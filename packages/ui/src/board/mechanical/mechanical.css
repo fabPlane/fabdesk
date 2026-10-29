@@ -666,3 +666,341 @@
     max-width: 200px;
   }
 }
+/* Dock tools outside the render surface so Fit always uses the unobscured canvas. */
+.fd-mechanical {
+  --cad-left: 0px;
+  --cad-right: 0px;
+  font-size: 13px;
+}
+.fd-mechanical.has-left-panel {
+  --cad-left: 280px;
+}
+.fd-mechanical.has-right-panel {
+  --cad-right: 320px;
+}
+.fd-mechanical-stage {
+  inset: 200px calc(var(--cad-right) + 20px) 150px calc(var(--cad-left) + 20px);
+}
+.fd-mechanical svg {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.fd-mechanical button {
+  min-height: 32px;
+}
+.fd-mechanical-header button,
+.fd-mechanical-pill button,
+.fd-mechanical-card p,
+.fd-mechanical-card label,
+.fd-mechanical-card summary,
+.fd-mechanical-parts strong {
+  font-size: 12px;
+}
+.fd-mechanical-card h2 {
+  font-size: 15px;
+}
+.fd-mechanical-parts small,
+.fd-mechanical-save,
+.fd-mechanical-help,
+.fd-mechanical-add footer {
+  font-size: 11px;
+}
+.fd-mechanical-add,
+.fd-mechanical-left {
+  left: 16px;
+  right: auto;
+  top: 120px;
+  width: 264px;
+  max-height: calc(100% - 280px);
+  overflow: auto;
+}
+.fd-mechanical-selection,
+.fd-mechanical-review-panel {
+  left: auto;
+  right: 16px;
+  top: 120px;
+  bottom: auto;
+  transform: none;
+  width: 304px;
+  max-width: calc(100% - 32px);
+  max-height: calc(100% - 280px);
+  overflow: auto;
+  padding: 16px;
+}
+.fd-mechanical-selection-tools {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fd-mechanical-selection-tools .fd-mechanical-card-heading {
+  width: 100%;
+  margin-bottom: 0;
+}
+.fd-mechanical-card-heading h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fd-mechanical-dimensions {
+  width: 100%;
+  margin: 0 0 8px !important;
+  font-variant-numeric: tabular-nums;
+  color: var(--fd-fg) !important;
+}
+.fd-mechanical-dimensions small {
+  display: block;
+  color: var(--fd-muted);
+  font-size: 11px;
+}
+.fd-mechanical-transform {
+  gap: 8px;
+}
+.fd-mechanical-transform fieldset {
+  width: 100%;
+  flex-wrap: wrap;
+}
+.fd-mechanical-transform fieldset label {
+  flex: 1 1 100%;
+  justify-content: space-between;
+}
+.fd-mechanical-transform fieldset input {
+  width: 165px;
+}
+.fd-mechanical-transform button {
+  font-size: 12px;
+  border: 1px solid var(--fd-border);
+  width: 100%;
+}
+.fd-mechanical-viewport-tools {
+  position: absolute;
+  top: 120px;
+  left: calc(var(--cad-left) + 20px);
+  right: calc(var(--cad-right) + 20px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.fd-mechanical-views {
+  position: static;
+  transform: none;
+  align-items: center;
+}
+.fd-mechanical-views button {
+  font-size: 11px;
+}
+.fd-mechanical-cube {
+  color: var(--fd-accent);
+  padding: 4px 6px;
+}
+.fd-mechanical-cube svg {
+  width: 28px;
+  height: 28px;
+}
+.fd-mechanical-edit-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px 5px 12px;
+  background: var(--fd-panel);
+  border: 1px solid var(--fd-border);
+  border-radius: 10px;
+  font-size: 12px;
+}
+.fd-mechanical-edit-banner button {
+  background: var(--fd-accent);
+  color: var(--fd-accent-fg);
+}
+.fd-mechanical-actions {
+  display: flex;
+  gap: 8px;
+}
+.fd-mechanical-review,
+.fd-mechanical-export {
+  color: var(--fd-fg);
+  background: var(--fd-panel);
+  border: 1px solid var(--fd-border);
+  font-size: 12px;
+}
+.fd-mechanical-review.has-warnings {
+  color: var(--fd-warning);
+  background: color-mix(in srgb, var(--fd-warning) 10%, var(--fd-panel));
+}
+.fd-mechanical-envelope-note {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  pointer-events: auto;
+  bottom: 94px;
+  left: 20px;
+  font-size: 11px;
+}
+.fd-mechanical-envelope-note button {
+  color: var(--fd-accent);
+  padding: 3px 6px;
+}
+.fd-mechanical.has-preview .fd-mechanical-envelope-note {
+  display: none;
+}
+.fd-mechanical-empty {
+  top: 40%;
+  left: calc(var(--cad-left) + 40px);
+  right: calc(var(--cad-right) + 40px);
+  max-width: none;
+}
+@container (max-width: 1100px) {
+  .fd-mechanical-stage,
+  .fd-mechanical-viewport-tools {
+    --cad-left: 0px;
+  }
+  .fd-mechanical.has-left-panel .fd-mechanical-stage,
+  .fd-mechanical.has-left-panel .fd-mechanical-viewport-tools {
+    --cad-left: 260px;
+  }
+  .fd-mechanical.has-right-panel .fd-mechanical-stage,
+  .fd-mechanical.has-right-panel .fd-mechanical-viewport-tools {
+    --cad-left: 0px;
+  }
+  .fd-mechanical.has-right-panel .fd-mechanical-left,
+  .fd-mechanical.has-right-panel .fd-mechanical-add {
+    display: none;
+  }
+  .fd-mechanical-left,
+  .fd-mechanical-add {
+    width: 244px;
+  }
+  .fd-mechanical-edit-banner {
+    position: absolute;
+    top: 76px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    z-index: 2;
+  }
+  .fd-mechanical.is-exploded .fd-mechanical-stage {
+    top: 250px;
+  }
+}
+@container (max-width: 750px) {
+  .fd-mechanical-header {
+    padding: 0 10px;
+  }
+  .fd-mechanical-header > div {
+    gap: 6px;
+  }
+  .fd-mechanical-top {
+    left: 10px;
+    right: 10px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .fd-mechanical-top button {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+  .fd-mechanical-stage {
+    top: 230px;
+    bottom: 190px;
+  }
+  .fd-mechanical-viewport-tools {
+    top: 150px;
+  }
+  .fd-mechanical-left,
+  .fd-mechanical-add,
+  .fd-mechanical-selection,
+  .fd-mechanical-review-panel {
+    top: 150px;
+    max-height: calc(100% - 340px);
+  }
+  .fd-mechanical-selection,
+  .fd-mechanical-review-panel {
+    width: 244px;
+  }
+  .fd-mechanical.has-right-panel .fd-mechanical-stage,
+  .fd-mechanical.has-right-panel .fd-mechanical-viewport-tools {
+    --cad-right: 260px;
+  }
+  .fd-mechanical-display {
+    position: absolute;
+    bottom: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+  .fd-mechanical-envelope-note {
+    bottom: 140px;
+    max-width: calc(100% - 32px);
+  }
+  .fd-mechanical-preview-bar {
+    bottom: 140px;
+  }
+}
+@container (max-width: 480px) {
+  .fd-mechanical-stage {
+    inset: 195px 10px 260px !important;
+  }
+  .fd-mechanical-viewport-tools {
+    left: 10px;
+    right: 10px;
+    top: 150px;
+  }
+  .fd-mechanical-left,
+  .fd-mechanical-add,
+  .fd-mechanical-selection,
+  .fd-mechanical-review-panel {
+    top: auto;
+    bottom: 140px;
+    left: 10px;
+    right: 10px;
+    width: auto;
+    max-height: 120px;
+  }
+  .fd-mechanical-envelope-note {
+    display: none;
+  }
+  .fd-mechanical-help {
+    font-size: 10px;
+  }
+}
+.fd-mechanical-cube {
+  padding: 0;
+  overflow: visible;
+}
+.fd-mechanical-cube path {
+  fill: var(--fd-panel-2);
+  stroke: var(--fd-border);
+  stroke-width: 1.5;
+}
+.fd-mechanical-cube text {
+  font-size: 10px;
+  fill: var(--fd-fg);
+  pointer-events: none;
+}
+.fd-mechanical-cube g {
+  cursor: pointer;
+  outline: none;
+}
+.fd-mechanical-cube g:hover path,
+.fd-mechanical-cube g:focus-visible path {
+  fill: color-mix(in srgb, var(--fd-accent) 25%, var(--fd-panel));
+  stroke: var(--fd-accent);
+}
+.fd-mechanical-views {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.fd-mechanical-views > button {
+  background: var(--fd-panel);
+  border: 1px solid var(--fd-border);
+}
+.fd-mechanical-viewport-tools {
+  align-items: center;
+}
+
+@container (min-width: 481px) and (max-width: 750px) {
+  .fd-mechanical.is-exploded .fd-mechanical-stage {
+    top: 280px;
+  }
+}

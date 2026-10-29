@@ -57,6 +57,9 @@ export class MechanicalScene {
   private models = new Map<string, { source: SceneModel; object: T.Group }>();
   private selection: string | null = null;
   private selectionBox: T.BoxHelper | null = null;
+  private hoverBox: T.BoxHelper | null = null;
+  private hovered: string | null = null;
+  private lastHover = 0;
   private mode: SceneMode = "orbit";
   private observer: ResizeObserver;
   private disposed = false;
@@ -75,6 +78,11 @@ export class MechanicalScene {
   private draggedGizmo = false;
   private themeObserver: MutationObserver;
   private environment: T.WebGLRenderTarget;
+  private keyLight = new T.DirectionalLight(0xfff4df, 1.8);
+  private ground = new T.Mesh(
+    new T.PlaneGeometry(1, 1),
+    new T.ShadowMaterial({ opacity: 0.16, depthWrite: false }),
+  );
   constructor(
     private host: HTMLElement,
     private callbacks: Callbacks,
@@ -89,10 +97,13 @@ export class MechanicalScene {
     this.renderer.outputColorSpace = T.SRGBColorSpace;
     this.renderer.toneMapping = T.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = T.PCFSoftShadowMap;
     const room = new RoomEnvironment(),
       pmrem = new T.PMREMGenerator(this.renderer);
     this.environment = pmrem.fromScene(room, 0.04);
     this.scene.environment = this.environment.texture;
+    this.scene.environmentIntensity = 0.7;
     room.dispose();
     pmrem.dispose();
     this.renderer.domElement.setAttribute(
@@ -131,9 +142,14 @@ export class MechanicalScene {
         );
     });
     this.scene.add(new T.HemisphereLight(0xffffff, 0x52664c, 1.1));
-    const key = new T.DirectionalLight(0xfff4df, 2);
-    key.position.set(-90, -100, 180);
+    const key = this.keyLight;
+    key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.normalBias = 0.15;
     this.scene.add(key);
+    this.scene.add(key.target);
+    this.ground.receiveShadow = true;
+    this.scene.add(this.ground);
     const fill = new T.DirectionalLight(0xd8ecff, 1);
     fill.position.set(100, 70, 80);
     this.scene.add(fill);
@@ -155,6 +171,8 @@ export class MechanicalScene {
     });
     this.renderer.domElement.addEventListener("pointerdown", this.pointerDown);
     this.renderer.domElement.addEventListener("pointerup", this.pointerUp);
+    this.renderer.domElement.addEventListener("pointermove", this.pointerMove);
+    this.renderer.domElement.addEventListener("pointerleave", this.clearHover);
     this.renderer.domElement.addEventListener("webglcontextlost", this.contextLost);
   }
   private contextLost = (e: Event) => {
@@ -164,8 +182,52 @@ export class MechanicalScene {
     );
   };
   private pointerDown = (e: PointerEvent) => {
+    this.clearHover();
+    this.renderer.domElement.focus({ preventScroll: true });
     this.pointerStart.set(e.clientX, e.clientY);
     this.draggedGizmo = false;
+  };
+  private clearHover = () => {
+    if (this.hoverBox) {
+      this.scene.remove(this.hoverBox);
+      disposeObject(this.hoverBox);
+      this.hoverBox = null;
+      this.render();
+    }
+    this.hovered = null;
+    this.renderer.domElement.style.cursor = "";
+  };
+  private pointerMove = (e: PointerEvent) => {
+    // Hover is a hint, never a continuous render loop or part of dragging.
+    if (e.buttons || this.mode !== "orbit" || performance.now() - this.lastHover < 80) return;
+    this.lastHover = performance.now();
+    const r = this.renderer.domElement.getBoundingClientRect();
+    const ray = new T.Raycaster();
+    ray.setFromCamera(
+      new T.Vector2(
+        ((e.clientX - r.left) / r.width) * 2 - 1,
+        1 - ((e.clientY - r.top) / r.height) * 2,
+      ),
+      this.camera,
+    );
+    const hit = ray.intersectObjects(
+      [...this.models.values()].filter((m) => m.object.visible).map((m) => m.object),
+      true,
+    )[0];
+    let object = hit?.object;
+    while (object && !object.userData["modelId"]) object = object.parent ?? undefined;
+    const id = object?.userData["modelId"] as string | undefined;
+    if ((id ?? null) === this.hovered) return;
+    this.clearHover();
+    if (id && object) {
+      this.hovered = id;
+      this.renderer.domElement.style.cursor = "pointer";
+      if (id !== this.selection) {
+        this.hoverBox = new T.BoxHelper(object, 0x7a9790);
+        this.scene.add(this.hoverBox);
+        this.render();
+      }
+    }
   };
   private pointerUp = (e: PointerEvent) => {
     if (
@@ -249,6 +311,7 @@ export class MechanicalScene {
     });
   };
   async setModels(sources: SceneModel[]) {
+    this.clearHover();
     const generation = ++this.generation;
     const added: Array<{ source: SceneModel; object: T.Group }> = [];
     const failed = new Set<string>();
@@ -439,6 +502,7 @@ export class MechanicalScene {
       object.scale.setScalar(i.scale);
       object.visible = i.visible;
       object.traverse((o) => {
+        if (o instanceof T.Mesh) o.castShadow = true;
         if (o instanceof T.Mesh && i.kind !== "board")
           for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
             let original = this.materialOpacity.get(m);
@@ -456,9 +520,30 @@ export class MechanicalScene {
           }
       });
     }
+    this.updateGround();
     this.render();
   }
+  private updateGround() {
+    const bounds = new T.Box3();
+    for (const { object } of this.models.values())
+      if (object.visible) bounds.expandByObject(object);
+    this.ground.visible = !bounds.isEmpty() && !this.translucent;
+    if (bounds.isEmpty()) return;
+    const center = bounds.getCenter(new T.Vector3());
+    const radius = Math.max(10, bounds.getSize(new T.Vector3()).length());
+    this.ground.position.set(center.x, center.y, bounds.min.z - 0.3);
+    this.ground.scale.setScalar(radius * 4);
+    this.keyLight.position.copy(center).add(new T.Vector3(-radius, -radius, radius * 2));
+    this.keyLight.target.position.copy(center);
+    const camera = this.keyLight.shadow.camera;
+    camera.left = camera.bottom = -radius;
+    camera.right = camera.top = radius;
+    camera.near = 0.1;
+    camera.far = radius * 6;
+    camera.updateProjectionMatrix();
+  }
   select(id: string | null) {
+    this.clearHover();
     this.selection = id;
     this.gizmo.detach();
     if (this.selectionBox) {
@@ -486,6 +571,7 @@ export class MechanicalScene {
     this.explode = value;
     this.updateTransforms();
     this.select(this.selection);
+    this.fit();
   }
   setTranslucent(value: boolean) {
     this.translucent = value;
@@ -551,9 +637,15 @@ export class MechanicalScene {
     this.models.clear();
     this.renderer.domElement.removeEventListener("pointerdown", this.pointerDown);
     this.renderer.domElement.removeEventListener("pointerup", this.pointerUp);
+    this.renderer.domElement.removeEventListener("pointermove", this.pointerMove);
+    this.renderer.domElement.removeEventListener("pointerleave", this.clearHover);
+    this.clearHover();
+    if (this.selectionBox) disposeObject(this.selectionBox);
     this.renderer.domElement.removeEventListener("webglcontextlost", this.contextLost);
     this.renderer.dispose();
     this.environment.dispose();
+    disposeObject(this.ground);
+    this.keyLight.shadow.dispose();
     this.renderer.domElement.remove();
   }
 }

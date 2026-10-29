@@ -16,6 +16,8 @@ import {
   type SceneMode,
 } from "./MechanicalScene";
 import { Dialog } from "../../components/ui";
+import { Icon } from "../../components/Icon";
+import { MechanicalIcon } from "./MechanicalIcon";
 import "./mechanical.css";
 
 type EnclosureResult = {
@@ -131,7 +133,16 @@ export function MechanicalWorkspace({
     [mode, setMode] = useState<SceneMode>("orbit");
   const [panel, setPanel] = useState<"add" | "generate" | "assembly" | null>("add"),
     [advancedOpen, setAdvancedOpen] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(() => {
+    try {
+      return localStorage.getItem("fd:mechanical:focus") !== "false";
+    } catch {
+      return true;
+    }
+  });
+  const [showExport, setShowExport] = useState(false);
+  const [modelRevision, setModelRevision] = useState(0);
+  const [dimensions, setDimensions] = useState<string | null>(null);
   const [busy, setBusy] = useState(""),
     [error, setError] = useState<string | null>(null),
     [saveState, setSaveState] = useState("Loading…");
@@ -157,6 +168,22 @@ export function MechanicalWorkspace({
     ...(view.warnings ?? []),
   ];
   const editable = loaded && !busy && !preview && explode === 0;
+  useEffect(() => {
+    try {
+      localStorage.setItem("fd:mechanical:focus", String(expanded));
+    } catch {
+      /* Storage may be unavailable. */
+    }
+  }, [expanded]);
+  const rightPanel = (!!current && !preview) || showReview || showExport;
+  const leftPanel = panel !== null && (!preview || panel === "generate");
+  function selectModel(id: string | null) {
+    setSelected(id);
+    if (id) {
+      setShowReview(false);
+      setShowExport(false);
+    }
+  }
   function save(next: MechanicalItem[]) {
     const version = ++saveVersion.current;
     setSaveState("Saving…");
@@ -196,7 +223,13 @@ export function MechanicalWorkspace({
     lifecycle.current = new AbortController();
     try {
       const s = new MechanicalScene(host.current!, {
-        select: setSelected,
+        select: (id) => {
+          setSelected(id);
+          if (id) {
+            setShowReview(false);
+            setShowExport(false);
+          }
+        },
         transform: (...args) => transform.current(...args),
         measured: setMeasured,
         zoom: setZoom,
@@ -338,6 +371,7 @@ export function MechanicalWorkspace({
             );
           setSources(all);
           await scene.current?.setModels(all);
+          if (!canceled) setModelRevision((n) => n + 1);
         }
       } catch (e) {
         if (!canceled) setError("Could not load assembly: " + message(e));
@@ -392,7 +426,7 @@ export function MechanicalWorkspace({
       if (!live.current) return;
       buffers.current.set(path, data);
       commit([...itemsRef.current, item]);
-      setSelected(item.id);
+      selectModel(item.id);
       setPanel("assembly");
       setMode("translate");
     });
@@ -489,11 +523,78 @@ export function MechanicalWorkspace({
       ]),
     });
   }
+  function generateDetailedBoard() {
+    void perform("Generating detailed PCB model…", async () => {
+      const response = await client.callTool("render_glb", { projectId });
+      if (response.jobId) {
+        const job = await client.waitJob(response.jobId, {
+          signal: lifecycle.current.signal,
+        });
+        if (job.status !== "done")
+          throw new Error(job.error ?? "PCB model generation did not finish.");
+      }
+      if (!live.current) return;
+      const blob = await client.readFileBlob(projectId, "renders/board.glb");
+      const data = await blob.arrayBuffer();
+      const board = mechanicalItem("renders/board.glb", "board", "PCB model");
+      const prior = itemsRef.current.find((i) => i.kind === "board");
+      board.position = prior?.position ?? [
+        0,
+        0,
+        Number(status.params?.["floorMm"] ?? 2) + Number(status.params?.["standoffMm"] ?? 3),
+      ];
+      if (prior) {
+        board.rotation = prior.rotation;
+        board.scale = prior.scale;
+        board.visible = prior.visible;
+      }
+      await scene.current?.validate({ item: board, data });
+      if (!live.current) return;
+      buffers.current.set("renders/board.glb", data);
+      commit([...itemsRef.current.filter((i) => i.kind !== "board"), board]);
+    });
+  }
+  // Read bounds after async model loading and every committed transform.
+  useEffect(() => {
+    const box = selected && scene.current?.bounds(selected);
+    setDimensions(
+      box
+        ? [box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z]
+            .map((n) => n.toFixed(1))
+            .join(" × ") + " mm"
+        : null,
+    );
+  }, [selected, modelRevision]);
   const title = project.data?.name ?? "Project";
   return (
     <section
-      className={`fd-mechanical${expanded ? " is-expanded" : ""}`}
+      className={`fd-mechanical${expanded ? " is-expanded" : ""}${leftPanel ? " has-left-panel" : ""}${rightPanel ? " has-right-panel" : ""}${preview ? " has-preview" : ""}${explode > 0 && !preview ? " is-exploded" : ""}`}
       data-testid="mechanical-workspace"
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (
+          advancedOpen ||
+          (e.target instanceof HTMLElement &&
+            e.target.closest("input, textarea, select, [contenteditable=true]"))
+        )
+          return;
+        if (e.key === "Escape") {
+          setMode("orbit");
+          setSelected(null);
+          setShowReview(false);
+          setShowExport(false);
+          e.preventDefault();
+          e.stopPropagation();
+        } else if (e.key.toLowerCase() === "f" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          scene.current?.fit();
+          e.preventDefault();
+          e.stopPropagation();
+        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && editable) {
+          undo(e.shiftKey);
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes("Files")) {
           e.preventDefault();
@@ -508,7 +609,9 @@ export function MechanicalWorkspace({
       <div className="fd-mechanical-stage" ref={host} />
       <header className="fd-mechanical-header">
         <div>
-          <span className="fd-mechanical-mark">◇</span>
+          <span className="fd-mechanical-mark">
+            <MechanicalIcon name="cube" />
+          </span>
           <strong>Mechanical</strong>
           <span className="fd-mechanical-divider">/</span>
           <span>{current?.name ?? title}</span>
@@ -520,48 +623,114 @@ export function MechanicalWorkspace({
           {saveState === "Save failed" && (
             <button onClick={() => save(itemsRef.current)}>Retry save</button>
           )}
-          <button onClick={() => setAdvancedOpen(true)}>Advanced CAD ↗</button>
+          <button onClick={() => setAdvancedOpen(true)}>Advanced CAD</button>
           <button
-            title={expanded ? "Exit expanded workspace" : "Expand workspace"}
-            aria-label={expanded ? "Exit expanded workspace" : "Expand workspace"}
+            title={expanded ? "Show chat beside CAD" : "Give CAD the full workspace"}
+            aria-label={expanded ? "Show chat" : "Focus CAD"}
             onClick={() => setExpanded(!expanded)}
           >
-            {expanded ? "↙" : "⛶ Expand"}
+            <Icon name="panel" /> {expanded ? "Show chat" : "Focus CAD"}
           </button>
         </div>
       </header>
       <div className="fd-mechanical-top">
         <div className="fd-mechanical-segment">
-          {(["assembly", "add", "generate"] as const).map((p) => (
+          {(["add", "assembly", "generate"] as const).map((p) => (
             <button
               key={p}
               aria-pressed={panel === p}
               disabled={!!preview || !!busy}
-              onClick={() => setPanel(p)}
+              onClick={() => {
+                setPanel(p);
+                setSelected(null);
+                setShowExport(false);
+                setShowReview(false);
+                setMode("orbit");
+              }}
             >
-              {p === "assembly" ? "Assembly" : p === "add" ? "Add model" : "Enclosure"}
+              {p === "assembly" ? "2 · Arrange" : p === "add" ? "1 · Add" : "3 · Enclosure"}
             </button>
           ))}
         </div>
-        <button className="fd-mechanical-review" onClick={() => setShowReview(!showReview)}>
-          {errors.length || view.alignment?.stale
-            ? `△ Review updates · ${errors.length || 1}`
-            : "◇ Review & export"}
-        </button>
-      </div>
-      <nav className="fd-mechanical-views" aria-label="Camera views">
-        {(["iso", "top", "front", "right"] as const).map((v) => (
-          <button key={v} title={`${v} view`} onClick={() => scene.current?.view(v)}>
-            {v === "iso" ? "◇" : v[0]!.toUpperCase() + v.slice(1)}
+        <div className="fd-mechanical-actions">
+          <button
+            className={`fd-mechanical-review${errors.length || view.alignment?.stale ? " has-warnings" : ""}`}
+            aria-pressed={showReview}
+            onClick={() => {
+              setShowReview(!showReview);
+              setShowExport(false);
+              setSelected(null);
+            }}
+          >
+            <Icon name={errors.length || view.alignment?.stale ? "warning" : "checklist"} />
+            {errors.length || view.alignment?.stale ? `Review · ${errors.length || 1}` : "Review"}
           </button>
-        ))}
-      </nav>
+          <button
+            className="fd-mechanical-export"
+            aria-pressed={showExport}
+            onClick={() => {
+              setShowExport(!showExport);
+              setShowReview(false);
+              setSelected(null);
+            }}
+          >
+            <Icon name="export" /> 4 · Export
+          </button>
+        </div>
+      </div>
+      <div className="fd-mechanical-viewport-tools">
+        <nav className="fd-mechanical-views" aria-label="Camera views">
+          <svg
+            className="fd-mechanical-cube"
+            viewBox="0 0 80 76"
+            width="72"
+            height="68"
+            aria-label="Orientation cube"
+          >
+            {(
+              [
+                ["top", "M40 3 75 21 40 39 5 21Z", 40, 24, "Top"],
+                ["front", "M5 21 40 39 40 73 5 55Z", 22, 48, "Front"],
+                ["right", "M40 39 75 21 75 55 40 73Z", 57, 48, "Right"],
+              ] as const
+            ).map(([view, d, x, y, label]) => (
+              <g
+                key={view}
+                role="button"
+                tabIndex={0}
+                aria-label={`${label} view`}
+                onClick={() => scene.current?.view(view)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    scene.current?.view(view);
+                  }
+                }}
+              >
+                <path d={d} />
+                <text x={x} y={y} textAnchor="middle">
+                  {label}
+                </text>
+              </g>
+            ))}
+          </svg>
+          <button title="Isometric view" onClick={() => scene.current?.view("iso")}>
+            3D
+          </button>
+        </nav>
+        {explode > 0 && !preview && (
+          <div className="fd-mechanical-edit-banner" role="status">
+            <span>Exploded view · editing paused</span>
+            <button onClick={() => setExplode(0)}>Return to editing</button>
+          </div>
+        )}
+      </div>
       {panel === "add" && !preview && (
         <aside className="fd-mechanical-card fd-mechanical-add">
           <div className="fd-mechanical-card-heading">
             <h2>Add to your assembly</h2>
             <button aria-label="Close panel" onClick={() => setPanel(null)}>
-              ×
+              <Icon name="close" />
             </button>
           </div>
           <button
@@ -569,30 +738,30 @@ export function MechanicalWorkspace({
             disabled={!editable}
             onClick={() => input.current?.click()}
           >
-            <span>⬡</span>
+            <MechanicalIcon name="cube" />
             <div>
               <strong>Import 3D model</strong>
               <small>Bring in an existing case or part</small>
             </div>
-            <span>›</span>
+            <Icon name="chevronRight" />
           </button>
           <button
             className="fd-mechanical-choice"
             disabled={!!busy}
             onClick={() => setPanel("generate")}
           >
-            <span>✧</span>
+            <Icon name="plus" />
             <div>
               <strong>Generate enclosure</strong>
               <small>Build a case around your PCB</small>
             </div>
-            <span>›</span>
+            <Icon name="chevronRight" />
           </button>
           <footer>
             Drop STL, OBJ or GLB onto the canvas.
             <br />
             STEP and native editing:{" "}
-            <button onClick={() => setAdvancedOpen(true)}>Advanced CAD ↗</button>
+            <button onClick={() => setAdvancedOpen(true)}>Advanced CAD</button>
           </footer>
         </aside>
       )}
@@ -604,7 +773,7 @@ export function MechanicalWorkspace({
               {items.length} {items.length === 1 ? "part" : "parts"}
             </span>
             <button aria-label="Close panel" onClick={() => setPanel(null)}>
-              ×
+              <Icon name="close" />
             </button>
           </div>
           <div className="fd-mechanical-parts">
@@ -612,12 +781,13 @@ export function MechanicalWorkspace({
               <div key={i.id} className={selected === i.id ? "is-selected" : ""}>
                 <button
                   title={i.visible ? "Hide model" : "Show model"}
+                  aria-label={`${i.visible ? "Hide" : "Show"} ${i.name}`}
                   disabled={!editable}
                   onClick={() => patch(i.id, { visible: !i.visible })}
                 >
-                  {i.visible ? "◉" : "○"}
+                  <MechanicalIcon name={i.visible ? "eye" : "eyeOff"} />
                 </button>
-                <button onClick={() => setSelected(i.id)}>
+                <button onClick={() => selectModel(i.id)}>
                   <strong>{i.name}</strong>
                   <small>
                     {i.kind === "import"
@@ -637,44 +807,13 @@ export function MechanicalWorkspace({
             disabled={!editable}
             onClick={() => input.current?.click()}
           >
-            ＋ Import model
+            <Icon name="plus" /> Import model
           </button>
           {
             <button
               className="fd-mechanical-wide"
               disabled={!loaded || !!busy || !!preview}
-              onClick={() =>
-                void perform("Generating detailed PCB model…", async () => {
-                  const response = await client.callTool("render_glb", { projectId });
-                  if (response.jobId) {
-                    const job = await client.waitJob(response.jobId, {
-                      signal: lifecycle.current.signal,
-                    });
-                    if (job.status !== "done")
-                      throw new Error(job.error ?? "PCB model generation did not finish.");
-                  }
-                  if (!live.current) return;
-                  const blob = await client.readFileBlob(projectId, "renders/board.glb");
-                  const data = await blob.arrayBuffer();
-                  const board = mechanicalItem("renders/board.glb", "board", "PCB model");
-                  const prior = itemsRef.current.find((i) => i.kind === "board");
-                  board.position = prior?.position ?? [
-                    0,
-                    0,
-                    Number(status.params?.["floorMm"] ?? 2) +
-                      Number(status.params?.["standoffMm"] ?? 3),
-                  ];
-                  if (prior) {
-                    board.rotation = prior.rotation;
-                    board.scale = prior.scale;
-                    board.visible = prior.visible;
-                  }
-                  await scene.current?.validate({ item: board, data });
-                  if (!live.current) return;
-                  buffers.current.set("renders/board.glb", data);
-                  commit([...itemsRef.current.filter((i) => i.kind !== "board"), board]);
-                })
-              }
+              onClick={() => generateDetailedBoard()}
             >
               {items.some((i) => i.path === "renders/board.glb")
                 ? "Refresh PCB model"
@@ -689,7 +828,7 @@ export function MechanicalWorkspace({
           <div className="fd-mechanical-card-heading">
             <h2>Generate enclosure</h2>
             <button aria-label="Close panel" onClick={() => setPanel(null)}>
-              ×
+              <Icon name="close" />
             </button>
           </div>
           <label>
@@ -793,7 +932,22 @@ export function MechanicalWorkspace({
       {current && !preview && (
         <div className="fd-mechanical-selection fd-mechanical-card">
           <div className="fd-mechanical-selection-tools">
-            <strong title={current.name}>⬡ {current.name}</strong>
+            <div className="fd-mechanical-card-heading">
+              <h2 title={current.name}>{current.name}</h2>
+              <button
+                aria-label="Close selection"
+                onClick={() => {
+                  setSelected(null);
+                  setMode("orbit");
+                }}
+              >
+                <Icon name="close" />
+              </button>
+            </div>
+            <p className="fd-mechanical-dimensions">
+              {dimensions ?? "Loading dimensions…"}
+              <small>World bounds · X × Y × Z</small>
+            </p>
             {(
               [
                 ["translate", "Move"],
@@ -815,7 +969,7 @@ export function MechanicalWorkspace({
             </button>
           </div>
           {mode !== "measure" && (
-            <details>
+            <details open>
               <summary>Position, rotation & scale · mm</summary>
               <div className="fd-mechanical-transform">
                 {(
@@ -882,16 +1036,17 @@ export function MechanicalWorkspace({
       )}
       {showReview && (
         <aside className="fd-mechanical-card fd-mechanical-review-panel">
-          <h2>Assembly review</h2>
+          <div className="fd-mechanical-card-heading">
+            <h2>Assembly review</h2>
+            <button aria-label="Close review" onClick={() => setShowReview(false)}>
+              <Icon name="close" />
+            </button>
+          </div>
           <p>Positioning models does not run a collision or print-fit check.</p>
-          <p>
-            Downloads use generated dimensions. Assembly moves, rotation and scale do not change
-            export files.
-          </p>
           {errors.length ? (
             errors.map((e, i) => (
               <p key={i} className="fd-mechanical-warning">
-                △ {e}
+                <Icon name="warning" /> {e}
               </p>
             ))
           ) : (
@@ -911,6 +1066,26 @@ export function MechanicalWorkspace({
           >
             Check board alignment
           </button>
+        </aside>
+      )}
+      {showExport && (
+        <aside className="fd-mechanical-card fd-mechanical-review-panel">
+          <div className="fd-mechanical-card-heading">
+            <h2>Export enclosure</h2>
+            <button aria-label="Close export" onClick={() => setShowExport(false)}>
+              <Icon name="close" />
+            </button>
+          </div>
+          <p>STL for 3D printing. STEP for editing in CAD.</p>
+          <p>
+            Files use generated dimensions. Assembly moves, rotation and scale do not change these
+            exports.
+          </p>
+          {preview ? (
+            <p>Apply or cancel your preview before exporting.</p>
+          ) : !status.exists ? (
+            <p>Generate and apply an enclosure to make export files available.</p>
+          ) : null}
           {!preview &&
             (
               [
@@ -927,7 +1102,7 @@ export function MechanicalWorkspace({
                     disabled={!!busy}
                     onClick={() => void download(path)}
                   >
-                    ↓ Download {name}
+                    <Icon name="export" /> Download {name}
                   </button>
                 ),
             )}
@@ -935,7 +1110,9 @@ export function MechanicalWorkspace({
       )}
       {!sources.length && loaded && !error && !busy && (
         <div className="fd-mechanical-empty">
-          <span>◇</span>
+          <span>
+            <MechanicalIcon name="cube" />
+          </span>
           <h2>Your mechanical workspace</h2>
           <p>Import a model or open a project with a PCB to start assembling.</p>
           <button className="fd-mechanical-primary" onClick={() => input.current?.click()}>
@@ -953,19 +1130,21 @@ export function MechanicalWorkspace({
         <div className="fd-mechanical-error" role="alert">
           <span>{error}</span>
           <button onClick={() => setError(null)} aria-label="Dismiss error">
-            ×
+            <Icon name="close" />
           </button>
         </div>
       )}
       <div className="fd-mechanical-bottom">
         <div className="fd-mechanical-pill">
-          <button onClick={() => scene.current?.fit()}>⛶ Fit</button>
+          <button title="Fit assembly (F)" onClick={() => scene.current?.fit()}>
+            <MechanicalIcon name="fit" /> Fit
+          </button>
           <button aria-label="Zoom out" onClick={() => scene.current?.zoom(1.2)}>
-            −
+            <Icon name="minus" />
           </button>
           <span>{zoom}%</span>
           <button aria-label="Zoom in" onClick={() => scene.current?.zoom(1 / 1.2)}>
-            ＋
+            <Icon name="plus" />
           </button>
         </div>
         <div className="fd-mechanical-pill fd-mechanical-display">
@@ -987,18 +1166,20 @@ export function MechanicalWorkspace({
         </div>
         <div className="fd-mechanical-pill">
           <button
-            title="Undo assembly edit"
+            title="Undo assembly edit (Ctrl/Cmd+Z)"
+            aria-label="Undo assembly edit"
             disabled={!editable || !history.current.length}
             onClick={() => undo()}
           >
-            ↶
+            <MechanicalIcon name="undo" />
           </button>
           <button
-            title="Redo assembly edit"
+            title="Redo assembly edit (Ctrl/Cmd+Shift+Z)"
+            aria-label="Redo assembly edit"
             disabled={!editable || !future.current.length}
             onClick={() => undo(true)}
           >
-            ↷
+            <MechanicalIcon name="redo" />
           </button>
           <button
             disabled={!!busy}
@@ -1013,22 +1194,27 @@ export function MechanicalWorkspace({
         </div>
       </div>
       <p className="fd-mechanical-help">
-        {mode === "measure"
-          ? measured === null
-            ? "Click two points on the model to measure in millimetres."
-            : `Distance: ${measured.toFixed(2)} mm · click to measure again`
-          : explode > 0
-            ? "Exploded view · close the lid to move or rotate parts"
-            : "Drag to orbit · scroll to zoom · right-drag to pan"}
+        {preview
+          ? "Preview only · Apply to save the enclosure or Cancel to return"
+          : mode === "measure"
+            ? measured === null
+              ? "Click two points on the model to measure in millimetres."
+              : `Distance: ${measured.toFixed(2)} mm · click to measure again`
+            : explode > 0
+              ? "Exploded view · close the lid to move or rotate parts"
+              : "Drag to orbit · scroll to zoom · right-drag to pan · F fit · Esc exit tool"}
       </p>
       {items.some((i) => i.path === "@board-envelope") && (
-        <span className="fd-mechanical-envelope-note">
-          PCB envelope · estimated component sizes
-        </span>
+        <div className="fd-mechanical-envelope-note">
+          <span>PCB envelope · estimated parts</span>
+          <button disabled={!loaded || !!busy || !!preview} onClick={generateDetailedBoard}>
+            Load detailed PCB
+          </button>
+        </div>
       )}
       {preview && (
         <div className="fd-mechanical-preview-bar">
-          <span>◉ Preview · not applied</span>
+          <span>Preview · not applied</span>
           <button
             disabled={!!busy}
             onClick={() => {
