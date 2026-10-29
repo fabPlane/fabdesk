@@ -1674,3 +1674,10 @@ Review→Design sources has requested Synchronization options; both directions a
 Native realR1 selection, requesteddisclosures, disabledstates, compactlayout andClose/Escapefocus passed. No proposals/applies/sends;34protectedDonorfiles exact. UItypes/233tests912assertions passed. [Evidence](pending-native-actions-structure.json).
 
 ![Replacement has a requested, explicitly pending home](selected-part-replacement-pending.png)
+
+
+## Project view structure
+
+The assembly overview keeps Connections as its quiet default. Its requested view menu gives planned3Dassembly a clearly pending home and links to existing individual board models. The map remains logical; assembled alignment/fit is not implemented. Native pendingstate→actualsource-qualifiedmodelview→Overview and compactlayout passed. No generation/sourceedit;VAIO16+actualDRCreportexact. Final mapoverride reset persisted throughreload. UItypes/233tests912assertions passed. [Evidence](assembly-view-structure-native.json).
+
+![Quiet compact project overview](overview-structure-compact.png)
