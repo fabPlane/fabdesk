@@ -3,7 +3,7 @@ export type OutputKind = "images" | "videos" | "models" | "manufacturing";
 
 /** A library of saved deliverables, not intermediate receipts/reports or project source files. */
 export function outputKind(path: string): OutputKind | null {
-  if (!/^(renders|exports)\//.test(path)) return null;
+  if (!/^(renders|exports)\//.test(path) || path.startsWith("renders/diff/")) return null;
   const extension = path.split(".").pop()?.toLowerCase();
   if (["png", "jpg", "jpeg", "webp", "svg"].includes(extension ?? "")) return "images";
   if (["mp4", "webm", "gif"].includes(extension ?? "")) return "videos";

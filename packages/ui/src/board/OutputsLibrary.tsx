@@ -1,3 +1,5 @@
+import { buildZip } from "@fabdesk/board-art";
+import { readOutputSelection } from "@fabdesk/client-core";
 import { VideoSourceStatus, videoInputLabel } from "./VideoSourceStatus";
 import { filterSavedOutputs, outputLibrarySections, useVideoInputRevisions, videoInputsNeedReview } from "@fabdesk/client-core";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -13,10 +15,12 @@ import { formatFileSize } from "./file-explorer";
 const ModelCanvas = lazy(() => import("./ModelCanvas"));
 const FILTERS = [{ id: "all", label: "All" }, { id: "images", label: "Images" }, { id: "videos", label: "Videos" }, { id: "models", label: "Models" }, { id: "manufacturing", label: "Manufacturing" }] as const;
 
-/** Saved files first; one selected output reveals its actions. Creation remains deliberate. */
+/** Open a preview directly; explicit checkboxes select files for single or batch download. */
 export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   const client = useCoreClient(), project = useProject(projectId), generate = useRunTool();
-  const [filter, setFilter] = useState<OutputKind | "all">("all"), [selected, setSelected] = useState<string | null>(null);
+  const [filter, setFilter] = useState<OutputKind | "all">("all"), [selectedPaths, setSelectedPaths] = useState<string[]>([]);
+  const selected = selectedPaths.length === 1 ? selectedPaths[0] ?? null : null;
+  const selectAll = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState(""), [sourceScope, setSourceScope] = useState("all");
   const search = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null), [downloading, setDownloading] = useState(false), [error, setError] = useState<string | null>(null);
@@ -29,6 +33,9 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   const memberModels = useAssemblyModelSummaries(projectId ?? "", assembly ? boardSources.data : undefined, !boardSources.isFetching && !boardSources.isError);
   const outputs = savedOutputs(project.data?.files ?? [], assembly ? boardSources.data?.sources : []), active = outputs.find(file => file.path === selected), shown = filterSavedOutputs(outputs, { kind: filter, query, ...(sourceScope === "project" ? { sourceId: null } : sourceScope.startsWith("source:") ? { sourceId: sourceScope.slice(7) } : {}) });
   const sections = outputLibrarySections(shown, filter === "all");
+  const selectedFiles = shown.filter(file => selectedPaths.includes(file.path));
+  const allSelected = shown.length > 0 && selectedFiles.length === shown.length;
+  useEffect(() => { if (selectAll.current) selectAll.current.indeterminate = selectedFiles.length > 0 && !allSelected; }, [selectedFiles.length, allSelected]);
   const modelRevision = useBoardModelRevision(projectId, sourceReady && !assembly && outputs.some(file => file.path === "renders/board.glb"));
   const pcbRevision = usePcbPreviewRevision(projectId, sourceReady && !assembly && outputs.some(file => file.path === "renders/pcb.svg"));
   const enclosureRevision = useEnclosureSourceRevision(projectId, sourceReady && !assembly && outputs.some(file => file.path === "exports/enclosure.stl"));
@@ -60,18 +67,26 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
     return { warning: false, label: "Source unverified" };
   };
   const visible = outputs.find(file => file.path === preview);
-  useEffect(() => { if (selected && !shown.some(file => file.path === selected)) { setSelected(null); setPreview(null); } }, [project.data?.files, selected, query, filter, sourceScope]);
+  useEffect(() => { const visible = new Set(shown.map(file => file.path)); setSelectedPaths(previous => { const next = previous.filter(path => visible.has(path)); return next.length === previous.length ? previous : next; }); }, [project.data?.files, query, filter, sourceScope]);
   const deselect = () => {
-    [...(library.current?.querySelectorAll<HTMLButtonElement>(".fd-output-card") ?? [])].find(card => card.dataset.path === selected)?.focus();
-    setSelected(null);
+    [...(library.current?.querySelectorAll<HTMLInputElement>(".fd-output-checkbox") ?? [])].find(card => card.dataset.path === selectedPaths[0])?.focus();
+    setSelectedPaths([]);
   };
   const download = async () => {
-    if (!active || !projectId || downloading) return;
+    if (!selectedFiles.length || !projectId || downloading) return;
+    const captured = [...selectedFiles];
     setDownloading(true); setError(null);
-    try { const blob = await client.readFileBlob(projectId, active.path), url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = basename(active.path); link.click(); setTimeout(() => URL.revokeObjectURL(url), 10_000); }
-    catch { setError("Could not download this output. Try again."); }
+    try {
+      const entries = await readOutputSelection(client, projectId, captured);
+      if (useUiStore.getState().activeProjectId !== projectId) return;
+      const bytes = entries.length === 1 ? entries[0]!.data : buildZip(entries);
+      const blob = new Blob([Uint8Array.from(bytes).buffer], { type: entries.length > 1 ? "application/zip" : "application/octet-stream" });
+      const url = URL.createObjectURL(blob), link = document.createElement("a"); link.href = url; link.download = entries.length === 1 ? basename(entries[0]!.name) : "fabPlane-outputs.zip"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    }
+    catch (failure) { setError(failure instanceof Error ? `Could not download the selection. ${failure.message}` : "Could not download the selection. Try again."); }
     finally { setDownloading(false); }
   };
+
   const create = (kind: "render" | "glb" | "video" | "files") => {
     if (!projectId || useUiStore.getState().activeProjectId !== projectId || kind !== "files" && !sourceReady) return;
     if (assembly && kind === "glb") { useUiStore.getState().setWorkspaceTab("3d"); return; }
@@ -86,7 +101,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   if (project.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   const canPreview = active && (active.kind === "images" || active.kind === "videos" || /\.(glb|stl|obj)$/i.test(active.path));
   return <div ref={library} className="fd-outputs-library" data-testid="outputs-library" onKeyDown={event => {
-    if (event.key === "Escape" && selected) { event.stopPropagation(); deselect(); }
+    if (event.key === "Escape" && selectedPaths.length && !preview) { event.stopPropagation(); deselect(); }
   }}>
     <header className="fd-output-library-heading">
       <div><h2>Saved outputs</h2><p>Images, videos, models and manufacturing files from this project.</p></div>
@@ -103,33 +118,34 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
     </header>
     <div className="fd-output-toolbar">
     <div className="fd-output-discovery" aria-label="Find saved outputs">
-      <label className="fd-output-search"><Icon name="search" width={16} height={16} /><input ref={search} aria-label="Find saved outputs" placeholder="Find an output…" value={query} onChange={event => { setQuery(event.target.value); setSelected(null); setError(null); }} /></label>
-      {assembly && <label className="fd-output-scope">Source<select aria-label="Filter output source" value={sourceScope} onChange={event => { setSourceScope(event.target.value); setSelected(null); setError(null); }}><option value="all">All sources</option><option value="project">Project outputs</option>{boardSources.data?.sources.map(row => <option key={row.source.id} value={`source:${row.source.id}`}>{row.source.name}</option>)}{sourceScope.startsWith("source:") && !boardSources.data?.sources.some(row => `source:${row.source.id}` === sourceScope) && <option value={sourceScope} disabled>Source unavailable</option>}</select></label>}
+      <label className="fd-output-search"><Icon name="search" width={16} height={16} /><input ref={search} aria-label="Find saved outputs" placeholder="Find an output…" value={query} onChange={event => { setQuery(event.target.value); setSelectedPaths([]); setError(null); }} /></label>
+      {assembly && <label className="fd-output-scope">Source<select aria-label="Filter output source" value={sourceScope} onChange={event => { setSourceScope(event.target.value); setSelectedPaths([]); setError(null); }}><option value="all">All sources</option><option value="project">Project outputs</option>{boardSources.data?.sources.map(row => <option key={row.source.id} value={`source:${row.source.id}`}>{row.source.name}</option>)}{sourceScope.startsWith("source:") && !boardSources.data?.sources.some(row => `source:${row.source.id}` === sourceScope) && <option value={sourceScope} disabled>Source unavailable</option>}</select></label>}
       <span role="status">{shown.length} of {outputs.length} saved files</span>
-      {(query || sourceScope !== "all" || filter !== "all") && <Button size="sm" variant="ghost" onClick={() => { setQuery(""); setSourceScope("all"); setFilter("all"); setSelected(null); setError(null); search.current?.focus(); }}>Clear filters</Button>}
+      {(query || sourceScope !== "all" || filter !== "all") && <Button size="sm" variant="ghost" onClick={() => { setQuery(""); setSourceScope("all"); setFilter("all"); setSelectedPaths([]); setError(null); search.current?.focus(); }}>Clear filters</Button>}
     </div>
-      <div className="fd-output-filters" role="group" aria-label="Filter saved outputs">{FILTERS.map(item => <Button ref={item.id === "manufacturing" ? manufacturingFilter : undefined} size="sm" key={item.id} aria-pressed={filter === item.id} onClick={() => { setFilter(item.id); setSelected(null); }}>{item.label}</Button>)}</div>
+      <div className="fd-output-filters" role="group" aria-label="Filter saved outputs">{FILTERS.map(item => <Button ref={item.id === "manufacturing" ? manufacturingFilter : undefined} size="sm" key={item.id} aria-pressed={filter === item.id} onClick={() => { setFilter(item.id); setSelectedPaths([]); }}>{item.label}</Button>)}</div>
 
     </div>
     {generate.state.status === "running" && <p role="status" className="fd-output-feedback"><Spinner />Creating output…</p>}
     {(error || generate.state.error) && <p role="alert" className="fd-output-feedback">{error || generate.state.error}</p>}
-    {active && <div className="fd-output-selected" data-testid="output-actions">
-      <div className="fd-output-action-bar"><span className="fd-output-selection-count">1 selected</span><strong title={active.path}>{active.sourceName ?? basename(active.path)}</strong>
-        {canPreview && <Button size="sm" onClick={() => setPreview(active.path)}>{active.kind === "videos" ? "Play" : "Preview"}</Button>}
-        <Button size="sm" disabled={downloading} onClick={() => void download()}>{downloading ? "Downloading…" : "Download"}</Button>
-        {active.path === "renders/board.glb" && <Button size="sm" disabled={!rootGenerationReady || generate.state.status === "running"} onClick={() => create("glb")}>Regenerate model</Button>}
-        <WorkspaceMenu key={active.path} className="fd-output-more" label={<span aria-label="More output actions"><Icon name="more" width={18} height={18} /></span>}>
+    {shown.length > 0 && <label className="fd-output-select-all"><input ref={selectAll} type="checkbox" checked={allSelected} aria-label="Select all matching outputs" onChange={() => setSelectedPaths(allSelected ? [] : shown.map(file => file.path))} />Select all {shown.length} files</label>}
+    {selectedFiles.length > 0 && <div className="fd-output-selected" data-testid="output-actions">
+      <div className="fd-output-action-bar"><span className="fd-output-selection-count">{selectedFiles.length} {selectedFiles.length === 1 ? "file" : "files"} selected</span>{active ? <strong title={active.path}>{basename(active.path)}{active.sourceName && <small> · {active.sourceName}</small>}</strong> : <strong>Download these files together as a ZIP</strong>}
+        {canPreview && <Button size="sm" onClick={() => active && setPreview(active.path)}>{active?.kind === "videos" ? "Play" : "Preview"}</Button>}
+        <Button size="sm" disabled={downloading} onClick={() => void download()}>{downloading ? "Preparing download…" : selectedFiles.length > 1 ? "Download ZIP" : "Download"}</Button>
+        {active?.path === "renders/board.glb" && <Button size="sm" disabled={!rootGenerationReady || generate.state.status === "running"} onClick={() => create("glb")}>Regenerate model</Button>}
+        {active && <WorkspaceMenu key={active.path} className="fd-output-more" label={<span aria-label="More output actions"><Icon name="more" width={18} height={18} /></span>}>
           <button onClick={() => useUiStore.getState().openProjectFile(active.path)}>Show file</button>
           <div className="fd-menu-caption">{sourceInfo(active.path).label}</div>
-        </WorkspaceMenu>
-        <Button size="sm" variant="ghost" aria-label="Deselect output" onClick={deselect}><Icon name="close" width={15} height={15} /></Button>
+        </WorkspaceMenu>}
+        <Button size="sm" variant="ghost" aria-label="Clear output selection" onClick={deselect}><Icon name="close" width={15} height={15} /></Button>
       </div>
     </div>}
-    {shown.length ? <div className="fd-output-grid">{sections.cards.map(file => <button key={file.path} className="fd-output-card" data-path={file.path} aria-pressed={selected === file.path} onClick={() => { setSelected(file.path); setError(null); }}>
+    {shown.length ? <div className="fd-output-grid">{sections.cards.map(file => <div key={file.path} className="fd-output-card" data-path={file.path} data-selected={selectedPaths.includes(file.path)}><label className="fd-output-checkbox-hit"><input className="fd-output-checkbox" data-path={file.path} type="checkbox" aria-label={`Select ${file.sourceName ? `${file.sourceName} · ` : ""}${basename(file.path)}`} checked={selectedPaths.includes(file.path)} onChange={() => { setSelectedPaths(previous => previous.includes(file.path) ? previous.filter(path => path !== file.path) : [...previous, file.path]); setError(null); }} /></label><button className="fd-output-open" aria-label={`${file.kind === "videos" ? "Play" : "Open"} ${file.sourceName ? `${file.sourceName} · ` : ""}${basename(file.path)}`} onClick={() => { if (file.kind === "images" || file.kind === "videos" || /\.(glb|stl|obj)$/i.test(file.path)) setPreview(file.path); else useUiStore.getState().openProjectFile(file.path); }}>
       <div className="fd-output-thumbnail">{sourceInfo(file.path).warning && <span className="fd-output-warning"><Icon name="warning" width={14} height={14} />Needs review</span>}{file.kind === "images" ? <ProjectImage projectId={projectId} path={file.path} alt={basename(file.path)} /> : file.kind === "videos" ? <><ProjectVideo projectId={projectId} path={file.path} thumbnail /><span className="fd-output-video-play"><Icon name="play" width={22} height={22} /></span></> : <><Icon name={file.kind === "models" ? "cube" : "export"} width={58} height={58} /><span>{file.path.split(".").pop()?.toUpperCase()}</span></>}</div>
       <div className="fd-output-caption"><strong><Icon name={file.kind === "images" ? "image" : file.kind === "videos" ? "play" : file.kind === "models" ? "cube" : "export"} width={18} height={18} aria-hidden="true" /><span>{basename(file.path)}</span></strong>{file.sourceName && <span className="fd-output-source">{file.sourceName}</span>}<span>{formatFileSize(file.size)} · Saved {new Date(file.mtime).toLocaleDateString()}</span><small data-stale={sourceInfo(file.path).warning}>{sourceInfo(file.path).label}</small></div>
-    </button>)}{sections.manufacturingFiles.length > 0 && <button className="fd-output-card" aria-label={`View ${sections.manufacturingFiles.length} individual manufacturing files`} onClick={() => {
-      setFilter("manufacturing"); setSelected(null);
+    </button></div>)}{sections.manufacturingFiles.length > 0 && <button className="fd-output-card" aria-label={`View ${sections.manufacturingFiles.length} individual manufacturing files`} onClick={() => {
+      setFilter("manufacturing"); setSelectedPaths([]);
       requestAnimationFrame(() => { if (useUiStore.getState().activeProjectId === projectId) manufacturingFilter.current?.focus(); });
     }}>
       <div className="fd-output-thumbnail"><Icon name="folderOpen" width={58} height={58} /><span>{sections.manufacturingFiles.length} FILES</span></div>

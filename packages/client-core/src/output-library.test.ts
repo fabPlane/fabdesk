@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { filterSavedOutputs, outputKind, outputLibrarySections, savedOutputs } from "./output-library";
 
 test("saved outputs include media/models/manufacturing without treating receipts, reports or sources as deliverables", () => {
-  for (const path of ["renders/board.glb.revision.json", "reports/drc.json", "board.kicad_pcb", "mechanical/imports/id/case.stl", "exports/.temporary"]) expect(outputKind(path)).toBeNull();
+  for (const path of ["renders/board.glb.revision.json", "reports/drc.json", "renders/diff/pcb-structured.svg", "renders/diff/revision/pcb-overlay.svg", "board.kicad_pcb", "mechanical/imports/id/case.stl", "exports/.temporary"]) expect(outputKind(path)).toBeNull();
   expect(outputKind("renders/top.PNG")).toBe("images"); expect(outputKind("exports/product-video.gif")).toBe("videos");
   expect(outputKind("exports/enclosure.stl")).toBe("models"); expect(outputKind("exports/gerbers/board-F_Cu.gbr")).toBe("manufacturing");
   expect(outputKind("exports/stencil.lbrn2")).toBe("manufacturing");

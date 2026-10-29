@@ -421,3 +421,18 @@
   .fd-checks-body .fd-checks-detail { grid-column:1; grid-row:auto; }
   .fd-checks-detail { position:static; max-height:360px; }
 }
+
+/* Output selection is explicit; opening a card previews one file without changing the batch. */
+.fd-output-grid > div.fd-output-card { position:relative; }
+.fd-output-open { display:block; width:100%; min-width:0; padding:0; text-align:left; border-radius:8px; background:transparent; color:inherit; cursor:pointer; }
+.fd-output-open:focus-visible { outline:2px solid var(--fd-accent); outline-offset:3px; }
+.fd-output-card[data-selected=true] { border-color:var(--fd-accent); box-shadow:0 0 0 1px var(--fd-accent); }
+.fd-output-checkbox-hit { position:absolute; z-index:2; top:16px; right:16px; width:34px; height:34px; display:grid; place-items:center; border:1px solid var(--fd-border); border-radius:8px; background:var(--fd-panel); box-shadow:var(--fd-soft-shadow); cursor:pointer; }
+.fd-output-checkbox { width:18px; height:18px; accent-color:var(--fd-accent); cursor:pointer; }
+.fd-output-checkbox-hit:has(:focus-visible) { outline:2px solid var(--fd-accent); outline-offset:2px; }
+.fd-output-checkbox:focus-visible { outline:0; }
+.fd-output-select-all { display:flex; align-items:center; gap:9px; width:fit-content; min-height:36px; margin:0 0 14px; padding:6px 2px; color:var(--fd-fg); font-size:12px; cursor:pointer; }
+.fd-output-select-all input { width:16px; height:16px; accent-color:var(--fd-accent); }
+.fd-output-action-bar > strong { max-width:none; flex:1; }
+.fd-output-action-bar > strong small { color:var(--fd-muted); font-weight:400; }
+@media(pointer:coarse) { .fd-output-checkbox-hit { width:44px; height:44px; } }
