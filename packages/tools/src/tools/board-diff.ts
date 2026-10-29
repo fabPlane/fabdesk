@@ -253,7 +253,7 @@ async function assertHistoricalMember(ctx: ToolContext, ref: string) {
 
 export const board_revision_checkpoint = defineTool({
   name: "board_revision_checkpoint", boardScoped: true, toolset: "kicad", title: "Save board comparison point",
-  description: "Save current native PCB/schematic bytes as a local comparison point without Git or modifying the design. Use its saved: reference with board_revision_diff before/after a deliberate edit. Assembly members require an explicit captured board selector.",
+  description: "Save current native PCB/schematic bytes as a local comparison point without Git or modifying the design. Returns a saved: reference accepted by board_revision_diff. Assembly members require an explicit captured board selector.",
   inputSchema: { label: z.string().trim().min(1).max(120).default("Saved comparison point") },
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   handler: async ({ label }, ctx) => {
@@ -329,10 +329,10 @@ export const board_revision_diff = defineTool({
   toolset: "kicad",
   title: "Visual board revision diff",
   description:
-    "Compare two git revisions of this board (default: HEAD → worktree). Highlights added/removed/moved components, net membership changes, and copper/schematic tracks. Writes reports/board-diff.json and renders/diff/{pcb,schematic}-{structured,overlay,side-by-side}.svg. `from`/`to` are git refs or `worktree`.",
+    "Compare two git revisions of this board (default: HEAD → worktree). Highlights added/removed/moved components, net membership changes, and copper/schematic tracks. Writes reports/board-diff.json and renders/diff/{pcb,schematic}-{structured,overlay,side-by-side}.svg. `from`/`to` accept Git refs, saved comparison-point references, or `worktree`.",
   inputSchema: {
-    from: z.string().min(1).default("HEAD").describe("Older git ref, or `worktree`."),
-    to: z.string().min(1).default(WORKTREE).describe("Newer git ref, or `worktree`."),
+    from: z.string().min(1).default("HEAD").describe("Older Git ref, saved:<SHA-256> comparison point, or worktree."),
+    to: z.string().min(1).default(WORKTREE).describe("Newer Git ref, saved:<SHA-256> comparison point, or worktree."),
   },
   annotations: {
     readOnlyHint: false,

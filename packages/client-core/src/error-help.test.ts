@@ -88,3 +88,8 @@ test("Windows Codex isolation fallback is a warning, not a login or file permiss
   expect(errorHelp(raw).message).toContain("may update your shared settings");
   expect(splitAgentError(`⚠ ${raw}\n\nI will inspect the board.`)).toEqual({ before: "", error: raw, after: "I will inspect the board." });
 });
+
+test("KiCad nightly format failures explain file-date compatibility without claiming sources were changed", () => {
+  const help = errorHelp("Failed to load board: KiCad was unable to open this file because it was created with a more recent version than the one you are running. To open it you will need to upgrade KiCad to version 10.99 or later (file format dated 20260901 or later).");
+  expect(help.title).toBe("KiCad cannot open this board format"); expect(help.action).toBe("kicad"); expect(help.message).toContain("same version number");
+});

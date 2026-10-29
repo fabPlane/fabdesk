@@ -100,6 +100,10 @@ export function errorHelp(input: unknown, context: ErrorContext = {}): ErrorHelp
     title: "Your computer is disconnected",
     message: "Open fabPlane on the computer you paired with and check that it is online, then reconnect.",
   };
+  if (/KiCad was unable to open this file because it was created with a more recent version|file format dated .* or later/i.test(text)) return {
+    title: "KiCad cannot open this board format",
+    message: "Choose a KiCad build that supports this file format in Settings → KiCad. Nightly builds can report the same version number while supporting different file dates. Your native sources and previous outputs are preserved.", action: "kicad",
+  };
   if (/MCP server.*(?:failed to connect|not connected)|PCB bridge.*(?:unavailable|not running|failed)|FabPCB.*unavailable/i.test(text)) return {
     title: "The design tools are not connected",
     message: "Restart fabPlane and try again. If board tools still fail, check the KiCad setup in Settings.", action: "kicad",

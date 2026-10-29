@@ -1,3 +1,4 @@
+import { expectedPcbSource } from "../pcb-output";
 import { renderMemberSchematicPreview } from "../member-schematic-preview";
 /** Render toolset: schematic/PCB images, GLB, and product videos. */
 import { createHash } from "node:crypto";
@@ -394,13 +395,17 @@ function highlightShape(row: Record<string, unknown>): string {
   return `<circle cx="${point.x}" cy="${point.y}" r="${radius}" />`;
 }
 
+const activeMemberVideos = new Set<string>();
+
 export const render_product_video = defineTool({
   name: "render_product_video",
+  boardScoped: true,
   toolset: "render",
   title: "Make a product video",
   description:
     "Render a short product video of the project's 3D scene (board GLB plus enclosure/mechanical meshes when present) for design reviews, customer updates and launch pages. Presets: orbit, explode (exploded → assembled), flip (top/bottom), push_in, review (title + orbit + flip + assemble + specs). Writes exports/product-video.mp4 / .webm / .gif plus a poster PNG. MP4 and WebM need ffmpeg on PATH (or FABDESK_FFMPEG); GIF is always produced. If renders/board.glb is missing, exports it first when a board exists.",
   inputSchema: {
+    expectedSourceSha256: expectedPcbSource,
     preset: z.enum(VIDEO_PRESETS).default("review"),
     durationSec: z.number().min(2).max(20).default(6),
     resolution: z.enum(VIDEO_RESOLUTIONS).default("720p"),
@@ -421,6 +426,42 @@ export const render_product_video = defineTool({
   longRunning: true,
   handler: async (args, ctx) => {
     const project = ctx.requireProject();
+    if (ctx.board) {
+      if (activeMemberVideos.has(project.dir)) throw new ToolError("A video export is already running for this source. Wait for it to finish.", "precondition");
+      activeMemberVideos.add(project.dir);
+      try {
+      if (!args.expectedSourceSha256) throw new ToolError("Inspect the selected saved PCB before making a video.", "precondition");
+      const board = await requireBoard(project), sourceHash = await pcbPreviewFileHash(board);
+      if (sourceHash !== args.expectedSourceSha256) throw new ToolError("PCB changed before video generation. Recheck this source.", "precondition");
+      const modelPath = await jailPath(project.dir, "renders/board.glb"), receiptPath = await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
+      let receipt: unknown; try { receipt = JSON.parse(await readFile(receiptPath, "utf8")); } catch { receipt = null; }
+      const parsed = AssemblyBoardModelRevision.safeParse(receipt);
+      const current = parsed.success && parsed.data.boardSource.projectId === project.id && parsed.data.boardSource.sourceId === ctx.board.sourceId && parsed.data.boardSource.manifestSha256 === ctx.board.manifestSha256 && parsed.data.sourceSha256 === sourceHash && await exists(modelPath) && await pcbPreviewFileHash(modelPath) === parsed.data.artifactSha256;
+      if (!current) await render_glb.handler({ expectedSourceSha256: sourceHash }, { ...ctx, progress: (fraction, note) => ctx.progress(fraction * .1, note) });
+      const model = await readFile(modelPath), modelHash = createHash("sha256").update(model).digest("hex");
+      const scratch = await mkdtemp(join(tmpdir(), "fabplane-member-video-"));
+      try {
+        // A board video contains this source's board only; unrelated meshes and parent metadata are not inferred.
+        await ensureDir(join(scratch, "renders")); await writeFile(join(scratch, "renders/board.glb"), model);
+        const { width, height, ...options } = args;
+        const result = await renderProductVideo({ ...options, ...(width ? { width } : {}), ...(height ? { height } : {}), projectDir: scratch, outputDir: join(scratch, "exports"), specs: extractSpecs({ name: project.name }), signal: ctx.signal, progress: (fraction, note) => ctx.progress(.1 + fraction * .85, note) });
+        const paths = [...Object.values(result.files).filter((path): path is string => !!path), result.poster, result.manifest];
+        const recorded = JSON.parse(await readFile(result.manifest, "utf8")) as Record<string, unknown>;
+        recorded.boardSource = { projectId: project.id, ...ctx.board };
+        await writeFile(result.manifest, JSON.stringify(recorded, null, 2) + "\n");
+        const publications = await Promise.all(paths.map(async path => ({ target: await jailPath(project.dir, path.slice(scratch.length + 1)), data: path === result.manifest ? Buffer.from((await readFile(path, "utf8")).replaceAll(scratch, project.dir)) : await readFile(path) })));
+        const publish = async () => {
+          ctx.signal.throwIfAborted();
+          if (await pcbPreviewFileHash(board) !== sourceHash || await pcbPreviewFileHash(modelPath) !== modelHash) throw new ToolError("PCB or model changed while rendering. Previous videos were kept; review inputs and try again.", "precondition");
+          for (const file of publications) await jailPath(project.dir, file.target);
+          for (const file of publications) await writeAtomic(file.target, file.data);
+        };
+        await ctx.runInScope!(publish);
+        const files = Object.fromEntries(Object.entries(result.files).map(([format, path]) => [format, path?.replace(scratch, project.dir)])), poster = result.poster.replace(scratch, project.dir);
+        return ok(`Saved a ${args.preset} video of this board (${result.width}×${result.height}, ${result.frameCount} frames). Component-model dependencies and captions remain unverified.${result.skipped.length ? ` Skipped: ${result.skipped.map(item => `${item.format} (${item.reason})`).join("; ")}` : ""}`, { ...result, files, poster, manifest: result.manifest.replace(scratch, project.dir), url: fileUrl(files.mp4 ?? files.gif ?? poster) }, { images: [{ path: poster, mime: "image/png" }] });
+      } finally { await rm(scratch, { recursive: true, force: true }); }
+      } finally { activeMemberVideos.delete(project.dir); }
+    }
     const boardGlb = p(project, PROJECT_FILES.renders, "board.glb");
     const board = p(project, PROJECT_FILES.boardPcb);
     if (await exists(board)) {

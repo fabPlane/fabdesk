@@ -72,3 +72,23 @@ test("an unrelated imported mesh never inherits the root PCB's provenance", asyn
   f.record({ ...f.revision, inputs: [{ path: "models/reference.glb", sha256: hash("reference") }] });
   expect(await f.inspect()).toBe("inputs-unchanged");
 });
+
+test("member video verifies its own declaration, model and media without reading root or siblings", async () => {
+  const { ProjectBoardSources } = await import("@fabdesk/protocol");
+  const f = fixture(), boardSource = { projectId: "project", sourceId: "io", manifestSha256: "a".repeat(64) };
+  const source = { id: "io", name: "I/O", location: "project", directory: "boards/io" };
+  const data = ProjectBoardSources.parse({ projectId: "project", mode: "assembly", manifestSha256: boardSource.manifestSha256, editing: "explicit-source-tools", observedAt: "2026-10-29T00:00:00Z", assembly: { contract: "fabplane.assembly.v1", sources: [source], instances: [{ id: "io-1", name: "I/O", sourceId: "io" }], connections: [] }, sources: [{ source, status: "available", pcbSha256: hash("pcb") }] });
+  f.files.set("exports/product-video.json", JSON.stringify({ revision: f.revision, boardSource }));
+  f.files.set("renders/board.glb.revision.json", JSON.stringify({ ...f.modelReceipt, boardSource, warnings: [] }));
+  const readPaths: string[] = [];
+  const read = async (_id: string, path: string) => { readPaths.push(path); if (!path.startsWith("boards/io/")) throw Error("Wrong board"); const found = f.files.get(path.slice(10)); if (found === undefined) throw new CoreHttpError(404, path, "missing"); return found; };
+  const client = { inspectBoardSources: async () => data, readFile: read, readFileBlob: async (id: string, path: string) => new Blob([await read(id, path)]) };
+  const inspect = () => inspectVideoInputRevision(client, "project", "boards/io/exports/product-video.mp4");
+  expect(await inspect()).toBe("inputs-unchanged");
+  f.files.set("board.kicad_pcb", "changed"); expect(await inspect()).toBe("board-source-changed");
+  f.files.set("exports/product-video.json", JSON.stringify({ revision: f.revision, boardSource: { ...boardSource, sourceId: "lcd" } })); expect(await inspect()).toBe("board-source-unverified");
+  expect(readPaths.every(path => path.startsWith("boards/io/"))).toBe(true);
+  f.files.set("exports/product-video.json", JSON.stringify({ revision: f.revision, boardSource }));
+  let calls = 0;
+  expect(await inspectVideoInputRevision({ ...client, inspectBoardSources: async () => { const next = structuredClone(data); if (++calls > 1) next.manifestSha256 = "b".repeat(64); return next; } }, "project", "boards/io/exports/product-video.mp4")).toBe("board-source-unverified");
+});

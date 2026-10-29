@@ -1,3 +1,4 @@
+import { BoardImageOutput } from "./BoardImageOutput";
 import { buildZip } from "@fabdesk/board-art";
 import { readOutputSelection } from "@fabdesk/client-core";
 import { VideoSourceStatus, videoInputLabel } from "./VideoSourceStatus";
@@ -21,6 +22,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   const [filter, setFilter] = useState<OutputKind | "all">("all"), [selectedPaths, setSelectedPaths] = useState<string[]>([]);
   const selected = selectedPaths.length === 1 ? selectedPaths[0] ?? null : null;
   const selectAll = useRef<HTMLInputElement>(null);
+  const [imageOutput, setImageOutput] = useState(false);
   const [query, setQuery] = useState(""), [sourceScope, setSourceScope] = useState("all");
   const search = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null), [downloading, setDownloading] = useState(false), [error, setError] = useState<string | null>(null);
@@ -39,7 +41,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   const modelRevision = useBoardModelRevision(projectId, sourceReady && !assembly && outputs.some(file => file.path === "renders/board.glb"));
   const pcbRevision = usePcbPreviewRevision(projectId, sourceReady && !assembly && outputs.some(file => file.path === "renders/pcb.svg"));
   const enclosureRevision = useEnclosureSourceRevision(projectId, sourceReady && !assembly && outputs.some(file => file.path === "exports/enclosure.stl"));
-  const videoRevisions = useVideoInputRevisions(projectId, sourceReady && !assembly ? outputs.filter(file => /^exports\/product-video\.(mp4|webm|gif)$/i.test(file.path)).map(file => file.path) : []);
+  const videoRevisions = useVideoInputRevisions(projectId, sourceReady ? outputs.filter(file => /(^|\/)exports\/product-video\.(mp4|webm|gif)$/i.test(file.path)).map(file => file.path) : []);
   const sourceInfo = (path: string) => {
     if (!sourceReady) return { warning: false, label: boardSources.isError ? "Board source check unavailable" : "Checking board source…" };
     const member = outputs.find(file => file.path === path);
@@ -56,6 +58,8 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
         const preview = memberPreviews.find(row => row.sourceId === member.sourceId);
         return { warning: !preview?.isFetching && !preview?.isError && ["source-changed", "artifact-changed", "missing-source", "missing-artifact"].includes(preview?.data ?? ""), label: preview?.isFetching ? "Checking preview source…" : preview?.isError ? "Preview source check unavailable" : preview?.data === "missing-source" ? "PCB source missing · Saved output" : preview?.data === "missing-artifact" ? "Saved preview file missing" : preview?.data === "source-changed" ? "PCB changed · Review preview" : preview?.data === "artifact-changed" ? "Preview changed · Source unverified" : preview?.data === "matches-source" ? "Preview matches saved PCB" : "Source unverified" };
       }
+      const video = videoRevisions.find(row => row.path === path);
+      if (video) return { warning: videoInputsNeedReview(video.data), label: video.isFetching ? "Checking video inputs…" : video.isError ? "Video inputs could not be checked" : videoInputLabel(video.data) };
       return { warning: false, label: "Source not checked" };
     }
     if (assembly) return { warning: false, label: "Project output · Source unverified" };
@@ -90,7 +94,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   const create = (kind: "render" | "glb" | "video" | "files") => {
     if (!projectId || useUiStore.getState().activeProjectId !== projectId || kind !== "files" && !sourceReady) return;
     if (assembly && kind === "glb") { useUiStore.getState().setWorkspaceTab("3d"); return; }
-    if (assembly && kind === "render") return;
+    if (kind === "render") { setImageOutput(true); return; }
     if (!assembly && kind !== "files" && !hasPcb) return;
     if (!assembly && kind !== "files" && !rootGenerationReady) return;
     if (kind === "video" || kind === "files") useUiStore.getState().setWorkspaceTab(kind === "video" ? "3d" : "files");
@@ -110,9 +114,9 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
         {!sourceReady && <div className="fd-menu-caption">{boardSources.isError ? "Board sources could not be checked." : "Checking board sources…"}</div>}
         {boardSources.isError && <button onClick={() => void boardSources.refetch()}>Retry source check</button>}
         {sourceReady && !assembly && !hasPcb && <><div className="fd-menu-caption">Add a saved PCB in Board to create images, models or videos.</div><button onClick={() => useUiStore.getState().setBoardTab("pcb")}>Open Board</button></>}
-        <button disabled={!rootGenerationReady || generate.state.status === "running"} title={assembly ? "Use the selected board’s PCB preview; member image renders are not available here yet." : !hasPcb ? "Add a saved PCB first" : undefined} onClick={() => create("render")}>Render board images</button>
+        <button disabled={!sourceReady || !assembly && !hasPcb || generate.state.status === "running"} onClick={() => create("render")}>Render board images</button>
         <button disabled={!sourceReady || !assembly && !rootGenerationReady || generate.state.status === "running"} title={!assembly && !hasPcb ? "Add a saved PCB first" : undefined} onClick={() => create("glb")}>{assembly ? "Review board models…" : "Generate board model"}</button>
-        <button disabled={!rootGenerationReady} title={assembly ? "Member video export is not available yet" : !hasPcb ? "Add a saved PCB first" : undefined} onClick={() => create("video")}>Make video…</button>
+        <button disabled={!sourceReady || !assembly && !hasPcb} onClick={() => create("video")}>Make video…</button>
         <button onClick={() => create("files")}>Export files…</button>
       </WorkspaceMenu>
     </header>
@@ -151,6 +155,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
       <div className="fd-output-thumbnail"><Icon name="folderOpen" width={58} height={58} /><span>{sections.manufacturingFiles.length} FILES</span></div>
       <div className="fd-output-caption"><strong>Manufacturing files</strong><span>Individual Gerber, drill and DXF files</span><small>View all {sections.manufacturingFiles.length} files · Source unverified</small></div>
     </button>}</div> : <div className="fd-output-empty"><h3>{outputs.length ? "No outputs match these filters" : "Your outputs will appear here"}</h3><p>{outputs.length ? "Try another name or path, choose a different source, or clear the filters." : "Create images, a board model, a video or export files from the menu above."}</p></div>}
+    <Dialog open={imageOutput} onClose={() => setImageOutput(false)} title="Render board image" className="fd-output-preview-dialog">{imageOutput && <BoardImageOutput projectId={projectId} />}</Dialog>
     <Dialog open={!!visible} onClose={() => setPreview(null)} title={visible ? visible.sourceName ? `${visible.sourceName} · ${basename(visible.path)}` : basename(visible.path) : "Output preview"} className="fd-output-preview-dialog">
       {visible && visible.kind !== "videos" && <p className="fd-output-preview-source" role="status" data-warning={sourceInfo(visible.path).warning}>{sourceInfo(visible.path).label}</p>}
       {visible && (visible.kind === "images" ? <ProjectImage projectId={projectId} path={visible.path} className="max-h-[70vh] w-full object-contain" /> : visible.kind === "videos" ? <><VideoSourceStatus projectId={projectId} path={visible.path} updating={false} /><ProjectVideo projectId={projectId} path={visible.path} className="max-h-[70vh]" /></> : <div className="fd-output-model-preview"><Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={visible.path} /></Suspense></div>)}

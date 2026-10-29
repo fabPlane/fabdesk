@@ -1,3 +1,4 @@
+import { ErrorNotice } from "../components/ErrorNotice";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { VideoSourceStatus } from "./VideoSourceStatus";
 import type { ReactNode } from "react";
@@ -131,8 +132,8 @@ export function ProductVideoPanel({
       </div>
       {!canGenerate && !making && !exporting && <p role="status" className="text-xs text-muted">{checkingSources ? "Checking saved PCB sources…" : "Verify a saved PCB in Board before generating a model or video."}</p>}
       {(making || exporting) && <p role="status" className="fd-video-job text-xs text-muted">{making ? "Making video…" : "Exporting model…"} {making ? makeNote : exportNote}</p>}
-      {exportError && <p role="alert" className="text-xs text-danger">{exportError}</p>}
-      {makeError && <p role="alert" className="text-xs text-danger">{makeError}</p>}
+      {exportError && <ErrorNotice error={exportError} />}
+      {makeError && <ErrorNotice error={makeError} />}
       <div className="fd-video-body min-h-0 flex-1">
         <details className="fd-video-setup"><DisclosureSummary icon="play" label="Make a product video" />
         <form

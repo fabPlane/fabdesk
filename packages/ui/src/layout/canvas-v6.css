@@ -436,3 +436,41 @@
 .fd-output-action-bar > strong { max-width:none; flex:1; }
 .fd-output-action-bar > strong small { color:var(--fd-muted); font-weight:400; }
 @media(pointer:coarse) { .fd-output-checkbox-hit { width:44px; height:44px; } }
+
+/* Export is a compact source-and-options task, with a real saved-source reference. */
+.fd-canvas-workspace .fd-export-workspace { width:min(1080px,100%); height:auto; min-height:100%; margin:0 auto; padding:30px 32px 100px; overflow:visible; gap:22px; }
+.fd-export-workspace > header { display:flex; align-items:flex-start; justify-content:space-between; text-align:left; gap:20px; }
+.fd-export-workspace h1 { font-size:30px; line-height:1.2; letter-spacing:-.8px; font-weight:650; margin:0 0 10px; }
+.fd-export-workspace header p { margin:0; font-size:14px; line-height:1.6; }
+.fd-export-board-scope { display:flex; align-items:center; gap:16px; color:var(--fd-muted); font-size:13px; }
+.fd-export-board-scope select { min-height:38px; max-width:100%; min-width:250px; background:var(--fd-panel); color:var(--fd-fg); border:1px solid var(--fd-border); border-radius:7px; padding:6px 12px; }
+.fd-export-flow { grid-template-columns:minmax(220px,.8fr) minmax(0,1.6fr); align-items:start; flex:none; min-height:0; }
+.fd-export-reference { display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-start; padding:22px; gap:16px; background:var(--fd-panel); border:1px solid var(--fd-border); border-radius:10px; min-height:0; overflow:visible; }
+.fd-export-reference h2 { margin:0; font-size:16px; font-weight:600; }
+.fd-export-reference img { width:100%; height:210px; object-fit:contain; }
+.fd-export-reference p { margin:0; font-size:12px; line-height:1.6; color:var(--fd-muted); }
+.fd-export-path { overflow-wrap:anywhere; font-family:monospace; font-size:11px!important; }
+.fd-export-no-preview { width:100%; height:180px; display:flex; flex-direction:column; gap:12px; align-items:center; justify-content:center; background:var(--fd-panel-2); border-radius:6px; color:var(--fd-muted); }
+.fd-export-config { border-radius:10px; overflow:visible; }
+.fd-export-config .fd-export-controls > div:last-child { position:static; padding-bottom:0; }
+@media (max-width:800px) {
+ .fd-canvas-workspace .fd-export-workspace { padding:24px 20px 100px; }
+ .fd-export-flow { display:flex; flex-direction:column; }
+ .fd-export-reference, .fd-export-config { width:100%; }
+ .fd-export-reference img { height:160px; }
+ .fd-export-workspace > header { flex-wrap:wrap; }
+}
+.fd-image-output { display:flex; flex-direction:column; gap:20px; }
+.fd-image-output > p { margin:0; color:var(--fd-muted); font-size:13px; line-height:1.6; }
+.fd-image-output label, .fd-member-output-studio > header label { display:flex; align-items:center; gap:14px; color:var(--fd-muted); font-size:13px; }
+.fd-image-output select, .fd-member-output-studio > header select { min-height:38px; background:var(--fd-panel); color:var(--fd-fg); border:1px solid var(--fd-border); padding:6px 12px; border-radius:7px; max-width:100%; }
+.fd-image-output-views, .fd-image-output-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.fd-image-output-views [aria-pressed=true] { color:var(--fd-accent); background:color-mix(in srgb,var(--fd-accent) 9%,var(--fd-panel)); border-color:var(--fd-accent); }
+.fd-image-output img { height:42vh; width:100%; object-fit:contain; }
+.fd-image-output-placeholder { min-height:220px; display:grid; place-items:center; color:var(--fd-muted); background:var(--fd-panel-2); border-radius:8px; }
+.fd-image-output-actions > span { font-family:monospace; font-size:11px; color:var(--fd-muted); margin-right:auto; }
+.fd-member-output-studio { height:100%; min-height:0; display:flex; flex-direction:column; }
+.fd-member-output-studio > header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; padding:24px 28px; border-bottom:1px solid var(--fd-border); }
+.fd-member-output-studio > header h2 { font-size:24px; font-weight:650; margin:0 0 6px; }
+.fd-member-output-studio > header p { margin:0; font-size:13px; color:var(--fd-muted); }
+.fd-member-output-studio > .fd-video-workspace { flex:1; height:auto; }

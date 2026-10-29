@@ -4,13 +4,14 @@ import {
   taskCheckpointText,
 } from "../task-checkpoints";
 /** Core toolset: always loaded. */
+import { expectedPcbSource } from "../pcb-output";
 import { createHash } from "node:crypto";
 import { readFile, readdir, lstat, mkdtemp, rm } from "node:fs/promises";
 import { z } from "zod/v4";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ASSEMBLY_MANIFEST_PATH, AssemblyPcbCheckReceipt, type ProjectBoardSources, type FpPcbBoardSpec, type NetlistFile } from "@fabdesk/protocol";
-import { PROJECT_FILES, exists, jailPath, mtimeMs, readJsonOrNull, writeJson } from "../fs";
+import { PROJECT_FILES, exists, jailPath, mtimeMs, readJsonOrNull, writeAtomic, writeJson } from "../fs";
 import {
   ToolError,
   ToolsetIdOrAlias,
@@ -984,11 +985,13 @@ export function describeViolation(v: unknown): string {
 
 export const render_board = defineTool({
   name: "render_board",
+  boardScoped: true,
   toolset: "core",
   title: "Render board image",
   description:
-    "Render a PNG of the KiCad board (top or bottom, raytraced optional) to renders/<view>.png and return it as an image so you can inspect placement and routing. Requires kicad-cli and circuit_build.",
+    "Render a PNG of the KiCad board (top or bottom, raytraced optional) to renders/<view>.png and return it as an image so you can inspect placement and routing. Requires kicad-cli and a saved native PCB.",
   inputSchema: {
+    expectedSourceSha256: expectedPcbSource,
     view: z.enum(["top", "bottom", "perspective", "side"]).default("top"),
     width: z.number().int().min(128).max(4096).default(1024),
     height: z.number().int().min(128).max(4096).default(768),
@@ -1001,22 +1004,36 @@ export const render_board = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async ({ view, width, height, quality }, ctx) => {
+  handler: async ({ view, width, height, quality, expectedSourceSha256 }, ctx) => {
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const board = p(project, PROJECT_FILES.boardPcb);
     if (!(await exists(board))) throw new ToolError("board.kicad_pcb not found", "precondition");
-    const output = p(project, PROJECT_FILES.renders, `${view}.png`);
+    if (ctx.board && !expectedSourceSha256) throw new ToolError("Inspect the selected saved PCB before rendering.", "precondition");
+    const revision = createHash("sha256").update(await readFile(board)).digest("hex");
+    if (expectedSourceSha256 && revision !== expectedSourceSha256) throw new ToolError("PCB changed before rendering. Recheck the source and try again.", "precondition");
+    const output = await jailPath(project.dir, `${PROJECT_FILES.renders}/${view}.png`);
+    const scratch = await mkdtemp(join(tmpdir(), "fabplane-board-image-"));
+    try {
     ctx.progress(0.3, "rendering");
     await ctx.services.kicad.renderPng(cli, {
       board,
-      output,
+      output: join(scratch, `${view}.png`),
       view,
       width,
       height,
       quality,
       signal: ctx.signal,
     });
+      const bytes = await readFile(join(scratch, `${view}.png`));
+      const publish = async () => {
+        ctx.signal.throwIfAborted();
+        if (createHash("sha256").update(await readFile(board)).digest("hex") !== revision) throw new ToolError("PCB changed while rendering. The previous image was kept.", "precondition");
+        await jailPath(project.dir, `${PROJECT_FILES.renders}/${view}.png`);
+        await writeAtomic(output, bytes);
+      };
+      if (ctx.runInScope) await ctx.runInScope(publish); else await publish();
+    } finally { await rm(scratch, { recursive: true, force: true }); }
     ctx.progress(1, "done");
     const url = fileUrl(output);
     return ok(

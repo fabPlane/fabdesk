@@ -1,3 +1,5 @@
+import { ErrorNotice } from "../components/ErrorNotice";
+import { useOutputSource } from "./useOutputSource";
 import { boardFileDestination } from "@fabdesk/client-core";
 import { CanvasToolButton } from "../components/CanvasToolButton";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -5,7 +7,7 @@ import { ProjectImage } from "../chat/ProjectImage";
 import { ProjectVideo } from "../chat/ProjectVideo";
 import { Button, EmptyState, IconButton, Input, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { editableSketchPaths, useCoreClient, useBoardSources, usePcbPreviewRevision, useProject, useProjectText, useRunTool } from "@fabdesk/client-core";
+import { editableSketchPaths, useCoreClient, usePcbPreviewRevision, useProject, useProjectText, useRunTool } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { stencilThicknessMm } from "../stores/stencil-thickness";
 import { cn } from "../util";
@@ -31,7 +33,7 @@ export function FilesTab({ exportFocus = false }: { exportFocus?: boolean } = {}
 function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFocus: boolean }) {
   const client = useCoreClient();
   const project = useProject(projectId);
-  const sources = useBoardSources(projectId);
+  const outputSource = useOutputSource(projectId), sources = outputSource.sources;
   const thicknessMm = useUiStore((s) => stencilThicknessMm(s.stencilThicknessByProject?.[projectId]));
   const setThickness = useUiStore((s) => s.setStencilThickness);
   const [selected, setSelected] = useState<string | null>(null);
@@ -74,16 +76,16 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const exportKind = exportChoices.includes(requestedExport) ? requestedExport : "export_gerbers";
   const busy = state.status === "running";
   const files = project.data?.files ?? [];
-  const assembly = sources.data?.mode === "assembly";
-  const hasPcb = files.some(file => file.path === "board.kicad_pcb");
+  const { assembly, prefix, board, row: source, ready: sourceReady } = outputSource;
+  const hasPcb = files.some(file => file.path === `${prefix}board.kicad_pcb`) && (!assembly || source?.status === "available");
   const bomSource = files.some(file => ["project.parts.json", "circuit.netlist.json", "board.kicad_sch"].includes(file.path));
   const scopeReady = !!sources.data && !sources.isFetching && !sources.isError;
-  const hasFabricationFiles = files.some(file => file.path.startsWith("exports/gerbers/") || ["exports/positions.csv", "exports/bom.csv"].includes(file.path));
-  const canExport = scopeReady && (exportKind === "export_bom" ? bomSource : !assembly && (exportKind === "export_zip" ? hasFabricationFiles : hasPcb));
-  const sourceNote = !scopeReady ? sources.isError ? "Board source scope could not be checked. Retry before exporting." : "Checking board sources…" : exportKind === "export_bom" ? !bomSource ? "Add a saved netlist, schematic or project parts list before exporting a BOM. Member-board BOMs are not included." : assembly ? "Project parts CSV includes saved root netlist and extras only; member-board BOMs are not included." : "Uses the saved netlist and project hardware, or schematic fallback. Component coverage and freshness are unverified." : assembly ? "Member-board manufacturing exports are not available here yet. Choose a board to inspect its source; project parts CSV remains separate." : exportKind === "export_zip" ? hasFabricationFiles ? "Packages existing Gerbers, drills, placements and BOM when present. Missing optional files are reported; nothing is regenerated or validated." : "Export Gerbers, drill files, placements or a BOM before creating a ZIP." : !hasPcb ? "Add a saved PCB in Board before creating manufacturing files." : exportKind === "export_dxf" ? "Exports F.Cu, B.Cu and Edge.Cuts in millimetres. Bottom layers use a top view. Review saved checks before fabrication." : "Exports use this project’s saved PCB. Review current checks, routing and clearances before fabrication.";
-  const previewPresent = exportFocus && !assembly && files.some(file => file.path === "renders/pcb.svg");
-  const previewRevision = usePcbPreviewRevision(projectId, previewPresent);
-  const previewLabel = previewRevision.isFetching ? "Checking saved preview…" : previewRevision.isError ? "Preview source check unavailable" : previewRevision.data === "matches-source" ? "Preview matches saved PCB" : previewRevision.data === "source-changed" ? "PCB changed · Preview is older" : "Saved preview · Source unverified";
+  const hasFabricationFiles = files.some(file => file.path.startsWith(`${prefix}exports/gerbers/`) || [`${prefix}exports/positions.csv`, `${prefix}exports/bom.csv`].includes(file.path));
+  const canExport = scopeReady && (exportKind === "export_bom" ? !assembly && bomSource : sourceReady && (exportKind === "export_zip" ? hasFabricationFiles : hasPcb));
+  const sourceNote = !scopeReady ? sources.isError ? "Board sources could not be checked. Retry before exporting." : "Checking board sources…" : assembly && !sourceReady ? "Choose an available board source before exporting. Changed source definitions must be selected again." : exportKind === "export_bom" ? "Uses the saved project netlist and hardware, or schematic fallback. Coverage and freshness are unverified." : exportKind === "export_zip" ? hasFabricationFiles ? "Packages this board’s existing Gerbers, drills, placements and BOM when present. Missing files are reported; nothing is regenerated." : "Export Gerbers, drill files or placements before creating a ZIP." : !hasPcb ? "Add this board’s saved KiCad PCB before creating manufacturing files." : exportKind === "export_dxf" ? "F.Cu, B.Cu and Edge.Cuts in millimetres. Bottom layers use a top view." : "Uses the selected board’s saved PCB. Review checks, routing and clearances before fabrication.";
+  const previewPresent = exportFocus && hasPcb && files.some(file => file.path === `${prefix}renders/pcb.svg`);
+  const previewRevision = usePcbPreviewRevision(projectId, previewPresent && !assembly);
+  const previewLabel = assembly ? "Saved PCB drawing · Review checks separately" : previewRevision.isFetching ? "Checking saved preview…" : previewRevision.isError ? "Preview source check unavailable" : previewRevision.data === "matches-source" ? "Preview matches saved PCB" : previewRevision.data === "source-changed" ? "PCB changed · Preview is older" : "Saved preview · Source unverified";
   const tree = useMemo(() => buildFileTree(files, query), [project.data?.files, query]);
   const file = files.find((f) => f.path === selected);
   const appearance = file ? fileAppearance(file.path) : null;
@@ -99,7 +101,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
         : exportKind === "export_laser_stencil"
           ? laserStencilToolArgs(laserForm)
           : {};
-    const result = await run(exportKind, { projectId, ...extras });
+    const result = await run(exportKind, { projectId, ...(board && exportKind !== "export_bom" ? { board, expectedSourceSha256: source?.pcbSha256 } : {}), ...extras });
     if (result.status === "done") void project.refetch();
   }
   async function downloadFile(path: string) {
@@ -142,14 +144,20 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   if (project.isLoading) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   const exportControls = { exportChoices, exportKind, setExportKind, thicknessMm, onThickness: (value: number) => setThickness(projectId, value), laserForm, setLaserForm, busy, canExport, sourceNote, ...(state.error && !exportFocus ? { error: `${EXPORTS[lastExport].title}: ${state.error}` } : {}), onExport: () => void exportFiles() };
   if (exportFocus) return <div className="fd-export-workspace">
-    <header><h1>Export files</h1><p>Choose manufacturing files for your saved board.</p></header>
+    <header><div><h1>Export files</h1><p>Choose a board and the files you need. Saved outputs stay in the library.</p></div><Button size="sm" variant="ghost" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }}><Icon name="library" width={16} height={16} />Saved outputs</Button></header>
+    {assembly && <label className="fd-export-board-scope">Board source<select aria-label="Board source for exports" disabled={!scopeReady || busy} value={outputSource.sourceId ?? ""} onChange={event => outputSource.choose(event.target.value)}><option value="" disabled>Choose a board…</option>{!source && outputSource.sourceId && <option value={outputSource.sourceId} disabled>Source definition changed</option>}{sources.data?.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · source unavailable" : ""}</option>)}</select></label>}
     <div className="fd-export-flow">
       <section className="fd-export-reference" aria-label="Export source reference">
-        {previewPresent ? <><ProjectImage retryable projectId={projectId} path="renders/pcb.svg" alt="Saved PCB preview for export reference" /><p>{previewLabel}</p></> : <EmptyState title={assembly ? "Assembly source exports need board scope" : hasPcb ? "Saved PCB ready for export selection" : "Start with a saved PCB"} icon={<Icon name="pcb" width={48} height={48} />}><p>{assembly ? "This export screen cannot manufacture all member boards. Their individual previews remain available in Boards." : "Use Board to inspect your source. Exports do not establish that a design is ready to manufacture."}</p><Button className="mt-4" onClick={() => useUiStore.getState().setBoardTab("pcb")}>Open Board</Button></EmptyState>}
+        <h2>{source?.source.name ?? "Saved board"}</h2>
+        {previewPresent ? <><ProjectImage retryable projectId={projectId} path={`${prefix}renders/pcb.svg`} alt="Saved PCB preview for export reference" /><p>{previewLabel}</p></> : <div className="fd-export-no-preview"><Icon name="pcb" width={48} height={48} /><p>{hasPcb ? "Saved native PCB" : "PCB source unavailable"}</p></div>}
+        <p className="fd-export-path">{prefix}board.kicad_pcb</p>
+        <Button disabled={busy || !sourceReady} size="sm" onClick={() => { const ui = useUiStore.getState(); if (assembly && outputSource.sourceId) outputSource.choose(outputSource.sourceId); ui.setBoardTab("pcb"); }}>Inspect board</Button>
+        {assembly && !sourceReady && <Button size="sm" disabled={busy} onClick={() => source?.status === "available" && outputSource.sourceId ? outputSource.choose(outputSource.sourceId) : useUiStore.getState().openProjectFile("fabplane.assembly.json")}>{source?.status === "available" ? "Select source again" : "Review source files"}</Button>}
+        <p>Exports do not mark this design as checked or ready to manufacture.</p>
       </section>
       <section className="fd-export-config" aria-label="Export options"><FileExportControls {...exportControls} /><div className="fd-export-parts-link"><span>Need a component list?</span><Button size="sm" variant="ghost" onClick={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().setBoardTab("bom"); }}>Open Parts & BOM</Button></div>{sources.isError && <Button size="sm" onClick={() => void sources.refetch()}>Retry source check</Button>}</section>
     </div>
-    {state.status !== "idle" && <div className="fd-export-feedback" role={state.error ? "alert" : "status"}>{state.error ?? (busy ? `Exporting ${EXPORTS[lastExport].title.toLowerCase()}…` : `${EXPORTS[lastExport].title} saved in project outputs.`)}{state.note && <p>{state.note}</p>}{state.status === "done" && <ExportCompletionDetails kind={lastExport} result={state.result} />}{state.status === "done" && <Button size="sm" variant="ghost" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }}>Open output library</Button>}</div>}
+    {state.status !== "idle" && <div className="fd-export-feedback" role={state.error ? "alert" : "status"}>{state.error ? <ErrorNotice error={state.error} /> : (busy ? `Exporting ${EXPORTS[lastExport].title.toLowerCase()}…` : `${EXPORTS[lastExport].title} saved under ${prefix}exports/.`)}{state.note && <p>{state.note}</p>}{state.status === "done" && <ExportCompletionDetails kind={lastExport} result={state.result} />}{state.status === "done" && <Button size="sm" variant="ghost" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }}>Open output library</Button>}</div>}
   </div>;
   return (
     <div className="fd-files flex h-full min-h-0 flex-col">

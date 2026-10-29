@@ -1,3 +1,4 @@
+import { MemberOutputStudio } from "./MemberOutputStudio";
 import { AssemblyModels } from "./AssemblyBoardModel";
 import { BoardModelStatus } from "./BoardModelStatus";
 import { lazy, Suspense, useMemo, useState } from "react";
@@ -24,10 +25,11 @@ const DEFAULT_FORM: ProductVideoForm = {
 };
 
 export function ThreeDTab() {
-  const projectId = useUiStore(state => state.activeProjectId), sources = useBoardSources(projectId);
+  const projectId = useUiStore(state => state.activeProjectId), outputs = useUiStore(state => state.workspaceArea === "outputs"), sources = useBoardSources(projectId);
   if (!projectId) return <EmptyState title="No project selected" />;
   if (sources.isError && !sources.data) return <LoadError title="Could not inspect board sources" onRetry={() => void sources.refetch()} />;
   if (sources.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
+  if (sources.data?.mode === "assembly" && outputs) return <MemberOutputStudio key={projectId} projectId={projectId} />;
   if (sources.data?.mode === "assembly") return <AssemblyModels key={projectId} projectId={projectId} data={sources.data} checking={sources.isFetching} failed={sources.isError} onRetry={() => void sources.refetch()} />;
   return <SingleBoardThreeDTab key={projectId} checkingSources={sources.isFetching} scopeReady={!sources.isFetching && !sources.isError && sources.data?.mode === "single"} />;
 }
