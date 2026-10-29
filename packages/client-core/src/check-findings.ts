@@ -66,3 +66,14 @@ export function normalizeReport(json: unknown, source: "drc" | "erc"): Violation
   return out;
 }
 
+
+/** Keep original report indexes so filtering cannot retarget a saved finding or PCB location. */
+export function filterCheckFindings(findings: readonly Violation[], filter: { query?: string; severity?: string; source?: "all" | "drc" | "erc" } = {}): Array<{ finding: Violation; index: number }> {
+  const terms = (filter.query ?? "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return findings.map((finding, index) => ({ finding, index })).filter(({ finding }) => {
+    if (filter.source && filter.source !== "all" && finding.source !== filter.source) return false;
+    if (filter.severity && filter.severity !== "all" && finding.severity.toLowerCase() !== filter.severity.toLowerCase()) return false;
+    const text = [finding.source, finding.type, finding.severity, finding.description, ...finding.items.map(item => item.description)].join(" ").toLowerCase();
+    return terms.every(term => text.includes(term));
+  });
+}

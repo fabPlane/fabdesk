@@ -767,3 +767,8 @@
 
 .fd-member-checks-detail-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .fd-member-checks-detail-heading h3 { flex:1; min-width:0; }
+
+.fd-finding-filters { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:16px 0; font-size:11px; color:var(--fd-muted); }
+.fd-finding-filters > input { flex:1; min-width:180px; max-width:360px; }
+.fd-finding-filters label { display:flex; align-items:center; gap:8px; }
+.fd-finding-filters select { padding:6px 8px; border:1px solid var(--fd-border); border-radius:7px; background:var(--fd-panel); color:var(--fd-fg); }

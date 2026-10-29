@@ -41,7 +41,7 @@ test("marker requires stamped native coordinates, matching source receipt and th
   expect(await assemblyFindingPreviewMatches(svg, "bad", hash)).toBe(false);
 });
 
-test("return navigation rejects changed reports, owners and ambiguous identical findings", () => {
+test("return navigation rejects changed reports and owners while exact indexes disambiguate identical findings", () => {
   const { data, snapshot } = fixture();
   const finding = captureAssemblyCheckFinding(data, snapshot, 0, 0)!;
   expect(assemblyCheckFindingRow(data, snapshot, finding)).toBe(0);
@@ -53,5 +53,19 @@ test("return navigation rejects changed reports, owners and ambiguous identical 
   snapshot.report.violations[0]!.description = "Clearance";
   snapshot.report.violations.push(structuredClone(snapshot.report.violations[0]!));
   const ambiguous = captureAssemblyCheckFinding(data, snapshot, 0, 0)!;
-  expect(assemblyCheckFindingRow(data, snapshot, ambiguous)).toBeNull();
+  expect(assemblyCheckFindingRow(data, snapshot, ambiguous)).toBe(0);
+  const second = captureAssemblyCheckFinding(data, snapshot, 1, 0)!;
+  expect(assemblyCheckFindingRow(data, snapshot, second)).toBe(1);
+  const { reportRowIndex: _row, reportItemIndex: _item, ...legacy } = ambiguous;
+  expect(assemblyCheckFindingRow(data, snapshot, legacy)).toBeNull();
+});
+
+test("return indexes cannot bypass report ownership or point identity", () => {
+  const { data, snapshot } = fixture(), finding = captureAssemblyCheckFinding(data, snapshot, 0, 0)!;
+  for (const reportRowIndex of [-1, 0.5, NaN, Infinity, 99]) expect(assemblyCheckFindingRow(data, snapshot, { ...finding, reportRowIndex })).toBeNull();
+  for (const reportItemIndex of [-1, 0.5, NaN, Infinity, 1, 99]) expect(assemblyCheckFindingRow(data, snapshot, { ...finding, reportItemIndex })).toBeNull();
+  expect(assemblyCheckFindingRow(data, snapshot, { ...finding, point: { x: 108, y: 100 } })).toBeNull();
+  expect(assemblyCheckFindingRow(data, snapshot, { ...finding, itemDescription: "Another track" })).toBeNull();
+  const { reportItemIndex: _item, ...partial } = finding;
+  expect(assemblyCheckFindingRow(data, snapshot, partial)).toBeNull();
 });

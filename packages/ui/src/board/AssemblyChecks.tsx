@@ -1,7 +1,8 @@
+import { CheckFindingFilters } from "./CheckFindingFilters";
 import { AssemblySchematicSources } from "./AssemblySchematicSources";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { BoardSourceSelection, ProjectBoardSources } from "@fabdesk/protocol";
-import { assemblyCheckFindingRow, captureAssemblyCheckFinding, normalizeReport, pcbToolJson, restoreAssemblySelection, useAssemblyPcbCheck, useRunTool } from "@fabdesk/client-core";
+import { filterCheckFindings, assemblyCheckFindingRow, captureAssemblyCheckFinding, normalizeReport, pcbToolJson, restoreAssemblySelection, useAssemblyPcbCheck, useRunTool } from "@fabdesk/client-core";
 import { Badge, Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 
@@ -11,10 +12,13 @@ export function AssemblyChecks({ projectId, data, checking, failed, onRetry }: {
     return restored ? { sourceId: restored.sourceId, manifestSha256: restored.manifestSha256 } : null;
   });
   const [selected, setSelected] = useState<number | null>(null), [resultError, setResultError] = useState<string | null>(null), [runScope, setRunScope] = useState("");
+  const [findingQuery, setFindingQuery] = useState(""), [severity, setSeverity] = useState("all");
   const source = data.sources.find(row => row.source.id === board?.sourceId);
   const owned = !!board && board.manifestSha256 === data.manifestSha256 && source?.status === "available" && source.source.location === "project";
   const report = useAssemblyPcbCheck(projectId, board, owned && !checking && !failed), tool = useRunTool(), busy = tool.state.status === "running";
   const scope = board ? `${board.sourceId}:${board.manifestSha256}` : "", rows = owned ? normalizeReport(report.data?.report, "drc") : [];
+  const filteredRows = filterCheckFindings(rows, { query: findingQuery, severity });
+  const filterFindings = (query: string, severity: string) => { setFindingQuery(query); setSeverity(severity); setSelected(null); };
   const returnFinding = useUiStore(state => state.assemblyFinding);
   const restored = useRef(false), returnFocus = useRef<number | null>(null), root = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -33,7 +37,7 @@ export function AssemblyChecks({ projectId, data, checking, failed, onRetry }: {
     // Leave room below the restored row for its details and the corner assistant.
     row?.scrollIntoView({ block: "center" }); row?.focus({ preventScroll: true });
   }, [selected, projectId]);
-  const choose = (id: string) => { restored.current = true; setBoard(id && data.manifestSha256 ? { sourceId: id, manifestSha256: data.manifestSha256 } : null); setSelected(null); setResultError(null); };
+  const choose = (id: string) => { restored.current = true; setBoard(id && data.manifestSha256 ? { sourceId: id, manifestSha256: data.manifestSha256 } : null); setSelected(null); setResultError(null); setFindingQuery(""); setSeverity("all"); };
   const run = async () => {
     const snapshot = report.data;
     if (!board || !owned || !snapshot || report.isFetching || report.isError || checking || failed || busy || useUiStore.getState().activeProjectId !== projectId) return;
@@ -58,14 +62,14 @@ export function AssemblyChecks({ projectId, data, checking, failed, onRetry }: {
       <div className="fd-member-checks-scope"><strong>{source?.source.name}</strong><span>{data.assembly?.instances.filter(instance => instance.sourceId === board.sourceId).map(instance => instance.name).join(" · ")}</span><span>PCB-only · Schematic parity, ERC, inter-board connections and enclosure fit are not checked.</span></div>
       {report.isError ? <LoadError title="Could not verify this source’s report" onRetry={() => void report.refetch()} /> : report.isPending || report.isFetching ? <p role="status"><Spinner />Checking saved PCB and report…</p> : <>
         <p role="status" className="fd-member-checks-status" data-warning={status !== "source-unchanged"}>{status === "source-changed" ? "PCB changed since DRC · Findings below are from the older saved PCB." : status === "source-unchanged" ? "PCB unchanged since this report · Review the findings below." : status === "scope-unverified" ? "Saved report ownership is unverified · Run a new check for this source." : "No saved PCB check for this source."}</p>
-        {report.data?.report ? rows.length ? <><p>{rows.length} saved findings</p><table className="fd-drc-table w-full text-left text-xs"><thead><tr><th>Severity</th><th>Rule</th><th>Description</th></tr></thead><tbody>{rows.map((row, index) => <Fragment key={index}><tr data-member-check-row={index} tabIndex={0} aria-selected={selected === index} onClick={() => setSelected(index)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelected(index); } }}><td><Badge tone={row.severity === "error" ? "danger" : row.severity === "warning" ? "warning" : "neutral"}>{row.severity}</Badge></td><td>{row.type}</td><td>{row.description}</td></tr>{selected === index && <tr><td colSpan={3}><section className="fd-member-checks-detail"><div className="fd-member-checks-detail-heading"><h3>{row.description}</h3><Button size="sm" variant="ghost" onClick={() => {
+        {report.data?.report ? rows.length ? <><CheckFindingFilters rows={rows} count={filteredRows.length} query={findingQuery} severity={severity} onChange={filterFindings} />{filteredRows.length === 0 ? <EmptyState title="No findings match these filters">Clear the filters to see the other saved findings.</EmptyState> : <table className="fd-drc-table w-full text-left text-xs"><thead><tr><th>Severity</th><th>Rule</th><th>Description</th></tr></thead><tbody>{filteredRows.map(({ finding: row, index }) => <Fragment key={index}><tr data-member-check-row={index} tabIndex={0} aria-selected={selected === index} onClick={() => setSelected(index)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelected(index); } }}><td><Badge tone={row.severity === "error" ? "danger" : row.severity === "warning" ? "warning" : "neutral"}>{row.severity}</Badge></td><td>{row.type}</td><td>{row.description}</td></tr>{selected === index && <tr><td colSpan={3}><section className="fd-member-checks-detail"><div className="fd-member-checks-detail-heading"><h3>{row.description}</h3><Button size="sm" variant="ghost" onClick={() => {
                   root.current?.querySelector<HTMLElement>(`[data-member-check-row="${index}"]`)?.focus({ preventScroll: true }); setSelected(null);
                 }}>Close details</Button></div>{row.items.map((item, itemIndex) => <p key={itemIndex}>{item.pos ? `(${item.pos.x.toFixed(3)}, ${item.pos.y.toFixed(3)}) mm · ` : ""}{item.description}{!busy && !checking && !failed && !report.isFetching && !report.isError && report.data && captureAssemblyCheckFinding(data, report.data, index, itemIndex) && <Button size="sm" variant="ghost" onClick={event => {
                   event.stopPropagation();
                   const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId || !report.data || report.isFetching || checking || failed) return;
                   const finding = captureAssemblyCheckFinding(data, report.data, index, itemIndex, ui.assemblyBoardByProject[projectId]);
                   if (finding) ui.openAssemblyFinding(finding);
-                }}>Show on PCB</Button>}</p>)}</section></td></tr>}</Fragment>)}</tbody></table></> : <EmptyState title="No findings listed in this report">This PCB-only report does not establish schematic parity or assembly compatibility.</EmptyState> : null}
+                }}>Show on PCB</Button>}</p>)}</section></td></tr>}</Fragment>)}</tbody></table>}</> : <EmptyState title="No findings listed in this report">This PCB-only report does not establish schematic parity or assembly compatibility.</EmptyState> : null}
       </>}
     </>}
     {runScope === scope && (resultError || tool.state.error) && <p role="alert" className="fd-update-feedback">{resultError ?? tool.state.error}</p>}
