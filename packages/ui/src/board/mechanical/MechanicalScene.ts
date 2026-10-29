@@ -8,6 +8,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { modelFormat, type MechanicalItem } from "@fabdesk/client-core";
 import type { MechanicalBox } from "@fabdesk/protocol";
 import { createFitOverlay } from "./fit-overlay";
+import { fittedCameraDistance } from "./camera-fit";
 
 export type BoardGeometry = {
   outline: { minX: number; minY: number; maxX: number; maxY: number };
@@ -738,10 +739,11 @@ export class MechanicalScene {
   private fitBox(box: T.Box3) {
     const center = box.getCenter(new T.Vector3()),
       size = box.getSize(new T.Vector3()).length();
-    const aspect = Math.min(1, this.camera.aspect);
-    this.fitDistance = Math.max(
-      5,
-      (size / (2 * Math.tan(T.MathUtils.degToRad(19))) / aspect) * 1.05,
+    this.fitDistance = fittedCameraDistance(
+      box,
+      this.camera.quaternion,
+      this.camera.fov,
+      this.camera.aspect,
     );
     const direction = this.camera.position.clone().sub(this.orbit.target).normalize();
     this.orbit.target.copy(center);
@@ -769,6 +771,7 @@ export class MechanicalScene {
               : new T.Vector3(1, -1, 1);
     this.camera.position.copy(this.orbit.target).addScaledVector(direction.normalize(), d);
     this.orbit.update();
+    this.fit();
     this.render();
   }
   dispose() {

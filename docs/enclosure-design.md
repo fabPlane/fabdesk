@@ -54,6 +54,16 @@ All mechanical values use millimetres, PCB XY coordinates and Z up. Exported CAD
 
 ## Running-app evidence
 
+### Consistent background and framing
+
+Add, Arrange and Enclosure share the same dotted workspace surface. The enclosure canvas is transparent; the inactive assembly scene/help is hidden so it cannot bleed through. On wide workspaces, Fit uses the space between the inspector and view controls, above the footer. Narrow workspaces collapse those controls. Camera fitting uses projected box corners and perspective depth; standard view buttons refit after changing direction.
+
+| Arrange | Enclosure |
+| --- | --- |
+| ![Arrange background](screenshots/mechanical-workspace/23-arrange-background.png) | ![Continuous enclosure background](screenshots/mechanical-workspace/22-consistent-background.png) |
+
+Checked all three modes and 2,108 px / 778 px workspace layouts, with no inspector overlap. Six focused scene/framing tests pass, including 27 aspect/shape/orientation combinations with all projected corners inside the viewport. UI typecheck and production build pass without output source maps.
+
 ### Select and position boards in the enclosure
 
 Camera drag recovery: informational fit-overlay text now lets pointer gestures reach the canvas, while its buttons remain clickable. Canvas and viewport chrome suppress native text/image dragging. Cancelled pointers, lost mouse capture and window focus loss release camera/part controls and discard an unfinished part move. Live native drags verified orbit through the overlay, recovery after injected pointer cancellation/focus loss and actual capture release, and a successful normal move afterwards. UI typecheck, 10 focused scene/placement tests and the desktop build pass for this fix; PCB source bytes remain unchanged.

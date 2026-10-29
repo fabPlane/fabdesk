@@ -129,11 +129,11 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
     let compact: boolean | undefined;
     const observer = new ResizeObserver(([entry]) => {
       if (!entry) return;
-      const next = entry.contentRect.width < 900;
+      const next = entry.contentRect.width < 1290;
       if (next !== compact) setControlsExpanded(!next);
       compact = next;
     });
-    observer.observe(host.current);
+    observer.observe(host.current.parentElement!);
     return () => observer.disconnect();
   }, []);
   const placementHandlers = useRef({
@@ -552,6 +552,7 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
   return (
     <section
       className="fd-case-workflow"
+      data-controls-expanded={controlsExpanded}
       aria-label="Enclosure designer"
       onKeyDown={(e) => {
         if ((e.target as HTMLElement).closest("input, textarea, select, [contenteditable=true]"))

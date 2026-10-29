@@ -19,7 +19,7 @@
   position: absolute;
   inset: 104px 0 0;
   z-index: 4;
-  background: var(--fd-bg);
+  background: transparent;
   display: grid;
   grid-template-columns: minmax(310px, 390px) 1fr;
 }
@@ -27,6 +27,12 @@
   visibility: hidden;
 }
 .fd-mechanical[data-enclosure-design="true"] .fd-mechanical-bottom {
+  visibility: hidden;
+}
+.fd-mechanical[data-enclosure-design="true"] .fd-mechanical-stage,
+.fd-mechanical[data-enclosure-design="true"] .fd-mechanical-help,
+.fd-mechanical[data-enclosure-design="true"] .fd-mechanical-envelope-note,
+.fd-mechanical[data-enclosure-design="true"] .fd-mechanical-empty {
   visibility: hidden;
 }
 .fd-case-view-tools {
@@ -43,12 +49,13 @@
 }
 .fd-case-canvas {
   position: absolute;
-  inset: 0 0 0 390px;
-  background: radial-gradient(
-    ellipse at center,
-    color-mix(in srgb, var(--fd-accent) 5%, var(--fd-bg)),
-    var(--fd-bg)
-  );
+  inset: 0 0 64px 390px;
+  background: transparent;
+}
+@container (min-width: 1290px) {
+  .fd-case-workflow[data-controls-expanded="true"] .fd-case-canvas {
+    right: 340px;
+  }
 }
 .fd-case-canvas canvas {
   display: block;
