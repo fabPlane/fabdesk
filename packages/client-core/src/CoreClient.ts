@@ -146,6 +146,7 @@ export interface RouteRunRecord {
   framesPath: string;
   startedAt: string;
   endedAt: string | null;
+  candidate?: { available: boolean };
   result: RouteResult | null;
   error: string | null;
 }
