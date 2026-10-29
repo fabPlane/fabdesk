@@ -1,0 +1,24 @@
+{
+  "feature": "Requested direct board switcher inside assembly board workspace",
+  "verified": [
+    "Picker lists6 current declared instances, highlightscurrentI/O and disables unresolvedKeyboard",
+    "I/O22parts36\u00d727.455mm switches directly to LCD29parts65\u00d728.25mm",
+    "Switching LCD Schematic to I/O retains Schematic tab and shows current boards/io missing-source folder",
+    "Renderer reload restores I/O plus Schematic and keeps picker/assistant closed",
+    "Compact960\u00d7720 picker and PCB/Schematic/3D headings fit",
+    "Escape closes picker and restores summary focus",
+    "16protected VAIO files and actual PCB DRC report byte-identical"
+  ],
+  "tests": "UI typecheck PASS;233tests912assertions/0fail; existing captured-selection/store contracts retained",
+  "boundaries": [
+    "Native edit busy, source checking/failure/stale identity and preview regeneration disable switching; checked in code, not mid-operation injected in native CUA",
+    "Only owned available sources open; missing sources resolve from project overview",
+    "No native source edits, generation, compatibility or reconciliation",
+    "Existing selected-source model/schematic/PCB behavior reused"
+  ],
+  "screenshots": [
+    "board-switcher-source-aware.png",
+    "board-switch-retains-task.png",
+    "board-switcher-compact.png"
+  ]
+}

@@ -1611,3 +1611,13 @@ Native VAIO search/source/category/no-match/clear/contextual-action/compact walk
 
 ![One source and its contextual output tools](outputs-source-filtered-actions.png)
 ![Compact searchable output collection](outputs-discovery-compact.png)
+
+
+## Switch boards inside the editor
+
+The member board heading now has a requested board picker. It uses current declared instances and captured source identity; unresolved sources are labelled and disabled. Selecting another owned board keeps the current PCB/Schematic/3D task and closes the picker. Native edit busy, stale/failed ownership and preview updates block switching. All boards still returns to the project map.
+
+Actual VAIO I/O→LCD loaded the LCD native source29parts65×28.25mm; LCD→I/O retained Schematic and the boards/io missing-source recovery. Renderer reload, compact menu and Escape focus passed. No source writes;16protected files+actual DRC report exact. UI types/233tests912assertions passed. Busy guards were code-reviewed, not fault-injected during a native operation. [Evidence](board-switcher-native.json).
+
+![Declared board choices from the current editor](board-switcher-source-aware.png)
+![Same requested picker at compact size](board-switcher-compact.png)
