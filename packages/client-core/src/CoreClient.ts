@@ -1,4 +1,5 @@
 /** Typed fetch wrapper over the fabdesk-core control API plus SSE subscription. */
+import { BoardSourceSelection } from "@fabdesk/protocol";
 import type {
   AgentId,
   AuthState,
@@ -53,6 +54,12 @@ import type {
 } from "@fabdesk/protocol";
 /** `GET /threads/:id`: the thread, saved run history, latest run, and current activity. */
 export type ThreadDetail = Thread & { run?: Run | null; runs?: Run[]; running?: boolean };
+
+function commentScopeQuery(board?: BoardSourceSelection): string {
+  if (!board) return "";
+  const captured = BoardSourceSelection.parse(board);
+  return `?sourceId=${encodeURIComponent(captured.sourceId)}&manifestSha256=${captured.manifestSha256}`;
+}
 
 /** One row of `GET /runs/live`. */
 export interface LiveRunSummary {
@@ -238,14 +245,15 @@ export class CoreClient {
   async readJson<T = unknown>(projectId: string, path: string): Promise<T> {
     return JSON.parse(await this.readFile(projectId, path)) as T;
   }
-  listComments(projectId: string): Promise<BoardCommentsFile> {
-    return this.request(`/projects/${encodeURIComponent(projectId)}/comments`);
+  listComments(projectId: string, board?: BoardSourceSelection): Promise<BoardCommentsFile> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/comments${commentScopeQuery(board)}`);
   }
   pinComment(
     projectId: string,
     input: CreateBoardComment,
+    board?: BoardSourceSelection,
   ): Promise<{ comment: BoardComment; label: string }> {
-    return this.request(`/projects/${encodeURIComponent(projectId)}/comments`, {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/comments${commentScopeQuery(board)}`, {
       method: "POST",
       json: input,
     });
@@ -254,9 +262,10 @@ export class CoreClient {
     projectId: string,
     commentId: string,
     patch: PatchBoardComment,
+    board?: BoardSourceSelection,
   ): Promise<{ comment: BoardComment; label: string }> {
     return this.request(
-      `/projects/${encodeURIComponent(projectId)}/comments/${encodeURIComponent(commentId)}`,
+      `/projects/${encodeURIComponent(projectId)}/comments/${encodeURIComponent(commentId)}${commentScopeQuery(board)}`,
       { method: "PATCH", json: patch },
     );
   }

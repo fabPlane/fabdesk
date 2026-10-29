@@ -12,6 +12,9 @@ import type { ProjectStore } from "./projects";
 const BOARD_TOOLSETS = new Set(["circuit", "route", "kicad", "verify", "render", "export", "sim", "cad"]);
 const ROOT_BOARD_TOOLS = new Set(["circuit_build", "circuit_place", "route_run", "verify_drc", "render_board", "project_import_kicad"]);
 function needsConcreteBoard(def: ToolDef): boolean {
+  // Unqualified comments remain legacy project-root discussion. An explicit board selector
+  // binds the same tools to that source's comments.json; no native board is inferred.
+  if (["comment_list", "comment_pin", "comment_answer", "comment_resolve"].includes(def.name)) return false;
   return def.boardScoped === true || ((def.scope ?? "project") === "project" && (BOARD_TOOLSETS.has(def.toolset) || ROOT_BOARD_TOOLS.has(def.name)));
 }
 

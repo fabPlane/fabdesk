@@ -1,4 +1,5 @@
 import type { AssistantSurface } from "../chat/assistant-context";
+import type { BoardSourceSelection } from "@fabdesk/protocol";
 import { create } from "zustand";
 import { DRAFT_KEY_NEW, newChatDraftKey, parseAssemblyMapPosition, type AssemblyMapPosition, type AssemblyMapLayout, workspaceAreaForView, workspaceViews, workspaceTabForArea, type WorkspaceArea, type AssemblySceneSelection, type AssemblyCheckFinding, type RootCheckFinding, type KeptOutputChoice } from "@fabdesk/client-core";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
@@ -94,8 +95,8 @@ export interface UiState {
   /** Parts Inventory (opened from the user menu) replaces the chat pane while true. */
   inventoryOpen: boolean;
   boardTab: BoardTab;
-  commentToReveal: { projectId: string; id: string; view: "pcb" | "schematic" } | null;
-  openBoardComment: (id: string, view: "pcb" | "schematic") => void;
+  commentToReveal: { projectId: string; id: string; view: "pcb" | "schematic"; board?: BoardSourceSelection } | null;
+  openBoardComment: (id: string, view: "pcb" | "schematic", board?: BoardSourceSelection) => void;
   fileToReveal: { projectId: string; path: string } | null;
   openProjectFile: (path: string) => void;
   stencilThicknessByProject: Record<string, number>;
@@ -259,8 +260,8 @@ export function createUiStore(storage?: StateStorage) {
   inventoryOpen: false,
   boardTab: "pcb",
   commentToReveal: null,
-  openBoardComment: (id, view) => set((s) => s.activeProjectId ? {
-    commentToReveal: { projectId: s.activeProjectId, id, view }, boardTab: view, workspaceArea: "boards", boardOpen: true,
+  openBoardComment: (id, view, board) => set((s) => s.activeProjectId ? {
+    commentToReveal: { projectId: s.activeProjectId, id, view, ...(board ? { board: { ...board } } : {}) }, boardTab: view, workspaceArea: "boards", boardOpen: true,
     activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false,
     workspaceByProject: { ...s.workspaceByProject, [s.activeProjectId]: { area: "boards", tab: view } },
   } : {}),

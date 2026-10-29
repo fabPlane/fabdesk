@@ -1,6 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import { newChatDraftKey, BOARD_TABS, BOARD_TAB_LABELS, SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, newChatInProjectState, normalizeSidebarListTab, migrateProjectDraftSlot, createUiStore, useUiStore } from "./ui";
 
+test("member comment navigation captures the source selector without aliasing it", () => {
+  const store = createUiStore({ getItem: () => null, setItem() {}, removeItem() {} });
+  store.getState().setActiveProject("project-a");
+  const board = { sourceId: "io", manifestSha256: "a".repeat(64) };
+  store.getState().openBoardComment("cmt_member", "pcb", board);
+  board.sourceId = "other";
+  expect(store.getState().commentToReveal?.board?.sourceId).toBe("io");
+  expect(store.getState().workspaceArea).toBe("boards");
+  store.getState().setActiveProject("project-b");
+  expect(store.getState().commentToReveal).toBeNull();
+});
+
 test("unfinished notes stay separate across projects, hosts and chat drafts during navigation", () => {
   const memory = new Map<string, string>();
   const storage = { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); }, removeItem: (key: string) => { memory.delete(key); } };

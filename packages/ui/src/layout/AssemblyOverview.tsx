@@ -11,6 +11,7 @@ import { assemblyMapLayoutKey, restoreAssemblyMapLayout, useCoreClient, type Ass
 import { Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { SvgViewer } from "../board/SvgViewer";
+import { useSourceCommentTools } from "../board/SourceCommentTools";
 import { AssemblyBoardModel } from "../board/AssemblyBoardModel";
 import { NativePartTools } from "../board/NativePartTools";
 import { parseSvgViewBox } from "../board/svg-coords";
@@ -336,22 +337,24 @@ function AssemblyBoardDetail({ projectId, detail, current, checking, failed, onB
 }
 
 
-/** Source-bound location tools; member comments are deliberately absent until anchors carry a source. */
+/** Source-bound location tools and pins stored beside the selected native source. */
 function AssemblyPcbDrawing({ projectId, board, directory, svg, canPosition, canSelect, findingPoint, onDismissFinding, visible, onBusyChange }: { projectId: string; board: BoardSourceSelection; directory: string; svg: string; visible: boolean; findingPoint: { x: number; y: number } | null; onDismissFinding: () => void; canPosition: boolean; canSelect: boolean; onBusyChange: (busy: boolean) => void }) {
   const [point, setPoint] = useState<{ x: number; y: number } | null>(null), [busy, setBusy] = useState(false);
   const busyRef = useRef(false), nativeCoordinates = pcbSvgHasNativeCoordinates(svg);
+  const comments = useSourceCommentTools({ projectId, board, directory, enabled: canSelect, canPin: canPosition && nativeCoordinates && !busy, visible });
   const mutationBusy = (value: boolean) => { busyRef.current = value; setBusy(value); onBusyChange(value); };
-  return <SvgViewer svg={svg} viewKey={`${projectId}/${board.sourceId}/${directory}`}
+  return <>{comments.dialog}<SvgViewer svg={svg} viewKey={`${projectId}/${board.sourceId}/${directory}`} toolbar={comments.toolbar}
     onDrawingEscape={() => { if (!point || busyRef.current) return false; setPoint(null); return true; }}
     {...(canSelect && nativeCoordinates ? { onDrawingClick: (next: { x: number; y: number }) => { if (!busyRef.current) { onDismissFinding(); setPoint(next); } } } : {})}
-    overlay={box => findingPoint && box ? <div data-canvas-tools className="fd-location-anchor fd-finding-anchor" style={{ left: `${(findingPoint.x - box.x) / box.width * 100}%`, top: `${(findingPoint.y - box.y) / box.height * 100}%` }}>
+    overlay={box => <>{nativeCoordinates && comments.overlay(box)}{findingPoint && box ? <div data-canvas-tools className="fd-location-anchor fd-finding-anchor" style={{ left: `${(findingPoint.x - box.x) / box.width * 100}%`, top: `${(findingPoint.y - box.y) / box.height * 100}%` }}>
       <span className="fd-location-marker" /><div className="fd-location-toolbar" role="group" aria-label="PCB check finding location" style={{ transform: `translateX(${(findingPoint.x - box.x) / box.width < .25 ? "0" : (findingPoint.x - box.x) / box.width > .75 ? "-100%" : "-50%"})`, ...((findingPoint.y - box.y) / box.height < .15 ? { top: 20, bottom: "auto" } : {}) }}><span>Check finding · {findingPoint.x.toFixed(3)}, {findingPoint.y.toFixed(3)} mm</span><button className="fd-assembly-dismiss" aria-label="Dismiss PCB check finding" onClick={onDismissFinding}><Icon name="close" width={15} height={15} /></button></div>
     </div> : point && box && <div data-canvas-tools className="fd-location-anchor" style={{ left: `${(point.x - box.x) / box.width * 100}%`, top: `${(point.y - box.y) / box.height * 100}%` }}>
       <span className="fd-location-marker" />
       <div className="fd-location-toolbar" aria-label="Selected board source location" style={{ transform: `translateX(${(point.x - box.x) / box.width < .25 ? "0" : (point.x - box.x) / box.width > .75 ? "-100%" : "-50%"})` }}>
         <span>{point.x.toFixed(1)}, {point.y.toFixed(1)} mm</span>
+        <Button size="sm" variant="ghost" disabled={!comments.ready || !canPosition || busy} onClick={() => comments.pinAt(point)}><Icon name="pin" width={14} height={14} />Pin comment</Button>
         <NativePartTools visible={visible} board={board} projectId={projectId} point={point} box={box} canPosition={canPosition && nativeCoordinates} openAbove={(point.y - box.y) / box.height > .5} onMoved={setPoint} onMutationBusyChange={mutationBusy} />
         <button className="fd-assembly-dismiss" disabled={busy} aria-label="Deselect board source location" onClick={event => { if (busyRef.current) return; const drawing = event.currentTarget.closest<HTMLElement>(".fd-svg-host"); setPoint(null); requestAnimationFrame(() => drawing?.focus({ preventScroll: true })); }}><Icon name="close" width={15} height={15} /></button>
       </div>
-    </div>} />;
+    </div>}</>} /></>;
 }

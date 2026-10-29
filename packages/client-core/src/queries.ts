@@ -857,12 +857,12 @@ export function useInventoryMutations() {
   };
 }
 
-export function useBoardComments(projectId: string | null) {
+export function useBoardComments(projectId: string | null, board?: BoardSourceSelection, enabled = true) {
   const client = useCoreClient();
   return useQuery({
-    queryKey: ["comments", projectId],
-    queryFn: () => client.listComments(projectId!),
-    enabled: !!projectId,
+    queryKey: ["comments", projectId, board ?? null],
+    queryFn: () => client.listComments(projectId!, board),
+    enabled: !!projectId && enabled,
   });
 }
 
@@ -884,7 +884,7 @@ export function useBoardNotes(projectId: string | null) {
   });
 }
 
-export function useBoardCommentMutations(projectId: string | null) {
+export function useBoardCommentMutations(projectId: string | null, board?: BoardSourceSelection) {
   const client = useCoreClient();
   const qc = useQueryClient();
   const refresh = () => {
@@ -895,12 +895,12 @@ export function useBoardCommentMutations(projectId: string | null) {
   };
   return {
     pin: useMutation({
-      mutationFn: (input: Parameters<typeof client.pinComment>[1]) => client.pinComment(projectId!, input),
+      mutationFn: (input: Parameters<typeof client.pinComment>[1]) => client.pinComment(projectId!, input, board),
       onSuccess: refresh,
     }),
     patch: useMutation({
       mutationFn: ({ commentId, patch }: { commentId: string; patch: Parameters<typeof client.patchComment>[2] }) =>
-        client.patchComment(projectId!, commentId, patch),
+        client.patchComment(projectId!, commentId, patch, board),
       onSuccess: refresh,
     }),
     writeNotes: useMutation({

@@ -19,6 +19,17 @@ describe("CoreClient open-source preview URL", () => {
 });
 
 describe("CoreClient board comments", () => {
+  test("source selectors accompany every comment operation and malformed selectors never become root requests", async () => {
+    const urls: string[] = [], client = new CoreClient({ baseUrl: "http://local", token: "test", fetch: async url => { urls.push(url); return Response.json({}); } });
+    const board = { sourceId: "io", manifestSha256: "a".repeat(64) };
+    await client.listComments("project", board);
+    await client.pinComment("project", { question: "Here?", anchor: { view: "pcb", ref: "R1" } }, board);
+    await client.patchComment("project", "cmt_test", { status: "resolved" }, board);
+    expect(urls.every(url => url.endsWith(`?sourceId=io&manifestSha256=${board.manifestSha256}`))).toBe(true);
+    expect(urls[2]).toContain("/comments/cmt_test?");
+    expect(() => client.listComments("project", { sourceId: "../wrong", manifestSha256: "bad" })).toThrow();
+    expect(urls).toHaveLength(3);
+  });
   test("pins and lists comments on encoded project ids", async () => {
     const calls: Array<{ url: string; method: string | undefined }> = [];
     const client = new CoreClient({
