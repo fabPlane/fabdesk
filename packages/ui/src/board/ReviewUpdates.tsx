@@ -1,4 +1,4 @@
-import { useAssistantSurface } from "../chat/useAssistantSurface";
+import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { ReviewDesignSources, ReviewKeepNote, ReviewScope, ReviewUpdateTable } from "./ReviewUpdateLayout";
 import type { IconName } from "../components/Icon";
@@ -33,7 +33,8 @@ function SingleBoardUpdates({ scopeReady }: { scopeReady: boolean }) {
   const videoPath = ["mp4", "webm", "gif"].map(ext => `exports/product-video.${ext}`).find(has);
   const video = useVideoInputRevision(projectId, videoPath);
   const previewSourceMissing = !pcb || preview.data === "missing-source", modelSourceMissing = !pcb || model.data === "missing-source", checkSourceMissing = !pcb || checks.data === "missing-source";
-  useAssistantSurface(projectId ? { projectId, label: "Review / Updates", priority: 10, details: JSON.stringify({ sourceReady: scopeReady, nativePcb: pcb, nativeSchematic: schematic, savedPreview: preview.data, savedModel: model.data, savedChecks: checks.data, savedVideo: video.data, sourceComparison: "not established by artifact freshness" }) } : null);
+  const assistantSurface = projectId ? { projectId, label: "Review / Updates", priority: 10, details: JSON.stringify({ sourceReady: scopeReady, nativePcb: pcb, nativeSchematic: schematic, savedPreview: preview.data, savedModel: model.data, savedChecks: checks.data, savedVideo: video.data, sourceComparison: "not established by artifact freshness" }) } : null;
+  useAssistantSurface(assistantSurface);
   if (!projectId) return <EmptyState title="No project selected" />;
   if (project.isError) return <LoadError title="Could not load project updates" onRetry={() => void project.refetch()} />;
   if (project.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
@@ -63,7 +64,7 @@ function SingleBoardUpdates({ scopeReady }: { scopeReady: boolean }) {
       const prompt = "Review the saved schematic and PCB in this project. Explain their differences and which synchronization direction is appropriate. Do not apply changes or save an open native document until we choose a direction.";
       ui.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt); ui.focusComposer();
     }}>{pcb && schematic ? "Ask about differences" : "Browse source files"}</Button>}>
-      <details className="fd-review-sync-options"><DisclosureSummary icon="folderOpen" label="Source details & sync" variant="compact" /><p>A newer timestamp does not identify which design should change. Generated-output freshness does not establish schematic/PCB equivalence.</p><p>Directed synchronization is not connected in this build.</p><div><Button size="sm" disabled>Update PCB from schematic</Button><Button size="sm" disabled>Update schematic from PCB</Button></div></details>
+      <details className="fd-review-sync-options"><DisclosureSummary icon="folderOpen" label="Source details & sync" variant="compact" /><p>A newer timestamp does not identify which design should change. Generated-output freshness does not establish schematic/PCB equivalence.</p><p>Ask the agent to review the intended direction and native source changes before saving. Some native preview tools also save the live schematic; the review must explain that before running them.</p><div><Button size="sm" onClick={() => assistantSurface && askAboutSurface(assistantSurface, "Review updating this PCB from the saved schematic. Explain the proposed footprint and connection changes, preserve board-only items, and identify any required native document saves before applying anything.")}>Review schematic → PCB</Button><Button size="sm" onClick={() => assistantSurface && askAboutSurface(assistantSurface, "Review bringing the saved PCB changes back into the schematic. Identify the electrical and footprint differences, explain what can be recovered, and propose native schematic edits without applying them yet.")}>Review PCB → schematic</Button></div></details>
     </ReviewDesignSources>
     {([{ id: "outputs", label: "Generated outputs" }, { id: "checks", label: "Saved checks" }] as const).map(group => <ReviewUpdateTable key={group.id} title={group.label} collapsed={group.id === "checks"} summaryStatus={readiness.data?.checks.drc === "fail" ? "Findings need review" : "PCB & schematic"} summaryWarning={readiness.data?.checks.drc === "fail"} rows={rows.filter(row => row.group === group.id && row.item !== "Other saved outputs" && (row.item !== "Generated enclosure" || has("enclosure.json"))).sort((a,b) => (a.item === "Board 3D model" ? 0 : a.item === "PCB preview" ? 1 : 2) - (b.item === "Board 3D model" ? 0 : b.item === "PCB preview" ? 1 : 2)).map(row => ({
       key: row.item, item: row.item === "Board 3D model" ? "3D model" : row.item === "Product video" ? "Review video" : row.item,

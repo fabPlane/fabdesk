@@ -226,3 +226,4 @@ export * from "./diff-preview";
 export * from "./board-file-destination";
 
 export { readOutputSelection, OUTPUT_DOWNLOAD_LIMIT } from "./output-download";
+export { reviewPackageFiles, type ReviewPackageOptions } from "./review-package";
