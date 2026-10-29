@@ -97,6 +97,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       {projectId && !fresh && !sketchReference && <span className="fd-canvas-breadcrumb" title={selectedBoardName ?? areaLabel}><span>/</span><strong>{selectedBoardName ?? areaLabel}</strong></span>}
       <div className="fd-canvas-header-actions">
         <span className="fd-canvas-connection" title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`}><i data-connected={connected} />{connected ? local ? "Local workspace" : "Remote workspace" : "Reconnecting…"}</span>
+        {projectId && !fresh && <Button size="sm" variant="ghost" title="Review source and output updates" aria-current={area === "review" && boardTab === "updates" ? "page" : undefined} onClick={() => ui().setBoardTab("updates")}>Review</Button>}
         <WorkspaceMenu className="fd-workspace-overflow" label={<span aria-label="Workspace options"><Icon name="more" width={20} height={20} /></span>}>
           {fresh && projectId && <><div className="fd-menu-caption">Project tools</div>{(Object.keys(WORKSPACE_AREAS) as WorkspaceArea[]).map(key => <button key={key} onClick={() => openArea(key)}>{WORKSPACE_AREAS[key].label}</button>)}<div className="fd-menu-divider" /></>}
           <button onClick={() => ui().setPaletteOpen(true)}><Icon name="search" width={16} height={16} />Search commands</button>

@@ -1633,3 +1633,10 @@ Native routing opens the existing recorded failed run honestly; no new run was s
 ![Compact toolbar](board-tools-compact.png)
 
 Full accumulated verification at **e5d9c63**: root typecheck PASS; standard suite **2277 passed /36 skipped /0 failures**, 17 batches. [Validation record](v6-workflow-validation.json).
+
+
+## Quiet Review entry
+
+A populated project has a header Review action that opens the existing Updates flow. Fresh start stays quiet. This is navigation, with no invented warning count or status. Root and assembly review keep their respective data sources and source ownership. Native root/VAIO/fresh/compact walkthrough passed; no generation or assistant message. UItypes/233tests912assertions passed; the preceding accumulated full root2277/36/0 remains separately scoped to e5d9c63. [Evidence](header-review-native.json).
+
+![Same Review entry, source-qualified assembly evidence](header-review-assembly-scope.png)
