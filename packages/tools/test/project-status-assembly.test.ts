@@ -34,7 +34,10 @@ test("agent status includes explicit sources, repeated instances and links witho
   const files = await readdir(project.dir), result = await invoke();
   expect(result.text).toContain("Assembly instances: 3; source boards: 2; declared connections: 1");
   expect(result.text).toContain("Source files available: 1/2. Geometry, schematic parity and connection compatibility are unverified");
-  expect(result.text).toContain("Explicit source tools pcb_inspect, render_pcb_svg, render_glb, render_schematic_svg, pcb_place, pcb_resize_outline, schematic_inspect and verify_drc");
+  expect(result.text).toContain("Explicit source tools accept board {sourceId, manifestSha256}");
+  expect(result.text).toContain("GLB/images/video, manufacturing exports, board_revision_list/diff/checkpoint, and comment_list/pin/answer/resolve");
+  expect(result.text).toContain("source-local comments.json");
+  expect(result.text).toContain("Member routing and live schematic authoring remain unavailable; do not substitute the root board");
   expect(result.text).toContain("external component models and fit remain unverified");
   expect(result.text).toContain("Shared physical instances use the same source");
   expect(result.text).toContain("Member DRC is PCB-only: pass schematicParity=false explicitly");

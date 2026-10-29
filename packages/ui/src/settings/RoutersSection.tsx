@@ -16,9 +16,11 @@ import {
   primaryAction,
   primaryActionLabel,
   stateLabel,
+  routerUsable,
 } from "./routers";
 
 function tone(router: RouterSnapshot): "success" | "warning" | "danger" | "neutral" {
+  if (router.ready && router.runtime?.ready === false) return "warning";
   if (router.state === "bundled" || (router.state === "installed" && router.ready)) return "success";
   if (router.state === "installing" || router.state === "installed") return "warning";
   if (router.state === "failed") return "danger";
@@ -83,6 +85,7 @@ export function RoutersSection() {
                 {router.notice}
               </p>
             )}
+            {router.runtime?.ready === false && router.ready && <p className="mt-2 text-xs text-warning">{router.runtime.reason ?? "The active PCB backend could not verify this engine."}</p>}
             {(!router.ready || router.overriddenBy) && router.state !== "bundled" && router.state !== "installing" && (
               <p className="mt-2 text-xs text-muted">{router.installHint}</p>
             )}
@@ -131,7 +134,7 @@ export function RoutersSection() {
               )}
               <Button
                 size="sm"
-                disabled={busy || !router.ready || preferredHere}
+                disabled={busy || !routerUsable(router) || preferredHere}
                 onClick={() => void patch.mutateAsync({ preferredRouter: router.id })}
               >
                 {preferredHere ? "Default" : "Set default"}

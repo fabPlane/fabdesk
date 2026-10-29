@@ -1,6 +1,7 @@
 /** Hono application: auth + origin guard, control API, tools/jobs, MCP, events. */
 import { readFile, stat, mkdir } from "node:fs/promises";
 import { threadTitleFrom } from "../thread-title";
+import { withRouterRuntime } from "./router-runtime";
 import { basename, extname, isAbsolute, join } from "node:path";
 import { Hono, type Context } from "hono";
 import {
@@ -275,14 +276,14 @@ export function createApp(deps: AppDeps): Hono<Env> {
 
   app.get("/doctor", async (c) => c.json(await deps.doctor()));
   app.get("/agents", async (c) => c.json(await deps.agents()));
-  app.get("/routers", (c) => {
+  app.get("/routers", async (c) => {
     const preferred = deps.store.settings.get().preferredRouter;
-    return c.json(
-      deps.services.routers?.list(preferred ?? undefined) ?? {
+    const list = deps.services.routers?.list(preferred ?? undefined) ?? {
         routers: [],
         ...(preferred ? { preferredRouter: preferred } : {}),
-      },
-    );
+      };
+    const status = await deps.services.design.status().catch(error => ({ url: "", ok: false, reason: errMsg(error) }));
+    return c.json(withRouterRuntime(list, status));
   });
   app.post("/routers/:id/install", async (c) => {
     const id = RouterCatalogId.parse(c.req.param("id"));

@@ -219,7 +219,8 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
   const active = !!ownedRunId && ["queued", "running", "cancel_requested", "cancelling"].includes(runRecord.data?.status ?? "");
   const busy = applying || route.state.status === "running" || active || projectRuns.some(item => ["queued", "running", "cancel_requested", "cancelling"].includes(item.status));
   const hasPcb = project.data?.files.some(file => file.path === "board.kicad_pcb") ?? false;
-  const canRoute = scopeReady && hasPcb && !project.isFetching && !project.isError && !!history.data && !history.isFetching && !history.isError && !busy;
+  const routerAvailable = !routers.isPending && !routers.isFetching && !routers.isError && picker.some(option => option.id === pickedRouter && !option.disabled);
+  const canRoute = scopeReady && hasPcb && routerAvailable && !project.isFetching && !project.isError && !!history.data && !history.isFetching && !history.isError && !busy;
   const preview = project.data?.files.some(file => file.path === "renders/pcb.svg");
   const showSavedReference = frames === 0 && !active && !!runError && preview;
   const cancelButton = active && cancel.manifest?.some(tool => tool.name === "route_cancel") ? <Button size="sm" disabled={cancel.state.status === "running" || ["cancel_requested", "cancelling"].includes(runRecord.data?.status ?? "")} onClick={() => {
@@ -246,6 +247,7 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
     </label>
     <details className="fd-routing-options"><DisclosureSummary icon="settings" label="Router options" /><Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setSettingsOpen(true, "router")}>Manage routers</Button></details>
     {routers.isError && <p role="alert">Router availability could not be checked. <Button size="sm" onClick={() => void routers.refetch()}>Retry</Button></p>}
+    {!routers.isPending && !routers.isError && !routerAvailable && <p role="status">{routers.isFetching ? "Checking router availability…" : picker.find(option => option.id === pickedRouter)?.hint ?? "Choose an available router."}</p>}
     <p role="status">{project.isError ? "Project files could not be read." : !scopeReady || project.isFetching ? "Checking saved PCB…" : !hasPcb ? "Add a saved PCB in Board before starting routing." : "Routing creates a candidate and keeps the saved PCB. Review the result, then choose whether to apply it."}</p>
     <Button className="fd-routing-start-action" variant="primary" disabled={!canRoute} onClick={() => void startRouting()}>{busy ? "Routing…" : "Start routing"}</Button>
     {ownedRunId && <section className="fd-routing-saved-run"><h3>Saved run</h3>{failureNotice || <p>Recorded {runRecord.data?.status ?? "run"} · inspect playback before starting another run.</p>}</section>}

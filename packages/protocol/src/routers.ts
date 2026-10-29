@@ -36,6 +36,8 @@ export const RouterSnapshot = z.object({
   install: z.enum(["bundled", "download"]),
   state: RouterInstallState,
   ready: z.boolean(),
+  /** Runtime health is separate from package installation; an installed engine can be unavailable. */
+  runtime: z.object({ ready: z.boolean(), reason: z.string().optional() }).optional(),
   installHint: z.string(),
   versionInstalled: z.string().optional(),
   progress: RouterProgress.optional(),

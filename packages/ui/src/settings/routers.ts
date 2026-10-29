@@ -1,6 +1,7 @@
 import type { RouterCatalogId, RouterSnapshot } from "@fabdesk/protocol";
 
 export type RouterAction = "install" | "uninstall" | "cancel" | "set-default";
+export function routerUsable(router: RouterSnapshot): boolean { return router.ready && router.runtime?.ready !== false; }
 
 export function canInstall(router: RouterSnapshot): boolean {
   return router.install === "download" && (router.state === "not_installed" || router.state === "failed");
@@ -27,6 +28,7 @@ export function canCancel(router: RouterSnapshot): boolean {
 }
 
 export function stateLabel(router: RouterSnapshot): string {
+  if (router.ready && router.runtime?.ready === false) return `${router.state === "bundled" ? "bundled" : "installed"} · unavailable`;
   switch (router.state) {
     case "bundled":
       return router.versionInstalled && router.versionInstalled !== "bundled"
@@ -118,6 +120,7 @@ export type RouterPickerOption = {
 };
 
 function notReadyNote(router: RouterSnapshot): string {
+  if (router.ready && router.runtime?.ready === false) return "engine unavailable";
   if (router.state === "installing") return "installing";
   if (router.state === "failed") return "install failed";
   if (router.state === "installed") return "not built";
@@ -130,24 +133,25 @@ export function routerPickerOptions(
   preferred?: RouterCatalogId,
 ): RouterPickerOption[] {
   const preferredName = routers.find((r) => r.id === preferred)?.displayName ?? preferred;
-  const preferredUnusable = !!preferred && routers.some((r) => r.id === preferred && !r.ready);
+  const preferredUnusable = !!preferred && routers.some((r) => r.id === preferred && !routerUsable(r));
+  const automaticReady = !!preferred && routers.some(router => router.id === preferred && routerUsable(router)) || routers.some(router => (router.id === "freerouting" || router.id === "fab_router") && routerUsable(router));
   const options: RouterPickerOption[] = [
     {
       id: "default",
       label: preferred
         ? `Default (${preferredName}${preferredUnusable ? " not ready → Freerouting → fab_router" : ""})`
         : "Default (Freerouting → fab_router)",
-      disabled: false,
-      hint: "Leave unset so routing keeps the current automatic default.",
+      disabled: !automaticReady,
+      hint: automaticReady ? "Leave unset so routing keeps the current automatic default." : "No automatic router is available. Check the PCB backend and router settings.",
     },
   ];
   for (const router of routers) {
     options.push({
       id: router.id,
       label: router.displayName,
-      disabled: !router.ready,
-      hint: router.ready ? router.strengths[0] ?? router.description : router.installHint,
-      ...(router.ready ? {} : { note: notReadyNote(router) }),
+      disabled: !routerUsable(router),
+      hint: router.runtime?.ready === false ? router.runtime.reason ?? router.installHint : router.ready ? router.strengths[0] ?? router.description : router.installHint,
+      ...(routerUsable(router) ? {} : { note: notReadyNote(router) }),
     });
   }
   return options;

@@ -13,6 +13,7 @@ import {
   primaryActionLabel,
   routerPickerOptions,
   stateLabel,
+  routerUsable,
 } from "./routers";
 
 const router = (over: Partial<RouterSnapshot>): RouterSnapshot => ({
@@ -31,6 +32,19 @@ const router = (over: Partial<RouterSnapshot>): RouterSnapshot => ({
 });
 
 describe("router settings helpers", () => {
+  test("runtime failures disable engines and automatic defaults while retaining their installation actions", () => {
+    const unavailable = router({ id: "fab_router", state: "bundled", install: "bundled", ready: true, runtime: { ready: false, reason: "Missing router module" } });
+    expect(routerUsable(unavailable)).toBe(false);
+    expect(stateLabel(unavailable)).toBe("bundled · unavailable");
+    expect(routerPickerOptions([unavailable])[0]?.disabled).toBe(true);
+    expect(routerPickerOptions([unavailable]).find(option => option.id === "fab_router")).toMatchObject({ disabled: true, note: "engine unavailable", hint: "Missing router module" });
+    const ready = router({ id: "freerouting", ready: true, state: "installed", runtime: { ready: true } });
+    expect(routerPickerOptions([unavailable, ready])[0]?.disabled).toBe(false);
+    // TraceMaker is selected automatically only when it is the configured preference.
+    const trace = router({ ready: true, state: "installed", runtime: { ready: true } });
+    expect(routerPickerOptions([trace])[0]?.disabled).toBe(true);
+    expect(routerPickerOptions([trace], "tracemaker")[0]?.disabled).toBe(false);
+  });
   test("install / uninstall / cancel follow the registry states", () => {
     const missing = router({});
     expect(canInstall(missing)).toBe(true);
