@@ -1,4 +1,4 @@
-import { useAssistantSurface } from "../chat/useAssistantSurface";
+import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { overviewBoardImages } from "@fabdesk/client-core";
 import { useOverviewImage } from "./useOverviewImage";
 import { useEffect, useRef, useState } from "react";
@@ -61,7 +61,8 @@ function SingleBoardOverview() {
   // A refreshed drawing of the same native board keeps its contextual tools.
   const surfaceKey = pcb ? "native:board.kicad_pcb" : schematic ? "native:board.kicad_sch" : preview ? `preview:${preview.path}` : `reference:${reference ?? ""}`;
   const selected = selectedKey === surfaceKey;
-  useAssistantSurface(projectId ? { projectId, label: selected ? `Overview · ${designLabel}` : "Project overview", priority: 5, details: JSON.stringify({ nativePcb: pcb?.path, nativeSchematic: schematic?.path, selected: selected ? surfaceKey : null, reference: reference, imagePreview: preview?.path, sourceCheckPending: project.isFetching }) } : null);
+  const assistantSurface = projectId ? { projectId, label: selected ? `Overview · ${designLabel}` : "Project overview", priority: 5, details: JSON.stringify({ nativePcb: pcb?.path, nativeSchematic: schematic?.path, selected: selected ? surfaceKey : null, reference: reference, imagePreview: preview?.path, sourceCheckPending: project.isFetching }) } : null;
+  useAssistantSurface(assistantSurface);
   useEffect(() => { if (selectedKey !== null && selectedKey !== surfaceKey) setSelectedKey(null); }, [selectedKey, surfaceKey]);
 
   const previewStatus = designTab === "schematic" ? "Saved schematic preview · freshness unverified" : preview?.path !== "renders/pcb.svg" ? "Saved image · source unverified"
@@ -85,10 +86,7 @@ function SingleBoardOverview() {
         <span><Icon name={designTab === "schematic" ? "compose" : "pcb"} width={17} height={17} />{designLabel}</span>
         <Button variant="ghost" size="sm" onClick={() => ui().setBoardTab(pcb || schematic ? designTab : "files")}><Icon name={pcb || schematic ? "compose" : "folderOpen"} width={16} height={16} />{!pcb && !schematic ? "Open project files" : designTab === "schematic" ? "Open schematic" : "Open board"}</Button>
         <Button variant="ghost" size="sm" onClick={() => {
-          const state = ui(); if (state.activeProjectId !== projectId) return;
-          const key = state.activeThreadId ?? newChatDraftKey(projectId), previous = state.drafts[key] ?? "";
-          const prompt = "Review this design’s available saved schematic and PCB sources. Explain its purpose and any changes that need attention before proposing edits.";
-          state.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt); state.focusComposer();
+          if (assistantSurface) askAboutSurface(assistantSurface, "Review this design’s available saved schematic and PCB sources. Explain its purpose and any changes that need attention before proposing edits.");
         }}><Icon name="sparkles" width={16} height={16} />Ask</Button>
         <WorkspaceMenu label={<><span>More</span><Icon name="chevronDown" width={14} height={14} /></>}>
           <button onClick={() => ui().setBoardTab(designTab === "schematic" ? "pcb" : "schematic")}>{designTab === "schematic" ? "PCB" : "Schematic"}</button>
