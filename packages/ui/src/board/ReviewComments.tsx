@@ -3,7 +3,8 @@ import { commentAnchorLabel, commentMillimetrePoint, type BoardComment } from "@
 import { useBoardSources, useBoardComments, useBoardCommentMutations } from "@fabdesk/client-core";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { newChatDraftKey, useUiStore } from "../stores/ui";
+import { useUiStore } from "../stores/ui";
+import { askAboutSurface } from "../chat/useAssistantSurface";
 import { buildCommentsAskPrompt } from "./comment-requests";
 
 /** The same persisted pins as the drawing, collected alongside changes and checks. */
@@ -18,12 +19,8 @@ export function ReviewComments() {
   const all = comments.data?.comments ?? [];
   const visible = all.filter((comment) => filter === "all" || (filter === "active" ? comment.status !== "resolved" : comment.status === "resolved"));
   const ask = (comment: BoardComment) => {
-    const ui = useUiStore.getState();
-    const key = ui.activeThreadId ?? newChatDraftKey(projectId);
-    const previous = ui.drafts[key] ?? "";
-    const prompt = buildCommentsAskPrompt([comment]);
-    ui.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt);
-    ui.focusComposer();
+    if (!projectId) return;
+    askAboutSurface({ projectId, label: "Review / Comments / Selected pin", priority: 20, details: JSON.stringify({ comment: { id: comment.id, question: comment.question, anchor: comment.anchor }, scope: assembly ? "Legacy project-root pin; not qualified for an assembly member. Verify its source before answering." : "Project board source; inspect saved files before answering." }) }, buildCommentsAskPrompt([comment]));
   };
   if (!projectId) return <EmptyState title="Choose a project to review comments" />;
   if (comments.isError) return <LoadError title="Could not load comments" onRetry={() => void comments.refetch()} />;

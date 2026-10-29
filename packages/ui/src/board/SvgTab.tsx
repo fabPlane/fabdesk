@@ -1,15 +1,15 @@
-import { useAssistantSurface } from "../chat/useAssistantSurface";
+import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BoardComment, CommentView } from "@fabdesk/protocol";
 import { commentAnchorLabel, commentMillimetrePoint } from "@fabdesk/protocol";
 import { Button, EmptyState, IconButton, Input, LoadError, Spinner, Textarea } from "../components/ui";
 import { Icon } from "../components/Icon";
+import { ErrorNotice } from "../components/ErrorNotice";
 import {
   useBoardCommentMutations,
   useBoardSources,
   useBoardComments,
-  useCoreClient,
   useProject,
   usePcbPreviewRevision,
   pcbSvgHasNativeCoordinates,
@@ -88,7 +88,6 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
   const render = useRunTool();
   const comments = useBoardComments(projectId);
   const { pin, patch } = useBoardCommentMutations(projectId);
-  const client = useCoreClient();
   const [commentMode, setCommentMode] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draftPoint, setDraftPoint] = useState<SvgPoint | null>(null);
@@ -96,8 +95,6 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
   const [ref, setRef] = useState("");
   const [net, setNet] = useState("");
   const [pad, setPad] = useState("");
-  const [asking, setAsking] = useState(false);
-  const [askError, setAskError] = useState<string | null>(null);
 
   useEffect(() => { setCanvasPoint(null); setNativeEditBusy(false); }, [projectId, kind]);
   const view = kind as CommentView;
@@ -138,39 +135,25 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
     requestAnimationFrame(() => commentTrigger.current?.focus());
   };
 
-  const askAgent = async (targets: BoardComment[]) => {
-    if (asking || targets.length === 0) return;
-    setAsking(true);
-    setAskError(null);
-    try {
-      const prompt = buildCommentsAskPrompt(targets);
-      const threadId = useUiStore.getState().activeThreadId;
-      if (threadId) {
-        await client.sendMessage(threadId, { content: prompt });
-      } else {
-        useUiStore.getState().setDraft(newChatDraftKey(useUiStore.getState().activeProjectId), prompt);
-        useUiStore.getState().focusComposer();
-      }
-    } catch (error) {
-      setAskError(error instanceof Error ? error.message : "Could not send the pinned comments. Try again.");
-    } finally {
-      setAsking(false);
-    }
+  const askAgent = (targets: BoardComment[]) => {
+    if (!projectId || targets.length === 0) return;
+    askAboutSurface({ projectId, priority: 20, label: `${kind === "pcb" ? "PCB" : "Schematic"} · Pinned comments`, details: JSON.stringify({ view: kind, source: kind === "pcb" ? "board.kicad_pcb" : "board.kicad_sch", comments: targets.map(comment => ({ id: comment.id, question: comment.question, anchor: comment.anchor })), sourceStatus: "Inspect the saved source before answering; pin locations are not validation results." }) }, buildCommentsAskPrompt(targets));
   };
 
-  const savePin = async () => {
+  const savePin = () => {
     if (!draftPoint || !question.trim()) return;
-    const created = await pin.mutateAsync({
+    pin.mutate({
       question: question.trim(),
       anchor: commentPinAnchor(view, draftPoint, {
         ...(ref.trim() ? { ref: ref.trim() } : {}),
         ...(net.trim() ? { net: net.trim() } : {}),
         ...(pad.trim() ? { pad: pad.trim() } : {}),
       }, nativeCoordinates),
-    });
-    setSelectedId(created.comment.id);
-    resetCompose();
-    setCommentMode(true);
+    }, { onSuccess: created => {
+      setSelectedId(created.comment.id);
+      resetCompose();
+      setCommentMode(true);
+    } });
   };
   const refreshPreview = () => {
     if (!projectId || !scopeReady || useUiStore.getState().activeProjectId !== projectId) return;
@@ -317,11 +300,12 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
                 </label>
                 </div></details>
                 <div className="flex gap-1">
-                  <Button size="sm" variant="primary" disabled={!question.trim() || pin.isPending} onClick={() => void savePin()}>
-                    Save pin
+                  <Button size="sm" variant="primary" disabled={!question.trim() || pin.isPending} onClick={savePin}>
+                    {pin.isPending ? "Saving pin…" : "Save pin"}
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={resetCompose}>Cancel</Button>
+                  <Button size="sm" variant="ghost" disabled={pin.isPending} onClick={resetCompose}>Cancel</Button>
                 </div>
+                {pin.isError && <ErrorNotice error={pin.error} />}
               </>
             )}
             {selected && !draftPoint && (
@@ -338,12 +322,12 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
                 )}
                 <div className="flex flex-wrap gap-1">
                   {selected.status !== "resolved" && (
-                    <Button size="sm" onClick={() => void patch.mutateAsync({ commentId: selected.id, patch: { status: "resolved" } })}>
+                    <Button size="sm" disabled={patch.isPending} onClick={() => patch.mutate({ commentId: selected.id, patch: { status: "resolved" } })}>
                       Resolve
                     </Button>
                   )}
                   {selected.status === "resolved" && (
-                    <Button size="sm" onClick={() => void patch.mutateAsync({ commentId: selected.id, patch: { status: "open" } })}>
+                    <Button size="sm" disabled={patch.isPending} onClick={() => patch.mutate({ commentId: selected.id, patch: { status: "open" } })}>
                       Reopen
                     </Button>
                   )}
@@ -355,11 +339,12 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
                 <Button size="sm" onClick={beginPin}>Add another pin</Button>
                 {pendingPins.length > 0 ? <>
                   <p className="text-[11px] text-muted">Send all {pendingPins.length} unanswered pin{pendingPins.length === 1 ? "" : "s"} in this view as one request.</p>
-                  <Button size="sm" variant="primary" disabled={asking} onClick={() => void askAgent(pendingPins)}>
-                    {asking ? "Sending…" : `Ask agent about ${pendingPins.length} pin${pendingPins.length === 1 ? "" : "s"}`}
+                  <Button size="sm" variant="primary" onClick={() => askAgent(pendingPins)}>
+                    {`Ask fabPlane about ${pendingPins.length} pin${pendingPins.length === 1 ? "" : "s"}`}
                   </Button>
-                </> : selected && <Button size="sm" disabled={asking} onClick={() => void askAgent([selected])}>{asking ? "Sending…" : "Ask again about this pin"}</Button>}
-                {askError && <p role="alert" className="text-xs text-danger">{askError}</p>}
+                </> : selected && <Button size="sm" onClick={() => askAgent([selected])}>Ask again about this pin</Button>}
+                <p className="text-[11px] text-muted">Review the question in Ask fabPlane, then send when ready.</p>
+                {patch.isError && <ErrorNotice error={patch.error} />}
               </div>
             )}
           </aside>
