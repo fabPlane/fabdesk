@@ -57,9 +57,13 @@ const guidance: Record<string, { title: string; destination: Destination; action
 export function EnclosureFitReview({
   report,
   onNavigate,
+  onShowIssue,
+  focusedIssue,
 }: {
   report: MechanicalFitReport;
   onNavigate: (step: Destination) => void;
+  onShowIssue: (issue: MechanicalFitIssue) => void;
+  focusedIssue: MechanicalFitIssue | null;
 }) {
   const blockers = report.issues.filter((i) => i.severity === "error");
   const notes = report.issues.filter(
@@ -77,7 +81,7 @@ export function EnclosureFitReview({
         : detail;
     return (
       <article
-        className={`fd-fit-card ${issue.severity === "error" ? "is-blocker" : "is-review"}`}
+        className={`fd-fit-card ${issue.severity === "error" ? "is-blocker" : "is-review"}${focusedIssue === issue ? " is-focused" : ""}`}
         key={`${issue.code}-${index}`}
       >
         <div className="fd-fit-card-heading">
@@ -94,16 +98,29 @@ export function EnclosureFitReview({
           </span>
         )}
         <p>{description}</p>
-        {info && (
-          <button
-            type="button"
-            className="fd-fit-link"
-            onClick={() => onNavigate(info.destination)}
-          >
-            {info.action}
-            <Icon name="chevronRight" aria-hidden="true" />
-          </button>
-        )}
+        <div className="fd-fit-card-actions">
+          {!!issue.regions?.length && (
+            <button
+              type="button"
+              className="fd-fit-locate"
+              aria-pressed={focusedIssue === issue}
+              onClick={() => onShowIssue(issue)}
+            >
+              <Icon name="search" aria-hidden="true" />
+              Show in 3D
+            </button>
+          )}
+          {info && (
+            <button
+              type="button"
+              className="fd-fit-link"
+              onClick={() => onNavigate(info.destination)}
+            >
+              {info.action}
+              <Icon name="chevronRight" aria-hidden="true" />
+            </button>
+          )}
+        </div>
       </article>
     );
   }

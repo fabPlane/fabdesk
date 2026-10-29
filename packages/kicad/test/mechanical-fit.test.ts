@@ -59,6 +59,37 @@ describe("mechanical fit constraints", () => {
     expect(v.width).toBeCloseTo(20);
     expect(v.depth).toBeCloseTo(40);
   });
+  test("fit highlights locate transformed parts, obstacles and overflow in world millimetres", () => {
+    const d = design();
+    d.boards[0]!.rotation = 90;
+    d.boards[0]!.x = 30;
+    d.obstacles = [{ name: "Battery", x: 19, y: 9, z: 6.6, width: 2, depth: 2, height: 4 }];
+    const r = checkMechanicalFit(d, boards(d));
+    const issue = r.issues.find((i) => i.code === "obstacle" && i.message.includes("R1"))!;
+    expect(issue.regions?.map((v) => v.name)).toEqual(["R1", "Battery"]);
+    expect(issue.regions![0]!.x).toBeCloseTo(19);
+    expect(issue.regions![0]!.y).toBeCloseTo(9);
+    expect(r.issues.find((i) => i.code === "outside-space")?.regions?.[0]?.depth).toBeCloseTo(40);
+    expect(r.issues.find((i) => i.code === "coverage")?.regions).toBeUndefined();
+    d.obstacles = [];
+    d.boards[0]!.rotation = 0;
+    d.boards[0]!.x = 0;
+    expect(checkMechanicalFit(d, boards(d)).issues.flatMap((i) => i.regions ?? [])).toEqual([]);
+  });
+  test("clearance-only conflicts have highlights and both colliding boards are located", () => {
+    const d = design();
+    d.obstacles = [{ name: "Near part", x: 11.5, y: 9, z: 6.7, width: 1, depth: 1, height: 2 }];
+    expect(
+      checkMechanicalFit(d, boards(d)).issues.some(
+        (i) => i.code === "obstacle" && i.regions?.[0]?.name === "R1",
+      ),
+    ).toBe(true);
+    d.boards.push({ ...d.boards[0]!, path: "second.kicad_pcb", x: 20 });
+    const r = checkMechanicalFit(d, boards(d));
+    const regions = r.issues.find((i) => i.code === "board-collision")!.regions!;
+    expect(regions.some((v) => v.name === "PCB" && v.x === 0)).toBe(true);
+    expect(regions.some((v) => v.name === "PCB" && v.x === 20)).toBe(true);
+  });
   test("detects overlapping boards and mounting posts without matching holes", () => {
     const d = design();
     d.boards.push({ ...d.boards[0]!, path: "second.kicad_pcb" });

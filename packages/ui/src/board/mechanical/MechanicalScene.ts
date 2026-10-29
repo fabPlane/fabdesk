@@ -6,6 +6,8 @@ import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { modelFormat, type MechanicalItem } from "@fabdesk/client-core";
+import type { MechanicalBox } from "@fabdesk/protocol";
+import { createFitOverlay } from "./fit-overlay";
 
 export type BoardGeometry = {
   outline: { minX: number; minY: number; maxX: number; maxY: number };
@@ -41,6 +43,7 @@ type Callbacks = {
 function disposeObject(object: T.Object3D) {
   object.traverse((o) => {
     if (!(o instanceof T.Mesh || o instanceof T.LineSegments || o instanceof T.Line)) return;
+    if (o instanceof T.InstancedMesh) o.dispose();
     o.geometry.dispose();
     for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
       for (const v of Object.values(m))
@@ -79,6 +82,8 @@ export class MechanicalScene {
     { opacity: number; transparent: boolean; depthWrite: boolean }
   >();
   private measurement: T.Group | null = null;
+  private fitOverlay: T.Group | null = null;
+  private spaceOutline: T.LineSegments | null = null;
   private point: T.Vector3 | null = null;
   private pointerStart = new T.Vector2();
   private draggedGizmo = false;
@@ -603,6 +608,53 @@ export class MechanicalScene {
     this.translucent = value;
     this.updateTransforms();
   }
+  setFitOverlay(regions: MechanicalBox[], space: MechanicalBox | null) {
+    if (this.fitOverlay) {
+      this.scene.remove(this.fitOverlay);
+      disposeObject(this.fitOverlay);
+    }
+    if (this.spaceOutline) {
+      this.scene.remove(this.spaceOutline);
+      disposeObject(this.spaceOutline);
+    }
+    this.fitOverlay = createFitOverlay(regions);
+    this.scene.add(this.fitOverlay);
+    this.spaceOutline = null;
+    if (space) {
+      const geometry = new T.BoxGeometry(space.width, space.depth, space.height);
+      this.spaceOutline = new T.LineSegments(
+        new T.EdgesGeometry(geometry),
+        new T.LineDashedMaterial({
+          color: 0x7eacbc,
+          dashSize: 2,
+          gapSize: 1,
+          transparent: true,
+          opacity: 0.7,
+          depthTest: false,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+      );
+      geometry.dispose();
+      this.spaceOutline.computeLineDistances();
+      this.spaceOutline.position.set(
+        space.x + space.width / 2,
+        space.y + space.depth / 2,
+        space.z + space.height / 2,
+      );
+      this.spaceOutline.renderOrder = 19;
+      this.scene.add(this.spaceOutline);
+    }
+    this.render();
+  }
+  focusFitRegions(regions: MechanicalBox[]) {
+    const box = new T.Box3();
+    for (const r of regions) {
+      box.expandByPoint(new T.Vector3(r.x, r.y, r.z));
+      box.expandByPoint(new T.Vector3(r.x + r.width, r.y + r.depth, r.z + r.height));
+    }
+    if (!box.isEmpty()) this.fitBox(box.expandByScalar(3));
+  }
   bounds(id: string) {
     const m = this.models.get(id);
     if (!m) return null;
@@ -611,7 +663,11 @@ export class MechanicalScene {
   fit() {
     const box = new T.Box3();
     for (const m of this.models.values()) if (m.object.visible) box.expandByObject(m.object);
+    if (this.spaceOutline) box.expandByObject(this.spaceOutline);
     if (box.isEmpty()) return;
+    this.fitBox(box);
+  }
+  private fitBox(box: T.Box3) {
     const center = box.getCenter(new T.Vector3()),
       size = box.getSize(new T.Vector3()).length();
     const aspect = Math.min(1, this.camera.aspect);
@@ -656,6 +712,8 @@ export class MechanicalScene {
     this.orbit.dispose();
     this.gizmo.dispose();
     this.clearMeasure();
+    if (this.fitOverlay) disposeObject(this.fitOverlay);
+    if (this.spaceOutline) disposeObject(this.spaceOutline);
     this.scene.traverse((o) => {
       if (o instanceof T.Mesh || o instanceof T.LineSegments) o.geometry.dispose();
     });

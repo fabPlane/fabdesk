@@ -4,6 +4,10 @@ Open **CAD → Enclosure**. The guided workspace has four tabs: **Start**, **Spa
 
 The Review tab separates required fixes from visual checks using labelled status cards, icons, board/blocker counts and contextual navigation. Raw diagnostic text remains under **Technical details**. **Check before printing** is a short checklist rather than a log paragraph. No status claims the design is certified for manufacture.
 
+Fit checks run automatically after edits pause. Located blockers highlight affected parts/obstacles in red, including insufficient clearance, board-to-board conflicts, overflow, mounting-post problems and out-of-bounds openings. **Show in 3D** isolates and frames a finding; **Show all issues** restores the overview. The dashed outline shows the usable interior. Both overlays can be toggled. Red is an estimated risk envelope, not an exact mesh intersection; imported-shell collisions are still outside the automatic checks.
+
+Back and destination-labelled Next actions make navigation explicit. Board placement fields describe left/right, front/back, height and rotation. Old check responses are discarded after edits, and changing the design clears the previous preview and highlights while the new check runs. All known board sources are displayed in the shared coordinate frame.
+
 ## Workflows
 
 - **New enclosure:** dimensions start from the project PCB. Adjust the rectangular interior, wall/floor/lid thickness, clearance, mounting posts and connector openings. Additional project PCBs can be positioned in the same coordinate frame. Preview the generated base and lid before applying.
@@ -42,7 +46,7 @@ All mechanical values use millimetres, PCB XY coordinates and Z up. Exported CAD
 ## Validation on Windows, 2026-10-29
 
 - Root typecheck and desktop production build pass; no source maps in desktop output.
-- 43 focused CAD/kernel/fit tests pass, including stale-preview refusal, collision gating, immutable ZIP hashes, path/schema checks, native transaction delegation and outline/cutout preservation. Native bridge behavior in these automated tests uses mocks.
+- Latest focused run: **51 CAD/kernel/fit/scene tests pass**, including transformed risk regions, clearance-only and board-to-board conflicts, clearing resolved risks, batched overlay geometry, stale-preview refusal, collision gating, immutable ZIP hashes, path/schema checks, native transaction delegation and outline/cutout preservation. Native bridge behavior in these automated tests uses mocks.
 - Full root run: **1,875 pass / 35 fail**. The failure names match the pre-change `mechanical-full-tests.log` baseline exactly. Root tests are not green.
 - Live VAIO A5 copy: preview and ZIP export pass; dimensions invalidate preview; a deliberately overlapping obstacle disables Apply; the original VAIO bottom-cover STL displays in the existing-case flow.
 - Real FreeCAD 1.1 geometry test: the generated modification script produced a valid solid/STEP/STL; point-containment assertions verified the cavity, through-opening, bored mounting post and protected obstacle. The source solid remained unchanged. This verifies the solid operation, not the desktop bridge integration.
@@ -51,6 +55,12 @@ All mechanical values use millimetres, PCB XY coordinates and Z up. Exported CAD
 ## Running-app evidence
 
 ### Visual fit review
+
+| Red collision / clearance risks | Displaced board outside the usable space |
+| --- | --- |
+| ![Affected parts highlighted red](screenshots/mechanical-workspace/17-fit-risks-3d.png) | ![Automatic overflow highlights](screenshots/mechanical-workspace/18-fit-overflow-3d.png) |
+
+Live follow-up: automatic rechecks, stale-response rejection after rapid edits, issue focus/reset, overlay toggles, collision-blocked Apply and cleared highlights after restoring a board all pass. A 778 px workspace has no inspector/footer overflow or toolbar/legend overlap. Two batched drawing objects handle 2,000 distinct test regions; the scene remains demand-rendered.
 
 | Review notes | Blocking collisions |
 | --- | --- |

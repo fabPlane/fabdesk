@@ -63,8 +63,21 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
   const s = d.space,
     c = s.clearance;
   const issues: MechanicalFitIssue[] = [];
-  const add = (code: string, message: string, severity: MechanicalFitIssue["severity"] = "error") =>
-    issues.push({ code, message, severity });
+  const add = (
+    code: string,
+    message: string,
+    severity: MechanicalFitIssue["severity"] = "error",
+    regions: MechanicalBox[] = [],
+  ) => issues.push({ code, message, severity, ...(regions.length ? { regions } : {}) });
+  const mountRegion = (m: MechanicalDesign["mounts"][number]): MechanicalBox => ({
+    name: "Mounting post",
+    x: m.x - m.outer / 2,
+    y: m.y - m.outer / 2,
+    z: s.floor,
+    width: m.outer,
+    depth: m.outer,
+    height: m.height,
+  });
   if (!d.confirmed)
     add("dimensions", "Confirm enclosure dimensions and units before building or exporting.");
   if (!boards.length)
@@ -85,10 +98,18 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
         v.z < s.floor - eps ||
         v.z + v.height > s.floor + s.height - c + eps
       )
-        add("outside-space", `${label}: ${v.name} exceeds the usable space or required clearance.`);
+        add(
+          "outside-space",
+          `${label}: ${v.name} exceeds the usable space or required clearance.`,
+          "error",
+          [v],
+        );
       for (const o of d.obstacles)
         if (boxesOverlap(v, o, c))
-          add("obstacle", `${label}: ${v.name} overlaps or is too close to ${o.name}.`);
+          add("obstacle", `${label}: ${v.name} overlaps or is too close to ${o.name}.`, "error", [
+            v,
+            o,
+          ]);
     }
     for (const warning of b.features.warnings)
       add("board-geometry", `${label}: ${warning}`, "review");
@@ -101,9 +122,16 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
         return Math.hypot(p.x - m.x, p.y - m.y) < 0.15 && h.diameterMm + eps >= m.diameter;
       });
       if (!hole)
-        add("mount-hole", `${label}: mounting point at ${m.x}, ${m.y} has no matching PCB hole.`);
+        add(
+          "mount-hole",
+          `${label}: mounting point at ${m.x}, ${m.y} has no matching PCB hole.`,
+          "error",
+          [mountRegion(m)],
+        );
       if (s.floor + m.height > b.placement.z + 0.05)
-        add("mount-height", `${label}: mounting point intersects the PCB.`);
+        add("mount-height", `${label}: mounting point intersects the PCB.`, "error", [
+          mountRegion(m),
+        ]);
     }
     for (const connector of b.features.connectors) {
       const p = boardPoint(b, connector.x, connector.y);
@@ -132,10 +160,15 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
   }
   for (let i = 0; i < all.length; i++)
     for (let j = i + 1; j < all.length; j++) {
-      if (all[i]!.volumes.some((a) => all[j]!.volumes.some((b) => boxesOverlap(a, b, c))))
+      const left = all[i]!.volumes.filter((a) =>
+        all[j]!.volumes.some((b) => boxesOverlap(a, b, c)),
+      );
+      if (left.length)
         add(
           "board-collision",
           `${all[i]!.b.placement.path} and ${all[j]!.b.placement.path} have overlapping clearance envelopes.`,
+          "error",
+          [...left, ...all[j]!.volumes.filter((b) => left.some((a) => boxesOverlap(a, b, c)))],
         );
     }
   for (const o of d.openings) {
@@ -148,7 +181,26 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
       o.z < s.floor ||
       o.z + o.height > s.floor + s.height
     )
-      add("opening-bounds", `${o.name} extends beyond its wall. Resize or reposition it.`);
+      add(
+        "opening-bounds",
+        `${o.name} extends beyond its wall. Resize or reposition it.`,
+        "error",
+        [
+          {
+            name: o.name,
+            x: vertical
+              ? o.wall === "minX"
+                ? s.x - s.wall
+                : s.x + s.width
+              : o.offset - o.width / 2,
+            y: vertical ? o.offset - o.width / 2 : o.wall === "minY" ? s.y - s.wall : s.y + s.depth,
+            z: o.z,
+            width: vertical ? s.wall : o.width,
+            depth: vertical ? o.width : s.wall,
+            height: o.height,
+          },
+        ],
+      );
   }
   for (const m of d.mounts)
     if (
@@ -157,7 +209,9 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
       m.y - m.outer / 2 < s.y ||
       m.y + m.outer / 2 > s.y + s.depth
     )
-      add("mount-bounds", "A mounting point extends outside the interior.");
+      add("mount-bounds", "A mounting point extends outside the interior.", "error", [
+        mountRegion(m),
+      ]);
   add(
     "coverage",
     "Checks use PCB outlines, component bounding boxes and estimated heights. Review actual component heights, cables, fasteners and manufacturing tolerances.",

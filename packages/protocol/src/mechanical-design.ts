@@ -83,7 +83,13 @@ export const MechanicalDesignSchema = z
   .refine((d) => d.mode !== "imported" || d.source !== null, "Choose the enclosure file first");
 export type MechanicalDesign = z.infer<typeof MechanicalDesignSchema>;
 export type MechanicalBox = z.infer<typeof MechanicalBoxSchema>;
-export type MechanicalFitIssue = { severity: "error" | "review"; code: string; message: string };
+export type MechanicalFitIssue = {
+  severity: "error" | "review";
+  code: string;
+  message: string;
+  /** Affected conservative envelopes in the same world-mm frame as the design. */
+  regions?: MechanicalBox[];
+};
 export type MechanicalFitReport = {
   status: "blocked" | "review";
   issues: MechanicalFitIssue[];

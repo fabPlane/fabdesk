@@ -239,7 +239,11 @@ export const cad_fit = defineTool({
       }
       const snap = await snapshot(dir, design);
       if (args.action === "check")
-        return ok("Fit review", { report: snap.report, revision: snap.revision });
+        return ok("Fit review", {
+          report: snap.report,
+          revision: snap.revision,
+          boards: snap.boards,
+        });
       if (args.action === "edit_board") {
         if (!design.confirmed)
           throw new ToolError(

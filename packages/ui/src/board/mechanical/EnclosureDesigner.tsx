@@ -3,6 +3,7 @@ import {
   MechanicalDesignSchema,
   type MechanicalDesign,
   type MechanicalFitReport,
+  type MechanicalFitIssue,
 } from "@fabdesk/protocol";
 import {
   useCoreClient,
@@ -41,12 +42,14 @@ const steps = ["Start", "Space", "PCB", "Review"] as const;
 type Step = (typeof steps)[number];
 function NumberField({
   label,
+  inputLabel,
   value,
   onChange,
   min = -10000,
   unit = "mm",
 }: {
   label: string;
+  inputLabel?: string;
   value: number;
   onChange: (v: number) => void;
   min?: number;
@@ -59,7 +62,7 @@ function NumberField({
       <span>{label}</span>
       <div>
         <input
-          aria-label={label}
+          aria-label={inputLabel ?? label}
           type="number"
           step="0.1"
           min={min}
@@ -103,6 +106,12 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
     running = useRef(false),
     importInput = useRef<HTMLInputElement>(null);
   const [modelSources, setModelSources] = useState<SceneModel[]>([]);
+  const [fitBoards, setFitBoards] = useState<Result["boards"]>(undefined);
+  const [fitState, setFitState] = useState(""),
+    [fitError, setFitError] = useState("");
+  const [showRisks, setShowRisks] = useState(true),
+    [showSpace, setShowSpace] = useState(true);
+  const [focusedIssue, setFocusedIssue] = useState<MechanicalFitIssue | null>(null);
   const sourceBuffers = useRef(new Map<string, ArrayBuffer>());
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -120,6 +129,39 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
   async function call(action: string, extra: Record<string, unknown> = {}) {
     return unpack(await client.callTool("cad_fit", { projectId, action, ...extra }));
   }
+  // Debounce edits; old responses never paint a newer design or replace a preview's report.
+  useEffect(() => {
+    if (!design || preview || busy) return;
+    const parsed = MechanicalDesignSchema.safeParse(design);
+    setFocusedIssue(null);
+    setReport(null);
+    setFitError("");
+    if (!parsed.success) {
+      setFitState("Complete the dimensions to check fit");
+      return;
+    }
+    let cancelled = false;
+    setFitState("Checking fit…");
+    const timer = setTimeout(() => {
+      void call("check", { design: parsed.data })
+        .then((r) => {
+          if (cancelled) return;
+          setReport(r.report ?? null);
+          setFitBoards(r.boards);
+          setFitState("Fit checked automatically");
+        })
+        .catch((e) => {
+          if (!cancelled) {
+            setFitState("Fit check unavailable");
+            setFitError(enclosureErrorMessage(e));
+          }
+        });
+    }, 450);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [design, board, preview, busy, client, projectId]);
   async function run(label: string, action: () => Promise<void>) {
     if (running.current) return;
     running.current = true;
@@ -184,6 +226,39 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
     };
   }, [modelSources]);
   useEffect(() => {
+    const s = design?.space;
+    const validSpace =
+      s &&
+      [s.x, s.y, s.floor, s.width, s.depth, s.height].every(Number.isFinite) &&
+      s.width > 0 &&
+      s.depth > 0 &&
+      s.height > 0;
+    scene.current?.setFitOverlay(
+      showRisks
+        ? focusedIssue
+          ? (focusedIssue.regions ?? [])
+          : (report?.issues.filter((i) => i.severity === "error").flatMap((i) => i.regions ?? []) ??
+            [])
+        : [],
+      showSpace && validSpace
+        ? {
+            name: "Usable interior",
+            x: s.x,
+            y: s.y,
+            z: s.floor,
+            width: s.width,
+            depth: s.depth,
+            height: s.height,
+          }
+        : null,
+    );
+  }, [report, focusedIssue, showRisks, showSpace, design]);
+  function showIssue(issue: MechanicalFitIssue) {
+    setFocusedIssue(issue);
+    setShowRisks(true);
+    scene.current?.focusFitRegions(issue.regions ?? []);
+  }
+  useEffect(() => {
     if (preview || !design) return;
     let cancelled = false;
     const models: SceneModel[] = design.obstacles.map((volume, i) => ({
@@ -191,20 +266,23 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
       volume,
       origin: [0, 0, 0],
     }));
-    const placement = design.boards.find((b) => b.path === "board.kicad_pcb");
-    if (placement && board) {
-      const item = mechanicalItem("@current-board", "board", "PCB envelope");
+    const knownBoards = new Map((fitBoards ?? []).map((b) => [b.placement.path, b.features]));
+    if (board && !knownBoards.has("board.kicad_pcb")) knownBoards.set("board.kicad_pcb", board);
+    for (const placement of design.boards) {
+      const features = knownBoards.get(placement.path);
+      if (!features) continue;
+      const item = mechanicalItem(`@current-${placement.path}`, "board", "PCB envelope");
       item.position = [placement.x, placement.y, placement.z];
       item.rotation = [0, 0, placement.rotation];
       models.push({
         item,
         board: {
-          outline: board.outline,
-          holes: board.holes,
-          parts: board.components ?? [],
-          connectors: board.connectors ?? [],
+          outline: features.outline,
+          holes: features.holes,
+          parts: features.components ?? [],
+          connectors: features.connectors ?? [],
         },
-        thickness: board.thicknessMm,
+        thickness: features.thicknessMm,
         origin: [0, 0, 0],
       });
     }
@@ -233,12 +311,13 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [design, board, preview, client, projectId]);
+  }, [design, board, fitBoards, preview, client, projectId]);
   const edit = (next: MechanicalDesign) => {
     setDesign(next);
     setDirty(true);
     setPreview(null);
     setReport(null);
+    setFocusedIssue(null);
     setArchive(null);
     setEditReview(null);
     setNotice("");
@@ -262,6 +341,9 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
     if (!mounted.current) return;
     setPreview(r);
     setReport(r.report ?? null);
+    setFitError("");
+    setFitState("Fit checked with preview");
+    setFocusedIssue(null);
     const models: SceneModel[] = design.obstacles.map((volume, i) => ({
       item: mechanicalItem(`@obstacle-${i}`, "import", volume.name),
       volume,
@@ -345,6 +427,7 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
           : { holes: [hole] };
     await call("edit_board", { design, expectedPcbRevision: board.pcbRevision, edit: change });
     const r = await call("status");
+    setFitBoards(undefined);
     setBoard(r.board ?? null);
     setEditReview(null);
     setPreview(null);
@@ -757,12 +840,22 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
                   </p>
                   {design.boards.map((b, i) => (
                     <details key={i} open>
-                      <summary>{b.path.split("/").at(-1)}</summary>
+                      <summary title={b.path}>
+                        {b.path === "board.kicad_pcb" ? "Project PCB" : enclosureFileLabel(b.path)}
+                      </summary>
                       <div className="fd-case-grid">
                         {(["x", "y", "z", "rotation"] as const).map((k) => (
                           <NumberField
                             key={k}
-                            label={`Board ${i + 1} ${k}`}
+                            label={
+                              {
+                                x: "Left / right (X)",
+                                y: "Front / back (Y)",
+                                z: "Height (Z)",
+                                rotation: "Rotation",
+                              }[k]
+                            }
+                            inputLabel={`Board ${i + 1} ${k}`}
                             unit={k === "rotation" ? "°" : "mm"}
                             value={b[k]}
                             onChange={(v) =>
@@ -925,13 +1018,37 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
                     onClick={() =>
                       void run("Checking clearances…", async () => {
                         const r = await call("check", { design });
+                        setFocusedIssue(null);
+                        setFitBoards(r.boards);
+                        setFitError("");
+                        setFitState("Fit checked");
+                        if (preview && r.revision !== preview.revision) {
+                          setPreview(null);
+                          setArchive(null);
+                          setNotice("The design changed. Preview again before applying.");
+                        }
                         setReport(r.report ?? null);
                       })
                     }
                   >
                     Check fit
                   </button>
-                  {report && <EnclosureFitReview report={report} onNavigate={setStep} />}
+                  <p className="fd-case-fit-state" role="status">
+                    {preview ? "Fit checked with preview" : fitState}
+                  </p>
+                  {fitError && (
+                    <p role="alert" className="fd-case-message is-error">
+                      {fitError}
+                    </p>
+                  )}
+                  {report && (
+                    <EnclosureFitReview
+                      report={report}
+                      onNavigate={setStep}
+                      onShowIssue={showIssue}
+                      focusedIssue={focusedIssue}
+                    />
+                  )}
                   {!preview && (
                     <p className="fd-case-hint">
                       Next: preview your case. If you change the design, preview it again before
@@ -964,6 +1081,15 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
                   : "Confirm dimensions to preview")}
           </span>
           <div>
+            {step !== "Start" && (
+              <button
+                className="fd-case-back"
+                disabled={actionsDisabled}
+                onClick={() => setStep(steps[steps.indexOf(step) - 1]!)}
+              >
+                Back
+              </button>
+            )}
             <button
               disabled={actionsDisabled || !dirty}
               onClick={() => void run("Saving settings…", save)}
@@ -976,7 +1102,7 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
                 disabled={actionsDisabled}
                 onClick={() => setStep(steps[steps.indexOf(step) + 1]!)}
               >
-                Continue
+                {step === "Start" ? "Next: space" : step === "Space" ? "Next: PCB" : "Next: review"}
               </button>
             ) : archive ? (
               <button
@@ -1006,15 +1132,55 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
           </div>
         </footer>
       </aside>
-      <div className="fd-case-view-tools">
-        {preview?.meshes?.lid && (
-          <button aria-pressed={openLid} onClick={() => setOpenLid(!openLid)}>
-            {openLid ? "Close lid" : "Open lid"}
+      <div className="fd-case-hud">
+        <div className="fd-case-view-tools">
+          <button aria-pressed={showRisks} onClick={() => setShowRisks(!showRisks)}>
+            Fit risks
           </button>
-        )}
-        <button aria-pressed={transparent} onClick={() => setTransparent(!transparent)}>
-          See through
-        </button>
+          <button aria-pressed={showSpace} onClick={() => setShowSpace(!showSpace)}>
+            Usable space
+          </button>
+          {preview?.meshes?.lid && (
+            <button aria-pressed={openLid} onClick={() => setOpenLid(!openLid)}>
+              {openLid ? "Close lid" : "Open lid"}
+            </button>
+          )}
+          <button aria-pressed={transparent} onClick={() => setTransparent(!transparent)}>
+            See through
+          </button>
+        </div>
+        <div className="fd-case-fit-legend" aria-label="Fit overlay legend">
+          <span>
+            <i className="is-risk" />
+            Red: affected parts / clearance risk
+          </span>
+          {showSpace && (
+            <span>
+              <i className="is-space" />
+              Dashed: usable interior
+            </span>
+          )}
+          <small>Estimated bounds · Not exact surface collisions</small>
+          {!preview && <small role="status">{fitState}</small>}
+          {focusedIssue ? (
+            <>
+              <strong>
+                Selected: {[...new Set(focusedIssue.regions?.map((r) => r.name))].join(", ")}
+              </strong>
+              <button
+                onClick={() => {
+                  setFocusedIssue(null);
+                  scene.current?.fit();
+                }}
+              >
+                Show all issues
+              </button>
+            </>
+          ) : report?.status === "blocked" && step !== "Review" ? (
+            <button onClick={() => setStep("Review")}>Review fit issues</button>
+          ) : null}
+          {!showRisks && <small>Red highlights hidden</small>}
+        </div>
       </div>
       <div className="fd-case-canvas-note">
         <strong>
