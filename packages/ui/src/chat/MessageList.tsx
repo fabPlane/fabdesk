@@ -10,6 +10,7 @@ import { useRunsStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
 import { Markdown } from "./Markdown";
+import { MessageAttachment } from "./MessageAttachment";
 import { ProjectImage } from "./ProjectImage";
 import { splitCompletedActivity } from "./completed-activity";
 import { RunActivity, WorkedActivity } from "./RunActivity";
@@ -78,15 +79,6 @@ export function ToolGroup({
   );
 }
 
-function ImagePart({ path }: { path: string }) {
-  const projectId = useUiStore((s) => s.activeProjectId);
-  return (
-    <div className="my-1.5">
-      <ProjectImage projectId={projectId} path={path} />
-    </div>
-  );
-}
-
 function AssistantText({ text, streaming = false }: { text: string; streaming?: boolean }) {
   const failure = splitAgentError(text);
   if (!failure) return <Markdown text={text} className={cn(streaming && "fd-caret")} />;
@@ -144,7 +136,7 @@ export function renderParts(m: Message, streaming: boolean): ReactNode[] {
         }
         break;
       case "image":
-        out.push(<ImagePart key={i} path={p.path} />);
+        out.push(<MessageAttachment key={i} path={p.path} mime={p.mime} />);
         break;
       case "approval":
         out.push(<PendingApprovalCard key={p.requestId} threadId={m.threadId} part={p} />);
@@ -238,7 +230,7 @@ export function MessageBubble({ message, streaming, latestReply = false }: { mes
             {message.parts
               .filter((p) => p.type === "image")
               .map((p, i) => (
-                <ImagePart key={i} path={(p as { path: string }).path} />
+                <MessageAttachment key={i} path={p.path} mime={p.mime} />
               ))}
           </>
         ) : (
