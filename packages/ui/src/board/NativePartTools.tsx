@@ -202,6 +202,7 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
           setOpen(false); ui.focusComposer();
         }}>Ask about {selection.part.ref}</Button>
         <p className="fd-native-part-note">Drag the target or use arrow keys to preview a move. Apply saves it.</p>
+        {selection && <details className="fd-native-part-details"><summary>More part actions</summary><p className="fd-native-part-note">Part replacement is not connected in this build. Position edits and the eligible single-edit revert remain separate.</p><Button size="sm" disabled>Replace {selection.part.ref}</Button></details>}
       </>}
       {message && <p role="status" className="fd-native-part-warning">{message}<BoardChecksButton projectId={projectId} {...(board ? { board } : {})} /></p>}
       {previewError && <details className="fd-native-part-note"><summary>Why couldn’t the preview update?</summary><p>{previewError}</p><p>Resolve the export error, then choose Update preview. The native placement is already saved.</p></details>}

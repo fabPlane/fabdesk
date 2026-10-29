@@ -1665,3 +1665,12 @@ NativeShare/Sync/History, localfallbackroutes, Escapefocus andcompactdialogs pas
 
 ![Pending sync structure](review-sync-structure-pending.png)
 ![Pending history at compact size](review-recovery-structure-compact.png)
+
+
+## Pending source and part actions have explicit homes
+
+Review→Design sources has requested Synchronization options; both directions are disabled and clearly not connected. Selected native part→More part actions shows the selected reference's pending replacement action. Neither appears by default. Existing native position/properties/limited revert remain separate and working; no replacement or reconciliation behavior is invented.
+
+Native realR1 selection, requesteddisclosures, disabledstates, compactlayout andClose/Escapefocus passed. No proposals/applies/sends;34protectedDonorfiles exact. UItypes/233tests912assertions passed. [Evidence](pending-native-actions-structure.json).
+
+![Replacement has a requested, explicitly pending home](selected-part-replacement-pending.png)

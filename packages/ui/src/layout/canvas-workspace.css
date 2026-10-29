@@ -807,3 +807,7 @@
 .fd-review-integration-dialog p { font-size:12px; line-height:1.65; color:var(--fd-muted); margin:8px 0 12px; }
 .fd-review-integration-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:20px; }
 .fd-review-integration-dialog .fd-review-integration-note { font-size:11px; margin-top:16px; }
+
+.fd-review-sync-options { margin-top:12px; font-size:12px; }
+.fd-review-sync-options summary { cursor:pointer; color:var(--fd-muted); }
+.fd-review-sync-options > div { display:flex; flex-wrap:wrap; gap:8px; }
