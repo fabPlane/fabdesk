@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { outputKind, outputLibrarySections, savedOutputs } from "./output-library";
+import { filterSavedOutputs, outputKind, outputLibrarySections, savedOutputs } from "./output-library";
 
 test("saved outputs include media/models/manufacturing without treating receipts, reports or sources as deliverables", () => {
   for (const path of ["renders/board.glb.revision.json", "reports/drc.json", "board.kicad_pcb", "mechanical/imports/id/case.stl", "exports/.temporary"]) expect(outputKind(path)).toBeNull();
@@ -76,4 +76,24 @@ test("nested declared outputs never borrow ownership from an available ancestor"
   expect(savedOutputs(files, [parent, child]).map(row => row.sourceId)).toEqual(["io"]);
   const rows = savedOutputs(files, [parent, { ...child, status: "missing" }]);
   expect(rows.find(row => row.path === files[1]!.path)).toMatchObject({ sourceId: "child", sourceName: "Child" });
+});
+
+
+test("output search intersects kind and exact qualified source without changing order or file identity", () => {
+  const files = [
+    { path: "boards/io/renders/pcb.svg", kind: "images" as const, sourceId: "io", sourceName: "I/O main", size: 4 },
+    { path: "boards/lcd/renders/pcb.svg", kind: "images" as const, sourceId: "lcd", sourceName: "LCD interface", size: 5 },
+    { path: "exports/io-reference.png", kind: "images" as const, size: 6 },
+    { path: "boards/io/exports/product-video.mp4", kind: "videos" as const, sourceId: "io", sourceName: "I/O main", size: 7 },
+  ];
+  const before = JSON.stringify(files);
+  expect(filterSavedOutputs(files, { query: "  PCB  I/O  " })).toEqual([files[0]!]);
+  expect(filterSavedOutputs(files, { kind: "images", sourceId: "io" })).toEqual([files[0]!]);
+  expect(filterSavedOutputs(files, { sourceId: "io" })).toEqual([files[0]!, files[3]!]);
+  expect(filterSavedOutputs(files, { sourceId: "IO" })).toEqual([]);
+  expect(filterSavedOutputs(files, { sourceId: null })).toEqual([files[2]!]);
+  expect(filterSavedOutputs(files, { query: "not-saved" })).toEqual([]);
+  expect(filterSavedOutputs(files, { kind: "all", query: "   " })).toEqual(files);
+  expect(filterSavedOutputs(files, { query: "LCD" })[0]).toBe(files[1]!);
+  expect(JSON.stringify(files)).toBe(before);
 });

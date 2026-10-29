@@ -31,3 +31,14 @@ export function outputLibrarySections<T extends { path: string; kind: OutputKind
   const paths = new Set(individual.map(file => file.path));
   return { cards: files.filter(file => !paths.has(file.path)), manufacturingFiles: individual };
 }
+
+/** Filter already-qualified outputs; never infer source membership from a search or file name. */
+export function filterSavedOutputs<T extends { path: string; kind: OutputKind; sourceId?: string; sourceName?: string }>(files: T[], options: { query?: string; kind?: OutputKind | "all"; sourceId?: string | null } = {}): T[] {
+  const terms = (options.query ?? "").trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  return files.filter(file => {
+    if (options.kind && options.kind !== "all" && file.kind !== options.kind) return false;
+    if (options.sourceId === null ? !!file.sourceId : options.sourceId !== undefined && file.sourceId !== options.sourceId) return false;
+    const text = [file.path, file.sourceId ?? "", file.sourceName ?? "", file.kind].join(" ").toLocaleLowerCase();
+    return terms.every(term => text.includes(term));
+  });
+}

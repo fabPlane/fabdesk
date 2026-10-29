@@ -1,5 +1,5 @@
 import { VideoSourceStatus, videoInputLabel } from "./VideoSourceStatus";
-import { outputLibrarySections, useVideoInputRevisions, videoInputsNeedReview } from "@fabdesk/client-core";
+import { filterSavedOutputs, outputLibrarySections, useVideoInputRevisions, videoInputsNeedReview } from "@fabdesk/client-core";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, useAssemblyPreviewRevisions, savedOutputs, useBoardSources, useBoardModelRevision, usePcbPreviewRevision, useEnclosureSourceRevision, useCoreClient, useProject, useRunTool, type OutputKind } from "@fabdesk/client-core";
 import { Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui";
@@ -17,6 +17,8 @@ const FILTERS = [{ id: "all", label: "All" }, { id: "images", label: "Images" },
 export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   const client = useCoreClient(), project = useProject(projectId), generate = useRunTool();
   const [filter, setFilter] = useState<OutputKind | "all">("all"), [selected, setSelected] = useState<string | null>(null);
+  const [query, setQuery] = useState(""), [sourceScope, setSourceScope] = useState("all");
+  const search = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null), [downloading, setDownloading] = useState(false), [error, setError] = useState<string | null>(null);
   const library = useRef<HTMLDivElement>(null), actions = useRef<HTMLDivElement>(null), manufacturingFilter = useRef<HTMLButtonElement>(null);
   const [actionPosition, setActionPosition] = useState({ left: 12, top: 150, maxWidth: 640 });
@@ -26,7 +28,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   const rootGenerationReady = sourceReady && !assembly && hasPcb && !project.isFetching && !project.isError;
   const memberPreviews = useAssemblyPreviewRevisions(projectId ?? "", assembly ? boardSources.data?.sources ?? [] : []);
   const memberModels = useAssemblyModelSummaries(projectId ?? "", assembly ? boardSources.data : undefined, !boardSources.isFetching && !boardSources.isError);
-  const outputs = savedOutputs(project.data?.files ?? [], assembly ? boardSources.data?.sources : []), active = outputs.find(file => file.path === selected), shown = outputs.filter(file => filter === "all" || file.kind === filter);
+  const outputs = savedOutputs(project.data?.files ?? [], assembly ? boardSources.data?.sources : []), active = outputs.find(file => file.path === selected), shown = filterSavedOutputs(outputs, { kind: filter, query, ...(sourceScope === "project" ? { sourceId: null } : sourceScope.startsWith("source:") ? { sourceId: sourceScope.slice(7) } : {}) });
   const sections = outputLibrarySections(shown, filter === "all");
   const modelRevision = useBoardModelRevision(projectId, sourceReady && !assembly && outputs.some(file => file.path === "renders/board.glb"));
   const pcbRevision = usePcbPreviewRevision(projectId, sourceReady && !assembly && outputs.some(file => file.path === "renders/pcb.svg"));
@@ -59,7 +61,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
     return { warning: false, label: "Source unverified" };
   };
   const visible = outputs.find(file => file.path === preview);
-  useEffect(() => { if (selected && !outputs.some(file => file.path === selected)) { setSelected(null); setPreview(null); } }, [project.data?.files, selected]);
+  useEffect(() => { if (selected && !shown.some(file => file.path === selected)) { setSelected(null); setPreview(null); } }, [project.data?.files, selected, query, filter, sourceScope]);
   useLayoutEffect(() => {
     if (!selected) return;
     const card = [...(library.current?.querySelectorAll<HTMLButtonElement>(".fd-output-card") ?? [])].find(element => element.dataset.path === selected);
@@ -119,7 +121,12 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
         <button onClick={() => create("files")}>Export files…</button>
       </WorkspaceMenu>
     </div>
-    <p className="sr-only">{shown.length} saved file{shown.length === 1 ? "" : "s"}{filter !== "all" ? ` · ${FILTERS.find(item => item.id === filter)?.label}` : ""}</p>
+    <div className="fd-output-discovery" aria-label="Find saved outputs">
+      <label className="fd-output-search"><Icon name="search" width={16} height={16} /><input ref={search} aria-label="Find saved outputs" placeholder="Find an output…" value={query} onChange={event => { setQuery(event.target.value); setSelected(null); setError(null); }} /></label>
+      {assembly && <label className="fd-output-scope">Source<select aria-label="Filter output source" value={sourceScope} onChange={event => { setSourceScope(event.target.value); setSelected(null); setError(null); }}><option value="all">All sources</option><option value="project">Project outputs</option>{boardSources.data?.sources.map(row => <option key={row.source.id} value={`source:${row.source.id}`}>{row.source.name}</option>)}{sourceScope.startsWith("source:") && !boardSources.data?.sources.some(row => `source:${row.source.id}` === sourceScope) && <option value={sourceScope} disabled>Source unavailable</option>}</select></label>}
+      <span role="status">{shown.length} of {outputs.length} saved files</span>
+      {(query || sourceScope !== "all" || filter !== "all") && <Button size="sm" variant="ghost" onClick={() => { setQuery(""); setSourceScope("all"); setFilter("all"); setSelected(null); setError(null); search.current?.focus(); }}>Clear filters</Button>}
+    </div>
     {generate.state.status === "running" && <p role="status" className="fd-output-feedback"><Spinner />Creating output…</p>}
     {(error || generate.state.error) && <p role="alert" className="fd-output-feedback">{error || generate.state.error}</p>}
     {active && <div ref={actions} style={actionPosition} className="fd-output-selected" data-testid="output-actions">
@@ -143,7 +150,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
     }}>
       <div className="fd-output-thumbnail"><Icon name="folderOpen" width={58} height={58} /><span>{sections.manufacturingFiles.length} FILES</span></div>
       <div className="fd-output-caption"><strong>Manufacturing files</strong><span>Individual Gerber, drill and DXF files</span><small>View all {sections.manufacturingFiles.length} files · Source unverified</small></div>
-    </button>}</div> : <div className="fd-output-empty"><h3>{filter === "all" ? "Your outputs will appear here" : "No saved files in this category"}</h3><p>Create images, a board model, a video or export files from the menu above.</p></div>}
+    </button>}</div> : <div className="fd-output-empty"><h3>{outputs.length ? "No outputs match these filters" : "Your outputs will appear here"}</h3><p>{outputs.length ? "Try another name or path, choose a different source, or clear the filters." : "Create images, a board model, a video or export files from the menu above."}</p></div>}
     <Dialog open={!!visible} onClose={() => setPreview(null)} title={visible ? visible.sourceName ? `${visible.sourceName} · ${basename(visible.path)}` : basename(visible.path) : "Output preview"} className="fd-output-preview-dialog">
       {visible && visible.kind !== "videos" && <p className="fd-output-preview-source" role="status" data-warning={sourceInfo(visible.path).warning}>{sourceInfo(visible.path).label}</p>}
       {visible && (visible.kind === "images" ? <ProjectImage projectId={projectId} path={visible.path} className="max-h-[70vh] w-full object-contain" /> : visible.kind === "videos" ? <><VideoSourceStatus projectId={projectId} path={visible.path} updating={false} /><ProjectVideo projectId={projectId} path={visible.path} className="max-h-[70vh]" /></> : <div className="fd-output-model-preview"><Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={visible.path} /></Suspense></div>)}

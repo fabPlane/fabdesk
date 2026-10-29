@@ -1601,3 +1601,13 @@ Native donor and Game Boy studies cover missing and present schematics, source-f
 
 ![Design sources before output updates](review-design-sources-first.png)
 ![Check evidence remains separate](review-checks-separated.png)
+
+
+## Find saved outputs by source and name
+
+Outputs Library now searches saved paths, source names/IDs and categories. Multi-board projects can scope to one declared source or project-level outputs. Category, source and search filters intersect without inferring new membership. Clear filters restores all files and search focus; filtering hides the previous selection toolbar. Large native manufacturing sets keep their existing grouping.
+
+Native VAIO search/source/category/no-match/clear/contextual-action/compact walkthrough passed;16 protected files and the real DRC report stayed exact. Core/UI types, client321tests1563assertions, UI233tests912assertions and focused9tests44assertions passed. No native generation/download or agent send was performed. [Evidence](output-discovery-native.json).
+
+![One source and its contextual output tools](outputs-source-filtered-actions.png)
+![Compact searchable output collection](outputs-discovery-compact.png)
