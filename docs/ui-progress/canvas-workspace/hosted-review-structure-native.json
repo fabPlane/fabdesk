@@ -1,0 +1,26 @@
+{
+  "target": "User-approved structure-first delegation milestone",
+  "feature": "Requested Review Changes Publish & sync home",
+  "nativeVerified": [
+    "Share review, KiCadpush/pull and Recovery/history states open onlywhenrequested",
+    "Eachstateexplicit Integrationpending and unfinished actionsdisabled",
+    "Browseprojectfilesopens existingFiles",
+    "Reviewlocalchangesreturns existing savedcomparison without generatingnewdiff",
+    "EscapeclosesShare and restoresmenu summary focus",
+    "History andtallerSyncdialogs fit960\u00d7720",
+    "34protectedDonorfiles exact"
+  ],
+  "validation": "UItypesPASS;233tests912assertions/0fail",
+  "boundaries": [
+    "Structureonly; no hostedstatusAPI/reviewlink/push/pull/generalundo implementation",
+    "No networkpublication/upload/sourceedit/remotePRchanges",
+    "Entriesremain available evenifDiffTab hasmissinghistory/memberunsupportedstate",
+    "Componentkeyedbyproject so requestedintegrationstate cannotcarryacrossprojectswitch"
+  ],
+  "screenshots": [
+    "review-sync-structure-pending.png",
+    "review-sharing-structure-pending.png",
+    "review-recovery-structure-compact.png",
+    "review-sync-structure-compact.png"
+  ]
+}

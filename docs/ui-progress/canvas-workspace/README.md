@@ -1655,3 +1655,13 @@ Actual VAIO Keyboard Review→definition→Review/Overview and compact long-prov
 ## Secondary-tool keyboard recovery
 
 Fixed a regression introduced by moving tools out of the primary tab list: when Routing/Artwork is active, primary tabs now retain a first keyboard stop without pretending PCB is selected. Native before: Shift+Tab skipped the group. After: it focuses unselected PCB; Right Arrow selects Schematic and keeps focus there. UItypes/233tests912assertions pass. [Evidence](primary-tab-focus-native.json).
+
+
+## Delegation-ready hosted review structure
+
+Review→Changes has a requested Publish & sync menu for Share for review, KiCadpush/pull and Recovery/history. Each opens an explicitly pending integration state with disabled unfinished actions and working local Changes/Files routes. No new top-level workspace or default pane is introduced. These are structural homes for coworkers; hosted APIs, publication and general undo are not implemented. The component is keyed by project and is available alongside missing-history/member-diff states.
+
+NativeShare/Sync/History, localfallbackroutes, Escapefocus andcompactdialogs passed;34Donorfiles exact. UItypes/233tests912assertions passed. [Evidence](hosted-review-structure-native.json).
+
+![Pending sync structure](review-sync-structure-pending.png)
+![Pending history at compact size](review-recovery-structure-compact.png)
