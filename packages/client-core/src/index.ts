@@ -221,3 +221,4 @@ export { inspectVideoInputRevision, videoInputsNeedReview, type VideoInputRevisi
 export * from "./kept-output";
 
 export * from "./stable-project-blob";
+export * from "./overview-images";

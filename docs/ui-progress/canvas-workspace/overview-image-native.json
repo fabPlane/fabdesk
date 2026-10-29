@@ -1,0 +1,38 @@
+{
+  "projectId": "prj_mvtdgrgj45bcf4a3ef",
+  "path": "/Users/amliomnie/Documents/Codex/2026-10-27/https-github-com-tensorfleet-placement-lab/work/sketch-first-projects/overview-image-fallbacks-isolated-ui-validation",
+  "fixture": "Three isolated copies of the same actual Game Boy board. Valid top render and PCB preview copied only from that board. Broken PNG intentionally invalid; empty has no images.",
+  "originalHashesUnchanged": true,
+  "originalHashes": {
+    "board.kicad_pcb": "c5794ae6e9fb0b5a8fd503fc8a71d0443451de3d004cfb0ee20099113a4250b1",
+    "renders/top.png": "8180def8e7097682246648364328b819c2d05ed44bbe2ea5b3d741f2c0b47ff5",
+    "renders/pcb.svg": "d9888ed276909f42796d094383c1d93dbcb68fff9cd86cb1ccfd5a8d58e0e75f"
+  },
+  "expected": [
+    "top image",
+    "PCB SVG after decode failure",
+    "default board icon"
+  ],
+  "observedNativeStates": [
+    "valid saved top render displayed",
+    "invalid PNG decoded unsuccessfully then actual PCB SVG displayed",
+    "no candidate displayed default board icon",
+    "single-board Game Boy overview preferred saved top render"
+  ],
+  "captures": [
+    "565-overview-image-fallbacks.png",
+    "567-single-board-overview-top-render-final.png"
+  ],
+  "protectedProjects": [
+    {
+      "files": 34,
+      "changed": []
+    },
+    {
+      "files": 8,
+      "changed": []
+    }
+  ],
+  "liveRecovery": "Verified in the mounted overview: normal project-file API changed invalid PNG to matching valid top render, then restored invalid PNG and observed PCB SVG fallback again. No navigation or manual refresh.",
+  "externalWrites": "Raw filesystem overwrite did not immediately refresh the mounted card; normal app file API events did. External filesystem watching is not claimed."
+}

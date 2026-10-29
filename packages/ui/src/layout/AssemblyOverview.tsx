@@ -1,3 +1,5 @@
+import { overviewBoardImages, useProject, type OverviewImage } from "@fabdesk/client-core";
+import { useOverviewImage } from "./useOverviewImage";
 import { CanvasToolButton } from "../components/CanvasToolButton";
 import { BoardViewTabs } from "../board/BoardViewTabs";
 import { WorkspaceMenu } from "./WorkspaceMenu";
@@ -5,7 +7,6 @@ import { AssemblySchematicPreview } from "../board/AssemblySchematicPreview";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { ASSEMBLY_MANIFEST_PATH, PCB_PREVIEW_REVISION_PATH, type BoardSourceSelection, type ProjectBoardSources } from "@fabdesk/protocol";
 import { assemblyMapLayoutKey, restoreAssemblyMapLayout, useCoreClient, type AssemblyMapLayout, nextAssemblyReviewSelection, assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, assemblyCheckFindingOwned, assemblyFindingPreviewMatches, assemblyCheckNeedsReview, assemblyCheckSummaryLabel, useAssemblyCheckSummaries, pcbSvgHasNativeCoordinates, restoreAssemblySelection, assemblyLinkShape, assemblyScene, assemblySourcesToReview, assemblySelectionState, captureAssemblySelection, useAssemblyBoardInspection, useAssemblyPreviewRevisions, usePcbPreviewRevision, useProjectText, useRunTool, type AssemblySceneNode, type AssemblySceneSelection } from "@fabdesk/client-core";
-import { useProjectBlobUrl } from "../hooks/queries";
 import { Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { SvgViewer } from "../board/SvgViewer";
@@ -26,10 +27,10 @@ function fitBox(bounds: Box, aspect: number): Box {
 function previewCopy(state: string | undefined, checking: boolean, failed: boolean, exists: boolean) {
   return checking ? "Checking preview…" : failed ? "Preview check unavailable" : !exists ? "No saved preview" : state === "matches-source" ? "Preview matches saved PCB" : state === "source-changed" ? "PCB changed since preview" : state === "artifact-changed" ? "Preview changed · unverified" : "Saved preview · unverified";
 }
-function BoardImage({ projectId, node }: { projectId: string; node: AssemblySceneNode }) {
-  const image = useProjectBlobUrl(projectId, node.source?.status === "available" ? node.source.previewPath ?? null : null);
-  return image.url ? <image href={image.url} x={12} y={12} width={node.width - 24} height={node.height - 68} preserveAspectRatio="xMidYMid meet" pointerEvents="none" />
-    : <g className="fd-assembly-placeholder" transform={`translate(${node.width / 2 - 105},16)`} pointerEvents="none"><rect x={70} y={26} width={70} height={52} rx={6} /><path d="M88 18v8m16-8v8m16-8v8M88 78v8m16-8v8m16-8v8M62 39h8m-8 15h8m70-15h8m-8 15h8" /><text x={105} y={102} textAnchor="middle">{image.isLoading ? "Loading preview…" : node.source?.status === "available" ? "No saved preview" : "Source unavailable"}</text></g>;
+function BoardImage({ projectId, node, candidates }: { projectId: string; node: AssemblySceneNode; candidates: OverviewImage[] }) {
+  const image = useOverviewImage(projectId, candidates);
+  return image.url ? <image href={image.url} x={12} y={12} width={node.width - 24} height={node.height - 68} preserveAspectRatio="xMidYMid meet" pointerEvents="none" onError={image.onError}><title>{image.candidate?.kind === "top" ? "Saved top render" : "Saved board image"} · freshness unverified</title></image>
+    : <g className="fd-assembly-placeholder" transform={`translate(${node.width / 2 - 105},16)`} pointerEvents="none"><rect x={70} y={26} width={70} height={52} rx={6} /><path d="M88 18v8m16-8v8m16-8v8M88 78v8m16-8v8m16-8v8M62 39h8m-8 15h8m70-15h8m-8 15h8" /><text x={105} y={102} textAnchor="middle">{image.loading ? "Loading preview…" : node.source?.status === "available" ? "No board image" : "Source unavailable"}</text></g>;
 }
 function askAbout(selection: AssemblySceneSelection | null, name: string, available: boolean, schematicAction?: "find" | "generate" | "import") {
   if (!selection) return;
@@ -44,6 +45,7 @@ function askAbout(selection: AssemblySceneSelection | null, name: string, availa
 
 /** Logical project topology. Canvas positions and declared links never imply chassis fit or electrical validation. */
 export function AssemblyOverview({ projectId, name, data, checking, failed, onRetry, boardPicker = false }: { boardPicker?: boolean; projectId: string; name: string; data: ProjectBoardSources; checking: boolean; failed: boolean; onRetry: () => void }) {
+  const projectFiles = useProject(projectId);
   const client = useCoreClient(), layoutKey = assemblyMapLayoutKey(client.baseUrl, projectId);
   const savedLayout = useUiStore(state => state.assemblyMapLayouts?.[layoutKey]);
   const [assemblyViewOpen, setAssemblyViewOpen] = useState(false);
@@ -230,10 +232,11 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
           </g>;
         })}
         {scene.nodes.map(node => {
+          const imageCandidates = overviewBoardImages(projectFiles.data?.files ?? [], { sources: data.sources, sourceId: node.instance.sourceId });
           const preview = previewById.get(node.instance.sourceId), warning = sourcesToReview.includes(node.instance.sourceId), status = node.source?.status;
           const check = checkById.get(node.instance.sourceId), checkWarning = !checks.isFetching && !checks.isError && assemblyCheckNeedsReview(check);
           const model = modelById.get(node.instance.sourceId), modelWarning = !models.isFetching && !models.isError && assemblyModelNeedsReview(model);
-          const text = modelWarning ? assemblyModelSummaryLabel(model) : checkWarning ? assemblyCheckSummaryLabel(check) : status !== "available" ? status === "unresolved" ? "Source not imported" : status === "blocked" ? "Source needs review" : "Source missing" : previewCopy(preview?.data, preview?.isFetching ?? false, preview?.isError ?? false, !!node.source?.previewPath);
+          const text = modelWarning ? assemblyModelSummaryLabel(model) : checkWarning ? assemblyCheckSummaryLabel(check) : status !== "available" ? status === "unresolved" ? "Source not imported" : status === "blocked" ? "Source needs review" : "Source missing" : imageCandidates[0] && imageCandidates[0].kind !== "pcb" ? "Saved image · freshness unverified" : previewCopy(preview?.data, preview?.isFetching ?? false, preview?.isError ?? false, !!node.source?.previewPath);
           return <g key={node.instance.id} ref={element => { if (element) nodeElements.current.set(node.instance.id, element); else nodeElements.current.delete(node.instance.id); }} data-assembly-node={node.instance.id} className="fd-assembly-node" transform={`translate(${node.x},${node.y})`} role="button" tabIndex={0} aria-label={`${node.instance.name}. Source ${node.source?.source.name ?? node.instance.sourceId}. ${text}. Select to show tools. Drag to arrange the map; Alt or Option plus arrows to nudge.`} aria-pressed={selected?.instanceId === node.instance.id} onPointerDown={event => beginMapDrag(event, node)} onPointerMove={moveMapDrag} onPointerUp={finishMapDrag} onPointerCancel={cancelMapDrag} onLostPointerCapture={cancelMapDrag} onClick={() => choose(node)} onKeyDown={event => {
               const offset = ({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] } as Record<string, number[]>)[event.key];
               if (event.altKey && offset) {
@@ -245,7 +248,7 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
             }}>
             <title>{node.instance.name} — {node.source?.source.name ?? node.instance.sourceId}. {text}</title>
             <rect className="fd-assembly-card" data-selected={selected?.instanceId === node.instance.id} data-unavailable={status !== "available"} width={node.width} height={node.height} rx={12} />
-            <BoardImage projectId={projectId} node={node} />
+            <BoardImage projectId={projectId} node={node} candidates={imageCandidates} />
             <text className="fd-assembly-node-title" x={12} y={node.height - 36}>{shortened(node.instance.name, 26)}</text>
             {warning && <rect className="fd-assembly-node-warning" x={10} y={node.height - 27} width={node.width - 20} height={23} rx={6} />}
             <text className="fd-assembly-node-note" data-warning={warning} x={12} y={node.height - 11}>{shortened(text, 34)}</text>

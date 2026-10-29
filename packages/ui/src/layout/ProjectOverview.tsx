@@ -1,3 +1,5 @@
+import { overviewBoardImages } from "@fabdesk/client-core";
+import { useOverviewImage } from "./useOverviewImage";
 import { useEffect, useRef, useState } from "react";
 import { CoreHttpError, savedOutputs, editableSketchPaths, projectSketchImagePaths, useBoardSources, useProject, useProjectOrder, usePcbPreviewRevision, useBoardModelRevision, useEnclosureSourceRevision, usePcbCheckRevision, useVideoInputRevision, videoInputsNeedReview } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
@@ -45,9 +47,9 @@ function SingleBoardOverview() {
   const schematic = files.find((file) => file.path === "board.kicad_sch");
   const designTab = pcb || !schematic ? "pcb" : "schematic";
   const designLabel = pcb ? "Main board" : schematic ? "Schematic design" : "Saved board preview";
-  // Keep the design overview on the PCB drawing; saved render images have no source receipt here.
-  const previewPaths = designTab === "schematic" ? ["renders/schematic.svg"] : ["renders/pcb.svg", "renders/top.png", "renders/pcb-top.png", "renders/populated-top.png", "renders/release-top.png"];
-  const preview = previewPaths.map((path) => files.find((file) => file.path === path)).find(Boolean);
+  const imageCandidates = overviewBoardImages(files, { schematicOnly: designTab === "schematic" });
+  const overviewImage = useOverviewImage(projectId ?? "", imageCandidates);
+  const preview = overviewImage.candidate;
   const issues = [...(order.data?.warnings ?? []), ...(order.data?.reasons ?? [])];
   const outputs = savedOutputs(files);
   const references = projectSketchImagePaths(files);
@@ -75,7 +77,7 @@ function SingleBoardOverview() {
     </div>
     {(pcb || schematic || preview) ? <div className="fd-overview-board">
       <button ref={selectionTrigger} className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label={`Select ${designLabel.toLowerCase()} to show tools`} onClick={() => setSelectedKey(selected ? null : surfaceKey)} onDoubleClick={() => ui().setBoardTab(pcb || schematic ? designTab : "files")}>
-        {preview ? <ProjectImage projectId={projectId} path={preview.path} alt={`${project.data.name} ${designTab} preview`} /> : <span><Icon name={designTab === "schematic" ? "compose" : "pcb"} width={64} height={64} /><span>{designTab === "schematic" ? "Open the schematic to create its preview" : "Open the PCB to render its preview"}</span></span>}
+        {overviewImage.url ? <img src={overviewImage.url} onError={overviewImage.onError} alt={`${project.data.name} ${preview?.kind === "top" ? "saved top render" : "saved board preview"}`} /> : <span><Icon name={designTab === "schematic" ? "compose" : "pcb"} width={64} height={64} /><span>{designTab === "schematic" ? "Open the schematic to create its preview" : "Open the PCB to render its preview"}</span></span>}
       </button>
       {selected && <div className="fd-board-context-tools" aria-label="Board actions">
         <span><Icon name={designTab === "schematic" ? "compose" : "pcb"} width={17} height={17} />{designLabel}</span>

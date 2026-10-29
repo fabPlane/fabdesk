@@ -111,6 +111,9 @@
 
 .fd-canvas-surface { position:relative; }
 .fd-canvas-workspace .fd-svg-viewer { --fd-viewer-inset:96; }
+.fd-project-overview { padding-top:86px; }
+.fd-overview-heading { margin:0; text-align:left; }
+@media(max-width:780px) { .fd-project-overview { padding-top:134px; } }
 
 .fd-review-updates > header,.fd-review-updates .fd-update-table,.fd-review-updates .fd-update-sync,.fd-review-explanation,.fd-review-update-group { max-width:var(--fd-content-width); }
 .fd-assembly-node-title { font-size:17px; }
