@@ -6,7 +6,8 @@ import { CheckReportStatus } from "./CheckReportStatus";
 import { cn } from "../util";
 import { useRunTool } from "@fabdesk/client-core";
 
-import { normalizeReport, useBoardSources, useProject } from "@fabdesk/client-core";
+import { filterCheckFindings, normalizeReport, useBoardSources, useProject } from "@fabdesk/client-core";
+import { CheckFindingFilters } from "./CheckFindingFilters";
 import { AssemblyChecks } from "./AssemblyChecks";
 export { normalizeReport, type Violation, type ViolationItem } from "@fabdesk/client-core";
 
@@ -30,6 +31,9 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
   const restored = useRef(false), root = useRef<HTMLDivElement>(null);
   const returnFocus = useRef<number | null>(null);
   const [filter, setFilter] = useState<"all" | "drc" | "erc">("all");
+  const [findingQuery, setFindingQuery] = useState(""), [severity, setSeverity] = useState("all");
+  const filterFindings = (query: string, severity: string) => { setFindingQuery(query); setSeverity(severity); setSelected(null); };
+  const clearFilters = () => { root.current?.querySelector<HTMLInputElement>('input[aria-label="Find saved check findings"]')?.focus(); setFilter("all"); filterFindings("", "all"); };
   const [runningCheck, setRunningCheck] = useState<"drc" | "erc" | null>(null);
   const tool = useRunTool();
   const rows = useMemo(
@@ -63,7 +67,8 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
     const result = await tool.run(kind, { projectId, ...(kind === "drc" && !hasSchematic ? { schematicParity: false } : {}) });
     if (result.status === "done") { setSelected(null); await Promise.all([drc.refetch(), erc.refetch()]); }
   };
-  const filteredRows = rows.map((finding, index) => ({ finding, index })).filter(({ finding }) => filter === "all" || finding.source === filter);
+  const filteredRows = filterCheckFindings(rows, { source: filter, query: findingQuery, severity });
+  const scopedRows = rows.filter(finding => filter === "all" || finding.source === filter);
   const failed = drc.isError || erc.isError || drc.parseError || erc.parseError;
   const loading = drc.isLoading || erc.isLoading;
   const noReports = drc.data === null && erc.data === null;
@@ -81,7 +86,8 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
       </div>
       {project.isError ? <LoadError title="Could not inspect saved design files" onRetry={() => void project.refetch()} /> : !sourceReady ? <p role="status">Checking project sources…</p> : (!hasPcb || !hasSchematic) && <p className="fd-single-checks-prerequisite">{!hasPcb && !hasSchematic ? "Save a PCB or schematic to start checking your design." : !hasSchematic ? "No saved schematic yet. PCB checks are available; electrical rule checking needs a schematic." : "No saved PCB yet. Schematic checks are available; PCB design rules need a board."}</p>}
       {tool.state.error && <p role="alert" className="text-xs text-danger">{tool.state.error}</p>}
-      {!loading && !failed && !noReports && <div className="fd-single-checks-filter"><label>Findings<select aria-label="Filter saved check findings" value={filter} onChange={event => { setFilter(event.target.value as typeof filter); setSelected(null); }}><option value="all">All checks</option><option value="drc">PCB · DRC</option><option value="erc">Schematic · ERC</option></select></label><span>{filteredRows.length} of {rows.length} saved findings</span></div>}
+      {!loading && !failed && !noReports && <div className="fd-single-checks-filter"><label>Findings<select aria-label="Filter saved check findings" value={filter} onChange={event => { setFilter(event.target.value as typeof filter); filterFindings("", "all"); }}><option value="all">All checks</option><option value="drc">PCB · DRC</option><option value="erc">Schematic · ERC</option></select></label></div>}
+      {!loading && !failed && !noReports && <CheckFindingFilters rows={scopedRows} count={filteredRows.length} query={findingQuery} severity={severity} onChange={filterFindings} />}
     </header>
   );
   const sel = selected !== null ? rows[selected] : undefined;
@@ -94,10 +100,10 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
           <Spinner />
         </div>
       ) : filteredRows.length === 0 ? (
-        <EmptyState title={noReports ? "Start with a design check" : rows.length > 0 ? "No findings in this view" : "No findings in saved reports"}>
+        <EmptyState title={noReports ? "Start with a design check" : rows.length > 0 ? "No findings match these filters" : "No findings in saved reports"} action={rows.length > 0 ? <Button size="sm" onClick={clearFilters}>Clear finding filters</Button> : undefined}>
           {noReports
             ? "PCB checks (DRC) look for layout problems such as clearances and unconnected pads. Schematic checks (ERC) look for electrical connection problems. Choose a check above when its source is ready."
-            : rows.length > 0 ? "Choose All checks to see the other saved findings." : "These saved reports contain no listed findings. Re-run checks after design changes; missing or incomplete checks do not establish a pass."}
+            : rows.length > 0 ? "Clear the finding filters to see the other saved findings." : "These saved reports contain no listed findings. Re-run checks after design changes; missing or incomplete checks do not establish a pass."}
         </EmptyState>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">

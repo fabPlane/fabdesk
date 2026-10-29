@@ -1,0 +1,71 @@
+{
+  "baseImplementation": "e88220e",
+  "projectId": "prj_mvrlt1yx802c210b69",
+  "nativeChecks": {
+    "existingReportTotal": 18,
+    "ruleSearch": "track_dangling ->2of18",
+    "selectedOriginalRowIndex": 10,
+    "showPcbLocation": {
+      "x": 104.49,
+      "y": 100
+    },
+    "backRestoresSameDetailsAndRowFocus": true,
+    "severityWarnings": "5of18",
+    "schematicOnlyFilter": "0of0, No saved ERC report remains visible",
+    "emptyFilterClearRestoresAllAndSearchFocus": true,
+    "compact960x720Fits": true,
+    "restored1440x870": true,
+    "noNativeRunOrAgentMessage": true,
+    "filtersResetOnTaskUnmount": true
+  },
+  "protectedHashes": {
+    "fabdesk.json": "e09a7ec0cadbe855b2002696db5d76f608fbd83db5d631ee9b87d5eaf805496d",
+    "comments.json": "2985ee5aae701a6247bf2e6f5769e2f91af54ef57bda949d0f4b1db5ac99edc7",
+    "board.kicad_pro": "0ef365722416a367bbc590a05896d06c587909aebb2b3030c0f558f675d2529c",
+    "project.parts.json": "44f638fe9268e4b6b5982a8848ffcc6cd9a4fdb2273d9115f6214a6937c87bb7",
+    ".gitignore": "b19e46b028283686f56a2fbc838cd00ea1d51c8d26ddbb8f0c5e6134a6a0cdb6",
+    "board.kicad_prl": "936695e1f47edc71a2116294f9748e7a654728e8ef7c07c7b25cfcafe804c786",
+    "NOTES.md": "dab6523b58c5a974151cd912d8bf8fbfe711559be284dc30368bd704a97ebb60",
+    "board.kicad_pcb": "623d182c8b5a79c654b5cf6a50534cb4d97863076ec717d36be2f96433563df8",
+    "renders/board.glb": "b0c4c16247fe8341f21794dc7770aebb6238da5c8bcce57fd4fe384133c09605",
+    "renders/pcb.svg.revision.json": "7f130e32f796174a7fa3f32b20a65090d19d2894a7a8ebf8778e4101c48dfab9",
+    "renders/board.glb.revision.json": "89f5502b2451c74da23e137b0541ce14928f0a7d2261a7d553b17be411c60131",
+    "renders/pcb.svg": "ce2bbbe45d2e05e53d29e3147f09a15ce5c3dfb6b0e02e07abd78e2c1656f103",
+    "exports/bom.csv": "1304e73bf436cb24e061b53391c197954815e4f984ef912203af0e25a16cd16a",
+    "exports/product-video.json": "d5d987a52d45862e166e7aa4f47a64f6da646b83f9cf4863836a6a2f73541070",
+    "exports/product-video.webm": "3fc97de293f18611fab7bfed2f9d5ea56c8021b771f438094307304e21047582",
+    "exports/product-video.gif": "ebbba707ea69339800e143a86524e249d2bf47cc3378b0c67955bb215dfdffa2",
+    "exports/product-video-poster.png": "3de80e0c00061e5c610ff862ad055b29757fb6a5744dab7d9dfe586d272ae9b8",
+    "exports/product-video.mp4": "33ca707d940be6b61b4af28cb053b3e6fdcb79496974f904e5b7a69436506362",
+    "reports/drc.json": "ea9ff04fb016639588111ef75b336283b416aacc3342938913f33444393df574",
+    "reports/board-diff.json": "bf66b11a589a95982624a8fc14c62b1ccc2a020a0b56896ccb66535b00b59d90",
+    ".fabdesk/runs/run_mvrqc7by6euqy6/request.json": "d30b217705a2232ee2daf1a37edc0372768b76559a4bf1fe49595403e3bfb680",
+    ".fabdesk/runs/run_mvrqc7by6euqy6/starting.kicad_pro": "0ef365722416a367bbc590a05896d06c587909aebb2b3030c0f558f675d2529c",
+    ".fabdesk/runs/run_mvrqc7by6euqy6/quality.json": "47d80b506c377397e96e8e3ca6b41c339d82c1b25e7dbc605c98ad5031eebe4c",
+    ".fabdesk/runs/run_mvrqc7by6euqy6/routing-drc-before.json": "1885a88a91399ff69221f5205ef6c1b2d91813c1dfb3c16f64e74d57903de386",
+    ".fabdesk/runs/run_mvrqc7by6euqy6/starting.kicad_pcb": "623d182c8b5a79c654b5cf6a50534cb4d97863076ec717d36be2f96433563df8",
+    ".fabdesk/runs/run_mvrqc7by6euqy6/frames.json": "d5c48e7e8bd81c5a979ac6140a6268e63ed610fe97ff313a69a6dbc7e5062f18",
+    ".fabdesk/runs/run_mvrqc7by6euqy6/frames.jsonl": "1d0cb9d031ce20269abf3fc369eb6df9b33fd030cec780f282e941cbd86f561c",
+    ".fabdesk/runs/run_mvrqc7by6euqy6/progress.json": "4245f183e14b01245fe6d47ed623e194b15467d779f78f98224a2c02883ad431",
+    "renders/diff/schematic-structured.svg": "94d0a78512f95684b1e09ab258ae315688a25410a63e053243d0ad3eabef9eb2",
+    "renders/diff/pcb-side-by-side.svg": "38bb3c9bd1d0332184ab730d8ebcb1b91cb3ff511f38d5a1899902d37fa4db87",
+    "renders/diff/pcb-overlay.svg": "5dc8ed5d897ee81105059b196ea3dde3e6b3fbeccaa61f96feef88ede241cb8a",
+    "renders/diff/pcb-structured.svg": "e237e47455aa565666a091842b8d02e1560ca1129a904e75bfbd670628644927",
+    "renders/diff/schematic-side-by-side.svg": "a76e47ac713c37c31916754d4c387aeb44e98c5ede49f5e45066ea7947cb52d8",
+    "renders/diff/schematic-overlay.svg": "0ab858ca7eab90c7bc499ff6fd811800436507ffda05c7aa97f000789f68bd8c"
+  },
+  "validation": {
+    "uiTypes": "PASS /tmp/canvas-root-finding-filter-ui-types.log",
+    "uiTests": "231passed/901assertions /tmp/canvas-root-finding-filter-ui-tests.log",
+    "sharedHelperPriorMilestone": "e88220e client316tests/types,focused9tests53assertPASS"
+  },
+  "screenshots": {
+    "452-root-check-finding-search.png": "root-finding-filters-search.png",
+    "453-root-filtered-warning-pcb-location.png": "root-finding-filters-point.png",
+    "454-root-findings-warnings-compact.png": "root-finding-filters-compact.png"
+  },
+  "limits": [
+    "Uses saved reports and existing PCB finding capture; no rerun, repair or validation pass claimed.",
+    "DRC/ERC source selection retained; unavailable schematic/ERC remains explicit."
+  ]
+}
