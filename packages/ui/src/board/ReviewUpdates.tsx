@@ -1,3 +1,5 @@
+import { ReviewDesignSources, ReviewKeepNote, ReviewScope, ReviewUpdateTable } from "./ReviewUpdateLayout";
+import type { IconName } from "../components/Icon";
 import { KeepSavedOutput } from "./KeepSavedOutput";
 import { videoInputLabel } from "./VideoSourceStatus";
 import { CoreHttpError, useBoardSources, useProject, useProjectOrder, usePcbPreviewRevision, useBoardModelRevision, useEnclosureSourceRevision, usePcbCheckRevision, useRunTool, useVideoInputRevision, videoInputsNeedReview } from "@fabdesk/client-core";
@@ -49,20 +51,27 @@ function SingleBoardUpdates({ scopeReady }: { scopeReady: boolean }) {
     { group: "outputs", item: "Other saved outputs", status: "Freshness not yet tracked", warning: false, note: "Other images and manufacturing files retain their saved versions. Review before sharing or fabrication.", action: "Browse outputs", onClick: () => open("renders") },
   ];
   return <div className="fd-review-updates" data-testid="review-updates">
-    <header><h2>Review updates</h2><p>Review design sources separately from generated outputs and saved checks. Choose each next step deliberately.</p><Button size="sm" variant="ghost" onClick={() => retry([preview, model, enclosure, checks, readiness, video])}>Recheck sources</Button></header>
-    <section className="fd-update-sync"><div><h3>Design sources</h3><div className="fd-review-source-pair"><span data-warning={!pcb}>PCB · {pcb ? "Saved source" : "Missing"}</span><span data-warning={!schematic}>Schematic · {schematic ? "Saved source" : "Missing"}</span></div><p>{pcb && schematic ? "A newer timestamp does not tell us which design should change. Review differences and choose a direction before applying an update." : "This project needs both a schematic and PCB before their relationship can be reviewed."}</p><small>Relationship not compared · generated-output freshness does not establish schematic/PCB equivalence.</small><details className="fd-review-sync-options"><summary>Synchronization options</summary><p>Compare the native sources before choosing a direction. Directed synchronization is not connected in this build.</p><div><Button size="sm" disabled>Update PCB from schematic</Button><Button size="sm" disabled>Update schematic from PCB</Button></div></details></div><Button size="sm" disabled={!pcb || !schematic} onClick={() => {
+    <ReviewScope><span className="fd-review-single-scope">Main board</span></ReviewScope>
+    <header><h2>Review updates</h2><p>Review your design sources and choose which saved outputs to update.</p><Button size="sm" variant="ghost" onClick={() => retry([preview, model, enclosure, checks, readiness, video])}>Recheck sources</Button></header>
+    <ReviewDesignSources pcb={pcb ? "Saved source" : "Not added"} schematic={schematic ? "Saved source" : "Not added"} status={pcb && schematic ? "PCB and schematic · not compared" : "Both sources are needed for comparison"} note="Review the differences before choosing a synchronization direction." action={<Button size="sm" onClick={() => {
       const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId) return;
+      if (!pcb || !schematic) { open("files"); return; }
       const key = ui.activeThreadId ?? newChatDraftKey(projectId), previous = ui.drafts[key] ?? "";
       const prompt = "Review the saved schematic and PCB in this project. Explain their differences and which synchronization direction is appropriate. Do not apply changes or save an open native document until we choose a direction.";
       ui.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt); ui.focusComposer();
-    }}>Ask about differences</Button>{(!pcb || !schematic) && <Button size="sm" variant="ghost" onClick={() => open("files")}>Browse source files</Button>}</section>
-    {([{ id: "outputs", label: "Generated outputs" }, { id: "checks", label: "Saved checks" }] as const).map(group => <section key={group.id} className="fd-review-update-group" aria-label={group.label}>
-      <h3>{group.label}</h3>
-    <div className="fd-update-table" role="table" aria-label={`${group.label} source review`}>
-      <div className="fd-update-row fd-update-table-heading" role="row"><span role="columnheader">Item</span><span role="columnheader">Source status</span><span role="columnheader">Next step</span></div>
-      {rows.filter(row => row.group === group.id).map(row => <div key={row.item} className="fd-update-row" role="row"><div role="cell"><strong>{row.item}</strong><details className="fd-review-source-details"><summary aria-label={`Source details for ${row.item}`}>Source details</summary><p>{row.note}</p></details></div><span role="cell" data-warning={row.warning}>{row.status}</span><div role="cell" className="fd-update-actions"><Button size="sm" disabled={row.disabled} onClick={row.onClick}>{row.action}</Button>{row.keep && <KeepSavedOutput key={`${projectId}:${row.keep.kind}`} projectId={projectId} kind={row.keep.kind} eligible={row.keep.eligible} />}</div></div>)}
-    </div>
-    </section>)}
+    }}>{pcb && schematic ? "Ask about differences" : "Browse source files"}</Button>}>
+      <details className="fd-review-sync-options"><summary>Source details and synchronization</summary><p>A newer timestamp does not identify which design should change. Generated-output freshness does not establish schematic/PCB equivalence.</p><p>Directed synchronization is not connected in this build.</p><div><Button size="sm" disabled>Update PCB from schematic</Button><Button size="sm" disabled>Update schematic from PCB</Button></div></details>
+    </ReviewDesignSources>
+    {([{ id: "outputs", label: "Generated outputs" }, { id: "checks", label: "Saved checks" }] as const).map(group => <ReviewUpdateTable key={group.id} title={group.label} collapsed={group.id === "checks"} summary={readiness.data?.checks.drc === "fail" ? "Saved checks · Findings need review" : "Saved checks"} rows={rows.filter(row => row.group === group.id && row.item !== "Other saved outputs" && (row.item !== "Generated enclosure" || has("enclosure.json"))).sort((a,b) => (a.item === "Board 3D model" ? 0 : a.item === "PCB preview" ? 1 : 2) - (b.item === "Board 3D model" ? 0 : b.item === "PCB preview" ? 1 : 2)).map(row => ({
+      key: row.item, item: row.item === "Board 3D model" ? "3D model" : row.item === "Product video" ? "Review video" : row.item,
+      icon: ({"Board 3D model":"cube","Product video":"play","PCB preview":"image","Generated enclosure":"cube","PCB checks":"checkCircle","Schematic checks":"schematic"} as Record<string,IconName>)[row.item] ?? "folder",
+      status: row.status, warning: row.warning,
+      note: row.item === "Board 3D model" ? "Component dependencies and fit are unverified." : row.item === "Product video" ? "Recorded inputs only; review the saved scene before sharing." : row.item === "PCB preview" ? "Drawing generated from the saved PCB." : row.item.endsWith("checks") ? "Source freshness and check findings are separate." : "Review the saved inputs before updating.",
+      details: <p>{row.note}</p>,
+      actions: <><Button size="sm" data-update={row.action.startsWith("Update") || row.action.startsWith("Create")} disabled={row.disabled} onClick={row.onClick}>{row.action}</Button>{row.keep && <KeepSavedOutput key={`${projectId}:${row.keep.kind}`} projectId={projectId} kind={row.keep.kind} eligible={row.keep.eligible} />}</>,
+    }))} />)}
+    <ReviewKeepNote />
+    <Button size="sm" variant="ghost" className="fd-review-browse-outputs" onClick={() => open("renders")}>Browse all saved outputs</Button>
     {busy && <p role="status" className="fd-update-feedback"><Spinner />Updating the selected output…</p>}
     {update.state.error && <p role="alert" className="fd-update-feedback">{update.state.error}</p>}
 

@@ -1,0 +1,321 @@
+{
+  "scope": "Read-only rendered UI navigation and source preservation. No generation, native edit, agent send, report rerun or remote publication.",
+  "routes": [
+    {
+      "projectId": "prj_mvrlt1yx802c210b69",
+      "tab": "pcb",
+      "width": 1440,
+      "height": 870,
+      "area": "boards",
+      "headings": [],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvrlt1yx802c210b69",
+      "tab": "schematic",
+      "width": 1440,
+      "height": 870,
+      "area": "boards",
+      "headings": [],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvrlt1yx802c210b69",
+      "tab": "3d",
+      "width": 1440,
+      "height": 870,
+      "area": "boards",
+      "headings": [],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvrlt1yx802c210b69",
+      "tab": "cinema",
+      "width": 1440,
+      "height": 870,
+      "area": "boards",
+      "headings": [
+        "Routing"
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvrlt1yx802c210b69",
+      "tab": "drc",
+      "width": 1440,
+      "height": 870,
+      "area": "review",
+      "headings": [
+        "Design checks"
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvrlt1yx802c210b69",
+      "tab": "renders",
+      "width": 1440,
+      "height": 870,
+      "area": "outputs",
+      "headings": [
+        "Saved outputs"
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvrlt1yx802c210b69",
+      "tab": "files",
+      "width": 1440,
+      "height": 870,
+      "area": "files",
+      "headings": [],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvrlt1yx802c210b69",
+      "tab": "notes",
+      "width": 1440,
+      "height": 870,
+      "area": "files",
+      "headings": [
+        "Project notes"
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvrlt1yx802c210b69",
+      "tab": "bom",
+      "width": 1440,
+      "height": 870,
+      "area": "parts",
+      "headings": [
+        "Parts for this build"
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvrlt1yx802c210b69",
+      "tab": "diff",
+      "width": 1440,
+      "height": 870,
+      "area": "review",
+      "headings": [],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvrlt1yx802c210b69",
+      "tab": "comments",
+      "width": 1440,
+      "height": 870,
+      "area": "review",
+      "headings": [
+        "Comments",
+        "Review routing and clearances near the changed R1 before fabrication."
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvrlt1yx802c210b69",
+      "tab": "updates",
+      "width": 1440,
+      "height": 870,
+      "area": "review",
+      "headings": [
+        "Review updates"
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvr2ofe307592e4a2e",
+      "tab": "pcb",
+      "width": 1440,
+      "height": 870,
+      "area": "boards",
+      "headings": [
+        "I/O main \u00b7 Rev H A18"
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": null,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvr2ofe307592e4a2e",
+      "tab": "schematic",
+      "width": 1440,
+      "height": 870,
+      "area": "boards",
+      "headings": [
+        "I/O main \u00b7 Rev H A18"
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": null,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvr2ofe307592e4a2e",
+      "tab": "3d",
+      "width": 1440,
+      "height": 870,
+      "area": "boards",
+      "headings": [
+        "I/O main \u00b7 Rev H A18"
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": null,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvr2ofe307592e4a2e",
+      "tab": "drc",
+      "width": 1440,
+      "height": 870,
+      "area": "review",
+      "headings": [
+        "Board checks"
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvr2ofe307592e4a2e",
+      "tab": "renders",
+      "width": 1440,
+      "height": 870,
+      "area": "outputs",
+      "headings": [
+        "Saved outputs"
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvr2ofe307592e4a2e",
+      "tab": "files",
+      "width": 1440,
+      "height": 870,
+      "area": "files",
+      "headings": [],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvr2ofe307592e4a2e",
+      "tab": "bom",
+      "width": 1440,
+      "height": 870,
+      "area": "parts",
+      "headings": [],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    },
+    {
+      "projectId": "prj_mvr2ofe307592e4a2e",
+      "tab": "updates",
+      "width": 1440,
+      "height": 870,
+      "area": "review",
+      "headings": [
+        "Review updates"
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false,
+      "taskRowHeight": 64,
+      "requestedInspectorCount": 0
+    }
+  ],
+  "preservation": [
+    {
+      "name": "root",
+      "protectedFiles": 34,
+      "changedDuringWalkthrough": [],
+      "changedFromPriorBaseline": []
+    },
+    {
+      "name": "vaio",
+      "protectedFiles": 8,
+      "changedDuringWalkthrough": [],
+      "changedFromPriorBaseline": []
+    }
+  ],
+  "excluded": "Mechanical internals teammate-owned; Artwork polish deferred; provider issue not retried.",
+  "reviewWalkthrough": [
+    "Selected I/O source shows separate PCB/Schematic card and actual preview/model status.",
+    "Native scope selector switched to unavailable Keyboard source; no root data substitution.",
+    "All boards renders compact source cards, selecting I/O restores its scoped output review.",
+    "Root project preserves actual model/preview/video actions and kept-output controls.",
+    "Compact960\u00d7720 and wide1440\u00d7870 reviewed; details and check tables closed by default."
+  ],
+  "verification": {
+    "uiTests": 234,
+    "assertions": 917,
+    "failures": 0,
+    "uiTypecheck": "pass"
+  },
+  "limits": "Ask about differences prepares an unsent agent request; native parity and directed synchronization remain unconnected. Assembly model action reviews the existing member model rather than silently regenerating it. No project writes/check runs/generation/agent sends/remote publication."
+}

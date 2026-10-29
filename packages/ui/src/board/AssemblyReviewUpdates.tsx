@@ -1,88 +1,73 @@
 import { useState } from "react";
 import { ASSEMBLY_MANIFEST_PATH, type ProjectBoardSources } from "@fabdesk/protocol";
-import { restoreAssemblySelection, assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, assemblyCheckNeedsReview, assemblyCheckSummaryLabel, useAssemblyCheckSummaries, assemblyReviewRows, useAssemblyPreviewRevisions, useRunTool } from "@fabdesk/client-core";
-import { Icon } from "../components/Icon";
+import { overviewBoardImages, restoreAssemblySelection, assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, assemblyCheckNeedsReview, assemblyCheckSummaryLabel, useAssemblyCheckSummaries, assemblyReviewRows, useAssemblyPreviewRevisions, useProject, useRunTool } from "@fabdesk/client-core";
 import { Button, Spinner } from "../components/ui";
+import { ReviewDesignSources, ReviewKeepNote, ReviewScope, ReviewUpdateTable, type ReviewOutputRow } from "./ReviewUpdateLayout";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 
 export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRetry }: { projectId: string; data: ProjectBoardSources; checking: boolean; failed: boolean; onRetry: () => void }) {
-  const previews = useAssemblyPreviewRevisions(projectId, data.sources), update = useRunTool();
+  const project = useProject(projectId), previews = useAssemblyPreviewRevisions(projectId, data.sources), update = useRunTool();
   const checks = useAssemblyCheckSummaries(projectId, data), checkById = new Map((checks.data ?? []).map(row => [row.sourceId, row]));
   const models = useAssemblyModelSummaries(projectId, data), modelById = new Map((models.data ?? []).map(row => [row.sourceId, row]));
   const [updatingSource, setUpdatingSource] = useState<string | null>(null);
+  const [requestedScope, setRequestedScope] = useState(() => restoreAssemblySelection(data, useUiStore.getState().assemblyBoardByProject[projectId])?.sourceId ?? null);
   const attentionSources = new Set([
     ...(!checks.isFetching && !checks.isError ? (checks.data ?? []).filter(assemblyCheckNeedsReview).map(row => row.sourceId) : []),
     ...(!models.isFetching && !models.isError ? (models.data ?? []).filter(assemblyModelNeedsReview).map(row => row.sourceId) : []),
   ]);
   const rows = assemblyReviewRows(data, new Map(previews.map(preview => [preview.sourceId, preview])), attentionSources);
+  const scope = requestedScope === "all" ? "all" : rows.some(row => row.sourceId === requestedScope) ? requestedScope : rows.find(row => row.board)?.sourceId ?? rows[0]?.sourceId;
+  const row = rows.find(item => item.sourceId === scope), declared = data.sources.find(item => item.source.id === scope);
   const busy = update.state.status === "running", unavailable = checking || failed;
   const active = () => useUiStore.getState().activeProjectId === projectId;
-  const ask = (sourceId: string, name: string) => {
+  const ask = (sourceId: string, name: string, compare = false) => {
     const ui = useUiStore.getState(); if (!active() || unavailable) return;
     const key = ui.activeThreadId ?? newChatDraftKey(projectId), previous = ui.drafts[key] ?? "";
-    const prompt = `Review source ${JSON.stringify(sourceId)} (${JSON.stringify(name)}) in this assembly. Identify missing files, revision differences and affected boards before proposing any changes. Do not claim compatibility or synchronize files without reviewing the native sources.`;
+    const prompt = `Review source ${JSON.stringify(sourceId)} (${JSON.stringify(name)}) in this assembly. ${compare ? "Compare its saved PCB and schematic, or locate the matching schematic in this repository if it is missing." : "Identify missing files, revision differences and affected boards."} Inspect shared source ownership before proposing changes. Do not claim compatibility or synchronize files without reviewing the native sources. Assembly manifest SHA-256 ${data.manifestSha256}.`;
     ui.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt); ui.focusComposer();
   };
-  const refresh = async (row: typeof rows[number]) => {
-    if (!row.board || busy || unavailable || !active()) return;
-    setUpdatingSource(row.sourceId);
-    await update.run("render_pcb_svg", { projectId, board: { ...row.board } });
-    // The source/preview hashes establish the visible result, not a tool's generic success message.
-    if (active()) { onRetry(); void previews.find(preview => preview.sourceId === row.sourceId)?.refetch(); }
+  const refresh = async (target: typeof rows[number]) => {
+    if (!target.board || busy || unavailable || !active()) return;
+    setUpdatingSource(target.sourceId);
+    await update.run("render_pcb_svg", { projectId, board: { ...target.board } });
+    if (active()) { onRetry(); void previews.find(preview => preview.sourceId === target.sourceId)?.refetch(); }
   };
-  const openSource = (row: typeof rows[number], tab: "pcb" | "drc" | "3d") => {
-    if (!active() || unavailable || busy || !row.selection) return;
-    const ui = useUiStore.getState();
-    const previous = restoreAssemblySelection(data, ui.assemblyBoardByProject[projectId]);
-    ui.setAssemblyBoard(previous?.sourceId === row.sourceId ? previous : row.selection); ui.setBoardTab(tab);
+  const openSource = (target: typeof rows[number], tab: "pcb" | "schematic" | "drc" | "3d") => {
+    if (!active() || unavailable || busy || !target.selection) return;
+    const ui = useUiStore.getState(), previous = restoreAssemblySelection(data, ui.assemblyBoardByProject[projectId]);
+    ui.setAssemblyBoard(previous?.sourceId === target.sourceId ? previous : target.selection); ui.setBoardTab(tab);
   };
+  const browse = (path: string) => { if (active() && !unavailable && !busy) useUiStore.getState().openProjectFile(path); };
+  const files = project.data?.files ?? [];
+  const prefix = declared?.source.location === "project" && declared.source.directory !== "." ? `${declared.source.directory}/` : "";
+  const hasSchematic = !!row?.board && (!!declared?.schematicPath || files.some(file => file.path === prefix + "board.kicad_sch"));
+  const modelStatus = unavailable ? "Source check unavailable" : models.isFetching ? "Checking model source…" : models.isError ? "Could not check model source" : modelById.get(scope ?? "")?.state === "source-unchanged" ? "PCB unchanged since export" : assemblyModelSummaryLabel(modelById.get(scope ?? ""));
+  const checkStatus = unavailable ? "Source check unavailable" : checks.isFetching ? "Checking PCB report…" : checks.isError ? "Could not check saved report" : assemblyCheckSummaryLabel(checkById.get(scope ?? ""));
+  const selectedPreview = previews.find(preview => preview.sourceId === row?.sourceId);
+  const images = row ? overviewBoardImages(files, { sources: data.sources, sourceId: row.sourceId }) : [];
+  const savedRender = images.find(image => image.kind === "top" || image.kind === "render");
+  const video = row?.board ? files.find(file => ["mp4", "webm", "gif"].some(ext => file.path === `${prefix}exports/product-video.${ext}`)) : undefined;
+  const outputs: ReviewOutputRow[] = row && !row.board ? [{key:"unavailable",item:"Board outputs",icon:"folder",status:row.status,warning:true,note:"Resolve the native source to review its saved outputs.",actions:<Button size="sm" disabled={unavailable || busy} onClick={() => browse(ASSEMBLY_MANIFEST_PATH)}>Source details</Button>}] : row ? [
+    { key: "model", item: "3D model", icon: "cube", status: modelStatus, warning: assemblyModelNeedsReview(modelById.get(row.sourceId)), note: "Model files and dependencies not inspected.", actions: <Button size="sm" disabled={unavailable || busy || !row.selection} onClick={() => openSource(row, "3d")}>Review model</Button> },
+    { key: "preview", item: "Board preview", icon: "image", status: unavailable ? "Source check unavailable" : row.status, warning: row.warning, note: "Saved PCB drawing · electrical checks stay separate.", actions: row.board ? <Button size="sm" data-update={!row.previewCurrent} disabled={unavailable || busy || !!selectedPreview?.isFetching} onClick={() => row.previewCurrent ? openSource(row, "pcb") : void refresh(row)}>{busy && updatingSource === row.sourceId ? "Updating preview…" : row.previewCurrent ? "Open board" : row.hasPreview ? "Update preview" : "Create preview"}</Button> : <Button size="sm" disabled={unavailable || busy} onClick={() => ask(row.sourceId, row.name)}>Resolve source</Button> },
+    ...(savedRender ? [{ key: "image", item: savedRender.kind === "top" ? "Top board image" : "Board image", icon: "image" as const, status: "Saved image · source unverified", note: "Review this saved render before sharing it.", actions: <Button size="sm" disabled={unavailable || busy} onClick={() => browse(savedRender.path)}>Review image</Button> }] : []),
+    ...(video ? [{ key: "video", item: "Review video", icon: "play" as const, status: "Saved video · source unverified", note: "Member-board video dependencies are not tracked here.", actions: <Button size="sm" disabled={unavailable || busy} onClick={() => browse(video.path)}>Preview video</Button> }] : []),
+  ] : [];
+  const sourceTiles = <div className="fd-review-source-grid">{rows.map(item => <button key={item.sourceId} className="fd-review-source-tile" data-warning={item.warning || attentionSources.has(item.sourceId)} disabled={unavailable || busy} onClick={() => setRequestedScope(item.sourceId)}><strong>{item.name}</strong><small>{item.status}</small><small>{item.instances.length} {item.instances.length === 1 ? "board" : "boards"}{attentionSources.has(item.sourceId) ? " · Review checks or model" : ""}</small></button>)}</div>;
   return <div className="fd-review-updates" data-testid="assembly-review-updates">
-    <header><h2>Review updates</h2><p>Sources needing attention appear first. Choose what to refresh; shared boards use one source.</p><Button size="sm" variant="ghost" disabled={busy || checking} onClick={() => { onRetry(); void checks.refetch(); void models.refetch(); for (const preview of previews) if (preview.trackable) void preview.refetch(); }}>Recheck sources</Button></header>
-    {failed && <p role="alert" className="fd-update-feedback">Project sources could not be refreshed. Retry before choosing a board or updating a preview.</p>}
-    <div className="fd-update-table" role="table" aria-label="Assembly source review">
-      <div className="fd-update-row fd-update-table-heading" role="row"><span role="columnheader">Board source</span><span role="columnheader">Source status</span><span role="columnheader">Next step</span></div>
-      {rows.map(row => {
-        const declaredSource = data.sources.find(source => source.source.id === row.sourceId);
-        const checkWarning = !unavailable && !checks.isFetching && !checks.isError && assemblyCheckNeedsReview(checkById.get(row.sourceId));
-        const modelWarning = !unavailable && !models.isFetching && !models.isError && assemblyModelNeedsReview(modelById.get(row.sourceId));
-        return <div key={row.sourceId} className="fd-update-row" role="row" data-review-source={row.sourceId}>
-          <div role="cell"><strong className="fd-review-source-name"><Icon name="pcb" width={20} height={20} />{row.name}</strong><p>{row.note}</p>{row.instances.length > 1 && <p>{row.instances.map(instance => instance.name).join(" · ")}</p>}</div>
-          <div role="cell" className="fd-assembly-review-status">
-            <span data-warning={!unavailable && row.warning}>{unavailable ? failed ? "Source check unavailable" : "Checking project sources…" : row.status}</span>
-            {checkWarning && <small data-warning>{assemblyCheckSummaryLabel(checkById.get(row.sourceId))}</small>}
-            {modelWarning && <small data-warning>{assemblyModelSummaryLabel(modelById.get(row.sourceId))}</small>}
-            {!row.board && declaredSource && <details className="fd-review-source-details">
-              <summary aria-label={`Source details for ${row.name}`}>Source details</summary>
-              <div>
-                <p>{declaredSource.reason ?? "This source is unavailable. Review its saved declaration before choosing how to resolve it."}</p>
-                <p>Source ID: {declaredSource.source.id}</p>
-                {declaredSource.source.location === "project" && <p>Project folder: {declaredSource.source.directory}</p>}
-                {declaredSource.source.provenance && <div className="fd-review-declared-origin"><strong>Declared origin · unverified</strong>{declaredSource.source.provenance.repository && <p>{declaredSource.source.provenance.repository}</p>}<p>{declaredSource.source.provenance.ref}</p><p>{declaredSource.source.provenance.path}</p></div>}
-                <Button size="sm" variant="ghost" disabled={unavailable || busy || !data.manifestSha256} onClick={() => { if (active() && !unavailable && !busy && data.manifestSha256) useUiStore.getState().openProjectFile(ASSEMBLY_MANIFEST_PATH); }}>Open project definition</Button>
-              </div>
-            </details>}
-            <details className="fd-review-source-details">
-              <summary aria-label={`Checks and model for ${row.name}`}>Checks and model</summary>
-              <div>
-                <p>{checking || checks.isFetching ? "Checking PCB reports…" : failed || checks.isError ? "PCB check status unavailable" : assemblyCheckSummaryLabel(checkById.get(row.sourceId))}</p>
-                <p>{checking || models.isFetching ? "Checking model receipts…" : failed || models.isError ? "Model source status unavailable" : assemblyModelSummaryLabel(modelById.get(row.sourceId))}</p>
-                {row.selection && <div className="fd-review-detail-actions">
-                  <Button size="sm" variant="ghost" disabled={unavailable || busy} onClick={() => openSource(row, "drc")}>PCB checks</Button>
-                  <Button size="sm" variant="ghost" disabled={unavailable || busy} onClick={() => openSource(row, "3d")}>Review 3D model</Button>
-                  {!row.previewCurrent && <Button size="sm" variant="ghost" disabled={unavailable || busy} onClick={() => openSource(row, "pcb")}>Open board</Button>}
-                </div>}
-              </div>
-            </details>
-          </div>
-          <div role="cell" className="fd-assembly-review-actions">
-            {row.board ? !row.previewCurrent ? <Button size="sm" disabled={unavailable || busy || !!previews.find(preview => preview.sourceId === row.sourceId)?.isFetching} onClick={() => void refresh(row)}>{busy && updatingSource === row.sourceId ? "Updating preview…" : row.hasPreview ? "Update preview" : "Create preview"}</Button> : row.selection && <Button size="sm" variant="ghost" onClick={() => openSource(row, "pcb")} disabled={unavailable || busy}>Open board</Button> : <Button size="sm" disabled={unavailable || busy} onClick={() => ask(row.sourceId, row.name)}>Resolve source</Button>}
-          </div>
-        </div>;
-      })}
-
-    </div>
-    {busy && <p role="status" className="fd-update-feedback"><Spinner />Updating one source preview; shared board instances use the same drawing.</p>}
+    <ReviewScope><select aria-label="Review board scope" value={scope ?? "all"} disabled={unavailable || busy} onChange={event => setRequestedScope(event.target.value)}><option value="all">All boards</option>{rows.map(item => <option key={item.sourceId} value={item.sourceId}>{item.name}</option>)}</select></ReviewScope>
+    <header><h2>Review updates</h2><p>Review your design sources and choose which saved outputs to update.</p><Button size="sm" variant="ghost" disabled={busy || checking} onClick={() => { onRetry(); void project.refetch(); void checks.refetch(); void models.refetch(); for (const preview of previews) if (preview.trackable) void preview.refetch(); }}>Recheck sources</Button></header>
+    {failed && <p role="alert" className="fd-update-feedback">Project sources could not be refreshed. Retry before choosing a board or updating an output.</p>}
+    {row ? <>
+      <ReviewDesignSources pcb={unavailable ? "Checking source…" : row.board ? "Saved source" : "Unavailable"} schematic={hasSchematic ? "Saved source" : "Not added"} status={unavailable ? "Source check unavailable" : !row.board ? row.status : hasSchematic ? "PCB and schematic · not compared" : "Schematic needed for comparison"} note={row.instances.length > 1 ? `Shared design · ${row.instances.length} boards. Review differences before choosing a direction.` : "Review the native sources before choosing a synchronization direction."} action={<Button size="sm" disabled={unavailable || busy} onClick={() => ask(row.sourceId, row.name, !!row.board)}>{!row.board ? "Resolve source" : hasSchematic ? "Ask about differences" : "Find schematic with agent"}</Button>}>
+        <details><summary>Source details and synchronization</summary><p>{row.name} · {row.note}</p><p>{declared?.reason ?? (declared?.source.location === "project" ? `Source folder: ${declared.source.directory}` : "Resolve the source before opening its design.")}</p>{declared?.source.provenance && <p className="fd-review-origin">Declared origin · unverified: {declared.source.provenance.repository} · {declared.source.provenance.ref} · {declared.source.provenance.path}</p>}<p>Directed synchronization is not connected. Matching output receipts do not establish PCB–schematic equivalence or assembly compatibility.</p><Button size="sm" variant="ghost" disabled={unavailable || busy} onClick={() => browse(ASSEMBLY_MANIFEST_PATH)}>Open project definition</Button>{hasSchematic && <Button size="sm" variant="ghost" disabled={unavailable || busy} onClick={() => openSource(row, "schematic")}>Open schematic</Button>}</details>
+      </ReviewDesignSources>
+      <ReviewUpdateTable title="Generated outputs" rows={outputs} />
+      <ReviewKeepNote />
+      <ReviewUpdateTable title="Saved checks" collapsed summary={`Saved checks · ${checkStatus}`} rows={[{key:"pcb-checks",item:"PCB checks",icon:"checkCircle",status:checkStatus,warning:assemblyCheckNeedsReview(checkById.get(row.sourceId)) || (checkById.get(row.sourceId)?.findingCount ?? 0) > 0,note:"PCB-only report. A matching source is not a passed check.",actions:<Button size="sm" disabled={unavailable || busy || !row.selection} onClick={() => openSource(row,"drc")}>Review findings</Button>}]} />
+      <details className="fd-review-source-summary"><summary>Other boards · {rows.length} source designs</summary>{sourceTiles}</details>
+    </> : <section className="fd-review-source-summary"><h3>Design sources</h3><p>Choose a board to review its sources, outputs and saved checks.</p>{sourceTiles}</section>}
+    {busy && <p role="status" className="fd-update-feedback"><Spinner />Updating one source preview; shared boards use the same drawing.</p>}
     {update.state.error && <p role="alert" className="fd-update-feedback">{update.state.error}</p>}
-    <details className="fd-review-explanation"><summary>How these source checks work</summary><section className="fd-update-sync"><div><h3>Checks and compatibility</h3><p>Preview freshness compares the saved PCB and drawing bytes. Model receipts compare the export’s PCB source; open a model to inspect its bytes. Neither verifies electrical checks, schematic parity, model dependencies, cables or enclosure fit.</p><small>Run PCB-only DRC in Checks. Schematic parity, ERC and inter-board compatibility need separate review.</small></div><Button size="sm" variant="ghost" onClick={() => { if (active()) useUiStore.getState().setBoardTab("drc"); }}>Open board checks</Button></section></details>
   </div>;
 }
