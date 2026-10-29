@@ -1,0 +1,25 @@
+{
+  "change": "Single-board Review groups design sources, generated outputs and saved checks",
+  "verified": [
+    "PCB-only study accurately identifies missing schematic; Browse source files opens Files",
+    "Both-native-source Game Boy study shows each as Saved source, relationship not compared",
+    "Existing Ask draft action retained; no assistant send or reconciliation performed",
+    "Existing output receipt values and actions unchanged",
+    "Generated outputs and Saved checks exposed as separately labelled tables",
+    "Compact960\u00d7720: source card/actions fit and saved checks reachable by scroll; Open checks opens existing DRC/ERC page",
+    "34 donor and9 Game Boy protected source/artifact files byte-identical"
+  ],
+  "tests": "UI types PASS;233 UI tests /912 assertions /0 failures; prior full root f073c74 2276/36/0",
+  "boundaries": [
+    "Single-board presentation refinement; assembly review remains independently source-qualified",
+    "No new comparison, synchronization or pass detection",
+    "Mechanical action and data unchanged; no enclosure operations",
+    "Agent model routing remains deferred"
+  ],
+  "screenshots": [
+    "review-design-sources-first.png",
+    "review-both-sources-uncompared.png",
+    "review-source-groups-compact.png",
+    "review-checks-separated.png"
+  ]
+}

@@ -767,3 +767,9 @@
 .fd-finding-filters select { padding:6px 8px; border:1px solid var(--fd-border); border-radius:7px; background:var(--fd-panel); color:var(--fd-fg); }
 
 .fd-file-preview-path { flex-basis:220px; min-width:min(220px,100%); }
+
+.fd-review-update-group { max-width:1040px; margin:24px auto; }
+.fd-review-update-group > h3 { font-size:15px; font-weight:600; margin:0 0 12px; }
+.fd-review-source-pair { display:flex; flex-wrap:wrap; gap:10px; margin:12px 0; }
+.fd-review-source-pair > span { padding:6px 10px; border:1px solid var(--fd-border); border-radius:7px; font-size:12px; }
+.fd-review-source-pair > span[data-warning="true"] { color:var(--fd-warning); }

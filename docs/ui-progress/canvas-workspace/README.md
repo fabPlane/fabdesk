@@ -1591,3 +1591,13 @@ Native walkthrough verified all three requested entry dialogs, dismissal focus, 
 
 ![One composer on a fresh project](fresh-start-one-composer.png)
 ![Compact fresh start](fresh-start-compact.png)
+
+
+## Source-first Review groups
+
+Single-board Updates now shows Design sources first, then separate Generated outputs and Saved checks tables. Presence is labelled Saved source or Missing; schematic/PCB equivalence remains explicitly un-compared. Missing-source recovery opens Files. The existing assistant draft action asks about differences without applying a direction. Existing output regeneration, Keep saved output, report provenance and Mechanical actions retain their behavior. Assembly Review stays independently source-qualified.
+
+Native donor and Game Boy studies cover missing and present schematics, source-file recovery, compact scrolling and existing check navigation. All34+9 protected files stayed exact. UI types/233tests912assertions passed; no native generation or assistant send in this layout walkthrough. [Evidence](review-groups-native.json).
+
+![Design sources before output updates](review-design-sources-first.png)
+![Check evidence remains separate](review-checks-separated.png)
