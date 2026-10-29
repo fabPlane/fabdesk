@@ -241,6 +241,14 @@ test("opening another project closes inherited canvas panes without discarding d
   expect(store.getState().boardTab).toBe("comments");
   expect(store.getState().drafts["chat-b"]).toBe("Keep this unsent question");
   expect(store.getState().attachments["chat-b"]?.[0]?.path).toBe("sketches/reference.png");
+  store.getState().setCanvasNavigationOpen(true);
+  store.getState().startNewChatInProject("b");
+  expect(store.getState().canvasNavigationOpen).toBe(false);
+  expect(store.getState().activeThreadId).toBeNull();
+  expect(store.getState().activeProjectId).toBe("b");
+  expect(store.getState().boardTab).toBe("comments");
+  expect(store.getState().drafts["chat-b"]).toBe("Keep this unsent question");
+  expect(store.getState().attachments["chat-b"]?.[0]?.path).toBe("sketches/reference.png");
 });
 
 

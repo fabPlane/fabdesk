@@ -1494,3 +1494,7 @@ Source-check recovery now also selects Files explicitly. Native owned malformed-
 ## Selecting a conversation reveals the assistant
 
 Selecting a same-project conversation previously left the navigation modal over the corner assistant. Nonempty conversation selection in canvas mode now dismisses navigation; classic sidebar behavior is retained. Native conversation-row and search-title routes passed without Send/retry; Notes remained the active task. Regression coverage preserves project/task/draft/attachment. All48protected root-study files exact; UI typecheck and231UItests/895assertions PASS. Captures413–414 and [native evidence](conversation-selection-native.json). Existing expired-auth response was viewed only, no reasoning-success claim.
+
+## Project-row new conversation reveals its composer
+
+Project-row New chat used the shared store action and left navigation over the draft. The shared canvas action now closes navigation, covering current/other-project rows and picker paths. Native current project retained Notes/focused composer; VAIO row restored Overview and its existing unsent source-resolution draft without Send. All48root/16VAIOprotected files exact. UI typecheck and231UItests/901assertions PASS. Captures415–416 and [native evidence](project-new-conversation-native.json). No new agent/auth/engineering success claim.

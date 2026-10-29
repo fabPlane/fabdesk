@@ -287,7 +287,7 @@ export function createUiStore(storage?: StateStorage) {
   setFocusMessageId: (focusMessageId) => set({ focusMessageId }),
   setActiveProject: (activeProjectId) => set((s) => ({ activeProjectId, ...(activeProjectId !== s.activeProjectId ? { activeThreadId: null, rootFinding: null, assemblyFinding: null, commentToReveal: null, activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false, ...(s.canvasMode ? { boardOpen: true, assistantOpen: false, canvasNavigationOpen: false } : {}), workspaceArea: activeProjectId ? s.workspaceByProject[activeProjectId]?.area ?? "boards" : "boards", boardTab: activeProjectId ? s.workspaceByProject[activeProjectId]?.tab ?? "pcb" : "pcb" } : {}) })),
   startNewChatInProject: (projectId) =>
-    set((s) => ({ ...newChatInProjectState(projectId), composerFocusNonce: s.composerFocusNonce + 1, assistantOpen: true,
+    set((s) => ({ ...newChatInProjectState(projectId), composerFocusNonce: s.composerFocusNonce + 1, assistantOpen: true, ...(s.canvasMode ? { canvasNavigationOpen: false } : {}),
       ...(projectId !== s.activeProjectId ? { rootFinding: null, assemblyFinding: null, workspaceArea: projectId ? s.workspaceByProject[projectId]?.area ?? "boards" : "boards", boardTab: projectId ? s.workspaceByProject[projectId]?.tab ?? "pcb" : "pcb" } : {}) })),
   setSidebarListTab: (sidebarListTab) => set({ sidebarListTab: normalizeSidebarListTab(sidebarListTab) }),
   setActiveOpenSourceId: (activeOpenSourceId) =>

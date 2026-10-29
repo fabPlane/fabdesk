@@ -1,0 +1,32 @@
+{
+  "before": "Project-row New chat in current project left canvas navigation over the draft assistant",
+  "after": [
+    "Project-row New chat in current project dismissed navigation, retained Notes and focused composer",
+    "Project-row New chat in VAIO project restored its Overview and existing unsent source-resolution draft; drawer dismissed; no Send",
+    "Closed assistant and left quiet VAIO Overview"
+  ],
+  "screenshots": [
+    "415-project-new-conversation-obscured-before.png",
+    "416-project-new-conversation-reveals-composer.png"
+  ],
+  "preservation": {
+    "exports-gerber-native-baseline.json": {
+      "protectedFiles": 48,
+      "mismatches": []
+    },
+    "vaio-visual-comparison-baseline.json": {
+      "protectedFiles": 16,
+      "mismatches": []
+    }
+  },
+  "validation": {
+    "uiTypecheck": "PASS /tmp/canvas-project-new-conversation-ui-types.log",
+    "uiTests": "231pass/901assertions/0fail /tmp/canvas-project-new-conversation-ui-tests.log",
+    "stateRegression": "New conversation retains current project/task and prior conversation draft/attachment"
+  },
+  "limits": [
+    "No new persisted conversation or agent request was created via Send",
+    "No source/check/export/edit or sign-in action",
+    "No full root-suite rerun"
+  ]
+}
