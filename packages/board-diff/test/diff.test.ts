@@ -307,3 +307,24 @@ describe("flattenArc", () => {
     expect(pts.some((p) => p.y > 0.5)).toBe(true);
   });
 });
+
+test("repeated connector pad numbers preserve multiplicity without false changes", () => {
+  const before = emptySnapshot(), after = emptySnapshot();
+  const first = { pin: "MP", shape: "rect", width: 1, height: 2 };
+  const second = { pin: "MP", shape: "rect", width: 1.8, height: 2.7 };
+  before.components.push({ ref: "J1", pads: [first, second] });
+  after.components.push({ ref: "J1", pads: [second, first] });
+  expect(diffBoards(before, after).components.changed).toHaveLength(0);
+  after.components[0]!.pads![0] = { ...second, width: 2 };
+  expect(diffBoards(before, after).components.changed[0]?.reasons).toContain("pads");
+});
+
+test("separate native Edge.Cuts edges do not become a diagonal polygon or schematic outline", () => {
+  const snap = snapshotFromKicadPcb('(kicad_pcb (gr_line (start 0 0) (end 20 0) (layer "Edge.Cuts")) (gr_line (start 20 10) (end 0 10) (layer "Edge.Cuts")))');
+  expect(snap.outlinePaths).toEqual([[{ x: 0, y: 0 }, { x: 20, y: 0 }], [{ x: 20, y: 10 }, { x: 0, y: 10 }]]);
+  const drawing = snapshotSvg(snap, "pcb");
+  expect(drawing).toContain('d="M0 0 L20 0"');
+  expect(drawing).toContain('d="M20 10 L0 10"');
+  expect(drawing).not.toContain('L20 10 L0 10 Z');
+  expect(snapshotSvg(snap, "schematic")).not.toContain('data-board-outline');
+});

@@ -63,6 +63,7 @@ export function mergeSnapshots(...sources: BoardSnapshot[]): BoardSnapshot {
   const vias = new Map<string, ViaSnapshot>();
   const zones = new Map<string, ZoneSnapshot>();
   let outline: BoardSnapshot["outline"] = [];
+  let outlinePaths: BoardSnapshot["outlinePaths"];
 
   for (const source of sources) {
     for (const component of source.components) {
@@ -74,7 +75,7 @@ export function mergeSnapshots(...sources: BoardSnapshot[]): BoardSnapshot {
     for (const track of source.tracks) tracks.set(track.id, track);
     for (const via of source.vias ?? []) vias.set(via.id, via);
     for (const zone of source.zones ?? []) zones.set(zone.id, zone);
-    if (source.outline.length > 0) outline = source.outline;
+    if (source.outline.length > 0) { outline = source.outline; outlinePaths = source.outlinePaths; }
   }
 
   out.components = [...components.values()].sort((a, b) => a.ref.localeCompare(b.ref));
@@ -83,6 +84,7 @@ export function mergeSnapshots(...sources: BoardSnapshot[]): BoardSnapshot {
   out.vias = [...vias.values()];
   out.zones = [...zones.values()];
   out.outline = outline;
+  if (outlinePaths) out.outlinePaths = outlinePaths;
   return out;
 }
 

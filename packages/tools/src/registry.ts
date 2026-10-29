@@ -94,6 +94,8 @@ export interface ToolContext {
   telemetry?: ToolTelemetry;
   /** Captured board scope; a transport must execute it rather than ignore its selector. */
   board?: BoardSourceSelection;
+  /** Captured assembly parent for project-relative history; native work still uses project.dir. */
+  boardRoot?: Readonly<{ id: string; dir: string }>;
   runInScope?: <T>(operation: () => Promise<T>) => Promise<T>;
 }
 
@@ -405,6 +407,7 @@ export function makeContext(opts: {
   telemetry?: ToolTelemetry;
   board?: BoardSourceSelection;
   runInScope?: <T>(operation: () => Promise<T>) => Promise<T>;
+  boardRoot?: Readonly<{ id: string; dir: string }>;
 }): ToolContext {
   const project = opts.project;
   return {
@@ -420,6 +423,7 @@ export function makeContext(opts: {
     ...(opts.session ? { session: opts.session } : {}),
     ...(opts.telemetry ? { telemetry: opts.telemetry } : {}),
     ...(opts.board ? { board: opts.board } : {}),
+    ...(opts.boardRoot ? { boardRoot: opts.boardRoot } : {}),
     ...(opts.runInScope ? { runInScope: opts.runInScope } : {}),
   };
 }

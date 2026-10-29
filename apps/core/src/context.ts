@@ -35,9 +35,11 @@ export function createContextFactory(deps: ContextDeps): ContextFactory {
     }
     const board = req.board ? Object.freeze(BoardSourceSelection.parse(req.board)) : undefined;
     let runInScope: (<T>(operation: () => Promise<T>) => Promise<T>) | undefined;
+    let boardRoot: Readonly<{ id: string; dir: string }> | undefined;
     if (board) {
       if (!project || !req.def.boardScoped) throw new ToolError("This operation does not support the requested assembly board source.", "precondition");
       const rootProject = project, binding = await resolveNativeBoardBinding(rootProject, board);
+      boardRoot = Object.freeze({ id: rootProject.id, dir: binding.rootDir });
       // IDs stay project-owned for leases, telemetry and jobs; native sessions use the captured leaf directory.
       project = Object.freeze({
         id: rootProject.id, name: `${rootProject.name} / ${board.sourceId}`, dir: binding.boardDir,
@@ -89,6 +91,7 @@ export function createContextFactory(deps: ContextDeps): ContextFactory {
       ...(telemetry ? { telemetry } : {}),
       ...(board ? { board } : {}),
       ...(runInScope ? { runInScope } : {}),
+      ...(boardRoot ? { boardRoot } : {}),
     });
   };
 }

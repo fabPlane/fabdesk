@@ -1,4 +1,6 @@
-import { diffPreviewSvg } from "@fabdesk/client-core";
+import { captureAssemblySelection, diffPreviewSvg, pcbToolJson, restoreAssemblySelection } from "@fabdesk/client-core";
+import type { BoardSourceSelection } from "@fabdesk/protocol";
+import { ReviewScope } from "./ReviewUpdateLayout";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, EmptyState, LoadError, Select, Spinner } from "../components/ui";
@@ -22,6 +24,8 @@ type ComponentChange = {
 };
 
 type BoardDiffReport = {
+  documents?: { pcb: boolean; schematic: boolean };
+  boardSource?: BoardSourceSelection & { projectId: string };
   from?: { ref: string; commit?: string };
   to?: { ref: string; commit?: string };
   summary?: {
@@ -76,25 +80,48 @@ function revisionsFrom(result: unknown): Revision[] {
 function shortRef(ref: string): string {
   if (ref === "HEAD") return "Latest commit";
   if (ref === "worktree") return "Current files";
+  if (ref.startsWith("saved:")) return `Saved point · ${ref.slice(6, 14)}`;
   return /^[0-9a-f]{7,40}$/i.test(ref) ? ref.slice(0, 8) : ref;
 }
 
 export function DiffTab() {
-  const projectId = useUiStore((s) => s.activeProjectId);
-  const sources = useBoardSources(projectId);
+  const projectId = useUiStore(s => s.activeProjectId), saved = useUiStore(s => projectId ? s.assemblyBoardByProject[projectId] : null);
+  const sources = useBoardSources(projectId), [requested, setRequested] = useState<string | null>(null);
+  if (!projectId) return <EmptyState title="Pick a project to compare revisions" />;
+  if (sources.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
+  if (sources.isError && !sources.data) return <LoadError title="Could not verify board scope for comparison" onRetry={() => void sources.refetch()} />;
+  const data = sources.data, assembly = data?.mode === "assembly";
+  const sourceId = assembly ? requested ?? restoreAssemblySelection(data, saved)?.sourceId ?? data.sources.find(row => row.status === "available")?.source.id ?? data.sources[0]?.source.id : null;
+  const source = assembly ? data.sources.find(row => row.source.id === sourceId) : null;
+  const board = assembly && data.manifestSha256 && source ? { sourceId: source.source.id, manifestSha256: data.manifestSha256 } : undefined;
+  const prefix = source?.source.location === "project" && source.source.directory !== "." ? `${source.source.directory}/` : "";
+  const ready = !sources.isFetching && !sources.isError && (!assembly || source?.status === "available");
+  return <>
+    {assembly && <ReviewScope><select aria-label="Board for Changes" value={sourceId ?? ""} disabled={sources.isFetching} onChange={event => {
+      const id = event.target.value; setRequested(id);
+      const instance = data.assembly?.instances.find(instance => instance.sourceId === id);
+      const selection = instance ? captureAssemblySelection(data, instance.id) : null;
+      if (selection && data.sources.find(row => row.source.id === id)?.status === "available") useUiStore.getState().setAssemblyBoard(selection);
+    }}>{!source && <option value={sourceId ?? ""} disabled>Source definition changed · choose a board</option>}{data.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · source unavailable" : ""}</option>)}</select></ReviewScope>}
+    {assembly && source?.status !== "available" ? <EmptyState title="Add this board’s source to compare changes"><p>{source?.reason ?? "Choose an imported board source, or locate this board’s native files."}</p><Button onClick={() => useUiStore.getState().openProjectFile("fabplane.assembly.json")}>Review source definition</Button></EmptyState> : <BoardRevisionDiff key={`${projectId}:${board?.sourceId ?? "root"}:${board?.manifestSha256 ?? ""}`} projectId={projectId} prefix={prefix} {...(board ? { board } : {})} sourceLabel={source?.source.name ?? "Main board"} scopeReady={ready} />}
+  </>;
+}
+
+function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady }: { projectId: string; prefix: string; board?: BoardSourceSelection; sourceLabel: string; scopeReady: boolean }) {
   const [changesOpen, setChangesOpen] = useState(false);
   const changesTrigger = useRef<HTMLButtonElement>(null), changesPanel = useRef<HTMLElement>(null);
   const workspace = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const list = useRunTool();
   const compare = useRunTool();
-  const reportQuery = useProjectJson(projectId, "reports/board-diff.json");
-  const report = asReport(reportQuery.data);
+  const checkpoint = useRunTool();
+  const reportQuery = useProjectJson(projectId, `${prefix}reports/board-diff.json`);
+  const candidate = asReport(reportQuery.data);
+  const report = candidate && (!board || candidate.boardSource?.projectId === projectId && candidate.boardSource.sourceId === board.sourceId && candidate.boardSource.manifestSha256 === board.manifestSha256) ? candidate : null;
   const [from, setFrom] = useState("HEAD");
   const [to, setTo] = useState("worktree");
   const [revisions, setRevisions] = useState<Revision[]>([
     { ref: "worktree", title: "Current worktree" },
-    { ref: "HEAD", title: "HEAD" },
   ]);
   const [surface, setSurface] = useState<Surface>("pcb");
   const [mode, setMode] = useState<Mode>("structured");
@@ -122,27 +149,31 @@ export function DiffTab() {
   }, [changesOpen, projectId]);
 
   useEffect(() => {
-    if (!projectId || sources.isPending || sources.isError || sources.data?.mode === "assembly") return;
-    void list.run("board_revision_list", { projectId, limit: 40 }).then((state) => {
+    if (!scopeReady) return;
+    void list.run("board_revision_list", { projectId, limit: 40, ...(board ? { board } : {}) }).then(state => {
       const next = revisionsFrom(state.result);
-      if (next.length > 0) setRevisions(next);
+      if (next.length > 0) {
+        setRevisions(next);
+        if (!report?.from?.ref) setFrom(next.find(revision => revision.ref !== "worktree")?.ref ?? "worktree");
+      }
     });
-  }, [projectId, list.run, sources.isPending, sources.isError, sources.data?.mode]);
+  }, [projectId, list.run, scopeReady, board?.sourceId, board?.manifestSha256]);
 
   useEffect(() => {
     if (report?.from?.ref) setFrom(report.from.ref);
     if (report?.to?.ref) setTo(report.to.ref);
   }, [report?.from?.ref, report?.to?.ref]);
 
+  useEffect(() => { if (report?.documents?.[surface] === false) setSurface(report.documents.pcb ? "pcb" : "schematic"); }, [report?.documents?.pcb, report?.documents?.schematic, surface]);
   const fileKey = FILE_KEYS[surface][mode];
   const svgPath = report?.files?.[fileKey] ?? report?.files?.[FILE_KEYS[surface].structured];
-  const svg = useProjectText(projectId, svgPath ?? null);
+  const svg = useProjectText(projectId, svgPath ? `${prefix}${svgPath}` : null);
   const drawing = useMemo(() => selectDiffGeometry(diffPreviewSvg(svg.data ?? ""), selection), [svg.data, selection]);
   const select = (next: DiffSelection) => setSelection(current =>
     current?.kind === next.kind && current.id === next.id ? null : next,
   );
 
-  const running = compare.state.status === "running" || list.state.status === "running";
+  const running = compare.state.status === "running" || list.state.status === "running" || checkpoint.state.status === "running";
   const noHistory = list.state.status === "done" && revisions.every(revision => revision.ref === "worktree");
   const options = useMemo(() => {
     const seen = new Set<string>();
@@ -152,7 +183,7 @@ export function DiffTab() {
       seen.add(rev.ref);
       rows.push(rev);
     }
-    for (const extra of [from, to, "HEAD", "worktree"]) {
+    for (const extra of [from, to, "worktree"]) {
       if (!seen.has(extra)) {
         seen.add(extra);
         rows.push({ ref: extra, title: extra });
@@ -161,17 +192,17 @@ export function DiffTab() {
     return rows;
   }, [revisions, from, to]);
 
-  if (!projectId) return <EmptyState title="Pick a project to compare revisions" />;
-
-  if (sources.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
-  if (sources.isError) return <LoadError title="Could not verify board scope for comparison" onRetry={() => void sources.refetch()} />;
-  if (sources.data?.mode === "assembly") return <div className="fd-canvas-empty h-full"><EmptyState title="Member-board revision comparison is not available yet"><p>Changes currently compares a project’s root board. Choose a board to inspect its saved source; this view does not compare or synchronize assembly members.</p><Button className="mt-4" onClick={() => useUiStore.getState().setBoardTab("pcb")}>Open boards</Button></EmptyState></div>;
-
-  if (noHistory && !report) return <div className="fd-canvas-empty h-full"><EmptyState title="No saved revision to compare yet"><p>This view uses Git history. Open a project with commits, or save its first commit with your Git tools, then reopen Changes.</p><Button className="mt-4" onClick={() => useUiStore.getState().setBoardTab("files")}>Open project files</Button></EmptyState></div>;
+  const savePoint = async () => {
+    if (running || !scopeReady || useUiStore.getState().activeProjectId !== projectId) return;
+    const result = await checkpoint.run("board_revision_checkpoint", { projectId, label: `${sourceLabel} · before next edit`, ...(board ? { board } : {}) });
+    if (result.status !== "done" || useUiStore.getState().activeProjectId !== projectId) return;
+    const point = pcbToolJson(result.result).revision as Revision | undefined;
+    if (point?.ref) { setRevisions(previous => [{ ref: "worktree", title: "Current files" }, point, ...previous.filter(row => row.ref !== point.ref && row.ref !== "worktree")]); setFrom(point.ref); setTo("worktree"); }
+  };
 
   const onCompare = async () => {
-    if (running || noHistory || sources.isFetching || sources.isError) return;
-    const result = await compare.run("board_revision_diff", { projectId, from, to });
+    if (running || noHistory || !scopeReady || useUiStore.getState().activeProjectId !== projectId) return;
+    const result = await compare.run("board_revision_diff", { projectId, from, to, ...(board ? { board } : {}) });
     if (result.status === "done") {
       // All six view artifacts are overwritten. Invalidate inactive views too,
       // otherwise switching modes can resurrect an older comparison image.
@@ -184,7 +215,7 @@ export function DiffTab() {
     <div ref={workspace} className="fd-diff-workspace flex h-full min-h-0 flex-col" data-testid="board-diff">
       <div className="fd-diff-toolbar" aria-label="Comparison controls">
       <div className="fd-diff-revisions flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-2">
-        <label className="flex min-w-0 items-center gap-1 text-[11px] text-muted">
+        {!noHistory && <><label className="flex min-w-0 items-center gap-1 text-[11px] text-muted">
           From
           <Select value={from} onChange={(e) => setFrom(e.target.value)} aria-label="From revision" className="h-8 max-w-52 text-xs">
             {options.map((rev) => (
@@ -204,14 +235,15 @@ export function DiffTab() {
             ))}
           </Select>
         </label>
-        <Button size="sm" variant="primary" disabled={running || noHistory || sources.isFetching} onClick={() => void onCompare()}>
-          {running ? "Comparing…" : "Compare"}
-        </Button>
+        <Button size="sm" variant="primary" disabled={running || noHistory || !scopeReady} onClick={() => void onCompare()}>
+          {compare.state.status === "running" ? "Comparing…" : "Compare"}
+        </Button></>}
+        <Button size="sm" variant={noHistory ? "primary" : "secondary"} disabled={running || !scopeReady} onClick={() => void savePoint()}>{checkpoint.state.status === "running" ? "Saving point…" : "Save comparison point"}</Button>
         {running && <Spinner />}
         <span className="ml-auto text-[11px] text-muted">{report ? "Saved comparison · " : ""}{diffHeadline(report)}</span>
       </div>
-      <div className="fd-diff-views flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-1.5">
-        {(["pcb", "schematic"] as const).map((id) => (
+      {report && <div className="fd-diff-views flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-1.5">
+        {(["pcb", "schematic"] as const).filter(id => report.documents?.[id] !== false).map((id) => (
           <Button key={id} size="sm" variant={surface === id ? "primary" : "ghost"} onClick={() => setSurface(id)}>
             {id === "pcb" ? "PCB" : "Schematic"}
           </Button>
@@ -230,9 +262,11 @@ export function DiffTab() {
           </Button>
         ))}
         {report && <Button ref={changesTrigger} size="sm" className="ml-auto" aria-expanded={changesOpen} aria-controls="revision-change-list" onClick={() => setChangesOpen(!changesOpen)}>Change list</Button>}
-        {compare.state.error && <span className="text-xs text-danger">{compare.state.error}</span>}
+        </div>}
+      {compare.state.error && <p role="alert" className="text-xs text-danger">{compare.state.error}</p>}
       </div>
-      </div>
+      {checkpoint.state.error && <p role="alert" className="px-3 text-xs text-warning">{checkpoint.state.error}</p>}
+      {checkpoint.state.status === "done" && <p role="status" className="px-3 text-xs text-muted">Comparison point saved. Make a change, then compare it with Current files.</p>}
       {list.state.error && <p role="alert" className="px-3 text-xs text-warning">Could not load revision history. {list.state.error}</p>}
       {mode === "overlay" && report && (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
@@ -255,13 +289,13 @@ export function DiffTab() {
       ) : !report ? (
         <div className="fd-canvas-empty h-full">
           <EmptyState title={noHistory ? "No saved revision to compare yet" : "Compare board revisions"}>
-            {noHistory ? "This view uses Git history. Open a project with commits, or save a commit using your Git tools, then reopen Changes." : "Choose two saved revisions, or compare the latest commit with your current files. Added parts are green, removed are red, and moved or changed parts are amber."}
+            {noHistory ? "Save a comparison point before making a change. After editing, compare that point with Current files. Existing Git revisions are also available when this project has history." : "Choose a saved comparison point or Git revision to compare with your current files. Added parts are green, removed are red, and moved or changed parts are amber."}
           </EmptyState>
         </div>
       ) : (
         <div className="fd-diff-content flex min-h-0 flex-1">
           <div className="min-w-0 flex-1">
-            {svgPath && svg.data ? (
+            {svgPath && svg.isLoading ? <div className="flex h-full items-center justify-center gap-2" role="status"><Spinner />Loading comparison…</div> : svg.isError ? <LoadError title="Could not load this comparison drawing" onRetry={() => void svg.refetch()} /> : svgPath && svg.data ? (
               <SvgViewer
                 svg={mode === "overlay" ? blendDiffOverlay(drawing.svg, blend) : drawing.svg}
                 viewKey={`${projectId}:${svgPath}:${reportQuery.dataUpdatedAt}:${selection?.kind ?? ""}:${selection?.id ?? ""}`}

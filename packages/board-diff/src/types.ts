@@ -71,6 +71,8 @@ export type BoardSnapshot = {
   vias: ViaSnapshot[];
   zones: ZoneSnapshot[];
   outline: Point[];
+  /** Separate native Edge.Cuts paths; points alone do not imply connected polygon vertices. */
+  outlinePaths?: Point[][];
 };
 
 export type ComponentChangeReason =
