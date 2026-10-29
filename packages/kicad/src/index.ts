@@ -51,6 +51,8 @@ export {
 export {
   inspectSchematicHierarchy,
   exportOwnedSchematicSvg,
+  exportOwnedSchematicBom,
+  type OwnedSchematicBom,
   type OwnedSchematicSvg,
   type SchematicHierarchy,
   type SchematicHierarchyIssue,

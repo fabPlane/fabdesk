@@ -168,6 +168,7 @@ export async function createServices(
       exportBom: (cli, o) => kicad.exportBom(cli, o),
       exportNetlist: (cli, o) => kicad.exportNetlist(cli, o),
       exportOwnedSchematicSvg: (cli, o) => kicad.exportOwnedSchematicSvg(cli, o),
+      exportOwnedSchematicBom: (cli, o) => kicad.exportOwnedSchematicBom(cli, o),
       exportSchematicSvg: (cli, o) => kicad.exportSchematicSvg(cli, o),
       exportSchematicPdf: (cli, o) => kicad.exportSchematicPdf(cli, o),
       exportPcbSvg: (cli, o) => kicad.exportPcbSvg(cli, o),

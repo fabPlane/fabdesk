@@ -232,8 +232,8 @@ export type OwnedSchematicSvg = {
   sheets: Array<{ name: string; svg: Uint8Array }>;
 };
 
-/** Render the exact inspected member hierarchy. Output bytes escape scratch only after saved files are rechecked. */
-export async function exportOwnedSchematicSvg(cli: KicadCli, opts: { projectDir: string; hierarchy: SchematicHierarchy; signal?: AbortSignal }): Promise<OwnedSchematicSvg> {
+/** Export the exact inspected hierarchy; return bytes only after every captured file is rechecked. */
+async function withCapturedSchematic<T>(opts: { projectDir: string; hierarchy: SchematicHierarchy; signal?: AbortSignal }, operation: (source: string, scratch: string) => Promise<T>) {
   const { hierarchy } = opts, dir = resolve(opts.projectDir);
   if (!hierarchy.complete || !hierarchy.sheets.length || hierarchy.sheets.length > 256) throw new Error("A complete bounded native hierarchy is required before schematic rendering");
   const files = new Map<string, Buffer>();
@@ -250,16 +250,37 @@ export async function exportOwnedSchematicSvg(cli: KicadCli, opts: { projectDir:
   if (revision !== hierarchy.aggregateRevision) throw new Error("The inspected hierarchy revision does not match the captured native files");
   let top: TopLevelSheet[] = [];
   if (hierarchy.projectFile) { const metadata = JSON.parse(files.get(hierarchy.projectFile)!.toString("utf8")); top = Array.isArray(metadata.schematic?.top_level_sheets) ? metadata.schematic.top_level_sheets : []; }
-  const sheets = await withOwnedFilesSnapshot(hierarchy.rootFile, hierarchy.projectFile, top, files, async (source, scratch) => {
+  const result = await withOwnedFilesSnapshot(hierarchy.rootFile, hierarchy.projectFile, top, files, operation);
+  for (const [path, bytes] of files) if (hash(await readOwnedFile(dir, resolve(dir, path))) !== hash(bytes)) throw new Error("Native schematic files changed while exporting; the previous output was kept");
+  await checkAbsentProject(); opts.signal?.throwIfAborted();
+  return { sourceRevision: revision, sourceFiles: [...files].map(([path, bytes]) => ({ path, sha256: hash(bytes) })), result };
+}
+
+/** Render immutable native sheets without altering any project source. */
+export async function exportOwnedSchematicSvg(cli: KicadCli, opts: { projectDir: string; hierarchy: SchematicHierarchy; signal?: AbortSignal }): Promise<OwnedSchematicSvg> {
+  const captured = await withCapturedSchematic(opts, async (source, scratch) => {
     const result = await exportSchematicSvg(cli, { schematic: source, outDir: join(scratch, "svg-output"), ...(opts.signal ? { signal: opts.signal } : {}) });
-    if (!result.paths.length || result.paths.length !== hierarchy.sheets.length) throw new Error("Schematic export did not produce one preview per inspected sheet");
+    if (!result.paths.length || result.paths.length !== opts.hierarchy.sheets.length) throw new Error("Schematic export did not produce one preview per inspected sheet");
     const rootSvg = basename(source).replace(/\.kicad_sch$/i, ".svg");
     const paths = [...result.paths].sort((a, b) => Number(basename(b) === rootSvg) - Number(basename(a) === rootSvg) || a.localeCompare(b));
     return Promise.all(paths.map(async path => ({ name: basename(path), svg: new Uint8Array(await readFile(path)) })));
   });
-  for (const [path, bytes] of files) if (hash(await readOwnedFile(dir, resolve(dir, path))) !== hash(bytes)) throw new Error("Native schematic files changed while rendering; the previous preview was kept");
-  await checkAbsentProject(); opts.signal?.throwIfAborted();
-  return { sourceRevision: revision, sourceFiles: [...files].map(([path, bytes]) => ({ path, sha256: hash(bytes) })), sheets };
+  return { sourceRevision: captured.sourceRevision, sourceFiles: captured.sourceFiles, sheets: captured.result };
+}
+
+export type OwnedSchematicBom = { sourceRevision: string; sourceFiles: Array<{ path: string; sha256: string }>; csv: string };
+
+/** Native default-variant BOM, with explicit fields and Do-Not-Populate exclusion. */
+export async function exportOwnedSchematicBom(cli: KicadCli, opts: { projectDir: string; hierarchy: SchematicHierarchy; signal?: AbortSignal }): Promise<OwnedSchematicBom> {
+  const captured = await withCapturedSchematic(opts, async (source, scratch) => {
+    const output = join(scratch, "bom.csv");
+    const fields = "Reference,Value,Footprint,MPN,Manufacturer,QUANTITY,DNP,EXCLUDE_FROM_BOM,EXCLUDE_FROM_BOARD";
+    await runKicadCli(cli, ["sch", "export", "bom", "--fields", fields, "--labels", fields, "--group-by", "", "--exclude-dnp", "--ref-range-delimiter", "", "-o", output, source], { ...(opts.signal ? { signal: opts.signal } : {}), cwd: dirname(source) });
+    const info = await stat(output);
+    if (info.size > 10 * 1024 * 1024) throw new Error("The native BOM exceeds the supported 10 MB limit");
+    return readFile(output, "utf8");
+  });
+  return { sourceRevision: captured.sourceRevision, sourceFiles: captured.sourceFiles, csv: captured.result };
 }
 
 async function exportRoot(
