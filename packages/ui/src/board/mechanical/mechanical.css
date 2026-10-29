@@ -248,11 +248,21 @@
   padding: 12px 20px 16px;
   background: var(--fd-panel);
 }
-.fd-case-panel footer > span {
-  display: block;
+.fd-case-footer-status > span {
+  flex: 1;
   color: var(--fd-muted);
   font-size: 11px;
+}
+.fd-case-footer-status {
+  align-items: center;
   margin-bottom: 10px;
+}
+.fd-case-history {
+  display: flex;
+  gap: 4px;
+}
+.fd-case-history button {
+  padding: 6px;
 }
 .fd-case-panel footer > div {
   display: flex;
@@ -273,6 +283,59 @@
 }
 .fd-case-message.is-error {
   border-color: var(--fd-danger, #d76d6d);
+}
+.fd-case-recovery {
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid var(--fd-accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--fd-accent) 5%, var(--fd-panel));
+}
+.fd-case-recovery strong {
+  font-size: 13px;
+}
+.fd-case-recovery p {
+  color: var(--fd-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.fd-case-recovery > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fd-case-recovery button {
+  font-size: 11px;
+}
+.fd-case-connection {
+  border: 1px solid var(--fd-border);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 12px 0;
+}
+.fd-case-connection > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.fd-case-connection strong {
+  font-size: 12px;
+}
+.fd-case-connection span {
+  color: var(--fd-muted);
+  font-size: 11px;
+}
+.fd-case-connection span.is-ready {
+  color: var(--fd-accent);
+}
+.fd-case-fields .fd-case-connection p {
+  font-size: 11px;
+  margin: 8px 0;
+}
+.fd-case-fields .fd-case-connection button {
+  font-size: 11px;
+  margin-bottom: 0;
 }
 .fd-fit-review {
   --fit-warning: var(--fd-warning, #b88628);
@@ -644,6 +707,54 @@
   white-space: normal;
   border: 1px solid var(--fd-border);
   min-height: 32px;
+}
+.fd-case-placement-tools button:only-child {
+  grid-column: 1 / -1;
+}
+.fd-case-body .fd-case-placement {
+  padding: 12px;
+  border: 1px solid var(--fd-border);
+  border-radius: 10px;
+  background: var(--fd-bg);
+}
+.fd-case-body .fd-case-placement button {
+  margin: 0;
+}
+.fd-case-placement-modes {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.fd-case-edit-modes {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--fd-border);
+  border-radius: 9px;
+  background: var(--fd-bg);
+  margin: 16px 0 10px;
+}
+.fd-case-edit-modes button {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  border: 1px solid transparent;
+}
+.fd-case-edit-modes button[aria-pressed="true"] {
+  background: var(--fd-panel-2);
+  border-color: var(--fd-border);
+  color: var(--fd-fg);
+}
+.fd-case-board-fields > button {
+  font-size: 11px;
+  background: transparent;
+}
+.fd-case-board-fields .fd-case-grid {
+  gap: 8px;
+}
+.fd-case-board-fields .fd-case-number {
+  margin: 4px 0;
+}
+.fd-case-body > .fd-case-fields > .fd-case-placement {
+  margin-top: 14px;
 }
 .fd-case-placement .fd-case-placement-tools button[aria-pressed="true"] {
   background: var(--fd-panel-2);
@@ -1145,6 +1256,20 @@
 .fd-mechanical-parts-panel .fd-mechanical-card-heading {
   flex-shrink: 0;
   margin-bottom: 12px;
+}
+.fd-mechanical-part-search {
+  width: 100%;
+  flex-shrink: 0;
+  margin-bottom: 10px;
+}
+.fd-mechanical-empty-search {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+}
+.fd-mechanical-parts strong {
+  overflow-wrap: anywhere;
 }
 .fd-mechanical-parts-panel .fd-mechanical-parts {
   flex: 1;

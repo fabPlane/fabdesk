@@ -4,6 +4,7 @@ export type EnclosureBoardSummary = {
   pcbRevision: string;
   thicknessMm: number;
   outline: {
+    closed?: boolean;
     minX: number;
     minY: number;
     maxX: number;
@@ -11,6 +12,7 @@ export type EnclosureBoardSummary = {
     widthMm: number;
     heightMm: number;
   };
+  warnings?: string[];
   holes: Array<{ x: number; y: number; diameterMm: number }>;
   connectors?: Array<{
     ref: string;
@@ -19,6 +21,7 @@ export type EnclosureBoardSummary = {
     y: number;
     widthMm: number;
     heightMm: number;
+    bounds?: { minX: number; minY: number; maxX: number; maxY: number };
   }>;
   components?: Array<{
     ref: string;
@@ -77,34 +80,74 @@ export function centerEnclosureBoard(
     placement.rotation,
   );
 }
+/** Numeric placement and viewport handles use the same centre pivot and world coordinates. */
+export function editEnclosureBoardPose(
+  placement: MechanicalDesign["boards"][number],
+  outline: EnclosureBoardSummary["outline"],
+  field: "x" | "y" | "z" | "rotation",
+  value: number,
+) {
+  const pose = enclosureBoardPose(placement, outline);
+  if (field !== "rotation") pose.position[{ x: 0, y: 1, z: 2 }[field]] = value;
+  return enclosureBoardPlacement(
+    placement,
+    outline,
+    pose.position,
+    field === "rotation" ? value : placement.rotation,
+  );
+}
 export function defaultEnclosureDesign(board: EnclosureBoardSummary | null): MechanicalDesign {
   const o = board?.outline;
+  const parts = board?.components ?? [];
+  const clearance = 1,
+    floor = 2;
+  const boardZ =
+    floor + Math.max(3, ...parts.filter((p) => p.bottom).map((p) => p.heightMm + clearance));
+  const minX = o ? Math.min(o.minX, ...parts.map((p) => p.bounds.minX)) - 2 : 0;
+  const minY = o ? Math.min(o.minY, ...parts.map((p) => p.bounds.minY)) - 2 : 0;
+  const maxX = o ? Math.max(o.maxX, ...parts.map((p) => p.bounds.maxX)) + 2 : 100;
+  const maxY = o ? Math.max(o.maxY, ...parts.map((p) => p.bounds.maxY)) + 2 : 70;
   return {
     version: 1,
     mode: "generated",
     confirmed: false,
     source: null,
     space: {
-      x: o ? o.minX - 2 : 0,
-      y: o ? o.minY - 2 : 0,
-      width: o ? o.widthMm + 4 : 100,
-      depth: o ? o.heightMm + 4 : 70,
-      height: Math.max(20, ...(board?.components?.map((c) => c.heightMm + 8) ?? [])),
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      depth: maxY - minY,
+      height: Math.max(
+        20,
+        boardZ -
+          floor +
+          (board?.thicknessMm ?? 1.6) +
+          Math.max(0, ...parts.filter((p) => !p.bottom).map((p) => p.heightMm)) +
+          clearance,
+      ),
       wall: 2,
-      floor: 2,
+      floor,
       lid: 2,
-      clearance: 1,
+      clearance,
     },
-    boards: board ? [{ path: "board.kicad_pcb", x: 0, y: 0, z: 5, rotation: 0 }] : [],
+    boards: board ? [{ path: "board.kicad_pcb", x: 0, y: 0, z: boardZ, rotation: 0 }] : [],
     obstacles: [],
     openings:
       board?.connectors?.map((c) => ({
         name: c.ref,
         wall: c.edge,
-        offset: c.edge.endsWith("X") ? c.y : c.x,
-        z: 5 + board.thicknessMm - 0.4,
-        width: c.widthMm + 0.8,
-        height: c.heightMm + 0.8,
+        offset: c.bounds
+          ? c.edge.endsWith("X")
+            ? (c.bounds.minY + c.bounds.maxY) / 2
+            : (c.bounds.minX + c.bounds.maxX) / 2
+          : c.edge.endsWith("X")
+            ? c.y
+            : c.x,
+        z: parts.find((p) => p.ref === c.ref)?.bottom
+          ? boardZ - c.heightMm - clearance
+          : boardZ + board.thicknessMm - clearance,
+        width: c.widthMm + clearance * 2,
+        height: c.heightMm + clearance * 2,
       })) ?? [],
     mounts:
       board?.holes.map((h) => ({
@@ -112,12 +155,17 @@ export function defaultEnclosureDesign(board: EnclosureBoardSummary | null): Mec
         y: h.y,
         diameter: h.diameterMm,
         outer: h.diameterMm + 2.4,
-        height: 3,
+        height: boardZ - floor,
       })) ?? [],
   };
 }
 export function decodeMesh(base64: string): ArrayBuffer {
   return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)).buffer;
+}
+export function validateEnclosureFile(name: string, bytes: number) {
+  if (!/\.(stl|step|stp)$/i.test(name)) throw new Error("Choose an STL or STEP enclosure file.");
+  if (!Number.isFinite(bytes) || bytes <= 0 || bytes > 50 * 1024 * 1024)
+    throw new Error("Choose an enclosure between 1 byte and 50 MiB.");
 }
 export function enclosureFileLabel(path: string): string {
   return (path.split("/").at(-1) ?? path).replace(

@@ -100,8 +100,8 @@ export function CadTab() {
               Advanced CAD editing — optional
             </summary>
             <p className="mt-2 text-xs leading-5 text-muted">
-              Enclosure generation and STL/STEP downloads work without the CAD bridge. Install it
-              only to edit mechanical parts in FreeCAD.
+              New enclosures can be generated and exported locally. Modifying an imported case or
+              editing mechanical parts in FreeCAD requires the native CAD service.
             </p>
             <div className="mt-4">
               <CadScreen projectSelected={Boolean(projectId)} state={state} session={session} />
@@ -124,7 +124,12 @@ export function CadTab() {
         </EmptyState>
       }
     >
-      <MechanicalWorkspace key={projectId} projectId={projectId} advanced={advanced} />
+      <MechanicalWorkspace
+        key={projectId}
+        projectId={projectId}
+        advanced={advanced}
+        cadRuntime={state.runtime}
+      />
     </Suspense>
   );
 }

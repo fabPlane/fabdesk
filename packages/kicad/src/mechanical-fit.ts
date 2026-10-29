@@ -95,7 +95,7 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
         v.x + v.width > s.x + s.width - c + eps ||
         v.y < s.y + c - eps ||
         v.y + v.depth > s.y + s.depth - c + eps ||
-        v.z < s.floor - eps ||
+        v.z < s.floor + c - eps ||
         v.z + v.height > s.floor + s.height - c + eps
       )
         add(
@@ -114,6 +114,18 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
     for (const warning of b.features.warnings)
       add("board-geometry", `${label}: ${warning}`, "review");
     for (const m of d.mounts) {
+      const post = mountRegion(m);
+      // A post outside the board's center bounds can still reach an overhanging part or edge.
+      for (const v of volumes.filter((v) => v.name !== "PCB"))
+        if (boxesOverlap(post, v, c))
+          add(
+            "mount-collision",
+            `${label}: mounting post overlaps or is too close to ${v.name}.`,
+            "error",
+            [post, v],
+          );
+      if (boxesOverlap(post, volumes[0]!))
+        add("mount-height", `${label}: mounting point intersects the PCB.`, "error", [post]);
       const outline = bounds(b, b.features.outline);
       if (m.x < outline.minX || m.x > outline.maxX || m.y < outline.minY || m.y > outline.maxY)
         continue;
@@ -128,17 +140,23 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
           "error",
           [mountRegion(m)],
         );
-      if (s.floor + m.height > b.placement.z + 0.05)
-        add("mount-height", `${label}: mounting point intersects the PCB.`, "error", [
-          mountRegion(m),
-        ]);
     }
     for (const connector of b.features.connectors) {
-      const p = boardPoint(b, connector.x, connector.y);
+      const envelope = bounds(b, connector.bounds);
+      const p = { x: (envelope.minX + envelope.maxX) / 2, y: (envelope.minY + envelope.maxY) / 2 };
+      const bottom = b.features.components?.find((part) => part.ref === connector.ref)?.bottom;
+      const z0 = bottom
+        ? b.placement.z - connector.heightMm
+        : b.placement.z + b.features.thicknessMm;
+      const z1 = bottom ? b.placement.z : z0 + connector.heightMm;
       const openings = d.openings.filter((o) => {
         const vertical = o.wall === "minX" || o.wall === "maxX";
         const along = vertical ? p.y : p.x;
         const at = vertical ? p.x : p.y;
+        const alongWidth = vertical ? envelope.maxY - envelope.minY : envelope.maxX - envelope.minX;
+        const acrossDepth = vertical
+          ? envelope.maxX - envelope.minX
+          : envelope.maxY - envelope.minY;
         const wall =
           o.wall === "minX"
             ? s.x
@@ -148,10 +166,10 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
                 ? s.y
                 : s.y + s.depth;
         return (
-          Math.abs(at - wall) <= connector.depthMm + s.wall + c &&
-          Math.abs(along - o.offset) + connector.widthMm / 2 + c <= o.width / 2 + eps &&
-          o.z <= b.placement.z + b.features.thicknessMm + eps &&
-          o.z + o.height >= b.placement.z + b.features.thicknessMm + connector.heightMm - eps
+          Math.abs(at - wall) <= acrossDepth + s.wall + c &&
+          Math.abs(along - o.offset) + alongWidth / 2 + c <= o.width / 2 + eps &&
+          o.z <= z0 + eps &&
+          o.z + o.height >= z1 - eps
         );
       });
       if (!openings.length)

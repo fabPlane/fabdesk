@@ -4,6 +4,16 @@ import { Icon } from "../../components/Icon";
 
 type Destination = "Start" | "Space" | "PCB";
 const guidance: Record<string, { title: string; destination: Destination; action: string }> = {
+  "shell-surface": {
+    title: "Possible case interference",
+    destination: "PCB",
+    action: "Adjust board position",
+  },
+  "shell-clearance": {
+    title: "Too close to the case surface",
+    destination: "PCB",
+    action: "Adjust board position",
+  },
   dimensions: {
     title: "Confirm your dimensions",
     destination: "Start",
@@ -28,6 +38,11 @@ const guidance: Record<string, { title: string; destination: Destination; action
   },
   "mount-height": {
     title: "Mounting post is too tall",
+    destination: "Space",
+    action: "Adjust mounting posts",
+  },
+  "mount-collision": {
+    title: "Mounting post is too close to a part",
     destination: "Space",
     action: "Adjust mounting posts",
   },
@@ -67,10 +82,12 @@ export function EnclosureFitReview({
 }) {
   const blockers = report.issues.filter((i) => i.severity === "error");
   const notes = report.issues.filter(
-    (i) => i.severity !== "error" && !["coverage", "import-coverage"].includes(i.code),
+    (i) =>
+      i.severity !== "error" && !["coverage", "import-coverage", "shell-coverage"].includes(i.code),
   );
   const blocked = report.status === "blocked" || blockers.length > 0;
   const imported = report.issues.some((i) => i.code === "import-coverage");
+  const shellChecked = report.issues.some((i) => i.code === "shell-coverage");
   function card(issue: MechanicalFitIssue, index: number) {
     const info = guidance[issue.code];
     const path = Object.keys(report.boardRevisions).find((p) => issue.message.startsWith(`${p}: `));
@@ -177,9 +194,15 @@ export function EnclosureFitReview({
           <li>Component heights and cable space</li>
           <li>Screw access and mounting points</li>
           <li>Printer tolerances and clearances</li>
-          {imported && <li>Actual fit against the imported case walls</li>}
+          {(imported || shellChecked) && <li>Actual fit against the imported case walls</li>}
         </ul>
         {imported && <p>Automatic checks do not include the imported shell surface.</p>}
+        {shellChecked && (
+          <p>
+            Surface highlights use estimated part boxes. They may include empty space or mounting
+            holes; inspect the real shapes.
+          </p>
+        )}
       </div>
       <details className="fd-fit-technical">
         <summary>Technical details</summary>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { CadRuntimeState } from "@fabdesk/protocol";
 import {
   useCoreClient,
   useProject,
@@ -113,9 +114,11 @@ function TransformNumber({
 export function MechanicalWorkspace({
   projectId,
   advanced,
+  cadRuntime = null,
 }: {
   projectId: string;
   advanced: ReactNode;
+  cadRuntime?: CadRuntimeState | null;
 }) {
   const client = useCoreClient(),
     project = useProject(projectId);
@@ -147,6 +150,7 @@ export function MechanicalWorkspace({
     }
   });
   const [showExport, setShowExport] = useState(false);
+  const [partFilter, setPartFilter] = useState("");
   const [modelRevision, setModelRevision] = useState(0);
   const [dimensions, setDimensions] = useState<string | null>(null);
   const [busy, setBusy] = useState(""),
@@ -174,6 +178,11 @@ export function MechanicalWorkspace({
     ...(view.warnings ?? []),
   ];
   const editable = loaded && !busy && !preview && explode === 0;
+  const visibleParts = items.filter((item) =>
+    `${item.name} ${item.path} ${item.kind}`
+      .toLowerCase()
+      .includes(partFilter.trim().toLowerCase()),
+  );
   useEffect(() => {
     try {
       localStorage.setItem("fd:mechanical:focus", String(expanded));
@@ -606,12 +615,13 @@ export function MechanicalWorkspace({
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes("Files")) {
           e.preventDefault();
-          e.dataTransfer.dropEffect = "copy";
+          e.dataTransfer.dropEffect = panel === "design" ? "none" : "copy";
         }
       }}
       onDrop={(e) => {
         e.preventDefault();
-        if (editable && e.dataTransfer.files[0]) void importModel(e.dataTransfer.files[0]);
+        if (panel !== "design" && editable && e.dataTransfer.files[0])
+          void importModel(e.dataTransfer.files[0]);
       }}
     >
       <div className="fd-mechanical-stage" ref={host} />
@@ -692,6 +702,7 @@ export function MechanicalWorkspace({
           projectId={projectId}
           active={panel === "design"}
           onStatusChange={setEnclosureStatus}
+          cadRuntime={cadRuntime}
         />
       )}
       <div className="fd-mechanical-viewport-tools" hidden={panel === "design"}>
@@ -786,14 +797,24 @@ export function MechanicalWorkspace({
           <div className="fd-mechanical-card-heading">
             <h2>Parts</h2>
             <span>
-              {items.length} {items.length === 1 ? "part" : "parts"}
+              {partFilter.trim()
+                ? `${visibleParts.length} / ${items.length}`
+                : `${items.length} ${items.length === 1 ? "part" : "parts"}`}
             </span>
             <button aria-label="Close panel" onClick={() => setPanel(null)}>
               <Icon name="close" />
             </button>
           </div>
+          <input
+            className="fd-mechanical-part-search"
+            type="search"
+            aria-label="Find a part"
+            placeholder="Find a part…"
+            value={partFilter}
+            onChange={(e) => setPartFilter(e.target.value)}
+          />
           <div className="fd-mechanical-parts">
-            {items.map((i) => (
+            {visibleParts.map((i) => (
               <div key={i.id} className={selected === i.id ? "is-selected" : ""}>
                 <button
                   title={i.visible ? "Hide model" : "Show model"}
@@ -803,7 +824,7 @@ export function MechanicalWorkspace({
                 >
                   <MechanicalIcon name={i.visible ? "eye" : "eyeOff"} />
                 </button>
-                <button onClick={() => selectModel(i.id)}>
+                <button aria-pressed={selected === i.id} onClick={() => selectModel(i.id)}>
                   <strong>{i.name}</strong>
                   <small>
                     {i.kind === "import"
@@ -817,6 +838,14 @@ export function MechanicalWorkspace({
                 </button>
               </div>
             ))}
+            {!visibleParts.length && (
+              <p className="fd-mechanical-empty-search">
+                {items.length ? "No matching parts." : "Import a model to start your assembly."}
+                {items.length > 0 && (
+                  <button onClick={() => setPartFilter("")}>Clear search</button>
+                )}
+              </p>
+            )}
           </div>
           <footer className="fd-mechanical-parts-actions">
             <button

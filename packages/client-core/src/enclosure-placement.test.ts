@@ -4,6 +4,7 @@ import {
   enclosureBoardPlacement,
   centerEnclosureBoard,
   defaultEnclosureDesign,
+  editEnclosureBoardPose,
 } from "./enclosure-design";
 const outline = { minX: 100, minY: 50, maxX: 152, maxY: 74, widthMm: 52, heightMm: 24 };
 test("centre-mounted gizmos preserve native board coordinates across rotations", () => {
@@ -39,4 +40,20 @@ test("rotating around the displayed centre keeps that centre fixed", () => {
   const center = enclosureBoardPose(original, outline).position;
   const turned = enclosureBoardPlacement(original, outline, center, 90);
   enclosureBoardPose(turned, outline).position.forEach((v, i) => expect(v).toBeCloseTo(center[i]!));
+});
+
+test("numeric rotation keeps the same centre as the gizmo and numeric XY edits use world centres", () => {
+  const original = { path: "board.kicad_pcb", x: 12, y: -7, z: 5, rotation: 0 };
+  const before = enclosureBoardPose(original, outline).position;
+  const rotated = editEnclosureBoardPose(original, outline, "rotation", 90);
+  enclosureBoardPose(rotated, outline).position.forEach((v, i) =>
+    expect(v).toBeCloseTo(before[i]!),
+  );
+  const shifted = editEnclosureBoardPose(rotated, outline, "x", 20);
+  const after = enclosureBoardPose(shifted, outline).position;
+  expect(after[0]).toBeCloseTo(20);
+  expect(after[1]).toBeCloseTo(before[1]!);
+  expect(after[2]).toBe(5);
+  expect(shifted.rotation).toBe(90);
+  expect(() => editEnclosureBoardPose(original, outline, "rotation", NaN)).toThrow();
 });

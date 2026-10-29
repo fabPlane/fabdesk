@@ -3,13 +3,88 @@ import { readFile, writeFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { unzipSync, strFromU8 } from "fflate";
-import type { MechanicalDesign } from "@fabdesk/protocol";
+import type { MechanicalDesign, MechanicalFitReport } from "@fabdesk/protocol";
+import type { CadService } from "../src";
 import { createRegistry, makeContext } from "../src";
 import { mockServices, tempProject } from "./mock-services";
 import { importedShellScript } from "../src/tools/cad-fit";
 
 const pcb =
   '(kicad_pcb (general (thickness 1.6))(gr_rect (start 0 0)(end 40 20)(layer "Edge.Cuts")))';
+const planeStl = (z: number) =>
+  `solid case\nfacet normal 0 0 1\nouter loop\nvertex -5 -5 ${z}\nvertex 50 -5 ${z}\nvertex -5 50 ${z}\nendloop\nendfacet\nendsolid case`;
+
+test("imported preview and export review the modified result, preserve the source, and honor transforms", async () => {
+  const { invoke, design, project, services } = await setup();
+  design.mode = "imported";
+  design.source = { path: "case.stl", scale: 1, position: [0, 0, 3], rotation: [0, 0, 0] };
+  const original = planeStl(2);
+  await writeFile(join(project.dir, "case.stl"), original);
+  const check = (await invoke({ action: "check", design })).json as { report: MechanicalFitReport };
+  expect(check.report.issues.some((i) => i.code === "shell-surface")).toBe(true);
+  const moved = structuredClone(design);
+  moved.source!.position[2] = 30;
+  const clear = (await invoke({ action: "check", design: moved })).json as typeof check;
+  expect(clear.report.issues.some((i) => i.code === "shell-surface")).toBe(false);
+  // This contract stub tests tool plumbing; it does not certify native FreeCAD operations.
+  services.cad = {
+    status: async () => ({ reachable: true }),
+    python: async (_dir: string, script: string) => {
+      const encoded = script.match(/^p = json.loads\((.+)\)$/m)![1]!;
+      const plan = JSON.parse(JSON.parse(encoded)) as { output: string };
+      await writeFile(join(plan.output, "case.stl"), planeStl(0));
+      await writeFile(join(plan.output, "case.step"), "contract fixture");
+      return { stdout: "", stderr: "" };
+    },
+  } as CadService;
+  const preview = (await invoke({ action: "preview", design })).json as {
+    report: MechanicalFitReport;
+    revision: string;
+  };
+  expect(preview.report.issues.some((i) => i.code === "shell-surface")).toBe(false);
+  expect(preview.report.issues.some((i) => i.code === "shell-coverage")).toBe(true);
+  const built = (await invoke({ action: "build", design, expectedRevision: preview.revision }))
+    .json as { archive: string; report: MechanicalFitReport };
+  const files = unzipSync(await readFile(join(project.dir, built.archive)));
+  expect(JSON.parse(strFromU8(files["fit-review.json"]!))).toEqual(built.report);
+  expect(built.report).toEqual(preview.report);
+  expect(await readFile(join(project.dir, "case.stl"), "utf8")).toBe(original);
+  expect(await readdir(join(project.dir, ".fabdesk/case-preview"))).toEqual([]);
+});
+
+test("unreadable imported surfaces keep a visible coverage limitation", async () => {
+  const { invoke, design, project } = await setup();
+  design.mode = "imported";
+  design.source = { path: "bad.stl", scale: 1, position: [0, 0, 0], rotation: [0, 0, 0] };
+  await writeFile(join(project.dir, "bad.stl"), "broken mesh");
+  const result = (await invoke({ action: "check", design })).json as {
+    report: MechanicalFitReport;
+  };
+  expect(result.report.issues.find((i) => i.code === "import-coverage")?.message).toContain(
+    "unavailable",
+  );
+  expect(result.report.issues.some((i) => i.code === "shell-coverage")).toBe(false);
+});
+
+test("fit checks identify changed enclosure bytes independently of board placement", async () => {
+  const { invoke, design, project } = await setup();
+  design.mode = "imported";
+  design.source = { path: "case.stl", scale: 1, position: [0, 0, 0], rotation: [0, 0, 0] };
+  await writeFile(join(project.dir, "case.stl"), "first mesh");
+  const first = (await invoke({ action: "check", design })).json as {
+    sourceRevision: string;
+    revision: string;
+  };
+  design.boards[0]!.x = 1;
+  const moved = (await invoke({ action: "check", design })).json as typeof first;
+  expect(moved.sourceRevision).toBe(first.sourceRevision);
+  expect(moved.revision).not.toBe(first.revision);
+  await writeFile(join(project.dir, "case.stl"), "changed mesh");
+  const changed = (await invoke({ action: "check", design })).json as typeof first;
+  expect(changed.sourceRevision).not.toBe(first.sourceRevision);
+  expect(changed.revision).not.toBe(moved.revision);
+  expect(changed.sourceRevision).toBe(createHash("sha256").update("changed mesh").digest("hex"));
+});
 async function setup() {
   const project = await tempProject("fit");
   await writeFile(join(project.dir, "board.kicad_pcb"), pcb);
@@ -166,4 +241,82 @@ test("outline replacement preserves circular cutouts and uses inspected IDs", as
     },
   });
   expect(edits).toMatchObject({ deleteItemIds: ["edge"] });
+});
+
+test("native preflight rejects overlapping new holes, mixed edits and an outline outside the enclosure", async () => {
+  const { invoke, design, project } = await setup();
+  const expectedPcbRevision = createHash("sha256").update(pcb).digest("hex");
+  const edit = (change: unknown) =>
+    invoke({ action: "edit_board", design, expectedPcbRevision, edit: change });
+  await expect(
+    edit({
+      holes: [
+        { x: 10, y: 10, diameter: 3 },
+        { x: 11, y: 10, diameter: 3 },
+      ],
+    }),
+  ).rejects.toThrow("overlap each other");
+  const outline = [
+    { x: 0, y: 0 },
+    { x: 60, y: 0 },
+    { x: 60, y: 20 },
+    { x: 0, y: 20 },
+  ];
+  await expect(edit({ outline, holes: [{ x: 10, y: 10, diameter: 3 }] })).rejects.toThrow(
+    "separately",
+  );
+  await expect(edit({ outline })).rejects.toThrow("usable space");
+  expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(pcb);
+});
+
+test("component moves respect other boards and holes require a known rectangular boundary", async () => {
+  const { invoke, design, project } = await setup();
+  const populated =
+    pcb.slice(0, -1) +
+    '(footprint "R_0402" (layer "F.Cu")(at 10 10)(property "Reference" "R1")(fp_rect (start -1 -1)(end 1 1)(layer "F.CrtYd"))))';
+  await writeFile(join(project.dir, "board.kicad_pcb"), populated);
+  await writeFile(join(project.dir, "other.kicad_pcb"), pcb);
+  design.space.width = 100;
+  design.boards.push({ path: "other.kicad_pcb", x: 20, y: 0, z: 5, rotation: 0 });
+  await expect(
+    invoke({
+      action: "edit_board",
+      design,
+      expectedPcbRevision: createHash("sha256").update(populated).digest("hex"),
+      edit: { footprints: [{ reference: "R1", position: { x: 21, y: 10 } }] },
+    }),
+  ).rejects.toThrow("overlap other.kicad_pcb");
+  expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(populated);
+  const irregular =
+    '(kicad_pcb (general (thickness 1.6))(gr_poly (pts (xy 0 0)(xy 40 0)(xy 0 20))(layer "Edge.Cuts")))';
+  await writeFile(join(project.dir, "board.kicad_pcb"), irregular);
+  await expect(
+    invoke({
+      action: "edit_board",
+      design,
+      expectedPcbRevision: createHash("sha256").update(irregular).digest("hex"),
+      edit: { holes: [{ x: 30, y: 15, diameter: 3 }] },
+    }),
+  ).rejects.toThrow("non-rectangular outline");
+  expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(irregular);
+});
+
+test("component moves reject off-board anchors and same-side component overlap before native writes", async () => {
+  const { invoke, design, project } = await setup();
+  const populated =
+    pcb.slice(0, -1) +
+    '(footprint "R_0402" (layer "F.Cu")(at 10 10)(property "Reference" "R1")(fp_rect (start -1 -1)(end 1 1)(layer "F.CrtYd")))' +
+    '(footprint "R_0402" (layer "F.Cu")(at 20 10)(property "Reference" "R2")(fp_rect (start -1 -1)(end 1 1)(layer "F.CrtYd"))))';
+  await writeFile(join(project.dir, "board.kicad_pcb"), populated);
+  design.space.width = 100;
+  const move = (x: number) =>
+    invoke({
+      action: "edit_board",
+      design,
+      expectedPcbRevision: createHash("sha256").update(populated).digest("hex"),
+      edit: { footprints: [{ reference: "R1", position: { x, y: 10 } }] },
+    });
+  await expect(move(45)).rejects.toThrow("outside the PCB bounds");
+  await expect(move(20)).rejects.toThrow("overlap another component envelope");
+  expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(populated);
 });

@@ -161,3 +161,6 @@ export type { VoiceShortcut } from "./speech/shortcut";
 export { PersistentDraft, localDraft } from "./persistent-draft";
 export * from "./mechanical";
 export * from "./enclosure-design";
+export * from "./enclosure-history";
+export * from "./enclosure-pcb-edit";
+export * from "./enclosure-recovery";

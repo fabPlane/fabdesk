@@ -226,10 +226,24 @@ function expandArc(box: Rect, start: Point, mid: Point, end: Point): void {
   if (!circ) return;
   const sweep = directedSweep(start, mid, end, circ.cx, circ.cy);
   const a0 = Math.atan2(start.y - circ.cy, start.x - circ.cx);
-  const steps = Math.max(8, Math.ceil((Math.abs(sweep) / TAU) * 32));
-  for (let i = 1; i < steps; i++) {
-    const a = a0 + (sweep * i) / steps;
-    expand(box, circ.cx + circ.r * Math.cos(a), circ.cy + circ.r * Math.sin(a));
+  expandCircularSweep(box, circ.cx, circ.cy, circ.r, a0, sweep);
+}
+
+/** Include exact cardinal extrema; sampling an arc can underestimate its physical envelope. */
+function expandCircularSweep(
+  box: Rect,
+  cx: number,
+  cy: number,
+  radius: number,
+  start: number,
+  sweep: number,
+) {
+  const include = (a: number) => expand(box, cx + radius * Math.cos(a), cy + radius * Math.sin(a));
+  include(start);
+  include(start + sweep);
+  for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+    const distance = normAngle(sweep >= 0 ? angle - start : start - angle);
+    if (distance <= Math.abs(sweep) + 1e-9) include(angle);
   }
 }
 
@@ -242,11 +256,7 @@ function expandLegacyArc(box: Rect, center: Point, end: Point, angleDeg: number)
   const a0 = Math.atan2(end.y - center.y, end.x - center.x);
   // KiCad 5 `angle` is a clockwise sweep from `end` about `start` (the center).
   const sweep = (-angleDeg * Math.PI) / 180;
-  const steps = Math.max(8, Math.ceil((Math.abs(sweep) / TAU) * 32));
-  for (let i = 0; i <= steps; i++) {
-    const a = a0 + (sweep * i) / steps;
-    expand(box, center.x + r * Math.cos(a), center.y + r * Math.sin(a));
-  }
+  expandCircularSweep(box, center.x, center.y, r, a0, sweep);
 }
 
 function footprintPlacement(fp: Sexpr[]): { x: number; y: number; rotationDeg: number } | null {
@@ -346,11 +356,19 @@ function nearestEdge(outline: Rect, point: Point, bounds: Rect): { edge: BoardEd
 function outlineFromGraphics(root: Sexpr[]): {
   outline: BoardOutline | null;
   circles: MountingHole[];
+  rectangular: boolean;
 } {
   const box = emptyRect();
   const circles: MountingHole[] = [];
   let source: BoardOutline["source"] = "segments";
-  let closed = false;
+  const edges: Array<[Point, Point]> = [];
+  let invalid = false,
+    curved = false,
+    closedCurves = 0;
+  const addEdge = (a: Point | null, b: Point | null) => {
+    if (!a || !b || Math.hypot(a.x - b.x, a.y - b.y) < 1e-7) invalid = true;
+    else edges.push([a, b]);
+  };
   let shapes = 0;
   const consider = (layer: string | null, kind: BoardOutline["source"], add: () => void) => {
     if (!isEdgeCuts(layer)) return;
@@ -365,6 +383,7 @@ function outlineFromGraphics(root: Sexpr[]): {
       const b = xy(child(g, "end"));
       if (a) expand(box, a.x, a.y);
       if (b) expand(box, b.x, b.y);
+      addEdge(a, b);
     });
   for (const g of children(root, "gr_rect"))
     consider(layerOf(g), "gr_rect", () => {
@@ -373,13 +392,26 @@ function outlineFromGraphics(root: Sexpr[]): {
       if (a && b) {
         expand(box, a.x, a.y);
         expand(box, b.x, b.y);
-        closed = true;
-      }
+        const c = { x: b.x, y: a.y },
+          d = { x: a.x, y: b.y };
+        addEdge(a, c);
+        addEdge(c, b);
+        addEdge(b, d);
+        addEdge(d, a);
+      } else invalid = true;
     });
   for (const g of children(root, "gr_poly"))
     consider(layerOf(g), "gr_poly", () => {
-      for (const p of collectPts(g)) expand(box, p.x, p.y);
-      if (collectPts(g).length >= 3) closed = true;
+      const points = collectPts(g);
+      if (
+        points.length > 1 &&
+        points[0]!.x === points.at(-1)!.x &&
+        points[0]!.y === points.at(-1)!.y
+      )
+        points.pop();
+      for (const p of points) expand(box, p.x, p.y);
+      if (points.length < 3) invalid = true;
+      else points.forEach((p, i) => addEdge(p, points[(i + 1) % points.length]!));
     });
   for (const g of children(root, "gr_arc"))
     consider(layerOf(g), "gr_arc", () => {
@@ -387,13 +419,23 @@ function outlineFromGraphics(root: Sexpr[]): {
       const mid = xy(child(g, "mid"));
       const end = xy(child(g, "end"));
       const angle = numberAt(child(g, "angle"), 1);
+      curved = true;
       if (start && mid && end) {
         expandArc(box, start, mid, end);
-        closed = true;
+        addEdge(start, end);
       } else if (start && end && angle !== null) {
         expandLegacyArc(box, start, end, angle);
-        closed = Math.abs(angle) >= 359.9;
-      }
+        if (Math.abs(angle) >= 359.999 && Math.abs(angle) <= 360.001) closedCurves++;
+        else {
+          const a = (-angle * Math.PI) / 180,
+            x = end.x - start.x,
+            y = end.y - start.y;
+          addEdge(end, {
+            x: start.x + x * Math.cos(a) - y * Math.sin(a),
+            y: start.y + x * Math.sin(a) + y * Math.cos(a),
+          });
+        }
+      } else invalid = true;
     });
   for (const g of children(root, "gr_circle")) {
     if (!isEdgeCuts(layerOf(g))) continue;
@@ -412,9 +454,32 @@ function outlineFromGraphics(root: Sexpr[]): {
     } else {
       expand(box, c.x - diameter / 2, c.y - diameter / 2);
       expand(box, c.x + diameter / 2, c.y + diameter / 2);
+      curved = true;
+      closedCurves++;
     }
   }
-  if (!validRect(box)) return { outline: null, circles };
+  if (!validRect(box)) return { outline: null, circles, rectangular: false };
+  // Endpoint degree detects open chains independently of file order or segment direction.
+  // This is a closure check, not polygon validity or a fabrication certification.
+  const degree = new Map<string, number>();
+  for (const edge of edges)
+    for (const p of edge) {
+      const key = `${Math.round(p.x * 100000)},${Math.round(p.y * 100000)}`;
+      degree.set(key, (degree.get(key) ?? 0) + 1);
+    }
+  const closed =
+    !invalid &&
+    (edges.length > 0 || closedCurves > 0) &&
+    [...degree.values()].every((n) => n === 2);
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-5;
+  const rectangular =
+    closed &&
+    !curved &&
+    edges.every(
+      ([a, b]) =>
+        (near(a.x, b.x) && (near(a.x, box.minX) || near(a.x, box.maxX))) ||
+        (near(a.y, b.y) && (near(a.y, box.minY) || near(a.y, box.maxY))),
+    );
   return {
     outline: {
       minX: mm(box.minX),
@@ -427,6 +492,7 @@ function outlineFromGraphics(root: Sexpr[]): {
       source,
     },
     circles,
+    rectangular,
   };
 }
 
@@ -442,11 +508,15 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
   );
   const thicknessMm = thickness ?? 1.6;
   if (thickness === null) warnings.push("board thickness missing; assuming 1.6 mm");
-  const { outline, circles } = outlineFromGraphics(root);
+  const { outline, circles, rectangular } = outlineFromGraphics(root);
   if (!outline) throw new Error("board has no Edge.Cuts outline");
   if (!outline.closed)
     warnings.push(
       "Edge.Cuts segments may not form a closed contour; the enclosure uses the bounding box",
+    );
+  else if (!rectangular)
+    warnings.push(
+      "Non-rectangular Edge.Cuts contour; enclosure fit uses a rectangular bounding estimate.",
     );
 
   const holes: MountingHole[] = [...circles];
@@ -493,16 +563,17 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
       ? bounds
       : { minX: origin.x - 1, minY: origin.y - 1, maxX: origin.x + 1, maxY: origin.y + 1 };
     const heightMm = estimatePartHeightMm(libId, value);
-    components.push({
-      ref: ref || libId,
-      footprint: libId,
-      x: origin.x,
-      y: origin.y,
-      heightMm,
-      bounds: body,
-      bottom: layerOf(fp) === "B.Cu",
-    });
     const mountLabel = `${libId} ${ref}`;
+    if (!MOUNT_RE.test(mountLabel) && !FIDUCIAL_RE.test(mountLabel))
+      components.push({
+        ref: ref || libId,
+        footprint: libId,
+        x: origin.x,
+        y: origin.y,
+        heightMm,
+        bounds: body,
+        bottom: layerOf(fp) === "B.Cu",
+      });
     if (
       !FIDUCIAL_RE.test(mountLabel) &&
       MOUNT_RE.test(mountLabel) &&

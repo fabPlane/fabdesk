@@ -7,20 +7,56 @@ import {
   MechanicalDesignSchema,
   MECHANICAL_DESIGN_PATH,
   type MechanicalDesign,
+  type MechanicalFitReport,
 } from "@fabdesk/protocol";
 import { extractBoardFeatures } from "@fabdesk/kicad/board-features";
 import {
   checkMechanicalFit,
   enclosureFromDesign,
+  boardVolumes,
+  boxesOverlap,
   type FitBoard,
 } from "@fabdesk/kicad/mechanical-fit";
 import { meshEnclosure } from "@fabdesk/kicad/enclosure";
+import { readStlTriangles, ShellSurface, withShellSurfaceReview } from "@fabdesk/kicad/shell-fit";
 import { defineTool, ToolError, type ToolContext } from "../registry";
 import { jailPath, readJsonIfPresent, writeAtomic, writeJson } from "../fs";
 import { ok } from "./common";
 import { native_edit_transaction } from "./native-edit";
 
 const sha = (v: string | Uint8Array) => createHash("sha256").update(v).digest("hex");
+// Repeated placement checks reuse the parsed surface; bound retained mesh memory.
+const shellSurfaces = new Map<string, ShellSurface>();
+function reviewSurface(
+  report: MechanicalFitReport,
+  design: MechanicalDesign,
+  boards: FitBoard[],
+  bytes: Uint8Array,
+  transform?: NonNullable<MechanicalDesign["source"]>,
+) {
+  try {
+    const key = sha(bytes) + JSON.stringify(transform ?? null);
+    let surface = shellSurfaces.get(key);
+    if (!surface) {
+      surface = new ShellSurface(readStlTriangles(bytes), transform);
+      shellSurfaces.set(key, surface);
+      while (shellSurfaces.size > 2) shellSurfaces.delete(shellSurfaces.keys().next().value!);
+    }
+    return withShellSurfaceReview(report, design, boards, surface);
+  } catch (error) {
+    return {
+      ...report,
+      issues: [
+        ...report.issues.filter((i) => i.code !== "import-coverage"),
+        {
+          code: "import-coverage",
+          severity: "review" as const,
+          message: `STL surface checks unavailable: ${error instanceof Error ? error.message : "Could not read the surface."}`,
+        },
+      ],
+    };
+  }
+}
 const coordinate = z.number().finite().min(-10000).max(10000);
 const point = z.object({ x: coordinate, y: coordinate });
 const editSchema = z.object({
@@ -62,17 +98,20 @@ async function snapshot(dir: string, design: MechanicalDesign) {
     boards.push({ placement, features: extractBoardFeatures(bytes.toString("utf8")) });
   }
   let sourceHash: string | null = null;
+  let report = checkMechanicalFit(design, boards);
   if (design.mode === "imported" && design.source) {
     const bytes = await readFile(await jailPath(dir, design.source.path));
     if (bytes.length > 50 * 1024 * 1024)
       throw new ToolError("Enclosure imports are limited to 50 MB", "invalid_args");
     sourceHash = sha(bytes);
+    if (extname(design.source.path).toLowerCase() === ".stl")
+      report = reviewSurface(report, design, boards, bytes, design.source);
   }
-  const report = checkMechanicalFit(design, boards);
   return {
     boards,
     files,
     report,
+    sourceRevision: sourceHash,
     revision: sha(JSON.stringify({ design, boards: report.boardRevisions, sourceHash })),
   };
 }
@@ -240,6 +279,7 @@ export const cad_fit = defineTool({
       const snap = await snapshot(dir, design);
       if (args.action === "check")
         return ok("Fit review", {
+          sourceRevision: snap.sourceRevision,
           report: snap.report,
           revision: snap.revision,
           boards: snap.boards,
@@ -257,6 +297,36 @@ export const cad_fit = defineTool({
         if (!b || b.features.pcbRevision !== args.expectedPcbRevision)
           throw new ToolError("PCB changed. Reload and review your edit.", "precondition");
         const edit = args.edit;
+        if (
+          [!!edit.outline, !!edit.footprints?.length, !!edit.holes?.length].filter(Boolean).length >
+          1
+        )
+          throw new ToolError(
+            "Apply outline, component and hole changes separately so each edit checks the current PCB.",
+            "invalid_args",
+          );
+        const assertVolumesFit = (planned: FitBoard["features"], names: Set<string>) => {
+          const candidateBoard = { placement: b.placement, features: planned };
+          const candidate = checkMechanicalFit(design, [candidateBoard]);
+          const conflicts = candidate.issues.filter(
+            (i) => i.severity === "error" && i.regions?.some((r) => names.has(r.name)),
+          );
+          if (conflicts.length)
+            throw new ToolError(conflicts.map((i) => i.message).join("\n"), "precondition");
+          const editedVolumes = boardVolumes(candidateBoard).filter((v) => names.has(v.name));
+          for (const other of snap.boards) {
+            if (other.placement.path === b.placement.path) continue;
+            if (
+              editedVolumes.some((a) =>
+                boardVolumes(other).some((c) => boxesOverlap(a, c, design.space.clearance)),
+              )
+            )
+              throw new ToolError(
+                `The edit would overlap ${other.placement.path} or its required clearance. Adjust the board placements first.`,
+                "precondition",
+              );
+          }
+        };
         if (edit.footprints?.length) {
           const planned = structuredClone(b.features);
           for (const move of edit.footprints) {
@@ -277,21 +347,47 @@ export const cad_fit = defineTool({
               minY: part.bounds.minY + dy,
               maxY: part.bounds.maxY + dy,
             };
+            const outline = planned.outline;
+            if (
+              part.x < outline.minX ||
+              part.x > outline.maxX ||
+              part.y < outline.minY ||
+              part.y > outline.maxY
+            )
+              throw new ToolError(
+                `${move.reference} would move outside the PCB bounds. Use the PCB editor to review intentional overhangs.`,
+                "precondition",
+              );
           }
-          const candidate = checkMechanicalFit(design, [
-            { placement: b.placement, features: planned },
-          ]);
           const moved = new Set(edit.footprints.map((p) => p.reference));
-          const conflicts = candidate.issues.filter(
-            (i) =>
-              i.severity === "error" && [...moved].some((ref) => i.message.includes(`: ${ref} `)),
-          );
-          if (conflicts.length)
-            throw new ToolError(conflicts.map((i) => i.message).join("\n"), "precondition");
+          const parts = boardVolumes({ placement: b.placement, features: planned }).slice(1);
+          for (const part of parts.filter((p) => moved.has(p.name)))
+            if (parts.some((other) => other !== part && boxesOverlap(part, other)))
+              throw new ToolError(
+                `${part.name} would overlap another component envelope. Choose a clear position or review the real shapes in the PCB editor.`,
+                "precondition",
+              );
+          assertVolumesFit(planned, moved);
         }
         if (!edit.outline && !edit.footprints?.length && !edit.holes?.length)
           throw new ToolError("Choose an outline, component or hole edit first.", "invalid_args");
-        for (const h of edit.holes ?? []) {
+        const holes = edit.holes ?? [];
+        if (
+          holes.length &&
+          (!b.features.outline.closed ||
+            b.features.warnings.some((w) => w.startsWith("Non-rectangular Edge.Cuts")))
+        )
+          throw new ToolError(
+            "Use Advanced PCB editing to add holes to an open or non-rectangular outline. Its rectangular preview cannot prove that a hole is inside the board.",
+            "precondition",
+          );
+        for (const [index, h] of holes.entries()) {
+          if (
+            holes
+              .slice(0, index)
+              .some((p) => Math.hypot(p.x - h.x, p.y - h.y) < (p.diameter + h.diameter) / 2)
+          )
+            throw new ToolError("The requested mounting holes overlap each other.", "invalid_args");
           const o = b.features.outline,
             r = h.diameter / 2;
           if (h.x - r <= o.minX || h.x + r >= o.maxX || h.y - r <= o.minY || h.y + r >= o.maxY)
@@ -371,6 +467,19 @@ export const cad_fit = defineTool({
               "The new outline would cut through an existing mounting hole. Reposition it in the PCB editor first.",
               "precondition",
             );
+          assertVolumesFit(
+            {
+              ...b.features,
+              outline: {
+                ...b.features.outline,
+                ...o,
+                widthMm: o.maxX - o.minX,
+                heightMm: o.maxY - o.minY,
+                closed: true,
+              },
+            },
+            new Set(["PCB"]),
+          );
           const geometry = await ctx.services.design.inspectBoardGeometry(dir);
           if (!geometry.revisionStable)
             throw new ToolError("PCB is changing. Try again after it is saved.", "precondition");
@@ -474,6 +583,11 @@ export const cad_fit = defineTool({
           "precondition",
         );
       const built = await meshes(ctx, design, snap.boards);
+      // A carved case differs from its original shell: review the result in world coordinates.
+      const finalReport =
+        design.mode === "imported"
+          ? reviewSurface(checkMechanicalFit(design, snap.boards), design, snap.boards, built.base)
+          : snap.report;
       if ((await snapshot(dir, design)).revision !== snap.revision)
         throw new ToolError(
           "A source file changed during generation. Preview again.",
@@ -481,8 +595,9 @@ export const cad_fit = defineTool({
         );
       if (args.action === "preview")
         return ok("Preview only — no project designs changed", {
+          sourceRevision: snap.sourceRevision,
           revision: snap.revision,
-          report: snap.report,
+          report: finalReport,
           boards: snap.boards,
           meshes: {
             base: Buffer.from(built.base).toString("base64"),
@@ -495,7 +610,7 @@ export const cad_fit = defineTool({
         "case.step": built.step,
         ...(built.lid ? { "lid.stl": built.lid } : {}),
         "enclosure-design.json": strToU8(JSON.stringify(design, null, 2)),
-        "fit-review.json": strToU8(JSON.stringify(snap.report, null, 2)),
+        "fit-review.json": strToU8(JSON.stringify(finalReport, null, 2)),
       };
       for (const [path, bytes] of Object.entries(snap.files)) outputs[`boards/${path}`] = bytes;
       outputs["manifest.json"] = strToU8(
@@ -523,7 +638,7 @@ export const cad_fit = defineTool({
         "Matched enclosure and PCB snapshot exported. Review fit notes and run electrical DRC before fabrication.",
         {
           revision: snap.revision,
-          report: snap.report,
+          report: finalReport,
           stl: `${destination}/case.stl`,
           lidStl: built.lid ? `${destination}/lid.stl` : null,
           step: `${destination}/case.step`,

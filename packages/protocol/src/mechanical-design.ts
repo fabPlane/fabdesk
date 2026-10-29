@@ -80,7 +80,16 @@ export const MechanicalDesignSchema = z
       )
       .max(100),
   })
-  .refine((d) => d.mode !== "imported" || d.source !== null, "Choose the enclosure file first");
+  .refine((d) => d.mode !== "imported" || d.source !== null, "Choose the enclosure file first")
+  .refine((d) => {
+    const paths = d.boards.map((b) =>
+      b.path
+        .split("/")
+        .filter((part) => part && part !== ".")
+        .join("/"),
+    );
+    return new Set(paths).size === paths.length;
+  }, "Include each PCB file only once in the enclosure");
 export type MechanicalDesign = z.infer<typeof MechanicalDesignSchema>;
 export type MechanicalBox = z.infer<typeof MechanicalBoxSchema>;
 export type MechanicalFitIssue = {

@@ -35,6 +35,71 @@ const design = (): MechanicalDesign => ({
 });
 const boards = (d: MechanicalDesign) => d.boards.map((placement) => ({ placement, features }));
 describe("mechanical fit constraints", () => {
+  test("floor clearance and posts outside the board still protect underside parts", () => {
+    const d = design();
+    d.space.x = -10;
+    d.space.width = 60;
+    d.mounts = [{ x: -1, y: 10, diameter: 1, outer: 4, height: 4 }];
+    const f = structuredClone(features);
+    f.components!.push({
+      ref: "J2",
+      footprint: "bottom",
+      x: 0,
+      y: 10,
+      heightMm: 2.5,
+      bottom: true,
+      bounds: { minX: -3, minY: 8, maxX: 2, maxY: 12 },
+    });
+    const fit = () => checkMechanicalFit(d, [{ placement: d.boards[0]!, features: f }]);
+    const report = fit();
+    expect(report.issues.some((i) => i.code === "outside-space" && i.message.includes("J2"))).toBe(
+      true,
+    );
+    expect(
+      report.issues.some((i) => i.code === "mount-collision" && i.message.includes("J2")),
+    ).toBe(true);
+    expect(report.issues.some((i) => i.code === "mount-height")).toBe(true);
+    d.mounts = [];
+    d.boards[0]!.z = 5.5;
+    expect(fit().issues.some((i) => i.code === "outside-space")).toBe(false);
+    d.boards[0]!.z = 5;
+    d.space.clearance = 0;
+    expect(fit().issues.some((i) => i.code === "outside-space")).toBe(false);
+  });
+  test("mounting posts highlight interference with underside components", () => {
+    const d = design();
+    d.mounts = [{ x: 3, y: 3, diameter: 3, outer: 6, height: 3 }];
+    const f = structuredClone(features);
+    f.components!.push({
+      ref: "U2",
+      footprint: "bottom",
+      x: 4,
+      y: 3,
+      heightMm: 3,
+      bottom: true,
+      bounds: { minX: 3, minY: 2, maxX: 5, maxY: 4 },
+    });
+    const report = checkMechanicalFit(d, [{ placement: d.boards[0]!, features: f }]);
+    expect(report.issues.find((i) => i.code === "mount-collision")).toMatchObject({
+      severity: "error",
+      regions: [{ name: "Mounting post" }, { name: "U2" }],
+    });
+    expect(report.status).toBe("blocked");
+  });
+  test("connector openings follow rotated board bounds and underside heights", () => {
+    const d = design();
+    d.space = { ...d.space, x: -25, y: -5, width: 30, depth: 50 };
+    d.boards[0] = { ...d.boards[0]!, rotation: 90, z: 7 };
+    const f = extractBoardFeatures(
+      '(kicad_pcb (general (thickness 1.6))(gr_rect (start 0 0)(end 40 20)(layer "Edge.Cuts"))(footprint "Connector_USB:USB_C" (layer "B.Cu")(at 10 0)(property "Reference" "J1")(fp_rect (start -2 -3)(end 2 1)(layer "B.CrtYd"))))',
+    );
+    expect(f.connectors).toHaveLength(1);
+    d.openings = [{ name: "USB", wall: "maxX", offset: 10, z: 3, width: 6, height: 5 }];
+    const fit = () => checkMechanicalFit(d, [{ placement: d.boards[0]!, features: f }]);
+    expect(fit().issues.some((i) => i.code === "connector-opening")).toBe(false);
+    d.openings[0]!.z = 8;
+    expect(fit().issues.some((i) => i.code === "connector-opening")).toBe(true);
+  });
   test("includes low-profile components and standard NPTH drill dimensions", () => {
     expect(features.components?.some((p) => p.ref === "R1")).toBe(true);
     expect(features.holes.find((h) => h.ref === "H1")?.diameterMm).toBe(3);
@@ -134,5 +199,10 @@ describe("mechanical fit constraints", () => {
     p.boards = [];
     p.mounts = [{ x: 1, y: 1, diameter: 6, outer: 3, height: 3 }];
     expect(MechanicalDesignSchema.safeParse(p).success).toBe(false);
+  });
+  test("duplicate board paths cannot create ambiguous selection or export identities", () => {
+    const d = design();
+    d.boards.push({ ...d.boards[0]!, path: "./board.kicad_pcb", x: 50 });
+    expect(MechanicalDesignSchema.safeParse(d).success).toBe(false);
   });
 });
