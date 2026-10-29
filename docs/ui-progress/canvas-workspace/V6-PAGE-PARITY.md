@@ -1,5 +1,21 @@
 # v6 page-by-page visual review
 
+## Active implementation resume checklist — October29,20:58Bangkok
+
+The new overnight run is active at051faf8; one final push is authorized, with local milestones during work. Existing native captures below remain evidence for their stated earlier revisions. New controls need native visual acceptance after the locked Mac is available; read-only rendered-state checks are not substituted for screenshots.
+
+- [x] Source-qualified Changes/checkpoints, batch library selection/download, scoped output creation and compact exports.
+- [x] Context at Send, live Codex model discovery and actual context/native-generation tests; no credential/default rewrites.
+- [x] Source-local board comments with Review scope and stale/sibling rejection; native sources preserved.
+- [x] Root routing candidate review and explicit apply; actual partial6→3opens result retained, not called complete routing.
+- [x] Actual fresh idea→native PCB/SCH→automatic canvas preview; two parts,20×15mm; native/design inputs unchanged across preview handoff.
+- [ ] Authoritative multi-board BOM/source coverage and working assembly CSV export; currently the UI targets a root-only export path.
+- [ ] Remaining non-enclosure human flows and guarded capability gaps: member routing, replacement/Undo, directional reconciliation.
+- [ ] New native dialog/media/keyboard and v6 visual acceptance when unlocked; original screenshot iterations retained.
+- [ ] Final full checks/diff review and one final PR389 push/handoff. Last fullsuite had2failures; both passed isolated reruns, so it is not an unqualified full pass.
+
+Mechanical PR398 remains teammate-owned; PR393 is the placement/resize integration boundary. Art Apply/polish remains deferred. Original VAIO8/root-study34 protected files rehashed13:57UTC with no mismatches. Detailed local evidence lives outside Git in outputs/overnight-journeys-2026-10-29. No roadmap completion claim.
+
 ## Latest: secondary controls and disclosures
 
 The October 29 follow-up replaces faint browser-default disclosure links with a shared opt-in heading. Major secondary sections use 44px rows with an icon, explicit title, actual status/count badge and right chevron. Metadata uses a quieter 34px control (44px with coarse pointers). Native details preserve mouse, Enter/Space and Tab behavior; focus follows the rounded control. Low-priority content stays collapsed.
