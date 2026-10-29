@@ -1,5 +1,16 @@
 # v6 page-by-page visual review
 
+## Active implementation resume checklist — 2026-10-29 19:52 UTC / October 30 02:52 Bangkok
+
+Code c642494; continuous run active, milestones local and final-one-push permission retained. New native-file attachment cards avoid invalid image previews. Outputs/Routing/3D source tasks preserve a selected shared physical board instance while its ownership/declaration still match. Regression checks cover stale/cross-project/missing/different-source selections.
+
+- [x] Root typecheck; sequential full package suites2266pass/36skip/0fail; exact repository scripts94pass/318assertions/0fail. UI243/960; client348/1662. Earlier default-parallel mechanical timeout and accidental broad vendor-script dependency errors remain logged honestly; no vendor edits/install.
+- [x] All42 protected VAIO/root-study files preserved at19:50UTC.
+- [ ] Native screenshot/click/media/dialog/keyboard and v6 visual acceptance after Mac unlock; shared Right-instance return loop added to the exact native queue. No new native captures after07 and no false completion claim.
+- [ ] Final diff/PR handoff and one final normal push; no merge/deploy. Mechanical PR398 excluded/last, PR393 integration boundary, Art Apply/polish deferred.
+
+Mac remains locked with unlock question pending. Optional live Codex check was rejected before execution; do not retry indirectly. Dev app43/task bridge34942; owned lease91251expires22:35:43UTC; automation remains PAUSED. Earlier checkpoints below remain historical.
+
 ## Active implementation resume checklist — 2026-10-29 16:46 UTC / 23:46 Bangkok
 
 Current code `2b85c3c`. Continuous run active; milestones local, one final normal push/PR389 update explicitly authorized at final handoff. Native captures below remain evidence only for their recorded revisions. No roadmap-complete claim.
