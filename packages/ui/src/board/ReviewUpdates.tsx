@@ -7,7 +7,7 @@ import { videoInputLabel } from "./VideoSourceStatus";
 import { CoreHttpError, useBoardSources, useProject, useProjectOrder, usePcbPreviewRevision, useBoardModelRevision, useEnclosureSourceRevision, usePcbCheckRevision, useRunTool, useVideoInputRevision, videoInputsNeedReview } from "@fabdesk/client-core";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { AssemblyReviewUpdates } from "./AssemblyReviewUpdates";
-import { newChatDraftKey, useUiStore } from "../stores/ui";
+import { useUiStore } from "../stores/ui";
 
 type Row = { group: "outputs" | "checks"; item: string; status: string; note: string; warning: boolean; action: string; keep?: { kind: "pcb-preview" | "board-model"; eligible: boolean }; disabled?: boolean; onClick: () => void };
 
@@ -38,7 +38,7 @@ function SingleBoardUpdates({ scopeReady }: { scopeReady: boolean }) {
   if (!projectId) return <EmptyState title="No project selected" />;
   if (project.isError) return <LoadError title="Could not load project updates" onRetry={() => void project.refetch()} />;
   if (project.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
-  const open = (tab: "pcb" | "3d" | "cad" | "drc" | "renders" | "files") => useUiStore.getState().setBoardTab(tab);
+  const open = (tab: "pcb" | "schematic" | "3d" | "cad" | "drc" | "renders" | "files") => useUiStore.getState().setBoardTab(tab);
   const retry = (queries: Array<{ refetch: () => unknown }>) => { for (const query of queries) void query.refetch(); };
   const busy = update.state.status === "running";
   const refresh = (kind: "render_pcb_svg" | "glb") => {
@@ -59,11 +59,9 @@ function SingleBoardUpdates({ scopeReady }: { scopeReady: boolean }) {
     <header><h2>Review updates</h2><p>Review your design sources and choose which saved outputs to update.</p><Button size="sm" variant="ghost" onClick={() => retry([preview, model, enclosure, checks, readiness, video])}>Recheck sources</Button></header>
     <ReviewDesignSources pcb={pcb ? "Saved source" : "Not added"} schematic={schematic ? "Saved source" : "Not added"} status={pcb && schematic ? "PCB and schematic · not compared" : "Both sources are needed for comparison"} note="Review the differences before choosing a synchronization direction." action={<Button size="sm" onClick={() => {
       const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId) return;
-      if (!pcb || !schematic) { open("files"); return; }
-      const key = ui.activeThreadId ?? newChatDraftKey(projectId), previous = ui.drafts[key] ?? "";
-      const prompt = "Review the saved schematic and PCB in this project. Explain their differences and which synchronization direction is appropriate. Do not apply changes or save an open native document until we choose a direction.";
-      ui.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt); ui.focusComposer();
-    }}>{pcb && schematic ? "Ask about differences" : "Browse source files"}</Button>}>
+      if (!pcb || !schematic) { open(pcb ? "schematic" : "pcb"); return; }
+      if (assistantSurface) askAboutSurface(assistantSurface, "Review the saved schematic and PCB in this project. Explain their differences and which synchronization direction is appropriate. Do not apply changes or save an open native document until we choose a direction.");
+    }}>{pcb && schematic ? "Ask about differences" : pcb ? "Add schematic" : "Add PCB"}</Button>}>
       <details className="fd-review-sync-options"><DisclosureSummary icon="folderOpen" label="Source details & sync" variant="compact" /><p>A newer timestamp does not identify which design should change. Generated-output freshness does not establish schematic/PCB equivalence.</p><p>Ask the agent to review the intended direction and native source changes before saving. Some native preview tools also save the live schematic; the review must explain that before running them.</p><div><Button size="sm" onClick={() => assistantSurface && askAboutSurface(assistantSurface, "Review updating this PCB from the saved schematic. Explain the proposed footprint and connection changes, preserve board-only items, and identify any required native document saves before applying anything.")}>Review schematic → PCB</Button><Button size="sm" onClick={() => assistantSurface && askAboutSurface(assistantSurface, "Review bringing the saved PCB changes back into the schematic. Identify the electrical and footprint differences, explain what can be recovered, and propose native schematic edits without applying them yet.")}>Review PCB → schematic</Button></div></details>
     </ReviewDesignSources>
     {([{ id: "outputs", label: "Generated outputs" }, { id: "checks", label: "Saved checks" }] as const).map(group => <ReviewUpdateTable key={group.id} title={group.label} collapsed={group.id === "checks"} summaryStatus={readiness.data?.checks.drc === "fail" ? "Findings need review" : "PCB & schematic"} summaryWarning={readiness.data?.checks.drc === "fail"} rows={rows.filter(row => row.group === group.id && row.item !== "Other saved outputs" && (row.item !== "Generated enclosure" || has("enclosure.json"))).sort((a,b) => (a.item === "Board 3D model" ? 0 : a.item === "PCB preview" ? 1 : 2) - (b.item === "Board 3D model" ? 0 : b.item === "PCB preview" ? 1 : 2)).map(row => ({

@@ -2,10 +2,11 @@ import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurfac
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useState } from "react";
 import { ASSEMBLY_MANIFEST_PATH, type ProjectBoardSources } from "@fabdesk/protocol";
-import { overviewBoardImages, restoreAssemblySelection, assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, assemblyCheckNeedsReview, assemblyCheckSummaryLabel, useAssemblyCheckSummaries, assemblyReviewRows, useAssemblyPreviewRevisions, useProject, useRunTool } from "@fabdesk/client-core";
+import { overviewBoardImages, restoreAssemblySelection, assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, assemblyCheckNeedsReview, assemblyCheckSummaryLabel, useAssemblyCheckSummaries, assemblyReviewRows, useAssemblyPreviewRevisions, useProject, useRunTool, useVideoInputRevision, videoInputsNeedReview } from "@fabdesk/client-core";
+import { videoInputLabel } from "./VideoSourceStatus";
 import { Button, Spinner } from "../components/ui";
 import { ReviewDesignSources, ReviewKeepNote, ReviewScope, ReviewUpdateTable, type ReviewOutputRow } from "./ReviewUpdateLayout";
-import { newChatDraftKey, useUiStore } from "../stores/ui";
+import { useUiStore } from "../stores/ui";
 
 export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRetry }: { projectId: string; data: ProjectBoardSources; checking: boolean; failed: boolean; onRetry: () => void }) {
   const project = useProject(projectId), previews = useAssemblyPreviewRevisions(projectId, data.sources), update = useRunTool();
@@ -25,11 +26,10 @@ export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRet
   useAssistantSurface(assistantSurface);
   const active = () => useUiStore.getState().activeProjectId === projectId;
   const ask = (sourceId: string, name: string, compare = false) => {
-    const ui = useUiStore.getState(); if (!active()) return;
-    const key = ui.activeThreadId ?? newChatDraftKey(projectId), previous = ui.drafts[key] ?? "";
+    if (!active()) return;
+    const target = rows.find(row => row.sourceId === sourceId);
     const prompt = compare ? `Compare the saved PCB and schematic for ${name}. Find a matching schematic in the project if it is missing, and explain any differences before changing sources.` : `Review ${name}. Explain missing files, source changes, and which boards are affected.`;
-    ui.setDraftBoardContext(key, { projectId, sourceKey: `review:${sourceId}`, label: name, instruction: JSON.stringify({ sourceId, manifestSha256: data.manifestSha256, source: data.sources.find(row => row.source.id === sourceId)?.source, request: "Inspect native sources and shared ownership before proposing changes. Artifact freshness does not establish electrical compatibility." }) });
-    ui.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt); ui.focusComposer();
+    askAboutSurface({ projectId, label: `Review / ${name}`, priority: 40, details: JSON.stringify({ board: target?.board, sourceId, manifestSha256: data.manifestSha256, source: data.sources.find(row => row.source.id === sourceId)?.source, request: "Inspect native sources and shared ownership before proposing changes. Artifact freshness does not establish electrical compatibility." }) }, prompt);
   };
   const refresh = async (target: typeof rows[number]) => {
     if (!target.board || busy || unavailable || !active()) return;
@@ -52,16 +52,18 @@ export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRet
   const images = row ? overviewBoardImages(files, { sources: data.sources, sourceId: row.sourceId }) : [];
   const savedRender = images.find(image => image.kind === "top" || image.kind === "render");
   const video = row?.board ? files.find(file => ["mp4", "webm", "gif"].some(ext => file.path === `${prefix}exports/product-video.${ext}`)) : undefined;
+  const videoRevision = useVideoInputRevision(projectId, video?.path);
+  const videoStatus = unavailable ? "Source check unavailable" : videoRevision.isFetching ? "Checking video inputs…" : videoRevision.isError ? "Video inputs could not be checked" : videoInputLabel(videoRevision.data);
   const outputs: ReviewOutputRow[] = row && !row.board ? [{key:"unavailable",item:"Board outputs",icon:"folder",status:row.status,warning:true,note:"Resolve the native source to review its saved outputs.",actions:<Button size="sm" disabled={unavailable || busy} onClick={() => browse(ASSEMBLY_MANIFEST_PATH)}>Source details</Button>}] : row ? [
-    { key: "model", item: "3D model", icon: "cube", status: modelStatus, warning: assemblyModelNeedsReview(modelById.get(row.sourceId)), note: "Model files and dependencies not inspected.", actions: <Button size="sm" disabled={unavailable || busy || !row.selection} onClick={() => openSource(row, "3d")}>Review model</Button> },
+    { key: "model", item: "3D model", icon: "cube", status: modelStatus, warning: assemblyModelNeedsReview(modelById.get(row.sourceId)), note: "External component models and physical fit remain unverified.", actions: <Button size="sm" disabled={unavailable || busy || !row.selection} onClick={() => openSource(row, "3d")}>Review model</Button> },
     { key: "preview", item: "Board preview", icon: "image", status: unavailable ? "Source check unavailable" : row.status, warning: row.warning, note: "Saved PCB drawing · electrical checks stay separate.", actions: row.board ? <Button size="sm" data-update={!row.previewCurrent} disabled={unavailable || busy || !!selectedPreview?.isFetching} onClick={() => row.previewCurrent ? openSource(row, "pcb") : void refresh(row)}>{busy && updatingSource === row.sourceId ? "Updating preview…" : row.previewCurrent ? "Open board" : row.hasPreview ? "Update preview" : "Create preview"}</Button> : <Button size="sm" disabled={unavailable || busy} onClick={() => ask(row.sourceId, row.name)}>Resolve source</Button> },
     ...(savedRender ? [{ key: "image", item: savedRender.kind === "top" ? "Top board image" : "Board image", icon: "image" as const, status: "Saved image · source unverified", note: "Review this saved render before sharing it.", actions: <Button size="sm" disabled={unavailable || busy} onClick={() => browse(savedRender.path)}>Review image</Button> }] : []),
-    ...(video ? [{ key: "video", item: "Review video", icon: "play" as const, status: "Saved video · source unverified", note: "Member-board video dependencies are not tracked here.", actions: <Button size="sm" disabled={unavailable || busy} onClick={() => browse(video.path)}>Preview video</Button> }] : []),
+    ...(video ? [{ key: "video", item: "Review video", icon: "play" as const, status: videoStatus, warning: videoInputsNeedReview(videoRevision.data), note: "Recorded video and model inputs only; captions, scene content and external dependencies need separate review.", actions: <Button size="sm" disabled={unavailable || busy} onClick={() => browse(video.path)}>Preview video</Button> }] : []),
   ] : [];
   const sourceTiles = <div className="fd-review-source-grid">{rows.map(item => <button key={item.sourceId} className="fd-review-source-tile" data-warning={item.warning || attentionSources.has(item.sourceId)} disabled={unavailable || busy} onClick={() => setRequestedScope(item.sourceId)}><strong>{item.name}</strong><small>{item.status}</small><small>{item.instances.length} {item.instances.length === 1 ? "board" : "boards"}{attentionSources.has(item.sourceId) ? " · Review checks or model" : ""}</small></button>)}</div>;
   return <div className="fd-review-updates" data-testid="assembly-review-updates">
     <ReviewScope><select aria-label="Review board scope" value={scope ?? "all"} disabled={unavailable || busy} onChange={event => setRequestedScope(event.target.value)}><option value="all">All boards</option>{rows.map(item => <option key={item.sourceId} value={item.sourceId}>{item.name}</option>)}</select></ReviewScope>
-    <header><h2>Review updates</h2><p>Review your design sources and choose which saved outputs to update.</p><Button size="sm" variant="ghost" disabled={busy || checking} onClick={() => { onRetry(); void project.refetch(); void checks.refetch(); void models.refetch(); for (const preview of previews) if (preview.trackable) void preview.refetch(); }}>Recheck sources</Button></header>
+    <header><h2>Review updates</h2><p>Review your design sources and choose which saved outputs to update.</p><Button size="sm" variant="ghost" disabled={busy || checking} onClick={() => { onRetry(); void project.refetch(); void checks.refetch(); void models.refetch(); void videoRevision.refetch(); for (const preview of previews) if (preview.trackable) void preview.refetch(); }}>Recheck sources</Button></header>
     {failed && <p role="alert" className="fd-update-feedback">Project sources could not be refreshed. Retry before choosing a board or updating an output.</p>}
     {row ? <>
       <ReviewDesignSources pcb={unavailable ? "Checking source…" : row.board ? "Saved source" : "Unavailable"} schematic={hasSchematic ? "Saved source" : "Not added"} status={unavailable ? "Source check unavailable" : !row.board ? row.status : hasSchematic ? "PCB and schematic · not compared" : "Schematic needed for comparison"} note={row.instances.length > 1 ? `Shared design · ${row.instances.length} boards. Review differences before choosing a direction.` : "Review the native sources before choosing a synchronization direction."} action={<Button size="sm" disabled={unavailable || busy} onClick={() => ask(row.sourceId, row.name, !!row.board)}>{!row.board ? "Resolve source" : hasSchematic ? "Ask about differences" : "Find schematic with agent"}</Button>}>

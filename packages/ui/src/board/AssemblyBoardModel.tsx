@@ -1,3 +1,5 @@
+import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
+import { CanvasToolButton } from "../components/CanvasToolButton";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { lazy, Suspense, useState } from "react";
@@ -13,6 +15,8 @@ export function AssemblyBoardModel({ projectId, data, selection, enabled }: { pr
   const model = useAssemblyBoardModel(projectId, board, enabled && owned), tool = useRunTool(), busy = tool.state.status === "running";
   const [error, setError] = useState<string | null>(null);
   const source = data.sources.find(row => row.source.id === selection.sourceId), state = model.data?.state;
+  const assistantSurface = { projectId, label: `3D / ${source?.source.name ?? selection.sourceId}`, priority: 15, details: JSON.stringify({ board, instanceId: selection.instanceId, source: source?.source, path: model.data?.path, sourceSha256: model.data?.sourceSha256, modelState: state, checking: !enabled || model.isFetching, generating: busy, warnings: model.data?.warnings, instruction: "Individual board model; assembly alignment, external component models and fit are not established." }) };
+  useAssistantSurface(assistantSurface);
   const run = async () => {
     const snapshot = model.data;
     if (!snapshot || !enabled || !owned || model.isFetching || model.isError || busy || useUiStore.getState().activeProjectId !== projectId) return;
@@ -37,7 +41,7 @@ export function AssemblyBoardModel({ projectId, data, selection, enabled }: { pr
   return <div className="fd-assembly-model" data-testid="assembly-board-model">
     <div className="fd-assembly-model-status" data-warning={["source-changed", "artifact-changed", "scope-unverified"].includes(state ?? "")} role="status"><strong>{source?.source.name} · {label}</strong><span>Component-model dependencies, physical placement and enclosure fit are unverified.</span></div>
     {model.data?.model ? <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}><ModelCanvas projectId={projectId} path={model.data.path} blob={model.data.model} /></Suspense> : <EmptyState title="See this board in 3D">Export a model from its saved KiCad PCB. Components appear when their model files are available.</EmptyState>}
-    <div className="fd-assembly-model-actions"><Button size="sm" disabled={!enabled || busy || model.isFetching || !model.data} onClick={() => void run()}>{busy ? "Exporting model…" : model.data?.model ? "Update this model" : "Generate 3D preview"}</Button>{model.data?.model && <Button size="sm" variant="ghost" disabled={!enabled || busy || model.isFetching} onClick={download}>Download GLB</Button>}</div>
+    <div className="fd-assembly-model-actions"><Button size="sm" disabled={!enabled || busy || model.isFetching || !model.data} onClick={() => void run()}>{busy ? "Exporting model…" : model.data?.model ? "Update this model" : "Generate 3D preview"}</Button>{model.data?.model && <Button size="sm" variant="ghost" disabled={!enabled || busy || model.isFetching} onClick={download}>Download GLB</Button>}<Button size="sm" variant="ghost" disabled={!enabled || busy} onClick={() => { const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId) return; ui.setAssemblyBoard(selection); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("3d"); }}>Make board video</Button><CanvasToolButton icon="sparkles" label="Ask about this 3D model" onClick={() => askAboutSurface(assistantSurface, "Review this board’s 3D model and its saved source. Explain missing component models or outdated inputs, and propose the next step before regenerating anything.")} /></div>
     {!!model.data?.warnings.length && <details className="fd-assembly-model-warnings"><DisclosureSummary icon="warning" label="Export notes" badge={model.data.warnings.length} warning variant="compact" /><ul>{model.data.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
     {(error || tool.state.error) && <ErrorNotice error={error ?? tool.state.error} />}
   </div>;
@@ -56,6 +60,6 @@ export function AssemblyModels({ projectId, data, checking, failed, onRetry }: {
   return <div className="fd-assembly-models">
     <header><div><h2>Board models</h2><p>Choose a source design. Shared physical boards use one exported model.</p></div><label>Board source<select aria-label="Board source for 3D model" disabled={checking || failed} value={selection?.sourceId ?? ""} onChange={event => choose(event.target.value)}><option value="">Choose a board source…</option>{data.sources.map(row => <option key={row.source.id} value={row.source.id} disabled={row.status !== "available"}>{row.source.name}{row.status !== "available" ? " · unavailable" : ""}</option>)}</select></label></header>
     {failed ? <LoadError title="Board sources could not be verified" onRetry={onRetry} /> : checking ? <p role="status"><Spinner />Checking sources…</p> : !selection ? <EmptyState title="Choose a board to see its model" /> : !owned ? <EmptyState title="Board definition changed">Select the source again to continue.<div className="mt-3"><Button size="sm" disabled={!data.manifestSha256 || data.sources.find(row => row.source.id === selection.sourceId)?.status !== "available"} onClick={() => choose(selection.sourceId)}>Select source again</Button></div></EmptyState> : <AssemblyBoardModel key={`${selection.sourceId}/${selection.manifestSha256}`} projectId={projectId} data={data} selection={selection} enabled />}
-    <p className="fd-assembly-models-note">Models are viewed individually. Assembly alignment, enclosure fit and member video export are not available here yet.</p>
+    <p className="fd-assembly-models-note">Models are viewed individually. Create board videos in Outputs. Assembly alignment and enclosure fit remain unverified.</p>
   </div>;
 }

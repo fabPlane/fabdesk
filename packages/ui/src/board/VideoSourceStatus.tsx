@@ -13,7 +13,7 @@ export function videoInputLabel(state: VideoInputRevisionState | undefined): str
     : "Saved video · Source unverified";
 }
 
-/** Tracked root-board provenance is checked; captions and full-scene freshness remain separate. */
+/** Tracked source-qualified provenance is checked; captions and full-scene freshness remain separate. */
 export function VideoSourceStatus({ projectId, path, updating }: { projectId: string; path: string; updating: boolean }) {
   const revision = useVideoInputRevision(projectId, path);
   return <div className="fd-board-model-status" data-warning={videoInputsNeedReview(revision.data)} aria-live="polite">
