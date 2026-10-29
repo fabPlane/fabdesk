@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { editableSketchPaths } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { ProjectImage } from "../chat/ProjectImage";
 import { Button } from "../components/ui";
@@ -18,6 +19,7 @@ export function SketchStartReference({ projectId, paths, preferred, checking, fa
   const drawing = useRef<HTMLButtonElement>(null);
   const path = paths.includes(choice) ? choice : preferred;
   const selected = selectedPath === path;
+  const editable = editableSketchPaths([{ path }]).includes(path);
   const ui = () => useUiStore.getState();
   const active = () => ui().activeProjectId === projectId;
   const dismiss = () => { setSelectedPath(null); requestAnimationFrame(() => drawing.current?.focus()); };
@@ -36,7 +38,7 @@ export function SketchStartReference({ projectId, paths, preferred, checking, fa
           if (!ui().attachments[key]?.some(item => item.path === path)) ui().addAttachment(key, { path, mime: /\.jpe?g$/i.test(path) ? "image/jpeg" : "image/png", label: path.slice("sketches/".length) });
           ui().focusComposer();
         }}>Use in message</Button>
-        <Button size="sm" variant="ghost" onClick={() => { if (active()) ui().setSketchOpen(true, "draw"); }}>Draw or open a copy</Button>
+        <Button size="sm" variant="ghost" onClick={() => { if (active()) ui().setSketchOpen(true, "draw", editable ? path : undefined); }}>{editable ? "Open drawing copy" : "Sketch tools"}</Button>
         <Button size="sm" variant="ghost" onClick={() => { if (active()) { ui().openProjectFile(path); ui().setAssistantOpen(false); } }}>View file</Button>
         <Button size="sm" variant="ghost" onClick={dismiss}>Deselect</Button>
       </div> : <p>Select your sketch to see its tools</p>}

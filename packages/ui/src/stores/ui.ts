@@ -105,6 +105,8 @@ export interface UiState {
   settingsSection: SettingsSection | null;
   sketchOpen: boolean;
   sketchMode: "draw" | "upload";
+  /** Requested saved copy, consumed by the project-scoped sketch session; never persisted. */
+  sketchSourcePath: string | null;
   /** Adopt a newly saved sketch project only while the original blank chat is active. */
   adoptSketchProject: (projectId: string) => void;
   agentPickerOpen: boolean;
@@ -134,7 +136,7 @@ export interface UiState {
   clearAttachments: (threadKey: string) => void;
   setPaletteOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean, section?: SettingsSection) => void;
-  setSketchOpen: (open: boolean, mode?: "draw" | "upload") => void;
+  setSketchOpen: (open: boolean, mode?: "draw" | "upload", sourcePath?: string) => void;
   setAgentPickerOpen: (open: boolean) => void;
   setWhatsNewOpen: (open: boolean) => void;
   markWhatsNewSeen: (id: string) => void;
@@ -265,6 +267,7 @@ export function createUiStore(storage?: StateStorage) {
   settingsSection: null,
   sketchOpen: false,
   sketchMode: "draw",
+  sketchSourcePath: null,
   adoptSketchProject: (projectId) => set((s) => {
     if (s.activeProjectId || s.activeThreadId) return {};
     const key = newChatDraftKey(projectId);
@@ -315,7 +318,7 @@ export function createUiStore(storage?: StateStorage) {
   clearAttachments: (key) => set((s) => ({ attachments: { ...s.attachments, [key]: [] } })),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setSettingsOpen: (settingsOpen, section) => set({ settingsOpen, settingsSection: settingsOpen ? (section ?? null) : null }),
-  setSketchOpen: (sketchOpen, sketchMode = "draw") => set({ sketchOpen, sketchMode }),
+  setSketchOpen: (sketchOpen, sketchMode = "draw", sourcePath) => set({ sketchOpen, sketchMode, sketchSourcePath: sketchOpen && sketchMode === "draw" ? sourcePath ?? null : null }),
   setAgentPickerOpen: (agentPickerOpen) => set({ agentPickerOpen }),
   setWhatsNewOpen: (whatsNewOpen) => set({ whatsNewOpen }),
   markWhatsNewSeen: (whatsNewSeenId) => set({ whatsNewSeenId }),

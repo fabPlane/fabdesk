@@ -25,7 +25,7 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
   const qc = useQueryClient();
   const [target] = useState(() => {
     const ui = useUiStore.getState();
-    return { projectId: ui.activeProjectId, threadId: ui.activeThreadId };
+    return { projectId: ui.activeProjectId, threadId: ui.activeThreadId, sourcePath: ui.sketchSourcePath };
   });
   const [session] = useState(() => createSketchDraftSession({
     client,
@@ -37,7 +37,7 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
   }));
   const project = useProject(target.projectId);
   const savedDrawings = editableSketchPaths(project.data?.files ?? []);
-  const [savedPath, setSavedPath] = useState("");
+  const [savedPath, setSavedPath] = useState(target.sourcePath ?? "");
   const [loading, setLoading] = useState(false);
   const [hasDrawing, setHasDrawing] = useState(false);
   const needsProjectChat = !!target.threadId && !target.projectId;
@@ -68,6 +68,10 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
   const sourceInput = useRef<HTMLInputElement>(null);
   const canvasRoot = useRef<HTMLDivElement>(null);
   const sourceOptions = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    // Present the selected copy without replacing a recovered or unsaved drawing.
+    if (target.sourcePath && sourceOptions.current) sourceOptions.current.open = true;
+  }, [target.sourcePath]);
   const [sourceName, setSourceName] = useState(memory?.source?.name ?? "");
   const rememberScene = useCallback(() => {
     const scene = initialScene.current;
@@ -276,7 +280,7 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
                       {savedDrawings.map(path => <option key={path} value={path}>{basename(path)}</option>)}
                     </select>
                   </label>
-                  <Button size="sm" disabled={busy || recovering || completed.current || !savedPath} onClick={() => void openSavedDrawing()}>{hasDrawing ? "Replace draft with saved copy" : "Open a copy"}</Button>
+                  <Button size="sm" disabled={busy || recovering || completed.current || !savedDrawings.includes(savedPath)} onClick={() => void openSavedDrawing()}>{hasDrawing ? "Replace draft with saved copy" : "Open a copy"}</Button>
                   <p>The saved original stays unchanged.</p>
                 </div>}
               </>}
