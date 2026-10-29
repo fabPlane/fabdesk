@@ -1,3 +1,4 @@
+import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { CART_ITEM_STATUSES, type CartItem, type CartItemPatch, type CartItemStatus, type Destination } from "@fabdesk/protocol";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button, EmptyState, IconButton, Input, Select, Spinner, Textarea } from "../components/ui";
@@ -164,6 +165,7 @@ const looksLikeMpn = (s: string) => !/\s/.test(s) && /\d/.test(s) && s.length <=
 export function ShoppingListTab() {
   const [view, setView] = useState<"bom" | "order">("bom");
   const projectId = useUiStore(s => s.activeProjectId);
+  useAssistantSurface(projectId ? { projectId, label: view === "bom" ? "Parts / Design BOM" : "Parts / Shopping", priority: 5, details: JSON.stringify({ view, projectId }) } : null);
   const navigation = (
     <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-panel-2/50 p-0.5" role="group" aria-label="Parts view">
       {(["bom", "order"] as const).map((value) => (

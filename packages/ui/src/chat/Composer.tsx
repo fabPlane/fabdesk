@@ -1,3 +1,5 @@
+import { useShallow } from "zustand/react/shallow";
+import { captureAssistantContext, selectAssistantState } from "./assistant-context";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { modelDisplayName } from "./model-display-name";
 import type { AgentId, Thread } from "@fabdesk/protocol";
@@ -69,6 +71,8 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
   const boardContext = matchingContexts?.length ? { projectId: matchingContexts[0]!.projectId, label: matchingContexts.map(context => context.label).join(", "), instruction: matchingContexts.map(context => context.instruction).join("\n\n") } : undefined;
   const setDraftBoardContext = useUiStore(s => s.setDraftBoardContext);
   const boardSources = useBoardSources(projectId);
+  const assistantState = useUiStore(useShallow(selectAssistantState));
+  const workspaceContext = captureAssistantContext(assistantState, boardSources.data, boardSources.isFetching || boardSources.isError, matchingContexts);
   const rootAutomation = boardSources.data?.mode === "single";
   const pending = useUiStore((s) => s.attachments[draftKey] ?? EMPTY);
   const addAttachment = useUiStore((s) => s.addAttachment);
@@ -177,7 +181,8 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
     }
     // `/shopping-list …` and friends expand into the instructions the agent needs.
     const expanded = expandSlashCommand(typed) ?? typed;
-    const content = boardContext ? `${expanded}\n\n${boardContext.instruction}` : expanded;
+    const content = expanded;
+    const workspaceContext = captureAssistantContext(selectAssistantState(useUiStore.getState()), boardSources.data, boardSources.isFetching || boardSources.isError, matchingContexts);
     setSending(true);
     setError(null);
     let createdThreadId: string | null = null;
@@ -190,6 +195,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
       }
       const input = {
         content,
+        workspaceContext,
         attachments: pending.map((a) => ({ path: a.path, mime: a.mime })),
         agentId,
         ...(model ? { model } : {}),
@@ -216,7 +222,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
     } finally {
       setSending(false);
     }
-  }, [draft, rootAutomation, matchingContexts, boardContext, setDraftBoardContext, sending, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
+  }, [draft, rootAutomation, matchingContexts, boardSources.data, boardSources.isFetching, boardSources.isError, setDraftBoardContext, sending, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
 
   const stop = useCallback(async () => {
     if (!run || stopping) return;
@@ -340,9 +346,10 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
             ))}
           </div>
         )}
+        <div className="fd-composer-workspace-context" title="The agent receives the current page and selection with your message"><Icon name="sparkles" width={13} height={13} /><span>{workspaceContext.label}</span></div>
         {boardContext && <div className="fd-composer-board-context">
-          <details><DisclosureSummary icon="pcb" label={`Board: ${boardContext.label}`} variant="compact" /><p>This source context accompanies your next message.</p><p className="break-words">{boardContext.instruction}</p></details>
-          <button type="button" aria-label="Remove board context" onClick={() => setDraftBoardContext(draftKey, null)}>×</button>
+          <details><DisclosureSummary icon="pcb" label={`Attached context · ${boardContext.label}`} variant="compact" /><p>This source context accompanies your next message.</p><p className="break-words">{boardContext.instruction}</p></details>
+          <button type="button" aria-label="Remove attached context" onClick={() => setDraftBoardContext(draftKey, null)}>×</button>
         </div>}
         <div className="fd-composer rounded-xl border border-border bg-panel transition-colors focus-within:border-accent">
           <VoiceBar

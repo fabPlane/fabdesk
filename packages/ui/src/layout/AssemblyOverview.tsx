@@ -1,3 +1,4 @@
+import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { overviewBoardImages, useProject, type OverviewImage } from "@fabdesk/client-core";
 import { useOverviewImage } from "./useOverviewImage";
 import { CanvasToolButton } from "../components/CanvasToolButton";
@@ -37,7 +38,7 @@ function askAbout(selection: AssemblySceneSelection | null, name: string, availa
   const projectId = selection.projectId;
   const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId) return;
   const key = ui.activeThreadId ?? newChatDraftKey(projectId), previous = ui.drafts[key] ?? "";
-  const prompt = schematicAction === "generate" ? `Generate a schematic for ${JSON.stringify(name)}.` : schematicAction === "import" ? `Import the attached schematic for ${JSON.stringify(name)}.` : schematicAction === "find" ? `Find the schematic for ${JSON.stringify(name)} in this project or its source repository.` : available ? `Review ${JSON.stringify(name)} and its board connections.` : `Help resolve the missing source for ${JSON.stringify(name)}.`;
+  const prompt = schematicAction === "generate" ? `Find an existing schematic for ${JSON.stringify(name)} in this project first. If none matches, help me generate a proposed schematic from its saved PCB and explain what needs review.` : schematicAction === "import" ? `Help me import a matching KiCad schematic for ${JSON.stringify(name)}. Check existing project files first and identify any missing referenced sheets.` : schematicAction === "find" ? `Find the schematic for ${JSON.stringify(name)} in this project or its source repository.` : available ? `Review ${JSON.stringify(name)} and its board connections.` : `Help resolve the missing source for ${JSON.stringify(name)}.`;
   const context = `Assembly context: instance ${JSON.stringify(selection.instanceId)}, source ${JSON.stringify(selection.sourceId)}, manifest SHA-256 ${selection.manifestSha256}. Verify the current project declaration and whether this source is shared before proposing edits. ${schematicAction ? "Search existing project files first and reuse the matching native KiCad schematic when available. Check its revision, referenced sheets and dependencies against the saved PCB. Do not replace an existing design or claim electrical compatibility without verification." : "Inspect the saved source and explain issues before proposing changes."}${schematicAction === "generate" ? " If no matching source exists, reconstruct a proposed schematic from the saved PCB connectivity. Explain what cannot be recovered, preserve the existing PCB and require review of the generated circuit." : ""}`;
   ui.setDraftBoardContext(key, { projectId, sourceKey: JSON.stringify([selection.instanceId, selection.sourceId, selection.manifestSha256]), label: name, instruction: context });
   ui.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt); ui.focusComposer();
@@ -82,6 +83,7 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
   const sourcesToReview = [...new Set([...assemblySourcesToReview(data, new Map(previews.filter(state => state.trackable).map(state => [state.sourceId, state.data]))), ...(!models.isFetching && !models.isError ? (models.data ?? []).filter(assemblyModelNeedsReview).map(row => row.sourceId) : []), ...(!checks.isFetching && !checks.isError ? (checks.data ?? []).filter(assemblyCheckNeedsReview).map(row => row.sourceId) : [])])];
   const selectedNode = selected ? scene.nodes.find(node => node.instance.id === selected.instanceId) : undefined;
   const selectedLink = scene.links.find(link => link.connection.id === linkId);
+  useAssistantSurface({ projectId, label: detail ? `Board · ${detail.instanceName}` : selectedLink ? "Overview · Connection" : selectedNode ? `Overview · ${selectedNode.instance.name}` : "Project overview", priority: 10, details: JSON.stringify({ board: detail?.selection ?? selected, source: detail?.directory, selectedConnection: selectedLink?.connection, ownershipCheckPending: checking || failed, declaredConnectionsOnly: true }) });
   const linkStale = !!linkId && linkHash !== data.manifestSha256;
   const ownership = selected ? assemblySelectionState(data, selected) : null;
   const unavailable = checking || failed;

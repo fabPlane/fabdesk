@@ -1,3 +1,5 @@
+import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
+import { CanvasToolButton } from "../components/CanvasToolButton";
 import { BoardImageOutput } from "./BoardImageOutput";
 import { buildZip } from "@fabdesk/board-art";
 import { readOutputSelection } from "@fabdesk/client-core";
@@ -71,6 +73,8 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
     return { warning: false, label: "Source unverified" };
   };
   const visible = outputs.find(file => file.path === preview);
+  const assistantSurface = projectId ? { projectId, label: visible ? `Output preview · ${basename(visible.path)}` : "Outputs / Library", priority: visible ? 40 : 5, details: JSON.stringify({ view: "Saved output library", preview: visible ? { path: visible.path, sourceId: visible.sourceId, sourceName: visible.sourceName, status: sourceInfo(visible.path).label } : null, selected: selectedPaths.slice(0, 20), sourceFilter: sourceScope, kindFilter: filter }) } : null;
+  useAssistantSurface(assistantSurface);
   useEffect(() => { const visible = new Set(shown.map(file => file.path)); setSelectedPaths(previous => { const next = previous.filter(path => visible.has(path)); return next.length === previous.length ? previous : next; }); }, [project.data?.files, query, filter, sourceScope]);
   const deselect = () => {
     [...(library.current?.querySelectorAll<HTMLInputElement>(".fd-output-checkbox") ?? [])].find(card => card.dataset.path === selectedPaths[0])?.focus();
@@ -155,8 +159,9 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
       <div className="fd-output-thumbnail"><Icon name="folderOpen" width={58} height={58} /><span>{sections.manufacturingFiles.length} FILES</span></div>
       <div className="fd-output-caption"><strong>Manufacturing files</strong><span>Individual Gerber, drill and DXF files</span><small>View all {sections.manufacturingFiles.length} files · Source unverified</small></div>
     </button>}</div> : <div className="fd-output-empty"><h3>{outputs.length ? "No outputs match these filters" : "Your outputs will appear here"}</h3><p>{outputs.length ? "Try another name or path, choose a different source, or clear the filters." : "Create images, a board model, a video or export files from the menu above."}</p></div>}
-    <Dialog open={imageOutput} onClose={() => setImageOutput(false)} title="Render board image" className="fd-output-preview-dialog">{imageOutput && <BoardImageOutput projectId={projectId} />}</Dialog>
+    <Dialog open={imageOutput} onClose={() => setImageOutput(false)} title="Render board image" className="fd-output-preview-dialog">{imageOutput && <BoardImageOutput projectId={projectId} onAsk={() => setImageOutput(false)} />}</Dialog>
     <Dialog open={!!visible} onClose={() => setPreview(null)} title={visible ? visible.sourceName ? `${visible.sourceName} · ${basename(visible.path)}` : basename(visible.path) : "Output preview"} className="fd-output-preview-dialog">
+      {visible && assistantSurface && <div className="fd-output-preview-ask"><CanvasToolButton icon="sparkles" label="Ask about this output" onClick={() => { askAboutSurface(assistantSurface, `Help me review ${basename(visible.path)}. Explain what it shows and whether its saved inputs need attention.`); setPreview(null); }} /></div>}
       {visible && visible.kind !== "videos" && <p className="fd-output-preview-source" role="status" data-warning={sourceInfo(visible.path).warning}>{sourceInfo(visible.path).label}</p>}
       {visible && (visible.kind === "images" ? <ProjectImage projectId={projectId} path={visible.path} className="max-h-[70vh] w-full object-contain" /> : visible.kind === "videos" ? <><VideoSourceStatus projectId={projectId} path={visible.path} updating={false} /><ProjectVideo projectId={projectId} path={visible.path} className="max-h-[70vh]" /></> : <div className="fd-output-model-preview"><Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={visible.path} /></Suspense></div>)}
     </Dialog>

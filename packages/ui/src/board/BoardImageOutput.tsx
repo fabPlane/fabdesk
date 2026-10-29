@@ -1,3 +1,5 @@
+import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
+import { CanvasToolButton } from "../components/CanvasToolButton";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useState } from "react";
 import { useProject, useRunTool } from "@fabdesk/client-core";
@@ -7,18 +9,21 @@ import { useUiStore } from "../stores/ui";
 import { useOutputSource } from "./useOutputSource";
 
 /** An intentional image export from the selected saved PCB, using the existing native renderer. */
-export function BoardImageOutput({ projectId }: { projectId: string }) {
+export function BoardImageOutput({ projectId, onAsk }: { projectId: string; onAsk: () => void }) {
   const scope = useOutputSource(projectId), project = useProject(projectId), tool = useRunTool();
   const [view, setView] = useState<"top" | "bottom" | "perspective" | "side">("top");
   const busy = tool.state.status === "running", path = `${scope.prefix}renders/${view}.png`;
   const present = project.data?.files.some(file => file.path === path);
   const ready = scope.ready && !!project.data?.files.some(file => file.path === `${scope.prefix}board.kicad_pcb`);
+  const assistantSurface = { projectId, label: "Render board image", priority: 50, details: JSON.stringify({ view, board: scope.board, source: scope.row?.source, sourceReady: ready, path, savedImagePresent: present, error: tool.state.error }) };
+  useAssistantSurface(assistantSurface);
   const render = async () => {
     if (!ready || busy || useUiStore.getState().activeProjectId !== projectId) return;
     const result = await tool.run("render_board", { projectId, view, ...(scope.board ? { board: scope.board, expectedSourceSha256: scope.row?.pcbSha256 } : {}) });
     if (result.status === "done") await project.refetch();
   };
   return <div className="fd-image-output">
+    <div className="fd-output-preview-ask"><CanvasToolButton icon="sparkles" label="Ask about this image" onClick={() => { askAboutSurface(assistantSurface, "Help me create a useful board image from the selected source and explain any missing inputs."); onAsk(); }} /></div>
     <p>Create an image from a saved PCB. Missing component models may affect its appearance.</p>
     {scope.assembly && <label>Board source<select aria-label="Board source for image" disabled={busy || scope.sources.isFetching} value={scope.sourceId ?? ""} onChange={event => scope.choose(event.target.value)}><option value="" disabled>Choose a board…</option>{!scope.row && scope.sourceId && <option value={scope.sourceId} disabled>Source definition changed</option>}{scope.data?.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · unavailable" : ""}</option>)}</select></label>}
     <div className="fd-image-output-views" role="group" aria-label="Image view">{(["top", "bottom", "perspective", "side"] as const).map(item => <Button key={item} size="sm" disabled={busy} aria-pressed={item === view} onClick={() => setView(item)}>{item[0]!.toUpperCase() + item.slice(1)}</Button>)}</div>

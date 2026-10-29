@@ -1,3 +1,4 @@
+import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { CheckFindingDetails } from "./CheckFindingDetails";
 import { CheckFindingFilters } from "./CheckFindingFilters";
 import { AssemblySchematicSources } from "./AssemblySchematicSources";
@@ -53,6 +54,8 @@ export function AssemblyChecks({ projectId, data, checking, failed, onRetry }: {
     }
   };
   const status = report.data?.state, selectedFinding = selected !== null ? rows[selected] : undefined;
+  useAssistantSurface({ projectId, label: selectedFinding ? "Checks · Selected finding" : "Review / Checks", priority: 10, details: JSON.stringify({ board, source: source?.source, sourceReady: owned && !checking && !failed, finding: selectedFinding, reportSourceState: status, checking: busy }) });
+
   return <div ref={root} className="fd-member-checks" data-testid="assembly-checks">
     <header><div><h2>Board checks</h2><p>Review saved PCB findings for this source design.</p></div>
       <label>Board source<select aria-label="Board source for checks" value={board?.sourceId ?? ""} disabled={busy || checking || failed} onChange={event => choose(event.target.value)}><option value="">Choose a board source…</option>{data.sources.map(row => <option key={row.source.id} value={row.source.id} disabled={row.status !== "available"}>{row.source.name}{row.status !== "available" ? " · unavailable" : ""}</option>)}</select></label>

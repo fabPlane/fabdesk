@@ -1,3 +1,4 @@
+import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useState } from "react";
 import { ASSEMBLY_MANIFEST_PATH, type ProjectBoardSources } from "@fabdesk/protocol";
@@ -20,11 +21,13 @@ export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRet
   const scope = requestedScope === "all" ? "all" : rows.some(row => row.sourceId === requestedScope) ? requestedScope : rows.find(row => row.board)?.sourceId ?? rows[0]?.sourceId;
   const row = rows.find(item => item.sourceId === scope), declared = data.sources.find(item => item.source.id === scope);
   const busy = update.state.status === "running", unavailable = checking || failed;
+  useAssistantSurface({ projectId, label: "Review / Updates", priority: 10, details: JSON.stringify({ scope, board: row?.board, source: declared?.source, status: row?.status, sourceCheckPending: unavailable, updating: busy }) });
   const active = () => useUiStore.getState().activeProjectId === projectId;
   const ask = (sourceId: string, name: string, compare = false) => {
     const ui = useUiStore.getState(); if (!active() || unavailable) return;
     const key = ui.activeThreadId ?? newChatDraftKey(projectId), previous = ui.drafts[key] ?? "";
-    const prompt = `Review source ${JSON.stringify(sourceId)} (${JSON.stringify(name)}) in this assembly. ${compare ? "Compare its saved PCB and schematic, or locate the matching schematic in this repository if it is missing." : "Identify missing files, revision differences and affected boards."} Inspect shared source ownership before proposing changes. Do not claim compatibility or synchronize files without reviewing the native sources. Assembly manifest SHA-256 ${data.manifestSha256}.`;
+    const prompt = compare ? `Compare the saved PCB and schematic for ${name}. Find a matching schematic in the project if it is missing, and explain any differences before changing sources.` : `Review ${name}. Explain missing files, source changes, and which boards are affected.`;
+    ui.setDraftBoardContext(key, { projectId, sourceKey: `review:${sourceId}`, label: name, instruction: JSON.stringify({ sourceId, manifestSha256: data.manifestSha256, source: data.sources.find(row => row.source.id === sourceId)?.source, request: "Inspect native sources and shared ownership before proposing changes. Artifact freshness does not establish electrical compatibility." }) });
     ui.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt); ui.focusComposer();
   };
   const refresh = async (target: typeof rows[number]) => {

@@ -73,7 +73,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const sketchReference = referenceCanvas ? attachedSketch ?? sketchPaths[0] : undefined;
   const referenceStart = fresh && !!sketchReference;
   const secondary = !!sourceId || inventory || order;
-  const showAssistant = !fresh && !conversationOnly && !secondary;
+  const showAssistant = !fresh && !conversationOnly;
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(client.baseUrl).hostname);
   const connected = sseStatus === "open" && (coreStatus?.state ?? "ready") === "ready";
 
@@ -123,7 +123,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       <div className="fd-canvas-surface">
         {order ? <OrderFlow /> : inventory ? <InventoryView /> : sourceId ? <OpenSourceView /> : projectId && boardSources.isError && !conversationOnly && (area === "boards" || area === "overview") ? <EmptyState title="Could not verify project board sources" action={<><Button onClick={() => void boardSources.refetch()}>Try again</Button><Button variant="ghost" onClick={() => ui().setBoardTab("files")}>Open project files</Button></>}><p role="alert">Review the project files or retry the source check before opening a board.</p>{boardSources.error instanceof Error && <details className="mt-3 max-w-xl text-left"><DisclosureSummary icon="warning" label="Source check details" variant="compact" /><p className="mt-2 break-words">{boardSources.error.message}</p></details>}</EmptyState> : projectId && sketchReference && !conversationOnly ? <SketchStartReference key={projectId} projectId={projectId} paths={sketchPaths} preferred={sketchReference} checking={project.isFetching} failed={project.isError} conversation={!!threadId || area === "overview"} assistantOpen={assistantOpen} attached={attachedSketch} /> : fresh || conversationOnly ? null : area === "overview" || area === "boards" && boardSources.data?.mode === "assembly" ? <ProjectOverview key={projectId} boardPicker={area === "boards"} /> : <BoardPanel canvas />}
       </div>
-        <section className={referenceStart ? "fd-canvas-reference-composer" : fresh ? "fd-canvas-start-surface" : conversationOnly ? "fd-canvas-conversation-surface" : "fd-assistant-dock"} aria-label="fabPlane assistant" hidden={secondary || (!fresh && !conversationOnly && !assistantOpen)} onKeyDown={(event) => {
+        <section className={referenceStart ? "fd-canvas-reference-composer" : fresh ? "fd-canvas-start-surface" : conversationOnly ? "fd-canvas-conversation-surface" : "fd-assistant-dock"} aria-label="fabPlane assistant" hidden={!fresh && !conversationOnly && !assistantOpen} onKeyDown={(event) => {
           if (!fresh && !conversationOnly && event.key === "Escape" && !(event.target as HTMLElement).closest("details[open]")) { event.stopPropagation(); closeAssistant(); }
         }}>
           {!fresh && !conversationOnly && <div className="fd-assistant-heading"><span><Icon name="sparkles" width={17} height={17} />Ask fabPlane</span><div>

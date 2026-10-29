@@ -1,3 +1,4 @@
+import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useOutputSource } from "./useOutputSource";
 import { boardFileDestination } from "@fabdesk/client-core";
@@ -90,6 +91,8 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const file = files.find((f) => f.path === selected);
   const appearance = file ? fileAppearance(file.path) : null;
   const designDestination = file && scopeReady && sources.data ? boardFileDestination(sources.data, file.path) : null;
+  const assistantSurface = { projectId, label: exportFocus ? "Outputs / Export files" : file ? `File · ${file.path.split("/").pop()}` : "Project files", priority: 10, details: JSON.stringify(exportFocus ? { board, source: source?.source, sourceReady, format: exportKind, outputDirectory: `${prefix}exports/`, busy, error: state.error } : { selectedFile: file?.path, format: appearance?.label, fileBytes: file?.size, preview: appearance?.preview }) };
+  useAssistantSurface(assistantSurface);
   const tooBig = !!file && file.size > MAX_TEXT_BYTES;
   const text = useProjectText(projectId, file && appearance?.preview === "text" && !tooBig ? file.path : null);
   async function exportFiles() {
@@ -144,7 +147,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   if (project.isLoading) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   const exportControls = { exportChoices, exportKind, setExportKind, thicknessMm, onThickness: (value: number) => setThickness(projectId, value), laserForm, setLaserForm, busy, canExport, sourceNote, ...(state.error && !exportFocus ? { error: `${EXPORTS[lastExport].title}: ${state.error}` } : {}), onExport: () => void exportFiles() };
   if (exportFocus) return <div className="fd-export-workspace">
-    <header><div><h1>Export files</h1><p>Choose a board and the files you need. Saved outputs stay in the library.</p></div><Button size="sm" variant="ghost" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }}><Icon name="library" width={16} height={16} />Saved outputs</Button></header>
+    <header><div><h1>Export files</h1><p>Choose a board and the files you need. Saved outputs stay in the library.</p></div><CanvasToolButton icon="sparkles" label="Ask about this export" onClick={() => askAboutSurface(assistantSurface, "Help me choose and export the files I need for this board. Review its saved source and existing outputs first.")} /><Button size="sm" variant="ghost" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }}><Icon name="library" width={16} height={16} />Saved outputs</Button></header>
     {assembly && <label className="fd-export-board-scope">Board source<select aria-label="Board source for exports" disabled={!scopeReady || busy} value={outputSource.sourceId ?? ""} onChange={event => outputSource.choose(event.target.value)}><option value="" disabled>Choose a board…</option>{!source && outputSource.sourceId && <option value={outputSource.sourceId} disabled>Source definition changed</option>}{sources.data?.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · source unavailable" : ""}</option>)}</select></label>}
     <div className="fd-export-flow">
       <section className="fd-export-reference" aria-label="Export source reference">
@@ -199,6 +202,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
                 if (target.selection) ui.setAssemblyBoard(target.selection);
                 ui.setBoardTab(target.tab);
               }}><Icon name={designDestination.tab === "pcb" ? "pcb" : "schematic"} width={16} height={16} />{designDestination.tab === "pcb" ? "Open board" : "Open schematic"}</Button>}
+              <CanvasToolButton icon="sparkles" label="Ask about this file" onClick={() => askAboutSurface(assistantSurface, `Help me understand ${file.path.split("/").pop()} and how it relates to this project.`)} />
               <CanvasToolButton icon="export" label={downloadPath === file.path ? "Downloading…" : "Download file"} disabled={downloadPath !== null} onClick={() => void downloadFile(file.path)} />
               {editableSketchPaths([file]).includes(file.path) && <Button size="sm" variant="ghost" onClick={() => {
                 const ui = useUiStore.getState();

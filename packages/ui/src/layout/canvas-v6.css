@@ -474,3 +474,8 @@
 .fd-member-output-studio > header h2 { font-size:24px; font-weight:650; margin:0 0 6px; }
 .fd-member-output-studio > header p { margin:0; font-size:13px; color:var(--fd-muted); }
 .fd-member-output-studio > .fd-video-workspace { flex:1; height:auto; }
+.fd-composer-workspace-context { display:flex; align-items:center; gap:7px; margin:0 4px 8px; font-size:11px; line-height:1.4; color:var(--fd-muted); }
+.fd-composer-workspace-context span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fd-message-workspace-context { margin-top:8px; border-top:1px solid var(--fd-border); padding-top:6px; font-size:11px; color:var(--fd-muted); }
+.fd-message-workspace-context pre { max-height:180px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; margin:8px 0 0; font-size:10px; }
+.fd-output-preview-ask { display:flex; justify-content:flex-end; margin-bottom:8px; }

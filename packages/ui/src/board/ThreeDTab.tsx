@@ -1,3 +1,4 @@
+import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { MemberOutputStudio } from "./MemberOutputStudio";
 import { AssemblyModels } from "./AssemblyBoardModel";
 import { BoardModelStatus } from "./BoardModelStatus";
@@ -70,6 +71,7 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources }: { scopeReady: boo
     [files],
   );
   const poster = files.find((f) => f.path === "exports/product-video-poster.png");
+  useAssistantSurface(projectId ? { projectId, label: canvas ? "Board / 3D" : "Outputs / Models & video", priority: 10, details: JSON.stringify({ model: glb?.path, videos: videos.map(file => file.path), videoSettings: form, sourceReady: canGenerate, exportingModel: glbRun.state.status === "running", makingVideo: videoRun.state.status === "running" }) } : null);
 
   if (!projectId) return <EmptyState title="No project selected" />;
   if (project.isError) return <LoadError title="Could not load 3D export" onRetry={() => void project.refetch()} />;

@@ -4,6 +4,7 @@
  * pending requests (approvals and questions) and of the queued-message drain that runs when a
  * run ends.
  */
+import { workspacePrompt, type WorkspaceContext } from "@fabdesk/protocol";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -143,6 +144,7 @@ type StartInput = {
   agentId: AgentId;
   model?: string;
   prompt: string;
+  workspaceContext?: WorkspaceContext;
   attachments: Array<{ path: string; mime: string }>;
 };
 
@@ -526,6 +528,7 @@ export class AgentRunManager {
     if (this.isRunning(input.threadId))
       throw new ToolError("an agent run is already active on this thread", "precondition");
     const projectId = input.project?.id ?? null;
+    if (input.workspaceContext && input.workspaceContext.projectId !== projectId) throw new ToolError("Workspace context belongs to another project. Reopen the conversation and send again.", "precondition");
     const busy = projectId !== null ? this.projectBusyMessage(projectId) : null;
     if (busy) throw new ToolError(busy.message, "precondition");
     this.startingThreads.add(input.threadId);
@@ -564,7 +567,7 @@ export class AgentRunManager {
         agentId: input.agentId,
         projectId: input.project?.id ?? null,
         cwd,
-        prompt: input.prompt,
+        prompt: workspacePrompt(input.prompt, input.workspaceContext),
         attachments: input.attachments,
         ...(selectedModel ? { model: selectedModel } : {}),
       });
@@ -673,7 +676,7 @@ export class AgentRunManager {
 
     const session: AgentSession = {
       cwd,
-      prompt: input.prompt,
+      prompt: workspacePrompt(input.prompt, input.workspaceContext),
       attachments: input.attachments,
       mcp: {
         url: this.deps.mcpProfile
@@ -949,12 +952,15 @@ export class AgentRunManager {
         p.type === "image" ? [{ path: p.path, mime: p.mime }] : [],
       );
       try {
+        const context = next.parts.find(part => part.type === "workspace_context");
+        if (context?.type === "workspace_context" && context.context.projectId !== (project?.id ?? null)) throw new ToolError("The queued workspace context belongs to another project. Review this message before sending it again.", "precondition");
         await this.start({
           threadId,
           project,
           agentId: thread.agentId,
           ...(thread.model ? { model: thread.model } : {}),
           prompt: next.contentMd,
+          ...(context?.type === "workspace_context" ? { workspaceContext: context.context } : {}),
           attachments,
         });
       } catch (e) {

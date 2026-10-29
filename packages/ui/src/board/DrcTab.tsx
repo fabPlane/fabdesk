@@ -1,3 +1,4 @@
+import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { CheckFindingDetails } from "./CheckFindingDetails";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, EmptyState, LoadError, Spinner } from "../components/ui";
@@ -91,6 +92,7 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
     </header>
   );
   const sel = selected !== null ? rows[selected] : undefined;
+  useAssistantSurface({ projectId, label: sel ? "Checks · Selected finding" : "Review / Checks", priority: 10, details: JSON.stringify({ finding: sel, filter, query: findingQuery, reportSourceState: checkRevision.data, checking: busy || loading, sourceReady }) });
   return (
     <div ref={root} className="fd-single-checks flex h-full min-h-0 flex-col">
       {toolbar}

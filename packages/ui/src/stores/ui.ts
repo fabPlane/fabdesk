@@ -1,3 +1,4 @@
+import type { AssistantSurface } from "../chat/assistant-context";
 import { create } from "zustand";
 import { DRAFT_KEY_NEW, newChatDraftKey, parseAssemblyMapPosition, type AssemblyMapPosition, type AssemblyMapLayout, workspaceAreaForView, workspaceViews, workspaceTabForArea, type WorkspaceArea, type AssemblySceneSelection, type AssemblyCheckFinding, type RootCheckFinding, type KeptOutputChoice } from "@fabdesk/client-core";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
@@ -56,6 +57,8 @@ export interface UiState {
   setCanvasNavigationOpen: (open: boolean) => void;
   keptOutputChoices: Record<string, KeptOutputChoice>;
   setKeptOutputChoice: (key: string, choice: KeptOutputChoice | null) => void;
+  assistantSurfaces: Record<string, AssistantSurface>;
+  setAssistantSurface: (id: string, surface: AssistantSurface | null) => void;
   assistantOpen: boolean;
   setAssistantOpen: (open: boolean) => void;
   workspaceArea: WorkspaceArea;
@@ -191,6 +194,8 @@ export function createUiStore(storage?: StateStorage) {
     else delete keptOutputChoices[key];
     return { keptOutputChoices };
   }),
+  assistantSurfaces: {},
+  setAssistantSurface: (id, surface) => set(state => { const assistantSurfaces = { ...state.assistantSurfaces }; if (surface) assistantSurfaces[id] = surface; else delete assistantSurfaces[id]; return { assistantSurfaces }; }),
   assistantOpen: false,
   setAssistantOpen: (assistantOpen) => set({ assistantOpen }),
   workspaceArea: "boards",

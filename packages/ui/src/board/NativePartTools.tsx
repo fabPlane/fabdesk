@@ -1,3 +1,4 @@
+import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
@@ -32,6 +33,8 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
   const [previewError, setPreviewError] = useState<string | null>(null);
   const parts = usePcbPartsNear(projectId, point, open && mode === "parts", board);
   const current = parts.data;
+  const assistantSurface = { projectId, label: mode === "outline" && open ? "Board · Resize outline" : selection ? `Board · ${selection.part.ref}` : "Board · Selected location", priority: 20, details: JSON.stringify({ board, pointMm: point, part: selection?.part, recordedSourceSha256: selection?.sourceSha256, editor: open ? mode : "location", proposedFields: open && selection ? fields : null, applying: busy, canPosition, error }) };
+  useAssistantSurface(visible ? assistantSurface : null);
   const sourceChanged = !!selection && !!current && selection.sourceSha256 !== current.sourceSha256;
   const values = parsePartPositionInput(fields);
   const changed = !!selection && !!values && (values.x !== selection.part.x || values.y !== selection.part.y || values.rotation !== ((selection.part.rotation % 360) + 360) % 360);
@@ -199,17 +202,9 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
           <div className="fd-native-part-actions">{hasProposal && <Button size="sm" variant="ghost" disabled={busy} onClick={() => { choose(selection.part, selection.sourceSha256, true); requestAnimationFrame(() => popup.current?.focus({ preventScroll: true })); }}>Discard proposal</Button>}<Button size="sm" disabled={busy || selection.part.locked} onClick={() => setFields((previous) => ({ ...previous, rotation: String((Number(previous.rotation) || 0) + 90) }))}>+90°</Button><Button size="sm" variant="primary" type="submit" disabled={busy || !canPosition || parts.isFetching || parts.isError || !values || !changed || sourceChanged || selection.part.locked}>{busy ? "Saving / refreshing…" : "Apply position"}</Button></div>
         </form>
         {recovery && <div className="fd-native-position-recovery"><Button size="sm" variant="ghost" disabled={busy || hasProposal || sourceChanged || !canPosition || parts.isFetching || parts.isError || selection.part.locked || recovery.savedSha256 !== selection.sourceSha256 || current?.sourceSha256 !== recovery.savedSha256} onClick={() => void apply(true)}>Revert last position</Button><p className="fd-native-part-note">Restore {recovery.part.ref} to {recovery.part.x}, {recovery.part.y} mm · {recovery.part.rotation}°. Available here until the PCB changes or another part is inspected; routing edits are not undone.</p></div>}
-        <Button size="sm" variant="ghost" disabled={busy || sourceChanged || !canPosition} onClick={() => {
-          const ui = useUiStore.getState();
-          if (ui.activeProjectId !== projectId) return;
-          const key = ui.activeThreadId ?? newChatDraftKey(projectId);
-          const prompt = `Explain part ${JSON.stringify(selection.part.ref)} in this PCB${board ? ` (assembly source ${JSON.stringify(board.sourceId)})` : ""}. Inspect the latest saved board for its connections and purpose.`;
-          const previous = ui.drafts[key] ?? "";
-          ui.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt);
-          setOpen(false); ui.focusComposer();
-        }}>Ask about {selection.part.ref}</Button>
+        <Button size="sm" variant="ghost" onClick={() => { askAboutSurface(assistantSurface, `Explain ${selection.part.ref}, its connections and its purpose in this board. Check the saved source before proposing changes.`); setOpen(false); }}>Ask about {selection.part.ref}</Button>
         <p className="fd-native-part-note">Drag the target or use arrow keys to preview a move. Apply saves it.</p>
-        {selection && <details className="fd-native-part-details"><DisclosureSummary icon="pcb" label="More part actions" /><p className="fd-native-part-note">Part replacement is not connected in this build. Position edits and the eligible single-edit revert remain separate.</p><Button size="sm" disabled>Replace {selection.part.ref}</Button></details>}
+        {selection && <details className="fd-native-part-details"><DisclosureSummary icon="pcb" label="More part actions" /><p className="fd-native-part-note">Ask for a compatible alternative and review its footprint and connections before changing the native board.</p><Button size="sm" onClick={() => { askAboutSurface(assistantSurface, `Find a suitable replacement for ${selection.part.ref}. Check its electrical requirements, footprint and pin mapping, then explain the proposed changes before editing the saved design.`); setOpen(false); }}>Ask to replace {selection.part.ref}</Button></details>}
       </>}
       {message && <p role="status" className="fd-native-part-warning">{message}<BoardChecksButton projectId={projectId} {...(board ? { board } : {})} /></p>}
       {previewError && <details className="fd-native-part-note"><DisclosureSummary icon="warning" label="Why couldn’t the preview update?" variant="compact" /><p>{previewError}</p><p>Resolve the export error, then choose Update preview. The native placement is already saved.</p></details>}

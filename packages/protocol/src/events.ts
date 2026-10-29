@@ -1,4 +1,5 @@
 /** Event bus topics shared by core, renderer and CLI. Topic names are dotted; subscriptions glob. */
+import { WorkspaceContext } from "./workspace-context";
 import { z } from "zod/v4";
 import { FinishItMilestoneId, FinishItSession } from "./finish-it";
 import { RouteFrame, RouteMeta, RouteResult, RouteStatic } from "./route-frames";
@@ -7,6 +8,7 @@ export const AgentId = z.enum(["claude", "codex", "cursor", "grok"]);
 export type AgentId = z.infer<typeof AgentId>;
 
 export const MessagePart = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("workspace_context"), context: WorkspaceContext }),
   z.object({ type: z.literal("text"), text: z.string() }),
   z.object({ type: z.literal("thinking"), text: z.string() }),
   z.object({

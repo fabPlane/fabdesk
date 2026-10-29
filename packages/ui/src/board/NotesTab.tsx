@@ -1,3 +1,4 @@
+import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { useEffect, useRef, useState } from "react";
 import { Button, EmptyState, LoadError, Spinner, Textarea } from "../components/ui";
 import { useBoardCommentMutations, useBoardNotes, useCoreClient, useProject } from "@fabdesk/client-core";
@@ -21,6 +22,7 @@ export function NotesTab() {
   const hasSavedNotes = project.data?.files.some(file => file.path === "NOTES.md") ?? false;
   const dirty = content !== saved, changedOutside = !saving && !!notes.data && !!draft && dirty && draft.base !== saved;
   const canSave = !!projectId && !!notes.data && dirty && !changedOutside && !saving && !notes.isFetching && !notes.isError;
+  useAssistantSurface(projectId ? { projectId, label: "Project notes", priority: 10, details: JSON.stringify({ file: "NOTES.md", previewMode: preview, unsavedChanges: dirty, changedOutside, saving, ...(dirty ? { unsavedDraft: content.slice(0, 4000), draftTruncated: content.length > 4000 } : {}) }) } : null);
   useEffect(() => {
     if (!notes.data || saving) return;
     const current = useUiStore.getState().notesDrafts[key];

@@ -1,3 +1,4 @@
+import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { ReviewDesignSources, ReviewKeepNote, ReviewScope, ReviewUpdateTable } from "./ReviewUpdateLayout";
 import type { IconName } from "../components/Icon";
@@ -32,6 +33,7 @@ function SingleBoardUpdates({ scopeReady }: { scopeReady: boolean }) {
   const videoPath = ["mp4", "webm", "gif"].map(ext => `exports/product-video.${ext}`).find(has);
   const video = useVideoInputRevision(projectId, videoPath);
   const previewSourceMissing = !pcb || preview.data === "missing-source", modelSourceMissing = !pcb || model.data === "missing-source", checkSourceMissing = !pcb || checks.data === "missing-source";
+  useAssistantSurface(projectId ? { projectId, label: "Review / Updates", priority: 10, details: JSON.stringify({ sourceReady: scopeReady, nativePcb: pcb, nativeSchematic: schematic, savedPreview: preview.data, savedModel: model.data, savedChecks: checks.data, savedVideo: video.data, sourceComparison: "not established by artifact freshness" }) } : null);
   if (!projectId) return <EmptyState title="No project selected" />;
   if (project.isError) return <LoadError title="Could not load project updates" onRetry={() => void project.refetch()} />;
   if (project.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;

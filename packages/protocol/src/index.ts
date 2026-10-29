@@ -27,3 +27,5 @@ export * from "./assembly";
 
 export * from "./sketch";
 export * from "./board-artwork";
+
+export * from "./workspace-context";

@@ -1,3 +1,4 @@
+import { DisclosureSummary } from "../components/DisclosureSummary";
 import type { Message, MessagePart, Thread } from "@fabdesk/protocol";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
@@ -232,6 +233,7 @@ export function MessageBubble({ message, streaming, latestReply = false }: { mes
         {isUser ? (
           <>
             {message.contentMd && <div className="whitespace-pre-wrap">{message.contentMd}</div>}
+            {message.parts.filter(part => part.type === "workspace_context").map((part, index) => part.type === "workspace_context" && <details key={`context-${index}`} className="fd-message-workspace-context"><DisclosureSummary icon="sparkles" label={`Context · ${part.context.label}`} variant="compact" /><pre>{part.context.details}</pre></details>)}
             {/* A photo attached on the phone arrives as an image part next to the text. */}
             {message.parts
               .filter((p) => p.type === "image")

@@ -1,3 +1,4 @@
+import { WorkspaceContext } from "./workspace-context";
 /** Control API DTOs shared by core routes and the renderer client. */
 import { z } from "zod/v4";
 import { CoreEndpoint, EndpointKind, TailscaleState } from "./devices";
@@ -148,6 +149,7 @@ export type Message = z.infer<typeof Message>;
 export const Attachment = z.object({ path: z.string(), mime: z.string() });
 
 export const SendMessage = z.object({
+  workspaceContext: WorkspaceContext.optional(),
   content: z.string().min(1),
   attachments: z.array(Attachment).default([]),
   agentId: AgentId.optional(),

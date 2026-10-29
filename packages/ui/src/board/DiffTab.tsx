@@ -1,3 +1,4 @@
+import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { captureAssemblySelection, diffPreviewSvg, pcbToolJson, restoreAssemblySelection } from "@fabdesk/client-core";
 import type { BoardSourceSelection } from "@fabdesk/protocol";
 import { ReviewScope } from "./ReviewUpdateLayout";
@@ -127,6 +128,7 @@ function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady }
   const [mode, setMode] = useState<Mode>("structured");
   const [blend, setBlend] = useState(50);
   const [selection, setSelection] = useState<DiffSelection | null>(null);
+  useAssistantSurface({ projectId, label: "Review / Changes", priority: 10, details: JSON.stringify({ board, source: sourceLabel, from, to, drawing: surface, display: mode, selection, reportPath: `${prefix}reports/board-diff.json`, reportAvailable: !!report, scopeReady }) });
   useEffect(() => setSelection(null), [projectId, reportQuery.dataUpdatedAt]);
   useEffect(() => {
     if (!selection && !changesOpen) return;

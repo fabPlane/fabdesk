@@ -592,6 +592,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const t = deps.store.threads.get(c.req.param("id"));
     if (!t) return c.json({ error: "not found" }, 404);
     const body = SendMessage.parse(await c.req.json());
+    if (body.workspaceContext && body.workspaceContext.projectId !== t.projectId) return c.json({ error: "The workspace context belongs to another project. Reopen this conversation and send again.", code: "precondition" }, 400);
     if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
     // The last await before `runs.start`: from the checks below to the lease `start` reserves
     // everything is synchronous, so no other request can take the thread or the project between
@@ -602,6 +603,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
       body.queue === true || c.req.query("queue") === "1" || c.req.query("queue") === "true";
     const parts = [
       { type: "text" as const, text: body.content },
+      ...(body.workspaceContext ? [{ type: "workspace_context" as const, context: body.workspaceContext }] : []),
       ...body.attachments.map((a) => ({ type: "image" as const, path: a.path, mime: a.mime })),
     ];
     if (deps.runs.isRunning(t.id)) {
@@ -656,6 +658,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
         agentId,
         ...((body.model ?? t.model) ? { model: (body.model ?? t.model) as string } : {}),
         prompt: body.content,
+        ...(body.workspaceContext ? { workspaceContext: body.workspaceContext } : {}),
         attachments: body.attachments,
       });
     } catch (e) {

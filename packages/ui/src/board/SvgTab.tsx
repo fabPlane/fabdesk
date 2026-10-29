@@ -1,3 +1,4 @@
+import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BoardComment, CommentView } from "@fabdesk/protocol";
@@ -114,6 +115,7 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
     useUiStore.setState({ commentToReveal: null });
   }, [commentToReveal, projectId, kind, comments.data, pins]);
   const selected = pins.find((comment) => comment.id === selectedId) ?? null;
+  useAssistantSurface(projectId && selected ? { projectId, label: `${kind === "pcb" ? "Board" : "Schematic"} · Comment`, priority: 15, details: JSON.stringify({ view: kind, comment: { id: selected.id, question: selected.question, anchor: selected.anchor } }) } : null);
   const pendingPins = pendingBoardComments(pins, view);
   const beginPin = () => {
     resetCompose();

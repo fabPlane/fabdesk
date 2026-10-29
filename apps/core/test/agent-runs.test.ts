@@ -325,3 +325,28 @@ describe("queued messages and the lease", () => {
     await settle();
   });
 });
+
+describe("captured workspace context", () => {
+  test("passes context to the agent without altering the visible user message", async () => {
+    const h = await harness(), t = h.thread(), context = { projectId: null, label: "Outputs / Preview", details: "Selected renders/top.png", capturedAt: "2026-10-29T00:00:00Z" };
+    const user = h.store.threads.addMessage({ threadId: t.id, role: "user", contentMd: "Explain this output", parts: [{ type: "workspace_context", context }] });
+    await h.manager.start({ threadId: t.id, project: null, agentId: "claude", prompt: "Explain this output", workspaceContext: context, attachments: [] });
+    expect(h.runs[0]!.session.prompt).toContain("renders/top.png"); expect(h.runs[0]!.session.prompt).toContain("<workspace_context>");
+    expect(h.store.threads.getMessage(user.id)?.contentMd).toBe("Explain this output");
+    h.runs[0]!.finish(); await settle();
+  });
+  test("context from another project never starts a run", async () => {
+    const h = await harness(), t = h.thread();
+    await expect(h.manager.start({ threadId: t.id, project: null, agentId: "claude", prompt: "Change it", workspaceContext: { projectId: "other", label: "Board", details: "other source", capturedAt: "2026-10-29T00:00:00Z" }, attachments: [] })).rejects.toThrow("another project");
+    expect(h.runs).toHaveLength(0); expect(h.manager.activeCount()).toBe(0);
+  });
+  test("queued messages retain their captured view and refuse mismatched project metadata", async () => {
+    const h = await harness(), t = h.thread(), context = { projectId: null, label: "Review / Checks", details: "Saved finding R1", capturedAt: "2026-10-29T00:00:00Z" };
+    h.store.threads.addMessage({ threadId: t.id, role: "user", contentMd: "Help with this finding", parts: [{ type: "workspace_context", context }], status: "queued" });
+    await h.manager.drainQueue(t.id);
+    expect(h.runs[0]!.session.prompt).toContain("Saved finding R1"); h.runs[0]!.finish(); await settle();
+    h.store.threads.addMessage({ threadId: t.id, role: "user", contentMd: "Wrong project", parts: [{ type: "workspace_context", context: { ...context, projectId: "other" } }], status: "queued" });
+    await h.manager.drainQueue(t.id); expect(h.runs).toHaveLength(1);
+    expect(h.store.threads.messages(t.id).some(message => message.contentMd.includes("queued workspace context belongs to another project"))).toBe(true);
+  });
+});

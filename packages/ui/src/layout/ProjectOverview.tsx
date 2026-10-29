@@ -1,3 +1,4 @@
+import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { overviewBoardImages } from "@fabdesk/client-core";
 import { useOverviewImage } from "./useOverviewImage";
 import { useEffect, useRef, useState } from "react";
@@ -60,6 +61,7 @@ function SingleBoardOverview() {
   // A refreshed drawing of the same native board keeps its contextual tools.
   const surfaceKey = pcb ? "native:board.kicad_pcb" : schematic ? "native:board.kicad_sch" : preview ? `preview:${preview.path}` : `reference:${reference ?? ""}`;
   const selected = selectedKey === surfaceKey;
+  useAssistantSurface(projectId ? { projectId, label: selected ? `Overview · ${designLabel}` : "Project overview", priority: 5, details: JSON.stringify({ nativePcb: pcb?.path, nativeSchematic: schematic?.path, selected: selected ? surfaceKey : null, reference: reference, imagePreview: preview?.path, sourceCheckPending: project.isFetching }) } : null);
   useEffect(() => { if (selectedKey !== null && selectedKey !== surfaceKey) setSelectedKey(null); }, [selectedKey, surfaceKey]);
 
   const previewStatus = designTab === "schematic" ? "Saved schematic preview · freshness unverified" : preview?.path !== "renders/pcb.svg" ? "Saved image · source unverified"

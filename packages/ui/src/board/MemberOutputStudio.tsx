@@ -1,3 +1,4 @@
+import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { lazy, Suspense, useState } from "react";
 import { useAssemblyBoardModel, useCoreClient, useProject, useRunTool } from "@fabdesk/client-core";
 import type { BoardSourceSelection } from "@fabdesk/protocol";
@@ -23,6 +24,7 @@ function MemberStudio({ projectId, board, prefix, sourceSha256, enabled }: { pro
   const [downloadPath, setDownloadPath] = useState<string | null>(null), [error, setError] = useState<string | null>(null);
   const files = project.data?.files ?? [], path = `${prefix}renders/board.glb`, glb = model.data?.model ? files.find(file => file.path === path) : undefined;
   const videos = files.filter(file => file.path.startsWith(`${prefix}exports/product-video.`) && /\.(mp4|webm|gif)$/i.test(file.path)), poster = files.find(file => file.path === `${prefix}exports/product-video-poster.png`);
+  useAssistantSurface({ projectId, label: "Outputs / Models & video", priority: 10, details: JSON.stringify({ board, sourceSha256, model: path, modelState: model.data?.state, videoSettings: form, savedVideos: videos.map(file => file.path), sourceCheckPending: !enabled || model.isFetching, exportingModel: glbRun.state.status === "running", makingVideo: videoRun.state.status === "running" }) });
   const generate = async (kind: "render_glb" | "render_product_video") => {
     if (!enabled || glbRun.state.status === "running" || videoRun.state.status === "running" || useUiStore.getState().activeProjectId !== projectId || model.isFetching || model.isError) return;
     const tool = kind === "render_glb" ? glbRun : videoRun;
