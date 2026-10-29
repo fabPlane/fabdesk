@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { detectBinary, resolveFirst } from "../detect";
 import { readCodexConfiguredModel } from "../codex-model";
+import { readCodexModelCatalog } from "../codex-models";
 import { CodexStreamParser } from "../parsers/codex";
 import { runAgentProcess } from "../process";
 import type { AgentAdapter, AgentRun, AgentSession } from "../types";
@@ -216,8 +217,9 @@ export const codexAdapter: AgentAdapter = {
     "Install Codex: npm install -g @openai/codex (or brew install codex), then run `codex login`.",
   detect: async (binaryPath) => {
     const detected = await detectBinary(CANDIDATES, binaryPath);
-    const defaultModel = detected.installed ? readCodexConfiguredModel() : undefined;
-    return { ...detected, ...(defaultModel ? { defaultModel } : {}) };
+    const catalog = detected.installed && detected.path ? await readCodexModelCatalog(detected.path, detected.version) : undefined;
+    const defaultModel = detected.installed ? readCodexConfiguredModel() ?? catalog?.defaultModel : undefined;
+    return { ...detected, ...catalog, ...(defaultModel ? { defaultModel } : {}) };
   },
   models: () => [
     "gpt-5.5",
