@@ -16,6 +16,7 @@ export type IconName =
   | "sidebar"
   | "panel"
   | "pcb"
+  | "schematic"
   | "search"
   | "settings"
   | "plus"
@@ -73,6 +74,7 @@ export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconN
     menu: <path d="M4 6h16M4 12h16M4 18h16" />,
     sidebar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>,
     panel: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></>,
+    schematic: <><path d="M3 6h6v12h12M9 12h12M15 6v12" /><circle cx="3" cy="6" r="2" /><circle cx="21" cy="12" r="2" /><circle cx="15" cy="6" r="2" /><circle cx="21" cy="18" r="2" /></>,
     pcb: <><rect x="3" y="3" width="18" height="18" rx="2" /><rect x="8" y="8" width="6" height="6" rx="1" /><path d="M11 3v5m3 3h7M3 11h5m3 3v7m3-4h3v-3" /></>,
     search: <><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4 4" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.07.08-1.85 1.85-.08-.07A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-.95 1.58V20H9v-.02A1.7 1.7 0 0 0 8.05 18.4a1.7 1.7 0 0 0-1.88.34l-.08.07-1.85-1.85.07-.08A1.7 1.7 0 0 0 4.65 15 1.7 1.7 0 0 0 3.07 14H3V10h.07A1.7 1.7 0 0 0 4.65 9a1.7 1.7 0 0 0-.34-1.88l-.07-.08 1.85-1.85.08.07A1.7 1.7 0 0 0 8.05 5.6 1.7 1.7 0 0 0 9 4.02V4h6v.02A1.7 1.7 0 0 0 16 5.6a1.7 1.7 0 0 0 1.88-.34l.08-.07 1.85 1.85-.07.08A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.53 1H21v4h-.07A1.7 1.7 0 0 0 19.4 15Z" /></>,

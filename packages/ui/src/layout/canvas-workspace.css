@@ -833,3 +833,13 @@
 .fd-assistant-dock:has([data-board-request=true]) { height:auto; max-height:calc(100% - 110px); }
 .fd-assistant-dock [data-board-request=true] .fd-thread-header { display:none; }
 .fd-assistant-dock [data-board-request=true] .fd-new-chat-body { max-height:60vh; }
+
+/* Canvas controls keep a fixed hit area; names appear without shifting their neighbours. */
+.fd-canvas-tool,.fd-canvas-tool-menu { position:relative; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+.fd-canvas-tool-button,.fd-canvas-tool-menu > summary { width:36px; height:36px; min-width:36px; padding:0; border-radius:10px; }
+.fd-canvas-tool-button[aria-pressed=true] { color:var(--fd-accent); background:color-mix(in srgb,var(--fd-accent) 9%,var(--fd-panel)); border-color:color-mix(in srgb,var(--fd-accent) 22%,var(--fd-border)); }
+.fd-canvas-tool-label { position:absolute; top:calc(100% + 8px); left:50%; transform:translateX(-50%); z-index:35; padding:6px 9px; border-radius:7px; color:var(--fd-panel); background:var(--fd-fg); font-size:11px; font-weight:500; line-height:1.4; white-space:nowrap; pointer-events:none; opacity:0; visibility:hidden; box-shadow:0 3px 10px #102a2020; }
+.fd-canvas-tool:hover > .fd-canvas-tool-label,.fd-canvas-tool:focus-within > .fd-canvas-tool-label,.fd-canvas-tool-menu:not([open]) > summary:hover .fd-canvas-tool-label,.fd-canvas-tool-menu:not([open]) > summary:focus-visible .fd-canvas-tool-label { opacity:1; visibility:visible; }
+.fd-board-view-tools { display:flex; gap:3px; align-items:center; margin:0 5px; padding:0 6px; border-left:1px solid var(--fd-border); border-right:1px solid var(--fd-border); }
+.fd-schematic-start-actions > div > button { gap:7px; min-height:36px; }
+@media(hover:none) { .fd-canvas-tool { flex-direction:column; gap:4px; } .fd-canvas-tool > .fd-canvas-tool-label { position:static; transform:none; opacity:1; visibility:visible; background:none; box-shadow:none; color:var(--fd-muted); padding:0 3px; font-size:10px; } }
