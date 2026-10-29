@@ -432,6 +432,8 @@ export function useUploadSketch() {
 export interface RouteRunSummary {
   id: string;
   projectId: string;
+  board?: BoardSourceSelection;
+  sourceDirectory?: string;
   router: string;
   fallbackReason?: string | null;
   attempts?: Array<{ router: string; outcome: string; reason: string | null }>;
@@ -487,9 +489,9 @@ export function useRouteRun(runId: string | null) {
   });
 }
 
-export function useRouteReview(projectId: string, runId: string, enabled: boolean) {
+export function useRouteReview(projectId: string, runId: string, enabled: boolean, board?: BoardSourceSelection) {
   const client = useCoreClient();
-  return useQuery({ queryKey: ["route-review", projectId, runId], queryFn: () => inspectRouteReview(client, projectId, runId), enabled });
+  return useQuery({ queryKey: ["route-review", projectId, runId, board?.sourceId ?? ".", board?.manifestSha256 ?? "."], queryFn: () => inspectRouteReview(client, projectId, runId, board), enabled });
 }
 
 /**

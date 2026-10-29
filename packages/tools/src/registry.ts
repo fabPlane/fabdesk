@@ -97,6 +97,8 @@ export interface ToolContext {
   /** Captured assembly parent for project-relative history; native work still uses project.dir. */
   boardRoot?: Readonly<{ id: string; dir: string }>;
   runInScope?: <T>(operation: () => Promise<T>) => Promise<T>;
+  /** Host-approved private routing snapshot; never broadens the canonical editable source. */
+  runWithRoutingSnapshot?: <T>(directory: string, operation: () => Promise<T>) => Promise<T>;
 }
 
 /** A host must bind an explicit selector; ignoring it must never become a root operation. */
@@ -407,6 +409,7 @@ export function makeContext(opts: {
   telemetry?: ToolTelemetry;
   board?: BoardSourceSelection;
   runInScope?: <T>(operation: () => Promise<T>) => Promise<T>;
+  runWithRoutingSnapshot?: <T>(directory: string, operation: () => Promise<T>) => Promise<T>;
   boardRoot?: Readonly<{ id: string; dir: string }>;
 }): ToolContext {
   const project = opts.project;
@@ -425,6 +428,7 @@ export function makeContext(opts: {
     ...(opts.board ? { board: opts.board } : {}),
     ...(opts.boardRoot ? { boardRoot: opts.boardRoot } : {}),
     ...(opts.runInScope ? { runInScope: opts.runInScope } : {}),
+    ...(opts.runWithRoutingSnapshot ? { runWithRoutingSnapshot: opts.runWithRoutingSnapshot } : {}),
   };
 }
 

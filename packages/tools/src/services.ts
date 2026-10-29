@@ -946,6 +946,10 @@ export type RouteApplyState =
 export type RouteRunRecord = {
   id: string;
   projectId: string;
+  /** Absent on legacy single-board runs; identity never follows the UI's active board. */
+  board?: import("@fabdesk/protocol").BoardSourceSelection;
+  sourceDirectory?: string;
+  sourceInputs?: Array<{ path: string; sha256: string | null }>;
   router: string;
   /** Historical records may predate attempt tracking. router identifies the final producer. */
   attempts?: Array<{

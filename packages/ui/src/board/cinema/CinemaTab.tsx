@@ -1,14 +1,17 @@
 import { DisclosureSummary } from "../../components/DisclosureSummary";
+import { askAboutSurface, useAssistantSurface } from "../../chat/useAssistantSurface";
+import { CanvasToolButton } from "../../components/CanvasToolButton";
+import { useOutputSource } from "../useOutputSource";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, EmptyState, LoadError, Select, Spinner } from "../../components/ui";
-import { useCoreClient } from "@fabdesk/client-core";
+import { routeRunMatchesSource, useCoreClient } from "@fabdesk/client-core";
 import { useCinemaStore } from "../../stores/cinema";
 import { useUiStore } from "../../stores/ui";
 import { Icon } from "../../components/Icon";
 import { cn } from "../../util";
 import { useBoardSources, useProject, useProjectText, useRouteRun, useRouteRuns, useRouters, useRunTool } from "@fabdesk/client-core";
 import { SvgViewer } from "../SvgViewer";
-import type { RouterCatalogId } from "@fabdesk/protocol";
+import type { BoardSourceSelection, RouterCatalogId } from "@fabdesk/protocol";
 import { routerPickerOptions } from "../../settings/routers";
 import { runFailureText } from "./runError";
 import { RouteCandidateReview } from "./RouteCandidateReview";
@@ -36,8 +39,8 @@ function isEditable(target: EventTarget | null): boolean {
   return ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "SUMMARY", "A"].includes(tag) || target.isContentEditable;
 }
 
-function RoutingReference({ projectId }: { projectId: string }) {
-  const drawing = useProjectText(projectId, "renders/pcb.svg");
+function RoutingReference({ projectId, prefix = "" }: { projectId: string; prefix?: string }) {
+  const drawing = useProjectText(projectId, `${prefix}renders/pcb.svg`);
   return <section className="fd-routing-reference" aria-label="Saved PCB routing reference">
     {drawing.isError ? <LoadError title="Could not load the saved PCB preview" onRetry={() => void drawing.refetch()} /> : drawing.isPending ? <Spinner /> : drawing.data ? <SvgViewer svg={drawing.data} viewKey={`${projectId}/routing-reference`} /> : <EmptyState title="No saved PCB preview" />}
     <p>Saved preview · Routing and source freshness unverified</p>
@@ -50,11 +53,18 @@ export function CinemaTab() {
   if (!projectId) return <EmptyState title="Choose a project" />;
   if (sources.isError) return <LoadError title="Could not check routing source" onRetry={() => void sources.refetch()} />;
   if (!sources.data) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
-  if (sources.data.mode === "assembly") return <EmptyState title="Routing needs a single-board project" action={<Button onClick={() => useUiStore.getState().setBoardTab("pcb")}>Open Boards</Button>}>Member-board routing is not available in this workspace yet. Inspect each saved PCB in Boards; this action will not route a project-root board in its place.</EmptyState>;
+  if (sources.data.mode === "assembly") return <MemberCinema key={projectId} projectId={projectId} />;
   return <ProjectCinema key={projectId} projectId={projectId} scopeReady={!sources.isFetching} />;
 }
 
-function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeReady: boolean }) {
+function MemberCinema({ projectId }: { projectId: string }) {
+  const scope = useOutputSource(projectId), [busy, setBusy] = useState(false);
+  const surface = { projectId, label: "Routing / Board source", priority: 5, details: JSON.stringify({ board: scope.board, source: scope.row?.source, sourceReady: scope.ready, instruction: "Routing applies to the selected source, shared by its declared physical instances. Connections and electrical parity remain unverified." }) };
+  useAssistantSurface(surface);
+  return <div className="flex h-full min-h-0 flex-col"><div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-3"><label className="flex items-center gap-2 text-sm">Board source<Select aria-label="Board source for routing" disabled={busy || scope.sources.isFetching} value={scope.sourceId ?? ""} onChange={event => scope.choose(event.target.value)}><option value="" disabled>Choose a board…</option>{scope.data?.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · source unavailable" : ""}</option>)}</Select></label><CanvasToolButton icon="sparkles" label="Ask about routing this board" onClick={() => askAboutSurface(surface, "Review this board’s saved source and routing needs. Explain the remaining connections and router settings before proposing a candidate.")} /></div><div className="min-h-0 flex-1">{scope.board && scope.board.manifestSha256 === scope.data?.manifestSha256 && scope.row?.status === "available" && scope.row.pcbSha256 ? <ProjectCinema key={`${scope.board.sourceId}/${scope.board.manifestSha256}`} projectId={projectId} scopeReady={scope.ready} board={scope.board} prefix={scope.prefix} sourceSha256={scope.row.pcbSha256} sourceName={scope.row.source.name} onOpenPcb={() => { if (useUiStore.getState().activeProjectId !== projectId) return; scope.choose(scope.board!.sourceId); useUiStore.getState().setBoardTab("pcb"); }} onBusyChange={setBusy} /> : <EmptyState title="Choose an available board source" action={<div className="flex gap-2"><Button onClick={() => scope.sourceId && scope.row?.status === "available" ? scope.choose(scope.sourceId) : void scope.sources.refetch()}>{scope.row?.status === "available" ? "Select source again" : "Recheck sources"}</Button><Button onClick={() => useUiStore.getState().openProjectFile("fabplane.assembly.json")}>Review source files</Button></div>}>Missing or changed source definitions must be resolved before creating a routing candidate.</EmptyState>}</div></div>;
+}
+
+function ProjectCinema({ projectId, scopeReady, board, prefix = "", sourceSha256, sourceName, onOpenPcb, onBusyChange }: { projectId: string; scopeReady: boolean; board?: BoardSourceSelection; prefix?: string; sourceSha256?: string; sourceName?: string; onOpenPcb?: () => void; onBusyChange?: (busy: boolean) => void }) {
   const client = useCoreClient();
 
   const runs = useCinemaStore((s) => s.runs);
@@ -98,7 +108,7 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
   const [frameRetry, setFrameRetry] = useState(0);
   const runRecord = useRouteRun(activeRunId);
   // Frame metadata has no project identity. Verify the durable record before showing it.
-  const ownedRunId = runRecord.data?.projectId === projectId ? activeRunId : null;
+  const ownedRunId = runRecord.data && routeRunMatchesSource(runRecord.data, projectId, board) ? activeRunId : null;
   const run = ownedRunId ? runs[ownedRunId] : undefined;
   const runError = runFailureText(runRecord.data);
   const frames = run?.frames.length ?? 0;
@@ -106,11 +116,11 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
   const restoredHistory = useRef(false);
   useEffect(() => {
     if (!history.data) return;
-    const foreignActiveRun = !!runRecord.data && runRecord.data.projectId !== projectId;
+    const foreignActiveRun = !!runRecord.data && !routeRunMatchesSource(runRecord.data, projectId, board);
     if (restoredHistory.current && !foreignActiveRun) return;
     restoredHistory.current = true;
-    if (!ownedRunId) setActiveRun(history.data.find(item => item.projectId === projectId)?.id ?? null);
-  }, [history.data, ownedRunId, projectId, runRecord.data?.projectId, setActiveRun]);
+    if (!ownedRunId) setActiveRun(history.data.find(item => routeRunMatchesSource(item, projectId, board))?.id ?? null);
+  }, [history.data, ownedRunId, projectId, board?.sourceId, board?.manifestSha256, runRecord.data?.projectId, runRecord.data?.board?.sourceId, runRecord.data?.board?.manifestSha256, setActiveRun]);
 
   // A newly launched run can return immediately. Refresh the project list while awaiting it.
   useEffect(() => {
@@ -214,21 +224,23 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
     return () => window.removeEventListener("keydown", onKey);
   }, [ownedRunId]);
 
-  const projectRuns = (history.data ?? []).filter(item => item.projectId === projectId);
+  const projectRuns = (history.data ?? []).filter(item => routeRunMatchesSource(item, projectId, board));
   const runIds = [...new Set([...projectRuns.map(item => item.id), ...(ownedRunId ? [ownedRunId] : [])])];
   const active = !!ownedRunId && ["queued", "running", "cancel_requested", "cancelling"].includes(runRecord.data?.status ?? "");
   const busy = applying || route.state.status === "running" || active || projectRuns.some(item => ["queued", "running", "cancel_requested", "cancelling"].includes(item.status));
-  const hasPcb = project.data?.files.some(file => file.path === "board.kicad_pcb") ?? false;
+  useEffect(() => { onBusyChange?.(busy); return () => onBusyChange?.(false); }, [busy, onBusyChange]);
+  useAssistantSurface({ projectId, label: sourceName ? `Routing / ${sourceName}` : "Routing", priority: 10, details: JSON.stringify({ board, sourceSha256, sourceDirectory: prefix || ".", router: pickedRouter, setupOpen, runId: ownedRunId, runState: runRecord.data?.status, creatingCandidate: busy, error: runError ?? route.state.error, instruction: "Candidate creation and explicit Apply are separate. Partial routing and recorded playback do not establish electrical checks or manufacturing readiness." }) });
+  const hasPcb = project.data?.files.some(file => file.path === `${prefix}board.kicad_pcb`) ?? false;
   const routerAvailable = !routers.isPending && !routers.isFetching && !routers.isError && picker.some(option => option.id === pickedRouter && !option.disabled);
   const canRoute = scopeReady && hasPcb && routerAvailable && !project.isFetching && !project.isError && !!history.data && !history.isFetching && !history.isError && !busy;
-  const preview = project.data?.files.some(file => file.path === "renders/pcb.svg");
+  const preview = project.data?.files.some(file => file.path === `${prefix}renders/pcb.svg`);
   const showSavedReference = frames === 0 && !active && !!runError && preview;
   const cancelButton = active && cancel.manifest?.some(tool => tool.name === "route_cancel") ? <Button size="sm" disabled={cancel.state.status === "running" || ["cancel_requested", "cancelling"].includes(runRecord.data?.status ?? "")} onClick={() => {
-    if (ownedRunId && useUiStore.getState().activeProjectId === projectId) void cancel.run("route_cancel", { projectId, runId: ownedRunId }).then(() => { void runRecord.refetch(); void history.refetch(); });
+    if (ownedRunId && useUiStore.getState().activeProjectId === projectId) void cancel.run("route_cancel", { projectId, ...(board ? { board } : {}), runId: ownedRunId }).then(() => { void runRecord.refetch(); void history.refetch(); });
   }}>Cancel run</Button> : null;
   async function startRouting() {
     if (!canRoute || useUiStore.getState().activeProjectId !== projectId) return;
-    await route.run("route", { projectId, applyPolicy: "manual", ...(pickedRouter !== "default" ? { router: pickedRouter } : {}) });
+    await route.run("route", { projectId, applyPolicy: "manual", ...(board ? { board, expectedSourceSha256: sourceSha256 } : {}), ...(pickedRouter !== "default" ? { router: pickedRouter } : {}) });
     void history.refetch();
   }
   const failureNotice = runError && (
@@ -239,7 +251,7 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
       );
   const setup = <section className="fd-routing-setup" aria-label="Routing setup">
     <h2>Routing</h2>
-    <p>Saved PCB · Board-level routing</p>
+    <p>{sourceName ?? "Saved PCB"} · Board-level routing</p>
     <label className="flex flex-col gap-2 text-xs">Router
       <Select aria-label="Router" value={pickedRouter} disabled={busy} onChange={e => setPickedRouter(e.target.value as "default" | RouterCatalogId)}>
         {picker.map(option => <option key={option.id} value={option.id} disabled={option.disabled} title={option.hint}>{option.label}{option.disabled ? ` (${option.note ?? "not installed"})` : ""}</option>)}
@@ -252,16 +264,16 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
     <Button className="fd-routing-start-action" variant="primary" disabled={!canRoute} onClick={() => void startRouting()}>{busy ? "Routing…" : "Start routing"}</Button>
     {ownedRunId && <section className="fd-routing-saved-run"><h3>Saved run</h3>{failureNotice || <p>Recorded {runRecord.data?.status ?? "run"} · inspect playback before starting another run.</p>}</section>}
   </section>;
-  const feedback = <>{ownedRunId && !active && <RouteCandidateReview key={ownedRunId} projectId={projectId} runId={ownedRunId} enabled={scopeReady && !busy} onBusyChange={setApplying} onChanged={() => { void runRecord.refetch(); void history.refetch(); void project.refetch(); }} />}{route.state.error && <p role="alert" className="text-danger">{route.state.error}</p>}{cancel.state.error && <p role="alert" className="text-danger">{cancel.state.error}</p>}{history.isError && <p role="alert">Routing history could not be loaded. <Button size="sm" onClick={() => void history.refetch()}>Retry history</Button></p>}{frameError && <p role="alert">{frameError} <Button size="sm" onClick={() => setFrameRetry(value => value + 1)}>Retry frames</Button></p>}</>;
+  const feedback = <>{ownedRunId && !active && <RouteCandidateReview key={ownedRunId} projectId={projectId} runId={ownedRunId} {...(board ? { board } : {})} {...(onOpenPcb ? { onOpenPcb } : {})} enabled={scopeReady && !busy} onBusyChange={setApplying} onChanged={() => { void runRecord.refetch(); void history.refetch(); void project.refetch(); }} />}{route.state.error && <p role="alert" className="text-danger">{route.state.error}</p>}{cancel.state.error && <p role="alert" className="text-danger">{cancel.state.error}</p>}{history.isError && <p role="alert">Routing history could not be loaded. <Button size="sm" onClick={() => void history.refetch()}>Retry history</Button></p>}{frameError && <p role="alert">{frameError} <Button size="sm" onClick={() => setFrameRetry(value => value + 1)}>Retry frames</Button></p>}</>;
   if (!run) return <div className="fd-routing-start">
     <header><div><h1>Routing</h1><p>Start a run when your board is ready for copper routing.</p></div><Button ref={setupTrigger} size="sm" aria-expanded={setupOpen} onClick={() => setSetupOpen(!setupOpen)}>{setupOpen ? "Close setup" : "Set up routing"}</Button></header>
-    <div className="fd-routing-start-body" data-setup-open={setupOpen}>{preview ? <RoutingReference projectId={projectId} /> : <section className="fd-routing-reference"><EmptyState title={hasPcb ? "Saved PCB" : "Start with a saved PCB"}>Choose Set up routing to review router options and requirements.</EmptyState></section>}{setupOpen && setup}</div>
+    <div className="fd-routing-start-body" data-setup-open={setupOpen}>{preview ? <RoutingReference projectId={projectId} prefix={prefix} /> : <section className="fd-routing-reference"><EmptyState title={hasPcb ? "Saved PCB" : "Start with a saved PCB"}>Choose Set up routing to review router options and requirements.</EmptyState></section>}{setupOpen && setup}</div>
     <div className="fd-routing-feedback">{history.isLoading && <p role="status">Loading recorded runs…</p>}{ownedRunId && <p role="status">Loading this run’s recorded frames…</p>}{cancelButton}{feedback}</div>
   </div>;
 
   return (
     <div className="fd-routing-player flex h-full flex-col" data-setup-open={setupOpen}>
-      <div className="fd-routing-heading"><strong>Routing</strong><span>{runRecord.data?.router} · {runRecord.data?.status} · Recorded run; current PCB coverage unverified</span><Button size="sm" variant="ghost" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(!detailsOpen)}>Layers and run details</Button><Button ref={setupTrigger} size="sm" aria-expanded={setupOpen} onClick={() => setSetupOpen(!setupOpen)}>{setupOpen ? "Close setup" : "New run"}</Button>{cancelButton}</div>
+      <div className="fd-routing-heading"><strong>Routing</strong><span>{runRecord.data?.router} · {runRecord.data?.result?.state ?? runRecord.data?.status}{runRecord.data?.result ? ` · ${runRecord.data.result.open.length} open nets in recorded result` : ""} · Current saved PCB coverage unverified</span><Button size="sm" variant="ghost" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(!detailsOpen)}>Layers and run details</Button><Button ref={setupTrigger} size="sm" aria-expanded={setupOpen} onClick={() => setSetupOpen(!setupOpen)}>{setupOpen ? "Close setup" : "New run"}</Button>{cancelButton}</div>
       {setupOpen && setup}
       <div className="fd-routing-feedback">{feedback}</div>
       <div className="fd-routing-playback flex flex-wrap items-center gap-1.5 text-xs" role="group" aria-label="Recorded routing playback">
@@ -334,7 +346,7 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
       {/* The box owns the size; the canvas is absolutely positioned so its bitmap size never feeds back into layout. */}
       <div ref={boxRef} className="fd-routing-drawing relative min-h-0 flex-1">
         <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" hidden={!!showSavedReference} />
-        {showSavedReference && <><RoutingReference projectId={projectId} /><p className="fd-routing-no-frames">This run has no recorded frames. Showing the saved PCB preview.</p></>}
+        {showSavedReference && <><RoutingReference projectId={projectId} prefix={prefix} /><p className="fd-routing-no-frames">This run has no recorded frames. Showing the saved PCB preview.</p></>}
       </div>
     </div>
   );

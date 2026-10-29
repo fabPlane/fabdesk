@@ -81,6 +81,7 @@ import { parsePublicGitHubUrl } from "../github-import";
 import { applyErrorReporting, captureCoreException } from "../sentry";
 import { parseTopics, sseResponse } from "./sse";
 import { cloudRoutes } from "./cloud-routes";
+import { resolveNativeBoardBinding } from "../assembly-board-binding";
 import { commentRoutes } from "./comment-routes";
 import { createSpeechService, SpeechProviderError, type SpeechService } from "../speech";
 
@@ -935,7 +936,14 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const rec = deps.store.routeRuns.get(c.req.param("id"));
     if (!rec) return c.json({ error: "not found" }, 404);
     const from = Number(c.req.query("from") ?? 0) || 0;
-    const project = await deps.projects.handle(rec.projectId);
+    let project = await deps.projects.handle(rec.projectId);
+    if (rec.board) {
+      if (!project || !/^run_[A-Za-z0-9_-]+$/.test(rec.id)) throw new ToolError("Routing source ownership is unavailable.", "precondition");
+      const binding = await resolveNativeBoardBinding(project, rec.board);
+      const sourceDir = binding.boardDir.slice(binding.rootDir.length + 1).replaceAll("\\", "/") || ".";
+      if (sourceDir !== rec.sourceDirectory) throw new ToolError("Routing artifact source does not match its recorded owner.", "precondition");
+      project = { ...project, dir: binding.boardDir };
+    }
     const currentPath = project
       ? join(project.dir, PROJECT_FILES.runs, rec.id, "frames.jsonl")
       : null;

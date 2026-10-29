@@ -37,7 +37,7 @@ test("agent status includes explicit sources, repeated instances and links witho
   expect(result.text).toContain("Explicit source tools accept board {sourceId, manifestSha256}");
   expect(result.text).toContain("GLB/images/video, manufacturing exports, board_revision_list/diff/checkpoint, and comment_list/pin/answer/resolve");
   expect(result.text).toContain("source-local comments.json");
-  expect(result.text).toContain("Member routing and live schematic authoring remain unavailable; do not substitute the root board");
+  expect(result.text).toContain("Member route_run requires expectedSourceSha256 and applyPolicy=manual");
   expect(result.text).toContain("external component models and fit remain unverified");
   expect(result.text).toContain("Shared physical instances use the same source");
   expect(result.text).toContain("Member DRC is PCB-only: pass schematicParity=false explicitly");

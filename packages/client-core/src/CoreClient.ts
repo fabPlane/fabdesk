@@ -130,6 +130,8 @@ export type HealthInfo = { ok?: boolean; version?: string; [k: string]: unknown 
 export interface RouteRunRecord {
   id: string;
   projectId: string;
+  board?: BoardSourceSelection;
+  sourceDirectory?: string;
   router: string;
   status:
     | "queued"

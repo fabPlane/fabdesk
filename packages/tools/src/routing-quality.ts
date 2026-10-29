@@ -131,6 +131,15 @@ export function copperBoard(text: string): CopperBoard {
     copper,
   };
 }
+
+/** Native layer table, independent of an assembly parent's board defaults. */
+export function routingCopperLayers(text: string): string[] {
+  const root = sexpressions(text)[0];
+  if (!Array.isArray(root) || root[0] !== "kicad_pcb") throw new Error("expected native PCB");
+  const names = child(root, "layers").slice(1).flatMap(row => Array.isArray(row) && typeof row[1] === "string" && /^(?:F|B|In\d+)\.Cu$/.test(row[1]) ? [row[1]] : []);
+  if (names.length < 2 || names.length > 32 || names.length % 2 !== 0 || new Set(names).size !== names.length || !names.includes("F.Cu") || !names.includes("B.Cu")) throw new Error("Native copper layers could not be verified for routing playback.");
+  return ["F.Cu", ...names.filter(name => name !== "F.Cu" && name !== "B.Cu").sort((a, b) => Number(a.match(/\d+/)?.[0]) - Number(b.match(/\d+/)?.[0])), "B.Cu"];
+}
 export async function readCopper(dir: string) {
   return copperBoard(await readFile(join(dir, PROJECT_FILES.boardPcb), "utf8"));
 }

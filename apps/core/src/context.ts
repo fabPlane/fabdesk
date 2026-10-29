@@ -2,7 +2,7 @@
 import { lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { ASSEMBLY_MANIFEST_PATH, BoardSourceSelection } from "@fabdesk/protocol";
-import { resolveNativeBoardBinding, withNativeBoardBinding } from "./assembly-board-binding";
+import { resolveNativeBoardBinding, withNativeBoardBinding, withNativeRoutingSnapshot } from "./assembly-board-binding";
 import { ToolError, makeContext, type ContextFactory, type CoreServices, type ProjectHandle, type ToolTelemetry, type ToolDef } from "@fabdesk/tools";
 import type { TokenSet } from "./auth";
 import type { ProjectStore } from "./projects";
@@ -39,6 +39,7 @@ export function createContextFactory(deps: ContextDeps): ContextFactory {
     const board = req.board ? Object.freeze(BoardSourceSelection.parse(req.board)) : undefined;
     let runInScope: (<T>(operation: () => Promise<T>) => Promise<T>) | undefined;
     let boardRoot: Readonly<{ id: string; dir: string }> | undefined;
+    let runWithRoutingSnapshot: (<T>(directory: string, operation: () => Promise<T>) => Promise<T>) | undefined;
     if (board) {
       if (!project || !req.def.boardScoped) throw new ToolError("This operation does not support the requested assembly board source.", "precondition");
       const rootProject = project, binding = await resolveNativeBoardBinding(rootProject, board);
@@ -50,6 +51,7 @@ export function createContextFactory(deps: ContextDeps): ContextFactory {
         updateManifest: async () => { throw new ToolError("This board-scoped operation cannot change parent project metadata.", "precondition"); },
       });
       runInScope = operation => withNativeBoardBinding(binding, operation);
+      if (req.def.name === "route_run") runWithRoutingSnapshot = (directory, operation) => withNativeRoutingSnapshot(binding, directory, operation);
     } else if (project && needsConcreteBoard(req.def)) {
       const declared = await lstat(join(project.dir, ASSEMBLY_MANIFEST_PATH)).then(() => true, (error: NodeJS.ErrnoException) => {
         if (error.code === "ENOENT") return false;
@@ -95,6 +97,7 @@ export function createContextFactory(deps: ContextDeps): ContextFactory {
       ...(board ? { board } : {}),
       ...(runInScope ? { runInScope } : {}),
       ...(boardRoot ? { boardRoot } : {}),
+      ...(runWithRoutingSnapshot ? { runWithRoutingSnapshot } : {}),
     });
   };
 }

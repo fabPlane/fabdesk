@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, realpath, rm, rename, symlink, link } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inspectProjectBoardSources } from "@fabdesk/tools";
-import { assertNativeBoardOwnership, resolveNativeBoardBinding, withNativeBoardBinding } from "../src/assembly-board-binding";
+import { assertNativeBoardOwnership, resolveNativeBoardBinding, withNativeBoardBinding, withNativeRoutingSnapshot } from "../src/assembly-board-binding";
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { force: true, recursive: true }))); });
 async function fixture() {
@@ -63,11 +63,26 @@ test("a queued operation cannot start after the captured declaration changes", a
 });
 
 test("native project and library companion aliases also block a captured save", async () => {
-  for (const filename of ["board.kicad_sch", "board.kicad_pro", "fp-lib-table", "sym-lib-table"]) {
+  for (const filename of ["board.kicad_sch", "board.kicad_pro", "board.kicad_dru", "fp-lib-table", "sym-lib-table"]) {
     const { project, selector } = await fixture(), binding = await resolveNativeBoardBinding(project, selector);
     const other = join(project.dir, "shared-companion"); await writeFile(other, "shared");
     await symlink(other, join(binding.boardDir, filename));
     await expect(binding.assertCurrent(binding.boardDir)).rejects.toThrow("ownership changed");
     await expect(resolveNativeBoardBinding(project, selector)).rejects.toThrow("ownership changed");
   }
+});
+
+test("routing scopes allow only the exact private snapshot and preserve canonical source ownership", async () => {
+  const { project, selector } = await fixture(), binding = await resolveNativeBoardBinding(project, selector);
+  const snapshot = join(binding.boardDir, ".fabdesk/runs/run_test/snapshot");
+  await mkdir(snapshot, { recursive: true }); await writeFile(join(snapshot, "board.kicad_pcb"), "independent snapshot");
+  await withNativeRoutingSnapshot(binding, snapshot, async () => {
+    await assertNativeBoardOwnership(snapshot); await assertNativeBoardOwnership(binding.boardDir);
+    await expect(assertNativeBoardOwnership(join(project.dir, "boards/b"))).rejects.toThrow("does not belong");
+    await expect(assertNativeBoardOwnership(join(binding.boardDir, ".fabdesk/runs/run_other/snapshot"))).rejects.toThrow("does not belong");
+  });
+  await expect(withNativeRoutingSnapshot(binding, join(project.dir, "boards/b"), async () => {})).rejects.toThrow("outside");
+  await withNativeBoardBinding(binding, async () => { await expect(assertNativeBoardOwnership(snapshot)).rejects.toThrow("ownership changed"); });
+  await rm(join(snapshot, "board.kicad_pcb")); await link(join(binding.boardDir, "board.kicad_pcb"), join(snapshot, "board.kicad_pcb"));
+  await expect(withNativeRoutingSnapshot(binding, snapshot, async () => {})).rejects.toThrow();
 });

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseRouteReview } from "./route-review";
+import { parseRouteReview, routeRunMatchesSource } from "./route-review";
 const record = () => ({ json: { run: { id: "run_test", projectId: "project", status: "completed", startingPcbRevision: "a".repeat(64), canonicalMatchesStart: true, candidate: { available: true, reopenable: true, path: ".fabdesk/runs/run_test/candidate.kicad_pcb", sha256: "b".repeat(64) }, application: { state: "manual", reason: null }, result: { state: "partial", open: ["GND"], quality: { text: "Three opens remain.", warnings: [] as { kind: string; text: string }[] } } } } });
 test("a validated partial candidate stays explicitly partial and needs separate application", () => {
   const review = parseRouteReview(record(), "project", "run_test");
@@ -17,4 +17,14 @@ test("another project/run or an unowned candidate path is refused", () => {
   expect(() => parseRouteReview(record(), "project", "run_other")).toThrow("another project");
   const value = record(); value.json.run.candidate.path = "../candidate.kicad_pcb";
   expect(() => parseRouteReview(value, "project", "run_test")).toThrow("outside");
+});
+test("member history and review require the captured source and qualify its candidate file", () => {
+  const board = { sourceId: "io", manifestSha256: "a".repeat(64) }, value = record();
+  const member = { json: { ...value.json, _board: { projectId: "project", ...board }, run: { ...value.json.run, board, sourceDirectory: "boards/io" } } };
+  expect(routeRunMatchesSource(member.json.run, "project", board)).toBe(true);
+  expect(routeRunMatchesSource(member.json.run, "project")).toBe(false);
+  expect(routeRunMatchesSource(member.json.run, "project", { ...board, sourceId: "lcd" })).toBe(false);
+  expect(parseRouteReview(member, "project", "run_test", board).candidatePath).toBe("boards/io/.fabdesk/runs/run_test/candidate.kicad_pcb");
+  expect(() => parseRouteReview(member, "project", "run_test")).toThrow("another board source");
+  expect(() => parseRouteReview(member, "project", "run_test", { ...board, manifestSha256: "b".repeat(64) })).toThrow("selected board source");
 });

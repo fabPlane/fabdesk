@@ -3950,6 +3950,7 @@ describe("registry", () => {
       "route.frame",
       "route.frame",
       "route.frame",
+      "project.changed",
       "route.done",
     ]);
     const status = await call("route_status");

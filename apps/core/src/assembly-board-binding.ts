@@ -2,7 +2,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { constants } from "node:fs";
 import { lstat, open, realpath, stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { ASSEMBLY_MANIFEST_PATH, type BoardSourceSelection } from "@fabdesk/protocol";
 import { inspectProjectBoardSources, NativeRevisionConflict, ToolError } from "@fabdesk/tools";
@@ -56,7 +56,7 @@ export async function resolveNativeBoardBinding(project: { id: string; dir: stri
         const currentBoardDirectory = await stat(boardDir);
         if (resolve(dir) !== boardDir || await realpath(boardDir) !== boardDir || currentBoardDirectory.dev !== boardDirectory.dev || currentBoardDirectory.ino !== boardDirectory.ino) throw new Error("Board directory changed");
         if (await manifestHash(rootDir) !== manifestSha256) throw new Error("Membership changed");
-        for (const filename of ["board.kicad_pcb", "board.kicad_sch", "board.kicad_pro", "fp-lib-table", "sym-lib-table"]) {
+        for (const filename of ["board.kicad_pcb", "board.kicad_sch", "board.kicad_pro", "board.kicad_dru", "fp-lib-table", "sym-lib-table"]) {
           const path = resolve(boardDir, filename);
           const metadata = await lstat(path).catch((error: NodeJS.ErrnoException) => {
             if (filename !== "board.kicad_pcb" && error.code === "ENOENT") return null;
@@ -77,6 +77,29 @@ export async function resolveNativeBoardBinding(project: { id: string; dir: stri
 export async function withNativeBoardBinding<T>(binding: NativeBoardBinding, operation: () => Promise<T>): Promise<T> {
   await binding.assertCurrent(binding.boardDir);
   return currentBinding.run(binding, operation);
+}
+
+/** A routing worker may operate only on its exact, independently owned private snapshot. */
+export async function withNativeRoutingSnapshot<T>(binding: NativeBoardBinding, directory: string, operation: () => Promise<T>): Promise<T> {
+  const snapshot = resolve(directory), path = relative(binding.boardDir, snapshot).split(sep).join("/");
+  if (!/^\.fabdesk\/runs\/run_[A-Za-z0-9_-]+\/snapshot$/.test(path)) throw new NativeRevisionConflict("Routing snapshot is outside this source’s private run directory.");
+  const original = await lstat(snapshot);
+  const assertSnapshot = async () => {
+    const current = await lstat(snapshot);
+    if (!current.isDirectory() || current.dev !== original.dev || current.ino !== original.ino || await realpath(snapshot) !== snapshot) throw new NativeRevisionConflict("Routing snapshot directory changed or is aliased.");
+    for (const name of ["board.kicad_pcb", "board.kicad_pro", "board.kicad_sch", "board.kicad_dru", "fp-lib-table", "sym-lib-table"]) {
+      const file = resolve(snapshot, name), entry = await lstat(file).catch((error: NodeJS.ErrnoException) => { if (name !== "board.kicad_pcb" && error.code === "ENOENT") return null; throw error; });
+      if (entry && (!entry.isFile() || entry.nlink !== 1 || await realpath(file) !== file)) throw new NativeRevisionConflict("Routing snapshot files must be independent regular files.");
+    }
+  };
+  await binding.assertCurrent(binding.boardDir); await assertSnapshot();
+  const derived = Object.freeze({ ...binding, async assertCurrent(dir: string) {
+    await binding.assertCurrent(binding.boardDir);
+    if (resolve(dir) === binding.boardDir) return;
+    if (resolve(dir) !== snapshot) throw new NativeRevisionConflict("Native operation does not belong to the captured routing snapshot.");
+    await assertSnapshot();
+  } });
+  return currentBinding.run(derived, operation);
 }
 
 /** Called at native entry and immediately before save; unscoped legacy operations are unchanged. */
