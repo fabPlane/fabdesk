@@ -1,3 +1,4 @@
+import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useLayoutEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Icon, type IconName } from "../components/Icon";
@@ -28,18 +29,18 @@ export type ReviewOutputRow = {
   key: string; item: string; icon: IconName; status: string; warning?: boolean; note?: string;
   details?: ReactNode; actions: ReactNode;
 };
-export function ReviewUpdateTable({ title, rows, collapsed = false, summary }: { title: string; rows: ReviewOutputRow[]; collapsed?: boolean; summary?: string }) {
+export function ReviewUpdateTable({ title, rows, collapsed = false, summaryStatus, summaryWarning = false }: { title: string; rows: ReviewOutputRow[]; collapsed?: boolean; summaryStatus?: string; summaryWarning?: boolean }) {
   const content = <section className="fd-review-update-group fd-review-output-group" aria-label={title}><h3>{title}</h3>
     <div className="fd-review-table-frame"><table className="fd-review-output-table" aria-label={`${title} source review`}>
       <thead><tr><th>Item</th><th>Status</th><th>Update</th></tr></thead>
       <tbody>{rows.map(row => <tr key={row.key} data-review-item={row.key}>
         <td><div className="fd-review-item-name"><Icon name={row.icon} width={28} height={28} /><strong>{row.item}</strong></div></td>
-        <td><div className="fd-review-item-status" data-warning={row.warning === true}><i /><div><strong>{row.status}</strong>{row.note && <p>{row.note}</p>}{row.details && <details className="fd-review-source-details"><summary>Source details</summary>{row.details}</details>}</div></div></td>
+        <td><div className="fd-review-item-status" data-warning={row.warning === true}><i /><div><strong>{row.status}</strong>{row.note && <p>{row.note}</p>}{row.details && <details className="fd-review-source-details"><DisclosureSummary icon="folderOpen" label="Source details" variant="compact" />{row.details}</details>}</div></div></td>
         <td><div className="fd-review-item-actions">{row.actions}</div></td>
       </tr>)}</tbody>
     </table></div>
   </section>;
-  return collapsed ? <details className="fd-review-checks-summary"><summary>{summary ?? title}</summary>{content}</details> : content;
+  return collapsed ? <details className="fd-review-checks-summary"><DisclosureSummary icon="shield" label={title} badge={summaryStatus} warning={summaryWarning} />{content}</details> : content;
 }
 
 export function ReviewKeepNote() {

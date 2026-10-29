@@ -1,3 +1,4 @@
+import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { NativePartTarget } from "./NativePartTarget";
@@ -98,7 +99,7 @@ export function NativeOutlinePanel({ projectId, board, canPosition, onBusyChange
       {recovery && <div><Button size="sm" variant="ghost" disabled={busy || hasProposal || stale || !canPosition || inspection.isFetching || inspection.isError || recovery.savedSha256 !== snapshot.sourceSha256 || inspection.data?.sourceSha256 !== recovery.savedSha256 || JSON.stringify([...snapshot.edgeIds].sort()) !== JSON.stringify([...recovery.edgeIds].sort())} onClick={() => void apply(true)}>Revert last dimensions</Button><p className="fd-native-part-note">Restore {recovery.bounds.maxX - recovery.bounds.minX} × {recovery.bounds.maxY - recovery.bounds.minY} mm using the same outline edges. Available here for this saved PCB snapshot; other edits are not undone.</p></div>}
     </>}
     {notice && <p role="status" className="fd-native-part-warning">{notice}<BoardChecksButton projectId={projectId} {...(board ? { board } : {})} /></p>}
-    {exportError && <details className="fd-native-part-note"><summary>Preview remains out of date</summary><p>{exportError}</p><p>Resolve the export error, then choose Update preview. The outline is already saved.</p></details>}
+    {exportError && <details className="fd-native-part-note"><DisclosureSummary icon="warning" label="Preview remains out of date" variant="compact" /><p>{exportError}</p><p>Resolve the export error, then choose Update preview. The outline is already saved.</p></details>}
     {error && <p role="alert" className="fd-native-part-warning">{error}</p>}
   </>;
 }

@@ -1,3 +1,4 @@
+import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BoardComment, CommentView } from "@fabdesk/protocol";
 import { commentAnchorLabel, commentMillimetrePoint } from "@fabdesk/protocol";
@@ -295,7 +296,7 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
                   rows={4}
                   aria-label="Comment question"
                 />
-                <details className="fd-comment-optional"><summary>Component, pin or net (optional)</summary><div className="mt-3 space-y-3">
+                <details className="fd-comment-optional"><DisclosureSummary icon="pin" label="Component, pin or net" badge="Optional" /><div className="mt-3 space-y-3">
                 <p className="text-[11px] text-muted">The board location is already captured. Add these details if you know them.</p>
                 <label className="flex flex-col gap-1 text-xs">
                   <span>Component reference <span className="text-muted">(optional)</span></span>

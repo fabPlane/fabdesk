@@ -1,3 +1,4 @@
+import { DisclosureSummary } from "../../components/DisclosureSummary";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, EmptyState, LoadError, Select, Spinner } from "../../components/ui";
 import { useCoreClient } from "@fabdesk/client-core";
@@ -230,7 +231,7 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
   const failureNotice = runError && (
         <div role="alert" className="border-b border-danger/40 bg-danger/10 px-3 py-1.5 text-xs text-danger" data-testid="route-run-error">
           <p><span className="font-semibold">Routing {runRecord.data?.status === "timed_out" ? "timed out" : "failed"}</span> using {runRecord.data?.router}. Check router availability before trying again. <Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setSettingsOpen(true, "router")}>Manage routers</Button></p>
-          <details className="mt-1"><summary className="cursor-pointer">Failure details</summary><p className="mt-2 break-words">{runError}</p></details>
+          <details className="mt-1"><DisclosureSummary icon="warning" label="Failure details" variant="compact" /><p className="mt-2 break-words">{runError}</p></details>
         </div>
       );
   const setup = <section className="fd-routing-setup" aria-label="Routing setup">
@@ -241,7 +242,7 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
         {picker.map(option => <option key={option.id} value={option.id} disabled={option.disabled} title={option.hint}>{option.label}{option.disabled ? ` (${option.note ?? "not installed"})` : ""}</option>)}
       </Select>
     </label>
-    <details className="fd-routing-options"><summary>Router options</summary><Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setSettingsOpen(true, "router")}>Manage routers</Button></details>
+    <details className="fd-routing-options"><DisclosureSummary icon="settings" label="Router options" /><Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setSettingsOpen(true, "router")}>Manage routers</Button></details>
     {routers.isError && <p role="alert">Router availability could not be checked. <Button size="sm" onClick={() => void routers.refetch()}>Retry</Button></p>}
     <p role="status">{project.isError ? "Project files could not be read." : !scopeReady || project.isFetching ? "Checking saved PCB…" : !hasPcb ? "Add a saved PCB in Board before starting routing." : "Routing can update the saved PCB after its source checks. Review the result and current PCB checks before fabrication."}</p>
     <Button className="fd-routing-start-action" variant="primary" disabled={!canRoute} onClick={() => void startRouting()}>{busy ? "Routing…" : "Start routing"}</Button>

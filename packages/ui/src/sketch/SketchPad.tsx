@@ -1,3 +1,4 @@
+import { DisclosureSummary } from "../components/DisclosureSummary";
 import "@excalidraw/excalidraw/index.css";
 import { isEditableSketchSource, MAX_EDITABLE_SKETCH_BYTES } from "@fabdesk/protocol";
 import type { ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
@@ -267,7 +268,7 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
             {hasDrawing && <Button size="sm" variant="ghost" disabled={busy || recovering || completed.current} onClick={() => apiRef.current?.scrollToContent(undefined, { fitToViewport: true, viewportZoomFactor: .65, maxZoom: 1 })}>Fit drawing</Button>}
           </>}
           <details ref={sourceOptions} className="fd-sketch-options">
-            <summary>{mode === "draw" ? "Drawing options" : "Image details"}</summary>
+            <DisclosureSummary icon={mode === "draw" ? "settings" : "image"} label={mode === "draw" ? "Drawing options" : "Image details"} variant="compact" />
             <div>
               <p>{target.projectId ? mode === "draw" ? "Save an editable PNG in this project and attach it to your next message. Each save keeps a new copy." : "Save the original image in this project and attach it to your next message." : "Saving creates a project automatically. Your sketch stays with it; nothing is sent to the agent yet."}</p>
               {mode === "draw" && <>

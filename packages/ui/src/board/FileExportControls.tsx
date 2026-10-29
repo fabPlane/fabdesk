@@ -1,3 +1,4 @@
+import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useEffect, useState } from "react";
 import { Button, Select, Spinner } from "../components/ui";
 import { FileGlyph } from "./FileGlyph";
@@ -30,7 +31,7 @@ export function FileExportControls({ exportChoices, exportKind, setExportKind, t
             {choices(common)}
           </div>
           {other.length > 0 && <details className="fd-export-other-formats mt-4" open={moreOpen} onToggle={event => setMoreOpen(event.currentTarget.open)}>
-            <summary className="cursor-pointer text-xs text-muted">More formats{SECONDARY_FILE_EXPORTS.includes(exportKind) ? ` · ${EXPORTS[exportKind].title}` : ""}</summary>
+            <DisclosureSummary icon="library" label="More formats" badge={SECONDARY_FILE_EXPORTS.includes(exportKind) ? EXPORTS[exportKind].title : `${other.length} formats`} />
             <div className="mt-3 space-y-2">{choices(other)}</div>
           </details>}
           {exportKind === "export_stencil" && <div className="mt-4 rounded-lg border border-border bg-bg/40 p-3">

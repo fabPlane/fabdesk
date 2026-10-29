@@ -1,3 +1,4 @@
+import { DisclosureSummary } from "../components/DisclosureSummary";
 import { VideoSourceStatus } from "./VideoSourceStatus";
 import type { ReactNode } from "react";
 import type { FileEntry } from "@fabdesk/protocol";
@@ -133,7 +134,7 @@ export function ProductVideoPanel({
       {exportError && <p role="alert" className="text-xs text-danger">{exportError}</p>}
       {makeError && <p role="alert" className="text-xs text-danger">{makeError}</p>}
       <div className="fd-video-body min-h-0 flex-1">
-        <details className="fd-video-setup"><summary>Make a product video</summary>
+        <details className="fd-video-setup"><DisclosureSummary icon="play" label="Make a product video" />
         <form
           className="flex flex-col gap-3 border-b border-border p-3 lg:border-b-0 lg:border-r"
           onSubmit={(e) => {
@@ -177,7 +178,7 @@ export function ProductVideoPanel({
               </Select>
             </label>
           </div>
-          <details className="fd-video-output-settings"><summary>Output settings</summary><div className="mt-3 grid grid-cols-2 gap-2">
+          <details className="fd-video-output-settings"><DisclosureSummary icon="settings" label="Output settings" /><div className="mt-3 grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1 text-[12px]">
               <span className="font-medium">Resolution</span>
               <Select

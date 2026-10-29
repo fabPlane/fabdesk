@@ -1,5 +1,14 @@
 # v6 page-by-page visual review
 
+## Latest: secondary controls and disclosures
+
+The October 29 follow-up replaces faint browser-default disclosure links with a shared opt-in heading. Major secondary sections use 44px rows with an icon, explicit title, actual status/count badge and right chevron. Metadata uses a quieter 34px control (44px with coarse pointers). Native details preserve mouse, Enter/Space and Tab behavior; focus follows the rounded control. Low-priority content stays collapsed.
+
+Applied across Review, source/Schematic/Checks details, PCB part/outline tools, comment context, optional export formats, video creation/settings/provenance, Routing options/errors, sketch options, assistant board context and shared technical error details. Workspace menus and chat activity retain their own patterns; Mechanical/enclosure and Artwork internals are untouched. “Other boards” is now “Project boards,” because the list includes the selected source. Sources/checks remain truthful; this does not add synchronization or validation capability.
+
+Native captures582–590 and `disclosure-controls-native.json` preserve the evidence. Mouse and keyboard expansion/collapse, compact960×720 layout, secondary export selection/restoration, requested video/routing/native-part controls were checked without starting jobs or saving native edits. UI234pass/917assertions/0fail; UI typecheckPASS;20route layout audit clean;34root+8VAIO protected files unchanged against the prior baseline. No full root-suite rerun for this presentation-only change. Local only; no push or remote PR updates.
+
+
 Reopened by the user's October 29 comparison: the shared style pass was insufficient. This pass checks composition, content scale, navigation and requested tools against every scene in `outputs/fabplane-workspace-v6/design-spec.json`. The implementation uses actual saved sources and reports; illustrative concept boards, revisions and counts are not acceptance fixtures.
 
 ## Reviewed pages

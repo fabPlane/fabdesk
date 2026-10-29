@@ -1,3 +1,4 @@
+import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import type { BoardSourceSelection, PcbPartPosition } from "@fabdesk/protocol";
@@ -177,7 +178,7 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
       <header><strong>{mode === "outline" ? "Resize board" : selection ? `${selection.part.ref} · ${selection.part.value}` : "Parts near this location"}</strong><IconButton title="Close board tools" size="sm" disabled={busy} onClick={close}><Icon name="close" width={14} height={14} /></IconButton></header>
       {mode === "outline" ? <NativeOutlinePanel {...(board ? { board } : {})} visible={visible} onMutationBusyChange={onMutationBusyChange} host={drawingHost ?? null} box={box} projectId={projectId} canPosition={canPosition} onBusyChange={value => { inFlight.current = value; if (mounted.current) setBusy(value); }} /> : <>
       {parts.isPending && !current ? <div className="flex items-center gap-2 text-muted"><Spinner />Inspecting saved PCB…</div> : parts.isError && !current ? <p role="alert">Could not inspect parts. <Button size="sm" onClick={() => void parts.refetch()}>Retry</Button></p> : current && <>
-        {current.parts.length > 0 ? selection ? <details key={selection.part.ref} className="fd-native-part-details"><summary>Choose another part</summary>{partPicker}</details> : partPicker : <p>No part origins within 5 mm. Select a location nearer the part you want to move.</p>}
+        {current.parts.length > 0 ? selection ? <details key={selection.part.ref} className="fd-native-part-details"><DisclosureSummary icon="search" label="Choose another part" />{partPicker}</details> : partPicker : <p>No part origins within 5 mm. Select a location nearer the part you want to move.</p>}
         {current.truncated && <p>More parts are nearby. Select a more precise location.</p>}
       </>}
       {parts.isError && current && <p role="alert" className="fd-native-part-warning">The latest part inspection failed. <Button size="sm" disabled={busy} onClick={() => void parts.refetch()}>Retry inspection</Button></p>}
@@ -187,7 +188,7 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
         {selection.part.locked && <p className="fd-native-part-warning">This part or its group is locked. Unlock it in KiCad before positioning it here.</p>}
         <form onSubmit={(event) => { event.preventDefault(); void apply(); }}>
           <details className="fd-native-part-details" key={`${selection.part.ref}:position`}>
-          <summary>Position & properties</summary>
+          <DisclosureSummary icon="settings" label="Position & properties" />
           <p className="fd-native-part-footprint">{selection.part.footprint || "Embedded footprint"} · {selection.part.flipped ? "Bottom" : "Top"}</p>
           <div className="fd-native-part-fields">{([['x', 'X (mm)'], ['y', 'Y (mm)'], ['rotation', 'Rotation (°)']] as const).map(([key, label]) => <label key={key}>{label}<Input type="number" step="any" aria-label={label} value={fields[key]} disabled={busy || selection.part.locked} onChange={(event) => { const value = event.currentTarget.value; setFields((previous) => ({ ...previous, [key]: value })); }} /></label>)}</div>
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload part</Button>
@@ -208,10 +209,10 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
           setOpen(false); ui.focusComposer();
         }}>Ask about {selection.part.ref}</Button>
         <p className="fd-native-part-note">Drag the target or use arrow keys to preview a move. Apply saves it.</p>
-        {selection && <details className="fd-native-part-details"><summary>More part actions</summary><p className="fd-native-part-note">Part replacement is not connected in this build. Position edits and the eligible single-edit revert remain separate.</p><Button size="sm" disabled>Replace {selection.part.ref}</Button></details>}
+        {selection && <details className="fd-native-part-details"><DisclosureSummary icon="pcb" label="More part actions" /><p className="fd-native-part-note">Part replacement is not connected in this build. Position edits and the eligible single-edit revert remain separate.</p><Button size="sm" disabled>Replace {selection.part.ref}</Button></details>}
       </>}
       {message && <p role="status" className="fd-native-part-warning">{message}<BoardChecksButton projectId={projectId} {...(board ? { board } : {})} /></p>}
-      {previewError && <details className="fd-native-part-note"><summary>Why couldn’t the preview update?</summary><p>{previewError}</p><p>Resolve the export error, then choose Update preview. The native placement is already saved.</p></details>}
+      {previewError && <details className="fd-native-part-note"><DisclosureSummary icon="warning" label="Why couldn’t the preview update?" variant="compact" /><p>{previewError}</p><p>Resolve the export error, then choose Update preview. The native placement is already saved.</p></details>}
       {error && <p role="alert" className="fd-native-part-warning">{error}</p>}
       </>}
     </section>, root.current?.closest(".fd-canvas-workspace") ?? document.body)}

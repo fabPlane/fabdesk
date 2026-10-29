@@ -1,3 +1,4 @@
+import { DisclosureSummary } from "../components/DisclosureSummary";
 import { modelDisplayName } from "./model-display-name";
 import type { AgentId, Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
@@ -340,7 +341,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
           </div>
         )}
         {boardContext && <div className="fd-composer-board-context">
-          <details><summary>Board: {boardContext.label}</summary><p>This source context accompanies your next message.</p><p className="break-words">{boardContext.instruction}</p></details>
+          <details><DisclosureSummary icon="pcb" label={`Board: ${boardContext.label}`} variant="compact" /><p>This source context accompanies your next message.</p><p className="break-words">{boardContext.instruction}</p></details>
           <button type="button" aria-label="Remove board context" onClick={() => setDraftBoardContext(draftKey, null)}>×</button>
         </div>}
         <div className="fd-composer rounded-xl border border-border bg-panel transition-colors focus-within:border-accent">

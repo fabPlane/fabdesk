@@ -1,3 +1,4 @@
+import { DisclosureSummary } from "./DisclosureSummary";
 import { errorHelp, errorPayload, type ErrorContext } from "@fabdesk/client-core";
 import { createContext, useContext } from "react";
 import { useUiStore } from "../stores/ui";
@@ -25,7 +26,7 @@ export function ErrorNotice({ error, agentId }: { error: unknown; agentId?: stri
       else setSettingsOpen(true, action);
     }}>{action === "projects" ? "Choose project" : action === "agents" ? "Agent settings" : action === "auth" ? "Account settings" : "KiCad settings"}</Button>}
     {raw && <details className="mt-2 text-xs text-muted">
-      <summary className="cursor-pointer">Technical details</summary>
+      <DisclosureSummary icon="terminal" label="Technical details" variant="compact" />
       <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words select-text">{raw}</pre>
     </details>}
   </div>;
