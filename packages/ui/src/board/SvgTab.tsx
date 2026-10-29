@@ -11,6 +11,8 @@ import {
   useBoardSources,
   useBoardComments,
   useProject,
+  useThreads,
+  useRunsStore,
   usePcbPreviewRevision,
   pcbSvgHasNativeCoordinates,
   useProjectText,
@@ -75,6 +77,9 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
   const [nativeEditBusy, setNativeEditBusy] = useState(false);
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
+  const threads = useThreads(projectId ? { projectId } : {});
+  const projectWorking = useRunsStore(state => Object.keys(state.runsByThread).some(id => threads.data?.some(thread => thread.id === id)) || Object.values(state.jobs).some(job => job.projectId === projectId && (job.status === "running" || job.status === "queued")));
+  const autoPreview = useRef<string | null>(null);
   const sources = useBoardSources(projectId);
   const scopeReady = sources.data?.mode === "single" && !sources.isFetching && !sources.isError;
   const rendered = useProjectText(projectId, `renders/${kind}.svg`);
@@ -157,8 +162,17 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
   };
   const refreshPreview = () => {
     if (!projectId || !scopeReady || useUiStore.getState().activeProjectId !== projectId) return;
-    void render.run(RENDER_TOOL[kind], { projectId });
+    void render.run(RENDER_TOOL[kind], { projectId }).then(result => { if (result.status === "done") { void rendered.refetch(); if (kind === "pcb") void revision.refetch(); } });
   };
+  useEffect(() => {
+    // Read the saved source once a build/agent has settled. Alternate image exports are not
+    // a coordinate or freshness receipt, so create the normal canvas preview through its tool.
+    if (!projectId || !active || !scopeReady || projectWorking || threads.isPending || threads.isError || project.isPending || project.isFetching || project.isError || rendered.isPending || rendered.isError || rendered.data || render.state.status === "running" || !project.data.files.some(file => file.path === `board.kicad_${kind === "pcb" ? "pcb" : "sch"}`)) return;
+    const key = `${projectId}/${kind}`;
+    if (autoPreview.current === key) return;
+    autoPreview.current = key;
+    void render.run(RENDER_TOOL[kind], { projectId }).then(result => { if (result.status === "done") { void rendered.refetch(); if (kind === "pcb") void revision.refetch(); } });
+  }, [projectId, active, scopeReady, projectWorking, threads.isPending, threads.isError, project.data, project.isPending, project.isFetching, project.isError, rendered.data, rendered.isPending, rendered.isError, render.state.status, kind, render.run]);
   const askForSource = () => {
     const ui = useUiStore.getState();
     if (!projectId || ui.activeProjectId !== projectId || !scopeReady) return;
