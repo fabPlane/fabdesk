@@ -1650,3 +1650,8 @@ Actual VAIO Keyboard Review→definition→Review/Overview and compact long-prov
 
 ![Missing-source facts when requested](review-missing-source-details.png)
 ![Exact project definition selected and focused](review-recovery-exact-definition.png)
+
+
+## Secondary-tool keyboard recovery
+
+Fixed a regression introduced by moving tools out of the primary tab list: when Routing/Artwork is active, primary tabs now retain a first keyboard stop without pretending PCB is selected. Native before: Shift+Tab skipped the group. After: it focuses unselected PCB; Right Arrow selects Schematic and keeps focus there. UItypes/233tests912assertions pass. [Evidence](primary-tab-focus-native.json).

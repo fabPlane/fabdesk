@@ -251,6 +251,9 @@ export function Tabs<T extends string>({
   className?: string;
   variant?: "pills" | "underline";
 }) {
+  // A secondary tool can own the current workspace while its primary view tabs remain visible.
+  // Keep one keyboard entry point without falsely marking that view as selected.
+  const focusableTab = tabs.some(tab => tab.id === value) ? value : tabs[0]?.id;
   return (
       <div className={cn("flex items-center overflow-x-auto", variant === "underline" ? "fd-tabs-underline" : "gap-1", className)} role="tablist">
       {tabs.map((t) => (
@@ -258,7 +261,7 @@ export function Tabs<T extends string>({
           key={t.id}
           role="tab"
           aria-selected={t.id === value}
-          tabIndex={t.id === value ? 0 : -1}
+          tabIndex={t.id === focusableTab ? 0 : -1}
           onKeyDown={(e) => {
             const index = tabs.findIndex((tab) => tab.id === t.id);
             const next = tabDestination(e.key, index, tabs.length);

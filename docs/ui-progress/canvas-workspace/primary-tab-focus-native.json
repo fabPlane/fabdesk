@@ -1,0 +1,10 @@
+{
+  "change": "Primary tabs retain one keyboard stop when a secondary tool is active",
+  "nativeBefore": "Shift+Tab from Routing skipped all three primary tabs and focused Board workspace switcher",
+  "nativeAfter": [
+    "Shift+Tab from Routing focuses unselected PCB tab while routing staysactive",
+    "Right Arrow selects Schematic and focuses its tab; existing missing-source state appears"
+  ],
+  "validation": "UItypesPASS;233tests912assertions/0fail",
+  "boundary": "Fallback tabIndex does not falsely mark the PCB selected; existing selected-tab behavior unchanged"
+}
