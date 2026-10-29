@@ -1,4 +1,4 @@
-import { useAssistantSurface } from "../chat/useAssistantSurface";
+import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { overviewBoardImages, useProject, type OverviewImage } from "@fabdesk/client-core";
 import { useOverviewImage } from "./useOverviewImage";
 import { CanvasToolButton } from "../components/CanvasToolButton";
@@ -16,7 +16,7 @@ import { AssemblyBoardModel } from "../board/AssemblyBoardModel";
 import { NativePartTools } from "../board/NativePartTools";
 import { parseSvgViewBox } from "../board/svg-coords";
 import { ProjectImage } from "../chat/ProjectImage";
-import { newChatDraftKey, useUiStore } from "../stores/ui";
+import { useUiStore } from "../stores/ui";
 
 type Box = { x: number; y: number; width: number; height: number };
 type MapDrag = { selection: AssemblySceneSelection; scopeKey: string; pointerId: number; clientX: number; clientY: number; x: number; y: number; scaleX: number; scaleY: number; nextX: number; nextY: number; moved: boolean; layout: AssemblyMapLayout };
@@ -34,15 +34,11 @@ function BoardImage({ projectId, node, candidates }: { projectId: string; node: 
   return image.url ? <image href={image.url} x={12} y={12} width={node.width - 24} height={node.height - 68} preserveAspectRatio="xMidYMid meet" pointerEvents="none" onError={image.onError}><title>{image.candidate?.kind === "top" ? "Saved top render" : "Saved board image"} · freshness unverified</title></image>
     : <g className="fd-assembly-placeholder" transform={`translate(${node.width / 2 - 105},16)`} pointerEvents="none"><rect x={70} y={26} width={70} height={52} rx={6} /><path d="M88 18v8m16-8v8m16-8v8M88 78v8m16-8v8m16-8v8M62 39h8m-8 15h8m70-15h8m-8 15h8" /><text x={105} y={102} textAnchor="middle">{image.loading ? "Loading preview…" : node.source?.status === "available" ? "No board image" : "Source unavailable"}</text></g>;
 }
-function askAbout(selection: AssemblySceneSelection | null, name: string, available: boolean, schematicAction?: "find" | "generate" | "import") {
+function askAbout(selection: AssemblySceneSelection | null, name: string, available: boolean) {
   if (!selection) return;
   const projectId = selection.projectId;
   const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId) return;
-  const key = ui.activeThreadId ?? newChatDraftKey(projectId), previous = ui.drafts[key] ?? "";
-  const prompt = schematicAction === "generate" ? `Find an existing schematic for ${JSON.stringify(name)} in this project first. If none matches, help me generate a proposed schematic from its saved PCB and explain what needs review.` : schematicAction === "import" ? `Help me import a matching KiCad schematic for ${JSON.stringify(name)}. Check existing project files first and identify any missing referenced sheets.` : schematicAction === "find" ? `Find the schematic for ${JSON.stringify(name)} in this project or its source repository.` : available ? `Review ${JSON.stringify(name)} and its board connections.` : `Help resolve the missing source for ${JSON.stringify(name)}.`;
-  const context = `Assembly context: instance ${JSON.stringify(selection.instanceId)}, source ${JSON.stringify(selection.sourceId)}, manifest SHA-256 ${selection.manifestSha256}. Verify the current project declaration and whether this source is shared before proposing edits. ${schematicAction ? "Search existing project files first and reuse the matching native KiCad schematic when available. Check its revision, referenced sheets and dependencies against the saved PCB. Do not replace an existing design or claim electrical compatibility without verification." : "Inspect the saved source and explain issues before proposing changes."}${schematicAction === "generate" ? " If no matching source exists, reconstruct a proposed schematic from the saved PCB connectivity. Explain what cannot be recovered, preserve the existing PCB and require review of the generated circuit." : ""}`;
-  ui.setDraftBoardContext(key, { projectId, sourceKey: JSON.stringify([selection.instanceId, selection.sourceId, selection.manifestSha256]), label: name, instruction: context });
-  ui.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt); ui.focusComposer();
+  askAboutSurface({ projectId, label: `Board / ${name}`, priority: 20, details: JSON.stringify({ selection, available, instruction: "Verify the current project declaration and whether this source is shared. Inspect saved source and declared connections before proposing changes; connection compatibility is unverified." }) }, available ? `Review ${name} and its board connections. Explain what needs attention before changing the design.` : `Help resolve the missing source for ${name}. Check project files and the declared origin first.`);
 }
 
 /** Logical project topology. Canvas positions and declared links never imply chassis fit or electrical validation. */
@@ -320,9 +316,7 @@ function AssemblyBoardDetail({ projectId, detail, current, checking, failed, onB
     {requestedFinding && <div className="fd-assembly-finding-summary" role="status"><div><strong>{requestedFinding.description}</strong><span>{findingVisible ? `${requestedFinding.itemDescription} · ${requestedFinding.point.x.toFixed(3)}, ${requestedFinding.point.y.toFixed(3)} mm` : findingReady ? "This finding is outside the saved preview. Its position is not shown." : "Location hidden until the saved PCB, project definition and displayed preview match this finding."}</span></div><div className="fd-assembly-finding-actions"><Button size="sm" disabled={!findingReady || nativeBusy} onClick={() => {
       const ui = useUiStore.getState();
       if (!findingReady || nativeBusy || ui.activeProjectId !== projectId || ui.assemblyFinding !== requestedFinding) return;
-      const key = ui.activeThreadId ?? newChatDraftKey(projectId), previous = ui.drafts[key] ?? "";
-      const prompt = `Help me understand this saved PCB check finding for assembly board ${JSON.stringify(detail.instanceName)}, source ${JSON.stringify(board.sourceId)}, directory ${JSON.stringify(detail.directory)}: ${JSON.stringify(requestedFinding.description)}. Report item: ${JSON.stringify(requestedFinding.itemDescription)} at X ${requestedFinding.point.x} mm, Y ${requestedFinding.point.y} mm. Captured PCB SHA-256 ${requestedFinding.sourceSha256}; assembly manifest SHA-256 ${board.manifestSha256}. Inspect the latest saved source and its PCB-only report before explaining whether it still applies. This source may be shared by multiple board instances. Explain the cause and proposed fix before making changes.`;
-      ui.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt); ui.focusComposer();
+      askAboutSurface({ projectId, label: `${detail.instanceName} / PCB finding`, priority: 25, details: JSON.stringify({ board, instance: detail.selection.instanceId, directory: detail.directory, finding: { description: requestedFinding.description, item: requestedFinding.itemDescription, pointMm: requestedFinding.point, recordedSourceSha256: requestedFinding.sourceSha256 }, locationVerified: !!findingVisible, instruction: "Inspect the latest saved source and PCB-only report. Source may be shared. Explain the cause and proposed fix before editing; this is not schematic parity or an electrical pass." }) }, `Explain this finding on ${detail.instanceName}: ${requestedFinding.description}. What should I check before fixing it?`);
     }}>Ask about finding</Button><Button size="sm" variant="ghost" disabled={nativeBusy} onClick={() => {
       const ui = useUiStore.getState();
       if (ui.activeProjectId === projectId && ui.assemblyFinding === requestedFinding) ui.setBoardTab("drc");
@@ -330,7 +324,7 @@ function AssemblyBoardDetail({ projectId, detail, current, checking, failed, onB
     {preview.isError ? <LoadError title="Could not load this board’s saved preview" onRetry={() => void preview.refetch()} /> : previewPath && preview.isPending ? <div className="flex h-full items-center justify-center"><Spinner /></div> : preview.data ? parseSvgViewBox(preview.data) ? <AssemblyPcbDrawing key={`${projectId}/${board.sourceId}/${board.manifestSha256}`} projectId={projectId} board={board} directory={detail.directory} svg={preview.data} visible={pcbView} findingPoint={findingVisible ? requestedFinding.point : null} onDismissFinding={dismissFinding} canSelect={editing && enabled} canPosition={editing && enabled && !updating && revision.data === "matches-source" && !revision.isFetching && !revision.isError} onBusyChange={onNativeBusy} /> : <div className="fd-assembly-safe-preview"><ProjectImage projectId={projectId} path={previewPath!} alt={`${detail.instanceName} saved PCB preview`} /><p>Saved preview · drawing coordinates unverified</p></div> : <EmptyState title="No saved PCB preview">Create a preview to see this saved board here. Its native source details appear above.</EmptyState>}
     {update.state.error && <p role="alert" className="fd-assembly-detail-error">{update.state.error}</p>}
     </div>
-    {schematicView && <AssemblySchematicPreview key={`${projectId}/${board.sourceId}/${board.manifestSha256}`} projectId={projectId} data={current} selection={detail.selection} enabled={enabled} onBusyChange={onNativeBusy} onSchematicAction={action => { if (enabled) askAbout(detail.selection, detail.instanceName, true, action); }} />}
+    {schematicView && <AssemblySchematicPreview key={`${projectId}/${board.sourceId}/${board.manifestSha256}`} projectId={projectId} data={current} selection={detail.selection} enabled={enabled} onBusyChange={onNativeBusy} />}
     {modelView && <AssemblyBoardModel key={`${projectId}/${board.sourceId}/${board.manifestSha256}`} projectId={projectId} data={current} selection={detail.selection} enabled={enabled} />}
     <p className="fd-assembly-detail-note">Source: {detail.sourceName}{owned && (current.assembly?.instances.filter(instance => instance.sourceId === detail.selection.sourceId).length ?? 0) > 1 ? ` · Shared by ${current.assembly!.instances.filter(instance => instance.sourceId === detail.selection.sourceId).length} boards` : ""} · Schematic, connection and fit checks unverified</p>
   </div>;

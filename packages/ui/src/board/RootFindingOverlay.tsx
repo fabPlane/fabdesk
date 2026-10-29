@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { assemblyFindingPreviewMatches, useCoreClient, usePcbCheckRevision, useProjectJson, useProjectText } from "@fabdesk/client-core";
 import { Button } from "../components/ui";
-import { newChatDraftKey, useUiStore } from "../stores/ui";
+import { useUiStore } from "../stores/ui";
+import { askAboutSurface } from "../chat/useAssistantSurface";
 import { svgPointToPercent, type SvgBox } from "./svg-coords";
 
 /** A saved finding is navigation evidence, never an editing selection or a new comment. */
@@ -53,11 +54,7 @@ export function RootFindingOverlay({ projectId, svg, box, ready }: { projectId: 
       <div><Button size="sm" disabled={!current} onClick={() => {
         const ui = useUiStore.getState();
         if (ui.activeProjectId !== projectId || ui.rootFinding !== finding) return;
-        const key = ui.activeThreadId ?? newChatDraftKey(projectId);
-        const prompt = `Help me understand this saved PCB check finding: ${JSON.stringify(finding.description)}. Report item: ${JSON.stringify(finding.itemDescription)} at X ${finding.point.x} mm, Y ${finding.point.y} mm. It was recorded in reports/drc.json for board.kicad_pcb SHA-256 ${finding.sourceSha256}. Inspect the latest saved sources and report before explaining whether it still applies. Explain the cause and proposed fix before making changes.`;
-        const previous = ui.drafts[key] ?? "";
-        ui.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt);
-        ui.focusComposer();
+        askAboutSurface({ projectId, label: "PCB / Saved finding", priority: 25, details: JSON.stringify({ source: "board.kicad_pcb", report: "reports/drc.json", finding: { description: finding.description, item: finding.itemDescription, pointMm: finding.point, recordedSourceSha256: finding.sourceSha256 }, locationVerified: !!visible, instruction: "Inspect latest saved source and report before explaining whether this finding still applies. Explain the cause and proposed fix before changing the design." }) }, `Explain this PCB finding: ${finding.description}. What should I check before fixing it?`);
       }}>Ask about finding</Button><Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setBoardTab("drc")}>Back to checks</Button><Button size="sm" variant="ghost" onClick={event => {
         const drawing = event.currentTarget.closest('[data-testid="board-pcb-svg"]')?.querySelector<HTMLElement>('[aria-label^="Drawing canvas"]') ?? event.currentTarget.closest('[data-testid="board-pcb-svg"]')?.querySelector<HTMLElement>('[data-testid="comment-mode"]');
         useUiStore.getState().dismissRootFinding(); requestAnimationFrame(() => drawing?.focus());

@@ -1,19 +1,16 @@
 import { DisclosureSummary } from "../components/DisclosureSummary";
-import { CanvasToolButton } from "../components/CanvasToolButton";
-import { Icon } from "../components/Icon";
 import { useEffect, useRef, useState } from "react";
 import type { ProjectBoardSources } from "@fabdesk/protocol";
-import { useCore, assemblySelectionState, captureAssemblySchematicInspection, pcbToolJson, useAssemblySchematicPreview, useRunTool, type AssemblySceneSelection } from "@fabdesk/client-core";
+import { assemblySelectionState, captureAssemblySchematicInspection, pcbToolJson, useAssemblySchematicPreview, useRunTool, type AssemblySceneSelection } from "@fabdesk/client-core";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
-import { newChatDraftKey, useUiStore } from "../stores/ui";
+import { useUiStore } from "../stores/ui";
 import { SvgViewer } from "./SvgViewer";
 import { parseSvgViewBox } from "./svg-coords";
+import { MissingNativeSource } from "./MissingNativeSource";
 
 /** Source-bound native sheet. Open missing previews automatically; source edits remain agent requests. */
-export function AssemblySchematicPreview({ projectId, data, selection, enabled, onBusyChange, onSchematicAction }: { projectId: string; data: ProjectBoardSources; selection: AssemblySceneSelection; enabled: boolean; onBusyChange: (busy: boolean) => void; onSchematicAction: (action: "find" | "generate" | "import") => void }) {
-  const { host } = useCore();
+export function AssemblySchematicPreview({ projectId, data, selection, enabled, onBusyChange }: { projectId: string; data: ProjectBoardSources; selection: AssemblySceneSelection; enabled: boolean; onBusyChange: (busy: boolean) => void }) {
   const autoAttempted = useRef(false);
-  const [picking, setPicking] = useState(false);
   const board = { sourceId: selection.sourceId, manifestSha256: selection.manifestSha256 }, owned = assemblySelectionState(data, selection) === "owned";
   const [page, setPage] = useState<string | null>(null), [error, setError] = useState<string | null>(null), [busy, setBusy] = useState(false), running = useRef(false);
   const preview = useAssemblySchematicPreview(projectId, board, page, enabled && owned), tool = useRunTool();
@@ -43,24 +40,11 @@ export function AssemblySchematicPreview({ projectId, data, selection, enabled, 
       void generate();
     }
   }, [enabled, owned, source?.schematicPath, state, preview.isFetching]);
-  const importSchematic = async () => {
-    if (picking || !enabled || !owned) return;
-    setPicking(true); setError(null);
-    try {
-      const paths = await host.pickFile({ multiple: true, filters: [{ name: "KiCad schematic and project files", extensions: ["kicad_sch", "kicad_pro", "sch", "lib", "dcm"] }] });
-      const ui = useUiStore.getState(), selected = ui.assemblyBoardByProject[projectId];
-      if (!paths.length || ui.activeProjectId !== projectId || selected?.instanceId !== selection.instanceId || selected.sourceId !== selection.sourceId || selected.manifestSha256 !== selection.manifestSha256) return;
-      const key = ui.activeThreadId ?? newChatDraftKey(projectId);
-      for (const path of paths) ui.addAttachment(key, { path, mime: "text/plain", label: path.split(/[\\/]/).at(-1) ?? path });
-      onSchematicAction("import");
-    } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
-    finally { setPicking(false); }
-  };
   if (!owned) return <EmptyState title="Schematic source changed or is unavailable">Select this board again before opening its saved schematic.</EmptyState>;
   if (preview.isError) return <LoadError title="Could not verify this source’s saved schematic preview" onRetry={() => { if (page) setPage(null); else void preview.refetch(); }} />;
   if (preview.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   const drawing = preview.data?.svg && parseSvgViewBox(preview.data.svg) ? preview.data.svg : null;
-  if (!source?.schematicPath && !drawing) return <div className="fd-assembly-schematic fd-assembly-schematic-empty"><EmptyState title="Add this board’s schematic" action={<div className="fd-schematic-start-actions"><div className="flex flex-wrap items-center justify-center gap-2"><Button disabled={!enabled || busy || picking} onClick={() => onSchematicAction("find")}><Icon name="search" width={16} height={16} aria-hidden="true" />Find with agent</Button><CanvasToolButton label={picking ? "Choosing files…" : "Import schematic"} icon="folderOpen" variant="secondary" disabled={!enabled || busy || picking} onClick={() => void importSchematic()} /><CanvasToolButton label="Generate with agent" icon="sparkles" variant="secondary" disabled={!enabled || busy || picking} onClick={() => onSchematicAction("generate")} /></div><p>Import and generation open a request for you to review and send.</p></div>}>No linked KiCad schematic was found in this board’s source folder. Find an existing design, import your files, or ask the agent to create one.{source?.pcbPath && <details className="mt-4"><DisclosureSummary icon="folderOpen" label="Source files" variant="compact" />{source.source.location === "project" && <p className="mt-2 break-all">{source.source.directory}</p>}<Button variant="ghost" disabled={!enabled || busy} onClick={() => { if (enabled && owned && !busy && source.pcbPath && useUiStore.getState().activeProjectId === projectId) useUiStore.getState().openProjectFile(source.pcbPath); }}>Browse source files</Button></details>}</EmptyState>{error && <p role="alert">{error}</p>}</div>;
+  if (!source?.schematicPath && !drawing) return <MissingNativeSource key={`${projectId}/${board.sourceId}/${board.manifestSha256}`} projectId={projectId} kind="schematic" enabled={enabled && !busy} selection={selection} membership={data} directory={source?.source.location === "project" ? source.source.directory : "."} name={source?.source.name ?? "Selected board"} />;
   const pages = preview.data?.sheets ?? [], pageIndex = pages.findIndex(sheet => sheet.path === preview.data?.sheet?.path);
   const showPrimaryRender = state !== "source-unchanged" || busy;
   const renderAction = <Button size="sm" disabled={!enabled || busy || preview.isFetching || !source?.schematicPath} onClick={() => void generate()}>{busy ? "Rendering sheets…" : preview.data?.sheets.length ? "Update schematic preview" : "Create schematic preview"}</Button>;

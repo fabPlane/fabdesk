@@ -18,7 +18,7 @@ import {
   useProjectText,
   useRunTool,
 } from "@fabdesk/client-core";
-import { newChatDraftKey, useUiStore } from "../stores/ui";
+import { useUiStore } from "../stores/ui";
 import { RootFindingOverlay } from "./RootFindingOverlay";
 import { NativePartTools } from "./NativePartTools";
 import { PcbPreviewStatus } from "./PcbPreviewStatus";
@@ -27,6 +27,7 @@ import { SvgViewer } from "./SvgViewer";
 import { type SvgPoint } from "./svg-coords";
 import { buildCommentsAskPrompt, pendingBoardComments } from "./comment-requests";
 import { SchematicPreviewStatus } from "./SchematicPreviewStatus";
+import { MissingNativeSource } from "./MissingNativeSource";
 
 const RENDER_TOOL = { schematic: "render_schematic_svg", pcb: "render_pcb_svg" } as const;
 
@@ -173,13 +174,6 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
     autoPreview.current = key;
     void render.run(RENDER_TOOL[kind], { projectId }).then(result => { if (result.status === "done") { void rendered.refetch(); if (kind === "pcb") void revision.refetch(); } });
   }, [projectId, active, scopeReady, projectWorking, threads.isPending, threads.isError, project.data, project.isPending, project.isFetching, project.isError, rendered.data, rendered.isPending, rendered.isError, render.state.status, kind, render.run]);
-  const askForSource = () => {
-    const ui = useUiStore.getState();
-    if (!projectId || ui.activeProjectId !== projectId || !scopeReady) return;
-    const key = ui.activeThreadId ?? newChatDraftKey(projectId), previous = ui.drafts[key] ?? "";
-    const prompt = `Help locate or create a native KiCad ${kind === "pcb" ? "PCB" : "schematic"} for this project. Review its saved files and explain what is missing before proposing changes.`;
-    ui.setDraft(key, previous.trim() ? `${previous}\n\n${prompt}` : prompt); ui.focusComposer();
-  };
 
   if (!projectId)
     return (
@@ -224,11 +218,8 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
                   <span>{nativeCoordinates ? `${canvasPoint.x.toFixed(1)}, ${canvasPoint.y.toFixed(1)} mm` : "Drawing location"}</span>
                   <Button variant="ghost" size="sm" onClick={() => {
                     const ui = useUiStore.getState();
-                    const key = ui.activeThreadId ?? newChatDraftKey(ui.activeProjectId);
-                    const prompt = `Explain this ${kind === "pcb" ? "PCB" : "schematic"} location near ${canvasPoint.x.toFixed(2)}, ${canvasPoint.y.toFixed(2)}${nativeCoordinates ? " native PCB mm" : kind === "pcb" ? " drawing units (PCB origin not verified)" : " SVG units"}.`;
-                    const existing = ui.drafts[key] ?? "";
-                    ui.setDraft(key, existing.trim() ? `${existing}\n\n${prompt}` : prompt);
-                    ui.focusComposer();
+                    if (ui.activeProjectId !== projectId) return;
+                    askAboutSurface({ projectId, label: `${kind === "pcb" ? "PCB" : "Schematic"} / Selected location`, priority: 20, details: JSON.stringify({ view: kind, source: kind === "pcb" ? "board.kicad_pcb" : "board.kicad_sch", point: canvasPoint, coordinateSystem: nativeCoordinates ? "kicad-pcb-mm" : "svg-units-unverified-native-origin", previewRevision: kind === "pcb" ? revision.data : "unverified", instruction: "Inspect the saved native design. Do not interpret unverified drawing coordinates as native millimetres or claim checks passed." }) }, `Explain the selected ${kind === "pcb" ? "PCB" : "schematic"} location and what I should check there.`);
                     setCanvasPoint(null);
                   }}><Icon name="sparkles" width={15} height={15} />Ask about this</Button>
                   <Button variant="ghost" size="sm" onClick={() => { setDraftPoint(canvasPoint); setCanvasPoint(null); setSelectedId(null); setCommentMode(true); }}><Icon name="pin" width={15} height={15} />Pin comment</Button>
@@ -368,9 +359,7 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
   }
   const sourcePath = kind === "pcb" ? "board.kicad_pcb" : "board.kicad_sch";
   if (!project.data?.files.some((file) => file.path === sourcePath))
-    return <div className="fd-canvas-empty h-full" data-testid={`board-${kind}-missing-source`}><EmptyState title={kind === "pcb" ? "This project needs a PCB" : "This project needs a schematic"} icon={<BoardOutline />} action={<Button disabled={!scopeReady} onClick={askForSource}>Ask about missing files</Button>}>
-      {kind === "pcb" ? "Add a KiCad board to this project to preview it here." : "Add a KiCad schematic to this project to preview it here."}
-    </EmptyState></div>;
+    return <MissingNativeSource key={`${projectId}/${kind}`} projectId={projectId} kind={kind} enabled={scopeReady} visible={active} />;
   const running = render.state.status === "running";
   const copy = svgArtifactCopy(kind);
   return (

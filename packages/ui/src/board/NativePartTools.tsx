@@ -11,7 +11,7 @@ import { NativePartTarget } from "./NativePartTarget";
 import { BoardChecksButton } from "./BoardChecksButton";
 import type { SvgBox } from "./svg-coords";
 import { NativeOutlinePanel } from "./NativeOutlinePanel";
-import { newChatDraftKey, useUiStore } from "../stores/ui";
+import { useUiStore } from "../stores/ui";
 
 type Selection = { part: PcbPartPosition; sourceSha256: string };
 type PositionRecovery = { part: PcbPartPosition; savedSha256: string };
