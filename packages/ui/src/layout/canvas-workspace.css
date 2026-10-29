@@ -791,3 +791,6 @@
 .fd-assembly-board-picker .fd-workspace-menu-content { width:320px; max-width:calc(100vw - 52px); }
 .fd-assembly-board-picker button > span { min-width:0; white-space:normal; }
 .fd-assembly-board-picker button small { display:block; margin-top:4px; color:var(--fd-muted); font-size:11px; }
+
+.fd-board-tools > summary { min-height:34px; padding:7px 12px; gap:8px; font-size:12px; }
+.fd-board-tool-active > summary { color:var(--fd-accent); border-color:var(--fd-accent); }

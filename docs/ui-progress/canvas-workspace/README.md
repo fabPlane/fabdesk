@@ -1621,3 +1621,13 @@ Actual VAIO I/O→LCD loaded the LCD native source29parts65×28.25mm; LCD→I/O 
 
 ![Declared board choices from the current editor](board-switcher-source-aware.png)
 ![Same requested picker at compact size](board-switcher-compact.png)
+
+
+## Requested root-board tools
+
+The root-board toolbar keeps PCB, Schematic and3D visible. Routing and Artwork move under one requested Tools menu; its active label identifies an opened tool. Workspace restore, command discovery and shortcut destinations retain every view. Existing comparison/check actions remain alongside the primary tabs. Assembly member capabilities stay separately qualified.
+
+Native routing opens the existing recorded failed run honestly; no new run was started. Artwork remains reachable without new art work. PCB return, compact layout and34protected-file preservation passed. UI types/233tests912assertions passed. [Evidence](board-tools-native.json).
+
+![Primary board views and requested tools](board-primary-tabs-tools.png)
+![Compact toolbar](board-tools-compact.png)

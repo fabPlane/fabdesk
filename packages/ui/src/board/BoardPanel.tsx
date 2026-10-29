@@ -1,3 +1,5 @@
+import { WorkspaceMenu } from "../layout/WorkspaceMenu";
+import { Icon } from "../components/Icon";
 import { BoardComparison } from "./BoardComparison";
 import { Button } from "../components/ui";
 import { ReviewUpdates } from "./ReviewUpdates";
@@ -83,7 +85,8 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
   const mod = modKey(host.platform);
   if (canvas) return <div className="fd-canvas-board" data-testid="board-panel">
     <div className="fd-canvas-controls">
-      {workspaceViews(area).length > 1 && <Tabs tabs={workspaceViews(area).map((item) => ({ id: item.tab, label: item.label }))} value={tab} onChange={setWorkspaceTab} />}
+      {workspaceViews(area).length > 1 && <Tabs tabs={workspaceViews(area).filter(item => area !== "boards" || item.tab !== "cinema" && item.tab !== "art").map((item) => ({ id: item.tab, label: item.label }))} value={tab} onChange={setWorkspaceTab} />}
+      {area === "boards" && <WorkspaceMenu className={`fd-board-tools ${tab === "cinema" || tab === "art" ? "fd-board-tool-active" : ""}`} label={<><span>{tab === "cinema" ? "Routing" : tab === "art" ? "Artwork" : "Tools"}</span><Icon name="chevronDown" width={14} height={14} /></>}><div className="fd-menu-caption">Board tools</div>{workspaceViews("boards").filter(item => item.tab === "cinema" || item.tab === "art").map(item => <button key={item.tab} aria-current={item.tab === tab ? "page" : undefined} onClick={() => setWorkspaceTab(item.tab)}>{item.label}</button>)}</WorkspaceMenu>}
       {compareAvailable && <Button className="fd-comparison-toggle" size="sm" aria-pressed={compare} onClick={() => useUiStore.getState().setBoardComparison(!compare)}>{compare ? "Close comparison" : `Show ${tab === "pcb" ? "schematic" : "PCB"} alongside`}</Button>}
       <div className="fd-canvas-checks">{assembly ? <Button size="sm" onClick={openChecks}>Board checks</Button> : order.data && <OrderChecksButton order={order.data} unavailable={order.isError || sources.isError || sources.isFetching || sources.data?.mode !== "single"} onClick={openOrder} onReviewChecks={openChecks} />}</div>
     </div>
