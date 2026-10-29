@@ -1581,3 +1581,13 @@ Native VAIO walkthrough covered dragging, renderer reload, keyboard nudging, boa
 ![Reset restores the declared presentation](board-map-layout-reset.png)
 
 Map-arrangement checkpoint: full root typecheck passed; standard suite **2276 passed /36 skipped /0 failures**. Focused client14/85assertions and UI233/912assertions passed. Skips are not native passes.
+
+
+## Targeted v6 fresh-start simplification
+
+Fresh projects have one centered composer and direct actions to draw/open a sketch, upload an image or import from GitHub. The artwork entry is a quiet link. The duplicate idea button and corner assistant are removed from this empty state; the corner assistant remains on populated workspaces. The global Export shortcut is removed; Outputs keeps its existing workspace home and exporter tools. This preserves real import capabilities and existing native behavior.
+
+Native walkthrough verified all three requested entry dialogs, dismissal focus, wide/compact layout and Outputs navigation. UI typecheck and233tests/912assertions passed; the preceding f073c74 full root suite remains2276/36/0. See [native proof](fresh-start-clarity-native.json).
+
+![One composer on a fresh project](fresh-start-one-composer.png)
+![Compact fresh start](fresh-start-compact.png)

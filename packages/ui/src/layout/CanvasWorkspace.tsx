@@ -62,7 +62,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const [creating, setCreating] = useState<"create" | "github" | null>(null);
   const [projectAction, setProjectAction] = useState<ProjectAction | null>(null);
   const ui = () => useUiStore.getState();
-  const name = project.data?.name ?? projects.data?.find((item) => item.id === projectId)?.name ?? "Untitled project";
+  const name = project.data?.name ?? projects.data?.find((item) => item.id === projectId)?.name ?? (projectId ? "Untitled project" : "New project");
   const conversationOnly = !boardOpen || (!projectId && !!threadId);
   const hasNativeDesign = project.data?.files.some((file) => file.path === "board.kicad_pcb" || file.path === "board.kicad_sch");
   const fresh = !threadId && !sourceId && !inventory && !order && (!projectId || (!!project.data && !boardSources.isError && boardSources.data?.mode === "single" && !hasNativeDesign && area === "boards" && boardTab === "pcb"));
@@ -97,7 +97,6 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       {projectId && !fresh && !sketchReference && <span className="fd-canvas-breadcrumb" title={selectedBoardName ?? areaLabel}><span>/</span><strong>{selectedBoardName ?? areaLabel}</strong></span>}
       <div className="fd-canvas-header-actions">
         <span className="fd-canvas-connection" title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`}><i data-connected={connected} />{connected ? local ? "Local workspace" : "Remote workspace" : "Reconnecting…"}</span>
-        {projectId && !fresh && <Button size="sm" onClick={() => openArea("outputs")}><Icon name="export" width={16} height={16} />Export</Button>}
         <WorkspaceMenu className="fd-workspace-overflow" label={<span aria-label="Workspace options"><Icon name="more" width={20} height={20} /></span>}>
           {fresh && projectId && <><div className="fd-menu-caption">Project tools</div>{(Object.keys(WORKSPACE_AREAS) as WorkspaceArea[]).map(key => <button key={key} onClick={() => openArea(key)}>{WORKSPACE_AREAS[key].label}</button>)}<div className="fd-menu-divider" /></>}
           <button onClick={() => ui().setPaletteOpen(true)}><Icon name="search" width={16} height={16} />Search commands</button>
@@ -136,7 +135,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
           <ThreadView presentation={fresh ? "start" : "chat"} referenceStart={referenceStart} />
         </section>
         {showAssistant && !assistantOpen && <button className="fd-ask-fabdesk" data-assistant-launcher onClick={() => { setAssistantOpen(true); ui().focusComposer(); }}><Icon name="sparkles" width={19} height={19} /><span>Ask fabPlane</span><Icon name="mic" width={19} height={19} /></button>}
-      {fresh && <><div className="fd-canvas-start-note">Your ideas and files stay with your project</div><button className="fd-ask-fabdesk" data-assistant-launcher onClick={() => ui().focusComposer()}><Icon name="sparkles" width={19} height={19} /><span>Ask fabPlane</span><Icon name="mic" width={19} height={19} /></button></>}
+      {fresh && <div className="fd-canvas-start-note">Your ideas and files stay with your project</div>}
     </main>
     <Dialog open={navigationOpen} onClose={() => setNavigationOpen(false)} bare ariaLabel="Projects and conversations" className="fd-canvas-drawer">
       <div className="fd-canvas-drawer-inner"><div className="fd-assistant-heading"><span>Projects & conversations</span><IconButton size="sm" title="Close navigation" onClick={() => setNavigationOpen(false)}><Icon name="close" width={17} height={17} /></IconButton></div>

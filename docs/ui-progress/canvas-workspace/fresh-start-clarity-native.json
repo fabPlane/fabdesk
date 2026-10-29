@@ -1,0 +1,22 @@
+{
+  "change": "Targeted v6 fresh-start and header simplification",
+  "nativeVerified": [
+    "One centered composer; no duplicate corner assistant or Describe an idea button",
+    "Sketch entry opens Draw with Import drawing available; Escape restores action focus",
+    "Image entry opens Upload image; no file chosen or uploaded",
+    "GitHub action opens existing public URL import dialog; no network import submitted",
+    "1440\u00d7870 and960\u00d7720 fit",
+    "Existing Outputs remains available through workspace switcher; real VAIO preview library loads; corner assistant remains closed after project content exists"
+  ],
+  "validation": "UI typecheck PASS;233 UI tests /912 assertions /0 failures. Prior full root f073c74:2276/36/0. No backend behavior changed.",
+  "limits": [
+    "No agent send, import, new artwork or export generation performed during this layout check",
+    "Existing GitHub-only import label retained to describe actual capability",
+    "No changes to Mechanical or Board Art tools"
+  ],
+  "screenshots": [
+    "fresh-start-one-composer.png",
+    "fresh-start-compact.png",
+    "outputs-through-workspace-switcher.png"
+  ]
+}

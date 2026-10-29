@@ -85,16 +85,11 @@
 .fd-start-view .fd-composer { border-radius:20px; border-color:var(--fd-border); box-shadow:0 5px 18px #102a200c; }
 .fd-start-view .fd-composer textarea { padding:16px 18px 6px; }
 .fd-start-view .fd-composer-toolbar { padding:4px 12px 10px; }
+.fd-fresh-art-link { display:block; margin:18px auto 0; color:var(--fd-muted); font-size:12px; text-underline-offset:3px; }
+.fd-fresh-art-link:hover { color:var(--fd-fg); text-decoration:underline; }
+.fd-fresh-art-link:focus-visible { outline:2px solid var(--fd-accent); outline-offset:5px; border-radius:3px; }
 .fd-fresh-actions { display:flex; flex-wrap:wrap; align-items:start; justify-content:center; gap:10px; margin:28px auto 0; }
-.fd-fresh-actions > button,.fd-start-sketch-menu > summary { height:52px; padding:0 20px; display:flex; gap:10px; align-items:center; border:1px solid var(--fd-border); border-radius:13px; background:var(--fd-panel); box-shadow:none; font-size:13px; font-weight:450; }
-.fd-start-sketch-menu { position:relative; }
-.fd-start-sketch-menu > summary { cursor:pointer; list-style:none; }
-.fd-start-sketch-menu > summary::-webkit-details-marker { display:none; }
-.fd-start-sketch-menu[open] > summary { background:color-mix(in srgb,var(--fd-accent) 7%,var(--fd-panel)); border-color:color-mix(in srgb,var(--fd-accent) 20%,var(--fd-border)); }
-.fd-start-sketch-menu > div { position:absolute; z-index:20; left:0; top:calc(100% + 8px); width:270px; max-width:calc(100vw - 48px); border:1px solid var(--fd-border); border-radius:15px; background:var(--fd-panel); padding:10px; box-shadow:0 10px 35px #102a2015; }
-.fd-start-sketch-menu button { display:flex; width:100%; min-height:42px; align-items:center; gap:12px; padding:8px 10px; border-radius:7px; font-size:13px; text-align:left; }
-.fd-start-sketch-menu button:hover { background:var(--fd-panel-2); }
-.fd-start-sketch-menu p { font-size:11px; color:var(--fd-muted); border-top:1px solid var(--fd-border); margin:8px 4px 0; padding-top:12px; }
+.fd-fresh-actions > button { height:52px; padding:0 20px; display:flex; gap:10px; align-items:center; border:1px solid var(--fd-border); border-radius:13px; background:var(--fd-panel); box-shadow:none; font-size:13px; font-weight:450; }
 .fd-project-overview { height:100%; overflow:auto; display:grid; grid-template-rows:auto minmax(180px,1fr) auto; gap:18px; padding:22px 40px 90px; text-align:center; }
 .fd-overview-heading { margin:0 auto; }
 .fd-overview-heading h1 { font-size:21px; font-weight:550; letter-spacing:-.45px; margin:4px 0 7px; }
@@ -139,15 +134,14 @@
   .fd-canvas-destinations { top:18px; left:20px; }
   .fd-canvas-checks { margin-left:auto; }
   .fd-assistant-dock { right:12px; bottom:12px; width:calc(100% - 24px); height:calc(100% - 30px); }
-  .fd-fresh-actions { max-width:480px; }
-  .fd-fresh-actions > button,.fd-start-sketch-menu { flex:1 1 42%; }
-  .fd-start-sketch-menu > summary { width:100%; justify-content:center; }
+  .fd-fresh-actions { max-width:680px; }
+  .fd-fresh-actions > button { flex:1 1 auto; }
   .fd-start-view .fd-hero-description { font-size:14px; }
   .fd-overview-facts { flex-wrap:wrap; }
   .fd-project-overview { padding-inline:20px; }
 }
 @media(prefers-reduced-motion:no-preference) {
-  .fd-assistant-dock,.fd-workspace-menu[open] > .fd-workspace-menu-content,.fd-start-sketch-menu[open] > div { animation:fd-canvas-reveal 170ms ease-out; }
+  .fd-assistant-dock,.fd-workspace-menu[open] > .fd-workspace-menu-content { animation:fd-canvas-reveal 170ms ease-out; }
   .fd-ask-fabdesk,.fd-fresh-actions > button { transition:box-shadow 160ms ease,transform 160ms ease; }
   .fd-ask-fabdesk:hover { transform:translateY(-2px); box-shadow:0 6px 18px #102a2020; }
   @keyframes fd-canvas-reveal { from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)} }
@@ -472,8 +466,6 @@
 .fd-canvas-breadcrumb { min-width:0; }
 .fd-canvas-breadcrumb > strong { min-width:0; overflow:hidden; text-overflow:ellipsis; font:inherit; }
 
-.fd-start-sketch-menu button > span { display:flex; flex-direction:column; gap:4px; white-space:normal; }
-.fd-start-sketch-menu button small { font-size:11px; color:var(--fd-muted); }
 .fd-composer-more > summary { border:0; box-shadow:none; padding:6px; min-height:30px; background:transparent; }
 .fd-composer-more .fd-workspace-menu-content { top:auto; bottom:calc(100% + 10px); width:240px; max-width:calc(100vw - 48px); }
 
