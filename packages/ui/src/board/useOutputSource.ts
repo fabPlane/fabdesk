@@ -1,4 +1,4 @@
-import { captureAssemblySelection, restoreAssemblySelection, useBoardSources } from "@fabdesk/client-core";
+import { captureAssemblySourceSelection, restoreAssemblySelection, useBoardSources } from "@fabdesk/client-core";
 import { useEffect, useState } from "react";
 import { useUiStore } from "../stores/ui";
 
@@ -17,8 +17,8 @@ export function useOutputSource(projectId: string) {
   const choose = (id: string) => {
     if (!data?.manifestSha256 || sources.isFetching || sources.isError || useUiStore.getState().activeProjectId !== projectId) return;
     setRequested({ sourceId: id, manifestSha256: data.manifestSha256 });
-    const instance = data.assembly?.instances.find(instance => instance.sourceId === id), selection = instance ? captureAssemblySelection(data, instance.id) : null;
-    if (selection && data.sources.find(row => row.source.id === id)?.status === "available") useUiStore.getState().setAssemblyBoard(selection);
+    const ui = useUiStore.getState(), selection = captureAssemblySourceSelection(data, id, ui.assemblyBoardByProject[projectId]);
+    if (selection) ui.setAssemblyBoard(selection);
   };
   return { sources, data, assembly, sourceId, row, board, prefix, ready, choose };
 }

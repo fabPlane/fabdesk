@@ -4,7 +4,7 @@ import { ErrorNotice } from "../components/ErrorNotice";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { lazy, Suspense, useState } from "react";
 import type { ProjectBoardSources } from "@fabdesk/protocol";
-import { assemblySelectionState, captureAssemblySelection, pcbToolJson, restoreAssemblySelection, useAssemblyBoardModel, useRunTool, type AssemblySceneSelection } from "@fabdesk/client-core";
+import { assemblySelectionState, captureAssemblySourceSelection, pcbToolJson, restoreAssemblySelection, useAssemblyBoardModel, useRunTool, type AssemblySceneSelection } from "@fabdesk/client-core";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 const ModelCanvas = lazy(() => import("./ModelCanvas"));
@@ -53,7 +53,7 @@ export function AssemblyModels({ projectId, data, checking, failed, onRetry }: {
   const owned = selection && assemblySelectionState(data, selection) === "owned";
   const choose = (sourceId: string) => {
     const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId || checking || failed) return;
-    const instance = data.assembly?.instances.find(row => row.sourceId === sourceId), next = instance ? captureAssemblySelection(data, instance.id) : null;
+    const next = captureAssemblySourceSelection(data, sourceId, ui.assemblyBoardByProject[projectId]);
     if (next && assemblySelectionState(data, next) !== "owned") return;
     setSelection(next); ui.setAssemblyBoard(next);
   };

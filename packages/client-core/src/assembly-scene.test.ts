@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { ProjectBoardSources } from "@fabdesk/protocol";
-import { nextAssemblyReviewSelection, restoreAssemblySelection, assemblyLinkShape, assemblyScene, assemblySourcesToReview, captureAssemblySelection, assemblySelectionState, inspectAssemblyBoard } from "./assembly-scene";
+import { captureAssemblySourceSelection, nextAssemblyReviewSelection, restoreAssemblySelection, assemblyLinkShape, assemblyScene, assemblySourcesToReview, captureAssemblySelection, assemblySelectionState, inspectAssemblyBoard } from "./assembly-scene";
 const source = { id: "io", name: "I/O", location: "project", directory: "boards/io" };
 const data = () => ProjectBoardSources.parse({ projectId: "project", mode: "assembly", manifestSha256: "a".repeat(64), editing: "single-board-only", observedAt: "2026-10-28T00:00:00Z", assembly: { contract: "fabplane.assembly.v1", sources: [source], instances: [{ id: "left", name: "Left I/O", sourceId: "io", presentation: { units: "canvas-px", x: -100, y: -40 } }, { id: "right", name: "Right I/O", sourceId: "io", presentation: { units: "canvas-px", x: 360, y: 240 } }], connections: [{ id: "link", name: "Declared link", a: { instanceId: "left", connector: "J1" }, b: { instanceId: "right", connector: "J1" } }] }, sources: [{ source, status: "available", pcbPath: "boards/io/board.kicad_pcb", previewPath: "boards/io/renders/pcb.svg" }] });
 test("scene membership uses physical instances without duplicating source ownership or converting canvas positions to millimetres", () => {
@@ -113,4 +113,25 @@ test("source review never invents instances or crosses a missing assembly declar
   expect(nextAssemblyReviewSelection(snapshot, ["not-declared"], null)).toBeNull();
   expect(nextAssemblyReviewSelection({ ...snapshot, mode: "single", assembly: null }, ["io"], null)).toBeNull();
   expect(nextAssemblyReviewSelection({ ...snapshot, manifestSha256: null }, ["io"], null)).toBeNull();
+});
+
+test("source-task navigation preserves the chosen shared instance and rejects stale or unavailable ownership", () => {
+  const snapshot = data(), right = captureAssemblySelection(snapshot, "right")!;
+  expect(captureAssemblySourceSelection(snapshot, "io", right)).toEqual(right);
+  expect(captureAssemblySourceSelection(snapshot, "io", { ...right, projectId: "other" })?.instanceId).toBe("left");
+  const changed = { ...snapshot, manifestSha256: "b".repeat(64) };
+  expect(captureAssemblySourceSelection(changed, "io", right)).toMatchObject({ instanceId: "left", manifestSha256: changed.manifestSha256 });
+  expect(captureAssemblySourceSelection(snapshot, "unknown", right)).toBeNull();
+  const unavailable = { ...snapshot, sources: snapshot.sources.map(row => ({ ...row, status: "blocked" as const })) };
+  expect(captureAssemblySourceSelection(unavailable, "io", right)).toBeNull();
+  expect(captureAssemblySourceSelection({ ...snapshot, mode: "single", assembly: null }, "io", right)).toBeNull();
+});
+
+test("choosing another source captures its instance instead of keeping the old source", () => {
+  const snapshot = data(), aux = { id: "aux", name: "Aux", location: "project", directory: "boards/aux" };
+  const extended = ProjectBoardSources.parse({ ...snapshot,
+    assembly: { ...snapshot.assembly, sources: [...snapshot.assembly!.sources, aux], instances: [...snapshot.assembly!.instances, { id: "aux-main", name: "Aux main", sourceId: "aux" }] },
+    sources: [...snapshot.sources, { source: aux, status: "available", pcbPath: "boards/aux/board.kicad_pcb" }],
+  });
+  expect(captureAssemblySourceSelection(extended, "aux", captureAssemblySelection(extended, "right"))).toMatchObject({ instanceId: "aux-main", sourceId: "aux", projectId: snapshot.projectId });
 });

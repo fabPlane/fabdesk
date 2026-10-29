@@ -62,6 +62,14 @@ export function restoreAssemblySelection(data: ProjectBoardSources, saved: unkno
   const selection = { ...parsed.data, projectId: row.projectId, instanceId: row.instanceId };
   return assemblySelectionState(data, selection) === "owned" ? selection : null;
 }
+/** Source tasks keep an already-owned physical instance instead of silently choosing its sibling. */
+export function captureAssemblySourceSelection(data: ProjectBoardSources, sourceId: string, previous?: unknown): AssemblySceneSelection | null {
+  const restored = restoreAssemblySelection(data, previous);
+  if (restored?.sourceId === sourceId) return restored;
+  const instance = data.mode === "assembly" ? data.assembly?.instances.find(row => row.sourceId === sourceId) : undefined;
+  const next = instance ? captureAssemblySelection(data, instance.id) : null;
+  return next && assemblySelectionState(data, next) === "owned" ? next : null;
+}
 export async function inspectAssemblyBoard(client: Pick<CoreClient, "callTool">, projectId: string, board: BoardSourceSelection) {
   const selector = Object.freeze(BoardSourceSelection.parse(board));
   const body = pcbToolJson(await client.callTool("pcb_inspect", { projectId, board: selector, kinds: ["components", "board_geometry"], limitPerKind: 200 }));
