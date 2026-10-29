@@ -1631,3 +1631,5 @@ Native routing opens the existing recorded failed run honestly; no new run was s
 
 ![Primary board views and requested tools](board-primary-tabs-tools.png)
 ![Compact toolbar](board-tools-compact.png)
+
+Full accumulated verification at **e5d9c63**: root typecheck PASS; standard suite **2277 passed /36 skipped /0 failures**, 17 batches. [Validation record](v6-workflow-validation.json).
