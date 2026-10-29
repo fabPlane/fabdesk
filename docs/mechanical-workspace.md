@@ -24,13 +24,13 @@ The left column contains the supplied design concepts; the right column shows th
 
 ### Usability refinement
 
-Panels reserve space beside the 3D render surface, so Fit no longer frames models underneath controls. Narrow layouts show one inspector at a time. Labels and buttons are larger, and SVG icons share the app's stroke style.
+Panels reserve space beside the 3D render surface, so Fit no longer frames models underneath controls. Narrow layouts show one inspector at a time. Existing assemblies open with the Parts list. The inspector groups X/Y/Z into rows, labels units once per group, explains uniform scale, and separates Move/Rotate/Measure from secondary actions. Save status remains visible beside chat. Labels and buttons are larger, and SVG icons share the app's stroke style.
 
 | Previous layout | Refined layout |
 | --- | --- |
 | ![Before: split canvas and overlapping tools](screenshots/mechanical-workspace/06-before-usability.png) | ![After: focus canvas, clear editing state and dedicated export](screenshots/mechanical-workspace/07-export-and-edit-state.png) |
 
-![Chat beside a docked inspector](screenshots/mechanical-workspace/08-chat-and-inspector.png)
+![Compact CAD panel beside chat (cropped to the workspace)](screenshots/mechanical-workspace/08-chat-and-inspector.png)
 
 ### Light theme
 
@@ -59,6 +59,7 @@ The board fallback is an outline bounding envelope with estimated component size
 - All 217 UI tests and all 172 client-core tests pass. Focused mechanical/CAD coverage: 22 tests (5 persistence/pose/import-policy, 4 mesh decoding/coordinate-frame, 13 CAD tools).
 - Full root suite: 1,863 passed, 35 failed. Failures match the earlier main baseline (34 in the full baseline log plus the separately reproduced MCP progress-timing failure). These include Windows process/symlink/platform assumptions, router/runtime checks and unrelated existing assertions; this is not an all-green root run.
 - Live app: native mouse orbit, move handle, rotation ring, scroll zoom and two-point measurement; exact negative/decimal coordinates; STL/OBJ/GLB imports; malformed mesh rejection; original-file preservation; undo/redo; remove/undo; scale persistence after reopening; preview/cancel preserving existing files; Apply creating STL/STEP; moved/rotated board-case alignment; compact explode controls; dark/light rendering; Advanced CAD dialog.
+- Readability follow-up: 217 UI tests, UI typecheck and desktop build pass; live verification of default Parts view, aligned/non-overlapping XYZ fields, negative decimal editing with undo, and visible scale/save status in a 767px-wide chat layout.
 - Usability follow-up: persisted focus/chat preference across project reopen; no canvas/inspector overlap at 646px workspace width; scale dimensions, keyboard undo/redo and text-field guards; F/Esc; view-cube keyboard activation; exploded-view return; separate review/export; valid base/lid STL and STEP blobs through the download buttons; OBJ import while Export is open closes Export and selects the import; import undo. Idle WebGL draw calls: **0** over 500ms, with drawing resuming on camera input. Preview/cancel again preserved all six checked PCB/layout/spec/export files.
 - Detailed GLB export was exercised with `mechanical/runtime-board.kicad_pcb` and KiCad 10.0.5. The separate enclosure fixture supplies the screenshots above.
 

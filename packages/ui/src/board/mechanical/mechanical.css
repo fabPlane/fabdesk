@@ -578,9 +578,6 @@
   }
 }
 @container (max-width: 1000px) {
-  .fd-mechanical-save {
-    display: none;
-  }
   .fd-mechanical-left {
     width: 215px;
   }
@@ -679,7 +676,8 @@
   --cad-right: 320px;
 }
 .fd-mechanical-stage {
-  inset: 200px calc(var(--cad-right) + 20px) 150px calc(var(--cad-left) + 20px);
+  inset: clamp(140px, 24%, 200px) calc(var(--cad-right) + 20px) clamp(100px, 18%, 150px)
+    calc(var(--cad-left) + 20px);
 }
 .fd-mechanical svg {
   display: inline-block;
@@ -695,7 +693,7 @@
 .fd-mechanical-card label,
 .fd-mechanical-card summary,
 .fd-mechanical-parts strong {
-  font-size: 12px;
+  font-size: 13px;
 }
 .fd-mechanical-card h2 {
   font-size: 15px;
@@ -752,24 +750,112 @@
   color: var(--fd-muted);
   font-size: 11px;
 }
+.fd-mechanical-tool-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+  padding: 4px;
+  background: var(--fd-bg);
+  border: 1px solid var(--fd-border);
+  border-radius: 10px;
+}
+.fd-mechanical-selection-tools .fd-mechanical-tool-row button {
+  padding: 8px 4px;
+  font-size: 13px;
+}
+.fd-mechanical-align {
+  width: 100%;
+  text-align: left;
+  color: var(--fd-muted);
+}
+.fd-mechanical-selection details {
+  padding: 14px 0 0;
+  margin-top: 14px;
+}
+.fd-mechanical-selection summary {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--fd-fg);
+}
 .fd-mechanical-transform {
-  gap: 8px;
+  display: block;
 }
 .fd-mechanical-transform fieldset {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
   width: 100%;
-  flex-wrap: wrap;
+  min-width: 0;
+  margin-top: 16px;
+}
+.fd-mechanical-transform legend {
+  font-size: 13px;
+  color: var(--fd-fg);
+  margin: 0 0 8px;
+  width: 100%;
+}
+.fd-mechanical-transform legend span {
+  float: right;
+  color: var(--fd-muted);
+  font-size: 12px;
 }
 .fd-mechanical-transform fieldset label {
-  flex: 1 1 100%;
-  justify-content: space-between;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+}
+.fd-mechanical-transform fieldset label > span {
+  font-weight: 600;
+  font-size: 12px;
 }
 .fd-mechanical-transform fieldset input {
-  width: 165px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 6px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
-.fd-mechanical-transform button {
+.fd-mechanical-transform input::-webkit-inner-spin-button,
+.fd-mechanical-transform input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+.fd-mechanical-transform .fd-mechanical-scale {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 18px 0;
+  font-size: 13px;
+}
+.fd-mechanical-scale small {
+  display: block;
+  font-size: 11px;
+  color: var(--fd-muted);
+  margin-top: 4px;
+}
+.fd-mechanical-scale input {
+  width: 76px;
+  font-size: 13px !important;
+}
+.fd-mechanical-part-actions {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--fd-border);
+  padding-top: 14px;
+}
+.fd-mechanical-part-actions button {
   font-size: 12px;
   border: 1px solid var(--fd-border);
   width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+}
+.fd-mechanical-part-actions button:last-child {
+  color: var(--fd-danger);
 }
 .fd-mechanical-viewport-tools {
   position: absolute;
@@ -900,8 +986,8 @@
     font-size: 11px;
   }
   .fd-mechanical-stage {
-    top: 230px;
-    bottom: 190px;
+    top: clamp(150px, 28%, 230px);
+    bottom: clamp(120px, 22%, 190px);
   }
   .fd-mechanical-viewport-tools {
     top: 150px;

@@ -295,6 +295,7 @@ export function MechanicalWorkspace({
               Number(res.params?.["floorMm"] ?? 2) + Number(res.params?.["standoffMm"] ?? 3);
         itemsRef.current = next;
         setItems(next);
+        setPanel(next.length ? "assembly" : "add");
         setSaveState("Saved in project");
         setLoaded(true);
       } catch (e) {
@@ -768,7 +769,7 @@ export function MechanicalWorkspace({
       {panel === "assembly" && !preview && (
         <aside className="fd-mechanical-card fd-mechanical-left">
           <div className="fd-mechanical-card-heading">
-            <h2>Assembly</h2>
+            <h2>Parts</h2>
             <span>
               {items.length} {items.length === 1 ? "part" : "parts"}
             </span>
@@ -948,29 +949,35 @@ export function MechanicalWorkspace({
               {dimensions ?? "Loading dimensions…"}
               <small>World bounds · X × Y × Z</small>
             </p>
-            {(
-              [
-                ["translate", "Move"],
-                ["rotate", "Rotate"],
-                ["measure", "Measure"],
-              ] as const
-            ).map(([m, label]) => (
-              <button
-                key={m}
-                aria-pressed={mode === m}
-                disabled={!editable}
-                onClick={() => setMode(mode === m ? "orbit" : m)}
-              >
-                {label}
-              </button>
-            ))}
-            <button disabled={!editable || current.kind === "board"} onClick={align}>
+            <div className="fd-mechanical-tool-row">
+              {(
+                [
+                  ["translate", "Move"],
+                  ["rotate", "Rotate"],
+                  ["measure", "Measure"],
+                ] as const
+              ).map(([m, label]) => (
+                <button
+                  key={m}
+                  aria-pressed={mode === m}
+                  disabled={!editable}
+                  onClick={() => setMode(mode === m ? "orbit" : m)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button
+              className="fd-mechanical-align"
+              disabled={!editable || current.kind === "board"}
+              onClick={align}
+            >
               Center on PCB
             </button>
           </div>
           {mode !== "measure" && (
             <details open>
-              <summary>Position, rotation & scale · mm</summary>
+              <summary>Transform</summary>
               <div className="fd-mechanical-transform">
                 {(
                   [
@@ -979,10 +986,12 @@ export function MechanicalWorkspace({
                   ] as const
                 ).map(([key, label, unit]) => (
                   <fieldset key={key}>
-                    <legend>{label}</legend>
+                    <legend>
+                      {label} <span>{unit}</span>
+                    </legend>
                     {["X", "Y", "Z"].map((axis, index) => (
-                      <label key={axis}>
-                        {axis}
+                      <label key={axis} data-axis={axis}>
+                        <span>{axis}</span>
                         <TransformNumber
                           key={`${current.id}-${key}-${axis}`}
                           label={`${label} ${axis}`}
@@ -995,13 +1004,14 @@ export function MechanicalWorkspace({
                             });
                           }}
                         />
-                        <small>{unit}</small>
                       </label>
                     ))}
                   </fieldset>
                 ))}
-                <label>
-                  Scale
+                <label className="fd-mechanical-scale">
+                  <span>
+                    Uniform scale <small>1 = original size</small>
+                  </span>
                   <TransformNumber
                     key={`${current.id}-scale`}
                     label="Model scale"
@@ -1012,23 +1022,25 @@ export function MechanicalWorkspace({
                     onCommit={(scale) => patch(current.id, { scale })}
                   />
                 </label>
-                <button
-                  disabled={!editable}
-                  onClick={() =>
-                    patch(current.id, { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 })
-                  }
-                >
-                  Reset transform
-                </button>
-                <button
-                  disabled={!editable}
-                  onClick={() => {
-                    commit(items.filter((i) => i.id !== current.id));
-                    setSelected(null);
-                  }}
-                >
-                  Remove from assembly
-                </button>
+                <div className="fd-mechanical-part-actions">
+                  <button
+                    disabled={!editable}
+                    onClick={() =>
+                      patch(current.id, { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 })
+                    }
+                  >
+                    Reset transform
+                  </button>
+                  <button
+                    disabled={!editable}
+                    onClick={() => {
+                      commit(items.filter((i) => i.id !== current.id));
+                      setSelected(null);
+                    }}
+                  >
+                    Remove from assembly
+                  </button>
+                </div>
               </div>
             </details>
           )}
