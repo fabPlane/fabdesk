@@ -365,6 +365,12 @@
 .fd-assembly-context { position:absolute; z-index:8; width:max-content; max-width:calc(100% - 32px); display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:7px; padding:8px 12px; border:1px solid var(--fd-border); border-radius:24px; background:var(--fd-panel); box-shadow:0 4px 20px #102a2018; font-size:12px; }
 .fd-assembly-context > strong { font-size:12px; padding-right:10px; border-right:1px solid var(--fd-border); }
 .fd-assembly-context > span { font-size:10px; color:var(--fd-muted); max-width:100%; overflow-wrap:anywhere; }
+.fd-assembly-source-details { padding:8px 10px; font-size:11px; color:var(--fd-muted); overflow-wrap:anywhere; }
+.fd-assembly-source-details strong { color:var(--fd-fg); font-weight:600; }
+.fd-assembly-source-details p { margin-top:6px; }
+.fd-assembly-source-details dt { font-weight:600; margin-top:8px; }
+.fd-assembly-source-details dt:first-child { margin-top:0; }
+.fd-assembly-source-details dd { margin:3px 0 0; }
 .fd-assembly-dismiss { color:var(--fd-muted); padding:4px; border-radius:50%; }
 .fd-assembly-camera { position:absolute; bottom:24px; left:26px; z-index:5; display:flex; align-items:center; gap:3px; padding:5px 9px; background:var(--fd-panel); border:1px solid var(--fd-border); border-radius:24px; box-shadow:0 3px 10px #102a2010; }
 .fd-assembly-camera > span { min-width:45px; text-align:center; font-size:11px; color:var(--fd-muted); }
