@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { cn } from "../util";
-import { Icon } from "./Icon";
+import { Icon, type IconName } from "./Icon";
 import { tabDestination, tabStopIndices } from "./keyboard";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
@@ -244,23 +244,26 @@ export function Tabs<T extends string>({
   onChange,
   className,
   variant = "pills",
+  iconOnly = false,
 }: {
-  tabs: Array<{ id: T; label: string; hint?: string }>;
+  tabs: Array<{ id: T; label: string; hint?: string; icon?: IconName }>;
   value: T;
   onChange: (t: T) => void;
   className?: string;
   variant?: "pills" | "underline";
+  iconOnly?: boolean;
 }) {
   // A secondary tool can own the current workspace while its primary view tabs remain visible.
   // Keep one keyboard entry point without falsely marking that view as selected.
   const focusableTab = tabs.some(tab => tab.id === value) ? value : tabs[0]?.id;
   return (
-      <div className={cn("flex items-center overflow-x-auto", variant === "underline" ? "fd-tabs-underline" : "gap-1", className)} role="tablist">
+      <div className={cn("flex items-center overflow-x-auto", variant === "underline" ? "fd-tabs-underline" : "gap-1", iconOnly && "fd-icon-tabs", className)} role="tablist">
       {tabs.map((t) => (
         <button
           key={t.id}
           role="tab"
           aria-selected={t.id === value}
+          aria-label={iconOnly ? t.label : undefined}
           tabIndex={t.id === focusableTab ? 0 : -1}
           onKeyDown={(e) => {
             const index = tabs.findIndex((tab) => tab.id === t.id);
@@ -280,7 +283,7 @@ export function Tabs<T extends string>({
               : cn("h-8 rounded-md", t.id === value ? "bg-panel-2 text-fg shadow-sm" : "text-muted hover:text-fg hover:bg-panel-2/60"),
           )}
         >
-          {t.label}
+          {iconOnly && t.icon ? <><Icon name={t.icon} width={18} height={18} aria-hidden="true" /><span className="fd-canvas-tool-label" aria-hidden="true">{t.label}</span></> : t.label}
         </button>
       ))}
     </div>

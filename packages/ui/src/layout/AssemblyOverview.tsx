@@ -243,10 +243,10 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
               if (event.key === "Enter" || event.key === " ") { event.preventDefault(); choose(node); focusToolsFrom(event.currentTarget, `board:${node.instance.id}`); }
             }}>
             <title>{node.instance.name} — {node.source?.source.name ?? node.instance.sourceId}. {text}</title>
-            <rect className="fd-assembly-card" data-selected={selected?.instanceId === node.instance.id} width={210} height={118} rx={12} />
+            <rect className="fd-assembly-card" data-selected={selected?.instanceId === node.instance.id} data-unavailable={status !== "available"} width={210} height={158} rx={12} />
             <BoardImage projectId={projectId} node={node} />
-            <text className="fd-assembly-node-title" x={0} y={138}>{shortened(node.instance.name)}</text>
-            <text className="fd-assembly-node-note" data-warning={warning} x={0} y={155}>{shortened(text, 32)}</text>
+            <text className="fd-assembly-node-title" x={12} y={130}>{shortened(node.instance.name)}</text>
+            <text className="fd-assembly-node-note" data-warning={warning} x={12} y={148}>{shortened(text, 32)}</text>
           </g>;
         })}
       </svg>

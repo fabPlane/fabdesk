@@ -106,11 +106,8 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
     if (event.key === "Escape" && selected) { event.stopPropagation(); deselect(); }
   }}>
     <header className="fd-output-library-heading">
-      <div className="sr-only"><h2>Project outputs</h2><p>Saved images, videos, models and manufacturing files.</p></div>
+      <div><h2>Saved outputs</h2><p>Images, videos, models and manufacturing files from this project.</p></div>
       {outputs.some(file => sourceInfo(file.path).warning) && <Button className="fd-output-review" size="sm" variant="ghost" onClick={() => useUiStore.getState().setBoardTab("updates")}><Icon name="warning" width={16} height={16} />Review updates · {outputs.filter(file => sourceInfo(file.path).warning).length}</Button>}
-    </header>
-    <div className="fd-output-toolbar">
-      <div className="fd-output-filters" role="group" aria-label="Filter saved outputs">{FILTERS.map(item => <Button ref={item.id === "manufacturing" ? manufacturingFilter : undefined} size="sm" key={item.id} aria-pressed={filter === item.id} onClick={() => { setFilter(item.id); setSelected(null); }}>{item.label}</Button>)}</div>
       <WorkspaceMenu className="fd-output-create" label={<><span>Create output</span><Icon name="plus" width={16} height={16} /></>}>
         {!sourceReady && <div className="fd-menu-caption">{boardSources.isError ? "Board sources could not be checked." : "Checking board sources…"}</div>}
         {boardSources.isError && <button onClick={() => void boardSources.refetch()}>Retry source check</button>}
@@ -120,12 +117,16 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
         <button disabled={!rootGenerationReady} title={assembly ? "Member video export is not available yet" : !hasPcb ? "Add a saved PCB first" : undefined} onClick={() => create("video")}>Make video…</button>
         <button onClick={() => create("files")}>Export files…</button>
       </WorkspaceMenu>
-    </div>
+    </header>
+    <div className="fd-output-toolbar">
     <div className="fd-output-discovery" aria-label="Find saved outputs">
       <label className="fd-output-search"><Icon name="search" width={16} height={16} /><input ref={search} aria-label="Find saved outputs" placeholder="Find an output…" value={query} onChange={event => { setQuery(event.target.value); setSelected(null); setError(null); }} /></label>
       {assembly && <label className="fd-output-scope">Source<select aria-label="Filter output source" value={sourceScope} onChange={event => { setSourceScope(event.target.value); setSelected(null); setError(null); }}><option value="all">All sources</option><option value="project">Project outputs</option>{boardSources.data?.sources.map(row => <option key={row.source.id} value={`source:${row.source.id}`}>{row.source.name}</option>)}{sourceScope.startsWith("source:") && !boardSources.data?.sources.some(row => `source:${row.source.id}` === sourceScope) && <option value={sourceScope} disabled>Source unavailable</option>}</select></label>}
       <span role="status">{shown.length} of {outputs.length} saved files</span>
       {(query || sourceScope !== "all" || filter !== "all") && <Button size="sm" variant="ghost" onClick={() => { setQuery(""); setSourceScope("all"); setFilter("all"); setSelected(null); setError(null); search.current?.focus(); }}>Clear filters</Button>}
+    </div>
+      <div className="fd-output-filters" role="group" aria-label="Filter saved outputs">{FILTERS.map(item => <Button ref={item.id === "manufacturing" ? manufacturingFilter : undefined} size="sm" key={item.id} aria-pressed={filter === item.id} onClick={() => { setFilter(item.id); setSelected(null); }}>{item.label}</Button>)}</div>
+
     </div>
     {generate.state.status === "running" && <p role="status" className="fd-output-feedback"><Spinner />Creating output…</p>}
     {(error || generate.state.error) && <p role="alert" className="fd-output-feedback">{error || generate.state.error}</p>}
@@ -143,7 +144,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
     </div>}
     {shown.length ? <div className="fd-output-grid">{sections.cards.map(file => <button key={file.path} className="fd-output-card" data-path={file.path} aria-pressed={selected === file.path} onClick={() => { setSelected(file.path); setError(null); }}>
       <div className="fd-output-thumbnail">{sourceInfo(file.path).warning && <span className="fd-output-warning"><Icon name="warning" width={14} height={14} />Needs review</span>}{file.kind === "images" ? <ProjectImage projectId={projectId} path={file.path} alt={basename(file.path)} /> : <><Icon name={file.kind === "videos" ? "play" : file.kind === "models" ? "cube" : "export"} width={58} height={58} /><span>{file.path.split(".").pop()?.toUpperCase()}</span></>}</div>
-      <div className="fd-output-caption"><strong>{file.sourceName ?? basename(file.path)}</strong>{file.sourceName && <span className="fd-output-source">{basename(file.path)}</span>}<span>{formatFileSize(file.size)} · Saved {new Date(file.mtime).toLocaleDateString()}</span><small data-stale={sourceInfo(file.path).warning}>{sourceInfo(file.path).label}</small></div>
+      <div className="fd-output-caption"><strong><Icon name={file.kind === "images" ? "image" : file.kind === "videos" ? "play" : file.kind === "models" ? "cube" : "export"} width={18} height={18} aria-hidden="true" /><span>{basename(file.path)}</span></strong>{file.sourceName && <span className="fd-output-source">{file.sourceName}</span>}<span>{formatFileSize(file.size)} · Saved {new Date(file.mtime).toLocaleDateString()}</span><small data-stale={sourceInfo(file.path).warning}>{sourceInfo(file.path).label}</small></div>
     </button>)}{sections.manufacturingFiles.length > 0 && <button className="fd-output-card" aria-label={`View ${sections.manufacturingFiles.length} individual manufacturing files`} onClick={() => {
       setFilter("manufacturing"); setSelected(null);
       requestAnimationFrame(() => { if (useUiStore.getState().activeProjectId === projectId) manufacturingFilter.current?.focus(); });

@@ -1,0 +1,115 @@
+{
+  "scope": "v6 consistency; read-only route diagnostics, not engineering capability verification",
+  "routes": [
+    {
+      "tab": "renders",
+      "area": "outputs",
+      "width": 1440,
+      "height": 870,
+      "headerHeight": 56,
+      "toolbarHeight": 64,
+      "headings": [
+        "Saved outputs"
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false
+    },
+    {
+      "tab": "bom",
+      "area": "parts",
+      "width": 1440,
+      "height": 870,
+      "headerHeight": 56,
+      "toolbarHeight": 64,
+      "headings": [
+        "Project parts"
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false
+    },
+    {
+      "tab": "updates",
+      "area": "review",
+      "width": 1440,
+      "height": 870,
+      "headerHeight": 56,
+      "toolbarHeight": 64,
+      "headings": [
+        "Review updates"
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false
+    },
+    {
+      "tab": "diff",
+      "area": "review",
+      "width": 1440,
+      "height": 870,
+      "headerHeight": 56,
+      "toolbarHeight": 64,
+      "headings": [],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false
+    },
+    {
+      "tab": "drc",
+      "area": "review",
+      "width": 1440,
+      "height": 870,
+      "headerHeight": 56,
+      "toolbarHeight": 64,
+      "headings": [
+        "Design checks"
+      ],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false
+    },
+    {
+      "tab": "files",
+      "area": "files",
+      "width": 1440,
+      "height": 870,
+      "headerHeight": 56,
+      "toolbarHeight": 64,
+      "headings": [],
+      "assistantClosed": true,
+      "horizontalPageOverflow": false,
+      "runtimeError": false
+    }
+  ],
+  "rootProtectedFiles": 34,
+  "rootUnchangedDuringNavigation": true,
+  "rootMatchesPriorBaseline": true,
+  "vaioProtectedFiles": 8,
+  "vaioNativeChanged": [],
+  "baseHead": "f2b257d",
+  "reference": "outputs/fabplane-workspace-v6/design-spec.json and images/02-project-overview.png,08-outputs.png,05-review-updates.png",
+  "uiTypes": "PASS",
+  "uiTests": {
+    "pass": 234,
+    "assertions": 917,
+    "fail": 0
+  },
+  "keyboard": "Native PCB -> Right -> Schematic -> Left -> PCB; accessible names, selection and focus preserved",
+  "freshStart": "One central composer, three alternative inputs, no Review action or empty task toolbar; no message sent",
+  "compact": "Actual 960x720 Parts capture; wide captures1440x870. Other page captures are labeled by their actual files, not inferred from names.",
+  "screenshots": [
+    "525-v6-overview-final.png",
+    "532-v6-outputs-accepted.png",
+    "530-v6-root-review.png",
+    "527-v6-parts-final.png",
+    "528-v6-parts-compact.png",
+    "531-v6-fresh-start.png"
+  ],
+  "limits": [
+    "Visual/UI consistency pass; no new engineering capability or compatibility claim.",
+    "No backend rebuild, source edit, export job, agent send, remote publication, merge or deploy.",
+    "Board Art and Mechanical internals unchanged; only shared app chrome applies.",
+    "Existing incomplete integrations remain identified in feature handoffs."
+  ]
+}

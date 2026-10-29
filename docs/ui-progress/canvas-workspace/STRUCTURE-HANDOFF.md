@@ -1,5 +1,7 @@
 # Shared UI structure — delegation handoff
 
+Latest visual pass: [V6-CONSISTENCY.md](V6-CONSISTENCY.md), actual captures and source-preservation proof in v6-consistency-native.json. Pending capabilities remain separate.
+
 Follow-up: schematic entry and board request clarity revised after user feedback. See [SCHEMATIC-FLOW.md](SCHEMATIC-FLOW.md). Latest UI checks234pass/917assertions; no native source changes.
 
 Source checkpoint: `b38683d`. **Shared UI structure ready for delegation.** Final UItypecheckPASS;233tests912assertions/0fail. This handoff covers UI structure; feature implementation is separately qualified. Local only.

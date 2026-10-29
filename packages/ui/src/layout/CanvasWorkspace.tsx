@@ -21,6 +21,7 @@ import { ProjectOverview } from "./ProjectOverview";
 import { SketchStartReference } from "./SketchStartReference";
 import type { AppShellProps } from "./AppShell";
 import "./canvas-workspace.css";
+import "./canvas-v6.css";
 
 
 export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps) {
@@ -91,7 +92,6 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
         <button onClick={() => setNavigationOpen(true)}><Icon name="sidebar" width={16} height={16} />Browse projects & chats</button>
       </WorkspaceMenu>
       {sketchReference && <span className="fd-canvas-breadcrumb"><span>/</span><strong>{threadId ? "Sketch review" : "Start with sketch"}</strong></span>}
-      {projectId && !fresh && !sketchReference && <span className="fd-canvas-breadcrumb" title={areaLabel}><span>/</span><strong>{areaLabel}</strong></span>}
       <div className="fd-canvas-header-actions">
         <span className="fd-canvas-connection" title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`}><i data-connected={connected} />{connected ? local ? "Local workspace" : "Remote workspace" : "Reconnecting…"}</span>
         {projectId && !fresh && <Button size="sm" variant="ghost" title="Review source and output updates" aria-current={area === "review" && boardTab === "updates" ? "page" : undefined} onClick={() => ui().setBoardTab("updates")}>Review</Button>}
@@ -108,7 +108,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
     </header>
     {banner}
     {projectId && boardSources.data?.mode === "assembly" && <LiveAssemblyPreviews key={`${client.baseUrl}/${projectId}/${boardSources.data.manifestSha256}`} projectId={projectId} data={boardSources.data} enabled={!boardSources.isFetching && !boardSources.isError && connected && boardSources.data.editing === "explicit-source-tools"} />}
-    <main className="fd-canvas-main" data-area={fresh ? "start" : area}>
+    <main className="fd-canvas-main" data-task-toolbar={!!projectId && !fresh && !secondary && !conversationOnly} data-area={fresh ? "start" : area}>
       {projectId && !fresh && !secondary && !conversationOnly && <nav className="fd-canvas-destinations" aria-label="Project workspace">
         <WorkspaceMenu label={<><Icon name="library" width={16} height={16} /><span>{areaLabel}</span><Icon name="chevronDown" width={14} height={14} /></>}>
           <div className="fd-menu-caption">Project workspace</div>

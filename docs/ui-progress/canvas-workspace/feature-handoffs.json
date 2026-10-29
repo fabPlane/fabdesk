@@ -6,7 +6,7 @@
   "designReference": "outputs/fabplane-workspace-v6; prior concepts preserved",
   "validation": {
     "root": "Full root types and2277 pass/36 skip/0 failures at e5d9c63; later structural UI changes use targeted checks.",
-    "ui": "Latest follow-up: UI typecheck PASS;234 tests/917 assertions/0 failures",
+    "ui": "Latest v6 pass: typecheckPASS;234 tests917assertions/0fail",
     "navigation": "Read-only UI navigation and rendered-shell diagnostics; no export/generation/sync/pass claim",
     "protected": "34 protected files byte-identical before/after"
   },
@@ -19,7 +19,8 @@
       "owner": "Coworker to assign",
       "working": [
         "One primary surface, secondary tools closed; official fabPlane logo/name.",
-        "Task restore and adaptive first-open default; project/chat drawer is requested."
+        "Task restore and adaptive first-open default; project/chat drawer is requested.",
+        "v6 shared56px header/64px task row, consistent typography/surfaces and icon/focus controls; no duplicate workspace breadcrumb."
       ],
       "remaining": [
         "Keep one navigation system as new features land; preserve project and endpoint ownership."
@@ -77,7 +78,8 @@
       "owner": "Coworker to assign",
       "working": [
         "Actual declared boards/links; source-qualified warnings; missing-source recovery.",
-        "Device-local card arrangement, zoom/Fit, reload/reset; connection endpoints open owned boards."
+        "Device-local card arrangement, zoom/Fit, reload/reset; connection endpoints open owned boards.",
+        "v6 board card captions/status inside unchanged logical map bounds; dashed unavailable-source cards."
       ],
       "remaining": [
         "Complete missing source imports and compatibility evidence as separate feature work."
@@ -187,7 +189,8 @@
       "working": [
         "Existing root/member schematic views and missing-file recovery.",
         "Stable PCB/Schematic/3D task locations; direct member switching retains the task.",
-        "Declared native schematic opens automatically via source-bound preview rendering; missing schematic offers Find, KiCad file picker/import request, Generate request."
+        "Declared native schematic opens automatically via source-bound preview rendering; missing schematic offers Find, KiCad file picker/import request, Generate request.",
+        "Root and assembly board views share accessible PCB/Schematic/3D icon controls; root arrow-key behavior preserved."
       ],
       "remaining": [
         "Complete member schematic hierarchy/library import; connect full comparison separately.",
@@ -642,5 +645,6 @@
   ],
   "structureReady": true,
   "featureImplementationComplete": false,
-  "followUp": "Schematic page UX follow-up after f5693ce; see SCHEMATIC-FLOW.md and schematic-flow-native.json"
+  "followUp": "Schematic page UX follow-up after f5693ce; see SCHEMATIC-FLOW.md and schematic-flow-native.json",
+  "latestVisualFollowUp": "v6 consistency: V6-CONSISTENCY.md and v6-consistency-native.json; source baseline f2b257d"
 }

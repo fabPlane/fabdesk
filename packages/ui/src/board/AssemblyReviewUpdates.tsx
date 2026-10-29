@@ -37,7 +37,7 @@ export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRet
     ui.setAssemblyBoard(previous?.sourceId === row.sourceId ? previous : row.selection); ui.setBoardTab(tab);
   };
   return <div className="fd-review-updates" data-testid="assembly-review-updates">
-    <header><h2>Choose what to update</h2><p>Sources needing attention appear first. Choose what to refresh; shared boards use one source.</p><Button size="sm" variant="ghost" disabled={busy || checking} onClick={() => { onRetry(); void checks.refetch(); void models.refetch(); for (const preview of previews) if (preview.trackable) void preview.refetch(); }}>Recheck sources</Button></header>
+    <header><h2>Review updates</h2><p>Sources needing attention appear first. Choose what to refresh; shared boards use one source.</p><Button size="sm" variant="ghost" disabled={busy || checking} onClick={() => { onRetry(); void checks.refetch(); void models.refetch(); for (const preview of previews) if (preview.trackable) void preview.refetch(); }}>Recheck sources</Button></header>
     {failed && <p role="alert" className="fd-update-feedback">Project sources could not be refreshed. Retry before choosing a board or updating a preview.</p>}
     <div className="fd-update-table" role="table" aria-label="Assembly source review">
       <div className="fd-update-row fd-update-table-heading" role="row"><span role="columnheader">Board source</span><span role="columnheader">Source status</span><span role="columnheader">Next step</span></div>

@@ -1,6 +1,6 @@
 import { HostedReviewTools } from "./HostedReviewTools";
 import { WorkspaceMenu } from "../layout/WorkspaceMenu";
-import { Icon } from "../components/Icon";
+import { Icon, type IconName } from "../components/Icon";
 import { BoardComparison } from "./BoardComparison";
 import { Button } from "../components/ui";
 import { ReviewUpdates } from "./ReviewUpdates";
@@ -26,6 +26,8 @@ import { ShoppingListTab } from "./ShoppingListTab";
 import { SvgTab } from "./SvgTab";
 import { ThreeDTab } from "./ThreeDTab";
 import { OrderChecksButton } from "./OrderChecksButton";
+
+const BOARD_VIEW_ICONS: Partial<Record<BoardTab, IconName>> = { pcb: "pcb", schematic: "schematic", "3d": "cube" };
 
 function TabBody({ tab }: { tab: BoardTab }) {
   switch (tab) {
@@ -84,13 +86,20 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
   const projects = useProjects();
   const project = projects.data?.find((item) => item.id === projectId);
   const mod = modKey(host.platform);
+  const visibleTabs = workspaceViews(area)
+    .filter(item => area !== "boards" || item.tab !== "cinema" && item.tab !== "art")
+    .map(item => ({
+      id: item.tab,
+      label: area === "boards" && item.tab === "3d" ? "3D model" : item.label,
+      ...(area === "boards" ? { icon: BOARD_VIEW_ICONS[item.tab] ?? "pcb" } : {}),
+    }));
   if (canvas) return <div className="fd-canvas-board" data-testid="board-panel">
     <div className="fd-canvas-controls">
-      {workspaceViews(area).length > 1 && <Tabs tabs={workspaceViews(area).filter(item => area !== "boards" || item.tab !== "cinema" && item.tab !== "art").map((item) => ({ id: item.tab, label: item.label }))} value={tab} onChange={setWorkspaceTab} />}
+      {workspaceViews(area).length > 1 && <Tabs tabs={visibleTabs} iconOnly={area === "boards"} value={tab} onChange={setWorkspaceTab} />}
       {area === "boards" && <WorkspaceMenu className={`fd-board-tools ${tab === "cinema" || tab === "art" ? "fd-board-tool-active" : ""}`} label={<><span>{tab === "cinema" ? "Routing" : tab === "art" ? "Artwork" : "Tools"}</span><Icon name="chevronDown" width={14} height={14} /></>}><div className="fd-menu-caption">Board tools</div>{workspaceViews("boards").filter(item => item.tab === "cinema" || item.tab === "art").map(item => <button key={item.tab} aria-current={item.tab === tab ? "page" : undefined} onClick={() => setWorkspaceTab(item.tab)}>{item.label}</button>)}</WorkspaceMenu>}
       {area === "review" && tab === "diff" && projectId && <HostedReviewTools key={projectId} projectId={projectId} />}
       {compareAvailable && <Button className="fd-comparison-toggle" size="sm" aria-pressed={compare} onClick={() => useUiStore.getState().setBoardComparison(!compare)}>{compare ? "Close comparison" : `Show ${tab === "pcb" ? "schematic" : "PCB"} alongside`}</Button>}
-      <div className="fd-canvas-checks">{assembly ? <Button size="sm" onClick={openChecks}>Board checks</Button> : order.data && <OrderChecksButton order={order.data} unavailable={order.isError || sources.isError || sources.isFetching || sources.data?.mode !== "single"} onClick={openOrder} onReviewChecks={openChecks} />}</div>
+      <div className="fd-canvas-checks">{area === "boards" && (assembly ? <Button size="sm" onClick={openChecks}>Board checks</Button> : order.data && <OrderChecksButton order={order.data} unavailable={order.isError || sources.isError || sources.isFetching || sources.data?.mode !== "single"} onClick={openOrder} onReviewChecks={openChecks} />)}</div>
     </div>
     <div className="fd-canvas-board-body">{compareAvailable && compare && projectId ? <BoardComparison key={projectId} projectId={projectId} active={tab as "pcb" | "schematic"} /> : area === "outputs" && tab === "renders" ? <OutputsLibrary key={projectId} projectId={projectId} /> : area === "outputs" && tab === "files" ? <FilesTab key={projectId} exportFocus /> : <TabBody key={`${projectId}:${tab}`} tab={tab} />}</div>
   </div>;
