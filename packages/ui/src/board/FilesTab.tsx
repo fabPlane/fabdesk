@@ -194,7 +194,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
                 <p className="mt-2 break-all font-mono text-xs">{file.path}</p>
               </EmptyState>}
               {appearance.preview === "text" && (tooBig ? <p className="text-xs text-muted">This file is too large to preview. Limit: 1 MB.</p>
-                : text.isError ? <div role="alert" className="text-xs text-danger">Could not load this file.</div>
+                : text.isError ? <div role="alert" className="space-y-2 text-xs text-danger"><p>Could not load this file.</p><Button size="sm" variant="ghost" disabled={text.isFetching} onClick={() => void text.refetch()}>{text.isFetching ? "Retrying…" : "Retry file preview"}</Button></div>
                 : text.isLoading ? <Spinner />
                 : text.data === null ? <p className="text-xs text-muted">This file is no longer available.</p>
                 : <pre className="whitespace-pre-wrap font-mono text-[11.5px] leading-relaxed [overflow-wrap:anywhere]">{text.data || "(Empty file)"}</pre>)}
