@@ -3,8 +3,8 @@ import { ProjectImage } from "../chat/ProjectImage";
 import { ProjectVideo } from "../chat/ProjectVideo";
 import { Button, Dialog, EmptyState, IconButton, Input, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { useBoardSources, usePcbPreviewRevision, useProject, useProjectText, useRunTool } from "@fabdesk/client-core";
-import { useUiStore } from "../stores/ui";
+import { editableSketchPaths, useBoardSources, usePcbPreviewRevision, useProject, useProjectText, useRunTool } from "@fabdesk/client-core";
+import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { stencilThicknessMm } from "../stores/stencil-thickness";
 import { cn } from "../util";
 import { buildFileTree, fileAppearance, formatFileSize, type ExplorerNode } from "./file-explorer";
@@ -174,6 +174,17 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
               <span className="min-w-0 flex-1 break-all text-xs" title={file.path}>{file.path.replaceAll("\\", "/").split("/").join(" / ")}</span>
               <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted">{appearance.label}</span>
               <span className="text-[10px] text-muted">{formatFileSize(file.size)}</span>
+              {editableSketchPaths([file]).includes(file.path) && <Button size="sm" variant="ghost" onClick={() => {
+                const ui = useUiStore.getState();
+                if (ui.activeProjectId === projectId) ui.setSketchOpen(true, "draw", file.path);
+              }}>Open drawing copy</Button>}
+              {/\.(png|jpe?g)$/i.test(file.path) && <Button size="sm" variant="ghost" onClick={() => {
+                const ui = useUiStore.getState();
+                if (ui.activeProjectId !== projectId) return;
+                const key = ui.activeThreadId ?? newChatDraftKey(projectId);
+                if (!ui.attachments[key]?.some(item => item.path === file.path)) ui.addAttachment(key, { path: file.path, mime: /\.jpe?g$/i.test(file.path) ? "image/jpeg" : "image/png", label: file.path.split("/").pop() ?? file.path });
+                ui.focusComposer();
+              }}><Icon name="sparkles" width={14} height={14} />Use in conversation</Button>}
             </div>
             <div className="min-h-0 flex-1 overflow-auto p-4">
               {appearance.preview === "image" && <ProjectImage projectId={projectId} path={file.path} className="fd-file-image max-h-none max-w-full" />}

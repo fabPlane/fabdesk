@@ -1,0 +1,38 @@
+{
+  "projectId": "prj_mvszo4wl7ba352a775",
+  "source": "sketches/vaio-io-reference.excalidraw.png",
+  "native": [
+    "Files Open drawing copy preselects the exact owned saved image and retains local draft pending explicit replacement",
+    "Use in conversation opens assistant while keeping Files selected and preserves existing unsent test question",
+    "Repeated Use in conversation keeps exactly one removable attachment",
+    "Removed only test attachment and test question; composer empty as before",
+    "Metadata file selection hides both image/copy actions",
+    "Actual960x720 selected-file path/actions/image fit; restored1440x870"
+  ],
+  "screenshots": [
+    "423-file-selected-reference-context-actions.png",
+    "424-file-reference-retains-question-no-duplicate.png",
+    "425-file-reference-actions-compact.png"
+  ],
+  "preservation": {
+    "protectedFiles": 3,
+    "mismatches": [],
+    "agentSendOrProjectSave": false,
+    "localSketchDraft": "Prior isolated unsaved copy retained",
+    "additionalContextFilesObserved": {
+      "AGENTS.md": "dd0600edeb5c155ada231ab69d840cff0bdd0126c761f8c043d6eb66b86e1460",
+      "CLAUDE.md": "336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49"
+    }
+  },
+  "validation": {
+    "uiTypes": "PASS /tmp/canvas-file-reference-actions-ui-types.log",
+    "uiTests": "231pass/901assertions/0fail /tmp/canvas-file-reference-actions-ui-tests.log",
+    "rootTypes": "PASS /tmp/canvas-reference-tools-root-types.log"
+  },
+  "limits": [
+    "Conversation attachment offered only for existing PNG/JPEG files; no new format/backend support",
+    "Editable scene names still require loader validation",
+    "Codex model issue remains deferred; no retry",
+    "AGENTS.md and CLAUDE.md appeared during earlier agent startup attempts and remain retained; original3files exact does not mean the entire project file set stayed identical across those attempts"
+  ]
+}

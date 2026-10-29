@@ -1508,3 +1508,9 @@ Fresh-start Import design now says Import from GitHub, matching the existing imp
 ## Selected saved drawing carries into copy options
 
 Sketch-reference contextual tools and reference-only Project Overview now carry the selected editable saved path into the existing sketch copy picker. Requested options open with that exact source preselected; recovered/unsaved drafts stay until explicit replacement. Ordinary sketch/upload entry and closing clear the transient request. Existing owned saved-path eligibility and loader validation remain authoritative. Native preselection/load, unsaved separate-text retention, ordinary-entry reset and Overview entry passed. All3isolated-study original files exact; no project Save/attach or agent request. Captures419–422 and [native evidence](selected-sketch-copy-native.json). Final UI types PASS;231UItests/901assertions before final Overview wiring, subsequently typechecked/natively verified.
+
+## Selected Files reference actions
+
+Files offers Open drawing copy for eligible saved scenes and Use in conversation for PNG/JPEG images only after selecting a file. Both use existing project-owned sketch/attachment paths. Native exact-source copy, unsent-question retention, repeated-selection deduplication, cleanup and non-image action hiding passed. All3isolated originals exact; no Save/Send. UI types and231UItests/901assertions PASS. Captures423–424 and [native evidence](file-reference-actions-native.json).
+
+Actual960×720 file actions/path/image fit passed and window restored1440×870; capture425. Root typecheck PASS (/tmp/canvas-reference-tools-root-types.log). The isolated study also retains AGENTS.md/CLAUDE.md observed after prior agent startup attempts; original3protected files remain exact, which is not a claim that those attempts added no context files.
