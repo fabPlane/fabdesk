@@ -2,6 +2,8 @@ import { BoardSourceSelection, PcbOutlineSegment, PcbInspectionCoordinateSystem,
 import type { CoreClient } from "./CoreClient";
 import { pcbToolJson, pcbToolJsonForSource } from "./pcb-parts";
 const record = (value: unknown): Record<string, unknown> | null => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+/** Format a dimension input at native nanometre precision, without changing inspected bounds. */
+export const outlineDimensionInput = (value: number) => String(Number(value.toFixed(6)));
 
 /** Only a complete unlocked native rectangle, identified by its original IDs, supports dimensions. */
 export function parsePcbOutlineInspection(value: unknown): PcbOutlineInspection {

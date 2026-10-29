@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { ProjectBoardSources } from "@fabdesk/protocol";
-import { nextAssemblyReviewSelection, restoreAssemblySelection, assemblyScene, assemblySourcesToReview, captureAssemblySelection, assemblySelectionState, inspectAssemblyBoard } from "./assembly-scene";
+import { nextAssemblyReviewSelection, restoreAssemblySelection, assemblyLinkShape, assemblyScene, assemblySourcesToReview, captureAssemblySelection, assemblySelectionState, inspectAssemblyBoard } from "./assembly-scene";
 const source = { id: "io", name: "I/O", location: "project", directory: "boards/io" };
 const data = () => ProjectBoardSources.parse({ projectId: "project", mode: "assembly", manifestSha256: "a".repeat(64), editing: "single-board-only", observedAt: "2026-10-28T00:00:00Z", assembly: { contract: "fabplane.assembly.v1", sources: [source], instances: [{ id: "left", name: "Left I/O", sourceId: "io", presentation: { units: "canvas-px", x: -100, y: -40 } }, { id: "right", name: "Right I/O", sourceId: "io", presentation: { units: "canvas-px", x: 360, y: 240 } }], connections: [{ id: "link", name: "Declared link", a: { instanceId: "left", connector: "J1" }, b: { instanceId: "right", connector: "J1" } }] }, sources: [{ source, status: "available", pcbPath: "boards/io/board.kicad_pcb", previewPath: "boards/io/renders/pcb.svg" }] });
 test("scene membership uses physical instances without duplicating source ownership or converting canvas positions to millimetres", () => {
@@ -20,6 +20,29 @@ test("captured selections go stale on membership or project changes and never re
   snapshot.sources[0]!.status = "missing";
   expect(assemblySelectionState(snapshot, selection)).toBe("unavailable");
   expect(captureAssemblySelection(snapshot, "unknown")).toBeNull();
+});
+test("readable map cards retain saved coordinates and link ports follow their actual bounds", () => {
+  const snapshot = data(), original = JSON.stringify(snapshot);
+  const scene = assemblyScene(snapshot, { left: { sourceId: "io", units: "canvas-px", x: -180, y: 15 } });
+  const a = scene.nodes[0]!, b = scene.nodes[1]!;
+  expect([a.x, a.y, b.x, b.y]).toEqual([-180, 15, 360, 240]);
+  for (const node of scene.nodes) {
+    expect(node.width).toBeGreaterThanOrEqual(260);
+    expect(scene.bounds.x).toBeLessThan(node.x);
+    expect(scene.bounds.y).toBeLessThan(node.y);
+    expect(scene.bounds.x + scene.bounds.width).toBeGreaterThan(node.x + node.width);
+    expect(scene.bounds.y + scene.bounds.height).toBeGreaterThan(node.y + node.height);
+  }
+  const forward = assemblyLinkShape(a, b), reverse = assemblyLinkShape(b, a);
+  expect(forward.start.x).toBeGreaterThan(a.x + a.width);
+  expect(forward.end.x).toBeLessThan(b.x);
+  expect(reverse.start).toEqual(forward.end);
+  expect(reverse.end).toEqual(forward.start);
+  const below = { ...b, x: a.x, y: a.y + 400 };
+  const vertical = assemblyLinkShape(a, below);
+  expect(vertical.start.y).toBeGreaterThan(a.y + a.height);
+  expect(vertical.end.y).toBeLessThan(below.y);
+  expect(JSON.stringify(snapshot)).toBe(original);
 });
 test("source attention includes unresolved ownership and changed previews, but never counts shared instances or unknown checks as passes", () => {
   const snapshot = data();

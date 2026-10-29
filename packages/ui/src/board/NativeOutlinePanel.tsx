@@ -4,7 +4,7 @@ import { NativePartTarget } from "./NativePartTarget";
 import { BoardChecksButton } from "./BoardChecksButton";
 import type { SvgBox } from "./svg-coords";
 import { PcbOutlineResizeResult, type PcbOutlineInspection, type BoardSourceSelection } from "@fabdesk/protocol";
-import { inspectPcbOutline, pcbToolJsonForSource, resizedOutlinePoints, useCoreClient, usePcbOutline, useRunTool, useToolManifest } from "@fabdesk/client-core";
+import { inspectPcbOutline, pcbToolJsonForSource, outlineDimensionInput, resizedOutlinePoints, useCoreClient, usePcbOutline, useRunTool, useToolManifest } from "@fabdesk/client-core";
 import { Button, Input, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 
@@ -23,13 +23,13 @@ export function NativeOutlinePanel({ projectId, board, canPosition, onBusyChange
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const choose = (data: PcbOutlineInspection, keepRecovery = false) => {
     if (!keepRecovery) setRecovery(null);
-    setSnapshot(data); setWidth(data.bounds ? String(data.bounds.maxX - data.bounds.minX) : ""); setHeight(data.bounds ? String(data.bounds.maxY - data.bounds.minY) : ""); setError(null); setNotice(null); setExportError(null);
+    setSnapshot(data); setWidth(data.bounds ? outlineDimensionInput(data.bounds.maxX - data.bounds.minX) : ""); setHeight(data.bounds ? outlineDimensionInput(data.bounds.maxY - data.bounds.minY) : ""); setError(null); setNotice(null); setExportError(null);
   };
   useEffect(() => { if (inspection.data && !snapshot) choose(inspection.data); }, [inspection.data, snapshot]);
   const stale = !!snapshot && !!inspection.data && snapshot.sourceSha256 !== inspection.data.sourceSha256;
   const points = resizedOutlinePoints(snapshot?.bounds ?? null, width, height);
-  const changed = !!snapshot && !!points && (!snapshot.bounds || Number(width) !== snapshot.bounds.maxX - snapshot.bounds.minX || Number(height) !== snapshot.bounds.maxY - snapshot.bounds.minY);
-  const hasProposal = !!snapshot && (width !== (snapshot.bounds ? String(snapshot.bounds.maxX - snapshot.bounds.minX) : "") || height !== (snapshot.bounds ? String(snapshot.bounds.maxY - snapshot.bounds.minY) : ""));
+  const changed = !!snapshot && !!points && (!snapshot.bounds || Number(width) !== Number(outlineDimensionInput(snapshot.bounds.maxX - snapshot.bounds.minX)) || Number(height) !== Number(outlineDimensionInput(snapshot.bounds.maxY - snapshot.bounds.minY)));
+  const hasProposal = !!snapshot && (width !== (snapshot.bounds ? outlineDimensionInput(snapshot.bounds.maxX - snapshot.bounds.minX) : "") || height !== (snapshot.bounds ? outlineDimensionInput(snapshot.bounds.maxY - snapshot.bounds.minY) : ""));
   const reload = async () => {
     if (inFlight.current) return;
     inFlight.current = true; setBusy(true); onBusyChange(true); setError(null);
@@ -82,7 +82,8 @@ export function NativeOutlinePanel({ projectId, board, canPosition, onBusyChange
     </>}
     {inspection.isError && <p role="alert" className="fd-native-part-warning">The latest outline inspection failed. Reload before applying dimensions.</p>}
     {!snapshot.editable ? <><p className="fd-native-part-note">{snapshot.reason}</p><Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload outline</Button></> : !!board && !snapshot.bounds ? <p className="fd-native-part-note">This assembly source needs a complete rectangular outline before it can be resized here. Define or review its boundary in KiCad.</p> : snapshot.bounds && !resizeAvailable ? <p className="fd-native-part-note">{tools.isPending ? "Loading native board tools…" : tools.isError ? "Could not load native board tools." : "This runtime does not support resizing existing native outlines yet. Update the app and its connected runtime."}{tools.isError && <Button size="sm" variant="ghost" onClick={() => void tools.refetch()}>Retry</Button>}</p> : <>
-      <p className="fd-native-part-note">{snapshot.bounds ? `Resize the rectangular outline from its top-left corner at (${snapshot.bounds.minX}, ${snapshot.bounds.minY}) mm.` : "This PCB has no outline yet. Enter its width and height; the top-left corner will be at KiCad (0, 0)."} Drag the bottom-right corner or enter dimensions, then Apply. Parts, traces and mechanical models keep their current positions.</p>
+      <p className="fd-native-part-note">{snapshot.bounds ? `Keep top-left corner · (${snapshot.bounds.minX}, ${snapshot.bounds.minY}) mm` : "New outline · top-left corner at KiCad (0, 0)"}</p>
+      <p className="fd-native-outline-scope">Outline only. Parts, tracks and mechanical models stay in place.</p>
       {stale && <p role="status" className="fd-native-part-warning">The PCB changed. Reload its outline before applying dimensions. Your typed values are kept.</p>}
       {!canPosition && !busy && <p className="fd-native-part-warning">Update the PCB preview before applying dimensions.</p>}
       <form ref={form} onSubmit={event => { event.preventDefault(); void apply(); }}>
@@ -90,8 +91,9 @@ export function NativeOutlinePanel({ projectId, board, canPosition, onBusyChange
           <label>Width (mm)<Input type="number" min="0.000001" max="1000" step="any" aria-label="Board width (mm)" value={width} disabled={busy} onChange={event => setWidth(event.target.value)} /></label>
           <label>Height (mm)<Input type="number" min="0.000001" max="1000" step="any" aria-label="Board height (mm)" value={height} disabled={busy} onChange={event => setHeight(event.target.value)} /></label>
         </div>
+        <p className="fd-native-part-note" role="status">{changed && points ? "Preview · not applied" : "Saved dimensions"}. Run checks after applying.</p>
         {hasProposal && !points && <p role="status" className="fd-native-part-warning">Enter width and height between 0.000001 and 1000 mm, or discard this proposal.</p>}
-        <div className="fd-native-part-actions">{hasProposal && <Button size="sm" variant="ghost" disabled={busy} onClick={event => { const dialog = event.currentTarget.closest<HTMLElement>('[role="dialog"]'); choose(snapshot, true); requestAnimationFrame(() => dialog?.focus({ preventScroll: true })); }}>Discard proposal</Button>}<Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload outline</Button><Button size="sm" variant="primary" type="submit" disabled={busy || stale || !canPosition || inspection.isFetching || inspection.isError || !points || !changed}>{busy ? "Saving / refreshing…" : snapshot.bounds ? "Apply dimensions" : "Create outline"}</Button></div>
+        <div className="fd-native-part-actions">{hasProposal && <Button size="sm" variant="ghost" disabled={busy} onClick={event => { const dialog = event.currentTarget.closest<HTMLElement>('[role="dialog"]'); choose(snapshot, true); requestAnimationFrame(() => dialog?.focus({ preventScroll: true })); }}>Discard proposal</Button>}<Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload outline</Button><Button size="sm" variant="primary" type="submit" disabled={busy || stale || !canPosition || inspection.isFetching || inspection.isError || !points || !changed}>{busy ? "Saving / refreshing…" : snapshot.bounds ? "Apply outline" : "Create outline"}</Button></div>
       </form>
       {recovery && <div><Button size="sm" variant="ghost" disabled={busy || hasProposal || stale || !canPosition || inspection.isFetching || inspection.isError || recovery.savedSha256 !== snapshot.sourceSha256 || inspection.data?.sourceSha256 !== recovery.savedSha256 || JSON.stringify([...snapshot.edgeIds].sort()) !== JSON.stringify([...recovery.edgeIds].sort())} onClick={() => void apply(true)}>Revert last dimensions</Button><p className="fd-native-part-note">Restore {recovery.bounds.maxX - recovery.bounds.minX} × {recovery.bounds.maxY - recovery.bounds.minY} mm using the same outline edges. Available here for this saved PCB snapshot; other edits are not undone.</p></div>}
     </>}

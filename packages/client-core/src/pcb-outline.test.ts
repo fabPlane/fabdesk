@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { parsePcbOutlineInspection, resizedOutlinePoints, inspectPcbOutline } from "./pcb-outline";
+import { outlineDimensionInput, parsePcbOutlineInspection, resizedOutlinePoints, inspectPcbOutline } from "./pcb-outline";
+test("dimension inputs remove subtraction noise while retaining native nanometre precision", () => {
+  expect(outlineDimensionInput(82.245 - 54.845)).toBe("27.4");
+  expect(outlineDimensionInput(0.000001)).toBe("0.000001");
+  expect(outlineDimensionInput(36.123456)).toBe("36.123456");
+});
 const points = [{ x: 100, y: 95 }, { x: 115, y: 95 }, { x: 115, y: 110 }, { x: 100, y: 110 }];
 const rows = points.map((start, i) => ({ id: String(i), owner: "board", layer: 47, kind: "segment", locked: false, toolOwnedOutline: true, start, end: points[(i + 1) % 4] }));
 const inspection = (items: unknown[] = rows, truncated = false) => ({ json: { contract: { name: "fabdesk.pcb-inspection", version: "2.0.0" }, revision: "a".repeat(64), coordinateSystem: { units: "mm", origin: "KiCad board origin", x: "right", y: "down" }, results: { board_geometry: { total: items.length, returned: items.length, truncated, rows: items } } } });

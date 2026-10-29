@@ -27,8 +27,8 @@ function previewCopy(state: string | undefined, checking: boolean, failed: boole
 }
 function BoardImage({ projectId, node }: { projectId: string; node: AssemblySceneNode }) {
   const image = useProjectBlobUrl(projectId, node.source?.status === "available" ? node.source.previewPath ?? null : null);
-  return image.url ? <image href={image.url} x={12} y={12} width={186} height={100} preserveAspectRatio="xMidYMid meet" pointerEvents="none" />
-    : <g className="fd-assembly-placeholder" pointerEvents="none"><rect x={70} y={26} width={70} height={52} rx={6} /><path d="M88 18v8m16-8v8m16-8v8M88 78v8m16-8v8m16-8v8M62 39h8m-8 15h8m70-15h8m-8 15h8" /><text x={105} y={102} textAnchor="middle">{image.isLoading ? "Loading preview…" : node.source?.status === "available" ? "No saved preview" : "Source unavailable"}</text></g>;
+  return image.url ? <image href={image.url} x={12} y={12} width={node.width - 24} height={node.height - 68} preserveAspectRatio="xMidYMid meet" pointerEvents="none" />
+    : <g className="fd-assembly-placeholder" transform={`translate(${node.width / 2 - 105},16)`} pointerEvents="none"><rect x={70} y={26} width={70} height={52} rx={6} /><path d="M88 18v8m16-8v8m16-8v8M88 78v8m16-8v8m16-8v8M62 39h8m-8 15h8m70-15h8m-8 15h8" /><text x={105} y={102} textAnchor="middle">{image.isLoading ? "Loading preview…" : node.source?.status === "available" ? "No saved preview" : "Source unavailable"}</text></g>;
 }
 function askAbout(selection: AssemblySceneSelection | null, name: string, available: boolean, schematicAction?: "find" | "generate" | "import") {
   if (!selection) return;
@@ -201,7 +201,7 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
     if (event.key === "Escape" && mapDrag.current) { event.preventDefault(); event.stopPropagation(); cancelMapDrag(); return; }
     if (event.key === "Escape" && (selectedNode || selectedLink)) { event.preventDefault(); dismissSelection(); event.stopPropagation(); }
   }}>
-    {!boardPicker && <WorkspaceMenu className="fd-assembly-view-menu" label={<><span>Connections</span><Icon name="chevronDown" width={14} height={14} /></>}><div className="fd-menu-caption">Project view</div><button disabled aria-current="page">Connections</button><button onClick={() => setAssemblyViewOpen(true)}>3D assembly</button></WorkspaceMenu>}
+    {!boardPicker && <div className="fd-assembly-view-menu fd-assembly-view-switch" role="group" aria-label="Project view"><button aria-current="page" onClick={fit}>Connections</button><button onClick={() => setAssemblyViewOpen(true)}>3D assembly</button></div>}
     <Dialog open={assemblyViewOpen} onClose={() => setAssemblyViewOpen(false)} title="3D assembly" className="fd-review-integration-dialog"><div className="fd-review-integration-status" role="status">Integration pending</div><section><h3>See the assembled system</h3><p>The assembled 3D scene is not connected in this build. Individual board models remain available. This connection map uses logical positions and does not establish installed positions or physical fit.</p><Button disabled>Open assembled scene</Button></section><div className="fd-review-integration-actions"><Button size="sm" onClick={() => { if (useUiStore.getState().activeProjectId !== projectId) return; setAssemblyViewOpen(false); const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("3d"); }}>Review board models</Button></div></Dialog>
     <header className="fd-assembly-heading"><h1 title={name}>{boardPicker ? "Choose a board" : "Project overview"}</h1><p>{scene.nodes.length} {scene.nodes.length === 1 ? "board" : "boards"}{data.sources.length !== scene.nodes.length && <> · {data.sources.length} source designs</>} · {scene.links.length} {scene.links.length === 1 ? "connection" : "connections"}</p><small>{failed ? "Project refresh unavailable" : checking ? "Checking project sources…" : "Declared connections · compatibility unverified"}</small>{boardPicker && savedBoard && !restored && !detail && <small role="status" className="fd-assembly-restore-notice">Project definition changed or board unavailable. Select a board again.</small>}</header>
     {failed ? <Button className="fd-assembly-update" size="sm" variant="ghost" onClick={onRetry}>Retry project refresh</Button> : sourcesToReview.length > 0 && <Button className="fd-assembly-update" size="sm" variant="ghost" disabled={checking} onClick={event => { const next = nextAssemblyReviewSelection(data, sourcesToReview, selected), node = next ? scene.nodes.find(node => node.instance.id === next.instanceId) : null; if (node) { choose(node); fit(); focusToolsFrom(event.currentTarget, `board:${node.instance.id}`); } }}><Icon name="warning" width={16} height={16} />{sourcesToReview.length > 1 && selected && ownership !== "stale" && sourcesToReview.includes(selected.sourceId) ? "Next source to review" : "Sources to review"} · {sourcesToReview.length}</Button>}
@@ -243,10 +243,11 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
               if (event.key === "Enter" || event.key === " ") { event.preventDefault(); choose(node); focusToolsFrom(event.currentTarget, `board:${node.instance.id}`); }
             }}>
             <title>{node.instance.name} — {node.source?.source.name ?? node.instance.sourceId}. {text}</title>
-            <rect className="fd-assembly-card" data-selected={selected?.instanceId === node.instance.id} data-unavailable={status !== "available"} width={210} height={158} rx={12} />
+            <rect className="fd-assembly-card" data-selected={selected?.instanceId === node.instance.id} data-unavailable={status !== "available"} width={node.width} height={node.height} rx={12} />
             <BoardImage projectId={projectId} node={node} />
-            <text className="fd-assembly-node-title" x={12} y={130}>{shortened(node.instance.name)}</text>
-            <text className="fd-assembly-node-note" data-warning={warning} x={12} y={148}>{shortened(text, 32)}</text>
+            <text className="fd-assembly-node-title" x={12} y={node.height - 36}>{shortened(node.instance.name, 26)}</text>
+            {warning && <rect className="fd-assembly-node-warning" x={10} y={node.height - 27} width={node.width - 20} height={23} rx={6} />}
+            <text className="fd-assembly-node-note" data-warning={warning} x={12} y={node.height - 11}>{shortened(text, 34)}</text>
           </g>;
         })}
       </svg>

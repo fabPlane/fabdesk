@@ -67,6 +67,12 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
       if (!rect) return;
       const safeBottom = window.innerHeight - (root.current?.closest(".fd-canvas-workspace") ? 88 : 12);
       const drawing = root.current?.closest(".fd-svg-host")?.getBoundingClientRect();
+      const workspace = root.current?.closest(".fd-canvas-main")?.getBoundingClientRect();
+      if (mode === "outline" && workspace && window.innerWidth >= 780) {
+        const width = 320, top = workspace.top + 82;
+        setPopupStyle({ left: workspace.right - width - 24, width, top, maxHeight: Math.max(160, safeBottom - top) });
+        return;
+      }
       const preferredWidth = mode === "parts" ? 330 : 390;
       const gutter = drawing ? Math.max(drawing.left, window.innerWidth - drawing.right) : 0;
       const width = Math.min(preferredWidth, window.innerWidth * .75, gutter >= 256 ? gutter - 36 : preferredWidth), below = safeBottom - rect.bottom - 12, above = rect.top - 24;
@@ -160,15 +166,15 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
   const drawingHost = root.current?.closest<HTMLElement>(".fd-svg-host");
   const partPicker = current && <label>Part<select aria-label="Select native PCB part" value={selection?.part.ref ?? ""} disabled={busy} onChange={(event) => { const part = current.parts.find((p) => p.ref === event.target.value); if (part) choose(part, current.sourceSha256); }}><option value="">Choose a part</option>{[...current.parts].sort((a, b) => Math.hypot(a.x - point.x, a.y - point.y) - Math.hypot(b.x - point.x, b.y - point.y)).map((part) => <option key={part.ref} value={part.ref}>{part.ref} · {part.value}</option>)}</select></label>;
 
-  return <div className="fd-native-part-control" data-mode={mode} data-open={open} ref={root} onKeyDown={(event) => {
+  return <div className="fd-native-part-control" data-mode={mode} data-open={open} data-visible={visible} ref={root} onKeyDown={(event) => {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); event.stopPropagation(); }
     if (event.key === "Escape" && open) { event.stopPropagation(); close(); }
   }}>
     <Button ref={trigger} size="sm" variant="ghost" aria-expanded={open && mode === "parts"} disabled={busy || !canPosition && !open} title={canPosition ? "Inspect and position native PCB parts" : "Update this preview to verify its native PCB coordinates before positioning parts"} onClick={() => { setMode("parts"); setOpen(mode !== "parts" || !open); }}><Icon name="pcb" width={15} height={15} />{selection?.part.ref ?? "Parts"}<Icon name="chevronDown" width={12} height={12} /></Button>
     <Button ref={outlineTrigger} size="sm" variant="ghost" aria-expanded={open && mode === "outline"} disabled={busy || !canPosition && !open} onClick={() => { setMode("outline"); setOpen(mode !== "outline" || !open); }}>Board size</Button>
     {visible && open && mode === "parts" && drawingHost && selection && values && canPosition && !sourceChanged && !busy && !parts.isError && !selection.part.locked && <NativePartTarget host={drawingHost} box={box} point={values} reference={selection.part.ref} changed={changed} onMove={target => { setFields(previous => ({ ...previous, x: String(target.x), y: String(target.y) })); setError(null); setMessage(null); setPreviewError(null); }} />}
-    {open && createPortal(<section ref={popup} style={{ ...popupStyle, ...(!visible ? { visibility: "hidden" as const } : {}) }} data-canvas-tools className="fd-native-part-popover" tabIndex={-1} role="dialog" aria-label={mode === "parts" ? "PCB part position" : "Board size"} aria-busy={busy}>
-      <header><strong>{mode === "outline" ? "Board size" : selection ? `${selection.part.ref} · ${selection.part.value}` : "Parts near this location"}</strong><IconButton title="Close board tools" size="sm" disabled={busy} onClick={close}><Icon name="close" width={14} height={14} /></IconButton></header>
+    {open && createPortal(<section ref={popup} style={{ ...popupStyle, ...(!visible ? { visibility: "hidden" as const } : {}) }} data-canvas-tools data-mode={mode} className="fd-native-part-popover" tabIndex={-1} role="dialog" aria-label={mode === "parts" ? "PCB part position" : "Board size"} aria-busy={busy}>
+      <header><strong>{mode === "outline" ? "Resize board" : selection ? `${selection.part.ref} · ${selection.part.value}` : "Parts near this location"}</strong><IconButton title="Close board tools" size="sm" disabled={busy} onClick={close}><Icon name="close" width={14} height={14} /></IconButton></header>
       {mode === "outline" ? <NativeOutlinePanel {...(board ? { board } : {})} visible={visible} onMutationBusyChange={onMutationBusyChange} host={drawingHost ?? null} box={box} projectId={projectId} canPosition={canPosition} onBusyChange={value => { inFlight.current = value; if (mounted.current) setBusy(value); }} /> : <>
       {parts.isPending && !current ? <div className="flex items-center gap-2 text-muted"><Spinner />Inspecting saved PCB…</div> : parts.isError && !current ? <p role="alert">Could not inspect parts. <Button size="sm" onClick={() => void parts.refetch()}>Retry</Button></p> : current && <>
         {current.parts.length > 0 ? selection ? <details key={selection.part.ref} className="fd-native-part-details"><summary>Choose another part</summary>{partPicker}</details> : partPicker : <p>No part origins within 5 mm. Select a location nearer the part you want to move.</p>}

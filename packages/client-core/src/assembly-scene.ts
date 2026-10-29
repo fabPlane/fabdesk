@@ -14,18 +14,18 @@ export function assemblySourcesToReview(data: ProjectBoardSources, previews: Rea
 export function assemblyScene(data: ProjectBoardSources, layout?: unknown) {
   if (data.mode !== "assembly" || !data.assembly) throw new Error("An explicit assembly declaration is required");
   const positions = restoreAssemblyMapLayout(data, layout);
-  const nodes: AssemblySceneNode[] = data.assembly.instances.map((instance, index) => ({ instance, source: data.sources.find(row => row.source.id === instance.sourceId), x: positions.get(instance.id)?.x ?? instance.presentation?.x ?? index % 3 * 290, y: positions.get(instance.id)?.y ?? instance.presentation?.y ?? Math.floor(index / 3) * 230, width: 210, height: 158 }));
+  const nodes: AssemblySceneNode[] = data.assembly.instances.map((instance, index) => ({ instance, source: data.sources.find(row => row.source.id === instance.sourceId), x: positions.get(instance.id)?.x ?? instance.presentation?.x ?? index % 3 * 290, y: positions.get(instance.id)?.y ?? instance.presentation?.y ?? Math.floor(index / 3) * 230, width: 270, height: 200 }));
   const links = data.assembly.connections.map(connection => ({ connection, a: nodes.find(node => node.instance.id === connection.a.instanceId)!, b: nodes.find(node => node.instance.id === connection.b.instanceId)! }));
   if (links.some(link => !link.a || !link.b)) throw new Error("A connection endpoint is not declared");
-  const minX = Math.min(...nodes.map(node => node.x)) - 64, minY = Math.min(...nodes.map(node => node.y)) - 64;
-  const maxX = Math.max(...nodes.map(node => node.x + node.width)) + 64, maxY = Math.max(...nodes.map(node => node.y + node.height)) + 64;
+  const minX = Math.min(...nodes.map(node => node.x)) - 24, minY = Math.min(...nodes.map(node => node.y)) - 24;
+  const maxX = Math.max(...nodes.map(node => node.x + node.width)) + 24, maxY = Math.max(...nodes.map(node => node.y + node.height)) + 24;
   return { nodes, links, bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY } };
 }
 /** Logical ports sit outside cards; they are not physical connector coordinates. */
 export function assemblyLinkShape(a: AssemblySceneNode, b: AssemblySceneNode) {
   const dx = b.x - a.x, dy = b.y - a.y, horizontal = Math.abs(dx) >= Math.abs(dy);
-  const start = horizontal ? { x: a.x + (dx >= 0 ? a.width + 5 : -5), y: a.y + 58 } : { x: a.x + a.width / 2, y: a.y + (dy >= 0 ? a.height + 5 : -5) };
-  const end = horizontal ? { x: b.x + (dx >= 0 ? -5 : b.width + 5), y: b.y + 58 } : { x: b.x + b.width / 2, y: b.y + (dy >= 0 ? -5 : b.height + 5) };
+  const start = horizontal ? { x: a.x + (dx >= 0 ? a.width + 5 : -5), y: a.y + (a.height - 68) / 2 + 12 } : { x: a.x + a.width / 2, y: a.y + (dy >= 0 ? a.height + 5 : -5) };
+  const end = horizontal ? { x: b.x + (dx >= 0 ? -5 : b.width + 5), y: b.y + (b.height - 68) / 2 + 12 } : { x: b.x + b.width / 2, y: b.y + (dy >= 0 ? -5 : b.height + 5) };
   const middle = horizontal ? (start.x + end.x) / 2 : (start.y + end.y) / 2;
   return { start, end, path: horizontal ? `M${start.x},${start.y} C${middle},${start.y} ${middle},${end.y} ${end.x},${end.y}` : `M${start.x},${start.y} C${start.x},${middle} ${end.x},${middle} ${end.x},${end.y}` };
 }

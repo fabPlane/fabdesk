@@ -171,7 +171,7 @@ export * from "./enclosure-revision";
 
 export * from "./pcb-parts";
 
-export { parsePcbOutlineInspection, inspectPcbOutline, resizedOutlinePoints } from "./pcb-outline";
+export { parsePcbOutlineInspection, inspectPcbOutline, outlineDimensionInput, resizedOutlinePoints } from "./pcb-outline";
 
 export { usePcbOutline } from "./queries";
 

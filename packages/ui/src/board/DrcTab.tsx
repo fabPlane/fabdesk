@@ -1,3 +1,4 @@
+import { CheckFindingDetails } from "./CheckFindingDetails";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { captureRootCheckFinding, rootCheckFindingRow, useCoreClient, usePcbCheckRevision, useProjectJson } from "@fabdesk/client-core";
@@ -106,8 +107,8 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
             : rows.length > 0 ? "Clear the finding filters to see the other saved findings." : "These saved reports contain no listed findings. Re-run checks after design changes; missing or incomplete checks do not establish a pass."}
         </EmptyState>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-auto">
+        <div className="fd-checks-results min-h-0 flex-1" data-detail-open={!!sel}>
+          <div className="fd-checks-table min-h-0 overflow-auto">
             <table className="fd-drc-table w-full text-left text-xs">
               <thead className="sticky top-0 bg-panel">
                 <tr className="text-[10.5px] uppercase tracking-wide text-muted">
@@ -142,7 +143,7 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
             </table>
           </div>
           {sel && (
-            <div className="max-h-48 overflow-auto border-t border-border bg-panel-2/40 px-3 py-2 text-xs">
+            <CheckFindingDetails><h3>Finding details</h3>
               <div className="mb-1 flex items-start justify-between gap-3"><strong>{sel.description}</strong><Button size="sm" variant="ghost" onClick={() => { root.current?.querySelector<HTMLElement>(`[data-check-row="${selected}"]`)?.focus({ preventScroll: true }); setSelected(null); }}>Close details</Button></div>
               {sel.items.length === 0 && <div className="text-muted">No item details.</div>}
               {sel.items.map((it, i) => (
@@ -162,7 +163,7 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
                   }}>Show on PCB</Button>}
                 </div>
               ))}
-            </div>
+            </CheckFindingDetails>
           )}
         </div>
       )}
