@@ -122,6 +122,32 @@ Arrange uses the available height for its parts list, with import/refresh action
 
 Background app checks passed at 2108×860, 1100×700, 778×600 and 600×500 workspace sizes: no horizontal panel overflow, all 13 parts reachable, tool-panel scrolling/collapse working, and no tools/footer overlap. Navigation, board selection, camera/move/rotate mode switches, view toggles, focus/fit and Escape deselection passed. All 16 focused scene/placement tests, UI typecheck and desktop build passed; no output source maps. The source PCB hash is unchanged. These layout checks do not resolve the native bridge and exact imported-surface collision limitations above.
 
+### UX and functionality audit
+
+Confirmed and fixed in the running app:
+
+- **Draft loss on mode changes:** Enclosure → Arrange/Add → Enclosure used to discard unsaved settings. The designer now remains mounted while hidden; settings, selection and undo survive those switches. Automatic fit checks pause while hidden. This is not recovery after closing the workspace or restarting the app: use Save for durable storage.
+- **Undo stopped at the previous digit:** typing 123 produced an undo target of 12. Numeric edits now commit on blur or Enter, so Undo move restores the position before typing. Escape cancels the draft. Untouched rounded values preserve the underlying precision.
+- **Invalid dimensions lacked useful feedback:** empty, negative or oversized widths now retain the prior value and show a field-level explanation. Bounds also cover board rotation, obstacle sizes, mounts and openings. Cross-field geometry constraints still run through the design validator.
+- **Misleading global save status:** the header now reports enclosure state while Enclosure is active instead of the assembly's independent save state.
+- **Invisible STEP source:** choosing a STEP file explains that its displayed mesh requires a native CAD preview and that an STL copy supports immediate positioning.
+
+Live regression checks used the background app bridge with DOM input/focus events. Draft retention, hidden-panel behavior, whole-edit undo, invalid/empty/oversized input handling, Escape, header status and the STEP explanation pass. All 16 focused scene/placement tests, UI typecheck and production build pass; no output source maps. Source PCB bytes are unchanged. This audit did not repeat the earlier full root suite or establish native bridge integration.
+
+![Inline validation and accurate save status](screenshots/mechanical-workspace/27-input-validation.png)
+
+Recommended next work, in priority order:
+
+| Priority | Improvement | Why it matters |
+| --- | --- | --- |
+| High | Actual imported-shell collision checks and clearance measurements | Defined rectangular bounds can miss a board crossing a real wall; red overlays must not imply exact fit certification. |
+| High | Backend readiness diagnostics with a guided connection check | Actual PCB edits and imported-solid modification need successful end-to-end native bridge tests. |
+| High | Shared or explicitly transferable Arrange/Enclosure placements | Moving a part in Arrange currently does not update its independent enclosure placement; the two coordinate workflows are easy to confuse. |
+| Medium | Recoverable drafts across workspace closure and app restart | Preserving the current mode session does not replace durable saving or recovery. |
+| Medium | Multi-step undo/redo for dimensions, board placement and removed constraints | Enclosure currently has one placement undo slot and no general edit history. |
+| Medium | Searchable part lists and explicit selection highlighting in the board inspector | Projects with many imported parts or PCBs need quicker selection and clearer context. |
+| Medium | Automatic connector-opening suggestions with user review | Manual wall/offset entry is error-prone; suggestions should be based on real connector geometry and remain reviewable. |
+
 ## UX references
 
 The layout follows [progressive disclosure](https://www.nngroup.com/articles/progressive-disclosure/), [visible system status](https://www.nngroup.com/articles/visibility-system-status/) and [recognition rather than recall](https://www.nngroup.com/articles/recognition-and-recall/): a short task sequence, one changing primary action, visible preview/save states and secondary geometry controls shown when needed.

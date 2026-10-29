@@ -134,6 +134,11 @@ export function MechanicalWorkspace({
     [mode, setMode] = useState<SceneMode>("orbit");
   const [panel, setPanel] = useState<"add" | "generate" | "design" | "assembly" | null>("add"),
     [advancedOpen, setAdvancedOpen] = useState(false);
+  const [enclosureOpened, setEnclosureOpened] = useState(false);
+  const [enclosureStatus, setEnclosureStatus] = useState("Loading enclosure…");
+  useEffect(() => {
+    if (panel === "design") setEnclosureOpened(true);
+  }, [panel]);
   const [expanded, setExpanded] = useState(() => {
     try {
       return localStorage.getItem("fd:mechanical:focus") !== "false";
@@ -621,9 +626,9 @@ export function MechanicalWorkspace({
         </div>
         <div>
           <span className="fd-mechanical-save" role="status">
-            ● {saveState}
+            ● {panel === "design" ? enclosureStatus : saveState}
           </span>
-          {saveState === "Save failed" && (
+          {panel !== "design" && saveState === "Save failed" && (
             <button onClick={() => save(itemsRef.current)}>Retry save</button>
           )}
           <button onClick={() => setAdvancedOpen(true)}>Advanced CAD</button>
@@ -681,7 +686,14 @@ export function MechanicalWorkspace({
           </button>
         </div>
       </div>
-      {panel === "design" && <EnclosureDesigner key={projectId} projectId={projectId} />}
+      {(panel === "design" || enclosureOpened) && (
+        <EnclosureDesigner
+          key={projectId}
+          projectId={projectId}
+          active={panel === "design"}
+          onStatusChange={setEnclosureStatus}
+        />
+      )}
       <div className="fd-mechanical-viewport-tools" hidden={panel === "design"}>
         <nav className="fd-mechanical-views" aria-label="Camera views">
           <svg

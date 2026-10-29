@@ -23,6 +23,9 @@
   display: grid;
   grid-template-columns: minmax(310px, 390px) 1fr;
 }
+.fd-case-workflow[hidden] {
+  display: none;
+}
 .fd-mechanical[data-enclosure-design="true"] .fd-mechanical-actions {
   visibility: hidden;
 }
@@ -121,6 +124,14 @@
   padding: 0;
   margin: 0;
   min-width: 0;
+}
+.fd-case-input-error {
+  color: var(--fd-danger, #f2857e);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.fd-case-number input[aria-invalid="true"] {
+  border-color: var(--fd-danger, #f2857e);
 }
 .fd-case-fields h3 {
   margin: 16px 0 8px;

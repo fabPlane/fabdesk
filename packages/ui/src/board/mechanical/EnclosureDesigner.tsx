@@ -49,6 +49,7 @@ function NumberField({
   value,
   onChange,
   min = -10000,
+  max = 10000,
   unit = "mm",
 }: {
   label: string;
@@ -56,10 +57,13 @@ function NumberField({
   value: number;
   onChange: (v: number) => void;
   min?: number;
+  max?: number;
   unit?: string;
 }) {
   const displayValue = String(Number(value.toFixed(3)));
   const [draft, setDraft] = useState(displayValue);
+  const [validation, setValidation] = useState("");
+  const validationId = useId();
   useEffect(() => setDraft(displayValue), [displayValue]);
   return (
     <label className="fd-case-number">
@@ -70,23 +74,52 @@ function NumberField({
           type="number"
           step="0.1"
           min={min}
+          max={max}
+          aria-invalid={!!validation}
+          aria-describedby={validation ? validationId : undefined}
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value);
-            if (e.target.value.trim() && Number.isFinite(e.target.valueAsNumber))
-              onChange(e.target.valueAsNumber);
+            setValidation("");
           }}
           onBlur={() => {
-            if (!draft.trim() || !Number.isFinite(Number(draft))) setDraft(displayValue);
+            const next = Number(draft);
+            if (draft.trim() && Number.isFinite(next) && next >= min && next <= max) {
+              if (next !== Number(displayValue)) onChange(next);
+            } else {
+              setDraft(displayValue);
+              setValidation(`Use a value from ${min} to ${max}. Previous value kept.`);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              setDraft(displayValue);
+              setValidation("");
+              e.stopPropagation();
+            }
           }}
         />
         <span>{unit}</span>
       </div>
+      {validation && (
+        <small id={validationId} className="fd-case-input-error" role="alert">
+          {validation}
+        </small>
+      )}
     </label>
   );
 }
 /** Guided enclosure workflow; all preview coordinates are in the saved PCB frame, in mm. */
-export function EnclosureDesigner({ projectId }: { projectId: string }) {
+export function EnclosureDesigner({
+  projectId,
+  active = true,
+  onStatusChange,
+}: {
+  projectId: string;
+  active?: boolean;
+  onStatusChange?: (status: string) => void;
+}) {
   const client = useCoreClient();
   const [design, setDesign] = useState<MechanicalDesign | null>(null),
     [board, setBoard] = useState<EnclosureBoardSummary | null>(null);
@@ -101,6 +134,16 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
   const [archive, setArchive] = useState<string | null>(null),
     [component, setComponent] = useState(""),
     [move, setMove] = useState({ x: 0, y: 0, rotation: 0 });
+  useEffect(() => {
+    onStatusChange?.(
+      busy ||
+        (dirty
+          ? "Unsaved enclosure changes"
+          : preview
+            ? "Enclosure preview"
+            : "Enclosure settings loaded"),
+    );
+  }, [busy, dirty, preview, onStatusChange]);
   const [hole, setHole] = useState({ x: 0, y: 0, diameter: 3 }),
     [editReview, setEditReview] = useState<"outline" | "move" | "hole" | null>(null);
   const revision = useRef<string | null>(null),
@@ -129,7 +172,7 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
     if (!host.current) return;
     let compact: boolean | undefined;
     const observer = new ResizeObserver(([entry]) => {
-      if (!entry) return;
+      if (!entry || !entry.contentRect.width) return;
       const next = entry.contentRect.width < 1290;
       if (next !== compact) setControlsExpanded(!next);
       compact = next;
@@ -213,7 +256,7 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
   }
   // Debounce edits; old responses never paint a newer design or replace a preview's report.
   useEffect(() => {
-    if (!design || preview || busy) return;
+    if (!active || !design || preview || busy) return;
     const parsed = MechanicalDesignSchema.safeParse(design);
     setFocusedIssue(null);
     setReport(null);
@@ -243,7 +286,7 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [design, board, preview, busy, client, projectId]);
+  }, [active, design, board, preview, busy, client, projectId]);
   async function run(label: string, action: () => Promise<void>) {
     if (running.current) return;
     running.current = true;
@@ -544,6 +587,9 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
       label={label}
       value={design!.space[key]}
       min={min}
+      max={
+        key === "x" || key === "y" ? 10000 : ["width", "depth", "height"].includes(key) ? 2000 : 20
+      }
       onChange={(v) => space(key, v)}
     />
   );
@@ -553,6 +599,7 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
   return (
     <section
       className="fd-case-workflow"
+      hidden={!active}
       data-controls-expanded={controlsExpanded}
       aria-label="Enclosure designer"
       onKeyDown={(e) => {
@@ -668,6 +715,12 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
                         Editing an imported solid requires FreeCAD. STL must be closed. Your
                         original file stays intact.
                       </p>
+                      {design.source && /\.(step|stp)$/i.test(design.source.path) && (
+                        <p className="fd-case-message" role="status">
+                          STEP files appear after generating a preview with the CAD backend. Import
+                          an STL copy for immediate visual positioning.
+                        </p>
+                      )}
                       {design.source && (
                         <details>
                           <summary>Import units and position</summary>
@@ -766,6 +819,8 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
                               key={k}
                               label={`${o.name} ${k}`}
                               value={o[k]}
+                              min={["width", "depth", "height"].includes(k) ? 0.1 : -10000}
+                              max={["width", "depth", "height"].includes(k) ? 2000 : 10000}
                               onChange={(v) =>
                                 edit({
                                   ...design,
@@ -825,6 +880,16 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
                               key={k}
                               label={`Mount ${i + 1} ${{ x: "X", y: "Y", diameter: "hole diameter", outer: "post diameter", height: "height" }[k]}`}
                               value={m[k]}
+                              min={k === "x" || k === "y" ? -10000 : k === "outer" ? 1 : 0.5}
+                              max={
+                                k === "x" || k === "y"
+                                  ? 10000
+                                  : k === "outer"
+                                    ? 40
+                                    : k === "height"
+                                      ? 100
+                                      : 20
+                              }
                               onChange={(v) =>
                                 edit({
                                   ...design,
@@ -916,6 +981,8 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
                               key={k}
                               label={`${o.name} ${k}`}
                               value={o[k]}
+                              min={k === "width" || k === "height" ? 0.1 : -10000}
+                              max={k === "width" || k === "height" ? 2000 : 10000}
                               onChange={(v) =>
                                 edit({
                                   ...design,
@@ -985,6 +1052,8 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
                             }
                             inputLabel={`Board ${i + 1} ${k}`}
                             unit={k === "rotation" ? "°" : "mm"}
+                            min={k === "rotation" ? -360 : -10000}
+                            max={k === "rotation" ? 360 : 10000}
                             value={b[k]}
                             onChange={(v) => changePlacement({ ...b, [k]: v })}
                           />
@@ -1092,6 +1161,7 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
                             key={k}
                             label={`PCB hole ${k}`}
                             value={hole[k]}
+                            min={k === "diameter" ? 0.1 : -10000}
                             onChange={(v) => {
                               setHole({ ...hole, [k]: v });
                               setEditReview(null);
