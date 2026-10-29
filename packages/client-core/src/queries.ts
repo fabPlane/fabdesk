@@ -1,5 +1,6 @@
 import { inspectKeptOutputIdentity, type KeptOutputKind } from "./kept-output";
 import { inspectVideoInputRevision } from "./video-input-revision";
+import { inspectRouteReview } from "./route-review";
 import { inspectAssemblySchematicPreview } from "./assembly-schematic-preview";
 import { inspectAssemblyModelSummaries } from "./assembly-model-summary";
 import { inspectAssemblyBoardModel } from "./assembly-board-model";
@@ -469,6 +470,11 @@ export function useRouteRun(runId: string | null) {
         ? 2000
         : false,
   });
+}
+
+export function useRouteReview(projectId: string, runId: string, enabled: boolean) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["route-review", projectId, runId], queryFn: () => inspectRouteReview(client, projectId, runId), enabled });
 }
 
 /**

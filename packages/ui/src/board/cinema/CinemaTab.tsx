@@ -11,6 +11,7 @@ import { SvgViewer } from "../SvgViewer";
 import type { RouterCatalogId } from "@fabdesk/protocol";
 import { routerPickerOptions } from "../../settings/routers";
 import { runFailureText } from "./runError";
+import { RouteCandidateReview } from "./RouteCandidateReview";
 import { CinemaPainter, DARK_THEME, LIGHT_THEME, frameStatusText, layerColor, nextFrameSeq, perfStatusText, type OffscreenLike } from "./renderer";
 
 /** Offscreen layers for the painter: statics and settled copper, sized like the visible canvas. */
@@ -69,6 +70,7 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
   const { seek, step, goLive, togglePlaying, toggleLayer, setActiveRun, ingestMany, setPlaybackMs, reportDraw } = useCinemaStore.getState();
   const route = useRunTool();
   const cancel = useRunTool();
+  const [applying, setApplying] = useState(false);
   const project = useProject(projectId);
   const history = useRouteRuns(projectId);
   const [setupOpen, setSetupOpen] = useState(false);
@@ -215,7 +217,7 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
   const projectRuns = (history.data ?? []).filter(item => item.projectId === projectId);
   const runIds = [...new Set([...projectRuns.map(item => item.id), ...(ownedRunId ? [ownedRunId] : [])])];
   const active = !!ownedRunId && ["queued", "running", "cancel_requested", "cancelling"].includes(runRecord.data?.status ?? "");
-  const busy = route.state.status === "running" || active || projectRuns.some(item => ["queued", "running", "cancel_requested", "cancelling"].includes(item.status));
+  const busy = applying || route.state.status === "running" || active || projectRuns.some(item => ["queued", "running", "cancel_requested", "cancelling"].includes(item.status));
   const hasPcb = project.data?.files.some(file => file.path === "board.kicad_pcb") ?? false;
   const canRoute = scopeReady && hasPcb && !project.isFetching && !project.isError && !!history.data && !history.isFetching && !history.isError && !busy;
   const preview = project.data?.files.some(file => file.path === "renders/pcb.svg");
@@ -225,7 +227,7 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
   }}>Cancel run</Button> : null;
   async function startRouting() {
     if (!canRoute || useUiStore.getState().activeProjectId !== projectId) return;
-    await route.run("route", { projectId, ...(pickedRouter !== "default" ? { router: pickedRouter } : {}) });
+    await route.run("route", { projectId, applyPolicy: "manual", ...(pickedRouter !== "default" ? { router: pickedRouter } : {}) });
     void history.refetch();
   }
   const failureNotice = runError && (
@@ -244,11 +246,11 @@ function ProjectCinema({ projectId, scopeReady }: { projectId: string; scopeRead
     </label>
     <details className="fd-routing-options"><DisclosureSummary icon="settings" label="Router options" /><Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setSettingsOpen(true, "router")}>Manage routers</Button></details>
     {routers.isError && <p role="alert">Router availability could not be checked. <Button size="sm" onClick={() => void routers.refetch()}>Retry</Button></p>}
-    <p role="status">{project.isError ? "Project files could not be read." : !scopeReady || project.isFetching ? "Checking saved PCB…" : !hasPcb ? "Add a saved PCB in Board before starting routing." : "Routing can update the saved PCB after its source checks. Review the result and current PCB checks before fabrication."}</p>
+    <p role="status">{project.isError ? "Project files could not be read." : !scopeReady || project.isFetching ? "Checking saved PCB…" : !hasPcb ? "Add a saved PCB in Board before starting routing." : "Routing creates a candidate and keeps the saved PCB. Review the result, then choose whether to apply it."}</p>
     <Button className="fd-routing-start-action" variant="primary" disabled={!canRoute} onClick={() => void startRouting()}>{busy ? "Routing…" : "Start routing"}</Button>
     {ownedRunId && <section className="fd-routing-saved-run"><h3>Saved run</h3>{failureNotice || <p>Recorded {runRecord.data?.status ?? "run"} · inspect playback before starting another run.</p>}</section>}
   </section>;
-  const feedback = <>{route.state.error && <p role="alert" className="text-danger">{route.state.error}</p>}{cancel.state.error && <p role="alert" className="text-danger">{cancel.state.error}</p>}{history.isError && <p role="alert">Routing history could not be loaded. <Button size="sm" onClick={() => void history.refetch()}>Retry history</Button></p>}{frameError && <p role="alert">{frameError} <Button size="sm" onClick={() => setFrameRetry(value => value + 1)}>Retry frames</Button></p>}</>;
+  const feedback = <>{ownedRunId && !active && <RouteCandidateReview key={ownedRunId} projectId={projectId} runId={ownedRunId} enabled={scopeReady && !busy} onBusyChange={setApplying} onChanged={() => { void runRecord.refetch(); void history.refetch(); void project.refetch(); }} />}{route.state.error && <p role="alert" className="text-danger">{route.state.error}</p>}{cancel.state.error && <p role="alert" className="text-danger">{cancel.state.error}</p>}{history.isError && <p role="alert">Routing history could not be loaded. <Button size="sm" onClick={() => void history.refetch()}>Retry history</Button></p>}{frameError && <p role="alert">{frameError} <Button size="sm" onClick={() => setFrameRetry(value => value + 1)}>Retry frames</Button></p>}</>;
   if (!run) return <div className="fd-routing-start">
     <header><div><h1>Routing</h1><p>Start a run when your board is ready for copper routing.</p></div><Button ref={setupTrigger} size="sm" aria-expanded={setupOpen} onClick={() => setSetupOpen(!setupOpen)}>{setupOpen ? "Close setup" : "Set up routing"}</Button></header>
     <div className="fd-routing-start-body" data-setup-open={setupOpen}>{preview ? <RoutingReference projectId={projectId} /> : <section className="fd-routing-reference"><EmptyState title={hasPcb ? "Saved PCB" : "Start with a saved PCB"}>Choose Set up routing to review router options and requirements.</EmptyState></section>}{setupOpen && setup}</div>

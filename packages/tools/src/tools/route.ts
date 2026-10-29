@@ -1893,6 +1893,7 @@ export const route_apply = defineTool({
   handler: async ({ runId, expectedPcbRevision, allowQualityRegression }, ctx) => {
     const rec = ctx.services.routeRuns.get(runId);
     if (!rec) throw new ToolError(`route run not found: ${runId}`, "not_found");
+    if (rec.projectId !== ctx.requireProject().id) throw new ToolError(`route ${runId} belongs to another project`, "precondition");
     if (rec.application.state === "applied" && rec.application.resultingPcbRevision)
       return ok(`Route ${runId} candidate is already applied.`, {
         runId,
