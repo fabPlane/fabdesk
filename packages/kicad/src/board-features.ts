@@ -117,12 +117,19 @@ export type BoardFeatures = {
   holes: MountingHole[];
   connectors: EdgeConnector[];
   tallParts: TallPart[];
+  /** All populated footprints, including short parts, for conservative fit checks. */
+  components?: Array<TallPart & { bottom: boolean }>;
   footprints: number;
   warnings: string[];
 };
 
 const mm = (n: number) => Math.round(n * 1e4) / 1e4;
-const emptyRect = (): Rect => ({ minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+const emptyRect = (): Rect => ({
+  minX: Infinity,
+  minY: Infinity,
+  maxX: -Infinity,
+  maxY: -Infinity,
+});
 const expand = (r: Rect, x: number, y: number): void => {
   if (x < r.minX) r.minX = x;
   if (y < r.minY) r.minY = y;
@@ -336,7 +343,10 @@ function nearestEdge(outline: Rect, point: Point, bounds: Rect): { edge: BoardEd
   return gaps.reduce((best, cur) => (cur.gap < best.gap ? cur : best));
 }
 
-function outlineFromGraphics(root: Sexpr[]): { outline: BoardOutline | null; circles: MountingHole[] } {
+function outlineFromGraphics(root: Sexpr[]): {
+  outline: BoardOutline | null;
+  circles: MountingHole[];
+} {
   const box = emptyRect();
   const circles: MountingHole[] = [];
   let source: BoardOutline["source"] = "segments";
@@ -426,17 +436,23 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
   const root = parseSexpr(boardText).find((n): n is Sexpr[] => head(n) === "kicad_pcb");
   if (!root) throw new Error("not a kicad_pcb file");
   const warnings: string[] = [];
-  const thickness = numberAt(child(root, "general") && child(child(root, "general")!, "thickness"), 1);
+  const thickness = numberAt(
+    child(root, "general") && child(child(root, "general")!, "thickness"),
+    1,
+  );
   const thicknessMm = thickness ?? 1.6;
   if (thickness === null) warnings.push("board thickness missing; assuming 1.6 mm");
   const { outline, circles } = outlineFromGraphics(root);
   if (!outline) throw new Error("board has no Edge.Cuts outline");
   if (!outline.closed)
-    warnings.push("Edge.Cuts segments may not form a closed contour; the enclosure uses the bounding box");
+    warnings.push(
+      "Edge.Cuts segments may not form a closed contour; the enclosure uses the bounding box",
+    );
 
   const holes: MountingHole[] = [...circles];
   const connectors: EdgeConnector[] = [];
   const tallParts: TallPart[] = [];
+  const components: NonNullable<BoardFeatures["components"]> = [];
   const footprints = children(root, "footprint");
   for (const fp of footprints) {
     const placement = footprintPlacement(fp);
@@ -454,7 +470,7 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
 
     for (const [index, pad] of children(fp, "pad").entries()) {
       const tokens = pad.filter((n): n is string => typeof n === "string");
-      if (!tokens.includes("npth")) continue;
+      if (!tokens.includes("npth") && !tokens.includes("np_thru_hole")) continue;
       const at = xy(child(pad, "at")) ?? { x: 0, y: 0 };
       const drill = child(pad, "drill");
       const diameter = numberAt(drill, 1) ?? numberAt(child(pad, "size"), 1) ?? 0;
@@ -477,6 +493,15 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
       ? bounds
       : { minX: origin.x - 1, minY: origin.y - 1, maxX: origin.x + 1, maxY: origin.y + 1 };
     const heightMm = estimatePartHeightMm(libId, value);
+    components.push({
+      ref: ref || libId,
+      footprint: libId,
+      x: origin.x,
+      y: origin.y,
+      heightMm,
+      bounds: body,
+      bottom: layerOf(fp) === "B.Cu",
+    });
     const mountLabel = `${libId} ${ref}`;
     if (
       !FIDUCIAL_RE.test(mountLabel) &&
@@ -538,6 +563,7 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
     holes,
     connectors,
     tallParts,
+    components,
     footprints: footprints.length,
     warnings,
   };

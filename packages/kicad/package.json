@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./board-features": "./src/board-features.ts",
     "./enclosure": "./src/enclosure.ts",
+    "./mechanical-fit": "./src/mechanical-fit.ts",
     "./stencil": "./src/stencil.ts",
     "./stencil-laser": "./src/stencil-laser.ts"
   },

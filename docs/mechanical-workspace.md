@@ -2,6 +2,8 @@
 
 Open a project and choose **CAD** in the board workspace. CAD starts in focus mode; **Show chat** restores the split workspace and **Focus CAD** expands it again. This preference is remembered on this device. The existing FreeCAD screen and kernel tree are under **Advanced CAD**.
 
+**Enclosure now opens the guided Start → Space → PCB → Review workflow.** See [enclosure design and PCB fit](enclosure-design.md) for the current controls, coordinated export, native bridge requirements and validation. The original viewer screenshots below document the assembly controls; the latest enclosure screenshots are in that guide.
+
 ## Reference-driven layout
 
 These are captures of the running desktop app, using the repository's enclosure regression fixture. The block-shaped components are explicitly labelled estimates, not replacement artwork for detailed PCB models. A generated `renders/board.glb` supplies the actual KiCad geometry and materials when available.
@@ -43,21 +45,21 @@ Panels reserve space beside the 3D render surface, so Fit no longer frames model
 - Measure picks two surface points and reports millimetres. It does not snap to vertices or certify fit.
 - Assembly visibility, transforms and imported-file references persist in `cad/assembly-layout.json`. Undo/redo lasts for the current workspace session. Original PCB and imported files remain unchanged. Removing a part only removes its assembly reference.
 - Imports accept STL/OBJ in millimetres and self-contained GLB in metres, converted to millimetres. Use scale 25.4 for an inch-based STL/OBJ. Limit: 50 MiB per file, six million vertices per model, 100 assembly entries. Unsupported compression or external GLB resources are rejected.
-- Preview does not write enclosure files or invoke FreeCAD. Apply writes the existing enclosure generator's STL/STEP/spec outputs, and rejects a PCB revision that changed since preview. Cases inherit the board's assembly pose, including rotation and scale.
+- The guided enclosure preview does not replace design/export files. Generated cases use the local geometry generator; modifying an imported case requires the native CAD bridge. Apply rejects stale previews and saves a coordinated ZIP. Its explicit PCB-coordinate placements are separate from Arrange's assembly poses.
 - Exploded view has a visible **Return to editing** action; Fit includes the exploded lid. Hover gives a model highlight, with subtle ground shadows and no idle rendering.
 - **Review** shows actual warnings in amber. The separate **Export** panel provides generated base STL, lid STL and STEP downloads. Downloads retain generated dimensions; assembly transforms do not bake into export files.
 
 ## Scope and limits
 
-Direct import in this canvas supports STL, OBJ and GLB. STEP/native solid editing remains in the optional FreeCAD workflow; this change does not provide a STEP tessellator. It also does not add connection authoring, automatic collision checking, surface alignment constraints, arbitrary solid editing, transformed-assembly export, or the illustrative laptop assets shown in the design references. Enclosures continue to use the existing generator's geometry and printability limits.
+Assembly import supports STL, OBJ and GLB. The guided enclosure workflow also accepts STEP through the native CAD bridge and adds conservative fit checks, constrained PCB edits and imported-case cavity/post/opening operations. It does not add connection authoring, exact imported-mesh collision checking, arbitrary solid editing or transformed-assembly export. Enclosures retain the generator's printability limits.
 
-The board fallback is an outline bounding envelope with estimated component sizes. Use **Load detailed PCB** on the envelope label or generate a detailed PCB model from Arrange for actual KiCad geometry; that requires an installed KiCad CLI compatible with the project's PCB version. Native FreeCAD editing itself was not exercised during this change because the optional runtime is not installed locally.
+The board fallback is an outline bounding envelope with estimated component sizes. Use **Load detailed PCB** on the envelope label or generate a detailed PCB model from Arrange for actual KiCad geometry; that requires an installed KiCad CLI compatible with the project's PCB version. The new imported-case script passed a real FreeCAD 1.1 solid test; the app's native bridge integration remains unverified locally.
 
 ## Validation (Windows, Bun 1.4.0)
 
 - Rechecked on 2026-10-29: root typecheck and desktop production build pass; no `.map` files in desktop build output.
 - All 217 UI tests and all 172 client-core tests pass. Focused mechanical/CAD coverage: 22 tests (5 persistence/pose/import-policy, 4 mesh decoding/coordinate-frame, 13 CAD tools).
-- Full root suite: 1,863 passed, 35 failed. Failures match the earlier main baseline (34 in the full baseline log plus the separately reproduced MCP progress-timing failure). These include Windows process/symlink/platform assumptions, router/runtime checks and unrelated existing assertions; this is not an all-green root run.
+- Latest full root suite: 1,875 passed, 35 failed. Failure names match the earlier mechanical-workspace baseline exactly. This is not an all-green root run. The new enclosure checks and native-runtime limitations are recorded in the enclosure guide.
 - Live app: native mouse orbit, move handle, rotation ring, scroll zoom and two-point measurement; exact negative/decimal coordinates; STL/OBJ/GLB imports; malformed mesh rejection; original-file preservation; undo/redo; remove/undo; scale persistence after reopening; preview/cancel preserving existing files; Apply creating STL/STEP; moved/rotated board-case alignment; compact explode controls; dark/light rendering; Advanced CAD dialog.
 - Readability follow-up: 217 UI tests, UI typecheck and desktop build pass; live verification of default Parts view, aligned/non-overlapping XYZ fields, negative decimal editing with undo, and visible scale/save status in a 767px-wide chat layout.
 - Usability follow-up: persisted focus/chat preference across project reopen; no canvas/inspector overlap at 646px workspace width; scale dimensions, keyboard undo/redo and text-field guards; F/Esc; view-cube keyboard activation; exploded-view return; separate review/export; valid base/lid STL and STEP blobs through the download buttons; OBJ import while Export is open closes Export and selects the import; import undo. Idle WebGL draw calls: **0** over 500ms, with drawing resuming on camera input. Preview/cancel again preserved all six checked PCB/layout/spec/export files.

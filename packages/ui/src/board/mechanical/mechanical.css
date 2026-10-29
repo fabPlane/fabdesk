@@ -15,6 +15,312 @@
   background-size: 22px 22px;
   font-size: 12px;
 }
+.fd-case-workflow {
+  position: absolute;
+  inset: 104px 0 0;
+  z-index: 4;
+  background: var(--fd-bg);
+  display: grid;
+  grid-template-columns: minmax(310px, 390px) 1fr;
+}
+.fd-mechanical[data-enclosure-design="true"] .fd-mechanical-actions {
+  visibility: hidden;
+}
+.fd-mechanical[data-enclosure-design="true"] .fd-mechanical-bottom {
+  visibility: hidden;
+}
+.fd-case-view-tools {
+  position: absolute;
+  top: 18px;
+  right: 24px;
+  display: flex;
+  gap: 8px;
+}
+.fd-case-view-tools button {
+  background: var(--fd-panel);
+  border: 1px solid var(--fd-border);
+  color: var(--fd-fg);
+}
+.fd-case-canvas {
+  position: absolute;
+  inset: 0 0 0 390px;
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--fd-accent) 5%, var(--fd-bg)),
+    var(--fd-bg)
+  );
+}
+.fd-case-canvas canvas {
+  display: block;
+}
+.fd-case-panel {
+  position: relative;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--fd-panel);
+  border-right: 1px solid var(--fd-border);
+  box-shadow: 4px 0 20px #0001;
+}
+.fd-case-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 20px 14px;
+  gap: 12px;
+}
+.fd-case-eyebrow {
+  color: var(--fd-muted);
+  font-size: 10px;
+  letter-spacing: 1.3px;
+}
+.fd-case-panel h2 {
+  margin: 4px 0 0;
+  font-size: 19px;
+}
+.fd-case-panel header small {
+  color: var(--fd-muted);
+  font-size: 10px;
+  text-align: right;
+}
+.fd-case-panel nav {
+  display: flex;
+  gap: 4px;
+  margin: 0 16px 12px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--fd-bg);
+}
+.fd-case-panel nav button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--fd-muted);
+  font-weight: 600;
+}
+.fd-case-panel nav button[aria-current="step"] {
+  color: var(--fd-fg);
+  background: var(--fd-panel-2);
+  box-shadow: 0 1px 4px #0002;
+}
+.fd-case-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 20px 24px;
+}
+.fd-case-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.fd-case-fields h3 {
+  margin: 16px 0 8px;
+  font-size: 14px;
+}
+.fd-case-fields p {
+  color: var(--fd-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 8px 0 14px;
+}
+.fd-case-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 10px 0;
+  font-size: 12px;
+}
+.fd-case-fields input:not([type="checkbox"]),
+.fd-case-fields select {
+  min-width: 0;
+  width: 100%;
+  background: var(--fd-bg);
+  border: 1px solid var(--fd-border);
+  color: var(--fd-fg);
+  border-radius: 7px;
+  padding: 9px;
+  font: inherit;
+}
+.fd-case-choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 16px 0 24px;
+}
+.fd-case-choices button {
+  padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  border: 1px solid var(--fd-border);
+  background: var(--fd-bg);
+  color: var(--fd-fg);
+  white-space: normal;
+  text-align: left;
+}
+.fd-case-choices button[aria-pressed="true"] {
+  color: var(--fd-fg);
+  border-color: var(--fd-accent);
+  background: color-mix(in srgb, var(--fd-accent) 12%, var(--fd-panel));
+}
+.fd-case-choices small {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.8;
+}
+.fd-case-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+.fd-case-number div {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+.fd-case-number div span {
+  position: absolute;
+  right: 9px;
+  color: var(--fd-muted);
+  font-size: 10px;
+  pointer-events: none;
+}
+.fd-case-number div input {
+  padding-right: 34px !important;
+  appearance: textfield;
+}
+.fd-case-number input::-webkit-inner-spin-button {
+  appearance: none;
+}
+.fd-case-fields details {
+  border-top: 1px solid var(--fd-border);
+  padding: 14px 0;
+  margin-top: 10px;
+}
+.fd-case-fields summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.fd-case-fields .fd-case-check {
+  flex-direction: row;
+  align-items: flex-start;
+  line-height: 1.5;
+  margin-top: 22px;
+}
+.fd-case-check input {
+  accent-color: var(--fd-accent);
+  margin-top: 2px;
+}
+.fd-case-entry {
+  border: 1px solid var(--fd-border);
+  border-radius: 8px;
+  padding: 10px;
+  margin: 12px 0;
+}
+.fd-case-fields button {
+  margin: 5px 0;
+  border: 1px solid var(--fd-border);
+  color: var(--fd-fg);
+  background: var(--fd-panel-2);
+}
+.fd-case-panel footer {
+  border-top: 1px solid var(--fd-border);
+  padding: 12px 20px 16px;
+  background: var(--fd-panel);
+}
+.fd-case-panel footer > span {
+  display: block;
+  color: var(--fd-muted);
+  font-size: 11px;
+  margin-bottom: 10px;
+}
+.fd-case-panel footer > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.fd-case-panel footer button {
+  min-width: 90px;
+}
+.fd-case-message {
+  padding: 12px;
+  margin: 10px 0;
+  border-radius: 8px;
+  border: 1px solid var(--fd-border);
+  background: var(--fd-panel-2);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.fd-case-message.is-error {
+  border-color: var(--fd-danger, #d76d6d);
+}
+.fd-case-results {
+  margin: 16px 0;
+}
+.fd-case-issue {
+  border-top: 1px solid var(--fd-border);
+  padding-top: 10px;
+}
+.fd-case-issue > span {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--fd-muted);
+}
+.fd-case-issue.error > span {
+  color: var(--fd-danger, #d76d6d);
+}
+.fd-case-canvas-note {
+  position: absolute;
+  left: 420px;
+  right: 30px;
+  bottom: 22px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--fd-muted);
+  pointer-events: none;
+}
+.fd-case-canvas-note strong {
+  color: var(--fd-fg);
+  font-size: 12px;
+}
+.fd-case-canvas-note span {
+  font-size: 11px;
+}
+.fd-case-canvas-note button {
+  pointer-events: auto;
+  margin-left: auto;
+  background: var(--fd-panel);
+  border: 1px solid var(--fd-border);
+}
+@container (max-width:800px) {
+  .fd-case-workflow {
+    grid-template-columns: 310px 1fr;
+  }
+  .fd-case-canvas {
+    left: 310px;
+  }
+  .fd-case-canvas-note {
+    left: 325px;
+    right: 10px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+@container (max-width:560px) {
+  .fd-case-workflow {
+    grid-template-columns: 1fr;
+  }
+  .fd-case-panel {
+    width: 100%;
+  }
+  .fd-case-canvas,
+  .fd-case-canvas-note {
+    display: none;
+  }
+}
 .fd-mechanical.is-expanded {
   position: fixed;
   inset: 48px 12px 12px;

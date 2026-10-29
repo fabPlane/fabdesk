@@ -383,13 +383,18 @@ export function generateEnclosure(
   features: BoardFeatures,
   paramsInput: Partial<EnclosureParams> = {},
   now = new Date(),
+  constraints?: {
+    inner: EnclosureSpec["inner"];
+    cutouts?: EnclosureCutout[];
+    standoffs?: EnclosureStandoff[];
+  },
 ): EnclosureSpec {
   const params = mergeEnclosureParams(paramsInput);
   const { outline } = features;
   const tallest = features.tallParts[0]?.heightMm ?? features.connectors.reduce((m, c) => Math.max(m, c.heightMm), 0);
   const cavityHeight = params.standoffMm + features.thicknessMm + Math.max(tallest, 2) + params.headroomMm;
   const pad = params.clearanceMm + params.outlineOffsetMm;
-  const inner: EnclosureSpec["inner"] = {
+  const inner: EnclosureSpec["inner"] = constraints?.inner ?? {
     minX: mm(outline.minX - pad),
     minY: mm(outline.minY - pad),
     maxX: mm(outline.maxX + pad),
@@ -411,7 +416,7 @@ export function generateEnclosure(
   if (params.outlineOffsetMm > 0)
     warnings.push(`outline offset ${params.outlineOffsetMm} mm is applied outside the ${params.clearanceMm} mm board clearance`);
 
-  const cutouts: EnclosureCutout[] = features.connectors.map((c) => {
+  const cutouts: EnclosureCutout[] = constraints?.cutouts ?? features.connectors.map((c) => {
     const widthMm = mm(c.widthMm + 2 * params.cutoutClearanceMm);
     const heightMm = mm(c.heightMm + 2 * params.cutoutClearanceMm);
     const z = mm(params.floorMm + params.standoffMm + features.thicknessMm + c.heightMm / 2);
@@ -432,7 +437,7 @@ export function generateEnclosure(
     };
   });
 
-  const standoffs: EnclosureStandoff[] = features.holes.map((h) => ({
+  const standoffs: EnclosureStandoff[] = constraints?.standoffs ?? features.holes.map((h) => ({
     id: h.id,
     x: h.x,
     y: h.y,

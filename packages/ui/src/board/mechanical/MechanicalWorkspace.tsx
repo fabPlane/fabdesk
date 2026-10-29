@@ -18,6 +18,7 @@ import {
 import { Dialog } from "../../components/ui";
 import { Icon } from "../../components/Icon";
 import { MechanicalIcon } from "./MechanicalIcon";
+import { EnclosureDesigner } from "./EnclosureDesigner";
 import "./mechanical.css";
 
 type EnclosureResult = {
@@ -131,7 +132,7 @@ export function MechanicalWorkspace({
     previewForm = useRef<Form | null>(null);
   const [selected, setSelected] = useState<string | null>(null),
     [mode, setMode] = useState<SceneMode>("orbit");
-  const [panel, setPanel] = useState<"add" | "generate" | "assembly" | null>("add"),
+  const [panel, setPanel] = useState<"add" | "generate" | "design" | "assembly" | null>("add"),
     [advancedOpen, setAdvancedOpen] = useState(false);
   const [expanded, setExpanded] = useState(() => {
     try {
@@ -571,6 +572,7 @@ export function MechanicalWorkspace({
     <section
       className={`fd-mechanical${expanded ? " is-expanded" : ""}${leftPanel ? " has-left-panel" : ""}${rightPanel ? " has-right-panel" : ""}${preview ? " has-preview" : ""}${explode > 0 && !preview ? " is-exploded" : ""}`}
       data-testid="mechanical-workspace"
+      data-enclosure-design={panel === "design"}
       tabIndex={-1}
       onKeyDown={(e) => {
         if (
@@ -636,7 +638,7 @@ export function MechanicalWorkspace({
       </header>
       <div className="fd-mechanical-top">
         <div className="fd-mechanical-segment">
-          {(["add", "assembly", "generate"] as const).map((p) => (
+          {(["add", "assembly", "design"] as const).map((p) => (
             <button
               key={p}
               aria-pressed={panel === p}
@@ -679,7 +681,8 @@ export function MechanicalWorkspace({
           </button>
         </div>
       </div>
-      <div className="fd-mechanical-viewport-tools">
+      {panel === "design" && <EnclosureDesigner key={projectId} projectId={projectId} />}
+      <div className="fd-mechanical-viewport-tools" hidden={panel === "design"}>
         <nav className="fd-mechanical-views" aria-label="Camera views">
           <svg
             className="fd-mechanical-cube"
@@ -749,7 +752,7 @@ export function MechanicalWorkspace({
           <button
             className="fd-mechanical-choice"
             disabled={!!busy}
-            onClick={() => setPanel("generate")}
+            onClick={() => setPanel("design")}
           >
             <Icon name="plus" />
             <div>

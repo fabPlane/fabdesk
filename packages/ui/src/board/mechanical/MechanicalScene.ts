@@ -10,7 +10,12 @@ import { modelFormat, type MechanicalItem } from "@fabdesk/client-core";
 export type BoardGeometry = {
   outline: { minX: number; minY: number; maxX: number; maxY: number };
   holes: Array<{ x: number; y: number; diameterMm: number }>;
-  parts: Array<{ ref: string; heightMm: number; bounds: BoardGeometry["outline"] }>;
+  parts: Array<{
+    ref: string;
+    heightMm: number;
+    bounds: BoardGeometry["outline"];
+    bottom?: boolean;
+  }>;
   connectors: Array<{ ref: string }>;
 };
 export type SceneModel = {
@@ -19,6 +24,7 @@ export type SceneModel = {
   board?: BoardGeometry;
   thickness?: number;
   origin?: [number, number, number];
+  volume?: { x: number; y: number; z: number; width: number; depth: number; height: number };
 };
 export type SceneMode = "orbit" | "translate" | "rotate" | "measure";
 type Callbacks = {
@@ -322,6 +328,7 @@ export class MechanicalScene {
         if (
           existing?.source.data === source.data &&
           existing?.source.board === source.board &&
+          JSON.stringify(existing?.source.volume) === JSON.stringify(source.volume) &&
           existing?.source.origin?.join() === source.origin?.join()
         )
           continue;
@@ -391,7 +398,26 @@ export class MechanicalScene {
         metalness: 0.25,
         side: T.DoubleSide,
       });
-    if (source.board) {
+    if (source.volume) {
+      const v = source.volume;
+      const geometry = new T.BoxGeometry(v.width, v.depth, v.height);
+      const mesh = new T.Mesh(
+        geometry,
+        new T.MeshStandardMaterial({
+          color: 0xd69b52,
+          transparent: true,
+          opacity: 0.25,
+          depthWrite: false,
+        }),
+      );
+      mesh.position.set(v.x + v.width / 2, v.y + v.depth / 2, v.z + v.height / 2);
+      const edges = new T.LineSegments(
+        new T.EdgesGeometry(geometry),
+        new T.LineBasicMaterial({ color: 0xd69b52 }),
+      );
+      edges.position.copy(mesh.position);
+      group.add(mesh, edges);
+    } else if (source.board) {
       const b = source.board,
         o = b.outline,
         shape = new T.Shape();
@@ -434,7 +460,7 @@ export class MechanicalScene {
         mesh.position.set(
           (p.minX + p.maxX) / 2,
           (p.minY + p.maxY) / 2,
-          thickness + part.heightMm / 2,
+          part.bottom ? -part.heightMm / 2 : thickness + part.heightMm / 2,
         );
         group.add(mesh);
       }

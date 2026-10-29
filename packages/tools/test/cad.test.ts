@@ -148,6 +148,7 @@ describe("cad toolset", () => {
       "cad_build_part",
       "cad_combine_parts",
       "cad_enclosure",
+      "cad_fit",
     ]);
     expect(registry.get("cad_python")!.annotations.openWorldHint).toBe(true);
     expect(toolsMarkdown(registry)).toContain("### cad — mechanical model (OpenCascade");

@@ -160,3 +160,4 @@ export {
 export type { VoiceShortcut } from "./speech/shortcut";
 export { PersistentDraft, localDraft } from "./persistent-draft";
 export * from "./mechanical";
+export * from "./enclosure-design";
