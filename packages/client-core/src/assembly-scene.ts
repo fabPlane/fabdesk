@@ -37,6 +37,19 @@ export function assemblySelectionState(data: ProjectBoardSources, selection: Ass
   const source = data.sources.find(row => row.source.id === selection.sourceId);
   return source?.status === "available" && source.source.location === "project" ? "owned" : "unavailable";
 }
+/** Step through source attention once per design, including sources that cannot be opened yet. */
+export function nextAssemblyReviewSelection(data: ProjectBoardSources, sourceIds: readonly string[], current: AssemblySceneSelection | null): AssemblySceneSelection | null {
+  if (data.mode !== "assembly" || !data.assembly || !data.manifestSha256) return null;
+  const pending = new Set(sourceIds), seen = new Set<string>();
+  const instances = data.assembly.instances.filter(instance => {
+    if (!pending.has(instance.sourceId) || seen.has(instance.sourceId)) return false;
+    seen.add(instance.sourceId); return true;
+  });
+  if (!instances.length) return null;
+  const currentIndex = current && assemblySelectionState(data, current) !== "stale" ? instances.findIndex(instance => instance.sourceId === current.sourceId) : -1;
+  const next = instances[(currentIndex + 1) % instances.length]!;
+  return captureAssemblySelection(data, next.id);
+}
 /** Restored UI state is untrusted and must never select a changed declaration or source. */
 export function restoreAssemblySelection(data: ProjectBoardSources, saved: unknown): AssemblySceneSelection | null {
   if (!saved || typeof saved !== "object") return null;

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { ProjectBoardSources } from "@fabdesk/protocol";
-import { restoreAssemblySelection, assemblyScene, assemblySourcesToReview, captureAssemblySelection, assemblySelectionState, inspectAssemblyBoard } from "./assembly-scene";
+import { nextAssemblyReviewSelection, restoreAssemblySelection, assemblyScene, assemblySourcesToReview, captureAssemblySelection, assemblySelectionState, inspectAssemblyBoard } from "./assembly-scene";
 const source = { id: "io", name: "I/O", location: "project", directory: "boards/io" };
 const data = () => ProjectBoardSources.parse({ projectId: "project", mode: "assembly", manifestSha256: "a".repeat(64), editing: "single-board-only", observedAt: "2026-10-28T00:00:00Z", assembly: { contract: "fabplane.assembly.v1", sources: [source], instances: [{ id: "left", name: "Left I/O", sourceId: "io", presentation: { units: "canvas-px", x: -100, y: -40 } }, { id: "right", name: "Right I/O", sourceId: "io", presentation: { units: "canvas-px", x: 360, y: 240 } }], connections: [{ id: "link", name: "Declared link", a: { instanceId: "left", connector: "J1" }, b: { instanceId: "right", connector: "J1" } }] }, sources: [{ source, status: "available", pcbPath: "boards/io/board.kicad_pcb", previewPath: "boards/io/renders/pcb.svg" }] });
 test("scene membership uses physical instances without duplicating source ownership or converting canvas positions to millimetres", () => {
@@ -56,4 +56,38 @@ test("restored board workspaces validate persisted ownership without silently se
   for (const invalid of [null, [], "right", {}, { ...saved, manifestSha256: "bad" }, { ...saved, instanceId: "missing" }, { ...saved, sourceId: "other" }, { ...saved, projectId: "other" }, { ...saved, manifestSha256: "b".repeat(64) }]) expect(restoreAssemblySelection(snapshot, invalid)).toBeNull();
   snapshot.sources[0]!.status = "missing";
   expect(restoreAssemblySelection(snapshot, saved)).toBeNull();
+});
+
+function reviewData() {
+  const snapshot = data();
+  const missing = { id: "missing", name: "Missing source", location: "unresolved" as const, provenance: { path: "missing.kicad_pcb" } };
+  snapshot.assembly!.sources.push(missing);
+  snapshot.assembly!.instances.push({ id: "missing-board", sourceId: "missing", name: "Missing board" });
+  snapshot.sources.push({ source: missing, status: "unresolved" });
+  return snapshot;
+}
+test("source review cycles distinct designs rather than repeating the first warning or shared instances", () => {
+  const snapshot = reviewData(), attention = ["missing", "io", "io", "undeclared"];
+  const first = nextAssemblyReviewSelection(snapshot, attention, null)!;
+  expect(first.instanceId).toBe("left");
+  const next = nextAssemblyReviewSelection(snapshot, attention, captureAssemblySelection(snapshot, "right"))!;
+  expect(next.instanceId).toBe("missing-board");
+  expect(assemblySelectionState(snapshot, next)).toBe("unavailable");
+  expect(nextAssemblyReviewSelection(snapshot, attention, next)).toEqual(first);
+  expect(attention).toEqual(["missing", "io", "io", "undeclared"]);
+});
+test("source review follows the current declaration after stale selection or attention changes", () => {
+  const snapshot = reviewData(), missing = captureAssemblySelection(snapshot, "missing-board")!;
+  for (const stale of [{ ...missing, projectId: "other" }, { ...missing, manifestSha256: "b".repeat(64) }, { ...missing, instanceId: "removed" }]) {
+    expect(nextAssemblyReviewSelection(snapshot, ["io", "missing"], stale)?.instanceId).toBe("left");
+  }
+  expect(nextAssemblyReviewSelection(snapshot, ["missing"], captureAssemblySelection(snapshot, "left"))).toEqual(missing);
+  expect(nextAssemblyReviewSelection(snapshot, ["io"], captureAssemblySelection(snapshot, "right"))?.instanceId).toBe("left");
+});
+test("source review never invents instances or crosses a missing assembly declaration", () => {
+  const snapshot = reviewData();
+  expect(nextAssemblyReviewSelection(snapshot, [], null)).toBeNull();
+  expect(nextAssemblyReviewSelection(snapshot, ["not-declared"], null)).toBeNull();
+  expect(nextAssemblyReviewSelection({ ...snapshot, mode: "single", assembly: null }, ["io"], null)).toBeNull();
+  expect(nextAssemblyReviewSelection({ ...snapshot, manifestSha256: null }, ["io"], null)).toBeNull();
 });
