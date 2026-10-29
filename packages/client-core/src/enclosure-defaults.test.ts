@@ -6,7 +6,10 @@ test("new enclosure defaults include overhangs, underside parts and connector cl
     pcbRevision: "a".repeat(64),
     thicknessMm: 1.6,
     outline: { minX: 0, minY: 0, maxX: 40, maxY: 20, widthMm: 40, heightMm: 20 },
-    holes: [{ x: 3, y: 3, diameterMm: 3 }],
+    holes: [
+      { x: 3, y: 3, diameterMm: 3, ref: "H1" },
+      { x: 30, y: 10, diameterMm: 1, ref: "U1" },
+    ],
     components: [
       {
         ref: "U1",
@@ -52,6 +55,8 @@ test("new enclosure defaults include overhangs, underside parts and connector cl
   expect(z - 9).toBeGreaterThanOrEqual(d.space.floor + d.space.clearance);
   expect(d.space.floor + d.space.height).toBeCloseTo(z + 1.6 + 22 + d.space.clearance);
   expect(d.mounts[0]!.height).toBe(z - d.space.floor);
+  expect(d.mounts).toHaveLength(1);
+  expect(board.holes).toHaveLength(2);
   expect(d.openings[0]!.width).toBe(4 + 2 * d.space.clearance);
   expect(d.confirmed).toBe(false);
   board.components![2]!.bottom = true;

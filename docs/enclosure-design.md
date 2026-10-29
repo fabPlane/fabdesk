@@ -4,7 +4,7 @@ Open **CAD → Enclosure**. Work through **Start → Space → PCB → Review**.
 
 ## Start with boards or an existing case
 
-- **New enclosure:** generate a rectangular base and lid around project PCBs. Initial dimensions include estimated component overhangs and underside parts; suggested posts and openings remain editable.
+- **New enclosure:** generate a rectangular base and lid around project PCBs. Initial dimensions include estimated component overhangs and underside parts; suggested posts and openings remain editable. Holes belonging to components are not automatically turned into screw posts.
 - **Existing case:** import a closed STL or solid STEP, confirm units and define usable interior space. STL displays immediately. Modification uses the native FabPlane CAD bridge to carve the cavity, preserve protected obstacle volumes, add bored posts and cut connector openings. It writes a copy and preserves the original.
 
 Import accepts one STL/STEP at a time, up to 50 MB. Dropping a file into Enclosure imports it into this workflow. Invalid or empty STL files are rejected before copying. STEP display requires a native preview; the UI explains this and offers STL for immediate positioning.
@@ -83,15 +83,16 @@ All values use millimetres, PCB XY coordinates and Z up. Use the included placem
 ## Validation — 2026-10-29
 
 - **Root typecheck and desktop production build pass.** No `.map` files in desktop output.
-- **65 focused tests pass / 985 assertions** across history, recovery, input/import planning, center rotation, defaults, PCB geometry, mechanical checks, STL surface checks, CAD tool contracts, scene geometry and camera fitting. Native service contracts in automated tests use mocks.
+- **65 focused tests pass / 987 assertions** across history, recovery, input/import planning, center rotation, defaults, PCB geometry, mechanical checks, STL surface checks, CAD tool contracts, scene geometry and camera fitting. Native service contracts in automated tests use mocks.
 - **Full root suite: 1,919 pass / 41 skip / 34 fail.** The 34 failure names are unchanged from the earlier run in this audit. Root tests are not green; failures include Windows process/symlink/CLI behavior, fixtures, speech cleanup and media encoding. The root script stops before its final scripts/test phase when workspace tests fail.
 - Background app checks: placement field and keyboard undo/redo, recovery after daemon restart, stale/corrupt recovery handling, input validation, import drop routing, source-byte reload, search/clear, generated preview and matched ZIP pass.
 - Four panel sizes checked: 2108×860, 1100×700, 778×600 and 600×500. No horizontal overflow, tool/inspector collision or footer overlap; compact tools remain scrollable.
 - Live VAIO copy: imported wall crossing appears red and can be focused. Cached surface checking of the 23,534-triangle bottom cover took approximately 7.4 ms in the measured run. Source PCB and original shell hashes are unchanged.
+- Additional audit: 31 main VAIO PCB files parse, produce schema-valid defaults with no default fit blockers, and generate readable base/lid STL and STEP output; this is not proof that all fit the original VAIO case. Independent checks match Three.js for 20,000 triangle/box cases and 1,000 source transforms. A live 20-edit/20-undo run preserves geometry/texture counts and restores the original placement.
 - ZIP verification: every manifest entry matches its file hash; included PCB bytes match the project source.
 - Earlier real FreeCAD 1.1 fixture generated valid STL/STEP and verified cavity, through-opening, bored post and protected obstacle. That verifies the solid operation, not desktop bridge integration.
 
-**Remaining integration gate:** actual PCB writes and imported-case modification still need successful live desktop tests with compatible native bridges. The Windows test environment could not supply those bridges. No claim of complete VAIO fit or manufacturing certification is made.
+**Remaining integration gate:** actual PCB writes and imported-case modification still need successful live desktop tests with compatible native bridges. The Windows test environment could not supply those bridges. Generated exports contain primitive shells/solids; review their unions and manifoldness in a CAD tool or slicer before printing. No claim of complete VAIO fit or manufacturing certification is made.
 
 ## Further work
 
