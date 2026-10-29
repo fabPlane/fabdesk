@@ -13,6 +13,13 @@ import {
 
 export const ProjectId = z.string().min(1);
 
+/** Explicit composer choice, saved atomically as the defaults for future chats. */
+export const AgentPreference = z.object({
+  agentId: AgentId,
+  model: z.string().nullable(),
+});
+export type AgentPreference = z.infer<typeof AgentPreference>;
+
 /** Default port for the daemon's opt-in remote listener (see docs/mobile.md). */
 export const REMOTE_DEFAULT_PORT = 47820;
 

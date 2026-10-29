@@ -1,6 +1,7 @@
 /** Typed fetch wrapper over the fabdesk-core control API plus SSE subscription. */
 import type {
   AgentId,
+  AgentPreference,
   AuthState,
   BomSyncSummary,
   Cart,
@@ -636,6 +637,9 @@ export class CoreClient {
   }
   patchSettings(patch: Partial<Settings>): Promise<Settings> {
     return this.request("/settings", { method: "PATCH", json: patch });
+  }
+  saveAgentPreference(preference: AgentPreference): Promise<Settings> {
+    return this.request("/settings/agent-preference", { method: "PUT", json: preference });
   }
   shutdown(): Promise<void> {
     return this.request("/shutdown", { method: "POST" });

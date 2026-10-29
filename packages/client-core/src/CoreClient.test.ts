@@ -1,6 +1,22 @@
 import { describe, expect, test } from "bun:test";
 import { CoreClient } from "./CoreClient";
 
+test("saving a composer preference sends only the explicit choice", async () => {
+  const calls: Array<{ url: string; method?: string; body: unknown }> = [];
+  const client = new CoreClient({
+    baseUrl: "http://127.0.0.1:47831", token: "tok",
+    fetch: async (url, init) => {
+      calls.push({ url, ...(init?.method ? { method: init.method } : {}), body: JSON.parse(String(init?.body)) });
+      return Response.json({ defaultAgent: "codex" });
+    },
+  });
+  await client.saveAgentPreference({ agentId: "codex", model: "selected-model" });
+  expect(calls).toEqual([{
+    url: "http://127.0.0.1:47831/settings/agent-preference", method: "PUT",
+    body: { agentId: "codex", model: "selected-model" },
+  }]);
+});
+
 describe("CoreClient open-source preview URL", () => {
   test("openSourcePreviewUrl is a loopback img src with the query token", () => {
     const client = new CoreClient({

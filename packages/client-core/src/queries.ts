@@ -226,6 +226,21 @@ export function usePatchSettings() {
   });
 }
 
+/** Persist only explicit selections, never the agent of a thread merely being viewed. */
+export function useSaveAgentPreference() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    scope: { id: "agent-preference" },
+    mutationFn: (preference: Parameters<typeof client.saveAgentPreference>[0]) => client.saveAgentPreference(preference),
+    onSuccess: async (data) => {
+      // An older settings fetch must not restore the previous default after this save.
+      await qc.cancelQueries({ queryKey: ["settings"] });
+      qc.setQueryData(["settings"], data);
+    },
+  });
+}
+
 export function useAuthState() {
   const client = useCoreClient();
   const setState = useAuthStore((s) => s.setState);
