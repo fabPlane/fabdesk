@@ -3,7 +3,7 @@ import { ProjectImage } from "../chat/ProjectImage";
 import { ProjectVideo } from "../chat/ProjectVideo";
 import { Button, Dialog, EmptyState, IconButton, Input, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { editableSketchPaths, useBoardSources, usePcbPreviewRevision, useProject, useProjectText, useRunTool } from "@fabdesk/client-core";
+import { editableSketchPaths, useCoreClient, useBoardSources, usePcbPreviewRevision, useProject, useProjectText, useRunTool } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { stencilThicknessMm } from "../stores/stencil-thickness";
 import { cn } from "../util";
@@ -27,6 +27,7 @@ export function FilesTab({ exportFocus = false }: { exportFocus?: boolean } = {}
 }
 
 function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFocus: boolean }) {
+  const client = useCoreClient();
   const project = useProject(projectId);
   const sources = useBoardSources(projectId);
   const thicknessMm = useUiStore((s) => stencilThicknessMm(s.stencilThicknessByProject?.[projectId]));
@@ -34,6 +35,8 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const [selected, setSelected] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [downloadPath, setDownloadPath] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<{ path: string; message: string } | null>(null);
   const fileToReveal = useUiStore((s) => s.fileToReveal);
   const fileTree = useRef<HTMLElement>(null), searchInput = useRef<HTMLInputElement>(null);
   const revealFocus = useRef<{ intent: NonNullable<typeof fileToReveal>; previous: Element | null } | null>(null);
@@ -97,6 +100,18 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
           : {};
     const result = await run(exportKind, { projectId, ...extras });
     if (result.status === "done") { setExportOpen(false); void project.refetch(); }
+  }
+  async function downloadFile(path: string) {
+    if (downloadPath || useUiStore.getState().activeProjectId !== projectId) return;
+    setDownloadPath(path); setDownloadError(null);
+    try {
+      const blob = await client.readFileBlob(projectId, path);
+      if (useUiStore.getState().activeProjectId !== projectId) return;
+      const url = URL.createObjectURL(blob), link = document.createElement("a");
+      link.href = url; link.download = path.split("/").pop() || "project-file"; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch { setDownloadError({ path, message: "Could not download this file. Try again." }); }
+    finally { setDownloadPath(null); }
   }
   function toggleFolder(path: string) {
     setExpanded((previous) => { const next = new Set(previous); if (next.has(path)) next.delete(path); else next.add(path); return next; });
@@ -171,9 +186,11 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
           {file && appearance && <>
             <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-panel/40 px-3 py-2">
               <FileGlyph kind={appearance.kind} />
-              <span className="min-w-0 flex-1 break-all text-xs" title={file.path}>{file.path.replaceAll("\\", "/").split("/").join(" / ")}</span>
+              <span className="fd-file-preview-path flex-1 break-all text-xs" title={file.path}>{file.path.replaceAll("\\", "/").split("/").join(" / ")}</span>
               <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted">{appearance.label}</span>
               <span className="text-[10px] text-muted">{formatFileSize(file.size)}</span>
+              <div role="group" aria-label="Selected file actions" className="flex max-w-full shrink-0 flex-wrap items-center gap-1">
+              <Button size="sm" variant="ghost" disabled={downloadPath !== null} title={downloadPath && downloadPath !== file.path ? `Downloading ${downloadPath}` : "Save a copy of this project file"} onClick={() => void downloadFile(file.path)}>{downloadPath === file.path ? "Downloading…" : "Download file"}</Button>
               {editableSketchPaths([file]).includes(file.path) && <Button size="sm" variant="ghost" onClick={() => {
                 const ui = useUiStore.getState();
                 if (ui.activeProjectId === projectId) ui.setSketchOpen(true, "draw", file.path);
@@ -185,8 +202,10 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
                 if (!ui.attachments[key]?.some(item => item.path === file.path)) ui.addAttachment(key, { path: file.path, mime: /\.jpe?g$/i.test(file.path) ? "image/jpeg" : "image/png", label: file.path.split("/").pop() ?? file.path });
                 ui.focusComposer();
               }}><Icon name="sparkles" width={14} height={14} />Use in conversation</Button>}
+              </div>
             </div>
             <div className="min-h-0 flex-1 overflow-auto p-4">
+              {downloadError?.path === file.path && <p role="alert" className="mb-3 text-xs text-danger">{downloadError.message}</p>}
               {appearance.preview === "image" && <ProjectImage retryable projectId={projectId} path={file.path} className="fd-file-image max-h-none max-w-full" />}
               {appearance.preview === "video" && <ProjectVideo projectId={projectId} path={file.path} className="max-h-[75vh] max-w-full" />}
               {appearance.preview === "none" && <EmptyState title={`${appearance.label} file`} icon={<FileGlyph kind={appearance.kind} className="!h-10 !w-10" />}>

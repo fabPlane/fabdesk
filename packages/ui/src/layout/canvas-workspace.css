@@ -772,3 +772,5 @@
 .fd-finding-filters > input { flex:1; min-width:180px; max-width:360px; }
 .fd-finding-filters label { display:flex; align-items:center; gap:8px; }
 .fd-finding-filters select { padding:6px 8px; border:1px solid var(--fd-border); border-radius:7px; background:var(--fd-panel); color:var(--fd-fg); }
+
+.fd-file-preview-path { flex-basis:220px; min-width:min(220px,100%); }
