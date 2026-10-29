@@ -1,0 +1,56 @@
+{
+  "baseImplementation": "0caef14",
+  "projectId": "prj_mvszo4wl7ba352a775",
+  "fixture": {
+    "path": "images/ui-preview-recovery.png",
+    "sha256": "eb9241a1f64aa30f817cf51499615a929e5221b8bdbb4865894b8dec8e420dd4",
+    "mode": 420,
+    "retainedIntentionally": true
+  },
+  "guard": {
+    "status": "RESTORED",
+    "inodeRetained": true,
+    "mode": "0o644",
+    "sha256": "eb9241a1f64aa30f817cf51499615a929e5221b8bdbb4865894b8dec8e420dd4"
+  },
+  "nativeChecks": {
+    "coldReadFailureBefore": "existing file shown as missing, no Retry",
+    "coldReadFailureAfter": "Could not load image + Retry image preview",
+    "retryProgressKeepsFocus": true,
+    "failedRetryKeepsFocus": true,
+    "deniedRetrySettlesBackToError": true,
+    "restoreRecovery": "existing watcher automatic, not a separate manual success-after-restore claim",
+    "cachedBlobLaterReadFailure": "error shown, older cached image hidden",
+    "cachedRestoreRecovery": "watcher automatic, same file selection retained",
+    "textPreviewUnaffected": true,
+    "originalSketchImageAndDrawingActionsUnaffected": true,
+    "noAgentMessageOrNativeDesignEdit": true
+  },
+  "protectedOriginalAndAgentContextHashes": {
+    ".gitignore": "b19e46b028283686f56a2fbc838cd00ea1d51c8d26ddbb8f0c5e6134a6a0cdb6",
+    "fabdesk.json": "a5725410062d17556c60b3d88b62379bee121d9bcd0f17153e5b31c4c761e324",
+    "sketches/vaio-io-reference.excalidraw.png": "eb9241a1f64aa30f817cf51499615a929e5221b8bdbb4865894b8dec8e420dd4",
+    "AGENTS.md": "dd0600edeb5c155ada231ab69d840cff0bdd0126c761f8c043d6eb66b86e1460",
+    "CLAUDE.md": "336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49"
+  },
+  "retainedTextFixtureSha256": "a3d11f0972e65182ff830eb1f43e813a70f84f044acedf65430d06046e8f37f8",
+  "validation": {
+    "uiTypecheck": "PASS /tmp/canvas-image-preview-recovery-ui-types.log",
+    "uiTests": "231passed/901assertions /tmp/canvas-image-preview-recovery-ui-tests.log",
+    "priorRootCheckpoint": "2304c65 roottypesPASS/2270passed36skipped0failed. New UI-only image recovery covered by final UI checks and native walkthrough."
+  },
+  "screenshots": {
+    "455-image-read-failure-mislabeled-missing.png": "image-recovery-before.png",
+    "456-image-read-error-with-retry.png": "image-recovery-error.png",
+    "457-image-preview-retry-keeps-focus.png": "image-recovery-retry-focus.png",
+    "458-image-preview-recovers-after-access-restored.png": "image-recovery-restored.png",
+    "459-cached-image-read-failure-remains-visible.png": "image-recovery-cached-error.png",
+    "460-cached-image-preview-recovers.png": "image-recovery-cached-restored.png"
+  },
+  "limits": [
+    "Retry opts in only for Files/export preview outside interactive image cards; other usages show error text without nested buttons.",
+    "This handles authenticated fetch/read states; image decoding/format validation is not newly implemented.",
+    "No freshness receipt or source-validation result is inferred from successful image fetch.",
+    "New test image copy intentionally retained; original sketch and other protected files remain exact."
+  ]
+}

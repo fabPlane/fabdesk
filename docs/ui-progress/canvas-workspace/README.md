@@ -1559,3 +1559,8 @@ Root Checks reuses the saved finding search/severity controls while retaining DR
 ### Full checkpoint after source recovery and check navigation
 
 At2304c65 root typecheck and standard full suite passed **2270tests /36skipped /0failures**,17batches. [Validation](check-navigation-validation.json). All16VAIO and34donor protected files exact; real VAIO I/O90finding report retained. The generated tracked Python cache alone was restored. Skipped native integrations are not passes; native walkthrough evidence above remains separate. No remote publication.
+
+
+## Honest image read errors and selected-file retry
+
+Project images now distinguish a failed read from an unavailable file, and object-URL creation uses loading feedback. Files/export preview opts into Retry; selectable cards retain noninteractive error text. Retry is scoped to the connection/project/path and keeps its control/focus while pending or failed. Native owned image copy tested cold denial→proper error→failed Retry/focus→restored watcher recovery, then cached-image denial→error instead of silently keeping an old preview→restored watcher recovery. Original sketch/context5files and text fixture remain exact; new imagecopy retained, permissions restored0644. Original drawing actions and text preview unaffected. Final UItypes/231tests/901assertions passed; prior full root checkpoint2304c65 remains2270/36/0. [Evidence](image-preview-recovery-native.json), actual [before](image-recovery-before.png), [error](image-recovery-error.png), [retry](image-recovery-retry-focus.png), [recovered](image-recovery-restored.png), [cached error](image-recovery-cached-error.png), [cached recovered](image-recovery-cached-restored.png). No new decoding validation or freshness pass claimed.

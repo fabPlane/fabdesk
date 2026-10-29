@@ -129,7 +129,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
     <header><h1>Export files</h1><p>Choose what you need for fabrication or your parts list.</p></header>
     <div className="fd-export-flow">
       <section className="fd-export-reference" aria-label="Export source reference">
-        {previewPresent ? <><ProjectImage projectId={projectId} path="renders/pcb.svg" alt="Saved PCB preview for export reference" /><p>{previewLabel}</p></> : <EmptyState title={assembly ? "Assembly source exports need board scope" : hasPcb ? "Saved PCB ready for export selection" : "Start with a saved PCB"} icon={<Icon name="pcb" width={48} height={48} />}><p>{assembly ? "This export screen cannot manufacture all member boards. Their individual previews remain available in Boards." : "Use Board to inspect your source. Exports do not establish that a design is ready to manufacture."}</p><Button className="mt-4" onClick={() => useUiStore.getState().setBoardTab("pcb")}>Open Board</Button></EmptyState>}
+        {previewPresent ? <><ProjectImage retryable projectId={projectId} path="renders/pcb.svg" alt="Saved PCB preview for export reference" /><p>{previewLabel}</p></> : <EmptyState title={assembly ? "Assembly source exports need board scope" : hasPcb ? "Saved PCB ready for export selection" : "Start with a saved PCB"} icon={<Icon name="pcb" width={48} height={48} />}><p>{assembly ? "This export screen cannot manufacture all member boards. Their individual previews remain available in Boards." : "Use Board to inspect your source. Exports do not establish that a design is ready to manufacture."}</p><Button className="mt-4" onClick={() => useUiStore.getState().setBoardTab("pcb")}>Open Board</Button></EmptyState>}
       </section>
       <section className="fd-export-config" aria-label="Export options"><FileExportControls {...exportControls} />{sources.isError && <Button size="sm" onClick={() => void sources.refetch()}>Retry source check</Button>}</section>
     </div>
@@ -187,7 +187,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
               }}><Icon name="sparkles" width={14} height={14} />Use in conversation</Button>}
             </div>
             <div className="min-h-0 flex-1 overflow-auto p-4">
-              {appearance.preview === "image" && <ProjectImage projectId={projectId} path={file.path} className="fd-file-image max-h-none max-w-full" />}
+              {appearance.preview === "image" && <ProjectImage retryable projectId={projectId} path={file.path} className="fd-file-image max-h-none max-w-full" />}
               {appearance.preview === "video" && <ProjectVideo projectId={projectId} path={file.path} className="max-h-[75vh] max-w-full" />}
               {appearance.preview === "none" && <EmptyState title={`${appearance.label} file`} icon={<FileGlyph kind={appearance.kind} className="!h-10 !w-10" />}>
                 {appearance.kind === "model" ? "Open this file in a compatible 3D viewer or slicer." : "A preview for this format is not available here."}

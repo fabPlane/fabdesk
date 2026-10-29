@@ -33,5 +33,5 @@ export function useProjectBlobUrl(projectId: string | null, path: string | null)
     return () => URL.revokeObjectURL(u);
   }, [q.data, scope]);
   const url = objectUrl?.scope === scope && objectUrl.blob === q.data ? objectUrl.url : null;
-  return { ...q, url };
+  return { ...q, url, scope };
 }
