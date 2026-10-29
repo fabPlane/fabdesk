@@ -22,8 +22,6 @@ export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRet
   const scope = requestedScope === "all" ? "all" : rows.some(row => row.sourceId === requestedScope) ? requestedScope : rows.find(row => row.board)?.sourceId ?? rows[0]?.sourceId;
   const row = rows.find(item => item.sourceId === scope), declared = data.sources.find(item => item.source.id === scope);
   const busy = update.state.status === "running", unavailable = checking || failed;
-  const assistantSurface = { projectId, label: "Review / Updates", priority: 10, details: JSON.stringify({ scope, board: row?.board, source: declared?.source, status: row?.status, sourceCheckPending: unavailable, updating: busy }) };
-  useAssistantSurface(assistantSurface);
   const active = () => useUiStore.getState().activeProjectId === projectId;
   const ask = (sourceId: string, name: string, compare = false) => {
     if (!active()) return;
@@ -54,6 +52,8 @@ export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRet
   const video = row?.board ? files.find(file => ["mp4", "webm", "gif"].some(ext => file.path === `${prefix}exports/product-video.${ext}`)) : undefined;
   const videoRevision = useVideoInputRevision(projectId, video?.path);
   const videoStatus = unavailable ? "Source check unavailable" : videoRevision.isFetching ? "Checking video inputs…" : videoRevision.isError ? "Video inputs could not be checked" : videoInputLabel(videoRevision.data);
+  const assistantSurface = { projectId, label: "Review / Updates", priority: 10, details: JSON.stringify({ scope, board: row?.board, source: declared?.source, previewStatus: row?.status, nativeSchematic: hasSchematic, modelStatus, checkStatus, savedImage: savedRender?.path, video: video ? { path: video.path, state: videoRevision.data, status: videoStatus } : null, sourceCheckPending: unavailable, updating: busy, instruction: "Artifact source receipts and saved findings do not establish electrical parity or assembly compatibility." }) };
+  useAssistantSurface(assistantSurface);
   const outputs: ReviewOutputRow[] = row && !row.board ? [{key:"unavailable",item:"Board outputs",icon:"folder",status:row.status,warning:true,note:"Resolve the native source to review its saved outputs.",actions:<Button size="sm" disabled={unavailable || busy} onClick={() => browse(ASSEMBLY_MANIFEST_PATH)}>Source details</Button>}] : row ? [
     { key: "model", item: "3D model", icon: "cube", status: modelStatus, warning: assemblyModelNeedsReview(modelById.get(row.sourceId)), note: "External component models and physical fit remain unverified.", actions: <Button size="sm" disabled={unavailable || busy || !row.selection} onClick={() => openSource(row, "3d")}>Review model</Button> },
     { key: "preview", item: "Board preview", icon: "image", status: unavailable ? "Source check unavailable" : row.status, warning: row.warning, note: "Saved PCB drawing · electrical checks stay separate.", actions: row.board ? <Button size="sm" data-update={!row.previewCurrent} disabled={unavailable || busy || !!selectedPreview?.isFetching} onClick={() => row.previewCurrent ? openSource(row, "pcb") : void refresh(row)}>{busy && updatingSource === row.sourceId ? "Updating preview…" : row.previewCurrent ? "Open board" : row.hasPreview ? "Update preview" : "Create preview"}</Button> : <Button size="sm" disabled={unavailable || busy} onClick={() => ask(row.sourceId, row.name)}>Resolve source</Button> },
