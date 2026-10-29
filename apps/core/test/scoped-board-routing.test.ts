@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createRegistry, inspectProjectBoardSources, type RouteRunRecord } from "@fabdesk/tools";
 import { mockServices, tempProject } from "../../../packages/tools/test/mock-services";
@@ -65,4 +65,39 @@ test("a queued run whose captured membership changes becomes failed instead of s
   expect(f.services.routeRuns.get(id)?.state).toBe("failed");
   expect(f.services.routeRuns.get(id)?.candidate.available).toBe(false);
   expect(await readFile(join(f.root, "boards/a/board.kicad_pcb"), "utf8")).toBe(boardText);
+});
+
+
+test("a member run refuses an aliased artifacts directory before writing sibling files", async () => {
+  const f = await fixture();
+  const sibling = join(f.root, "boards/b");
+  await symlink(sibling, join(f.root, "boards/a/.fabdesk"));
+  await expect(f.invoke("route_run", { router: "fab_router", applyPolicy: "manual", expectedSourceSha256: digest(boardText), waitMs: 0 })).rejects.toThrow("Routing artifact");
+  expect((await readdir(sibling)).sort()).toEqual(["board.kicad_pcb", "board.kicad_pro"]);
+});
+
+test("publishing a private candidate never overwrites a hard-linked sibling source", async () => {
+  const f = await fixture(), route = f.services.design.route;
+  f.services.design.route = async (dir, ...args) => {
+    const result = await route(dir, ...args);
+    await link(join(f.root, "boards/b/board.kicad_pcb"), join(dirname(dir), "candidate.kicad_pcb"));
+    return result;
+  };
+  const started = await f.invoke("route_run", { router: "fab_router", applyPolicy: "manual", expectedSourceSha256: digest(boardText), waitMs: 0 });
+  await terminal(f.services, (started.json as { runId: string }).runId);
+  expect(await readFile(join(f.root, "boards/b/board.kicad_pcb"), "utf8")).toBe(boardText);
+  expect(await readFile(join(f.root, "boards/a/board.kicad_pcb"), "utf8")).toBe(boardText);
+});
+
+
+test("Apply refuses a candidate replaced by a hard-link even when its bytes match", async () => {
+  const f = await fixture();
+  const started = await f.invoke("route_run", { router: "fab_router", applyPolicy: "manual", expectedSourceSha256: digest(boardText), waitMs: 0 });
+  const run = await terminal(f.services, (started.json as { runId: string }).runId);
+  const candidate = join(f.root, "boards/a", run.candidate.path), sibling = join(f.root, "boards/b/board.kicad_pcb");
+  const bytes = await readFile(candidate);
+  await writeFile(sibling, bytes); await rm(candidate); await link(sibling, candidate);
+  await expect(f.invoke("route_apply", { runId: run.id, expectedPcbRevision: run.startingPcbRevision })).rejects.toThrow("hard-link aliases");
+  expect(await readFile(join(f.root, "boards/a/board.kicad_pcb"), "utf8")).toBe(boardText);
+  expect(await readFile(sibling)).toEqual(bytes);
 });

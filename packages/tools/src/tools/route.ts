@@ -1,6 +1,6 @@
 /** Route toolset + the shared `route_run` implementation used by the core toolset. */
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile, realpath, rm, stat } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rm, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { z } from "zod/v4";
 import type { CinemaShape, RouteResult } from "@fabdesk/protocol";
@@ -315,6 +315,16 @@ async function captureMemberRouteInputs(project: ProjectHandle) {
     catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT" && path !== "board.kicad_pcb") return { path, sha256: null }; throw error; }
   }));
 }
+async function assertMemberRoutingArtifacts(ctx: ToolContext, runDir: string) {
+  if (!ctx.board) return;
+  if (ctx.runInScope) await ctx.runInScope(async () => {});
+  const root = ctx.requireProject().dir, path = relative(root, runDir).split(sep).join("/");
+  if (!/^\.fabdesk\/runs\/run_[A-Za-z0-9_-]+$/.test(path)) throw new NativeRevisionConflict("Routing artifact directory does not belong to this source.");
+  for (const directory of [join(root, ".fabdesk"), join(root, ".fabdesk/runs"), runDir]) {
+    const entry = await lstat(directory).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return null; throw error; });
+    if (entry && (!entry.isDirectory() || await realpath(directory) !== directory)) throw new NativeRevisionConflict("Routing artifact directories must be independent source-owned folders.");
+  }
+}
 function assertRouteSource(ctx: ToolContext, record: RouteRunRecord) {
   const board = ctx.board, owner = record.board;
   if (!!board !== !!owner || board && (board.sourceId !== owner?.sourceId || board.manifestSha256 !== owner?.manifestSha256)) throw new ToolError("This routing run belongs to a different board source. Select its recorded source before reviewing or applying it.", "precondition");
@@ -426,7 +436,7 @@ async function persistProgress(ctx: ToolContext, rec: RouteRunRecord, runDir: st
   const path = join(runDir, "progress.json");
   const data = JSON.stringify(compactRecord(rec), null, 2) + "\n";
   const pending = (progressQueues.get(path) ?? Promise.resolve())
-    .then(() => writeAtomic(path, data))
+    .then(async () => { await assertMemberRoutingArtifacts(ctx, runDir); await writeAtomic(path, data); })
     .catch((error: unknown) => {
       console.error(`route ${rec.id}: progress write failed: ${String(error)}`);
     });
@@ -473,7 +483,8 @@ async function applyCandidate(
     throw new ToolError(next.application.reason!, "precondition");
   }
   const candidatePath = p(project, rec.candidate.path);
-  const candidate = await readFile(candidatePath);
+  await assertMemberRoutingArtifacts(ctx, p(project, rec.artifacts.runDir));
+  const candidate = ctx.board ? Buffer.from((await inspectOwnedProjectFile(await realpath(project.dir), rec.candidate.path, 512 * 1024 * 1024, true)).text!) : await readFile(candidatePath);
   if (sha256(candidate) !== rec.candidate.sha256)
     throw new ToolError("candidate hash no longer matches its durable identity", "precondition");
   let next: RouteRunRecord = {
@@ -951,8 +962,8 @@ async function executeRoute(
       // copper is present rather than discarding the user's protected geometry.
       if (scopeHasLockedCopper) return;
       await ctx.services.design.release(snapshotDir);
-      await copyFile(join(runDir, "starting.kicad_pcb"), join(snapshotDir, PROJECT_FILES.boardPcb));
-      await copyFile(join(runDir, "starting.kicad_pro"), join(snapshotDir, PROJECT_FILES.boardPro));
+      await writeAtomic(join(snapshotDir, PROJECT_FILES.boardPcb), await readFile(join(runDir, "starting.kicad_pcb")));
+      await writeAtomic(join(snapshotDir, PROJECT_FILES.boardPro), await readFile(join(runDir, "starting.kicad_pro")));
       const removed = await ctx.services.design.unroute(snapshotDir, requestedNets);
       rec.progress.diagnostics.push(
         `Clean retry: removed ${removed.tracks} tracks and ${removed.vias} vias on requested nets only.`,
@@ -1313,8 +1324,9 @@ async function executeRoute(
     );
     const candidatePath = join(runDir, "candidate.kicad_pcb");
     await ctx.services.design.release(snapshotDir).catch(() => undefined);
-    await copyFile(join(snapshotDir, PROJECT_FILES.boardPcb), candidatePath);
-    const candidateBytes = await readFile(candidatePath);
+    await assertMemberRoutingArtifacts(ctx, runDir);
+    const candidateBytes = await readFile(join(snapshotDir, PROJECT_FILES.boardPcb));
+    await writeAtomic(candidatePath, candidateBytes);
     await ctx.services.design.query(snapshotDir, "nets");
     const afterInventory = await boardInventory(ctx, snapshotDir);
     const diff = inventoryDiff(beforeInventory, afterInventory);
@@ -1698,7 +1710,9 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
   const runRel = join(PROJECT_FILES.runs, runId);
   const runDir = p(project, runRel);
   const snapshotDir = join(runDir, "snapshot");
+  await assertMemberRoutingArtifacts(ctx, runDir);
   await mkdir(snapshotDir, { recursive: true });
+  await assertMemberRoutingArtifacts(ctx, runDir);
   await Promise.all([
     writeAtomic(join(snapshotDir, PROJECT_FILES.boardPcb), boardBytes),
     writeAtomic(join(snapshotDir, PROJECT_FILES.boardPro), projectBytes),
