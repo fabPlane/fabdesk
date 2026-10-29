@@ -648,7 +648,7 @@ export function MechanicalWorkspace({
                 setMode("orbit");
               }}
             >
-              {p === "assembly" ? "2 · Arrange" : p === "add" ? "1 · Add" : "3 · Enclosure"}
+              {p === "assembly" ? "Arrange" : p === "add" ? "Add" : "Enclosure"}
             </button>
           ))}
         </div>
@@ -674,7 +674,7 @@ export function MechanicalWorkspace({
               setSelected(null);
             }}
           >
-            <Icon name="export" /> 4 · Export
+            <Icon name="export" /> Export
           </button>
         </div>
       </div>

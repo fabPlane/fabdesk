@@ -8,7 +8,7 @@ These are captures of the running desktop app, using the repository's enclosure 
 
 | Requested reference | Implemented interaction |
 | --- | --- |
-| Assembly canvas with a floating import/generate card | Dotted canvas, theme colours, remembered focus mode, docked/collapsible panels, project save status and a numbered Add → Arrange → Enclosure → Export workflow. |
+| Assembly canvas with a floating import/generate card | Dotted canvas, theme colours, remembered focus mode, docked/collapsible panels, project save status and an Add → Arrange → Enclosure → Export workflow. |
 | Selected imported case with movement tools | STL/OBJ/GLB import, selection, XYZ movement/rotation handles, precise values, uniform scale, centre-on-PCB and surface measurement. |
 | Enclosure form and exploded preview with Apply/Cancel | Actual generated base/lid meshes, clearance/wall/options, explode slider, transparency, non-writing preview and explicit Apply. |
 
