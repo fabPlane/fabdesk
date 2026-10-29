@@ -108,6 +108,20 @@ These screenshots use the VAIO P project's A5 board copy and original bottom-cov
 
 ![Matched ZIP ready to download](screenshots/mechanical-workspace/14-enclosure-export.png)
 
+### Layout refinement
+
+The enclosure scene has one collapsible **View & placement** panel, divided into **Position boards**, **View** and **Fit guidance**. Related actions use an aligned two-column grid. The panel scrolls independently in shorter workspaces, and imported-surface limitations remain readable at compact widths. The bottom status and Fit view action stay clear of the tools.
+
+Arrange uses the available height for its parts list, with import/refresh actions grouped below a divider. At very short heights the entire panel can scroll to keep those actions reachable.
+
+| Earlier parts list | Expanded list with grouped actions |
+| --- | --- |
+| ![Earlier parts layout](screenshots/mechanical-workspace/24-layout-before.png) | ![Organized parts panel](screenshots/mechanical-workspace/25-layout-arrange.png) |
+
+![Grouped enclosure controls](screenshots/mechanical-workspace/26-layout-enclosure.png)
+
+Background app checks passed at 2108×860, 1100×700, 778×600 and 600×500 workspace sizes: no horizontal panel overflow, all 13 parts reachable, tool-panel scrolling/collapse working, and no tools/footer overlap. Navigation, board selection, camera/move/rotate mode switches, view toggles, focus/fit and Escape deselection passed. All 16 focused scene/placement tests, UI typecheck and desktop build passed; no output source maps. The source PCB hash is unchanged. These layout checks do not resolve the native bridge and exact imported-surface collision limitations above.
+
 ## UX references
 
 The layout follows [progressive disclosure](https://www.nngroup.com/articles/progressive-disclosure/), [visible system status](https://www.nngroup.com/articles/visibility-system-status/) and [recognition rather than recall](https://www.nngroup.com/articles/recognition-and-recall/): a short task sequence, one changing primary action, visible preview/save states and secondary geometry controls shown when needed.

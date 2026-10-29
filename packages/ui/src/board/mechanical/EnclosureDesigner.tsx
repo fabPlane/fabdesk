@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   MechanicalDesignSchema,
   type MechanicalDesign,
@@ -120,6 +120,7 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
   const [placementMode, setPlacementMode] = useState<"orbit" | "translate" | "rotate">("orbit");
   const [caseVisible, setCaseVisible] = useState(true);
   const [controlsExpanded, setControlsExpanded] = useState(true);
+  const sceneToolsId = useId();
   const [undoPlacement, setUndoPlacement] = useState<MechanicalDesign["boards"][number] | null>(
     null,
   );
@@ -1256,162 +1257,170 @@ export function EnclosureDesigner({ projectId }: { projectId: string }) {
         <button
           className="fd-case-controls-toggle"
           aria-expanded={controlsExpanded}
+          aria-controls={sceneToolsId}
           onClick={() => setControlsExpanded(!controlsExpanded)}
         >
-          {controlsExpanded ? "Hide view controls" : "View & placement"}
+          <span>View & placement</span>
+          <span aria-hidden="true">{controlsExpanded ? "−" : "+"}</span>
         </button>
-        <section className="fd-case-placement" aria-label="Position boards in the enclosure">
-          <div className="fd-case-placement-title">
-            <strong>Position boards</strong>
-            <small>Case stays fixed</small>
-          </div>
-          <select
-            aria-label="Select board in 3D"
-            value={selectedBoard ?? ""}
-            disabled={!!busy}
-            onChange={(e) => selectBoard(e.target.value || null)}
-          >
-            <option value="">Click a board or choose one…</option>
-            {design?.boards.map((b) => (
-              <option key={b.path} value={b.path}>
-                {b.path === "board.kicad_pcb" ? "Project PCB" : enclosureFileLabel(b.path)}
-              </option>
-            ))}
-          </select>
-          <div className="fd-case-placement-tools">
-            <button
+        <div className="fd-case-tools-body" id={sceneToolsId} hidden={!controlsExpanded}>
+          <section className="fd-case-placement" aria-label="Position boards in the enclosure">
+            <div className="fd-case-placement-title">
+              <strong>Position boards</strong>
+              <small>Case stays fixed</small>
+            </div>
+            <select
+              aria-label="Select board in 3D"
+              value={selectedBoard ?? ""}
               disabled={!!busy}
-              aria-pressed={placementMode === "orbit"}
-              onClick={() => setPlacementMode("orbit")}
+              onChange={(e) => selectBoard(e.target.value || null)}
             >
-              Camera
-            </button>
-            <button
-              disabled={!selectedBoard || !!busy}
-              aria-pressed={placementMode === "translate"}
-              onClick={() => setPlacementMode("translate")}
-            >
-              Move
-            </button>
-            <button
-              disabled={!selectedBoard || !!busy}
-              aria-pressed={placementMode === "rotate"}
-              onClick={() => setPlacementMode("rotate")}
-            >
-              Rotate
-            </button>
-            <button
-              disabled={!selectedBoard || !!busy}
-              onClick={() => selectedBoard && scene.current?.focusModel(`@fit-${selectedBoard}`)}
-            >
-              Focus board
-            </button>
-          </div>
-          {currentPlacement && (
-            <>
-              <small>
-                {placementMode === "translate"
-                  ? "Drag an arrow or a square handle to move."
-                  : placementMode === "rotate"
-                    ? "Drag the ring to rotate the board flat."
-                    : "Drag empty space to orbit. Scroll to zoom."}
-              </small>
-              <div className="fd-case-placement-tools">
+              <option value="">Click a board or choose one…</option>
+              {design?.boards.map((b) => (
+                <option key={b.path} value={b.path}>
+                  {b.path === "board.kicad_pcb" ? "Project PCB" : enclosureFileLabel(b.path)}
+                </option>
+              ))}
+            </select>
+            <div className="fd-case-placement-tools">
+              <button
+                disabled={!!busy}
+                aria-pressed={placementMode === "orbit"}
+                onClick={() => setPlacementMode("orbit")}
+              >
+                Camera
+              </button>
+              <button
+                disabled={!selectedBoard || !!busy}
+                aria-pressed={placementMode === "translate"}
+                onClick={() => setPlacementMode("translate")}
+              >
+                Move
+              </button>
+              <button
+                disabled={!selectedBoard || !!busy}
+                aria-pressed={placementMode === "rotate"}
+                onClick={() => setPlacementMode("rotate")}
+              >
+                Rotate
+              </button>
+              <button
+                disabled={!selectedBoard || !!busy}
+                onClick={() => selectedBoard && scene.current?.focusModel(`@fit-${selectedBoard}`)}
+              >
+                Focus board
+              </button>
+            </div>
+            {currentPlacement && (
+              <>
+                <small>
+                  {placementMode === "translate"
+                    ? "Drag an arrow or a square handle to move."
+                    : placementMode === "rotate"
+                      ? "Drag the ring to rotate the board flat."
+                      : "Drag empty space to orbit. Scroll to zoom."}
+                </small>
+                <div className="fd-case-placement-tools">
+                  <button
+                    disabled={!currentFeatures || !design?.confirmed || !!busy}
+                    title="Uses your confirmed interior dimensions; does not certify fit against the imported shell."
+                    onClick={() => {
+                      if (currentFeatures && design)
+                        changePlacement(
+                          centerEnclosureBoard(
+                            currentPlacement,
+                            currentFeatures.outline,
+                            design.space,
+                          ),
+                        );
+                    }}
+                  >
+                    Center in usable space
+                  </button>
+                  <button disabled={!undoPlacement || !!busy} onClick={undoBoardMove}>
+                    Undo move
+                  </button>
+                </div>
+                <small>Placement only · PCB file unchanged</small>
+              </>
+            )}
+          </section>
+          <section className="fd-case-view-section" aria-label="Scene view">
+            <h3>View</h3>
+            <div className="fd-case-view-tools">
+              <button onClick={() => scene.current?.view("top")}>Top view</button>
+              <button onClick={() => scene.current?.view("iso")}>3D view</button>
+              {(design?.source || preview) && (
+                <button aria-pressed={!caseVisible} onClick={() => setCaseVisible(!caseVisible)}>
+                  {caseVisible ? "Hide case" : "Show case"}
+                </button>
+              )}
+              <button aria-pressed={showRisks} onClick={() => setShowRisks(!showRisks)}>
+                Fit risks
+              </button>
+              <button aria-pressed={showSpace} onClick={() => setShowSpace(!showSpace)}>
+                Usable space
+              </button>
+              {preview?.meshes?.lid && (
+                <button aria-pressed={openLid} onClick={() => setOpenLid(!openLid)}>
+                  {openLid ? "Close lid" : "Open lid"}
+                </button>
+              )}
+              <button aria-pressed={transparent} onClick={() => setTransparent(!transparent)}>
+                See through
+              </button>
+            </div>
+          </section>
+          <div className="fd-case-fit-legend" aria-label="Fit overlay legend">
+            <h3>Fit guidance</h3>
+            {design?.mode === "imported" && (
+              <>
+                <strong>Check the actual case walls</strong>
+                <small>
+                  Red checks use the interior you defined. Imported case surfaces are not checked
+                  automatically.
+                </small>
                 <button
-                  disabled={!currentFeatures || !design?.confirmed || !!busy}
-                  title="Uses your confirmed interior dimensions; does not certify fit against the imported shell."
                   onClick={() => {
-                    if (currentFeatures && design)
-                      changePlacement(
-                        centerEnclosureBoard(
-                          currentPlacement,
-                          currentFeatures.outline,
-                          design.space,
-                        ),
-                      );
+                    setStep("Start");
+                    setShowSpace(true);
                   }}
                 >
-                  Center in usable space
+                  Set usable interior
                 </button>
-                <button disabled={!undoPlacement || !!busy} onClick={undoBoardMove}>
-                  Undo move
-                </button>
-              </div>
-              <small>Placement only · PCB file unchanged</small>
-            </>
-          )}
-        </section>
-        <div className="fd-case-view-tools">
-          <button onClick={() => scene.current?.view("top")}>Top view</button>
-          <button onClick={() => scene.current?.view("iso")}>3D view</button>
-          {(design?.source || preview) && (
-            <button aria-pressed={!caseVisible} onClick={() => setCaseVisible(!caseVisible)}>
-              {caseVisible ? "Hide case" : "Show case"}
-            </button>
-          )}
-          <button aria-pressed={showRisks} onClick={() => setShowRisks(!showRisks)}>
-            Fit risks
-          </button>
-          <button aria-pressed={showSpace} onClick={() => setShowSpace(!showSpace)}>
-            Usable space
-          </button>
-          {preview?.meshes?.lid && (
-            <button aria-pressed={openLid} onClick={() => setOpenLid(!openLid)}>
-              {openLid ? "Close lid" : "Open lid"}
-            </button>
-          )}
-          <button aria-pressed={transparent} onClick={() => setTransparent(!transparent)}>
-            See through
-          </button>
-        </div>
-        <div className="fd-case-fit-legend" aria-label="Fit overlay legend">
-          {design?.mode === "imported" && (
-            <>
-              <strong>Check the actual case walls</strong>
-              <small>
-                Red checks use the interior you defined. Imported case surfaces are not checked
-                automatically.
-              </small>
-              <button
-                onClick={() => {
-                  setStep("Start");
-                  setShowSpace(true);
-                }}
-              >
-                Set usable interior
-              </button>
-            </>
-          )}
-          <span>
-            <i className="is-risk" />
-            Red: affected parts / clearance risk
-          </span>
-          {showSpace && (
+              </>
+            )}
             <span>
-              <i className="is-space" />
-              Dashed: usable interior
+              <i className="is-risk" />
+              Red: affected parts / clearance risk
             </span>
-          )}
-          <small>Estimated bounds · Not exact surface collisions</small>
-          {!preview && <small role="status">{fitState}</small>}
-          {focusedIssue ? (
-            <>
-              <strong>
-                Selected: {[...new Set(focusedIssue.regions?.map((r) => r.name))].join(", ")}
-              </strong>
-              <button
-                onClick={() => {
-                  setFocusedIssue(null);
-                  scene.current?.fit();
-                }}
-              >
-                Show all issues
-              </button>
-            </>
-          ) : report?.status === "blocked" && step !== "Review" ? (
-            <button onClick={() => setStep("Review")}>Review fit issues</button>
-          ) : null}
-          {!showRisks && <small>Red highlights hidden</small>}
+            {showSpace && (
+              <span>
+                <i className="is-space" />
+                Dashed: usable interior
+              </span>
+            )}
+            <small>Estimated bounds · Not exact surface collisions</small>
+            {!preview && <small role="status">{fitState}</small>}
+            {focusedIssue ? (
+              <>
+                <strong>
+                  Selected: {[...new Set(focusedIssue.regions?.map((r) => r.name))].join(", ")}
+                </strong>
+                <button
+                  onClick={() => {
+                    setFocusedIssue(null);
+                    scene.current?.fit();
+                  }}
+                >
+                  Show all issues
+                </button>
+              </>
+            ) : report?.status === "blocked" && step !== "Review" ? (
+              <button onClick={() => setStep("Review")}>Review fit issues</button>
+            ) : null}
+            {!showRisks && <small>Red highlights hidden</small>}
+          </div>
         </div>
       </div>
       <div className="fd-case-canvas-note">

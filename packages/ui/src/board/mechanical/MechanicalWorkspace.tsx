@@ -770,7 +770,7 @@ export function MechanicalWorkspace({
         </aside>
       )}
       {panel === "assembly" && !preview && (
-        <aside className="fd-mechanical-card fd-mechanical-left">
+        <aside className="fd-mechanical-card fd-mechanical-left fd-mechanical-parts-panel">
           <div className="fd-mechanical-card-heading">
             <h2>Parts</h2>
             <span>
@@ -806,25 +806,27 @@ export function MechanicalWorkspace({
               </div>
             ))}
           </div>
-          <button
-            className="fd-mechanical-wide"
-            disabled={!editable}
-            onClick={() => input.current?.click()}
-          >
-            <Icon name="plus" /> Import model
-          </button>
-          {
+          <footer className="fd-mechanical-parts-actions">
             <button
               className="fd-mechanical-wide"
-              disabled={!loaded || !!busy || !!preview}
-              onClick={() => generateDetailedBoard()}
+              disabled={!editable}
+              onClick={() => input.current?.click()}
             >
-              {items.some((i) => i.path === "renders/board.glb")
-                ? "Refresh PCB model"
-                : "Generate detailed PCB model"}
+              <Icon name="plus" /> Import model
             </button>
-          }
-          <p>Assembly positions are saved separately. PCB and imported originals stay unchanged.</p>
+            {
+              <button
+                className="fd-mechanical-wide"
+                disabled={!loaded || !!busy || !!preview}
+                onClick={() => generateDetailedBoard()}
+              >
+                {items.some((i) => i.path === "renders/board.glb")
+                  ? "Refresh PCB model"
+                  : "Generate detailed PCB model"}
+              </button>
+            }
+            <p>Moving parts keeps original files unchanged.</p>
+          </footer>
         </aside>
       )}
       {panel === "generate" && (

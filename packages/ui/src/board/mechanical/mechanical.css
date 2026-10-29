@@ -504,33 +504,80 @@
   position: absolute;
   top: 18px;
   right: 24px;
-  max-width: calc(100% - 450px);
+  width: 300px;
+  max-width: calc(100% - 420px);
+  max-height: calc(100% - 100px);
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 10px;
-  pointer-events: none;
-}
-.fd-case-controls-toggle {
+  align-items: stretch;
+  border: 1px solid var(--fd-border);
+  border-radius: 12px;
+  background: var(--fd-panel);
+  box-shadow: 0 8px 24px #00000012;
+  overflow: hidden;
   pointer-events: auto;
 }
-.fd-case-hud[data-collapsed="true"] > :not(.fd-case-controls-toggle) {
+.fd-case-controls-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  width: 100%;
+  padding: 13px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+}
+.fd-case-tools-body[hidden] {
   display: none;
+}
+.fd-case-tools-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border-top: 1px solid var(--fd-border);
+}
+.fd-case-tools-body h3 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.fd-case-view-section {
+  padding: 14px;
+  border-top: 1px solid var(--fd-border);
 }
 .fd-case-hud .fd-case-view-tools {
   position: static;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
   max-width: 100%;
-  pointer-events: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.fd-case-hud .fd-case-view-tools button {
+  min-width: 0;
+  white-space: normal;
+  padding: 8px;
+  font-size: 11px;
 }
 .fd-case-hud .fd-case-fit-legend {
   position: static;
-  max-width: 300px;
+  max-width: 100%;
   width: 100%;
   box-sizing: border-box;
-  pointer-events: none;
-}
-.fd-case-hud .fd-case-fit-legend button {
-  pointer-events: auto;
+  border: 0;
+  border-top: 1px solid var(--fd-border);
+  border-radius: 0;
+  background: transparent;
+  padding: 14px;
 }
 .fd-case-hud,
 .fd-case-canvas-note,
@@ -542,14 +589,11 @@
   -webkit-user-drag: none;
 }
 .fd-case-placement {
-  width: 300px;
+  width: 100%;
   max-width: 100%;
   box-sizing: border-box;
   pointer-events: auto;
-  border: 1px solid var(--fd-border);
-  border-radius: 12px;
-  padding: 12px;
-  background: var(--fd-panel);
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 9px;
@@ -579,22 +623,21 @@
   font-size: 12px;
 }
 .fd-case-placement-tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
 }
 .fd-case-placement-tools button {
   font-size: 11px;
   padding: 6px 8px;
   white-space: normal;
+  border: 1px solid var(--fd-border);
+  min-height: 32px;
 }
 .fd-case-placement .fd-case-placement-tools button[aria-pressed="true"] {
   background: var(--fd-panel-2);
   color: var(--fd-fg);
   border-color: var(--fd-accent);
-}
-.fd-case-placement + .fd-case-view-tools {
-  max-width: 300px;
 }
 @container (max-width: 800px) {
   .fd-case-hud {
@@ -610,9 +653,6 @@
     right: 12px;
     top: 110px;
     max-width: calc(100% - 340px);
-  }
-  .fd-case-fit-legend small {
-    display: none;
   }
 }
 @container (max-width: 560px) {
@@ -696,8 +736,14 @@
   .fd-case-canvas-note {
     left: 325px;
     right: 10px;
-    flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
+    gap: 8px;
+  }
+  .fd-case-canvas-note span {
+    display: none;
+  }
+  .fd-case-canvas-note button {
+    flex-shrink: 0;
   }
 }
 @container (max-width:560px) {
@@ -1077,6 +1123,40 @@
   gap: 3px;
   max-height: 260px;
   overflow: auto;
+}
+.fd-mechanical-left.fd-mechanical-parts-panel {
+  bottom: 110px;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+.fd-mechanical-parts-panel .fd-mechanical-card-heading {
+  flex-shrink: 0;
+  margin-bottom: 12px;
+}
+.fd-mechanical-parts-panel .fd-mechanical-parts {
+  flex: 1;
+  min-height: 64px;
+  max-height: none;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.fd-mechanical-parts-actions {
+  flex-shrink: 0;
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px solid var(--fd-border);
+}
+.fd-mechanical-parts-actions .fd-mechanical-wide {
+  margin: 0;
+}
+.fd-mechanical-parts-actions p {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.5;
 }
 .fd-mechanical-parts > div {
   display: flex;
@@ -1720,6 +1800,10 @@
   }
 }
 @container (max-width: 480px) {
+  .fd-mechanical-left.fd-mechanical-parts-panel {
+    bottom: 140px;
+    max-height: 120px;
+  }
   .fd-mechanical-stage {
     inset: 195px 10px 260px !important;
   }
