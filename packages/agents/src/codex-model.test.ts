@@ -2,7 +2,17 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseCodexConfiguredModel, readCodexConfiguredModel } from "./codex-model";
+import { parseCodexConfiguredModel, readCodexConfiguredModel, parseCodexModelEfforts, readCodexModelEfforts } from "./codex-model";
+
+test("Codex effort choices come from each cached model, not a universal list", () => {
+  expect(parseCodexModelEfforts({ models: [
+    { slug: "fast", supported_reasoning_levels: [{ effort: "low" }, { effort: "medium" }, null, { effort: "invented" }] },
+    { slug: "deep", supported_reasoning_levels: [{ effort: "high" }, { effort: "ultra" }] },
+    { slug: "unknown" }, null,
+  ] })).toEqual({ fast: ["low", "medium"], deep: ["high", "ultra"] });
+  expect(parseCodexModelEfforts(null)).toEqual({});
+  expect(readCodexModelEfforts({ CODEX_HOME: join(tmpdir(), "missing-fabdesk-effort-catalog") })).toEqual({});
+});
 
 test("Codex model metadata respects selected profile and never picks an inactive profile", () => {
   expect(parseCodexConfiguredModel('model="gpt-6-astra"')).toBe("gpt-6-astra");

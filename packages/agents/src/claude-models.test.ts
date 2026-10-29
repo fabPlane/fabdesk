@@ -3,6 +3,16 @@ import { parseClaudeModelCatalog } from "./claude-models";
 
 const response = (models: unknown) => ({ type: "control_response", response: { subtype: "success", request_id: "fabdesk-model-catalog", response: { models } } });
 
+test("effort capabilities resolve defaults and aliases without inventing support", () => {
+  const result = parseClaudeModelCatalog(response([
+    { value: "default", resolvedModel: "claude-opus-test", supportsEffort: true, supportedEffortLevels: ["low", "high", "invalid"] },
+    { value: "opus[1m]", resolvedModel: "claude-opus-test", supportsEffort: true, supportedEffortLevels: ["low", "high"] },
+    { value: "haiku", resolvedModel: "claude-haiku-test" },
+  ]));
+  expect(result?.modelEfforts).toEqual({ default: ["low", "high"], "claude-opus-test": ["low", "high"], "opus[1m]": ["low", "high"], opus: ["low", "high"] });
+  expect(result?.modelEfforts?.haiku).toBeUndefined();
+});
+
 test("uses CLI-resolved versions while retaining selectable IDs", () => {
   const result = parseClaudeModelCatalog(response([
     { value: "default", resolvedModel: "claude-opus-5[1m]" },

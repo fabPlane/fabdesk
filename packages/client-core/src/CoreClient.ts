@@ -2,6 +2,7 @@
 import type {
   AgentId,
   AgentPreference,
+  AgentEffortPreference,
   AuthState,
   BomSyncSummary,
   Cart,
@@ -640,6 +641,9 @@ export class CoreClient {
   }
   saveAgentPreference(preference: AgentPreference): Promise<Settings> {
     return this.request("/settings/agent-preference", { method: "PUT", json: preference });
+  }
+  saveAgentEffort(preference: AgentEffortPreference): Promise<Settings> {
+    return this.request("/settings/agent-effort", { method: "PUT", json: preference });
   }
   shutdown(): Promise<void> {
     return this.request("/shutdown", { method: "POST" });

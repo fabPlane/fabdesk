@@ -241,6 +241,20 @@ export function useSaveAgentPreference() {
   });
 }
 
+export function useSaveAgentEffort() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    // Serialize with agent/model changes so their settings responses cannot arrive out of order.
+    scope: { id: "agent-preference" },
+    mutationFn: (preference: Parameters<typeof client.saveAgentEffort>[0]) => client.saveAgentEffort(preference),
+    onSuccess: async (data) => {
+      await qc.cancelQueries({ queryKey: ["settings"] });
+      qc.setQueryData(["settings"], data);
+    },
+  });
+}
+
 export function useAuthState() {
   const client = useCoreClient();
   const setState = useAuthStore((s) => s.setState);

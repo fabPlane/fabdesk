@@ -68,6 +68,7 @@ export async function detectAgents(settings?: Settings): Promise<AgentInfo[]> {
         models: result.models ?? adapter.models(),
         ...(result.modelAliases ? { modelAliases: result.modelAliases } : {}),
         ...(result.defaultModel ? { defaultModel: result.defaultModel } : {}),
+        ...(result.modelEfforts ? { modelEfforts: result.modelEfforts } : {}),
         supportsSupervised: adapter.supportsSupervised,
       };
     }),

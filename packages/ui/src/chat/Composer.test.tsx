@@ -10,12 +10,18 @@ import { useAppActions, type AppActions } from "../app/useAppActions";
 const client = new CoreClient({ baseUrl: "http://test.invalid", token: "test" });
 const settings = Settings.parse({ defaultAgent: "codex", agents: { codex: { model: "gpt-6-astra" } } });
 
-function renderComposer(projectId: string | null, thread: Thread | null = null, loadingThread = false, withSettings = true) {
+function renderComposer(projectId: string | null, thread: Thread | null = null, loadingThread = false, withSettings = true, effort?: string | null, levels?: string[]) {
   // Zustand's server renderer reads its initial snapshot, rather than the live browser state.
   const initial = useUiStore.getInitialState();
   const previous = { ...initial };
   const qc = new QueryClient();
-  if (withSettings) qc.setQueryData(["settings"], settings);
+  if (withSettings) qc.setQueryData(["settings"], effort === undefined ? settings : Settings.parse({
+    ...settings, agents: { codex: { ...settings.agents.codex, effort } },
+  }));
+  if (levels) qc.setQueryData(["doctor"], { agents: [{
+    id: "codex", displayName: "Codex", installed: true, models: ["gpt-6-astra"],
+    modelEfforts: { "gpt-6-astra": levels },
+  }] });
   Object.assign(initial, { activeProjectId: projectId, drafts: { [thread?.id ?? "__new__"]: "Build a board" } });
   try {
     return renderToStaticMarkup(<CoreProvider client={client} host={nullHost} queryClient={qc}>
@@ -69,4 +75,14 @@ test("the New Chat action opens the picker without discarding the current conver
     useUiStore.getState().setProjectPickerOpen(false);
     expect(useUiStore.getState().activeThreadId).toBe("thread-a");
   } finally { useUiStore.setState(previous); }
+});
+
+test("the model label shows the effective effort, including Auto and unsupported-model fallback", () => {
+  const label = (effort: string | null, levels: string[]) => renderComposer("project-a", null, false, true, effort, levels);
+  expect(label("high", ["low", "high"])).toContain(">GPT-6 Astra High</span>");
+  expect(label("high", ["low", "high"])).toContain('aria-label="Agent and model: Codex: GPT-6 Astra High"');
+  expect(label("low", ["low", "high"])).toContain(">GPT-6 Astra Low</span>");
+  expect(label(null, ["low", "high"])).toContain(">GPT-6 Astra Auto</span>");
+  expect(label("ultra", ["low", "high"])).toContain(">GPT-6 Astra Auto</span>");
+  expect(label("high", [])).toContain(">GPT-6 Astra</span>");
 });
