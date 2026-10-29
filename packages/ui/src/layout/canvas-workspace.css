@@ -815,3 +815,5 @@
 .fd-assembly-view-menu { position:absolute; left:190px; top:22px; z-index:16; }
 .fd-assembly-view-menu > summary { min-height:34px; padding:7px 12px; gap:8px; font-size:12px; }
 @media(max-width:1100px) { .fd-assembly-view-menu { left:180px; top:18px; } }
+
+.fd-export-parts-link { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:18px; font-size:12px; color:var(--fd-muted); }

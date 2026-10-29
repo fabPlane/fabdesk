@@ -1681,3 +1681,10 @@ Native realR1 selection, requesteddisclosures, disabledstates, compactlayout and
 The assembly overview keeps Connections as its quiet default. Its requested view menu gives planned3Dassembly a clearly pending home and links to existing individual board models. The map remains logical; assembled alignment/fit is not implemented. Native pendingstate→actualsource-qualifiedmodelview→Overview and compactlayout passed. No generation/sourceedit;VAIO16+actualDRCreportexact. Final mapoverride reset persisted throughreload. UItypes/233tests912assertions passed. [Evidence](assembly-view-structure-native.json).
 
 ![Quiet compact project overview](overview-structure-compact.png)
+
+
+## Canonical Parts and Outputs homes
+
+Outputs→Exportfiles now focuses on manufacturing; a clear component-list link opens Parts&BOM with its existing ExportCSV action. Classic Files retains its original BOM export access. Parts copy qualifies coverage of any saved netlist and project hardware. Models&video retain their shared Outputs task with creation settings disclosed only on request.
+
+Native manufacturing→Parts/CSV, Shopping signedout, savedGLB/video formats and requestedvideo controls passed;34protectedfiles exact. No generation/exports/signin/edits in this structural walkthrough. [Evidence](output-parts-ownership-native.json).

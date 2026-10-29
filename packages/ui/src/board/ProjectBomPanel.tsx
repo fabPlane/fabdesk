@@ -289,7 +289,7 @@ export function ProjectBomPanel() {
               {parts.parts.length} off-board
             </Badge>
           </div>
-          <p className="mt-1 text-xs text-muted">{sources.data?.mode === "assembly" ? "Project extras and saved root netlist only. Member-board BOMs are not included." : sources.isPending || sources.isError ? "Project extras and saved root netlist. Board membership has not been verified." : "Saved board netlist and project hardware. Source freshness is unverified."}</p>
+          <p className="mt-1 text-xs text-muted">{sources.data?.mode === "assembly" ? "Project extras and saved root netlist only. Member-board BOMs are not included." : sources.isPending || sources.isError ? "Project extras and saved root netlist. Board membership has not been verified." : "Project hardware and any saved board netlist. Component coverage and freshness are unverified."}</p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           <Button ref={addTrigger} variant="primary" size="sm" onClick={() => setLibraryOpen(true)}><Icon name="plus" width={15} height={15} />Add parts</Button>

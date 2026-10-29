@@ -69,7 +69,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const [laserForm, setLaserForm] = useState<LaserStencilFormState>(DEFAULT_LASER_STENCIL_FORM);
   const { run, state, manifest } = useRunTool();
   const availableExports = fileExportChoices(manifest);
-  const exportChoices: ExportKind[] = exportFocus ? ["export_gerbers", "export_bom", ...availableExports.filter(kind => kind !== "export_gerbers" && kind !== "export_bom")] : availableExports;
+  const exportChoices: ExportKind[] = exportFocus ? ["export_gerbers", ...availableExports.filter(kind => kind !== "export_gerbers" && kind !== "export_bom")] : availableExports;
   const exportKind = exportChoices.includes(requestedExport) ? requestedExport : "export_gerbers";
   const busy = state.status === "running";
   const files = project.data?.files ?? [];
@@ -141,12 +141,12 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   if (project.isLoading) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   const exportControls = { exportChoices, exportKind, setExportKind, thicknessMm, onThickness: (value: number) => setThickness(projectId, value), laserForm, setLaserForm, busy, canExport, sourceNote, ...(state.error && !exportFocus ? { error: `${EXPORTS[lastExport].title}: ${state.error}` } : {}), onExport: () => void exportFiles() };
   if (exportFocus) return <div className="fd-export-workspace">
-    <header><h1>Export files</h1><p>Choose what you need for fabrication or your parts list.</p></header>
+    <header><h1>Export files</h1><p>Choose manufacturing files for your saved board.</p></header>
     <div className="fd-export-flow">
       <section className="fd-export-reference" aria-label="Export source reference">
         {previewPresent ? <><ProjectImage retryable projectId={projectId} path="renders/pcb.svg" alt="Saved PCB preview for export reference" /><p>{previewLabel}</p></> : <EmptyState title={assembly ? "Assembly source exports need board scope" : hasPcb ? "Saved PCB ready for export selection" : "Start with a saved PCB"} icon={<Icon name="pcb" width={48} height={48} />}><p>{assembly ? "This export screen cannot manufacture all member boards. Their individual previews remain available in Boards." : "Use Board to inspect your source. Exports do not establish that a design is ready to manufacture."}</p><Button className="mt-4" onClick={() => useUiStore.getState().setBoardTab("pcb")}>Open Board</Button></EmptyState>}
       </section>
-      <section className="fd-export-config" aria-label="Export options"><FileExportControls {...exportControls} />{sources.isError && <Button size="sm" onClick={() => void sources.refetch()}>Retry source check</Button>}</section>
+      <section className="fd-export-config" aria-label="Export options"><FileExportControls {...exportControls} /><div className="fd-export-parts-link"><span>Need a component list?</span><Button size="sm" variant="ghost" onClick={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().setBoardTab("bom"); }}>Open Parts & BOM</Button></div>{sources.isError && <Button size="sm" onClick={() => void sources.refetch()}>Retry source check</Button>}</section>
     </div>
     {state.status !== "idle" && <div className="fd-export-feedback" role={state.error ? "alert" : "status"}>{state.error ?? (busy ? `Exporting ${EXPORTS[lastExport].title.toLowerCase()}…` : `${EXPORTS[lastExport].title} saved in project outputs.`)}{state.note && <p>{state.note}</p>}{state.status === "done" && <ExportCompletionDetails kind={lastExport} result={state.result} />}{state.status === "done" && <Button size="sm" variant="ghost" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }}>Open output library</Button>}</div>}
   </div>;
