@@ -207,7 +207,7 @@ export function ProjectBomPanel() {
   );
 
   useEffect(() => {
-    if (!pendingReveal || pendingReveal.projectId !== projectId || !addedRow.current || !bomScroll.current) return;
+    if (libraryOpen || !pendingReveal || pendingReveal.projectId !== projectId || !addedRow.current || !bomScroll.current) return;
     const container = bomScroll.current;
     const row = addedRow.current;
     const headerHeight = container.querySelector("thead")?.getBoundingClientRect().height ?? 0;
@@ -219,7 +219,10 @@ export function ProjectBomPanel() {
     });
     setHighlightedLine(pendingReveal.lineId);
     setPendingReveal(null);
-  }, [lines, pendingReveal, projectId]);
+    requestAnimationFrame(() => {
+      if (row.isConnected && useUiStore.getState().activeProjectId === projectId) row.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+    });
+  }, [lines, pendingReveal, projectId, libraryOpen]);
 
   useEffect(() => {
     if (!highlightedLine) return;
@@ -267,7 +270,6 @@ export function ProjectBomPanel() {
     setBomQuery("");
     setLibraryOpen(false);
     setPendingReveal({ projectId, lineId: part.id });
-    requestAnimationFrame(() => addTrigger.current?.focus());
   };
 
   const setQtyFor = (lineId: string, nextQty: number) => {
