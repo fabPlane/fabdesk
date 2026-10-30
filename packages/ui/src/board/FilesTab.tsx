@@ -155,7 +155,6 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
         <p className="fd-export-path">{prefix}board.kicad_pcb</p>
         <Button disabled={busy || !sourceReady} size="sm" onClick={() => { const ui = useUiStore.getState(); if (assembly && outputSource.sourceId) outputSource.choose(outputSource.sourceId); ui.setBoardTab("pcb"); }}>Inspect board</Button>
         {assembly && !sourceReady && <Button size="sm" disabled={busy} onClick={() => source?.status === "available" && outputSource.sourceId ? outputSource.choose(outputSource.sourceId) : useUiStore.getState().openProjectFile("fabplane.assembly.json")}>{source?.status === "available" ? "Select source again" : "Review source files"}</Button>}
-        <p>Exports do not mark this design as checked or ready to manufacture.</p>
       </section>
       <section className="fd-export-config" aria-label="Export options"><FileExportControls {...exportControls} /><div className="fd-export-parts-link"><span>Need a component list?</span><Button size="sm" variant="ghost" onClick={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().setBoardTab("bom"); }}>Open Parts & BOM</Button></div>{sources.isError && <Button size="sm" onClick={() => void sources.refetch()}>Retry source check</Button>}</section>
     </div>

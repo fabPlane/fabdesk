@@ -136,7 +136,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
     </div>
     {generate.state.status === "running" && <p role="status" className="fd-output-feedback"><Spinner />Creating output…</p>}
     {(error || generate.state.error) && <p role="alert" className="fd-output-feedback">{error || generate.state.error}</p>}
-    {shown.length > 0 && <label className="fd-output-select-all"><input ref={selectAll} type="checkbox" checked={allSelected} aria-label="Select all matching outputs" onChange={() => setSelectedPaths(allSelected ? [] : shown.map(file => file.path))} />Select all {shown.length} files</label>}
+    {shown.length > 0 && <label className="fd-output-select-all"><input ref={selectAll} type="checkbox" checked={allSelected} aria-label="Select all matching outputs" onChange={() => setSelectedPaths(allSelected ? [] : shown.map(file => file.path))} />Select all {shown.length} {shown.length === 1 ? "file" : "files"}</label>}
     {selectedFiles.length > 0 && <div className="fd-output-selected" data-testid="output-actions">
       <div className="fd-output-action-bar"><span className="fd-output-selection-count">{selectedFiles.length} {selectedFiles.length === 1 ? "file" : "files"} selected</span>{active ? <strong title={active.path}>{basename(active.path)}{active.sourceName && <small> · {active.sourceName}</small>}</strong> : <strong>Download these files together as a ZIP</strong>}
         {canPreview && <Button size="sm" onClick={() => active && setPreview(active.path)}>{active?.kind === "videos" ? "Play" : "Preview"}</Button>}
