@@ -9,7 +9,7 @@ import { useBranchThread } from "../hooks/threadActions";
 import { useRunsStore } from "@fabdesk/client-core";
 import { SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, normalizeSidebarListTab, useUiStore } from "../stores/ui";
 import { cn } from "../util";
-import { groupThreadsByProject, sidebarSections, type ProjectThreadGroup } from "@fabdesk/client-core";
+import { groupThreadsByProject, sidebarSections, searchProjectGroups, type ProjectThreadGroup } from "@fabdesk/client-core";
 import { OpenSourceList } from "./OpenSourceList";
 import { UserFooter } from "./UserFooter";
 import { SearchResults } from "../chat/SearchResults";
@@ -58,6 +58,7 @@ export function ThreadSidebar({ onNewChat, onOpenProject }: ThreadSidebarProps) 
     [threads.data, projects.data, pinnedProjectIds],
   );
   const sections = useMemo(() => sidebarSections(projectGroups, pinnedProjectIds), [projectGroups, pinnedProjectIds]);
+  const projectMatches = useMemo(() => searchProjectGroups(projectGroups, q), [projectGroups, q]);
   const { patch } = useThreadMutations();
   const branch = useBranchThread();
   const [deletingChat, setDeletingChat] = useState<Thread | null>(null);
@@ -252,7 +253,7 @@ export function ThreadSidebar({ onNewChat, onOpenProject }: ThreadSidebarProps) 
           </div>
           <div className="fd-sidebar-search relative mx-3 mb-1 mt-2">
             <Icon name="search" width={15} height={15} className="pointer-events-none absolute left-2.5 top-2.5 text-muted" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search chats" aria-label="Search chats" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find projects or chats…" aria-label="Find projects or chats" />
           </div>
         </>
       )}
@@ -260,7 +261,17 @@ export function ThreadSidebar({ onNewChat, onOpenProject }: ThreadSidebarProps) 
         <OpenSourceList />
       ) : (
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-1">
-        {q.trim().length >= 2 ? <SearchResults query={q} /> : <>
+        {q.trim().length >= 2 ? <>
+          <section aria-label="Project search results" className="mb-4">
+            <h2 className="px-2 py-2 text-[11px] font-medium text-muted">Projects</h2>
+            {projects.isLoading ? <p className="px-2 py-2 text-xs text-muted">Loading projects…</p> : projects.isError ? <p role="alert" className="px-2 py-2 text-xs text-danger">Could not load projects. <button className="underline" onClick={() => void projects.refetch()}>Try again</button></p> : projectMatches.length ? projectMatches.map(group => <button key={group.key} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[13px] hover:bg-panel-2 focus-visible:outline focus-visible:outline-accent" onClick={() => {
+              if (!group.projectId) return;
+              if (onOpenProject) onOpenProject(group.projectId);
+              else { setActiveOpenSourceId(null); setActiveProject(group.projectId); setActiveThread(null); }
+            }}><Icon name="folder" width={17} height={17} className="shrink-0" /><ScrollingTitle text={group.title} /></button>) : <p className="px-2 py-2 text-xs text-muted">No matching projects.</p>}
+          </section>
+          <SearchResults query={q} />
+        </> : <>
         {threads.isLoading && <div className="px-2 py-3 text-xs text-muted">Loading...</div>}
         {threads.isError && <div className="px-2 py-3 text-xs text-danger">Could not load chats</div>}
         {(sections.pinnedProjects.length > 0 || sections.pinnedChats.length > 0) && <section aria-labelledby="sidebar-pinned-heading" className="mb-4" data-testid="sidebar-pinned-section">

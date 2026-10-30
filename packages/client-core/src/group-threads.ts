@@ -10,6 +10,13 @@ export type ProjectThreadGroup = {
   threads: Thread[];
 };
 
+/** Project discovery is independent of whether a project has matching conversations. */
+export function searchProjectGroups(groups: readonly ProjectThreadGroup[], query: string): ProjectThreadGroup[] {
+  const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  return groups.filter(group => group.kind === "project" && group.projectId && terms.every(term => group.title.toLocaleLowerCase().includes(term)))
+    .sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" }) || a.key.localeCompare(b.key));
+}
+
 /** Separate favorites from the project list without duplicating their chats. */
 export function sidebarSections(groups: readonly ProjectThreadGroup[], pinnedProjectIds: readonly string[]) {
   const pins = new Set(pinnedProjectIds);

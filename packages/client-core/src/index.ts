@@ -107,7 +107,7 @@ export type { LiveRun, LiveJob } from "./stores/runs";
 export { useRunTool, resolveToolName, TOOL_PATTERNS } from "./tools";
 export type { ToolKind, ToolRunState } from "./tools";
 
-export { groupThreadsByProject, sidebarSections } from "./group-threads";
+export { groupThreadsByProject, sidebarSections, searchProjectGroups } from "./group-threads";
 export type { ProjectThreadGroup, ProjectThreadGroupKind } from "./group-threads";
 export { pickerModelChoices, agentModelLabel } from "./agent-model-choices";
 

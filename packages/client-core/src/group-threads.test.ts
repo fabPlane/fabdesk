@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ProjectSummary, Thread } from "@fabdesk/protocol";
-import { groupThreadsByProject, sidebarSections } from "./group-threads";
+import { groupThreadsByProject, sidebarSections, searchProjectGroups } from "./group-threads";
 
 function thread(id: string, title: string, projectId: string | null, pinned = false): Thread {
   return {
@@ -18,6 +18,19 @@ function thread(id: string, title: string, projectId: string | null, pinned = fa
     updatedAt: "2026-01-01T00:00:00Z",
   };
 }
+
+test("project search finds empty projects independently of chat content and pinning", () => {
+  const projects: ProjectSummary[] = [
+    { id: "empty", name: "VAIO native edit", path: "/empty", createdAt: "", updatedAt: "" },
+    { id: "other", name: "USB bridge", path: "/other", createdAt: "", updatedAt: "" },
+  ];
+  const groups = groupThreadsByProject([thread("chat", "VAIO native edit", "other", true)], projects, ["empty"]);
+  expect(searchProjectGroups(groups, "  EDIT  vaio ").map(group => group.projectId)).toEqual(["empty"]);
+  expect(searchProjectGroups(groups, "usb").map(group => group.projectId)).toEqual(["other"]);
+  expect(searchProjectGroups(groups, "missing")).toEqual([]);
+  expect(searchProjectGroups(groups, "")).toHaveLength(2);
+  expect(groups.find(group => group.projectId === "empty")?.threads).toEqual([]);
+});
 
 describe("groupThreadsByProject", () => {
   const projects: ProjectSummary[] = [
