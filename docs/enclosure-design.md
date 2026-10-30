@@ -234,3 +234,13 @@ The VAIO study now has two **9.74 × 4.11 mm rounded USB-C openings** and a **13
 ![Rounded USB-C openings in the live app](screenshots/mechanical-workspace/47-rounded-usbc-openings.png)
 
 [Compare the previous rectangular openings](screenshots/mechanical-workspace/46-port-openings-and-disclosures.png).
+
+## Thin microSD access slot
+
+The VAIO microSD socket was using the generic 5 mm connector height, producing a 5.8 mm opening. The exact `microSD_HC_Hirose_DM3D-SF` footprint now uses the manufacturer's **1.55 mm** body height ([Hirose EDC3-156814, sheet 1](https://static.chipdip.ru/lib/930/DOC036930988.pdf)). The default opening is **2.35 mm tall**, including 0.4 mm clearance per side, correctly aligned above the PCB. The saved footprint supplies the width (13.55 mm after allowance); the inserted card drawing does not determine the body height. Other card connector models retain their estimates, and custom measurements still take precedence.
+
+**85 affected tests / 472 assertions pass**, including all four rotations, top/bottom mounting, undersized-opening rejection, exported wall material above the slot, and unrelated connector fallbacks. Four package typechecks and desktop build pass; zero packaged source maps. The regenerated VAIO export has two rounded USB-C openings and one thin rectangular microSD opening. Independent STEP import and **231 STL/STEP probes** agree; manifest hashes and original board bytes verify. This checks software geometry, not physical card insertion or manufacturing fit. Saved cases need a new layout preview to recalculate openings.
+
+![Thin microSD slot in the live app](screenshots/mechanical-workspace/48-thin-microsd-opening.png)
+
+[Before: user-reported oversized microSD opening](screenshots/mechanical-workspace/49-microsd-opening-before.png).

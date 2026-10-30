@@ -160,7 +160,22 @@ const MOUNT_RE = /mounting.?hole|^mh[_:]|hole_pad/i;
 const FIDUCIAL_RE = /fiducial/i;
 const EDGE_TOLERANCE_MM = 2.5;
 
+/** Heights above the mounting face for exact part numbers, never connector-wide guesses. */
+function connectorBodyProfile(footprint: string) {
+  // GCT USB4105, sheet 1, B4: https://gct.co/files/drawings/usb4105.pdf
+  if (/(?:^|:)USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal$/.test(footprint))
+    return { heightMm: 3.31, source: "GCT USB4105 drawing" as const };
+  // Hirose EDC3-156814, sheet 1: 1.55 +/- 0.13 mm above PCB.
+  // https://static.chipdip.ru/lib/930/DOC036930988.pdf (manufacturer drawing)
+  // Retain the saved footprint's XY outline; do not confuse the inserted card with body height.
+  if (/(?:^|:)microSD_HC_Hirose_DM3D-SF$/.test(footprint))
+    return { heightMm: 1.55, source: "Hirose DM3D-SF drawing" as const };
+  return undefined;
+}
+
 export function estimatePartHeightMm(footprint: string, value = ""): number {
+  const known = connectorBodyProfile(footprint);
+  if (known) return known.heightMm;
   const text = `${footprint} ${value}`;
   if (/usb.?c|type-?c|usb_c/i.test(text)) return 3.6;
   if (/hdmi/i.test(text)) return 6.5;
@@ -592,11 +607,8 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
     const body = validRect(bounds)
       ? bounds
       : { minX: origin.x - 1, minY: origin.y - 1, maxX: origin.x + 1, maxY: origin.y + 1 };
-    // Exact footprint family only: do not assign one connector's height to all USB-C parts.
-    // GCT USB4105 drawing, sheet 1, B4: 8.94 mm shell width, 3.31 mm above PCB.
-    // https://gct.co/files/drawings/usb4105.pdf
-    const usb4105 = /(?:^|:)USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal$/.test(libId);
-    const heightMm = usb4105 ? 3.31 : estimatePartHeightMm(libId, value);
+    const measured = connectorBodyProfile(libId);
+    const heightMm = estimatePartHeightMm(libId, value);
     const fab = courtyardBounds(fp, origin, placement.rotationDeg, true);
     const mountLabel = `${libId} ${ref}`;
     if (!MOUNT_RE.test(mountLabel) && !FIDUCIAL_RE.test(mountLabel))
@@ -639,9 +651,7 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
                 bounds: fab,
                 heightMm,
                 centerZ: heightMm / 2,
-                source: usb4105
-                  ? ("GCT USB4105 drawing" as const)
-                  : ("fabrication-outline" as const),
+                source: measured?.source ?? ("fabrication-outline" as const),
               },
             }
           : {}),

@@ -4,7 +4,7 @@ export type ConnectorFace = {
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
   heightMm: number;
   centerZ: number;
-  source: "fabrication-outline" | "GCT USB4105 drawing";
+  source: "fabrication-outline" | "GCT USB4105 drawing" | "Hirose DM3D-SF drawing";
 };
 
 export const DEFAULT_OPENING_CLEARANCE = 0.4;
