@@ -24,7 +24,7 @@ export function MissingNativeSource({ projectId, kind, enabled, visible = true, 
   const request = (action: "find" | "generate" | "import") => {
     if (!enabled || !active()) return;
     const target = name ? ` for ${name}` : " for this project";
-    const question = action === "find" ? `Find the matching native ${label}${target} in this project or its source repository. Check existing files first and show it here when its source is confirmed.` : action === "import" ? `Import the attached native ${label}${target}. Check the matching source, referenced sheets and dependencies, preserve existing files, and show the imported design here.` : `Help me create a proposed ${label}${target}. Reuse a matching existing design if available; otherwise explain the design and what needs review before applying it.`;
+    const question = action === "find" ? `Find the matching native ${label}${target}. Search the project files and source repository first, confirm which design belongs here, then show it on this canvas.` : action === "import" ? `Import the attached native ${label}${target}. Check the matching source, referenced sheets and dependencies, preserve existing files, and show the imported design here.` : `Help me create a proposed ${label}${target}. Reuse a matching existing design if available; otherwise explain the design and what needs review before applying it.`;
     askAboutSurface(surface, question);
   };
   const chooseFiles = async () => {

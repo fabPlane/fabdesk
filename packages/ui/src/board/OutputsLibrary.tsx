@@ -1,11 +1,11 @@
-import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
-import { CanvasToolButton } from "../components/CanvasToolButton";
+import { useAssistantSurface } from "../chat/useAssistantSurface";
+import { OutputPreviewDialog } from "./OutputPreviewDialog";
 import { BoardImageOutput } from "./BoardImageOutput";
 import { buildZip } from "@fabdesk/board-art";
 import { readOutputSelection } from "@fabdesk/client-core";
-import { VideoSourceStatus, videoInputLabel } from "./VideoSourceStatus";
+import { videoInputLabel } from "./VideoSourceStatus";
 import { filterSavedOutputs, outputLibrarySections, useVideoInputRevisions, videoInputsNeedReview } from "@fabdesk/client-core";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, useAssemblyPreviewRevisions, savedOutputs, useBoardSources, useBoardModelRevision, usePcbPreviewRevision, useEnclosureSourceRevision, useCoreClient, useProject, useRunTool, type OutputKind } from "@fabdesk/client-core";
 import { Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui";
 import { ProjectImage } from "../chat/ProjectImage";
@@ -15,7 +15,6 @@ import { useUiStore } from "../stores/ui";
 import { WorkspaceMenu } from "../layout/WorkspaceMenu";
 import { basename } from "../util";
 import { formatFileSize } from "./file-explorer";
-const ModelCanvas = lazy(() => import("./ModelCanvas"));
 const FILTERS = [{ id: "all", label: "All" }, { id: "images", label: "Images" }, { id: "videos", label: "Videos" }, { id: "models", label: "Models" }, { id: "manufacturing", label: "Manufacturing" }] as const;
 
 /** Open a preview directly; explicit checkboxes select files for single or batch download. */
@@ -160,10 +159,6 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
       <div className="fd-output-caption"><strong>Manufacturing files</strong><span>Individual Gerber, drill and DXF files</span><small>View all {sections.manufacturingFiles.length} files · Source unverified</small></div>
     </button>}</div> : <div className="fd-output-empty"><h3>{outputs.length ? "No outputs match these filters" : "Your outputs will appear here"}</h3><p>{outputs.length ? "Try another name or path, choose a different source, or clear the filters." : "Create images, a board model, a video or export files from the menu above."}</p></div>}
     <Dialog open={imageOutput} onClose={() => setImageOutput(false)} title="Render board image" className="fd-output-preview-dialog">{imageOutput && <BoardImageOutput projectId={projectId} onAsk={() => setImageOutput(false)} />}</Dialog>
-    <Dialog open={!!visible} onClose={() => setPreview(null)} title={visible ? visible.sourceName ? `${visible.sourceName} · ${basename(visible.path)}` : basename(visible.path) : "Output preview"} className="fd-output-preview-dialog">
-      {visible && assistantSurface && <div className="fd-output-preview-ask"><CanvasToolButton icon="sparkles" label="Ask about this output" onClick={() => { askAboutSurface(assistantSurface, `Help me review ${basename(visible.path)}. Explain what it shows and whether its saved inputs need attention.`); setPreview(null); }} /></div>}
-      {visible && visible.kind !== "videos" && <p className="fd-output-preview-source" role="status" data-warning={sourceInfo(visible.path).warning}>{sourceInfo(visible.path).label}</p>}
-      {visible && (visible.kind === "images" ? <ProjectImage projectId={projectId} path={visible.path} className="max-h-[70vh] w-full object-contain" /> : visible.kind === "videos" ? <><VideoSourceStatus projectId={projectId} path={visible.path} updating={false} /><ProjectVideo projectId={projectId} path={visible.path} className="max-h-[70vh]" /></> : <div className="fd-output-model-preview"><Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={visible.path} /></Suspense></div>)}
-    </Dialog>
+    {visible && visible.kind !== "manufacturing" && <OutputPreviewDialog key={`${projectId}:${visible.path}`} projectId={projectId} output={{ ...visible, kind: visible.kind }} status={sourceInfo(visible.path).label} warning={sourceInfo(visible.path).warning} onClose={() => setPreview(null)} />}
   </div>;
 }
