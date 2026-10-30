@@ -160,8 +160,8 @@ function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady, 
     return () => cancelAnimationFrame(frame);
   }, [changesOpen, projectId]);
 
-  useEffect(() => {
-    if (!scopeReady) return;
+  const loadRevisions = () => {
+    if (!scopeReady || list.state.status === "running" || useUiStore.getState().activeProjectId !== projectId) return;
     void list.run("board_revision_list", { projectId, limit: 40, ...(board ? { board } : {}) }).then(state => {
       const next = revisionsFrom(state.result);
       if (next.length > 0) {
@@ -169,7 +169,8 @@ function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady, 
         if (!report?.from?.ref) setFrom(next.find(revision => revision.ref !== "worktree")?.ref ?? "worktree");
       }
     });
-  }, [projectId, list.run, scopeReady, board?.sourceId, board?.manifestSha256]);
+  };
+  useEffect(loadRevisions, [projectId, list.run, scopeReady, board?.sourceId, board?.manifestSha256]);
 
   useEffect(() => {
     if (report?.from?.ref) setFrom(report.from.ref);
@@ -281,7 +282,7 @@ function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady, 
       </div>
       {checkpoint.state.error && <p role="alert" className="px-3 text-xs text-warning">{checkpoint.state.error}</p>}
       {checkpointNotice && <p role="status" className="px-3 text-xs text-muted">Comparison point saved. Make a change, then compare it with Current files.</p>}
-      {list.state.error && <p role="alert" className="px-3 text-xs text-warning">Could not load revision history. {list.state.error}</p>}
+      {list.state.error && <div role="alert" className="flex flex-wrap items-center gap-2 px-3 text-xs text-warning"><span>Could not load revision history. {list.state.error}</span><Button size="sm" disabled={running || !scopeReady} onClick={loadRevisions}>Retry revision history</Button></div>}
       {report && <div className="fd-diff-help"><p>Saved comparison snapshot. After editing, choose Compare again.</p><details><DisclosureSummary icon="image" label="Drawing guide" variant="compact" /><DiffLegend mode={mode} /><p>Revision diagrams show parsed positions and connections with simplified part shapes. Inspect the board’s native PCB or schematic for the full drawing. This comparison does not check electrical rules or manufacturing readiness.</p><Button size="sm" disabled={!scopeReady || running} onClick={() => onOpenNative(surface)}>Open current {surface === "pcb" ? "PCB" : "schematic"}</Button></details></div>}
       {mode === "overlay" && report && (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
