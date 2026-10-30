@@ -170,6 +170,13 @@ export function defaultConnectorAccess(footprint: string): "external" | "interna
     : "internal";
 }
 export type MechanicalBox = z.infer<typeof MechanicalBoxSchema>;
+export type PcbModelGap = {
+  ref: string;
+  footprint: string;
+  reason: "unassigned" | "hidden" | "not-loaded" | "partial";
+  /** Declared model paths, never interpreted as proof that geometry was loaded. */
+  models: string[];
+};
 export type MechanicalFitIssue = {
   severity: "error" | "review";
   code: string;
@@ -178,6 +185,7 @@ export type MechanicalFitIssue = {
   regions?: MechanicalBox[];
 };
 export type MechanicalFitReport = {
+  modelGaps?: Array<{ boardPath: string; parts: PcbModelGap[] }>;
   geometry?: { closed: boolean; baseParts: number; lidParts: number; engine: string };
   status: "blocked" | "review";
   issues: MechanicalFitIssue[];

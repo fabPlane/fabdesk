@@ -2064,6 +2064,23 @@
 .fd-pcb-model-status [role="alert"] {
   color: #ee9c8e;
 }
+
+.fd-pcb-model-gaps {
+  max-height: 320px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.fd-pcb-model-gaps article {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--fd-border);
+  border-radius: 8px;
+}
+.fd-pcb-model-gaps small,
+.fd-pcb-model-gaps code {
+  display: block;
+  overflow-wrap: anywhere;
+}
 .fd-case-hole-row {
   display: flex;
   gap: 12px;

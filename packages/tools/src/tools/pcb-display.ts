@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
 import { measureGlb, readSavedBoardModels } from "@fabdesk/kicad";
+import type { PcbModelGap } from "@fabdesk/protocol";
 import { jailPath, ensureDir } from "../fs";
 import { ToolError, type ToolContext } from "../registry";
 import { requireKicad, ok } from "./common";
@@ -15,16 +16,34 @@ export function displayCoverage(board: string, roots: ReturnType<typeof measureG
       // Bare mounting holes and fiducials are already geometry in the board body.
       (f.models.length > 0 || !/mounting.?hole|fiducial/i.test(f.footprint)),
   );
-  const missing = footprints.filter(
-    (f) =>
-      !f.ref ||
-      !f.models.length ||
-      (counts.get(f.ref) ?? 0) < f.models.filter((m) => !m.hidden).length,
-  );
+  const details: PcbModelGap[] = footprints.flatMap((f) => {
+    const visible = f.models.filter((m) => !m.hidden);
+    const loaded = f.ref ? (counts.get(f.ref) ?? 0) : 0;
+    const reason: PcbModelGap["reason"] | null = !f.models.length
+      ? "unassigned"
+      : !visible.length
+        ? "hidden"
+        : loaded === 0
+          ? "not-loaded"
+          : loaded < visible.length
+            ? "partial"
+            : null;
+    return reason
+      ? [
+          {
+            ref: f.ref ?? f.footprint,
+            footprint: f.footprint,
+            reason,
+            models: visible.map((m) => m.declared),
+          },
+        ]
+      : [];
+  });
   return {
     total: footprints.length,
-    loaded: footprints.length - missing.length,
-    missing: missing.map((f) => f.ref ?? f.footprint),
+    loaded: footprints.length - details.length,
+    missing: details.map((f) => f.ref),
+    details,
   };
 }
 

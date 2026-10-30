@@ -3,6 +3,8 @@ import { writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { solidKernel } from "@fabdesk/kicad/enclosure-solid";
 import { measureGlb } from "@fabdesk/kicad";
+import { extractBoardFeatures } from "@fabdesk/kicad/board-features";
+import { isPlanarBoardLayer } from "../src/tools/enclosure-detailed-fit";
 import { defaultEnclosureDesign } from "../../client-core/src/enclosure-design";
 import { createRegistry, makeContext } from "../src";
 import { tempProject, mockServices } from "./mock-services";
@@ -59,6 +61,35 @@ async function cubeGlb(width: number) {
   out.set(bin, 28 + j.length);
   return out;
 }
+test("planar layer classification never hides a component or raised surface", () => {
+  const board = {
+    placement: { path: "board.kicad_pcb", x: 0, y: 0, z: 0, rotation: 0 },
+    features: extractBoardFeatures(
+      '(kicad_pcb (general(thickness 1.6))(gr_rect(start 0 0)(end 40 20)(layer "Edge.Cuts")))',
+    ),
+  };
+  const layer = {
+    name: "anonymous-layer",
+    vertices: 6,
+    origin: { x: 0, y: 0, z: 0 },
+    bounds: { minX: 0, minY: 0, minZ: 1.585, maxX: 40, maxY: 20, maxZ: 1.585 },
+  };
+  expect(isPlanarBoardLayer(layer, board, new Set(["J1"]))).toBe(true);
+  expect(isPlanarBoardLayer({ ...layer, name: "J1" }, board, new Set(["J1"]))).toBe(false);
+  expect(
+    isPlanarBoardLayer(
+      { ...layer, bounds: { ...layer.bounds, minZ: 8, maxZ: 8 } },
+      board,
+      new Set(),
+    ),
+  ).toBe(false);
+  expect(
+    isPlanarBoardLayer({ ...layer, bounds: { ...layer.bounds, maxZ: 1.7 } }, board, new Set()),
+  ).toBe(false);
+  expect(
+    isPlanarBoardLayer({ ...layer, bounds: { ...layer.bounds, maxX: 50 } }, board, new Set()),
+  ).toBe(false);
+});
 test("detailed fit catches actual geometry beyond the estimated outline and blocks exports", async () => {
   const project = await tempProject("detailed"),
     services = mockServices([project]);

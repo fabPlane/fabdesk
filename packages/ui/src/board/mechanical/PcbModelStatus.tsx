@@ -20,6 +20,17 @@ export function PcbModelStatus({
     m.coverage.missing.map((ref) => `${path}: ${ref}`),
   );
   const warnings = entries.flatMap(([, m]) => m.warnings);
+  const barePad = (name: string) => /(?:^|:)TestPoint_Pad_|SolderJumper/i.test(name);
+  const priority = (reason: string, footprint: string) =>
+    reason !== "unassigned" ? 0 : barePad(footprint) ? 2 : 1;
+  const repair = {
+    unassigned: "Assign a model in the PCB footprint, then refresh.",
+    hidden: "Enable the footprint's 3D model in KiCad, then refresh.",
+    "not-loaded":
+      "Check the model file and KiCad library path, then refresh. A linked filename alone does not supply geometry.",
+    partial:
+      "Some linked models did not load. Check every model file in this footprint, then refresh.",
+  };
   async function download(path: string, model: PcbDisplay) {
     setExporting(true);
     setExportError("");
@@ -71,11 +82,46 @@ export function PcbModelStatus({
       </p>
       {!!missing.length && (
         <details>
-          <summary>{missing.length} components missing 3D geometry</summary>
+          <summary>{missing.length} footprints need model review</summary>
           <p>
             Assign their 3D models in the PCB design, then refresh. Missing parts are not drawn.
           </p>
-          <p>{missing.join(", ")}</p>
+          <div className="fd-pcb-model-gaps">
+            {entries
+              .filter(([, m]) => m.coverage.missing.length)
+              .map(([path, m]) => (
+                <div key={path}>
+                  <strong>{path.split(/[\\/]/).at(-1)}</strong>
+                  {m.coverage.details?.length ? (
+                    [...m.coverage.details]
+                      .sort(
+                        (a, b) => priority(a.reason, a.footprint) - priority(b.reason, b.footprint),
+                      )
+                      .map((gap, index) => (
+                        <article key={`${gap.ref}-${index}`}>
+                          <strong>{gap.ref}</strong>
+                          <small>{gap.footprint}</small>
+                          <p>
+                            {gap.reason === "unassigned" && barePad(gap.footprint)
+                              ? "No separate body is assigned to this pad. Check solder height and probe or jumper access."
+                              : repair[gap.reason]}
+                          </p>
+                          {!!gap.models.length && (
+                            <details>
+                              <summary>Linked files</summary>
+                              {gap.models.map((file, i) => (
+                                <code key={i}>{file}</code>
+                              ))}
+                            </details>
+                          )}
+                        </article>
+                      ))
+                  ) : (
+                    <p>{m.coverage.missing.join(", ")}</p>
+                  )}
+                </div>
+              ))}
+          </div>
         </details>
       )}
       {!!warnings.length && (

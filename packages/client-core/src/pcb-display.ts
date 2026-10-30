@@ -1,9 +1,11 @@
 import type { CoreClient } from "./CoreClient";
 
+import type { PcbModelGap } from "@fabdesk/protocol";
+
 export type PcbDisplay = {
   modelPath: string;
   pcbRevision: string;
-  coverage: { total: number; loaded: number; missing: string[] };
+  coverage: { total: number; loaded: number; missing: string[]; details?: PcbModelGap[] };
   warnings: string[];
   bounds?: { minX: number; minY: number; minZ: number; maxX: number; maxY: number; maxZ: number };
   data: ArrayBuffer;

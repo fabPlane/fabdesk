@@ -18,10 +18,14 @@ test("coverage uses loaded nodes, including multiple models and absent reference
     origin: { x: 0, y: 0, z: 0 },
     bounds: { minX: 0, minY: 0, minZ: 0, maxX: 1, maxY: 1, maxZ: 1 },
   });
-  expect(displayCoverage(pcb, [node("U1"), node("U2")])).toEqual({
+  expect(displayCoverage(pcb, [node("U1"), node("U2")])).toMatchObject({
     total: 3,
     loaded: 1,
     missing: ["U2", "J1"],
+    details: [
+      { ref: "U2", reason: "partial", models: ["a.step", "b.step"] },
+      { ref: "J1", reason: "unassigned", models: [] },
+    ],
   });
 });
 test("bare mounting holes and fiducials are not missing component bodies", () => {
@@ -30,7 +34,20 @@ test("bare mounting holes and fiducials are not missing component bodies", () =>
       '(kicad_pcb (footprint "MountingHole:3mm" (property "Reference" "H1")) (footprint "Fiducial" (property "Reference" "FID1")))',
       [],
     ),
-  ).toEqual({ total: 0, loaded: 0, missing: [] });
+  ).toEqual({ total: 0, loaded: 0, missing: [], details: [] });
+});
+
+test("hidden-only and unloaded linked models never count as loaded geometry", () => {
+  const result = displayCoverage(
+    `(kicad_pcb
+    (footprint "HiddenConnector" (property "Reference" "J1") (model "hidden.step" (hide yes)))
+    (footprint "MissingChip" (property "Reference" "U1") (model "absent.step"))
+    (footprint "NoReference" (model "a.step")))`,
+    [],
+  );
+  expect(result.loaded).toBe(0);
+  expect(result.missing).toEqual(["J1", "U1", "NoReference"]);
+  expect(result.details.map((d) => d.reason)).toEqual(["hidden", "not-loaded", "not-loaded"]);
 });
 
 test("display export rejects stale PCB before export and changed PCB during export", async () => {

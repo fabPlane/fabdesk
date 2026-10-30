@@ -2,13 +2,34 @@ import { randomUUID } from "node:crypto";
 import { readFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { MechanicalDesign, MechanicalFitReport } from "@fabdesk/protocol";
-import { measureGlb } from "@fabdesk/kicad";
+import { measureGlb, readSavedBoardModels } from "@fabdesk/kicad";
 import { solidKernel, solidFromTriangles, type Manifold } from "@fabdesk/kicad/enclosure-solid";
 import { readStlTriangles } from "@fabdesk/kicad/shell-fit";
 import type { FitBoard } from "@fabdesk/kicad/mechanical-fit";
 import type { ToolContext } from "../registry";
 import { jailPath } from "../fs";
 import { displayCoverage } from "./pcb-display";
+
+/** Native board artwork can be planar. Never classify a named component as artwork. */
+export function isPlanarBoardLayer(
+  root: ReturnType<typeof measureGlb>["roots"][number],
+  board: FitBoard,
+  references: Set<string>,
+) {
+  const r = root.bounds,
+    f = board.features,
+    o = f.outline;
+  return (
+    !!r &&
+    !references.has(root.name) &&
+    r.maxZ - r.minZ < 1e-5 &&
+    (Math.abs(r.minZ) < 0.1 || Math.abs(r.minZ - f.thicknessMm) < 0.1) &&
+    r.minX >= o.minX - 0.1 &&
+    r.maxX <= o.maxX + 0.1 &&
+    r.minY >= o.minY - 0.1 &&
+    r.maxY <= o.maxY + 0.1
+  );
+}
 
 /** Fresh native export + solid intersections. Missing/unclosed models remain explicit review items. */
 export async function detailedEnclosureFit(
@@ -19,7 +40,7 @@ export async function detailedEnclosureFit(
   lid: Uint8Array | null,
   original: MechanicalFitReport,
 ) {
-  const report = { ...original, issues: [...original.issues] };
+  const report: MechanicalFitReport = { ...original, issues: [...original.issues], modelGaps: [] };
   const note = (code: string, message: string, severity: "error" | "review" = "review") =>
     report.issues.push({ code, message, severity });
   if (!d.detailedFit) return report;
@@ -64,15 +85,19 @@ export async function detailedEnclosureFit(
         const bytes = await readFile(output);
         if (bytes.length > 50 * 1024 * 1024)
           throw new Error("model exceeds the 50 MB detailed-fit limit");
-        const measured = measureGlb(bytes, { triangles: true }),
-          coverage = displayCoverage(await readFile(board, "utf8"), measured.roots);
+        const source = await readFile(board, "utf8"),
+          references = new Set(readSavedBoardModels(source).flatMap((f) => (f.ref ? [f.ref] : []))),
+          measured = measureGlb(bytes, { triangles: true }),
+          coverage = displayCoverage(source, measured.roots);
+        report.modelGaps!.push({ boardPath: b.placement.path, parts: coverage.details });
         if (coverage.missing.length)
           note(
             "detailed-missing",
-            `${b.placement.path}: missing 3D bodies for ${coverage.missing.slice(0, 12).join(", ")}${coverage.missing.length > 12 ? "…" : ""}. These parts were not checked as solids.`,
+            `${b.placement.path}: missing 3D bodies for ${coverage.missing.join(", ")}. These parts were not checked as solids. PCB model quality lists each part and its repair action.`,
           );
         const parts: Manifold[] = [];
-        let openModels = 0;
+        const openModels: string[] = [];
+        let planarLayers = 0;
         for (const root of measured.roots) {
           if (!root.triangles?.length) continue;
           total += root.triangles.length / 9;
@@ -86,13 +111,19 @@ export async function detailedEnclosureFit(
             parts.push(placed);
             checked++;
           } catch {
-            openModels++;
+            if (isPlanarBoardLayer(root, b, references)) planarLayers++;
+            else openModels.push(root.name);
           }
         }
-        if (openModels)
+        if (openModels.length)
           note(
             "detailed-open",
-            `${b.placement.path}: ${openModels} model surfaces could not be checked as closed solids. Review the source 3D models.`,
+            `${b.placement.path}: ${openModels.length} model surfaces (${openModels.join(", ")}) could not be checked as closed solids. Review the source 3D models.`,
+          );
+        if (planarLayers)
+          note(
+            "detailed-layers",
+            `${b.placement.path}: ${planarLayers} unnamed planar surfaces near the PCB faces were excluded from solid intersections. These are consistent with board artwork layers; solder thickness and surface contact still require physical review.`,
           );
         if (!parts.length) throw new Error("no closed board/component models available");
         const solid = own(k.Manifold.union(parts));
