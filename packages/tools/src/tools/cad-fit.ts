@@ -25,6 +25,7 @@ import { jailPath, readJsonIfPresent, writeAtomic, writeJson } from "../fs";
 import { ok } from "./common";
 import { native_edit_transaction } from "./native-edit";
 import { detailedEnclosureFit } from "./enclosure-detailed-fit";
+import { bundleEnclosureModels } from "./enclosure-model-bundle";
 
 const sha = (v: string | Uint8Array) => createHash("sha256").update(v).digest("hex");
 // Repeated placement checks reuse the parsed surface; bound retained mesh memory.
@@ -99,6 +100,7 @@ async function snapshot(dir: string, design: MechanicalDesign) {
     files[placement.path] = bytes;
     boards.push({ placement, features: extractBoardFeatures(bytes.toString("utf8")) });
   }
+  const modelBundle = await bundleEnclosureModels(dir, files);
   let sourceHash: string | null = null;
   let report = checkMechanicalFit(design, boards);
   if (design.mode === "imported" && design.source) {
@@ -112,9 +114,17 @@ async function snapshot(dir: string, design: MechanicalDesign) {
   return {
     boards,
     files,
+    modelBundle,
     report,
     sourceRevision: sourceHash,
-    revision: sha(JSON.stringify({ design, boards: report.boardRevisions, sourceHash })),
+    revision: sha(
+      JSON.stringify({
+        design,
+        boards: report.boardRevisions,
+        sourceHash,
+        models: modelBundle.revision,
+      }),
+    ),
   };
 }
 
@@ -662,6 +672,8 @@ export const cad_fit = defineTool({
             "lid-print.stl is flipped with the outside face at Z=0, so the lip/holders point upward. lid.stl retains assembly coordinates.",
             "Import into your slicer in millimetres. Check bed size, wall layers, overhangs and support settings for your printer/material.",
             "Closed, joined geometry has been checked by software. Printing, strength and physical fit have NOT been verified.",
+            "boards/ contains portable project-local model links. source-boards/ preserves original files when model links were rewritten; circuit geometry is unchanged.",
+            "See model-dependencies.json for packaged files and unresolved/external library models that must still be installed. Missing dependencies are not proof of fit.",
             "[ ] Print a small pilot-hole / connector-fit sample before the full case.",
             "[ ] Fit every board with power disconnected; confirm all underside parts and solder joints clear the supports.",
             "[ ] Fit the actual plugs/cards; check insertion, removal and cable bends.",
@@ -676,7 +688,10 @@ export const cad_fit = defineTool({
           ? { "geometry-validation.json": strToU8(JSON.stringify(built.validation, null, 2)) }
           : {}),
       };
-      for (const [path, bytes] of Object.entries(snap.files)) outputs[`boards/${path}`] = bytes;
+      Object.assign(outputs, snap.modelBundle.files);
+      outputs["model-dependencies.json"] = strToU8(
+        JSON.stringify(snap.modelBundle.dependencies, null, 2),
+      );
       for (const [path, text] of Object.entries(await enclosureFitSamples(design, snap.boards)))
         outputs[path] = strToU8(text);
       outputs["manifest.json"] = strToU8(
@@ -690,11 +705,17 @@ export const cad_fit = defineTool({
             files: Object.fromEntries(Object.entries(outputs).map(([p, b]) => [p, sha(b)])),
             reviewRequired: true,
             electricalDrcRun: false,
+            sourceBoardRevisions: snap.report.boardRevisions,
           },
           null,
           2,
         ),
       );
+      if ((await snapshot(dir, design)).revision !== snap.revision)
+        throw new ToolError(
+          "A PCB, enclosure source or project model changed during export. Preview again before exporting.",
+          "precondition",
+        );
       // Publish immutable snapshots. A partial write can never replace a previous export.
       for (const [name, bytes] of Object.entries(outputs))
         await writeAtomic(await jailPath(dir, `${destination}/${name}`), bytes);

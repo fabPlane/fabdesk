@@ -16,6 +16,30 @@ const pcb =
 const planeStl = (z: number) =>
   `solid case\nfacet normal 0 0 1\nouter loop\nvertex -5 -5 ${z}\nvertex 50 -5 ${z}\nvertex -5 50 ${z}\nendloop\nendfacet\nendsolid case`;
 
+test("coordinated exports include local models and reject a changed model after preview", async () => {
+  const { invoke, design, project } = await setup();
+  const source = pcb.replace(
+    /\)$/,
+    '(footprint "test" (property "Reference" "U1") (at 10 10) (model "part.step")))',
+  );
+  await writeFile(join(project.dir, "board.kicad_pcb"), source);
+  await writeFile(join(project.dir, "part.step"), "model first");
+  const preview = (await invoke({ action: "preview", design })).json as { revision: string };
+  const built = (await invoke({ action: "build", design, expectedRevision: preview.revision }))
+    .json as { archive: string };
+  const files = unzipSync(await readFile(join(project.dir, built.archive)));
+  const dependencies = JSON.parse(strFromU8(files["model-dependencies.json"]!));
+  expect(dependencies[0].status).toBe("packaged");
+  expect(strFromU8(files[dependencies[0].files[0].path]!)).toBe("model first");
+  expect(strFromU8(files["source-boards/board.kicad_pcb"]!)).toBe(source);
+  expect(strFromU8(files["boards/board.kicad_pcb"]!)).toContain("${KIPRJMOD}/.fabdesk-models/");
+  await writeFile(join(project.dir, "part.step"), "model changed");
+  await expect(
+    invoke({ action: "build", design, expectedRevision: preview.revision }),
+  ).rejects.toThrow(/changed/);
+  expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(source);
+});
+
 test("native imported-shell plan carries rounded contours and preserves rectangle compatibility", async () => {
   const { design } = await setup();
   design.openings = [
