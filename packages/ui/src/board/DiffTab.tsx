@@ -1,6 +1,7 @@
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { captureAssemblySourceSelection, diffPreviewSvg, pcbToolJson, restoreAssemblySelection } from "@fabdesk/client-core";
 import type { BoardSourceSelection } from "@fabdesk/protocol";
+import { DisclosureSummary } from "../components/DisclosureSummary";
 import { ReviewScope } from "./ReviewUpdateLayout";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -103,11 +104,20 @@ export function DiffTab() {
       const selection = captureAssemblySourceSelection(data, id, useUiStore.getState().assemblyBoardByProject[projectId]);
       if (selection && data.sources.find(row => row.source.id === id)?.status === "available") useUiStore.getState().setAssemblyBoard(selection);
     }}>{!source && <option value={sourceId ?? ""} disabled>Source definition changed · choose a board</option>}{data.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · source unavailable" : ""}</option>)}</select></ReviewScope>}
-    {assembly && source?.status !== "available" ? <EmptyState title="Add this board’s source to compare changes"><p>{source?.reason ?? "Choose an imported board source, or locate this board’s native files."}</p><Button onClick={() => useUiStore.getState().openProjectFile("fabplane.assembly.json")}>Review source definition</Button></EmptyState> : <BoardRevisionDiff key={`${projectId}:${board?.sourceId ?? "root"}:${board?.manifestSha256 ?? ""}`} projectId={projectId} prefix={prefix} {...(board ? { board } : {})} sourceLabel={source?.source.name ?? "Main board"} scopeReady={ready} />}
+    {assembly && source?.status !== "available" ? <EmptyState title="Add this board’s source to compare changes"><p>{source?.reason ?? "Choose an imported board source, or locate this board’s native files."}</p><Button onClick={() => useUiStore.getState().openProjectFile("fabplane.assembly.json")}>Review source definition</Button></EmptyState> : <BoardRevisionDiff key={`${projectId}:${board?.sourceId ?? "root"}:${board?.manifestSha256 ?? ""}`} projectId={projectId} prefix={prefix} {...(board ? { board } : {})} sourceLabel={source?.source.name ?? "Main board"} scopeReady={ready} onOpenNative={surface => {
+      const ui = useUiStore.getState();
+      if (!ready || ui.activeProjectId !== projectId) return;
+      if (assembly && source) {
+        const selection = captureAssemblySourceSelection(data, source.source.id, ui.assemblyBoardByProject[projectId]);
+        if (!selection) return;
+        ui.setAssemblyBoard(selection);
+      }
+      ui.setBoardTab(surface);
+    }} />}
   </>;
 }
 
-function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady }: { projectId: string; prefix: string; board?: BoardSourceSelection; sourceLabel: string; scopeReady: boolean }) {
+function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady, onOpenNative }: { onOpenNative: (surface: Surface) => void; projectId: string; prefix: string; board?: BoardSourceSelection; sourceLabel: string; scopeReady: boolean }) {
   const [changesOpen, setChangesOpen] = useState(false);
   const [checkpointNotice, setCheckpointNotice] = useState(false);
   const changesTrigger = useRef<HTMLButtonElement>(null), changesPanel = useRef<HTMLElement>(null);
@@ -244,7 +254,7 @@ function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady }
         </Button></>}
         <Button size="sm" variant={noHistory ? "primary" : "secondary"} disabled={running || !scopeReady} onClick={() => void savePoint()}>{checkpoint.state.status === "running" ? "Saving point…" : "Save comparison point"}</Button>
         {running && <Spinner />}
-        <span className="ml-auto text-[11px] text-muted">{report ? "Saved comparison · " : ""}{diffHeadline(report)}</span>
+        <span className="ml-auto text-[11px] text-muted">{report && !hasChanges ? "No part or net changes in this saved comparison." : <>{report ? "Saved comparison · " : ""}{diffHeadline(report)}</>}</span>
       </div>
       {report && <div className="fd-diff-views flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-1.5">
         {(["pcb", "schematic"] as const).filter(id => report.documents?.[id] !== false).map((id) => (
@@ -272,7 +282,7 @@ function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady }
       {checkpoint.state.error && <p role="alert" className="px-3 text-xs text-warning">{checkpoint.state.error}</p>}
       {checkpointNotice && <p role="status" className="px-3 text-xs text-muted">Comparison point saved. Make a change, then compare it with Current files.</p>}
       {list.state.error && <p role="alert" className="px-3 text-xs text-warning">Could not load revision history. {list.state.error}</p>}
-      {report && <p className="px-1 text-[11px] text-muted">Saved comparison snapshot. After editing, choose Compare again to include your latest files.</p>}
+      {report && <div className="fd-diff-help"><p>Saved comparison snapshot. After editing, choose Compare again.</p><details><DisclosureSummary icon="image" label="Drawing guide" variant="compact" /><DiffLegend mode={mode} /><p>Revision diagrams show parsed positions and connections with simplified part shapes. Inspect the board’s native PCB or schematic for the full drawing. This comparison does not check electrical rules or manufacturing readiness.</p><Button size="sm" disabled={!scopeReady || running} onClick={() => onOpenNative(surface)}>Open current {surface === "pcb" ? "PCB" : "schematic"}</Button></details></div>}
       {mode === "overlay" && report && (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
           <span className="text-muted">Compare revisions</span>
@@ -288,7 +298,6 @@ function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady }
           <span className="text-[11px] text-muted">{100 - blend}% From / {blend}% To · position and zoom stay fixed</span>
         </div>
       )}
-      {report && <DiffLegend mode={mode} />}
       {reportQuery.isError ? (
         <LoadError title="Could not load the last diff report" onRetry={() => void reportQuery.refetch()} />
       ) : !report ? (
