@@ -18,6 +18,7 @@ import { ProjectActionDialog, type ProjectAction } from "./ProjectActionDialog";
 
 export interface ThreadSidebarProps {
   onNewChat: () => void;
+  onOpenProject?: (projectId: string) => void;
 }
 
 interface Menu {
@@ -26,7 +27,7 @@ interface Menu {
   thread: Thread;
 }
 
-export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
+export function ThreadSidebar({ onNewChat, onOpenProject }: ThreadSidebarProps) {
 
   const [q, setQ] = useState("");
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
@@ -160,6 +161,13 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           return (
           <div key={group.key} className="fd-sidebar-project-group" data-testid={`sidebar-group-${group.key}`}>
             <div className="fd-project-heading group relative flex items-center gap-0.5 px-0.5" data-menu-open={projectMenu?.id === group.projectId}>
+              {onOpenProject && group.kind === "project" && <IconButton
+                size="sm"
+                title={`${expanded ? "Hide" : "Show"} chats in ${group.title}`}
+                aria-expanded={expanded}
+                aria-controls={`project-chats-${group.key}`}
+                onClick={() => setExpandedProjects(current => ({ ...current, [group.key]: !expanded }))}
+              ><Icon name={expanded ? "chevronDown" : "chevronRight"} width={14} height={14} /></IconButton>}
               <button
                 type="button"
                 className={cn(
@@ -167,11 +175,12 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
                   group.kind === "project" && group.projectId === projectId ? "bg-panel-2/50 text-fg" : "text-muted",
                 )}
                 aria-current={group.kind === "project" && group.projectId === projectId ? "true" : undefined}
-                aria-expanded={group.kind === "project" ? expanded : undefined}
-                aria-controls={group.kind === "project" ? `project-chats-${group.key}` : undefined}
+                aria-expanded={!onOpenProject && group.kind === "project" ? expanded : undefined}
+                aria-controls={!onOpenProject && group.kind === "project" ? `project-chats-${group.key}` : undefined}
                 onClick={() => {
                   if (group.kind === "project" && group.projectId) {
-                    setExpandedProjects((current) => ({ ...current, [group.key]: !expanded }));
+                    if (onOpenProject) onOpenProject(group.projectId);
+                    else setExpandedProjects((current) => ({ ...current, [group.key]: !expanded }));
                   }
                 }}
               >

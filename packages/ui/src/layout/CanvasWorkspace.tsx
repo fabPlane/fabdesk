@@ -141,7 +141,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
     </main>
     <Dialog open={navigationOpen} onClose={() => setNavigationOpen(false)} bare ariaLabel="Projects and conversations" className="fd-canvas-drawer">
       <div className="fd-canvas-drawer-inner"><div className="fd-assistant-heading"><span>Projects & conversations</span><IconButton size="sm" title="Close navigation" onClick={() => setNavigationOpen(false)}><Icon name="close" width={17} height={17} /></IconButton></div>
-      <ThreadSidebar onNewChat={onNewChat} /></div>
+      <ThreadSidebar onNewChat={onNewChat} onOpenProject={(id) => { ui().setActiveProject(id); ui().setBoardOpen(true); setNavigationOpen(false); }} /></div>
     </Dialog>
     {creating && <CreateProjectDialog initialMode={creating} onClose={() => setCreating(null)} onCreated={(id) => { ui().setActiveProject(id); ui().setBoardOpen(true); setCreating(null); }} />}
     {projectAction && <ProjectActionDialog key={projectAction.id} project={projectAction} onClose={() => setProjectAction(null)} />}
