@@ -89,6 +89,28 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
   const all = boards.map((b) => ({ b, volumes: boardVolumes(b) }));
   for (const { b, volumes } of all) {
     const label = b.placement.path;
+    const hasAlignedPost = d.mounts.some(
+      (m) =>
+        (!m.boardPath || m.boardPath === label) &&
+        b.features.holes.some((h) => {
+          const p = boardPoint(b, h.x, h.y);
+          return (
+            h.shape !== "slot" &&
+            h.purpose !== "component" &&
+            (!m.holeId || m.holeId === h.id) &&
+            Math.hypot(p.x - m.x, p.y - m.y) < 0.05 &&
+            Math.abs(s.floor + m.height - b.placement.z) < 0.05 &&
+            m.diameter <= h.diameterMm
+          );
+        }),
+    );
+    if (!hasAlignedPost)
+      add(
+        "mount-none",
+        `${label}: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.`,
+        "review",
+        [volumes[0]!],
+      );
     for (const v of volumes) {
       if (
         v.x < s.x + c - eps ||
@@ -372,12 +394,6 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
         mountRegion(m),
       ]);
   }
-  if (boards.length && !d.mounts.length)
-    add(
-      "mount-none",
-      "No screw posts selected. Review the detected PCB holes or choose another way to retain the board.",
-      "review",
-    );
   add(
     "coverage",
     "Checks use PCB outlines, component bounding boxes and estimated heights. Review actual component heights, cables, fasteners and manufacturing tolerances.",

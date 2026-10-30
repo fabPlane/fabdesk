@@ -139,7 +139,11 @@ describe("mechanical fit constraints", () => {
     d.obstacles = [];
     d.boards[0]!.rotation = 0;
     d.boards[0]!.x = 0;
-    expect(checkMechanicalFit(d, boards(d)).issues.flatMap((i) => i.regions ?? [])).toEqual([]);
+    expect(
+      checkMechanicalFit(d, boards(d))
+        .issues.filter((i) => i.severity === "error")
+        .flatMap((i) => i.regions ?? []),
+    ).toEqual([]);
   });
   test("clearance-only conflicts have highlights and both colliding boards are located", () => {
     const d = design();

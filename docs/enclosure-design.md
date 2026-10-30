@@ -123,3 +123,15 @@ Live backend checks reject seven invalid mounting configurations at export. A ma
 ![Measured holes and linked posts](screenshots/mechanical-workspace/34-pcb-mounting-holes.png)
 
 ![Six-board manual test enclosure](screenshots/mechanical-workspace/35-six-board-enclosure.png)
+
+## Real VAIO board collection test — 30 October
+
+Using local `vaio_p_modding` snapshot `ac0fdf7`, eleven distinct board families (478 parsed component envelopes) were copied unchanged into a shared FabDesk project. Older revisions and unrelated demos were excluded. Alternative power boards and bench adapters are included as a collection stress test, not a validated electrical assembly. The main CM5 carrier and non-PCB hardware are outside this source set.
+
+The generated interior is 200 × 305 × 24 mm with twelve measured-hole posts; the base mesh measures 204 × 309 × 26 mm and the lid 204 × 309 × 2.6 mm including its lip. The coordinated ZIP contains all eleven original PCB sources with verified manifest hashes. Loaded native geometry exposed underestimated underside clearance on the Sony escape and LVDS boards; raising their placements and linked posts resolves the measured bounding-box clearance. All ten available native models now have at least 1 mm cavity clearance.
+
+**This is an enclosure study, not a print-ready VAIO chassis.** Seven boards need holders or another reviewed retention method. Connector routing/openings, hardware, cooling and cable reach remain unresolved. A2 uses KiCad 10.99/11 format, which installed KiCad 10.0.5 cannot render; its conservative reference remains visible. Across the other ten boards, 295/374 component bodies load; missing entries include bare pads/jumpers and unresolved physical component models. There are 36 actionable fit-review items plus the general coverage note, despite zero blocking estimated-envelope conflicts.
+
+This test fixed a warning gap: each PCB without an aligned supporting post now gets its own retention review, even when another PCB has posts. Thirty focused tests / 117 assertions and the KiCad package typecheck pass. Real-board overlap, floor-intersection and shifted-post checks all report blockers. Base/lid STL parse successfully; exact solid collision, union/manifoldness and physical fit remain unverified.
+
+![Actual VAIO board collection, including visible model compatibility warning](screenshots/mechanical-workspace/36-vaio-real-boards.png)

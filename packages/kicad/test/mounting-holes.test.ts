@@ -138,3 +138,14 @@ test("generated STL has an open bore above the floor and solid supporting annulu
   expect(surface.intersects(probe(15.2, 8))).toBe(true);
   expect(step).toContain("CYLINDRICAL_SURFACE");
 });
+test("a mounted board never hides an unsecured board in the same enclosure", () => {
+  const { design, boards, features } = setup();
+  const placement = { path: "unsecured.kicad_pcb", x: 70, y: 0, z: 5, rotation: 0 };
+  design.space.width = 130;
+  design.boards.push(placement);
+  boards.push({ placement, features: { ...features, holes: [] } });
+  const findings = checkMechanicalFit(design, boards).issues.filter((i) => i.code === "mount-none");
+  expect(findings).toHaveLength(1);
+  expect(findings[0]!.message).toStartWith("unsecured.kicad_pcb:");
+  expect(findings[0]!.regions?.[0]?.x).toBe(70);
+});
