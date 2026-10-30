@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useProjectBlobUrl } from "../hooks/queries";
 import { Button } from "../components/ui";
 import { cn } from "../util";
@@ -20,18 +20,32 @@ export function ProjectImage({
 }) {
   const { url, scope, isLoading, isError, isFetching, data, refetch } = useProjectBlobUrl(projectId, path);
   const [retryingScope, setRetryingScope] = useState<string | null>(null);
+  const currentScope = useRef(scope); currentScope.current = scope;
+  const retryButton = useRef<HTMLButtonElement>(null), retryRequested = useRef(false);
+  const failed = (value: string) => {
+    setFailedUrl(value);
+    if (retryRequested.current) requestAnimationFrame(() => { if (currentScope.current === scope && document.activeElement === document.body) retryButton.current?.focus({ preventScroll: true }); });
+    retryRequested.current = false;
+  };
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const unreadable = !!url && failedUrl === url;
   const retrying = retryingScope === scope;
   const retry = async () => {
+    retryRequested.current = true;
     setRetryingScope(scope);
     try { await refetch(); }
-    finally { setRetryingScope(current => current === scope ? null : current); }
+    finally {
+      setFailedUrl(current => current === url ? null : current);
+      setRetryingScope(current => current === scope ? null : current);
+      requestAnimationFrame(() => { if (currentScope.current === scope && document.activeElement === document.body) retryButton.current?.focus({ preventScroll: true }); });
+    }
   };
   if (!projectId) return <span className="text-xs text-muted">{path}</span>;
-  if (isError || data === null || retrying) {
-    const message = retrying ? "Retrying image preview…" : isError ? "Could not load image." : "Image file unavailable.";
-    return retryable ? <div role="alert" className="space-y-2 text-xs text-danger"><p>{message}</p><p className="break-all text-muted">{path}</p><Button size="sm" variant="ghost" aria-disabled={isFetching || retrying} className={isFetching || retrying ? "opacity-50" : ""} onClick={() => { if (!isFetching && !retrying) void retry(); }}>{isFetching || retrying ? "Retrying…" : "Retry image preview"}</Button></div> : <span role="alert" className="break-all text-xs text-muted">{message} {path}</span>;
+  if (isError || data === null || retrying || unreadable) {
+    const message = retrying ? "Retrying image preview…" : isError ? "Could not load image." : unreadable ? "This file could not be displayed as an image. The saved file is unchanged." : "Image file unavailable.";
+    return retryable ? <div role="alert" className="space-y-2 text-xs text-danger"><p>{message}</p><p className="break-all text-muted">{path}</p><Button ref={retryButton} size="sm" variant="ghost" aria-disabled={isFetching || retrying} className={isFetching || retrying ? "opacity-50" : ""} onClick={() => { if (!isFetching && !retrying) void retry(); }}>{isFetching || retrying ? "Retrying…" : "Retry image preview"}</Button></div> : <span role="alert" className="break-all text-xs text-muted">{message} {path}</span>;
   }
   if (isLoading || data && !url) return <div className={cn("h-24 w-32 animate-pulse rounded bg-panel-2", className)} />;
   if (!url) return <span className="break-all text-xs text-muted">Image file unavailable: {path}</span>;
-  return <img src={url} alt={alt ?? path} className={cn("max-h-80 rounded border border-border", className)} />;
+  return <img src={url} alt={alt ?? path} onError={() => failed(url)} onLoad={() => { retryRequested.current = false; }} className={cn("max-h-80 rounded border border-border", className)} />;
 }

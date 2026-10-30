@@ -33,7 +33,7 @@ export function OutputPreviewDialog({ projectId, output, status, warning = false
       }} />
     </div>
     {output.kind !== "videos" && <p className="fd-output-preview-source" role="status" data-warning={warning}>{status}</p>}
-    {output.kind === "images" ? <ProjectImage projectId={projectId} path={output.path} className="max-h-[70vh] w-full object-contain" />
+    {output.kind === "images" ? <ProjectImage retryable projectId={projectId} path={output.path} className="max-h-[70vh] w-full object-contain" />
       : output.kind === "videos" ? <><VideoSourceStatus projectId={projectId} path={output.path} updating={false} /><ProjectVideo projectId={projectId} path={output.path} className="max-h-[70vh]" /></>
       : <div className="fd-output-model-preview"><Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={output.path} /></Suspense></div>}
   </Dialog>;
