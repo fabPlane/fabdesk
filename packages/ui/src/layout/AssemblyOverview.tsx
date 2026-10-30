@@ -8,7 +8,7 @@ import { AssemblySchematicPreview } from "../board/AssemblySchematicPreview";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
 import { ASSEMBLY_MANIFEST_PATH, PCB_PREVIEW_REVISION_PATH, type BoardSourceSelection, type ProjectBoardSources } from "@fabdesk/protocol";
 import { assemblyMapLayoutKey, restoreAssemblyMapLayout, useCoreClient, type AssemblyMapLayout, nextAssemblyReviewSelection, assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, assemblyCheckFindingOwned, assemblyFindingPreviewMatches, assemblyCheckNeedsReview, assemblyCheckSummaryLabel, useAssemblyCheckSummaries, pcbSvgHasNativeCoordinates, restoreAssemblySelection, assemblyLinkShape, assemblyScene, assemblySourcesToReview, assemblySelectionState, captureAssemblySelection, useAssemblyBoardInspection, useAssemblyPreviewRevisions, usePcbPreviewRevision, useProjectText, useRunTool, type AssemblySceneNode, type AssemblySceneSelection } from "@fabdesk/client-core";
-import { Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui";
+import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { SvgViewer } from "../board/SvgViewer";
 import { useSourceCommentTools } from "../board/SourceCommentTools";
@@ -47,7 +47,6 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
   const projectFiles = useProject(projectId);
   const client = useCoreClient(), layoutKey = assemblyMapLayoutKey(client.baseUrl, projectId);
   const savedLayout = useUiStore(state => state.assemblyMapLayouts?.[layoutKey]);
-  const [assemblyViewOpen, setAssemblyViewOpen] = useState(false);
   const [transientLayout, setTransientLayout] = useState<AssemblyMapLayout | null>(null);
   const savedPositions = useMemo(() => restoreAssemblyMapLayout(data, savedLayout), [data, savedLayout]);
   const scene = useMemo(() => assemblyScene(data, transientLayout ?? savedLayout), [data, transientLayout, savedLayout]);
@@ -81,9 +80,7 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
   const sourcesToReview = [...new Set([...assemblySourcesToReview(data, new Map(previews.filter(state => state.trackable).map(state => [state.sourceId, state.data]))), ...(!models.isFetching && !models.isError ? (models.data ?? []).filter(assemblyModelNeedsReview).map(row => row.sourceId) : []), ...(!checks.isFetching && !checks.isError ? (checks.data ?? []).filter(assemblyCheckNeedsReview).map(row => row.sourceId) : [])])];
   const selectedNode = selected ? scene.nodes.find(node => node.instance.id === selected.instanceId) : undefined;
   const selectedLink = scene.links.find(link => link.connection.id === linkId);
-  useAssistantSurface({ projectId, label: detail ? `Board · ${detail.instanceName}` : selectedLink ? "Overview · Connection" : selectedNode ? `Overview · ${selectedNode.instance.name}` : "Project overview", priority: 10, details: JSON.stringify({ board: detail?.selection ?? selected, source: detail?.directory, selectedConnection: selectedLink?.connection, ownershipCheckPending: checking || failed, declaredConnectionsOnly: true }) });
-  const assemblySurface = { projectId, label: "Overview / 3D assembly", priority: 40, details: JSON.stringify({ manifestSha256: data.manifestSha256, sources: data.sources.map(row => ({ source: row.source, status: row.status })), instances: data.assembly?.instances, instruction: "Individual board models are available. No installed transforms, assembly alignment or physical fit are established by the logical map." }) };
-  useAssistantSurface(assemblyViewOpen ? assemblySurface : null);
+  useAssistantSurface({ projectId, label: detail ? `Board · ${detail.instanceName}` : selectedLink ? "Overview · Connection" : selectedNode ? `Overview · ${selectedNode.instance.name}` : "Project overview", priority: 10, details: JSON.stringify({ board: detail?.selection ?? selected, source: detail?.directory, selectedConnection: selectedLink?.connection, ownershipCheckPending: checking || failed, declaredConnectionsOnly: true, physicalArrangement: "Logical map only. Installed transforms, assembly alignment and physical fit are not established." }) });
   const linkStale = !!linkId && linkHash !== data.manifestSha256;
   const ownership = selected ? assemblySelectionState(data, selected) : null;
   const unavailable = checking || failed;
@@ -206,8 +203,13 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
     if (event.key === "Escape" && mapDrag.current) { event.preventDefault(); event.stopPropagation(); cancelMapDrag(); return; }
     if (event.key === "Escape" && (selectedNode || selectedLink)) { event.preventDefault(); dismissSelection(); event.stopPropagation(); }
   }}>
-    {!boardPicker && <div className="fd-assembly-view-menu fd-assembly-view-switch" role="group" aria-label="Project view"><button aria-current="page" onClick={fit}>Connections</button><button onClick={() => setAssemblyViewOpen(true)}>3D assembly</button></div>}
-    <Dialog open={assemblyViewOpen} onClose={() => setAssemblyViewOpen(false)} title="3D assembly" className="fd-review-integration-dialog"><div className="fd-review-integration-status" role="status">Integration pending</div><section><h3>See the assembled system</h3><p>The assembled 3D scene is not connected in this build. Individual board models remain available. This connection map uses logical positions and does not establish installed positions or physical fit.</p></section><div className="fd-review-integration-actions"><Button size="sm" onClick={() => { if (useUiStore.getState().activeProjectId !== projectId) return; setAssemblyViewOpen(false); const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("3d"); }}>Review board models</Button><Button size="sm" variant="ghost" onClick={() => { askAboutSurface(assemblySurface, "Help me review the board models and what is still needed to define this system’s physical arrangement. Identify missing models and placement information without treating the connection map as installed positions."); setAssemblyViewOpen(false); }}><Icon name="sparkles" width={16} height={16} />Ask about assembly</Button></div></Dialog>
+    {!boardPicker && <div className="fd-assembly-view-menu fd-assembly-view-switch" role="group" aria-label="Project view"><button aria-current="page" onClick={fit}>Connections</button><button disabled={unavailable} onClick={() => {
+      const ui = useUiStore.getState();
+      if (unavailable || ui.activeProjectId !== projectId) return;
+      if (selected && assemblySelectionState(data, selected) === "owned") ui.setAssemblyBoard(selected);
+      ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("3d");
+    }}>3D models</button></div>}
+
     <header className="fd-assembly-heading"><h1 title={name}>{boardPicker ? "Choose a board" : "Project overview"}</h1><p>{scene.nodes.length} {scene.nodes.length === 1 ? "board" : "boards"}{data.sources.length !== scene.nodes.length && <> · {data.sources.length} source designs</>} · {scene.links.length} {scene.links.length === 1 ? "connection" : "connections"}</p><small>{failed ? "Project refresh unavailable" : checking ? "Checking project sources…" : "Declared connections · compatibility unverified"}</small>{boardPicker && savedBoard && !restored && !detail && <small role="status" className="fd-assembly-restore-notice">Project definition changed or board unavailable. Select a board again.</small>}</header>
     {failed ? <Button className="fd-assembly-update" size="sm" variant="ghost" onClick={onRetry}>Retry project refresh</Button> : sourcesToReview.length > 0 && <Button className="fd-assembly-update" size="sm" variant="ghost" disabled={checking} onClick={event => { const next = nextAssemblyReviewSelection(data, sourcesToReview, selected), node = next ? scene.nodes.find(node => node.instance.id === next.instanceId) : null; if (node) { choose(node); fit(); focusToolsFrom(event.currentTarget, `board:${node.instance.id}`); } }}><Icon name="warning" width={16} height={16} />{sourcesToReview.length > 1 && selected && ownership !== "stale" && sourcesToReview.includes(selected.sourceId) ? "Next source to review" : "Sources to review"} · {sourcesToReview.length}</Button>}
     <div ref={viewport} className="fd-assembly-viewport" tabIndex={0} aria-label="Assembly canvas. Drag boards to arrange this device’s project map; drag the background to pan; scroll to zoom. Select a board to show its tools." onKeyDown={event => {
