@@ -218,7 +218,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
             <div className="min-h-0 flex-1 overflow-auto p-4">
               {downloadError?.path === file.path && <p role="alert" className="mb-3 text-xs text-danger">{downloadError.message}</p>}
               {appearance.preview === "image" && <ProjectImage retryable projectId={projectId} path={file.path} className="fd-file-image max-h-none max-w-full" />}
-              {appearance.preview === "video" && <ProjectVideo projectId={projectId} path={file.path} className="max-h-[75vh] max-w-full" />}
+              {appearance.preview === "video" && <ProjectVideo projectId={projectId} path={file.path} className="fd-file-video max-w-full" />}
               {appearance.preview === "none" && <EmptyState title={`${appearance.label} file`} icon={<FileGlyph kind={appearance.kind} className="!h-10 !w-10" />}>
                 {appearance.kind === "model" ? "Open this file in a compatible 3D viewer or slicer." : "A preview for this format is not available here."}
                 <p className="mt-2 break-all font-mono text-xs">{file.path}</p>

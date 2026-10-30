@@ -329,6 +329,7 @@
 .fd-files section[aria-label="File preview"] { background:color-mix(in srgb,var(--fd-panel) 60%,var(--fd-bg)); }
 .fd-file-preview-path { font-size:13px; }
 .fd-file-text-preview { max-width:100%; padding:22px; border:1px solid var(--fd-border); border-radius:10px; background:var(--fd-panel); font-size:13px; line-height:1.85; tab-size:2; }
+.fd-files .fd-file-video { display:block; max-height:calc(100vh - 350px); object-fit:contain; }
 .fd-files .fd-file-image { display:block; max-height:calc(100vh - 330px); margin:20px auto; object-fit:contain; }
 .fd-project-notes { padding:30px max(var(--fd-canvas-gutter),calc((100% - var(--fd-content-width))/2)) 96px; gap:22px; }
 .fd-project-notes h1 { font-size:28px; font-weight:650; letter-spacing:-.8px; }
