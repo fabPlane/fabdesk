@@ -10,6 +10,7 @@ import { modelFormat, type MechanicalItem } from "@fabdesk/client-core";
 import type { MechanicalBox } from "@fabdesk/protocol";
 import { createFitOverlay } from "./fit-overlay";
 import { fittedCameraDistance } from "./camera-fit";
+import { batchPcbGeometry } from "./batchPcbGeometry";
 
 export type BoardGeometry = {
   outline: { minX: number; minY: number; maxX: number; maxY: number };
@@ -110,7 +111,7 @@ export class MechanicalScene {
     this.renderer = new T.WebGLRenderer({
       antialias: true,
       alpha: true,
-      powerPreference: "low-power",
+      powerPreference: "high-performance",
     });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.setClearColor(0, 0);
@@ -118,6 +119,7 @@ export class MechanicalScene {
     this.renderer.toneMapping = T.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1;
     this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.autoUpdate = false;
     this.renderer.shadowMap.type = T.PCFSoftShadowMap;
     const room = new RoomEnvironment(),
       pmrem = new T.PMREMGenerator(this.renderer);
@@ -500,7 +502,7 @@ export class MechanicalScene {
       disposeObject(model);
     }
   }
-  static async decode(source: SceneModel): Promise<T.Group> {
+  static async decode(source: SceneModel, batch = true): Promise<T.Group> {
     const group = new T.Group();
     group.userData["modelId"] = source.item.id;
     const material = () =>
@@ -616,6 +618,13 @@ export class MechanicalScene {
         group.add(gltf.scene);
       } else throw Error("This model format is not supported in the assembly viewer.");
     }
+    if (
+      batch &&
+      source.data &&
+      source.item.kind === "board" &&
+      modelFormat(source.item.path) === "glb"
+    )
+      batchPcbGeometry(group);
     let vertices = 0;
     group.traverse((o) => {
       if (o instanceof T.Mesh) {
@@ -645,6 +654,7 @@ export class MechanicalScene {
     return group;
   }
   private updateTransforms() {
+    this.renderer.shadowMap.needsUpdate = true;
     for (const { source, object } of this.models.values()) {
       const i = source.item;
       object.position.fromArray(i.position);

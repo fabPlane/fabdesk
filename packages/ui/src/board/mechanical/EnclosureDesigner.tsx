@@ -29,6 +29,8 @@ import {
   mountAtHole,
   alignEnclosureMounts,
   linkEnclosureMounts,
+  proposeEnclosureLayout,
+  connectorAccess,
 } from "@fabdesk/client-core";
 import { MechanicalScene, type SceneModel, type BoardGeometry } from "./MechanicalScene";
 import { EnclosureFitReview } from "./EnclosureFitReview";
@@ -143,6 +145,9 @@ export function EnclosureDesigner({
   cadRuntime?: CadRuntimeState | null;
 }) {
   const client = useCoreClient();
+  const [layoutProposal, setLayoutProposal] = useState<ReturnType<
+    typeof proposeEnclosureLayout
+  > | null>(null);
   const [design, setDesign] = useState<MechanicalDesign | null>(null),
     [board, setBoard] = useState<EnclosureBoardSummary | null>(null);
   const [step, setStep] = useState<Step>("Start"),
@@ -199,7 +204,22 @@ export function EnclosureDesigner({
       modelSources.flatMap((source) => {
         if (!source.board) return [source];
         const model = pcbModels.models[source.item.id.slice(5)];
-        return model ? [detailedBoardSource(source, model)] : [];
+        if (model) return [detailedBoardSource(source, model)];
+        const { board: geometry, ...reference } = source;
+        return [
+          {
+            ...reference,
+            item: { ...source.item, name: "PCB bounds · detailed model unavailable" },
+            volume: {
+              x: geometry.outline.minX,
+              y: geometry.outline.minY,
+              z: 0,
+              width: geometry.outline.maxX - geometry.outline.minX,
+              depth: geometry.outline.maxY - geometry.outline.minY,
+              height: source.thickness ?? 1.6,
+            },
+          },
+        ];
       }),
     [modelSources, pcbModels.models],
   );
@@ -627,6 +647,7 @@ export function EnclosureDesigner({
     if (selectedBoard && !next.boards.some((b) => b.path === selectedBoard)) selectBoard(null);
   }
   function edit(next: MechanicalDesign, label = "Edit enclosure") {
+    setLayoutProposal(null);
     if (history.current.commit(next, label)) applyDraft(next);
   }
   function space(key: keyof MechanicalDesign["space"], value: number) {
@@ -1511,6 +1532,111 @@ export function EnclosureDesigner({
               )}
               {step === "PCB" && (
                 <>
+                  <section className="fd-case-entry" aria-label="Automatic enclosure layout">
+                    <strong>Arrange boards around their ports</strong>
+                    <p>
+                      Find a compact layout, bring external ports to the walls, and create matching
+                      openings. Review the proposal before using it.
+                    </p>
+                    <details>
+                      <summary>Choose external ports</summary>
+                      <small>
+                        USB, HDMI and card sockets start as external. Headers and board-to-board
+                        connectors start as internal. Confirm these choices.
+                      </small>
+                      {mountingBoards().map((b) =>
+                        (b.features.connectors ?? []).map((c) => (
+                          <label className="fd-case-confirm" key={`${b.placement.path}:${c.ref}`}>
+                            <input
+                              type="checkbox"
+                              checked={connectorAccess(design, b.placement.path, c) === "external"}
+                              onChange={(e) =>
+                                edit(
+                                  {
+                                    ...design,
+                                    portAccess: [
+                                      ...(design.portAccess ?? []).filter(
+                                        (p) => p.boardPath !== b.placement.path || p.ref !== c.ref,
+                                      ),
+                                      {
+                                        boardPath: b.placement.path,
+                                        ref: c.ref,
+                                        access: e.target.checked ? "external" : "internal",
+                                      },
+                                    ],
+                                  },
+                                  "Set port access",
+                                )
+                              }
+                            />
+                            <span>
+                              {enclosureFileLabel(b.placement.path)} · {c.ref}
+                            </span>
+                          </label>
+                        )),
+                      )}
+                    </details>
+                    <button
+                      className="fd-mechanical-primary"
+                      disabled={!!busy || pcbModels.loading || !design.boards.length}
+                      onClick={() =>
+                        void run("Finding a port-aware layout…", async () => {
+                          const r = await call("check", { design });
+                          setFitBoards(r.boards);
+                          setLayoutProposal(
+                            proposeEnclosureLayout(
+                              design,
+                              (r.boards ?? []).map((b) => ({
+                                ...b,
+                                ...(pcbModels.models[b.placement.path]?.bounds &&
+                                pcbModels.models[b.placement.path]?.pcbRevision ===
+                                  b.features.pcbRevision
+                                  ? { modelBounds: pcbModels.models[b.placement.path]!.bounds! }
+                                  : {}),
+                              })),
+                            ),
+                          );
+                        })
+                      }
+                    >
+                      Find a better layout
+                    </button>
+                    {layoutProposal && (
+                      <div className="fd-case-message" role="status">
+                        <strong>
+                          {layoutProposal.design.space.width} × {layoutProposal.design.space.depth}{" "}
+                          mm inside
+                        </strong>
+                        <p>
+                          {layoutProposal.openingsAdded} of {layoutProposal.externalPorts} external
+                          ports at walls · matching openings included
+                        </p>
+                        {!!layoutProposal.unresolved.length && (
+                          <p>
+                            {layoutProposal.unresolved.length} ports still need manual placement or
+                            a different case layout.
+                          </p>
+                        )}
+                        <details>
+                          <summary>Review assumptions and unresolved ports</summary>
+                          {[...layoutProposal.unresolved, ...layoutProposal.notes].map((n) => (
+                            <p key={n}>{n}</p>
+                          ))}
+                        </details>
+                        <button
+                          onClick={() => {
+                            edit(layoutProposal.design, "Arrange boards and port openings");
+                            setNotice(
+                              "Layout applied to the draft. Check fit and preview the enclosure; Undo restores the previous layout.",
+                            );
+                          }}
+                        >
+                          Use this layout
+                        </button>
+                        <button onClick={() => setLayoutProposal(null)}>Cancel</button>
+                      </div>
+                    )}
+                  </section>
                   <section
                     className="fd-case-placement"
                     aria-label="Position boards in the enclosure"

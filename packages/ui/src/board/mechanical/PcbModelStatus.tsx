@@ -84,7 +84,18 @@ export function PcbModelStatus({
           <p>{warnings.join("\n")}</p>
         </details>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <>
+          <details>
+            <summary>Why a detailed model is unavailable</summary>
+            <p role="alert">{error}</p>
+          </details>
+          <small>
+            Unavailable boards remain visible as amber bounds in Enclosure. These are estimated
+            references, not detailed models.
+          </small>
+        </>
+      )}
       {exportError && <p role="alert">{exportError}</p>}
       {entries.length > 1 ? (
         <details>

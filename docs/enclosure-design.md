@@ -135,3 +135,19 @@ The generated interior is 200 × 305 × 24 mm with twelve measured-hole posts; t
 This test fixed a warning gap: each PCB without an aligned supporting post now gets its own retention review, even when another PCB has posts. Thirty focused tests / 117 assertions and the KiCad package typecheck pass. Real-board overlap, floor-intersection and shifted-post checks all report blockers. Base/lid STL parse successfully; exact solid collision, union/manifoldness and physical fit remain unverified.
 
 ![Actual VAIO board collection, including visible model compatibility warning](screenshots/mechanical-workspace/36-vaio-real-boards.png)
+
+## Port-aware VAIO layout and viewer optimization — 30 October
+
+This supersedes the earlier manual 200 × 305 mm layout. **PCB → Find a better layout** searches board rotations and positions, prioritizes external ports at their facing walls, then minimizes the candidate case footprint. Review external/internal connector choices, inspect the proposal, and choose **Use this layout**. Undo/redo restores the complete placement, openings and linked posts. Imported interiors, obstacles and manual openings keep the case dimensions fixed. No PCB source is rewritten.
+
+The eleven-board VAIO collection now fits a **325 × 130 × 20 mm** interior: 30.7% less footprint, six external ports at walls, six matching wall openings, and twelve repositioned posts. Exported STL intersection probes confirm all six openings are empty and the wall below each is solid. All ten available native-model bounding boxes remain within the cavity clearance; source PCB bytes and export hashes are unchanged. The live workflow passed proposal acceptance, Undo/Redo, preview, save and coordinated export. Three panel sizes (1240 × 900, 780 × 600, 600 × 500) retain visible footer controls without horizontal overflow.
+
+The viewer batches opaque surfaces and same-material coplanar translucent PCB patches, retains separate curved transparent geometry, caches up to twenty models within a 160 MiB budget, avoids duplicate parsing, and refreshes shadows only when geometry/transforms change. The real native models drop from **39,981 to 539 mesh objects** with all **559,274 triangles** retained; maximum measured world-bound difference is 0.0000031 mm. A short local synchronous rendering sample measured about **14.4 ms/frame** after planar batching versus 60–75 ms during the first optimization pass, with 967 versus 5,036 draw calls. This is a local sample, not a guaranteed frame rate across hardware. See Three.js [object batching guidance](https://threejs.org/manual/pages/optimize-lots-of-objects.html).
+
+The search is a bounded heuristic, not proof of a globally optimal layout. Connector classification and facing edges are inferred from footprints; mating plugs, cables, cooling, exact component heights and manufacturing tolerances need review. Seven boards still need retention; A2 requires newer KiCad and is explicitly shown as amber estimated bounds. The remaining ten load 295/374 component models. This collection contains alternative boards and is not a validated complete VAIO electrical assembly.
+
+Validation: **10 focused tests / 65 assertions**, all five changed package typechecks, and desktop build pass (zero packaged source maps). Broad package runs total **1,052 pass / 2 skip / 14 fail**; all fourteen failure names recur in the earlier baseline. The whole suite is not green. Automated geometry/export checks do not establish manifoldness or physical fit.
+
+![Compact VAIO layout with external-port proposal](screenshots/mechanical-workspace/37-vaio-port-layout.png)
+
+![Generated openings in the case walls](screenshots/mechanical-workspace/38-vaio-port-openings.png)

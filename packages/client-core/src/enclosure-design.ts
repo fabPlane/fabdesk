@@ -1,4 +1,4 @@
-import type { MechanicalDesign } from "@fabdesk/protocol";
+import { defaultConnectorAccess, type MechanicalDesign } from "@fabdesk/protocol";
 
 export type EnclosureBoardSummary = {
   pcbRevision: string;
@@ -27,6 +27,7 @@ export type EnclosureBoardSummary = {
   }>;
   connectors?: Array<{
     ref: string;
+    footprint?: string;
     edge: "minX" | "maxX" | "minY" | "maxY";
     x: number;
     y: number;
@@ -144,22 +145,26 @@ export function defaultEnclosureDesign(board: EnclosureBoardSummary | null): Mec
     boards: board ? [{ path: "board.kicad_pcb", x: 0, y: 0, z: boardZ, rotation: 0 }] : [],
     obstacles: [],
     openings:
-      board?.connectors?.map((c) => ({
-        name: c.ref,
-        wall: c.edge,
-        offset: c.bounds
-          ? c.edge.endsWith("X")
-            ? (c.bounds.minY + c.bounds.maxY) / 2
-            : (c.bounds.minX + c.bounds.maxX) / 2
-          : c.edge.endsWith("X")
-            ? c.y
-            : c.x,
-        z: parts.find((p) => p.ref === c.ref)?.bottom
-          ? boardZ - c.heightMm - clearance
-          : boardZ + board.thicknessMm - clearance,
-        width: c.widthMm + clearance * 2,
-        height: c.heightMm + clearance * 2,
-      })) ?? [],
+      board?.connectors
+        ?.filter((c) => !c.footprint || defaultConnectorAccess(c.footprint) === "external")
+        .map((c) => ({
+          name: c.ref,
+          boardPath: "board.kicad_pcb",
+          ref: c.ref,
+          wall: c.edge,
+          offset: c.bounds
+            ? c.edge.endsWith("X")
+              ? (c.bounds.minY + c.bounds.maxY) / 2
+              : (c.bounds.minX + c.bounds.maxX) / 2
+            : c.edge.endsWith("X")
+              ? c.y
+              : c.x,
+          z: parts.find((p) => p.ref === c.ref)?.bottom
+            ? boardZ - c.heightMm - clearance
+            : boardZ + board.thicknessMm - clearance,
+          width: c.widthMm + clearance * 2,
+          height: c.heightMm + clearance * 2,
+        })) ?? [],
     mounts:
       board?.holes
         // Connector alignment/pin holes are not screw mounts. Keep them in the PCB geometry.

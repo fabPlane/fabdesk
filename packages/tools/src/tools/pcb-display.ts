@@ -64,6 +64,14 @@ export async function renderPcbDisplay(ctx: ToolContext, path: string, expected:
       modelPath: relativePath,
       pcbRevision: expected,
       coverage: displayCoverage(original, measured.roots),
+      bounds: {
+        minX: Math.min(...measured.roots.flatMap((r) => (r.bounds ? [r.bounds.minX] : []))),
+        minY: Math.min(...measured.roots.flatMap((r) => (r.bounds ? [r.bounds.minY] : []))),
+        minZ: Math.min(...measured.roots.flatMap((r) => (r.bounds ? [r.bounds.minZ] : []))),
+        maxX: Math.max(...measured.roots.flatMap((r) => (r.bounds ? [r.bounds.maxX] : []))),
+        maxY: Math.max(...measured.roots.flatMap((r) => (r.bounds ? [r.bounds.maxY] : []))),
+        maxZ: Math.max(...measured.roots.flatMap((r) => (r.bounds ? [r.bounds.maxZ] : []))),
+      },
       warnings: result.warnings,
     });
   } catch (error) {

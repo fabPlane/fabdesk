@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { loadPcbDisplay, useCoreClient, type PcbDisplay } from "@fabdesk/client-core";
-import { MechanicalScene, type SceneModel } from "./MechanicalScene";
+import type { SceneModel } from "./MechanicalScene";
 
 export function usePcbModels(
   projectId: string,
@@ -31,7 +31,6 @@ export function usePcbModels(
             board.pcbRevision,
             attempt > 0,
           );
-          await MechanicalScene.validateData(model.modelPath, model.data);
           next[board.path] = model;
         } catch (e) {
           errors.push(`${board.path}: ${e instanceof Error ? e.message : String(e)}`);

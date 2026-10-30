@@ -55,6 +55,16 @@ export const MechanicalDesignSchema = z
         }),
       )
       .max(20),
+    portAccess: z
+      .array(
+        z.object({
+          boardPath: path,
+          ref: z.string().min(1).max(500),
+          access: z.enum(["external", "internal"]),
+        }),
+      )
+      .max(500)
+      .optional(),
     obstacles: z.array(MechanicalBoxSchema).max(100),
     mounts: z
       .array(
@@ -82,6 +92,8 @@ export const MechanicalDesignSchema = z
           z: coordinate,
           width: size,
           height: size,
+          boardPath: path.optional(),
+          ref: z.string().min(1).max(500).optional(),
         }),
       )
       .max(100),
@@ -97,6 +109,13 @@ export const MechanicalDesignSchema = z
     return new Set(paths).size === paths.length;
   }, "Include each PCB file only once in the enclosure");
 export type MechanicalDesign = z.infer<typeof MechanicalDesignSchema>;
+export function defaultConnectorAccess(footprint: string): "external" | "internal" {
+  return /usb|hdmi|displayport|rj45|ethernet|audio|jack|barrel|micro.?sd|sd.?card|dm3|sma/i.test(
+    footprint,
+  )
+    ? "external"
+    : "internal";
+}
 export type MechanicalBox = z.infer<typeof MechanicalBoxSchema>;
 export type MechanicalFitIssue = {
   severity: "error" | "review";

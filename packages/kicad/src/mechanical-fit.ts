@@ -4,6 +4,7 @@ import type {
   MechanicalFitReport,
   MechanicalFitIssue,
 } from "@fabdesk/protocol";
+import { defaultConnectorAccess } from "@fabdesk/protocol";
 import type { BoardFeatures, Rect } from "./board-features";
 import { generateEnclosure, type EnclosureCutout } from "./enclosure";
 
@@ -262,6 +263,10 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
       }
     }
     for (const connector of b.features.connectors) {
+      const access =
+        d.portAccess?.find((p) => p.boardPath === label && p.ref === connector.ref)?.access ??
+        defaultConnectorAccess(connector.footprint);
+      if (access === "internal") continue;
       const envelope = bounds(b, connector.bounds);
       const p = { x: (envelope.minX + envelope.maxX) / 2, y: (envelope.minY + envelope.maxY) / 2 };
       const bottom = b.features.components?.find((part) => part.ref === connector.ref)?.bottom;
@@ -270,6 +275,22 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
         : b.placement.z + b.features.thicknessMm;
       const z1 = bottom ? b.placement.z : z0 + connector.heightMm;
       const openings = d.openings.filter((o) => {
+        if (o.boardPath && (o.boardPath !== label || o.ref !== connector.ref)) return false;
+        if (o.boardPath) {
+          const edges = ["maxX", "maxY", "minX", "minY"] as const;
+          const turn = ((b.placement.rotation % 360) + 360) % 360;
+          const facing = edges[(edges.indexOf(connector.edge) + turn / 90) % 4];
+          if (o.wall !== facing) return false;
+          const gap =
+            facing === "minX"
+              ? envelope.minX - s.x
+              : facing === "maxX"
+                ? s.x + s.width - envelope.maxX
+                : facing === "minY"
+                  ? envelope.minY - s.y
+                  : s.y + s.depth - envelope.maxY;
+          if (gap > Math.max(1, c) + 1.5 + eps) return false;
+        }
         const vertical = o.wall === "minX" || o.wall === "maxX";
         const along = vertical ? p.y : p.x;
         const at = vertical ? p.x : p.y;
