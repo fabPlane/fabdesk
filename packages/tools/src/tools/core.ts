@@ -1,3 +1,4 @@
+import { outputRevision } from "../output-revision";
 import {
   compareTaskCheckpoint,
   compactTaskComparison,
@@ -1032,7 +1033,10 @@ export const render_board = defineTool({
         ctx.signal.throwIfAborted();
         if (createHash("sha256").update(await readFile(board)).digest("hex") !== revision) throw new ToolError("PCB changed while rendering. The previous image was kept.", "precondition");
         await jailPath(project.dir, `${PROJECT_FILES.renders}/${view}.png`);
+        const receipt = await jailPath(project.dir, `${PROJECT_FILES.renders}/${view}.png.revision.json`);
+        const metadata = outputRevision(ctx, `${PROJECT_FILES.renders}/${view}.png`, bytes, "pcb", [{ path: "board.kicad_pcb", sha256: revision }]);
         await writeAtomic(output, bytes);
+        await writeAtomic(receipt, metadata);
       };
       if (ctx.runInScope) await ctx.runInScope(publish); else await publish();
     } finally { await rm(scratch, { recursive: true, force: true }); }

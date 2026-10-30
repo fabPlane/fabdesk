@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, writeFile, symlink } from "node:fs/promises";
 import { join } from "node:path";
+import { OutputRevision } from "@fabdesk/protocol";
 import { withPcbOutput } from "../src/pcb-output";
 import { createRegistry, makeContext } from "../src";
 import { mockServices, tempProject } from "./mock-services";
@@ -51,6 +52,9 @@ test("member stencil exports use only the captured leaf and return durable sourc
   expect(result._board.sourceId).toBe("io"); expect(result.path).toBe(join(dir, "exports/stencil/F-Paste.stl"));
   expect(await Bun.file(result.path).exists()).toBe(true);
   expect(await readFile(join(dir, "exports/stencil/F-Paste.json"), "utf8")).not.toContain("fabplane-pcb-output-");
+  const receipt = OutputRevision.parse(JSON.parse(await readFile(result.path + ".revision.json", "utf8")));
+  expect(receipt.board).toEqual(board); expect(receipt.projectId).toBe(parent.id); expect(receipt.artifact).toBe("exports/stencil/F-Paste.stl");
+  expect(receipt.inputs).toEqual([{ path: "board.kicad_pcb", sha256: sha }]); expect(receipt.artifactSha256).toBe(hash(await readFile(result.path)));
   expect(await readFile(join(dir, "board.kicad_pcb"))).toEqual(before);
   expect(await Bun.file(join(parent.dir, "exports/stencil/F-Paste.stl")).exists()).toBe(false);
 });
@@ -94,4 +98,17 @@ test("native image rendering keeps the previous PNG when a saved PCB changes mid
   await expect(registry.invoke("render_board", {}, async () => ctx)).rejects.toThrow("previous image was kept");
   expect(await readFile(join(project.dir, "renders/top.png"), "utf8")).toBe("previous image");
   expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe("external edit");
+});
+
+
+test("packaged output provenance tracks saved manufacturing files and excludes metadata", async () => {
+  const { project, ctx } = await fixture();
+  await mkdir(join(project.dir, "exports/gerbers"), { recursive: true });
+  await writeFile(join(project.dir, "exports/gerbers/F_Cu.gbr"), "gerber");
+  await writeFile(join(project.dir, "exports/gerbers/F_Cu.gbr.revision.json"), "metadata");
+  const out = await createRegistry().invoke("export_zip", {}, async () => ctx);
+  expect(out.isError).toBeFalsy(); expect((out.json as { files: string[] }).files).toEqual(["gerbers/F_Cu.gbr"]);
+  const receipt = OutputRevision.parse(JSON.parse(await readFile(join(project.dir, "exports/fabrication.zip.revision.json"), "utf8")));
+  expect(receipt.basis).toBe("saved-files"); expect(receipt.inputs).toEqual([{ path: "exports/gerbers/F_Cu.gbr", sha256: hash(Buffer.from("gerber")) }]);
+  expect(receipt.artifactSha256).toBe(hash(await readFile(join(project.dir, "exports/fabrication.zip"))));
 });

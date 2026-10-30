@@ -30,3 +30,4 @@ export * from "./board-artwork";
 
 export * from "./workspace-context";
 export * from "./bom";
+export * from "./output-revision";

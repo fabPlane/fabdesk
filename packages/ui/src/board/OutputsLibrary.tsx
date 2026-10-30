@@ -1,3 +1,4 @@
+import { useOutputRevisions, outputRevisionLabel, outputInputsNeedReview } from "@fabdesk/client-core";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { OutputPreviewDialog } from "./OutputPreviewDialog";
 import { BoardImageOutput } from "./BoardImageOutput";
@@ -43,6 +44,15 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   const pcbRevision = usePcbPreviewRevision(projectId, sourceReady && !assembly && outputs.some(file => file.path === "renders/pcb.svg"));
   const enclosureRevision = useEnclosureSourceRevision(projectId, sourceReady && !assembly && outputs.some(file => file.path === "exports/enclosure.stl"));
   const videoRevisions = useVideoInputRevisions(projectId, sourceReady ? outputs.filter(file => /(^|\/)exports\/product-video\.(mp4|webm|gif)$/i.test(file.path)).map(file => file.path) : []);
+  const outputRevisions = useOutputRevisions(projectId, outputs.filter(file => !/(?:^|\/)renders\/(?:board\.glb|pcb\.svg)$|(?:^|\/)exports\/(?:enclosure\.stl|product-video\.(?:mp4|webm|gif))$/i.test(file.path)).flatMap(file => {
+    const source = file.sourceId ? boardSources.data?.sources.find(row => row.source.id === file.sourceId) : null;
+    if (assembly && !source || source && source.source.location !== "project") return [];
+    return [{ path: file.path, directory: source?.source.location === "project" ? source.source.directory : ".", ...(source && boardSources.data?.manifestSha256 ? { board: { sourceId: source.source.id, manifestSha256: boardSources.data.manifestSha256 } } : {}) }];
+  }), sourceReady);
+  const recordedInfo = (path: string) => {
+    const result = outputRevisions.find(row => row.path === path);
+    return result ? { warning: !result.isFetching && !result.isError && outputInputsNeedReview(result.data), label: result.isFetching || result.isPending ? "Checking recorded inputs…" : result.isError ? "Output source check unavailable" : outputRevisionLabel(result.data) } : { warning: false, label: "Source not checked" };
+  };
   const sourceInfo = (path: string) => {
     if (!sourceReady) return { warning: false, label: boardSources.isError ? "Board source check unavailable" : "Checking board source…" };
     const member = outputs.find(file => file.path === path);
@@ -61,7 +71,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
       }
       const video = videoRevisions.find(row => row.path === path);
       if (video) return { warning: videoInputsNeedReview(video.data), label: video.isFetching ? "Checking video inputs…" : video.isError ? "Video inputs could not be checked" : videoInputLabel(video.data) };
-      return { warning: false, label: "Source not checked" };
+      return recordedInfo(path);
     }
     if (assembly) return { warning: false, label: "Project output · Source unverified" };
     if (path === "renders/board.glb") return { warning: !hasPcb || ["source-changed", "artifact-changed", "missing-source", "missing-artifact"].includes(modelRevision.data ?? ""), label: modelRevision.isFetching ? "Checking model source…" : modelRevision.isError ? "Model source check unavailable" : !hasPcb || modelRevision.data === "missing-source" ? "PCB source missing · Saved output" : modelRevision.data === "missing-artifact" ? "Saved model file missing" : modelRevision.data === "source-changed" ? "PCB changed · Review model" : modelRevision.data === "artifact-changed" ? "Model changed · Source unverified" : modelRevision.data === "source-unchanged" ? "PCB unchanged · Model dependencies unverified" : "Source unverified" };
@@ -69,7 +79,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
     if (path === "exports/enclosure.stl") return { warning: enclosureRevision.data === "changed", label: enclosureRevision.isFetching ? "Checking case source…" : enclosureRevision.isError ? "Case source check unavailable" : enclosureRevision.data === "changed" ? "PCB changed · Review case" : enclosureRevision.data === "unchanged" ? "Case source unchanged · Fit unverified" : "Case source unverified" };
     const video = videoRevisions.find(row => row.path === path);
     if (video) return { warning: !video.isFetching && !video.isError && videoInputsNeedReview(video.data), label: video.isFetching || video.isPending ? "Checking video inputs…" : video.isError ? "Video inputs could not be checked" : videoInputLabel(video.data) };
-    return { warning: false, label: "Source unverified" };
+    return recordedInfo(path);
   };
   const visible = outputs.find(file => file.path === preview);
   const assistantSurface = projectId ? { projectId, label: visible ? `Output preview · ${basename(visible.path)}` : "Outputs / Library", priority: visible ? 40 : 5, details: JSON.stringify({ view: "Saved output library", preview: visible ? { path: visible.path, sourceId: visible.sourceId, sourceName: visible.sourceName, status: sourceInfo(visible.path).label } : null, selected: selectedPaths.slice(0, 20), sourceFilter: sourceScope, kindFilter: filter }) } : null;

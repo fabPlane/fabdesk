@@ -1,3 +1,4 @@
+import { outputRevision } from "./output-revision";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -23,7 +24,7 @@ export async function withPcbOutput(ctx: ToolContext, expected: string | undefin
     if (source) await writeFile(join(scratch, "board.kicad_pcb"), source);
     // Packaging uses only the selected source's already-saved manufacturing files.
     if (existingFabrication) {
-      const names = (await readdir(await jailPath(project.dir, "exports/gerbers")).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return []; throw error; })).map(name => `exports/gerbers/${name}`);
+      const names = (await readdir(await jailPath(project.dir, "exports/gerbers")).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return []; throw error; })).filter(name => !name.endsWith(".revision.json")).map(name => `exports/gerbers/${name}`);
       for (const path of [...names, "exports/positions.csv", "exports/bom.csv"]) {
         let bytes: Buffer;
         try { bytes = await readFile(await jailPath(project.dir, path)); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") continue; throw error; }
@@ -47,12 +48,16 @@ export async function withPcbOutput(ctx: ToolContext, expected: string | undefin
       await walk(root);
     }
     for (const file of pending) if (/\.(json|md|txt|csv|svg|dxf|lbrn2)$/i.test(file.path)) file.bytes = Buffer.from(file.bytes.toString("utf8").replaceAll(scratch, project.dir));
+    const receipts = await Promise.all(pending.filter(file => /\.(png|jpe?g|webp|svg|stl|obj|step|stp|zip|csv|gbr|gbl|gtl|gbo|gto|gbs|gts|gbp|gtp|gm1|gko|drl|pdf|dxf|lbrn2|net|pos)$/i.test(file.path)).map(async file => ({
+      path: `${file.path}.revision.json`, destination: await jailPath(project.dir, `${file.path}.revision.json`),
+      bytes: Buffer.from(outputRevision(ctx, file.path, file.bytes, existingFabrication ? "saved-files" : "pcb", existingFabrication ? captured : [{ path: "board.kicad_pcb", sha256: revision! }])),
+    })));
     const publish = async () => {
       ctx.signal.throwIfAborted();
       if (revision && hash(await readFile(board)) !== revision) throw new ToolError("PCB changed while exporting. Previous outputs were kept; review the source and try again.", "precondition");
       for (const file of captured) if (hash(await readFile(await jailPath(project.dir, file.path))) !== file.sha256) throw new ToolError("Manufacturing files changed while packaging. Create the ZIP again from the saved outputs.", "precondition");
-      for (const file of pending) await jailPath(project.dir, file.path);
-      for (const file of pending) await writeAtomic(file.destination, file.bytes);
+      for (const file of [...pending, ...receipts]) await jailPath(project.dir, file.path);
+      for (const file of [...pending, ...receipts]) await writeAtomic(file.destination, file.bytes);
     };
     if (ctx.runInScope) await ctx.runInScope(publish); else await publish();
     // Existing exporters return absolute paths in text, JSON and inline images.

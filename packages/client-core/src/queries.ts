@@ -1,3 +1,4 @@
+import { inspectOutputRevision, type OutputRevisionTarget } from "./output-revision";
 import { inspectKeptOutputIdentity, type KeptOutputKind } from "./kept-output";
 import { pcbToolJson } from "./pcb-parts";
 import { inspectVideoInputRevision } from "./video-input-revision";
@@ -1057,4 +1058,15 @@ export function useVideoInputRevisions(projectId: string | null, paths: string[]
     enabled: !!projectId,
   })) });
   return rows.map((row, index) => ({ ...row, path: paths[index]! }));
+}
+
+/** Optional exporter receipts; missing legacy metadata never certifies an output. */
+export function useOutputRevisions(projectId: string | null, targets: OutputRevisionTarget[], enabled = true) {
+  const client = useCoreClient();
+  const rows = useQueries({ queries: targets.map(target => ({
+    queryKey: ["output-revision", projectId, client.baseUrl, target],
+    queryFn: () => inspectOutputRevision(client, projectId!, target),
+    enabled: !!projectId && enabled,
+  })) });
+  return rows.map((row, index) => ({ ...row, path: targets[index]!.path }));
 }
