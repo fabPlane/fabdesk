@@ -817,10 +817,10 @@ export function EnclosureDesigner({
       <aside className="fd-case-panel">
         <header>
           <div>
-            <span className="fd-case-eyebrow">ENCLOSURE DESIGN</span>
-            <h2>A case that fits</h2>
+            <h2>Enclosure</h2>
+            <p>Design a case around your boards</p>
           </div>
-          <small role="status">{dirty ? "Unsaved changes" : "Project settings"}</small>
+          <small role="status">{dirty ? "Unsaved" : "Project settings"}</small>
         </header>
         <nav aria-label="Enclosure workflow">
           {steps.map((s) => (
@@ -1674,6 +1674,7 @@ export function EnclosureDesigner({
                         setPreview(null);
                         setModelSources([]);
                         setArchive(null);
+                        setNotice("");
                       }}
                     >
                       Discard preview

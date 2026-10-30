@@ -16,12 +16,13 @@
   font-size: 12px;
 }
 .fd-case-workflow {
+  --case-inspector-width: 360px;
   position: absolute;
-  inset: 104px 0 0;
+  inset: 120px 16px 16px;
   z-index: 4;
   background: transparent;
   display: grid;
-  grid-template-columns: minmax(310px, 390px) 1fr;
+  grid-template-columns: var(--case-inspector-width) minmax(0, 1fr);
 }
 .fd-case-workflow[hidden] {
   display: none;
@@ -52,12 +53,12 @@
 }
 .fd-case-canvas {
   position: absolute;
-  inset: 0 0 64px 390px;
+  inset: 0 0 56px calc(var(--case-inspector-width) + 20px);
   background: transparent;
 }
 @container (min-width: 1290px) {
   .fd-case-workflow[data-controls-expanded="true"] .fd-case-canvas {
-    right: 340px;
+    right: 280px;
   }
 }
 .fd-case-canvas canvas {
@@ -68,38 +69,44 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--fd-panel);
-  border-right: 1px solid var(--fd-border);
-  box-shadow: 4px 0 20px #0001;
+  align-self: start;
+  max-height: 100%;
+  padding: 0;
+  overflow: hidden;
 }
 .fd-case-panel header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 20px 14px;
+  padding: 18px 18px 16px;
   gap: 12px;
 }
-.fd-case-eyebrow {
-  color: var(--fd-muted);
-  font-size: 10px;
-  letter-spacing: 1.3px;
-}
 .fd-case-panel h2 {
-  margin: 4px 0 0;
-  font-size: 19px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+.fd-case-panel header p {
+  margin: 5px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--fd-muted);
 }
 .fd-case-panel header small {
   color: var(--fd-muted);
   font-size: 10px;
   text-align: right;
+  white-space: nowrap;
+  line-height: 1.5;
 }
 .fd-case-panel nav {
   display: flex;
   gap: 4px;
-  margin: 0 16px 12px;
+  margin: 0 18px 16px;
   padding: 4px;
   border-radius: 10px;
   background: var(--fd-bg);
+  border: 1px solid var(--fd-border);
 }
 .fd-case-panel nav button {
   flex: 1;
@@ -117,7 +124,10 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0 20px 24px;
+  padding: 0 18px 20px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--fd-border) transparent;
 }
 .fd-case-fields {
   border: 0;
@@ -134,8 +144,11 @@
   border-color: var(--fd-danger, #f2857e);
 }
 .fd-case-fields h3 {
-  margin: 16px 0 8px;
+  margin: 24px 0 8px;
   font-size: 14px;
+}
+.fd-case-fields > h3:first-child {
+  margin-top: 0;
 }
 .fd-case-fields p {
   color: var(--fd-muted);
@@ -146,8 +159,8 @@
 .fd-case-fields label {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  margin: 10px 0;
+  gap: 8px;
+  margin: 12px 0;
   font-size: 12px;
 }
 .fd-case-fields input:not([type="checkbox"]),
@@ -157,8 +170,8 @@
   background: var(--fd-bg);
   border: 1px solid var(--fd-border);
   color: var(--fd-fg);
-  border-radius: 7px;
-  padding: 9px;
+  border-radius: 8px;
+  padding: 10px;
   font: inherit;
 }
 .fd-case-choices {
@@ -167,8 +180,8 @@
   gap: 8px;
   margin: 16px 0 24px;
 }
-.fd-case-choices button {
-  padding: 14px 10px;
+.fd-case-fields .fd-case-choices button {
+  padding: 14px 12px;
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -178,13 +191,14 @@
   white-space: normal;
   text-align: left;
 }
-.fd-case-choices button[aria-pressed="true"] {
+.fd-case-workflow .fd-case-choices button[aria-pressed="true"] {
   color: var(--fd-fg);
   border-color: var(--fd-accent);
   background: color-mix(in srgb, var(--fd-accent) 12%, var(--fd-panel));
 }
 .fd-case-choices small {
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.5;
   font-weight: 400;
   opacity: 0.8;
 }
@@ -245,8 +259,9 @@
 }
 .fd-case-panel footer {
   border-top: 1px solid var(--fd-border);
-  padding: 12px 20px 16px;
+  padding: 10px 18px 14px;
   background: var(--fd-panel);
+  flex-shrink: 0;
 }
 .fd-case-footer-status > span {
   flex: 1;
@@ -576,10 +591,10 @@
 }
 .fd-case-hud {
   position: absolute;
-  top: 18px;
-  right: 24px;
-  width: 300px;
-  max-width: calc(100% - 420px);
+  top: 0;
+  right: 0;
+  width: 260px;
+  max-width: calc(100% - var(--case-inspector-width) - 20px);
   max-height: calc(100% - 100px);
   display: flex;
   flex-direction: column;
@@ -591,14 +606,14 @@
   overflow: hidden;
   pointer-events: auto;
 }
-.fd-case-controls-toggle {
+.fd-case-hud .fd-case-controls-toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-shrink: 0;
   width: 100%;
-  padding: 13px 14px;
+  padding: 12px 14px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -763,8 +778,8 @@
 }
 @container (max-width: 800px) {
   .fd-case-hud {
-    max-width: calc(100% - 340px);
-    right: 12px;
+    max-width: calc(100% - var(--case-inspector-width) - 20px);
+    right: 0;
   }
   .fd-case-view-tools {
     max-width: calc(100% - 340px);
@@ -826,9 +841,9 @@
 }
 .fd-case-canvas-note {
   position: absolute;
-  left: 420px;
-  right: 30px;
-  bottom: 22px;
+  left: calc(var(--case-inspector-width) + 20px);
+  right: 0;
+  bottom: 0;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -850,14 +865,9 @@
 }
 @container (max-width:800px) {
   .fd-case-workflow {
-    grid-template-columns: 310px 1fr;
-  }
-  .fd-case-canvas {
-    left: 310px;
+    --case-inspector-width: 300px;
   }
   .fd-case-canvas-note {
-    left: 325px;
-    right: 10px;
     align-items: center;
     gap: 8px;
   }
@@ -970,8 +980,8 @@
 .fd-mechanical-top {
   position: absolute;
   top: 66px;
-  left: 20px;
-  right: 20px;
+  left: 16px;
+  right: 16px;
   display: flex;
   justify-content: space-between;
   pointer-events: none;
@@ -980,9 +990,11 @@
   pointer-events: auto;
 }
 .fd-mechanical-segment {
-  padding: 3px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
   border: 1px solid var(--fd-border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--fd-panel);
   box-shadow: 0 3px 12px #00000009;
 }
@@ -995,7 +1007,8 @@
   border: 1px solid color-mix(in srgb, var(--fd-warning) 22%, transparent);
   font-size: 11px;
 }
-.fd-mechanical-card {
+.fd-mechanical-card,
+.fd-case-panel {
   background: color-mix(in srgb, var(--fd-panel) 96%, transparent);
   border: 1px solid var(--fd-border);
   border-radius: 16px;
@@ -1003,6 +1016,8 @@
     0 10px 36px #00000012,
     0 2px 8px #0000000a;
   backdrop-filter: blur(14px);
+}
+.fd-mechanical-card {
   padding: 18px;
 }
 .fd-mechanical-card h2 {
@@ -1882,6 +1897,9 @@
   }
 }
 @container (max-width: 750px) {
+  .fd-case-workflow {
+    inset: 120px 10px 10px;
+  }
   .fd-mechanical-header {
     padding: 0 10px;
   }
