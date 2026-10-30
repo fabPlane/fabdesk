@@ -18,7 +18,7 @@ function ShoppingBomDialog({ projectId, open, busy, error, onClose, onSync }: { 
   useEffect(() => { setAllowPartial(false); }, [open, bom.data?.revision]);
   const surface = { projectId, label: "Shopping / Review BOM import", priority: 20, details: JSON.stringify({ snapshotRevision: bom.data?.revision, coverage: bom.data?.coverage, importParts: bom.data?.lines.length, partialCoverage: !bom.data?.complete, ordering: "not performed", error: error instanceof Error ? error.message : undefined }) };
   useAssistantSurface(open ? surface : null);
-  return <Dialog open={open} title="Review parts before syncing" onClose={() => { if (!busy) onClose(); }}>
+  return <Dialog open={open} closeDisabled={busy} title="Review parts before syncing" onClose={() => { if (!busy) onClose(); }}>
     <div className="space-y-4 text-sm">
       {bom.isLoading || bom.isFetching ? <p className="flex items-center gap-2"><Spinner />Reading saved design sources…</p> : bom.isError ? <div role="alert"><p className="text-danger">{bom.error instanceof Error ? bom.error.message : "Could not read the project BOM."}</p><Button size="sm" onClick={() => void bom.refetch()}>Retry source check</Button></div> : <>
         <p>{bom.data?.lines.length ?? 0} listed items from your Design BOM. Matching suppliers, order status and notes stay saved; manual items are kept.</p>

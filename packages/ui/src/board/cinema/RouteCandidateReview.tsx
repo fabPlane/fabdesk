@@ -47,7 +47,7 @@ export function RouteCandidateReview({ projectId, runId, enabled, board, sourceN
   };
   const data = review.data;
   return <><Button size="sm" disabled={!enabled || working} onClick={() => setOpen(true)}><Icon name="route" width={15} height={15} />Review candidate</Button>
-    <Dialog open={open} onClose={() => { if (!workingRef.current) setOpen(false); }} title="Review routing candidate">
+    <Dialog open={open} closeDisabled={working} onClose={() => { if (!workingRef.current) setOpen(false); }} title="Review routing candidate">
       {review.isPending ? <Spinner /> : review.isError ? <LoadError title="Could not inspect the saved routing candidate" onRetry={() => void review.refetch()} /> : data && <div className="space-y-4">
         <div><p className="mb-2 text-sm font-medium text-muted">{sourceName ?? board?.sourceId ?? "Saved PCB"}</p><strong>{data.applied ? "Candidate applied" : data.resultState === "complete" ? "All requested connections routed" : data.resultState === "partial" ? "Partial routing candidate" : "Recorded routing result"}</strong><p className="mt-1 text-sm text-muted">{data.reason}</p></div>
         <details><DisclosureSummary icon="route" label="Routing metrics" /><pre className="mt-2 whitespace-pre-wrap rounded-lg border border-border bg-panel-2 p-3 text-xs">{data.quality}</pre></details>
