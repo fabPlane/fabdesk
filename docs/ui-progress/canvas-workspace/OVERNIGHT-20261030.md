@@ -1,3 +1,5 @@
+> Current follow-up: [whole-app workflow acceptance](WHOLE-APP-20261030.md), code `72cd7f1`, supersedes historical implementation/check/runtime status below. Teammate integration notices and exact remaining limits are included there.
+
 # Overnight non-enclosure workflow acceptance · October 30
 
 This pass completes the requested non-enclosure canvas user journeys on `feat/sketch-first-drafts`, from run start `1169366` through code `ac1bf94`. The draft remains an integration review: Mechanical/enclosure is teammate-owned in #398, the new placement/resize/replacement/general Undo workspace is #393, and Board Art Apply/polish remains deferred. No merge or deployment is included. Future engineering capabilities below are not claimed complete.

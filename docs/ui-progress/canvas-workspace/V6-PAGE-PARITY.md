@@ -1,3 +1,5 @@
+> Current follow-up: [whole-app workflow acceptance](WHOLE-APP-20261030.md), code `72cd7f1`, supersedes historical implementation/check/runtime status below. Teammate integration notices and exact remaining limits are included there.
+
 # v6 page-by-page visual review
 
 ## Final native acceptance · October 30

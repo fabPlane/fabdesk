@@ -1,3 +1,5 @@
+> Current follow-up: [whole-app workflow acceptance](WHOLE-APP-20261030.md), code `72cd7f1`, supersedes historical implementation/check/runtime status below. Teammate integration notices and exact remaining limits are included there.
+
 # Canvas workspace implementation milestone
 
 **October 30 navigation follow-up:** [3D assembly destination corrected](ASSEMBLY-NAVIGATION.md). The overview entry belongs to Mechanical; individual board 3D and Outputs creation are separate. This supersedes the earlier direct-Outputs choice without claiming the teammate assembly scene is finished.
