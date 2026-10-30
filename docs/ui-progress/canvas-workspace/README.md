@@ -1,5 +1,7 @@
 # Canvas workspace implementation milestone
 
+**October 30 navigation follow-up:** [3D assembly destination corrected](ASSEMBLY-NAVIGATION.md). The overview entry belongs to Mechanical; individual board 3D and Outputs creation are separate. This supersedes the earlier direct-Outputs choice without claiming the teammate assembly scene is finished.
+
 ## Latest · October 30 non-enclosure workflow pass
 
 The requested non-enclosure user journeys and native UI acceptance are complete through code **ac1bf94**. [Current acceptance and screenshots](OVERNIGHT-20261030.md) supersede the older limitations and LOCAL ONLY statements below. This pass adds working source-qualified Changes/comments, actual output multiselect/ZIP and shared media previews, compact source exports, native BOM/Shopping coverage, scoped routing review/Apply, contextual unsent Ask and useful local review packages. Native walkthroughs cover the primary modify→review→deliver loop, fresh Codex board handoff, VAIO and shared-instance return.

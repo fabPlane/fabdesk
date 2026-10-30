@@ -43,7 +43,7 @@ function askAbout(selection: AssemblySceneSelection | null, name: string, availa
 }
 
 /** Logical project topology. Canvas positions and declared links never imply chassis fit or electrical validation. */
-export function AssemblyOverview({ projectId, name, data, checking, failed, onRetry, boardPicker = false }: { boardPicker?: boolean; projectId: string; name: string; data: ProjectBoardSources; checking: boolean; failed: boolean; onRetry: () => void }) {
+export function AssemblyOverview({ projectId, name, data, checking, failed, onRetry, boardPicker = false, embedded = false }: { boardPicker?: boolean; embedded?: boolean; projectId: string; name: string; data: ProjectBoardSources; checking: boolean; failed: boolean; onRetry: () => void }) {
   const projectFiles = useProject(projectId);
   const client = useCoreClient(), layoutKey = assemblyMapLayoutKey(client.baseUrl, projectId);
   const savedLayout = useUiStore(state => state.assemblyMapLayouts?.[layoutKey]);
@@ -80,7 +80,7 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
   const sourcesToReview = [...new Set([...assemblySourcesToReview(data, new Map(previews.filter(state => state.trackable).map(state => [state.sourceId, state.data]))), ...(!models.isFetching && !models.isError ? (models.data ?? []).filter(assemblyModelNeedsReview).map(row => row.sourceId) : []), ...(!checks.isFetching && !checks.isError ? (checks.data ?? []).filter(assemblyCheckNeedsReview).map(row => row.sourceId) : [])])];
   const selectedNode = selected ? scene.nodes.find(node => node.instance.id === selected.instanceId) : undefined;
   const selectedLink = scene.links.find(link => link.connection.id === linkId);
-  useAssistantSurface({ projectId, label: detail ? `Board · ${detail.instanceName}` : selectedLink ? "Overview · Connection" : selectedNode ? `Overview · ${selectedNode.instance.name}` : "Project overview", priority: 10, details: JSON.stringify({ board: detail?.selection ?? selected, source: detail?.directory, selectedConnection: selectedLink?.connection, ownershipCheckPending: checking || failed, declaredConnectionsOnly: true, physicalArrangement: "Logical map only. Installed transforms, assembly alignment and physical fit are not established." }) });
+  useAssistantSurface({ projectId, label: detail ? `Board · ${detail.instanceName}` : embedded ? "Mechanical · Board reference" : selectedLink ? "Overview · Connection" : selectedNode ? `Overview · ${selectedNode.instance.name}` : "Project overview", priority: 10, details: JSON.stringify({ board: detail?.selection ?? selected, source: detail?.directory, selectedConnection: selectedLink?.connection, ownershipCheckPending: checking || failed, declaredConnectionsOnly: true, physicalArrangement: "Logical map only. Installed transforms, assembly alignment and physical fit are not established." }) });
   const linkStale = !!linkId && linkHash !== data.manifestSha256;
   const ownership = selected ? assemblySelectionState(data, selected) : null;
   const unavailable = checking || failed;
@@ -203,14 +203,14 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
     if (event.key === "Escape" && mapDrag.current) { event.preventDefault(); event.stopPropagation(); cancelMapDrag(); return; }
     if (event.key === "Escape" && (selectedNode || selectedLink)) { event.preventDefault(); dismissSelection(); event.stopPropagation(); }
   }}>
-    {!boardPicker && <div className="fd-assembly-view-menu fd-assembly-view-switch" role="group" aria-label="Project view"><button aria-current="page" onClick={fit}>Connections</button><button disabled={unavailable} onClick={() => {
+    {!boardPicker && !embedded && <nav className="fd-assembly-view-menu fd-assembly-view-actions" aria-label="Project views"><Button size="sm" aria-current="page" onClick={fit}>Connections</Button><Button size="sm" variant="ghost" disabled={unavailable} title="Open the Mechanical workspace for assembly and enclosure" aria-label="Open 3D assembly in Mechanical" onClick={() => {
       const ui = useUiStore.getState();
       if (unavailable || ui.activeProjectId !== projectId) return;
       if (selected && assemblySelectionState(data, selected) === "owned") ui.setAssemblyBoard(selected);
-      ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("3d");
-    }}>3D models</button></div>}
+      ui.setWorkspaceArea("mechanical");
+    }}><Icon name="cube" width={16} height={16} />3D assembly<Icon name="chevronRight" width={14} height={14} /></Button></nav>}
 
-    <header className="fd-assembly-heading"><h1 title={name}>{boardPicker ? "Choose a board" : "Project overview"}</h1><p>{scene.nodes.length} {scene.nodes.length === 1 ? "board" : "boards"}{data.sources.length !== scene.nodes.length && <> · {data.sources.length} source designs</>} · {scene.links.length} {scene.links.length === 1 ? "connection" : "connections"}</p><small>{failed ? "Project refresh unavailable" : checking ? "Checking project sources…" : "Declared connections · compatibility unverified"}</small>{boardPicker && savedBoard && !restored && !detail && <small role="status" className="fd-assembly-restore-notice">Project definition changed or board unavailable. Select a board again.</small>}</header>
+    <header className="fd-assembly-heading"><h1 title={name}>{boardPicker ? "Choose a board" : embedded ? "Board reference" : "Project overview"}</h1><p>{scene.nodes.length} {scene.nodes.length === 1 ? "board" : "boards"}{data.sources.length !== scene.nodes.length && <> · {data.sources.length} source designs</>} · {scene.links.length} {scene.links.length === 1 ? "connection" : "connections"}</p><small>{failed ? "Project refresh unavailable" : checking ? "Checking project sources…" : embedded ? "Connection map · 3D arrangement and fit unverified" : "Declared connections · compatibility unverified"}</small>{boardPicker && savedBoard && !restored && !detail && <small role="status" className="fd-assembly-restore-notice">Project definition changed or board unavailable. Select a board again.</small>}</header>
     {failed ? <Button className="fd-assembly-update" size="sm" variant="ghost" onClick={onRetry}>Retry project refresh</Button> : sourcesToReview.length > 0 && <Button className="fd-assembly-update" size="sm" variant="ghost" disabled={checking} onClick={event => { const next = nextAssemblyReviewSelection(data, sourcesToReview, selected), node = next ? scene.nodes.find(node => node.instance.id === next.instanceId) : null; if (node) { choose(node); fit(); focusToolsFrom(event.currentTarget, `board:${node.instance.id}`); } }}><Icon name="warning" width={16} height={16} />{sourcesToReview.length > 1 && selected && ownership !== "stale" && sourcesToReview.includes(selected.sourceId) ? "Next source to review" : "Sources to review"} · {sourcesToReview.length}</Button>}
     <div ref={viewport} className="fd-assembly-viewport" tabIndex={0} aria-label="Assembly canvas. Drag boards to arrange this device’s project map; drag the background to pan; scroll to zoom. Select a board to show its tools." onKeyDown={event => {
       if (event.target !== event.currentTarget) return;

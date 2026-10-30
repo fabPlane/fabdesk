@@ -120,9 +120,6 @@
 .fd-assembly-node-note { font-size:13px; }
 .fd-assembly-node-warning { fill:color-mix(in srgb,var(--fd-warning) 13%,var(--fd-panel)); }
 .fd-assembly-viewport { bottom:72px; }
-.fd-assembly-view-switch { position:absolute; z-index:16; display:flex; align-items:center; height:36px; padding:2px; border:1px solid var(--fd-border); border-radius:8px; background:var(--fd-panel); }
-.fd-assembly-view-switch > button { min-height:30px; padding:5px 18px; border-radius:5px; font-size:12px; white-space:nowrap; }
-.fd-assembly-view-switch > button[aria-current=page] { background:var(--fd-panel-2); color:var(--fd-accent); }
 .fd-canvas-main[data-area=overview] .fd-canvas-destinations > .fd-workspace-menu > summary { background:var(--fd-primary); border-color:var(--fd-primary); color:var(--fd-primary-fg); }
 .fd-assembly-card[data-unavailable=true] { stroke-dasharray:5 4; fill:color-mix(in srgb,var(--fd-panel) 65%,var(--fd-bg)); }
 /* Parts and Shopping share the same toolbar position as all other task tabs. */
@@ -493,3 +490,8 @@
 .fd-diff-help > details { flex:1 1 auto; }
 .fd-diff-help > details[open] { flex-basis:100%; }
 .fd-diff-help > details > p { margin:10px 4px 0; max-width:840px; line-height:1.6; }
+
+/* Overview navigation must not impersonate in-place tabs or leak into an embedded reference. */
+.fd-assembly-view-actions { display:flex; align-items:center; gap:8px; }
+.fd-assembly-view-actions > button { min-height:36px; white-space:nowrap; }
+.fd-assembly-view-actions > button[aria-current=page] { color:var(--fd-accent); background:var(--fd-panel-2); }
