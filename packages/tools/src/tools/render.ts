@@ -15,6 +15,7 @@ import { PROJECT_FILES, ensureDir, exists, mtimeMs } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import { fileUrl, loadNetlist, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
 import { rowPoints } from "./spatial";
+import { renderPcbDisplay } from "./pcb-display";
 
 async function fileRevision(
   path: string,
@@ -159,7 +160,10 @@ export const render_glb = defineTool({
   title: "Export 3D GLB",
   description:
     "Export a 3D model (GLB) of the KiCad board to renders/board.glb for the app's 3D tab. Requires kicad-cli and board.kicad_pcb.",
-  inputSchema: {},
+  inputSchema: {
+    boardPath: z.string().optional(),
+    expectedPcbRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
@@ -167,7 +171,12 @@ export const render_glb = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async (_args, ctx) => {
+  handler: async (args, ctx) => {
+    if (args.boardPath || args.expectedPcbRevision) {
+      if (!args.boardPath || !args.expectedPcbRevision)
+        throw new ToolError("Provide both boardPath and expectedPcbRevision.", "invalid_args");
+      return renderPcbDisplay(ctx, args.boardPath, args.expectedPcbRevision);
+    }
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const board = await requireBoard(project);

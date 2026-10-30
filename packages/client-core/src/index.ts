@@ -164,3 +164,4 @@ export * from "./enclosure-design";
 export * from "./enclosure-history";
 export * from "./enclosure-pcb-edit";
 export * from "./enclosure-recovery";
+export * from "./pcb-display";

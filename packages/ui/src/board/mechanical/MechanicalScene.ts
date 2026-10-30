@@ -2,6 +2,7 @@ import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
+import { STLExporter } from "three/addons/exporters/STLExporter.js";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
@@ -439,6 +440,62 @@ export class MechanicalScene {
   async validate(source: SceneModel) {
     const object = await MechanicalScene.decode(source);
     disposeObject(object);
+  }
+  static async validateData(path: string, data: ArrayBuffer) {
+    const model = await this.decode({
+      item: {
+        id: "validate",
+        path,
+        kind: "board",
+        name: "PCB",
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: 1,
+        visible: true,
+      },
+      data,
+    });
+    disposeObject(model);
+  }
+  static async boardStl(path: string, data: ArrayBuffer): Promise<Blob> {
+    const model = await this.decode({
+      item: {
+        id: "export",
+        path,
+        kind: "board",
+        name: "PCB",
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: 1,
+        visible: true,
+      },
+      data,
+      origin: [0, 0, 0],
+    });
+    const baked = new T.Group();
+    try {
+      model.updateMatrixWorld(true);
+      // STL has no transforms or mirrored-face culling. Bake each mesh and correct
+      // winding after the handedness change from KiCad Y-up to PCB coordinates.
+      model.traverse((node) => {
+        if (!(node instanceof T.Mesh)) return;
+        const geometry = node.geometry.clone().applyMatrix4(node.matrixWorld);
+        if (node.matrixWorld.determinant() < 0) {
+          const indices = geometry.index
+            ? Array.from(geometry.index.array)
+            : Array.from({ length: geometry.getAttribute("position").count }, (_, i) => i);
+          for (let i = 0; i < indices.length; i += 3)
+            [indices[i + 1], indices[i + 2]] = [indices[i + 2]!, indices[i + 1]!];
+          geometry.setIndex(indices);
+        }
+        baked.add(new T.Mesh(geometry, new T.MeshBasicMaterial()));
+      });
+      const stl = new STLExporter().parse(baked, { binary: true });
+      return new Blob([new Uint8Array(stl.buffer as ArrayBuffer)], { type: "model/stl" });
+    } finally {
+      disposeObject(baked);
+      disposeObject(model);
+    }
   }
   static async decode(source: SceneModel): Promise<T.Group> {
     const group = new T.Group();

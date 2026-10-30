@@ -298,6 +298,7 @@ export const cad_enclosure = defineTool({
 
 function summarizeFeatures(features: Awaited<ReturnType<typeof loadFeatures>>) {
   return {
+    pcbRevision: features.pcbRevision,
     outlineMm: { width: features.outline.widthMm, height: features.outline.heightMm },
     geometry: {
       outline: features.outline,

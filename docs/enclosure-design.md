@@ -96,6 +96,14 @@ All values use millimetres, PCB XY coordinates and Z up. Use the included placem
 
 ## Further work
 
-Prioritize native bridge end-to-end validation, transferable Arrange/Enclosure placements, exact solid containment/collision checks and richer real component geometry. These are distinct from the implemented conservative fit review.
+Prioritize native bridge end-to-end validation, transferable Arrange/Enclosure placements and exact solid containment/collision checks. These are distinct from the implemented conservative fit review.
+
+## PCB geometry in the viewport — 30 October
+
+Arrange and Enclosure automatically load KiCad-exported GLB geometry for the saved PCB revision: actual Edge.Cuts, holes, pads, silkscreen, solder mask and linked component models. The renderer preserves KiCad millimetres and the PCB coordinate frame, including bottom-side models. Missing or unreadable component models are listed; they are not replaced with estimated boxes. Export errors remain visible with a Refresh action.
+
+The model card downloads binary PCB STL from the same geometry, with transforms baked and mirrored triangle winding corrected. STL is geometry-only; the viewport retains GLB materials. Incomplete component coverage produces a `-partial.stl` filename. This is a visualization/export improvement: collision review and enclosure dimensions still use conservative feature bounds and estimated heights, not exact component solids. Missing models must be assigned in the source PCB and refreshed.
+
+Validation: nine focused tests pass for coverage, source revision guards, request reuse, coordinates and STL units/winding. Live KiCad 10.0.5 checks cover a real CM5 board (12/15 component models), L-shaped and circular fixtures, and a linked-model fixture with bottom-side components. Adding a missing model and refreshing changes coverage from 9/13 to 10/13 without changing PCB bytes. Live PCB STL downloads preserve 65 × 32 mm CM5 bounds and the linked fixture's Z range −1.215 to 6.695 mm. Enclosure preview remains usable, and three tested panel sizes have no horizontal overflow or hidden footer. The broader four-package run has 948 pass, 2 skip and 15 failures; all failure names match the prior audit. This is not a green full-repository test result or fabrication certification.
 
 The interface uses [progressive disclosure](https://www.nngroup.com/articles/progressive-disclosure/), [visible system status](https://www.nngroup.com/articles/visibility-system-status/) and [recognition rather than recall](https://www.nngroup.com/articles/recognition-and-recall/): a short task sequence, visible states and secondary controls shown when needed.

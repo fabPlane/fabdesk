@@ -1,0 +1,68 @@
+import { createHash, randomUUID } from "node:crypto";
+import { readFile, rm } from "node:fs/promises";
+import { measureGlb, readSavedBoardModels } from "@fabdesk/kicad";
+import { jailPath, ensureDir } from "../fs";
+import { ToolError, type ToolContext } from "../registry";
+import { requireKicad, ok } from "./common";
+
+export function displayCoverage(board: string, roots: ReturnType<typeof measureGlb>["roots"]) {
+  const counts = new Map<string, number>();
+  for (const node of roots)
+    if (node.bounds && node.vertices) counts.set(node.name, (counts.get(node.name) ?? 0) + 1);
+  const footprints = readSavedBoardModels(board).filter((f) => !f.dnp);
+  const missing = footprints.filter(
+    (f) =>
+      !f.ref ||
+      !f.models.length ||
+      (counts.get(f.ref) ?? 0) < f.models.filter((m) => !m.hidden).length,
+  );
+  return {
+    total: footprints.length,
+    loaded: footprints.length - missing.length,
+    missing: missing.map((f) => f.ref ?? f.footprint),
+  };
+}
+
+/** A fresh immutable export; never reuse an old file after a failed KiCad process. */
+export async function renderPcbDisplay(ctx: ToolContext, path: string, expected: string) {
+  const project = ctx.requireProject();
+  if (!path.toLowerCase().endsWith(".kicad_pcb"))
+    throw new ToolError("Choose a KiCad PCB file", "invalid_args");
+  const board = await jailPath(project.dir, path);
+  const original = await readFile(board, "utf8");
+  const revision = (text: string) => createHash("sha256").update(text).digest("hex");
+  if (revision(original) !== expected)
+    throw new ToolError(
+      "PCB changed. Refresh the board before loading its 3D model.",
+      "precondition",
+    );
+  const cli = await requireKicad(ctx);
+  const relativePath = `renders/pcb-models/${randomUUID()}.glb`;
+  const output = await jailPath(project.dir, relativePath);
+  await ensureDir(await jailPath(project.dir, "renders/pcb-models"));
+  try {
+    const result = await ctx.services.kicad.exportGlb(cli, {
+      board,
+      output,
+      mechanical: true,
+      signal: ctx.signal,
+    });
+    if (revision(await readFile(board, "utf8")) !== expected)
+      throw new ToolError("PCB changed during export. Refresh and try again.", "precondition");
+    const bytes = await readFile(output);
+    if (bytes.length > 50 * 1024 * 1024)
+      throw new ToolError("PCB model exceeds the 50 MB viewer limit.", "precondition");
+    const measured = measureGlb(bytes);
+    if (!measured.roots.some((r) => r.bounds && r.vertices))
+      throw new ToolError("KiCad exported an empty model.", "precondition");
+    return ok("Exported PCB geometry from the saved KiCad design.", {
+      modelPath: relativePath,
+      pcbRevision: expected,
+      coverage: displayCoverage(original, measured.roots),
+      warnings: result.warnings,
+    });
+  } catch (error) {
+    await rm(output, { force: true });
+    throw error;
+  }
+}

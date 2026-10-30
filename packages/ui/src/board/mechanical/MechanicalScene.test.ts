@@ -111,3 +111,23 @@ test("GLB imports convert metres to mm and KiCad board coordinates match enclosu
   expect(b.max.x).toBeCloseTo(20);
   expect(b.max.z).toBeCloseTo(10);
 });
+
+test("downloaded PCB STL preserves KiCad millimetres and board axes", async () => {
+  const blob = await MechanicalScene.boardStl("board.glb", glb());
+  const bytes = new DataView(await blob.arrayBuffer());
+  // Normals must follow the mirrored coordinate transform, not turn inside out.
+  expect(bytes.getFloat32(84, true)).toBeLessThan(0);
+  expect(bytes.getFloat32(88, true)).toBeGreaterThan(0);
+  const model = await MechanicalScene.decode({
+    item: mechanicalItem("pcb.stl", "board"),
+    data: await blob.arrayBuffer(),
+    origin: [0, 0, 0],
+  });
+  const bounds = new Box3().setFromObject(model);
+  expect(bounds.min.x).toBeCloseTo(0);
+  expect(bounds.min.y).toBeCloseTo(0);
+  expect(bounds.min.z).toBeCloseTo(0);
+  expect(bounds.max.x).toBeCloseTo(20);
+  expect(bounds.max.y).toBeCloseTo(30);
+  expect(bounds.max.z).toBeCloseTo(10);
+});

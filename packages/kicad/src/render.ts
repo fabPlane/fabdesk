@@ -61,6 +61,8 @@ export interface ExportGlbOptions {
   board: string;
   output: string;
   includeDnp?: boolean;
+  /** Keep absolute PCB coordinates and per-footprint nodes for mechanical placement/coverage. */
+  mechanical?: boolean;
   signal?: AbortSignal;
 }
 
@@ -73,20 +75,21 @@ export interface ExportGlbOptions {
 export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promise<{ fused: boolean; warnings: string[] }> {
   const base = ["pcb", "export", "glb", "--force", "--subst-models", "--include-pads", "--include-silkscreen", "--include-soldermask"];
   if (!options.includeDnp) base.push("--no-dnp");
+  if (options.mechanical) base.push("--user-origin", "0x0mm");
   const tail = ["-o", options.output, options.board];
   const attempt = async (fused: boolean) => {
     const result = await runKicadCli(cli, [...base, ...(fused ? ["--fuse-shapes"] : []), ...tail], {
       tolerateExit: true,
       ...(options.signal ? { signal: options.signal } : {}),
     });
-    const warnings = result.stderr
+    const warnings = `${result.stdout}\n${result.stderr}`
       .split("\n")
-      .filter((line) => /file not found|problems encountered|warning/i.test(line))
+      .filter((line) => /file not found|problems encountered|warning|could not add|failed/i.test(line))
       .map((line) => line.trim());
     return { ok: existsSync(options.output), warnings, exitCode: result.exitCode, stderr: result.stderr };
   };
-  const fused = await attempt(true);
-  if (fused.ok) return { fused: true, warnings: fused.warnings };
+  const fused = await attempt(!options.mechanical);
+  if (fused.ok) return { fused: !options.mechanical, warnings: fused.warnings };
   const plain = await attempt(false);
   if (plain.ok) return { fused: false, warnings: plain.warnings };
   throw new Error(`pcb export glb failed (${plain.exitCode}): ${lastLines(plain.stderr)}`);

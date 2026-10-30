@@ -2025,3 +2025,42 @@
     top: 280px;
   }
 }
+.fd-pcb-model-status {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--fd-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--fd-bg) 55%, transparent);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.fd-pcb-model-status > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fd-pcb-model-status p {
+  margin: 0;
+  line-height: 1.5;
+}
+.fd-pcb-model-status small {
+  opacity: 0.72;
+  line-height: 1.5;
+}
+.fd-pcb-model-status summary {
+  cursor: pointer;
+  color: #e4b76e;
+}
+.fd-pcb-model-status details p {
+  margin-top: 8px;
+}
+.fd-pcb-model-status button {
+  padding: 6px 9px;
+  border-radius: 6px;
+}
+.fd-pcb-model-status [role="alert"] {
+  color: #ee9c8e;
+}

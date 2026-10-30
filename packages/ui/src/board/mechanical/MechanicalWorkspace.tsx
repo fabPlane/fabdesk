@@ -20,6 +20,8 @@ import { Dialog } from "../../components/ui";
 import { Icon } from "../../components/Icon";
 import { MechanicalIcon } from "./MechanicalIcon";
 import { EnclosureDesigner } from "./EnclosureDesigner";
+import { detailedBoardSource, usePcbModels } from "./usePcbModels";
+import { PcbModelStatus } from "./PcbModelStatus";
 import "./mechanical.css";
 
 type EnclosureResult = {
@@ -27,8 +29,8 @@ type EnclosureResult = {
   pcbRevision?: string;
   previewOnly?: boolean;
   params?: Record<string, number | string | boolean>;
-  board?: { geometry?: BoardGeometry; thicknessMm?: number };
-  features?: { geometry?: BoardGeometry; thicknessMm?: number };
+  board?: { geometry?: BoardGeometry; thicknessMm?: number; pcbRevision?: string };
+  features?: { geometry?: BoardGeometry; thicknessMm?: number; pcbRevision?: string };
   meshes?: { base: string; lid: string };
   stl?: string;
   lidStl?: string;
@@ -173,6 +175,13 @@ export function MechanicalWorkspace({
   const operation = useRef(false);
   const current = items.find((i) => i.id === selected),
     view = preview ?? status;
+  const pcbModels = usePcbModels(
+    projectId,
+    view.board?.pcbRevision
+      ? [{ path: "board.kicad_pcb", pcbRevision: view.board.pcbRevision }]
+      : [],
+    panel !== "design",
+  );
   const errors = [
     ...(view.alignment?.issues?.map((i) => i.message) ?? []),
     ...(view.warnings ?? []),
@@ -295,7 +304,7 @@ export function MechanicalWorkspace({
         };
         if (details.files.some((f) => f.path === "renders/board.glb"))
           add("renders/board.glb", "board", "PCB model");
-        else if (res.board?.geometry) add("@board-envelope", "board", "PCB envelope");
+        else if (res.board?.geometry) add("@board-envelope", "board", "PCB model");
         for (const [path, kind, name] of [
           [res.stl, "base", "Enclosure base"],
           [res.lidStl, "lid", "Enclosure lid"],
@@ -338,6 +347,11 @@ export function MechanicalWorkspace({
           : [0, 0, 0];
         for (const item of items) {
           if (preview && (item.kind === "base" || item.kind === "lid")) continue;
+          if (item.kind === "board" && view.board?.pcbRevision) {
+            const model = pcbModels.models["board.kicad_pcb"];
+            if (model) all.push(detailedBoardSource({ item, origin }, model));
+            continue;
+          }
           if (item.path === "@board-envelope") {
             const board = view.board?.geometry;
             if (board) all.push({ item, board, thickness: view.board?.thicknessMm ?? 1.6, origin });
@@ -396,7 +410,7 @@ export function MechanicalWorkspace({
     return () => {
       canceled = true;
     };
-  }, [items, loaded, preview, status, revision, client, projectId]);
+  }, [items, loaded, preview, status, revision, client, projectId, pcbModels.models]);
   useEffect(() => {
     scene.current?.select(selected);
   }, [selected]);
@@ -814,6 +828,7 @@ export function MechanicalWorkspace({
             onChange={(e) => setPartFilter(e.target.value)}
           />
           <div className="fd-mechanical-parts">
+            {view.board?.pcbRevision && <PcbModelStatus {...pcbModels} />}
             {visibleParts.map((i) => (
               <div key={i.id} className={selected === i.id ? "is-selected" : ""}>
                 <button
@@ -825,12 +840,14 @@ export function MechanicalWorkspace({
                   <MechanicalIcon name={i.visible ? "eye" : "eyeOff"} />
                 </button>
                 <button aria-pressed={selected === i.id} onClick={() => selectModel(i.id)}>
-                  <strong>{i.name}</strong>
+                  <strong>
+                    {i.path === "@board-envelope" && view.board?.pcbRevision ? "PCB model" : i.name}
+                  </strong>
                   <small>
                     {i.kind === "import"
                       ? "Imported · original preserved"
                       : i.path === "@board-envelope"
-                        ? "Board envelope · estimated parts"
+                        ? "KiCad PCB geometry"
                         : i.kind === "board"
                           ? "PCB model"
                           : "Generated enclosure"}
@@ -859,9 +876,11 @@ export function MechanicalWorkspace({
               <button
                 className="fd-mechanical-wide"
                 disabled={!loaded || !!busy || !!preview}
-                onClick={() => generateDetailedBoard()}
+                onClick={() =>
+                  view.board?.pcbRevision ? pcbModels.retry() : generateDetailedBoard()
+                }
               >
-                {items.some((i) => i.path === "renders/board.glb")
+                {view.board?.pcbRevision || items.some((i) => i.path === "renders/board.glb")
                   ? "Refresh PCB model"
                   : "Generate detailed PCB model"}
               </button>
@@ -1262,7 +1281,7 @@ export function MechanicalWorkspace({
               ? "Exploded view · close the lid to move or rotate parts"
               : "Drag to orbit · scroll to zoom · right-drag to pan · F fit · Esc exit tool"}
       </p>
-      {items.some((i) => i.path === "@board-envelope") && (
+      {!view.board?.pcbRevision && items.some((i) => i.path === "@board-envelope") && (
         <div className="fd-mechanical-envelope-note">
           <span>PCB envelope · estimated parts</span>
           <button disabled={!loaded || !!busy || !!preview} onClick={generateDetailedBoard}>

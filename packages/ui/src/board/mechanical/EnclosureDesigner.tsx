@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   MechanicalDesignSchema,
   type MechanicalDesign,
@@ -29,6 +29,8 @@ import {
 import { MechanicalScene, type SceneModel, type BoardGeometry } from "./MechanicalScene";
 import { EnclosureFitReview } from "./EnclosureFitReview";
 import { MechanicalIcon } from "./MechanicalIcon";
+import { detailedBoardSource, usePcbModels } from "./usePcbModels";
+import { PcbModelStatus } from "./PcbModelStatus";
 
 type Result = {
   design?: MechanicalDesign | null;
@@ -178,6 +180,25 @@ export function EnclosureDesigner({
     importInput = useRef<HTMLInputElement>(null);
   const [modelSources, setModelSources] = useState<SceneModel[]>([]);
   const [fitBoards, setFitBoards] = useState<Result["boards"]>(undefined);
+  const pcbModels = usePcbModels(
+    projectId,
+    (design?.boards ?? []).flatMap((placement) => {
+      const features =
+        (preview?.boards ?? fitBoards)?.find((b) => b.placement.path === placement.path)
+          ?.features ?? (placement.path === "board.kicad_pcb" ? board : null);
+      return features ? [{ path: placement.path, pcbRevision: features.pcbRevision }] : [];
+    }),
+    active,
+  );
+  const renderedSources = useMemo(
+    () =>
+      modelSources.flatMap((source) => {
+        if (!source.board) return [source];
+        const model = pcbModels.models[source.item.id.slice(5)];
+        return model ? [detailedBoardSource(source, model)] : [];
+      }),
+    [modelSources, pcbModels.models],
+  );
   const [fitState, setFitState] = useState(""),
     [fitError, setFitError] = useState("");
   const [showRisks, setShowRisks] = useState(true),
@@ -261,7 +282,7 @@ export function EnclosureDesigner({
   useEffect(() => {
     scene.current?.select(selectedBoard ? `@fit-${selectedBoard}` : null);
     scene.current?.setMode(busy || pendingRecovery ? "orbit" : placementMode);
-  }, [selectedBoard, placementMode, busy, pendingRecovery, modelSources]);
+  }, [selectedBoard, placementMode, busy, pendingRecovery, renderedSources]);
   useEffect(() => {
     scene.current?.setCaseVisible(caseVisible);
   }, [caseVisible]);
@@ -307,7 +328,7 @@ export function EnclosureDesigner({
   }, [openLid, preview?.meshes?.lid]);
   useEffect(() => {
     scene.current?.setTranslucent(transparent);
-  }, [transparent, modelSources]);
+  }, [transparent, renderedSources]);
   async function call(action: string, extra: Record<string, unknown> = {}) {
     return unpack(await client.callTool("cad_fit", { projectId, action, ...extra }));
   }
@@ -438,14 +459,19 @@ export function EnclosureDesigner({
   useEffect(() => {
     let cancel = false;
     void scene.current
-      ?.setModels(modelSources, false)
+      ?.setModels(renderedSources, false)
       .then(() => {
         const sourceReady =
           !!preview ||
           design?.mode !== "imported" ||
           !design.source?.path.toLowerCase().endsWith(".stl") ||
           modelSources.some((m) => m.item.path === design.source?.path);
-        if (!cancel && modelSources.length && sourceReady && !framed.current) {
+        if (
+          !cancel &&
+          renderedSources.some((m) => m.item.kind === "board") &&
+          sourceReady &&
+          !framed.current
+        ) {
           scene.current?.fit();
           framed.current = true;
         }
@@ -454,7 +480,7 @@ export function EnclosureDesigner({
     return () => {
       cancel = true;
     };
-  }, [modelSources]);
+  }, [renderedSources]);
   useEffect(() => {
     const s = design?.space;
     const validSpace =
@@ -835,6 +861,7 @@ export function EnclosureDesigner({
           ))}
         </nav>
         <div className="fd-case-body" ref={body}>
+          {!!design?.boards.length && <PcbModelStatus {...pcbModels} />}
           {pendingRecovery && (
             <div className="fd-case-recovery" role="status">
               <strong>Resume your unsaved work?</strong>
