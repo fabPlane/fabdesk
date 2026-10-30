@@ -9,7 +9,12 @@ export function displayCoverage(board: string, roots: ReturnType<typeof measureG
   const counts = new Map<string, number>();
   for (const node of roots)
     if (node.bounds && node.vertices) counts.set(node.name, (counts.get(node.name) ?? 0) + 1);
-  const footprints = readSavedBoardModels(board).filter((f) => !f.dnp);
+  const footprints = readSavedBoardModels(board).filter(
+    (f) =>
+      !f.dnp &&
+      // Bare mounting holes and fiducials are already geometry in the board body.
+      (f.models.length > 0 || !/mounting.?hole|fiducial/i.test(f.footprint)),
+  );
   const missing = footprints.filter(
     (f) =>
       !f.ref ||

@@ -69,7 +69,9 @@ describe("extractBoardFeatures", () => {
     expect(features.holes.map((h) => [h.x, h.y, h.diameterMm])).toEqual([
       [4, 4, 2.2],
       [46, 26, 2.2],
+      [50, 15, 0.8],
     ]);
+    expect(features.holes.map((h) => h.purpose)).toEqual(["unclassified", "mounting", "component"]);
     expect(features.connectors.map((c) => c.ref).sort()).toEqual(["J1", "J2"]);
     const usb = features.connectors.find((c) => c.ref === "J1")!;
     expect(usb.edge).toBe("minY");

@@ -13,7 +13,18 @@ export type EnclosureBoardSummary = {
     heightMm: number;
   };
   warnings?: string[];
-  holes: Array<{ x: number; y: number; diameterMm: number; ref?: string }>;
+  holes: Array<{
+    id?: string;
+    x: number;
+    y: number;
+    diameterMm: number;
+    ref?: string;
+    purpose?: "mounting" | "component" | "unclassified";
+    shape?: "round" | "slot";
+    source?: string;
+    drillWidthMm?: number;
+    drillHeightMm?: number;
+  }>;
   connectors?: Array<{
     ref: string;
     edge: "minX" | "maxX" | "minY" | "maxY";
@@ -152,13 +163,18 @@ export function defaultEnclosureDesign(board: EnclosureBoardSummary | null): Mec
     mounts:
       board?.holes
         // Connector alignment/pin holes are not screw mounts. Keep them in the PCB geometry.
-        .filter((h) => !h.ref || !parts.some((p) => p.ref === h.ref))
+        .filter(
+          (h) =>
+            h.shape !== "slot" &&
+            (h.purpose ? h.purpose === "mounting" : !h.ref || !parts.some((p) => p.ref === h.ref)),
+        )
         .map((h) => ({
           x: h.x,
           y: h.y,
           diameter: h.diameterMm,
           outer: h.diameterMm + 2.4,
           height: boardZ - floor,
+          ...(h.id ? { boardPath: "board.kicad_pcb", holeId: h.id } : {}),
         })) ?? [],
   };
 }

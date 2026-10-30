@@ -40,6 +40,12 @@ export function PcbModelStatus({
       setExporting(false);
     }
   }
+  const downloads = entries.map(([path, model]) => (
+    <button key={path} disabled={loading || exporting} onClick={() => void download(path, model)}>
+      Download {entries.length > 1 ? path.split("/").at(-1) : "PCB"} STL
+      {model.coverage.missing.length ? " (partial)" : ""}
+    </button>
+  ));
   return (
     <section className="fd-pcb-model-status" aria-label="PCB model quality">
       <div>
@@ -59,7 +65,9 @@ export function PcbModelStatus({
           ? "Reading the board and its linked component models."
           : !entries.length
             ? "The detailed model is unavailable. Resolve the issue below, then refresh."
-            : `${entries.reduce((n, [, m]) => n + m.coverage.loaded, 0)} / ${entries.reduce((n, [, m]) => n + m.coverage.total, 0)} component models loaded · dimensions in mm`}
+            : entries.every(([, m]) => m.coverage.total === 0)
+              ? "Board geometry loaded · no component bodies required"
+              : `${entries.reduce((n, [, m]) => n + m.coverage.loaded, 0)} / ${entries.reduce((n, [, m]) => n + m.coverage.total, 0)} component models loaded · dimensions in mm`}
       </p>
       {!!missing.length && (
         <details>
@@ -78,16 +86,14 @@ export function PcbModelStatus({
       )}
       {error && <p role="alert">{error}</p>}
       {exportError && <p role="alert">{exportError}</p>}
-      {entries.map(([path, model]) => (
-        <button
-          key={path}
-          disabled={loading || exporting}
-          onClick={() => void download(path, model)}
-        >
-          Download {entries.length > 1 ? path.split("/").at(-1) : "PCB"} STL
-          {model.coverage.missing.length ? " (partial)" : ""}
-        </button>
-      ))}
+      {entries.length > 1 ? (
+        <details>
+          <summary>PCB STL downloads · {entries.length} boards</summary>
+          {downloads}
+        </details>
+      ) : (
+        downloads
+      )}
       {!!entries.length && (
         <small>
           STL includes the loaded geometry. Fit checks still use estimated component bounds.

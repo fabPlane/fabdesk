@@ -29,8 +29,9 @@ describe("generateEnclosure", () => {
     expect(usb.edge).toBe("minY");
     expect(usb.center.x).toBe(25);
     expect(usb.widthMm).toBeGreaterThan(features.connectors[0]!.widthMm);
-    expect(spec.standoffs).toHaveLength(2);
-    expect(spec.standoffs.some((s) => s.x === 4 && s.y === 4)).toBe(true);
+    expect(spec.standoffs).toHaveLength(1); // Unclassified Edge.Cuts circles require explicit selection.
+    expect(spec.standoffs.some((s) => s.x === 46 && s.y === 26)).toBe(true);
+    expect(spec.standoffs.some((s) => s.x === 4 && s.y === 4)).toBe(false);
     expect(spec.solids.some((s) => s.role === "floor")).toBe(true);
     expect(spec.solids.some((s) => s.role === "lid")).toBe(true);
     expect(spec.solids.filter((s) => s.role === "wall").length).toBeGreaterThanOrEqual(4);
@@ -124,7 +125,7 @@ describe("meshEnclosure", () => {
     const spec = generateEnclosure(extractBoardFeatures(fixture));
     const { step } = meshEnclosure(spec);
     const standoffs = spec.solids.filter((s) => s.role === "standoff");
-    expect(standoffs).toHaveLength(2);
+      expect(standoffs).toHaveLength(1);
     for (const s of standoffs) expect(step).toContain(`MANIFOLD_SOLID_BREP('${s.name}'`);
     expect(step.match(/MANIFOLD_SOLID_BREP/g)?.length).toBe(spec.solids.length);
     expect(step.match(/CYLINDRICAL_SURFACE/g)?.length).toBe(2 * standoffs.length);
@@ -133,7 +134,7 @@ describe("meshEnclosure", () => {
       expect(radii).toContain(st.outerDiameterMm / 2);
       expect(radii).toContain(st.innerDiameterMm / 2);
     }
-    expect(step).toContain(`CARTESIAN_POINT('',(4,4,`);
+      expect(step).toContain(`CARTESIAN_POINT('',(46,26,`);
   });
 
   test("writeBoxesStep emits an annular tube", () => {

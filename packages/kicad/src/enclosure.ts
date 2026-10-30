@@ -437,11 +437,13 @@ export function generateEnclosure(
     };
   });
 
-  const standoffs: EnclosureStandoff[] = constraints?.standoffs ?? features.holes.map((h) => ({
+  const standoffs: EnclosureStandoff[] = constraints?.standoffs ?? features.holes.filter((h) =>
+    h.shape !== "slot" && (h.purpose ? h.purpose === "mounting" : !h.ref || !features.components?.some((p) => p.ref === h.ref))
+  ).map((h) => ({
     id: h.id,
     x: h.x,
     y: h.y,
-    innerDiameterMm: mm(h.diameterMm + 0.2),
+    innerDiameterMm: mm(h.diameterMm),
     outerDiameterMm: mm(h.diameterMm + 2.4),
     heightMm: params.standoffMm,
   }));
@@ -843,7 +845,7 @@ export function checkEnclosureAlignment(
       });
   }
 
-  for (const hole of features.holes) {
+  for (const hole of features.holes.filter((h) => h.shape !== "slot" && (h.purpose ? h.purpose === "mounting" : !h.ref || !features.components?.some((p) => p.ref === h.ref)))) {
     const stand = spec.standoffs.find((s) => dist({ x: s.x, y: s.y }, { x: hole.x, y: hole.y }) <= HOLE_POS_TOL_MM);
     if (!stand)
       issues.push({

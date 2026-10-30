@@ -24,6 +24,14 @@ test("coverage uses loaded nodes, including multiple models and absent reference
     missing: ["U2", "J1"],
   });
 });
+test("bare mounting holes and fiducials are not missing component bodies", () => {
+  expect(
+    displayCoverage(
+      '(kicad_pcb (footprint "MountingHole:3mm" (property "Reference" "H1")) (footprint "Fiducial" (property "Reference" "FID1")))',
+      [],
+    ),
+  ).toEqual({ total: 0, loaded: 0, missing: [] });
+});
 
 test("display export rejects stale PCB before export and changed PCB during export", async () => {
   const project = await tempProject("display"),

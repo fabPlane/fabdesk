@@ -84,7 +84,11 @@ export type MountingHole = {
   x: number;
   y: number;
   diameterMm: number;
-  source: "npth-pad" | "edge-cuts-circle" | "footprint";
+  source: "npth-pad" | "pth-pad" | "edge-cuts-circle" | "footprint";
+  purpose?: "mounting" | "component" | "unclassified";
+  shape?: "round" | "slot";
+  drillWidthMm?: number;
+  drillHeightMm?: number;
   ref?: string;
 };
 
@@ -150,7 +154,7 @@ const rotateLocal = (x: number, y: number, deg: number): Point => {
 
 const CONNECTOR_RE =
   /usb|hdmi|displayport|dp_?conn|rj45|ethernet|sma|u\.?fl|jack|barrel|jst|type-?c|usb_c|conn_|connector|header|pinheader|pin_header|audio|trrs|trs|sd.?card|micro.?sd|dc.?in|molex|picoblade|pico.?lock|swd|tag-?connect|qwiic|stemma/i;
-const MOUNT_RE = /mounting.?hole|^mh[_:]|hole_pad|npt?h/i;
+const MOUNT_RE = /mounting.?hole|^mh[_:]|hole_pad/i;
 const FIDUCIAL_RE = /fiducial/i;
 const EDGE_TOLERANCE_MM = 2.5;
 
@@ -450,6 +454,8 @@ function outlineFromGraphics(root: Sexpr[]): {
         y: mm(c.y),
         diameterMm: mm(diameter),
         source: "edge-cuts-circle",
+        purpose: "unclassified",
+        shape: "round",
       });
     } else {
       expand(box, c.x - diameter / 2, c.y - diameter / 2);
@@ -536,25 +542,38 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
     const origin = { x: placement.x, y: placement.y };
     const attr = child(fp, "attr");
     const dnp = (attr?.includes("dnp") ?? false) || child(fp, "dnp")?.[1] === "yes";
-    if (dnp) continue;
-
+    const mounting = MOUNT_RE.test(`${libId} ${ref}`) && !FIDUCIAL_RE.test(`${libId} ${ref}`);
     for (const [index, pad] of children(fp, "pad").entries()) {
       const tokens = pad.filter((n): n is string => typeof n === "string");
-      if (!tokens.includes("npth") && !tokens.includes("np_thru_hole")) continue;
+      const npth = tokens.includes("npth") || tokens.includes("np_thru_hole");
+      if (!npth && !tokens.includes("thru_hole")) continue;
       const at = xy(child(pad, "at")) ?? { x: 0, y: 0 };
       const drill = child(pad, "drill");
-      const diameter = numberAt(drill, 1) ?? numberAt(child(pad, "size"), 1) ?? 0;
-      if (diameter <= 0) continue;
+      const slot = drill?.[1] === "oval";
+      const dx = numberAt(drill, slot ? 2 : 1) ?? 0;
+      const dy = slot ? (numberAt(drill, 3) ?? 0) : dx;
+      if (dx <= 0 || dy <= 0) {
+        warnings.push(`${ref || libId}: drill dimensions are missing; no screw mount inferred.`);
+        continue;
+      }
+      // KiCad's drill export uses the pad anchor. Its "offset shape from hole"
+      // setting moves copper, not the drill centre (verified against native Excellon).
       const p = rotateLocal(at.x, at.y, placement.rotationDeg);
       holes.push({
-        id: `${ref || libId}-npth-${index}`,
+        id: `${ref || libId}-${npth ? "npth" : "pth"}-${index}`,
         x: mm(origin.x + p.x),
         y: mm(origin.y + p.y),
-        diameterMm: mm(diameter),
-        source: "npth-pad",
+        diameterMm: mm(Math.min(dx, dy)),
+        source: npth ? "npth-pad" : "pth-pad",
+        purpose: mounting ? "mounting" : "component",
+        shape: slot ? "slot" : "round",
+        drillWidthMm: mm(dx),
+        drillHeightMm: mm(dy),
         ...(ref ? { ref } : {}),
       });
     }
+    // DNP omits the component body, not the physical holes in the manufactured PCB.
+    if (dnp) continue;
 
     const court = courtyardBounds(fp, origin, placement.rotationDeg);
     const pads = padBounds(fp, origin, placement.rotationDeg);
@@ -579,14 +598,9 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
       MOUNT_RE.test(mountLabel) &&
       !holes.some((h) => h.ref === ref)
     ) {
-      holes.push({
-        id: ref || `mount-${holes.length + 1}`,
-        x: mm(origin.x),
-        y: mm(origin.y),
-        diameterMm: 2.2,
-        source: "footprint",
-        ...(ref ? { ref } : {}),
-      });
+      warnings.push(
+        `${ref || libId}: mounting footprint has no readable drill; no screw mount inferred.`,
+      );
     }
     const near = nearestEdge(outline, origin, body);
     const looksLikeConnector = CONNECTOR_RE.test(`${libId} ${value} ${ref}`);

@@ -2064,3 +2064,26 @@
 .fd-pcb-model-status [role="alert"] {
   color: #ee9c8e;
 }
+.fd-case-hole-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--fd-border);
+}
+.fd-case-hole-row span {
+  min-width: 0;
+}
+.fd-case-hole-row small {
+  display: block;
+  margin-top: 4px;
+  color: var(--fd-muted);
+}
+.fd-case-hole-row button {
+  flex-shrink: 0;
+}
+.fd-case-hole-list {
+  max-height: 200px;
+  overflow: auto;
+}

@@ -25,6 +25,10 @@ import {
   validateEnclosureFile,
   type EnclosureRecovery,
   type EnclosureBoardSummary,
+  mountingCandidates,
+  mountAtHole,
+  alignEnclosureMounts,
+  linkEnclosureMounts,
 } from "@fabdesk/client-core";
 import { MechanicalScene, type SceneModel, type BoardGeometry } from "./MechanicalScene";
 import { EnclosureFitReview } from "./EnclosureFitReview";
@@ -241,6 +245,30 @@ export function EnclosureDesigner({
       (path === "board.kicad_pcb" ? board : null)
     );
   }
+  function mountingBoards(next = design) {
+    return (next?.boards ?? []).flatMap((placement) => {
+      const features = featuresFor(placement.path);
+      return features ? [{ placement, features }] : [];
+    });
+  }
+  useEffect(() => {
+    scene.current?.setMountingHoles(
+      step === "Space" && design
+        ? mountingBoards().flatMap((b) =>
+            mountingCandidates(b.features).map((hole) => {
+              const m = mountAtHole(b, hole, design.space.floor);
+              return {
+                x: m.x,
+                y: m.y,
+                z: b.placement.z + b.features.thicknessMm + 0.05,
+                diameter: hole.diameterMm,
+                linked: design.mounts.some((post) => Math.hypot(post.x - m.x, post.y - m.y) < 0.05),
+              };
+            }),
+          )
+        : [],
+    );
+  }, [step, design, fitBoards, board, preview]);
   function selectBoard(path: string | null) {
     if (busy || pendingRecovery) return;
     setSelectedBoard(path);
@@ -252,10 +280,11 @@ export function EnclosureDesigner({
     if (!design) return;
     const old = design.boards.find((b) => b.path === next.path);
     if (!old) return;
-    edit(
-      { ...design, boards: design.boards.map((b) => (b.path === next.path ? next : b)) },
-      "Position board",
-    );
+    const moved = {
+      ...design,
+      boards: design.boards.map((b) => (b.path === next.path ? next : b)),
+    };
+    edit(alignEnclosureMounts(moved, mountingBoards(moved)), "Position board");
   }
   function restoreHistory(redo = false) {
     if (!design || busy || pendingRecovery) return;
@@ -528,6 +557,12 @@ export function EnclosureDesigner({
       selectable: false,
     }));
     const knownBoards = new Map((fitBoards ?? []).map((b) => [b.placement.path, b.features]));
+    for (const [i, post] of design.mounts.entries()) {
+      if (post.height <= 0 || post.outer <= post.diameter) continue;
+      const item = mechanicalItem(`@mount-${i}`, "base", `Screw post ${i + 1}`);
+      item.position = [post.x, post.y, design.space.floor];
+      models.push({ item, post, origin: [0, 0, 0], selectable: false, enclosure: true });
+    }
     if (board && !knownBoards.has("board.kicad_pcb")) knownBoards.set("board.kicad_pcb", board);
     for (const placement of design.boards) {
       const features = knownBoards.get(placement.path);
@@ -595,11 +630,13 @@ export function EnclosureDesigner({
     if (history.current.commit(next, label)) applyDraft(next);
   }
   function space(key: keyof MechanicalDesign["space"], value: number) {
-    if (design)
+    if (design) {
+      const next = { ...design, confirmed: false, space: { ...design.space, [key]: value } };
       edit(
-        { ...design, confirmed: false, space: { ...design.space, [key]: value } },
+        key === "floor" ? alignEnclosureMounts(next, mountingBoards(next)) : next,
         "Interior dimensions",
       );
+    }
   }
   async function save() {
     const parsed = MechanicalDesignSchema.parse(design);
@@ -1139,18 +1176,112 @@ export function EnclosureDesigner({
                     </button>
                   </details>
                   <details>
-                    <summary>Mounting points · {design.mounts.length}</summary>
+                    <summary>PCB holes & screw posts · {design.mounts.length} posts</summary>
                     <p>
-                      Creates screw posts in the case. Matching PCB holes are checked separately.
+                      Posts use the saved drill centres and follow linked boards. Bores are
+                      unthreaded; set their diameter for your actual screw, pilot hole or insert
+                      before printing.
                     </p>
+                    {mountingBoards().map((b) => (
+                      <div className="fd-case-entry" key={b.placement.path}>
+                        <strong>
+                          {enclosureFileLabel(b.placement.path)} · {b.features.holes.length}{" "}
+                          detected holes
+                        </strong>
+                        <p>
+                          {mountingCandidates(b.features).length} round mounting candidates ·{" "}
+                          {b.features.holes.filter((h) => h.shape === "slot").length} slots.
+                          Connector/pin holes are excluded from automatic posts.
+                        </p>
+                        <p>
+                          Green rings align with posts; amber rings have no post. Routing vias are
+                          not listed.
+                        </p>
+                        {!mountingCandidates(b.features).length && (
+                          <p>
+                            No round screw-mount holes detected. Do not drill the PCB without
+                            checking its copper and components.
+                          </p>
+                        )}
+                        {mountingCandidates(b.features).map((h, hi) => {
+                          const m = mountAtHole(b, h, design.space.floor);
+                          const exists = design.mounts.some(
+                            (p) =>
+                              (p.boardPath === b.placement.path && p.holeId === h.id) ||
+                              Math.hypot(p.x - m.x, p.y - m.y) < 0.05,
+                          );
+                          return (
+                            <div className="fd-case-hole-row" key={h.id ?? hi}>
+                              <span>
+                                <strong>
+                                  {h.ref || `Hole ${hi + 1}`} · Ø{h.diameterMm} mm
+                                </strong>
+                                <small>
+                                  X {m.x.toFixed(2)} · Y {m.y.toFixed(2)}
+                                  {h.purpose === "unclassified"
+                                    ? " · confirm this is a screw hole"
+                                    : ""}
+                                </small>
+                              </span>
+                              <button
+                                disabled={exists || m.height < 0.5 || design.mounts.length >= 100}
+                                onClick={() =>
+                                  edit(
+                                    { ...design, mounts: [...design.mounts, m] },
+                                    "Add linked screw post",
+                                  )
+                                }
+                              >
+                                {exists ? "Post added" : "Add post"}
+                              </button>
+                            </div>
+                          );
+                        })}
+                        <details>
+                          <summary>All drill dimensions</summary>
+                          <div className="fd-case-hole-list">
+                            {b.features.holes.map((h, i) => (
+                              <p key={h.id ?? i}>
+                                {h.ref || "Edge.Cuts"} ·{" "}
+                                {h.shape === "slot"
+                                  ? `${h.drillWidthMm} × ${h.drillHeightMm} mm slot`
+                                  : `Ø${h.diameterMm} mm`}{" "}
+                                · {h.purpose ?? "review"} · PCB X {h.x}, Y {h.y}
+                              </p>
+                            ))}
+                          </div>
+                        </details>
+                      </div>
+                    ))}
+                    <button
+                      disabled={!design.mounts.length}
+                      onClick={() =>
+                        edit(
+                          alignEnclosureMounts(
+                            linkEnclosureMounts(design, mountingBoards()),
+                            mountingBoards(),
+                          ),
+                          "Link and align screw posts",
+                        )
+                      }
+                    >
+                      Link & align posts to PCB holes
+                    </button>
                     {design.mounts.map((m, i) => (
-                      <div className="fd-case-entry" key={i}>
-                        <strong>Mount {i + 1}</strong>
+                      <details className="fd-case-entry" key={i}>
+                        <summary>
+                          Mount {i + 1} · Ø {m.diameter} mm bore
+                        </summary>
+                        {m.boardPath && (
+                          <small>
+                            Linked to {enclosureFileLabel(m.boardPath)} · follows board placement
+                          </small>
+                        )}
                         <div className="fd-case-grid">
                           {(["x", "y", "diameter", "outer", "height"] as const).map((k) => (
                             <NumberField
                               key={k}
-                              label={`Mount ${i + 1} ${{ x: "X", y: "Y", diameter: "hole diameter", outer: "post diameter", height: "height" }[k]}`}
+                              label={`Mount ${i + 1} ${{ x: "X", y: "Y", diameter: "bore diameter", outer: "post diameter", height: "height" }[k]}`}
                               value={m[k]}
                               min={k === "x" || k === "y" ? -10000 : k === "outer" ? 1 : 0.5}
                               max={
@@ -1173,6 +1304,86 @@ export function EnclosureDesigner({
                             />
                           ))}
                         </div>
+                        <div className="fd-case-grid">
+                          <NumberField
+                            label={`Mount ${i + 1} screw head diameter`}
+                            value={m.headDiameter ?? 0}
+                            min={0.5}
+                            max={40}
+                            onChange={(v) =>
+                              edit(
+                                {
+                                  ...design,
+                                  mounts: design.mounts.map((p, j) =>
+                                    j === i ? { ...p, headDiameter: v } : p,
+                                  ),
+                                },
+                                "Set screw head diameter",
+                              )
+                            }
+                          />
+                          <NumberField
+                            label={`Mount ${i + 1} screw head height`}
+                            value={m.headHeight ?? 0}
+                            min={0.1}
+                            max={20}
+                            onChange={(v) =>
+                              edit(
+                                {
+                                  ...design,
+                                  mounts: design.mounts.map((p, j) =>
+                                    j === i ? { ...p, headHeight: v } : p,
+                                  ),
+                                },
+                                "Set screw head height",
+                              )
+                            }
+                          />
+                          <NumberField
+                            label={`Mount ${i + 1} screw shaft diameter`}
+                            value={m.screwDiameter ?? 0}
+                            min={0.5}
+                            max={20}
+                            onChange={(v) =>
+                              edit(
+                                {
+                                  ...design,
+                                  mounts: design.mounts.map((p, j) =>
+                                    j === i ? { ...p, screwDiameter: v } : p,
+                                  ),
+                                },
+                                "Set screw shaft diameter",
+                              )
+                            }
+                          />
+                          <NumberField
+                            label={`Mount ${i + 1} screw length below head`}
+                            value={m.screwLength ?? 0}
+                            min={0.5}
+                            max={100}
+                            onChange={(v) =>
+                              edit(
+                                {
+                                  ...design,
+                                  mounts: design.mounts.map((p, j) =>
+                                    j === i ? { ...p, screwLength: v } : p,
+                                  ),
+                                },
+                                "Set screw length",
+                              )
+                            }
+                          />
+                        </div>
+                        {(!m.headDiameter ||
+                          !m.headHeight ||
+                          !m.screwDiameter ||
+                          !m.screwLength) && (
+                          <small>
+                            Enter measured screw/washer dimensions to check fit. Zero means not yet
+                            specified. Thread engagement and print tolerances still need physical
+                            verification.
+                          </small>
+                        )}
                         <button
                           onClick={() =>
                             edit({ ...design, mounts: design.mounts.filter((_, j) => j !== i) })
@@ -1180,7 +1391,7 @@ export function EnclosureDesigner({
                         >
                           Remove mount
                         </button>
-                      </div>
+                      </details>
                     ))}
                     <button
                       onClick={() =>

@@ -63,6 +63,12 @@ export const MechanicalDesignSchema = z
             diameter: z.number().min(0.5).max(20),
             outer: z.number().min(1).max(40),
             height: z.number().min(0.5).max(100),
+            boardPath: path.optional(),
+            holeId: z.string().min(1).max(500).optional(),
+            headDiameter: z.number().min(0.5).max(40).optional(),
+            headHeight: z.number().min(0.1).max(20).optional(),
+            screwDiameter: z.number().min(0.5).max(20).optional(),
+            screwLength: z.number().min(0.5).max(100).optional(),
           })
           .refine((m) => m.outer > m.diameter, "Mount diameter must leave a wall around the hole"),
       )

@@ -31,6 +31,7 @@ export type SceneModel = {
   volume?: { x: number; y: number; z: number; width: number; depth: number; height: number };
   selectable?: boolean;
   enclosure?: boolean;
+  post?: { diameter: number; outer: number; height: number };
 };
 export type SceneMode = "orbit" | "translate" | "rotate" | "measure";
 type Callbacks = {
@@ -89,6 +90,7 @@ export class MechanicalScene {
   >();
   private measurement: T.Group | null = null;
   private fitOverlay: T.Group | null = null;
+  private holeMarkers: T.Group | null = null;
   private spaceOutline: T.LineSegments | null = null;
   private point: T.Vector3 | null = null;
   private pointerStart = new T.Vector2();
@@ -381,6 +383,7 @@ export class MechanicalScene {
         if (
           existing?.source.data === source.data &&
           existing?.source.board === source.board &&
+          JSON.stringify(existing?.source.post) === JSON.stringify(source.post) &&
           JSON.stringify(existing?.source.volume) === JSON.stringify(source.volume) &&
           existing?.source.origin?.join() === source.origin?.join()
         )
@@ -526,6 +529,19 @@ export class MechanicalScene {
       );
       edges.position.copy(mesh.position);
       group.add(mesh, edges);
+    } else if (source.post) {
+      const p = source.post;
+      const shape = new T.Shape();
+      shape.absarc(0, 0, p.outer / 2, 0, Math.PI * 2, false);
+      const hole = new T.Path();
+      hole.absarc(0, 0, p.diameter / 2, 0, Math.PI * 2, true);
+      shape.holes.push(hole);
+      group.add(
+        new T.Mesh(
+          new T.ExtrudeGeometry(shape, { depth: p.height, bevelEnabled: false, curveSegments: 48 }),
+          new T.MeshStandardMaterial({ color: 0xc5c9c3, roughness: 0.6 }),
+        ),
+      );
     } else if (source.board) {
       const b = source.board,
         o = b.outline,
@@ -781,6 +797,31 @@ export class MechanicalScene {
     }
     if (!box.isEmpty()) this.fitBox(box.expandByScalar(3));
   }
+  setMountingHoles(
+    holes: Array<{ x: number; y: number; z: number; diameter: number; linked: boolean }>,
+  ) {
+    if (this.holeMarkers) {
+      this.scene.remove(this.holeMarkers);
+      disposeObject(this.holeMarkers);
+    }
+    this.holeMarkers = new T.Group();
+    for (const hole of holes) {
+      const ring = new T.Mesh(
+        new T.RingGeometry(hole.diameter / 2, hole.diameter / 2 + 0.45, 48),
+        new T.MeshBasicMaterial({
+          color: hole.linked ? 0xaddb75 : 0xe4b76e,
+          side: T.DoubleSide,
+          depthTest: false,
+          depthWrite: false,
+        }),
+      );
+      ring.position.set(hole.x, hole.y, hole.z);
+      ring.renderOrder = 21;
+      this.holeMarkers.add(ring);
+    }
+    this.scene.add(this.holeMarkers);
+    this.render();
+  }
   bounds(id: string) {
     const m = this.models.get(id);
     if (!m) return null;
@@ -841,6 +882,7 @@ export class MechanicalScene {
     this.gizmo.dispose();
     this.clearMeasure();
     if (this.fitOverlay) disposeObject(this.fitOverlay);
+    if (this.holeMarkers) disposeObject(this.holeMarkers);
     if (this.spaceOutline) disposeObject(this.spaceOutline);
     this.scene.traverse((o) => {
       if (o instanceof T.Mesh || o instanceof T.LineSegments) o.geometry.dispose();

@@ -4,6 +4,56 @@ import { Icon } from "../../components/Icon";
 
 type Destination = "Start" | "Space" | "PCB";
 const guidance: Record<string, { title: string; destination: Destination; action: string }> = {
+  "mount-support": {
+    title: "Post does not support the PCB",
+    destination: "Space",
+    action: "Align screw posts",
+  },
+  "mount-bearing": {
+    title: "Not enough support around the hole",
+    destination: "Space",
+    action: "Widen the post",
+  },
+  "mount-wall": {
+    title: "Screw post wall is too thin",
+    destination: "Space",
+    action: "Adjust screw posts",
+  },
+  "mount-overlap": {
+    title: "Screw posts overlap",
+    destination: "Space",
+    action: "Review screw posts",
+  },
+  "screw-head-unknown": {
+    title: "Add your screw dimensions",
+    destination: "Space",
+    action: "Set screw dimensions",
+  },
+  "screw-head-clearance": {
+    title: "Screw head needs more room",
+    destination: "Space",
+    action: "Review screw clearance",
+  },
+  "screw-head-size": {
+    title: "Screw head is smaller than the hole",
+    destination: "Space",
+    action: "Check screw dimensions",
+  },
+  "mount-none": {
+    title: "Choose how to secure the board",
+    destination: "Space",
+    action: "Review PCB holes",
+  },
+  "screw-shaft": {
+    title: "Screw is wider than the PCB hole",
+    destination: "Space",
+    action: "Check screw dimensions",
+  },
+  "screw-length": {
+    title: "Screw length does not fit the post",
+    destination: "Space",
+    action: "Adjust screw or post height",
+  },
   "shell-surface": {
     title: "Possible case interference",
     destination: "PCB",

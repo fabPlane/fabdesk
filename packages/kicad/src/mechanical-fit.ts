@@ -126,12 +126,22 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
           );
       if (boxesOverlap(post, volumes[0]!))
         add("mount-height", `${label}: mounting point intersects the PCB.`, "error", [post]);
+      // A linked post only needs a matching hole in its own PCB. Physical collisions
+      // with every other board/part above are still checked independently.
+      if (m.boardPath && m.boardPath !== label) continue;
       const outline = bounds(b, b.features.outline);
       if (m.x < outline.minX || m.x > outline.maxX || m.y < outline.minY || m.y > outline.maxY)
         continue;
       const hole = b.features.holes.find((h) => {
         const p = boardPoint(b, h.x, h.y);
-        return Math.hypot(p.x - m.x, p.y - m.y) < 0.15 && h.diameterMm + eps >= m.diameter;
+        return (
+          h.shape !== "slot" &&
+          h.purpose !== "component" &&
+          (!m.boardPath || m.boardPath === label) &&
+          (!m.holeId || h.id === m.holeId) &&
+          Math.hypot(p.x - m.x, p.y - m.y) < 0.05 &&
+          h.diameterMm + eps >= m.diameter
+        );
       });
       if (!hole)
         add(
@@ -140,6 +150,94 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
           "error",
           [mountRegion(m)],
         );
+      if (hole) {
+        if (m.screwDiameter && m.screwDiameter > hole.diameterMm)
+          add("screw-shaft", `${label}: the screw shaft is wider than the PCB hole.`, "error", [
+            post,
+          ]);
+        if (
+          m.screwLength &&
+          (m.screwLength <= b.features.thicknessMm ||
+            m.screwLength > b.features.thicknessMm + m.height)
+        )
+          add(
+            "screw-length",
+            `${label}: the screw must reach below the PCB without extending past the blind post bore into the floor. Length is measured below the head.`,
+            "error",
+            [post],
+          );
+        if (Math.abs(s.floor + m.height - b.placement.z) > 0.05)
+          add(
+            "mount-support",
+            `${label}: post does not meet the PCB underside. Align its height to support the board.`,
+            "error",
+            [post],
+          );
+        if (m.outer <= hole.diameterMm + 1)
+          add(
+            "mount-bearing",
+            `${label}: the post needs more supporting material around the PCB hole.`,
+            "error",
+            [post],
+          );
+        if (!m.headDiameter || !m.headHeight || !m.screwDiameter || !m.screwLength) {
+          if (
+            !issues.some(
+              (i) => i.code === "screw-head-unknown" && i.message.startsWith(`${label}:`),
+            )
+          )
+            add(
+              "screw-head-unknown",
+              `${label}: enter the actual screw shaft, length and head dimensions for its mounting posts.`,
+              "review",
+              [post],
+            );
+        }
+        if (m.headDiameter && m.headHeight) {
+          const head: MechanicalBox = {
+            name: "Screw head",
+            x: m.x - m.headDiameter / 2,
+            y: m.y - m.headDiameter / 2,
+            z: b.placement.z + b.features.thicknessMm,
+            width: m.headDiameter,
+            depth: m.headDiameter,
+            height: m.headHeight,
+          };
+          if (m.headDiameter <= hole.diameterMm)
+            add(
+              "screw-head-size",
+              `${label}: the screw head could pass through the PCB hole. Use the actual head/washer diameter.`,
+              "error",
+              [head],
+            );
+          if (
+            head.z + head.height + c > s.floor + s.height ||
+            head.x < s.x + c ||
+            head.y < s.y + c ||
+            head.x + head.width > s.x + s.width - c ||
+            head.y + head.depth > s.y + s.depth - c
+          )
+            add(
+              "screw-head-clearance",
+              `${label}: screw head is too close to the lid or walls.`,
+              "error",
+              [head],
+            );
+          for (const other of [
+            ...all.flatMap((entry) =>
+              entry.volumes.filter((v) => entry.b !== b || v.name !== "PCB"),
+            ),
+            ...d.obstacles,
+          ])
+            if (boxesOverlap(head, other, c))
+              add(
+                "screw-head-clearance",
+                `${label}: screw head overlaps or is too close to ${other.name}.`,
+                "error",
+                [head, other],
+              );
+        }
+      }
     }
     for (const connector of b.features.connectors) {
       const envelope = bounds(b, connector.bounds);
@@ -220,7 +318,50 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
         ],
       );
   }
-  for (const m of d.mounts)
+  for (const [i, m] of d.mounts.entries()) {
+    if (
+      m.boardPath &&
+      !boards.some(
+        (b) => b.placement.path === m.boardPath && b.features.holes.some((h) => h.id === m.holeId),
+      )
+    )
+      add(
+        "mount-hole",
+        "A linked PCB hole is missing. Review or remove its mounting post.",
+        "error",
+        [mountRegion(m)],
+      );
+    if (m.boardPath) {
+      const linkedBoard = boards.find((b) => b.placement.path === m.boardPath);
+      const linkedHole = linkedBoard?.features.holes.find((h) => h.id === m.holeId);
+      if (linkedBoard && linkedHole) {
+        const p = boardPoint(linkedBoard, linkedHole.x, linkedHole.y);
+        if (
+          linkedHole.shape === "slot" ||
+          linkedHole.purpose === "component" ||
+          Math.hypot(p.x - m.x, p.y - m.y) >= 0.05
+        )
+          add(
+            "mount-hole",
+            `${m.boardPath}: linked post is not aligned to a round mounting hole. Align or remove it.`,
+            "error",
+            [mountRegion(m)],
+          );
+      }
+    }
+    if (m.outer - m.diameter < 2 - eps)
+      add(
+        "mount-wall",
+        "A mounting post has less than 1 mm of material around its bore.",
+        "error",
+        [mountRegion(m)],
+      );
+    for (const other of d.mounts.slice(i + 1))
+      if (Math.hypot(m.x - other.x, m.y - other.y) < (m.outer + other.outer) / 2 + c)
+        add("mount-overlap", "Mounting posts overlap or are too close together.", "error", [
+          mountRegion(m),
+          mountRegion(other),
+        ]);
     if (
       m.x - m.outer / 2 < s.x ||
       m.x + m.outer / 2 > s.x + s.width ||
@@ -230,6 +371,13 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
       add("mount-bounds", "A mounting point extends outside the interior.", "error", [
         mountRegion(m),
       ]);
+  }
+  if (boards.length && !d.mounts.length)
+    add(
+      "mount-none",
+      "No screw posts selected. Review the detected PCB holes or choose another way to retain the board.",
+      "review",
+    );
   add(
     "coverage",
     "Checks use PCB outlines, component bounding boxes and estimated heights. Review actual component heights, cables, fasteners and manufacturing tolerances.",

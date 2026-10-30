@@ -107,3 +107,19 @@ The model card downloads binary PCB STL from the same geometry, with transforms 
 Validation: nine focused tests pass for coverage, source revision guards, request reuse, coordinates and STL units/winding. Live KiCad 10.0.5 checks cover a real CM5 board (12/15 component models), L-shaped and circular fixtures, and a linked-model fixture with bottom-side components. Adding a missing model and refreshing changes coverage from 9/13 to 10/13 without changing PCB bytes. Live PCB STL downloads preserve 65 × 32 mm CM5 bounds and the linked fixture's Z range −1.215 to 6.695 mm. Enclosure preview remains usable, and three tested panel sizes have no horizontal overflow or hidden footer. The broader four-package run has 948 pass, 2 skip and 15 failures; all failure names match the prior audit. This is not a green full-repository test result or fabrication certification.
 
 The interface uses [progressive disclosure](https://www.nngroup.com/articles/progressive-disclosure/), [visible system status](https://www.nngroup.com/articles/visibility-system-status/) and [recognition rather than recall](https://www.nngroup.com/articles/recognition-and-recall/): a short task sequence, visible states and secondary controls shown when needed.
+
+## PCB holes and mounting hardware — 30 October
+
+Space → **PCB holes & screw posts** lists measured plated/non-plated drills and slots. Round mounting holes offer a post action; connector/pin holes and slots are excluded from automatic posts. Unclassified circular cutouts require a deliberate selection. Missing drill dimensions never produce an invented mounting hole, and routing vias are not listed. DNP footprints still contribute their physical drills.
+
+Linked posts follow their PCB's position, rotation and floor height. Green/amber rings show whether a post is aligned to a candidate hole. Existing posts can be explicitly linked when a unique measured hole matches. Each post expands to reveal bore, support and actual screw dimensions. Bare mounting-hole/fiducial footprints without a component model no longer count as missing component geometry.
+
+Fit review blocks shifted/missing holes, oversized bores or shafts, unsupported boards, thin/overlapping posts, screws reaching the floor, and screw-head conflicts with components, other boards, obstacles, walls or lid. Missing screw measurements remain a visible review item. Bores are **unthreaded**: select a suitable pilot/insert diameter and verify threading, engagement and manufacturing tolerances physically. The generator does not infer screw standards from hole size or certify a perfect fit.
+
+Validation: **73 focused tests / 387 assertions pass**; all five changed packages typecheck; the desktop build passes with zero source maps. A native KiCad 10.0.5 Excellon export independently confirms a rotated fixture's 3.2 mm hole at (13, 8), 2.2 mm hole at (40, 24), and 2 × 4 mm slot. Copper-pad offset does not move the drill centre. Live UI rotation/translation updates both linked posts exactly; two Undo operations restore the original positions. Three panel sizes have no horizontal overflow or hidden footer.
+
+Live backend checks reject seven invalid mounting configurations at export. A manually arranged **six-PCB fixture with twelve posts** produces one shared enclosure and a coordinated ZIP containing all six PCB files. This is a synthetic test, not the actual VAIO assembly or automatic placement optimization. The broader five-package run has **1,043 pass / 2 skip / 14 fail**; every failure name also appears in the earlier audit. The full suite is not green.
+
+![Measured holes and linked posts](screenshots/mechanical-workspace/34-pcb-mounting-holes.png)
+
+![Six-board manual test enclosure](screenshots/mechanical-workspace/35-six-board-enclosure.png)
