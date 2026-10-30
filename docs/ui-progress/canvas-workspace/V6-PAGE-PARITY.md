@@ -1,5 +1,18 @@
 # v6 page-by-page visual review
 
+## Native implementation resume — 2026-10-30 04:04 UTC / 11:04 Bangkok
+
+Code aa3bfbc; continuous run active. User unlocked the Mac03:25UTC. Actual native captures08–24 now cover real Library multiselect/filter/focus/ZIP, image/GLB/GIF/unsent-context previews, render-view recovery, compact source export, shared Right-instance return, central missing-preview action and source-B candidate review/Apply/PCB. No full-page visual acceptance claim yet.
+
+- [x] Native Library2selection+5filteredSelectall+Escape+ZIPbyteexact; GLB/Image/GIF previews and captured unsent Ask context.
+- [x] Actual member Gerber export with3native/declarationfilespreserved; selectedsharedRightinstance retained through Export and Routing.
+- [x] Native candidateApplytoisolatedsourceBexactSHA, other3nativefilespreserved; postApplydrawingcurrent. Routingremainspartial2nets/3connections.
+- [x] Fixedchat-onlyprojectbrowseraccess, centeredmissing-previewaction, source-identifiedroutingreview and visibletealcopperhighlightinlightmode. AffectedUI243/960/typesPASS; renderer19/63/client+UItypesPASS.
+- [ ] RemainingnativeParts/BOM/hardware/Shopping,recovery/import,Changes/comments/edit,VAIOandcompact/v6comparisons; exactqueueupdatedlocally.
+- [ ] Finalintegratedchecks/diff/PRhandoffandonefinalnormalpush; no merge/deploy. Existingfullsequentialcheckpoint2266/36skip/0fail,scripts94pass remainshistoricalbeforetheseUIchanges.
+
+MechanicalPR398excluded/last; PR393integrationboundary; ArtApply/polishdeferred. Existingoriginals/screenshots/failuresretained; optionalnewliveAgentsendrejectedbeforeexecution,noindirectretry. App43/taskbridge34942; lease29563until04:17:17UTC,renewnear04:07; automationPAUSED. Earliercheckpointsbelowhistorical.
+
 ## Active implementation resume checklist — 2026-10-29 19:52 UTC / October 30 02:52 Bangkok
 
 Code c642494; continuous run active, milestones local and final-one-push permission retained. New native-file attachment cards avoid invalid image previews. Outputs/Routing/3D source tasks preserve a selected shared physical board instance while its ownership/declaration still match. Regression checks cover stale/cross-project/missing/different-source selections.
