@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { CoreHttpError, savedOutputs, editableSketchPaths, projectSketchImagePaths, useBoardSources, useProject, useProjectOrder, usePcbPreviewRevision, useBoardModelRevision, useEnclosureSourceRevision, usePcbCheckRevision, useVideoInputRevision, videoInputsNeedReview } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { ProjectImage } from "../chat/ProjectImage";
-import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
+import { Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui";
 import { AssemblyOverview } from "./AssemblyOverview";
 import { Icon } from "../components/Icon";
 import { WorkspaceMenu } from "./WorkspaceMenu";
@@ -27,6 +27,7 @@ function SingleBoardOverview() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const selectionTrigger = useRef<HTMLButtonElement>(null);
   const [chosenReference, setChosenReference] = useState<string | null>(null);
+  const [readinessOpen, setReadinessOpen] = useState(false);
   const files = project.data?.files ?? [], has = (path: string) => files.some(file => file.path === path);
   const pcbMissing = !has("board.kicad_pcb");
   const pcbRevision = usePcbPreviewRevision(projectId, has("renders/pcb.svg"));
@@ -112,7 +113,22 @@ function SingleBoardOverview() {
     <nav className="fd-overview-facts" aria-label="Project resources">
       <button onClick={() => ui().setBoardTab("files")}><Icon name="folder" width={18} height={18} /><strong>{files.length}</strong><span>project files</span></button>
       <button onClick={() => ui().setBoardTab("renders")}><Icon name="export" width={18} height={18} /><strong>{outputs.length}</strong><span>saved outputs</span></button>
-      <button onClick={() => ui().setBoardTab("drc")}><Icon name={issues.length ? "warning" : "checklist"} width={18} height={18} /><strong>{order.isError ? "Unavailable" : issues.length ? "Needs review" : "Open checks"}</strong><span>{issues.length ? `${issues.length} readiness notes` : "DRC / ERC & readiness"}</span></button>
+      <button onClick={() => setReadinessOpen(true)}><Icon name={issues.length ? "warning" : "checklist"} width={18} height={18} /><strong>{order.isError ? "Unavailable" : issues.length ? "Needs review" : "Review readiness"}</strong><span>{order.isFetching ? "Checking readiness…" : issues.length ? `${issues.length} readiness notes` : "DRC / ERC & readiness"}</span></button>
     </nav>
+    <Dialog open={readinessOpen} onClose={() => setReadinessOpen(false)} title="Readiness notes">
+      <p className="mb-4 text-sm text-muted">{project.data.name} · Main board. These notes describe preparation still needed; they are not all reported design errors.</p>
+      {order.isFetching ? <p role="status"><Spinner /> Checking current readiness…</p> : order.isError ? <LoadError title="Could not load readiness notes" onRetry={() => void order.refetch()} /> : <>
+        <ol className="space-y-3" aria-label="Current readiness notes">{issues.map((note, index) => {
+          const check = /\b(DRC|ERC)\b/i.test(note), exports = /gerbers?|fabrication zip|fab house/i.test(note);
+          const action = /\bDRC\b/i.test(note) ? "Review PCB checks" : check ? "Review schematic checks" : exports ? "Open export files" : "Review source files";
+          return <li key={`${index}:${note}`} className="rounded-xl border border-border p-4">
+            <div className="mb-2 flex items-start gap-2"><Icon name="warning" className="mt-0.5 shrink-0 text-warning" /><p className="text-sm leading-6">{note}</p></div>
+            <Button size="sm" onClick={() => { setReadinessOpen(false); if (exports && !check) { ui().setWorkspaceArea("outputs"); ui().setWorkspaceTab("files"); } else ui().setBoardTab(check ? "drc" : "files"); }}>{action}</Button>
+          </li>;
+        })}</ol>
+        {issues.length === 0 && <p className="text-sm">No current readiness notes. Review saved checks and source coverage before fabrication; this is not a compatibility or fit certification.</p>}
+        <div className="mt-4 flex flex-wrap justify-end gap-2"><Button variant="ghost" onClick={() => { askAboutSurface({ projectId, label: "Overview / Readiness notes", priority: 50, details: JSON.stringify({ notes: issues, checks: order.data?.checks }) }, "Explain these readiness notes in order of what I should do next. Distinguish checks not run from reported findings. Inspect saved sources before proposing changes."); setReadinessOpen(false); }}><Icon name="sparkles" />Ask about these notes</Button>{issues.length === 0 && <Button onClick={() => { setReadinessOpen(false); ui().setBoardTab("drc"); }}>Open checks</Button>}</div>
+      </>}
+    </Dialog>
   </div>;
 }

@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCore } from "@fabdesk/client-core";
+import { useCore, sortImportedBoards, importedBoardLabel, isBackupBoard, type ImportedBoardSort } from "@fabdesk/client-core";
 import { parsePublicGitHubUrl } from "@fabdesk/protocol";
 import { Button, Dialog, Input } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -20,6 +20,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<{ id: string; boards: string[] } | null>(null);
+  const [sort, setSort] = useState<ImportedBoardSort>("version");
   const abort = useRef<AbortController | null>(null);
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(client.baseUrl).hostname);
   const canPick = local && !!host.pickDirectory;
@@ -84,9 +85,14 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
     </div>}
     {result ? <div className="space-y-4">
       {result.boards.length === 0 ? <p className="text-sm leading-6 text-muted">Project imported. No KiCad board was found. You can add one later.</p> : <>
-        <p className="text-sm text-muted">Choose the board to open in fabPlane:</p>
-        <div className="max-h-48 space-y-2 overflow-y-auto" role="group" aria-label="KiCad boards">
-          {result.boards.map((path) => <Button key={path} type="button" disabled={pending} className="w-full justify-start break-all text-left" onClick={() => void adopt(path)}>{path}</Button>)}
+        <p className="text-sm text-muted">Choose the board to open. Other versions stay in Files.</p>
+        <label className="flex items-center justify-between gap-2 text-sm">Sort boards<select aria-label="Sort imported boards" value={sort} disabled={pending} onChange={event => setSort(event.target.value as ImportedBoardSort)} className="rounded-md border border-border bg-panel px-2 py-2"><option value="version">Version · newest first</option><option value="path">Path · A–Z</option></select></label>
+        <div className="max-h-[45vh] space-y-2 overflow-y-auto" role="group" aria-label="KiCad boards">
+          {[false, true].map(backup => {
+            const paths = sortImportedBoards(result.boards.filter(path => isBackupBoard(path) === backup), sort);
+            const choices = paths.map(path => <Button key={path} type="button" disabled={pending} className="!h-auto min-h-12 w-full !whitespace-normal !items-start !flex-col !gap-1 !py-3 text-left" title={path} onClick={() => void adopt(path)}><strong>{importedBoardLabel(path)}</strong><span className="min-w-0 w-full break-all text-xs font-normal leading-5 text-muted">{path}</span></Button>);
+            return backup ? paths.length > 0 && <details key="backups"><summary className="cursor-pointer py-3 text-sm text-muted">Backups & archives · {paths.length}</summary><div className="space-y-2">{choices}</div></details> : <div key="boards" className="space-y-2">{choices}</div>;
+          })}
         </div>
       </>}
       {pending && <p role="status" className="text-sm text-muted">Opening board…</p>}

@@ -186,6 +186,7 @@ export * from "./board-model-revision";
 export { useBoardModelRevision } from "./queries";
 
 export * from "./output-library";
+export * from "./imported-boards";
 
 export * from "./assembly-scene";
 export * from "./assembly-map-layout";
