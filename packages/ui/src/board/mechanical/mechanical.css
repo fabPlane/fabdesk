@@ -2195,3 +2195,184 @@
 .fd-layout-choice > button {
   width: 100%;
 }
+.fd-case-intro h3 {
+  margin-top: 0;
+}
+.fd-case-fields .fd-case-intro h3 {
+  margin: 18px 0 10px;
+}
+.fd-case-board-picker .fd-case-intro h3 {
+  margin-top: 0;
+}
+.fd-case-panel header .fd-case-save-draft {
+  font-size: 11px;
+  padding: 6px 8px;
+  white-space: nowrap;
+  background: transparent;
+}
+.fd-case-picker-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0 10px;
+  font-size: 12px;
+}
+.fd-case-picker-toolbar button {
+  background: transparent;
+  border: 0;
+  color: var(--fd-muted);
+}
+.fd-case-board-list {
+  display: grid;
+  gap: 8px;
+  overflow: visible;
+  scrollbar-width: thin;
+  margin: 10px 0 16px;
+}
+.fd-case-fields label.fd-case-board-option {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  margin: 0;
+  border: 1px solid var(--fd-border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.fd-case-board-option:has(input:checked) {
+  border-color: var(--fd-accent, #a9d76f);
+  background: color-mix(in srgb, var(--fd-accent, #a9d76f) 7%, transparent);
+}
+.fd-case-board-option > svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--fd-muted);
+}
+.fd-case-board-option > input {
+  flex: 0 0 auto;
+  accent-color: var(--fd-accent, #a9d76f);
+}
+.fd-case-board-option > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.fd-case-board-option strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.fd-case-board-option small {
+  color: var(--fd-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+}
+.fd-case-simple-options {
+  display: grid;
+  gap: 8px;
+}
+.fd-case-fields .fd-case-simple-options > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  gap: 12px;
+  padding: 10px 12px;
+  min-height: 54px;
+  margin: 0;
+  border-radius: 11px;
+  background: var(--fd-bg);
+}
+.fd-case-fields .fd-case-simple-options > button[aria-pressed="true"] {
+  color: var(--fd-fg);
+  border-color: var(--fd-accent, #a9d76f);
+  background: color-mix(in srgb, var(--fd-accent, #a9d76f) 8%, var(--fd-bg));
+}
+.fd-case-simple-options strong,
+.fd-case-simple-options small {
+  display: block;
+}
+.fd-case-simple-options strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+.fd-case-simple-options small {
+  font-size: 11px;
+  line-height: 1.5;
+  margin-top: 3px;
+  color: var(--fd-muted);
+}
+.fd-case-simple-options em {
+  font-size: 9px;
+  font-style: normal;
+  color: var(--fd-fg);
+  border-radius: 20px;
+  background: var(--fd-panel-2);
+  padding: 4px 7px;
+}
+.fd-case-option-dot {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--fd-border);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.fd-case-simple-options [aria-pressed="true"] .fd-case-option-dot {
+  background: var(--fd-accent, #a9d76f);
+  border: 3px solid var(--fd-panel);
+  box-shadow: 0 0 0 1px var(--fd-accent, #a9d76f);
+}
+.fd-case-fields > details.fd-case-advanced {
+  border: 1px solid var(--fd-border);
+  border-radius: 11px;
+  padding: 13px;
+  margin: 12px 0 0;
+}
+.fd-case-advanced > summary {
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.fd-case-model-disclosure {
+  font-size: 11px;
+  margin: 0 0 18px;
+  color: var(--fd-muted);
+}
+.fd-case-model-disclosure > summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+.fd-case-model-disclosure .fd-pcb-model-status {
+  margin-top: 10px;
+}
+.fd-case-review-notes > summary {
+  display: list-item;
+  font-weight: 650;
+}
+.fd-case-review-notes > summary span {
+  color: var(--fd-muted);
+  font-size: 11px;
+  margin-left: 8px;
+  font-weight: 400;
+}
+.fd-case-preview-tools {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.fd-case-fields .fd-case-preview-tools button {
+  flex: 1;
+  margin: 0;
+}
+.fd-case-fields .fd-case-preview-tools button[aria-pressed="true"] {
+  color: var(--fd-fg);
+  background: var(--fd-panel-2);
+  border-color: var(--fd-accent);
+}
+.fd-case-recheck {
+  color: var(--fd-muted);
+  font-size: 11px;
+}

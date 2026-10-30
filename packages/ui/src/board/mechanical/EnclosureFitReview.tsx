@@ -166,7 +166,7 @@ export function EnclosureFitReview({
   focusedIssue,
 }: {
   report: MechanicalFitReport;
-  onNavigate: (step: Destination) => void;
+  onNavigate: (step: Destination, code: string) => void;
   onShowIssue: (issue: MechanicalFitIssue) => void;
   focusedIssue: MechanicalFitIssue | null;
 }) {
@@ -221,7 +221,7 @@ export function EnclosureFitReview({
             <button
               type="button"
               className="fd-fit-link"
-              onClick={() => onNavigate(info.destination)}
+              onClick={() => onNavigate(info.destination, issue.code)}
             >
               {info.action}
               <Icon name="chevronRight" aria-hidden="true" />
@@ -238,11 +238,11 @@ export function EnclosureFitReview({
           <Icon name={blocked ? "warning" : "search"} aria-hidden="true" />
         </span>
         <div>
-          <strong>{blocked ? "Changes needed" : "Ready to inspect"}</strong>
+          <strong>{blocked ? "Let’s fix the fit" : "Preview checked"}</strong>
           <p>
             {blocked
-              ? "Resolve the blockers before applying."
-              : "Review the fit before you make the case."}
+              ? "Fix the red items below before saving files."
+              : "Look around the case, then check the notes before making it."}
           </p>
         </div>
       </div>
@@ -269,12 +269,19 @@ export function EnclosureFitReview({
         </div>
       )}
       {notes.length > 0 && (
-        <div className="fd-fit-group">
-          <h3>Take a closer look</h3>
+        <details className="fd-fit-group fd-case-review-notes">
+          <summary>
+            Before you make it <span>{notes.length} checks</span>
+          </summary>
+          <p>
+            Check real plugs, mounting and clearances. These notes are not a guarantee of physical
+            fit.
+          </p>
           {notes.map(card)}
-        </div>
+        </details>
       )}
-      <div className="fd-fit-print-note">
+      <details className="fd-fit-print-note">
+        <summary>Printing checklist</summary>
         <div className="fd-fit-card-heading">
           <Icon name="checklist" aria-hidden="true" />
           <h4>Check before printing</h4>
@@ -293,7 +300,7 @@ export function EnclosureFitReview({
             holes; inspect the real shapes.
           </p>
         )}
-      </div>
+      </details>
       <details className="fd-fit-technical">
         <summary>Technical details</summary>
         <ul>

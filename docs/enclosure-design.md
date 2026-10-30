@@ -177,3 +177,23 @@ The VAIO collection still contains alternatives and adapters, excludes the main 
 ![Example plug envelopes and cable distance guide](screenshots/mechanical-workspace/40-assembly-access-guides.png)
 
 ![Native geometry catches insufficient cavity clearance](screenshots/mechanical-workspace/41-native-clearance-review.png)
+
+## Simple default workflow — 30 October
+
+The current interface replaces **Start / Space / PCB / Review** with **Boards / Case / Preview**. New generated cases need no number entry:
+
+- **Boards:** check the boards to include. Their dimensions come from the files. Search and selection counts replace the long file dropdown; generated export copies are excluded. Selection is limited to twenty boards. Removing a board also removes its linked posts, openings, port profiles and cable endpoints, with Undo available.
+- **Case:** choose New case, then Small case or More room, and click **Make preview**. The app arranges the boards, sizes the case, updates linked features, saves the draft and renders the preview. Saved designs initially use **Keep my layout** so opening a project does not rearrange prior work. The advanced comparison still offers the Ports together objective.
+- **Preview:** **See inside** and **Fit view** are directly available. Blocking errors remain expanded and disable saving design files; secondary checks and printing guidance are expandable. Clearance/overlap errors offer **Try a roomier layout**, which still respects locks and other constraints and can report that no solution was found. Save design files prepares the coordinated ZIP; Download files retrieves it.
+
+Dimensions, manual board movement, fixed parts, screws, port/cable settings and native PCB edits remain available under named disclosures. Imported cases still require their usable interior dimensions and confirmation; the app does not invent measurements or silently confirm them. Detailed-model limitations remain visible in the compact model-status disclosure. The presentation follows [progressive disclosure](https://www.nngroup.com/articles/progressive-disclosure/): keep the usual task small and reveal specialist options when needed. This has not been usability-tested with children.
+
+Validation: **434 affected-package tests pass** (207 client-core, 227 UI), both package typechecks pass, and the desktop production build passes with zero packaged source maps. Tests cover automatic sizing with native bounds, preserving imported-case confirmation, keeping existing layouts, source-file filtering, linked-setting removal and keeping blockers outside collapsed notes. Live first-use testing selected two unchanged VAIO-source boards and produced a **120 × 80 × 15 mm** case with three port openings, without entering numbers. Export manifest hashes and unchanged source bytes are verified. The existing eleven-board VAIO design also previews through the simplified flow.
+
+All three screens at 1240 × 900, 780 × 600 and 600 × 500 have zero visible numeric inputs on the default generated-case path, no horizontal overflow, and visible footer actions. Clearing selection disables the next action; Undo restores it. Existing-case mode exposes the three required dimensions and keeps preview disabled until its requirements are met. Broader suite failures documented above were not reclassified as resolved; exact collisions, manufacturing and physical fit remain unverified.
+
+![Choose boards](screenshots/mechanical-workspace/42-simple-board-selection.png)
+
+![Choose a case without a numeric form](screenshots/mechanical-workspace/43-simple-case-options.png)
+
+![Preview and inspect](screenshots/mechanical-workspace/44-simple-case-preview.png)

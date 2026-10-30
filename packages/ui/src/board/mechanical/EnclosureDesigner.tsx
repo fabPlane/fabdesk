@@ -11,6 +11,10 @@ import {
 import {
   useCoreClient,
   defaultEnclosureDesign,
+  enclosureSourceBoards,
+  selectEnclosureBoards,
+  prepareEnclosurePreview,
+  type EnclosureLayoutGoal,
   decodeMesh,
   mechanicalItem,
   enclosureErrorMessage,
@@ -40,6 +44,7 @@ import { MechanicalIcon } from "./MechanicalIcon";
 import { detailedBoardSource, usePcbModels } from "./usePcbModels";
 import { NumberField } from "./EnclosureNumberField";
 import { EnclosureLayoutPanel, type LayoutChoice } from "./EnclosureLayoutPanel";
+import { EnclosureBoardPicker } from "./EnclosureBoardPicker";
 import { PcbModelStatus } from "./PcbModelStatus";
 
 type Result = {
@@ -64,7 +69,8 @@ const unpack = (v: unknown) => {
   if (r.isError) throw new Error("The operation was rejected. Reload the project and try again.");
   return r.json ?? r.result?.json ?? {};
 };
-const steps = ["Start", "Space", "PCB", "Review"] as const;
+const steps = ["PCB", "Start", "Review"] as const;
+const stepLabels = { PCB: "Boards", Start: "Case", Review: "Preview" };
 type Step = (typeof steps)[number];
 /** Guided enclosure workflow; all preview coordinates are in the saved PCB frame, in mm. */
 export function EnclosureDesigner({
@@ -79,11 +85,18 @@ export function EnclosureDesigner({
   cadRuntime?: CadRuntimeState | null;
 }) {
   const client = useCoreClient();
+  const [layoutChoice, setLayoutChoice] = useState<EnclosureLayoutGoal | "keep">("compact");
+  const [caseDetails, setCaseDetails] = useState(false);
+  const [layoutDetails, setLayoutDetails] = useState(false);
+  const [manualPlacement, setManualPlacement] = useState(false);
+  const [customSize, setCustomSize] = useState(false);
+  const caseSettings = useRef<HTMLDetailsElement>(null);
+  const layoutSettings = useRef<HTMLDetailsElement>(null);
   const [layoutProposals, setLayoutProposals] = useState<LayoutChoice[] | null>(null);
   const [showPlugs, setShowPlugs] = useState(false);
   const [design, setDesign] = useState<MechanicalDesign | null>(null),
     [board, setBoard] = useState<EnclosureBoardSummary | null>(null);
-  const [step, setStep] = useState<Step>("Start"),
+  const [step, setStep] = useState<Step>("PCB"),
     [files, setFiles] = useState<string[]>([]);
   const [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
@@ -262,7 +275,7 @@ export function EnclosureDesigner({
   }
   useEffect(() => {
     scene.current?.setMountingHoles(
-      step === "Space" && design
+      step === "Start" && caseDetails && design
         ? mountingBoards().flatMap((b) =>
             mountingCandidates(b.features).map((hole) => {
               const m = mountAtHole(b, hole, design.space.floor);
@@ -277,13 +290,16 @@ export function EnclosureDesigner({
           )
         : [],
     );
-  }, [step, design, fitBoards, board, preview]);
+  }, [step, caseDetails, design, fitBoards, board, preview]);
   function selectBoard(path: string | null) {
     if (busy || pendingRecovery) return;
     setSelectedBoard(path);
     setPlacementMode(path ? "translate" : "orbit");
     setFocusedIssue(null);
-    if (path) setStep("PCB");
+    if (path) {
+      setStep("PCB");
+      setManualPlacement(true);
+    }
   }
   function changePlacement(next: MechanicalDesign["boards"][number]) {
     if (!design) return;
@@ -366,6 +382,7 @@ export function EnclosureDesigner({
   useEffect(() => {
     if (body.current) body.current.scrollTop = 0;
   }, [step, error]);
+  useEffect(() => setNotice(""), [step]);
   const [capabilities, setCapabilities] = useState({ pcb: false, cad: false });
   const [openLid, setOpenLid] = useState(true),
     [transparent, setTransparent] = useState(false);
@@ -456,6 +473,7 @@ export function EnclosureDesigner({
           "Local draft recovery is unavailable. Save to the project before closing this workspace.",
         );
       }
+      setLayoutChoice(r.design ? "keep" : "compact");
       setDesign(initial);
       setFiles(p.files.map((f) => f.path));
     });
@@ -649,6 +667,7 @@ export function EnclosureDesigner({
   }
   function space(key: keyof MechanicalDesign["space"], value: number) {
     if (design) {
+      setLayoutChoice("keep");
       const next = { ...design, confirmed: false, space: { ...design.space, [key]: value } };
       edit(
         key === "floor" ? alignEnclosureMounts(next, mountingBoards(next)) : next,
@@ -656,8 +675,8 @@ export function EnclosureDesigner({
       );
     }
   }
-  async function save() {
-    const parsed = MechanicalDesignSchema.parse(design);
+  async function save(next = design) {
+    const parsed = MechanicalDesignSchema.parse(next);
     const r = await call("save", { design: parsed, expectedDesignRevision: revision.current });
     if (!mounted.current) return;
     revision.current = r.designRevision ?? null;
@@ -696,9 +715,10 @@ export function EnclosureDesigner({
       setNotice("Enclosure copied into this project. Confirm its units and usable interior.");
     });
   }
-  async function showPreview() {
-    if (!design) return;
-    await save();
+  async function showPreview(next = design) {
+    if (!next) return;
+    const design = next;
+    await save(design);
     if (!mounted.current) return;
     const r = await call("preview", { design });
     if (!mounted.current) return;
@@ -743,8 +763,66 @@ export function EnclosureDesigner({
       });
     }
     setModelSources(models);
-    setNotice("Preview only. Apply when the dimensions and fit review look right.");
+    setNotice("");
+    setTransparent(true);
+    setShowSpace(false);
     setStep("Review");
+  }
+  async function makePreview(choice = layoutChoice) {
+    if (!design) return;
+    const checked = await call("check", { design });
+    if (!mounted.current) return;
+    setFitBoards(checked.boards);
+    const inputs = (checked.boards ?? []).map((b) => ({
+      ...b,
+      ...(pcbModels.models[b.placement.path]?.pcbRevision === b.features.pcbRevision &&
+      pcbModels.models[b.placement.path]?.bounds
+        ? { modelBounds: pcbModels.models[b.placement.path]!.bounds! }
+        : {}),
+    }));
+    const next = prepareEnclosurePreview(design, inputs, choice);
+    edit(next, "Create case preview");
+    await showPreview(next);
+  }
+  function navigateIssue(destination: "Start" | "Space" | "PCB", code: string) {
+    if (code === "no-board" || code === "board-geometry") {
+      setStep("PCB");
+      return;
+    }
+    if (["native-clearance", "outside-space", "board-collision"].includes(code)) {
+      setStep("Start");
+      return;
+    }
+    setStep("Start");
+    if (destination === "Space") {
+      setCaseDetails(true);
+      requestAnimationFrame(() => {
+        const root = caseSettings.current;
+        const target = [...(root?.querySelectorAll("summary") ?? [])].find((s) =>
+          s.textContent?.includes(
+            code.includes("opening")
+              ? "Connector openings"
+              : code === "obstacle"
+                ? "Obstacles"
+                : "PCB holes & screw posts",
+          ),
+        );
+        if (target?.parentElement instanceof HTMLDetailsElement) target.parentElement.open = true;
+        (target ?? root)?.scrollIntoView({ block: "start" });
+      });
+    } else if (destination === "PCB") {
+      setLayoutDetails(true);
+      requestAnimationFrame(() => {
+        const root = layoutSettings.current;
+        const target = [...(root?.querySelectorAll("summary") ?? [])].find((s) =>
+          s.textContent?.includes(
+            code.startsWith("cable") ? "Cable connections" : "Ports & plug access",
+          ),
+        );
+        if (target?.parentElement instanceof HTMLDetailsElement) target.parentElement.open = true;
+        (target ?? root)?.scrollIntoView({ block: "start" });
+      });
+    } else setCustomSize(true);
   }
   async function download(path: string) {
     const blob = await client.readFileBlob(projectId, path);
@@ -760,7 +838,7 @@ export function EnclosureDesigner({
     const r = await call("build", { design, expectedRevision: preview.revision });
     if (!mounted.current) return;
     setArchive(r.archive ?? null);
-    setNotice("Enclosure and PCB snapshot saved together. Ready to download.");
+    setNotice("Your case and board files are ready to download.");
   }
   async function applyEdit() {
     if (!design || !board || !editReview) return;
@@ -899,9 +977,19 @@ export function EnclosureDesigner({
         <header>
           <div>
             <h2>Enclosure</h2>
-            <p>Design a case around your boards</p>
+            <p>Choose boards. Make a case. Check the fit.</p>
           </div>
-          <small role="status">{dirty ? "Unsaved" : "Project settings"}</small>
+          {dirty ? (
+            <button
+              className="fd-case-save-draft"
+              disabled={actionsDisabled}
+              onClick={() => void run("Saving settings…", save)}
+            >
+              Save draft
+            </button>
+          ) : (
+            <small role="status">{revision.current ? "Saved" : "New case"}</small>
+          )}
         </header>
         <nav aria-label="Enclosure workflow">
           {steps.map((s) => (
@@ -911,12 +999,24 @@ export function EnclosureDesigner({
               disabled={!!busy}
               onClick={() => setStep(s)}
             >
-              {s}
+              {stepLabels[s]}
             </button>
           ))}
         </nav>
         <div className="fd-case-body" ref={body}>
-          {!!design?.boards.length && <PcbModelStatus {...pcbModels} />}
+          {!!design?.boards.length && (
+            <details className="fd-case-model-disclosure">
+              <summary>
+                {pcbModels.loading
+                  ? "Reading board shapes…"
+                  : pcbModels.error ||
+                      Object.values(pcbModels.models).some((m) => m.coverage.missing.length)
+                    ? "Some 3D parts need checking"
+                    : "3D details & board downloads"}
+              </summary>
+              <PcbModelStatus {...pcbModels} />
+            </details>
+          )}
           {pendingRecovery && (
             <div className="fd-case-recovery" role="status">
               <strong>Resume your unsaved work?</strong>
@@ -984,24 +1084,27 @@ export function EnclosureDesigner({
             <fieldset disabled={!!busy || !!pendingRecovery} className="fd-case-fields">
               {step === "Start" && (
                 <>
-                  <h3>What are you starting with?</h3>
-                  <p>
-                    Create a case around your boards, or make room inside an existing enclosure.
-                  </p>
+                  <h3>Choose your case</h3>
+                  <p>We can size a new case for you, or use one you already have.</p>
                   <div className="fd-case-choices">
                     <button
                       aria-pressed={design.mode === "generated"}
-                      onClick={() => edit({ ...design, mode: "generated", confirmed: false })}
+                      onClick={() => {
+                        if (design.mode !== "generated") {
+                          edit({ ...design, mode: "generated", confirmed: false });
+                          setLayoutChoice("compact");
+                        }
+                      }}
                     >
-                      <strong>New enclosure</strong>
-                      <small>Generate a base and lid</small>
+                      <strong>New case</strong>
+                      <small>Size automatically</small>
                     </button>
                     <button
                       aria-pressed={design.mode === "imported"}
                       onClick={() => edit({ ...design, mode: "imported", confirmed: false })}
                     >
                       <strong>Existing case</strong>
-                      <small>Keep the original; edit a copy</small>
+                      <small>Import a file</small>
                     </button>
                   </div>
                   {design.mode === "imported" && (
@@ -1088,40 +1191,136 @@ export function EnclosureDesigner({
                       )}
                     </>
                   )}
-                  <h3>Usable inside dimensions</h3>
-                  <p>Measure inside the walls. All dimensions are millimetres.</p>
-                  <div className="fd-case-grid">
-                    {field("width", "Inside width")}
-                    {field("depth", "Inside depth")}
-                    {field("height", "Inside height")}
-                  </div>
-                  <details>
-                    <summary>Wall thickness and origin</summary>
-                    <div className="fd-case-grid">
-                      {field("wall", "Wall thickness", 0.5)}
-                      {field("floor", "Floor thickness", 0.5)}
-                      {field("lid", "Lid thickness", 0.5)}
-                      {field("x", "Interior X", -10000)}
-                      {field("y", "Interior Y", -10000)}
-                    </div>
-                    <p>XY uses the PCB coordinate system. The floor starts at Z = 0.</p>
-                  </details>
-                  <label className="fd-case-check">
-                    <input
-                      type="checkbox"
-                      checked={design.confirmed}
-                      onChange={(e) => edit({ ...design, confirmed: e.target.checked })}
-                    />
-                    I have confirmed the units and interior dimensions
-                  </label>
+                  {design.mode === "generated" && (
+                    <>
+                      <div className="fd-case-intro">
+                        <h3>Layout</h3>
+                      </div>
+                      <div className="fd-case-simple-options" role="group" aria-label="Case layout">
+                        {(
+                          [
+                            ["compact", "Small case", "Use less space", "Recommended"],
+                            ["assembly", "More room", "Leave extra room between boards", ""],
+
+                            ["keep", "Keep my layout", "Use the current size and positions", ""],
+                          ] as const
+                        ).map(([value, title, hint, badge]) => (
+                          <button
+                            key={value}
+                            aria-pressed={layoutChoice === value}
+                            onClick={() => {
+                              setLayoutChoice(value);
+                              setPreview(null);
+                              setArchive(null);
+                            }}
+                          >
+                            <span>
+                              <strong>{title}</strong>
+                              <small>{hint}</small>
+                            </span>
+                            {badge ? (
+                              <em>{badge}</em>
+                            ) : (
+                              <span aria-hidden="true" className="fd-case-option-dot" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="fd-case-hint">
+                        {layoutChoice === "ports"
+                          ? "Ports grouped on fewer sides. Change this in Ports, cables & fixed boards."
+                          : layoutChoice === "keep"
+                            ? `Current inside size: ${design.space.width} × ${design.space.depth} × ${design.space.height} mm.`
+                            : "No measurements needed to start. Locks, fixed parts and custom openings are respected."}
+                      </p>
+                      <details
+                        open={customSize}
+                        onToggle={(e) => setCustomSize(e.currentTarget.open)}
+                        className="fd-case-advanced"
+                      >
+                        <summary>Set a size or wall thickness</summary>
+                        <p>Use a specific size instead of automatic sizing.</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLayoutChoice("keep");
+                            setPreview(null);
+                            setArchive(null);
+                          }}
+                          disabled={layoutChoice === "keep"}
+                        >
+                          Use these dimensions
+                        </button>
+                        <h3>Inside size</h3>
+                        <p>Change only what you need. Sizes are in millimetres.</p>
+                        <div className="fd-case-grid">
+                          {field("width", "Inside width")}
+                          {field("depth", "Inside depth")}
+                          {field("height", "Inside height")}
+                        </div>
+                        <details>
+                          <summary>Wall thickness and origin</summary>
+                          <div className="fd-case-grid">
+                            {field("wall", "Wall thickness", 0.5)}
+                            {field("floor", "Floor thickness", 0.5)}
+                            {field("lid", "Lid thickness", 0.5)}
+                            {field("x", "Interior X", -10000)}
+                            {field("y", "Interior Y", -10000)}
+                          </div>
+                          <p>XY uses the PCB coordinate system. The floor starts at Z = 0.</p>
+                        </details>
+                      </details>
+                    </>
+                  )}
+                  {design.mode === "imported" && (
+                    <>
+                      <h3>Inside size</h3>
+                      <p>
+                        For an existing case, measure the empty space inside. Sizes are in
+                        millimetres.
+                      </p>
+                      <div className="fd-case-grid">
+                        {field("width", "Inside width")}
+                        {field("depth", "Inside depth")}
+                        {field("height", "Inside height")}
+                      </div>
+                      <details>
+                        <summary>Wall thickness and origin</summary>
+                        <div className="fd-case-grid">
+                          {field("wall", "Wall thickness", 0.5)}
+                          {field("floor", "Floor thickness", 0.5)}
+                          {field("lid", "Lid thickness", 0.5)}
+                          {field("x", "Interior X", -10000)}
+                          {field("y", "Interior Y", -10000)}
+                        </div>
+                        <p>XY uses the PCB coordinate system. The floor starts at Z = 0.</p>
+                      </details>
+                      {design.mode === "imported" && (
+                        <label className="fd-case-check">
+                          <input
+                            type="checkbox"
+                            checked={design.confirmed}
+                            onChange={(e) => edit({ ...design, confirmed: e.target.checked })}
+                          />
+                          I checked these measurements against my case
+                        </label>
+                      )}
+                    </>
+                  )}
                 </>
               )}
-              {step === "Space" && (
-                <>
+              {step === "Start" && (
+                <details
+                  ref={caseSettings}
+                  className="fd-case-advanced"
+                  open={caseDetails}
+                  onToggle={(e) => setCaseDetails(e.currentTarget.open)}
+                >
+                  <summary>Fixed parts, screws & openings</summary>
                   <h3>Leave room for the real parts</h3>
                   <p>Add space occupied by batteries, hinges and other fixed parts.</p>
                   {field("clearance", "Minimum clearance", 0)}
-                  <details open={design.obstacles.length > 0}>
+                  <details>
                     <summary>Obstacles · {design.obstacles.length}</summary>
                     {design.obstacles.map((o, i) => (
                       <div className="fd-case-entry" key={i}>
@@ -1525,10 +1724,16 @@ export function EnclosureDesigner({
                       Add connector opening
                     </button>
                   </details>
-                </>
+                </details>
               )}
-              {step === "PCB" && (
-                <>
+              {step === "Start" && (
+                <details
+                  ref={layoutSettings}
+                  className="fd-case-advanced"
+                  open={layoutDetails}
+                  onToggle={(e) => setLayoutDetails(e.currentTarget.open)}
+                >
+                  <summary>Ports, cables & fixed boards</summary>
                   <EnclosureLayoutPanel
                     design={design}
                     boards={mountingBoards()}
@@ -1540,6 +1745,7 @@ export function EnclosureDesigner({
                     onCancel={() => setLayoutProposals(null)}
                     onUse={(proposal) => {
                       edit(proposal.design, "Arrange boards and port openings");
+                      setLayoutChoice("keep");
                       setNotice(
                         "Layout applied to the draft. Review fit and preview before export. Undo restores the previous layout.",
                       );
@@ -1570,381 +1776,403 @@ export function EnclosureDesigner({
                       })
                     }
                   />
-                  <section
-                    className="fd-case-placement"
-                    aria-label="Position boards in the enclosure"
+                </details>
+              )}
+              {step === "PCB" && (
+                <>
+                  <EnclosureBoardPicker
+                    files={enclosureSourceBoards(
+                      files,
+                      design.boards.map((b) => b.path),
+                    )}
+                    selected={design.boards.map((b) => b.path)}
+                    onChange={(paths) => {
+                      edit(selectEnclosureBoards(design, paths), "Choose boards");
+                      if (design.mode === "generated") setLayoutChoice("compact");
+                    }}
+                  />
+                  <details
+                    className="fd-case-advanced"
+                    open={manualPlacement}
+                    onToggle={(e) => setManualPlacement(e.currentTarget.open)}
                   >
-                    <div className="fd-case-placement-title">
-                      <strong>Position boards</strong>
-                      <small>Case stays fixed</small>
-                    </div>
-                    <select
-                      aria-label="Select board in 3D"
-                      value={selectedBoard ?? ""}
-                      disabled={!!busy}
-                      onChange={(e) => selectBoard(e.target.value || null)}
+                    <summary>Move boards yourself</summary>
+                    <section
+                      className="fd-case-placement"
+                      aria-label="Position boards in the enclosure"
                     >
-                      <option value="">Click a board or choose one…</option>
-                      {design?.boards.map((b) => (
-                        <option key={b.path} value={b.path}>
-                          {b.path === "board.kicad_pcb"
-                            ? "Project PCB"
-                            : enclosureFileLabel(b.path)}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="fd-case-placement-tools fd-case-placement-modes">
-                      <button
+                      <div className="fd-case-placement-title">
+                        <strong>Position boards</strong>
+                        <small>Case stays fixed</small>
+                      </div>
+                      <select
+                        aria-label="Select board in 3D"
+                        value={selectedBoard ?? ""}
                         disabled={!!busy}
-                        aria-pressed={placementMode === "orbit"}
-                        onClick={() => setPlacementMode("orbit")}
+                        onChange={(e) => selectBoard(e.target.value || null)}
                       >
-                        Camera
-                      </button>
-                      <button
-                        disabled={!selectedBoard || !!busy || currentPlacement?.locked}
-                        aria-pressed={placementMode === "translate"}
-                        onClick={() => setPlacementMode("translate")}
-                      >
-                        Move
-                      </button>
-                      <button
-                        disabled={!selectedBoard || !!busy || currentPlacement?.locked}
-                        aria-pressed={placementMode === "rotate"}
-                        onClick={() => setPlacementMode("rotate")}
-                      >
-                        Rotate
-                      </button>
-                    </div>
-                    {design.boards.map(
-                      (b, i) =>
-                        b.path === selectedBoard &&
-                        currentPose && (
-                          <div key={b.path} className="fd-case-board-fields">
+                        <option value="">Click a board or choose one…</option>
+                        {design?.boards.map((b) => (
+                          <option key={b.path} value={b.path}>
+                            {b.path === "board.kicad_pcb"
+                              ? "Project PCB"
+                              : enclosureFileLabel(b.path)}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="fd-case-placement-tools fd-case-placement-modes">
+                        <button
+                          disabled={!!busy}
+                          aria-pressed={placementMode === "orbit"}
+                          onClick={() => setPlacementMode("orbit")}
+                        >
+                          Camera
+                        </button>
+                        <button
+                          disabled={!selectedBoard || !!busy || currentPlacement?.locked}
+                          aria-pressed={placementMode === "translate"}
+                          onClick={() => setPlacementMode("translate")}
+                        >
+                          Move
+                        </button>
+                        <button
+                          disabled={!selectedBoard || !!busy || currentPlacement?.locked}
+                          aria-pressed={placementMode === "rotate"}
+                          onClick={() => setPlacementMode("rotate")}
+                        >
+                          Rotate
+                        </button>
+                      </div>
+                      {design.boards.map(
+                        (b, i) =>
+                          b.path === selectedBoard &&
+                          currentPose && (
+                            <div key={b.path} className="fd-case-board-fields">
+                              <details>
+                                <summary>Exact position</summary>
+                                <div className="fd-case-grid">
+                                  {(["x", "y", "z", "rotation"] as const).map((k) => (
+                                    <NumberField
+                                      key={k}
+                                      label={
+                                        {
+                                          x: "Board center X",
+                                          y: "Board center Y",
+                                          z: "Height (Z)",
+                                          rotation: "Rotation",
+                                        }[k]
+                                      }
+                                      inputLabel={`Board ${i + 1} ${k}`}
+                                      unit={k === "rotation" ? "°" : "mm"}
+                                      min={k === "rotation" ? -360 : -10000}
+                                      max={k === "rotation" ? 360 : 10000}
+                                      value={
+                                        k === "rotation"
+                                          ? b.rotation
+                                          : currentPose.position[{ x: 0, y: 1, z: 2 }[k]]!
+                                      }
+                                      onChange={(v) =>
+                                        changePlacement(
+                                          editEnclosureBoardPose(b, currentFeatures!.outline, k, v),
+                                        )
+                                      }
+                                    />
+                                  ))}
+                                </div>
+                              </details>
+                              <button
+                                onClick={() =>
+                                  edit(
+                                    selectEnclosureBoards(
+                                      design,
+                                      design.boards.filter((_, j) => j !== i).map((p) => p.path),
+                                    ),
+                                  )
+                                }
+                              >
+                                Remove from enclosure
+                              </button>
+                            </div>
+                          ),
+                      )}
+                      {currentPlacement && (
+                        <>
+                          {!currentPose && (
+                            <p role="status">
+                              Board geometry is not available yet. Open Preview if the fit check
+                              reports a file problem.
+                            </p>
+                          )}
+                          <small>
+                            {placementMode === "translate"
+                              ? "Drag an arrow or a square handle to move."
+                              : placementMode === "rotate"
+                                ? "Drag the ring to rotate the board flat."
+                                : "Drag empty space to orbit. Scroll to zoom."}
+                          </small>
+                          <div className="fd-case-placement-tools">
+                            <button
+                              disabled={!selectedBoard || !!busy}
+                              onClick={() =>
+                                selectedBoard && scene.current?.focusModel(`@fit-${selectedBoard}`)
+                              }
+                            >
+                              Focus board
+                            </button>
+
+                            <button
+                              disabled={!currentFeatures || !design?.confirmed || !!busy}
+                              title="Uses your confirmed interior dimensions; does not certify fit against the imported shell."
+                              onClick={() => {
+                                if (currentFeatures && design)
+                                  changePlacement(
+                                    centerEnclosureBoard(
+                                      currentPlacement,
+                                      currentFeatures.outline,
+                                      design.space,
+                                    ),
+                                  );
+                              }}
+                            >
+                              Center in usable space
+                            </button>
+                          </div>
+                          <small>Center coordinates · PCB file unchanged</small>
+                        </>
+                      )}
+                    </section>
+
+                    {board && design.boards.some((b) => b.path === "board.kicad_pcb") && (
+                      <details>
+                        <summary>Edit actual project PCB</summary>
+                        <p>
+                          Changes board.kicad_pcb. Existing tracks are preserved; rerouting and
+                          electrical DRC may be needed.
+                        </p>
+                        {connectionCard("pcb")}
+                        {!design.confirmed && (
+                          <p className="fd-case-hint">
+                            Check the inside size under Case before applying PCB edits.
+                          </p>
+                        )}
+                        <div className="fd-case-edit-modes" role="group" aria-label="PCB change">
+                          {(
+                            [
+                              ["outline", "Outline"],
+                              ["move", "Component"],
+                              ["hole", "Hole"],
+                            ] as const
+                          ).map(([value, label]) => (
+                            <button
+                              key={value}
+                              aria-pressed={pcbEditMode === value}
+                              onClick={() => {
+                                setPcbEditMode(value);
+                                setEditReview(null);
+                              }}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        {pcbEditMode === "outline" && (
+                          <>
+                            <p>
+                              Use the confirmed interior, minus clearance, as the new rectangular
+                              PCB boundary.
+                            </p>
+                            <button
+                              disabled={
+                                design.boards.find((b) => b.path === "board.kicad_pcb")
+                                  ?.rotation !== 0
+                              }
+                              onClick={() => setEditReview("outline")}
+                            >
+                              Review outline change
+                            </button>
+                            {design.boards.find((b) => b.path === "board.kicad_pcb")?.rotation !==
+                              0 && (
+                              <p className="fd-case-hint">
+                                Set the project PCB placement rotation to 0° before sizing its
+                                outline.
+                              </p>
+                            )}
+                          </>
+                        )}
+                        {pcbEditMode === "move" && (
+                          <>
+                            <p>
+                              Move a component using its original PCB coordinates, in millimetres.
+                            </p>
+                            <label>
+                              Component
+                              <select
+                                value={component}
+                                onChange={(e) => {
+                                  setComponent(e.target.value);
+                                  setEditReview(null);
+                                  const c = board.components?.find((c) => c.ref === e.target.value);
+                                  if (c) setMove({ x: c.x, y: c.y, rotation: 0 });
+                                }}
+                              >
+                                <option value="">Choose a component…</option>
+                                {board.components?.map((c) => (
+                                  <option key={c.ref}>{c.ref}</option>
+                                ))}
+                              </select>
+                            </label>
                             <div className="fd-case-grid">
-                              {(["x", "y", "z", "rotation"] as const).map((k) => (
+                              <NumberField
+                                label="Component X"
+                                value={move.x}
+                                onChange={(v) => {
+                                  setMove({ ...move, x: v });
+                                  setEditReview(null);
+                                }}
+                              />
+                              <NumberField
+                                label="Component Y"
+                                value={move.y}
+                                onChange={(v) => {
+                                  setMove({ ...move, y: v });
+                                  setEditReview(null);
+                                }}
+                              />
+                            </div>
+                            <button disabled={!component} onClick={() => setEditReview("move")}>
+                              Review component move
+                            </button>
+                          </>
+                        )}
+                        {pcbEditMode === "hole" && (
+                          <>
+                            <p>
+                              Add a round board cutout using original PCB coordinates. Diameter:
+                              0.5–20 mm.
+                            </p>
+                            <div className="fd-case-grid">
+                              {(["x", "y", "diameter"] as const).map((k) => (
                                 <NumberField
                                   key={k}
-                                  label={
-                                    {
-                                      x: "Board center X",
-                                      y: "Board center Y",
-                                      z: "Height (Z)",
-                                      rotation: "Rotation",
-                                    }[k]
-                                  }
-                                  inputLabel={`Board ${i + 1} ${k}`}
-                                  unit={k === "rotation" ? "°" : "mm"}
-                                  min={k === "rotation" ? -360 : -10000}
-                                  max={k === "rotation" ? 360 : 10000}
-                                  value={
-                                    k === "rotation"
-                                      ? b.rotation
-                                      : currentPose.position[{ x: 0, y: 1, z: 2 }[k]]!
-                                  }
-                                  onChange={(v) =>
-                                    changePlacement(
-                                      editEnclosureBoardPose(b, currentFeatures!.outline, k, v),
-                                    )
-                                  }
+                                  label={`PCB hole ${k}`}
+                                  value={hole[k]}
+                                  min={k === "diameter" ? 0.5 : -10000}
+                                  max={k === "diameter" ? 20 : 10000}
+                                  onChange={(v) => {
+                                    setHole({ ...hole, [k]: v });
+                                    setEditReview(null);
+                                  }}
                                 />
                               ))}
                             </div>
                             <button
-                              onClick={() =>
-                                edit({ ...design, boards: design.boards.filter((_, j) => j !== i) })
+                              disabled={
+                                !board.outline.closed ||
+                                board.warnings?.some((w) =>
+                                  w.startsWith("Non-rectangular Edge.Cuts"),
+                                )
                               }
+                              onClick={() => setEditReview("hole")}
                             >
-                              Remove from enclosure
+                              Review mounting hole
                             </button>
-                          </div>
-                        ),
-                    )}
-                    {currentPlacement && (
-                      <>
-                        {!currentPose && (
-                          <p role="status">
-                            Board geometry is not available yet. Open Review if the fit check
-                            reports a file problem.
-                          </p>
+                            {(!board.outline.closed ||
+                              board.warnings?.some((w) =>
+                                w.startsWith("Non-rectangular Edge.Cuts"),
+                              )) && (
+                              <p className="fd-case-hint">
+                                This outline needs the PCB editor for hole placement. The
+                                rectangular preview cannot prove a hole is inside the board.
+                              </p>
+                            )}
+                          </>
                         )}
-                        <small>
-                          {placementMode === "translate"
-                            ? "Drag an arrow or a square handle to move."
-                            : placementMode === "rotate"
-                              ? "Drag the ring to rotate the board flat."
-                              : "Drag empty space to orbit. Scroll to zoom."}
-                        </small>
-                        <div className="fd-case-placement-tools">
-                          <button
-                            disabled={!selectedBoard || !!busy}
-                            onClick={() =>
-                              selectedBoard && scene.current?.focusModel(`@fit-${selectedBoard}`)
-                            }
-                          >
-                            Focus board
-                          </button>
-
-                          <button
-                            disabled={!currentFeatures || !design?.confirmed || !!busy}
-                            title="Uses your confirmed interior dimensions; does not certify fit against the imported shell."
-                            onClick={() => {
-                              if (currentFeatures && design)
-                                changePlacement(
-                                  centerEnclosureBoard(
-                                    currentPlacement,
-                                    currentFeatures.outline,
-                                    design.space,
-                                  ),
-                                );
-                            }}
-                          >
-                            Center in usable space
-                          </button>
-                        </div>
-                        <small>Center coordinates · PCB file unchanged</small>
-                      </>
-                    )}
-                  </section>
-
-                  <label>
-                    Add a PCB
-                    <select
-                      aria-label="Add a PCB"
-                      value=""
-                      onChange={(e) => {
-                        if (e.target.value)
-                          edit({
-                            ...design,
-                            boards: [
-                              ...design.boards,
-                              {
-                                path: e.target.value,
-                                x: 0,
-                                y: 0,
-                                z: design.space.floor + 3,
-                                rotation: 0,
-                              },
-                            ],
-                          });
-                      }}
-                    >
-                      <option value="">Choose project board…</option>
-                      {files
-                        .filter(
-                          (p) =>
-                            p.endsWith(".kicad_pcb") && !design.boards.some((b) => b.path === p),
-                        )
-                        .map((p) => (
-                          <option key={p}>{p}</option>
-                        ))}
-                    </select>
-                  </label>
-                  {board && design.boards.some((b) => b.path === "board.kicad_pcb") && (
-                    <details>
-                      <summary>Edit actual project PCB</summary>
-                      <p>
-                        Changes board.kicad_pcb. Existing tracks are preserved; rerouting and
-                        electrical DRC may be needed.
-                      </p>
-                      {connectionCard("pcb")}
-                      {!design.confirmed && (
-                        <p className="fd-case-hint">
-                          Confirm the interior dimensions in Start before applying PCB edits.
-                        </p>
-                      )}
-                      <div className="fd-case-edit-modes" role="group" aria-label="PCB change">
-                        {(
-                          [
-                            ["outline", "Outline"],
-                            ["move", "Component"],
-                            ["hole", "Hole"],
-                          ] as const
-                        ).map(([value, label]) => (
-                          <button
-                            key={value}
-                            aria-pressed={pcbEditMode === value}
-                            onClick={() => {
-                              setPcbEditMode(value);
-                              setEditReview(null);
-                            }}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                      {pcbEditMode === "outline" && (
-                        <>
-                          <p>
-                            Use the confirmed interior, minus clearance, as the new rectangular PCB
-                            boundary.
-                          </p>
-                          <button
-                            disabled={
-                              design.boards.find((b) => b.path === "board.kicad_pcb")?.rotation !==
-                              0
-                            }
-                            onClick={() => setEditReview("outline")}
-                          >
-                            Review outline change
-                          </button>
-                          {design.boards.find((b) => b.path === "board.kicad_pcb")?.rotation !==
-                            0 && (
-                            <p className="fd-case-hint">
-                              Set the project PCB placement rotation to 0° before sizing its
-                              outline.
+                        {editReview && (
+                          <div className="fd-case-message">
+                            <strong>
+                              {editReview === "outline"
+                                ? "Replace the PCB outline with the interior rectangle minus clearance?"
+                                : editReview === "move"
+                                  ? `Move ${component} to ${move.x}, ${move.y} mm?`
+                                  : `Add a ${hole.diameter} mm board cutout at ${hole.x}, ${hole.y}?`}
+                            </strong>
+                            <p>
+                              A recoverable native edit is saved. This does not check electrical
+                              design rules.
                             </p>
-                          )}
-                        </>
-                      )}
-                      {pcbEditMode === "move" && (
-                        <>
-                          <p>
-                            Move a component using its original PCB coordinates, in millimetres.
-                          </p>
-                          <label>
-                            Component
-                            <select
-                              value={component}
-                              onChange={(e) => {
-                                setComponent(e.target.value);
-                                setEditReview(null);
-                                const c = board.components?.find((c) => c.ref === e.target.value);
-                                if (c) setMove({ x: c.x, y: c.y, rotation: 0 });
-                              }}
+                            <button
+                              className="fd-mechanical-primary"
+                              disabled={!capabilities.pcb || !design.confirmed}
+                              onClick={() => void run("Saving PCB edit…", applyEdit)}
                             >
-                              <option value="">Choose a component…</option>
-                              {board.components?.map((c) => (
-                                <option key={c.ref}>{c.ref}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <div className="fd-case-grid">
-                            <NumberField
-                              label="Component X"
-                              value={move.x}
-                              onChange={(v) => {
-                                setMove({ ...move, x: v });
-                                setEditReview(null);
-                              }}
-                            />
-                            <NumberField
-                              label="Component Y"
-                              value={move.y}
-                              onChange={(v) => {
-                                setMove({ ...move, y: v });
-                                setEditReview(null);
-                              }}
-                            />
+                              Apply PCB edit
+                            </button>
+                            <button onClick={() => setEditReview(null)}>Cancel</button>
                           </div>
-                          <button disabled={!component} onClick={() => setEditReview("move")}>
-                            Review component move
-                          </button>
-                        </>
-                      )}
-                      {pcbEditMode === "hole" && (
-                        <>
-                          <p>
-                            Add a round board cutout using original PCB coordinates. Diameter:
-                            0.5–20 mm.
-                          </p>
-                          <div className="fd-case-grid">
-                            {(["x", "y", "diameter"] as const).map((k) => (
-                              <NumberField
-                                key={k}
-                                label={`PCB hole ${k}`}
-                                value={hole[k]}
-                                min={k === "diameter" ? 0.5 : -10000}
-                                max={k === "diameter" ? 20 : 10000}
-                                onChange={(v) => {
-                                  setHole({ ...hole, [k]: v });
-                                  setEditReview(null);
-                                }}
-                              />
-                            ))}
-                          </div>
-                          <button
-                            disabled={
-                              !board.outline.closed ||
-                              board.warnings?.some((w) => w.startsWith("Non-rectangular Edge.Cuts"))
-                            }
-                            onClick={() => setEditReview("hole")}
-                          >
-                            Review mounting hole
-                          </button>
-                          {(!board.outline.closed ||
-                            board.warnings?.some((w) =>
-                              w.startsWith("Non-rectangular Edge.Cuts"),
-                            )) && (
-                            <p className="fd-case-hint">
-                              This outline needs the PCB editor for hole placement. The rectangular
-                              preview cannot prove a hole is inside the board.
-                            </p>
-                          )}
-                        </>
-                      )}
-                      {editReview && (
-                        <div className="fd-case-message">
-                          <strong>
-                            {editReview === "outline"
-                              ? "Replace the PCB outline with the interior rectangle minus clearance?"
-                              : editReview === "move"
-                                ? `Move ${component} to ${move.x}, ${move.y} mm?`
-                                : `Add a ${hole.diameter} mm board cutout at ${hole.x}, ${hole.y}?`}
-                          </strong>
-                          <p>
-                            A recoverable native edit is saved. This does not check electrical
-                            design rules.
-                          </p>
-                          <button
-                            className="fd-mechanical-primary"
-                            disabled={!capabilities.pcb || !design.confirmed}
-                            onClick={() => void run("Saving PCB edit…", applyEdit)}
-                          >
-                            Apply PCB edit
-                          </button>
-                          <button onClick={() => setEditReview(null)}>Cancel</button>
-                        </div>
-                      )}
-                    </details>
-                  )}
+                        )}
+                      </details>
+                    )}
+                  </details>
                 </>
               )}
               {step === "Review" && (
                 <>
-                  <h3>Check before you export</h3>
+                  <h3>Your case preview</h3>
                   <p>
-                    {design.mode === "generated"
-                      ? "Preview the base and lid around your boards."
-                      : "Preview a modified copy of your imported case."}
+                    {design.boards.length} boards · {design.space.width} × {design.space.depth} ×{" "}
+                    {design.space.height} mm inside
                   </p>
-                  <button
-                    onClick={() =>
-                      void run("Checking clearances…", async () => {
-                        const r = await call("check", { design });
-                        acceptSourceRevision(r);
-                        setFocusedIssue(null);
-                        setFitBoards(r.boards);
-                        setFitError("");
-                        setFitState("Fit checked");
-                        if (preview && r.revision !== preview.revision) {
-                          setPreview(null);
-                          setArchive(null);
-                          setNotice("The design changed. Preview again before applying.");
-                        }
-                        setReport(
-                          preview && r.revision === preview.revision
-                            ? (preview.report ?? null)
-                            : (r.report ?? null),
-                        );
-                      })
-                    }
-                  >
-                    Check fit
-                  </button>
-                  <p className="fd-case-fit-state" role="status">
-                    {preview ? "Fit checked with preview" : fitState}
-                  </p>
+                  <div className="fd-case-preview-tools">
+                    <button aria-pressed={transparent} onClick={() => setTransparent(!transparent)}>
+                      See inside
+                    </button>
+                    <button onClick={() => scene.current?.fit()}>Fit view</button>
+                  </div>
+                  {design.mode === "generated" &&
+                    report?.issues.some(
+                      (i) =>
+                        i.severity === "error" &&
+                        ["native-clearance", "outside-space", "board-collision"].includes(i.code),
+                    ) && (
+                      <button
+                        onClick={() => {
+                          setLayoutChoice("assembly");
+                          void run("Finding more room…", () => makePreview("assembly"));
+                        }}
+                      >
+                        Try a roomier layout
+                      </button>
+                    )}
+                  <details className="fd-case-recheck">
+                    <summary>Run checks again</summary>
+                    <button
+                      onClick={() =>
+                        void run("Checking clearances…", async () => {
+                          const r = await call("check", { design });
+                          acceptSourceRevision(r);
+                          setFocusedIssue(null);
+                          setFitBoards(r.boards);
+                          setFitError("");
+                          setFitState("Fit checked");
+                          if (preview && r.revision !== preview.revision) {
+                            setPreview(null);
+                            setArchive(null);
+                            setNotice("The design changed. Preview again before applying.");
+                          }
+                          setReport(
+                            preview && r.revision === preview.revision
+                              ? (preview.report ?? null)
+                              : (r.report ?? null),
+                          );
+                        })
+                      }
+                    >
+                      Check fit
+                    </button>
+                    <p className="fd-case-fit-state" role="status">
+                      {preview ? "Fit checked with preview" : fitState}
+                    </p>
+                  </details>
                   {fitError && (
                     <p role="alert" className="fd-case-message is-error">
                       {fitError}
@@ -1953,15 +2181,14 @@ export function EnclosureDesigner({
                   {report && (
                     <EnclosureFitReview
                       report={report}
-                      onNavigate={setStep}
+                      onNavigate={navigateIssue}
                       onShowIssue={showIssue}
                       focusedIssue={focusedIssue}
                     />
                   )}
                   {!preview && (
                     <p className="fd-case-hint">
-                      Next: preview your case. If you change the design, preview it again before
-                      applying.
+                      Make a preview to see your case and check the fit.
                     </p>
                   )}
                   {design.mode === "imported" && !capabilities.cad && connectionCard("cad")}
@@ -1986,6 +2213,7 @@ export function EnclosureDesigner({
           <div className="fd-case-footer-status">
             <span role="status">
               {busy ||
+                (pcbModels.loading ? "Reading board shapes…" : "") ||
                 (preview
                   ? "Preview ready"
                   : design?.mode === "imported" && !capabilities.cad
@@ -1993,8 +2221,10 @@ export function EnclosureDesigner({
                       ? "Imported-case editing unavailable here"
                       : "Connect CAD to preview this case"
                     : design?.confirmed
-                      ? "Dimensions confirmed"
-                      : "Confirm dimensions to preview")}
+                      ? "Ready to preview"
+                      : design?.mode === "generated"
+                        ? "We’ll size the case for you"
+                        : "Check your case measurements")}
             </span>
             <div className="fd-case-history" aria-label="Enclosure edit history">
               <button
@@ -2024,7 +2254,7 @@ export function EnclosureDesigner({
             </div>
           </div>
           <div>
-            {step !== "Start" && (
+            {step !== "PCB" && (
               <button
                 className="fd-case-back"
                 disabled={actionsDisabled}
@@ -2033,19 +2263,27 @@ export function EnclosureDesigner({
                 Back
               </button>
             )}
-            <button
-              disabled={actionsDisabled || !dirty}
-              onClick={() => void run("Saving settings…", save)}
-            >
-              Save
-            </button>
-            {step !== "Review" ? (
+            {step === "PCB" ? (
               <button
                 className="fd-mechanical-primary"
-                disabled={actionsDisabled}
-                onClick={() => setStep(steps[steps.indexOf(step) + 1]!)}
+                disabled={actionsDisabled || !design?.boards.length}
+                onClick={() => setStep("Start")}
               >
-                {step === "Start" ? "Next: space" : step === "Space" ? "Next: PCB" : "Next: review"}
+                Choose a case
+              </button>
+            ) : step === "Start" ? (
+              <button
+                className="fd-mechanical-primary"
+                disabled={
+                  actionsDisabled ||
+                  pcbModels.loading ||
+                  !design?.boards.length ||
+                  (design.mode === "imported" &&
+                    (!design.confirmed || !design.source?.path || !capabilities.cad))
+                }
+                onClick={() => void run("Making your case…", makePreview)}
+              >
+                {pcbModels.loading ? "Reading boards…" : "Make preview"}
               </button>
             ) : archive ? (
               <button
@@ -2053,7 +2291,7 @@ export function EnclosureDesigner({
                 disabled={actionsDisabled}
                 onClick={() => void run("Preparing download…", () => download(archive))}
               >
-                Download design ZIP
+                Download files
               </button>
             ) : preview ? (
               <button
@@ -2061,19 +2299,21 @@ export function EnclosureDesigner({
                 disabled={actionsDisabled || pcbModels.loading || report?.status === "blocked"}
                 onClick={() => void run("Saving matched designs…", build)}
               >
-                Apply & prepare export
+                Save design files
               </button>
             ) : (
               <button
                 className="fd-mechanical-primary"
                 disabled={
                   actionsDisabled ||
-                  !design?.confirmed ||
-                  (design.mode === "imported" && !capabilities.cad)
+                  pcbModels.loading ||
+                  !design?.boards.length ||
+                  (design.mode === "imported" &&
+                    (!design.confirmed || !design.source?.path || !capabilities.cad))
                 }
-                onClick={() => void run("Building enclosure preview…", showPreview)}
+                onClick={() => void run("Making your case…", makePreview)}
               >
-                Preview enclosure
+                {pcbModels.loading ? "Reading boards…" : "Make preview"}
               </button>
             )}
           </div>

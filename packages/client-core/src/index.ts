@@ -167,3 +167,4 @@ export * from "./enclosure-recovery";
 export * from "./pcb-display";
 export * from "./enclosure-mounts";
 export * from "./enclosure-layout";
+export * from "./enclosure-setup";
