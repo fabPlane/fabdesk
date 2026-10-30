@@ -677,7 +677,7 @@ export const cad_fit = defineTool({
           : {}),
       };
       for (const [path, bytes] of Object.entries(snap.files)) outputs[`boards/${path}`] = bytes;
-      for (const [path, text] of Object.entries(await enclosureFitSamples(design)))
+      for (const [path, text] of Object.entries(await enclosureFitSamples(design, snap.boards)))
         outputs[path] = strToU8(text);
       outputs["manifest.json"] = strToU8(
         JSON.stringify(

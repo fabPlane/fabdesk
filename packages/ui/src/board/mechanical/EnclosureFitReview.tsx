@@ -4,6 +4,11 @@ import { Icon } from "../../components/Icon";
 
 type Destination = "Start" | "Space" | "PCB";
 const guidance: Record<string, { title: string; destination: Destination; action: string }> = {
+  "holder-space": {
+    title: "The board needs a different restraint",
+    destination: "Start",
+    action: "Review board holders",
+  },
   "detailed-layers": {
     title: "Flat board layers excluded",
     destination: "PCB",

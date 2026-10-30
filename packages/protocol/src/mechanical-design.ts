@@ -110,7 +110,7 @@ export const MechanicalDesignSchema = z
       })
       .optional(),
     holders: z
-      .array(z.object({ boardPath: path, kind: z.literal("corner-clamps") }))
+      .array(z.object({ boardPath: path, kind: z.enum(["corner-clamps", "edge-clamps"]) }))
       .max(20)
       .refine(
         (items) => new Set(items.map((item) => item.boardPath)).size === items.length,

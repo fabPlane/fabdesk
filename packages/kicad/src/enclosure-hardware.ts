@@ -6,6 +6,7 @@ import {
 } from "@fabdesk/protocol";
 import type { EnclosureSolid } from "./enclosure";
 import type { BoardFeatures } from "./board-features";
+import { findEdgeHolders } from "./enclosure-edge-holders";
 type Board = { placement: MechanicalDesign["boards"][number]; features: BoardFeatures };
 
 /** Hardware geometry and its safety envelopes are generated together, so checks cannot drift. */
@@ -103,7 +104,7 @@ export function enclosureHardware(d: MechanicalDesign, boards: Board[]) {
   if (d.mode !== "generated" && (d.holders?.length || d.closure?.kind === "screws"))
     add(
       "hardware-mode",
-      "Automatic lid screws and corner holders currently require a generated case.",
+      "Automatic lid screws and board holders currently require a generated case.",
     );
   if (d.closure?.kind === "screws") {
     const c = d.closure,
@@ -201,7 +202,7 @@ export function enclosureHardware(d: MechanicalDesign, boards: Board[]) {
     ) {
       add(
         "holder-outline",
-        `${holder.boardPath}: automatic corner holders require a closed rectangular board at a quarter-turn rotation.`,
+        `${holder.boardPath}: automatic holders require a closed rectangular board at a quarter-turn rotation.`,
       );
       continue;
     }
@@ -217,8 +218,64 @@ export function enclosureHardware(d: MechanicalDesign, boards: Board[]) {
     ) {
       add(
         "holder-room",
-        `${holder.boardPath}: not enough space above or below the board for corner holders.`,
+        `${holder.boardPath}: not enough space above or below the board for holders.`,
       );
+      continue;
+    }
+    if (d.closure?.kind !== "screws")
+      add("holder-closure", "Board holders need a screwed lid to retain the board.");
+    if (holder.kind === "edge-clamps") {
+      const keepouts = [
+        ...components,
+        ...pcbs.filter((p) => p.name !== holder.boardPath),
+        ...d.obstacles,
+        ...mounts,
+        ...plugs,
+        ...openings,
+        ...solids.map(region),
+        ...b.features.holes.map((h) =>
+          world(
+            b,
+            {
+              minX: h.x - (h.drillWidthMm ?? h.diameterMm) / 2 - 0.25,
+              maxX: h.x + (h.drillWidthMm ?? h.diameterMm) / 2 + 0.25,
+              minY: h.y - (h.drillHeightMm ?? h.diameterMm) / 2 - 0.25,
+              maxY: h.y + (h.drillHeightMm ?? h.diameterMm) / 2 + 0.25,
+            },
+            s.floor,
+            s.height,
+            `${holder.boardPath}: ${h.id}`,
+          ),
+        ),
+      ];
+      const found = findEdgeHolders(pcb, s, (solid) => {
+        const r = region(solid);
+        return (
+          r.width > 0 &&
+          r.depth > 0 &&
+          r.height > 0 &&
+          r.x >= s.x &&
+          r.y >= s.y &&
+          r.x + r.width <= s.x + s.width &&
+          r.y + r.depth <= s.y + s.depth &&
+          !keepouts.some((p) => overlaps(r, p))
+        );
+      });
+      if (!found)
+        add(
+          "holder-space",
+          `${holder.boardPath}: no clear, distributed edge supports and end stops were found. Leave clear strips near the edges, change the layout, or use a custom restraint.`,
+          [pcb],
+        );
+      else {
+        for (const solid of found) solids.push({ ...solid, name: `${solid.name}${solids.length}` });
+        add(
+          "holder-review",
+          `${holder.boardPath}: four edge supports and lid captures with low end stops avoid the known keepouts. Verify 2 × 4 mm underside contact strips, 0.5 mm capture lips (0.25 mm nominal engagement at maximum play), solder clearance, and restraint under plug insertion on a printed sample.`,
+          [],
+          "review",
+        );
+      }
       continue;
     }
     for (const right of [false, true])
@@ -302,8 +359,6 @@ export function enclosureHardware(d: MechanicalDesign, boards: Board[]) {
         );
         box("capture", "lid", x, y, pcb.z + pcb.height + gap, x + pad, y + pad, ceiling + s.lid);
       }
-    if (d.closure?.kind !== "screws")
-      add("holder-closure", "Corner holders need a screwed lid to retain the board.");
     add(
       "holder-review",
       `${holder.boardPath}: verify 2.5 mm clear corners, solder joints, underside parts and 0.25 mm holder play on a printed sample.`,

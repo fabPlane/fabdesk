@@ -108,29 +108,33 @@ export function EnclosureHardwarePanel({
               {enclosureFileLabel(b.path)}
               <select
                 aria-label={`${b.path} board retention`}
-                value={
-                  design.holders?.some((h) => h.boardPath === b.path) ? "corner-clamps" : "posts"
-                }
+                value={design.holders?.find((h) => h.boardPath === b.path)?.kind ?? "posts"}
                 onChange={(e) =>
                   onChange({
                     ...design,
                     holders: [
                       ...(design.holders ?? []).filter((h) => h.boardPath !== b.path),
-                      ...(e.target.value === "corner-clamps"
-                        ? [{ boardPath: b.path, kind: "corner-clamps" as const }]
+                      ...(e.target.value === "corner-clamps" || e.target.value === "edge-clamps"
+                        ? [
+                            {
+                              boardPath: b.path,
+                              kind: e.target.value as "corner-clamps" | "edge-clamps",
+                            },
+                          ]
                         : []),
                     ],
                   })
                 }
               >
                 <option value="posts">Use mounting holes / custom retention</option>
+                <option value="edge-clamps">Find clear edges · no PCB holes</option>
                 <option value="corner-clamps">Corner holders · no PCB holes</option>
               </select>
             </label>
           ))}
           <p className="fd-case-hint">
-            Corner holders need a screwed lid and a rectangular PCB with clear corners. Contact with
-            parts blocks export.
+            Holders need a screwed lid and a rectangular PCB. Find clear edges avoids occupied
+            corners; if no suitable supports fit, the preview explains what needs room.
           </p>
         </>
       )}

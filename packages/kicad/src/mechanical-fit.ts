@@ -299,15 +299,9 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
           const turn = ((b.placement.rotation % 360) + 360) % 360;
           const facing = edges[(edges.indexOf(profile?.face ?? connector.edge) + turn / 90) % 4];
           if (o.wall !== facing) return false;
-          const gap =
-            facing === "minX"
-              ? envelope.minX - s.x
-              : facing === "maxX"
-                ? s.x + s.width - envelope.maxX
-                : facing === "minY"
-                  ? envelope.minY - s.y
-                  : s.y + s.depth - envelope.maxY;
-          if (gap > Math.max(1, c) + 1.5 + eps) return false;
+          // A linked opening can be correctly aligned with a recessed socket.
+          // Check the actual plug's mating reach below; a distance heuristic
+          // must not report a correctly cut opening as missing.
         }
         const vertical = o.wall === "minX" || o.wall === "maxX";
         const along = vertical ? apertureCenter.y : apertureCenter.x;
@@ -325,7 +319,7 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
                 ? s.y
                 : s.y + s.depth;
         return (
-          Math.abs(at - wall) <= acrossDepth + s.wall + c &&
+          (o.boardPath || Math.abs(at - wall) <= acrossDepth + s.wall + c) &&
           Math.abs(along - o.offset) + alongWidth / 2 + padding <= o.width / 2 + eps &&
           o.z <= apertureZ - padding + eps &&
           o.z + o.height >= apertureZ + apertureHeight + padding - eps &&

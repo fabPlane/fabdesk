@@ -76,6 +76,42 @@ test("measured aperture, plug body and mating reach are checked independently", 
   p.design.portAccess![0]!.wall = "maxX";
   expect(codes()).toContain("port-wall");
 });
+test("a recessed socket keeps its aligned opening while actual mating reach remains enforced", () => {
+  const { d, boards } = fixture();
+  d.boards = d.boards.slice(0, 1);
+  d.boards[0]!.x = 10;
+  d.portAccess = [
+    {
+      boardPath: "a.kicad_pcb",
+      ref: "J1",
+      access: "external",
+      aperture: { width: 8, height: 3.6 },
+      plug: { width: 10, height: 6, depth: 10, reach: 20 },
+    },
+  ];
+  d.openings = [
+    {
+      name: "Recessed USB",
+      boardPath: "a.kicad_pcb",
+      ref: "J1",
+      wall: "minX",
+      offset: 12,
+      z: 7.2,
+      width: 8.8,
+      height: 4.4,
+    },
+  ];
+  const codes = () => checkMechanicalFit(d, boards.slice(0, 1)).issues.map((i) => i.code);
+  expect(codes()).not.toContain("connector-opening");
+  expect(codes()).not.toContain("plug-reach");
+  d.portAccess[0]!.plug!.reach = 2;
+  expect(codes()).toContain("plug-reach");
+  delete d.portAccess[0]!.plug;
+  expect(codes()).toContain("port-measurements");
+  d.openings[0]!.offset += 4;
+  expect(codes()).toContain("connector-opening");
+});
+
 test("overlapping plug bodies are flagged even when both PCBs fit inside", () => {
   const { d, boards } = fixture();
   d.portAccess = d.boards.map((b) => ({

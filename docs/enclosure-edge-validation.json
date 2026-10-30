@@ -1,0 +1,33 @@
+{
+  "fixture": "Two unchanged VAIO-derived boards with adaptive edge holders",
+  "physicalFitVerified": false,
+  "nativeClosedBodies": 138,
+  "collisionBlockers": 0,
+  "slicerProfile": "Bambu P2S, 0.4 mm nozzle, 0.20 mm layers, 2 walls, 15% infill",
+  "parts": [
+    {
+      "part": "case.stl",
+      "grams": 43.64485549926758,
+      "warning": "",
+      "triangles": 2682
+    },
+    {
+      "part": "lid-print.stl",
+      "grams": 26.026287078857422,
+      "warning": "",
+      "triangles": 2098
+    },
+    {
+      "part": "fit-samples/edge-holder-01.stl",
+      "grams": 0.12762628495693207,
+      "warning": "",
+      "triangles": 36
+    },
+    {
+      "part": "fit-samples/edge-holder-02.stl",
+      "grams": 0.12456193566322327,
+      "warning": "",
+      "triangles": 36
+    }
+  ]
+}

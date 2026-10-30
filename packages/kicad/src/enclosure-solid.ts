@@ -4,6 +4,7 @@ import wasmPath from "manifold-3d/manifold.wasm" with { type: "file" };
 import { asciiStl, writeBoxesStep, type EnclosureSpec } from "./enclosure";
 import { profileTriangles, profileWall, type Triangle } from "./enclosure-profile";
 import type { MechanicalDesign } from "@fabdesk/protocol";
+import { EDGE_HOLDER_FIT } from "./enclosure-edge-holders";
 export type { Manifold } from "manifold-3d";
 
 let ready: Promise<ManifoldToplevel> | undefined;
@@ -107,7 +108,10 @@ export async function auditStl(bytes: Uint8Array) {
 }
 
 /** Small, separate print coupons let users test tolerances before spending a full case. */
-export async function enclosureFitSamples(d: MechanicalDesign) {
+export async function enclosureFitSamples(
+  d: MechanicalDesign,
+  boards: ReadonlyArray<{ placement: { path: string }; features: { thicknessMm: number } }> = [],
+) {
   const k = await solidKernel(),
     files: Record<string, string> = {},
     owned: Manifold[] = [];
@@ -174,6 +178,41 @@ export async function enclosureFitSamples(d: MechanicalDesign) {
       );
       guide.push(
         `screw-pilots.stl: three holes along the long edge. Left to right in model coordinates: ${diameters.map((n) => n.toFixed(2)).join(", ")} mm. Test your screw without forcing it, then enter the best measured pilot size and regenerate the case.`,
+      );
+    }
+    for (const [index, holder] of (d.holders ?? []).entries()) {
+      if (holder.kind !== "edge-clamps") continue;
+      const thickness = boards.find((b) => b.placement.path === holder.boardPath)?.features
+        .thicknessMm;
+      if (thickness === undefined) {
+        guide.push(
+          `${holder.boardPath}: edge-fit sample unavailable without the saved PCB thickness.`,
+        );
+        continue;
+      }
+      if (!Number.isFinite(thickness) || thickness <= 0 || thickness > 20)
+        throw new Error("Invalid PCB thickness for holder sample");
+      const { play, pad, capture, wall } = EDGE_HOLDER_FIT;
+      const floor = 2,
+        span = 8,
+        roof = 1.5,
+        slotTop = floor + thickness + play;
+      const block = (x: number, z: number, width: number, height: number) =>
+        own(own(k.Manifold.cube([width, span, height])).translate([x, 0, z]));
+      const sample = own(
+        k.Manifold.union([
+          block(0, 0, wall + play + pad, floor),
+          block(0, floor, wall, thickness + play + roof),
+          block(wall, slotTop, play + capture, roof),
+        ]),
+      );
+      // Print on its end face so the narrow retention lip needs no supports.
+      const flat = own(own(sample.rotate([90, 0, 0])).translate([0, slotTop + roof, 0]));
+      inspectSolid(flat, "Edge holder sample");
+      const file = `fit-samples/edge-holder-${String(index + 1).padStart(2, "0")}.stl`;
+      files[file] = asciiStl("edge_holder_fit_sample", solidTriangles(flat));
+      guide.push(
+        `${file}: ${holder.boardPath}, ${thickness} mm PCB + ${play} mm vertical play, ${capture} mm capture lip. Slide a clear edge of the actual board into the printed slot; check solder and component clearance. Do not force it. This checks local fit only; install and load-test the complete screwed-lid case before relying on its retention.`,
       );
     }
     if (Object.keys(files).length) files["fit-samples/README.txt"] = guide.join("\n");
