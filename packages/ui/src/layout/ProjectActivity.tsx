@@ -43,8 +43,11 @@ export function ProjectActivity({ projectId }: { projectId: string }) {
     const ui = useUiStore.getState();
     if (/route|verify|drc|erc/.test(job.kind)) {
       if (!sources.data || sources.isFetching || sources.isError) { setError("Recheck board sources before opening this task’s result."); return; }
+      const board = projectJobBoard(job);
+      if (sources.data.mode !== "assembly" && board) {
+        setError("This task belongs to a member-board source that is no longer declared here. Review its saved files before opening a current board result."); return;
+      }
       if (sources.data.mode === "assembly") {
-        const board = projectJobBoard(job);
         const selection = board?.manifestSha256 === sources.data.manifestSha256 ? captureAssemblySourceSelection(sources.data, board.sourceId, ui.assemblyBoardByProject[projectId]) : null;
         if (!selection) { setError("This saved task does not establish current board ownership. Open its board from the project overview to review the current results."); return; }
         ui.setAssemblyBoard(selection);
