@@ -1,3 +1,5 @@
+import { askAboutSurface } from "../chat/useAssistantSurface";
+import { Icon } from "../components/Icon";
 import type { AgentId, Settings } from "@fabdesk/protocol";
 import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Dialog, Input, Select, Spinner } from "../components/ui";
@@ -55,10 +57,9 @@ export function SettingsDialog() {
   const storedTheme = useUiStore((s) => s.themeId);
   const originalTheme = useRef(storedTheme);
   const [confirmClose, setConfirmClose] = useState(false);
-  const [section, setSection] = useState<SettingsSection>("agents");
-  useEffect(() => {
-    if (open && requestedSection) setSection(requestedSection);
-  }, [open, requestedSection]);
+  // Keep the displayed section and the assistant’s current-window context in one store.
+  const section = requestedSection ?? "agents";
+  const projectId = useUiStore(s => s.activeProjectId);
   const settings = useSettings();
   const doctor = useDoctor();
   const patch = usePatchSettings();
@@ -95,7 +96,7 @@ export function SettingsDialog() {
           {SETTINGS_SECTIONS.map((s) => (
             <button
               key={s}
-              onClick={() => setSection(s)}
+              onClick={() => setOpen(true, s)}
               className={cn(
                 "mb-0.5 block min-h-9 w-full rounded-lg px-3 py-2 text-left text-[13px] transition-colors",
                 s === section ? "bg-panel-2 font-semibold text-fg" : "text-muted hover:bg-panel-2/50 hover:text-fg",
@@ -268,6 +269,14 @@ export function SettingsDialog() {
           </Button>
         </div>
       )}
+      {projectId && <div className="mt-3 flex shrink-0 flex-wrap items-center gap-3 border-t border-border pt-3">
+        <Button size="sm" variant="ghost" disabled={dirty || patch.isPending} onClick={() => {
+          if (dirty || patch.isPending) return;
+          askAboutSurface({ projectId, label: `Settings · ${LABELS[section]}`, priority: 60, details: JSON.stringify({ window: "Settings", section, sectionLabel: LABELS[section], savedValuesIncluded: false, instruction: "Explain the current settings section. No credentials or configuration values are included in this UI context. Review options with the user before changing configuration." }) }, `Help me understand the ${LABELS[section]} settings and the next checks I should make.`);
+          setOpen(false);
+        }}><Icon name="sparkles" width={16} height={16} />Ask about these settings</Button>
+        {dirty && <span className="text-xs text-muted">Save or reset your changes before leaving Settings to ask.</span>}
+      </div>}
     </Dialog>
     <Dialog open={open && confirmClose} onClose={() => setConfirmClose(false)} title="Unsaved changes" className="w-[420px]">
       <p className="text-sm text-muted">Keep editing to save your changes, or discard them and close Settings.</p>

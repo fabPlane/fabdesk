@@ -19,3 +19,20 @@ test("Settings context replaces hidden page selection and oversized details stay
   const context = captureAssistantContext(snapshot, undefined, false, [{ label: "Attached", instruction: '"'.repeat(20000) }], now);
   expect(context.details.length).toBeLessThanOrEqual(16000); expect(() => JSON.parse(context.details)).not.toThrow();
 });
+
+
+test("a settings window excludes a hidden board finding and follows section navigation", () => {
+  const snapshot = state();
+  snapshot.workspaceArea = "boards" as typeof snapshot.workspaceArea;
+  snapshot.boardTab = "pcb" as typeof snapshot.boardTab;
+  snapshot.rootFinding = { projectId: "p", description: "Hidden PCB finding", itemDescription: "R1", point: { x: 1, y: 2 }, sourceSha256: "a".repeat(64) } as NonNullable<typeof snapshot.rootFinding>;
+  const sources = { projectId: "p", mode: "single" } as Parameters<typeof captureAssistantContext>[1];
+  expect(captureAssistantContext(snapshot, sources, false).details).toContain("Hidden PCB finding");
+  snapshot.settingsOpen = true;
+  snapshot.settingsSection = "voice";
+  const context = captureAssistantContext(snapshot, sources, false);
+  expect(context.label).toBe("Settings / voice");
+  expect(context.details).not.toContain("Hidden PCB finding");
+  snapshot.settingsSection = "router";
+  expect(captureAssistantContext(snapshot, sources, false).label).toBe("Settings / router");
+});
