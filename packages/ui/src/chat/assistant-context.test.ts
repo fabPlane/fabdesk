@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { captureAssistantContext, selectAssistantState } from "./assistant-context";
 import { useUiStore } from "../stores/ui";
 const now = "2026-10-29T00:00:00Z";
-const state = () => ({ ...selectAssistantState(useUiStore.getState()), activeProjectId: "p", workspaceArea: "outputs" as const, boardTab: "renders" as const, assistantSurfaces: {}, settingsOpen: false, sketchOpen: false, inventoryOpen: false, orderFlowOpen: false, activeOpenSourceId: null });
+const state = (): ReturnType<typeof selectAssistantState> => ({ ...selectAssistantState(useUiStore.getState()), activeProjectId: "p", workspaceArea: "outputs" as const, boardTab: "renders" as const, assistantSurfaces: {}, settingsOpen: false, sketchOpen: false, inventoryOpen: false, orderFlowOpen: false, activeOpenSourceId: null });
 test("context follows mounted preview priority and ignores another project's selections", () => {
   const snapshot = state();
   snapshot.assistantSurfaces = { library: { projectId: "p", label: "Library", details: "2 selected", priority: 5 }, preview: { projectId: "p", label: "Preview · pcb.svg", details: "boards/io/renders/pcb.svg", priority: 40 }, other: { projectId: "other", label: "Other PCB", details: "private source", priority: 100 } };
@@ -35,4 +35,23 @@ test("a settings window excludes a hidden board finding and follows section navi
   expect(context.details).not.toContain("Hidden PCB finding");
   snapshot.settingsSection = "router";
   expect(captureAssistantContext(snapshot, sources, false).label).toBe("Settings / router");
+});
+
+
+test("secondary windows select only their own context and keep catalog identity", () => {
+  const snapshot = state();
+  snapshot.assistantSurfaces = {
+    old: { projectId: "p", label: "Hidden board", details: "old finding", priority: 100 },
+    inventory: { projectId: "p", scope: "inventory", label: "Parts inventory", details: "Service check failed", priority: 10 },
+    catalog: { projectId: "p", scope: "catalog", label: "Catalog / Sensor", details: "Preview only", priority: 10 },
+  };
+  snapshot.inventoryOpen = true;
+  const inventory = captureAssistantContext(snapshot, undefined, false);
+  expect(inventory.label).toBe("Parts inventory");
+  expect(inventory.details).toContain("Service check failed");
+  expect(inventory.details).not.toContain("old finding");
+  snapshot.inventoryOpen = false; snapshot.activeOpenSourceId = "catalog-sensor";
+  const catalog = captureAssistantContext(snapshot, undefined, false);
+  expect(catalog.label).toBe("Catalog / Sensor");
+  expect(JSON.parse(catalog.details).catalogProjectId).toBe("catalog-sensor");
 });

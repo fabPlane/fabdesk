@@ -415,7 +415,7 @@ export function ProjectBomPanel() {
             )}
           </div>
       </div>
-      <Dialog open={exportOpen} title="Export bill of materials" onClose={() => { if (!downloading) setExportOpen(false); }}>
+      <Dialog open={exportOpen} closeDisabled={downloading} title="Export bill of materials" onClose={() => { if (!downloading) setExportOpen(false); }}>
         <div className="space-y-4 text-sm">
           <p>{lines.length} listed items. The CSV includes board-qualified references, quantities, footprints and saved part numbers.</p>
           {!bom.data?.complete && <div className="rounded-lg border border-warning/30 bg-warning/5 p-3"><p className="font-medium text-warning">Some board sources need review</p><p className="mt-1 text-xs text-muted">Missing sources are omitted. Saved netlist parts have not been checked against native schematic exclusions.</p><label className="mt-3 flex items-start gap-2"><input type="checkbox" checked={allowPartial} onChange={event => setAllowPartial(event.target.checked)} disabled={downloading} /><span>Export only the listed parts</span></label></div>}

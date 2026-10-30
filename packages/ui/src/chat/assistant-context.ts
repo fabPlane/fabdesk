@@ -2,7 +2,7 @@ import { workspaceViews, restoreAssemblySelection } from "@fabdesk/client-core";
 import type { ProjectBoardSources, WorkspaceContext } from "@fabdesk/protocol";
 import type { UiState } from "../stores/ui";
 
-export type AssistantSurface = { projectId: string; label: string; details: string; priority: number };
+export type AssistantSurface = { projectId: string; label: string; details: string; priority: number; scope?: "workspace" | "inventory" | "order" | "catalog" };
 export const selectAssistantState = (state: UiState) => ({
   activeProjectId: state.activeProjectId, workspaceArea: state.workspaceArea, boardTab: state.boardTab,
   assemblyBoardByProject: state.assemblyBoardByProject, assistantSurfaces: state.assistantSurfaces,
@@ -17,12 +17,14 @@ export function captureAssistantContext(state: ReturnType<typeof selectAssistant
   const view = workspaceViews(state.workspaceArea).find(view => view.tab === state.boardTab)?.label;
   const page = state.settingsOpen ? `Settings / ${state.settingsSection ?? "General"}` : state.sketchOpen ? "Sketch editor" : state.inventoryOpen ? "Parts inventory" : state.orderFlowOpen ? "Order review" : state.activeOpenSourceId ? "Open source project" : `${state.workspaceArea[0]!.toUpperCase()}${state.workspaceArea.slice(1)}${view ? ` / ${view}` : ""}`;
   const showingWorkspace = !state.settingsOpen && !state.sketchOpen && !state.inventoryOpen && !state.orderFlowOpen && !state.activeOpenSourceId;
-  const surface = showingWorkspace ? Object.values(state.assistantSurfaces).filter(item => item.projectId === projectId).sort((a, b) => b.priority - a.priority)[0] : undefined;
+  const activeScope = state.inventoryOpen ? "inventory" : state.orderFlowOpen ? "order" : state.activeOpenSourceId ? "catalog" : "workspace";
+  const surface = !state.settingsOpen && !state.sketchOpen ? Object.values(state.assistantSurfaces).filter(item => item.projectId === projectId && (item.scope ?? "workspace") === activeScope).sort((a, b) => b.priority - a.priority)[0] : undefined;
   const selection = showingWorkspace && projectId && sources?.projectId === projectId && (state.workspaceArea === "boards" || state.workspaceArea === "review") ? restoreAssemblySelection(sources, state.assemblyBoardByProject[projectId]) : null;
   const row = selection ? sources?.sources.find(row => row.source.id === selection.sourceId) : undefined;
   const finding = showingWorkspace && state.boardTab === "pcb" && state.workspaceArea === "boards" ? state.assemblyFinding?.selection.projectId === projectId && state.assemblyFinding.selection.sourceId === selection?.sourceId ? state.assemblyFinding : state.rootFinding?.projectId === projectId && sources?.mode === "single" ? state.rootFinding : null : null;
   const details = {
     page,
+    ...(state.activeOpenSourceId ? { catalogProjectId: state.activeOpenSourceId } : {}),
     ...(surface ? { focusedSurface: { label: surface.label, details: surface.details.slice(0, 6000) } } : {}),
     sourceCheck: checking ? "pending or unavailable" : sources?.mode ?? "unavailable",
     ...(selection ? { board: { sourceId: selection.sourceId, instanceId: selection.instanceId, manifestSha256: selection.manifestSha256, name: row?.source.name, availability: row?.status, pcbSha256: checking ? undefined : row?.pcbSha256 } } : {}),

@@ -445,3 +445,22 @@ test("recent project visits survive reload, follow opening order and stay on the
   for (let i = 0; i < 30; i++) restored.getState().recordProjectVisit(`core-${i}`, "a");
   expect(Object.keys(restored.getState().recentProjectsByEndpoint).length).toBe(20);
 });
+
+
+test("catalog selection reveals the preview and assistant entry in canvas, retaining classic behavior", () => {
+  const store = createUiStore({ getItem: () => null, setItem() {}, removeItem() {} });
+  store.getState().setActiveProject("project-a");
+  store.getState().setDraft(newChatDraftKey("project-a"), "Keep my project question");
+  store.getState().setCanvasNavigationOpen(true);
+  store.getState().setBoardOpen(false);
+  store.getState().setActiveOpenSourceId("catalog-sensor");
+  expect(store.getState().activeProjectId).toBe("project-a");
+  expect(store.getState().activeOpenSourceId).toBe("catalog-sensor");
+  expect(store.getState().canvasNavigationOpen).toBe(false);
+  expect(store.getState().boardOpen).toBe(true);
+  expect(store.getState().assistantOpen).toBe(false);
+  expect(store.getState().drafts[newChatDraftKey("project-a")]).toBe("Keep my project question");
+  store.getState().setCanvasMode(false);
+  store.getState().setActiveOpenSourceId("other-catalog");
+  expect(store.getState().boardOpen).toBe(false);
+});

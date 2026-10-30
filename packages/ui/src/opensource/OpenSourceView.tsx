@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { Button, Spinner } from "../components/ui";
+import { useAssistantSurface } from "../chat/useAssistantSurface";
+import { useEffect, useRef, useState } from "react";
+import { Button, LoadError, Spinner } from "../components/ui";
 import { useCoreClient } from "@fabdesk/client-core";
 import { useOpenSourceProject, useRemixOpenSource } from "@fabdesk/client-core";
 import { CatalogThumb } from "./CatalogThumb";
@@ -8,16 +9,19 @@ import { useUiStore } from "../stores/ui";
 export function OpenSourceView() {
   const id = useUiStore((s) => s.activeOpenSourceId);
   const client = useCoreClient();
+  const mounted = useRef(true), currentClient = useRef(client); currentClient.current = client;
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const setActiveProject = useUiStore((s) => s.setActiveProject);
   const setActiveThread = useUiStore((s) => s.setActiveThread);
   const setActiveOpenSourceId = useUiStore((s) => s.setActiveOpenSourceId);
   const setSidebarListTab = useUiStore((s) => s.setSidebarListTab);
   const setBoardOpen = useUiStore((s) => s.setBoardOpen);
   const setBoardTab = useUiStore((s) => s.setBoardTab);
-  const focusComposer = useUiStore((s) => s.focusComposer);
   const project = useOpenSourceProject(id);
   const remix = useRemixOpenSource();
   const entry = project.data;
+  const projectId = useUiStore(s => s.activeProjectId);
+  useAssistantSurface(projectId && id ? { projectId, scope: "catalog", label: `Catalog / ${entry?.name ?? id}`, priority: 10, details: JSON.stringify({ catalogId: id, name: entry?.name, loading: project.isLoading, loadFailed: project.isError, creatingRemix: remix.isPending, instruction: "This is a catalog preview. It is not a board in the active project; remix creates a separate local project." }) } : null);
   const hero = id ? client.openSourcePreviewUrl(id, "hero") : "";
   const [heroFailed, setHeroFailed] = useState(false);
   useEffect(() => {
@@ -25,15 +29,24 @@ export function OpenSourceView() {
   }, [id]);
 
   const onRemix = async () => {
-    if (!id) return;
-    const result = await remix.mutateAsync(id);
+    if (!id || remix.isPending) return;
+    let result;
+    try { result = await remix.mutateAsync(id); }
+    catch { return; } // Keep the mutation error visible with the existing Retry/Remix action.
+    // Finishing an import must not steal navigation after the user left its preview.
+    const ui = useUiStore.getState();
+    if (!mounted.current || currentClient.current !== client || ui.activeOpenSourceId !== id || ui.activeProjectId !== projectId) return;
     setActiveProject(result.project.id);
     setActiveThread(null);
     setActiveOpenSourceId(null);
     setSidebarListTab("projects");
-    setBoardTab("pcb");
+    setBoardTab(result.pcbPath ? "pcb" : "files");
     setBoardOpen(true);
-    focusComposer();
+    useUiStore.getState().setAssistantOpen(false);
+    if (!result.pcbPath) {
+      const readme = result.project.files.find(file => /^readme(?:\.[^/]+)?$/i.test(file.path));
+      if (readme) useUiStore.getState().openProjectFile(readme.path);
+    }
   };
 
   if (!id) return null;
@@ -45,7 +58,7 @@ export function OpenSourceView() {
     );
   }
   if (!entry) {
-    return <div className="flex h-full items-center justify-center text-sm text-danger">Could not load this project.</div>;
+    return <LoadError title="Could not load this project" onRetry={() => void project.refetch()} />;
   }
 
   return (

@@ -149,6 +149,8 @@ export function Kbd({ children }: { children: ReactNode }) {
 export interface DialogProps {
   open: boolean;
   onClose: () => void;
+  /** Use when an in-flight action cannot be dismissed or cancelled by closing. */
+  closeDisabled?: boolean;
   title?: ReactNode;
   ariaLabel?: string;
   children: ReactNode;
@@ -159,7 +161,7 @@ export interface DialogProps {
   fallbackFocus?: () => HTMLElement | null | undefined;
 }
 
-export function Dialog({ open, onClose, title, ariaLabel, children, className, bare, fallbackFocus }: DialogProps) {
+export function Dialog({ open, onClose, closeDisabled = false, title, ariaLabel, children, className, bare, fallbackFocus }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const fallbackFocusRef = useRef(fallbackFocus);
   fallbackFocusRef.current = fallbackFocus;
@@ -202,19 +204,20 @@ export function Dialog({ open, onClose, title, ariaLabel, children, className, b
       }
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        if (!closeDisabled) onClose();
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [open, onClose]);
+  }, [open, onClose, closeDisabled]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[3px]" onMouseDown={onClose} role="presentation">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[3px]" onMouseDown={() => { if (!closeDisabled) onClose(); }} role="presentation">
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
+        aria-busy={closeDisabled || undefined}
         aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}
         tabIndex={-1}
         className={cn(
@@ -227,7 +230,7 @@ export function Dialog({ open, onClose, title, ariaLabel, children, className, b
         {title !== undefined && (
           <div className="flex min-h-13 items-center justify-between border-b border-border px-5 py-3">
             <div className="min-w-0 break-words text-[15px] font-semibold tracking-[-0.01em]">{title}</div>
-            <IconButton title="Close" onClick={onClose}>
+            <IconButton title={closeDisabled ? "Wait for the current action to finish" : "Close"} disabled={closeDisabled} onClick={onClose}>
               <Icon name="close" />
             </IconButton>
           </div>

@@ -336,12 +336,12 @@ export function createUiStore(storage?: StateStorage) {
       ...(projectId !== s.activeProjectId ? { rootFinding: null, assemblyFinding: null, workspaceArea: projectId ? s.workspaceByProject[projectId]?.area ?? "boards" : "boards", boardTab: projectId ? s.workspaceByProject[projectId]?.tab ?? "pcb" : "pcb" } : {}) })),
   setSidebarListTab: (sidebarListTab) => set({ sidebarListTab: normalizeSidebarListTab(sidebarListTab) }),
   setActiveOpenSourceId: (activeOpenSourceId) =>
-    set({
+    set(s => ({
       activeOpenSourceId,
       ...(activeOpenSourceId
-        ? { activeThreadId: null, orderFlowOpen: false, inventoryOpen: false, sidebarListTab: "open_source" as const, boardOpen: false }
+        ? { activeThreadId: null, orderFlowOpen: false, inventoryOpen: false, sidebarListTab: "open_source" as const, boardOpen: s.canvasMode, ...(s.canvasMode ? { canvasNavigationOpen: false, assistantOpen: false } : {}) }
         : {}),
-    }),
+    })),
   setProjectPickerOpen: (projectPickerOpen) => set({ projectPickerOpen }),
   setOrderFlowOpen: (orderFlowOpen) => set({ orderFlowOpen, ...(orderFlowOpen ? { activeOpenSourceId: null, inventoryOpen: false } : {}) }),
   setInventoryOpen: (inventoryOpen) =>

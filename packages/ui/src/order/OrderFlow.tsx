@@ -1,6 +1,7 @@
+import { useAssistantSurface } from "../chat/useAssistantSurface";
 import type { OrderVendorId } from "@fabdesk/protocol";
 import { useState } from "react";
-import { Button } from "../components/ui";
+import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useCore } from "@fabdesk/client-core";
 import { useProjectOrder, useStartOrder } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
@@ -23,8 +24,12 @@ export function OrderFlow() {
   const { host } = useCore();
   const [vendor, setVendor] = useState<OrderVendorId | null>(null);
   const session = start.data;
-  const vendors = order.data?.vendors ?? [];
+  const vendors = (order.data?.vendors ?? []).filter(item => item.enabled);
   const ready = order.data?.ready === true;
+  useAssistantSurface(projectId ? { projectId, scope: "order", label: "Manufacturing / Order review", priority: 10, details: JSON.stringify({ loading: order.isPending, readinessCheckFailed: order.isError, ready, blockers: order.data?.reasons, warnings: order.data?.warnings, selectedVendor: vendor, preparingVendorInstructions: start.isPending, vendorInstructionsAvailable: !!session, instruction: "This screen prepares vendor instructions. It does not confirm an order, quote, upload or payment. Review the saved manufacturing outputs and readiness before ordering." }) } : null);
+
+  if (!projectId) return <EmptyState title="Choose a project before ordering" action={<Button onClick={() => useUiStore.getState().setProjectPickerOpen(true)}>Choose project</Button>} />;
+  if (order.isPending || order.isError) return <div className="flex h-full min-h-0 flex-col"><div className="p-3"><Button size="sm" onClick={() => setOrderFlowOpen(false)}>Back to project</Button></div>{order.isPending ? <div className="flex flex-1 items-center justify-center gap-2" role="status"><Spinner />Checking ordering requirements…</div> : <LoadError title="Could not check ordering requirements" onRetry={() => void order.refetch()} />}</div>;
 
   return (
     <div className="fd-content-pane flex h-full min-w-0 flex-col bg-bg" data-testid="order-flow">
@@ -37,8 +42,9 @@ export function OrderFlow() {
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
         <h1 className="text-xl font-semibold">Where should we fabricate this?</h1>
         <p className="mt-2 max-w-lg text-sm text-muted">
-          Pick a fab house. Laser and CNC are listed so the path is obvious; they are disabled for now.
+          Choose a supported board manufacturer. For your own fabrication process, use the project’s export files.
         </p>
+        <Button className="mt-4" size="sm" onClick={() => { setOrderFlowOpen(false); useUiStore.getState().setWorkspaceArea("outputs"); useUiStore.getState().setWorkspaceTab("files"); }}>Open export files</Button>
         {order.data && !ready && (
           <div
             className="mt-5 max-w-xl rounded-lg border border-danger/40 bg-danger/5 p-4"
@@ -58,7 +64,7 @@ export function OrderFlow() {
                 setOrderFlowOpen(false);
               }}
             >
-              Open DRC/ERC
+              Review board checks
             </Button>
           </div>
         )}
@@ -74,10 +80,10 @@ export function OrderFlow() {
             <button
               key={item.id}
               type="button"
-              disabled={!item.enabled || !ready}
+              disabled={!ready || start.isPending}
               onClick={() => {
                 setVendor(item.id);
-                if (projectId && item.enabled && ready) void start.mutateAsync({ projectId, vendor: item.id });
+                if (projectId && item.enabled && ready && !start.isPending) void start.mutateAsync({ projectId, vendor: item.id }).catch(() => {}); // Error is shown below.
               }}
               className={cn(
                 "rounded-lg border px-3 py-3 text-left",

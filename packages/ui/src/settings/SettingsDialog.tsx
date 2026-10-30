@@ -90,7 +90,7 @@ export function SettingsDialog() {
   };
 
   return (
-    <><Dialog open={open} onClose={close} title="Settings" className="fd-settings h-[80vh] w-[860px]">
+    <><Dialog open={open} onClose={close} closeDisabled={patch.isPending} title="Settings" className="fd-settings h-[80vh] w-[860px]">
       <div className="fd-settings-layout flex min-h-0 flex-1 gap-6">
         <nav className="w-40 shrink-0 overflow-y-auto border-r border-border pr-3" aria-label="Settings sections">
           {SETTINGS_SECTIONS.map((s) => (
