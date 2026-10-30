@@ -87,6 +87,9 @@ export interface UiState {
   activeProjectId: string | null;
   /** Local sidebar preference, retained across app restarts. */
   pinnedProjectIds: string[];
+  /** Recently opened projects per connected core; unrelated hosts never share the menu. */
+  recentProjectsByEndpoint: Record<string, string[]>;
+  recordProjectVisit: (endpoint: string, projectId: string) => void;
   setProjectPinned: (id: string, pinned: boolean) => void;
   sidebarListTab: SidebarListTab;
   activeOpenSourceId: string | null;
@@ -250,6 +253,16 @@ export function createUiStore(storage?: StateStorage) {
   focusMessageId: null,
   activeProjectId: null,
   pinnedProjectIds: [],
+  recentProjectsByEndpoint: {},
+  recordProjectVisit: (endpoint, projectId) => set(s => {
+    if (!endpoint || !projectId) return {};
+    const previous = s.recentProjectsByEndpoint[endpoint] ?? [];
+    if (previous[0] === projectId) return {};
+    const recentProjectsByEndpoint = { ...s.recentProjectsByEndpoint };
+    delete recentProjectsByEndpoint[endpoint];
+    recentProjectsByEndpoint[endpoint] = [projectId, ...previous.filter(id => id !== projectId)].slice(0, 20);
+    return { recentProjectsByEndpoint: Object.fromEntries(Object.entries(recentProjectsByEndpoint).slice(-20)) };
+  }),
   setProjectPinned: (id, pinned) => set((s) => ({
     pinnedProjectIds: pinned ? [...s.pinnedProjectIds.filter((value) => value !== id), id] : s.pinnedProjectIds.filter((value) => value !== id),
   })),
@@ -388,6 +401,7 @@ export function createUiStore(storage?: StateStorage) {
         activeThreadId: s.activeThreadId,
         activeProjectId: s.activeProjectId,
         pinnedProjectIds: s.pinnedProjectIds,
+        recentProjectsByEndpoint: s.recentProjectsByEndpoint,
         sidebarListTab: s.sidebarListTab,
         boardTab: s.boardTab,
         stencilThicknessByProject: s.stencilThicknessByProject,

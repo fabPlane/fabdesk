@@ -424,3 +424,24 @@ test("board request context survives reload separately from prose and retains ev
   expect(restored.getState().drafts[key]).toBe("Keep my unsent question");
   expect(restored.getState().draftBoardContexts["other-thread"]?.[0]?.projectId).toBe("other-project");
 });
+
+
+test("recent project visits survive reload, follow opening order and stay on their core", () => {
+  const memory = new Map<string, string>();
+  const storage = { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); }, removeItem: (key: string) => { memory.delete(key); } };
+  const store = createUiStore(storage);
+  store.getState().recordProjectVisit("local", "a");
+  store.getState().recordProjectVisit("local", "b");
+  store.getState().recordProjectVisit("remote", "elsewhere");
+  store.getState().recordProjectVisit("local", "a");
+  expect(store.getState().recentProjectsByEndpoint.local).toEqual(["a", "b"]);
+  expect(store.getState().recentProjectsByEndpoint.remote).toEqual(["elsewhere"]);
+  const restored = createUiStore(storage);
+  expect(restored.getState().recentProjectsByEndpoint).toEqual(store.getState().recentProjectsByEndpoint);
+  for (let i = 0; i < 30; i++) restored.getState().recordProjectVisit("local", `project-${i}`);
+  expect(restored.getState().recentProjectsByEndpoint.local?.length).toBe(20);
+  expect(restored.getState().recentProjectsByEndpoint.local?.[0]).toBe("project-29");
+  expect(restored.getState().recentProjectsByEndpoint.remote).toEqual(["elsewhere"]);
+  for (let i = 0; i < 30; i++) restored.getState().recordProjectVisit(`core-${i}`, "a");
+  expect(Object.keys(restored.getState().recentProjectsByEndpoint).length).toBe(20);
+});

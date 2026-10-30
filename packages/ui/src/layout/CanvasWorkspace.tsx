@@ -42,6 +42,17 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
     else state.setWorkspaceArea("boards");
   }, [projectId, boardSources.data, boardSources.isFetching, boardSources.isError, project.data, project.isFetching, project.isError]);
   const projects = useProjects();
+  const recentProjectsByEndpoint = useUiStore(s => s.recentProjectsByEndpoint);
+  useEffect(() => {
+    if (projectId && project.data?.id === projectId && !project.isFetching && !project.isError)
+      useUiStore.getState().recordProjectVisit(client.baseUrl, projectId);
+  }, [client.baseUrl, projectId, project.data?.id, project.isFetching, project.isError]);
+  const otherProjects = (projects.data ?? []).filter(item => item.id !== projectId);
+  const recentProjects = (recentProjectsByEndpoint[client.baseUrl] ?? []).flatMap(id => {
+    const item = otherProjects.find(project => project.id === id);
+    return item ? [item] : [];
+  });
+  const switcherProjects = (recentProjects.length ? recentProjects : otherProjects).slice(0, 5);
   const area = useUiStore((s) => s.workspaceArea);
   const boardTab = useUiStore((s) => s.boardTab);
   const areaLabel = area === "boards" && boardSources.data?.mode === "assembly" ? "Boards" : WORKSPACE_AREAS[area].label;
@@ -85,10 +96,10 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       </button>
       <WorkspaceMenu className="fd-project-switcher" label={<><span>{name}</span><Icon name="chevronDown" width={15} height={15} /></>}>
         {projectId && <><div className="fd-menu-caption">Current project</div><button onClick={() => setProjectAction({ id: projectId, name, action: "rename" })}><Icon name="compose" width={16} height={16} />Rename project</button><div className="fd-menu-divider" /></>}
-        <div className="fd-menu-caption">Recent projects</div>
+        <div className="fd-menu-caption">{recentProjects.length ? "Recent projects" : "Projects"}</div>
         {projects.isError && <button onClick={() => void projects.refetch()}>Could not load projects · Retry</button>}
         {projects.isPending && <p className="p-3 text-xs text-muted">Loading projects…</p>}
-        {(projects.data ?? []).filter(item => item.id !== projectId).slice(0, 5).map((item) => <button key={item.id} aria-current={item.id === projectId ? "true" : undefined} onClick={() => { ui().setActiveProject(item.id); ui().setBoardOpen(true); }}><Icon name="folder" width={16} height={16} /><span>{item.name}</span>{item.id === projectId && <Icon name="check" width={15} height={15} />}</button>)}
+        {switcherProjects.map((item) => <button key={item.id} aria-current={item.id === projectId ? "true" : undefined} onClick={() => { ui().setActiveProject(item.id); ui().setBoardOpen(true); }}><Icon name="folder" width={16} height={16} /><span>{item.name}</span>{item.id === projectId && <Icon name="check" width={15} height={15} />}</button>)}
         <div className="fd-menu-divider" />
         <button onClick={() => setCreating("create")}><Icon name="plus" width={16} height={16} />New project</button>
         <button onClick={() => setCreating("github")}><Icon name="folderOpen" width={16} height={16} />Import from GitHub</button>
