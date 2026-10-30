@@ -1,5 +1,24 @@
 # v6 page-by-page visual review
 
+## Final native acceptance · October 30
+
+Code **ac1bf94**, [current evidence](OVERNIGHT-20261030.md). Earlier unchecked items below are historical and superseded by this scoped result.
+
+- [x] Primary root native modify → explicit Apply/Discard → stale checks/outputs → actual finding → saved comparison → deliverables.
+- [x] VAIO connection → board/source → scoped Review → overview; unresolved Keyboard retained; all 42 protected originals exact.
+- [x] Shared Right-instance context preserved through export/routing/model and return; other source selects its owned instance.
+- [x] Real Library multiselect/filtered Select all/native ZIP; image/GLB/animation previews, Escape/focus and source context.
+- [x] Compact manufacturing exports and actual member Gerber output; native file recovery/attachments/unsent requests.
+- [x] Native BOM exclusions/physical quantities/hardware/partial CSV/Shopping auth; collapsible coverage with honest warnings.
+- [x] Changes/comments snapshots, readable prompts, current native schematic shortcut and compact drawing usability.
+- [x] Files/Notes save/reopen/draft-preservation/discard and actual local review ZIP.
+- [x] v6 comparison of overview/board/Review/Checks/Parts/Outputs/Routing; compact 960×700 and wide 1440×870 captures.
+- [x] Final affected UI types and tests (245 passed, 970 assertions); integrated packages (2,271 passed, 36 skipped), scripts (94 passed), root types and production build passed; no source maps.
+- [x] Local final evidence/diff review. One normal final push/PR389 handoff is the publication step, with result recorded locally.
+
+Excluded: teammate Mechanical PR398, new placement workspace PR393, and Board Art Apply/polish. Engineering parity, fit and dependency limits are disclosed. The optional later live-agent send was rejected before execution and was not retried. All concepts and screenshots are preserved.
+
+
 ## Native implementation resume — 2026-10-30 04:04 UTC / 11:04 Bangkok
 
 Code aa3bfbc; continuous run active. User unlocked the Mac03:25UTC. Actual native captures08–24 now cover real Library multiselect/filter/focus/ZIP, image/GLB/GIF/unsent-context previews, render-view recovery, compact source export, shared Right-instance return, central missing-preview action and source-B candidate review/Apply/PCB. No full-page visual acceptance claim yet.

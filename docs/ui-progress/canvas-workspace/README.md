@@ -1,5 +1,17 @@
 # Canvas workspace implementation milestone
 
+## Latest · October 30 non-enclosure workflow pass
+
+The requested non-enclosure user journeys and native UI acceptance are complete through code **ac1bf94**. [Current acceptance and screenshots](OVERNIGHT-20261030.md) supersede the older limitations and LOCAL ONLY statements below. This pass adds working source-qualified Changes/comments, actual output multiselect/ZIP and shared media previews, compact source exports, native BOM/Shopping coverage, scoped routing review/Apply, contextual unsent Ask and useful local review packages. Native walkthroughs cover the primary modify→review→deliver loop, fresh Codex board handoff, VAIO and shared-instance return.
+
+Root typecheck passed; sequential packages **2,271 pass /36 skip /0 fail**; exact scripts **94 pass**. Final UI **245 pass /970 assertions**, affected types pass; final production desktop build passed with no source maps. All **42 protected original files** remained byte-exact. Original concepts, screenshots and honest failed attempts are preserved.
+
+This is the non-enclosure workflow pass, not completion of the whole future engineering roadmap. **PR398 Mechanical and PR393’s new placement/resize workspace remain separate; Board Art Apply/polish is deferred.** No full electrical parity, assembly compatibility/fit or universal dependency freshness is claimed. Routing remains partial; Shopping needs sign-in. An optional later live-agent check was rejected by automatic approval review and was not retried. Earlier positive Codex evidence remains valid.
+
+One final normal push and PR389 update is authorized for this handoff. No merge/deployment. Publication result belongs to the PR history and local handoff; earlier sections below are a preserved historical record.
+
+## Historical implementation record
+
 Design roadmap: [#388](https://github.com/TensorFleet/fabdesk/pull/388). Implementation continues in [#389](https://github.com/TensorFleet/fabdesk/pull/389).
 
 **Shared UI structure is ready for feature delegation** at source checkpoint **b38683d**. This is the user-approved structure-first milestone, not completion of every feature. [23 feature handoffs](STRUCTURE-HANDOFF.md) give each feature a home, working/preserved behavior, remaining implementation, dependencies and entry files. [Final acceptance](structure-final-acceptance.json) separates navigation, native evidence and functional limits.

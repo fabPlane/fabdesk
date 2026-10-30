@@ -1,0 +1,270 @@
+{
+  "checkedAt": "2026-10-30T05:56:06.184761+00:00",
+  "codeCommit": "ac1bf94",
+  "runStart": "1169366",
+  "branch": "feat/sketch-first-drafts",
+  "scope": "Non-enclosure canvas workspace user journeys; external PR393/PR398 integrations and Board Art Apply/polish excluded",
+  "nativeWindowCssSizes": [
+    [
+      1440,
+      870
+    ],
+    [
+      960,
+      700
+    ]
+  ],
+  "screenshotsAreActualNativeCaptures": true,
+  "sourcePreservation": {
+    "files": 42,
+    "allUnchanged": true,
+    "checkedAt": "2026-10-30T05:54:41.210176+00:00"
+  },
+  "checks": {
+    "rootTypecheck": "PASS at 324c498",
+    "sequentialPackageTests": {
+      "pass": 2271,
+      "skip": 36,
+      "fail": 0,
+      "code": "324c498"
+    },
+    "scripts": {
+      "pass": 94,
+      "assertions": 318,
+      "fail": 0
+    },
+    "latestUi": {
+      "pass": 245,
+      "assertions": 970,
+      "fail": 0,
+      "code": "ac1bf94",
+      "typecheck": "PASS"
+    },
+    "productionDesktopBuild": "PASS at ac1bf94, 12.38s; no .map files in apps/desktop/out"
+  },
+  "nativeJourneys": [
+    "Fresh Codex idea-to-native PCB/schematic (earlier recorded run)",
+    "Root preview/discard/apply \u2192 stale outputs/checks \u2192 actual findings \u2192 saved comparison \u2192 deliverables",
+    "VAIO connection \u2192 endpoint/board \u2192 Review \u2192 overview, including missing keyboard source",
+    "Shared Right instance \u2192 Outputs/Routing \u2192 PCB retains Right; another source selects its owned instance",
+    "Library independent multiselect/filter/Select all/native ZIP, model/image/animation previews and Escape focus",
+    "Member manufacturing export, real partial routing candidate review/Apply, source hash preservation",
+    "Native BOM physical quantities/hardware/reviewed partial CSV/Shopping authentication recovery",
+    "Source Find/Import/Generate, readable unsent context, source-specific Comments",
+    "Notes save/reopen/draft navigation/Keep editing/Discard; local review ZIP"
+  ],
+  "limitations": [
+    "PR398 Mechanical/enclosure remains teammate-owned and excluded; PR393 placement/resize/replacement/general Undo integration is separate",
+    "Board Art Apply and further polish remain deferred",
+    "Declared inter-board links do not establish compatibility or installed fit",
+    "Structured Changes diagrams are saved comparisons, not full native drawings or schematic/PCB electrical reconciliation",
+    "Model PCB hash receipts do not certify model dependencies, physical fit or full artifact freshness",
+    "Routing fixtures remain partial; failing endpoint-collision run is retained; root edit fixture has 12 DRC findings",
+    "Native format validation used task-local KiCad nightly plus existing installed libraries; old installed CLI rejected newer source format",
+    "Shopping requires user authentication; no purchase or live cart mutation was tested",
+    "Earlier real Codex context/fresh-project evidence retained; optional later live context send was rejected by automatic approval review before execution and was not retried",
+    "Default parallel suite had an intermittent mechanical timeout; sequential and isolated suites passed",
+    "Native Save-panel filename insertion preserved in archive evidence; canonical evidence ZIP is a byte-exact copy",
+    "New local HTML gallery resource links are filesystem-validated; HTML was not browser-render-verified"
+  ],
+  "screenshots": [
+    {
+      "title": "Overview",
+      "file": "overnight-20261030-59-overview-final-model-entry.png",
+      "original": "59-overview-final-model-entry.png",
+      "sha256": "959ca5f6d5a2a0b92e2ef0a61b8d516967b4166f2a6c94fae54b9045e8b1c7d1",
+      "bytes": 413347,
+      "reference": "02-project-overview.png",
+      "caption": "Six declared boards and five links; actual saved drawings with a missing-source fallback. 3D models opens the selected source directly. Logical layout does not establish installed position or compatibility."
+    },
+    {
+      "title": "Selected board and finding",
+      "file": "overnight-20261030-39-vaio-contextual-finding-after.png",
+      "original": "39-vaio-contextual-finding-after.png",
+      "sha256": "91dfef88c0fe08d6b26195b7a26b760dac63090296dff01129562506950f132a",
+      "bytes": 465035,
+      "reference": "03-board-selection.png",
+      "caption": "Source-qualified circular finding marker and contextual card; Dismiss restores drawing focus. The two saved VAIO DRC findings remain findings."
+    },
+    {
+      "title": "Review updates",
+      "file": "overnight-20261030-46-review-updates-current-v6.png",
+      "original": "46-review-updates-current-v6.png",
+      "sha256": "b9dc7fd24d2a5a206672ff9b9a4195c6bf202fa05da3071e915a2b1edfcb70aa",
+      "bytes": 372079,
+      "reference": "05-review-updates.png",
+      "caption": "Scoped source card, generated-output table and explicit next actions. Saved output choices retain warnings instead of implying checks passed."
+    },
+    {
+      "title": "Changes",
+      "file": "overnight-20261030-47-changes-current-schematic-snapshot.png",
+      "original": "47-changes-current-schematic-snapshot.png",
+      "sha256": "6585dc7501876a2a52137e5daed04ffe4b5af0b0516eb844eefdda917b226b29",
+      "bytes": 255932,
+      "reference": null,
+      "caption": "Source-qualified saved comparison, readable snapshot status and folded guide. Structured diagrams explain changes; they are not full native drawings or electrical parity checks."
+    },
+    {
+      "title": "Compact Changes",
+      "file": "overnight-20261030-48-compact-changes-after.png",
+      "original": "48-compact-changes-after.png",
+      "sha256": "5b703fe81695c5f05ccb416d2d84500becc6b3c067ef07a0137e78029028cd98",
+      "bytes": 193607,
+      "reference": null,
+      "caption": "A minimum-height drawing with scrolling keeps comparisons usable at 960 \u00d7 700. The guide opens the selected board\u2019s actual current schematic."
+    },
+    {
+      "title": "Parts & BOM",
+      "file": "overnight-20261030-56-parts-native-coverage-current.png",
+      "original": "56-parts-native-coverage-current.png",
+      "sha256": "bb9ac814889871abc658b56b50119e3f6f761354dce3217c9f945bcd4c3fba2f",
+      "bytes": 329537,
+      "reference": "09-parts.png",
+      "caption": "One parts list; native schematic coverage remains explicit. Missing sources do not count as zero parts. Source details are genuinely collapsible."
+    },
+    {
+      "title": "Library",
+      "file": "overnight-20261030-51-library-current-v6.png",
+      "original": "51-library-current-v6.png",
+      "sha256": "ee841376c3c44ecb38b624608f2e7097ced425bd309e5688273a40c654ae6e85",
+      "bytes": 486991,
+      "reference": "08-outputs.png",
+      "caption": "Saved artifacts remain separate from creation settings. Board/source filters and image/model/video previews use existing tools."
+    },
+    {
+      "title": "Real multiple selection",
+      "file": "overnight-20261030-10-library-two-selected-native.png",
+      "original": "10-library-two-selected-native.png",
+      "sha256": "926f9ef853a2bcb7b199176e7ab3cb7abe9c80ac64f23db1c4246c9dc088902f",
+      "bytes": 393194,
+      "reference": null,
+      "caption": "Independent checkboxes, filtered Select all and Clear; two selected source-qualified outputs downloaded in a native Save dialog and verified byte-for-byte."
+    },
+    {
+      "title": "Model preview",
+      "file": "overnight-20261030-11-library-model-preview-native.png",
+      "original": "11-library-model-preview-native.png",
+      "sha256": "3bd2d0c6158bc2bc42e492497d18e70aef85511afdc5ad34930e272ccb3fd8ce",
+      "bytes": 197375,
+      "reference": null,
+      "caption": "Shared preview dialog loads the actual GLB, supports view controls and Fit, and returns to the same selection with Escape."
+    },
+    {
+      "title": "Video preview",
+      "file": "overnight-20261030-14-library-video-preview-native.png",
+      "original": "14-library-video-preview-native.png",
+      "sha256": "b2c2e3dbb53e287761c4898243e54ade7d2554e4f48dfc2f7847faa75eaa41a6",
+      "bytes": 215499,
+      "reference": null,
+      "caption": "Existing saved animation and provenance use the same preview shell. New rendering jobs were not repeated merely for screenshots."
+    },
+    {
+      "title": "Compact export",
+      "file": "overnight-20261030-52-export-current-v6.png",
+      "original": "52-export-current-v6.png",
+      "sha256": "8911ea87b07ff16b4acbb2c70d90a247fa747b582aa6bc3441837bc9e405f820",
+      "bytes": 394197,
+      "reference": null,
+      "caption": "A source selector and focused manufacturing controls replace the empty left-hand canvas. Actual member Gerber export produced 16 files on the isolated fixture."
+    },
+    {
+      "title": "Find, import or generate",
+      "file": "overnight-20261030-27-native-schematic-import-unsent.png",
+      "original": "27-native-schematic-import-unsent.png",
+      "sha256": "5036ff38f135e3d706a7f11061ad72bccd109ba077a637c8e02df0ca46faad81",
+      "bytes": 365885,
+      "reference": null,
+      "caption": "Shared missing-source flow finds possible repository files and accepts a native file attachment. Ask/generate requests are concise and unsent; a candidate is not silently declared the right schematic."
+    },
+    {
+      "title": "Contextual Ask",
+      "file": "overnight-20261030-31-native-comment-ask-readable.png",
+      "original": "31-native-comment-ask-readable.png",
+      "sha256": "c76ca903e186b8ff50158d640cb1a4a75ba0896452ccbf746f31c47440946f8e",
+      "bytes": 334139,
+      "reference": null,
+      "caption": "Readable question text with captured page, source and pin context. Sending remains explicit; opening help does not silently transmit a message."
+    },
+    {
+      "title": "Routing review",
+      "file": "overnight-20261030-24-routing-visible-copper-native.png",
+      "original": "24-routing-visible-copper-native.png",
+      "sha256": "3e3a0b5a15af50357c735c84bdbba1f49cd9758e304aea5d6c2edd0c6d681c12",
+      "bytes": 266735,
+      "reference": "10-routing.png",
+      "caption": "The real final frame uses visible teal copper on the light canvas. The applied fixture remains partial with two unrouted nets and three connections; no fabricated animation or electrical pass."
+    },
+    {
+      "title": "Native edit proposal",
+      "file": "overnight-20261030-34-native-component-proposal.png",
+      "original": "34-native-component-proposal.png",
+      "sha256": "0a2d04bc7261f714bdd339ca5ec379968efe702efa2effd3b93d58e3a1c5cd0f",
+      "bytes": 311935,
+      "reference": "04-board-resize.png",
+      "caption": "Existing native editing is reused with preview, explicit Apply/Discard and revision guards. This reference supplies the shell/inspector style; PR393\u2019s new placement workspace is separate."
+    },
+    {
+      "title": "Native checks",
+      "file": "overnight-20261030-35-native-check-finding-location.png",
+      "original": "35-native-check-finding-location.png",
+      "sha256": "4cbdc6706095c31ed4834ccdd542013c5956e0d10f15c5e5d19d23fb8dc453b0",
+      "bytes": 273697,
+      "reference": "07-checks.png",
+      "caption": "Actual fixture checks completed with 12 findings; selecting one locates its saved coordinates. No ERC, schematic parity or release pass is claimed."
+    },
+    {
+      "title": "Files",
+      "file": "overnight-20261030-53-files-readonly-current.png",
+      "original": "53-files-readonly-current.png",
+      "sha256": "41e4e71a9cb40c47e575dc90299f4ef9ae6b6db0ee435164457e2817bbaa7544",
+      "bytes": 406945,
+      "reference": null,
+      "caption": "Source files remain inspectable with safe board/schematic destinations and contextual help; historical output views do not gain editing authority."
+    },
+    {
+      "title": "Notes",
+      "file": "overnight-20261030-54-notes-saved-preview.png",
+      "original": "54-notes-saved-preview.png",
+      "sha256": "b2273be7f1d584223443818eeed687ab875cb2cfed6976c2c1cfcb9ec5d8984c",
+      "bytes": 239990,
+      "reference": null,
+      "caption": "Actual Markdown saved and reopened. Unsaved drafts survive task navigation, with explicit Keep editing or Discard actions."
+    },
+    {
+      "title": "Local review package",
+      "file": "overnight-20261030-55-local-review-package.png",
+      "original": "55-local-review-package.png",
+      "sha256": "188bfc0bb2affe5572edd8dfa4263b9db10e3c15e140f378802a5c9e6a8d3ec4",
+      "bytes": 242677,
+      "reference": null,
+      "caption": "Explicit file groups create a local review ZIP, not a hosted share link. All 37 selected project files in the 38-entry archive were byte-exact."
+    },
+    {
+      "title": "Direct board model",
+      "file": "overnight-20261030-58-overview-direct-model-after.png",
+      "original": "58-overview-direct-model-after.png",
+      "sha256": "56ab76890b972205cb6c0e10eff3abd5750450c2ebec372b7a31107dec842a8a",
+      "bytes": 307403,
+      "reference": null,
+      "caption": "Overview \u2192 3D models loads the chosen LCD board\u2019s actual GLB. No unfinished assembly dialog or implied physical-fit result."
+    },
+    {
+      "title": "Compact overview",
+      "file": "overnight-20261030-41-compact-vaio-overview.png",
+      "original": "41-compact-vaio-overview.png",
+      "sha256": "977055f4ebddb6905b3e8221ec8ffbe65ca0c402e517d4a4d3b8e4eea3293bc2",
+      "bytes": 275097,
+      "reference": null,
+      "caption": "Actual compact native window; project context, readable cards and requested corner assistant stay available. Captured before the final 3D models label change."
+    },
+    {
+      "title": "Compact review",
+      "file": "overnight-20261030-42-compact-review-updates.png",
+      "original": "42-compact-review-updates.png",
+      "sha256": "af78011c8f254e1c433da763edfe7c96146df258f3066f670063ff14e6977288",
+      "bytes": 244919,
+      "reference": null,
+      "caption": "Actual compact Review Updates with source scope and useful actions; supporting disclosures are closed until requested."
+    }
+  ]
+}
