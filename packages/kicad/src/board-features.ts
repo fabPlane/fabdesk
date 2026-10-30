@@ -6,6 +6,7 @@
  * footprint name when no 3D measurement is available.
  */
 import { createHash } from "node:crypto";
+import type { ConnectorFace } from "@fabdesk/protocol";
 
 type Sexpr = string | Sexpr[];
 
@@ -93,6 +94,7 @@ export type MountingHole = {
 };
 
 export type EdgeConnector = {
+  face?: ConnectorFace;
   ref: string;
   footprint: string;
   x: number;
@@ -295,7 +297,12 @@ function footprintValue(fp: Sexpr[]): string {
   return typeof value === "string" ? value : "";
 }
 
-function courtyardBounds(fp: Sexpr[], origin: Point, rotationDeg: number): Rect {
+function courtyardBounds(
+  fp: Sexpr[],
+  origin: Point,
+  rotationDeg: number,
+  fabrication = false,
+): Rect {
   const r = emptyRect();
   const addLocal = (x: number, y: number) => {
     const p = rotateLocal(x, y, rotationDeg);
@@ -303,7 +310,8 @@ function courtyardBounds(fp: Sexpr[], origin: Point, rotationDeg: number): Rect 
   };
   for (const name of ["fp_line", "fp_rect", "fp_poly", "fp_circle"] as const) {
     for (const g of children(fp, name)) {
-      if (!isCourtyard(layerOf(g))) continue;
+      if (fabrication ? !["F.Fab", "B.Fab"].includes(layerOf(g) ?? "") : !isCourtyard(layerOf(g)))
+        continue;
       if (name === "fp_line") {
         const a = xy(child(g, "start"));
         const b = xy(child(g, "end"));
@@ -314,6 +322,8 @@ function courtyardBounds(fp: Sexpr[], origin: Point, rotationDeg: number): Rect 
         const b = xy(child(g, "end"));
         if (a && b) {
           addLocal(a.x, a.y);
+          addLocal(a.x, b.y);
+          addLocal(b.x, a.y);
           addLocal(b.x, b.y);
         }
       } else if (name === "fp_poly") {
@@ -323,8 +333,9 @@ function courtyardBounds(fp: Sexpr[], origin: Point, rotationDeg: number): Rect 
         const e = xy(child(g, "end"));
         if (c && e) {
           const rad = Math.hypot(e.x - c.x, e.y - c.y);
-          addLocal(c.x - rad, c.y - rad);
-          addLocal(c.x + rad, c.y + rad);
+          const center = rotateLocal(c.x, c.y, rotationDeg);
+          expand(r, origin.x + center.x - rad, origin.y + center.y - rad);
+          expand(r, origin.x + center.x + rad, origin.y + center.y + rad);
         }
       }
     }
@@ -581,7 +592,12 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
     const body = validRect(bounds)
       ? bounds
       : { minX: origin.x - 1, minY: origin.y - 1, maxX: origin.x + 1, maxY: origin.y + 1 };
-    const heightMm = estimatePartHeightMm(libId, value);
+    // Exact footprint family only: do not assign one connector's height to all USB-C parts.
+    // GCT USB4105 drawing, sheet 1, B4: 8.94 mm shell width, 3.31 mm above PCB.
+    // https://gct.co/files/drawings/usb4105.pdf
+    const usb4105 = /(?:^|:)USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal$/.test(libId);
+    const heightMm = usb4105 ? 3.31 : estimatePartHeightMm(libId, value);
+    const fab = courtyardBounds(fp, origin, placement.rotationDeg, true);
     const mountLabel = `${libId} ${ref}`;
     if (!MOUNT_RE.test(mountLabel) && !FIDUCIAL_RE.test(mountLabel))
       components.push({
@@ -617,6 +633,18 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
         widthMm: mm(Math.max(along, 4)),
         depthMm: mm(Math.max(into, 2)),
         heightMm,
+        ...(validRect(fab)
+          ? {
+              face: {
+                bounds: fab,
+                heightMm,
+                centerZ: heightMm / 2,
+                source: usb4105
+                  ? ("GCT USB4105 drawing" as const)
+                  : ("fabrication-outline" as const),
+              },
+            }
+          : {}),
         bounds: {
           minX: mm(body.minX),
           minY: mm(body.minY),

@@ -4,7 +4,13 @@ import type {
   MechanicalFitReport,
   MechanicalFitIssue,
 } from "@fabdesk/protocol";
-import { cableAssessments, portEnvelopes, defaultConnectorAccess } from "@fabdesk/protocol";
+import {
+  cableAssessments,
+  portEnvelopes,
+  defaultConnectorAccess,
+  connectorOpening,
+  DEFAULT_OPENING_CLEARANCE,
+} from "@fabdesk/protocol";
 import type { BoardFeatures, Rect } from "./board-features";
 import { generateEnclosure, type EnclosureCutout } from "./enclosure";
 
@@ -274,9 +280,16 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
       const z0 = bottom
         ? b.placement.z - connector.heightMm
         : b.placement.z + b.features.thicknessMm;
-      const z1 = bottom ? b.placement.z : z0 + connector.heightMm;
-      const apertureHeight = profile?.aperture?.height ?? connector.heightMm;
-      const apertureZ = (z0 + z1 - apertureHeight) / 2;
+      const aperture = connectorOpening(
+        connector,
+        profile?.face ?? connector.edge,
+        profile?.aperture,
+      );
+      const apertureCenter = boardPoint(b, aperture.x, aperture.y);
+      const apertureHeight = aperture.height;
+      const padding = d.openingClearance ?? DEFAULT_OPENING_CLEARANCE;
+      const apertureZ =
+        (bottom ? b.placement.z - aperture.centerZ : z0 + aperture.centerZ) - apertureHeight / 2;
       const openings = d.openings.filter((o) => {
         if (o.boardPath && (o.boardPath !== label || o.ref !== connector.ref)) return false;
         if (o.boardPath) {
@@ -295,11 +308,9 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
           if (gap > Math.max(1, c) + 1.5 + eps) return false;
         }
         const vertical = o.wall === "minX" || o.wall === "maxX";
-        const along = vertical ? p.y : p.x;
+        const along = vertical ? apertureCenter.y : apertureCenter.x;
         const at = vertical ? p.x : p.y;
-        const alongWidth =
-          profile?.aperture?.width ??
-          (vertical ? envelope.maxY - envelope.minY : envelope.maxX - envelope.minX);
+        const alongWidth = aperture.width;
         const acrossDepth = vertical
           ? envelope.maxX - envelope.minX
           : envelope.maxY - envelope.minY;
@@ -313,10 +324,9 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
                 : s.y + s.depth;
         return (
           Math.abs(at - wall) <= acrossDepth + s.wall + c &&
-          Math.abs(along - o.offset) + alongWidth / 2 + (d.openingClearance ?? c) <=
-            o.width / 2 + eps &&
-          o.z <= apertureZ + eps &&
-          o.z + o.height >= apertureZ + apertureHeight - eps
+          Math.abs(along - o.offset) + alongWidth / 2 + padding <= o.width / 2 + eps &&
+          o.z <= apertureZ - padding + eps &&
+          o.z + o.height >= apertureZ + apertureHeight + padding - eps
         );
       });
       if (!openings.length)

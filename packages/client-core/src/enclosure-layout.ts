@@ -2,6 +2,8 @@ import {
   cableAssessments,
   portEnvelopes,
   defaultConnectorAccess,
+  connectorOpening,
+  DEFAULT_OPENING_CLEARANCE,
   type MechanicalDesign,
 } from "@fabdesk/protocol";
 import { alignEnclosureMounts, linkEnclosureMounts, type MountBoard } from "./enclosure-mounts";
@@ -58,7 +60,7 @@ type Port = {
   edge: Edge;
   height: number;
   bottom: boolean;
-  aperture?: { width: number; height: number };
+  aperture: { width: number; height: number; x: number; y: number; centerZ: number };
   wall?: Edge;
 };
 export type EnclosureLayoutGoal = "compact" | "assembly" | "ports";
@@ -176,11 +178,13 @@ function options(d: MechanicalDesign, b: LayoutBoard): Option[] {
         const profile = d.portAccess?.find(
           (p) => p.boardPath === b.placement.path && p.ref === c.ref,
         );
+        const face = connectorOpening(c, profile?.face ?? c.edge, profile?.aperture);
+        const center = turn(face.x, face.y, rotation);
         return {
           ref: c.ref,
           bounds: rotateRect(c.bounds!, rotation),
           edge: rotatedEdge(profile?.face ?? c.edge, rotation),
-          ...(profile?.aperture ? { aperture: profile.aperture } : {}),
+          aperture: { ...face, ...center },
           ...(profile?.wall ? { wall: profile.wall } : {}),
           height: c.heightMm,
           bottom: parts.some((p) => p.ref === c.ref && p.bottom),
@@ -425,11 +429,11 @@ export function proposeEnclosureLayout(
         unresolved.push(`${b.board.placement.path}: ${p.ref} cannot reach its facing wall`);
         continue;
       }
-      const r = shift(p.bounds, b.x + sx, b.y + sy),
-        vertical = p.edge === "minX" || p.edge === "maxX";
+      const vertical = p.edge === "minX" || p.edge === "maxX";
       const z = p.bottom ? b.z - p.height : b.z + b.board.features.thicknessMm;
-      const padding = d.openingClearance ?? margin;
-      const height = p.aperture?.height ?? p.height;
+      const padding = d.openingClearance ?? DEFAULT_OPENING_CLEARANCE;
+      const height = p.aperture.height;
+      const centerZ = p.bottom ? b.z - p.aperture.centerZ : z + p.aperture.centerZ;
       openings.push({
         name: `${b.board.placement.path
           .split("/")
@@ -439,9 +443,9 @@ export function proposeEnclosureLayout(
         boardPath: b.board.placement.path,
         ref: p.ref,
         wall: p.edge,
-        offset: vertical ? (r.minY + r.maxY) / 2 : (r.minX + r.maxX) / 2,
-        z: Math.max(d.space.floor, z + (p.height - height) / 2 - padding),
-        width: (p.aperture?.width ?? (vertical ? r.maxY - r.minY : r.maxX - r.minX)) + 2 * padding,
+        offset: vertical ? p.aperture.y + b.y + sy : p.aperture.x + b.x + sx,
+        z: centerZ - height / 2 - padding,
+        width: p.aperture.width + 2 * padding,
         height: height + 2 * padding,
       });
     }

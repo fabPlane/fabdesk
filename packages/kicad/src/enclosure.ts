@@ -9,6 +9,7 @@ export { previewEnclosureSvg } from "./enclosure-preview";
  * is available, the `cad` toolset also mirrors the primitives into `model.FCStd`.
  */
 import type { BoardEdge, BoardFeatures, Point, Rect } from "./board-features";
+import { connectorOpening } from "@fabdesk/protocol";
 
 export const ENCLOSURE_CONTRACT = { name: "fabdesk.enclosure", version: "2.0.0" } as const;
 
@@ -371,13 +372,6 @@ function punchWall(name: string, wall: Box3, holes: Box3[]): EnclosureSolid[] {
   return remain.map((b, i) => box(remain.length === 1 ? name : `${name}_${i + 1}`, "wall", b.min, b.max));
 }
 
-function connectorAlong(c: { edge: BoardEdge; x: number; y: number; bounds: Rect }): number {
-  const cx = (c.bounds.minX + c.bounds.maxX) / 2;
-  const cy = (c.bounds.minY + c.bounds.maxY) / 2;
-  const along = c.edge === "minX" || c.edge === "maxX" ? cy : cx;
-  return Number.isFinite(along) ? along : c.edge === "minX" || c.edge === "maxX" ? c.y : c.x;
-}
-
 /** Build a two-piece case whose cutouts and standoffs track the current board features. */
 export function generateEnclosure(
   features: BoardFeatures,
@@ -417,10 +411,12 @@ export function generateEnclosure(
     warnings.push(`outline offset ${params.outlineOffsetMm} mm is applied outside the ${params.clearanceMm} mm board clearance`);
 
   const cutouts: EnclosureCutout[] = constraints?.cutouts ?? features.connectors.map((c) => {
-    const widthMm = mm(c.widthMm + 2 * params.cutoutClearanceMm);
-    const heightMm = mm(c.heightMm + 2 * params.cutoutClearanceMm);
-    const z = mm(params.floorMm + params.standoffMm + features.thicknessMm + c.heightMm / 2);
-    const along = connectorAlong(c);
+    const face = connectorOpening(c);
+    const widthMm = mm(face.width + 2 * params.cutoutClearanceMm);
+    const heightMm = mm(face.height + 2 * params.cutoutClearanceMm);
+    const bottom = features.components?.some((part) => part.ref === c.ref && part.bottom);
+    const z = mm(params.floorMm + params.standoffMm + (bottom ? -face.centerZ : features.thicknessMm + face.centerZ));
+    const along = c.edge === "minX" || c.edge === "maxX" ? face.y : face.x;
     const wall =
       c.edge === "minX" ? inner.minX : c.edge === "maxX" ? inner.maxX : c.edge === "minY" ? inner.minY : inner.maxY;
     return {
@@ -825,7 +821,8 @@ export function checkEnclosureAlignment(
       });
       continue;
     }
-    const along = connectorAlong(live);
+    const face = connectorOpening(live);
+    const along = live.edge === "minX" || live.edge === "maxX" ? face.y : face.x;
     const specAlong = cut.edge === "minX" || cut.edge === "maxX" ? cut.center.y : cut.center.x;
     if (Math.abs(along - specAlong) > CUTOUT_POS_TOL_MM)
       issues.push({
@@ -834,8 +831,8 @@ export function checkEnclosureAlignment(
         ref: cut.ref,
         message: `cutout ${cut.ref} is ${mm(Math.abs(along - specAlong))} mm off the connector (tolerance ${CUTOUT_POS_TOL_MM} mm)`,
       });
-    const needW = live.widthMm + 2 * spec.params.cutoutClearanceMm;
-    const needH = live.heightMm + 2 * spec.params.cutoutClearanceMm;
+    const needW = face.width + 2 * spec.params.cutoutClearanceMm;
+    const needH = face.height + 2 * spec.params.cutoutClearanceMm;
     if (cut.widthMm + CUTOUT_SIZE_TOL_MM < needW || cut.heightMm + CUTOUT_SIZE_TOL_MM < needH)
       issues.push({
         code: "small-cutout",

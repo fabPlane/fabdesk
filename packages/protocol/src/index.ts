@@ -19,3 +19,4 @@ export * from "./routers";
 export * from "./speech";
 export * from "./mechanical-design";
 export * from "./mechanical-access";
+export * from "./connector-opening";

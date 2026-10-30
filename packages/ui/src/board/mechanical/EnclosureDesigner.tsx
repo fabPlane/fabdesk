@@ -45,6 +45,7 @@ import { detailedBoardSource, usePcbModels } from "./usePcbModels";
 import { NumberField } from "./EnclosureNumberField";
 import { EnclosureLayoutPanel, type LayoutChoice } from "./EnclosureLayoutPanel";
 import { EnclosureBoardPicker } from "./EnclosureBoardPicker";
+import { EnclosureBoardDimensions } from "./EnclosureBoardDimensions";
 import { PcbModelStatus } from "./PcbModelStatus";
 
 type Result = {
@@ -294,12 +295,8 @@ export function EnclosureDesigner({
   function selectBoard(path: string | null) {
     if (busy || pendingRecovery) return;
     setSelectedBoard(path);
-    setPlacementMode(path ? "translate" : "orbit");
+    setPlacementMode(path && step === "PCB" && manualPlacement ? "translate" : "orbit");
     setFocusedIssue(null);
-    if (path) {
-      setStep("PCB");
-      setManualPlacement(true);
-    }
   }
   function changePlacement(next: MechanicalDesign["boards"][number]) {
     if (!design) return;
@@ -1004,6 +1001,14 @@ export function EnclosureDesigner({
           ))}
         </nav>
         <div className="fd-case-body" ref={body}>
+          <EnclosureBoardDimensions
+            paths={design?.boards.map((b) => b.path) ?? []}
+            selected={selectedBoard}
+            features={currentFeatures}
+            disabled={actionsDisabled}
+            onSelect={selectBoard}
+            onFocus={() => selectedBoard && scene.current?.focusModel(`@fit-${selectedBoard}`)}
+          />
           {!!design?.boards.length && (
             <details className="fd-case-model-disclosure">
               <summary>

@@ -3,6 +3,7 @@ import {
   type MechanicalBox,
   type MechanicalDesign,
 } from "./mechanical-design";
+import type { ConnectorFace } from "./connector-opening";
 
 type Rect = { minX: number; minY: number; maxX: number; maxY: number };
 export type MechanicalAccessBoard = {
@@ -17,6 +18,7 @@ export type MechanicalAccessBoard = {
       footprint?: string;
       bounds?: Rect;
       heightMm: number;
+      face?: ConnectorFace;
     }>;
     components?: Array<{ ref: string; bottom?: boolean }>;
   };
@@ -71,8 +73,9 @@ export function portEnvelopes(d: MechanicalDesign, boards: MechanicalAccessBoard
       if (!Number.isInteger(turns)) continue;
       const face = order[(order.indexOf(p?.face ?? c.edge) + turns) % 4]!;
       const a = (b.placement.rotation * Math.PI) / 180;
-      const points = [c.bounds.minX, c.bounds.maxX].flatMap((x) =>
-        [c.bounds!.minY, c.bounds!.maxY].map((y) => ({
+      const body = c.face?.bounds ?? c.bounds;
+      const points = [body.minX, body.maxX].flatMap((x) =>
+        [body.minY, body.maxY].map((y) => ({
           x: b.placement.x + x * Math.cos(a) - y * Math.sin(a),
           y: b.placement.y + x * Math.sin(a) + y * Math.cos(a),
         })),
@@ -98,7 +101,12 @@ export function portEnvelopes(d: MechanicalDesign, boards: MechanicalAccessBoard
         face === "minX" ? r.minX : face === "maxX" ? r.maxX : face === "minY" ? r.minY : r.maxY;
       const gap = Math.abs(front - wall);
       const along = vertical ? (r.minY + r.maxY) / 2 : (r.minX + r.maxX) / 2;
-      const z = accessPoint(b, c.ref)!.z;
+      const centerZ = c.face?.centerZ ?? c.heightMm / 2;
+      const z =
+        b.placement.z +
+        (b.features.components?.some((part) => part.ref === c.ref && part.bottom)
+          ? -centerZ
+          : b.features.thicknessMm + centerZ);
       const plug = p?.plug;
       const start = negative ? wall - s.wall - (plug?.depth ?? 0) : wall + s.wall;
       result.push({

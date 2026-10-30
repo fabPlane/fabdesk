@@ -197,3 +197,26 @@ All three screens at 1240 × 900, 780 × 600 and 600 × 500 have zero visible nu
 ![Choose a case without a numeric form](screenshots/mechanical-workspace/43-simple-case-options.png)
 
 ![Preview and inspect](screenshots/mechanical-workspace/44-simple-case-preview.png)
+
+## PCB measurements and port sizing
+
+The selected-board card shows the PCB outline width, length and laminate thickness in millimetres on every enclosure screen. Selecting a board keeps the current screen; Move/Rotate remain explicit tools. The card labels component height as excluded. All CAD disclosures use inset chevrons with a consistent text gap, including the printing checklist.
+
+Port openings now use the saved footprint's F.Fab/B.Fab body outline when available, separately from the conservative courtyard used for collisions. Default opening allowance is **0.4 mm per side**, independent of board clearance. Custom aperture sizes and explicit zero allowance take precedence. Planner, fit checks and enclosure exports share the sizing rule; bottom-mounted and rotated ports retain alignment. Plug-access checks use the physical body envelope too.
+
+The exact GCT USB4105 top-mount footprint uses its nominal **3.31 mm body height** from [GCT drawing USB4105, sheet 1, revision B4](https://gct.co/files/drawings/usb4105.pdf). Other connector heights remain estimates unless supplied by the user; this is not a universal USB-C size or a guarantee of mating access. Apertures remain rectangular, and manufacturing/plug clearances still need review. Existing saved openings remain unchanged until a new layout is previewed.
+
+Live VAIO-derived two-board comparison:
+
+| Opening | Before | After |
+| --- | --- | --- |
+| USB-C J3 / J5 | 12.64 × 5.60 mm | 9.74 × 4.11 mm |
+| SD J2 | 15.80 × 7.00 mm | 13.55 × 5.80 mm |
+
+The selected USB board reads **74 × 92 × 1.2 mm**; the SD board reads **39 × 14.5 × 1 mm**. The 120 × 80 × 17 mm study exports three unobstructed openings with solid wall directly above each; ZIP manifests verify and both PCB source files remain byte-for-byte unchanged. These are engineering studies, not approved fabrication outputs.
+
+Validation: **284 affected tests / 1,953 assertions pass**, protocol/KiCad/client-core/UI typechecks pass, desktop production build passes, zero packaged source maps. Nine live screen/window combinations (1240×900, 780×600, 600×500) pass overflow/footer/default-field checks, including disclosure insets and switching the selected board without leaving Preview. Earlier unrelated broad-suite failures documented above were not rerun for this change.
+
+![Selected board measurements](screenshots/mechanical-workspace/45-selected-board-measurements.png)
+
+![Inset disclosures and smaller USB-C openings](screenshots/mechanical-workspace/46-port-openings-and-disclosures.png)

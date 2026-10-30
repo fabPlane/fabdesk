@@ -26,6 +26,7 @@ export type EnclosureBoardSummary = {
     drillHeightMm?: number;
   }>;
   connectors?: Array<{
+    face?: import("@fabdesk/protocol").ConnectorFace;
     ref: string;
     footprint?: string;
     edge: "minX" | "maxX" | "minY" | "maxY";

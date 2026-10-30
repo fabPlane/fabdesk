@@ -1,5 +1,9 @@
 import { useState } from "react";
-import type { MechanicalDesign } from "@fabdesk/protocol";
+import {
+  connectorOpening,
+  DEFAULT_OPENING_CLEARANCE,
+  type MechanicalDesign,
+} from "@fabdesk/protocol";
 import {
   connectorAccess,
   enclosureFileLabel,
@@ -119,7 +123,7 @@ export function EnclosureLayoutPanel({
           </p>
           <NumberField
             label="Opening clearance per side"
-            value={design.openingClearance ?? Math.max(1, design.space.clearance)}
+            value={design.openingClearance ?? DEFAULT_OPENING_CLEARANCE}
             min={0}
             max={5}
             onChange={(v) => onChange({ ...design, openingClearance: v }, "Opening tolerance")}
@@ -136,6 +140,8 @@ export function EnclosureLayoutPanel({
                 ref: c.ref,
                 access: connectorAccess(design, b.placement.path, c),
               };
+              const opening = connectorOpening(c, setting.face ?? c.edge, setting.aperture);
+              const padding = design.openingClearance ?? DEFAULT_OPENING_CLEARANCE;
               return (
                 <details className="fd-layout-port" key={`${b.placement.path}:${c.ref}`}>
                   <summary>
@@ -154,6 +160,15 @@ export function EnclosureLayoutPanel({
                   </label>
                   {setting.access === "external" && (
                     <>
+                      <p className="fd-case-hint">
+                        Opening {(opening.width + 2 * padding).toFixed(2)} ×{" "}
+                        {(opening.height + 2 * padding).toFixed(2)} mm · {padding} mm clearance per
+                        side.
+                        <br />
+                        {opening.source === "fabrication-outline"
+                          ? "Body outline from PCB; height estimated."
+                          : opening.source}
+                      </p>
                       <label>
                         Connector faces (on PCB)
                         <select
@@ -209,7 +224,12 @@ export function EnclosureLayoutPanel({
                             port({
                               ...rest,
                               ...(e.target.checked
-                                ? { aperture: { width: c.widthMm, height: c.heightMm } }
+                                ? {
+                                    aperture: {
+                                      width: connectorOpening(c, setting.face ?? c.edge).width,
+                                      height: connectorOpening(c).height,
+                                    },
+                                  }
                                 : {}),
                             });
                           }}
@@ -219,8 +239,8 @@ export function EnclosureLayoutPanel({
                       {setting.aperture && (
                         <>
                           <small>
-                            Starting values come from the footprint. Enter the required opening,
-                            before clearance is added.
+                            Enter the opening before clearance is added. Check the actual connector
+                            and plug before printing.
                           </small>
                           <div className="fd-case-grid">
                             {(["width", "height"] as const).map((k) => (
