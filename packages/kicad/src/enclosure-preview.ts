@@ -2,6 +2,7 @@
  * Top + isometric SVG preview of a parametric enclosure (board, offset cavity, vents, snap clips).
  */
 import type { EnclosureSolid, EnclosureSpec } from "./enclosure";
+import { profileTriangles } from "./enclosure-profile";
 
 const mm = (n: number) => Math.round(n * 1e4) / 1e4;
 
@@ -84,7 +85,19 @@ export function previewEnclosureSvg(spec: EnclosureSpec): string {
     const db = b.min.x + b.min.y + b.min.z;
     return da - db;
   });
-  const isoParts = solids.flatMap((s) => (s.kind === "box" ? boxFaces(s) : []));
+  const isoParts = solids.flatMap((s) =>
+    s.kind === "profile"
+      ? profileTriangles(s).map((tri) =>
+          poly(
+            tri.map((p) => iso(p.x, p.y, p.z)),
+            ROLE_FILL[s.role],
+            "none",
+          ),
+        )
+      : s.kind === "box"
+        ? boxFaces(s)
+        : [],
+  );
   let isoMinX = Infinity;
   let isoMinY = Infinity;
   let isoMaxX = -Infinity;

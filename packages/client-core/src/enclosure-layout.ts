@@ -60,7 +60,14 @@ type Port = {
   edge: Edge;
   height: number;
   bottom: boolean;
-  aperture: { width: number; height: number; x: number; y: number; centerZ: number };
+  aperture: {
+    width: number;
+    height: number;
+    x: number;
+    y: number;
+    centerZ: number;
+    shape: import("@fabdesk/protocol").OpeningShape;
+  };
   wall?: Edge;
 };
 export type EnclosureLayoutGoal = "compact" | "assembly" | "ports";
@@ -447,6 +454,7 @@ export function proposeEnclosureLayout(
         z: centerZ - height / 2 - padding,
         width: p.aperture.width + 2 * padding,
         height: height + 2 * padding,
+        shape: p.aperture.shape,
       });
     }
   const next: MechanicalDesign = {

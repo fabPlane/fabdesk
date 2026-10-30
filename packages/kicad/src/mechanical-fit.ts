@@ -10,6 +10,7 @@ import {
   defaultConnectorAccess,
   connectorOpening,
   DEFAULT_OPENING_CLEARANCE,
+  openingContains,
 } from "@fabdesk/protocol";
 import type { BoardFeatures, Rect } from "./board-features";
 import { generateEnclosure, type EnclosureCutout } from "./enclosure";
@@ -326,7 +327,17 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
           Math.abs(at - wall) <= acrossDepth + s.wall + c &&
           Math.abs(along - o.offset) + alongWidth / 2 + padding <= o.width / 2 + eps &&
           o.z <= apertureZ - padding + eps &&
-          o.z + o.height >= apertureZ + apertureHeight + padding - eps
+          o.z + o.height >= apertureZ + apertureHeight + padding - eps &&
+          openingContains(
+            o,
+            {
+              width: alongWidth + 2 * padding,
+              height: apertureHeight + 2 * padding,
+              shape: aperture.shape,
+            },
+            along - o.offset,
+            apertureZ + apertureHeight / 2 - (o.z + o.height / 2),
+          )
         );
       });
       if (!openings.length)
@@ -544,6 +555,7 @@ export function enclosureFromDesign(d: MechanicalDesign, boards: FitBoard[]) {
     },
     widthMm: o.width,
     heightMm: o.height,
+    ...(o.shape ? { shape: o.shape } : {}),
     connector: { x: 0, y: 0, widthMm: o.width, heightMm: o.height },
   }));
   return generateEnclosure(

@@ -65,6 +65,32 @@ async function applyEnclosureToCad(
     const dx = solid.max.x - solid.min.x;
     const dy = solid.max.y - solid.min.y;
     const dz = solid.max.z - solid.min.z;
+    if (solid.kind === "profile" && solid.profile) {
+      const data = JSON.stringify({ solid, document: model.document, group: group.name });
+      const result = await cad.python(
+        dir,
+        `import json, FreeCAD as App, Part
+p=json.loads(${JSON.stringify(data)})
+s=p['solid']; profile=s['profile']; axis=profile['axis']; start=s['min'][axis]
+doc=App.getDocument(p['document'])
+faces=[]
+for ring in profile['rings']:
+    pts=[App.Vector(start,u,v) if axis=='x' else App.Vector(u,start,v) for u,v in ring]
+    faces.append(Part.Face(Part.makePolygon(pts+[pts[0]])))
+face=faces[0]
+for hole in faces[1:]: face=face.cut(hole)
+depth=s['max'][axis]-start
+shape=face.extrude(App.Vector(depth,0,0) if axis=='x' else App.Vector(0,depth,0))
+if not shape.isValid(): raise ValueError('Invalid enclosure wall profile')
+obj=doc.addObject('Part::Feature',s['name']); obj.Shape=shape
+doc.getObject(p['group']).addObject(obj)
+`,
+        "exec",
+      );
+      if (result.exception) throw new Error(result.exception);
+      created.push(solid.name);
+      continue;
+    }
     if (solid.kind === "cylinder" && solid.radiusMm) {
       const cx = (solid.min.x + solid.max.x) / 2;
       const cy = (solid.min.y + solid.max.y) / 2;

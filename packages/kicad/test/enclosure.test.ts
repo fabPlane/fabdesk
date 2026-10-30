@@ -12,6 +12,7 @@ import {
   writeBoxesStep,
 } from "../src/enclosure";
 import { previewEnclosureSvg } from "../src/enclosure-preview";
+import { ShellSurface, readStlTriangles } from "../src/shell-fit";
 
 const fixture = readFileSync(join(import.meta.dir, "fixtures/enclosure/board.kicad_pcb"), "utf8");
 
@@ -94,9 +95,19 @@ describe("generateEnclosure", () => {
     const usb = spec.cutouts.find((c) => c.ref === "J1")!;
     const zLo = usb.center.z - usb.heightMm / 2 + 0.05;
     const zHi = usb.center.z + usb.heightMm / 2 - 0.05;
-    const walls = spec.solids.filter((s) => s.role === "wall");
+    const surface = new ShellSurface(
+      readStlTriangles(new TextEncoder().encode(meshEnclosure(spec).baseStl)),
+    );
     const covers = (x: number, y: number, z: number) =>
-      walls.some((s) => x >= s.min.x && x <= s.max.x && y >= s.min.y && y <= s.max.y && z >= s.min.z && z <= s.max.z);
+      surface.intersects({
+        name: "probe",
+        x: x - 0.01,
+        y: y - spec.params.wallMm,
+        z: z - 0.01,
+        width: 0.02,
+        depth: 2 * spec.params.wallMm,
+        height: 0.02,
+      });
     const wallY = (spec.outer.minY + spec.inner.minY) / 2;
     expect(covers(usb.center.x, wallY, usb.center.z)).toBe(false);
     expect(covers(usb.center.x, wallY, zLo)).toBe(false);

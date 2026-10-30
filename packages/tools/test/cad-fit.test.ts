@@ -14,6 +14,21 @@ const pcb =
 const planeStl = (z: number) =>
   `solid case\nfacet normal 0 0 1\nouter loop\nvertex -5 -5 ${z}\nvertex 50 -5 ${z}\nvertex -5 50 ${z}\nendloop\nendfacet\nendsolid case`;
 
+test("native imported-shell plan carries rounded contours and preserves rectangle compatibility", async () => {
+  const {design}=await setup();
+  design.openings=[
+    {name:"USB-C",wall:"minX",offset:10,z:5,width:10,height:4,shape:"rounded"},
+    {name:"legacy",wall:"maxY",offset:15,z:5,width:10,height:4},
+  ];
+  const script=importedShellScript(design,'C:/test/quote"case.step',"C:/test/out");
+  const encoded=script.match(/^p = json.loads\((.+)\)$/m)![1]!;
+  const data=JSON.parse(JSON.parse(encoded));
+  expect(data.contours[0].length).toBeGreaterThan(40);
+  expect(data.contours[1]).toHaveLength(4);
+  expect(script).toContain("Part.Face(Part.makePolygon(pts+[pts[0]])).extrude(direction)");
+  expect(data.input).toBe('C:/test/quote"case.step');
+});
+
 test("imported preview and export review the modified result, preserve the source, and honor transforms", async () => {
   const { invoke, design, project, services } = await setup();
   design.mode = "imported";

@@ -6,6 +6,7 @@ import { zipSync, strToU8 } from "fflate";
 import {
   MechanicalDesignSchema,
   MECHANICAL_DESIGN_PATH,
+  openingContour,
   type MechanicalDesign,
   type MechanicalFitReport,
 } from "@fabdesk/protocol";
@@ -122,7 +123,12 @@ export function importedShellScript(
   input: string,
   output: string,
 ): string {
-  const data = JSON.stringify({ design, input, output });
+  const data = JSON.stringify({
+    design,
+    input,
+    output,
+    contours: design.openings.map((o) => openingContour(o.width, o.height, o.shape)),
+  });
   return `import json, math, os
 import FreeCAD as App, Part, Mesh
 p = json.loads(${JSON.stringify(data)})
@@ -154,16 +160,19 @@ for m in d['mounts']:
     base = App.Vector(m['x'],m['y'],s['floor']-0.01)
     stand = Part.makeCylinder(m['outer']/2,m['height']+0.01,base).cut(Part.makeCylinder(m['diameter']/2,m['height']+0.02,base))
     shape = shape.fuse(stand)
-for o in d['openings']:
+for o, contour in zip(d['openings'],p['contours']):
     w = o['wall']
     if w in ['minX','maxX']:
         x = b.XMin-1 if w == 'minX' else s['x']+s['width']-1
         t = s['x']-b.XMin+2 if w == 'minX' else b.XMax-s['x']-s['width']+2
-        cutter = box(x,o['offset']-o['width']/2,o['z'],t,o['width'],o['height'])
+        pts = [App.Vector(x,o['offset']+u,o['z']+o['height']/2+v) for u,v in contour]
+        direction = App.Vector(t,0,0)
     else:
         y = b.YMin-1 if w == 'minY' else s['y']+s['depth']-1
         t = s['y']-b.YMin+2 if w == 'minY' else b.YMax-s['y']-s['depth']+2
-        cutter = box(o['offset']-o['width']/2,y,o['z'],o['width'],t,o['height'])
+        pts = [App.Vector(o['offset']+u,y,o['z']+o['height']/2+v) for u,v in contour]
+        direction = App.Vector(0,t,0)
+    cutter = Part.Face(Part.makePolygon(pts+[pts[0]])).extrude(direction)
     shape = shape.cut(cutter)
 shape = shape.removeSplitter()
 if not shape.isValid() or shape.Volume <= 0: raise ValueError('The modified case is not a valid solid. Original file preserved.')

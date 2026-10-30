@@ -65,7 +65,13 @@ export const MechanicalDesignSchema = z
           access: z.enum(["external", "internal"]),
           face: edge.optional(),
           wall: edge.optional(),
-          aperture: z.object({ width: size, height: size }).optional(),
+          aperture: z
+            .object({
+              width: size,
+              height: size,
+              shape: z.enum(["rectangle", "rounded"]).optional(),
+            })
+            .optional(),
           plug: z
             .object({
               width: size,
@@ -113,6 +119,7 @@ export const MechanicalDesignSchema = z
       .array(
         z.object({
           name: z.string().min(1).max(80),
+          shape: z.enum(["rectangle", "rounded"]).optional(),
           wall: z.enum(["minX", "maxX", "minY", "maxY"]),
           offset: coordinate,
           z: coordinate,

@@ -4,12 +4,13 @@ export { previewEnclosureSvg } from "./enclosure-preview";
  * Parametric printable enclosure from {@link extractBoardFeatures}: a two-piece clamshell
  * (base + lid) that follows the board outline, mounting holes and edge-connector cutouts.
  *
- * The fused triangle mesh (STL) is the printable truth. STEP is an assembly of the same
- * axis-aligned boxes so a CAD tool can open the case without FreeCAD. When a FreeCAD session
+ * STL and STEP use the same wall profiles (curves tessellated within 0.01 mm).
+ * STEP is an assembly of boxes, tubes and planar profile faces. When a FreeCAD session
  * is available, the `cad` toolset also mirrors the primitives into `model.FCStd`.
  */
 import type { BoardEdge, BoardFeatures, Point, Rect } from "./board-features";
-import { connectorOpening } from "@fabdesk/protocol";
+import { connectorOpening, openingContains, type OpeningShape } from "@fabdesk/protocol";
+import { profileWall, profileTriangles, type Profile, type Triangle } from "./enclosure-profile";
 
 export const ENCLOSURE_CONTRACT = { name: "fabdesk.enclosure", version: "2.0.0" } as const;
 
@@ -68,7 +69,8 @@ export const DEFAULT_ENCLOSURE_PARAMS: EnclosureParams = {
 
 export type EnclosureSolid = {
   name: string;
-  kind: "box" | "cylinder";
+  kind: "box" | "cylinder" | "profile";
+  profile?: Profile;
   role: "floor" | "wall" | "lid" | "lip" | "standoff" | "clip";
   min: { x: number; y: number; z: number };
   max: { x: number; y: number; z: number };
@@ -92,6 +94,7 @@ export type EnclosureClip = {
 };
 
 export type EnclosureCutout = {
+  shape?: OpeningShape;
   ref: string;
   edge: BoardEdge;
   /** Opening on the wall, board XY plus Z-up from the case floor. */
@@ -429,6 +432,7 @@ export function generateEnclosure(
       },
       widthMm,
       heightMm,
+      shape: face.shape,
       connector: { x: c.x, y: c.y, widthMm: c.widthMm, heightMm: c.heightMm },
     };
   });
@@ -525,7 +529,7 @@ export function generateEnclosure(
   ): Box3 => ({ min, max });
   const holesFor = (edge: BoardEdge, wall: Box3): Box3[] => [
     ...cutouts
-      .filter((c) => c.edge === edge)
+      .filter((c) => c.edge === edge && c.shape !== "rounded")
       .map((c) => {
         const halfW = c.widthMm / 2;
         const halfH = c.heightMm / 2;
@@ -579,12 +583,15 @@ export function generateEnclosure(
     { x: inner.maxX, y: inner.minY, z: inner.z0 },
     { x: outer.maxX, y: inner.maxY, z: inner.z1 },
   );
-  solids.push(
-    ...punchWall("EnclosureWallMinY", minY, holesFor("minY", minY)),
-    ...punchWall("EnclosureWallMaxY", maxY, holesFor("maxY", maxY)),
-    ...punchWall("EnclosureWallMinX", minX, holesFor("minX", minX)),
-    ...punchWall("EnclosureWallMaxX", maxX, holesFor("maxX", maxX)),
-  );
+  for (const [edge, wall] of Object.entries({ minX, maxX, minY, maxY }) as [BoardEdge, Box3][]) {
+    const name = `EnclosureWall${edge[0]!.toUpperCase()}${edge.slice(1)}`;
+    const rounded = cutouts.filter((c) => c.edge === edge && c.shape === "rounded");
+    solids.push(
+      ...(rounded.length
+        ? profileWall(name, edge, wall, holesFor(edge, wall), rounded)
+        : punchWall(name, wall, holesFor(edge, wall))),
+    );
+  }
 
   for (const s of standoffs) {
     const r = s.outerDiameterMm / 2;
@@ -833,7 +840,18 @@ export function checkEnclosureAlignment(
       });
     const needW = face.width + 2 * spec.params.cutoutClearanceMm;
     const needH = face.height + 2 * spec.params.cutoutClearanceMm;
-    if (cut.widthMm + CUTOUT_SIZE_TOL_MM < needW || cut.heightMm + CUTOUT_SIZE_TOL_MM < needH)
+    if (
+      cut.widthMm + CUTOUT_SIZE_TOL_MM < needW ||
+      cut.heightMm + CUTOUT_SIZE_TOL_MM < needH ||
+      !openingContains(
+        {
+          width: cut.widthMm + CUTOUT_SIZE_TOL_MM,
+          height: cut.heightMm + CUTOUT_SIZE_TOL_MM,
+          ...(cut.shape ? { shape: cut.shape } : {}),
+        },
+        { width: needW, height: needH, shape: face.shape },
+      )
+    )
       issues.push({
         code: "small-cutout",
         severity: "error",
@@ -988,15 +1006,18 @@ function asciiStl(name: string, tris: Tri[]): string {
 
 export type EnclosureMeshes = { baseStl: string; lidStl: string; step: string };
 
-/** Fused ASCII STL for the base (walls, floor, standoffs) and lid, plus a box-assembly STEP. */
+/** ASCII STL base/lid and STEP assembly with matching wall profiles. */
 export function meshEnclosure(spec: EnclosureSpec): EnclosureMeshes {
   const base: Tri[] = [];
   const lid: Tri[] = [];
   for (const s of spec.solids) {
-    if (s.role === "lid" || s.role === "lip") addBoxMesh(lid, s.min, s.max);
+    if (s.kind === "profile") base.push(...profileTriangles(s));
+    else if (s.role === "lid" || s.role === "lip") addBoxMesh(lid, s.min, s.max);
     else if (s.kind === "cylinder" && s.radiusMm) {
       const stand = spec.standoffs.find(
-        (h) => Math.abs(h.x - (s.min.x + s.max.x) / 2) < 1e-6 && Math.abs(h.y - (s.min.y + s.max.y) / 2) < 1e-6,
+        (h) =>
+          Math.abs(h.x - (s.min.x + s.max.x) / 2) < 1e-6 &&
+          Math.abs(h.y - (s.min.y + s.max.y) / 2) < 1e-6,
       );
       addHollowCylinder(
         base,
@@ -1013,12 +1034,16 @@ export function meshEnclosure(spec: EnclosureSpec): EnclosureMeshes {
     baseStl: asciiStl("fabplane_enclosure_base", base),
     lidStl: asciiStl("fabplane_enclosure_lid", lid),
     step: writeBoxesStep(
-      spec.solids.filter((s) => s.kind === "box").map((s) => ({ name: s.name, min: s.min, max: s.max })),
+      spec.solids
+        .filter((s) => s.kind === "box")
+        .map((s) => ({ name: s.name, min: s.min, max: s.max })),
       spec.solids.flatMap((s): StepTube[] => {
         if (s.kind !== "cylinder" || !s.radiusMm) return [];
         const cx = (s.min.x + s.max.x) / 2;
         const cy = (s.min.y + s.max.y) / 2;
-        const stand = spec.standoffs.find((h) => Math.abs(h.x - cx) < 1e-6 && Math.abs(h.y - cy) < 1e-6);
+        const stand = spec.standoffs.find(
+          (h) => Math.abs(h.x - cx) < 1e-6 && Math.abs(h.y - cy) < 1e-6,
+        );
         return [
           {
             name: s.name,
@@ -1031,6 +1056,9 @@ export function meshEnclosure(spec: EnclosureSpec): EnclosureMeshes {
           },
         ];
       }),
+      spec.solids
+        .filter((s) => s.kind === "profile")
+        .map((s) => ({ name: s.name, triangles: profileTriangles(s) })),
     ),
   };
 }
@@ -1050,6 +1078,7 @@ export type StepTube = {
 export function writeBoxesStep(
   boxes: Array<{ name: string; min: EnclosureSolid["min"]; max: EnclosureSolid["max"] }>,
   tubes: StepTube[] = [],
+  profiles: Array<{ name: string; triangles: Triangle[] }> = [],
 ): string {
   const ents: string[] = [];
   const next = (): number => {
@@ -1258,6 +1287,68 @@ export function writeBoxesStep(
     set(shell, `CLOSED_SHELL('',(${faces.map((f) => `#${f}`).join(",")}))`);
     const solid = next();
     set(solid, `MANIFOLD_SOLID_BREP('${t.name}',#${shell})`);
+    shapeIds.push(solid);
+  }
+  // Planar BREP facets use the very same closed triangulation as the STL and preview.
+  for (const profile of profiles) {
+    const vertices = new Map<string, { point: number; vertex: number }>();
+    const edges = new Map<string, number>();
+    const vertex = (p: EnclosureSolid["min"]) => {
+      const key = `${p.x},${p.y},${p.z}`;
+      let v = vertices.get(key);
+      if (!v) {
+        const pt = point(p.x, p.y, p.z),
+          id = next();
+        set(id, `VERTEX_POINT('',#${pt})`);
+        v = { point: pt, vertex: id };
+        vertices.set(key, v);
+      }
+      return v;
+    };
+    const faces = profile.triangles.map((tri) => {
+      const vs = tri.map(vertex);
+      const loop = tri.map((p, i) => {
+        const a = vs[i]!,
+          b = vs[(i + 1) % 3]!,
+          q = tri[(i + 1) % 3]!;
+        const forward = a.vertex < b.vertex,
+          key = forward ? `${a.vertex}:${b.vertex}` : `${b.vertex}:${a.vertex}`;
+        let e = edges.get(key);
+        if (!e) {
+          const start = forward ? a : b,
+            end = forward ? b : a,
+            sign = forward ? 1 : -1;
+          const length = Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z);
+          const vec = next();
+          set(
+            vec,
+            `VECTOR('',#${axis((sign * (q.x - p.x)) / length, (sign * (q.y - p.y)) / length, (sign * (q.z - p.z)) / length)},1.)`,
+          );
+          const line = next();
+          set(line, `LINE('',#${start.point},#${vec})`);
+          e = next();
+          set(e, `EDGE_CURVE('',#${start.vertex},#${end.vertex},#${line},.T.)`);
+          edges.set(key, e);
+        }
+        return oriented(e, forward);
+      });
+      const n = normal(tri),
+        a = tri[0],
+        b = tri[1],
+        length = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+      const loc = next();
+      set(
+        loc,
+        `AXIS2_PLACEMENT_3D('',#${vs[0]!.point},#${axis(n.x, n.y, n.z)},#${axis((b.x - a.x) / length, (b.y - a.y) / length, (b.z - a.z) / length)})`,
+      );
+      const plane = next();
+      set(plane, `PLANE('',#${loc})`);
+      return advancedFace([bound(loop, true)], plane, true);
+    });
+    const shell = next();
+    set(shell, `CLOSED_SHELL('',(${faces.map((f) => `#${f}`).join(",")}))`);
+    const solid = next();
+    set(solid, `MANIFOLD_SOLID_BREP('${profile.name}',#${shell})`);
     shapeIds.push(solid);
   }
   const nRep = next();

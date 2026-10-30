@@ -161,7 +161,8 @@ export function EnclosureLayoutPanel({
                   {setting.access === "external" && (
                     <>
                       <p className="fd-case-hint">
-                        Opening {(opening.width + 2 * padding).toFixed(2)} ×{" "}
+                        {opening.shape === "rounded" ? "Rounded ends" : "Rectangle"} · Opening{" "}
+                        {(opening.width + 2 * padding).toFixed(2)} ×{" "}
                         {(opening.height + 2 * padding).toFixed(2)} mm · {padding} mm clearance per
                         side.
                         <br />
@@ -234,10 +235,29 @@ export function EnclosureLayoutPanel({
                             });
                           }}
                         />
-                        <span>Override opening size</span>
+                        <span>Customize opening</span>
                       </label>
                       {setting.aperture && (
                         <>
+                          <label>
+                            Opening shape
+                            <select
+                              aria-label={`${c.ref} opening shape`}
+                              value={opening.shape}
+                              onChange={(e) =>
+                                port({
+                                  ...setting,
+                                  aperture: {
+                                    ...setting.aperture!,
+                                    shape: e.target.value as "rectangle" | "rounded",
+                                  },
+                                })
+                              }
+                            >
+                              <option value="rounded">Rounded ends · USB-C</option>
+                              <option value="rectangle">Rectangle</option>
+                            </select>
+                          </label>
                           <small>
                             Enter the opening before clearance is added. Check the actual connector
                             and plug before printing.

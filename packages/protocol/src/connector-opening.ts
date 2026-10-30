@@ -1,3 +1,4 @@
+import type { OpeningShape } from "./opening-profile";
 /** A port's visible face is separate from its pads/courtyard collision envelope. */
 export type ConnectorFace = {
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
@@ -17,9 +18,10 @@ export function connectorOpening(
     heightMm: number;
     bounds?: ConnectorFace["bounds"];
     face?: ConnectorFace;
+    footprint?: string;
   },
   edge = connector.edge,
-  override?: { width: number; height: number },
+  override?: { width: number; height: number; shape?: OpeningShape | undefined },
 ) {
   const face = connector.face;
   const r = face?.bounds ?? connector.bounds;
@@ -35,6 +37,11 @@ export function connectorOpening(
         : connector.widthMm),
     height: override?.height ?? face?.heightMm ?? connector.heightMm,
     centerZ: face?.centerZ ?? connector.heightMm / 2,
+    shape:
+      override?.shape ??
+      ((/usb[_ -]?c(?:_|\b)/i.test(connector.footprint ?? "")
+        ? "rounded"
+        : "rectangle") as OpeningShape),
     source: override ? "Custom measurement" : (face?.source ?? "Estimated footprint bounds"),
   };
 }

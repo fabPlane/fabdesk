@@ -1640,6 +1640,26 @@ export function EnclosureDesigner({
                     {design.openings.map((o, i) => (
                       <div className="fd-case-entry" key={i}>
                         <label>
+                          Opening shape
+                          <select
+                            aria-label={`${o.name} opening shape`}
+                            value={o.shape ?? "rectangle"}
+                            onChange={(e) =>
+                              edit({
+                                ...design,
+                                openings: design.openings.map((p, j) =>
+                                  j === i
+                                    ? { ...p, shape: e.target.value as "rectangle" | "rounded" }
+                                    : p,
+                                ),
+                              })
+                            }
+                          >
+                            <option value="rounded">Rounded ends · USB-C</option>
+                            <option value="rectangle">Rectangle</option>
+                          </select>
+                        </label>
+                        <label>
                           Opening name
                           <input
                             value={o.name}

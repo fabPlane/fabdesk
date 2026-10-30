@@ -220,3 +220,17 @@ Validation: **284 affected tests / 1,953 assertions pass**, protocol/KiCad/clien
 ![Selected board measurements](screenshots/mechanical-workspace/45-selected-board-measurements.png)
 
 ![Inset disclosures and smaller USB-C openings](screenshots/mechanical-workspace/46-port-openings-and-disclosures.png)
+
+## Rounded USB-C openings
+
+New automatic layouts recognize USB-C footprints and use rounded-end wall openings, with the same per-side allowance as before. Other ports default to rectangles. Each opening has a shape selector; the port customization panel also saves the choice with its measured aperture. Existing saved openings without shape metadata remain rectangular until deliberately changed or recalculated.
+
+Wall profiles are cut as polygons, including overlapping openings and openings meeting an edge, then extruded through the wall. Curves are tessellated with at most 0.01 mm chord error. The desktop preview, STL and STEP retain that same geometry. STEP stores closed planar BREP facets rather than analytic arcs. Shape-aware fit checks reject a rectangular required profile whose corners would be clipped by a rounded opening.
+
+The VAIO study now has two **9.74 × 4.11 mm rounded USB-C openings** and a **13.55 × 5.80 mm rectangular SD opening**. Independent OpenCascade STEP import succeeds (13 meshes); **231 cross-section probes agree between exported STEP and STL**, including clear centres/ends and solid rounded corners. ZIP hashes verify and original boards remain unchanged. Live shape selection, rectangle override, Undo and preview invalidation pass.
+
+**315 affected tests / 2,124 assertions pass**; protocol, KiCad, client-core, tools and UI typechecks pass; desktop build passes with zero packaged source maps. Tests cover all four wall orientations, underside ports, closed/oriented wall meshes, overlapping profiles, edge notches, legacy rectangular files and native bridge contour serialization. Native FreeCAD editing is covered by contract tests; no real FreeCAD session was available. The USB-C family contour is a rounded-end approximation, not arbitrary contour extraction from every connector's 3D model; actual plug fit and manufacturing tolerance still require review.
+
+![Rounded USB-C openings in the live app](screenshots/mechanical-workspace/47-rounded-usbc-openings.png)
+
+[Compare the previous rectangular openings](screenshots/mechanical-workspace/46-port-openings-and-disclosures.png).

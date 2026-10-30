@@ -321,6 +321,7 @@ describe("cad_enclosure", () => {
     expect((out.json as { appliedToCad: boolean }).appliedToCad).toBe(true);
     expect(cad.calls.some((c) => c.startsWith("add App::DocumentObjectGroup"))).toBe(true);
     expect(cad.calls.some((c) => c.startsWith("add Part::Box"))).toBe(true);
+    expect(cad.calls.some((c) => c.startsWith("python ") && c.includes("face.extrude") && c.includes("profile['rings']"))).toBe(true);
     const spec = JSON.parse(await readFile(join(project.dir, "enclosure.json"), "utf8")) as {
       standoffs: Array<{ innerDiameterMm: number; outerDiameterMm: number }>;
     };
