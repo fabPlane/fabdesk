@@ -5,17 +5,18 @@ import { askAboutSurface, useAssistantSurface } from "../../chat/useAssistantSur
 import { Button, Dialog, LoadError, Spinner } from "../../components/ui";
 import { ErrorNotice } from "../../components/ErrorNotice";
 import { Icon } from "../../components/Icon";
+import { DisclosureSummary } from "../../components/DisclosureSummary";
 import { useUiStore } from "../../stores/ui";
 import type { BoardSourceSelection } from "@fabdesk/protocol";
 
 /** Existing revision-bound route_apply, exposed as an explicit review step after playback. */
-export function RouteCandidateReview({ projectId, runId, enabled, board, onOpenPcb, onBusyChange, onChanged }: { projectId: string; runId: string; enabled: boolean; board?: BoardSourceSelection; onOpenPcb?: () => void; onBusyChange: (busy: boolean) => void; onChanged: () => void }) {
+export function RouteCandidateReview({ projectId, runId, enabled, board, sourceName, onOpenPcb, onBusyChange, onChanged }: { projectId: string; runId: string; enabled: boolean; board?: BoardSourceSelection; sourceName?: string; onOpenPcb?: () => void; onBusyChange: (busy: boolean) => void; onChanged: () => void }) {
   const [open, setOpen] = useState(false), [working, setWorking] = useState(false), workingRef = useRef(false);
   const client = useCoreClient();
   const [downloading, setDownloading] = useState(false), [downloadError, setDownloadError] = useState<string | null>(null);
   const review = useRouteReview(projectId, runId, enabled && open, board), apply = useRunTool(), qc = useQueryClient();
   useEffect(() => { onBusyChange(working); return () => onBusyChange(false); }, [working, onBusyChange]);
-  useAssistantSurface(open ? { projectId, label: "Routing / Candidate review", priority: 40, details: JSON.stringify({ board, runId, candidate: review.data ?? null, status: "Recorded route candidate; applying is separate from electrical validation." }) } : null);
+  useAssistantSurface(open ? { projectId, label: "Routing / Candidate review", priority: 40, details: JSON.stringify({ board, sourceName, runId, candidate: review.data ?? null, status: "Recorded route candidate; applying is separate from electrical validation." }) } : null);
   const applyCandidate = async () => {
     if (workingRef.current || !enabled || useUiStore.getState().activeProjectId !== projectId) return;
     workingRef.current = true; setWorking(true);
@@ -48,21 +49,21 @@ export function RouteCandidateReview({ projectId, runId, enabled, board, onOpenP
   return <><Button size="sm" disabled={!enabled || working} onClick={() => setOpen(true)}><Icon name="route" width={15} height={15} />Review candidate</Button>
     <Dialog open={open} onClose={() => { if (!workingRef.current) setOpen(false); }} title="Review routing candidate">
       {review.isPending ? <Spinner /> : review.isError ? <LoadError title="Could not inspect the saved routing candidate" onRetry={() => void review.refetch()} /> : data && <div className="space-y-4">
-        <div><strong>{data.applied ? "Candidate applied" : data.resultState === "complete" ? "All requested connections routed" : data.resultState === "partial" ? "Partial routing candidate" : "Recorded routing result"}</strong><p className="mt-1 text-sm text-muted">{data.reason}</p></div>
-        <pre className="whitespace-pre-wrap rounded-lg border border-border bg-panel-2 p-3 text-xs">{data.quality}</pre>
+        <div><p className="mb-2 text-sm font-medium text-muted">{sourceName ?? board?.sourceId ?? "Saved PCB"}</p><strong>{data.applied ? "Candidate applied" : data.resultState === "complete" ? "All requested connections routed" : data.resultState === "partial" ? "Partial routing candidate" : "Recorded routing result"}</strong><p className="mt-1 text-sm text-muted">{data.reason}</p></div>
+        <details><DisclosureSummary icon="route" label="Routing metrics" /><pre className="mt-2 whitespace-pre-wrap rounded-lg border border-border bg-panel-2 p-3 text-xs">{data.quality}</pre></details>
         {!!data.openNets.length && <p className="text-sm text-warning">Unrouted nets: {data.openNets.join(", ")}. Applying this candidate does not complete routing.</p>}
         {data.warnings.map((warning, index) => <p key={index} className="text-sm text-warning">{warning.text}</p>)}
-        <p className="text-xs text-muted">Review the recorded playback and candidate source. Apply replaces the saved PCB after checking its starting revision and candidate identity. Drawings, models and checks may then need updating. A routing result does not establish electrical parity or manufacturing readiness.</p>
+        <p className="text-xs text-muted">Apply saves this candidate over the current PCB. Refresh its drawing, models and electrical checks afterward. Routing does not mark the design as checked.</p>
         <div className="flex flex-wrap gap-2">
           {data.canApply && <Button size="sm" variant="primary" disabled={!enabled || working || review.isFetching} onClick={() => void applyCandidate()}>{working ? "Applying…" : "Apply candidate"}</Button>}
           {data.applied && <Button size="sm" disabled={working} onClick={() => { setOpen(false); if (onOpenPcb) onOpenPcb(); else useUiStore.getState().setBoardTab("pcb"); }}>Open saved PCB</Button>}
           {data.available && <Button size="sm" variant="ghost" disabled={working || downloading} onClick={() => void downloadCandidate()}><Icon name="export" width={15} height={15} />{downloading ? "Downloading…" : "Download candidate PCB"}</Button>}
           <Button size="sm" variant="ghost" disabled={working} onClick={() => {
-            askAboutSurface({ projectId, label: "Routing / Candidate review", priority: 40, details: JSON.stringify({ board, runId, review: data }) }, "Review this routing candidate, its remaining connections and quality warnings. Explain whether applying it would help. Inspect the latest PCB first and propose the next action before changing it."); setOpen(false);
+            askAboutSurface({ projectId, label: "Routing / Candidate review", priority: 40, details: JSON.stringify({ board, sourceName, runId, review: data }) }, "Review this routing candidate, its remaining connections and quality warnings. Explain whether applying it would help. Inspect the latest PCB first and propose the next action before changing it."); setOpen(false);
           }}><Icon name="sparkles" width={15} height={15} />Ask fabPlane</Button>
           <Button size="sm" variant="ghost" disabled={working} onClick={() => setOpen(false)}>{data.applied ? "Close" : "Keep saved PCB"}</Button>
         </div>
-        {!enabled && <p role="status" className="text-xs text-warning">Finish the active board operation before applying this candidate.</p>}
+        {!enabled && !working && <p role="status" className="text-xs text-warning">Finish the active board operation before applying this candidate.</p>}
         {downloadError && <p role="alert" className="text-sm text-danger">{downloadError}</p>}
         {apply.state.error && <ErrorNotice error={apply.state.error} />}
       </div>}
