@@ -495,3 +495,18 @@
 .fd-assembly-view-actions { display:flex; align-items:center; gap:8px; }
 .fd-assembly-view-actions > button { min-height:36px; white-space:nowrap; }
 .fd-assembly-view-actions > button[aria-current=page] { color:var(--fd-accent); background:var(--fd-panel-2); }
+
+.fd-project-activity-count { min-width:18px; margin-left:-8px; padding:1px 5px; border-radius:10px; background:var(--fd-accent); color:var(--fd-panel); font-size:11px; text-align:center; }
+.fd-project-activity { width:680px; }
+.fd-project-activity > div:last-child > p { color:var(--fd-muted); font-size:13px; line-height:1.6; }
+.fd-project-activity-toolbar,.fd-project-activity-heading,.fd-project-activity-actions { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+.fd-project-activity-toolbar { margin:18px 0; }
+.fd-project-activity-list { display:grid; gap:12px; }
+.fd-project-activity-list > li { min-width:0; padding:16px; border:1px solid var(--fd-border); border-radius:12px; }
+.fd-project-activity-heading strong { font-size:14px; }
+.fd-project-activity-heading > span,.fd-project-activity-list p { font-size:12px; line-height:1.6; color:var(--fd-muted); overflow-wrap:anywhere; }
+.fd-project-activity-list [data-status=failed] .fd-project-activity-heading > span { color:var(--fd-warning); }
+.fd-project-activity-list progress { width:100%; height:6px; margin-top:12px; accent-color:var(--fd-accent); }
+.fd-project-activity-actions { margin-top:12px; justify-content:flex-start; }
+.fd-project-activity-list details { margin-top:10px; }
+.fd-project-activity-id { font-family:monospace; }

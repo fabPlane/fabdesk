@@ -297,8 +297,10 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       void qc.invalidateQueries({ queryKey: ["thread", event.threadId] });
       break;
     case "job.started":
+      void qc.invalidateQueries({ queryKey: ["jobs"] });
       runs.upsertJob({
         jobId: event.jobId,
+        endpoint: ctx.client.baseUrl,
         kind: event.kind,
         status: "running",
         startedAt: event.ts,
@@ -312,14 +314,17 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       });
       break;
     case "job.done":
+      void qc.invalidateQueries({ queryKey: ["jobs"] });
       runs.patchJob(event.jobId, { status: "done", result: event.result, progress: 1 });
       void qc.invalidateQueries({ queryKey: ["job", event.jobId] });
       break;
     case "job.failed":
+      void qc.invalidateQueries({ queryKey: ["jobs"] });
       runs.patchJob(event.jobId, { status: "failed", error: event.error });
       void qc.invalidateQueries({ queryKey: ["job", event.jobId] });
       break;
     case "job.cancelled":
+      void qc.invalidateQueries({ queryKey: ["jobs"] });
       runs.patchJob(event.jobId, { status: "cancelled" });
       void qc.invalidateQueries({ queryKey: ["job", event.jobId] });
       break;

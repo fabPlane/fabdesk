@@ -921,9 +921,13 @@ export function createApp(deps: AppDeps): Hono<Env> {
         (deps.listener === "local" && deps.tokens.lookup(token)?.kind !== "device"),
     }),
   );
-  app.get("/jobs", (c) =>
-    c.json(deps.jobs.list().length ? deps.jobs.list() : deps.store.jobs.list()),
-  );
+  app.get("/jobs", (c) => {
+    const projectId = c.req.query("projectId");
+    // New work must not hide persisted history from before a daemon restart.
+    const jobs = new Map(deps.store.jobs.list(100, projectId).map(job => [job.id, job]));
+    for (const job of deps.jobs.list()) if (!projectId || job.projectId === projectId) jobs.set(job.id, job);
+    return c.json([...jobs.values()]);
+  });
   app.get("/jobs/:id", (c) => {
     const j = deps.jobs.get(c.req.param("id")) ?? deps.store.jobs.get(c.req.param("id"));
     return j ? c.json(j) : c.json({ error: "not found" }, 404);

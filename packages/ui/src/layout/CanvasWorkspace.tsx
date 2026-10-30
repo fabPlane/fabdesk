@@ -20,6 +20,7 @@ import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { WorkspaceMenu } from "./WorkspaceMenu";
 import { LiveAssemblyPreviews } from "./LiveAssemblyPreviews";
 import { ProjectOverview } from "./ProjectOverview";
+import { ProjectActivity } from "./ProjectActivity";
 import { SketchStartReference } from "./SketchStartReference";
 import type { AppShellProps } from "./AppShell";
 import "./canvas-workspace.css";
@@ -95,6 +96,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       </WorkspaceMenu>
       {referenceStart && <span className="fd-canvas-breadcrumb"><span>/</span><strong>Start with sketch</strong></span>}
       <div className="fd-canvas-header-actions">
+        {projectId && <ProjectActivity key={`${client.baseUrl}/${projectId}`} projectId={projectId} />}
         <span className="fd-canvas-connection" title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`}><i data-connected={connected} />{connected ? local ? "Local workspace" : "Remote workspace" : "Reconnecting…"}</span>
         {projectId && !fresh && <Button size="sm" variant="ghost" title="Review source and output updates" aria-current={area === "review" && boardTab === "updates" ? "page" : undefined} onClick={() => ui().setBoardTab("updates")}>Review</Button>}
         {projectId && !fresh && <HostedReviewTools key={projectId} projectId={projectId} shareButton />}

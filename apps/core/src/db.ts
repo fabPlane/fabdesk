@@ -1034,11 +1034,11 @@ export class JobRepo {
     const r = this.db.query<JobRow, [string]>("SELECT * FROM jobs WHERE id = ?").get(id);
     return r ? this.toJob(r) : null;
   }
-  list(limit = 100): Job[] {
-    return this.db
-      .query<JobRow, [number]>("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?")
-      .all(limit)
-      .map((r) => this.toJob(r));
+  list(limit = 100, projectId?: string): Job[] {
+    const rows = projectId
+      ? this.db.query<JobRow, [string, number]>("SELECT * FROM jobs WHERE project_id = ? ORDER BY created_at DESC LIMIT ?").all(projectId, limit)
+      : this.db.query<JobRow, [number]>("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?").all(limit);
+    return rows.map((r) => this.toJob(r));
   }
   /** Jobs still marked running/queued from a previous process are failed on startup. */
   failStale(): number {

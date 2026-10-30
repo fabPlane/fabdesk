@@ -70,6 +70,9 @@ test("network errors gain guidance while intentional cancellations stay cancella
   const abort = new DOMException("Canceled", "AbortError");
   const canceled = new CoreClient({ baseUrl: "http://test", token: "t", fetch: async () => { throw abort; } });
   expect(await canceled.listProjects().catch(e => e)).toBe(abort);
+  expect(errorHelp("cancelled")).toMatchObject({ title: "Task cancelled", severity: "warning" });
+  expect(errorHelp("cancelled").message).not.toContain("restart");
+  expect(errorHelp("cancelled").message).toContain("may remain");
 });
 
 test("old duplicate authentication replies collapse, but user prose is not classified", () => {

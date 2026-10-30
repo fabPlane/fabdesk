@@ -46,6 +46,11 @@ export function errorHelp(input: unknown, context: ErrorContext = {}): ErrorHelp
   const status = context.status ?? (input instanceof Error && "status" in input && typeof input.status === "number" ? input.status : undefined);
   const agent = context.agentId ? agentNames[context.agentId] ?? "The selected agent" : "The selected agent";
   const command = context.agentId ? loginCommands[context.agentId] : undefined;
+  if (/^(?:cancelled|canceled|AbortError: (?:the operation was aborted|aborted))\.?$/i.test(text)) return {
+    title: "Task cancelled",
+    message: "This task stopped. Files saved before cancellation may remain; review the outputs before starting it again.",
+    severity: "warning",
+  };
   if (code === "approval_not_supported" || text === "agent cannot run supervised") return {
     title: "Approval pauses are unavailable for this agent",
     message: "Keep the current permission setting to continue. Your selected agent and model have not changed.",

@@ -1,4 +1,4 @@
-import type { Job, ToolManifestEntry } from "@fabdesk/protocol";
+import { BoardSourceSelection, type Job, type ToolManifestEntry } from "@fabdesk/protocol";
 import { useCallback, useState } from "react";
 import { useCore } from "./provider";
 import { openStencilFolder } from "./stencil-folder";
@@ -67,7 +67,9 @@ export function useRunTool() {
           setState({ status: "running", jobId: res.jobId });
           useRunsStore
             .getState()
-            .upsertJob({ jobId: res.jobId, kind: name, status: "running", startedAt: Date.now() });
+            .upsertJob({ jobId: res.jobId, kind: name, status: "running", startedAt: Date.now(), endpoint: client.baseUrl,
+              ...(typeof args.projectId === "string" ? { projectId: args.projectId } : {}),
+              ...(BoardSourceSelection.safeParse(args.board).success ? { board: BoardSourceSelection.parse(args.board) } : {}) });
           const job: Job = await client.waitJob(res.jobId);
           const next: ToolRunState =
             job.status === "done"

@@ -384,6 +384,14 @@ describe("http daemon", () => {
       job = (await (await api(`/jobs/${jobId}`)).json()) as typeof job;
     }
     expect(job.status).toBe("done");
+    // A fresh runner job cannot hide persisted history, and the activity view is project-scoped.
+    daemon.store.jobs.insert({ id: "job_persisted_history", kind: "tool:render_board", projectId: project.id });
+    daemon.store.jobs.update("job_persisted_history", { status: "done" });
+    const history = await (await api(`/jobs?projectId=${project.id}`)).json() as Array<{ id: string; projectId: string }>;
+    expect(history.map(row => row.id)).toContain(jobId);
+    expect(history.map(row => row.id)).toContain("job_persisted_history");
+    expect(history.every(row => row.projectId === project.id)).toBe(true);
+    expect(await (await api("/jobs?projectId=unrelated-project")).json()).toEqual([]);
     expect(await Bun.file(join(project.path, "board.kicad_pcb")).exists()).toBe(true);
     const manifest = (await (await api("/tools/manifest")).json()) as Array<{ name: string }>;
     expect(manifest.length).toBe(daemon.registry.list().length);

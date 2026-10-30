@@ -603,11 +603,11 @@ export function useWriteProjectFile() {
 /* ---------- jobs ---------- */
 
 /** Every job the daemon knows about; polls while one is queued or running, events cover the rest. */
-export function useJobs(enabled = true) {
+export function useJobs(enabled = true, projectId?: string) {
   const client = useCoreClient();
   return useQuery({
-    queryKey: ["jobs"],
-    queryFn: () => client.request<Job[]>("/jobs"),
+    queryKey: ["jobs", client.baseUrl, projectId ?? null],
+    queryFn: () => client.request<Job[]>(`/jobs${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`),
     enabled,
     refetchInterval: (q) =>
       q.state.data?.some((j) => j.status === "queued" || j.status === "running") ? 2000 : false,
