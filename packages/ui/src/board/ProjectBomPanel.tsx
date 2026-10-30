@@ -155,10 +155,10 @@ function PartsToolbar({ label, query, onQueryChange, selected, onChange, include
             className="absolute right-1 top-1" onClick={() => { onQueryChange(""); searchInput.current?.focus(); }}><Icon name="close" width={14} height={14} /></IconButton>}
         </div>
         <Button size="sm" variant={open || selected.length ? "secondary" : "ghost"}
+          aria-label={`Filter parts${selected.length ? ` · ${selected.length} active` : ""}`} title="Filter parts"
           aria-expanded={open} aria-controls={filtersId} onClick={() => setOpen(!open)}
           className={cn("shrink-0", selected.length > 0 && "text-accent")}>
-          Filters{selected.length > 0 ? ` (${selected.length})` : ""}
-          <Icon name="chevronDown" width={14} height={14} className={open ? "rotate-180" : ""} />
+          <Icon name="filter" width={18} height={18} />{selected.length > 0 && <span>{selected.length}</span>}
         </Button>
       </div>
       {open && <div id={filtersId}>
@@ -303,7 +303,7 @@ export function ProjectBomPanel() {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold">Parts for this build</h2>
-            <span className="text-xs text-muted">{lines.length} {lines.length === 1 ? "item" : "items"}</span>
+            <span className="text-xs text-muted">{lines.length} BOM {lines.length === 1 ? "line" : "lines"} · {lines.reduce((sum, line) => sum + line.qty, 0)} total quantity</span>
             <Badge tone="accent" title="Off-board parts are separate from components mounted on the PCB.">
               {parts.parts.length} off-board
             </Badge>
@@ -324,8 +324,8 @@ export function ProjectBomPanel() {
           </Button>
         </div>
       </div>
-      {bom.data && <div className="shrink-0 border-b border-border px-3 py-2">
-        <details><DisclosureSummary icon="pcb" label={bom.data.complete ? "Source coverage" : "Review source coverage"} warning={!bom.data.complete} badge={`${bom.data.coverage.filter(source => source.multiplier > 0 && source.status === "native-schematic").length} of ${bom.data.coverage.filter(source => source.multiplier > 0).length} native sources${bom.data.complete ? "" : " · incomplete"}`} />
+      {bom.data && <div className="fd-bom-coverage shrink-0 pb-3">
+        <details><DisclosureSummary variant="compact" icon="pcb" label={bom.data.complete ? "Parts source details" : "Review missing parts sources"} warning={!bom.data.complete} badge={`${bom.data.coverage.filter(source => source.multiplier > 0 && source.status === "native-schematic").length} of ${bom.data.coverage.filter(source => source.multiplier > 0).length} native sources${bom.data.complete ? "" : " · incomplete"}`} />
         <div className="mt-2 grid gap-2 sm:grid-cols-2">{bom.data.coverage.map(source => <div key={source.sourceId ?? "main"} className="rounded-lg border border-border px-3 py-2 text-xs"><div className="flex items-start justify-between gap-2"><div className="font-medium">{source.name}<span className="ml-2 text-muted">{source.multiplier} {source.multiplier === 1 ? "board" : "boards"} · {source.status === "native-schematic" || source.status === "saved-netlist" ? `${source.componentCount * source.multiplier} listed parts` : source.status === "unused" ? "Not included" : "Parts not listed"}</span></div><CanvasToolButton icon="sparkles" label={`Ask about ${source.name} parts`} onClick={() => askAboutSurface({ projectId, label: `Parts / ${source.name}`, priority: 40, details: JSON.stringify({ revision: bom.data?.revision, manifestSha256: bom.data?.manifestSha256, source, instruction: "This is captured BOM coverage, not a PCB parity or electrical-check result. Inspect the declared source and preserve independent boards." }) }, (source.status === "native-schematic" || source.status === "saved-netlist") ? "Explain the listed parts and quantities for this board, including exclusions and shared instances. Flag missing purchasing information before suggesting changes." : "Help recover this board’s parts list. Find its saved schematic or design netlist in the project first, explain what is missing, and propose how to import or create it without guessing parts or changing unrelated boards.")} /></div><p className={cn("mt-1", source.status === "native-schematic" || source.status === "saved-netlist" || source.status === "unused" ? "text-muted" : "text-warning")}>{source.status === "native-schematic" ? "Saved native schematic · BOM exclusions respected" : source.status === "saved-netlist" ? "Saved design netlist · source freshness unverified" : source.reason ?? source.status}</p></div>)}</div>
         <p className="mt-2 text-xs text-muted">Source coverage does not establish schematic/PCB parity or passed electrical checks. Hardware is counted once for the project.</p></details>
       </div>}

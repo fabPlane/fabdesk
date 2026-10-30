@@ -1,3 +1,11 @@
+## Local second checkpoint — in progress
+
+Schematic previews open at Fit width, with drag pan, pointer-centered zoom and Fit sheet reset. Library groups canonical video formats, schematic sheets and manufacturing layers; private video frames and a completed video’s supporting poster stay in Files. Each card has exact-file Files/Download actions; checkbox selection names and counts the grouped files. Render board image is directly available. Shared preview actions sit in the dialog header, labels escape clipping and follow loading dialog layout, and BOM shows lines versus summed quantity with compact source/filter controls.
+
+Actual native checks in the isolated Playbridge import: one counted readiness note opened its exact DRC release-gate reason and explicit PCB-check destination without running checks; schematic Fit width → drag → Fit sheet → Fit width worked; video MP4 played to 0:05/0:06 and Close returned to Library; video group selected 3 files, plus one image selected 4, then Clear removed the selection; Render board image opened its existing saved Top view without regeneration; BOM showed 73 lines / 77 quantity and its filter icon opened the category controls. New captures 02–08 remain under the local walkthrough-fixes-2026-10-30 evidence directory.
+
+Checks: affected UI/client-core typechecks pass; UI 249 tests / 993 assertions pass; output-library 12 tests / 54 assertions pass. Native model coverage discrepancy, output deletion, import provenance, Home lifecycle, focus-by-component and Gerber/drill package acceptance remain unfinished. Gerber orchestration is local work in progress, excluded from this checkpoint commit. No whole-queue completion or new full-root/build/hosted-CI pass claimed.
+
 # Walkthrough feedback and fix pass · October 30
 
 This is the current **19-item acceptance queue**, collected during the fresh imported Playbridge journey and the user's screenshot review. The user has now authorized fixes and requested an immediate remote checkpoint. Earlier completion statements in WHOLE-APP-20261030.md describe the previous implementation pass, not acceptance of this new feedback.

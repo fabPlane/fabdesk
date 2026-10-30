@@ -202,6 +202,7 @@ export function SvgTab({ kind, active = true, onOpenChecks }: { kind: "schematic
         <div className="min-w-0 flex-1">
           <SvgViewer
             svg={rendered.data}
+            initialFit={kind === "schematic" ? "width" : "sheet"}
             viewKey={`${projectId}:${kind}`}
             commentMode={commentMode}
             {...((commentMode || canvasMode) ? { onDrawingClick: (point: SvgPoint) => {

@@ -152,6 +152,7 @@ export interface DialogProps {
   /** Use when an in-flight action cannot be dismissed or cancelled by closing. */
   closeDisabled?: boolean;
   title?: ReactNode;
+  headerActions?: ReactNode;
   ariaLabel?: string;
   children: ReactNode;
   className?: string;
@@ -161,7 +162,7 @@ export interface DialogProps {
   fallbackFocus?: () => HTMLElement | null | undefined;
 }
 
-export function Dialog({ open, onClose, closeDisabled = false, title, ariaLabel, children, className, bare, fallbackFocus }: DialogProps) {
+export function Dialog({ open, onClose, closeDisabled = false, title, headerActions, ariaLabel, children, className, bare, fallbackFocus }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const fallbackFocusRef = useRef(fallbackFocus);
   fallbackFocusRef.current = fallbackFocus;
@@ -221,7 +222,7 @@ export function Dialog({ open, onClose, closeDisabled = false, title, ariaLabel,
         aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}
         tabIndex={-1}
         className={cn(
-          "fd-elevated flex max-h-full flex-col overflow-hidden rounded-2xl border border-border bg-panel",
+          "fd-elevated flex max-h-full flex-col overflow-hidden rounded-2xl border border-border bg-panel text-left",
           bare ? "" : /(?:^|\s)!?w-/.test(className ?? "") ? "max-w-full" : "w-[640px] max-w-full",
           className,
         )}
@@ -230,9 +231,9 @@ export function Dialog({ open, onClose, closeDisabled = false, title, ariaLabel,
         {title !== undefined && (
           <div className="flex min-h-13 items-center justify-between border-b border-border px-5 py-3">
             <div className="min-w-0 break-words text-[15px] font-semibold tracking-[-0.01em]">{title}</div>
-            <IconButton title={closeDisabled ? "Wait for the current action to finish" : "Close"} disabled={closeDisabled} onClick={onClose}>
+            <div className="flex shrink-0 items-center gap-1">{headerActions}<IconButton title={closeDisabled ? "Wait for the current action to finish" : "Close"} disabled={closeDisabled} onClick={onClose}>
               <Icon name="close" />
-            </IconButton>
+            </IconButton></div>
           </div>
         )}
         <div className={cn("min-h-0 flex-1 overflow-auto", bare ? "" : "p-5")}>{children}</div>

@@ -6,7 +6,7 @@ export function videoInputLabel(state: VideoInputRevisionState | undefined): str
   return state === "board-source-changed" ? "PCB changed since the video’s board model"
     : state === "board-source-unverified" ? "Video board model · PCB source unverified"
     : state === "inputs-changed" ? "Video model inputs changed"
-    : state === "inputs-unchanged" ? "Recorded model inputs unchanged"
+    : state === "inputs-unchanged" ? "Models unchanged since video export"
     : state === "artifact-changed" ? "Video file changed · Source unverified"
     : state === "missing-input" ? "A recorded video model is missing"
     : state === "missing-artifact" ? "Saved video is missing"

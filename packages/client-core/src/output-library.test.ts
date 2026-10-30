@@ -97,3 +97,33 @@ test("output search intersects kind and exact qualified source without changing 
   expect(filterSavedOutputs(files, { query: "LCD" })[0]).toBe(files[1]!);
   expect(JSON.stringify(files)).toBe(before);
 });
+
+test("internal video frames and unfinished zero-byte formats stay out of the saved library", () => {
+  const files = ["exports/.product-video-frames/frame-0001.png", "renders/frame-0001.png", "exports/product-video.mp4", "exports/product-video.webm"].map(path => ({ path, size: path.endsWith(".webm") ? 0 : 20, mtime: "2026-10-30" }));
+  expect(savedOutputs(files).map(file => file.path)).toEqual(["exports/product-video.mp4", "renders/frame-0001.png"]);
+});
+
+test("format groups preserve paths/source identity and manufacturing chronology", async () => {
+  const { outputCards } = await import("./output-library");
+  const files = savedOutputs([
+    { path: "exports/product-video.webm", size: 2, mtime: "2026-10-29" },
+    { path: "exports/product-video.mp4", size: 2, mtime: "2026-10-29" },
+    { path: "exports/product-video-poster.png", size: 2, mtime: "2026-10-29" },
+    { path: "exports/gerbers/front.gtl", size: 2, mtime: "2026-10-30" },
+    { path: "exports/gerbers/drill.drl", size: 2, mtime: "2026-10-30" },
+    { path: "renders/top.png", size: 2, mtime: "2026-10-28" },
+  ]);
+  const cards = outputCards(files);
+  expect(cards.map(card => card.label)).toEqual(["Manufacturing layers", "Product video", "Top view image"]);
+  expect(cards[1]!.primary.path).toBe("exports/product-video.mp4");
+  expect(cards[1]!.files).toHaveLength(2);
+  expect(outputCards(files, false).filter(card => card.primary.kind === "manufacturing")).toHaveLength(2);
+  expect(files).toHaveLength(5);
+});
+
+test("video support posters do not inflate selection counts or borrow another board's completed video", () => {
+  const sources = ["io", "lcd"].map(id => ({ source: { id, name: id, location: "project" as const, directory: `boards/${id}` }, status: "available" as const }));
+  const files = ["boards/io/exports/product-video.mp4", "boards/io/exports/product-video-poster.png", "boards/lcd/exports/product-video-poster.png"].map(path => ({ path, size: 20, mtime: "2026-10-30" }));
+  expect(savedOutputs(files, sources).map(file => file.path)).toEqual([files[0]!.path, files[2]!.path]);
+  expect(files).toHaveLength(3);
+});

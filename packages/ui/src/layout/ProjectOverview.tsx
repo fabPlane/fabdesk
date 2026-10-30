@@ -113,7 +113,7 @@ function SingleBoardOverview() {
     <nav className="fd-overview-facts" aria-label="Project resources">
       <button onClick={() => ui().setBoardTab("files")}><Icon name="folder" width={18} height={18} /><strong>{files.length}</strong><span>project files</span></button>
       <button onClick={() => ui().setBoardTab("renders")}><Icon name="export" width={18} height={18} /><strong>{outputs.length}</strong><span>saved outputs</span></button>
-      <button onClick={() => setReadinessOpen(true)}><Icon name={issues.length ? "warning" : "checklist"} width={18} height={18} /><strong>{order.isError ? "Unavailable" : issues.length ? "Needs review" : "Review readiness"}</strong><span>{order.isFetching ? "Checking readiness…" : issues.length ? `${issues.length} readiness notes` : "DRC / ERC & readiness"}</span></button>
+      <button onClick={() => setReadinessOpen(true)}><Icon name={issues.length ? "warning" : "checklist"} width={18} height={18} /><strong>{order.isError ? "Unavailable" : issues.length ? "Needs review" : "Review readiness"}</strong><span>{order.isFetching ? "Checking readiness…" : issues.length ? `${issues.length} readiness ${issues.length === 1 ? "note" : "notes"}` : "DRC / ERC & readiness"}</span></button>
     </nav>
     <Dialog open={readinessOpen} onClose={() => setReadinessOpen(false)} title="Readiness notes">
       <p className="mb-4 text-sm text-muted">{project.data.name} · Main board. These notes describe preparation still needed; they are not all reported design errors.</p>

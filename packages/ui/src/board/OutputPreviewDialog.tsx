@@ -22,8 +22,7 @@ export function OutputPreviewDialog({ projectId, output, status, warning = false
   const surface = { projectId, label: `Output preview · ${basename(output.path)}`, priority: 40,
     details: JSON.stringify({ view: "Saved output preview", preview: { ...output, status }, instruction: "Inspect the saved file and its recorded inputs. Output freshness does not establish electrical checks or physical compatibility." }) };
   useAssistantSurface(surface);
-  return <Dialog open onClose={onClose} title={output.sourceName ? `${output.sourceName} · ${basename(output.path)}` : basename(output.path)} className="fd-output-preview-dialog">
-    <div className="fd-output-preview-ask">
+  return <Dialog open onClose={onClose} title={output.sourceName ? `${output.sourceName} · ${basename(output.path)}` : basename(output.path)} className="fd-output-preview-dialog" headerActions={<>
       <CanvasToolButton icon="folderOpen" label="Show file" onClick={() => {
         if (useUiStore.getState().activeProjectId !== projectId) return;
         onClose(); useUiStore.getState().openProjectFile(output.path);
@@ -31,7 +30,7 @@ export function OutputPreviewDialog({ projectId, output, status, warning = false
       <CanvasToolButton icon="sparkles" label="Ask about this output" onClick={() => {
         askAboutSurface(surface, `Help me review ${basename(output.path)}. Explain what it shows and whether its saved inputs need attention.`); onClose();
       }} />
-    </div>
+    </>}>
     {output.kind !== "videos" && <p className="fd-output-preview-source" role="status" data-warning={warning}>{status}</p>}
     {output.kind === "images" ? <ProjectImage retryable projectId={projectId} path={output.path} className="max-h-[70vh] w-full object-contain" />
       : output.kind === "videos" ? <><VideoSourceStatus projectId={projectId} path={output.path} updating={false} /><ProjectVideo projectId={projectId} path={output.path} className="max-h-[70vh]" /></>
