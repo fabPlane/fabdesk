@@ -1,6 +1,6 @@
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { useEffect, useRef, useState } from "react";
-import { Button, EmptyState, LoadError, Spinner, Textarea } from "../components/ui";
+import { Button, Dialog, EmptyState, LoadError, Spinner, Textarea } from "../components/ui";
 import { useBoardCommentMutations, useBoardNotes, useCoreClient, useProject } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { WorkspaceMenu } from "../layout/WorkspaceMenu";
@@ -16,13 +16,14 @@ export function NotesTab() {
   const draft = useUiStore(s => s.notesDrafts[key]);
   const [preview, setPreview] = useState(false), [saving, setSaving] = useState(false), [saveError, setSaveError] = useState<string | null>(null);
   const [reviewSaved, setReviewSaved] = useState(false);
+  const [discardFor, setDiscardFor] = useState<string | null>(null);
   const editor = useRef<HTMLTextAreaElement>(null);
   const focusEditor = () => requestAnimationFrame(() => { if (useUiStore.getState().activeProjectId === projectId) editor.current?.focus(); });
   const saved = notes.data?.content ?? "", content = draft?.content ?? saved;
   const hasSavedNotes = project.data?.files.some(file => file.path === "NOTES.md") ?? false;
   const dirty = content !== saved, changedOutside = !saving && !!notes.data && !!draft && dirty && draft.base !== saved;
   const canSave = !!projectId && !!notes.data && dirty && !changedOutside && !saving && !notes.isFetching && !notes.isError;
-  useAssistantSurface(projectId ? { projectId, label: "Project notes", priority: 10, details: JSON.stringify({ file: "NOTES.md", previewMode: preview, unsavedChanges: dirty, changedOutside, saving, ...(dirty ? { unsavedDraft: content.slice(0, 4000), draftTruncated: content.length > 4000 } : {}) }) } : null);
+  useAssistantSurface(projectId ? { projectId, label: "Project notes", priority: 10, details: JSON.stringify({ file: "NOTES.md", previewMode: preview, unsavedChanges: dirty, changedOutside, saving, discardConfirmationOpen: discardFor === key, ...(dirty ? { unsavedDraft: content.slice(0, 4000), draftTruncated: content.length > 4000 } : {}) }) } : null);
   useEffect(() => {
     if (!notes.data || saving) return;
     const current = useUiStore.getState().notesDrafts[key];
@@ -56,6 +57,7 @@ export function NotesTab() {
       <div className="fd-notes-actions"><Button size="sm" variant="ghost" aria-pressed={preview || reviewSaved} onClick={() => { if (reviewSaved) setReviewSaved(false); else setPreview(!preview); }}>{reviewSaved ? "Return to draft" : preview ? "Edit notes" : "Preview"}</Button>
         <WorkspaceMenu label={<span aria-label="More notes tools"><Icon name="more" width={17} height={17} /></span>}>
           <button disabled={notes.isFetching || saving} onClick={() => void notes.refetch()}>Recheck saved notes</button>
+          <button disabled={!dirty || saving || !notes.data || notes.isError || notes.isFetching} onClick={() => setDiscardFor(key)}>Discard unsaved draft…</button>
           <button disabled={!hasSavedNotes} onClick={() => useUiStore.getState().openProjectFile("NOTES.md")}>Show saved file</button>
           <div className="fd-menu-caption">Saved as NOTES.md. Markdown formatting is optional.</div>
         </WorkspaceMenu>
@@ -72,6 +74,13 @@ export function NotesTab() {
         setSaveError(null);
       }} placeholder={"What should everyone working on this project know?\n\nWrite decisions, requirements, open questions or bring-up notes…"} aria-label="Project notes" />}
     </section>
+    <Dialog open={discardFor === key} title="Discard unsaved notes?" onClose={() => { setDiscardFor(null); focusEditor(); }}>
+      <p className="text-sm text-muted">Your saved NOTES.md file stays unchanged. The unsaved draft for this project will be removed.</p>
+      <div className="mt-5 flex justify-end gap-2"><Button onClick={() => { setDiscardFor(null); focusEditor(); }}>Keep editing</Button><Button disabled={!dirty || saving || !notes.data || notes.isError || notes.isFetching} onClick={() => {
+        if (discardFor !== key || useUiStore.getState().activeProjectId !== projectId || saving || !notes.data || notes.isError || notes.isFetching) return;
+        useUiStore.getState().setNotesDraft(key, null); setDiscardFor(null); setReviewSaved(false); setPreview(false); setSaveError(null); focusEditor();
+      }}>Discard draft</Button></div>
+    </Dialog>
     <footer role="status">{dirty ? "Unsaved draft · Kept during navigation in this app session" : hasSavedNotes ? "Saved notes stay with this project" : "Notes will be saved with this project"}</footer>
   </div>;
 }
