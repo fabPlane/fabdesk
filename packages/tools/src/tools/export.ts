@@ -232,6 +232,8 @@ export const export_zip = defineTool({
     "Bundle the files currently present in exports/gerbers plus positions.csv and bom.csv into exports/fabrication.zip or a named filename under exports/. Missing optional entries are reported.",
   inputSchema: {
     expectedSourceSha256: expectedPcbSource,
+    gerberFiles: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/).max(240)).min(1).max(512).optional()
+      .describe("Exact basenames in exports/gerbers/ to package from a completed Gerber/drill export. Omitting this retains saved-file packaging."),
     filename: z
       .string()
       .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.zip$/)
@@ -245,17 +247,19 @@ export const export_zip = defineTool({
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async ({ filename, expectedSourceSha256 }, ctx) => withPcbOutput(ctx, expectedSourceSha256, async (ctx) => {
+  handler: async ({ filename, expectedSourceSha256, gerberFiles }, ctx) => withPcbOutput(ctx, expectedSourceSha256, async (ctx) => {
     const project = ctx.requireProject();
     const exportsDir = p(project, PROJECT_FILES.exports);
     const gerbersDir = join(exportsDir, "gerbers");
     const entries: Array<{ name: string; path: string }> = [];
-    for (const f of await readdir(gerbersDir).catch(() => [])) {
+    for (const f of gerberFiles ? [...new Set(gerberFiles)] : await readdir(gerbersDir).catch(() => [])) {
       const abs = join(gerbersDir, f);
-      if ((await stat(abs)).isFile()) entries.push({ name: `gerbers/${f}`, path: abs });
+      const info = await stat(abs).catch(() => null);
+      if (info?.isFile()) entries.push({ name: `gerbers/${f}`, path: abs });
+      else if (gerberFiles) throw new ToolError(`Requested manufacturing file is missing: ${f}. Export again before packaging.`, "precondition");
     }
     const missing: string[] = [];
-    for (const f of ["positions.csv", "bom.csv"]) {
+    for (const f of gerberFiles ? [] : ["positions.csv", "bom.csv"]) {
       const abs = join(exportsDir, f);
       if (await stat(abs).catch(() => null)) entries.push({ name: f, path: abs });
       else missing.push(f);

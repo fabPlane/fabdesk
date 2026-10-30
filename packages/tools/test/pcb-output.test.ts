@@ -112,3 +112,20 @@ test("packaged output provenance tracks saved manufacturing files and excludes m
   expect(receipt.basis).toBe("saved-files"); expect(receipt.inputs).toEqual([{ path: "exports/gerbers/F_Cu.gbr", sha256: hash(Buffer.from("gerber")) }]);
   expect(receipt.artifactSha256).toBe(hash(await readFile(join(project.dir, "exports/fabrication.zip"))));
 });
+
+test("an explicit Gerber package includes its new drill/layers without old layers or optional lists", async () => {
+  const { project, ctx, sha } = await fixture();
+  await mkdir(join(project.dir, "exports/gerbers"), { recursive: true });
+  for (const name of ["front.gtl", "board.drl", "old-layer.gbr"]) await writeFile(join(project.dir, "exports/gerbers", name), `contents-${name}`);
+  await writeFile(join(project.dir, "exports/bom.csv"), "old BOM");
+  const out = await createRegistry().invoke("export_zip", { filename: "io-gerbers.zip", expectedSourceSha256: sha, gerberFiles: ["front.gtl", "board.drl"] }, async () => ctx);
+  expect((out.json as { files: string[]; missing: string[] }).files).toEqual(["gerbers/front.gtl", "gerbers/board.drl"]);
+  expect((out.json as { missing: string[] }).missing).toEqual([]);
+  const bytes = await readFile(join(project.dir, "exports/io-gerbers.zip"));
+  expect(bytes.includes(Buffer.from("gerbers/board.drl"))).toBe(true);
+  expect(bytes.includes(Buffer.from("old-layer.gbr"))).toBe(false);
+  expect(bytes.includes(Buffer.from("bom.csv"))).toBe(false);
+  await expect(createRegistry().invoke("export_zip", { filename: "missing.zip", gerberFiles: ["absent.drl"] }, async () => ctx)).rejects.toThrow("Requested manufacturing file is missing");
+  expect(await Bun.file(join(project.dir, "exports/missing.zip")).exists()).toBe(false);
+  expect(await readFile(join(project.dir, "board.kicad_pcb"))).toEqual(await readFile(SAMPLE));
+});

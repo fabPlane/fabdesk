@@ -11,7 +11,7 @@ export function outputKind(path: string): OutputKind | null {
   if (["png", "jpg", "jpeg", "webp", "svg"].includes(extension ?? "")) return "images";
   if (["mp4", "webm", "gif"].includes(extension ?? "")) return "videos";
   if (["glb", "stl", "obj", "step", "stp"].includes(extension ?? "")) return "models";
-  if (["zip", "csv", "gbr", "gbl", "gtl", "gbo", "gto", "gbs", "gts", "gbp", "gtp", "gm1", "gko", "drl", "pdf", "dxf", "lbrn2", "net", "pos"].includes(extension ?? "")) return "manufacturing";
+  if (["zip", "csv", "gbr", "gbl", "gtl", "gba", "gta", "gbo", "gto", "gbs", "gts", "gbp", "gtp", "gm1", "gko", "drl", "pdf", "dxf", "lbrn2", "net", "pos"].includes(extension ?? "")) return "manufacturing";
   return null;
 }
 export function savedOutputs(files: FileEntry[], sources: ProjectBoardSources["sources"] = []) {

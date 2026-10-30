@@ -105,6 +105,7 @@ export { useRunsStore } from "./stores/runs";
 export type { LiveRun, LiveJob } from "./stores/runs";
 
 export { useRunTool, resolveToolName, TOOL_PATTERNS } from "./tools";
+export { exportGerberPackage, gerberPackageFilename } from "./manufacturing-package";
 export type { ToolKind, ToolRunState } from "./tools";
 
 export { groupThreadsByProject, sidebarSections, searchProjectGroups } from "./group-threads";

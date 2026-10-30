@@ -1,3 +1,11 @@
+## Local manufacturing checkpoint
+
+Outputs → Export files now creates a named Gerber ZIP by sequencing the existing source-guarded Gerber and drill exporters. The ZIP receives only this run’s returned filenames, excluding obsolete layers or optional earlier BOM/placements. A missing/failed drill stage, changed source, mismatched ZIP manifest or changed project cannot produce the completed-download state. Individual advanced exporters retain their existing behavior. The UI names the package, shows progress/error details and preserves source context.
+
+Native Playbridge acceptance: visible Create Gerber package → 26-file result → Download → native Save. Archive CRC check passed, board.drl and copper/mask/paste/edge layers are present; downloaded bytes equal the saved archive. PCB, schematic and fabdesk.json remain byte-exact against the pre-export capture. Evidence: local 09-gerber-package-result.png and 10-gerber-package-proof.json. This verifies packaging, not DRC/fabrication approval.
+
+UI/client/tools typechecks passed; UI 249/993 passed; focused package/output/native-preservation tests 23/114 passed. Member selection/source guards have unit coverage; the corresponding new multi-board native package repeat remains pending. Home lifecycle is next; the other remaining19-item acceptance requirements and new journeys are still active.
+
 ## Local second checkpoint — in progress
 
 Schematic previews open at Fit width, with drag pan, pointer-centered zoom and Fit sheet reset. Library groups canonical video formats, schematic sheets and manufacturing layers; private video frames and a completed video’s supporting poster stay in Files. Each card has exact-file Files/Download actions; checkbox selection names and counts the grouped files. Render board image is directly available. Shared preview actions sit in the dialog header, labels escape clipping and follow loading dialog layout, and BOM shows lines versus summed quantity with compact source/filter controls.

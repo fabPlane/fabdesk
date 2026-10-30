@@ -26,7 +26,7 @@ test("member outputs exclude blocked and undeclared source directories and retai
 });
 
 test("actual native paste and board-edge Gerbers remain visible manufacturing outputs", () => {
-  for (const path of ["exports/gerbers/board-F_Paste.gtp", "exports/gerbers/board-B_Paste.gbp", "exports/gerbers/board-Edge_Cuts.gm1"]) {
+  for (const path of ["exports/gerbers/board-F_Paste.gtp", "exports/gerbers/board-B_Paste.gbp", "exports/gerbers/board-Edge_Cuts.gm1", "exports/gerbers/board-F_Adhesive.gta", "exports/gerbers/board-B_Adhesive.gba"]) {
     expect(outputKind(path)).toBe("manufacturing");
     expect(savedOutputs([{ path, size: 1, mtime: "2026-10-29" }])[0]?.path).toBe(path);
   }

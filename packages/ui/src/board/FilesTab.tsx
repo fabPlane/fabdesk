@@ -1,7 +1,7 @@
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useOutputSource } from "./useOutputSource";
-import { boardFileDestination } from "@fabdesk/client-core";
+import { boardFileDestination, sha256Blob, exportGerberPackage, gerberPackageFilename } from "@fabdesk/client-core";
 import { CanvasToolButton } from "../components/CanvasToolButton";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
@@ -70,19 +70,25 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   }, [fileToReveal, selected, expanded, query, project.data, projectId, exportFocus]);
   const [requestedExport, setExportKind] = useState<ExportKind>(exportFocus ? "export_gerbers" : "export_stencil");
   const [lastExport, setLastExport] = useState<ExportKind>(exportFocus ? "export_gerbers" : "export_stencil");
+  const [packagePhase, setPackagePhase] = useState<string | null>(null);
+  const [packageError, setPackageError] = useState<string | null>(null);
+  const [packageResult, setPackageResult] = useState<{ path: string; files: string[] } | null>(null);
+  const [lastScope, setLastScope] = useState<string | null>(null);
   const [laserForm, setLaserForm] = useState<LaserStencilFormState>(DEFAULT_LASER_STENCIL_FORM);
   const { run, state, manifest } = useRunTool();
   const availableExports = fileExportChoices(manifest).filter(kind => kind !== "export_bom");
   const exportChoices: ExportKind[] = exportFocus ? ["export_gerbers", ...availableExports.filter(kind => kind !== "export_gerbers")] : availableExports;
   const exportKind = exportChoices.includes(requestedExport) ? requestedExport : "export_gerbers";
-  const busy = state.status === "running";
+  const busy = state.status === "running" || packagePhase !== null;
   const files = project.data?.files ?? [];
   const { assembly, prefix, board, row: source, ready: sourceReady } = outputSource;
+  const scopeKey = `${prefix}:${board?.sourceId ?? "root"}:${board?.manifestSha256 ?? ""}`;
   const hasPcb = files.some(file => file.path === `${prefix}board.kicad_pcb`) && (!assembly || source?.status === "available");
   const scopeReady = !!sources.data && !sources.isFetching && !sources.isError;
   const hasFabricationFiles = files.some(file => file.path.startsWith(`${prefix}exports/gerbers/`) || [`${prefix}exports/positions.csv`, `${prefix}exports/bom.csv`].includes(file.path));
-  const canExport = scopeReady && sourceReady && (exportKind === "export_zip" ? hasFabricationFiles : hasPcb);
-  const sourceNote = !scopeReady ? sources.isError ? "Board sources could not be checked. Retry before exporting." : "Checking board sources…" : assembly && !sourceReady ? "Choose an available board source before exporting. Changed source definitions must be selected again." : exportKind === "export_zip" ? hasFabricationFiles ? "Packages this board’s existing Gerbers, drills, placements and BOM when present. Missing files are reported; nothing is regenerated." : "Export Gerbers, drill files or placements before creating a ZIP." : !hasPcb ? "Add this board’s saved KiCad PCB before creating manufacturing files." : exportKind === "export_dxf" ? "F.Cu, B.Cu and Edge.Cuts in millimetres. Bottom layers use a top view." : "Uses the selected board’s saved PCB. Review checks, routing and clearances before fabrication.";
+  const packageToolsReady = !exportFocus || exportKind !== "export_gerbers" || ["export_gerbers", "export_drill", "export_zip"].every(name => manifest?.some(tool => tool.name === name));
+  const canExport = scopeReady && sourceReady && packageToolsReady && (exportKind === "export_zip" ? hasFabricationFiles : hasPcb);
+  const sourceNote = !manifest ? "Checking available export tools…" : !packageToolsReady ? "This core must provide Gerber, drill and ZIP exporters to create a package. Individual exports remain in Project files." : !scopeReady ? sources.isError ? "Board sources could not be checked. Retry before exporting." : "Checking board sources…" : assembly && !sourceReady ? "Choose an available board source before exporting. Changed source definitions must be selected again." : exportKind === "export_zip" ? hasFabricationFiles ? "Packages this board’s existing Gerbers, drills, placements and BOM when present. Missing files are reported; nothing is regenerated." : "Export Gerbers, drill files or placements before creating a ZIP." : !hasPcb ? "Add this board’s saved KiCad PCB before creating manufacturing files." : exportKind === "export_dxf" ? "F.Cu, B.Cu and Edge.Cuts in millimetres. Bottom layers use a top view." : "Uses the selected board’s saved PCB. Review checks, routing and clearances before fabrication.";
   const previewPresent = exportFocus && hasPcb && files.some(file => file.path === `${prefix}renders/pcb.svg`);
   const previewRevision = usePcbPreviewRevision(projectId, previewPresent && !assembly);
   const previewLabel = assembly ? "Saved PCB drawing · Review checks separately" : previewRevision.isFetching ? "Checking saved preview…" : previewRevision.isError ? "Preview source check unavailable" : previewRevision.data === "matches-source" ? "Preview matches saved PCB" : previewRevision.data === "source-changed" ? "PCB changed · Preview is older" : "Saved preview · Source unverified";
@@ -97,6 +103,26 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   async function exportFiles() {
     if (!canExport || busy || useUiStore.getState().activeProjectId !== projectId) return;
     setLastExport(exportKind);
+    setLastScope(scopeKey);
+    setPackageError(null);
+    setPackageResult(null);
+    // The existing tools share source-bound guards. A manufacturing package needs
+    // drills as well as layers; never describe a partial sequence as complete.
+    if (exportFocus && exportKind === "export_gerbers") {
+      const capturedBoard = board;
+      try {
+        setPackagePhase("Checking package source…");
+        const capturedSha = source?.pcbSha256 ?? await sha256Blob(await client.readFileBlob(projectId, `${prefix}board.kicad_pcb`));
+        const result = await exportGerberPackage({ projectId, sourceSha256: capturedSha,
+          filename: gerberPackageFilename(source?.source.name ?? project.data?.name ?? "board"),
+          ...(capturedBoard ? { board: capturedBoard } : {}), run,
+          isCurrent: () => useUiStore.getState().activeProjectId === projectId, onPhase: setPackagePhase });
+        setPackageResult({ path: `${prefix}exports/${result.filename}`, files: result.files });
+        await project.refetch();
+      } catch (failure) { setPackageError(failure instanceof Error ? failure.message : "Manufacturing package did not finish."); }
+      finally { setPackagePhase(null); }
+      return;
+    }
     const extras =
       exportKind === "export_stencil"
         ? { thicknessMm }
@@ -144,9 +170,9 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
 
   if (project.isError) return <LoadError title="Could not load project files" onRetry={() => void project.refetch()} />;
   if (project.isLoading) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
-  const exportControls = { exportChoices, exportKind, setExportKind, thicknessMm, onThickness: (value: number) => setThickness(projectId, value), laserForm, setLaserForm, busy, canExport, sourceNote, ...(state.error && !exportFocus ? { error: `${EXPORTS[lastExport].title}: ${state.error}` } : {}), onExport: () => void exportFiles() };
+  const exportControls = { gerberPackage: exportFocus, exportChoices, exportKind, setExportKind, thicknessMm, onThickness: (value: number) => setThickness(projectId, value), laserForm, setLaserForm, busy, canExport, sourceNote, ...(state.error && !exportFocus ? { error: `${EXPORTS[lastExport].title}: ${state.error}` } : {}), onExport: () => void exportFiles() };
   if (exportFocus) return <div className="fd-export-workspace">
-    <header><div><h1>Export files</h1><p>Choose a board and the files you need. Saved outputs stay in the library.</p></div><CanvasToolButton icon="sparkles" label="Ask about this export" onClick={() => askAboutSurface(assistantSurface, "Help me choose and export the files I need for this board. Review its saved source and existing outputs first.")} /><Button size="sm" variant="ghost" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }}><Icon name="library" width={16} height={16} />Saved outputs</Button></header>
+    <header><div><h1>Export files</h1><p>{assembly ? "Choose a board, then select the files to export." : hasPcb ? "Choose the files to export from this board. Exported files appear in Library." : "Add a saved KiCad PCB to create manufacturing files."}</p></div><div className="fd-export-header-actions"><CanvasToolButton icon="sparkles" label="Ask about these export settings" onClick={() => askAboutSurface(assistantSurface, "Help me choose and export the files I need for this board. Review its saved source and existing outputs first.")} /><Button size="sm" variant="ghost" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }}><Icon name="library" width={16} height={16} />Saved outputs</Button></div></header>
     {assembly && <label className="fd-export-board-scope">Board source<select aria-label="Board source for exports" disabled={!scopeReady || busy} value={outputSource.sourceId ?? ""} onChange={event => outputSource.choose(event.target.value)}><option value="" disabled>Choose a board…</option>{!source && outputSource.sourceId && <option value={outputSource.sourceId} disabled>Source definition changed</option>}{sources.data?.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · source unavailable" : ""}</option>)}</select></label>}
     <div className="fd-export-flow">
       <section className="fd-export-reference" aria-label="Export source reference">
@@ -158,7 +184,15 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
       </section>
       <section className="fd-export-config" aria-label="Export options"><FileExportControls {...exportControls} /><div className="fd-export-parts-link"><span>Need a component list?</span><Button size="sm" variant="ghost" onClick={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().setBoardTab("bom"); }}>Open Parts & BOM</Button></div>{sources.isError && <Button size="sm" onClick={() => void sources.refetch()}>Retry source check</Button>}</section>
     </div>
-    {state.status !== "idle" && <div className="fd-export-feedback" role={state.error ? "alert" : "status"}>{state.error ? <ErrorNotice error={state.error} /> : (busy ? `Exporting ${EXPORTS[lastExport].title.toLowerCase()}…` : `${EXPORTS[lastExport].title} saved under ${prefix}exports/.`)}{state.note && <p>{state.note}</p>}{state.status === "done" && <ExportCompletionDetails kind={lastExport} result={state.result} />}{state.status === "done" && <Button size="sm" variant="ghost" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }}>Open output library</Button>}</div>}
+    {lastScope === scopeKey && (state.status !== "idle" || packagePhase || packageError) && <div className="fd-export-feedback" role={state.error || packageError ? "alert" : "status"}>
+      {packageError ? <p>{packageError}</p> : state.error ? <ErrorNotice error={state.error} /> : busy ? <p>{packagePhase ?? `Exporting ${EXPORTS[lastExport].title.toLowerCase()}…`}</p> : packageResult ? <p>Gerber package saved · {packageResult.files.length} files, including Gerber layers and drills. Review design checks before fabrication.</p> : <p>{EXPORTS[lastExport].title} saved under {prefix}exports/.</p>}
+      {state.note && <p>{state.note}</p>}
+      {!busy && !packageError && state.status === "done" && !packageResult && <ExportCompletionDetails kind={lastExport} result={state.result} />}
+      {!busy && !packageError && packageResult && <Button size="sm" onClick={() => void downloadFile(packageResult.path)} disabled={!!downloadPath}><Icon name="download" />Download {packageResult.path.split("/").pop()}</Button>}
+      {downloadError && <p role="alert">{downloadError.message}</p>}
+      {!busy && state.status === "done" && <Button size="sm" variant="ghost" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }}>Open output library</Button>}
+    </div>}
+
   </div>;
   return (
     <div className="fd-files flex h-full min-h-0 flex-col">

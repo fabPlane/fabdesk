@@ -8,7 +8,8 @@ import { STENCIL_THICKNESSES_MM, DEFAULT_STENCIL_THICKNESS_MM } from "../stores/
 import { LaserStencilPresetPanel, type LaserStencilFormState } from "./LaserStencilPresetPanel";
 
 /** The existing file exporters share the same deliberate controls in Files and Outputs. */
-export function FileExportControls({ exportChoices, exportKind, setExportKind, thicknessMm, onThickness, laserForm, setLaserForm, busy, canExport, sourceNote, error, onExport, onClose }: {
+export function FileExportControls({ exportChoices, exportKind, setExportKind, thicknessMm, onThickness, laserForm, setLaserForm, busy, canExport, sourceNote, error, onExport, onClose, gerberPackage = false }: {
+  gerberPackage?: boolean;
   exportChoices: readonly ExportKind[]; exportKind: ExportKind; setExportKind: (kind: ExportKind) => void;
   thicknessMm: number; onThickness: (value: number) => void;
   laserForm: LaserStencilFormState; setLaserForm: (form: LaserStencilFormState) => void;
@@ -22,7 +23,7 @@ export function FileExportControls({ exportChoices, exportKind, setExportKind, t
   const choices = (kinds: readonly ExportKind[]) => kinds.map(kind => <label key={kind} className={cn("flex cursor-pointer items-center gap-3 rounded-lg border p-3", exportKind === kind ? "border-accent bg-accent/10" : "border-border hover:bg-panel-2/50")}>
     <input type="radio" name="project-export" value={kind} checked={exportKind === kind} onChange={() => setExportKind(kind)} className="accent-[var(--fd-accent)]" />
     <FileGlyph kind={EXPORTS[kind].kind} />
-    <span><span className="block text-[13px] font-medium">{EXPORTS[kind].title}</span><span className="block text-xs text-muted">{EXPORTS[kind].detail}</span></span>
+    <span><span className="block text-[13px] font-medium">{gerberPackage && kind === "export_gerbers" ? "Gerber package" : EXPORTS[kind].title}</span><span className="block text-xs text-muted">{gerberPackage && kind === "export_gerbers" ? "Gerber layers + Excellon drill files in a ZIP" : EXPORTS[kind].detail}</span></span>
   </label>);
   return <div className="fd-export-controls">
         <fieldset disabled={busy}>
@@ -49,7 +50,7 @@ export function FileExportControls({ exportChoices, exportKind, setExportKind, t
           <p className="fd-export-source-note w-full text-xs text-muted" role="status">{sourceNote}</p>
           <span className="mr-auto text-[11px] text-muted">Saved under exports/</span>
           {onClose && <Button size="sm" variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>}
-          <Button size="sm" variant="primary" disabled={busy || !canExport} onClick={onExport}>{busy ? <><Spinner /> Exporting…</> : EXPORTS[exportKind].action}</Button>
+          <Button size="sm" variant="primary" disabled={busy || !canExport} onClick={onExport}>{busy ? <><Spinner /> Exporting…</> : gerberPackage && exportKind === "export_gerbers" ? "Create Gerber package" : EXPORTS[exportKind].action}</Button>
         </div>
   </div>;
 }
