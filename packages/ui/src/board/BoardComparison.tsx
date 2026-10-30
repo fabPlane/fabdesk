@@ -4,14 +4,14 @@ import { useUiStore } from "../stores/ui";
 import { SvgTab } from "./SvgTab";
 
 /** One PCB and one schematic from the same project; opening comparison never synchronizes them. */
-export function BoardComparison({ projectId, active }: { projectId: string; active: "pcb" | "schematic" }) {
+export function BoardComparison({ projectId, active, onOpenChecks }: { projectId: string; active: "pcb" | "schematic"; onOpenChecks?: () => void }) {
   const focus = (kind: "pcb" | "schematic") => { if (useUiStore.getState().activeProjectId === projectId && useUiStore.getState().boardTab !== kind) useUiStore.getState().setWorkspaceTab(kind); };
   return <div className="fd-board-comparison" data-testid="board-comparison">
     <PanelGroup direction="horizontal" autoSaveId={`fabplane-board-comparison-${projectId}`}>
       <Panel id="pcb" order={1} defaultSize={50} minSize={25}>
         <section className="fd-comparison-pane" data-view="pcb" data-active={active === "pcb"} aria-label="PCB comparison pane" onPointerDownCapture={() => focus("pcb")} onFocusCapture={() => focus("pcb")}>
           <header><Button size="sm" variant="ghost" aria-pressed={active === "pcb"} onClick={() => focus("pcb")}>PCB</Button></header>
-          <div className="fd-comparison-drawing"><SvgTab kind="pcb" active={active === "pcb"} /></div>
+          <div className="fd-comparison-drawing"><SvgTab {...(onOpenChecks ? { onOpenChecks } : {})} kind="pcb" active={active === "pcb"} /></div>
         </section>
       </Panel>
       <PanelResizeHandle className="fd-comparison-divider" aria-label="Resize PCB and schematic views" />

@@ -9,7 +9,7 @@ import { filterCheckFindings, assemblyCheckFindingRow, captureAssemblyCheckFindi
 import { Badge, Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 
-export function AssemblyChecks({ projectId, data, checking, failed, onRetry }: { projectId: string; data: ProjectBoardSources; checking: boolean; failed: boolean; onRetry: () => void }) {
+export function AssemblyChecks({ projectId, data, checking, failed, onRetry, contextual = false, onNavigate }: { projectId: string; data: ProjectBoardSources; checking: boolean; failed: boolean; onRetry: () => void; contextual?: boolean; onNavigate?: () => void }) {
   const [board, setBoard] = useState<BoardSourceSelection | null>(() => {
     const restored = restoreAssemblySelection(data, useUiStore.getState().assemblyBoardByProject[projectId]);
     return restored ? { sourceId: restored.sourceId, manifestSha256: restored.manifestSha256 } : null;
@@ -55,14 +55,14 @@ export function AssemblyChecks({ projectId, data, checking, failed, onRetry }: {
     }
   };
   const status = report.data?.state, selectedFinding = selected !== null ? rows[selected] : undefined;
-  useAssistantSurface({ projectId, label: selectedFinding ? "Checks · Selected finding" : "Review / Checks", priority: 10, details: JSON.stringify({ board, source: source?.source, sourceReady: owned && !checking && !failed, finding: selectedFinding, reportSourceState: status, checking: busy }) });
+  useAssistantSurface({ projectId, label: selectedFinding ? "Checks · Selected finding" : contextual ? "Board / Checks" : "Review / Checks", priority: contextual ? 50 : 10, details: JSON.stringify({ board, source: source?.source, sourceReady: owned && !checking && !failed, finding: selectedFinding, reportSourceState: status, checking: busy }) });
 
   return <div ref={root} className="fd-member-checks" data-testid="assembly-checks">
     <header><div><h2>Board checks</h2><p>Review saved PCB findings for this source design.</p></div>
-      <label>Board source<select aria-label="Board source for checks" value={board?.sourceId ?? ""} disabled={busy || checking || failed} onChange={event => choose(event.target.value)}><option value="">Choose a board source…</option>{data.sources.map(row => <option key={row.source.id} value={row.source.id} disabled={row.status !== "available"}>{row.source.name}{row.status !== "available" ? " · unavailable" : ""}</option>)}</select></label>
+      {!contextual && <label>Board source<select aria-label="Board source for checks" value={board?.sourceId ?? ""} disabled={busy || checking || failed} onChange={event => choose(event.target.value)}><option value="">Choose a board source…</option>{data.sources.map(row => <option key={row.source.id} value={row.source.id} disabled={row.status !== "available"}>{row.source.name}{row.status !== "available" ? " · unavailable" : ""}</option>)}</select></label>}
     <div className="fd-member-checks-toolbar"><Button size="sm" variant="ghost" disabled={busy || checking} onClick={() => { onRetry(); if (owned) void report.refetch(); }}>Recheck sources</Button>{owned && <Button size="sm" disabled={busy || checking || failed || report.isPending || report.isFetching || report.isError || !report.data} onClick={() => void run()}>{busy ? "Checking PCB…" : "Run PCB-only DRC"}</Button>}</div></header>
     <div className="fd-checks-body" data-detail-open={!!selectedFinding}>
-    {board && owned && <div className="fd-checks-context"><div className="fd-member-checks-scope"><strong>{source?.source.name}</strong><span>PCB-only report · Electrical parity and assembly compatibility are not checked.</span></div><AssemblySchematicSources key={`${projectId}/${scope}`} projectId={projectId} board={board} data={data} disabled={busy || checking || failed} /></div>}
+    {board && owned && <div className="fd-checks-context"><div className="fd-member-checks-scope"><strong>{source?.source.name}</strong><span>PCB-only report · Electrical parity and assembly compatibility are not checked.</span></div><AssemblySchematicSources key={`${projectId}/${scope}`} projectId={projectId} board={board} data={data} disabled={busy || checking || failed} {...(onNavigate ? { onNavigate } : {})} /></div>}
     {failed ? <LoadError title="Board sources could not be verified" onRetry={onRetry} /> : checking ? <p role="status"><Spinner />Checking project sources…</p> : !board ? <EmptyState title="Select a board to review its checks">Reports stay with their source design. No project-wide compatibility result is inferred.</EmptyState> : !owned ? <EmptyState title="Board source changed or is unavailable">Select the source again before checking it.<div className="mt-3"><Button size="sm" disabled={source?.status !== "available" || !data.manifestSha256} onClick={() => choose(board.sourceId)}>Select source again</Button></div></EmptyState> : <>
       {report.isError ? <LoadError title="Could not verify this source’s report" onRetry={() => void report.refetch()} /> : report.isPending || report.isFetching ? <p role="status"><Spinner />Checking saved PCB and report…</p> : <>
         <p role="status" className="fd-member-checks-status" data-warning={status !== "source-unchanged"}>{status === "source-changed" ? "PCB changed since DRC · Findings below are from the older saved PCB." : status === "source-unchanged" ? "PCB unchanged since this report · Review the findings below." : status === "scope-unverified" ? "Saved report ownership is unverified · Run a new check for this source." : "No saved PCB check for this source."}</p>
@@ -72,7 +72,7 @@ export function AssemblyChecks({ projectId, data, checking, failed, onRetry }: {
                   event.stopPropagation();
                   const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId || !report.data || report.isFetching || checking || failed || selected === null) return;
                   const finding = captureAssemblyCheckFinding(data, report.data, selected, itemIndex, ui.assemblyBoardByProject[projectId]);
-                  if (finding) ui.openAssemblyFinding(finding);
+                  if (finding) { ui.openAssemblyFinding(finding); onNavigate?.(); }
                 }}>Show on PCB</Button>}</p>)}</CheckFindingDetails>}</div>}</> : <EmptyState title="No findings listed in this report">This PCB-only report does not establish schematic parity or assembly compatibility.</EmptyState> : null}
       </>}
     </>}

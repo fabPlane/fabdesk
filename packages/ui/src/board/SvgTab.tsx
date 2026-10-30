@@ -69,7 +69,7 @@ export function commentPinAnchor(
 }
 
 /** Schematic / PCB tab: shows the daemon's rendered SVG (`renders/<kind>.svg`, drawn by kicad-cli) and offers to render it. */
-export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; active?: boolean }) {
+export function SvgTab({ kind, active = true, onOpenChecks }: { kind: "schematic" | "pcb"; active?: boolean; onOpenChecks?: () => void }) {
   const commentTrigger = useRef<HTMLButtonElement>(null);
   const commentToReveal = useUiStore((s) => s.commentToReveal);
   const canvasMode = useUiStore((s) => s.canvasMode);
@@ -209,7 +209,7 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
               else setCanvasPoint(point);
             } } : {})}
             overlay={(box) => <>
-              {kind === "pcb" && active && <RootFindingOverlay projectId={projectId} svg={rendered.data!} box={box} ready={scopeReady && nativeCoordinates && revision.data === "matches-source" && !revision.isFetching && !revision.isError} />}
+              {kind === "pcb" && active && <RootFindingOverlay {...(onOpenChecks ? { onOpenChecks } : {})} projectId={projectId} svg={rendered.data!} box={box} ready={scopeReady && nativeCoordinates && revision.data === "matches-source" && !revision.isFetching && !revision.isError} />}
               <CommentPins nativePcbCoordinates={nativeCoordinates} comments={pins} box={box} selectedId={selectedId} draftPoint={draftPoint}
                 onSelect={(id) => { setSelectedId(id); setDraftPoint(null); setCanvasPoint(null); }} />
               {canvasMode && canvasPoint && box && !commentMode && <div data-canvas-tools className="fd-location-anchor" style={{ visibility: active ? "visible" : "hidden", left: `${(canvasPoint.x - box.x) / box.width * 100}%`, top: `${(canvasPoint.y - box.y) / box.height * 100}%` }}>

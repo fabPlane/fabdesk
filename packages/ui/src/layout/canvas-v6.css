@@ -510,3 +510,29 @@
 .fd-project-activity-actions { margin-top:12px; justify-content:flex-start; }
 .fd-project-activity-list details { margin-top:10px; }
 .fd-project-activity-id { font-family:monospace; }
+
+.fd-schematic-availability-heading { display:flex; align-items:flex-start; gap:12px; }
+.fd-schematic-availability-heading > svg { flex-shrink:0; color:var(--fd-accent); margin-top:2px; }
+.fd-schematic-availability-heading > div { flex:1; min-width:0; }
+.fd-schematic-availability-heading > button { flex-shrink:0; }
+.fd-member-schematic-sources .fd-schematic-checks-note { font-size:11px; margin-top:8px; }
+.fd-schematic-source-path { overflow-wrap:anywhere; font-family:var(--font-mono,monospace); font-size:11px; }
+@media(max-width:780px) { .fd-schematic-availability-heading { flex-wrap:wrap; } }
+
+.fd-board-checks-dialog { width:min(1040px,calc(100vw - 48px)); max-width:1040px; }
+.fd-board-checks-dialog-tools { display:flex; justify-content:space-between; align-items:center; gap:16px; color:var(--fd-muted); font-size:12px; }
+.fd-board-checks-dialog .fd-member-checks,.fd-board-checks-dialog .fd-single-checks { padding:20px 0 0; height:auto; }
+.fd-board-checks-dialog .fd-member-checks > header > div:first-child,.fd-board-checks-dialog .fd-single-checks-header > div:first-child { display:none; }
+.fd-board-checks-dialog .fd-member-checks > header,.fd-board-checks-dialog .fd-single-checks-header { margin-bottom:18px; }
+.fd-board-checks-dialog .fd-checks-context { grid-template-columns:minmax(0,1fr); }
+.fd-board-checks-dialog .fd-checks-body { padding:0; overflow:visible; }
+.fd-board-checks-dialog .fd-checks-results[data-detail-open=true] { grid-template-columns:minmax(0,1fr); }
+.fd-board-checks-dialog .fd-checks-table { max-height:340px; }
+.fd-board-checks-dialog .fd-checks-detail { max-height:300px; }
+
+.fd-routing-toolbar-slot,.fd-routing-toolbar-inline { display:flex; align-items:center; gap:12px; width:100%; min-width:0; }
+.fd-routing-toolbar-inline { padding:12px 20px; }
+.fd-routing-toolbar-slot .fd-assembly-board-picker > summary { min-height:36px; }
+.fd-routing-toolbar-slot .fd-board-view-tabs { flex-shrink:0; }
+@media(max-width:1100px) { .fd-routing-toolbar-slot { gap:8px; } }
+@media(max-width:780px) { .fd-routing-toolbar-slot { flex-wrap:wrap; } }

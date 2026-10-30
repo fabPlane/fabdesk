@@ -1,10 +1,13 @@
+import { createPortal } from "react-dom";
+import { BoardViewTabs } from "../BoardViewTabs";
+import { AssemblyBoardPicker } from "../AssemblyBoardPicker";
 import { DisclosureSummary } from "../../components/DisclosureSummary";
 import { askAboutSurface, useAssistantSurface } from "../../chat/useAssistantSurface";
 import { CanvasToolButton } from "../../components/CanvasToolButton";
 import { useOutputSource } from "../useOutputSource";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, EmptyState, LoadError, Select, Spinner } from "../../components/ui";
-import { routeRunMatchesSource, useCoreClient } from "@fabdesk/client-core";
+import { restoreAssemblySelection, routeRunMatchesSource, useCoreClient } from "@fabdesk/client-core";
 import { useCinemaStore } from "../../stores/cinema";
 import { useUiStore } from "../../stores/ui";
 import { Icon } from "../../components/Icon";
@@ -47,21 +50,34 @@ function RoutingReference({ projectId, prefix = "" }: { projectId: string; prefi
   </section>;
 }
 
-export function CinemaTab() {
+export function CinemaTab({ canvas = false, onOpenChecks }: { canvas?: boolean; onOpenChecks?: () => void } = {}) {
   const projectId = useUiStore(s => s.activeProjectId);
+  const [rootBusy, setRootBusy] = useState(false);
   const sources = useBoardSources(projectId);
   if (!projectId) return <EmptyState title="Choose a project" />;
   if (sources.isError) return <LoadError title="Could not check routing source" onRetry={() => void sources.refetch()} />;
   if (!sources.data) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
-  if (sources.data.mode === "assembly") return <MemberCinema key={projectId} projectId={projectId} />;
-  return <ProjectCinema key={projectId} projectId={projectId} scopeReady={!sources.isFetching} />;
+  if (sources.data.mode === "assembly") return <MemberCinema key={projectId} projectId={projectId} canvas={canvas} {...(onOpenChecks ? { onOpenChecks } : {})} />;
+  return <div className="flex h-full min-h-0 flex-col">{canvas && <RoutingToolbar projectId={projectId} disabled={rootBusy || sources.isFetching} {...(onOpenChecks ? { onOpenChecks } : {})} />}<div className="min-h-0 flex-1"><ProjectCinema key={projectId} projectId={projectId} scopeReady={!sources.isFetching} onBusyChange={setRootBusy} /></div></div>;
 }
 
-function MemberCinema({ projectId }: { projectId: string }) {
+/** Project-owned source picker and the same named tabs as the PCB/schematic/model canvas. */
+function RoutingToolbar({ projectId, disabled, onOpenChecks, children }: { projectId: string; disabled: boolean; onOpenChecks?: () => void; children?: import("react").ReactNode }) {
+  const [host, setHost] = useState<Element | null>(null);
+  useLayoutEffect(() => { setHost(document.querySelector("[data-routing-toolbar-slot]")); }, []);
+  const content = <>{children}<BoardViewTabs value="pcb" disabled={disabled} onChange={tab => useUiStore.getState().setBoardTab(tab)} /><CanvasToolButton icon="sparkles" label="Ask about routing this board" disabled={disabled} onClick={() => {
+    const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId) return;
+    const surface = Object.values(ui.assistantSurfaces).filter(row => row.projectId === projectId).sort((a,b) => b.priority - a.priority)[0];
+    askAboutSurface(surface ?? { projectId, label: "Board / Routing", priority: 10, details: JSON.stringify({ board: ui.assemblyBoardByProject[projectId] }) }, "Review this board’s saved source and routing needs. Explain the remaining connections, current candidate and router settings before proposing changes.");
+  }} /><div className="fd-board-task-actions"><Button size="sm" variant="primary" aria-current="page" title="Close routing and return to PCB" disabled={disabled} onClick={() => useUiStore.getState().setBoardTab("pcb")}><Icon name="route" width={18} height={18} />Routing</Button><Button size="sm" disabled={disabled} onClick={() => onOpenChecks ? onOpenChecks() : useUiStore.getState().setBoardTab("drc")}><Icon name="checkCircle" width={18} height={18} />Checks</Button></div></>;
+  return host ? createPortal(content, host) : <div className="fd-routing-toolbar-inline">{content}</div>;
+}
+
+function MemberCinema({ projectId, canvas, onOpenChecks }: { projectId: string; canvas: boolean; onOpenChecks?: () => void }) {
   const scope = useOutputSource(projectId), [busy, setBusy] = useState(false);
   const surface = { projectId, label: "Routing / Board source", priority: 5, details: JSON.stringify({ board: scope.board, source: scope.row?.source, sourceReady: scope.ready, instruction: "Routing applies to the selected source, shared by its declared physical instances. Connections and electrical parity remain unverified." }) };
   useAssistantSurface(surface);
-  return <div className="flex h-full min-h-0 flex-col"><div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-3"><label className="flex items-center gap-2 text-sm">Board source<Select aria-label="Board source for routing" disabled={busy || scope.sources.isFetching} value={scope.sourceId ?? ""} onChange={event => scope.choose(event.target.value)}><option value="" disabled>Choose a board…</option>{scope.data?.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · source unavailable" : ""}</option>)}</Select></label><CanvasToolButton icon="sparkles" label="Ask about routing this board" onClick={() => askAboutSurface(surface, "Review this board’s saved source and routing needs. Explain the remaining connections and router settings before proposing a candidate.")} /></div><div className="min-h-0 flex-1">{scope.board && scope.board.manifestSha256 === scope.data?.manifestSha256 && scope.row?.status === "available" && scope.row.pcbSha256 ? <ProjectCinema key={`${scope.board.sourceId}/${scope.board.manifestSha256}`} projectId={projectId} scopeReady={scope.ready} board={scope.board} prefix={scope.prefix} sourceSha256={scope.row.pcbSha256} sourceName={scope.row.source.name} onOpenPcb={() => { if (useUiStore.getState().activeProjectId !== projectId) return; scope.choose(scope.board!.sourceId); useUiStore.getState().setBoardTab("pcb"); }} onBusyChange={setBusy} /> : <EmptyState title="Choose an available board source" action={<div className="flex gap-2"><Button onClick={() => scope.sourceId && scope.row?.status === "available" ? scope.choose(scope.sourceId) : void scope.sources.refetch()}>{scope.row?.status === "available" ? "Select source again" : "Recheck sources"}</Button><Button onClick={() => useUiStore.getState().openProjectFile("fabplane.assembly.json")}>Review source files</Button></div>}>Missing or changed source definitions must be resolved before creating a routing candidate.</EmptyState>}</div></div>;
+  return <div className="flex h-full min-h-0 flex-col">{canvas ? <RoutingToolbar projectId={projectId} disabled={busy || scope.sources.isFetching || scope.sources.isError} {...(onOpenChecks ? { onOpenChecks } : {})}>{scope.data && <AssemblyBoardPicker projectId={projectId} data={scope.data} selection={restoreAssemblySelection(scope.data, useUiStore.getState().assemblyBoardByProject[projectId])} disabled={busy || scope.sources.isFetching || scope.sources.isError} onBack={() => useUiStore.getState().setWorkspaceArea("overview")} onChoose={selection => { useUiStore.getState().setAssemblyBoard(selection); scope.choose(selection.sourceId); }} />}</RoutingToolbar> : <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-3"><label className="flex items-center gap-2 text-sm">Board source<Select aria-label="Board source for routing" disabled={busy || scope.sources.isFetching} value={scope.sourceId ?? ""} onChange={event => scope.choose(event.target.value)}><option value="" disabled>Choose a board…</option>{scope.data?.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · source unavailable" : ""}</option>)}</Select></label><CanvasToolButton icon="sparkles" label="Ask about routing this board" onClick={() => askAboutSurface(surface, "Review this board’s saved source and routing needs. Explain the remaining connections and router settings before proposing a candidate.")} /></div>}<div className="min-h-0 flex-1">{scope.board && scope.board.manifestSha256 === scope.data?.manifestSha256 && scope.row?.status === "available" && scope.row.pcbSha256 ? <ProjectCinema key={`${scope.board.sourceId}/${scope.board.manifestSha256}`} projectId={projectId} scopeReady={scope.ready} board={scope.board} prefix={scope.prefix} sourceSha256={scope.row.pcbSha256} sourceName={scope.row.source.name} onOpenPcb={() => { if (useUiStore.getState().activeProjectId !== projectId) return; scope.choose(scope.board!.sourceId); useUiStore.getState().setBoardTab("pcb"); }} onBusyChange={setBusy} /> : <EmptyState title="Choose an available board source" action={<div className="flex gap-2"><Button onClick={() => scope.sourceId && scope.row?.status === "available" ? scope.choose(scope.sourceId) : void scope.sources.refetch()}>{scope.row?.status === "available" ? "Select source again" : "Recheck sources"}</Button><Button onClick={() => useUiStore.getState().openProjectFile("fabplane.assembly.json")}>Review source files</Button></div>}>Missing or changed source definitions must be resolved before creating a routing candidate.</EmptyState>}</div></div>;
 }
 
 function ProjectCinema({ projectId, scopeReady, board, prefix = "", sourceSha256, sourceName, onOpenPcb, onBusyChange }: { projectId: string; scopeReady: boolean; board?: BoardSourceSelection; prefix?: string; sourceSha256?: string; sourceName?: string; onOpenPcb?: () => void; onBusyChange?: (busy: boolean) => void }) {

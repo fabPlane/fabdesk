@@ -1,3 +1,4 @@
+import { SchematicAvailability } from "./SchematicAvailability";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { CheckFindingDetails } from "./CheckFindingDetails";
@@ -14,16 +15,16 @@ import { CheckFindingFilters } from "./CheckFindingFilters";
 import { AssemblyChecks } from "./AssemblyChecks";
 export { normalizeReport, type Violation, type ViolationItem } from "@fabdesk/client-core";
 
-export function DrcTab() {
+export function DrcTab({ contextual = false, onNavigate }: { contextual?: boolean; onNavigate?: () => void } = {}) {
   const projectId = useUiStore(state => state.activeProjectId), sources = useBoardSources(projectId);
   if (!projectId) return <EmptyState title="No project selected" />;
   if (sources.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   if (sources.isError && sources.data?.mode !== "assembly") return <LoadError title="Could not verify project board sources" onRetry={() => { void sources.refetch(); }} />;
-  if (sources.data?.mode === "assembly") return <AssemblyChecks projectId={projectId} data={sources.data} checking={sources.isFetching} failed={sources.isError} onRetry={() => { void sources.refetch(); }} />;
-  return <SingleBoardChecks key={projectId} projectId={projectId} scopeVerified={sources.data?.mode === "single" && !sources.isFetching && !sources.isError} />;
+  if (sources.data?.mode === "assembly") return <AssemblyChecks contextual={contextual} {...(onNavigate ? { onNavigate } : {})} projectId={projectId} data={sources.data} checking={sources.isFetching} failed={sources.isError} onRetry={() => { void sources.refetch(); }} />;
+  return <SingleBoardChecks contextual={contextual} {...(onNavigate ? { onNavigate } : {})} key={projectId} projectId={projectId} scopeVerified={sources.data?.mode === "single" && !sources.isFetching && !sources.isError} />;
 }
 
-function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; scopeVerified: boolean }) {
+function SingleBoardChecks({ projectId, scopeVerified, contextual, onNavigate }: { projectId: string; scopeVerified: boolean; contextual: boolean; onNavigate?: () => void }) {
   const project = useProject(projectId);
   const client = useCoreClient();
   const drc = useProjectJson(projectId, "reports/drc.json");
@@ -93,11 +94,16 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
     </header>
   );
   const sel = selected !== null ? rows[selected] : undefined;
-  useAssistantSurface({ projectId, label: sel ? "Checks · Selected finding" : "Review / Checks", priority: 10, details: JSON.stringify({ finding: sel, filter, query: findingQuery, reportSourceState: checkRevision.data, checking: busy || loading, sourceReady }) });
+  useAssistantSurface({ projectId, label: sel ? "Checks · Selected finding" : contextual ? "Board / Checks" : "Review / Checks", priority: contextual ? 50 : 10, details: JSON.stringify({ finding: sel, filter, query: findingQuery, reportSourceState: checkRevision.data, checking: busy || loading, sourceReady }) });
   return (
     <div ref={root} className="fd-single-checks flex h-full min-h-0 flex-col">
       {toolbar}
       <div className="fd-checks-body" data-detail-open={!!sel}>
+      {sourceReady && <div className="fd-checks-context"><div className="fd-member-checks-scope"><strong>{project.data?.name}</strong><span>Saved project sources · Review each check’s coverage below.</span></div><SchematicAvailability available={hasSchematic} disabled={busy} onOpen={() => {
+        const ui = useUiStore.getState(); if (!sourceReady || busy || ui.activeProjectId !== projectId) return;
+        onNavigate?.(); ui.setBoardTab("schematic");
+      }} /></div>}
+
       {!loading && !failed && !noReports && <CheckReportStatus projectId={projectId} drc={drc.data} erc={erc.data} />}
       <div className="fd-single-checks-filters">
       {!loading && !failed && !noReports && <div className="fd-single-checks-filter"><label>Findings<select aria-label="Filter saved check findings" value={filter} onChange={event => { setFilter(event.target.value as typeof filter); filterFindings("", "all"); }}><option value="all">All checks</option><option value="drc">PCB · DRC</option><option value="erc">Schematic · ERC</option></select></label></div>}
@@ -165,7 +171,7 @@ function SingleBoardChecks({ projectId, scopeVerified }: { projectId: string; sc
                   {sel.source === "drc" && selected !== null && captureRootCheckFinding(client.baseUrl, projectId, drc.data, selected, i) && <Button size="sm" variant="ghost" disabled={!sourceReady || busy || drc.isFetching || drc.isError || checkRevision.isFetching || checkRevision.isError || checkRevision.data !== "source-unchanged"} onClick={() => {
                     const state = useUiStore.getState(); if (state.activeProjectId !== projectId || !sourceReady || busy || drc.isFetching || checkRevision.isFetching || checkRevision.isError || checkRevision.data !== "source-unchanged") return;
                     const finding = captureRootCheckFinding(client.baseUrl, projectId, drc.data, selected, i);
-                    if (finding) state.openRootFinding(finding);
+                    if (finding) { state.openRootFinding(finding); onNavigate?.(); }
                   }}>Show on PCB</Button>}
                 </p>
               ))}
