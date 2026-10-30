@@ -414,12 +414,7 @@
 .fd-assembly-review-status small { font-size:11px; }
 .fd-assembly-review-status [data-warning="true"] { color:var(--fd-warning); font-weight:600; }
 
-.fd-assembly-finding-summary { display:flex; align-items:center; gap:12px; margin:0 20px 12px; padding:12px 16px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); font-size:12px; }
-.fd-assembly-finding-summary { flex-wrap:wrap; }
-.fd-assembly-finding-summary > div { flex:1; min-width:min(260px,100%); }
-.fd-assembly-finding-summary > .fd-assembly-finding-actions { flex:0 1 auto; display:flex; flex-wrap:wrap; gap:6px; min-width:0; }
-.fd-assembly-finding-summary span { display:block; margin-top:4px; color:var(--fd-muted); overflow-wrap:anywhere; }
-.fd-finding-anchor .fd-location-marker { background:var(--fd-warning, #d49320); }
+.fd-finding-fallback { position:relative; min-height:210px; }
 .fd-member-checks-detail p button { margin-left:8px; }
 
 .fd-live-preview-notice { position:absolute; z-index:25; left:50%; bottom:96px; transform:translateX(-50%); display:flex; align-items:center; gap:8px; max-width:calc(100% - 32px); padding:7px 10px 7px 14px; border:1px solid var(--fd-border); border-radius:14px; background:var(--fd-panel); box-shadow:0 6px 22px #102a2020; font-size:12px; }
