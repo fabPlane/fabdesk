@@ -128,7 +128,7 @@ function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady }
   const [mode, setMode] = useState<Mode>("structured");
   const [blend, setBlend] = useState(50);
   const [selection, setSelection] = useState<DiffSelection | null>(null);
-  useAssistantSurface({ projectId, label: "Review / Changes", priority: 10, details: JSON.stringify({ board, source: sourceLabel, from, to, drawing: surface, display: mode, selection, reportPath: `${prefix}reports/board-diff.json`, reportAvailable: !!report, scopeReady }) });
+  useAssistantSurface({ projectId, label: "Review / Changes", priority: 10, details: JSON.stringify({ board, source: sourceLabel, from, to, drawing: surface, display: mode, selection, reportPath: `${prefix}reports/board-diff.json`, reportAvailable: !!report, reportFreshness: "Saved comparison snapshot. Later edits are not included automatically; re-run Compare to include current files.", scopeReady }) });
   useEffect(() => setSelection(null), [projectId, reportQuery.dataUpdatedAt]);
   useEffect(() => {
     if (!selection && !changesOpen) return;
@@ -272,6 +272,7 @@ function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady }
       {checkpoint.state.error && <p role="alert" className="px-3 text-xs text-warning">{checkpoint.state.error}</p>}
       {checkpointNotice && <p role="status" className="px-3 text-xs text-muted">Comparison point saved. Make a change, then compare it with Current files.</p>}
       {list.state.error && <p role="alert" className="px-3 text-xs text-warning">Could not load revision history. {list.state.error}</p>}
+      {report && <p className="px-1 text-[11px] text-muted">Saved comparison snapshot. After editing, choose Compare again to include your latest files.</p>}
       {mode === "overlay" && report && (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
           <span className="text-muted">Compare revisions</span>
