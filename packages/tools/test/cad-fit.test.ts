@@ -8,6 +8,8 @@ import type { CadService } from "../src";
 import { createRegistry, makeContext } from "../src";
 import { mockServices, tempProject } from "./mock-services";
 import { importedShellScript } from "../src/tools/cad-fit";
+import { joinedEnclosure } from "@fabdesk/kicad/enclosure-solid";
+import { enclosureFromDesign } from "@fabdesk/kicad/mechanical-fit";
 
 const pcb =
   '(kicad_pcb (general (thickness 1.6))(gr_rect (start 0 0)(end 40 20)(layer "Edge.Cuts")))';
@@ -15,14 +17,14 @@ const planeStl = (z: number) =>
   `solid case\nfacet normal 0 0 1\nouter loop\nvertex -5 -5 ${z}\nvertex 50 -5 ${z}\nvertex -5 50 ${z}\nendloop\nendfacet\nendsolid case`;
 
 test("native imported-shell plan carries rounded contours and preserves rectangle compatibility", async () => {
-  const {design}=await setup();
-  design.openings=[
-    {name:"USB-C",wall:"minX",offset:10,z:5,width:10,height:4,shape:"rounded"},
-    {name:"legacy",wall:"maxY",offset:15,z:5,width:10,height:4},
+  const { design } = await setup();
+  design.openings = [
+    { name: "USB-C", wall: "minX", offset: 10, z: 5, width: 10, height: 4, shape: "rounded" },
+    { name: "legacy", wall: "maxY", offset: 15, z: 5, width: 10, height: 4 },
   ];
-  const script=importedShellScript(design,'C:/test/quote"case.step',"C:/test/out");
-  const encoded=script.match(/^p = json.loads\((.+)\)$/m)![1]!;
-  const data=JSON.parse(JSON.parse(encoded));
+  const script = importedShellScript(design, 'C:/test/quote"case.step', "C:/test/out");
+  const encoded = script.match(/^p = json.loads\((.+)\)$/m)![1]!;
+  const data = JSON.parse(JSON.parse(encoded));
   expect(data.contours[0].length).toBeGreaterThan(40);
   expect(data.contours[1]).toHaveLength(4);
   expect(script).toContain("Part.Face(Part.makePolygon(pts+[pts[0]])).extrude(direction)");
@@ -47,7 +49,10 @@ test("imported preview and export review the modified result, preserve the sourc
     python: async (_dir: string, script: string) => {
       const encoded = script.match(/^p = json.loads\((.+)\)$/m)![1]!;
       const plan = JSON.parse(JSON.parse(encoded)) as { output: string };
-      await writeFile(join(plan.output, "case.stl"), planeStl(0));
+      const closed = await joinedEnclosure(
+        enclosureFromDesign({ ...design, mode: "generated", source: null }, []),
+      );
+      await writeFile(join(plan.output, "case.stl"), closed.baseStl);
       await writeFile(join(plan.output, "case.step"), "contract fixture");
       return { stdout: "", stderr: "" };
     },
@@ -65,6 +70,15 @@ test("imported preview and export review the modified result, preserve the sourc
   expect(built.report).toEqual(preview.report);
   expect(await readFile(join(project.dir, "case.stl"), "utf8")).toBe(original);
   expect(await readdir(join(project.dir, ".fabdesk/case-preview"))).toEqual([]);
+  services.cad.python = async (_dir: string, script: string) => {
+    const encoded = script.match(/^p = json.loads\((.+)\)$/m)![1]!;
+    const plan = JSON.parse(JSON.parse(encoded)) as { output: string };
+    await writeFile(join(plan.output, "case.stl"), planeStl(30));
+    await writeFile(join(plan.output, "case.step"), "broken native result");
+    return { stdout: "", stderr: "" };
+  };
+  await expect(invoke({ action: "preview", design })).rejects.toThrow();
+  expect(await readFile(join(project.dir, "case.stl"), "utf8")).toBe(original);
 });
 
 test("unreadable imported surfaces keep a visible coverage limitation", async () => {

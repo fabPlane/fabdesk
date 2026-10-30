@@ -78,6 +78,7 @@ export const MechanicalDesignSchema = z
               height: size,
               depth: size,
               reach: z.number().finite().min(0).max(200),
+              travel: z.number().finite().min(0).max(200).optional(),
             })
             .optional(),
         }),
@@ -97,6 +98,25 @@ export const MechanicalDesignSchema = z
       .max(100)
       .optional(),
     openingClearance: z.number().finite().min(0).max(5).optional(),
+    detailedFit: z.boolean().optional(),
+    closure: z
+      .object({
+        kind: z.enum(["lift-off", "screws"]),
+        screwDiameter: z.number().min(1).max(6),
+        screwLength: z.number().min(3).max(40),
+        pilotDiameter: z.number().min(0.5).max(6),
+        clearanceDiameter: z.number().min(1).max(8),
+        bossDiameter: z.number().min(5).max(20),
+      })
+      .optional(),
+    holders: z
+      .array(z.object({ boardPath: path, kind: z.literal("corner-clamps") }))
+      .max(20)
+      .refine(
+        (items) => new Set(items.map((item) => item.boardPath)).size === items.length,
+        "Choose one holder per board",
+      )
+      .optional(),
     obstacles: z.array(MechanicalBoxSchema).max(100),
     mounts: z
       .array(
@@ -158,6 +178,7 @@ export type MechanicalFitIssue = {
   regions?: MechanicalBox[];
 };
 export type MechanicalFitReport = {
+  geometry?: { closed: boolean; baseParts: number; lidParts: number; engine: string };
   status: "blocked" | "review";
   issues: MechanicalFitIssue[];
   boardRevisions: Record<string, string>;

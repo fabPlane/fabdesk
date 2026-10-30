@@ -35,6 +35,7 @@ export function selectEnclosureBoards(design: MechanicalDesign, paths: string[])
         },
     ),
     mounts: design.mounts.filter((m) => !m.boardPath || selected.has(m.boardPath)),
+    ...(design.holders ? { holders: design.holders.filter((h) => selected.has(h.boardPath)) } : {}),
     openings: design.openings.filter((o) => !o.boardPath || selected.has(o.boardPath)),
     ...(design.portAccess
       ? { portAccess: design.portAccess.filter((p) => selected.has(p.boardPath)) }

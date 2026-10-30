@@ -12,7 +12,6 @@ import {
   generateEnclosure,
   isEnclosureSpec,
   normalizeEnclosureSpec,
-  meshEnclosure,
   previewEnclosureSvg,
   type AlignmentReport,
   type EnclosureParams,
@@ -20,6 +19,7 @@ import {
   type VentFace,
   type VentPattern,
 } from "@fabdesk/kicad/enclosure";
+import { joinedEnclosure } from "@fabdesk/kicad/enclosure-solid";
 import { PROJECT_FILES, projectRelative, readJsonOrNull, writeAtomic, writeJson } from "../fs";
 import { defineTool, ToolError, type ProjectHandle } from "../registry";
 import type { CadService } from "../services";
@@ -271,7 +271,7 @@ export const cad_enclosure = defineTool({
       ...(args.snapCount !== undefined ? { snapCount: args.snapCount } : {}),
     };
     const spec = generateEnclosure(features, params);
-    const mesh = meshEnclosure(spec);
+    const mesh = await joinedEnclosure(spec);
     const previewSvg = previewEnclosureSvg(spec);
     if (args.action === "preview") {
       return ok("Enclosure preview — not applied.", {

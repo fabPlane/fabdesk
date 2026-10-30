@@ -75,6 +75,7 @@ export type EnclosureSolid = {
   min: { x: number; y: number; z: number };
   max: { x: number; y: number; z: number };
   radiusMm?: number;
+  innerRadiusMm?: number;
 };
 
 export type EnclosureVent = {
@@ -990,7 +991,7 @@ function normal(t: Tri): { x: number; y: number; z: number } {
   return { x: x / len, y: y / len, z: z / len };
 }
 
-function asciiStl(name: string, tris: Tri[]): string {
+export function asciiStl(name: string, tris: Tri[]): string {
   const lines = [`solid ${name}`];
   for (const t of tris) {
     const n = normal(t);
@@ -1011,8 +1012,8 @@ export function meshEnclosure(spec: EnclosureSpec): EnclosureMeshes {
   const base: Tri[] = [];
   const lid: Tri[] = [];
   for (const s of spec.solids) {
-    if (s.kind === "profile") base.push(...profileTriangles(s));
-    else if (s.role === "lid" || s.role === "lip") addBoxMesh(lid, s.min, s.max);
+    const target = s.role === "lid" || s.role === "lip" ? lid : base;
+    if (s.kind === "profile") target.push(...profileTriangles(s));
     else if (s.kind === "cylinder" && s.radiusMm) {
       const stand = spec.standoffs.find(
         (h) =>
@@ -1020,15 +1021,15 @@ export function meshEnclosure(spec: EnclosureSpec): EnclosureMeshes {
           Math.abs(h.y - (s.min.y + s.max.y) / 2) < 1e-6,
       );
       addHollowCylinder(
-        base,
+        target,
         (s.min.x + s.max.x) / 2,
         (s.min.y + s.max.y) / 2,
         s.min.z,
         s.max.z,
-        (stand?.innerDiameterMm ?? s.radiusMm * 0.5) / 2,
+        s.innerRadiusMm ?? (stand?.innerDiameterMm ?? s.radiusMm * 0.5) / 2,
         s.radiusMm,
       );
-    } else addBoxMesh(base, s.min, s.max);
+    } else addBoxMesh(target, s.min, s.max);
   }
   return {
     baseStl: asciiStl("fabplane_enclosure_base", base),
@@ -1051,7 +1052,7 @@ export function meshEnclosure(spec: EnclosureSpec): EnclosureMeshes {
             cy,
             z0: s.min.z,
             z1: s.max.z,
-            innerRadiusMm: (stand?.innerDiameterMm ?? s.radiusMm * 0.5) / 2,
+            innerRadiusMm: s.innerRadiusMm ?? (stand?.innerDiameterMm ?? s.radiusMm * 0.5) / 2,
             outerRadiusMm: s.radiusMm,
           },
         ];

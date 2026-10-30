@@ -229,8 +229,11 @@ export function proposeEnclosureLayout(
   if (d.mounts.some((m) => !m.boardPath || !m.holeId))
     throw Error("Link manual posts to PCB holes before arranging boards automatically.");
   const all = inputs.map((b) => options(d, b));
-  const gap = Math.max(goal === "assembly" ? 8 : 3, d.space.clearance * 2),
-    margin = Math.max(1, d.space.clearance);
+  // Corner holders extend 1.75 mm beyond each PCB edge. Reserve their room
+  // during placement, including between two retained boards.
+  const holderMargin = d.holders?.length ? 1.75 : 0;
+  const gap = Math.max(goal === "assembly" ? 8 : 3, d.space.clearance * 2 + holderMargin * 2),
+    margin = Math.max(1, d.space.clearance + holderMargin);
   const fixed =
     d.mode === "imported" ||
     d.boards.some((b) => b.locked) ||

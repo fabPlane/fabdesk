@@ -607,8 +607,21 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
     const body = validRect(bounds)
       ? bounds
       : { minX: origin.x - 1, minY: origin.y - 1, maxX: origin.x + 1, maxY: origin.y + 1 };
-    const measured = connectorBodyProfile(libId);
-    const heightMm = estimatePartHeightMm(libId, value);
+    const property = children(fp, "property").find(
+      (p) => p[1] === "Height" || p[1] === "Height (mm)",
+    );
+    const heightText = typeof property?.[2] === "string" ? property[2].trim() : "";
+    const heightMatch = heightText.match(/^(\d+(?:\.\d+)?)\s*(mm)?$/i);
+    const suppliedHeight = heightMatch ? Number(heightMatch[1]) : null;
+    const validHeight = suppliedHeight !== null && suppliedHeight > 0 && suppliedHeight <= 200;
+    if (heightText && !validHeight)
+      warnings.push(
+        `${ref || libId}: Height property must be a positive number in mm; using an estimated height.`,
+      );
+    const measured = validHeight
+      ? { heightMm: suppliedHeight, source: "PCB Height property" as const }
+      : connectorBodyProfile(libId);
+    const heightMm = measured?.heightMm ?? estimatePartHeightMm(libId, value);
     const fab = courtyardBounds(fp, origin, placement.rotationDeg, true);
     const mountLabel = `${libId} ${ref}`;
     if (!MOUNT_RE.test(mountLabel) && !FIDUCIAL_RE.test(mountLabel))

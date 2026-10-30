@@ -18,12 +18,13 @@ import {
   boxesOverlap,
   type FitBoard,
 } from "@fabdesk/kicad/mechanical-fit";
-import { meshEnclosure } from "@fabdesk/kicad/enclosure";
+import { joinedEnclosure, auditStl, enclosureFitSamples } from "@fabdesk/kicad/enclosure-solid";
 import { readStlTriangles, ShellSurface, withShellSurfaceReview } from "@fabdesk/kicad/shell-fit";
 import { defineTool, ToolError, type ToolContext } from "../registry";
 import { jailPath, readJsonIfPresent, writeAtomic, writeJson } from "../fs";
 import { ok } from "./common";
 import { native_edit_transaction } from "./native-edit";
+import { detailedEnclosureFit } from "./enclosure-detailed-fit";
 
 const sha = (v: string | Uint8Array) => createHash("sha256").update(v).digest("hex");
 // Repeated placement checks reuse the parsed surface; bound retained mesh memory.
@@ -183,11 +184,13 @@ print('Enclosure modification complete')`;
 async function meshes(ctx: ToolContext, design: MechanicalDesign, boards: FitBoard[]) {
   if (design.mode === "generated") {
     const spec = enclosureFromDesign(design, boards);
-    const result = meshEnclosure(spec);
+    const result = await joinedEnclosure(spec);
     return {
       base: strToU8(result.baseStl),
       lid: strToU8(result.lidStl),
       step: strToU8(result.step),
+      validation: result.validation,
+      lidPrint: strToU8(result.lidPrintStl),
     };
   }
   const dir = ctx.requireProject().dir,
@@ -212,10 +215,19 @@ async function meshes(ctx: ToolContext, design: MechanicalDesign, boards: FitBoa
       "exec",
     );
     if (result.exception) throw new ToolError(result.exception, "precondition");
+    const base = new Uint8Array(await readFile(join(output, "case.stl")));
+    const checked = await auditStl(base);
     return {
-      base: new Uint8Array(await readFile(join(output, "case.stl"))),
+      base,
       lid: null,
       step: new Uint8Array(await readFile(join(output, "case.step"))),
+      validation: {
+        engine: "manifold-3d 3.5.4",
+        base: checked,
+        lid: null,
+        physicalFitVerified: false,
+      },
+      lidPrint: null,
     };
   } finally {
     await rm(output, { recursive: true, force: true });
@@ -593,10 +605,33 @@ export const cad_fit = defineTool({
         );
       const built = await meshes(ctx, design, snap.boards);
       // A carved case differs from its original shell: review the result in world coordinates.
-      const finalReport =
+      let finalReport =
         design.mode === "imported"
           ? reviewSurface(checkMechanicalFit(design, snap.boards), design, snap.boards, built.base)
           : snap.report;
+      finalReport = await detailedEnclosureFit(
+        ctx,
+        design,
+        snap.boards,
+        built.base,
+        built.lid,
+        finalReport,
+      );
+      if (built.validation)
+        finalReport.geometry = {
+          closed: true,
+          baseParts: built.validation.base.components,
+          lidParts: built.validation.lid?.components ?? 0,
+          engine: built.validation.engine,
+        };
+      if (args.action !== "preview" && finalReport.status === "blocked")
+        throw new ToolError(
+          finalReport.issues
+            .filter((i) => i.severity === "error")
+            .map((i) => i.message)
+            .join("\n"),
+          "precondition",
+        );
       if ((await snapshot(dir, design)).revision !== snap.revision)
         throw new ToolError(
           "A source file changed during generation. Preview again.",
@@ -618,10 +653,32 @@ export const cad_fit = defineTool({
         "case.stl": built.base,
         "case.step": built.step,
         ...(built.lid ? { "lid.stl": built.lid } : {}),
+        ...(built.lidPrint ? { "lid-print.stl": built.lidPrint } : {}),
+        "PRINT-AND-FIT.txt": strToU8(
+          [
+            "FABDESK ENCLOSURE — PHYSICAL CHECK REQUIRED",
+            `Design revision: ${snap.revision}`,
+            "case.stl and case.step use assembly coordinates. Print the base flat on its floor.",
+            "lid-print.stl is flipped with the outside face at Z=0, so the lip/holders point upward. lid.stl retains assembly coordinates.",
+            "Import into your slicer in millimetres. Check bed size, wall layers, overhangs and support settings for your printer/material.",
+            "Closed, joined geometry has been checked by software. Printing, strength and physical fit have NOT been verified.",
+            "[ ] Print a small pilot-hole / connector-fit sample before the full case.",
+            "[ ] Fit every board with power disconnected; confirm all underside parts and solder joints clear the supports.",
+            "[ ] Fit the actual plugs/cards; check insertion, removal and cable bends.",
+            "[ ] Check lid screw engagement; do not force screws or let them reach the PCB.",
+            "[ ] Check lid closing, board retention, cooling and fastener access.",
+            "Printer/material: __________  Result/issues: __________  Checked by/date: __________",
+          ].join("\n"),
+        ),
         "enclosure-design.json": strToU8(JSON.stringify(design, null, 2)),
         "fit-review.json": strToU8(JSON.stringify(finalReport, null, 2)),
+        ...(built.validation
+          ? { "geometry-validation.json": strToU8(JSON.stringify(built.validation, null, 2)) }
+          : {}),
       };
       for (const [path, bytes] of Object.entries(snap.files)) outputs[`boards/${path}`] = bytes;
+      for (const [path, text] of Object.entries(await enclosureFitSamples(design)))
+        outputs[path] = strToU8(text);
       outputs["manifest.json"] = strToU8(
         JSON.stringify(
           {

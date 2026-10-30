@@ -4,6 +4,66 @@ import { Icon } from "../../components/Icon";
 
 type Destination = "Start" | "Space" | "PCB";
 const guidance: Record<string, { title: string; destination: Destination; action: string }> = {
+  "detailed-clearance": {
+    title: "3D parts are too close",
+    destination: "PCB",
+    action: "Leave more space",
+  },
+  "detailed-collision": {
+    title: "3D parts intersect",
+    destination: "PCB",
+    action: "Rearrange the boards",
+  },
+  "detailed-missing": {
+    title: "Some 3D models are missing",
+    destination: "PCB",
+    action: "Inspect PCB models",
+  },
+  "detailed-open": {
+    title: "A model needs repair",
+    destination: "PCB",
+    action: "Inspect PCB models",
+  },
+  "detailed-unavailable": {
+    title: "Detailed check is incomplete",
+    destination: "PCB",
+    action: "Review model coverage",
+  },
+  "holder-collision": {
+    title: "A holder touches a component",
+    destination: "Start",
+    action: "Review board holders",
+  },
+  "holder-room": {
+    title: "The holder needs more room",
+    destination: "Start",
+    action: "Review board holders",
+  },
+  "holder-outline": {
+    title: "This board needs custom retention",
+    destination: "Start",
+    action: "Review board holders",
+  },
+  "holder-closure": {
+    title: "Secure the holder with a screwed lid",
+    destination: "Start",
+    action: "Choose lid screws",
+  },
+  "hardware-access": {
+    title: "Hardware blocks a port",
+    destination: "Start",
+    action: "Review lid and holders",
+  },
+  "closure-length": {
+    title: "Lid screw length needs changing",
+    destination: "Start",
+    action: "Review lid screws",
+  },
+  "closure-size": {
+    title: "Lid screw dimensions do not fit",
+    destination: "Start",
+    action: "Review lid screws",
+  },
   "native-clearance": {
     title: "Detailed model needs more room",
     destination: "PCB",
@@ -233,6 +293,16 @@ export function EnclosureFitReview({
   }
   return (
     <section className="fd-fit-review" aria-label="Fit review summary">
+      {report.geometry?.closed && (
+        <p className="fd-case-message" role="status">
+          <strong>Closed solids checked</strong>
+          <br />
+          {report.geometry.lidParts
+            ? "Case and lid are each one joined piece."
+            : "The case is one joined piece."}{" "}
+          Physical fit still needs a printed sample.
+        </p>
+      )}
       <div className={`fd-fit-overview ${blocked ? "is-blocker" : "is-review"}`} role="status">
         <span className="fd-fit-status-icon">
           <Icon name={blocked ? "warning" : "search"} aria-hidden="true" />

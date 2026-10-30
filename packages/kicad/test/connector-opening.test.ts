@@ -9,6 +9,14 @@ import { proposeEnclosureLayout } from "../../client-core/src/enclosure-layout";
 
 const footprint = "Connector_USB:USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal";
 const microSd = "Connector_Card:microSD_HC_Hirose_DM3D-SF";
+test("explicit PCB height supports thin unknown connectors and rejects ambiguous units", () => {
+  for (const [height,expected] of [["1.25 mm",1.25],["0.8",0.8],["2 in",5],["-1",5],["0",5],["999",5]] as const) {
+    const f=extractBoardFeatures(`(kicad_pcb (gr_rect(start 0 0)(end 40 20)(layer "Edge.Cuts"))(footprint "Connector:Unknown" (layer "F.Cu")(at 20 0)(property "Reference" "J1")(property "Height" "${height}")(fp_rect(start -3 -1)(end 3 3)(layer "F.Fab"))(fp_rect(start -4 -2)(end 4 4)(layer "F.CrtYd"))))`);
+    expect(f.connectors[0]!.heightMm).toBe(expected);
+    if(expected!==5)expect(f.connectors[0]!.face?.source).toBe("PCB Height property");
+    else expect(f.warnings.some(w=>w.includes("Height property"))).toBe(true);
+  }
+});
 const pcb = (bottom = false, fab = true, name = footprint) =>
   extractBoardFeatures(`
   (kicad_pcb (general(thickness 1.6))(gr_rect(start 0 0)(end 40 20)(layer "Edge.Cuts"))

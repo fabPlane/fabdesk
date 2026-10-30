@@ -2135,17 +2135,21 @@
   min-width: 0;
   text-overflow: ellipsis;
 }
-.fd-layout-planner .fd-case-confirm {
+.fd-layout-planner .fd-case-confirm,
+.fd-case-hardware .fd-case-confirm {
   display: flex;
+  flex-direction: row;
   gap: 8px;
   align-items: flex-start;
 }
-.fd-layout-planner .fd-case-confirm input {
+.fd-layout-planner .fd-case-confirm input,
+.fd-case-hardware .fd-case-confirm input {
   flex: 0 0 auto;
   margin-top: 3px;
   width: auto;
 }
-.fd-layout-planner .fd-case-confirm span {
+.fd-layout-planner .fd-case-confirm span,
+.fd-case-hardware .fd-case-confirm span {
   min-width: 0;
 }
 .fd-layout-cable {

@@ -108,7 +108,8 @@ export function portEnvelopes(d: MechanicalDesign, boards: MechanicalAccessBoard
           ? -centerZ
           : b.features.thicknessMm + centerZ);
       const plug = p?.plug;
-      const start = negative ? wall - s.wall - (plug?.depth ?? 0) : wall + s.wall;
+      const accessDepth = plug ? plug.depth + (plug.travel ?? 0) : 0;
+      const start = negative ? wall - s.wall - accessDepth : wall + s.wall;
       result.push({
         boardPath: b.placement.path,
         ref: c.ref,
@@ -121,8 +122,8 @@ export function portEnvelopes(d: MechanicalDesign, boards: MechanicalAccessBoard
               x: vertical ? start : along - plug.width / 2,
               y: vertical ? along - plug.width / 2 : start,
               z: z - plug.height / 2,
-              width: vertical ? plug.depth : plug.width,
-              depth: vertical ? plug.width : plug.depth,
+              width: vertical ? accessDepth : plug.width,
+              depth: vertical ? plug.width : accessDepth,
               height: plug.height,
             }
           : null,

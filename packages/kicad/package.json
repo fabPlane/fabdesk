@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./board-features": "./src/board-features.ts",
     "./enclosure": "./src/enclosure.ts",
+    "./enclosure-solid": "./src/enclosure-solid.ts",
     "./mechanical-fit": "./src/mechanical-fit.ts",
     "./shell-fit": "./src/shell-fit.ts",
     "./stencil": "./src/stencil.ts",
@@ -21,6 +22,7 @@
     "@resvg/resvg-wasm": "2.6.2",
     "earcut": "^3.0.2",
     "kicadts": "^0.0.56",
+    "manifold-3d": "3.5.4",
     "polygon-clipping": "^0.15.7",
     "zod": "3.25.76"
   },

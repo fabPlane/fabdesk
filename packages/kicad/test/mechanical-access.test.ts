@@ -86,6 +86,30 @@ test("overlapping plug bodies are flagged even when both PCBs fit inside", () =>
   }));
   expect(checkMechanicalFit(d, boards).issues.some((i) => i.code === "plug-collision")).toBe(true);
 });
+
+test("removal travel reserves free space beyond the inserted plug", () => {
+  const { d, boards } = fixture();
+  d.boards = d.boards.slice(0, 1);
+  d.portAccess = [
+    {
+      boardPath: d.boards[0]!.path,
+      ref: "J1",
+      access: "external",
+      plug: { width: 10, height: 6, depth: 10, reach: 5 },
+    },
+  ];
+  const p = portEnvelopes(d, boards.slice(0, 1))[0]!.plug!;
+  d.obstacles = [
+    { name: "Card removal obstruction", x: p.x - 8, y: p.y, z: p.z, width: 3, depth: 3, height: 3 },
+  ];
+  expect(
+    checkMechanicalFit(d, boards.slice(0, 1)).issues.some((i) => i.code === "plug-collision"),
+  ).toBe(false);
+  d.portAccess[0]!.plug!.travel = 10;
+  expect(
+    checkMechanicalFit(d, boards.slice(0, 1)).issues.some((i) => i.code === "plug-collision"),
+  ).toBe(true);
+});
 test("new constraints round-trip while invalid sizes are rejected", () => {
   const { d } = fixture();
   d.boards[0]!.locked = true;

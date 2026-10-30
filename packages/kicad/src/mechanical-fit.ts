@@ -14,6 +14,7 @@ import {
 } from "@fabdesk/protocol";
 import type { BoardFeatures, Rect } from "./board-features";
 import { generateEnclosure, type EnclosureCutout } from "./enclosure";
+import { enclosureHardware } from "./enclosure-hardware";
 
 export type FitBoard = { placement: MechanicalDesign["boards"][number]; features: BoardFeatures };
 const eps = 1e-5;
@@ -70,7 +71,7 @@ export function boardVolumes(b: FitBoard): MechanicalBox[] {
 export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): MechanicalFitReport {
   const s = d.space,
     c = s.clearance;
-  const issues: MechanicalFitIssue[] = [];
+  const issues: MechanicalFitIssue[] = [...enclosureHardware(d, boards).issues];
   const add = (
     code: string,
     message: string,
@@ -112,7 +113,7 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
           );
         }),
     );
-    if (!hasAlignedPost)
+    if (!hasAlignedPost && !d.holders?.some((h) => h.boardPath === label))
       add(
         "mount-none",
         `${label}: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.`,
@@ -558,7 +559,7 @@ export function enclosureFromDesign(d: MechanicalDesign, boards: FitBoard[]) {
     ...(o.shape ? { shape: o.shape } : {}),
     connector: { x: 0, y: 0, widthMm: o.width, heightMm: o.height },
   }));
-  return generateEnclosure(
+  const spec = generateEnclosure(
     features,
     {
       wallMm: s.wall,
@@ -582,4 +583,6 @@ export function enclosureFromDesign(d: MechanicalDesign, boards: FitBoard[]) {
       })),
     },
   );
+  spec.solids.push(...enclosureHardware(d, boards).solids);
+  return spec;
 }

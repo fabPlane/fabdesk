@@ -46,6 +46,7 @@ import { NumberField } from "./EnclosureNumberField";
 import { EnclosureLayoutPanel, type LayoutChoice } from "./EnclosureLayoutPanel";
 import { EnclosureBoardPicker } from "./EnclosureBoardPicker";
 import { EnclosureBoardDimensions } from "./EnclosureBoardDimensions";
+import { EnclosureHardwarePanel } from "./EnclosureHardwarePanel";
 import { PcbModelStatus } from "./PcbModelStatus";
 
 type Result = {
@@ -1106,12 +1107,18 @@ export function EnclosureDesigner({
                     </button>
                     <button
                       aria-pressed={design.mode === "imported"}
-                      onClick={() => edit({ ...design, mode: "imported", confirmed: false })}
+                      onClick={() => {
+                        // Generated-only hardware must not leave an imported case blocked
+                        // by settings that are hidden in this mode.
+                        const { closure: _closure, holders: _holders, ...rest } = design;
+                        edit({ ...rest, mode: "imported", confirmed: false });
+                      }}
                     >
                       <strong>Existing case</strong>
                       <small>Import a file</small>
                     </button>
                   </div>
+                  <EnclosureHardwarePanel design={design} onChange={edit} />
                   {design.mode === "imported" && (
                     <>
                       <label>

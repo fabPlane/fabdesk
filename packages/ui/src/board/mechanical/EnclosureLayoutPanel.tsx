@@ -293,6 +293,7 @@ export function EnclosureLayoutPanel({
                                       height: c.heightMm + 4,
                                       depth: 20,
                                       reach: 0,
+                                      travel: 10,
                                     },
                                   }
                                 : {}),
@@ -306,15 +307,22 @@ export function EnclosureLayoutPanel({
                           <small>
                             Replace these starting dimensions with your actual plug. Reach is the
                             usable mating length from the plug shoulder; zero remains blocked.
+                            Removal space reserves extra room to pull the plug or card out.
                           </small>
                           <div className="fd-case-grid">
-                            {(["width", "height", "depth", "reach"] as const).map((k) => (
+                            {(["width", "height", "depth", "reach", "travel"] as const).map((k) => (
                               <NumberField
                                 key={k}
-                                label={k === "reach" ? "Mating reach" : `Plug ${k}`}
-                                value={setting.plug![k]}
-                                min={k === "reach" ? 0 : 0.1}
-                                max={k === "reach" ? 200 : 2000}
+                                label={
+                                  k === "reach"
+                                    ? "Mating reach"
+                                    : k === "travel"
+                                      ? "Removal space"
+                                      : `Plug ${k}`
+                                }
+                                value={setting.plug![k] ?? 0}
+                                min={k === "reach" || k === "travel" ? 0 : 0.1}
+                                max={k === "reach" || k === "travel" ? 200 : 2000}
                                 onChange={(v) =>
                                   port({ ...setting, plug: { ...setting.plug!, [k]: v } })
                                 }

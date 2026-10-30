@@ -279,6 +279,8 @@ export type Bounds = {
 };
 
 export type GlbRootNode = {
+  /** Optional transformed triangles for bounded detailed fit checks; never included by default. */
+  triangles?: Float64Array;
   name: string;
   /** Model origin after the full transform chain, KiCad board mm (Z up). */
   origin: Vec3;
@@ -344,7 +346,9 @@ type Gltf = {
   scene?: number;
   scenes?: Array<{ nodes?: number[] }>;
   nodes?: GltfNode[];
-  meshes?: Array<{ primitives: Array<{ attributes: Record<string, number> }> }>;
+  meshes?: Array<{
+    primitives: Array<{ attributes: Record<string, number>; indices?: number; mode?: number }>;
+  }>;
   accessors?: Array<{
     bufferView?: number;
     byteOffset?: number;
@@ -370,7 +374,11 @@ const toBoard = (x: number, y: number, z: number): Vec3 => ({
 });
 
 /** Parses a binary glTF and returns every scene-root child with its exact transformed vertex bounds. */
-export function measureGlb(bytes: Uint8Array): { generator: string | null; roots: GlbRootNode[] } {
+export function measureGlb(
+  bytes: Uint8Array,
+  options: { triangles?: boolean } = {},
+): { generator: string | null; roots: GlbRootNode[] } {
+  let totalTriangles = 0;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (bytes.byteLength < 20 || view.getUint32(0, true) !== 0x46546c67)
     throw new Error("not a binary glTF file");
@@ -390,7 +398,7 @@ export function measureGlb(bytes: Uint8Array): { generator: string | null; roots
     index: number,
     parent: Mat4,
     bounds: Bounds,
-    counter: { vertices: number },
+    counter: { vertices: number; triangles: number[] },
     seen: Set<number>,
   ) => {
     if (seen.has(index)) throw new Error("cyclic glTF node graph");
@@ -419,6 +427,7 @@ export function measureGlb(bytes: Uint8Array): { generator: string | null; roots
         if (start + stride * (accessor.count - 1) + 12 > bytes.byteLength)
           throw new Error("glTF accessor exceeds buffer");
         const m = world;
+        const positions: Vec3[] = [];
         for (let v = 0; v < accessor.count; v++) {
           const o = start + v * stride;
           const x = view.getFloat32(o, true);
@@ -429,6 +438,7 @@ export function measureGlb(bytes: Uint8Array): { generator: string | null; roots
             m[1]! * x + m[5]! * y + m[9]! * z + m[13]!,
             m[2]! * x + m[6]! * y + m[10]! * z + m[14]!,
           );
+          if (options.triangles) positions.push(p);
           if (p.x < bounds.minX) bounds.minX = p.x;
           if (p.y < bounds.minY) bounds.minY = p.y;
           if (p.z < bounds.minZ) bounds.minZ = p.z;
@@ -437,6 +447,55 @@ export function measureGlb(bytes: Uint8Array): { generator: string | null; roots
           if (p.z > bounds.maxZ) bounds.maxZ = p.z;
         }
         counter.vertices += accessor.count;
+        if (options.triangles) {
+          if (primitive.mode !== undefined && primitive.mode !== 4)
+            throw new Error("Detailed fit requires triangle primitives");
+          const indices: number[] = [];
+          if (primitive.indices === undefined) {
+            for (let i = 0; i < positions.length; i++) indices.push(i);
+          } else {
+            const a = gltf.accessors?.[primitive.indices],
+              b = a?.bufferView === undefined ? undefined : gltf.bufferViews?.[a.bufferView];
+            if (
+              !a ||
+              !b ||
+              a.sparse ||
+              a.type !== "SCALAR" ||
+              b.buffer !== 0 ||
+              ![5121, 5123, 5125].includes(a.componentType)
+            )
+              throw new Error("Unsupported glTF triangle indices");
+            const width = a.componentType === 5121 ? 1 : a.componentType === 5123 ? 2 : 4;
+            const start = binOffset + (b.byteOffset ?? 0) + (a.byteOffset ?? 0),
+              stride = b.byteStride ?? width;
+            if (start + stride * (a.count - 1) + width > bytes.length)
+              throw new Error("Triangle indices exceed GLB buffer");
+            for (let i = 0; i < a.count; i++)
+              indices.push(
+                width === 1
+                  ? view.getUint8(start + i * stride)
+                  : width === 2
+                    ? view.getUint16(start + i * stride, true)
+                    : view.getUint32(start + i * stride, true),
+              );
+          }
+          if (indices.length % 3) throw new Error("Incomplete glTF triangle");
+          totalTriangles += indices.length / 3;
+          if (totalTriangles > 250_000)
+            throw new Error(
+              "Detailed fit is limited to 250,000 triangles per board; simplify the model.",
+            );
+          const det =
+            m[0]! * (m[5]! * m[10]! - m[9]! * m[6]!) -
+            m[4]! * (m[1]! * m[10]! - m[9]! * m[2]!) +
+            m[8]! * (m[1]! * m[6]! - m[5]! * m[2]!);
+          for (let i = 0; i < indices.length; i += 3)
+            for (const j of det > 0 ? [0, 2, 1] : [0, 1, 2]) {
+              const p = positions[indices[i + j]!];
+              if (!p) throw new Error("Invalid glTF triangle index");
+              counter.triangles.push(p.x, p.y, p.z);
+            }
+        }
       }
     }
     for (const c of node.children ?? []) accumulate(c, world, bounds, counter, seen);
@@ -459,13 +518,14 @@ export function measureGlb(bytes: Uint8Array): { generator: string | null; roots
       maxY: -Infinity,
       maxZ: -Infinity,
     };
-    const counter = { vertices: 0 };
+    const counter = { vertices: 0, triangles: [] as number[] };
     accumulate(index, rootMatrix, bounds, counter, new Set());
     return {
       name: node.name ?? "",
       origin: toBoard(world[12]!, world[13]!, world[14]!),
       bounds: counter.vertices ? bounds : null,
       vertices: counter.vertices,
+      ...(options.triangles ? { triangles: new Float64Array(counter.triangles) } : {}),
     };
   });
   return { generator: gltf.asset?.generator ?? null, roots };
