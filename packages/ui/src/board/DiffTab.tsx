@@ -1,5 +1,5 @@
 import { useAssistantSurface } from "../chat/useAssistantSurface";
-import { captureAssemblySelection, diffPreviewSvg, pcbToolJson, restoreAssemblySelection } from "@fabdesk/client-core";
+import { captureAssemblySourceSelection, diffPreviewSvg, pcbToolJson, restoreAssemblySelection } from "@fabdesk/client-core";
 import type { BoardSourceSelection } from "@fabdesk/protocol";
 import { ReviewScope } from "./ReviewUpdateLayout";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -100,8 +100,7 @@ export function DiffTab() {
   return <>
     {assembly && <ReviewScope><select aria-label="Board for Changes" value={sourceId ?? ""} disabled={sources.isFetching} onChange={event => {
       const id = event.target.value; setRequested(id);
-      const instance = data.assembly?.instances.find(instance => instance.sourceId === id);
-      const selection = instance ? captureAssemblySelection(data, instance.id) : null;
+      const selection = captureAssemblySourceSelection(data, id, useUiStore.getState().assemblyBoardByProject[projectId]);
       if (selection && data.sources.find(row => row.source.id === id)?.status === "available") useUiStore.getState().setAssemblyBoard(selection);
     }}>{!source && <option value={sourceId ?? ""} disabled>Source definition changed · choose a board</option>}{data.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · source unavailable" : ""}</option>)}</select></ReviewScope>}
     {assembly && source?.status !== "available" ? <EmptyState title="Add this board’s source to compare changes"><p>{source?.reason ?? "Choose an imported board source, or locate this board’s native files."}</p><Button onClick={() => useUiStore.getState().openProjectFile("fabplane.assembly.json")}>Review source definition</Button></EmptyState> : <BoardRevisionDiff key={`${projectId}:${board?.sourceId ?? "root"}:${board?.manifestSha256 ?? ""}`} projectId={projectId} prefix={prefix} {...(board ? { board } : {})} sourceLabel={source?.source.name ?? "Main board"} scopeReady={ready} />}
@@ -110,6 +109,7 @@ export function DiffTab() {
 
 function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady }: { projectId: string; prefix: string; board?: BoardSourceSelection; sourceLabel: string; scopeReady: boolean }) {
   const [changesOpen, setChangesOpen] = useState(false);
+  const [checkpointNotice, setCheckpointNotice] = useState(false);
   const changesTrigger = useRef<HTMLButtonElement>(null), changesPanel = useRef<HTMLElement>(null);
   const workspace = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -199,11 +199,12 @@ function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady }
     const result = await checkpoint.run("board_revision_checkpoint", { projectId, label: `${sourceLabel} · before next edit`, ...(board ? { board } : {}) });
     if (result.status !== "done" || useUiStore.getState().activeProjectId !== projectId) return;
     const point = pcbToolJson(result.result).revision as Revision | undefined;
-    if (point?.ref) { setRevisions(previous => [{ ref: "worktree", title: "Current files" }, point, ...previous.filter(row => row.ref !== point.ref && row.ref !== "worktree")]); setFrom(point.ref); setTo("worktree"); }
+    if (point?.ref) { setRevisions(previous => [{ ref: "worktree", title: "Current files" }, point, ...previous.filter(row => row.ref !== point.ref && row.ref !== "worktree")]); setFrom(point.ref); setTo("worktree"); setCheckpointNotice(true); }
   };
 
   const onCompare = async () => {
     if (running || noHistory || !scopeReady || useUiStore.getState().activeProjectId !== projectId) return;
+    setCheckpointNotice(false);
     const result = await compare.run("board_revision_diff", { projectId, from, to, ...(board ? { board } : {}) });
     if (result.status === "done") {
       // All six view artifacts are overwritten. Invalidate inactive views too,
@@ -213,6 +214,7 @@ function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady }
   };
 
   const diff = report?.diff;
+  const hasChanges = !!diff && [diff.components.added, diff.components.removed, diff.components.changed, diff.nets.added, diff.nets.removed, diff.nets.changed].some(items => items.length > 0);
   return (
     <div ref={workspace} className="fd-diff-workspace flex h-full min-h-0 flex-col" data-testid="board-diff">
       <div className="fd-diff-toolbar" aria-label="Comparison controls">
@@ -268,7 +270,7 @@ function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady }
       {compare.state.error && <p role="alert" className="text-xs text-danger">{compare.state.error}</p>}
       </div>
       {checkpoint.state.error && <p role="alert" className="px-3 text-xs text-warning">{checkpoint.state.error}</p>}
-      {checkpoint.state.status === "done" && <p role="status" className="px-3 text-xs text-muted">Comparison point saved. Make a change, then compare it with Current files.</p>}
+      {checkpointNotice && <p role="status" className="px-3 text-xs text-muted">Comparison point saved. Make a change, then compare it with Current files.</p>}
       {list.state.error && <p role="alert" className="px-3 text-xs text-warning">Could not load revision history. {list.state.error}</p>}
       {mode === "overlay" && report && (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs">
@@ -316,7 +318,7 @@ function BoardRevisionDiff({ projectId, prefix, board, sourceLabel, scopeReady }
             <p className="mb-2 font-medium">
               {shortRef(report.from?.ref ?? from)} → {shortRef(report.to?.ref ?? to)}
             </p>
-            <p className="mb-3 text-[11px] text-muted">Click a change to highlight and zoom. Click again or press Esc to clear.</p>
+            <p className="mb-3 text-[11px] text-muted">{hasChanges ? "Click a change to highlight and zoom. Click again or press Esc to clear." : "No part or net changes in this comparison. This does not check electrical rules or manufacturing readiness."}</p>
             <DiffGroup
               selection={selection} onSelect={select}
               title="Added"

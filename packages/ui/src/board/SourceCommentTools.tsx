@@ -7,7 +7,7 @@ import { ErrorNotice } from "../components/ErrorNotice";
 import { Icon } from "../components/Icon";
 import { useUiStore } from "../stores/ui";
 import { CommentPins } from "./CommentPins";
-import { buildCommentsAskPrompt } from "./comment-requests";
+import { buildCommentsAskPrompt, buildCommentsUserPrompt } from "./comment-requests";
 import type { SvgBox, SvgPoint } from "./svg-coords";
 
 /** A source's existing comment file, shared across its physical instances, never a root fallback. */
@@ -24,7 +24,7 @@ export function useSourceCommentTools({ projectId, board, directory, enabled, ca
   }, [visible, requested, projectId, board.sourceId, board.manifestSha256, comments.data]);
   useAssistantSurface(visible && open ? { projectId, label: "Board / Source comments", priority: 35, details: JSON.stringify({ board, directory, selected: selected ? { id: selected.id, question: selected.question, anchor: selected.anchor } : null, draft: point ? { pointMm: point, question, saved: false } : null }) } : null);
   const ask = (comment: BoardComment) => {
-    askAboutSurface({ projectId, label: "Board / Selected source comment", priority: 35, details: JSON.stringify({ board, directory, comment: { id: comment.id, question: comment.question, anchor: comment.anchor }, sourceStatus: "Inspect saved files before answering; a pin is not validation evidence." }) }, `Review this board comment using its captured source selection. Pass this board selector to comment_list, comment_answer and native inspection tools: ${JSON.stringify(board)}. Do not answer a project-root or sibling comment with the same ID.\n\n${buildCommentsAskPrompt([comment])}`);
+    askAboutSurface({ projectId, label: "Board / Selected source comment", priority: 35, details: JSON.stringify({ instructions: `Use the captured board selector for comment_list, comment_answer and native inspection tools. Never answer a root or sibling comment with the same ID.\n${buildCommentsAskPrompt([comment])}`, board, directory, comment: { id: comment.id, question: comment.question, anchor: comment.anchor }, sourceStatus: "Inspect saved files before answering; a pin is not validation evidence." }) }, buildCommentsUserPrompt([comment]));
     setOpen(false);
   };
   const pinAt = (next: SvgPoint) => { if (!ready || !canPin || pin.isPending || useUiStore.getState().activeProjectId !== projectId) return; setPoint(next); setSelectedId(null); setQuestion(""); pin.reset(); setOpen(true); };

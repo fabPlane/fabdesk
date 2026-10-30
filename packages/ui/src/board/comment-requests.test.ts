@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { buildCommentAskPrompt, type BoardComment } from "@fabdesk/protocol";
-import { buildCommentsAskPrompt, pendingBoardComments } from "./comment-requests";
+import { buildCommentsAskPrompt, buildCommentsUserPrompt, pendingBoardComments } from "./comment-requests";
 
 const pin = (id: string, patch: Partial<BoardComment> = {}): BoardComment => ({
   id, question: `Question for ${id}`, author: "test", status: "open",
@@ -25,4 +25,23 @@ test("batch includes only unanswered open pins in the current view", () => {
 test("single pin keeps its exact targeted prompt and empty batches send nothing", () => {
   expect(buildCommentsAskPrompt([pin("single")])).toBe(buildCommentAskPrompt(pin("single")));
   expect(buildCommentsAskPrompt([])).toBe("");
+});
+
+test("editable comment question stays readable while context retains exact answer targets", () => {
+  const comment = pin("cmt_private_target");
+  const question = buildCommentsUserPrompt([comment]);
+  expect(question).toContain(comment.question);
+  expect(question).toContain("save your answer to this pin");
+  expect(question).not.toContain("comment_answer");
+  expect(question).not.toContain("pcb_inspect");
+  expect(buildCommentsAskPrompt([comment])).toContain(`Comment id: ${comment.id}`);
+  expect(buildCommentsUserPrompt([])).toBe("");
+});
+
+test("batch editable question keeps every question without source selectors or tool syntax", () => {
+  const question = buildCommentsUserPrompt([pin("one"), pin("two")]);
+  expect(question).toContain("2 pinned comments");
+  expect(question).toContain("1. Question for one");
+  expect(question).toContain("2. Question for two");
+  expect(question).not.toContain("comment_answer");
 });

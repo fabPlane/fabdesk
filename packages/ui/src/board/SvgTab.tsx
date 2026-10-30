@@ -25,7 +25,7 @@ import { PcbPreviewStatus } from "./PcbPreviewStatus";
 import { CommentPins } from "./CommentPins";
 import { SvgViewer } from "./SvgViewer";
 import { type SvgPoint } from "./svg-coords";
-import { buildCommentsAskPrompt, pendingBoardComments } from "./comment-requests";
+import { buildCommentsAskPrompt, buildCommentsUserPrompt, pendingBoardComments } from "./comment-requests";
 import { SchematicPreviewStatus } from "./SchematicPreviewStatus";
 import { MissingNativeSource } from "./MissingNativeSource";
 
@@ -143,7 +143,7 @@ export function SvgTab({ kind, active = true }: { kind: "schematic" | "pcb"; act
 
   const askAgent = (targets: BoardComment[]) => {
     if (!projectId || targets.length === 0) return;
-    askAboutSurface({ projectId, priority: 20, label: `${kind === "pcb" ? "PCB" : "Schematic"} · Pinned comments`, details: JSON.stringify({ view: kind, source: kind === "pcb" ? "board.kicad_pcb" : "board.kicad_sch", comments: targets.map(comment => ({ id: comment.id, question: comment.question, anchor: comment.anchor })), sourceStatus: "Inspect the saved source before answering; pin locations are not validation results." }) }, buildCommentsAskPrompt(targets));
+    askAboutSurface({ projectId, priority: 20, label: `${kind === "pcb" ? "PCB" : "Schematic"} · Pinned comments`, details: JSON.stringify({ instructions: buildCommentsAskPrompt(targets), view: kind, source: kind === "pcb" ? "board.kicad_pcb" : "board.kicad_sch", comments: targets.map(comment => ({ id: comment.id, question: comment.question, anchor: comment.anchor })), sourceStatus: "Inspect the saved source before answering; pin locations are not validation results." }) }, buildCommentsUserPrompt(targets));
   };
 
   const savePin = () => {

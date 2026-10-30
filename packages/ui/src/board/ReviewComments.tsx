@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { commentAnchorLabel, commentMillimetrePoint, type BoardComment } from "@fabdesk/protocol";
-import { captureAssemblySelection, useBoardComments, useBoardCommentMutations } from "@fabdesk/client-core";
+import { captureAssemblySourceSelection, useBoardComments, useBoardCommentMutations } from "@fabdesk/client-core";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { Icon } from "../components/Icon";
 import { useUiStore } from "../stores/ui";
-import { askAboutSurface } from "../chat/useAssistantSurface";
-import { buildCommentsAskPrompt } from "./comment-requests";
+import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
+import { buildCommentsAskPrompt, buildCommentsUserPrompt } from "./comment-requests";
 import { useOutputSource } from "./useOutputSource";
 import { ReviewScope } from "./ReviewUpdateLayout";
 
@@ -21,12 +21,12 @@ export function ReviewComments() {
   const canLocate = ready && (!assembly || !legacy && !!board);
   const all = comments.data?.comments ?? [];
   const visible = all.filter(comment => filter === "all" || (filter === "active" ? comment.status !== "resolved" : comment.status === "resolved"));
+  useAssistantSurface(projectId ? { projectId, label: "Review / Comments", priority: 10, details: JSON.stringify({ scope: assembly && legacy ? "Legacy project-root comments; not an assembly member" : scope.row?.source.name ?? "Main board", board, filter, sourceReady: ready, comments: visible.map(comment => ({ id: comment.id, question: comment.question, status: comment.status, anchor: comment.anchor })), instruction: "Inspect the displayed discussion source before answering. Pins record discussion, not validation. Legacy project comments must not be addressed using a remembered member-board selector." }) } : null);
   const openBoard = (comment?: BoardComment) => {
     if (!projectId || !canLocate || useUiStore.getState().activeProjectId !== projectId) return;
     const ui = useUiStore.getState();
     if (assembly) {
-      const instance = scope.data?.assembly?.instances.find(instance => instance.sourceId === board?.sourceId);
-      const selection = instance && scope.data ? captureAssemblySelection(scope.data, instance.id) : null;
+      const selection = scope.data && board ? captureAssemblySourceSelection(scope.data, board.sourceId, ui.assemblyBoardByProject[projectId]) : null;
       if (!selection) return;
       ui.setAssemblyBoard(selection);
     }
@@ -36,7 +36,7 @@ export function ReviewComments() {
   const ask = (comment: BoardComment) => {
     if (!projectId || !ready) return;
     const binding = board ? `Use the captured board selector ${JSON.stringify(board)} for comment_list, comment_answer and native inspection tools. Do not use a root or sibling comment.\n\n` : "";
-    askAboutSurface({ projectId, label: "Review / Comments / Selected pin", priority: 20, details: JSON.stringify({ board, sourceDirectory: scope.row?.source.location === "project" ? scope.row.source.directory : undefined, comment: { id: comment.id, question: comment.question, anchor: comment.anchor }, scope: assembly && legacy ? "Legacy project-root pin; not qualified for an assembly member. Verify its source before answering." : "Inspect this saved source before answering; a pin is not validation evidence." }) }, binding + buildCommentsAskPrompt([comment]));
+    askAboutSurface({ projectId, label: "Review / Comments / Selected pin", priority: 20, details: JSON.stringify({ instructions: binding + buildCommentsAskPrompt([comment]), board, sourceDirectory: scope.row?.source.location === "project" ? scope.row.source.directory : undefined, comment: { id: comment.id, question: comment.question, anchor: comment.anchor }, scope: assembly && legacy ? "Legacy project-root pin; not qualified for an assembly member. Verify its source before answering." : "Inspect this saved source before answering; a pin is not validation evidence." }) }, buildCommentsUserPrompt([comment]));
   };
   if (!projectId) return <EmptyState title="Choose a project to review comments" />;
   return <>
@@ -51,8 +51,8 @@ export function ReviewComments() {
       {scope.sources.isError ? <LoadError title="Could not verify comment source" onRetry={() => void scope.sources.refetch()} /> : !scope.data || scope.sources.isFetching ? <Spinner /> : !ready ? <EmptyState title="Select an available board source">Comments are never loaded from another board in its place.<div className="mt-3"><Button disabled={!scope.sourceId || scope.row?.status !== "available"} onClick={() => scope.sourceId && scope.choose(scope.sourceId)}>Select source again</Button></div></EmptyState> : comments.isError ? <LoadError title="Could not load comments" onRetry={() => void comments.refetch()} /> : comments.isPending ? <Spinner /> : <>
         {patch.isError && <ErrorNotice error={patch.error} />}
         {!visible.length ? <EmptyState title={all.length ? "No comments in this view" : "No comments yet"} icon={<Icon name="pin" width={34} height={34} />}>
-          <p>{assembly && legacy ? "Keep new board questions with the selected source. Choose a board in Scope to review its discussion." : "Select a location on the PCB and choose Pin comment."}</p>
-          <div className="mt-4 flex justify-center gap-2">{canLocate ? <Button onClick={() => openBoard()}>Open PCB</Button> : <Button onClick={() => useUiStore.getState().setBoardTab("notes")}>Open project notes</Button>}</div>
+          <p>{all.length ? filter === "active" ? "All saved comments are resolved. You can review them or add a new pin on the drawing." : "No resolved comments yet. Switch back to the active discussion." : assembly && legacy ? "Keep new board questions with the selected source. Choose a board in Scope to review its discussion." : "Select a location on the PCB and choose Pin comment."}</p>
+          <div className="mt-4 flex justify-center gap-2">{all.length > 0 && <Button onClick={() => setFilter(filter === "active" ? "resolved" : "active")}>{filter === "active" ? "View resolved comments" : "View active comments"}</Button>}{canLocate ? <Button variant={all.length ? "ghost" : "secondary"} onClick={() => openBoard()}>Open PCB</Button> : <Button onClick={() => useUiStore.getState().setBoardTab("notes")}>Open project notes</Button>}</div>
         </EmptyState> : <ul>{visible.map(comment => <li key={comment.id}>
           <div className="fd-review-comment-meta"><span>{comment.anchor.view === "pcb" ? "PCB" : comment.anchor.view === "schematic" ? "Schematic" : comment.anchor.view === "3d" ? "3D" : "Product"} · {commentAnchorLabel(comment.anchor)}</span><span>{comment.status}</span></div>
           {comment.anchor.view === "pcb" && (comment.anchor.x !== undefined || comment.anchor.y !== undefined) && !commentMillimetrePoint(comment.anchor) && <p className="mt-2 text-xs text-warning">Drawing origin unverified · Confirm this pin on an updated PCB preview.</p>}
