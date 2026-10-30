@@ -1,6 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   MechanicalDesignSchema,
+  portEnvelopes,
+  cableAssessments,
   type MechanicalDesign,
   type MechanicalFitReport,
   type MechanicalFitIssue,
@@ -30,12 +32,14 @@ import {
   alignEnclosureMounts,
   linkEnclosureMounts,
   proposeEnclosureLayout,
-  connectorAccess,
+  nativeEnclosureClearanceIssues,
 } from "@fabdesk/client-core";
 import { MechanicalScene, type SceneModel, type BoardGeometry } from "./MechanicalScene";
 import { EnclosureFitReview } from "./EnclosureFitReview";
 import { MechanicalIcon } from "./MechanicalIcon";
 import { detailedBoardSource, usePcbModels } from "./usePcbModels";
+import { NumberField } from "./EnclosureNumberField";
+import { EnclosureLayoutPanel, type LayoutChoice } from "./EnclosureLayoutPanel";
 import { PcbModelStatus } from "./PcbModelStatus";
 
 type Result = {
@@ -62,76 +66,6 @@ const unpack = (v: unknown) => {
 };
 const steps = ["Start", "Space", "PCB", "Review"] as const;
 type Step = (typeof steps)[number];
-function NumberField({
-  label,
-  inputLabel,
-  value,
-  onChange,
-  min = -10000,
-  max = 10000,
-  unit = "mm",
-}: {
-  label: string;
-  inputLabel?: string;
-  value: number;
-  onChange: (v: number) => void;
-  min?: number;
-  max?: number;
-  unit?: string;
-}) {
-  const displayValue = String(Number(value.toFixed(3)));
-  const [draft, setDraft] = useState(displayValue);
-  const [validation, setValidation] = useState("");
-  const validationId = useId();
-  useEffect(() => {
-    setDraft(displayValue);
-    setValidation("");
-  }, [displayValue]);
-  return (
-    <label className="fd-case-number">
-      <span>{label}</span>
-      <div>
-        <input
-          aria-label={inputLabel ?? label}
-          type="number"
-          step="0.1"
-          min={min}
-          max={max}
-          aria-invalid={!!validation}
-          aria-describedby={validation ? validationId : undefined}
-          value={draft}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            setValidation("");
-          }}
-          onBlur={() => {
-            const next = Number(draft);
-            if (draft.trim() && Number.isFinite(next) && next >= min && next <= max) {
-              if (next !== Number(displayValue)) onChange(next);
-            } else {
-              setDraft(displayValue);
-              setValidation(`Use a value from ${min} to ${max}. Previous value kept.`);
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-            if (e.key === "Escape") {
-              setDraft(displayValue);
-              setValidation("");
-              e.stopPropagation();
-            }
-          }}
-        />
-        <span>{unit}</span>
-      </div>
-      {validation && (
-        <small id={validationId} className="fd-case-input-error" role="alert">
-          {validation}
-        </small>
-      )}
-    </label>
-  );
-}
 /** Guided enclosure workflow; all preview coordinates are in the saved PCB frame, in mm. */
 export function EnclosureDesigner({
   projectId,
@@ -145,9 +79,8 @@ export function EnclosureDesigner({
   cadRuntime?: CadRuntimeState | null;
 }) {
   const client = useCoreClient();
-  const [layoutProposal, setLayoutProposal] = useState<ReturnType<
-    typeof proposeEnclosureLayout
-  > | null>(null);
+  const [layoutProposals, setLayoutProposals] = useState<LayoutChoice[] | null>(null);
+  const [showPlugs, setShowPlugs] = useState(false);
   const [design, setDesign] = useState<MechanicalDesign | null>(null),
     [board, setBoard] = useState<EnclosureBoardSummary | null>(null);
   const [step, setStep] = useState<Step>("Start"),
@@ -157,7 +90,7 @@ export function EnclosureDesigner({
     [notice, setNotice] = useState("");
   const [dirty, setDirty] = useState(false),
     [preview, setPreview] = useState<Result | null>(null),
-    [report, setReport] = useState<MechanicalFitReport | null>(null);
+    [baseReport, setReport] = useState<MechanicalFitReport | null>(null);
   const [pendingRecovery, setPendingRecovery] = useState<EnclosureRecovery | null>(null);
   const [recoveryWarning, setRecoveryWarning] = useState("");
   const recoveryStore = useRef<EnclosureRecoveryStore | null>(null);
@@ -199,9 +132,27 @@ export function EnclosureDesigner({
     }),
     active,
   );
-  const renderedSources = useMemo(
-    () =>
-      modelSources.flatMap((source) => {
+  const report = useMemo<MechanicalFitReport | null>(() => {
+    if (!baseReport || !design) return baseReport;
+    const extra = nativeEnclosureClearanceIssues(
+      design,
+      mountingBoards().map((b) => ({
+        ...b,
+        ...(pcbModels.models[b.placement.path]?.pcbRevision === b.features.pcbRevision &&
+        pcbModels.models[b.placement.path]?.bounds
+          ? { modelBounds: pcbModels.models[b.placement.path]!.bounds! }
+          : {}),
+      })),
+    );
+    return {
+      ...baseReport,
+      status: extra.length ? "blocked" : baseReport.status,
+      issues: [...extra, ...baseReport.issues],
+    };
+  }, [baseReport, design, pcbModels.models, fitBoards, preview, board]);
+  const renderedSources = useMemo<SceneModel[]>(
+    () => [
+      ...modelSources.flatMap((source) => {
         if (!source.board) return [source];
         const model = pcbModels.models[source.item.id.slice(5)];
         if (model) return [detailedBoardSource(source, model)];
@@ -221,7 +172,45 @@ export function EnclosureDesigner({
           },
         ];
       }),
-    [modelSources, pcbModels.models],
+      ...(showPlugs && design
+        ? portEnvelopes(design, mountingBoards()).flatMap((p) =>
+            p.plug
+              ? [
+                  {
+                    item: mechanicalItem(
+                      `@plug-${p.boardPath}-${p.ref}`,
+                      "import",
+                      `${p.ref} plug envelope`,
+                    ),
+                    volume: p.plug,
+                    volumeColor: 0x64cbd2,
+                    selectable: false,
+                    origin: [0, 0, 0] as [number, number, number],
+                  },
+                ]
+              : [],
+          )
+        : []),
+      ...(showPlugs && design
+        ? cableAssessments(design, mountingBoards()).flatMap((c) =>
+            c.a && c.b
+              ? [
+                  {
+                    item: mechanicalItem(`@cable-${c.id}`, "import", "Cable direct-distance guide"),
+                    guide: {
+                      from: [c.a.x, c.a.y, c.a.z] as [number, number, number],
+                      to: [c.b.x, c.b.y, c.b.z] as [number, number, number],
+                      color: c.reachable ? 0x64cbd2 : 0xf16c6c,
+                    },
+                    selectable: false,
+                    origin: [0, 0, 0] as [number, number, number],
+                  },
+                ]
+              : [],
+          )
+        : []),
+    ],
+    [modelSources, pcbModels.models, showPlugs, design, fitBoards, preview, board],
   );
   const [fitState, setFitState] = useState(""),
     [fitError, setFitError] = useState("");
@@ -300,6 +289,10 @@ export function EnclosureDesigner({
     if (!design) return;
     const old = design.boards.find((b) => b.path === next.path);
     if (!old) return;
+    if (old.locked) {
+      setNotice("Unlock this board before changing its position.");
+      return;
+    }
     const moved = {
       ...design,
       boards: design.boards.map((b) => (b.path === next.path ? next : b)),
@@ -330,8 +323,12 @@ export function EnclosureDesigner({
   }, [projectId, design?.source?.path, design?.mode]);
   useEffect(() => {
     scene.current?.select(selectedBoard ? `@fit-${selectedBoard}` : null);
-    scene.current?.setMode(busy || pendingRecovery ? "orbit" : placementMode);
-  }, [selectedBoard, placementMode, busy, pendingRecovery, renderedSources]);
+    scene.current?.setMode(
+      busy || pendingRecovery || design?.boards.find((b) => b.path === selectedBoard)?.locked
+        ? "orbit"
+        : placementMode,
+    );
+  }, [selectedBoard, placementMode, busy, pendingRecovery, renderedSources, design]);
   useEffect(() => {
     scene.current?.setCaseVisible(caseVisible);
   }, [caseVisible]);
@@ -647,7 +644,7 @@ export function EnclosureDesigner({
     if (selectedBoard && !next.boards.some((b) => b.path === selectedBoard)) selectBoard(null);
   }
   function edit(next: MechanicalDesign, label = "Edit enclosure") {
-    setLayoutProposal(null);
+    setLayoutProposals(null);
     if (history.current.commit(next, label)) applyDraft(next);
   }
   function space(key: keyof MechanicalDesign["space"], value: number) {
@@ -1532,111 +1529,47 @@ export function EnclosureDesigner({
               )}
               {step === "PCB" && (
                 <>
-                  <section className="fd-case-entry" aria-label="Automatic enclosure layout">
-                    <strong>Arrange boards around their ports</strong>
-                    <p>
-                      Find a compact layout, bring external ports to the walls, and create matching
-                      openings. Review the proposal before using it.
-                    </p>
-                    <details>
-                      <summary>Choose external ports</summary>
-                      <small>
-                        USB, HDMI and card sockets start as external. Headers and board-to-board
-                        connectors start as internal. Confirm these choices.
-                      </small>
-                      {mountingBoards().map((b) =>
-                        (b.features.connectors ?? []).map((c) => (
-                          <label className="fd-case-confirm" key={`${b.placement.path}:${c.ref}`}>
-                            <input
-                              type="checkbox"
-                              checked={connectorAccess(design, b.placement.path, c) === "external"}
-                              onChange={(e) =>
-                                edit(
-                                  {
-                                    ...design,
-                                    portAccess: [
-                                      ...(design.portAccess ?? []).filter(
-                                        (p) => p.boardPath !== b.placement.path || p.ref !== c.ref,
-                                      ),
-                                      {
-                                        boardPath: b.placement.path,
-                                        ref: c.ref,
-                                        access: e.target.checked ? "external" : "internal",
-                                      },
-                                    ],
-                                  },
-                                  "Set port access",
-                                )
-                              }
-                            />
-                            <span>
-                              {enclosureFileLabel(b.placement.path)} · {c.ref}
-                            </span>
-                          </label>
-                        )),
-                      )}
-                    </details>
-                    <button
-                      className="fd-mechanical-primary"
-                      disabled={!!busy || pcbModels.loading || !design.boards.length}
-                      onClick={() =>
-                        void run("Finding a port-aware layout…", async () => {
-                          const r = await call("check", { design });
-                          setFitBoards(r.boards);
-                          setLayoutProposal(
-                            proposeEnclosureLayout(
-                              design,
-                              (r.boards ?? []).map((b) => ({
-                                ...b,
-                                ...(pcbModels.models[b.placement.path]?.bounds &&
-                                pcbModels.models[b.placement.path]?.pcbRevision ===
-                                  b.features.pcbRevision
-                                  ? { modelBounds: pcbModels.models[b.placement.path]!.bounds! }
-                                  : {}),
-                              })),
-                            ),
-                          );
-                        })
-                      }
-                    >
-                      Find a better layout
-                    </button>
-                    {layoutProposal && (
-                      <div className="fd-case-message" role="status">
-                        <strong>
-                          {layoutProposal.design.space.width} × {layoutProposal.design.space.depth}{" "}
-                          mm inside
-                        </strong>
-                        <p>
-                          {layoutProposal.openingsAdded} of {layoutProposal.externalPorts} external
-                          ports at walls · matching openings included
-                        </p>
-                        {!!layoutProposal.unresolved.length && (
-                          <p>
-                            {layoutProposal.unresolved.length} ports still need manual placement or
-                            a different case layout.
-                          </p>
-                        )}
-                        <details>
-                          <summary>Review assumptions and unresolved ports</summary>
-                          {[...layoutProposal.unresolved, ...layoutProposal.notes].map((n) => (
-                            <p key={n}>{n}</p>
-                          ))}
-                        </details>
-                        <button
-                          onClick={() => {
-                            edit(layoutProposal.design, "Arrange boards and port openings");
-                            setNotice(
-                              "Layout applied to the draft. Check fit and preview the enclosure; Undo restores the previous layout.",
-                            );
-                          }}
-                        >
-                          Use this layout
-                        </button>
-                        <button onClick={() => setLayoutProposal(null)}>Cancel</button>
-                      </div>
-                    )}
-                  </section>
+                  <EnclosureLayoutPanel
+                    design={design}
+                    boards={mountingBoards()}
+                    busy={!!busy || pcbModels.loading}
+                    proposals={layoutProposals}
+                    showPlugs={showPlugs}
+                    onShowPlugs={setShowPlugs}
+                    onChange={edit}
+                    onCancel={() => setLayoutProposals(null)}
+                    onUse={(proposal) => {
+                      edit(proposal.design, "Arrange boards and port openings");
+                      setNotice(
+                        "Layout applied to the draft. Review fit and preview before export. Undo restores the previous layout.",
+                      );
+                    }}
+                    onFind={() =>
+                      void run("Comparing enclosure layouts…", async () => {
+                        const r = await call("check", { design });
+                        setFitBoards(r.boards);
+                        const boards = (r.boards ?? []).map((b) => ({
+                          ...b,
+                          ...(pcbModels.models[b.placement.path]?.bounds &&
+                          pcbModels.models[b.placement.path]?.pcbRevision === b.features.pcbRevision
+                            ? { modelBounds: pcbModels.models[b.placement.path]!.bounds! }
+                            : {}),
+                        }));
+                        setLayoutProposals(
+                          (["compact", "assembly", "ports"] as const).map((goal) => {
+                            try {
+                              return {
+                                goal,
+                                proposal: proposeEnclosureLayout(design, boards, goal),
+                              };
+                            } catch (e) {
+                              return { goal, error: enclosureErrorMessage(e) };
+                            }
+                          }),
+                        );
+                      })
+                    }
+                  />
                   <section
                     className="fd-case-placement"
                     aria-label="Position boards in the enclosure"
@@ -1669,14 +1602,14 @@ export function EnclosureDesigner({
                         Camera
                       </button>
                       <button
-                        disabled={!selectedBoard || !!busy}
+                        disabled={!selectedBoard || !!busy || currentPlacement?.locked}
                         aria-pressed={placementMode === "translate"}
                         onClick={() => setPlacementMode("translate")}
                       >
                         Move
                       </button>
                       <button
-                        disabled={!selectedBoard || !!busy}
+                        disabled={!selectedBoard || !!busy || currentPlacement?.locked}
                         aria-pressed={placementMode === "rotate"}
                         onClick={() => setPlacementMode("rotate")}
                       >
@@ -2125,7 +2058,7 @@ export function EnclosureDesigner({
             ) : preview ? (
               <button
                 className="fd-mechanical-primary"
-                disabled={actionsDisabled || report?.status === "blocked"}
+                disabled={actionsDisabled || pcbModels.loading || report?.status === "blocked"}
                 onClick={() => void run("Saving matched designs…", build)}
               >
                 Apply & prepare export

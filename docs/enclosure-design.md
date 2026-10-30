@@ -151,3 +151,29 @@ Validation: **10 focused tests / 65 assertions**, all five changed package typec
 ![Compact VAIO layout with external-port proposal](screenshots/mechanical-workspace/37-vaio-port-layout.png)
 
 ![Generated openings in the case walls](screenshots/mechanical-workspace/38-vaio-port-openings.png)
+
+## Assembly constraints and layout choices — 30 October
+
+**PCB → Plan your assembly → Compare layouts** replaces the single layout proposal. Compact prioritizes footprint; Assembly space leaves at least 8 mm between board envelopes; Ports together prioritizes fewer exterior walls. Each card shows interior dimensions, accessible ports, wall count, spacing and assumptions. Accepting a choice remains undoable. These are bounded search objectives, not guaranteed global optima or assembly-access certification.
+
+Optional board locks preserve position, height and rotation and keep the case dimensions fixed. Port controls distinguish internal connectors from external ports, override inferred PCB-facing edges, select a preferred case wall, and record rectangular opening and mating-plug dimensions. Opening clearance is independent of board clearance. Plug reach includes the board-to-wall gap and wall thickness; overlapping plug envelopes produce blockers. Starting measurements are explicitly estimates requiring verification.
+
+Cable connections store connector endpoints, usable length and a bend/slack allowance. The planner rejects candidates whose direct 3D endpoint distance plus allowance exceeds cable length. The backend blocks missing endpoints, short cables, insufficient plug reach and plug collisions during build/export. Optional cyan plug envelopes and dashed connector guides make the assumptions visible. Dashed lines are distances, not routed cables; bend paths, connector pin compatibility and real cable availability are not inferred.
+
+The desktop review now supplements estimated component checks with revision-matched loaded native-model bounds against all cavity faces. A native clearance blocker disables Apply/export in the desktop. This supplemental check is currently client-side; direct `cad_fit` calls still use estimated component geometry. It is bounding-box containment, not exact solid collision, and missing models remain visible limitations.
+
+### Validation
+
+- Real eleven-board VAIO collection: Compact **325 × 130 × 20 mm**, six ports on two walls, 3 mm board spacing; Assembly space **225 × 195 × 20 mm**, six ports on three walls, 8 mm spacing. Ports together returns the same dimensions as Compact for this collection. No invented VAIO cable measurements were added.
+- Live choice acceptance, Undo and Redo restore exact designs. Locking a board disables movement. Panels at 1240 × 900, 780 × 600 and 600 × 500 retain their footer and have no horizontal overflow.
+- A separate fixture uses two unchanged copies of a real SV test board and **example** plug/cable measurements, not a validated VAIO wiring plan. Backend exports reject short cable, insufficient plug reach and overlapping plugs. Valid profiles/connections survive coordinated export with manifest hashes verified.
+- Loaded native geometry revealed only **0.27 mm** lid clearance in that fixture's 14 mm interior, despite passing estimated checks. The desktop blocks Apply. Changing the interior to **16 mm** clears the blocker and exports successfully, preserving the board lock and constraints.
+- **21 focused tests / 107 assertions pass**. All five changed packages typecheck; desktop production build passes with zero packaged source maps. Latest client-core/UI runs pass **203 + 226 tests**. Combined with the other package runs: **1,061 pass / 2 skip / 15 fail**. Every failure name occurs in the prior audit, including an intermittent MCP adapter failure; the full suite is not green.
+
+The VAIO collection still contains alternatives and adapters, excludes the main carrier/non-PCB hardware, has seven boards needing retention, and loads 295/374 component models on ten boards; A2 needs newer KiCad. No manufacturing-ready or perfect-fit claim is made. Exact solid collisions, routed cable geometry, shaped connector apertures, closure/retention design and manufacturing profiles remain separate work.
+
+![Compare layouts on the real VAIO collection](screenshots/mechanical-workspace/39-assembly-layout-choices.png)
+
+![Example plug envelopes and cable distance guide](screenshots/mechanical-workspace/40-assembly-access-guides.png)
+
+![Native geometry catches insufficient cavity clearance](screenshots/mechanical-workspace/41-native-clearance-review.png)

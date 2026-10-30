@@ -4,7 +4,7 @@ import type {
   MechanicalFitReport,
   MechanicalFitIssue,
 } from "@fabdesk/protocol";
-import { defaultConnectorAccess } from "@fabdesk/protocol";
+import { cableAssessments, portEnvelopes, defaultConnectorAccess } from "@fabdesk/protocol";
 import type { BoardFeatures, Rect } from "./board-features";
 import { generateEnclosure, type EnclosureCutout } from "./enclosure";
 
@@ -263,6 +263,7 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
       }
     }
     for (const connector of b.features.connectors) {
+      const profile = d.portAccess?.find((p) => p.boardPath === label && p.ref === connector.ref);
       const access =
         d.portAccess?.find((p) => p.boardPath === label && p.ref === connector.ref)?.access ??
         defaultConnectorAccess(connector.footprint);
@@ -274,12 +275,14 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
         ? b.placement.z - connector.heightMm
         : b.placement.z + b.features.thicknessMm;
       const z1 = bottom ? b.placement.z : z0 + connector.heightMm;
+      const apertureHeight = profile?.aperture?.height ?? connector.heightMm;
+      const apertureZ = (z0 + z1 - apertureHeight) / 2;
       const openings = d.openings.filter((o) => {
         if (o.boardPath && (o.boardPath !== label || o.ref !== connector.ref)) return false;
         if (o.boardPath) {
           const edges = ["maxX", "maxY", "minX", "minY"] as const;
           const turn = ((b.placement.rotation % 360) + 360) % 360;
-          const facing = edges[(edges.indexOf(connector.edge) + turn / 90) % 4];
+          const facing = edges[(edges.indexOf(profile?.face ?? connector.edge) + turn / 90) % 4];
           if (o.wall !== facing) return false;
           const gap =
             facing === "minX"
@@ -294,7 +297,9 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
         const vertical = o.wall === "minX" || o.wall === "maxX";
         const along = vertical ? p.y : p.x;
         const at = vertical ? p.x : p.y;
-        const alongWidth = vertical ? envelope.maxY - envelope.minY : envelope.maxX - envelope.minX;
+        const alongWidth =
+          profile?.aperture?.width ??
+          (vertical ? envelope.maxY - envelope.minY : envelope.maxX - envelope.minX);
         const acrossDepth = vertical
           ? envelope.maxX - envelope.minX
           : envelope.maxY - envelope.minY;
@@ -308,13 +313,71 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
                 : s.y + s.depth;
         return (
           Math.abs(at - wall) <= acrossDepth + s.wall + c &&
-          Math.abs(along - o.offset) + alongWidth / 2 + c <= o.width / 2 + eps &&
-          o.z <= z0 + eps &&
-          o.z + o.height >= z1 - eps
+          Math.abs(along - o.offset) + alongWidth / 2 + (d.openingClearance ?? c) <=
+            o.width / 2 + eps &&
+          o.z <= apertureZ + eps &&
+          o.z + o.height >= apertureZ + apertureHeight - eps
         );
       });
       if (!openings.length)
         add("connector-opening", `${label}: review an opening for ${connector.ref}.`, "review");
+      if (!profile?.aperture || !profile.plug)
+        add(
+          "port-measurements",
+          `${label}: ${connector.ref} needs measured opening and plug dimensions. Footprint bounds do not establish mating access.`,
+          "review",
+        );
+    }
+  }
+  for (const cable of cableAssessments(d, boards)) {
+    if (cable.distance === null)
+      add(
+        "cable-endpoint",
+        `Cable ${cable.id}: a connector is missing. Choose both endpoints again.`,
+      );
+    else if (!cable.reachable)
+      add(
+        "cable-length",
+        `Cable ${cable.id}: needs at least ${cable.required!.toFixed(1)} mm including slack; only ${cable.length} mm is available.`,
+      );
+    else
+      add(
+        "cable-routing",
+        `Cable ${cable.id}: ${cable.distance.toFixed(1)} mm direct distance + ${cable.slack} mm slack fits ${cable.length} mm. Confirm the actual bend path and assembly access.`,
+        "review",
+      );
+  }
+  const ports = portEnvelopes(d, boards);
+  for (let i = 0; i < ports.length; i++) {
+    const p = ports[i]!,
+      profile = d.portAccess?.find((c) => c.boardPath === p.boardPath && c.ref === p.ref);
+    if (profile?.wall && p.face !== profile.wall)
+      add("port-wall", `${p.boardPath}: ${p.ref} does not face its chosen wall.`);
+    if (p.reach !== null && p.reach + eps < p.gap + s.wall)
+      add(
+        "plug-reach",
+        `${p.boardPath}: ${p.ref} needs ${(p.gap + s.wall).toFixed(1)} mm mating reach through the wall; the measured plug allows ${p.reach} mm.`,
+        "error",
+        p.plug ? [p.plug] : [],
+      );
+    if (p.plug) {
+      if (
+        [...boards.flatMap(boardVolumes), ...d.obstacles].some((v) => boxesOverlap(p.plug!, v, c))
+      )
+        add(
+          "plug-collision",
+          `${p.boardPath}: ${p.ref} plug access overlaps a board or reserved space.`,
+          "error",
+          [p.plug],
+        );
+      for (const other of ports.slice(i + 1))
+        if (other.plug && boxesOverlap(p.plug, other.plug, c))
+          add(
+            "plug-collision",
+            `${p.ref} and ${other.ref}: plug bodies need more separation.`,
+            "error",
+            [p.plug, other.plug],
+          );
     }
   }
   for (let i = 0; i < all.length; i++)

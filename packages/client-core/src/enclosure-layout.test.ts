@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
 import { MechanicalDesignSchema } from "@fabdesk/protocol";
 import { defaultEnclosureDesign } from "./enclosure-design";
-import { proposeEnclosureLayout, type LayoutBoard } from "./enclosure-layout";
+import {
+  proposeEnclosureLayout,
+  nativeEnclosureClearanceIssues,
+  type LayoutBoard,
+} from "./enclosure-layout";
 const fixture = (path: string): LayoutBoard => ({
   placement: { path, x: 100, y: 100, z: 6, rotation: 0 },
   features: {
@@ -93,4 +97,88 @@ test("unlinked manual mounting points require explicit review", () => {
   d.boards = [b.placement];
   d.mounts = [{ x: 0, y: 0, diameter: 2, outer: 5, height: 4 }];
   expect(() => proposeEnclosureLayout(d, [b])).toThrow("Link manual posts");
+});
+test("locks preserve the full placement and case while preferred walls constrain rotations", () => {
+  const b = fixture("locked.kicad_pcb"),
+    d = defaultEnclosureDesign(null);
+  b.placement = { ...b.placement, x: 2, y: 2, z: 6, rotation: 0 };
+  d.boards = [{ ...b.placement, locked: true }];
+  d.space.width = 100;
+  d.space.depth = 70;
+  d.portAccess = [{ boardPath: b.placement.path, ref: "USB", access: "external", wall: "minX" }];
+  const p = proposeEnclosureLayout(d, [b]);
+  expect(p.design.boards[0]!).toEqual(d.boards[0]!);
+  expect(p.design.space.width).toBe(100);
+  expect(p.design.space.depth).toBe(70);
+  expect(p.design.openings[0]!.wall).toBe("minX");
+  d.portAccess[0]!.wall = "maxX";
+  expect(() => proposeEnclosureLayout(d, [b])).toThrow("No collision-free");
+});
+test("cable length and slack are enforced and missing endpoints cannot silently pass", () => {
+  const boards = [fixture("one.kicad_pcb"), fixture("two.kicad_pcb")],
+    d = defaultEnclosureDesign(null);
+  d.boards = boards.map((b) => b.placement);
+  d.connections = [
+    {
+      id: "ribbon",
+      from: { boardPath: "one.kicad_pcb", ref: "FFC" },
+      to: { boardPath: "two.kicad_pcb", ref: "FFC" },
+      length: 100,
+      slack: 10,
+    },
+  ];
+  const p = proposeEnclosureLayout(d, boards);
+  expect(p.cables[0]!.reachable).toBe(true);
+  expect(p.cables[0]!.required).toBeLessThanOrEqual(100);
+  d.connections[0]!.length = 1;
+  expect(() => proposeEnclosureLayout(d, boards)).toThrow("No collision-free");
+  d.connections[0]!.from.ref = "missing";
+  expect(() => proposeEnclosureLayout(d, boards)).toThrow("endpoint");
+});
+test("opening dimensions and mating reach are independent from component clearance", () => {
+  const b = fixture("port.kicad_pcb"),
+    d = defaultEnclosureDesign(null);
+  d.boards = [b.placement];
+  d.openingClearance = 0.3;
+  d.portAccess = [
+    {
+      boardPath: b.placement.path,
+      ref: "USB",
+      access: "external",
+      face: "minX",
+      wall: "minY",
+      aperture: { width: 6, height: 2 },
+      plug: { width: 12, height: 8, depth: 20, reach: 5 },
+    },
+  ];
+  const p = proposeEnclosureLayout(d, [b]);
+  expect(p.design.openings[0]!.width).toBeCloseTo(6.6);
+  expect(p.design.openings[0]!.height).toBeCloseTo(2.6);
+  expect(p.design.openings[0]!.wall).toBe("minY");
+  d.portAccess[0]!.plug!.reach = 0;
+  expect(() => proposeEnclosureLayout(d, [b])).toThrow("No collision-free");
+});
+test("assembly option reserves wider board spacing and keeps deterministic results", () => {
+  const boards = [fixture("one.kicad_pcb"), fixture("two.kicad_pcb")],
+    d = defaultEnclosureDesign(null);
+  d.boards = boards.map((b) => b.placement);
+  const compact = proposeEnclosureLayout(d, boards, "compact"),
+    assembly = proposeEnclosureLayout(d, boards, "assembly"),
+    ports = proposeEnclosureLayout(d, boards, "ports");
+  expect(assembly.boardGap).toBeGreaterThan(compact.boardGap);
+  expect(ports.goal).toBe("ports");
+  expect(proposeEnclosureLayout(d, boards, "assembly").design).toEqual(assembly.design);
+});
+test("native model bounds reveal underside and lid clearance missed by estimates", () => {
+  const b = fixture("native.kicad_pcb"),
+    d = defaultEnclosureDesign(null);
+  b.placement = { ...b.placement, x: 5, y: 5, z: 6 };
+  d.boards = [b.placement];
+  d.space = { ...d.space, width: 100, depth: 80, height: 14 };
+  b.modelBounds = { minX: 0, minY: 0, maxX: 40, maxY: 20, minZ: -1, maxZ: 10 };
+  expect(nativeEnclosureClearanceIssues(d, [b])[0]!.code).toBe("native-clearance");
+  d.space.height = 16;
+  expect(nativeEnclosureClearanceIssues(d, [b])).toEqual([]);
+  b.modelBounds.minZ = -5;
+  expect(nativeEnclosureClearanceIssues(d, [b])[0]!.severity).toBe("error");
 });

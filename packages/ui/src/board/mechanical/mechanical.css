@@ -2087,3 +2087,111 @@
   max-height: 200px;
   overflow: auto;
 }
+.fd-layout-planner fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.fd-layout-planner fieldset:disabled {
+  opacity: 0.65;
+}
+.fd-layout-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.fd-layout-heading > span,
+.fd-layout-planner summary > span {
+  color: var(--fd-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.fd-layout-planner summary > span {
+  float: right;
+  margin-left: 8px;
+}
+.fd-layout-planner .fd-layout-port {
+  padding: 12px;
+  border: 1px solid var(--fd-border);
+  border-radius: 8px;
+  background: var(--fd-panel);
+}
+.fd-layout-port summary > small,
+.fd-layout-cable > small,
+.fd-layout-choice > small {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: var(--fd-muted);
+}
+.fd-layout-planner label,
+.fd-layout-planner p {
+  overflow-wrap: anywhere;
+}
+.fd-layout-planner select {
+  width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+.fd-layout-planner .fd-case-confirm {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.fd-layout-planner .fd-case-confirm input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  width: auto;
+}
+.fd-layout-planner .fd-case-confirm span {
+  min-width: 0;
+}
+.fd-layout-cable {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--fd-border);
+}
+.fd-layout-choices {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+.fd-layout-choice {
+  padding: 14px;
+  border: 1px solid var(--fd-border);
+  border-radius: 10px;
+  background: var(--fd-panel);
+  min-width: 0;
+}
+.fd-layout-size {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 16px 0 10px;
+}
+.fd-layout-size small {
+  font-size: 10px;
+  color: var(--fd-muted);
+  font-weight: 400;
+}
+.fd-layout-choice dl {
+  margin: 0;
+}
+.fd-layout-choice dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 0;
+}
+.fd-layout-choice dt {
+  color: var(--fd-muted);
+  font-size: 11px;
+}
+.fd-layout-choice dd {
+  margin: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.fd-layout-choice > button {
+  width: 100%;
+}

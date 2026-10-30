@@ -18,3 +18,4 @@ export * from "./finish-it";
 export * from "./routers";
 export * from "./speech";
 export * from "./mechanical-design";
+export * from "./mechanical-access";

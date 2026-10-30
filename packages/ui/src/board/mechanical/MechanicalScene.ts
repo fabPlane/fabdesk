@@ -30,6 +30,8 @@ export type SceneModel = {
   thickness?: number;
   origin?: [number, number, number];
   volume?: { x: number; y: number; z: number; width: number; depth: number; height: number };
+  volumeColor?: number;
+  guide?: { from: [number, number, number]; to: [number, number, number]; color: number };
   selectable?: boolean;
   enclosure?: boolean;
   post?: { diameter: number; outer: number; height: number };
@@ -387,6 +389,8 @@ export class MechanicalScene {
           existing?.source.board === source.board &&
           JSON.stringify(existing?.source.post) === JSON.stringify(source.post) &&
           JSON.stringify(existing?.source.volume) === JSON.stringify(source.volume) &&
+          JSON.stringify(existing?.source.guide) === JSON.stringify(source.guide) &&
+          existing?.source.volumeColor === source.volumeColor &&
           existing?.source.origin?.join() === source.origin?.join()
         )
           continue;
@@ -512,13 +516,31 @@ export class MechanicalScene {
         metalness: 0.25,
         side: T.DoubleSide,
       });
-    if (source.volume) {
+    if (source.guide) {
+      const g = source.guide;
+      const line = new T.Line(
+        new T.BufferGeometry().setFromPoints([new T.Vector3(...g.from), new T.Vector3(...g.to)]),
+        new T.LineDashedMaterial({ color: g.color, dashSize: 2, gapSize: 1, depthTest: false }),
+      );
+      line.computeLineDistances();
+      line.renderOrder = 10;
+      group.add(line);
+      for (const point of [g.from, g.to]) {
+        const m = new T.Mesh(
+          new T.SphereGeometry(1, 8, 6),
+          new T.MeshBasicMaterial({ color: g.color, depthTest: false }),
+        );
+        m.position.fromArray(point);
+        m.renderOrder = 10;
+        group.add(m);
+      }
+    } else if (source.volume) {
       const v = source.volume;
       const geometry = new T.BoxGeometry(v.width, v.depth, v.height);
       const mesh = new T.Mesh(
         geometry,
         new T.MeshStandardMaterial({
-          color: 0xd69b52,
+          color: source.volumeColor ?? 0xd69b52,
           transparent: true,
           opacity: 0.25,
           depthWrite: false,
@@ -527,7 +549,7 @@ export class MechanicalScene {
       mesh.position.set(v.x + v.width / 2, v.y + v.depth / 2, v.z + v.height / 2);
       const edges = new T.LineSegments(
         new T.EdgesGeometry(geometry),
-        new T.LineBasicMaterial({ color: 0xd69b52 }),
+        new T.LineBasicMaterial({ color: source.volumeColor ?? 0xd69b52 }),
       );
       edges.position.copy(mesh.position);
       group.add(mesh, edges);

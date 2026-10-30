@@ -107,7 +107,8 @@ export function PcbModelStatus({
       )}
       {!!entries.length && (
         <small>
-          STL includes the loaded geometry. Fit checks still use estimated component bounds.
+          STL includes the loaded geometry. Bounds-based fit checks cannot verify exact component
+          collisions.
         </small>
       )}
     </section>

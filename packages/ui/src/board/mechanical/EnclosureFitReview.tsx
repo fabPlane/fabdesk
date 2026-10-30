@@ -4,6 +4,46 @@ import { Icon } from "../../components/Icon";
 
 type Destination = "Start" | "Space" | "PCB";
 const guidance: Record<string, { title: string; destination: Destination; action: string }> = {
+  "native-clearance": {
+    title: "Detailed model needs more room",
+    destination: "PCB",
+    action: "Rearrange or enlarge the case",
+  },
+  "cable-endpoint": {
+    title: "Reconnect the cable endpoints",
+    destination: "PCB",
+    action: "Review connections",
+  },
+  "cable-length": {
+    title: "Cable cannot reach",
+    destination: "PCB",
+    action: "Adjust layout or cable",
+  },
+  "cable-routing": {
+    title: "Check the cable bend path",
+    destination: "PCB",
+    action: "Review cable allowance",
+  },
+  "port-wall": {
+    title: "Port faces the wrong wall",
+    destination: "PCB",
+    action: "Review port direction",
+  },
+  "port-measurements": {
+    title: "Confirm the connector and plug",
+    destination: "PCB",
+    action: "Set port dimensions",
+  },
+  "plug-reach": {
+    title: "Plug cannot reach through the wall",
+    destination: "PCB",
+    action: "Check mating reach",
+  },
+  "plug-collision": {
+    title: "Plug access is obstructed",
+    destination: "PCB",
+    action: "Separate ports or obstacles",
+  },
   "mount-support": {
     title: "Post does not support the PCB",
     destination: "Space",

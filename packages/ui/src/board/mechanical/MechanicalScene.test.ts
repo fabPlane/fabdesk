@@ -131,3 +131,15 @@ test("downloaded PCB STL preserves KiCad millimetres and board axes", async () =
   expect(bounds.max.y).toBeCloseTo(30);
   expect(bounds.max.z).toBeCloseTo(10);
 });
+test("cable distance guides and plug envelopes decode without pretending to be PCB geometry", async () => {
+  const model = await MechanicalScene.decode({
+    item: mechanicalItem("guide", "import", "Cable guide"),
+    guide: { from: [0, 0, 3], to: [30, 20, 3], color: 0x64cbd2 },
+    selectable: false,
+    origin: [0, 0, 0],
+  });
+  const b = new Box3().setFromObject(model);
+  expect(b.min.x).toBeCloseTo(-1);
+  expect(b.max.x).toBeCloseTo(31);
+  expect(b.max.y).toBeCloseTo(21);
+});

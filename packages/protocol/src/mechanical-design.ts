@@ -3,6 +3,7 @@ import { z } from "zod/v4";
 const coordinate = z.number().finite().min(-10000).max(10000);
 const size = z.number().finite().positive().max(2000);
 const point = z.object({ x: coordinate, y: coordinate });
+const edge = z.enum(["minX", "maxX", "minY", "maxY"]);
 const path = z
   .string()
   .min(1)
@@ -52,6 +53,7 @@ export const MechanicalDesignSchema = z
           y: coordinate,
           z: coordinate,
           rotation: z.number().finite().min(-360).max(360),
+          locked: z.boolean().optional(),
         }),
       )
       .max(20),
@@ -61,10 +63,34 @@ export const MechanicalDesignSchema = z
           boardPath: path,
           ref: z.string().min(1).max(500),
           access: z.enum(["external", "internal"]),
+          face: edge.optional(),
+          wall: edge.optional(),
+          aperture: z.object({ width: size, height: size }).optional(),
+          plug: z
+            .object({
+              width: size,
+              height: size,
+              depth: size,
+              reach: z.number().finite().min(0).max(200),
+            })
+            .optional(),
         }),
       )
       .max(500)
       .optional(),
+    connections: z
+      .array(
+        z.object({
+          id: z.string().min(1).max(80),
+          from: z.object({ boardPath: path, ref: z.string().min(1).max(500) }),
+          to: z.object({ boardPath: path, ref: z.string().min(1).max(500) }),
+          length: size,
+          slack: z.number().finite().min(0).max(1000),
+        }),
+      )
+      .max(100)
+      .optional(),
+    openingClearance: z.number().finite().min(0).max(5).optional(),
     obstacles: z.array(MechanicalBoxSchema).max(100),
     mounts: z
       .array(
