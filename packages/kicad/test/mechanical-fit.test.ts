@@ -35,6 +35,17 @@ const design = (): MechanicalDesign => ({
 });
 const boards = (d: MechanicalDesign) => d.boards.map((placement) => ({ placement, features }));
 describe("mechanical fit constraints", () => {
+  test("a board at nominal minimum clearance fails when opposing surface error is enabled", () => {
+    const d = design();
+    d.space.x = -1;
+    const fit = () => checkMechanicalFit(d, boards(d));
+    expect(fit().issues.some((i) => i.code === "outside-space")).toBe(false);
+    d.fitAllowance = 0.1;
+    expect(fit().issues.some((i) => i.code === "outside-space")).toBe(true);
+    expect(fit().issues.some((i) => i.code === "fit-allowance" && i.severity === "review")).toBe(
+      true,
+    );
+  });
   test("floor clearance and posts outside the board still protect underside parts", () => {
     const d = design();
     d.space.x = -10;

@@ -6,7 +6,7 @@ import {
 } from "@fabdesk/protocol";
 import type { EnclosureSolid } from "./enclosure";
 import type { BoardFeatures } from "./board-features";
-import { findEdgeHolders } from "./enclosure-edge-holders";
+import { edgeHolderFit, findEdgeHolders } from "./enclosure-edge-holders";
 type Board = { placement: MechanicalDesign["boards"][number]; features: BoardFeatures };
 
 /** Hardware geometry and its safety envelopes are generated together, so checks cannot drift. */
@@ -14,6 +14,8 @@ export function enclosureHardware(d: MechanicalDesign, boards: Board[]) {
   const solids: EnclosureSolid[] = [],
     issues: MechanicalFitIssue[] = [];
   const s = d.space,
+    allowance = d.fitAllowance ?? 0,
+    errorGap = 2 * allowance,
     ceiling = s.floor + s.height;
   const add = (
     code: string,
@@ -31,12 +33,19 @@ export function enclosureHardware(d: MechanicalDesign, boards: Board[]) {
     height: solid.max.z - solid.min.z,
   });
   const overlaps = (a: MechanicalBox, b: MechanicalBox) =>
-    a.x < b.x + b.width - 1e-5 &&
-    a.x + a.width > b.x + 1e-5 &&
-    a.y < b.y + b.depth - 1e-5 &&
-    a.y + a.depth > b.y + 1e-5 &&
-    a.z < b.z + b.height - 1e-5 &&
-    a.z + a.height > b.z + 1e-5;
+    a.x < b.x + b.width + errorGap - 1e-5 &&
+    a.x + a.width + errorGap > b.x + 1e-5 &&
+    a.y < b.y + b.depth + errorGap - 1e-5 &&
+    a.y + a.depth + errorGap > b.y + 1e-5 &&
+    a.z < b.z + b.height + errorGap - 1e-5 &&
+    a.z + a.height + errorGap > b.z + 1e-5;
+  if (allowance > 0)
+    add(
+      "fit-allowance",
+      `Checks reserve ${errorGap.toFixed(2)} mm between opposing surfaces (±${allowance.toFixed(2)} mm each). Edge holders, lid rim and newly arranged port openings include this allowance; review existing openings. This is a dimensional assumption, not verified printer accuracy, material strength or missing-model coverage.`,
+      [],
+      "review",
+    );
   const world = (
     b: Board,
     r: { minX: number; minY: number; maxX: number; maxY: number },
@@ -110,19 +119,19 @@ export function enclosureHardware(d: MechanicalDesign, boards: Board[]) {
     const c = d.closure,
       r = c.bossDiameter / 2;
     if (
-      c.pilotDiameter >= c.screwDiameter ||
-      c.clearanceDiameter <= c.screwDiameter ||
-      c.bossDiameter - c.clearanceDiameter < 3
+      c.pilotDiameter + errorGap >= c.screwDiameter ||
+      c.clearanceDiameter - errorGap <= c.screwDiameter ||
+      c.bossDiameter - c.clearanceDiameter - 4 * allowance < 3
     )
       add(
         "closure-size",
-        "Lid screws need a smaller pilot, a larger clearance hole, and at least 1.5 mm of material around each hole.",
+        "Lid screws need a smaller pilot, a larger clearance hole, and at least 1.5 mm of material around each hole after the selected dimensional allowance.",
       );
     const engagement = c.screwLength - s.lid;
-    if (engagement < c.screwDiameter * 2 || engagement > s.height - 1)
+    if (engagement - errorGap < c.screwDiameter * 2 || engagement + errorGap > s.height - 1)
       add(
         "closure-length",
-        "Lid screw engagement must be at least two screw diameters, with 1 mm remaining above the floor.",
+        "Lid screw engagement must remain at least two screw diameters, with 1 mm above the floor, after the selected dimensional allowance. Check screw length and lid thickness.",
       );
     const candidates: Array<Array<[number, number]>> = [];
     // Search a bounded set of positions along both wall pairs. Keep four lugs
@@ -208,7 +217,7 @@ export function enclosureHardware(d: MechanicalDesign, boards: Board[]) {
     }
     const pcb = pcbs[boards.indexOf(b)]!,
       pad = 2.5,
-      gap = 0.25,
+      gap = holder.kind === "edge-clamps" ? edgeHolderFit(allowance).play : 0.25,
       wall = 1.5;
     if (
       pcb.width < 2 * pad + 2 ||
@@ -248,19 +257,24 @@ export function enclosureHardware(d: MechanicalDesign, boards: Board[]) {
           ),
         ),
       ];
-      const found = findEdgeHolders(pcb, s, (solid) => {
-        const r = region(solid);
-        return (
-          r.width > 0 &&
-          r.depth > 0 &&
-          r.height > 0 &&
-          r.x >= s.x &&
-          r.y >= s.y &&
-          r.x + r.width <= s.x + s.width &&
-          r.y + r.depth <= s.y + s.depth &&
-          !keepouts.some((p) => overlaps(r, p))
-        );
-      });
+      const found = findEdgeHolders(
+        pcb,
+        s,
+        (solid) => {
+          const r = region(solid);
+          return (
+            r.width > 0 &&
+            r.depth > 0 &&
+            r.height > 0 &&
+            r.x >= s.x + errorGap &&
+            r.y >= s.y + errorGap &&
+            r.x + r.width <= s.x + s.width - errorGap &&
+            r.y + r.depth <= s.y + s.depth - errorGap &&
+            !keepouts.some((p) => overlaps(r, p))
+          );
+        },
+        allowance,
+      );
       if (!found)
         add(
           "holder-space",
@@ -269,15 +283,23 @@ export function enclosureHardware(d: MechanicalDesign, boards: Board[]) {
         );
       else {
         for (const solid of found) solids.push({ ...solid, name: `${solid.name}${solids.length}` });
+        const foot = found.find((solid) => solid.name === "EdgeFence")!;
+        const contactLength = Math.max(foot.max.x - foot.min.x, foot.max.y - foot.min.y);
         add(
           "holder-review",
-          `${holder.boardPath}: four edge supports and lid captures with low end stops avoid the known keepouts. Verify 2 × 4 mm underside contact strips, 0.5 mm capture lips (0.25 mm nominal engagement at maximum play), solder clearance, and restraint under plug insertion on a printed sample.`,
+          `${holder.boardPath}: four edge supports and lid captures avoid known keepouts. ${edgeHolderFit(allowance).play.toFixed(2)} mm play and ${edgeHolderFit(allowance).capture.toFixed(2)} mm capture lips retain 0.25 mm calculated engagement at maximum play and selected surface error. Verify 2 × ${contactLength.toFixed(0)} mm underside contact strips, solder clearance and strength under plug insertion on a printed sample.`,
           [],
           "review",
         );
       }
       continue;
     }
+    if (allowance > 0)
+      add(
+        "holder-tolerance",
+        "Corner holders do not support dimensional allowance. Choose Find clear edges, or use custom retention.",
+        [pcb],
+      );
     for (const right of [false, true])
       for (const back of [false, true]) {
         const x = right ? pcb.x + pcb.width - pad : pcb.x,

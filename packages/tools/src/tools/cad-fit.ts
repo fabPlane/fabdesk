@@ -349,7 +349,9 @@ export const cad_fit = defineTool({
             if (other.placement.path === b.placement.path) continue;
             if (
               editedVolumes.some((a) =>
-                boardVolumes(other).some((c) => boxesOverlap(a, c, design.space.clearance)),
+                boardVolumes(other).some((c) =>
+                  boxesOverlap(a, c, design.space.clearance + 2 * (design.fitAllowance ?? 0)),
+                ),
               )
             )
               throw new ToolError(

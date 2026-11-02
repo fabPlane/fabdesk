@@ -4,7 +4,7 @@ import wasmPath from "manifold-3d/manifold.wasm" with { type: "file" };
 import { asciiStl, writeBoxesStep, type EnclosureSpec } from "./enclosure";
 import { profileTriangles, profileWall, type Triangle } from "./enclosure-profile";
 import type { MechanicalDesign } from "@fabdesk/protocol";
-import { EDGE_HOLDER_FIT } from "./enclosure-edge-holders";
+import { edgeHolderFit } from "./enclosure-edge-holders";
 export type { Manifold } from "manifold-3d";
 
 let ready: Promise<ManifoldToplevel> | undefined;
@@ -192,7 +192,7 @@ export async function enclosureFitSamples(
       }
       if (!Number.isFinite(thickness) || thickness <= 0 || thickness > 20)
         throw new Error("Invalid PCB thickness for holder sample");
-      const { play, pad, capture, wall } = EDGE_HOLDER_FIT;
+      const { play, pad, capture, wall } = edgeHolderFit(d.fitAllowance);
       const floor = 2,
         span = 8,
         roof = 1.5,

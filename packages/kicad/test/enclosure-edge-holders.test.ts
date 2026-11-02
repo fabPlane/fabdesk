@@ -11,6 +11,7 @@ import {
 import { joinedEnclosure, enclosureFitSamples, auditStl } from "../src/enclosure-solid";
 import { readStlTriangles } from "../src/shell-fit";
 import { MechanicalDesignSchema } from "@fabdesk/protocol";
+import { edgeHolderFit, findEdgeHolders } from "../src/enclosure-edge-holders";
 
 function fixture(rotation = 0) {
   const d = defaultEnclosureDesign(null);
@@ -137,4 +138,68 @@ test("edge-fit sample preserves the board thickness and capture profile in a clo
     "1 mm PCB + 0.25 mm vertical play, 0.5 mm capture lip",
   );
   expect(files["fit-samples/README.txt"]).toContain("load-test the complete screwed-lid case");
+});
+
+test("dimensional allowance rejects nominal screw fit and preserves edge capture after variation", async () => {
+  const { d, boards } = fixture();
+  d.fitAllowance = 0.1;
+  expect(enclosureHardware(d, boards).issues.some((i) => i.code === "closure-length")).toBe(true);
+  d.closure!.screwLength = 10;
+  const hardware = enclosureHardware(d, boards);
+  expect(hardware.issues.filter((i) => i.severity === "error")).toEqual([]);
+  const dimensions = edgeHolderFit(d.fitAllowance);
+  expect(dimensions.play - 2 * d.fitAllowance).toBeCloseTo(0.25);
+  expect(dimensions.capture - dimensions.play - 2 * d.fitAllowance).toBeCloseTo(0.25);
+  const captures = hardware.solids.filter((s) => s.name.startsWith("EdgeCapture"));
+  expect(captures).toHaveLength(4);
+  expect(captures[0]!.min.z - (boards[0]!.placement.z + 1)).toBeCloseTo(0.45);
+  const spec = enclosureFromDesign(d, boards);
+  const rim = spec.solids.filter((s) => s.role === "lip");
+  expect(rim.length).toBeGreaterThan(0);
+  for (const s of rim) {
+    expect(s.min.x).toBeGreaterThanOrEqual(d.space.x + 0.45);
+    expect(s.min.y).toBeGreaterThanOrEqual(d.space.y + 0.45);
+    expect(s.max.x).toBeLessThanOrEqual(d.space.x + d.space.width - 0.45);
+    expect(s.max.y).toBeLessThanOrEqual(d.space.y + d.space.depth - 0.45);
+    expect(Math.min(s.max.x - s.min.x, s.max.y - s.min.y)).toBeCloseTo(0.6);
+  }
+  const result = await joinedEnclosure(spec);
+  expect(result.validation.base.components).toBe(1);
+  expect(result.validation.lid.components).toBe(1);
+  const files = await enclosureFitSamples(d, boards);
+  expect(files["fit-samples/README.txt"]).toContain("0.45 mm vertical play, 0.9 mm capture lip");
+  expect(
+    (await auditStl(new TextEncoder().encode(files["fit-samples/edge-holder-01.stl"]!))).components,
+  ).toBe(1);
+  d.closure!.clearanceDiameter = 3.15;
+  expect(enclosureHardware(d, boards).issues.some((i) => i.code === "closure-size")).toBe(true);
+});
+
+test("thin boards and legacy corner holders cannot silently claim tolerance-safe retention", () => {
+  const { d, boards } = fixture();
+  d.fitAllowance = 0.2;
+  d.closure!.screwLength = 10;
+  expect(enclosureHardware(d, boards).issues.some((i) => i.code === "holder-space")).toBe(true);
+  d.holders![0]!.kind = "corner-clamps";
+  expect(enclosureHardware(d, boards).issues.some((i) => i.code === "holder-tolerance")).toBe(true);
+  expect(MechanicalDesignSchema.safeParse({ ...d, fitAllowance: -0.1 }).success).toBe(false);
+  expect(MechanicalDesignSchema.safeParse({ ...d, fitAllowance: Infinity }).success).toBe(false);
+});
+
+test("dense boards can use 3 mm support strips without reducing component keepouts", () => {
+  const { d, boards } = fixture();
+  const pcb = boardVolumes(boards[0]!)[0]!;
+  const result = findEdgeHolders(pcb, d.space, (s) => {
+    if (!s.name.startsWith("EdgeFence") && !s.name.startsWith("EdgeStop")) return true;
+    // Available strips are only 3.2 mm long; a 4 mm fence cannot fit.
+    return Math.max(s.max.x - s.min.x, s.max.y - s.min.y) <= 3.2;
+  });
+  expect(result).not.toBeNull();
+  expect(result!.filter((s) => s.name === "EdgeCapture")).toHaveLength(4);
+  expect(
+    result!
+      .filter((s) => s.name === "EdgeFence")
+      .every((s) => Math.max(s.max.x - s.min.x, s.max.y - s.min.y) === 3),
+  ).toBe(true);
+  expect(findEdgeHolders(pcb, d.space, () => false)).toBeNull();
 });

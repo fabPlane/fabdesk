@@ -38,6 +38,24 @@ const fixture = (path: string): LayoutBoard => ({
     ],
   },
 });
+test("layout reserves dimensional allowance in rounded openings and native clearance", () => {
+  const b = fixture("usb.kicad_pcb");
+  const d = defaultEnclosureDesign(null);
+  d.confirmed = true;
+  d.boards = [b.placement];
+  const nominal = proposeEnclosureLayout(d, [b]);
+  d.fitAllowance = 0.1;
+  const tolerant = proposeEnclosureLayout(d, [b]);
+  expect(tolerant.design.openings[0]!.width - nominal.design.openings[0]!.width).toBeCloseTo(0.4);
+  expect(tolerant.design.openings[0]!.height - nominal.design.openings[0]!.height).toBeCloseTo(0.4);
+  expect(tolerant.design.openings[0]!.shape).toBe("rounded");
+  const p = tolerant.design.boards[0]!;
+  expect(
+    nativeEnclosureClearanceIssues(tolerant.design, [
+      { ...b, placement: p, modelBounds: { ...b.features.outline, minZ: 0, maxZ: 1.6 } },
+    ]),
+  ).toEqual([]);
+});
 test("multi-board proposal places external ports at walls, cuts openings and keeps linked posts", () => {
   const boards = Array.from({ length: 6 }, (_, i) => fixture(`board-${i}.kicad_pcb`));
   const d = defaultEnclosureDesign(null);

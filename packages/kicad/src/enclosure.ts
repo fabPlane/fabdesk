@@ -30,6 +30,8 @@ export type EnclosureParams = {
   headroomMm: number;
   cutoutClearanceMm: number;
   lipMm: number;
+  /** Lateral gap between the locating rim and the case interior. */
+  lipClearanceMm: number;
   ventPattern: VentPattern;
   ventPitchMm: number;
   ventSizeMm: number;
@@ -54,6 +56,7 @@ export const DEFAULT_ENCLOSURE_PARAMS: EnclosureParams = {
   headroomMm: 1.5,
   cutoutClearanceMm: 0.4,
   lipMm: 1,
+  lipClearanceMm: 0,
   ventPattern: "none",
   ventPitchMm: 6,
   ventSizeMm: 2.5,
@@ -168,6 +171,7 @@ export function mergeEnclosureParams(input: Partial<EnclosureParams> = {}): Encl
     headroomMm: input.headroomMm ?? DEFAULT_ENCLOSURE_PARAMS.headroomMm,
     cutoutClearanceMm: input.cutoutClearanceMm ?? DEFAULT_ENCLOSURE_PARAMS.cutoutClearanceMm,
     lipMm: input.lipMm ?? DEFAULT_ENCLOSURE_PARAMS.lipMm,
+    lipClearanceMm: input.lipClearanceMm ?? DEFAULT_ENCLOSURE_PARAMS.lipClearanceMm,
     ventPattern: input.ventPattern ?? DEFAULT_ENCLOSURE_PARAMS.ventPattern,
     ventPitchMm: input.ventPitchMm ?? DEFAULT_ENCLOSURE_PARAMS.ventPitchMm,
     ventSizeMm: input.ventSizeMm ?? DEFAULT_ENCLOSURE_PARAMS.ventSizeMm,
@@ -731,43 +735,80 @@ export function generateEnclosure(
   }
 
   const lipOpeningsFor = (edge: BoardEdge) => lipOpenings[edge];
+  const lip = {
+    minX: inner.minX + params.lipClearanceMm,
+    maxX: inner.maxX - params.lipClearanceMm,
+    minY: inner.minY + params.lipClearanceMm,
+    maxY: inner.maxY - params.lipClearanceMm,
+  };
+  if (
+    !Number.isFinite(params.lipClearanceMm) ||
+    params.lipClearanceMm < 0 ||
+    lip.maxX - lip.minX <= 2 * Math.min(params.lipMm, 1.2) ||
+    lip.maxY - lip.minY <= 2 * Math.min(params.lipMm, 1.2)
+  )
+    throw new Error("The lid rim and its clearance do not fit inside this case.");
   solids.push(
     ...splitWall(
       "EnclosureLidLipMinY",
       {
-        min: { x: inner.minX, y: inner.minY, z: mm(inner.z1 - params.lipMm) },
-        max: { x: inner.maxX, y: inner.minY + Math.min(params.lipMm, 1.2), z: inner.z1 },
+        min: { x: lip.minX, y: lip.minY, z: mm(inner.z1 - params.lipMm) },
+        max: { x: lip.maxX, y: lip.minY + Math.min(params.lipMm, 1.2), z: inner.z1 },
       },
       "x",
       lipOpeningsFor("minY"),
-    ).map((s) => ({ ...s, role: "lip" as const, name: s.name.replace("EnclosureWall", "EnclosureLidLip") })),
+    ).map((s) => ({
+      ...s,
+      role: "lip" as const,
+      name: s.name.replace("EnclosureWall", "EnclosureLidLip"),
+    })),
     ...splitWall(
       "EnclosureLidLipMaxY",
       {
-        min: { x: inner.minX, y: inner.maxY - Math.min(params.lipMm, 1.2), z: mm(inner.z1 - params.lipMm) },
-        max: { x: inner.maxX, y: inner.maxY, z: inner.z1 },
+        min: {
+          x: lip.minX,
+          y: lip.maxY - Math.min(params.lipMm, 1.2),
+          z: mm(inner.z1 - params.lipMm),
+        },
+        max: { x: lip.maxX, y: lip.maxY, z: inner.z1 },
       },
       "x",
       lipOpeningsFor("maxY"),
-    ).map((s) => ({ ...s, role: "lip" as const, name: s.name.replace("EnclosureWall", "EnclosureLidLip") })),
+    ).map((s) => ({
+      ...s,
+      role: "lip" as const,
+      name: s.name.replace("EnclosureWall", "EnclosureLidLip"),
+    })),
     ...splitWall(
       "EnclosureLidLipMinX",
       {
-        min: { x: inner.minX, y: inner.minY, z: mm(inner.z1 - params.lipMm) },
-        max: { x: inner.minX + Math.min(params.lipMm, 1.2), y: inner.maxY, z: inner.z1 },
+        min: { x: lip.minX, y: lip.minY, z: mm(inner.z1 - params.lipMm) },
+        max: { x: lip.minX + Math.min(params.lipMm, 1.2), y: lip.maxY, z: inner.z1 },
       },
       "y",
       lipOpeningsFor("minX"),
-    ).map((s) => ({ ...s, role: "lip" as const, name: s.name.replace("EnclosureWall", "EnclosureLidLip") })),
+    ).map((s) => ({
+      ...s,
+      role: "lip" as const,
+      name: s.name.replace("EnclosureWall", "EnclosureLidLip"),
+    })),
     ...splitWall(
       "EnclosureLidLipMaxX",
       {
-        min: { x: inner.maxX - Math.min(params.lipMm, 1.2), y: inner.minY, z: mm(inner.z1 - params.lipMm) },
-        max: { x: inner.maxX, y: inner.maxY, z: inner.z1 },
+        min: {
+          x: lip.maxX - Math.min(params.lipMm, 1.2),
+          y: lip.minY,
+          z: mm(inner.z1 - params.lipMm),
+        },
+        max: { x: lip.maxX, y: lip.maxY, z: inner.z1 },
       },
       "y",
       lipOpeningsFor("maxX"),
-    ).map((s) => ({ ...s, role: "lip" as const, name: s.name.replace("EnclosureWall", "EnclosureLidLip") })),
+    ).map((s) => ({
+      ...s,
+      role: "lip" as const,
+      name: s.name.replace("EnclosureWall", "EnclosureLidLip"),
+    })),
   );
 
   return {

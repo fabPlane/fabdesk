@@ -30,6 +30,37 @@ export function EnclosureHardwarePanel({
       </p>
       {design.mode === "generated" && (
         <>
+          <label className="fd-case-confirm">
+            <input
+              type="checkbox"
+              checked={(design.fitAllowance ?? 0) > 0}
+              onChange={(e) => onChange({ ...design, fitAllowance: e.target.checked ? 0.1 : 0 })}
+            />
+            <span>Allow for small sizing differences</span>
+          </label>
+          <p className="fd-case-hint">
+            Adds room at the lid and edge holders, and checks screws and port clearance. Preview
+            again; existing openings may need resizing. This is an assumption about your printer,
+            not a measured result.
+          </p>
+          {(design.fitAllowance ?? 0) > 0 && (
+            <label>
+              Assumed error per surface
+              <select
+                aria-label="Assumed error per surface"
+                value={design.fitAllowance}
+                onChange={(e) => onChange({ ...design, fitAllowance: Number(e.target.value) })}
+              >
+                {[...new Set([0.1, 0.15, 0.2, design.fitAllowance!])]
+                  .sort((a, b) => a - b)
+                  .map((v) => (
+                    <option key={v} value={v}>
+                      ±{v.toFixed(2)} mm
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
           <label>
             Lid fastening
             <select

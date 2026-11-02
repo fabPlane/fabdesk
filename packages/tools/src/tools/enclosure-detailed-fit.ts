@@ -164,11 +164,12 @@ export async function detailedEnclosureFit(
         // Support surfaces intentionally touch their PCB, so enforce exact minimum
         // separation only between independent boards and reserved obstacles.
         for (const other of [...assembled, ...obstacles]) {
-          const gap = solid.minGap(other.solid, d.space.clearance);
-          if (!intersecting.has(other.solid) && gap < d.space.clearance - 1e-4)
+          const requiredGap = d.space.clearance + 2 * (d.fitAllowance ?? 0);
+          const gap = solid.minGap(other.solid, requiredGap);
+          if (!intersecting.has(other.solid) && gap < requiredGap - 1e-4)
             note(
               "detailed-clearance",
-              `${b.placement.path}: only ${gap.toFixed(2)} mm to ${other.path}; ${d.space.clearance} mm clearance is required.`,
+              `${b.placement.path}: only ${gap.toFixed(2)} mm to ${other.path}; ${requiredGap} mm clearance including fit allowance is required.`,
               "error",
             );
         }

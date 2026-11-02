@@ -9,7 +9,7 @@ import {
   portEnvelopes,
   defaultConnectorAccess,
   connectorOpening,
-  DEFAULT_OPENING_CLEARANCE,
+  enclosureOpeningClearance,
   openingContains,
 } from "@fabdesk/protocol";
 import type { BoardFeatures, Rect } from "./board-features";
@@ -70,7 +70,8 @@ export function boardVolumes(b: FitBoard): MechanicalBox[] {
 }
 export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): MechanicalFitReport {
   const s = d.space,
-    c = s.clearance;
+    allowance = 2 * (d.fitAllowance ?? 0),
+    c = s.clearance + allowance;
   const issues: MechanicalFitIssue[] = [...enclosureHardware(d, boards).issues];
   const add = (
     code: string,
@@ -289,7 +290,7 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
       );
       const apertureCenter = boardPoint(b, aperture.x, aperture.y);
       const apertureHeight = aperture.height;
-      const padding = d.openingClearance ?? DEFAULT_OPENING_CLEARANCE;
+      const padding = enclosureOpeningClearance(d);
       const apertureZ =
         (bottom ? b.placement.z - aperture.centerZ : z0 + aperture.centerZ) - apertureHeight / 2;
       const openings = d.openings.filter((o) => {
@@ -369,10 +370,10 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
       profile = d.portAccess?.find((c) => c.boardPath === p.boardPath && c.ref === p.ref);
     if (profile?.wall && p.face !== profile.wall)
       add("port-wall", `${p.boardPath}: ${p.ref} does not face its chosen wall.`);
-    if (p.reach !== null && p.reach + eps < p.gap + s.wall)
+    if (p.reach !== null && p.reach + eps < p.gap + s.wall + allowance)
       add(
         "plug-reach",
-        `${p.boardPath}: ${p.ref} needs ${(p.gap + s.wall).toFixed(1)} mm mating reach through the wall; the measured plug allows ${p.reach} mm.`,
+        `${p.boardPath}: ${p.ref} needs ${(p.gap + s.wall + allowance).toFixed(2)} mm mating reach through the wall including fit allowance; the specified plug allows ${p.reach} mm.`,
         "error",
         p.plug ? [p.plug] : [],
       );
@@ -562,6 +563,7 @@ export function enclosureFromDesign(d: MechanicalDesign, boards: FitBoard[]) {
       clearanceMm: s.clearance,
       standoffMm: 0,
       lipMm: 0.6,
+      lipClearanceMm: 0.25 + 2 * (d.fitAllowance ?? 0),
     },
     new Date(),
     {

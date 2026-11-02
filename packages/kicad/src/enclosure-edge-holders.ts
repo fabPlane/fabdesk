@@ -3,18 +3,44 @@ import type { EnclosureSolid } from "./enclosure";
 
 export const EDGE_HOLDER_FIT = { play: 0.25, pad: 2, capture: 0.5, length: 4, wall: 1.5 } as const;
 
+export function edgeHolderFit(allowance = 0) {
+  return {
+    ...EDGE_HOLDER_FIT,
+    play: EDGE_HOLDER_FIT.play + 2 * allowance,
+    // Keep 0.25 mm engagement after maximum lateral play and opposing surface error.
+    capture: EDGE_HOLDER_FIT.capture + 4 * allowance,
+  };
+}
+
 /** Four distributed supports/capture pegs, plus low stops on the other two edges.
  * Search is bounded and never relaxes the supplied keepouts to find a solution. */
 export function findEdgeHolders(
   pcb: MechanicalBox,
   space: MechanicalDesign["space"],
   clear: (solid: EnclosureSolid) => boolean,
+  allowance = 0,
 ): EnclosureSolid[] | null {
-  const { play, pad, capture, length, wall } = EDGE_HOLDER_FIT;
+  // A 3 mm contact length can fit between connectors on a dense narrow board.
+  // Keep the 2 mm underside depth and full capture profile; never reduce keepouts.
+  for (const length of [4, 3]) {
+    const found = searchEdgeHolders(pcb, space, clear, allowance, length);
+    if (found) return found;
+  }
+  return null;
+}
+
+function searchEdgeHolders(
+  pcb: MechanicalBox,
+  space: MechanicalDesign["space"],
+  clear: (solid: EnclosureSolid) => boolean,
+  allowance: number,
+  length: number,
+): EnclosureSolid[] | null {
+  const { play, pad, capture, wall } = edgeHolderFit(allowance);
   const top = pcb.z + pcb.height,
     ceiling = space.floor + space.height;
   // Low stops must still engage after the PCB rises through its allowed play.
-  const stopTop = pcb.z + Math.max(pcb.height / 2, play + 0.2);
+  const stopTop = pcb.z + Math.max(pcb.height / 2, play + 2 * allowance + 0.2);
   if (stopTop > top - 0.1) return null;
   const box = (
     name: string,
@@ -44,8 +70,8 @@ export function findEdgeHolders(
     const origin = Math.min(inner, fence),
       extent = pad + play + wall;
     // The lid peg is anchored outside the PCB rather than being a slender
-    // column on top of it. Its 0.5 mm lip leaves 0.25 mm nominal engagement
-    // at maximum lateral play; printing and load-bearing still need a sample.
+    // column on top of it. Capture scales with play and opposing surface error;
+    // printing and load-bearing still need a sample.
     const captureOrigin = positive ? edge - capture : fence;
     // Side fences touch no PCB copper; the clearance is measured from the board edge.
     const make = (

@@ -3,7 +3,7 @@ import {
   portEnvelopes,
   defaultConnectorAccess,
   connectorOpening,
-  DEFAULT_OPENING_CLEARANCE,
+  enclosureOpeningClearance,
   type MechanicalDesign,
 } from "@fabdesk/protocol";
 import { alignEnclosureMounts, linkEnclosureMounts, type MountBoard } from "./enclosure-mounts";
@@ -23,7 +23,7 @@ export function nativeEnclosureClearanceIssues(
       m = b.modelBounds,
       r = shift(rotateRect(m, p.rotation), p.x, p.y),
       s = d.space,
-      c = s.clearance;
+      c = s.clearance + 2 * (d.fitAllowance ?? 0);
     const minimum = Math.min(
       r.minX - s.x,
       r.minY - s.y,
@@ -158,8 +158,10 @@ function options(d: MechanicalDesign, b: LayoutBoard): Option[] {
         d.space.floor +
           Math.max(
             3,
-            ...parts.filter((p) => p.bottom).map((p) => p.heightMm + d.space.clearance),
-            -(m?.minZ ?? 0) + d.space.clearance,
+            ...parts
+              .filter((p) => p.bottom)
+              .map((p) => p.heightMm + d.space.clearance + 2 * (d.fitAllowance ?? 0)),
+            -(m?.minZ ?? 0) + d.space.clearance + 2 * (d.fitAllowance ?? 0),
           ),
       );
   const top =
@@ -231,9 +233,13 @@ export function proposeEnclosureLayout(
   const all = inputs.map((b) => options(d, b));
   // Corner holders extend 1.75 mm beyond each PCB edge. Reserve their room
   // during placement, including between two retained boards.
-  const holderMargin = d.holders?.length ? 1.75 : 0;
-  const gap = Math.max(goal === "assembly" ? 8 : 3, d.space.clearance * 2 + holderMargin * 2),
-    margin = Math.max(1, d.space.clearance + holderMargin);
+  const allowance = 2 * (d.fitAllowance ?? 0);
+  const holderMargin = d.holders?.length ? 1.75 + allowance : 0;
+  const gap = Math.max(
+      goal === "assembly" ? 8 : 3,
+      (d.space.clearance + allowance + holderMargin) * 2,
+    ),
+    margin = Math.max(1, d.space.clearance + allowance + holderMargin);
   const fixed =
     d.mode === "imported" ||
     d.boards.some((b) => b.locked) ||
@@ -287,7 +293,7 @@ export function proposeEnclosureLayout(
             ...(o.board.features.components ?? []).filter((p) => p.bottom).map((p) => p.heightMm),
             -(o.board.modelBounds?.minZ ?? 0),
           );
-          if (o.z - underside < d.space.floor + d.space.clearance - 1e-5) continue;
+          if (o.z - underside < d.space.floor + d.space.clearance + allowance - 1e-5) continue;
           if (o.ports.some((p) => p.wall && p.wall !== p.edge)) continue;
           const bw = o.rect.maxX - o.rect.minX,
             bh = o.rect.maxY - o.rect.minY;
@@ -376,7 +382,8 @@ export function proposeEnclosureLayout(
           },
         })),
       );
-      if (access.some((p) => p.reach !== null && p.reach + 1e-5 < p.gap + d.space.wall)) continue;
+      if (access.some((p) => p.reach !== null && p.reach + 1e-5 < p.gap + d.space.wall + allowance))
+        continue;
       const plugs = access.flatMap((p) => (p.plug ? [p.plug] : []));
       if (
         plugs.some((a, i) =>
@@ -385,10 +392,10 @@ export function proposeEnclosureLayout(
               overlap(
                 { minX: a.x, minY: a.y, maxX: a.x + a.width, maxY: a.y + a.depth },
                 { minX: b.x, minY: b.y, maxX: b.x + b.width, maxY: b.y + b.depth },
-                d.space.clearance,
+                d.space.clearance + allowance,
               ) &&
-              a.z < b.z + b.height + d.space.clearance &&
-              a.z + a.height + d.space.clearance > b.z,
+              a.z < b.z + b.height + d.space.clearance + allowance &&
+              a.z + a.height + d.space.clearance + allowance > b.z,
           ),
         )
       )
@@ -441,7 +448,7 @@ export function proposeEnclosureLayout(
       }
       const vertical = p.edge === "minX" || p.edge === "maxX";
       const z = p.bottom ? b.z - p.height : b.z + b.board.features.thicknessMm;
-      const padding = d.openingClearance ?? DEFAULT_OPENING_CLEARANCE;
+      const padding = enclosureOpeningClearance(d);
       const height = p.aperture.height;
       const centerZ = p.bottom ? b.z - p.aperture.centerZ : z + p.aperture.centerZ;
       openings.push({

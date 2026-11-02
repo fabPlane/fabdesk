@@ -106,3 +106,18 @@ An isolated test with 1.8 mm available above the PCB previously missed both capa
 | Physical validation | Prototype files and fit samples prepared | Real printing and board/screw/card/cable assembly; no trial recorded |
 
 The full objective remains incomplete. Passing geometry checks or slicing is insufficient to claim a perfect physical fit.
+
+
+## Dimensional allowance and digital assembly checks — 2 November 2026
+
+- Fixed a zero-clearance locating rim in the guided generated lid. Its nominal gap is now 0.25 mm; optional per-surface allowance increases it by twice that allowance without thinning the rim.
+- Optional “Allow for small sizing differences” adds opposing-surface error to cavity, independent-board, obstacle, plug-reach and hardware checks. Newly arranged openings include it; existing openings remain visible for review/resizing. It is a planning assumption, not printer calibration.
+- Edge-holder play and capture scale together, preserving 0.25 mm calculated engagement under the assumed error. Search tries 4 mm then 3 mm contact strips without relaxing keepouts. Thin boards or unsafe legacy corner holders block export. Fit samples use the same cross-section.
+- Screw checks account for hole/outer diameter and axial variation. The VAIO example uses 10 mm M3-sized screws, a 0.10 mm per-surface assumption, 0.45 mm holder play and 0.90 mm capture. These are checked design inputs, not tested hardware strength.
+- Real VAIO QA copy: raised both boards 0.20 mm and moved the small microSD board 1.50 mm away from the wall to clear its end stop. USB supports use 2 × 4 mm contact strips; microSD uses 2 × 3 mm. Existing openings expanded 0.20 mm per edge. Original PCB geometry remains untouched.
+- **80 tests / 524 assertions pass**, root typecheck and Windows core/desktop builds pass. Tests cover nominal-fit failures, rim gap/thickness, joined solids, sample consistency, thin boards, dense support strips and opening layout.
+- Native validation checks **141 closed bodies**, with **zero known collision blockers**. Case, print-oriented lid and two holder samples each slice with nonzero extrusion and no warnings. Independent OpenCascade reads the case and lid from STEP; coordinated ZIP hashes match.
+- Connector scenarios: assumed USB-C plug bodies 12 × 6 × 20 mm, 8 mm reach and 15 mm removal travel; assumed card envelope 11 × 1 × 15 mm, 12 mm reach/travel. These clear the tested layout. Negative controls with 2 mm reach or 80 mm-wide overlapping plug bodies are rejected. These assumptions were **not** saved as verified hardware dimensions.
+- Live UI: raising allowance to 0.20 mm exposes three blockers and disables export; restoring 0.10 mm clears them and enables export. Saved settings restore correctly.
+
+[Machine-readable evidence](enclosure-tolerance-validation.json). C17/C18 retain their documented 2.0 mm maximum body-height envelope plus the selected fit clearance. No exact manufacturer capacitor model or assembled solder-height measurement was obtained. Physical fit/strength is still unverified; this remains a prototype workflow.

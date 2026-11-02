@@ -4,6 +4,16 @@ import { Icon } from "../../components/Icon";
 
 type Destination = "Start" | "Space" | "PCB";
 const guidance: Record<string, { title: string; destination: Destination; action: string }> = {
+  "fit-allowance": {
+    title: "Room for small sizing differences",
+    destination: "Start",
+    action: "Review fit allowance",
+  },
+  "holder-tolerance": {
+    title: "Choose holders with fit allowance",
+    destination: "Start",
+    action: "Choose edge holders",
+  },
   "holder-space": {
     title: "The board needs a different restraint",
     destination: "Start",

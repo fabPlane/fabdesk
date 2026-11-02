@@ -4,10 +4,22 @@ export type ConnectorFace = {
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
   heightMm: number;
   centerZ: number;
-  source: "fabrication-outline" | "GCT USB4105 drawing" | "Hirose DM3D-SF drawing" | "PCB Height property";
+  source:
+    | "fabrication-outline"
+    | "GCT USB4105 drawing"
+    | "Hirose DM3D-SF drawing"
+    | "PCB Height property";
 };
 
 export const DEFAULT_OPENING_CLEARANCE = 0.4;
+
+/** Two opposing surfaces may each consume their stated dimensional allowance. */
+export function enclosureOpeningClearance(d: {
+  openingClearance?: number | undefined;
+  fitAllowance?: number | undefined;
+}) {
+  return (d.openingClearance ?? DEFAULT_OPENING_CLEARANCE) + 2 * (d.fitAllowance ?? 0);
+}
 
 export function connectorOpening(
   connector: {

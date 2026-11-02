@@ -98,6 +98,8 @@ export const MechanicalDesignSchema = z
       .max(100)
       .optional(),
     openingClearance: z.number().finite().min(0).max(5).optional(),
+    /** Assumed maximum dimensional error per mating surface, not a printer certification. */
+    fitAllowance: z.number().finite().min(0).max(0.5).optional(),
     detailedFit: z.boolean().optional(),
     closure: z
       .object({
