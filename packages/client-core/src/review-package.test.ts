@@ -15,3 +15,14 @@ test("assembly packages do not infer root or undeclared/blocked member ownership
   const files = ["fabplane.assembly.json", "board.kicad_pcb", "boards/io/board.kicad_pcb", "boards/io/renders/top.png", "boards/io/blocked/board.kicad_pcb", "boards/io/blocked/renders/top.png", "boards/other/board.kicad_pcb"].map(file);
   expect(reviewPackageFiles(files, scope, options).map(file => file.path)).toEqual(["boards/io/board.kicad_pcb", "boards/io/renders/top.png", "fabplane.assembly.json"]);
 });
+
+
+test("member notes and comments follow declared source ownership and the explicit notes choice", () => {
+  const source = { id: "rh", name: "RH", location: "project", directory: "boards/rh" };
+  const blocked = { ...source, id: "blocked", directory: "boards/rh/private" };
+  const scope = ProjectBoardSources.parse({ ...single, mode: "assembly", manifestSha256: "a".repeat(64), assembly: { contract: "fabplane.assembly.v1", sources: [source, blocked], instances: [{ id: "rh-1", name: "RH", sourceId: "rh" }], connections: [] }, sources: [{ source, status: "available" }, { source: blocked, status: "blocked" }] });
+  const files = ["comments.json", "NOTES.md", "boards/rh/comments.json", "boards/rh/NOTES.md", "boards/rh/private/comments.json", "boards/rh/.fabdesk/comments.json", "boards/other/comments.json"].map(file);
+  const choices = { outputs: false, sources: false, notes: true, checks: false };
+  expect(reviewPackageFiles(files, scope, choices).map(file => file.path)).toEqual(["boards/rh/comments.json", "boards/rh/NOTES.md", "comments.json", "NOTES.md"]);
+  expect(reviewPackageFiles(files, scope, { ...choices, notes: false })).toEqual([]);
+});

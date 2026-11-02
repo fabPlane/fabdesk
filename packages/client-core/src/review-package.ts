@@ -14,6 +14,7 @@ export function reviewPackageFiles(files: FileEntry[], scope: ProjectBoardSource
     const owner = directories.find(row => file.path.startsWith(row.prefix));
     if (!owner?.available) return false;
     const path = file.path.slice(owner.prefix.length);
+    if (options.notes && ["NOTES.md", "comments.json"].includes(path)) return true;
     if (options.sources && (!path.split("/").some(part => part.startsWith(".")) && /\.(kicad_pcb|kicad_sch|kicad_pro|kicad_sym|kicad_mod)$/i.test(path) || ["circuit.netlist.json", "project.parts.json", "fp-lib-table", "sym-lib-table"].includes(path))) return true;
     return options.checks && (/^reports\/(drc|erc|board-diff|schematic-sync|checks)\.(json|md)$/.test(path) || /^renders\/diff\/.+\.svg$/.test(path));
   }).sort((a, b) => a.path.localeCompare(b.path));
