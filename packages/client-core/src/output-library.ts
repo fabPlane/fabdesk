@@ -1,3 +1,4 @@
+import { savedOutputKind as outputKind } from "@fabdesk/protocol";
 import type { FileEntry, ProjectBoardSources } from "@fabdesk/protocol";
 export type OutputKind = "images" | "videos" | "models" | "manufacturing";
 /** Effective chronology keeps a labelled file-time fallback for untracked/legacy artifacts. */
@@ -8,18 +9,7 @@ export function outputTime(file: Pick<FileEntry, "mtime" | "generatedAt">) {
 }
 
 /** A library of saved deliverables, not intermediate receipts/reports or project source files. */
-export function outputKind(path: string): OutputKind | null {
-  if (!/^(renders|exports)\//.test(path) || path.startsWith("renders/diff/")) return null;
-  // Exact private scratch directory written by product-video/encode.ts; never
-  // suppress arbitrary user images called frame-N.png elsewhere.
-  if (/^exports\/\.product-video-frames\//.test(path)) return null;
-  const extension = path.split(".").pop()?.toLowerCase();
-  if (["png", "jpg", "jpeg", "webp", "svg"].includes(extension ?? "")) return "images";
-  if (["mp4", "webm", "gif"].includes(extension ?? "")) return "videos";
-  if (["glb", "stl", "obj", "step", "stp"].includes(extension ?? "")) return "models";
-  if (["zip", "csv", "gbr", "gbl", "gtl", "gba", "gta", "gbo", "gto", "gbs", "gts", "gbp", "gtp", "gm1", "gko", "drl", "pdf", "dxf", "lbrn2", "net", "pos"].includes(extension ?? "")) return "manufacturing";
-  return null;
-}
+export { savedOutputKind as outputKind } from "@fabdesk/protocol";
 export function savedOutputs(files: FileEntry[], sources: ProjectBoardSources["sources"] = []) {
   // A missing PCB does not delete saved deliverables from a declared directory.
   // Blocked/undeclared directories still cannot establish an output source.

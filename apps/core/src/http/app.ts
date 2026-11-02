@@ -83,6 +83,7 @@ import { parseTopics, sseResponse } from "./sse";
 import { cloudRoutes } from "./cloud-routes";
 import { resolveNativeBoardBinding } from "../assembly-board-binding";
 import { commentRoutes } from "./comment-routes";
+import { outputTrashRoutes } from "./output-trash-routes";
 import { createSpeechService, SpeechProviderError, type SpeechService } from "../speech";
 
 export type AppDeps = {
@@ -406,6 +407,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
 
   commentRoutes(app, deps);
+  outputTrashRoutes(app, deps);
 
   app.get("/projects/:id/sketches", async (c) => {
     const h = await deps.projects.handle(c.req.param("id"));

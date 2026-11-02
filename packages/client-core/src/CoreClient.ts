@@ -1,6 +1,9 @@
 /** Typed fetch wrapper over the fabdesk-core control API plus SSE subscription. */
 import { BoardSourceSelection } from "@fabdesk/protocol";
 import type {
+  OutputTrashReview,
+  OutputTrashEntry,
+  OutputTrashBatchResult,
   AgentId,
   AuthState,
   BomSyncSummary,
@@ -284,6 +287,18 @@ export class CoreClient {
       method: "PUT",
       json: { content },
     });
+  }
+  reviewOutputTrash(projectId: string, paths: string[]): Promise<OutputTrashReview> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/output-trash/review`, { method: "POST", json: { paths } });
+  }
+  moveOutputsToTrash(projectId: string, files: Array<{ path: string; token: string }>): Promise<OutputTrashBatchResult> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/output-trash`, { method: "POST", json: { files } });
+  }
+  listOutputTrash(projectId: string): Promise<{ files: OutputTrashEntry[] }> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/output-trash`);
+  }
+  restoreOutputTrash(projectId: string, ids: string[]): Promise<OutputTrashBatchResult> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/output-trash/restore`, { method: "POST", json: { ids } });
   }
   async writeFile(projectId: string, path: string, content: string | Blob): Promise<void> {
     const res = await this.fetchImpl(this.fileUrl(projectId, path), {

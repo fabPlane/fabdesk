@@ -1079,3 +1079,17 @@ export function useOutputRevisions(projectId: string | null, targets: OutputRevi
   })) });
   return rows.map((row, index) => ({ ...row, path: targets[index]!.path }));
 }
+
+/** Review output eligibility without changing preview/download selection. The server rechecks at execution. */
+export function useOutputTrashReview(projectId: string | null, files: Array<{ path: string; size: number; mtime: string }>) {
+  const client = useCoreClient(), jobs = useJobs(!!projectId, projectId ?? undefined);
+  const live = useRunsStore(state => state.jobs);
+  const activity = projectJobs(projectId ?? "", jobs.data ?? [], live, client.baseUrl).filter(job => job.status === "running" || job.status === "queued").map(job => job.id).sort();
+  const query = useQuery({
+    queryKey: ["output-trash-review", client.baseUrl, projectId, files.map(file => [file.path, file.size, file.mtime]), activity],
+    queryFn: () => client.reviewOutputTrash(projectId!, files.map(file => file.path)),
+    enabled: !!projectId && files.length > 0 && files.length <= 2000,
+    staleTime: 5000,
+  });
+  return { ...query, projectActive: activity.length > 0 };
+}
