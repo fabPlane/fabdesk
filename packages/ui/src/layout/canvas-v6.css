@@ -521,8 +521,7 @@
 @media(max-width:780px) { .fd-schematic-availability-heading { flex-wrap:wrap; } }
 
 .fd-board-checks-dialog { width:min(1040px,calc(100vw - 48px)); max-width:1040px; }
-.fd-board-checks-dialog-tools { display:flex; justify-content:space-between; align-items:center; gap:16px; color:var(--fd-muted); font-size:12px; }
-.fd-board-checks-dialog .fd-member-checks,.fd-board-checks-dialog .fd-single-checks { padding:20px 0 0; height:auto; }
+.fd-board-checks-dialog .fd-member-checks,.fd-board-checks-dialog .fd-single-checks { padding:0; height:auto; }
 .fd-board-checks-dialog .fd-member-checks > header > div:first-child,.fd-board-checks-dialog .fd-single-checks-header > div:first-child { display:none; }
 .fd-board-checks-dialog .fd-member-checks > header,.fd-board-checks-dialog .fd-single-checks-header { margin-bottom:18px; }
 .fd-board-checks-dialog .fd-checks-context { grid-template-columns:minmax(0,1fr); }

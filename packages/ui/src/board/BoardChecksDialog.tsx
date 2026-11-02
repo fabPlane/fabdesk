@@ -11,12 +11,11 @@ import { DrcTab } from "./DrcTab";
 export function BoardChecksDialog({ projectId, open, onClose }: { projectId: string; open: boolean; onClose: () => void }) {
   const sources = useBoardSources(projectId), settingsOpen = useUiStore(state => state.settingsOpen);
   useEffect(() => { if (open && settingsOpen) onClose(); }, [open, settingsOpen, onClose]);
-  return <Dialog open={open} onClose={onClose} title="Board checks" className="fd-board-checks-dialog">
-    <div className="fd-board-checks-dialog-tools"><span>Checks for the board you’re viewing</span><CanvasToolButton icon="sparkles" label="Ask about these checks" onClick={() => {
+  return <Dialog open={open} onClose={onClose} title="Board checks" className="fd-board-checks-dialog" headerActions={<CanvasToolButton icon="sparkles" label="Ask about these checks" onClick={() => {
       const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId) return;
       const context = captureAssistantContext(selectAssistantState(ui), sources.data, sources.isFetching || sources.isError);
       askAboutSurface({ projectId, label: context.label, details: context.details, priority: 50 }, "Help me understand this board’s saved check results. Explain the selected finding, what has actually been checked, and the safest next step before changing anything."); onClose();
-    }} /></div>
+    }} />}>
     <DrcTab contextual onNavigate={onClose} />
   </Dialog>;
 }
