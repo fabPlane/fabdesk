@@ -425,7 +425,8 @@
 .fd-assembly-model { position:relative; }
 .fd-assembly-model-status { display:flex; flex-direction:column; gap:4px; padding:10px 20px; font-size:12px; }
 .fd-assembly-model-status span { color:var(--fd-muted); }
-.fd-assembly-model-actions { position:absolute; right:20px; bottom:24px; display:flex; flex-wrap:wrap; gap:8px; }
+.fd-assembly-model-actions { display:flex; flex:none; justify-content:flex-end; align-items:center; flex-wrap:wrap; gap:8px; padding:4px 20px 10px; }
+.fd-assembly-model-actions[data-empty="true"] { justify-content:center; padding:0; }
 .fd-assembly-model-warnings { padding:8px 20px; font-size:12px; max-height:150px; overflow:auto; }
 .fd-assembly-model-warnings summary { cursor:pointer; color:var(--fd-muted); }
 .fd-assembly-model-warnings li { margin-top:5px; overflow-wrap:anywhere; }
