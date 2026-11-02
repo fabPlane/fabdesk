@@ -9,13 +9,14 @@ import { ProjectImage } from "../chat/ProjectImage";
 import { ProjectVideo } from "../chat/ProjectVideo";
 import { Button, EmptyState, IconButton, Input, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { editableSketchPaths, useCoreClient, usePcbPreviewRevision, useProject, useProjectText, useRunTool } from "@fabdesk/client-core";
+import { editableSketchPaths, savedOutputs, useCoreClient, usePcbPreviewRevision, useProject, useProjectText, useRunTool } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { stencilThicknessMm } from "../stores/stencil-thickness";
 import { cn } from "../util";
 import { buildFileTree, fileAppearance, formatFileSize, type ExplorerNode } from "./file-explorer";
 import { FileGlyph } from "./FileGlyph";
 import { FileExportControls } from "./FileExportControls";
+import { OutputPreviewDialog } from "./OutputPreviewDialog";
 import { FILE_EXPORTS as EXPORTS, fileExportChoices, type FileExportKind as ExportKind } from "./file-exports";
 import {
   DEFAULT_LASER_STENCIL_FORM,
@@ -39,6 +40,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const thicknessMm = useUiStore((s) => stencilThicknessMm(s.stencilThicknessByProject?.[projectId]));
   const setThickness = useUiStore((s) => s.setStencilThickness);
   const [selected, setSelected] = useState<string | null>(null);
+  const [modelPreviewPath, setModelPreviewPath] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [downloadPath, setDownloadPath] = useState<string | null>(null);
@@ -97,6 +99,11 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const tree = useMemo(() => buildFileTree(files, query), [project.data?.files, query]);
   const file = files.find((f) => f.path === selected);
   const appearance = file ? fileAppearance(file.path) : null;
+  const canPreviewModel = !!file && /\.(glb|stl|obj)$/i.test(file.path);
+  const modelPreview = canPreviewModel && modelPreviewPath === file?.path ? {
+    ...savedOutputs(files, assembly ? sources.data?.sources : []).find(output => output.path === modelPreviewPath),
+    path: modelPreviewPath!, kind: "models" as const,
+  } : null;
   const designDestination = file && scopeReady && sources.data ? boardFileDestination(sources.data, file.path) : null;
   const assistantSurface = { projectId, label: exportFocus ? "Outputs / Export files" : file ? `File · ${file.path.split("/").pop()}` : "Project files", priority: 10, details: JSON.stringify(exportFocus ? { board, source: source?.source, sourceReady, format: exportKind, outputDirectory: `${prefix}exports/`, busy, error: state.error } : { selectedFile: file?.path, format: appearance?.label, fileBytes: file?.size, preview: appearance?.preview }) };
   useAssistantSurface(assistantSurface);
@@ -255,8 +262,8 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
               {downloadError?.path === file.path && <p role="alert" className="mb-3 text-xs text-danger">{downloadError.message}</p>}
               {appearance.preview === "image" && <ProjectImage retryable projectId={projectId} path={file.path} className="fd-file-image max-h-none max-w-full" />}
               {appearance.preview === "video" && <ProjectVideo projectId={projectId} path={file.path} className="fd-file-video max-w-full" />}
-              {appearance.preview === "none" && <EmptyState title={`${appearance.label} file`} icon={<FileGlyph kind={appearance.kind} className="!h-10 !w-10" />}>
-                {appearance.kind === "model" ? "Open this file in a compatible 3D viewer or slicer." : "A preview for this format is not available here."}
+              {appearance.preview === "none" && <EmptyState title={`${appearance.label} file`} icon={<FileGlyph kind={appearance.kind} className="!h-10 !w-10" />} {...(canPreviewModel ? { action: <Button onClick={() => setModelPreviewPath(file.path)}><Icon name="cube" width={16} height={16} />Preview model</Button> } : {})}>
+                {canPreviewModel ? "Inspect this saved model in fabPlane, or download it for your viewer or slicer." : appearance.kind === "model" ? "Open this file in a compatible 3D viewer or slicer." : "A preview for this format is not available here."}
                 <p className="mt-2 break-all font-mono text-xs">{file.path}</p>
               </EmptyState>}
               {appearance.preview === "text" && (tooBig ? <p className="text-xs text-muted">This file is too large to preview. Limit: 1 MB.</p>
@@ -268,6 +275,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
           </>}
         </section>
       </div>
+      {modelPreview && <OutputPreviewDialog projectId={projectId} output={modelPreview} status="Saved model file · Source freshness unverified" onClose={() => setModelPreviewPath(null)} />}
 
     </div>
   );
