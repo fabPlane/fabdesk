@@ -1,3 +1,49 @@
+# November 2 — current broad acceptance checkpoint
+
+This section supersedes older progress and “pending” summaries below. Work continues on `feat/sketch-first-drafts`; local code through `8763362` / `ea97851` is not yet published. PR389 last independently verified at `3a8eb63` (259 commits); one final normal push remains authorized at final handoff. No merge/deploy.
+
+Recent UI fixes: fresh Sketch/Notes entry and saved drawing copies, consistent Download arrows, an in-place Library Needs review filter with exact output reasons, compact contextual Share/Checks controls, inclusion of owned member comments in review ZIPs, recovery from an unverified empty schematic preview, verified member-model exporter warnings, and removal of a stray model “done” message from video setup. Parts first-load now has an explanatory status instead of an isolated spinner; affected UI types pass, but the transient new loading text was not captured after a fast reload.
+
+## Nineteen-item acceptance summary
+
+| Item | Current result | Practical limit |
+| --- | --- | --- |
+| 1 Import ordering | Native Playbridge version/path sorting, backups, exact selected source verified (17–21) | Ordering is not a validity recommendation |
+| 2 Home lifecycle | Close/reopen, A/B isolation, drafts, running video activity, create/import landing verified | No deletion or auth change |
+| 3 Large schematic | Fit/width, vector zoom/pan and actual paired source rendering verified | Multi-sheet navigation/focus remains bounded below |
+| 4 Semantic assistant focus | Root single-sheet source-qualified focus verified | Member/multi-sheet extension tracked in issue412 |
+| 5 Video deliverables | Grouped formats, hidden intermediates, cancellation preservation and cold reopen verified | Encoder dependencies remain explicit |
+| 6 Output removal | Single/bulk Trash and exact-path byte-preserving restoration verified, root/member | Referenced inputs stay guarded |
+| 7 Render entry | Prominent action; actual I/O top image and Overview preference verified (118/121) | Saved image alone is not source/fit proof |
+| 8 Popup spacing | Actual wide/compact image/video/3D/Share/Checks exercised (122–135) | Not every dialog/error branch exhaustively exercised |
+| 9 Tooltip edges | Portal placement and right-edge keyboard label verified (123–125) | Hover and all four edges not exhaustively observed |
+| 10 Library selection | Per-card actions, checkbox/bulk selection, filtering/hidden-selection clearing verified | Groups expose contained file counts |
+| 11 BOM clarity | Filters/coverage/quantities/CSV verified; actual local I/O14lines22quantity | Multi-board missing sources are not invented |
+| 12 Export Ask | Deliberate contextual action verified | Questions remain unsent unless explicitly executed |
+| 13 Output chronology | Regenerated image/model/video/package ordering verified | No exhaustive filesystem timestamp edge-case claim |
+| 14 Download icons | Manufacturing neutral type icon and file/candidate downward Download arrows | Internal action names unchanged |
+| 15 Import identity | Exact selected path/version/hash retained on reopen, Files and Ask | Does not certify latest remote revision |
+| 16 Model coverage | Actual Playbridge connectors/video and member warnings visible (141) | RH J5 STEP absent; full geometry/fit not claimed |
+| 17 Preview Close | Actual video playback/Close returns to same Library | No download cancellation claim from Close |
+| 18 Gerber package | Root/member actual ZIPs include drill, CRC and byte-exact downloads | Packaging is not electrical/fabrication approval |
+| 19 Readiness navigation | Root exact notes/actions; selected/missing member source review verified | Existing findings and missing sources stay visible |
+
+## Actual local VAIO continuation
+
+At the user's direction, used the existing local `TensorFleet/vaio_p_modding` clone. Its original modified `.kicad_pro` files and untracked files were preserved. Independent no-hardlink checkout of saved main `11db1b6` succeeded; bounded60s latest fetch timed out. No latest-remote or GitHub-import success is claimed.
+
+Home/Create made an isolated test project. Explicit byte-exact canonical-name copies of real `REVH_MAIN_A18` PCB/schematic/project files establish a single-board local-source test, not an inferred six-board assembly. Actual visible Overview → PCB → Schematic → Generate3D → Models & video → Make video → Parts → Activity/Open outputs → Play → Export files → Gerber package → Save passed. Video:6s/24fps/144frames, MP4/WebM/GIF; Parts14lines22quantity; package28entries with Excellon drill, CRCpass, download byte exact. Native copies and six listed original modified/untracked file hashes plus original Git status unchanged. History directories were not recursively hashed. Captures142–148 and proof149 are local evidence.
+
+The repository's instrumented `io-main` release preflight passed before fabrication generation; this is separate from DRC/ERC/physical-fit approval. Native work is recorded under `pcb_iteration` run `20261102T181839-98fa3f22`; its UI wall intervals include navigation/review and are not native CPU timings. Actual window is again2880×1740physical; no settings/security/power changes.
+
+## Verification and remaining work
+
+Full root typecheck passed at `17e566d`; newer UI-only changes pass affected UI typechecks. Recent focused suites: output grouping/download16tests75assertions; review-package ownership3/5; member preview/inspection13/47; member model3/18. UI257/1090 passed before the last Share/Checks/preview/warning small patches; those have targeted checks/types/native evidence. No new full-root test/build/hosted-CI pass is claimed.
+
+Continue broader delivery-format and remaining interaction checks. Do not repeatedly retry unavailable dependencies: comparator drawing defect [411](https://github.com/TensorFleet/fabdesk/issues/411), member/multi-sheet focus [412](https://github.com/TensorFleet/fabdesk/issues/412), missing VAIO RH repository/assets and authenticated shopping acceptance are recorded limits. Teammate398 enclosure/assembly,393 replacement/resize and Board Art Apply/polish remain deferred. Overall app completion is not declared. Automation stays PAUSED, keep-awake RELEASED.
+
+---
+
 # November 2 — broad native workflow checkpoint, continuing
 
 Local HEAD eff209d follows20de919(import access recovery),58d9bbb(member model action layout),6929212/37ab084(first video setup and cold saved-output load),593c3e8(video caption fitting). Overview now has contextual Review updates bound to the selected source; read-only missing-source review preserves the exact declared Keyboard scope without granting native ownership. Native LCD/Keyboard repeats109–110, scene14tests/87assertions and affected UI/client types pass. No full-root/build/hosted-CI pass claimed.
