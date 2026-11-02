@@ -2439,11 +2439,48 @@
   display: block;
   font-weight: 650;
 }
-.fd-case-review-notes > summary span {
+.fd-fit-tasks .fd-case-review-notes {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--fd-border);
+  border-radius: 10px;
+  background: var(--fd-panel-2);
+}
+.fd-fit-task-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fd-fit-task-label strong {
+  color: var(--fd-fg);
+  font-size: 12px;
+}
+.fd-fit-task-label small {
   color: var(--fd-muted);
   font-size: 11px;
-  margin-left: 8px;
   font-weight: 400;
+}
+.fd-fit-exact,
+.fd-fit-report-entry {
+  font-size: 11px;
+  color: var(--fd-muted);
+  overflow-wrap: anywhere;
+}
+.fd-fit-report-entry {
+  border-top: 1px solid var(--fd-border);
+}
+.fd-fit-print-note .fd-fit-simple-checks {
+  list-style: none;
+  padding: 0;
+}
+.fd-fit-simple-checks li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+}
+.fd-fit-simple-checks strong {
+  color: var(--fd-fg);
 }
 .fd-case-preview-tools {
   display: flex;

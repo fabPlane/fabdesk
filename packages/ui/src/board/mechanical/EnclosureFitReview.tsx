@@ -1,5 +1,10 @@
 import type { MechanicalFitIssue, MechanicalFitReport } from "@fabdesk/protocol";
-import { enclosureFileLabel, fitIssueBoardPath } from "@fabdesk/client-core";
+import {
+  enclosureFileLabel,
+  fitIssueBoardPath,
+  enclosureReviewGroups,
+  enclosureIssueSummary,
+} from "@fabdesk/client-core";
 import { Icon } from "../../components/Icon";
 
 type Destination = "Start" | "Space" | "PCB";
@@ -300,10 +305,8 @@ export function EnclosureFitReview({
       </section>
     );
   const blockers = report.issues.filter((i) => i.severity === "error");
-  const notes = report.issues.filter(
-    (i) =>
-      i.severity !== "error" && !["coverage", "import-coverage", "shell-coverage"].includes(i.code),
-  );
+  const groups = enclosureReviewGroups(report.issues);
+  const tasks = groups.filter((group) => group.id !== "method");
   const blocked = report.status === "blocked" || blockers.length > 0;
   const imported = report.issues.some((i) => i.code === "import-coverage");
   const shellChecked = report.issues.some((i) => i.code === "shell-coverage");
@@ -314,10 +317,7 @@ export function EnclosureFitReview({
       path && issue.message.startsWith(`${path}: `)
         ? issue.message.slice(path.length + 2)
         : issue.message;
-    const description =
-      issue.code === "board-geometry" && detail.includes("may not form a closed contour")
-        ? "The board outline could not be confirmed. This preview uses a rectangular estimate."
-        : detail;
+    const description = (issue.severity !== "error" && enclosureIssueSummary[issue.code]) || detail;
     return (
       <article
         className={`fd-fit-card ${issue.severity === "error" ? "is-blocker" : "is-review"}${focusedIssue === issue ? " is-focused" : ""}`}
@@ -337,6 +337,12 @@ export function EnclosureFitReview({
           </span>
         )}
         <p>{description}</p>
+        {description !== detail && (
+          <details className="fd-fit-exact">
+            <summary>Exact finding</summary>
+            <p>{detail}</p>
+          </details>
+        )}
         <div className="fd-fit-card-actions">
           {!!issue.regions?.length && (
             <button
@@ -392,11 +398,11 @@ export function EnclosureFitReview({
         </div>
         <div className={blocked ? "has-blockers" : ""}>
           <dd>{blockers.length}</dd>
-          <dt>{blockers.length === 1 ? "Blocker" : "Blockers"}</dt>
+          <dt>Must fix</dt>
         </div>
         <div>
-          <dd>{notes.length}</dd>
-          <dt>To review</dt>
+          <dd>{tasks.length}</dd>
+          <dt>Check types</dt>
         </div>
       </dl>
       {blockers.length > 0 && (
@@ -407,54 +413,72 @@ export function EnclosureFitReview({
           {blockers.map(card)}
         </div>
       )}
-      {notes.length > 0 && (
-        <details className="fd-fit-group fd-case-review-notes">
-          <summary>
-            Before you make it <span>{notes.length} checks</span>
-          </summary>
-          <p>
-            Check real plugs, mounting and clearances. These notes are not a guarantee of physical
-            fit.
-          </p>
-          {notes.map(card)}
-        </details>
+      {tasks.length > 0 && (
+        <div className="fd-fit-tasks">
+          <h3>Before printing</h3>
+          <p>Open a check to see which boards need attention.</p>
+          {tasks.map((group) => (
+            <details className="fd-fit-group fd-case-review-notes" key={group.id}>
+              <summary>
+                <span className="fd-fit-task-label">
+                  <strong>{group.title}</strong>
+                  <small>
+                    {group.issues.length} {group.issues.length === 1 ? "finding" : "findings"}
+                  </small>
+                </span>
+              </summary>
+              <p>{group.detail}</p>
+              {group.issues.map(card)}
+            </details>
+          ))}
+        </div>
       )}
       <details className="fd-fit-print-note">
-        <summary>Printing checklist</summary>
-        <div className="fd-fit-card-heading">
-          <Icon name="checklist" aria-hidden="true" />
-          <h4>Check before printing</h4>
-        </div>
-        <p>Sizes are estimated. Confirm these on the real parts:</p>
+        <summary>Try a test print first</summary>
+        <p>The preview cannot guarantee a perfect fit. Before making the final case:</p>
+        <ul className="fd-fit-simple-checks">
+          <li>
+            <strong>Does everything fit?</strong>
+            <span>Check the lid closes without pressing on parts or cables.</span>
+          </li>
+          <li>
+            <strong>Do the boards stay put?</strong>
+            <span>Check the screws or holders keep them in place.</span>
+          </li>
+          <li>
+            <strong>Can you plug things in?</strong>
+            <span>Try your actual plugs and cables.</span>
+          </li>
+        </ul>
+        <p>Your printer may make openings slightly smaller or larger.</p>
+        {(imported || shellChecked) && (
+          <p>Also check the boards against the walls of your existing case.</p>
+        )}
+      </details>
+      <details className="fd-fit-technical">
+        <summary>Full check report · {report.issues.length} findings</summary>
+        <p>Original measurements and check limits. Nothing is removed from this report.</p>
         {report.geometry?.closed && (
           <p>
             {report.geometry.lidParts
               ? "Case and lid are each one joined piece."
               : "The case is one joined piece."}{" "}
-            Physical fit still needs a printed sample.
+            A test print is still needed to check the fit.
           </p>
         )}
-        <ul>
-          <li>Component heights and cable space</li>
-          <li>Screw access and mounting points</li>
-          <li>Printer tolerances and clearances</li>
-          {(imported || shellChecked) && <li>Actual fit against the imported case walls</li>}
-        </ul>
-        {imported && <p>Automatic checks do not include the imported shell surface.</p>}
-        {shellChecked && (
-          <p>
-            Surface highlights use estimated part boxes. They may include empty space or mounting
-            holes; inspect the real shapes.
-          </p>
-        )}
-      </details>
-      <details className="fd-fit-technical">
-        <summary>Technical details</summary>
-        <ul>
-          {report.issues.map((i, n) => (
-            <li key={n}>{i.message}</li>
-          ))}
-        </ul>
+        {report.issues.map((issue, n) => {
+          const path = fitIssueBoardPath(issue.message, Object.keys(report.boardRevisions));
+          return (
+            <details className="fd-fit-report-entry" key={n}>
+              <summary>
+                {issue.severity === "error" ? "Must fix: " : ""}
+                {guidance[issue.code]?.title ?? "Check details"}
+                {path ? ` — ${enclosureFileLabel(path)}` : ""}
+              </summary>
+              <p>{issue.message}</p>
+            </details>
+          );
+        })}
       </details>
     </section>
   );

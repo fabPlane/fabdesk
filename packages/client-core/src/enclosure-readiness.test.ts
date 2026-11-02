@@ -45,7 +45,7 @@ test("review items allow explicitly qualified prototype export", () => {
   );
   expect(review.kind).toBe("review");
   expect(review.canExport).toBe(true);
-  expect(review.detail).toContain("physical fit is unverified");
+  expect(review.detail).toContain("test print is still needed to confirm the fit");
   expect(enclosureReadiness(true, report, false).title).toBe("Ready for prototype export");
 });
 

@@ -51,7 +51,8 @@ export function enclosureReadiness(
     ? ({
         kind: "review",
         title: "Needs review before printing",
-        detail: `${notes} ${notes === 1 ? "item needs" : "items need"} your review. Prototype export is available; physical fit is unverified.`,
+        detail:
+          "Review the checks below. You can export a test case, but a test print is still needed to confirm the fit.",
         canExport: true,
       } as const)
     : ({

@@ -229,3 +229,12 @@ Measured final Arrange & fit case run: 24.8 seconds from click to completed seve
 - Completed steps show a check, unavailable steps show a lock, and each step explains the next action. Going back preserves choices. Changing selected boards or case settings invalidates the dependent step. Draft recovery conflicts and unreadable/empty selections cannot bypass the gate; confirmation is remembered within the session.
 - Built-app seven-board QA: a changed selection locked Case and Preview, clicking the disabled Case tab did nothing, Continue unlocked Case, Undo to a different selection relocked it, and confirmation survived reload. A generated preview unlocked Preview; changing the layout locked it again. The unchanged full fit check returned 0 blockers / 39 review items.
 - 20 focused workflow, readiness, recovery and setup tests / 77 assertions pass. Root typecheck and desktop build pass. No source maps in output.
+
+## Plain-language fit review (2026-11-02)
+
+- Review findings are grouped into tasks: secure boards, check plug space, check missing shapes and check room inside. Unknown findings remain under Other checks. Blocking errors stay expanded above the optional tasks.
+- Common repeated warnings use short explanations, with exact findings expandable. The full report retains every original message, including check limitations and sampled assembly results. No fit rules or export gates changed.
+- The print checklist asks whether everything fits, boards stay in place and plugs can be inserted. It still explicitly requires a test print; geometry is not presented as proof of physical fit.
+- 10 focused tests / 48 assertions, root typecheck and desktop build pass. Live presentation check reused the user's existing seven-board preview: four task categories, all 40 original findings preserved, working disclosures and no horizontal overflow. The original board draft and Undo history were preserved. Geometry was not regenerated for this presentation change.
+
+![Grouped checks in the seven-board preview](screenshots/mechanical-workspace/73-simple-fit-review.png)
