@@ -28,6 +28,16 @@ test("raw JSON is kept in collapsed details, not the main explanation", () => {
   expect(html.split("<details")[0]).not.toContain("project_not_found");
 });
 
+test("historical account-model rejection offers the in-chat picker, preserving partial work", () => {
+  const text = "I inspected your schematic.\n\n⚠ The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account.";
+  const html = render(<MessageBubble message={{ ...message, contentMd: text, parts: [{ type: "text", text }] }} streaming={false} />);
+  expect(html).toContain("I inspected your schematic.");
+  expect(html).toContain("The selected model is unavailable");
+  expect(html).toContain("Choose model");
+  expect(html).not.toContain("Agent settings");
+  expect(html).not.toContain("sign in again");
+});
+
 test("a user quoting an error is never rewritten as an app failure", () => {
   const html = renderToStaticMarkup(<MessageBubble message={{ ...message, role: "user" }} streaming={false} />);
   expect(html).not.toContain('data-testid="error-notice"');

@@ -35,6 +35,21 @@ test("provider-specific login advice does not confuse Claude with fabPlane", () 
   expect(errorHelp("unauthorized", { status: 401 }).message).toContain("paired device");
 });
 
+test("exact account-model rejection and capacity errors offer chat model recovery without claiming quota exhaustion", () => {
+  const unsupported = "The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account.";
+  const capacity = "Selected model is at capacity. Please try a different model.";
+  expect(splitAgentError(`I inspected the board.\n\n⚠ ${unsupported}`)).toEqual({ before: "I inspected the board.", error: unsupported });
+  expect(errorHelp(unsupported)).toMatchObject({ action: "models", title: "The selected model is unavailable" });
+  expect(errorHelp(capacity)).toMatchObject({ action: "models", title: "This model is busy right now" });
+  expect(agentErrorText(capacity)).toBe(capacity);
+  expect(agentErrorText(`This explains why ${unsupported}`)).toBeNull();
+  const wrapped = JSON.stringify({ type: "error", status: 400, error: { type: "invalid_request_error", message: unsupported, code: "model_not_found" } });
+  expect(splitAgentError(`⚠ Model metadata not found.\n\n⚠ ${wrapped}`)).toEqual({ before: "⚠ Model metadata not found.", error: wrapped });
+  expect(errorHelp(wrapped).action).toBe("models");
+  expect(errorHelp("insufficient_quota").action).toBe("agents");
+  expect(errorHelp("rate_limit_error").action).toBeUndefined();
+});
+
 test.each([
   ["rate_limit_error", "Wait a little"],
   ["insufficient_quota", "usage and billing"],

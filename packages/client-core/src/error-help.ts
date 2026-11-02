@@ -1,5 +1,5 @@
 /** User-facing recovery guidance. Keep original errors available for diagnostics. */
-export type ErrorAction = "projects" | "agents" | "auth" | "kicad";
+export type ErrorAction = "projects" | "agents" | "models" | "auth" | "kicad";
 export interface ErrorHelp {
   title: string;
   message: string;
@@ -97,9 +97,13 @@ export function errorHelp(input: unknown, context: ErrorContext = {}): ErrorHelp
     title: "This conversation is too long for the selected model",
     message: "Start a new chat with a short summary, or shorten your message and remove large attachments, then send again.",
   };
-  if (/model_not_found|model.*(?:does not exist|not found|not available|not supported|do not have access)|unsupported model/i.test(text)) return {
+  if (/selected model is at capacity|model.*temporarily at capacity/i.test(text)) return {
+    title: "This model is busy right now",
+    message: "Try again later, or choose a different model for this chat and resend your message when you’re ready.", action: "models",
+  };
+  if (["model_not_found", "model_not_supported", "unsupported_model"].includes(code ?? "") || /model_not_found|model.*(?:does not exist|not found|not available|not supported|do not have access)|unsupported model/i.test(text)) return {
     title: "The selected model is unavailable",
-    message: "Choose a different model below the message box. If you expected access, check your agent account’s plan.", action: "agents",
+    message: "Choose a different model for this chat, then send your message again. A model appearing in the picker does not guarantee access with your agent account.", action: "models",
   };
   if (/core offline|core disconnected/i.test(text)) return {
     title: "Your computer is disconnected",
@@ -206,6 +210,8 @@ export function agentErrorText(text: string): string | null {
   const unique = [...new Set(chunks)];
   if (unique.length !== 1) return null;
   const raw = unique[0]!;
+  if (raw.startsWith("{") && ["model_not_found", "model_not_supported", "unsupported_model"].includes(errorPayload(raw).code ?? "")) return raw;
+  if (/^The (['"])[^'"\n]+\1 model is not supported when using Codex with a ChatGPT account\.?$/i.test(raw) || /^Selected model is at capacity\.(?: Please try a different model\.)?$/i.test(raw)) return raw;
   // A core-generated warning marker identifies a failure; plain assistant prose does not.
   if (clean.startsWith("⚠ ") && /^(?:Error:|MCP server|No answer was received for the question\.)/i.test(raw)) return raw;
   if (raw.startsWith("Windows denied a Codex overlay symlink (EPERM).")) return raw;
