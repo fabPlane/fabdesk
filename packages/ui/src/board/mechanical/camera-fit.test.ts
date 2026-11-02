@@ -1,6 +1,34 @@
 import { expect, test } from "bun:test";
 import { Box3, PerspectiveCamera, Vector3 } from "three";
-import { fittedCameraDistance } from "./camera-fit";
+import { assemblyClipRange, fittedCameraDistance } from "./camera-fit";
+
+test("assembly depth range separates thin PCB layers while keeping all corners visible", () => {
+  const box = new Box3(new Vector3(-75, -90, 0), new Vector3(75, 90, 20));
+  const camera = new PerspectiveCamera(38, 1, 0.0235, 30785);
+  camera.position.set(0, 0, 310);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld();
+  const quantizedDepth = (z: number) =>
+    Math.round(((new Vector3(0, 0, z).project(camera).z + 1) / 2) * (2 ** 24 - 1));
+  expect(Math.abs(quantizedDepth(1.6) - quantizedDepth(1.61))).toBeLessThanOrEqual(1);
+  for (const distance of [30, 310, 5000])
+    for (const direction of [new Vector3(0, 0, 1), new Vector3(1, -1, 1).normalize()]) {
+      camera.position.copy(direction).multiplyScalar(distance);
+      camera.lookAt(0, 0, 0);
+      Object.assign(camera, assemblyClipRange(box, camera.position, camera.quaternion));
+      camera.updateProjectionMatrix();
+      camera.updateMatrixWorld();
+      for (const x of [-75, 75])
+        for (const y of [-90, 90])
+          for (const z of [0, 20]) {
+            const world = new Vector3(x, y, z);
+            if (world.clone().applyMatrix4(camera.matrixWorldInverse).z >= -0.01) continue;
+            expect(Math.abs(world.project(camera).z)).toBeLessThan(1);
+          }
+      if (distance === 310)
+        expect(Math.abs(quantizedDepth(1.6) - quantizedDepth(1.61))).toBeGreaterThan(100);
+    }
+});
 
 test("fit keeps every corner inside wide, tall and square viewports in different orientations", () => {
   for (const aspect of [0.45, 1, 2.4])

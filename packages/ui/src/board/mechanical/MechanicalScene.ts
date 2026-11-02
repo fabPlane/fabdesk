@@ -9,7 +9,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { modelFormat, type MechanicalItem } from "@fabdesk/client-core";
 import type { MechanicalBox } from "@fabdesk/protocol";
 import { createFitOverlay } from "./fit-overlay";
-import { fittedCameraDistance } from "./camera-fit";
+import { assemblyClipRange, fittedCameraDistance } from "./camera-fit";
 import { batchPcbGeometry } from "./batchPcbGeometry";
 
 export type BoardGeometry = {
@@ -85,6 +85,7 @@ export class MechanicalScene {
   private generation = 0;
   private frame = 0;
   private fitDistance = 100;
+  private clippingBounds = new T.Box3();
   private explode = 0;
   private translucent = false;
   private materialOpacity = new WeakMap<
@@ -368,6 +369,15 @@ export class MechanicalScene {
     this.frame = requestAnimationFrame(() => {
       this.frame = 0;
       this.selectionBox?.update();
+      const box = this.clippingBounds.clone();
+      if (this.spaceOutline) box.expandByObject(this.spaceOutline);
+      if (this.gizmo.dragging && this.gizmo.object) box.expandByObject(this.gizmo.object);
+      const { near, far } = assemblyClipRange(box, this.camera.position, this.camera.quaternion);
+      if (near !== this.camera.near || far !== this.camera.far) {
+        this.camera.near = near;
+        this.camera.far = far;
+        this.camera.updateProjectionMatrix();
+      }
       this.renderer.render(this.scene, this.camera);
       this.callbacks.zoom(
         Math.round((this.fitDistance / this.camera.position.distanceTo(this.orbit.target)) * 100),
@@ -710,6 +720,7 @@ export class MechanicalScene {
     const bounds = new T.Box3();
     for (const { object } of this.models.values())
       if (object.visible) bounds.expandByObject(object);
+    this.clippingBounds.copy(bounds);
     this.ground.visible = !bounds.isEmpty() && !this.translucent;
     if (bounds.isEmpty()) return;
     const center = bounds.getCenter(new T.Vector3());
@@ -867,8 +878,7 @@ export class MechanicalScene {
     this.fitBox(box);
   }
   private fitBox(box: T.Box3) {
-    const center = box.getCenter(new T.Vector3()),
-      size = box.getSize(new T.Vector3()).length();
+    const center = box.getCenter(new T.Vector3());
     this.fitDistance = fittedCameraDistance(
       box,
       this.camera.quaternion,
@@ -878,9 +888,6 @@ export class MechanicalScene {
     const direction = this.camera.position.clone().sub(this.orbit.target).normalize();
     this.orbit.target.copy(center);
     this.camera.position.copy(center).addScaledVector(direction, this.fitDistance);
-    this.camera.near = Math.max(0.001, size / 10000);
-    this.camera.far = Math.max(10000, this.fitDistance * 100);
-    this.camera.updateProjectionMatrix();
     this.orbit.update();
     this.render();
   }

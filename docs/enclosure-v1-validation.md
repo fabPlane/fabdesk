@@ -181,3 +181,13 @@ The full objective remains incomplete. Passing geometry checks or slicing is ins
 - The original Auto arrange action retains a configured cap. Imported cases and fixed wall constraints are never silently resized. Locked boards, obstacles and manual openings require review before removing the boundary constraint.
 - Tests cover a too-small cap becoming a valid clearance-safe generated case, unchanged input, and rejection of imported/fixed cases. Layout/setup/history: 22 tests, 108 assertions. Root typecheck and desktop build passed.
 - Live seven-board test: Resize case to fit produced a 150 × 180 × 16 mm interior / 154 × 184 × 20 mm exterior with five detected external openings. Undo exactly restored the starting poses and 245 × 120 mm cap; Redo exactly restored the resized design. Left the resized draft open, unsaved, with Undo available. Detailed geometry for the newer-format combined board remains unavailable; fit/preview review is still required.
+
+## 2026-11-02 — combined peripheral model and camera depth
+
+- The lower-right amber rectangle was the combined-peripheral-a2 board: its source requires KiCad 10.99+, while this machine used 10.0. Installed the signed official 10.99 nightly alongside 10.0 and selected its CLI in local FabDesk settings. This is a local prerequisite change, not a bundled KiCad upgrade.
+- All seven selected VAIO boards now load real GLB geometry, including the combined board (7,248,448 bytes). Its PCB SHA-256 remains `4bad50642edb8d0b5ddbe0771f41c4e974b34e3b379114ce47bda7d3ad687dd0`; no source board was rewritten. The previous unavailable-board notes above describe earlier checks.
+- The newer exports exposed depth-buffer interference between closely spaced PCB surfaces. Camera clipping now follows the assembly bounds, view and zoom instead of spanning almost zero to tens of thousands of millimetres. Cached assembly bounds avoid traversing all meshes during ordinary orbiting.
+- Validation: 12 rendering/camera tests, 767 assertions; root typecheck and desktop build pass. The regression checks 0.01 mm layer separation and visible bounds at different distances/orientations. Reloaded the built app, checked top/3D views and zoom with seven actual models and no lost graphics context. Restored the exact draft values and Undo history.
+- Component coverage remains incomplete: combined board has 61/104 footprint models loaded. Missing/unassigned entries include foreign absolute paths, unavailable custom parts and bare pads; no guessed replacements were added. Preview/fit checks and physical verification are still required.
+
+![Seven real boards including the restored lower-right combined peripheral board](screenshots/mechanical-workspace/65-combined-board-restored.png)
