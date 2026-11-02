@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { BoardChecksDialog } from "./BoardChecksDialog";
+import { ImportedBoardIdentity } from "./ImportedBoardIdentity";
 import { BoardViewTabs } from "./BoardViewTabs";
 import { CanvasToolButton } from "../components/CanvasToolButton";
 import { HostedReviewTools } from "./HostedReviewTools";
@@ -97,6 +98,7 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
     }));
   if (canvas) return <div className="fd-canvas-board" data-testid="board-panel">
     <div className="fd-canvas-controls">
+      {area === "boards" && projectId && sources.data?.mode === "single" && <ImportedBoardIdentity projectId={projectId} />}
       {area === "boards" && tab === "cinema" ? <div className="fd-routing-toolbar-slot" data-routing-toolbar-slot /> : area === "boards" ? <BoardViewTabs value={tab} onChange={setWorkspaceTab} /> : workspaceViews(area).length > 1 && <Tabs tabs={visibleTabs} value={tab} onChange={setWorkspaceTab} />}
       {area === "boards" && tab !== "cinema" && <WorkspaceMenu className="fd-board-tools fd-canvas-tool-menu" label={<><span aria-label="More board tools"><Icon name="more" width={18} height={18} /></span><span className="fd-canvas-tool-label" aria-hidden="true">More board tools</span></>}><div className="fd-menu-caption">Board tools</div><button aria-current={tab === "art" ? "page" : undefined} onClick={() => setWorkspaceTab("art")}>Artwork</button>{order.data && <button onClick={openOrder}>Order options</button>}</WorkspaceMenu>}
       {area === "review" && tab === "diff" && projectId && <HostedReviewTools key={projectId} projectId={projectId} />}

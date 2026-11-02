@@ -589,3 +589,9 @@
 .fd-home-task-badge { padding:4px 8px; border-radius:6px; color:var(--fd-accent); background:var(--fd-panel-2); font-size:11px; }
 .fd-project-home > footer { margin-top:28px; border-top:1px solid var(--fd-border); padding-top:18px; }
 @media(max-width:780px) { .fd-project-home { padding:30px 20px 60px; } .fd-project-home > header { flex-direction:column; } .fd-home-list-heading { align-items:flex-start; flex-direction:column; gap:6px; } .fd-home-projects button { flex-wrap:wrap; } .fd-home-open { margin-left:auto; } }
+.fd-imported-board-identity { min-width:0; flex:0 1 auto; }
+.fd-imported-board-identity > summary { max-width:240px; gap:8px; }
+.fd-imported-board-identity > summary > svg { flex:none; }
+.fd-imported-board-details { padding:10px; font-size:12px; line-height:1.6; text-align:left; }
+.fd-imported-board-details p { margin-top:7px; overflow-wrap:anywhere; color:var(--fd-muted); }
+.fd-overview-board-caption .fd-imported-board-identity .fd-workspace-menu-content { bottom:calc(100% + 8px); top:auto; }

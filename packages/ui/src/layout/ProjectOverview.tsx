@@ -9,6 +9,7 @@ import { Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui
 import { AssemblyOverview } from "./AssemblyOverview";
 import { Icon } from "../components/Icon";
 import { WorkspaceMenu } from "./WorkspaceMenu";
+import { ImportedBoardIdentity } from "../board/ImportedBoardIdentity";
 
 /** Declared assembly membership takes priority over the legacy canonical root board. */
 export function ProjectOverview({ boardPicker = false }: { boardPicker?: boolean } = {}) {
@@ -96,7 +97,7 @@ function SingleBoardOverview() {
           <button onClick={() => ui().setBoardTab("drc")}>Checks</button>
         </WorkspaceMenu>
       </div>}
-      <div className="fd-overview-board-caption"><strong>{designLabel}</strong>{preview && <span>{previewStatus}</span>}<span>{schematic ? "Schematic available" : "No schematic source"}</span>{!pcb && <span>No saved PCB</span>}</div>
+      <div className="fd-overview-board-caption"><strong>{designLabel}</strong><ImportedBoardIdentity projectId={projectId} />{preview && <span>{previewStatus}</span>}<span>{schematic ? "Schematic available" : "No schematic source"}</span>{!pcb && <span>No saved PCB</span>}</div>
     </div> : reference ? <div className="fd-overview-board fd-overview-reference">
       <button ref={selectionTrigger} className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label="Select saved reference to show tools" onClick={() => setSelectedKey(selected ? null : surfaceKey)}><ProjectImage projectId={projectId} path={reference} alt="Saved project reference" /></button>
       {selected && <div className="fd-board-context-tools" aria-label="Reference actions"><span><Icon name="image" width={17} height={17} />Reference</span>

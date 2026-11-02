@@ -46,6 +46,12 @@ export const ProjectManifest = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   board: BoardSettings,
+  /** Historical import selection, not a claim that the editable working board remains unchanged. */
+  importedBoard: z.object({
+    path: z.string().min(1),
+    adoptedAt: z.string(),
+    pcbSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  }).optional(),
   /** Omitted selects Freerouting with automatic fab_router fallback. `capacity` is a legacy fab_router alias. */
   router: z.enum(["fab_router", "capacity", "freerouting", "tracemaker"]).optional(),
   agent: z.object({ lastUsed: AgentId.optional() }).default({}),
