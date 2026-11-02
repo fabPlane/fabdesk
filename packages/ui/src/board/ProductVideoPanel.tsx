@@ -1,7 +1,7 @@
 import { ErrorNotice } from "../components/ErrorNotice";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { VideoSourceStatus } from "./VideoSourceStatus";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { FileEntry } from "@fabdesk/protocol";
 import { Button, Select, Spinner } from "../components/ui";
 import { ProjectImage } from "../chat/ProjectImage";
@@ -111,6 +111,7 @@ export function ProductVideoPanel({
   onOpenVideoFile,
   onMakeVideo,
 }: ProductVideoPanelProps) {
+  const [setupOpen, setSetupOpen] = useState(() => !videos.some(file => file.size > 0));
   const availableVideos = videos.filter(file => file.size > 0);
   const preview = making ? undefined : pickPreview(availableVideos);
   return (
@@ -143,7 +144,7 @@ export function ProductVideoPanel({
       {exportError && <ErrorNotice error={exportError} />}
       {makeError && <ErrorNotice error={makeError} />}
       <div className="fd-video-body min-h-0 flex-1">
-        <details className="fd-video-setup"><DisclosureSummary icon="play" label="Make a product video" />
+        <details className="fd-video-setup" open={setupOpen} onToggle={event => setSetupOpen(event.currentTarget.open)}><DisclosureSummary icon="play" label="Make a product video" />
         <form
           className="flex flex-col gap-3 border-b border-border p-3 lg:border-b-0 lg:border-r"
           onSubmit={(e) => {

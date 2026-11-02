@@ -35,6 +35,7 @@ describe("product video panel", () => {
     );
     expect(html).toContain('data-testid="product-video-panel"');
     expect(html).toContain('data-testid="make-video"');
+    expect(html).toContain('class="fd-video-setup" open=""');
     expect(html).toContain("Make video");
     expect(html).toContain("Generate 3D model");
     for (const preset of VIDEO_PRESETS) expect(html).toContain(preset.label);
