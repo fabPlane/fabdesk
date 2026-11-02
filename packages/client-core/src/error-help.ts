@@ -76,6 +76,13 @@ export function errorHelp(input: unknown, context: ErrorContext = {}): ErrorHelp
     title: "A linked item is no longer available",
     message: "The project, chat, or folder this action refers to could not be found. Reopen the project or start a new chat, then try again.", action: "projects",
   };
+  if (/^could not clone https:\/\/github\.com\//i.test(text)) return /could not read Username|authentication failed|repository.*not found/i.test(text) ? {
+    title: "GitHub could not open this repository",
+    message: "Check the repository URL and public visibility. This importer supports public repositories only. Your import details are kept so you can correct the URL and try again.",
+  } : {
+    title: "Could not import this repository",
+    message: "Check your connection and the GitHub repository URL, then try again. Your import details are kept.",
+  };
   if (code === "cloud_signed_out") return {
     title: "Sign in to fabPlane",
     message: "Your fabPlane session has ended. Open Settings → Account and sign in again, then retry.", action: "auth",

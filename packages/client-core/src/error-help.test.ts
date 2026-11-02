@@ -35,6 +35,15 @@ test("provider-specific login advice does not confuse Claude with fabPlane", () 
   expect(errorHelp("unauthorized", { status: 401 }).message).toContain("paired device");
 });
 
+test("GitHub clone access and network failures do not recommend changing an AI agent", () => {
+  const raw = JSON.stringify({ error: "could not clone https://github.com/owner/private.git: fatal: could not read Username for 'https://github.com': terminal prompts disabled", code: "unavailable" });
+  expect(errorHelp(raw, { status: 503 })).toMatchObject({ title: "GitHub could not open this repository" });
+  expect(errorHelp(raw).message).toContain("public repositories only");
+  expect(errorHelp(raw).action).toBeUndefined();
+  expect(errorHelp(raw).command).toBeUndefined();
+  expect(errorHelp("could not clone https://github.com/owner/repo.git: Could not resolve host: github.com", { status: 503 }).message).toContain("connection");
+});
+
 test("exact account-model rejection and capacity errors offer chat model recovery without claiming quota exhaustion", () => {
   const unsupported = "The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account.";
   const capacity = "Selected model is at capacity. Please try a different model.";
