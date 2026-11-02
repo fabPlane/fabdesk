@@ -237,7 +237,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
                 ui.setBoardTab(target.tab);
               }}><Icon name={designDestination.tab === "pcb" ? "pcb" : "schematic"} width={16} height={16} />{designDestination.tab === "pcb" ? "Open board" : "Open schematic"}</Button>}
               <CanvasToolButton icon="sparkles" label="Ask about this file" onClick={() => askAboutSurface(assistantSurface, `Help me understand ${file.path.split("/").pop()} and how it relates to this project.`)} />
-              <CanvasToolButton icon="export" label={downloadPath === file.path ? "Downloading…" : "Download file"} disabled={downloadPath !== null} onClick={() => void downloadFile(file.path)} />
+              <CanvasToolButton icon="download" label={downloadPath === file.path ? "Downloading…" : "Download file"} disabled={downloadPath !== null} onClick={() => void downloadFile(file.path)} />
               {editableSketchPaths([file]).includes(file.path) && <Button size="sm" variant="ghost" onClick={() => {
                 const ui = useUiStore.getState();
                 if (ui.activeProjectId === projectId) ui.setSketchOpen(true, "draw", file.path);

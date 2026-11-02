@@ -57,7 +57,7 @@ export function RouteCandidateReview({ projectId, runId, enabled, board, sourceN
         <div className="flex flex-wrap gap-2">
           {data.canApply && <Button size="sm" variant="primary" disabled={!enabled || working || review.isFetching} onClick={() => void applyCandidate()}>{working ? "Applying…" : "Apply candidate"}</Button>}
           {data.applied && <Button size="sm" disabled={working} onClick={() => { setOpen(false); if (onOpenPcb) onOpenPcb(); else useUiStore.getState().setBoardTab("pcb"); }}>Open saved PCB</Button>}
-          {data.available && <Button size="sm" variant="ghost" disabled={working || downloading} onClick={() => void downloadCandidate()}><Icon name="export" width={15} height={15} />{downloading ? "Downloading…" : "Download candidate PCB"}</Button>}
+          {data.available && <Button size="sm" variant="ghost" disabled={working || downloading} onClick={() => void downloadCandidate()}><Icon name="download" width={15} height={15} />{downloading ? "Downloading…" : "Download candidate PCB"}</Button>}
           <Button size="sm" variant="ghost" disabled={working} onClick={() => {
             askAboutSurface({ projectId, label: "Routing / Candidate review", priority: 40, details: JSON.stringify({ board, sourceName, runId, review: data }) }, "Review this routing candidate, its remaining connections and quality warnings. Explain whether applying it would help. Inspect the latest PCB first and propose the next action before changing it."); setOpen(false);
           }}><Icon name="sparkles" width={15} height={15} />Ask fabPlane</Button>
