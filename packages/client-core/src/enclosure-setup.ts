@@ -5,6 +5,24 @@ import {
   type LayoutBoard,
 } from "./enclosure-layout";
 
+/** Explicit resize action: release the generated-case cap, never an existing case or fixed walls. */
+export function resizeEnclosureToFit(design: MechanicalDesign): MechanicalDesign {
+  if (design.mode !== "generated")
+    throw Error(
+      "An imported case cannot grow automatically. Choose New case to size a new enclosure.",
+    );
+  if (
+    design.boards.some((b) => b.locked) ||
+    design.obstacles.length ||
+    design.openings.some((o) => !o.boardPath)
+  )
+    throw Error(
+      "This case has fixed boards, obstacles or manual openings. Review those constraints before resizing automatically.",
+    );
+  const { layoutLimit: _limit, ...next } = design;
+  return { ...next, confirmed: false };
+}
+
 /** Do not offer exported snapshots as extra boards. Existing selections remain removable. */
 export function enclosureSourceBoards(files: string[], selected: string[]) {
   return [

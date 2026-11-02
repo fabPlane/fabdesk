@@ -4,6 +4,7 @@ import {
   enclosureSourceBoards,
   prepareEnclosurePreview,
   selectEnclosureBoards,
+  resizeEnclosureToFit,
 } from "./enclosure-setup";
 import { nativeEnclosureClearanceIssues, type LayoutBoard } from "./enclosure-layout";
 
@@ -17,6 +18,38 @@ const board: LayoutBoard = {
   },
   modelBounds: { minX: -1, minY: 0, maxX: 41, maxY: 20, minZ: -2, maxZ: 12 },
 };
+test("explicit resize removes a too-small cap and produces a case that fits the board", () => {
+  const d = selectEnclosureBoards(defaultEnclosureDesign(null), [board.placement.path]);
+  d.layoutLimit = { width: 10, depth: 10 };
+  const original = structuredClone(d);
+  expect(() => prepareEnclosurePreview(d, [board], "compact")).toThrow("No collision-free");
+  const result = prepareEnclosurePreview(resizeEnclosureToFit(d), [board], "compact");
+  expect(result.layoutLimit).toBeUndefined();
+  expect(result.space.width).toBeGreaterThan(10);
+  expect(
+    nativeEnclosureClearanceIssues(result, [{ ...board, placement: result.boards[0]! }]),
+  ).toEqual([]);
+  expect(d).toEqual(original);
+});
+test("resize never silently changes an imported case or fixed constraints", () => {
+  const d = selectEnclosureBoards(defaultEnclosureDesign(null), [board.placement.path]);
+  expect(() => resizeEnclosureToFit({ ...d, mode: "imported" })).toThrow("imported case");
+  expect(() => resizeEnclosureToFit({ ...d, boards: [{ ...d.boards[0]!, locked: true }] })).toThrow(
+    "fixed boards",
+  );
+  expect(() =>
+    resizeEnclosureToFit({
+      ...d,
+      obstacles: [{ name: "Battery", x: 1, y: 1, z: 2, width: 10, depth: 10, height: 4 }],
+    }),
+  ).toThrow("obstacles");
+  expect(() =>
+    resizeEnclosureToFit({
+      ...d,
+      openings: [{ name: "Vent", wall: "minX", offset: 5, z: 5, width: 2, height: 2 }],
+    }),
+  ).toThrow("manual openings");
+});
 test("new case reaches a native-clearance-safe preview without entering dimensions", () => {
   const d = selectEnclosureBoards(defaultEnclosureDesign(null), [board.placement.path]);
   const result = prepareEnclosurePreview(d, [board], "compact");

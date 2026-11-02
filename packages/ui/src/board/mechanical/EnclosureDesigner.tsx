@@ -14,6 +14,7 @@ import {
   enclosureSourceBoards,
   selectEnclosureBoards,
   prepareEnclosurePreview,
+  resizeEnclosureToFit,
   type EnclosureLayoutGoal,
   decodeMesh,
   mechanicalItem,
@@ -828,12 +829,13 @@ export function EnclosureDesigner({
     edit(next, "Create case preview");
     await showPreview(next);
   }
-  async function autoArrange() {
+  async function autoArrange(resize = false) {
     if (!design) return;
+    const input = resize ? resizeEnclosureToFit(design) : design;
     if (design.mode === "imported" && !design.confirmed)
       throw new Error("Confirm the inside dimensions of your existing case before auto arranging.");
     const checked = await call("check", {
-      design: { ...design, detailedFit: false, assemblyCheck: false },
+      design: { ...input, detailedFit: false, assemblyCheck: false },
     });
     if (!mounted.current) return;
     setFitBoards(checked.boards);
@@ -844,22 +846,26 @@ export function EnclosureDesigner({
         ? { modelBounds: pcbModels.models[b.placement.path]!.bounds! }
         : {}),
     }));
-    const [choice] = await compareLayouts(design, boards, "compact");
+    const [choice] = await compareLayouts(input, boards, "compact");
     if (!mounted.current) return;
-    if (choice?.error?.startsWith("No collision-free") && design.layoutLimit)
+    if (choice?.error?.startsWith("No collision-free") && input.layoutLimit)
       throw new Error(
-        `Could not find a layout within your ${design.layoutLimit.width} × ${design.layoutLimit.depth} mm case limit. Your layout is unchanged. Try a larger limit in Case settings, fewer boards, or review locked boards and port requirements.`,
+        `Could not find a layout within your ${input.layoutLimit.width} × ${input.layoutLimit.depth} mm case limit. Your layout is unchanged. ${design.mode === "generated" ? "Use Resize case to fit for a larger new case, or review your boards and constraints." : "Review your boards and constraints, or choose New case to create a larger enclosure."}`,
       );
     if (!choice?.proposal)
       throw new Error(choice?.error ?? "Could not arrange these boards. Your layout is unchanged.");
     framed.current = false;
-    edit(choice.proposal.design, "Auto arrange boards");
+    edit(choice.proposal.design, resize ? "Resize case and arrange boards" : "Auto arrange boards");
     setLayoutChoice("keep");
     selectBoard(null);
     setShowSpace(true);
     const review = choice.proposal.unresolved.length;
+    const space = choice.proposal.design.space;
     setNotice(
       `Arranged ${design.boards.length} board${design.boards.length === 1 ? "" : "s"}. ` +
+        (resize
+          ? `Case sized to ${space.width + 2 * space.wall} × ${space.depth + 2 * space.wall} × ${space.floor + space.height + space.lid} mm outside. Previous size limit removed. `
+          : "") +
         (review ? `${review} port connection${review === 1 ? "" : "s"} need review. ` : "") +
         "Preview to check the fit. Undo restores your previous layout.",
     );
@@ -1093,10 +1099,29 @@ export function EnclosureDesigner({
                 !design?.boards.length ||
                 design.boards.every((b) => b.locked)
               }
-              onClick={() => void run("Auto arranging boards…", autoArrange)}
+              onClick={() => void run("Auto arranging boards…", () => autoArrange())}
             >
-              {busy === "Auto arranging boards…" ? "Arranging…" : "Auto arrange"}
+              {busy === "Auto arranging boards…"
+                ? "Arranging…"
+                : design?.mode === "generated" && !design.layoutLimit
+                  ? "Auto arrange & size"
+                  : "Auto arrange"}
             </button>
+            {design?.mode === "generated" && design.layoutLimit && (
+              <>
+                <button
+                  disabled={actionsDisabled || pcbModels.loading || !design.boards.length}
+                  onClick={() => void run("Auto arranging boards…", () => autoArrange(true))}
+                >
+                  Resize case to fit
+                </button>
+                <small>
+                  Auto arrange keeps your {design.layoutLimit.width} × {design.layoutLimit.depth} mm
+                  limit. Resize case to fit removes that limit, sizes a new case and places the
+                  boards. Undo restores both.
+                </small>
+              </>
+            )}
             <small>
               {!design?.boards.length
                 ? "Choose boards below to place them automatically."
