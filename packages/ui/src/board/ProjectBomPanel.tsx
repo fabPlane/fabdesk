@@ -233,8 +233,10 @@ export function ProjectBomPanel() {
   if (!projectId) return <EmptyState title="No project selected" />;
   if (bom.isLoading || partsFile.isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center" role="status">
         <Spinner />
+        <strong className="text-sm font-medium">Reading parts for this build…</strong>
+        <p className="max-w-sm text-xs leading-5 text-muted">Loading saved design sources and project hardware. You can keep working and follow design tasks in Project activity.</p>
       </div>
     );
   }
