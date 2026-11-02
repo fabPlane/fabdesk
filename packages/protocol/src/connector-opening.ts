@@ -54,6 +54,6 @@ export function connectorOpening(
       ((/usb[_ -]?c(?:_|\b)/i.test(connector.footprint ?? "")
         ? "rounded"
         : "rectangle") as OpeningShape),
-    source: override ? "Custom measurement" : (face?.source ?? "Estimated footprint bounds"),
+    source: override ? "Custom dimensions" : (face?.source ?? "Estimated footprint bounds"),
   };
 }

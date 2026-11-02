@@ -4,6 +4,21 @@ import { Icon } from "../../components/Icon";
 
 type Destination = "Start" | "Space" | "PCB";
 const guidance: Record<string, { title: string; destination: Destination; action: string }> = {
+  "assembly-obstruction": {
+    title: "A part needs a different assembly path",
+    destination: "PCB",
+    action: "Review placement and assembly order",
+  },
+  "assembly-sampled": {
+    title: "Straight-down assembly sampled",
+    destination: "Start",
+    action: "Review assembly checks",
+  },
+  "assembly-unavailable": {
+    title: "Assembly check is incomplete",
+    destination: "Start",
+    action: "Enable detailed model checks",
+  },
   "fit-allowance": {
     title: "Room for small sizing differences",
     destination: "Start",

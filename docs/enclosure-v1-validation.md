@@ -121,3 +121,16 @@ The full objective remains incomplete. Passing geometry checks or slicing is ins
 - Live UI: raising allowance to 0.20 mm exposes three blockers and disables export; restoring 0.10 mm clears them and enables export. Saved settings restore correctly.
 
 [Machine-readable evidence](enclosure-tolerance-validation.json). C17/C18 retain their documented 2.0 mm maximum body-height envelope plus the selected fit clearance. No exact manufacturer capacitor model or assembled solder-height measurement was obtained. Physical fit/strength is still unverified; this remains a prototype workflow.
+
+
+## Assembly paths and dimension evidence — 2 November 2026
+
+- Optional **Check straight-down assembly** samples rigid removal in +Z (reverse of downward installation). Each loaded board and the lid are checked at 12 positions against the case, other installed boards and reserved obstacles. An observed intersection produces a review card and 3D region. Clear samples are not a continuous-motion proof; assembly order, angled insertion, cables, tools and strength remain outside the check.
+- The VAIO assembly had no obstruction at 36 sampled positions across its two boards and lid. Native preview took approximately 12 seconds; final-position collision blockers remain zero. Missing component models remain explicit.
+- Opening and plug dimensions now carry separate source records: assumed, manufacturer drawing, or measured hardware. A nonblank reference is required to remove the assumed-dimensions review. Changing a dimension or opening shape resets its evidence to assumed. Existing designs are never silently treated as measured.
+- An explicitly specified aperture without a fitting opening now blocks export. Merely inferred openings retain review status. Custom entries are labelled “Custom dimensions,” and per-side clearance is displayed to two decimal places.
+- **103 focused tests / 681 assertions pass** across ten files. Includes an obstructed assembly path despite a clear final pose, unobstructed samples, cancellation, evidence persistence, empty references and undersized apertures. Root typecheck and Windows core/desktop builds pass. Live UI confirms stale evidence is reset after a numeric edit; temporary QA references were discarded.
+- Case, print lid and both holder samples match the previously sliced files byte for byte. Export manifest hashes verify. No additional slicing was needed for unchanged geometry.
+- Further capacitor research did not obtain a verified exact downloadable 3D file. The manufacturer D4 drawing still supports the retained 2.0 mm maximum body-height envelope; neither that drawing nor entered evidence proves assembled solder height or physical strength.
+
+[Machine-readable assembly and evidence results](enclosure-assembly-validation.json).

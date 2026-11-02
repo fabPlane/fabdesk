@@ -337,11 +337,22 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
         );
       });
       if (!openings.length)
-        add("connector-opening", `${label}: review an opening for ${connector.ref}.`, "review");
-      if (!profile?.aperture || !profile.plug)
+        add(
+          "connector-opening",
+          `${label}: no opening fits the specified face and clearance for ${connector.ref}.`,
+          profile?.aperture ? "error" : "review",
+        );
+      const documented = (e: { kind: string; reference?: string | undefined } | undefined) =>
+        !!e && e.kind !== "estimate" && !!e.reference?.trim();
+      if (
+        !profile?.aperture ||
+        !profile.plug ||
+        !documented(profile.aperture.evidence) ||
+        !documented(profile.plug.evidence)
+      )
         add(
           "port-measurements",
-          `${label}: ${connector.ref} needs measured opening and plug dimensions. Footprint bounds do not establish mating access.`,
+          `${label}: ${connector.ref} dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.`,
           "review",
         );
     }

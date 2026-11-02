@@ -20,13 +20,37 @@ export function EnclosureHardwarePanel({
         <input
           type="checkbox"
           checked={design.detailedFit ?? false}
-          onChange={(e) => onChange({ ...design, detailedFit: e.target.checked })}
+          onChange={(e) =>
+            onChange({
+              ...design,
+              detailedFit: e.target.checked,
+              ...(!e.target.checked ? { assemblyCheck: false } : {}),
+            })
+          }
         />
         <span>Check actual 3D models</span>
       </label>
       <p className="fd-case-hint">
         Slower, more detailed collision checks using KiCad models. Missing models stay flagged for
         review.
+      </p>
+      <label className="fd-case-confirm">
+        <input
+          type="checkbox"
+          checked={design.assemblyCheck ?? false}
+          onChange={(e) =>
+            onChange({
+              ...design,
+              assemblyCheck: e.target.checked,
+              ...(e.target.checked ? { detailedFit: true } : {}),
+            })
+          }
+        />
+        <span>Check straight-down assembly</span>
+      </label>
+      <p className="fd-case-hint">
+        Samples the board and lid movement for obstructions. Slower; angled assembly, flexible
+        cables and physical strength still need review.
       </p>
       {design.mode === "generated" && (
         <>

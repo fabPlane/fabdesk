@@ -4,6 +4,10 @@ const coordinate = z.number().finite().min(-10000).max(10000);
 const size = z.number().finite().positive().max(2000);
 const point = z.object({ x: coordinate, y: coordinate });
 const edge = z.enum(["minX", "maxX", "minY", "maxY"]);
+const dimensionEvidence = z.object({
+  kind: z.enum(["estimate", "datasheet", "measured"]),
+  reference: z.string().max(500).optional(),
+});
 const path = z
   .string()
   .min(1)
@@ -70,6 +74,7 @@ export const MechanicalDesignSchema = z
               width: size,
               height: size,
               shape: z.enum(["rectangle", "rounded"]).optional(),
+              evidence: dimensionEvidence.optional(),
             })
             .optional(),
           plug: z
@@ -79,6 +84,7 @@ export const MechanicalDesignSchema = z
               depth: size,
               reach: z.number().finite().min(0).max(200),
               travel: z.number().finite().min(0).max(200).optional(),
+              evidence: dimensionEvidence.optional(),
             })
             .optional(),
         }),
@@ -101,6 +107,7 @@ export const MechanicalDesignSchema = z
     /** Assumed maximum dimensional error per mating surface, not a printer certification. */
     fitAllowance: z.number().finite().min(0).max(0.5).optional(),
     detailedFit: z.boolean().optional(),
+    assemblyCheck: z.boolean().optional(),
     closure: z
       .object({
         kind: z.enum(["lift-off", "screws"]),

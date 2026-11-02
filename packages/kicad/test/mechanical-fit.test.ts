@@ -35,6 +35,35 @@ const design = (): MechanicalDesign => ({
 });
 const boards = (d: MechanicalDesign) => d.boards.map((placement) => ({ placement, features }));
 describe("mechanical fit constraints", () => {
+  test("entered port numbers remain assumed until evidence is recorded; undersized openings block", () => {
+    const d = design();
+    const f = extractBoardFeatures(
+      '(kicad_pcb (general(thickness 1.6))(gr_rect(start 0 0)(end 40 20)(layer "Edge.Cuts"))(footprint "Connector_USB:USB_C" (layer "F.Cu")(at 10 0)(property "Reference" "J1")(fp_rect(start -2 -1)(end 2 3)(layer "F.CrtYd"))))',
+    );
+    d.portAccess = [
+      {
+        boardPath: "board.kicad_pcb",
+        ref: "J1",
+        access: "external",
+        aperture: { width: 4, height: 3 },
+        plug: { width: 6, height: 5, depth: 20, reach: 8 },
+      },
+    ];
+    const fit = () => checkMechanicalFit(d, [{ placement: d.boards[0]!, features: f }]);
+    expect(fit().issues.some((i) => i.code === "port-measurements")).toBe(true);
+    expect(fit().issues.some((i) => i.code === "connector-opening" && i.severity === "error")).toBe(
+      true,
+    );
+    const p = d.portAccess[0]!;
+    p.aperture!.evidence = { kind: "datasheet", reference: "Drawing J1, face view" };
+    p.plug!.evidence = { kind: "measured", reference: "QA cable A, shoulder to tip" };
+    expect(fit().issues.some((i) => i.code === "port-measurements")).toBe(false);
+    p.plug!.evidence.reference = "  ";
+    expect(fit().issues.some((i) => i.code === "port-measurements")).toBe(true);
+    p.plug!.evidence = { kind: "estimate", reference: "Old measurement" };
+    expect(fit().issues.some((i) => i.code === "port-measurements")).toBe(true);
+    expect(MechanicalDesignSchema.parse(d).portAccess![0]!.plug!.evidence!.kind).toBe("estimate");
+  });
   test("a board at nominal minimum clearance fails when opposing surface error is enabled", () => {
     const d = design();
     d.space.x = -1;

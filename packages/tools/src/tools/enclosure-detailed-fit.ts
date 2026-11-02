@@ -9,6 +9,7 @@ import type { FitBoard } from "@fabdesk/kicad/mechanical-fit";
 import type { ToolContext } from "../registry";
 import { jailPath } from "../fs";
 import { displayCoverage } from "./pcb-display";
+import { sampleVerticalAssembly } from "./enclosure-assembly";
 
 /** Native board artwork can be planar. Never classify a named component as artwork. */
 export function isPlanarBoardLayer(
@@ -43,7 +44,11 @@ export async function detailedEnclosureFit(
   const report: MechanicalFitReport = { ...original, issues: [...original.issues], modelGaps: [] };
   const note = (code: string, message: string, severity: "error" | "review" = "review") =>
     report.issues.push({ code, message, severity });
-  if (!d.detailedFit) return report;
+  if (!d.detailedFit) {
+    if (d.assemblyCheck)
+      note("assembly-unavailable", "Enable actual 3D model checks to inspect the assembly path.");
+    return report;
+  }
   const cli = await ctx.services.kicad.resolveCli();
   if (!cli) {
     note(
@@ -181,6 +186,59 @@ export async function detailedEnclosureFit(
           `${b.placement.path}: detailed fit incomplete — ${error instanceof Error ? error.message : String(error)}`,
         );
       }
+    }
+    if (d.assemblyCheck) {
+      const motions = [
+        ...assembled.map((a) => ({
+          ...a,
+          barriers: [
+            { path: "case", solid: shell },
+            ...obstacles,
+            ...assembled.filter((other) => other !== a),
+          ],
+        })),
+        ...(cover
+          ? [
+              {
+                path: "lid",
+                solid: cover,
+                barriers: [{ path: "case", solid: shell }, ...obstacles, ...assembled],
+              },
+            ]
+          : []),
+      ];
+      for (const motion of motions) {
+        const result = sampleVerticalAssembly(motion.solid, motion.barriers, ctx.signal);
+        if (result.obstruction) {
+          const hit = result.obstruction,
+            b = hit.bounds;
+          report.issues.push({
+            code: "assembly-obstruction",
+            severity: "review",
+            message: `${motion.path}: straight-up removal intersects ${hit.path} at ${hit.offset.toFixed(2)} mm lift (${hit.volume.toFixed(2)} mm³). Straight-down installation along that path is obstructed. Review assembly order, angled insertion or the case opening. Other boards were held in their final positions.`,
+            regions: [
+              {
+                name: "Sampled assembly obstruction",
+                x: b.min[0],
+                y: b.min[1],
+                z: b.min[2],
+                width: b.max[0] - b.min[0],
+                depth: b.max[1] - b.min[1],
+                height: b.max[2] - b.min[2],
+              },
+            ],
+          });
+        } else
+          note(
+            "assembly-sampled",
+            `${motion.path}: no obstruction at 12 sampled positions over ${result.distance.toFixed(2)} mm of straight-up removal. This reverses downward installation; gaps between samples, missing models, cables, tools and strength are not verified.`,
+          );
+      }
+      if (assembled.length !== boards.length)
+        note(
+          "assembly-unavailable",
+          "Some board geometry was unavailable; assembly checks cover only the loaded bodies.",
+        );
     }
     note(
       "detailed-coverage",

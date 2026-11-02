@@ -59,7 +59,7 @@ test("microSD uses its documented low body height, without changing unrelated ca
     width: 11,
     height: 1,
     centerZ: 0.775,
-    source: "Custom measurement",
+    source: "Custom dimensions",
   });
 });
 

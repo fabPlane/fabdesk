@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   connectorOpening,
   DEFAULT_OPENING_CLEARANCE,
+  enclosureOpeningClearance,
   type MechanicalDesign,
 } from "@fabdesk/protocol";
 import {
@@ -12,6 +13,7 @@ import {
   type proposeEnclosureLayout,
 } from "@fabdesk/client-core";
 import { NumberField } from "./EnclosureNumberField";
+import { EnclosureDimensionEvidence } from "./EnclosureDimensionEvidence";
 
 type Proposal = ReturnType<typeof proposeEnclosureLayout>;
 export type LayoutChoice = { goal: EnclosureLayoutGoal; proposal?: Proposal; error?: string };
@@ -141,7 +143,7 @@ export function EnclosureLayoutPanel({
                 access: connectorAccess(design, b.placement.path, c),
               };
               const opening = connectorOpening(c, setting.face ?? c.edge, setting.aperture);
-              const padding = design.openingClearance ?? DEFAULT_OPENING_CLEARANCE;
+              const padding = enclosureOpeningClearance(design);
               return (
                 <details className="fd-layout-port" key={`${b.placement.path}:${c.ref}`}>
                   <summary>
@@ -163,7 +165,7 @@ export function EnclosureLayoutPanel({
                       <p className="fd-case-hint">
                         {opening.shape === "rounded" ? "Rounded ends" : "Rectangle"} · Opening{" "}
                         {(opening.width + 2 * padding).toFixed(2)} ×{" "}
-                        {(opening.height + 2 * padding).toFixed(2)} mm · {padding} mm clearance per
+                        {(opening.height + 2 * padding).toFixed(2)} mm · {padding.toFixed(2)} mm clearance per
                         side.
                         <br />
                         {opening.source === "fabrication-outline"
@@ -250,6 +252,7 @@ export function EnclosureLayoutPanel({
                                   aperture: {
                                     ...setting.aperture!,
                                     shape: e.target.value as "rectangle" | "rounded",
+                                    evidence: { kind: "estimate" },
                                   },
                                 })
                               }
@@ -271,11 +274,25 @@ export function EnclosureLayoutPanel({
                                 min={0.1}
                                 max={2000}
                                 onChange={(v) =>
-                                  port({ ...setting, aperture: { ...setting.aperture!, [k]: v } })
+                                  port({
+                                    ...setting,
+                                    aperture: {
+                                      ...setting.aperture!,
+                                      [k]: v,
+                                      evidence: { kind: "estimate" },
+                                    },
+                                  })
                                 }
                               />
                             ))}
                           </div>
+                          <EnclosureDimensionEvidence
+                            label={`${c.ref} opening`}
+                            value={setting.aperture.evidence}
+                            onChange={(evidence) =>
+                              port({ ...setting, aperture: { ...setting.aperture!, evidence } })
+                            }
+                          />
                         </>
                       )}
                       <label className="fd-case-confirm">
@@ -324,11 +341,25 @@ export function EnclosureLayoutPanel({
                                 min={k === "reach" || k === "travel" ? 0 : 0.1}
                                 max={k === "reach" || k === "travel" ? 200 : 2000}
                                 onChange={(v) =>
-                                  port({ ...setting, plug: { ...setting.plug!, [k]: v } })
+                                  port({
+                                    ...setting,
+                                    plug: {
+                                      ...setting.plug!,
+                                      [k]: v,
+                                      evidence: { kind: "estimate" },
+                                    },
+                                  })
                                 }
                               />
                             ))}
                           </div>
+                          <EnclosureDimensionEvidence
+                            label={`${c.ref} plug`}
+                            value={setting.plug.evidence}
+                            onChange={(evidence) =>
+                              port({ ...setting, plug: { ...setting.plug!, evidence } })
+                            }
+                          />
                         </>
                       )}
                     </>
