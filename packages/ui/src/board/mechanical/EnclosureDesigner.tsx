@@ -97,7 +97,11 @@ export function EnclosureDesigner({
   const [layoutProposals, setLayoutProposals] = useState<LayoutChoice[] | null>(null);
   const cancelLayout = useRef<(() => void) | null>(null);
   useEffect(() => () => cancelLayout.current?.(), [projectId]);
-  async function compareLayouts(value: MechanicalDesign, boards: LayoutBoard[]) {
+  async function compareLayouts(
+    value: MechanicalDesign,
+    boards: LayoutBoard[],
+    goal?: EnclosureLayoutGoal,
+  ) {
     cancelLayout.current?.();
     const worker = new Worker(new URL("./enclosure-layout.worker.ts", import.meta.url), {
       type: "module",
@@ -127,13 +131,14 @@ export function EnclosureDesigner({
         reject(new Error("Layout search could not start. Reload the panel and try again."));
       };
       try {
-        worker.postMessage({ design: value, boards });
+        worker.postMessage({ design: value, boards, ...(goal ? { goal } : {}) });
       } catch (error) {
         finish();
         reject(error);
       }
     });
-    if (mounted.current) setLayoutProposals(result);
+    if (mounted.current && !goal) setLayoutProposals(result);
+    return result;
   }
   const [showPlugs, setShowPlugs] = useState(false);
   const [design, setDesign] = useState<MechanicalDesign | null>(null),
@@ -823,6 +828,42 @@ export function EnclosureDesigner({
     edit(next, "Create case preview");
     await showPreview(next);
   }
+  async function autoArrange() {
+    if (!design) return;
+    if (design.mode === "imported" && !design.confirmed)
+      throw new Error("Confirm the inside dimensions of your existing case before auto arranging.");
+    const checked = await call("check", {
+      design: { ...design, detailedFit: false, assemblyCheck: false },
+    });
+    if (!mounted.current) return;
+    setFitBoards(checked.boards);
+    const boards = (checked.boards ?? []).map((b) => ({
+      ...b,
+      ...(pcbModels.models[b.placement.path]?.bounds &&
+      pcbModels.models[b.placement.path]?.pcbRevision === b.features.pcbRevision
+        ? { modelBounds: pcbModels.models[b.placement.path]!.bounds! }
+        : {}),
+    }));
+    const [choice] = await compareLayouts(design, boards, "compact");
+    if (!mounted.current) return;
+    if (choice?.error?.startsWith("No collision-free") && design.layoutLimit)
+      throw new Error(
+        `Could not find a layout within your ${design.layoutLimit.width} × ${design.layoutLimit.depth} mm case limit. Your layout is unchanged. Try a larger limit in Case settings, fewer boards, or review locked boards and port requirements.`,
+      );
+    if (!choice?.proposal)
+      throw new Error(choice?.error ?? "Could not arrange these boards. Your layout is unchanged.");
+    framed.current = false;
+    edit(choice.proposal.design, "Auto arrange boards");
+    setLayoutChoice("keep");
+    selectBoard(null);
+    setShowSpace(true);
+    const review = choice.proposal.unresolved.length;
+    setNotice(
+      `Arranged ${design.boards.length} board${design.boards.length === 1 ? "" : "s"}. ` +
+        (review ? `${review} port connection${review === 1 ? "" : "s"} need review. ` : "") +
+        "Preview to check the fit. Undo restores your previous layout.",
+    );
+  }
   function navigateIssue(destination: "Start" | "Space" | "PCB", code: string) {
     if (code === "no-board" || code === "board-geometry") {
       setStep("PCB");
@@ -1043,6 +1084,29 @@ export function EnclosureDesigner({
           ))}
         </nav>
         <div className="fd-case-body" ref={body}>
+          <section className="fd-case-auto-arrange" aria-label="Automatic board placement">
+            <button
+              className="fd-mechanical-primary"
+              disabled={
+                actionsDisabled ||
+                pcbModels.loading ||
+                !design?.boards.length ||
+                design.boards.every((b) => b.locked)
+              }
+              onClick={() => void run("Auto arranging boards…", autoArrange)}
+            >
+              {busy === "Auto arranging boards…" ? "Arranging…" : "Auto arrange"}
+            </button>
+            <small>
+              {!design?.boards.length
+                ? "Choose boards below to place them automatically."
+                : pcbModels.loading
+                  ? "Loading board shapes before arranging…"
+                  : design.boards.every((b) => b.locked)
+                    ? "All boards are locked. Unlock a board to arrange it."
+                    : "Place boards and align ports in one click. Locked boards stay in place."}
+            </small>
+          </section>
           <EnclosureBoardDimensions
             paths={design?.boards.map((b) => b.path) ?? []}
             selected={selectedBoard}

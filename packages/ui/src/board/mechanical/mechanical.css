@@ -135,6 +135,20 @@
   margin: 0;
   min-width: 0;
 }
+.fd-case-auto-arrange {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.fd-case-auto-arrange button {
+  width: 100%;
+  min-height: 36px;
+}
+.fd-case-auto-arrange small {
+  color: var(--fd-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
 .fd-case-input-error {
   color: var(--fd-danger, #f2857e);
   font-size: 11px;

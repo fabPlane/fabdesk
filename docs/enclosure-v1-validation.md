@@ -166,3 +166,11 @@ The full objective remains incomplete. Passing geometry checks or slicing is ins
 - Three full Add → Arrange → Enclosure and Case → Preview → Boards cycles retained all six models without WebGL context loss. Compared the recovered draft with the pre-reload draft: unchanged. A hidden-window timing test hit the automation timeout; the visible-window repeat passed.
 - Validation: 16 targeted model loading/decoding/batching tests, 63 assertions; root typecheck and desktop production build passed.
 - Separate compatibility limitation: `combined-peripheral-a2` requires KiCad 10.99 or newer and cannot be exported by this installation. Its amber bounds are intentional fallback, not recovered detailed geometry. No source PCB files were converted or changed.
+
+### 2026-11-02 — One-click Auto arrange
+
+- A visible Auto arrange button is available at the top of every enclosure step. It runs the existing compact, port-aware deterministic search in a Web Worker and applies the result as one undoable draft edit, with automatic framing and a fit-review reminder. Advanced comparison remains available.
+- Uses matching native model bounds where available; preserves locks, obstacles, imported-case dimensions and configured case-size limits. Imported interiors must be confirmed first. Empty selections and all-locked boards explain why arrangement is disabled. Failed searches leave the design unchanged.
+- Real seven-board VAIO test: the configured 245 × 120 mm limit rejected the search without modifying the draft. Temporarily removing the limit produced a 150 × 180 × 16 mm interior and five detected external openings. Undo restored the exact previous poses, then the original size limit. No project save, PCB edit or export was performed by Auto arrange.
+- The combined peripheral board remains an estimated envelope because the installed KiCad cannot export its newer file format; the screenshot makes this visible. Auto arrangement still requires Preview and fit review, and is not a proof of printability or a globally optimal solution.
+- Checks: 20 layout/setup/history tests, 99 assertions; root typecheck and desktop build passed. Final UI typecheck passed after clearer size-limit/loading messages. Screenshot: `screenshots/mechanical-workspace/63-auto-arrange.png`.
