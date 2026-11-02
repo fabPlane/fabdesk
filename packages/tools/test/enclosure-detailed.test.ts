@@ -9,7 +9,7 @@ import { defaultEnclosureDesign } from "../../client-core/src/enclosure-design";
 import { createRegistry, makeContext } from "../src";
 import { tempProject, mockServices } from "./mock-services";
 
-async function cubeGlb(width: number) {
+async function cubeGlb(width: number, repeats = 1) {
   const k = await solidKernel(),
     cube = k.Manifold.cube([width, 20, 1.6]);
   const m = cube.getMesh();
@@ -20,7 +20,8 @@ async function cubeGlb(width: number) {
     positions[i + 1] = m.vertProperties[i + 2]! / 1000;
     positions[i + 2] = m.vertProperties[i + 1]! / 1000;
   }
-  const indices = new Uint32Array(m.triVerts);
+  const indices = new Uint32Array(m.triVerts.length * repeats);
+  for (let i = 0; i < repeats; i++) indices.set(m.triVerts, i * m.triVerts.length);
   for (let i = 0; i < indices.length; i += 3) {
     const v = indices[i + 1]!;
     indices[i + 1] = indices[i + 2]!;
@@ -172,4 +173,42 @@ test("GLB triangle capture keeps mm coordinates and repairs the axis-conversion 
   } finally {
     s.delete();
   }
+});
+test("an over-budget board does not consume the budget or coverage of later boards", async () => {
+  const project = await tempProject("budget"),
+    services = mockServices([project]);
+  const source =
+    '(kicad_pcb (general(thickness 1.6))(gr_rect(start 0 0)(end 40 20)(layer "Edge.Cuts")))';
+  for (const path of ["large.kicad_pcb", "small.kicad_pcb"])
+    await writeFile(join(project.dir, path), source);
+  services.kicad.resolveCli = async () => ({ path: "fixture-cli", version: "test" });
+  const large = await cubeGlb(40, 42000),
+    small = await cubeGlb(40);
+  services.kicad.exportGlb = async (_cli, opts) => {
+    await writeFile(opts.output, opts.board.endsWith("large.kicad_pcb") ? large : small);
+    return { fused: true, warnings: [] };
+  };
+  const d = defaultEnclosureDesign(null);
+  d.confirmed = true;
+  d.detailedFit = true;
+  d.space = { ...d.space, width: 100, depth: 30, height: 20 };
+  d.boards = [
+    { path: "large.kicad_pcb", x: 2, y: 2, z: 5, rotation: 0 },
+    { path: "small.kicad_pcb", x: 52, y: 2, z: 5, rotation: 0 },
+  ];
+  const result = (
+    await createRegistry().invoke(
+      "cad_fit",
+      { project: project.id, action: "preview", design: d },
+      () => makeContext({ services, project }),
+    )
+  ).json as any;
+  expect(result.report.issues.filter((i: any) => i.code === "detailed-unavailable")).toHaveLength(
+    1,
+  );
+  expect(
+    result.report.issues.some(
+      (i: any) => i.code === "detailed-coverage" && i.message.includes("1 closed"),
+    ),
+  ).toBe(true);
 });

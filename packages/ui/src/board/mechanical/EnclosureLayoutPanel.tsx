@@ -165,8 +165,8 @@ export function EnclosureLayoutPanel({
                       <p className="fd-case-hint">
                         {opening.shape === "rounded" ? "Rounded ends" : "Rectangle"} · Opening{" "}
                         {(opening.width + 2 * padding).toFixed(2)} ×{" "}
-                        {(opening.height + 2 * padding).toFixed(2)} mm · {padding.toFixed(2)} mm clearance per
-                        side.
+                        {(opening.height + 2 * padding).toFixed(2)} mm · {padding.toFixed(2)} mm
+                        clearance per side.
                         <br />
                         {opening.source === "fabrication-outline"
                           ? "Body outline from PCB; height estimated."
@@ -382,8 +382,8 @@ export function EnclosureLayoutPanel({
             Cable connections <span>{design.connections?.length ?? 0} defined</span>
           </summary>
           <p>
-            Connect board references and enter usable cable length plus an allowance for bends. We
-            check direct distance plus that allowance; actual routing still needs review.
+            Choose the connectors and usable cable length. Turn on route planning to reserve space
+            around other parts and bends. Cable dimensions come from your cable drawing.
           </p>
           <label className="fd-case-confirm">
             <input
@@ -391,7 +391,7 @@ export function EnclosureLayoutPanel({
               checked={showPlugs}
               onChange={(e) => onShowPlugs(e.target.checked)}
             />
-            <span>Show guides in 3D · dashed lines are direct distances, not routed cables</span>
+            <span>Show cable guides in 3D · planned corridors or direct distance</span>
           </label>
           {(design.connections ?? []).map((c) => (
             <div className="fd-layout-cable" key={c.id}>
@@ -423,6 +423,60 @@ export function EnclosureLayoutPanel({
                   />
                 ))}
               </div>
+              <label className="fd-case-confirm">
+                <input
+                  type="checkbox"
+                  checked={!!c.routing}
+                  onChange={(e) =>
+                    onChange(
+                      {
+                        ...design,
+                        connections: design.connections!.map((p) => {
+                          if (p.id !== c.id) return p;
+                          const { routing: _routing, ...rest } = p;
+                          return e.target.checked
+                            ? { ...rest, routing: { diameter: 2, bendRadius: 5 } }
+                            : rest;
+                        }),
+                      },
+                      "Cable route planning",
+                    )
+                  }
+                />
+                <span>Plan a clear cable route</span>
+              </label>
+              {c.routing && (
+                <>
+                  <small>
+                    Starting estimates — confirm for your cable. For ribbon cables, use the full
+                    width as the reserved diameter.
+                  </small>
+                  <div className="fd-case-grid">
+                    {(["diameter", "bendRadius"] as const).map((key) => (
+                      <NumberField
+                        key={key}
+                        label={key === "diameter" ? "Cable space / width" : "Minimum bend radius"}
+                        value={c.routing![key]}
+                        min={0.1}
+                        max={key === "diameter" ? 50 : 100}
+                        onChange={(value) =>
+                          onChange(
+                            {
+                              ...design,
+                              connections: design.connections!.map((p) =>
+                                p.id === c.id
+                                  ? { ...p, routing: { ...c.routing!, [key]: value } }
+                                  : p,
+                              ),
+                            },
+                            "Cable dimensions",
+                          )
+                        }
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
               <button
                 onClick={() =>
                   onChange(
@@ -515,6 +569,45 @@ export function EnclosureLayoutPanel({
             Add connection
           </button>
         </details>
+        <label className="fd-case-confirm">
+          <input
+            type="checkbox"
+            checked={!!design.layoutLimit}
+            onChange={(e) => {
+              const { layoutLimit: _limit, ...rest } = design;
+              onChange(
+                e.target.checked ? { ...rest, layoutLimit: { width: 250, depth: 250 } } : rest,
+                "Print area limit",
+              );
+            }}
+          />
+          <span>Keep the case within my print area</span>
+        </label>
+        {design.layoutLimit && (
+          <>
+            <p>
+              Usable print area after brim and edge margin. Includes case walls; check the exported
+              lid and slicer placement separately.
+            </p>
+            <div className="fd-case-grid">
+              {(["width", "depth"] as const).map((key) => (
+                <NumberField
+                  key={key}
+                  label={key === "width" ? "Print width" : "Print depth"}
+                  value={design.layoutLimit![key]}
+                  min={1}
+                  max={2000}
+                  onChange={(value) =>
+                    onChange(
+                      { ...design, layoutLimit: { ...design.layoutLimit!, [key]: value } },
+                      "Print area limit",
+                    )
+                  }
+                />
+              ))}
+            </div>
+          </>
+        )}
         <button className="fd-mechanical-primary" disabled={!design.boards.length} onClick={onFind}>
           Compare layouts
         </button>
@@ -538,6 +631,10 @@ export function EnclosureLayoutPanel({
                     <small>mm inside</small>
                   </div>
                   <dl>
+                    <div>
+                      <dt>Layouts checked</dt>
+                      <dd>{p.search.attempts}</dd>
+                    </div>
                     <div>
                       <dt>Accessible ports</dt>
                       <dd>

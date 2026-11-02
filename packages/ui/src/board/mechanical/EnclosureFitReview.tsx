@@ -4,6 +4,16 @@ import { Icon } from "../../components/Icon";
 
 type Destination = "Start" | "Space" | "PCB";
 const guidance: Record<string, { title: string; destination: Destination; action: string }> = {
+  "cable-route-blocked": {
+    title: "A cable needs a clear path",
+    destination: "Start",
+    action: "Review cable space and board positions",
+  },
+  "screw-tool-access": {
+    title: "A screw is hard to reach",
+    destination: "PCB",
+    action: "Review the assembly order",
+  },
   "assembly-obstruction": {
     title: "A part needs a different assembly path",
     destination: "PCB",

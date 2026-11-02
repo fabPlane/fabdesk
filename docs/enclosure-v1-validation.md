@@ -2,6 +2,18 @@
 
 PR #398 adds a guarded prototype enclosure workflow. Software checks and slicing are evidence for review; they do not certify a manufactured assembly.
 
+## Multi-board follow-up — 2 November 2026
+
+- Layout search now tries up to 12 deterministic orders, connection-priority orders and positions beside fixed obstacles. Optional print-area limits include the case body walls. Comparison runs in a dedicated worker without repeating native intersections; the built-app eleven-board comparison produced three choices in 1.1 seconds (55 timer ticks, 36.5 ms longest interval, background timer throttling disabled for automation).
+- Optional cable planning searches conservative three-dimensional orthogonal corridors around substrate/component boxes, mounts, obstacles and previously planned cables. It reserves bend radius and cross-section, checks routed length plus slack, and blocks an unsuccessful requested route. Straight guides remain clearly distinguished from planned corridors. Endpoint connector exit direction, exact holder/lug geometry, ribbon twist and physical cable dimensions still require review. Planning is bounded and sequential, not globally optimal.
+- Assembly review now highlights obstructed assumed screwdriver corridors. The assumed diameter is 6 mm or the larger entered screw head; this does not establish actual tool access or retention strength.
+- Native checking skips non-solid planar artwork before conversion and releases intermediate solids per board. Limits are 500,000 triangles per board and 1,500,000 per assembly; a failed board no longer exhausts later boards' budget or inflates checked coverage.
+- Six real boards: unrestricted cavity changes from 215 × 120 to 255 × 100 mm (1.2% less area). Eleven real boards: unrestricted 325 × 130 mm unchanged. With a 250 × 250 mm case-body limit, the eleven-board result is 190 × 225 × 20 mm inside, with all six inferred external ports at their walls. The case and lid pass independent slicing with no warnings; STEP reads as two solids and ZIP hashes match.
+- Eleven-board native coverage improves from 307 to 314 closed bodies. All ten exporter-compatible boards are considered; the combined peripheral A2 file still requires KiCad 10.99 or newer. No known native collision blockers; 132 sampled assembly positions clear for loaded bodies. Missing models, seven unsupported boards, screw dimensions, five screwdriver-access concerns and unmeasured ports remain explicit review items.
+- **118 focused tests / 735 assertions pass**, as do root typecheck and core/desktop builds. Broader Windows packages: 732 pass, five existing failures (four CLI-probe shims and a CRLF-sensitive stencil fixture), also present in earlier baseline-compared logs. Protocol, client-core and UI packages pass. The prior PR CI failure was an outdated aperture fixture missing evidence records; it now checks both unknown and documented dimensions correctly.
+
+These are mechanical stress collections, including alternative revisions, not a validated electrical VAIO system. No verified cable map was supplied for this collection, and no custom harness was created. Cooling, mass distribution, material strength, screw pullout and physical assembly remain unverified. Original VAIO PCB hashes were checked and source files left unchanged. See [multi-board evidence](enclosure-multiboard-validation.json) and the [actual app preview](screenshots/mechanical-workspace/60-eleven-board-preview.png).
+
 ## New behavior
 
 - Generated case and lid are boolean-joined separately with Manifold 3.5.4. Export rejects open, empty, non-positive or disconnected parts. STL and faceted STEP use the same joined boundary. Imported results must also pass a closed-solid audit.

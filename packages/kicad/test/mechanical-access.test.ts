@@ -63,6 +63,15 @@ test("measured aperture, plug body and mating reach are checked independently", 
   const codes = () => checkMechanicalFit(p.design, placed).issues.map((i) => i.code);
   expect(codes()).not.toContain("connector-opening");
   expect(codes()).not.toContain("plug-reach");
+  expect(codes()).toContain("port-measurements");
+  p.design.portAccess![0]!.aperture!.evidence = {
+    kind: "measured",
+    reference: "Synthetic connector measurement fixture",
+  };
+  p.design.portAccess![0]!.plug!.evidence = {
+    kind: "datasheet",
+    reference: "Synthetic plug drawing fixture",
+  };
   expect(codes()).not.toContain("port-measurements");
   const envelope = portEnvelopes(p.design, placed)[0]!;
   expect(envelope.plug!.x + envelope.plug!.width).toBeCloseTo(

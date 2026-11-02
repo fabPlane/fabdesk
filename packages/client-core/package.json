@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./enclosure-layout": "./src/enclosure-layout.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

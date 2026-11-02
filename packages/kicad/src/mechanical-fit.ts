@@ -183,6 +183,32 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
           [mountRegion(m)],
         );
       if (hole) {
+        if (d.assemblyCheck) {
+          const diameter = Math.max(6, m.headDiameter ?? 0);
+          const start = b.placement.z + b.features.thicknessMm;
+          const tool: MechanicalBox = {
+            name: "Assumed screwdriver access",
+            x: m.x - diameter / 2,
+            y: m.y - diameter / 2,
+            z: start,
+            width: diameter,
+            depth: diameter,
+            height: Math.max(0.1, s.floor + s.height - start),
+          };
+          const blockers = [
+            ...all.flatMap((entry) =>
+              entry.volumes.filter((v) => entry.b !== b || v.name !== "PCB"),
+            ),
+            ...d.obstacles,
+          ].filter((v) => boxesOverlap(tool, v, c));
+          if (blockers.length)
+            add(
+              "screw-tool-access",
+              `${label}: a ${diameter} mm assumed straight screwdriver corridor meets ${blockers.map((v) => v.name).join(", ")}. Review the actual tool, mounting position and assembly order.`,
+              "review",
+              [tool, ...blockers],
+            );
+        }
         if (m.screwDiameter && m.screwDiameter > hole.diameterMm)
           add("screw-shaft", `${label}: the screw shaft is wider than the PCB hole.`, "error", [
             post,
@@ -357,11 +383,16 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
         );
     }
   }
-  for (const cable of cableAssessments(d, boards)) {
+  for (const cable of cableAssessments(d, boards, true)) {
     if (cable.distance === null)
       add(
         "cable-endpoint",
         `Cable ${cable.id}: a connector is missing. Choose both endpoints again.`,
+      );
+    else if (cable.route && !cable.route.route)
+      add(
+        "cable-route-blocked",
+        `Cable ${cable.id}: no clear bend-aware corridor found within the search limit. Move boards, reserve more space or revise the cable dimensions.`,
       );
     else if (!cable.reachable)
       add(
@@ -371,7 +402,9 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
     else
       add(
         "cable-routing",
-        `Cable ${cable.id}: ${cable.distance.toFixed(1)} mm direct distance + ${cable.slack} mm slack fits ${cable.length} mm. Confirm the actual bend path and assembly access.`,
+        cable.route?.route
+          ? `Cable ${cable.id}: ${cable.route.route.length.toFixed(1)} mm reserved route + ${cable.slack} mm slack fits ${cable.length} mm. ${cable.route.route.bends} bends reserve a ${cable.routing!.bendRadius} mm radius. Review connector exit direction, cable crossings, ribbon twist and actual cable dimensions; this uses bounding boxes, not flexible-cable simulation.`
+          : `Cable ${cable.id}: ${cable.distance.toFixed(1)} mm direct distance + ${cable.slack} mm slack fits ${cable.length} mm. Enable route planning to check obstacles and bend space.`,
         "review",
       );
   }

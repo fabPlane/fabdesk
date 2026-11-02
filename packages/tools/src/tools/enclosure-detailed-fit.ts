@@ -78,6 +78,11 @@ export async function detailedEnclosureFit(
     const assembled: Array<{ path: string; solid: Manifold }> = [];
     for (const b of boards) {
       ctx.signal?.throwIfAborted();
+      const temporary: Manifold[] = [];
+      const part = (solid: Manifold) => {
+        temporary.push(solid);
+        return solid;
+      };
       try {
         const board = await jailPath(dir, b.placement.path),
           output = join(scratch, `${assembled.length}-${randomUUID()}.glb`);
@@ -102,19 +107,27 @@ export async function detailedEnclosureFit(
           );
         const parts: Manifold[] = [];
         const openModels: string[] = [];
-        let planarLayers = 0;
+        let planarLayers = 0,
+          boardTriangles = 0;
         for (const root of measured.roots) {
           if (!root.triangles?.length) continue;
-          total += root.triangles.length / 9;
-          if (total > 500_000)
-            throw new Error("assembly exceeds 500,000 detailed-fit triangles; split the assembly");
+          // Artwork is not a closed physical body. Do not spend the solid budget
+          // or build three native copies of a surface that cannot be intersected.
+          if (isPlanarBoardLayer(root, b, references)) {
+            planarLayers++;
+            continue;
+          }
+          boardTriangles += root.triangles.length / 9;
+          if (boardTriangles > 500_000 || total + boardTriangles > 1_500_000)
+            throw new Error(
+              "detailed-fit solid budget exceeded (500,000 per board / 1,500,000 assembly triangles); split the assembly or simplify models",
+            );
           try {
-            const native = own(solidFromTriangles(k, root.triangles));
-            const rotated = own(native.rotate([0, 0, b.placement.rotation]));
-            const placed = own(rotated.translate([b.placement.x, b.placement.y, b.placement.z]));
+            const native = part(solidFromTriangles(k, root.triangles));
+            const rotated = part(native.rotate([0, 0, b.placement.rotation]));
+            const placed = part(rotated.translate([b.placement.x, b.placement.y, b.placement.z]));
             if (placed.volume() <= 0) throw new Error("non-positive solid volume");
             parts.push(placed);
-            checked++;
           } catch {
             if (isPlanarBoardLayer(root, b, references)) planarLayers++;
             else openModels.push(root.name);
@@ -179,12 +192,16 @@ export async function detailedEnclosureFit(
             );
         }
         assembled.push({ path: b.placement.path, solid });
+        total += boardTriangles;
+        checked += parts.length;
       } catch (error) {
         if (ctx.signal?.aborted) throw error;
         note(
           "detailed-unavailable",
           `${b.placement.path}: detailed fit incomplete — ${error instanceof Error ? error.message : String(error)}`,
         );
+      } finally {
+        for (const solid of temporary.reverse()) solid.delete();
       }
     }
     if (d.assemblyCheck) {

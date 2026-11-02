@@ -212,7 +212,7 @@ function wallGap(p: Port, b: Placed, w: number, h: number) {
         : h - r.maxY;
 }
 /** Bounded deterministic search, prioritizing reachable external ports, then case footprint.
- * Does not modify PCB files or claim a global optimum/cable-route solution. */
+ * Does not modify PCB files or claim a global optimum. */
 export function proposeEnclosureLayout(
   design: MechanicalDesign,
   inputs: LayoutBoard[],
@@ -261,14 +261,38 @@ export function proposeEnclosureLayout(
         dims.push([w, Math.ceil(Math.max((area / w) * factor, longest) / 5) * 5]);
     }
   let best: { placed: Placed[]; w: number; h: number; matched: number; score: number } | undefined;
-  for (const [w, h] of dims)
-    for (let order = 0; order < 3; order++) {
+  let attempts = 0,
+    feasible = 0;
+  const orderCount = Math.min(12, 3 + inputs.length);
+  const connected = (path: string) =>
+    (d.connections ?? []).filter((c) => c.from.boardPath === path || c.to.boardPath === path)
+      .length;
+  const rank = new Map(
+    [...inputs]
+      .sort((a, b) => a.placement.path.localeCompare(b.placement.path))
+      .map((b, i) => [b.placement.path, i]),
+  );
+  const uniqueDims = [...new Map(dims.map((v) => [v.join(","), v])).values()];
+  for (const [w, h] of uniqueDims)
+    for (let order = 0; order < orderCount; order++) {
+      attempts++;
       if (w > 2000 || h > 2000) continue;
+      if (
+        d.layoutLimit &&
+        (w + 2 * d.space.wall > d.layoutLimit.width || h + 2 * d.space.wall > d.layoutLimit.depth)
+      )
+        continue;
       const sorted = [...all].sort((a, b) => {
         const ports = b[0]!.ports.length - a[0]!.ports.length;
         const ar = (o: Option) => (o.rect.maxX - o.rect.minX) * (o.rect.maxY - o.rect.minY);
         return (
           Number(!!b[0]!.board.placement.locked) - Number(!!a[0]!.board.placement.locked) ||
+          (order >= 3
+            ? order === 3
+              ? connected(b[0]!.board.placement.path) - connected(a[0]!.board.placement.path)
+              : ((rank.get(a[0]!.board.placement.path)! + order - 4) % inputs.length) -
+                ((rank.get(b[0]!.board.placement.path)! + order - 4) % inputs.length)
+            : 0) ||
           ports ||
           (order === 1 ? ar(a[0]!) - ar(b[0]!) : ar(b[0]!) - ar(a[0]!)) ||
           a[0]!.board.placement.path.localeCompare(b[0]!.board.placement.path)
@@ -304,6 +328,12 @@ export function proposeEnclosureLayout(
             xs.add(b.world.minX - bw - gap);
             ys.add(b.world.maxY + gap);
             ys.add(b.world.minY - bh - gap);
+          }
+          for (const obstacle of d.obstacles) {
+            xs.add(obstacle.x - d.space.x - bw - margin - 0.001);
+            xs.add(obstacle.x - d.space.x + obstacle.width + margin + 0.001);
+            ys.add(obstacle.y - d.space.y - bh - margin - 0.001);
+            ys.add(obstacle.y - d.space.y + obstacle.depth + margin + 0.001);
           }
           if (o.board.placement.locked) {
             xs.clear();
@@ -405,19 +435,35 @@ export function proposeEnclosureLayout(
         0,
       );
       const walls = new Set(placed.flatMap((b) => b.ports.map((p) => p.edge))).size;
-      const cableLength = cableAssessments(
-        d,
-        placed.map((p) => ({
-          ...p.board,
-          placement: {
-            ...p.board.placement,
-            x: p.x + d.space.x,
-            y: p.y + d.space.y,
-            z: p.z,
-            rotation: p.rotation,
-          },
-        })),
-      ).reduce((n, c) => n + (c.distance ?? 0), 0);
+      const finalDesign = {
+        ...d,
+        space: {
+          ...d.space,
+          width: w,
+          depth: h,
+          height: fixed
+            ? d.space.height
+            : Math.ceil(Math.max(...placed.map((b) => b.top)) + margin - d.space.floor + 1),
+        },
+      };
+      const cableBoards = placed.map((p) => ({
+        ...p.board,
+        placement: {
+          ...p.board.placement,
+          x: p.x + d.space.x,
+          y: p.y + d.space.y,
+          z: p.z,
+          rotation: p.rotation,
+        },
+      }));
+      const mountedDesign = alignEnclosureMounts(
+        { ...finalDesign, boards: cableBoards.map((b) => b.placement) },
+        cableBoards,
+      );
+      const cables = cableAssessments(mountedDesign, cableBoards, true);
+      if (cables.some((c) => !c.reachable)) continue;
+      feasible++;
+      const cableLength = cables.reduce((n, c) => n + (c.required ?? 0), 0);
       const score =
         -matched * 1e9 +
         (goal === "ports" ? walls * 1e7 : 0) +
@@ -427,7 +473,7 @@ export function proposeEnclosureLayout(
     }
   if (!best)
     throw Error(
-      "No collision-free layout found with these locks, wall choices, plug dimensions and cable lengths. Increase the usable space or review a constraint.",
+      "No collision-free layout found with these locks, print-area limits, wall choices, plug dimensions and cable lengths. Increase the usable space or review a constraint.",
     );
   const sx = d.space.x,
     sy = d.space.y;
@@ -486,11 +532,13 @@ export function proposeEnclosureLayout(
   );
   return {
     goal,
+    search: { attempts, feasible, orders: orderCount, dimensions: uniqueDims.length },
     boardGap: gap,
     wallCount: new Set(openings.filter((o) => o.boardPath).map((o) => o.wall)).size,
     cables: cableAssessments(
       aligned,
       inputs.map((b) => ({ ...b, placement: boards.find((p) => p.path === b.placement.path)! })),
+      true,
     ),
     design: aligned,
     externalPorts: best.placed.reduce((n, b) => n + b.ports.length, 0),
@@ -498,7 +546,8 @@ export function proposeEnclosureLayout(
     unresolved,
     notes: [
       "External ports are inferred from footprint names; confirm their facing edge and plug clearance.",
-      "Cable checks use straight-line distance plus your slack allowance, not routed bend geometry. Physical assembly and cooling still need review.",
+      "Optional cable routes reserve obstacle clearance and bend space. Connector exits, cable crossings, ribbon twist, cooling and physical strength still need review.",
+      `Compared ${attempts} deterministic layout attempts; ${feasible} passed placement and configured cable checks. This is a bounded search, not a guaranteed global optimum.`,
       ...inputs
         .filter((b) => !b.modelBounds)
         .map((b) => `${b.placement.path}: dimensions use estimated component bounds.`),

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { MechanicalDesignSchema } from "@fabdesk/protocol";
+import { MechanicalDesignSchema, cableAssessments } from "@fabdesk/protocol";
 import { defaultEnclosureDesign } from "./enclosure-design";
 import {
   proposeEnclosureLayout,
@@ -199,4 +199,49 @@ test("native model bounds reveal underside and lid clearance missed by estimates
   expect(nativeEnclosureClearanceIssues(d, [b])).toEqual([]);
   b.modelBounds.minZ = -5;
   expect(nativeEnclosureClearanceIssues(d, [b])[0]!.severity).toBe("error");
+});
+test("print area bounds include case walls and failure never silently ignores the limit", () => {
+  const bs = Array.from({ length: 6 }, (_, i) => fixture(`print-${i}.kicad_pcb`)),
+    d = defaultEnclosureDesign(null);
+  d.boards = bs.map((b) => b.placement);
+  d.layoutLimit = { width: 110, depth: 110 };
+  const p = proposeEnclosureLayout(d, bs);
+  expect(p.design.space.width + 2 * d.space.wall).toBeLessThanOrEqual(110);
+  expect(p.design.space.depth + 2 * d.space.wall).toBeLessThanOrEqual(110);
+  expect(p.search.orders).toBeGreaterThan(3);
+  d.layoutLimit = { width: 20, depth: 20 };
+  expect(() => proposeEnclosureLayout(d, bs)).toThrow("print-area");
+});
+test("planned cables are checked against posts at their proposed positions", () => {
+  const bs = [fixture("first.kicad_pcb"), fixture("second.kicad_pcb")],
+    d = defaultEnclosureDesign(null);
+  d.space.clearance = 0.2;
+  d.boards = bs.map((b) => b.placement);
+  d.mounts = bs.map((b) => ({
+    boardPath: b.placement.path,
+    holeId: "h",
+    x: 105,
+    y: 105,
+    diameter: 2,
+    outer: 4,
+    height: 4,
+  }));
+  d.connections = [
+    {
+      id: "link",
+      from: { boardPath: bs[0]!.placement.path, ref: "FFC" },
+      to: { boardPath: bs[1]!.placement.path, ref: "FFC" },
+      length: 150,
+      slack: 5,
+      routing: { diameter: 0.5, bendRadius: 0.5 },
+    },
+  ];
+  const p = proposeEnclosureLayout(d, bs);
+  const placed = bs.map((b) => ({
+    ...b,
+    placement: p.design.boards.find((x) => x.path === b.placement.path)!,
+  }));
+  expect(p.cables[0]!.reachable).toBe(true);
+  expect(cableAssessments(p.design, placed, true)).toEqual(p.cables);
+  expect(p.design.mounts.every((m) => m.x !== 105 || m.y !== 105)).toBe(true);
 });

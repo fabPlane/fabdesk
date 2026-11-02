@@ -4,6 +4,7 @@ import {
   type MechanicalDesign,
 } from "./mechanical-design";
 import type { ConnectorFace } from "./connector-opening";
+import { routeCable } from "./cable-route";
 
 type Rect = { minX: number; minY: number; maxX: number; maxY: number };
 export type MechanicalAccessBoard = {
@@ -20,7 +21,8 @@ export type MechanicalAccessBoard = {
       heightMm: number;
       face?: ConnectorFace;
     }>;
-    components?: Array<{ ref: string; bottom?: boolean }>;
+    outline?: Rect;
+    components?: Array<{ ref: string; bottom?: boolean; bounds?: Rect; heightMm?: number }>;
   };
 };
 export function accessPoint(b: MechanicalAccessBoard, ref: string) {
@@ -37,22 +39,136 @@ export function accessPoint(b: MechanicalAccessBoard, ref: string) {
         : b.features.thicknessMm + c.heightMm / 2),
   };
 }
-export function cableAssessments(d: MechanicalDesign, boards: MechanicalAccessBoard[]) {
+export function cableAssessments(
+  d: MechanicalDesign,
+  boards: MechanicalAccessBoard[],
+  route = false,
+) {
+  const reserved: MechanicalBox[] = [];
   return (d.connections ?? []).map((c) => {
     const from = boards.find((b) => b.placement.path === c.from.boardPath),
       to = boards.find((b) => b.placement.path === c.to.boardPath);
     const a = from && accessPoint(from, c.from.ref),
       b = to && accessPoint(to, c.to.ref);
     const distance = a && b ? Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) : null;
+    const obstacles = route && c.routing ? [...cableObstacles(d, boards, c), ...reserved] : [];
+    const routing =
+      route && c.routing && a && b
+        ? routeCable(
+            a,
+            b,
+            {
+              name: "Interior",
+              x: d.space.x,
+              y: d.space.y,
+              z: d.space.floor,
+              width: d.space.width,
+              depth: d.space.depth,
+              height: d.space.height,
+            },
+            obstacles,
+            c.routing.diameter,
+            c.routing.bendRadius,
+            d.space.clearance + 2 * (d.fitAllowance ?? 0),
+          )
+        : null;
+    const length = routing ? (routing.route?.length ?? null) : distance;
+    if (routing?.route && c.routing) {
+      const points = routing.route.points,
+        radius = c.routing.diameter / 2;
+      for (let i = 1; i < points.length; i++) {
+        const start = points[i - 1]!,
+          end = points[i]!;
+        reserved.push({
+          name: `Cable ${c.id}`,
+          x: Math.min(start.x, end.x) - radius,
+          y: Math.min(start.y, end.y) - radius,
+          z: Math.min(start.z, end.z) - radius,
+          width: Math.abs(end.x - start.x) + 2 * radius,
+          depth: Math.abs(end.y - start.y) + 2 * radius,
+          height: Math.abs(end.z - start.z) + 2 * radius,
+        });
+      }
+      for (const point of points.slice(1, -1)) {
+        const extent = c.routing.bendRadius + radius;
+        reserved.push({
+          name: `Cable ${c.id} bend`,
+          x: point.x - extent,
+          y: point.y - extent,
+          z: point.z - extent,
+          width: 2 * extent,
+          depth: 2 * extent,
+          height: 2 * extent,
+        });
+      }
+    }
     return {
       ...c,
       a: a ?? null,
       b: b ?? null,
       distance,
-      required: distance === null ? null : distance + c.slack,
-      reachable: distance !== null && distance + c.slack <= c.length + 1e-5,
+      route: routing,
+      required: length === null ? null : length + c.slack,
+      reachable: length !== null && length + c.slack <= c.length + 1e-5,
     };
   });
+}
+
+function cableObstacles(
+  d: MechanicalDesign,
+  boards: MechanicalAccessBoard[],
+  cable: NonNullable<MechanicalDesign["connections"]>[number],
+) {
+  const boxes = [...d.obstacles];
+  for (const board of boards) {
+    const p = board.placement,
+      f = board.features,
+      angle = (p.rotation * Math.PI) / 180;
+    const add = (r: Rect, z: number, height: number, name: string) => {
+      const points = [r.minX, r.maxX].flatMap((x) =>
+        [r.minY, r.maxY].map((y) => ({
+          x: p.x + x * Math.cos(angle) - y * Math.sin(angle),
+          y: p.y + x * Math.sin(angle) + y * Math.cos(angle),
+        })),
+      );
+      const x = Math.min(...points.map((p) => p.x)),
+        y = Math.min(...points.map((p) => p.y));
+      boxes.push({
+        name,
+        x,
+        y,
+        z,
+        width: Math.max(...points.map((p) => p.x)) - x,
+        depth: Math.max(...points.map((p) => p.y)) - y,
+        height,
+      });
+    };
+    if (f.outline) add(f.outline, p.z, f.thicknessMm, `${p.path} substrate`);
+    for (const part of f.components ?? []) {
+      // The mating connector necessarily contains the endpoint. Its exit direction
+      // remains a review item; all other component and substrate bounds stay blocked.
+      if ([cable.from, cable.to].some((e) => e.boardPath === p.path && e.ref === part.ref))
+        continue;
+      if (part.bounds && part.heightMm)
+        add(
+          part.bounds,
+          part.bottom ? p.z - part.heightMm : p.z + f.thicknessMm,
+          part.heightMm,
+          `${p.path} ${part.ref}`,
+        );
+    }
+  }
+  for (const m of d.mounts)
+    boxes.push({
+      name: "Mount",
+      x: m.x - m.outer / 2,
+      y: m.y - m.outer / 2,
+      z: d.space.floor,
+      width: m.outer,
+      depth: m.outer,
+      height: m.height,
+    });
+  return boxes;
 }
 export function portEnvelopes(d: MechanicalDesign, boards: MechanicalAccessBoard[]) {
   const result: Array<{

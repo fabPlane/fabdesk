@@ -99,6 +99,12 @@ export const MechanicalDesignSchema = z
           to: z.object({ boardPath: path, ref: z.string().min(1).max(500) }),
           length: size,
           slack: z.number().finite().min(0).max(1000),
+          routing: z
+            .object({
+              diameter: z.number().finite().min(0.1).max(50),
+              bendRadius: z.number().finite().min(0.1).max(100),
+            })
+            .optional(),
         }),
       )
       .max(100)
@@ -108,6 +114,7 @@ export const MechanicalDesignSchema = z
     fitAllowance: z.number().finite().min(0).max(0.5).optional(),
     detailedFit: z.boolean().optional(),
     assemblyCheck: z.boolean().optional(),
+    layoutLimit: z.object({ width: size, depth: size }).optional(),
     closure: z
       .object({
         kind: z.enum(["lift-off", "screws"]),

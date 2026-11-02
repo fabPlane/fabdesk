@@ -35,6 +35,32 @@ const design = (): MechanicalDesign => ({
 });
 const boards = (d: MechanicalDesign) => d.boards.map((placement) => ({ placement, features }));
 describe("mechanical fit constraints", () => {
+  test("assembly review flags screwdriver access blocked above a mounting hole", () => {
+    const d = design();
+    d.assemblyCheck = true;
+    const h = features.holes.find((h) => h.purpose === "mounting")!;
+    d.mounts = [
+      {
+        boardPath: d.boards[0]!.path,
+        holeId: h.id,
+        x: 3,
+        y: 3,
+        diameter: 2.5,
+        outer: 5,
+        height: 3,
+      },
+    ];
+    d.obstacles = [{ name: "Upper bracket", x: 2, y: 2, z: 15, width: 2, depth: 2, height: 2 }];
+    const issue = checkMechanicalFit(d, boards(d)).issues.find(
+      (i) => i.code === "screw-tool-access",
+    );
+    expect(issue?.severity).toBe("review");
+    expect(issue?.regions?.length).toBe(2);
+    d.obstacles = [];
+    expect(
+      checkMechanicalFit(d, boards(d)).issues.some((i) => i.code === "screw-tool-access"),
+    ).toBe(false);
+  });
   test("entered port numbers remain assumed until evidence is recorded; undersized openings block", () => {
     const d = design();
     const f = extractBoardFeatures(

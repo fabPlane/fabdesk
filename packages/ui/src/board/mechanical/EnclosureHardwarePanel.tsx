@@ -49,8 +49,9 @@ export function EnclosureHardwarePanel({
         <span>Check straight-down assembly</span>
       </label>
       <p className="fd-case-hint">
-        Samples the board and lid movement for obstructions. Slower; angled assembly, flexible
-        cables and physical strength still need review.
+        Samples board and lid movement and checks an assumed 6 mm screwdriver corridor (or the
+        larger screw head). Slower; angled assembly, flexible cables and physical strength still
+        need review.
       </p>
       {design.mode === "generated" && (
         <>

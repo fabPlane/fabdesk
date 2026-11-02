@@ -35,7 +35,7 @@ import {
   mountAtHole,
   alignEnclosureMounts,
   linkEnclosureMounts,
-  proposeEnclosureLayout,
+  type LayoutBoard,
   nativeEnclosureClearanceIssues,
 } from "@fabdesk/client-core";
 import { MechanicalScene, type SceneModel, type BoardGeometry } from "./MechanicalScene";
@@ -95,6 +95,46 @@ export function EnclosureDesigner({
   const caseSettings = useRef<HTMLDetailsElement>(null);
   const layoutSettings = useRef<HTMLDetailsElement>(null);
   const [layoutProposals, setLayoutProposals] = useState<LayoutChoice[] | null>(null);
+  const cancelLayout = useRef<(() => void) | null>(null);
+  useEffect(() => () => cancelLayout.current?.(), [projectId]);
+  async function compareLayouts(value: MechanicalDesign, boards: LayoutBoard[]) {
+    cancelLayout.current?.();
+    const worker = new Worker(new URL("./enclosure-layout.worker.ts", import.meta.url), {
+      type: "module",
+    });
+    const result = await new Promise<LayoutChoice[]>((resolve, reject) => {
+      const finish = () => {
+        clearTimeout(timer);
+        worker.terminate();
+        cancelLayout.current = null;
+      };
+      const timer = setTimeout(() => {
+        finish();
+        reject(
+          new Error("Layout search took too long. Try fewer boards or fewer cable constraints."),
+        );
+      }, 30000);
+      cancelLayout.current = () => {
+        finish();
+        reject(new Error("Layout comparison cancelled."));
+      };
+      worker.onmessage = (event: MessageEvent<LayoutChoice[]>) => {
+        finish();
+        resolve(event.data);
+      };
+      worker.onerror = () => {
+        finish();
+        reject(new Error("Layout search could not start. Reload the panel and try again."));
+      };
+      try {
+        worker.postMessage({ design: value, boards });
+      } catch (error) {
+        finish();
+        reject(error);
+      }
+    });
+    if (mounted.current) setLayoutProposals(result);
+  }
   const [showPlugs, setShowPlugs] = useState(false);
   const [design, setDesign] = useState<MechanicalDesign | null>(null),
     [board, setBoard] = useState<EnclosureBoardSummary | null>(null);
@@ -207,22 +247,26 @@ export function EnclosureDesigner({
           )
         : []),
       ...(showPlugs && design
-        ? cableAssessments(design, mountingBoards()).flatMap((c) =>
-            c.a && c.b
-              ? [
-                  {
-                    item: mechanicalItem(`@cable-${c.id}`, "import", "Cable direct-distance guide"),
-                    guide: {
-                      from: [c.a.x, c.a.y, c.a.z] as [number, number, number],
-                      to: [c.b.x, c.b.y, c.b.z] as [number, number, number],
-                      color: c.reachable ? 0x64cbd2 : 0xf16c6c,
-                    },
-                    selectable: false,
-                    origin: [0, 0, 0] as [number, number, number],
-                  },
-                ]
-              : [],
-          )
+        ? cableAssessments(design, mountingBoards(), true).flatMap((c) => {
+            const points = c.route?.route?.points ?? (c.a && c.b ? [c.a, c.b] : []);
+            return points.slice(1).map((end, index) => {
+              const start = points[index]!;
+              return {
+                item: mechanicalItem(
+                  `@cable-${c.id}-${index}`,
+                  "import",
+                  c.route?.route ? "Reserved cable corridor" : "Cable direct-distance guide",
+                ),
+                guide: {
+                  from: [start.x, start.y, start.z] as [number, number, number],
+                  to: [end.x, end.y, end.z] as [number, number, number],
+                  color: c.reachable ? 0x64cbd2 : 0xf16c6c,
+                },
+                selectable: false,
+                origin: [0, 0, 0] as [number, number, number],
+              };
+            });
+          })
         : []),
     ],
     [modelSources, pcbModels.models, showPlugs, design, fitBoards, preview, board],
@@ -1784,7 +1828,11 @@ export function EnclosureDesigner({
                     }}
                     onFind={() =>
                       void run("Comparing enclosure layouts…", async () => {
-                        const r = await call("check", { design });
+                        // Placement needs parsed features. Native body intersections run on
+                        // Preview; repeating those here delays every layout comparison.
+                        const r = await call("check", {
+                          design: { ...design, detailedFit: false, assemblyCheck: false },
+                        });
                         setFitBoards(r.boards);
                         const boards = (r.boards ?? []).map((b) => ({
                           ...b,
@@ -1793,18 +1841,7 @@ export function EnclosureDesigner({
                             ? { modelBounds: pcbModels.models[b.placement.path]!.bounds! }
                             : {}),
                         }));
-                        setLayoutProposals(
-                          (["compact", "assembly", "ports"] as const).map((goal) => {
-                            try {
-                              return {
-                                goal,
-                                proposal: proposeEnclosureLayout(design, boards, goal),
-                              };
-                            } catch (e) {
-                              return { goal, error: enclosureErrorMessage(e) };
-                            }
-                          }),
-                        );
+                        if (mounted.current) await compareLayouts(design, boards);
                       })
                     }
                   />
