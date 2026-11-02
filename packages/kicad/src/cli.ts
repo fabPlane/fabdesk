@@ -4,7 +4,10 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 export type KicadInvocation = { command: string[]; cwd: string };
-export type KicadInvocationTracer = (input: KicadInvocation, invoke: () => Promise<RunResult>) => Promise<RunResult>;
+export type KicadInvocationTracer = (
+  input: KicadInvocation,
+  invoke: () => Promise<RunResult>,
+) => Promise<RunResult>;
 export type KicadCli = { path: string; version: string; trace?: KicadInvocationTracer };
 
 export interface RunResult {
@@ -14,7 +17,10 @@ export interface RunResult {
 }
 
 export class KicadCliError extends Error {
-  constructor(message: string, readonly result: RunResult) {
+  constructor(
+    message: string,
+    readonly result: RunResult,
+  ) {
     super(message);
     this.name = "KicadCliError";
   }
@@ -32,7 +38,10 @@ export interface RunOptions {
  * Packaged layout: `<resources>/kicad/` next to `<resources>/core/fabdesk-core`.
  * Override the resources dir with `FABDESK_RESOURCES`, or the kicad tree with `FABDESK_BUNDLED_KICAD`.
  */
-export function bundledKicadRoots(env: NodeJS.ProcessEnv = process.env, execPath = process.execPath): string[] {
+export function bundledKicadRoots(
+  env: NodeJS.ProcessEnv = process.env,
+  execPath = process.execPath,
+): string[] {
   const roots: string[] = [];
   const push = (p: string | undefined) => {
     if (p && p.length > 0) roots.push(p);
@@ -91,7 +100,7 @@ function knownLocations(): string[] {
     case "win32": {
       // Per-machine installs, then the per-user installs winget and the "current user" installer write.
       const local = process.env["LOCALAPPDATA"] ?? join(homedir(), "AppData", "Local");
-      return ["10.0", "9.0"].flatMap((v) => [
+      return ["10.0", "9.0", "10.99"].flatMap((v) => [
         join(local, "Programs", "FabPlane", "KiCad", v, "bin", "kicad-cli.exe"),
         `C:\\Program Files\\KiCad\\${v}\\bin\\kicad-cli.exe`,
         join(local, "Programs", "KiCad", v, "bin", "kicad-cli.exe"),
@@ -125,7 +134,20 @@ function isFile(path: string): boolean {
  * `PATH`, `extraLocations`, then stock / standalone install paths.
  * Each candidate is validated by running `version`.
  */
-export async function findKicadCli(explicit?: string, opts: { extraLocations?: string[]; trace?: KicadInvocationTracer } = {}): Promise<KicadCli | null> {
+export function kicadVersionAtLeast(actual: string, required: string): boolean {
+  const a = /^(\d+)\.(\d+)/.exec(actual),
+    b = /^(\d+)\.(\d+)/.exec(required);
+  return (
+    !!a &&
+    !!b &&
+    (Number(a[1]) > Number(b[1]) || (Number(a[1]) === Number(b[1]) && Number(a[2]) >= Number(b[2])))
+  );
+}
+
+export async function findKicadCli(
+  explicit?: string,
+  opts: { extraLocations?: string[]; trace?: KicadInvocationTracer; minimumVersion?: string } = {},
+): Promise<KicadCli | null> {
   const candidates = [
     explicit,
     process.env.KICAD_CLI,
@@ -141,9 +163,18 @@ export async function findKicadCli(explicit?: string, opts: { extraLocations?: s
     seen.add(path);
     if (!isFile(path)) continue;
     try {
-      const result = await runKicadCli({ path, version: "", ...(opts.trace ? { trace: opts.trace } : {}) }, ["version"], { tolerateExit: true });
+      const result = await runKicadCli(
+        { path, version: "", ...(opts.trace ? { trace: opts.trace } : {}) },
+        ["version"],
+        { tolerateExit: true },
+      );
       const version = result.stdout.trim().split("\n")[0]?.trim() ?? "";
-      if (result.exitCode === 0 && version) return { path, version, ...(opts.trace ? { trace: opts.trace } : {}) };
+      if (
+        result.exitCode === 0 &&
+        version &&
+        (!opts.minimumVersion || kicadVersionAtLeast(version, opts.minimumVersion))
+      )
+        return { path, version, ...(opts.trace ? { trace: opts.trace } : {}) };
     } catch {
       // Try the next candidate.
     }
@@ -159,13 +190,21 @@ const NOISE = [
 ];
 
 /** Runs kicad-cli with `args`, filtering platform noise from stderr. Throws on non-zero exit unless `tolerateExit`. */
-export async function runKicadCli(cli: KicadCli, args: string[], opts: RunOptions = {}): Promise<RunResult> {
+export async function runKicadCli(
+  cli: KicadCli,
+  args: string[],
+  opts: RunOptions = {},
+): Promise<RunResult> {
   const input = { command: [cli.path, ...args], cwd: opts.cwd ?? process.cwd() };
   const invoke = () => runKicadCliUntraced(cli, args, opts);
   return cli.trace ? cli.trace(input, invoke) : invoke();
 }
 
-async function runKicadCliUntraced(cli: KicadCli, args: string[], opts: RunOptions): Promise<RunResult> {
+async function runKicadCliUntraced(
+  cli: KicadCli,
+  args: string[],
+  opts: RunOptions,
+): Promise<RunResult> {
   opts.signal?.throwIfAborted();
   const proc = Bun.spawn([cli.path, ...args], {
     stdout: "pipe",
@@ -185,9 +224,13 @@ async function runKicadCliUntraced(cli: KicadCli, args: string[], opts: RunOptio
       .filter((line) => !NOISE.some((n) => line.includes(n)))
       .join("\n");
     const result = { stdout, stderr, exitCode };
-    if (opts.signal?.aborted) throw new KicadCliError(`kicad-cli ${args.slice(0, 3).join(" ")} aborted`, result);
+    if (opts.signal?.aborted)
+      throw new KicadCliError(`kicad-cli ${args.slice(0, 3).join(" ")} aborted`, result);
     if (exitCode !== 0 && !opts.tolerateExit) {
-      throw new KicadCliError(`kicad-cli ${args.slice(0, 3).join(" ")} failed (${exitCode}): ${lastLines(stderr || stdout)}`, result);
+      throw new KicadCliError(
+        `kicad-cli ${args.slice(0, 3).join(" ")} failed (${exitCode}): ${lastLines(stderr || stdout)}`,
+        result,
+      );
     }
     return result;
   } finally {

@@ -3,8 +3,41 @@ import { createHash } from "node:crypto";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeContext } from "../src";
-import { displayCoverage, renderPcbDisplay } from "../src/tools/pcb-display";
+import {
+  displayCoverage,
+  renderPcbDisplay,
+  pcbCreatorVersion,
+  pcbModelReadiness,
+} from "../src/tools/pcb-display";
+import { kicadVersionAtLeast } from "@fabdesk/kicad";
 import { mockServices, tempProject } from "./mock-services";
+
+test("setup version comparison handles nightly and stable versions without patch false alarms", () => {
+  expect(pcbCreatorVersion('(kicad_pcb\n (version 20260901)\n (generator_version "10.99")')).toBe(
+    "10.99",
+  );
+  expect(pcbCreatorVersion("(kicad_pcb (version 20260901))")).toBeNull();
+  expect(kicadVersionAtLeast("10.0.0", "10.0.5")).toBe(true);
+  expect(kicadVersionAtLeast("10.0.1", "10.99")).toBe(false);
+  expect(kicadVersionAtLeast("11.0.0", "10.99")).toBe(true);
+  expect(kicadVersionAtLeast("unknown", "10.99")).toBe(false);
+});
+test("readiness is read-only and rejects paths outside the project", async () => {
+  const project = await tempProject("readiness"),
+    services = mockServices([project]);
+  services.kicad.resolveCli = async () => ({ path: "test-cli", version: "10.99" });
+  const text = '(kicad_pcb\n (generator_version "10.0")\n)';
+  await writeFile(join(project.dir, "board.kicad_pcb"), text);
+  const ctx = makeContext({ services, project });
+  const result = await pcbModelReadiness(ctx, ["board.kicad_pcb"]);
+  expect(result.json).toMatchObject({
+    needsSetup: false,
+    suggested: null,
+    boards: [{ path: "board.kicad_pcb", savedWith: "10.0", newer: false }],
+  });
+  expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(text);
+  await expect(pcbModelReadiness(ctx, ["../escape.kicad_pcb"])).rejects.toThrow();
+});
 
 test("coverage uses loaded nodes, including multiple models and absent references", () => {
   const pcb = `(kicad_pcb

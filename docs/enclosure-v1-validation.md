@@ -191,3 +191,25 @@ The full objective remains incomplete. Passing geometry checks or slicing is ins
 - Component coverage remains incomplete: combined board has 61/104 footprint models loaded. Missing/unassigned entries include foreign absolute paths, unavailable custom parts and bare pads; no guessed replacements were added. Preview/fit checks and physical verification are still required.
 
 ![Seven real boards including the restored lower-right combined peripheral board](screenshots/mechanical-workspace/65-combined-board-restored.png)
+
+## 2026-11-02 — guided setup, fit actions and recovery
+
+- Added a visible board-loading card with loaded/selected counts, an explanation of amber placeholders and retry/setup actions. A read-only preflight compares the PCB saving version with the local exporter. It offers an already installed newer exporter when available; only the user's button changes the app setting. Saving-version comparison is advisory, and actual export remains the compatibility check. The flow does not download KiCad or guess missing component models.
+- **Arrange & fit case** now places boards, sizes a generated case within existing constraints, aligns detected external openings and creates the checked preview in one action. A separate Placement only disclosure retains the lightweight layout action. Explicit Resize case to fit releases a generated-case cap. Existing/fixed cases and locked parts retain their constraints; Undo restores the prior design.
+- Fit warning actions highlight the relevant region and select the affected board with Move controls, or open the specific model/settings section. Two-board collision messages identify the first affected board as well as single-board boundary warnings.
+- A single readiness card distinguishes a missing preview, blocked export, prototype export with review items, and prototype export without known blockers. Detailed geometry/printing notes stay in the checklist rather than repeating status cards. No state certifies physical fit.
+- Same-revision unsaved drafts restore automatically; changed saved revisions still require a recovery choice. Equivalent objects with reordered JSON properties no longer create phantom edits. The enclosure step, selection and camera survive tab changes/reload within the session. Background assembly loading no longer resets an already opened enclosure panel, and an unframed camera cannot overwrite a remembered view.
+- Existing camera/board tool separation, Fit view, simple defaults and Advanced disclosures remain in place. Model refresh still retains only geometry matching the same PCB revision, avoiding stale models being mistaken for the current design.
+
+### Verification
+
+- 45 focused tests / 904 assertions pass: readiness response envelopes, version comparison, path containment, recovery conflicts, corrupted camera preferences, revision-safe model retention, history, setup, export gates and rendering. Root typecheck and desktop production build pass; no source maps in the built app.
+- Separate seven-board VAIO QA project; original project PCB files were not edited. With KiCad 10.0 selected deliberately, the actual failure remained visible and the new installed-version button selected 10.99 and reloaded all seven models. A synchronous tool-response handling issue found during this exercise was fixed and regression-tested.
+- One-click placement completed with a joined case/lid preview, zero known blockers and 39 review items. Undo restored the original QA draft. A board moved outside the case produced red highlighting; its warning action selected the board and enabled Move. Automatic recovery retained the edited draft and selection; camera coordinates after reload/tab changes matched within 0.000001 mm.
+- Missing component models, assumed dimensions, cable/assembly limits and physical printing remain review work. These UI changes do not resolve those engineering uncertainties.
+
+Measured final Arrange & fit case run: 24.8 seconds from click to completed seven-board preview. Original/QA copies match for all 11 source PCBs. [Machine-readable evidence](enclosure-experience-validation.json).
+
+![One-click preview and export readiness](screenshots/mechanical-workspace/67-arrange-fit-preview.png)
+
+![Warning action selects the red board and opens Move](screenshots/mechanical-workspace/68-actionable-fit-warning.png)

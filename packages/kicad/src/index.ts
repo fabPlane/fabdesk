@@ -1,4 +1,5 @@
 export {
+  kicadVersionAtLeast,
   findKicadCli,
   runKicadCli,
   countCopperLayers,

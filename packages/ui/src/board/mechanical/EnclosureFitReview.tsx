@@ -1,5 +1,5 @@
 import type { MechanicalFitIssue, MechanicalFitReport } from "@fabdesk/protocol";
-import { enclosureFileLabel } from "@fabdesk/client-core";
+import { enclosureFileLabel, fitIssueBoardPath } from "@fabdesk/client-core";
 import { Icon } from "../../components/Icon";
 
 type Destination = "Start" | "Space" | "PCB";
@@ -223,7 +223,7 @@ const guidance: Record<string, { title: string; destination: Destination; action
   "outside-space": {
     title: "More room is needed",
     destination: "Space",
-    action: "Adjust usable space",
+    action: "Move board or resize case",
   },
   obstacle: { title: "Parts are too close", destination: "Space", action: "Review obstacles" },
   "board-geometry": {
@@ -274,11 +274,13 @@ export function EnclosureFitReview({
   onNavigate,
   onShowIssue,
   focusedIssue,
+  readiness,
 }: {
   report: MechanicalFitReport;
-  onNavigate: (step: Destination, code: string) => void;
+  onNavigate: (step: Destination, code: string, issue: MechanicalFitIssue) => void;
   onShowIssue: (issue: MechanicalFitIssue) => void;
   focusedIssue: MechanicalFitIssue | null;
+  readiness?: { kind: string; title: string; detail: string };
 }) {
   const blockers = report.issues.filter((i) => i.severity === "error");
   const notes = report.issues.filter(
@@ -290,8 +292,11 @@ export function EnclosureFitReview({
   const shellChecked = report.issues.some((i) => i.code === "shell-coverage");
   function card(issue: MechanicalFitIssue, index: number) {
     const info = guidance[issue.code];
-    const path = Object.keys(report.boardRevisions).find((p) => issue.message.startsWith(`${p}: `));
-    const detail = path ? issue.message.slice(path.length + 2) : issue.message;
+    const path = fitIssueBoardPath(issue.message, Object.keys(report.boardRevisions));
+    const detail =
+      path && issue.message.startsWith(`${path}: `)
+        ? issue.message.slice(path.length + 2)
+        : issue.message;
     const description =
       issue.code === "board-geometry" && detail.includes("may not form a closed contour")
         ? "The board outline could not be confirmed. This preview uses a rectangular estimate."
@@ -331,7 +336,10 @@ export function EnclosureFitReview({
             <button
               type="button"
               className="fd-fit-link"
-              onClick={() => onNavigate(info.destination, issue.code)}
+              onClick={() => {
+                onShowIssue(issue);
+                onNavigate(info.destination, issue.code, issue);
+              }}
             >
               {info.action}
               <Icon name="chevronRight" aria-hidden="true" />
@@ -343,26 +351,20 @@ export function EnclosureFitReview({
   }
   return (
     <section className="fd-fit-review" aria-label="Fit review summary">
-      {report.geometry?.closed && (
-        <p className="fd-case-message" role="status">
-          <strong>Closed solids checked</strong>
-          <br />
-          {report.geometry.lidParts
-            ? "Case and lid are each one joined piece."
-            : "The case is one joined piece."}{" "}
-          Physical fit still needs a printed sample.
-        </p>
-      )}
-      <div className={`fd-fit-overview ${blocked ? "is-blocker" : "is-review"}`} role="status">
+      <div
+        className={`fd-fit-overview ${blocked ? "is-blocker" : "is-review"}${readiness ? " fd-export-readiness" : ""}`}
+        role="status"
+      >
         <span className="fd-fit-status-icon">
           <Icon name={blocked ? "warning" : "search"} aria-hidden="true" />
         </span>
         <div>
-          <strong>{blocked ? "Let’s fix the fit" : "Preview checked"}</strong>
+          <strong>{readiness?.title ?? (blocked ? "Let’s fix the fit" : "Preview checked")}</strong>
           <p>
-            {blocked
-              ? "Fix the red items below before saving files."
-              : "Look around the case, then check the notes before making it."}
+            {readiness?.detail ??
+              (blocked
+                ? "Fix the red items below before saving files."
+                : "Look around the case, then check the notes before making it.")}
           </p>
         </div>
       </div>
@@ -407,6 +409,14 @@ export function EnclosureFitReview({
           <h4>Check before printing</h4>
         </div>
         <p>Sizes are estimated. Confirm these on the real parts:</p>
+        {report.geometry?.closed && (
+          <p>
+            {report.geometry.lidParts
+              ? "Case and lid are each one joined piece."
+              : "The case is one joined piece."}{" "}
+            Physical fit still needs a printed sample.
+          </p>
+        )}
         <ul>
           <li>Component heights and cable space</li>
           <li>Screw access and mounting points</li>

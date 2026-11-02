@@ -137,8 +137,23 @@ export function MechanicalWorkspace({
     previewForm = useRef<Form | null>(null);
   const [selected, setSelected] = useState<string | null>(null),
     [mode, setMode] = useState<SceneMode>("orbit");
-  const [panel, setPanel] = useState<"add" | "generate" | "design" | "assembly" | null>("add"),
+  const panelKey = `fd:mechanical:panel:${client.baseUrl}:${projectId}`;
+  const [panel, setPanel] = useState<"add" | "generate" | "design" | "assembly" | null>(() => {
+      try {
+        const saved = sessionStorage.getItem(panelKey);
+        return saved === "design" || saved === "assembly" ? saved : "add";
+      } catch {
+        return "add";
+      }
+    }),
     [advancedOpen, setAdvancedOpen] = useState(false);
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(panelKey, panel ?? "add");
+    } catch {
+      /* Optional view preference. */
+    }
+  }, [panelKey, panel]);
   const [enclosureOpened, setEnclosureOpened] = useState(false);
   const [enclosureStatus, setEnclosureStatus] = useState("Loading enclosure…");
   useEffect(() => {
@@ -319,7 +334,13 @@ export function MechanicalWorkspace({
               Number(res.params?.["floorMm"] ?? 2) + Number(res.params?.["standoffMm"] ?? 3);
         itemsRef.current = next;
         setItems(next);
-        setPanel(next.length ? "assembly" : "add");
+        setPanel((current) =>
+          current === "design" || current === "assembly"
+            ? current
+            : next.length
+              ? "assembly"
+              : "add",
+        );
         setSaveState("Saved in project");
         setLoaded(true);
       } catch (e) {

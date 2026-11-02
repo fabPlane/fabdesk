@@ -1,8 +1,17 @@
 import type { MechanicalDesign } from "@fabdesk/protocol";
 
 type Entry = { design: MechanicalDesign; label: string };
-export const sameEnclosureDesign = (a: MechanicalDesign, b: MechanicalDesign) =>
-  JSON.stringify(a) === JSON.stringify(b);
+export const sameEnclosureDesign = (a: MechanicalDesign, b: MechanicalDesign) => {
+  const canonical = (value: MechanicalDesign) =>
+    JSON.stringify(value, (_key, item) =>
+      item && typeof item === "object" && !Array.isArray(item)
+        ? Object.fromEntries(
+            Object.entries(item).sort(([left], [right]) => left.localeCompare(right)),
+          )
+        : item,
+    );
+  return canonical(a) === canonical(b);
+};
 
 /** Full-design history: removing a board or constraint can be undone along with its settings. */
 export class EnclosureHistory {

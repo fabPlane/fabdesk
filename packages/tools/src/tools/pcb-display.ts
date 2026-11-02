@@ -1,10 +1,57 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
-import { measureGlb, readSavedBoardModels } from "@fabdesk/kicad";
+import {
+  findKicadCli,
+  kicadVersionAtLeast,
+  measureGlb,
+  readSavedBoardModels,
+} from "@fabdesk/kicad";
 import type { PcbModelGap } from "@fabdesk/protocol";
 import { jailPath, ensureDir } from "../fs";
 import { ToolError, type ToolContext } from "../registry";
 import { requireKicad, ok } from "./common";
+
+export function pcbCreatorVersion(text: string): string | null {
+  return (
+    /^\s*\(generator_version\s+"(\d+\.\d+[^"\r\n]*)"\)/m.exec(text.slice(0, 4096))?.[1] ?? null
+  );
+}
+
+/** Advisory only: the saving application version is not a file-format compatibility guarantee. */
+export async function pcbModelReadiness(ctx: ToolContext, paths: string[]) {
+  const project = ctx.requireProject();
+  const cli = await ctx.services.kicad.resolveCli();
+  const boards = await Promise.all(
+    paths.map(async (path) => {
+      if (!path.toLowerCase().endsWith(".kicad_pcb"))
+        throw new ToolError("Choose a KiCad PCB file", "invalid_args");
+      const source = await readFile(await jailPath(project.dir, path), "utf8");
+      const savedWith = pcbCreatorVersion(source);
+      return {
+        path,
+        savedWith,
+        newer: !!savedWith && !!cli && !kicadVersionAtLeast(cli.version, savedWith),
+      };
+    }),
+  );
+  const newest = boards
+    .map((b) => b.savedWith)
+    .filter((v): v is string => !!v)
+    .sort((a, b) => (kicadVersionAtLeast(a, b) ? -1 : 1))[0];
+  const needsSetup = !cli || boards.some((b) => b.newer);
+  const candidate = needsSetup
+    ? await findKicadCli(undefined, { ...(newest ? { minimumVersion: newest } : {}) })
+    : null;
+  return ok("Checked the local PCB exporter; actual exports still validate compatibility.", {
+    exporter: cli ? { path: cli.path, version: cli.version } : null,
+    suggested:
+      candidate && candidate.path !== cli?.path
+        ? { path: candidate.path, version: candidate.version }
+        : null,
+    boards,
+    needsSetup,
+  });
+}
 
 export function displayCoverage(board: string, roots: ReturnType<typeof measureGlb>["roots"]) {
   const counts = new Map<string, number>();

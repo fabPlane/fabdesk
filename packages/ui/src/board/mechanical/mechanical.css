@@ -2506,3 +2506,65 @@
   line-height: 1.5;
   color: var(--fd-muted);
 }
+
+/* Compact status cards share the enclosure panel rhythm and theme. */
+.fd-model-health,
+.fd-export-readiness {
+  padding: 12px 14px;
+  margin: 0 0 16px;
+  border: 1px solid var(--fd-border);
+  border-radius: 12px;
+  background: var(--fd-panel-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.fd-model-health > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fd-model-health svg {
+  flex: 0 0 18px;
+  color: var(--fd-accent);
+}
+.fd-model-health p,
+.fd-export-readiness p {
+  margin: 6px 0 0;
+  color: var(--fd-muted);
+  overflow-wrap: anywhere;
+}
+.fd-model-health small {
+  display: block;
+  margin-top: 8px;
+  color: var(--fd-muted);
+}
+.fd-model-health-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.fd-model-health-actions button {
+  min-height: 34px;
+  white-space: normal;
+  text-align: left;
+}
+.fd-model-health.needs-attention,
+.fd-export-readiness.is-review {
+  border-left: 3px solid #d6b56e;
+}
+.fd-export-readiness.is-blocked {
+  border-left: 3px solid var(--fd-danger, #f2857e);
+}
+.fd-export-readiness.is-ready {
+  border-left: 3px solid var(--fd-accent);
+}
+.fd-case-auto-arrange > details {
+  margin-top: 8px;
+}
+.fd-case-auto-arrange > details > summary {
+  color: var(--fd-muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 6px 0;
+}

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   currentPcbDisplays,
+  pcbReadinessResult,
   refreshPcbDisplays,
   useCoreClient,
   type PcbDisplay,
+  type PcbModelReadiness,
 } from "@fabdesk/client-core";
 import type { SceneModel } from "./MechanicalScene";
 
@@ -19,7 +21,28 @@ export function usePcbModels(
   const consumedAttempt = useRef(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [readiness, setReadiness] = useState<PcbModelReadiness | null>(null);
+  const [setupError, setSetupError] = useState("");
+  const [fixing, setFixing] = useState(false);
   const signature = JSON.stringify(boards);
+  useEffect(() => {
+    if (!active || !boards.length) return;
+    let cancelled = false;
+    setReadiness(null);
+    setSetupError("");
+    void client
+      .callTool("render_pcb_readiness", { projectId, boardPaths: boards.map((b) => b.path) })
+      .then((response) => {
+        const result = pcbReadinessResult(response);
+        if (!cancelled) setReadiness(result);
+      })
+      .catch((e) => {
+        if (!cancelled) setSetupError(String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, projectId, signature, attempt, active]);
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
@@ -51,7 +74,30 @@ export function usePcbModels(
     () => currentPcbDisplays(snapshot, projectId, boards),
     [snapshot, signature, projectId],
   );
-  return { models: current, loading, error, retry: () => retry((n) => n + 1) };
+  async function fixSetup() {
+    if (!readiness?.suggested || fixing) return;
+    setFixing(true);
+    setSetupError("");
+    try {
+      await client.patchSettings({ kicadCliPath: readiness.suggested.path });
+      retry((n) => n + 1);
+    } catch (e) {
+      setSetupError(String(e));
+    } finally {
+      setFixing(false);
+    }
+  }
+  return {
+    models: current,
+    loading,
+    error,
+    retry: () => retry((n) => n + 1),
+    readiness,
+    setupError,
+    fixing,
+    fixSetup,
+    requested: boards.length,
+  };
 }
 
 export function detailedBoardSource(source: SceneModel, model: PcbDisplay): SceneModel {

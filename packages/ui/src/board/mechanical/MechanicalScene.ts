@@ -11,6 +11,7 @@ import type { MechanicalBox } from "@fabdesk/protocol";
 import { createFitOverlay } from "./fit-overlay";
 import { assemblyClipRange, fittedCameraDistance } from "./camera-fit";
 import { batchPcbGeometry } from "./batchPcbGeometry";
+import { parseWorkspaceView } from "./workspace-view";
 
 export type BoardGeometry = {
   outline: { minX: number; minY: number; maxX: number; maxY: number };
@@ -895,6 +896,18 @@ export class MechanicalScene {
     this.camera.position.sub(this.orbit.target).multiplyScalar(factor).add(this.orbit.target);
     this.orbit.update();
     this.render();
+  }
+  getView() {
+    return { position: this.camera.position.toArray(), target: this.orbit.target.toArray() };
+  }
+  restoreView(value: unknown) {
+    const view = parseWorkspaceView(value);
+    if (!view) return false;
+    this.camera.position.fromArray(view.position);
+    this.orbit.target.fromArray(view.target);
+    this.orbit.update();
+    this.render();
+    return true;
   }
   view(view: "iso" | "top" | "front" | "right") {
     const d = this.camera.position.distanceTo(this.orbit.target),

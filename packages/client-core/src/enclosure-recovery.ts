@@ -1,4 +1,5 @@
 import { MechanicalDesignSchema, type MechanicalDesign } from "@fabdesk/protocol";
+import { sameEnclosureDesign } from "./enclosure-history";
 
 export type EnclosureRecovery = {
   version: 1;
@@ -6,6 +7,16 @@ export type EnclosureRecovery = {
   baseRevision: string | null;
   savedAt: number;
 };
+
+export function enclosureRecoveryAction(
+  recovered: EnclosureRecovery | null,
+  saved: MechanicalDesign,
+  revision: string | null,
+) {
+  if (!recovered) return "none";
+  if (sameEnclosureDesign(recovered.design, saved)) return "discard";
+  return recovered.baseRevision === revision ? "restore" : "conflict";
+}
 type Storage = {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;

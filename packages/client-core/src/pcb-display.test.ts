@@ -4,8 +4,17 @@ import {
   currentPcbDisplays,
   loadPcbDisplay,
   refreshPcbDisplays,
+  pcbReadinessResult,
   type PcbDisplay,
 } from "./pcb-display";
+
+test("readiness accepts synchronous and wrapped tool responses and rejects errors", () => {
+  const json = { exporter: null, suggested: null, boards: [], needsSetup: true };
+  expect(pcbReadinessResult({ ok: true, json })).toEqual(json);
+  expect(pcbReadinessResult({ result: { json } })).toEqual(json);
+  for (const response of [null, { jobId: "pending" }, { isError: true, json }, { json: {} }])
+    expect(() => pcbReadinessResult(response)).toThrow("Setup check unavailable");
+});
 
 test("model requests deduplicate, refresh on demand and reject mismatched revisions", async () => {
   let calls = 0;

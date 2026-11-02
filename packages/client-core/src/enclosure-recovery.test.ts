@@ -1,6 +1,28 @@
 import { expect, test } from "bun:test";
 import { defaultEnclosureDesign } from "./enclosure-design";
-import { enclosureRecoveryKey, EnclosureRecoveryStore } from "./enclosure-recovery";
+import {
+  enclosureRecoveryKey,
+  EnclosureRecoveryStore,
+  enclosureRecoveryAction,
+} from "./enclosure-recovery";
+
+test("automatic recovery only restores drafts based on the unchanged saved design", () => {
+  const saved = defaultEnclosureDesign(null),
+    draft = { ...saved, space: { ...saved.space, width: 150 } };
+  const recovered = {
+    version: 1 as const,
+    design: draft,
+    baseRevision: "a".repeat(64),
+    savedAt: 1,
+  };
+  expect(enclosureRecoveryAction(recovered, saved, recovered.baseRevision)).toBe("restore");
+  expect(enclosureRecoveryAction(recovered, saved, "b".repeat(64))).toBe("conflict");
+  expect(enclosureRecoveryAction(null, saved, null)).toBe("none");
+  const reordered = Object.fromEntries(Object.entries(saved).reverse()) as typeof saved;
+  expect(
+    enclosureRecoveryAction({ ...recovered, design: reordered }, saved, recovered.baseRevision),
+  ).toBe("discard");
+});
 
 function storage() {
   const map = new Map<string, string>();

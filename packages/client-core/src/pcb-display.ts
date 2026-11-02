@@ -12,6 +12,28 @@ export type PcbDisplay = {
 };
 
 export type PcbDisplayRequest = { path: string; pcbRevision: string };
+export type PcbModelReadiness = {
+  exporter: { path: string; version: string } | null;
+  suggested: { path: string; version: string } | null;
+  boards: Array<{ path: string; savedWith: string | null; newer: boolean }>;
+  needsSetup: boolean;
+};
+export function pcbReadinessResult(response: unknown): PcbModelReadiness {
+  const envelope = response as {
+    json?: PcbModelReadiness;
+    isError?: boolean;
+    result?: { json?: PcbModelReadiness; isError?: boolean };
+  } | null;
+  const output = envelope?.result ?? envelope;
+  if (
+    !output?.json ||
+    output.isError ||
+    !Array.isArray(output.json.boards) ||
+    typeof output.json.needsSetup !== "boolean"
+  )
+    throw Error("Setup check unavailable. Refresh to retry; board exports are checked separately.");
+  return output.json;
+}
 export type PcbDisplaySnapshot = { projectId: string; models: Record<string, PcbDisplay> };
 
 /** Retain only geometry that still belongs to this exact project and PCB revision. */

@@ -49,6 +49,13 @@ import { EnclosureBoardPicker } from "./EnclosureBoardPicker";
 import { EnclosureBoardDimensions } from "./EnclosureBoardDimensions";
 import { EnclosureHardwarePanel } from "./EnclosureHardwarePanel";
 import { PcbModelStatus } from "./PcbModelStatus";
+import { PcbModelHealth } from "./PcbModelHealth";
+import { parseWorkspaceView, type WorkspaceView } from "./workspace-view";
+import {
+  enclosureReadiness,
+  fitIssueBoardPath,
+  enclosureRecoveryAction,
+} from "@fabdesk/client-core";
 
 type Result = {
   design?: MechanicalDesign | null;
@@ -88,6 +95,8 @@ export function EnclosureDesigner({
   cadRuntime?: CadRuntimeState | null;
 }) {
   const client = useCoreClient();
+  const viewKey = useRef<string | null>(null);
+  const restoredView = useRef<WorkspaceView | null>(null);
   const [layoutChoice, setLayoutChoice] = useState<EnclosureLayoutGoal | "keep">("compact");
   const [caseDetails, setCaseDetails] = useState(false);
   const [layoutDetails, setLayoutDetails] = useState(false);
@@ -283,6 +292,8 @@ export function EnclosureDesigner({
     [showSpace, setShowSpace] = useState(true);
   const [focusedIssue, setFocusedIssue] = useState<MechanicalFitIssue | null>(null);
   const [selectedBoard, setSelectedBoard] = useState<string | null>(null);
+  const viewState = useRef({ step, selected: selectedBoard });
+  viewState.current = { step, selected: selectedBoard };
   const [placementMode, setPlacementMode] = useState<"orbit" | "translate" | "rotate">("orbit");
   const [caseVisible, setCaseVisible] = useState(true);
   const [controlsExpanded, setControlsExpanded] = useState(true);
@@ -502,16 +513,32 @@ export function EnclosureDesigner({
         : defaultEnclosureDesign(r.board ?? null);
       savedDesign.current = structuredClone(initial);
       history.current.reset(initial);
+      let restoredDraft: MechanicalDesign | null = null;
       try {
         const store = new EnclosureRecoveryStore(
           localStorage,
           enclosureRecoveryKey(client.baseUrl, projectId, p.path),
         );
         recoveryStore.current = store;
+        viewKey.current = `${store.key}:view`;
+        try {
+          const view = JSON.parse(sessionStorage.getItem(viewKey.current) ?? "null");
+          restoredView.current = parseWorkspaceView(view?.camera);
+          if (steps.includes(view?.step)) setStep(view.step);
+          if (typeof view?.selected === "string") setSelectedBoard(view.selected);
+        } catch {
+          /* A missing or invalid view must not prevent draft recovery. */
+        }
         const recovered = store.load();
-        if (recovered && !sameEnclosureDesign(recovered.design, initial))
-          setPendingRecovery(recovered);
-        else if (recovered) store.clear();
+        const recoveryAction = enclosureRecoveryAction(recovered, initial, revision.current);
+        if (recovered && (recoveryAction === "restore" || recoveryAction === "conflict")) {
+          if (recoveryAction === "restore") {
+            history.current.commit(recovered.design, "Restore local draft");
+            restoredDraft = recovered.design;
+            setDirty(true);
+            setNotice("Your unsaved draft was restored. Undo returns to the saved design.");
+          } else setPendingRecovery(recovered);
+        } else if (recoveryAction === "discard") store.clear();
       } catch {
         recoveryStore.current = null;
         setRecoveryWarning(
@@ -519,7 +546,7 @@ export function EnclosureDesigner({
         );
       }
       setLayoutChoice(r.design ? "keep" : "compact");
-      setDesign(initial);
+      setDesign(restoredDraft ?? initial);
       setFiles(p.files.map((f) => f.path));
     });
     return () => {
@@ -558,6 +585,7 @@ export function EnclosureDesigner({
       scene.current = s;
       s.setPlanarPlacement(true);
       return () => {
+        rememberView();
         s.dispose();
         scene.current = null;
       };
@@ -582,6 +610,10 @@ export function EnclosureDesigner({
           !framed.current
         ) {
           scene.current?.fit();
+          if (restoredView.current) {
+            scene.current?.restoreView(restoredView.current);
+            restoredView.current = null;
+          }
           framed.current = true;
         }
       })
@@ -590,6 +622,25 @@ export function EnclosureDesigner({
       cancel = true;
     };
   }, [renderedSources]);
+  function rememberView() {
+    if (!viewKey.current || !scene.current || !framed.current) return;
+    try {
+      sessionStorage.setItem(
+        viewKey.current,
+        JSON.stringify({ camera: scene.current.getView(), ...viewState.current }),
+      );
+    } catch {
+      /* View preferences are optional; design recovery reports its own failures. */
+    }
+  }
+  useEffect(() => {
+    if (!active) rememberView();
+    window.addEventListener("pagehide", rememberView);
+    return () => {
+      rememberView();
+      window.removeEventListener("pagehide", rememberView);
+    };
+  }, [active, step, selectedBoard, projectId]);
   useEffect(() => {
     const s = design?.space;
     const validSpace =
@@ -829,7 +880,7 @@ export function EnclosureDesigner({
     edit(next, "Create case preview");
     await showPreview(next);
   }
-  async function autoArrange(resize = false) {
+  async function autoArrange(resize = false, previewAfter = false) {
     if (!design) return;
     const input = resize ? resizeEnclosureToFit(design) : design;
     if (design.mode === "imported" && !design.confirmed)
@@ -854,8 +905,11 @@ export function EnclosureDesigner({
       );
     if (!choice?.proposal)
       throw new Error(choice?.error ?? "Could not arrange these boards. Your layout is unchanged.");
+    const arranged = previewAfter
+      ? prepareEnclosurePreview(choice.proposal.design, boards, "keep")
+      : choice.proposal.design;
     framed.current = false;
-    edit(choice.proposal.design, resize ? "Resize case and arrange boards" : "Auto arrange boards");
+    edit(arranged, resize ? "Resize case and arrange boards" : "Auto arrange boards");
     setLayoutChoice("keep");
     selectBoard(null);
     setShowSpace(true);
@@ -869,14 +923,64 @@ export function EnclosureDesigner({
         (review ? `${review} port connection${review === 1 ? "" : "s"} need review. ` : "") +
         "Preview to check the fit. Undo restores your previous layout.",
     );
+    if (previewAfter) {
+      setBusy("Making your case…");
+      try {
+        await showPreview(arranged);
+      } catch (e) {
+        throw new Error(
+          `Boards arranged, but the preview could not finish. ${enclosureErrorMessage(e)} Undo is available.`,
+        );
+      }
+    }
   }
-  function navigateIssue(destination: "Start" | "Space" | "PCB", code: string) {
-    if (code === "no-board" || code === "board-geometry") {
+  function navigateIssue(
+    destination: "Start" | "Space" | "PCB",
+    code: string,
+    issue?: MechanicalFitIssue,
+  ) {
+    const path = issue && fitIssueBoardPath(issue.message, design?.boards.map((b) => b.path) ?? []);
+    if (["detailed-missing", "detailed-open", "detailed-unavailable"].includes(code)) {
       setStep("PCB");
+      requestAnimationFrame(() => {
+        const disclosure = body.current?.querySelector<HTMLDetailsElement>(
+          ".fd-case-model-disclosure",
+        );
+        if (disclosure) {
+          disclosure.open = true;
+          disclosure.scrollIntoView({ block: "nearest" });
+        }
+      });
       return;
     }
-    if (["native-clearance", "outside-space", "board-collision"].includes(code)) {
+    if (
+      [
+        "native-clearance",
+        "outside-space",
+        "board-collision",
+        "detailed-collision",
+        "detailed-clearance",
+        "shell-surface",
+        "shell-clearance",
+      ].includes(code)
+    ) {
       setStep("Start");
+      if (path) {
+        selectBoard(path);
+        setPlacementMode("translate");
+      }
+      setNotice(
+        "Move the highlighted board, or use Arrange & fit case. Preview again after making changes.",
+      );
+      requestAnimationFrame(() =>
+        body.current
+          ?.querySelector('[aria-label="Selected board controls"]')
+          ?.scrollIntoView({ block: "nearest" }),
+      );
+      return;
+    }
+    if (code === "no-board" || code === "board-geometry") {
+      setStep("PCB");
       return;
     }
     setStep("Start");
@@ -1004,6 +1108,7 @@ export function EnclosureDesigner({
     />
   );
   const actionsDisabled = !!busy || !!pendingRecovery || !design;
+  const exportReadiness = enclosureReadiness(!!preview, report, pcbModels.loading);
   const currentPlacement = design?.boards.find((b) => b.path === selectedBoard);
   const currentFeatures = selectedBoard ? featuresFor(selectedBoard) : null;
   const currentPose =
@@ -1099,19 +1204,15 @@ export function EnclosureDesigner({
                 !design?.boards.length ||
                 design.boards.every((b) => b.locked)
               }
-              onClick={() => void run("Auto arranging boards…", () => autoArrange())}
+              onClick={() => void run("Auto arranging boards…", () => autoArrange(false, true))}
             >
-              {busy === "Auto arranging boards…"
-                ? "Arranging…"
-                : design?.mode === "generated" && !design.layoutLimit
-                  ? "Auto arrange & size"
-                  : "Auto arrange"}
+              {busy === "Auto arranging boards…" ? "Arranging…" : "Arrange & fit case"}
             </button>
             {design?.mode === "generated" && design.layoutLimit && (
               <>
                 <button
                   disabled={actionsDisabled || pcbModels.loading || !design.boards.length}
-                  onClick={() => void run("Auto arranging boards…", () => autoArrange(true))}
+                  onClick={() => void run("Auto arranging boards…", () => autoArrange(true, true))}
                 >
                   Resize case to fit
                 </button>
@@ -1129,9 +1230,24 @@ export function EnclosureDesigner({
                   ? "Loading board shapes before arranging…"
                   : design.boards.every((b) => b.locked)
                     ? "All boards are locked. Unlock a board to arrange it."
-                    : "Place boards and align ports in one click. Locked boards stay in place."}
+                    : "Arrange boards, align detected ports and preview the fit. Locked boards stay in place."}
             </small>
+            <details>
+              <summary>Placement only</summary>
+              <button
+                disabled={
+                  actionsDisabled ||
+                  pcbModels.loading ||
+                  !design?.boards.length ||
+                  design.boards.every((b) => b.locked)
+                }
+                onClick={() => void run("Auto arranging boards…", () => autoArrange())}
+              >
+                Arrange without preview
+              </button>
+            </details>
           </section>
+          <PcbModelHealth {...pcbModels} />
           <EnclosureBoardDimensions
             paths={design?.boards.map((b) => b.path) ?? []}
             selected={selectedBoard}
@@ -2393,6 +2509,7 @@ export function EnclosureDesigner({
                   {report && (
                     <EnclosureFitReview
                       report={report}
+                      readiness={exportReadiness}
                       onNavigate={navigateIssue}
                       onShowIssue={showIssue}
                       focusedIssue={focusedIssue}
@@ -2427,7 +2544,7 @@ export function EnclosureDesigner({
               {busy ||
                 (pcbModels.loading ? "Reading board shapes…" : "") ||
                 (preview
-                  ? "Preview ready"
+                  ? exportReadiness.title
                   : design?.mode === "imported" && !capabilities.cad
                     ? cadRuntime?.status === "unsupported"
                       ? "Imported-case editing unavailable here"
@@ -2508,7 +2625,7 @@ export function EnclosureDesigner({
             ) : preview ? (
               <button
                 className="fd-mechanical-primary"
-                disabled={actionsDisabled || pcbModels.loading || report?.status === "blocked"}
+                disabled={actionsDisabled || !exportReadiness.canExport}
                 onClick={() => void run("Saving matched designs…", build)}
               >
                 Save design files
