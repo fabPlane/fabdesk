@@ -55,6 +55,7 @@ describe("product video render", () => {
     const manifest = JSON.parse(await Bun.file(out.manifest).text());
     expect(changed).toBe(true);
     expect(manifest.revision.inputs).toEqual([{ path: "renders/board.glb", sha256: createHash("sha256").update(original).digest("hex") }]);
+    expect(Number.isNaN(Date.parse(manifest.generatedAt))).toBe(false);
     expect(await Bun.file(join(dir, "renders/board.glb")).text()).toBe("changed after decode");
   });
 

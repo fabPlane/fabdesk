@@ -1,3 +1,11 @@
+## Local output chronology checkpoint · November 2, 2026
+
+Library now orders files and grouped cards by recorded completed export time when a recognized receipt matches the exact artifact bytes. Untracked, malformed, changed and zero-byte artifacts retain a clearly labelled file-time fallback. Date labels include time, and grouping uses the latest effective file time while retaining stable path selection. The core reuses existing exporter receipts with bounded cached streaming hashes; it does not equate generation dates with source freshness. Future video manifests record completion time; older videos are not backdated.
+
+Native isolated Playbridge repeat: rendered Top image; a running-task Close warning appeared, and reopening showed its completed task and saved result. A fresh 26-file Gerber/drill ZIP and layer group appeared before the earlier image. Regenerating Top moved it first without losing the selected ZIP. Manufacturing filtering and Home close/reopen retained the expected order. Captures22–27 and proof28 preserve evidence. The initial Home capture had no active badge by capture time; that longer-task acceptance remains pending. A new model/video timestamp repeat and preview/download non-reordering acceptance remain pending. Native PCB/schematic and import receipt are unchanged; artifact hashes and ZIP CRC/drill entry pass. This is not electrical/fabrication approval.
+
+Affected types pass (core, client-core, UI, product-video). Focused chronology/output/video tests23/95 and final chronology/project/output tests22/111 pass; UI251/1061 pass. No whole-root/build/hosted-CI claim. Local previous milestones df0da09 (Home) and5468fb1 (import identity); remote remains d1d6927. Continue model coverage investigation and remaining queue after this local commit.
+
 ## Local imported-board identity checkpoint · November 2, 2026
 
 Item15 now records the exact repository PCB path, adoption time and byte hash in the project manifest. Overview and the single-board toolbar show a readable version label with the exact path, separate working/imported Files actions and a source-aware unsent Ask question. This is historical import provenance, not proof that the working copy or outputs remain unchanged; existing projects without a receipt are not guessed or backfilled.

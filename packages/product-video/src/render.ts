@@ -76,6 +76,7 @@ async function renderVideo(opts: RenderOptions): Promise<RenderOutputs> {
   const outputs = await Promise.all(Object.values(encoded.files).filter((path): path is string => !!path).map(async path => ({ path: relative(opts.projectDir, path).split(sep).join("/"), sha256: createHash("sha256").update(await readFile(path)).digest("hex") })));
   const manifest = {
     schema: 1,
+    generatedAt: new Date().toISOString(),
     revision: {
       contract: "fabplane.video-input-revision.v1",
       inputs: scene.parts.map(part => ({ path: part.path, sha256: part.sourceSha256 })),

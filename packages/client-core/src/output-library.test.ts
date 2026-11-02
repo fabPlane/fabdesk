@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { filterSavedOutputs, outputKind, outputLibrarySections, savedOutputs } from "./output-library";
+import { filterSavedOutputs, outputCards, outputKind, outputLibrarySections, savedOutputs } from "./output-library";
 
 test("saved outputs include media/models/manufacturing without treating receipts, reports or sources as deliverables", () => {
   for (const path of ["renders/board.glb.revision.json", "reports/drc.json", "renders/diff/pcb-structured.svg", "renders/diff/revision/pcb-overlay.svg", "board.kicad_pcb", "mechanical/imports/id/case.stl", "exports/.temporary"]) expect(outputKind(path)).toBeNull();
@@ -126,4 +126,24 @@ test("video support posters do not inflate selection counts or borrow another bo
   const files = ["boards/io/exports/product-video.mp4", "boards/io/exports/product-video-poster.png", "boards/lcd/exports/product-video-poster.png"].map(path => ({ path, size: 20, mtime: "2026-10-30" }));
   expect(savedOutputs(files, sources).map(file => file.path)).toEqual([files[0]!.path, files[2]!.path]);
   expect(files).toHaveLength(3);
+});
+
+test("export chronology overrides touched mtime, orders grouped layers and keeps stable paths", () => {
+  const files = [
+    { path: "renders/top.png", size: 20, mtime: "2027-01-01", generatedAt: "2026-11-01T01:00:00.000Z" },
+    { path: "exports/gerbers/top.gtl", size: 2, mtime: "2026-10-30", generatedAt: "2026-11-02T01:00:00.000Z" },
+    { path: "exports/gerbers/drill.drl", size: 2, mtime: "2026-10-30", generatedAt: "2026-11-02T01:00:01.000Z" },
+    { path: "renders/legacy.png", size: 2, mtime: "2026-11-01T12:00:00.000Z" },
+    { path: "exports/product-video.mp4", size: 20, mtime: "2026-10-30", generatedAt: "2026-11-02T02:00:00.000Z" },
+  ];
+  const cards = outputCards(savedOutputs(files));
+  expect(cards.map(card => card.label)).toEqual(["Product video", "Manufacturing layers", "legacy.png", "Top view image"]);
+  expect(cards[1]!.time).toMatchObject({ value: "2026-11-02T01:00:01.000Z", basis: "exported" });
+  expect(cards[2]!.time.basis).toBe("file-saved");
+  const selected = new Set(["renders/top.png"]);
+  const regenerated = files.map(file => file.path === "renders/top.png" ? { ...file, generatedAt: "2026-11-02T03:00:00.000Z" } : file);
+  const after = outputCards(savedOutputs(regenerated));
+  expect(after[0]!.label).toBe("Top view image");
+  expect(after.flatMap(card => card.files).filter(file => selected.has(file.path)).map(file => file.path)).toEqual(["renders/top.png"]);
+  expect(outputCards(filterSavedOutputs(savedOutputs(files), { kind: "manufacturing" }), false)[0]!.primary.path).toBe("exports/gerbers/drill.drl");
 });

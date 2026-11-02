@@ -24,6 +24,7 @@ import {
 import type { ProjectRepo } from "./db";
 import { newId } from "./db";
 import { logger } from "./log";
+import { OutputGenerationTimes } from "./output-generation-times";
 
 /** A chosen parent directory that does not exist or is not a folder; HTTP answers 400 `invalid_parent_directory`. */
 export class InvalidParentDirectory extends ToolError {
@@ -47,6 +48,7 @@ export function slugify(name: string): string {
 export const FORGOTTEN_MANIFEST = "fabdesk.json.forgotten";
 
 export class ProjectStore implements ProjectResolver {
+  private readonly outputGenerationTimes = new OutputGenerationTimes();
   private readonly handles = new Map<string, ProjectHandle>();
   private readonly watchers = new Map<string, FSWatcher>();
   private readonly pendingChanges = new Map<
@@ -359,7 +361,7 @@ export class ProjectStore implements ProjectResolver {
     if (!row) return null;
     const h = await this.handle(id);
     if (!h) return null;
-    const files = await this.listFiles(row.path);
+    const files = await this.outputGenerationTimes.attach(row.path, id, await this.listFiles(row.path));
     const { slug: _slug, ...summary } = row;
     return { ...summary, name: h.name, manifest: h.manifest(), files };
   }

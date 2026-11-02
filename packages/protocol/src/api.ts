@@ -72,6 +72,8 @@ export const FileEntry = z.object({
   path: z.string(),
   size: z.number().int(),
   mtime: z.string(),
+  /** Completed exporter receipt time, only when its artifact hash still matches. Not source freshness. */
+  generatedAt: z.string().datetime().optional(),
 });
 export type FileEntry = z.infer<typeof FileEntry>;
 

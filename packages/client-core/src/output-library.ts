@@ -1,5 +1,11 @@
 import type { FileEntry, ProjectBoardSources } from "@fabdesk/protocol";
 export type OutputKind = "images" | "videos" | "models" | "manufacturing";
+/** Effective chronology keeps a labelled file-time fallback for untracked/legacy artifacts. */
+export function outputTime(file: Pick<FileEntry, "mtime" | "generatedAt">) {
+  const generated = file.generatedAt && Number.isFinite(Date.parse(file.generatedAt));
+  const value = generated ? file.generatedAt! : file.mtime;
+  return { value, ms: Number.isFinite(Date.parse(value)) ? Date.parse(value) : 0, basis: generated ? "exported" as const : "file-saved" as const };
+}
 
 /** A library of saved deliverables, not intermediate receipts/reports or project source files. */
 export function outputKind(path: string): OutputKind | null {
@@ -27,7 +33,7 @@ export function savedOutputs(files: FileEntry[], sources: ProjectBoardSources["s
   });
   const completedVideos = new Set(outputs.filter(file => file.kind === "videos" && /(?:^|\/)exports\/product-video\.(mp4|webm|gif)$/i.test(file.path)).map(file => file.path.replace(/\.[^.]+$/, "")));
   return outputs.filter(file => !/(?:^|\/)exports\/product-video-poster\.png$/i.test(file.path) || !completedVideos.has(file.path.replace(/-poster\.png$/i, "")))
-    .sort((a, b) => b.mtime.localeCompare(a.mtime) || a.path.localeCompare(b.path));
+    .sort((a, b) => outputTime(b).ms - outputTime(a).ms || a.path.localeCompare(b.path));
 }
 
 export type SavedOutput = ReturnType<typeof savedOutputs>[number];
@@ -60,8 +66,9 @@ export function outputCards(files: SavedOutput[], groupManufacturing = true) {
       : /(?:^|\/)renders\/top$/.test(key) ? "Top view image"
       : /(?:^|\/)renders\/bottom$/.test(key) ? "Bottom view image"
       : files[0]!.path.split("/").pop()!;
-    return { key, files, primary: files[0]!, mtime: variants.reduce((date, file) => file.mtime > date ? file.mtime : date, ""), label };
-  }).sort((a, b) => b.mtime.localeCompare(a.mtime) || a.key.localeCompare(b.key));
+    const time = variants.map(outputTime).sort((a, b) => b.ms - a.ms || (a.basis === b.basis ? 0 : a.basis === "exported" ? -1 : 1))[0]!;
+    return { key, files, primary: files[0]!, mtime: variants.reduce((date, file) => file.mtime > date ? file.mtime : date, ""), time, label };
+  }).sort((a, b) => b.time.ms - a.time.ms || a.key.localeCompare(b.key));
 }
 
 /** Keep large native layer-file sets from overwhelming All; every row remains in Manufacturing. */
