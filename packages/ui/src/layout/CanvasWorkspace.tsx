@@ -1,3 +1,4 @@
+import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { HostedReviewTools } from "../board/HostedReviewTools";
 import { useEffect, useState } from "react";
@@ -78,6 +79,10 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const referenceCanvas = !!projectId && !!project.data && !hasNativeDesign && !boardSources.isError && boardSources.data?.mode === "single" && (area === "overview" || area === "boards" && boardTab === "pcb") && boardOpen;
   const sketchReference = referenceCanvas ? attachedSketch ?? sketchPaths[0] : undefined;
   const referenceStart = fresh && !!sketchReference;
+  useAssistantSurface(projectId && (fresh || !!sketchReference) ? {
+    projectId, label: sketchReference ? "Project sketch" : "Project idea", priority: 5,
+    details: JSON.stringify({ stage: "Planning before a native board exists", savedReference: sketchReference ?? null, savedSketches: sketchPaths.slice(0, 20), instruction: "Use the actual saved references and project notes. A planning sketch is not a native schematic, PCB, checked circuit or generated board." }),
+  } : null);
   const secondary = !!sourceId || inventory || order;
   const showAssistant = !fresh && !conversationOnly;
   const home = !projectId && !threadId && !secondary;
@@ -98,7 +103,6 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
         {projectId && !fresh && <HostedReviewTools key={projectId} projectId={projectId} shareButton />}
         <WorkspaceMenu className="fd-workspace-overflow" label={<span aria-label="Workspace options"><Icon name="more" width={20} height={20} /></span>}>
           {projectId && <><div className="fd-menu-caption">Current project</div><button onClick={() => setProjectAction({ id: projectId, name, action: "rename" })}><Icon name="compose" width={16} height={16} />Rename project</button><button onClick={() => ui().requestProjectClose(true)}><Icon name="close" width={16} height={16} />Close project · Home</button><button onClick={() => setNavigationOpen(true)}><Icon name="sidebar" width={16} height={16} />Project conversations</button><div className="fd-menu-divider" /></>}
-          {fresh && projectId && <><div className="fd-menu-caption">Project tools</div>{(Object.keys(WORKSPACE_AREAS) as WorkspaceArea[]).map(key => <button key={key} onClick={() => openArea(key)}>{WORKSPACE_AREAS[key].label}</button>)}<div className="fd-menu-divider" /></>}
           <button onClick={() => ui().setPaletteOpen(true)}><Icon name="search" width={16} height={16} />Search commands</button>
           <button onClick={() => ui().setSettingsOpen(true)}><Icon name="settings" width={16} height={16} />Settings</button>
           <button onClick={() => ui().setInventoryOpen(true)}><Icon name="library" width={16} height={16} />Parts inventory</button>
@@ -110,12 +114,13 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
     </header>
     {banner}
     {projectId && boardSources.data?.mode === "assembly" && <LiveAssemblyPreviews key={`${client.baseUrl}/${projectId}/${boardSources.data.manifestSha256}`} projectId={projectId} data={boardSources.data} enabled={!boardSources.isFetching && !boardSources.isError && connected && boardSources.data.editing === "explicit-source-tools"} />}
-    {home ? <main className="fd-home-surface"><ProjectHome onCreate={() => setCreating("create")} onImport={() => setCreating("github")} onBrowse={() => { ui().setSidebarListTab("open_source"); setNavigationOpen(true); }} /></main> : <main className="fd-canvas-main" data-task-toolbar={!!projectId && !fresh && !secondary && !conversationOnly} data-area={fresh ? "start" : area}>
-      {projectId && !fresh && !secondary && !conversationOnly && <nav className="fd-canvas-destinations" aria-label="Project workspace">
-        <WorkspaceMenu label={<><Icon name="library" width={16} height={16} /><span>{areaLabel}</span><Icon name="chevronDown" width={14} height={14} /></>}>
+    {home ? <main className="fd-home-surface"><ProjectHome onCreate={() => setCreating("create")} onImport={() => setCreating("github")} onBrowse={() => { ui().setSidebarListTab("open_source"); setNavigationOpen(true); }} /></main> : <main className="fd-canvas-main" data-task-toolbar={!!projectId && !secondary && !conversationOnly} data-area={fresh ? "start" : area}>
+      {projectId && !secondary && !conversationOnly && <nav className="fd-canvas-destinations" aria-label="Project workspace">
+        <WorkspaceMenu label={<><Icon name="library" width={16} height={16} /><span>{fresh ? "Start" : areaLabel}</span><Icon name="chevronDown" width={14} height={14} /></>}>
           <div className="fd-menu-caption">Project workspace</div>
-          {(Object.keys(WORKSPACE_AREAS) as WorkspaceArea[]).map((key) => <button key={key} aria-current={area === key ? "page" : undefined} onClick={() => openArea(key)}>{key === "boards" && boardSources.data?.mode === "assembly" ? "Boards" : WORKSPACE_AREAS[key].label}</button>)}
+          {(Object.keys(WORKSPACE_AREAS) as WorkspaceArea[]).map((key) => <button key={key} aria-current={area === key ? "page" : undefined} onClick={() => openArea(key)}>{key === "boards" && boardSources.data?.mode === "single" && !hasNativeDesign ? "Start" : key === "boards" && boardSources.data?.mode === "assembly" ? "Boards" : WORKSPACE_AREAS[key].label}</button>)}
         </WorkspaceMenu>
+        {fresh && <Button size="sm" variant="ghost" onClick={() => ui().setBoardTab("notes")}><Icon name="compose" width={16} height={16} />Project notes</Button>}
       </nav>}
       {sketchReference && !fresh && !secondary && !conversationOnly && <span className="fd-reference-view-label">Project reference</span>}
       {secondary && !order && <Button className="fd-canvas-back" size="sm" onClick={() => { ui().setActiveOpenSourceId(null); ui().setInventoryOpen(false); ui().setOrderFlowOpen(false); ui().setBoardOpen(true); }}>← Return to canvas</Button>}

@@ -622,3 +622,7 @@
 .fd-schematic-focus-marker > span { width:24px; height:24px; border:2px solid var(--fd-accent); border-radius:50%; box-shadow:0 0 0 5px color-mix(in srgb,var(--fd-accent) 15%,transparent); }
 
 .fd-svg-focus-stage { padding:50vh 50vw; width:max-content; }
+
+/* Planning keeps the same workspace entry as design tasks, with Notes directly available. */
+.fd-canvas-destinations { display:flex; align-items:center; gap:16px; }
+.fd-canvas-main[data-area=start] .fd-start-reference { top:80px; }

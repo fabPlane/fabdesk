@@ -44,6 +44,8 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
   const needsProjectChat = !!target.threadId && !target.projectId;
   const [mode, setMode] = useState(() => useUiStore.getState().sketchMode);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const [canvasReady, setCanvasReady] = useState(false);
+  const requestedCopyHandled = useRef(false);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [file, setFile] = useState<File | null>(null);
@@ -243,6 +245,21 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
     }
   };
 
+  useEffect(() => {
+    if (requestedCopyHandled.current || !target.sourcePath || recovering || !canvasReady || project.isFetching || !project.data) return;
+    requestedCopyHandled.current = true;
+    // An explicit copy request opens immediately only when there is no recovered work to replace.
+    if (needsRecovery.current || apiRef.current?.getSceneElements().some(element => !element.isDeleted)) {
+      setRecoveryStatus("Your local draft is kept. Choose Replace draft with saved copy in Drawing options to open the requested drawing.");
+      return;
+    }
+    if (!savedDrawings.includes(target.sourcePath)) {
+      setError("The selected saved drawing is no longer available. Choose another drawing in Drawing options.");
+      return;
+    }
+    void openSavedDrawing();
+  }, [canvasReady, recovering, project.isFetching, project.data]);
+
   const dark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
   return (
     <Dialog open onClose={close} bare ariaLabel="Sketch or image" className="h-[85vh] w-[90vw] max-w-6xl">
@@ -314,7 +331,7 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
           ) : (
             <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}>
               <Excalidraw initialData={initialScene.current}
-                excalidrawAPI={(api) => { apiRef.current = api; }}
+                excalidrawAPI={(api) => { apiRef.current = api; setCanvasReady(true); }}
                 onChange={(elements, appState, files) => {
                   initialScene.current = { elements, appState, files }; setHasDrawing(elements.some(element => !element.isDeleted));
                   const signature = sketchRecoverySignature(elements);
