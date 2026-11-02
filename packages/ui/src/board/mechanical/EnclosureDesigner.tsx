@@ -1165,6 +1165,8 @@ export function EnclosureDesigner({
     else if (step === "Review" && !preview) setStep("Start");
   }, [design, busy, pendingRecovery, step, confirmedSelection, preview]);
   const exportReadiness = enclosureReadiness(!!preview, report, pcbModels.loading);
+  const stepNeedsAttention =
+    !!error || !!fitError || (step === "Review" && report?.status === "blocked");
   const currentPlacement = design?.boards.find((b) => b.path === selectedBoard);
   const currentFeatures = selectedBoard ? featuresFor(selectedBoard) : null;
   const currentPose =
@@ -1220,7 +1222,7 @@ export function EnclosureDesigner({
       }}
     >
       <div className="fd-case-canvas" ref={host} />
-      <aside className="fd-case-panel">
+      <aside className="fd-case-panel" data-step-attention={stepNeedsAttention}>
         <header>
           <div>
             <h2>Enclosure</h2>
@@ -1254,21 +1256,46 @@ export function EnclosureDesigner({
                   : false;
             const hint =
               s === "Start" ? workflow.caseHint : s === "Review" ? workflow.previewHint : null;
+            const state = locked
+              ? "locked"
+              : s === step
+                ? stepNeedsAttention
+                  ? "attention"
+                  : "current"
+                : complete
+                  ? "complete"
+                  : "available";
+            const stateLabel = {
+              locked: "Locked",
+              attention: "Needs attention",
+              current: "Current",
+              complete: "Complete",
+              available: "Ready",
+            }[state];
             return (
               <button
                 key={s}
+                data-step-state={state}
+                aria-label={`${stepLabels[s]} — ${stateLabel}`}
                 aria-current={step === s ? "step" : undefined}
                 disabled={actionsDisabled || locked}
                 title={locked ? (hint ?? undefined) : undefined}
                 onClick={() => setStep(s)}
               >
-                {(locked || complete) && <MechanicalIcon name={locked ? "lock" : "check"} />}
-                {stepLabels[s]}
+                <span className="fd-case-step-name">
+                  {(locked || complete) && <MechanicalIcon name={locked ? "lock" : "check"} />}
+                  {stepLabels[s]}
+                </span>
+                <small>{stateLabel}</small>
               </button>
             );
           })}
         </nav>
         <p className="fd-case-step-hint" role="status">
+          <strong>
+            {stepLabels[step]}
+            {stepNeedsAttention ? " · Needs attention" : " · Current section"}
+          </strong>
           {step === "PCB"
             ? fitError || workflow.boardsHint
             : step === "Start"
