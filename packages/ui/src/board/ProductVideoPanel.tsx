@@ -252,7 +252,6 @@ export function ProductVideoPanel({
             </Button>
             {making && makeNote && <span className="text-[11px] text-muted">{makeNote}</span>}
           </div>
-          {exportNote && !making && <div className="text-[11px] text-muted">{exportNote}</div>}
         </form></details>
         <div className="fd-video-preview flex min-h-0 flex-col gap-2 p-3" data-testid="product-video-preview">
           {preview ? (
