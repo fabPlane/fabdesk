@@ -32,24 +32,26 @@ export function AssemblySchematicPreview({ projectId, data, selection, enabled, 
     } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
     finally { running.current = false; setBusy(false); onBusyChange(false); }
   };
+  const drawing = preview.data?.svg && parseSvgViewBox(preview.data.svg) ? preview.data.svg : null;
   useEffect(() => {
     // A missing drawing is a display concern: render the verified native source once on entry.
     // Preserve stale previews and surface failures with an explicit retry rather than looping.
-    if (!autoAttempted.current && enabled && owned && source?.schematicPath && state === "missing-preview" && !preview.isFetching && !running.current) {
+    // An unverified or damaged receipt may also withhold the SVG. Do not leave
+    // those states on an Opening screen without starting work or offering Retry.
+    if (!autoAttempted.current && enabled && owned && source?.schematicPath && preview.data && !drawing && !preview.isError && !preview.isFetching && !running.current) {
       autoAttempted.current = true;
       void generate();
     }
-  }, [enabled, owned, source?.schematicPath, state, preview.isFetching]);
+  }, [enabled, owned, source?.schematicPath, drawing, preview.data, preview.isError, preview.isFetching]);
   if (!owned) return <EmptyState title="Schematic source changed or is unavailable">Select this board again before opening its saved schematic.</EmptyState>;
   if (preview.isError) return <LoadError title="Could not verify this source’s saved schematic preview" onRetry={() => { if (page) setPage(null); else void preview.refetch(); }} />;
   if (preview.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
-  const drawing = preview.data?.svg && parseSvgViewBox(preview.data.svg) ? preview.data.svg : null;
   if (!source?.schematicPath && !drawing) return <MissingNativeSource key={`${projectId}/${board.sourceId}/${board.manifestSha256}`} projectId={projectId} kind="schematic" enabled={enabled && !busy} selection={selection} membership={data} directory={source?.source.location === "project" ? source.source.directory : "."} name={source?.source.name ?? "Selected board"} />;
   const pages = preview.data?.sheets ?? [], pageIndex = pages.findIndex(sheet => sheet.path === preview.data?.sheet?.path);
   const showPrimaryRender = state !== "source-unchanged" || busy;
   const renderAction = <Button size="sm" disabled={!enabled || busy || preview.isFetching || !source?.schematicPath} onClick={() => void generate()}>{busy ? "Rendering sheets…" : preview.data?.sheets.length ? "Update schematic preview" : "Create schematic preview"}</Button>;
   const label = !enabled ? "Checking source ownership…" : busy ? "Rendering the inspected hierarchy…" : preview.isFetching ? "Checking saved sheets and preview…" : state === "source-unchanged" ? "Saved source files match this preview" : state === "source-changed" ? "Schematic changed since preview · showing an earlier drawing" : state === "artifact-changed" ? "Preview file changed or is missing · source unverified" : state === "scope-unverified" ? "Preview ownership is unverified · render this source again" : "No saved schematic preview for this source";
-  if (!drawing) return <div className="fd-assembly-schematic fd-assembly-schematic-empty"><EmptyState title={busy || !autoAttempted.current ? "Opening schematic…" : "Could not open the schematic automatically"} action={!busy && autoAttempted.current ? renderAction : undefined}>The native KiCad files were found. fabPlane creates the drawing here without changing your circuit.</EmptyState>{(error || tool.state.error) && <p role="alert" className="fd-assembly-detail-error">{error ?? tool.state.error}</p>}</div>;
+  if (!drawing) return <div className="fd-assembly-schematic fd-assembly-schematic-empty"><EmptyState title={busy ? "Opening schematic…" : "Open this board’s schematic"} action={!busy ? renderAction : undefined}>The native KiCad files were found. fabPlane creates the drawing here without changing your circuit.</EmptyState>{(error || tool.state.error) && <p role="alert" className="fd-assembly-detail-error">{error ?? tool.state.error}</p>}</div>;
   return <div className="fd-assembly-schematic" data-testid="assembly-schematic-preview">
     <div className="fd-assembly-model-status" role="status" data-warning={["source-changed", "artifact-changed", "scope-unverified"].includes(state ?? "")}><strong>{label}</strong><details className="fd-schematic-preview-details"><DisclosureSummary icon="image" label="Preview details" variant="compact" /><span>Read-only native sheet · ERC, PCB parity, external symbol libraries and assembly compatibility are unverified.</span>{!showPrimaryRender && renderAction}</details></div>
     {(pages.length > 1 || showPrimaryRender) && <div className="fd-assembly-schematic-toolbar">
