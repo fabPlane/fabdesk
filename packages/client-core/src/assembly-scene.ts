@@ -53,14 +53,16 @@ export function nextAssemblyReviewSelection(data: ProjectBoardSources, sourceIds
   return captureAssemblySelection(data, next.id);
 }
 /** Restored UI state is untrusted and must never select a changed declaration or source. */
-export function restoreAssemblySelection(data: ProjectBoardSources, saved: unknown): AssemblySceneSelection | null {
+export function restoreAssemblySelection(data: ProjectBoardSources, saved: unknown, purpose: "owned" | "review" = "owned"): AssemblySceneSelection | null {
   if (!saved || typeof saved !== "object") return null;
   const row = saved as Record<string, unknown>;
   if (typeof row.projectId !== "string" || typeof row.instanceId !== "string") return null;
   const parsed = BoardSourceSelection.safeParse({ sourceId: row.sourceId, manifestSha256: row.manifestSha256 });
   if (!parsed.success) return null;
   const selection = { ...parsed.data, projectId: row.projectId, instanceId: row.instanceId };
-  return assemblySelectionState(data, selection) === "owned" ? selection : null;
+  const state = assemblySelectionState(data, selection);
+  // Read-only source review must retain unresolved declarations; native tasks still require owned sources.
+  return state === "owned" || purpose === "review" && state === "unavailable" ? selection : null;
 }
 /** Source tasks keep an already-owned physical instance instead of silently choosing its sibling. */
 export function captureAssemblySourceSelection(data: ProjectBoardSources, sourceId: string, previous?: unknown): AssemblySceneSelection | null {

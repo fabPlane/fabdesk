@@ -135,3 +135,14 @@ test("choosing another source captures its instance instead of keeping the old s
   });
   expect(captureAssemblySourceSelection(extended, "aux", captureAssemblySelection(extended, "right"))).toMatchObject({ instanceId: "aux-main", sourceId: "aux", projectId: snapshot.projectId });
 });
+
+
+test("read-only review restores a missing declared source without granting native ownership", () => {
+  const snapshot = reviewData(), saved = captureAssemblySelection(snapshot, "missing-board")!;
+  expect(restoreAssemblySelection(snapshot, saved)).toBeNull();
+  expect(restoreAssemblySelection(snapshot, saved, "review")).toEqual(saved);
+  for (const invalid of [null, {}, { ...saved, projectId: "other" }, { ...saved, instanceId: "removed" }, { ...saved, sourceId: "io" }, { ...saved, manifestSha256: "b".repeat(64) }]) {
+    expect(restoreAssemblySelection(snapshot, invalid, "review")).toBeNull();
+  }
+  expect(captureAssemblySourceSelection(snapshot, "missing", saved)).toBeNull();
+});

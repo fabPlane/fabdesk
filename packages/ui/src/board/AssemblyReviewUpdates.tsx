@@ -16,7 +16,7 @@ export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRet
   const models = useAssemblyModelSummaries(projectId, data), modelById = new Map((models.data ?? []).map(row => [row.sourceId, row]));
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [updatingSource, setUpdatingSource] = useState<string | null>(null);
-  const [requestedScope, setRequestedScope] = useState(() => restoreAssemblySelection(data, useUiStore.getState().assemblyBoardByProject[projectId])?.sourceId ?? null);
+  const [requestedScope, setRequestedScope] = useState(() => restoreAssemblySelection(data, useUiStore.getState().assemblyBoardByProject[projectId], "review")?.sourceId ?? null);
   const attentionSources = new Set([
     ...(!checks.isFetching && !checks.isError ? (checks.data ?? []).filter(assemblyCheckNeedsReview).map(row => row.sourceId) : []),
     ...(!models.isFetching && !models.isError ? (models.data ?? []).filter(assemblyModelNeedsReview).map(row => row.sourceId) : []),
