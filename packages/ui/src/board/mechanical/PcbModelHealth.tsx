@@ -28,6 +28,13 @@ export function PcbModelHealth({
   const needsSetup = readiness?.needsSetup;
   const problem = !loading && (unavailable > 0 || !!error);
   if (!requested) return null;
+  if (!loading && !problem && !needsSetup && !setupError)
+    return (
+      <p className="fd-model-health-ready" role="status">
+        <MechanicalIcon name="cube" />
+        {loaded} boards visible
+      </p>
+    );
   return (
     <section
       className={`fd-model-health${problem || needsSetup ? " needs-attention" : ""}`}

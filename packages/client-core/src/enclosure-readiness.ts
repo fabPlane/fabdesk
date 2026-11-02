@@ -12,6 +12,14 @@ export function enclosureReadiness(
   report: MechanicalFitReport | null,
   loading: boolean,
 ) {
+  if (report?.issues.some((i) => i.code === "verification-pending"))
+    return {
+      kind: "pending",
+      title: "Fit checks not finished",
+      detail:
+        "You can inspect the shape now. Export unlocks after the checks finish; retry the preview if they fail.",
+      canExport: false,
+    } as const;
   if (loading)
     return {
       kind: "pending",

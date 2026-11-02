@@ -48,3 +48,17 @@ test("review items allow explicitly qualified prototype export", () => {
   expect(review.detail).toContain("physical fit is unverified");
   expect(enclosureReadiness(true, report, false).title).toBe("Ready for prototype export");
 });
+
+test("a visible shape never unlocks export while verification is pending", () => {
+  const state = enclosureReadiness(
+    true,
+    {
+      ...report,
+      issues: [{ code: "verification-pending", severity: "review", message: "Shape only" }],
+    },
+    false,
+  );
+  expect(state.canExport).toBe(false);
+  expect(state.kind).toBe("pending");
+  expect(state.title).toContain("not finished");
+});

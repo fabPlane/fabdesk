@@ -282,6 +282,23 @@ export function EnclosureFitReview({
   focusedIssue: MechanicalFitIssue | null;
   readiness?: { kind: string; title: string; detail: string };
 }) {
+  if (report.issues.some((issue) => issue.code === "verification-pending"))
+    return (
+      <section className="fd-fit-review" aria-label="Fit review summary">
+        <div className="fd-fit-overview fd-export-readiness" role="status">
+          <span className="fd-fit-status-icon">
+            <Icon name="search" aria-hidden="true" />
+          </span>
+          <div>
+            <strong>Case shape is ready</strong>
+            <p>
+              Model and fit checks must finish before export. You can rotate and inspect the case
+              now.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
   const blockers = report.issues.filter((i) => i.severity === "error");
   const notes = report.issues.filter(
     (i) =>

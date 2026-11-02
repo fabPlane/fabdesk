@@ -251,7 +251,16 @@ export const cad_fit = defineTool({
   description:
     "Save confirmed interior dimensions, board placements, obstacles, mounts and openings; check conservative clearance envelopes; preview/build a case; apply native PCB outline, mounting-hole and component edits; export a revision-matched design ZIP. Imported STL/STEP modification uses FreeCAD and preserves the original. Fit checks are not a fabrication certification.",
   inputSchema: {
-    action: z.enum(["status", "save", "check", "preview", "build", "edit_board", "export"]),
+    action: z.enum([
+      "status",
+      "save",
+      "check",
+      "preview_shape",
+      "preview",
+      "build",
+      "edit_board",
+      "export",
+    ]),
     design: MechanicalDesignSchema.optional(),
     expectedRevision: z.string().length(64).optional(),
     expectedDesignRevision: z.string().length(64).nullable().optional(),
@@ -590,16 +599,17 @@ export const cad_fit = defineTool({
       }
       if (!design.confirmed)
         throw new ToolError("Confirm dimensions and units first.", "precondition");
-      if (
-        args.action !== "preview" &&
-        (!args.expectedRevision || args.expectedRevision !== snap.revision)
-      )
+      const previewing = args.action === "preview" || args.action === "preview_shape";
+      const verificationPending = args.action === "preview_shape";
+      if (verificationPending && design.mode !== "generated")
+        throw new ToolError("Fast shape previews support generated cases only.", "invalid_args");
+      if (!previewing && (!args.expectedRevision || args.expectedRevision !== snap.revision))
         throw new ToolError(
           "Design or PCB changed. Preview again before applying or exporting.",
           "precondition",
         );
       if (
-        args.action !== "preview" &&
+        !previewing &&
         saved !== null &&
         sha(JSON.stringify(saved)) !== sha(JSON.stringify(design))
       )
@@ -607,7 +617,7 @@ export const cad_fit = defineTool({
           "Saved enclosure settings differ from this preview. Save and preview again before exporting.",
           "precondition",
         );
-      if (args.action !== "preview" && snap.report.status === "blocked")
+      if (!previewing && snap.report.status === "blocked")
         throw new ToolError(
           snap.report.issues
             .filter((i) => i.severity === "error")
@@ -621,14 +631,27 @@ export const cad_fit = defineTool({
         design.mode === "imported"
           ? reviewSurface(checkMechanicalFit(design, snap.boards), design, snap.boards, built.base)
           : snap.report;
-      finalReport = await detailedEnclosureFit(
-        ctx,
-        design,
-        snap.boards,
-        built.base,
-        built.lid,
-        finalReport,
-      );
+      if (verificationPending) {
+        finalReport = {
+          ...finalReport,
+          issues: [
+            ...finalReport.issues,
+            {
+              code: "verification-pending",
+              severity: "review",
+              message: "Shape preview only. Complete the model and fit checks before exporting.",
+            },
+          ],
+        };
+      } else
+        finalReport = await detailedEnclosureFit(
+          ctx,
+          design,
+          snap.boards,
+          built.base,
+          built.lid,
+          finalReport,
+        );
       if (built.validation)
         finalReport.geometry = {
           closed: true,
@@ -636,7 +659,7 @@ export const cad_fit = defineTool({
           lidParts: built.validation.lid?.components ?? 0,
           engine: built.validation.engine,
         };
-      if (args.action !== "preview" && finalReport.status === "blocked")
+      if (!previewing && finalReport.status === "blocked")
         throw new ToolError(
           finalReport.issues
             .filter((i) => i.severity === "error")
@@ -649,10 +672,10 @@ export const cad_fit = defineTool({
           "A source file changed during generation. Preview again.",
           "precondition",
         );
-      if (args.action === "preview")
+      if (previewing)
         return ok("Preview only — no project designs changed", {
           sourceRevision: snap.sourceRevision,
-          revision: snap.revision,
+          ...(verificationPending ? { verificationPending: true } : { revision: snap.revision }),
           report: finalReport,
           boards: snap.boards,
           meshes: {

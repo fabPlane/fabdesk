@@ -4,6 +4,27 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { EnclosureFitReview } from "./EnclosureFitReview";
 import type { MechanicalFitReport } from "@fabdesk/protocol";
 
+test("a quick shell is not presented as a completed fit check", () => {
+  const html = renderToStaticMarkup(
+    createElement(EnclosureFitReview, {
+      report: {
+        status: "review",
+        checkedBoards: 7,
+        coverage: "bounds",
+        boardRevisions: {},
+        issues: [{ code: "verification-pending", severity: "review", message: "Shape only" }],
+      },
+      focusedIssue: null,
+      onNavigate: () => {},
+      onShowIssue: () => {},
+    }),
+  );
+  expect(html).toContain("Case shape is ready");
+  expect(html).toContain("checks must finish before export");
+  expect(html).not.toContain("Boards checked");
+  expect(html).not.toContain("Preview checked");
+});
+
 test("simplified review keeps blocking errors outside collapsed optional checks", () => {
   const report: MechanicalFitReport = {
     status: "blocked",

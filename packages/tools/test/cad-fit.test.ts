@@ -170,6 +170,30 @@ async function setup() {
   };
   return { project, services, invoke, design };
 }
+test("fast shape preview is explicitly unverified and cannot authorize an export", async () => {
+  const { invoke, design, services } = await setup();
+  design.detailedFit = true;
+  let exporterCalled = false;
+  services.kicad.resolveCli = async () => {
+    exporterCalled = true;
+    return null;
+  };
+  const result = (await invoke({ action: "preview_shape", design })).json as {
+    verificationPending: boolean;
+    revision?: string;
+    meshes: { base: string };
+    report: MechanicalFitReport;
+  };
+  expect(exporterCalled).toBe(false);
+  expect(result.verificationPending).toBe(true);
+  expect(result.revision).toBeUndefined();
+  expect(result.meshes.base.length).toBeGreaterThan(0);
+  expect(result.report.issues.some((i) => i.code === "verification-pending")).toBe(true);
+  await expect(invoke({ action: "build", design })).rejects.toThrow(/Preview again/);
+  await invoke({ action: "preview", design });
+  expect(exporterCalled).toBe(true);
+});
+
 test("preview leaves designs untouched; ZIP includes matching source hashes and rejects stale PCB", async () => {
   const { invoke, design, project } = await setup();
   const before = await readdir(project.dir);

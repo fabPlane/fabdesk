@@ -58,6 +58,7 @@ import {
 } from "@fabdesk/client-core";
 
 type Result = {
+  verificationPending?: boolean;
   design?: MechanicalDesign | null;
   designRevision?: string | null;
   board?: EnclosureBoardSummary | null;
@@ -296,7 +297,7 @@ export function EnclosureDesigner({
   viewState.current = { step, selected: selectedBoard };
   const [placementMode, setPlacementMode] = useState<"orbit" | "translate" | "rotate">("orbit");
   const [caseVisible, setCaseVisible] = useState(true);
-  const [controlsExpanded, setControlsExpanded] = useState(true);
+  const [controlsExpanded, setControlsExpanded] = useState(false);
   const sceneToolsId = useId();
   const history = useRef(new EnclosureHistory());
   const savedDesign = useRef<MechanicalDesign | null>(null);
@@ -307,7 +308,7 @@ export function EnclosureDesigner({
     const observer = new ResizeObserver(([entry]) => {
       if (!entry || !entry.contentRect.width) return;
       const next = entry.contentRect.width < 1290;
-      if (next !== compact) setControlsExpanded(!next);
+      if (next && next !== compact) setControlsExpanded(false);
       compact = next;
     });
     observer.observe(host.current.parentElement!);
@@ -816,56 +817,64 @@ export function EnclosureDesigner({
     const design = next;
     await save(design);
     if (!mounted.current) return;
-    const r = await call("preview", { design });
-    if (!mounted.current) return;
-    framed.current = false;
-    setPreview(r);
-    setReport(r.report ?? null);
-    setFitError("");
-    setFitState("Fit checked with preview");
-    setFocusedIssue(null);
-    const models: SceneModel[] = design.obstacles.map((volume, i) => ({
-      item: mechanicalItem(`@obstacle-${i}`, "import", volume.name),
-      volume,
-      origin: [0, 0, 0],
-      selectable: false,
-    }));
-    if (r.meshes)
-      for (const kind of ["base", "lid"] as const) {
-        const bytes = r.meshes[kind];
-        if (bytes)
-          models.push({
-            item: mechanicalItem(
-              `@case-${kind}.stl`,
-              kind,
-              kind === "base" ? "Enclosure preview" : "Lid",
-            ),
-            data: decodeMesh(bytes),
-            origin: [0, 0, 0],
-            selectable: false,
-            enclosure: true,
-          });
+    // Display the joined shell while fresh native model checks continue.
+    for (const action of design.mode === "generated" ? ["preview_shape", "preview"] : ["preview"]) {
+      setBusy(action === "preview_shape" ? "Creating case shape…" : "Checking models & fit…");
+      const r = await call(action, { design });
+      if (!mounted.current) return;
+      if (action !== "preview" || design.mode !== "generated") framed.current = false;
+      setPreview(r);
+      setReport(r.report ?? null);
+      setFitError("");
+      setFitState(r.verificationPending ? "Checking models & fit…" : "Fit checked with preview");
+      setFocusedIssue(null);
+      const models: SceneModel[] = design.obstacles.map((volume, i) => ({
+        item: mechanicalItem(`@obstacle-${i}`, "import", volume.name),
+        volume,
+        origin: [0, 0, 0],
+        selectable: false,
+      }));
+      if (r.meshes)
+        for (const kind of ["base", "lid"] as const) {
+          const bytes = r.meshes[kind];
+          if (bytes)
+            models.push({
+              item: mechanicalItem(
+                `@case-${kind}.stl`,
+                kind,
+                kind === "base" ? "Enclosure preview" : "Lid",
+              ),
+              data: decodeMesh(bytes),
+              origin: [0, 0, 0],
+              selectable: false,
+              enclosure: true,
+            });
+        }
+      for (const b of r.boards ?? []) {
+        const item = mechanicalItem(`@fit-${b.placement.path}`, "board", b.placement.path);
+        const pose = enclosureBoardPose(b.placement, b.features.outline);
+        item.position = pose.position;
+        item.rotation = pose.rotation;
+        models.push({
+          item,
+          board: geometryFor(b.placement.path, b.features),
+          thickness: b.features.thicknessMm,
+          origin: pose.origin,
+        });
       }
-    for (const b of r.boards ?? []) {
-      const item = mechanicalItem(`@fit-${b.placement.path}`, "board", b.placement.path);
-      const pose = enclosureBoardPose(b.placement, b.features.outline);
-      item.position = pose.position;
-      item.rotation = pose.rotation;
-      models.push({
-        item,
-        board: geometryFor(b.placement.path, b.features),
-        thickness: b.features.thicknessMm,
-        origin: pose.origin,
-      });
+      setModelSources(models);
+      setNotice("");
+      setTransparent(true);
+      setShowSpace(false);
+      setStep("Review");
     }
-    setModelSources(models);
-    setNotice("");
-    setTransparent(true);
-    setShowSpace(false);
-    setStep("Review");
   }
   async function makePreview(choice = layoutChoice) {
     if (!design) return;
+    if (design.mode === "generated" && choice !== "keep") {
+      await autoArrange(false, true, choice);
+      return;
+    }
     const checked = await call("check", { design });
     if (!mounted.current) return;
     setFitBoards(checked.boards);
@@ -880,7 +889,11 @@ export function EnclosureDesigner({
     edit(next, "Create case preview");
     await showPreview(next);
   }
-  async function autoArrange(resize = false, previewAfter = false) {
+  async function autoArrange(
+    resize = false,
+    previewAfter = false,
+    goal: EnclosureLayoutGoal = "compact",
+  ) {
     if (!design) return;
     const input = resize ? resizeEnclosureToFit(design) : design;
     if (design.mode === "imported" && !design.confirmed)
@@ -897,7 +910,8 @@ export function EnclosureDesigner({
         ? { modelBounds: pcbModels.models[b.placement.path]!.bounds! }
         : {}),
     }));
-    const [choice] = await compareLayouts(input, boards, "compact");
+    setBusy("Arranging boards…");
+    const [choice] = await compareLayouts(input, boards, goal);
     if (!mounted.current) return;
     if (choice?.error?.startsWith("No collision-free") && input.layoutLimit)
       throw new Error(
@@ -970,7 +984,7 @@ export function EnclosureDesigner({
         setPlacementMode("translate");
       }
       setNotice(
-        "Move the highlighted board, or use Arrange & fit case. Preview again after making changes.",
+        "Move the highlighted board, or choose Auto arrange in Case. Preview again after making changes.",
       );
       requestAnimationFrame(() =>
         body.current
@@ -1195,67 +1209,17 @@ export function EnclosureDesigner({
           ))}
         </nav>
         <div className="fd-case-body" ref={body}>
-          <section className="fd-case-auto-arrange" aria-label="Automatic board placement">
-            <button
-              className="fd-mechanical-primary"
-              disabled={
-                actionsDisabled ||
-                pcbModels.loading ||
-                !design?.boards.length ||
-                design.boards.every((b) => b.locked)
-              }
-              onClick={() => void run("Auto arranging boards…", () => autoArrange(false, true))}
-            >
-              {busy === "Auto arranging boards…" ? "Arranging…" : "Arrange & fit case"}
-            </button>
-            {design?.mode === "generated" && design.layoutLimit && (
-              <>
-                <button
-                  disabled={actionsDisabled || pcbModels.loading || !design.boards.length}
-                  onClick={() => void run("Auto arranging boards…", () => autoArrange(true, true))}
-                >
-                  Resize case to fit
-                </button>
-                <small>
-                  Auto arrange keeps your {design.layoutLimit.width} × {design.layoutLimit.depth} mm
-                  limit. Resize case to fit removes that limit, sizes a new case and places the
-                  boards. Undo restores both.
-                </small>
-              </>
-            )}
-            <small>
-              {!design?.boards.length
-                ? "Choose boards below to place them automatically."
-                : pcbModels.loading
-                  ? "Loading board shapes before arranging…"
-                  : design.boards.every((b) => b.locked)
-                    ? "All boards are locked. Unlock a board to arrange it."
-                    : "Arrange boards, align detected ports and preview the fit. Locked boards stay in place."}
-            </small>
-            <details>
-              <summary>Placement only</summary>
-              <button
-                disabled={
-                  actionsDisabled ||
-                  pcbModels.loading ||
-                  !design?.boards.length ||
-                  design.boards.every((b) => b.locked)
-                }
-                onClick={() => void run("Auto arranging boards…", () => autoArrange())}
-              >
-                Arrange without preview
-              </button>
-            </details>
-          </section>
           <PcbModelHealth {...pcbModels} />
-          <EnclosureBoardDimensions
-            paths={design?.boards.map((b) => b.path) ?? []}
-            selected={selectedBoard}
-            features={currentFeatures}
-            disabled={actionsDisabled}
-            onSelect={selectBoard}
-            onFocus={() => selectedBoard && scene.current?.focusModel(`@fit-${selectedBoard}`)}
-          />
+          {(selectedBoard || step === "PCB") && (
+            <EnclosureBoardDimensions
+              paths={design?.boards.map((b) => b.path) ?? []}
+              selected={selectedBoard}
+              features={currentFeatures}
+              disabled={actionsDisabled}
+              onSelect={selectBoard}
+              onFocus={() => selectedBoard && scene.current?.focusModel(`@fit-${selectedBoard}`)}
+            />
+          )}
           {selectedBoard && !pcbModels.models[selectedBoard] && (
             <p role="status" className="fd-mechanical-note">
               {pcbModels.loading
@@ -1444,7 +1408,6 @@ export function EnclosureDesigner({
                       <small>Import a file</small>
                     </button>
                   </div>
-                  <EnclosureHardwarePanel design={design} onChange={edit} />
                   {design.mode === "imported" && (
                     <>
                       <label>
@@ -1531,42 +1494,26 @@ export function EnclosureDesigner({
                   )}
                   {design.mode === "generated" && (
                     <>
-                      <div className="fd-case-intro">
-                        <h3>Layout</h3>
-                      </div>
-                      <div className="fd-case-simple-options" role="group" aria-label="Case layout">
-                        {(
-                          [
-                            ["compact", "Small case", "Use less space", "Recommended"],
-                            ["assembly", "More room", "Leave extra room between boards", ""],
+                      <label className="fd-case-layout-choice">
+                        Board layout
+                        <select
+                          value={layoutChoice}
+                          onChange={(e) => {
+                            setLayoutChoice(e.target.value as EnclosureLayoutGoal | "keep");
 
-                            ["keep", "Keep my layout", "Use the current size and positions", ""],
-                          ] as const
-                        ).map(([value, title, hint, badge]) => (
-                          <button
-                            key={value}
-                            aria-pressed={layoutChoice === value}
-                            onClick={() => {
-                              setLayoutChoice(value);
-                              setPreview(null);
-                              setArchive(null);
-                            }}
-                          >
-                            <span>
-                              <strong>{title}</strong>
-                              <small>{hint}</small>
-                            </span>
-                            {badge ? (
-                              <em>{badge}</em>
-                            ) : (
-                              <span aria-hidden="true" className="fd-case-option-dot" />
-                            )}
-                          </button>
-                        ))}
-                      </div>
+                            setPreview(null);
+                            setArchive(null);
+                          }}
+                        >
+                          <option value="compact">Auto arrange · compact case</option>
+                          <option value="assembly">Auto arrange · more room</option>
+                          <option value="ports">Auto arrange · ports together</option>
+                          <option value="keep">Keep my board positions</option>
+                        </select>
+                      </label>
                       <p className="fd-case-hint">
                         {layoutChoice === "ports"
-                          ? "Ports grouped on fewer sides. Change this in Ports, cables & fixed boards."
+                          ? "Group detected ports on fewer sides of the case."
                           : layoutChoice === "keep"
                             ? `Current inside size: ${design.space.width} × ${design.space.depth} × ${design.space.height} mm.`
                             : "No measurements needed to start. Locks, fixed parts and custom openings are respected."}
@@ -1589,6 +1536,27 @@ export function EnclosureDesigner({
                         >
                           Use these dimensions
                         </button>
+                        {design.layoutLimit && (
+                          <div className="fd-case-resize-option">
+                            <p>
+                              Outside size limit: {design.layoutLimit.width} ×{" "}
+                              {design.layoutLimit.depth} mm.
+                            </p>
+                            <button
+                              disabled={
+                                actionsDisabled || pcbModels.loading || !design.boards.length
+                              }
+                              onClick={() =>
+                                void run("Reading boards…", () => autoArrange(true, true))
+                              }
+                            >
+                              Resize case to fit
+                            </button>
+                            <small>
+                              Removes this size limit. Fixed boards and obstacles stay protected.
+                            </small>
+                          </div>
+                        )}
                         <h3>Inside size</h3>
                         <p>Change only what you need. Sizes are in millimetres.</p>
                         <div className="fd-case-grid">
@@ -1610,6 +1578,7 @@ export function EnclosureDesigner({
                       </details>
                     </>
                   )}
+                  <EnclosureHardwarePanel design={design} onChange={edit} />
                   {design.mode === "imported" && (
                     <>
                       <h3>Inside size</h3>
@@ -2498,7 +2467,9 @@ export function EnclosureDesigner({
                       Check fit
                     </button>
                     <p className="fd-case-fit-state" role="status">
-                      {preview ? "Fit checked with preview" : fitState}
+                      {preview && !preview.verificationPending
+                        ? "Fit checked with preview"
+                        : fitState}
                     </p>
                   </details>
                   {fitError && (
@@ -2610,9 +2581,14 @@ export function EnclosureDesigner({
                   (design.mode === "imported" &&
                     (!design.confirmed || !design.source?.path || !capabilities.cad))
                 }
-                onClick={() => void run("Making your case…", makePreview)}
+                onClick={() => void run("Reading boards…", makePreview)}
               >
-                {pcbModels.loading ? "Reading boards…" : "Make preview"}
+                {busy ||
+                  (pcbModels.loading
+                    ? "Reading boards…"
+                    : design?.mode === "generated" && layoutChoice !== "keep"
+                      ? "Arrange & fit case"
+                      : "Preview case")}
               </button>
             ) : archive ? (
               <button
@@ -2622,7 +2598,7 @@ export function EnclosureDesigner({
               >
                 Download files
               </button>
-            ) : preview ? (
+            ) : preview && !preview.verificationPending ? (
               <button
                 className="fd-mechanical-primary"
                 disabled={actionsDisabled || !exportReadiness.canExport}
@@ -2640,9 +2616,14 @@ export function EnclosureDesigner({
                   (design.mode === "imported" &&
                     (!design.confirmed || !design.source?.path || !capabilities.cad))
                 }
-                onClick={() => void run("Making your case…", makePreview)}
+                onClick={() => void run("Reading boards…", makePreview)}
               >
-                {pcbModels.loading ? "Reading boards…" : "Make preview"}
+                {busy ||
+                  (pcbModels.loading
+                    ? "Reading boards…"
+                    : design?.mode === "generated" && layoutChoice !== "keep"
+                      ? "Arrange & fit case"
+                      : "Preview case")}
               </button>
             )}
           </div>
@@ -2655,7 +2636,7 @@ export function EnclosureDesigner({
           aria-controls={sceneToolsId}
           onClick={() => setControlsExpanded(!controlsExpanded)}
         >
-          <span>View & fit</span>
+          <span>View options</span>
           <span aria-hidden="true">{controlsExpanded ? "−" : "+"}</span>
         </button>
         <div className="fd-case-tools-body" id={sceneToolsId} hidden={!controlsExpanded}>

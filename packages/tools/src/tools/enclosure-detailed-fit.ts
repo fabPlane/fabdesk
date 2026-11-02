@@ -10,6 +10,8 @@ import type { ToolContext } from "../registry";
 import { jailPath } from "../fs";
 import { displayCoverage } from "./pcb-display";
 import { sampleVerticalAssembly } from "./enclosure-assembly";
+import { boundsSeparation } from "./enclosure-bounds";
+import { exportEnclosureBoards } from "./enclosure-exports";
 
 /** Native board artwork can be planar. Never classify a named component as artwork. */
 export function isPlanarBoardLayer(
@@ -69,6 +71,21 @@ export async function detailedEnclosureFit(
   let checked = 0,
     total = 0;
   try {
+    const exports = await exportEnclosureBoards(
+      boards,
+      async (b, index) => {
+        const board = await jailPath(dir, b.placement.path);
+        const output = join(scratch, `${index}-${randomUUID()}.glb`);
+        await ctx.services.kicad.exportGlb(cli, {
+          board,
+          output,
+          mechanical: true,
+          signal: ctx.signal,
+        });
+        return { board, output };
+      },
+      ctx.signal,
+    );
     const shell = own(solidFromTriangles(k, readStlTriangles(base)));
     const cover = lid ? own(solidFromTriangles(k, readStlTriangles(lid))) : null;
     const obstacles = d.obstacles.map((o) => ({
@@ -76,7 +93,7 @@ export async function detailedEnclosureFit(
       solid: own(own(k.Manifold.cube([o.width, o.depth, o.height])).translate([o.x, o.y, o.z])),
     }));
     const assembled: Array<{ path: string; solid: Manifold }> = [];
-    for (const b of boards) {
+    for (const [index, b] of boards.entries()) {
       ctx.signal?.throwIfAborted();
       const temporary: Manifold[] = [];
       const part = (solid: Manifold) => {
@@ -84,14 +101,9 @@ export async function detailedEnclosureFit(
         return solid;
       };
       try {
-        const board = await jailPath(dir, b.placement.path),
-          output = join(scratch, `${assembled.length}-${randomUUID()}.glb`);
-        await ctx.services.kicad.exportGlb(cli, {
-          board,
-          output,
-          mechanical: true,
-          signal: ctx.signal,
-        });
+        const exported = exports[index]!;
+        if (exported.status === "rejected") throw exported.reason;
+        const { board, output } = exported.value;
         const bytes = await readFile(output);
         if (bytes.length > 50 * 1024 * 1024)
           throw new Error("model exceeds the 50 MB detailed-fit limit");
@@ -145,6 +157,7 @@ export async function detailedEnclosureFit(
           );
         if (!parts.length) throw new Error("no closed board/component models available");
         const solid = own(k.Manifold.union(parts));
+        const solidBounds = solid.boundingBox();
         const intersecting = new Set<Manifold>();
         for (const [label, other] of [
           ["case", shell],
@@ -153,6 +166,7 @@ export async function detailedEnclosureFit(
           ...obstacles.map((a) => [a.path, a.solid]),
         ] as Array<[string, Manifold | null]>) {
           if (!other) continue;
+          if (boundsSeparation(solidBounds, other.boundingBox()) > 0) continue;
           const intersection = solid.intersect(other);
           try {
             if (intersection.volume() > 0.01) {
@@ -183,6 +197,7 @@ export async function detailedEnclosureFit(
         // separation only between independent boards and reserved obstacles.
         for (const other of [...assembled, ...obstacles]) {
           const requiredGap = d.space.clearance + 2 * (d.fitAllowance ?? 0);
+          if (boundsSeparation(solidBounds, other.solid.boundingBox()) >= requiredGap) continue;
           const gap = solid.minGap(other.solid, requiredGap);
           if (!intersecting.has(other.solid) && gap < requiredGap - 1e-4)
             note(

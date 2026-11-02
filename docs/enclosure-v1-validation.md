@@ -213,3 +213,12 @@ Measured final Arrange & fit case run: 24.8 seconds from click to completed seve
 ![One-click preview and export readiness](screenshots/mechanical-workspace/67-arrange-fit-preview.png)
 
 ![Warning action selects the red board and opens Move](screenshots/mechanical-workspace/68-actionable-fit-warning.png)
+
+## Faster, simpler enclosure workflow (2026-11-02)
+
+- Replaced competing arrange/placement/preview buttons with one footer action and a compact board-layout selector. Measurements appear when a board is selected (or on Boards); advanced hardware follows the basic choices. View options start collapsed and stay collapsed when the panel grows.
+- Generated cases show joined shell geometry before detailed model checks finish. The early result is explicitly unverified, contains no export revision, and cannot unlock export. Checks continue automatically with fresh native exports, exact intersections, clearance and assembly-path sampling enabled.
+- Native export concurrency is bounded at two. Failed boards remain explicit findings; cancellation drains running exports before scratch cleanup. Conservative bounding-box separation prunes only solid operations that cannot affect the result.
+- Real seven-board comparison: native detailed checks fell from 24.2 to 16.2 seconds with identical issue messages. In the built app, the joined case appeared after 1.6 seconds; full checking finished in 18.1–19.5 seconds across two runs versus the previous 24.8-second run. The live result retained 0 blockers and 39 review items. These are local observations, not guaranteed timings on other machines.
+- 45 targeted tests / 211 assertions pass, including bounded concurrency, cancellation, failures, exact collision preservation, unverified-preview export rejection and pending-check presentation. Root typecheck and desktop build pass; no source maps in output. The full monorepo suite was not rerun for this change.
+- Built-app failure recovery: a deliberately interrupted full check kept export disabled and offered Preview case again. Retry completed successfully. The final panel has one primary footer action and no horizontal overflow. Original VAIO draft and Undo history were preserved.
