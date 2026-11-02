@@ -18,7 +18,7 @@ export function VideoSourceStatus({ projectId, path, updating }: { projectId: st
   const revision = useVideoInputRevision(projectId, path);
   return <div className="fd-board-model-status" data-warning={videoInputsNeedReview(revision.data)} aria-live="polite">
     <strong>{updating ? "Updating video…" : revision.isFetching || revision.isPending ? "Checking video inputs…" : revision.isError ? "Video inputs could not be checked" : videoInputLabel(revision.data)}</strong>
-    <details><DisclosureSummary icon="folderOpen" label="Video source details" variant="compact" /><p>Checks the saved video, its recorded models and the PCB source of a tracked board model. Captions, new scene content and external component files still need review. The saved video stays until you choose Make video.</p></details>
+    <details><DisclosureSummary icon="folderOpen" label="Video source details" variant="compact" /><p>Checks the saved video, its recorded models and the PCB source of a tracked board model. Video uses saved 3D meshes; a board image may show component geometry that those meshes omit. Captions, model coverage, new scene content and external component files still need review. The saved video stays until you choose Make video.</p></details>
     {revision.isError && <Button size="sm" variant="ghost" onClick={() => void revision.refetch()}>Retry video source check</Button>}
   </div>;
 }

@@ -1,3 +1,13 @@
+# November 2 — imported 3D component context validated locally
+
+Observed GLB mismatch traced to the editable root PCB losing the imported folder's `${KIPRJMOD}` component-model context. The explicitly recorded selected import folder now supplies that variable to the native exporter; the editable PCB and original model assets are not rewritten or duplicated. Root model receipts retain actual exporter warnings and the relative folder; optional export details disclose that this is not full dependency/geometry/fit verification. Legacy projects without a recorded import are not guessed.
+
+Actual native Playbridge repeat: regenerated GLB contains J1/J2 and shows both connector housings; generated six-second video through UI, closed to Home with a visible running-task badge, reopened Activity at frame107/144, then played/seeked MP4 and closed via X back to Library. MP4/WebM/GIF hashes match the manifest and its input matches the corrected GLB. Completed group/export time are visible. Original PCB/schematic, import identity and repository versions unchanged. Evidence31–39; proof39. User generated schematic preview during the repeat; it correctly appears newer than the video.
+
+Affected UI/tools/kicad/core typechecks pass. Focused11tests/39assertions, UI251/1061, protocol95/395 pass. No whole-root/build/hosted-CI or full engineering approval claim. This milestone is local after883cd09; remote independently remainsd1d6927, title updated. Next observed regression: Models & video exposes zero-byte WebM and loses local making-state after reopen during active encoding; fix persisted activity awareness and format availability, then remaining19queue and authorized journeys. No completion/stop at commit. Teammate398/393 and Art deferrals unchanged; automationPAUSED/keepawakeRELEASED.
+
+---
+
 ## Local output chronology checkpoint · November 2, 2026
 
 Library now orders files and grouped cards by recorded completed export time when a recognized receipt matches the exact artifact bytes. Untracked, malformed, changed and zero-byte artifacts retain a clearly labelled file-time fallback. Date labels include time, and grouping uses the latest effective file time while retaining stable path selection. The core reuses existing exporter receipts with bounded cached streaming hashes; it does not equate generation dates with source freshness. Future video manifests record completion time; older videos are not backdated.

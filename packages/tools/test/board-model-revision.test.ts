@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { BOARD_MODEL_REVISION_PATH, BoardModelRevision } from "@fabdesk/protocol";
 import { createRegistry } from "../src";
 import { pcbPreviewFileHash } from "../src/pcb-preview-revision";
@@ -43,5 +43,30 @@ for (const mode of ["source-change", "failure", "no-output"] as const) test(`${m
     await expect(run()).rejects.toThrow();
     expect(await readFile(output, "utf8")).toBe("previous model");
     expect(await readFile(join(project.dir, BOARD_MODEL_REVISION_PATH), "utf8")).toBe("previous receipt");
+  } finally { await rm(project.dir, { recursive: true, force: true }); }
+});
+
+test("imported root copy exports with the explicitly selected model directory without modifying sources", async () => {
+  const project = await tempProject("imported-model-context"), origin = "versions/v4.1/board.kicad_pcb";
+  await mkdir(join(project.dir, "versions/v4.1"), { recursive: true });
+  await Bun.write(join(project.dir, origin), "original PCB");
+  await Bun.write(join(project.dir, "board.kicad_pcb"), "edited working PCB");
+  await project.updateManifest({ importedBoard: { path: origin, adoptedAt: new Date().toISOString(), pcbSha256: "a".repeat(64) } });
+  const base = mockServices([project]), registry = createRegistry();
+  const services = mockServices([project], { kicad: { ...base.kicad, exportGlb: async (_cli, options) => {
+    expect(options.board).toBe(join(project.dir, "board.kicad_pcb"));
+    expect(options.modelProjectDir).toBe(join(project.dir, "versions/v4.1"));
+    await Bun.write(options.output, "model with imported dependencies");
+    return { fused: false, warnings: ["Warning: one other model unavailable"] };
+  } } });
+  const factory = contextFactory(services, project);
+  try {
+    await registry.invoke("render_glb", {}, ref => factory({ def: registry.get("render_glb")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    const receipt = JSON.parse(await readFile(join(project.dir, BOARD_MODEL_REVISION_PATH), "utf8"));
+    expect(receipt.modelProjectDirectory).toBe("versions/v4.1");
+    expect(receipt.warnings).toEqual(["Warning: one other model unavailable"]);
+    expect(await Bun.file(join(project.dir, origin)).text()).toBe("original PCB");
+    expect(await Bun.file(join(project.dir, "board.kicad_pcb")).text()).toBe("edited working PCB");
+    expect(receipt.sourceSha256).toBe(await pcbPreviewFileHash(join(project.dir, "board.kicad_pcb")));
   } finally { await rm(project.dir, { recursive: true, force: true }); }
 });

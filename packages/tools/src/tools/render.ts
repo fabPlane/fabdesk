@@ -6,7 +6,7 @@ import { AssemblyBoardModelRevision, BoardModelRevision, BOARD_MODEL_REVISION_PA
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { z } from "zod/v4";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import {
   extractSpecs,
   renderProductVideo,
@@ -210,17 +210,23 @@ export const render_glb = defineTool({
     ctx.progress(0.2, "exporting glb");
     const sourceSha256 = await pcbPreviewFileHash(board);
     if (expectedSourceSha256 && sourceSha256 !== expectedSourceSha256) throw new ToolError("The saved PCB changed since inspection. Inspect the selected source again before exporting its model.", "precondition");
+    // The editable PCB is copied to the root during import. Its project-relative
+    // component models still belong to the explicitly selected repository directory.
+    const imported = !ctx.board ? project.manifest().importedBoard : undefined;
+    const modelProjectDir = imported ? dirname(await jailPath(project.dir, imported.path)) : project.dir;
+    if (!(await stat(modelProjectDir).catch(() => null))?.isDirectory()) throw new ToolError("The imported board's component-model directory is missing. Restore that source folder before exporting the model.", "precondition");
+    const modelProjectDirectory = relative(project.dir, modelProjectDir).split(sep).join("/");
     const scratch = await mkdtemp(join(tmpdir(), "fabplane-board-model-"));
     let res: { fused: boolean; warnings: string[] };
     try {
       // Keep the source in its real project so relative component models/project variables
       // resolve normally. Only publish a newly written export, after rechecking saved PCB bytes.
       const temporary = join(scratch, "board.glb");
-      res = await ctx.services.kicad.exportGlb(cli, { board, output: temporary, signal: ctx.signal });
+      res = await ctx.services.kicad.exportGlb(cli, { board, output: temporary, ...(modelProjectDirectory ? { modelProjectDir } : {}), signal: ctx.signal });
       if (await pcbPreviewFileHash(board) !== sourceSha256)
         throw new ToolError("PCB changed while exporting the model. The previous model was kept; review the saved PCB and try again.", "precondition");
       const bytes = await readFile(temporary);
-      const receipt = (ctx.board ? AssemblyBoardModelRevision : BoardModelRevision).parse({ contract: "fabplane.board-model-revision.v1", source: "board.kicad_pcb", artifact: "renders/board.glb", sourceSha256, artifactSha256: createHash("sha256").update(bytes).digest("hex"), generatedAt: new Date().toISOString(), dependencies: "unverified", ...(ctx.board ? { boardSource: { projectId: project.id, ...ctx.board }, warnings: res.warnings } : {}) });
+      const receipt = (ctx.board ? AssemblyBoardModelRevision : BoardModelRevision).parse({ contract: "fabplane.board-model-revision.v1", source: "board.kicad_pcb", artifact: "renders/board.glb", sourceSha256, artifactSha256: createHash("sha256").update(bytes).digest("hex"), generatedAt: new Date().toISOString(), dependencies: "unverified", warnings: res.warnings, ...(modelProjectDirectory ? { modelProjectDirectory } : {}), ...(ctx.board ? { boardSource: { projectId: project.id, ...ctx.board } } : {}) });
       await jailPath(project.dir, `${PROJECT_FILES.renders}/board.glb`);
       await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
       await ctx.runInScope?.(async () => {});

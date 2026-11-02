@@ -60,6 +60,8 @@ export async function renderPng(cli: KicadCli, options: RenderPngOptions): Promi
 export interface ExportGlbOptions {
   board: string;
   output: string;
+  /** Preserve ${KIPRJMOD} model references when an imported board has an editable root copy. */
+  modelProjectDir?: string;
   includeDnp?: boolean;
   signal?: AbortSignal;
 }
@@ -72,6 +74,7 @@ export interface ExportGlbOptions {
  */
 export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promise<{ fused: boolean; warnings: string[] }> {
   const base = ["pcb", "export", "glb", "--force", "--subst-models", "--include-pads", "--include-silkscreen", "--include-soldermask"];
+  if (options.modelProjectDir) base.push("--define-var", `KIPRJMOD=${options.modelProjectDir}`);
   if (!options.includeDnp) base.push("--no-dnp");
   const tail = ["-o", options.output, options.board];
   const attempt = async (fused: boolean) => {
@@ -79,9 +82,9 @@ export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promi
       tolerateExit: true,
       ...(options.signal ? { signal: options.signal } : {}),
     });
-    const warnings = result.stderr
+    const warnings = `${result.stdout}\n${result.stderr}`
       .split("\n")
-      .filter((line) => /file not found|problems encountered|warning/i.test(line))
+      .filter((line) => /file not found|problems encountered|warning|could not add 3d model|unable to load/i.test(line))
       .map((line) => line.trim());
     return { ok: existsSync(options.output), warnings, exitCode: result.exitCode, stderr: result.stderr };
   };

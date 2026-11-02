@@ -37,6 +37,9 @@ export const BoardModelRevision = z.object({
   artifactSha256: z.string().regex(/^[a-f0-9]{64}$/),
   generatedAt: z.string().datetime(),
   dependencies: z.literal("unverified"),
+  /** Recorded import directory used for KIPRJMOD; does not establish model coverage or freshness. */
+  modelProjectDirectory: AssemblyRelativePath.optional(),
+  warnings: z.array(z.string()).optional(),
 });
 export type BoardModelRevision = z.infer<typeof BoardModelRevision>;
 export const BOARD_MODEL_REVISION_PATH = "renders/board.glb.revision.json";
