@@ -130,6 +130,21 @@ body {
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
+/* Native popup menus may use an OS surface instead of the select's background.
+   Give both the field and its options an explicit, matching theme palette. */
+select {
+  color-scheme: inherit;
+  color: var(--fd-fg);
+  background-color: var(--fd-panel);
+}
+select option,
+select optgroup {
+  color: var(--fd-fg);
+  background-color: var(--fd-panel);
+}
+select option:disabled {
+  color: var(--fd-muted);
+}
 :is(button, input, select, textarea, [role="tab"]):focus-visible {
   outline: 2px solid var(--fd-accent);
   outline-offset: 2px;
