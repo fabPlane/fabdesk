@@ -1,4 +1,12 @@
-## Local manufacturing checkpoint
+## Publication checkpoint · November 2, 2026
+
+The requested follow-up push published **714d573** (output grouping/actions, schematic navigation, dialog/tooltips and BOM presentation) and **b5c9c53** (source-bound Gerber package with drill files). GitHub previously remained at **c424380**; the two later milestones had been local only. Their actual implementation and native validation are described below. Validation dates remain October 30; this publication does not imply new November 2 native results or a full-root/hosted-CI pass.
+
+The Home → Open → Close → Home implementation is still uncommitted and under native validation. It is excluded from this publication. Output deletion, import provenance, component focus, model-coverage investigation and the remaining acceptance cases are unfinished. This is an interim publication, not completion of the nineteen-item queue or the additional user journeys. No merge or deployment.
+
+The earlier “local” headings and pending statements below are chronological checkpoints. This section governs publication status; the newest manufacturing checkpoint supersedes the older statement that Gerber orchestration is unfinished.
+
+## Manufacturing checkpoint
 
 Outputs → Export files now creates a named Gerber ZIP by sequencing the existing source-guarded Gerber and drill exporters. The ZIP receives only this run’s returned filenames, excluding obsolete layers or optional earlier BOM/placements. A missing/failed drill stage, changed source, mismatched ZIP manifest or changed project cannot produce the completed-download state. Individual advanced exporters retain their existing behavior. The UI names the package, shows progress/error details and preserves source context.
 
