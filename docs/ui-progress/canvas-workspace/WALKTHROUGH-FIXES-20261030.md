@@ -1,3 +1,15 @@
+# November 2 — core-flow handoff checkpoint
+
+Code through `51bd9c9` adds shared Files model previews (`c58ea02`), visible stencil completion notes (`2ef0b17`) and contained export scrolling so navigation/Ask stay at the canvas edges. Actual native before/after evidence is [recorded here](WALKTHROUGH-20261102-VISUALS.md); all original captures remain preserved.
+
+**Current checks:** UI260tests/1098assertions and41focused cross-package tests/228assertions pass. Affected UI types pass through the final TypeScript changes; last full-root typecheck passed at `17e566d`. Production desktop build passed at `51bd9c9` (renderer38.47s), with zero source maps. No fresh full-root test-suite or hosted-CI pass is claimed; earlier default-suite timeouts are historical observations, not assumed current failures.
+
+Actual Playbridge additional-export walkthrough passed: printable STL240openings/23340triangles plus SVG; laser244openings/4fiducials with a visible frame-hole note; standalone drill;80-row placements;3DXF layers;27-file saved fabrication ZIP, with missing BOM disclosed, CRC and byte-exact download. Four native/project metadata hashes unchanged. Actual local VAIO I/O proof and19-item acceptance remain below.
+
+At final review, teammate PR398 is still OPEN/DRAFT (`46bc6c1`);393 is OPEN/unmerged (`222f574`). Neither was integrated or merged. Remaining comparison visualization411, member/multi-sheet semantic focus412, missing VAIO RH revision/model assets and authenticated supplier acceptance remain ticketed/dependency limits. This is a reviewable core UI-flow checkpoint, not universal app/engineering completion. No new code cycle should be implied after final handoff; continue from the next user test or newly available dependency.
+
+---
+
 # November 2 — current broad acceptance checkpoint
 
 This section supersedes older progress and “pending” summaries below. Work continues on `feat/sketch-first-drafts`; local code through `8763362` / `ea97851` is not yet published. PR389 last independently verified at `3a8eb63` (259 commits); one final normal push remains authorized at final handoff. No merge/deploy.
