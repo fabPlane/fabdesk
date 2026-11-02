@@ -1,3 +1,19 @@
+# November 2 — requested publication checkpoint
+
+The user requested publication of the latest verified work. This checkpoint includes five November 2 implementation commits after the previously published d1d6927:
+
+- df0da09: explicit Home/open/close lifecycle, scoped conversations and unsaved-edit exit guards.
+- 5468fb1: persisted imported-board path/time/hash and readable source identity.
+- 883cd09: output ordering by recorded, byte-verified completed export time.
+- 98c4b61: native GLB exports retain the recorded import folder's component-model context; actual Playbridge connector geometry and video were verified.
+- 753d0fa: temporary video encoding preserves saved deliverables on cancel/failure; active progress survives Home/reopen and unfinished formats cannot be downloaded.
+
+Latest affected UI/client/product-video typechecks passed; focused video/activity checks passed 23 tests / 97 assertions, and UI passed 253 tests / 1068 assertions. Earlier milestone-specific core/tools/kicad/protocol checks and actual native evidence are recorded below. Native cancellation preserved all seven protected video/source files byte for byte; subsequent four-second export completed and played with matching recorded artifact/input hashes. Evidence40–46 remains in the local walkthrough evidence directory; no new screenshot upload or whole-root/build/hosted-CI pass is claimed.
+
+This is an interim publication, not app completion. Next: recoverable output deletion, remaining nineteen-item acceptance, semantic component focus and the agreed user journeys. Teammate enclosure/assembly #398, replacement/resizing #393 and Board Art Apply/polish remain deferred. No merge, deployment, force push, permanent security/power change or new automation. Earlier local-only statements below are historical; verify publication against this checkpoint commit and the PR head.
+
+---
+
 # November 2 — safe video regeneration and recovered activity validated locally
 
 Models & video now recovers active exports from project job history after page changes/Home reopen, blocks duplicate generation, hides unfinished playback/downloads and excludes zero-byte formats. Board-scoped work uses known source ownership; an unscoped persisted job conservatively blocks another export in that project. Task-history failures offer Retry. Previous posters are labelled explicitly during regeneration.
