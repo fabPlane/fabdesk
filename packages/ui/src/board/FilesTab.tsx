@@ -17,6 +17,7 @@ import { buildFileTree, fileAppearance, formatFileSize, type ExplorerNode } from
 import { FileGlyph } from "./FileGlyph";
 import { FileExportControls } from "./FileExportControls";
 import { OutputPreviewDialog } from "./OutputPreviewDialog";
+import { ExportCompletionDetails } from "./ExportCompletionDetails";
 import { FILE_EXPORTS as EXPORTS, fileExportChoices, type FileExportKind as ExportKind } from "./file-exports";
 import {
   DEFAULT_LASER_STENCIL_FORM,
@@ -279,14 +280,4 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
 
     </div>
   );
-}
-
-
-function ExportCompletionDetails({ kind, result }: { kind: ExportKind; result: unknown }) {
-  if (kind !== "export_zip" || !result || typeof result !== "object" || !("json" in result)) return null;
-  const json = result.json;
-  if (!json || typeof json !== "object") return null;
-  const files = "files" in json && Array.isArray(json.files) ? json.files.filter((file): file is string => typeof file === "string") : [];
-  const missing = "missing" in json && Array.isArray(json.missing) ? json.missing.filter((file): file is string => typeof file === "string") : [];
-  return <p>{files.length} saved files packaged{missing.length ? ` · Not included: ${missing.join(", ")}` : ""}</p>;
 }
