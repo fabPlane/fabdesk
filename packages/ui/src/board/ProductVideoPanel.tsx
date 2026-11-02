@@ -1,7 +1,7 @@
 import { ErrorNotice } from "../components/ErrorNotice";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { VideoSourceStatus } from "./VideoSourceStatus";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { FileEntry } from "@fabdesk/protocol";
 import { Button, Select, Spinner } from "../components/ui";
 import { ProjectImage } from "../chat/ProjectImage";
@@ -111,7 +111,10 @@ export function ProductVideoPanel({
   onOpenVideoFile,
   onMakeVideo,
 }: ProductVideoPanelProps) {
-  const [setupOpen, setSetupOpen] = useState(() => !videos.some(file => file.size > 0));
+  const hasSavedVideo = videos.some(file => file.size > 0);
+  const [setupOpen, setSetupOpen] = useState(() => !hasSavedVideo);
+  // Saved files may arrive after mount during a cold project/core reopen.
+  useEffect(() => { setSetupOpen(!hasSavedVideo); }, [hasSavedVideo]);
   const availableVideos = videos.filter(file => file.size > 0);
   const preview = making ? undefined : pickPreview(availableVideos);
   return (
