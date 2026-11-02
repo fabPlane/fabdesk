@@ -41,6 +41,8 @@ import {
   type SendMessageInput,
 } from "./CoreClient";
 import { useAuthStore } from "./stores/auth";
+import { useRunsStore } from "./stores/runs";
+import { activeModelOutputJobs, projectJobs } from "./project-jobs";
 
 export function useProjects() {
   const client = useCoreClient();
@@ -613,6 +615,13 @@ export function useJobs(enabled = true, projectId?: string) {
     refetchInterval: (q) =>
       q.state.data?.some((j) => j.status === "queued" || j.status === "running") ? 2000 : false,
   });
+}
+
+/** Recover output work after changing pages or reopening a project. */
+export function useModelOutputActivity(projectId: string | null, board?: BoardSourceSelection) {
+  const client = useCoreClient(), history = useJobs(!!projectId, projectId ?? undefined), live = useRunsStore(state => state.jobs);
+  const active = activeModelOutputJobs(projectJobs(projectId ?? "", history.data ?? [], live, client.baseUrl), board);
+  return { ...active, ready: !history.isPending && !history.isError, isError: history.isError, refetch: history.refetch };
 }
 
 export function useCancelJob() {

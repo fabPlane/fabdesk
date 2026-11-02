@@ -1,3 +1,15 @@
+# November 2 — safe video regeneration and recovered activity validated locally
+
+Models & video now recovers active exports from project job history after page changes/Home reopen, blocks duplicate generation, hides unfinished playback/downloads and excludes zero-byte formats. Board-scoped work uses known source ownership; an unscoped persisted job conservatively blocks another export in that project. Task-history failures offer Retry. Previous posters are labelled explicitly during regeneration.
+
+The existing video renderer now encodes in temporary storage, verifies recorded mesh bytes again, and publishes completed artifacts by atomic per-file replacement with the receipt last. Cancellation, render failure, changed meshes or no encoded formats preserve previous deliverables. Skipped optional formats retain earlier files without falsely including them in the new receipt. This is not a cross-file disk-failure transaction/rollback.
+
+Native Playbridge: repeat export → Home running badge → reopen retained frame progress and disabled generation/downloads → Activity Cancel → Cancelled frame76/144. All five previous video/poster/receipt files plus PCB/schematic remain byte exact (proof44). A subsequent4s export completed, three formats grouped newest, MP4 played, X returned to Library, recorded output/input hashes match (proof46). Captures40–46. Existing models/original versions preserved. Local prior milestone98c4b61 fixes imported component-model context. Remote stilld1d6927; no new push.
+
+UI/client/product-video typechecks pass. Focused23tests/97assertions and UI253/1068 pass. One initial optional-format test assumed null disabled automatic ffmpeg discovery; corrected to an explicit missing executable and reran successfully. No full-root/build/CI or complete electrical/model dependency approval. Next: recoverable output deletion and remaining native acceptance; Ask main-chip canvas focus needs a source-bound semantic navigation contract, not guessed thumbnail coordinates. Keep working; teammate398/393/Art deferrals and paused automation/released keepawake unchanged.
+
+---
+
 # November 2 — imported 3D component context validated locally
 
 Observed GLB mismatch traced to the editable root PCB losing the imported folder's `${KIPRJMOD}` component-model context. The explicitly recorded selected import folder now supplies that variable to the native exporter; the editable PCB and original model assets are not rewritten or duplicated. Root model receipts retain actual exporter warnings and the relative folder; optional export details disclose that this is not full dependency/geometry/fit verification. Legacy projects without a recorded import are not guessed.

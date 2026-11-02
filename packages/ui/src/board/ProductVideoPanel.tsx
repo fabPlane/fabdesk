@@ -47,6 +47,8 @@ export type ProductVideoForm = {
 export type ProductVideoPanelProps = {
   modelStatus?: ReactNode;
   modelPreview?: ReactNode;
+  activityStatus?: ReactNode;
+  activityReady?: boolean;
   canGenerate?: boolean;
   checkingSources?: boolean;
   projectId: string;
@@ -72,6 +74,7 @@ export type ProductVideoPanelProps = {
 };
 
 export function pickPreview(videos: FileEntry[]): FileEntry | undefined {
+  videos = videos.filter(file => file.size > 0);
   return (
     videos.find((f) => f.path.endsWith(".mp4")) ??
     videos.find((f) => f.path.endsWith(".webm")) ??
@@ -84,6 +87,8 @@ export function ProductVideoPanel({
   projectId,
   modelStatus,
   modelPreview,
+  activityStatus,
+  activityReady = true,
   canGenerate = true,
   checkingSources = false,
   glb,
@@ -106,11 +111,12 @@ export function ProductVideoPanel({
   onOpenVideoFile,
   onMakeVideo,
 }: ProductVideoPanelProps) {
-  const preview = pickPreview(videos);
+  const availableVideos = videos.filter(file => file.size > 0);
+  const preview = making ? undefined : pickPreview(availableVideos);
   return (
     <div className="fd-video-workspace flex h-full min-h-0 flex-col" data-testid="product-video-panel">
       <div className="fd-video-model-tools flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-        <Button variant="secondary" size="sm" disabled={exporting || making || !canGenerate} onClick={onExportGlb}>
+        <Button variant="secondary" size="sm" disabled={exporting || making || !canGenerate || !activityReady} onClick={onExportGlb}>
           {exporting ? (
             <>
               <Spinner className="mr-1" /> Exporting GLB…
@@ -131,7 +137,9 @@ export function ProductVideoPanel({
         {modelStatus}
       </div>
       {!canGenerate && !making && !exporting && <p role="status" className="text-xs text-muted">{checkingSources ? "Checking saved PCB sources…" : "Verify a saved PCB in Board before generating a model or video."}</p>}
+      {activityStatus}
       {(making || exporting) && <p role="status" className="fd-video-job text-xs text-muted">{making ? "Making video…" : "Exporting model…"} {making ? makeNote : exportNote}</p>}
+      {making && <p role="status" className="text-xs text-muted">The video is being encoded. Playback and downloads return when the export finishes. You can follow or cancel it in Project activity.</p>}
       {exportError && <ErrorNotice error={exportError} />}
       {makeError && <ErrorNotice error={makeError} />}
       <div className="fd-video-body min-h-0 flex-1">
@@ -140,7 +148,7 @@ export function ProductVideoPanel({
           className="flex flex-col gap-3 border-b border-border p-3 lg:border-b-0 lg:border-r"
           onSubmit={(e) => {
             e.preventDefault();
-            if (canGenerate && !making && !exporting) onMakeVideo();
+            if (canGenerate && activityReady && !making && !exporting) onMakeVideo();
           }}
         >
           <div>
@@ -229,7 +237,7 @@ export function ProductVideoPanel({
             Title and spec captions (name, board size, layers, MCU)
           </label></details>
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" variant="primary" size="sm" disabled={!canGenerate || making || exporting} data-testid="make-video">
+            <Button type="submit" variant="primary" size="sm" disabled={!canGenerate || !activityReady || making || exporting} data-testid="make-video">
               {making ? (
                 <>
                   <Spinner className="mr-1" /> Making video…
@@ -250,16 +258,16 @@ export function ProductVideoPanel({
                 <ProjectVideo projectId={projectId} path={preview.path} />
               </div>
               <div className="text-[11px] text-muted">
-                {videos.map((f) => `${basename(f.path)} (${(f.size / 1024).toFixed(0)} KB)`).join(" · ")}
+                {availableVideos.map((f) => `${basename(f.path)} (${(f.size / 1024).toFixed(0)} KB)`).join(" · ")}
               </div>
               <div className="flex flex-wrap items-center gap-2" aria-label="Download saved video formats">
-                {videos.map(file => <Button key={file.path} size="sm" variant="secondary" aria-label={`Download ${file.path.split(".").pop()?.toUpperCase()}`} disabled={!onDownloadVideo || downloading || !!downloadingVideo || making || exporting} onClick={() => onDownloadVideo?.(file.path)}>{downloadingVideo === file.path ? "Downloading…" : `Download ${file.path.split(".").pop()?.toUpperCase()}`}</Button>)}
+                {availableVideos.map(file => <Button key={file.path} size="sm" variant="secondary" aria-label={`Download ${file.path.split(".").pop()?.toUpperCase()}`} disabled={!onDownloadVideo || downloading || !!downloadingVideo || making || exporting} onClick={() => onDownloadVideo?.(file.path)}>{downloadingVideo === file.path ? "Downloading…" : `Download ${file.path.split(".").pop()?.toUpperCase()}`}</Button>)}
                 {onOpenVideoFile && <Button size="sm" variant="ghost" onClick={() => onOpenVideoFile(preview.path)}>Show exported file</Button>}
               </div>
             </>
           ) : poster ? (
             <>
-              <div className="text-sm font-semibold">Poster</div>
+              <div className="text-sm font-semibold">{making ? "Previous saved poster" : "Poster"}</div>
               <ProjectImage projectId={projectId} path={poster.path} className="max-h-[52vh] w-full object-contain" />
             </>
           ) : modelPreview ? <div className="fd-video-model-preview" aria-label="Saved board model reference">{modelPreview}</div> : (

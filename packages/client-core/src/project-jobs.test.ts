@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Job } from "@fabdesk/protocol";
-import { projectJobs, projectJobBoard } from "./project-jobs";
+import { projectJobs, projectJobBoard, activeModelOutputJobs } from "./project-jobs";
 
 const job = (id: string, projectId = "a", status: Job["status"] = "running"): Job => ({ id, projectId, kind: "render_board", status, progress: null, note: null, error: null, result: null, startedAt: "2026-10-30T06:00:00Z", endedAt: null });
 test("persisted jobs recover after navigation without exposing another project's tasks", () => {
@@ -29,4 +29,15 @@ test("job source metadata is not borrowed from another project's result", () => 
 test("live jobs from another core cannot inherit an identical project ID", () => {
   const rows = projectJobs("a", [], { remote: { jobId: "remote", projectId: "a", endpoint: "remote", kind: "render_board", status: "running", startedAt: 1 } }, "local");
   expect(rows).toEqual([]);
+});
+
+test("output activity survives page remounts and conservatively treats unscoped server tasks", () => {
+  const board = { sourceId: "io", manifestSha256: "a".repeat(64) };
+  const video = { ...job("video"), kind: "render_product_video" };
+  const member = { ...job("model"), kind: "render_glb", board };
+  const done = { ...job("finished", "a", "done"), kind: "render_glb" };
+  expect(activeModelOutputJobs([video, member, done])).toEqual({ video, model: undefined });
+  expect(activeModelOutputJobs([video, member, done], board)).toEqual({ video, model: member });
+  expect(activeModelOutputJobs([video, member, done], { ...board, sourceId: "lcd" })).toEqual({ video, model: undefined });
+  expect(activeModelOutputJobs([done])).toEqual({ video: undefined, model: undefined });
 });

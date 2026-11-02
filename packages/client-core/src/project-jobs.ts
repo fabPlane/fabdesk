@@ -40,3 +40,16 @@ export function projectJobBoard(job: ProjectJob): BoardSourceSelection | null {
   const parsed = BoardSourceSelection.safeParse({ sourceId: record.sourceId, manifestSha256: record.manifestSha256 });
   return parsed.success ? parsed.data : null;
 }
+
+/** Unscoped persisted tasks conservatively block another export in the same project. */
+export function activeModelOutputJobs(rows: ProjectJob[], board?: BoardSourceSelection) {
+  const relevant = rows.filter(job => {
+    if (!jobIsActive(job)) return false;
+    const source = projectJobBoard(job);
+    return !source || !!board && source.sourceId === board.sourceId;
+  });
+  return {
+    model: relevant.find(job => /^(?:render_glb|glb)$/.test(job.kind)),
+    video: relevant.find(job => /^(?:render_product_video|video)$/.test(job.kind)),
+  };
+}

@@ -1,8 +1,8 @@
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { lazy, Suspense, useState } from "react";
-import { useAssemblyBoardModel, useCoreClient, useProject, useRunTool } from "@fabdesk/client-core";
+import { useAssemblyBoardModel, useCoreClient, useProject, useRunTool, useModelOutputActivity } from "@fabdesk/client-core";
 import type { BoardSourceSelection } from "@fabdesk/protocol";
-import { Button, EmptyState, Spinner } from "../components/ui";
+import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import { ProductVideoPanel, type ProductVideoForm } from "./ProductVideoPanel";
 import { useOutputSource } from "./useOutputSource";
@@ -20,19 +20,22 @@ export function MemberOutputStudio({ projectId }: { projectId: string }) {
 
 function MemberStudio({ projectId, board, prefix, sourceSha256, enabled }: { projectId: string; board: BoardSourceSelection; prefix: string; sourceSha256: string; enabled: boolean }) {
   const client = useCoreClient(), project = useProject(projectId), model = useAssemblyBoardModel(projectId, board), glbRun = useRunTool(), videoRun = useRunTool();
+  const activity = useModelOutputActivity(projectId, board);
+  const exporting = glbRun.state.status === "running" || !!activity.model;
+  const making = videoRun.state.status === "running" || !!activity.video;
   const [form, setForm] = useState<ProductVideoForm>({ preset: "review", resolution: "720p", aspect: "landscape", background: "light", durationSec: 6, captions: true });
   const [downloadPath, setDownloadPath] = useState<string | null>(null), [error, setError] = useState<string | null>(null);
   const files = project.data?.files ?? [], path = `${prefix}renders/board.glb`, glb = model.data?.model ? files.find(file => file.path === path) : undefined;
   const videos = files.filter(file => file.path.startsWith(`${prefix}exports/product-video.`) && /\.(mp4|webm|gif)$/i.test(file.path)), poster = files.find(file => file.path === `${prefix}exports/product-video-poster.png`);
-  useAssistantSurface({ projectId, label: "Outputs / Models & video", priority: 10, details: JSON.stringify({ board, sourceSha256, model: path, modelState: model.data?.state, videoSettings: form, savedVideos: videos.map(file => file.path), sourceCheckPending: !enabled || model.isFetching, exportingModel: glbRun.state.status === "running", makingVideo: videoRun.state.status === "running" }) });
+  useAssistantSurface({ projectId, label: "Outputs / Models & video", priority: 10, details: JSON.stringify({ board, sourceSha256, model: path, modelState: model.data?.state, videoSettings: form, savedVideos: videos.map(file => file.path), sourceCheckPending: !enabled || model.isFetching, exportingModel: exporting, makingVideo: making }) });
   const generate = async (kind: "render_glb" | "render_product_video") => {
-    if (!enabled || glbRun.state.status === "running" || videoRun.state.status === "running" || useUiStore.getState().activeProjectId !== projectId || model.isFetching || model.isError) return;
+    if (!enabled || !activity.ready || exporting || making || useUiStore.getState().activeProjectId !== projectId || model.isFetching || model.isError) return;
     const tool = kind === "render_glb" ? glbRun : videoRun;
     const result = await tool.run(kind, { projectId, board, expectedSourceSha256: sourceSha256, ...(kind === "render_product_video" ? { ...form } : {}) });
     if (result.status === "done") await Promise.all([project.refetch(), model.refetch()]);
   };
   const download = async (selected: string) => {
-    if (downloadPath || useUiStore.getState().activeProjectId !== projectId) return;
+    if (downloadPath || exporting || making || useUiStore.getState().activeProjectId !== projectId) return;
     setDownloadPath(selected); setError(null);
     try {
       const blob = await client.readFileBlob(projectId, selected);
@@ -40,7 +43,11 @@ function MemberStudio({ projectId, board, prefix, sourceSha256, enabled }: { pro
       const url = URL.createObjectURL(blob), link = document.createElement("a"); link.href = url; link.download = `${board.sourceId}-${selected.split("/").pop()}`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch { setError("Could not download this output. Try again."); } finally { setDownloadPath(null); }
   };
-  return <ProductVideoPanel projectId={projectId} glb={glb} videos={videos} poster={poster} form={form} onForm={setForm} exporting={glbRun.state.status === "running"} making={videoRun.state.status === "running"}
+  return <ProductVideoPanel projectId={projectId} glb={glb} videos={videos} poster={poster} form={form} onForm={setForm} exporting={exporting} making={making}
+    activityReady={activity.ready}
+    activityStatus={activity.isError ? <LoadError title="Could not check export tasks" onRetry={() => void activity.refetch()} /> : !activity.ready ? <p role="status" className="text-xs text-muted">Checking export tasks…</p> : null}
+    {...(activity.model?.note ? { exportNote: activity.model.note } : {})}
+    {...(activity.video?.note ? { makeNote: activity.video.note } : {})}
     canGenerate={enabled && !model.isFetching && !model.isError && !!model.data} checkingSources={!enabled || model.isFetching}
     modelStatus={<p className="text-xs text-muted" role="status">{model.isError ? "Model source check unavailable" : model.isFetching ? "Checking model source…" : model.data?.state === "source-unchanged" ? "PCB unchanged since model export · Component models unverified" : model.data?.state === "source-changed" ? "PCB changed · Regenerate the model" : "Model source unverified · Generate from the saved PCB"}</p>}
     {...(model.data?.model ? { modelPreview: <Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={path} blob={model.data.model} /></Suspense> } : {})}

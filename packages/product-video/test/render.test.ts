@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildBoxGlb, buildBoxStl } from "../src/fixture";
@@ -43,20 +43,44 @@ describe("product video render", () => {
     expect(new TextDecoder().decode((await Bun.file(out.files.gif!).arrayBuffer()).slice(0, 6))).toBe("GIF89a");
   });
 
-  test("receipt records decoded input bytes even if a saved mesh changes during rendering", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "fabdesk-pv-revision-"));
-    await mkdir(join(dir, "renders"), { recursive: true });
-    const original = buildBoxGlb();
-    await writeFile(join(dir, "renders/board.glb"), original);
+  for (const mode of ["changed-model", "cancelled", "failure", "all-formats-skipped"] as const) test(`${mode} keeps all previously saved video files and receipt`, async () => {
+    const dir = await mkdtemp(join(tmpdir(), "fabdesk-pv-preserve-")), controller = new AbortController();
+    await mkdir(join(dir, "renders"), { recursive: true }); await mkdir(join(dir, "exports"));
+    await writeFile(join(dir, "renders/board.glb"), buildBoxGlb());
+    const protectedPaths = ["product-video.gif", "product-video.mp4", "product-video-poster.png", "product-video.json"];
+    for (const path of protectedPaths) await writeFile(join(dir, "exports", path), `previous ${path}`);
     let changed = false;
-    const out = await renderProductVideo({ projectDir: dir, outputDir: join(dir, "exports"), preset: "orbit", durationSec: 2, fps: 8, resolution: "720p", aspect: "landscape", background: "light", captions: false, formats: ["gif"], specs: { name: "Board", lines: [] }, width: 80, height: 64,
-      progress: (_fraction, note) => { if (!changed && note.startsWith("frame ")) { changed = true; writeFileSync(join(dir, "renders/board.glb"), "changed after decode"); } },
-    });
-    const manifest = JSON.parse(await Bun.file(out.manifest).text());
-    expect(changed).toBe(true);
-    expect(manifest.revision.inputs).toEqual([{ path: "renders/board.glb", sha256: createHash("sha256").update(original).digest("hex") }]);
-    expect(Number.isNaN(Date.parse(manifest.generatedAt))).toBe(false);
-    expect(await Bun.file(join(dir, "renders/board.glb")).text()).toBe("changed after decode");
+    try {
+      await expect(renderProductVideo({ projectDir: dir, outputDir: join(dir, "exports"), preset: "orbit", durationSec: 2, fps: 8, resolution: "720p", aspect: "landscape", background: "light", captions: false, formats: ["gif"], specs: { name: "Board", lines: [] }, width: 80, height: 64, signal: controller.signal, ...(mode === "all-formats-skipped" ? { formats: ["mp4"], ffmpegPath: join(dir, "missing-ffmpeg") } : {}),
+        progress: (_fraction, note) => {
+          if (!changed && note?.startsWith("frame ")) {
+            changed = true;
+            if (mode === "changed-model") writeFileSync(join(dir, "renders/board.glb"), "changed after decode");
+            if (mode === "failure") throw Error("simulated renderer failure");
+          }
+          // Cancellation after encoding must still leave prior completed outputs intact.
+          if (mode === "cancelled" && note === "done") controller.abort();
+        },
+      })).rejects.toThrow();
+      expect(changed).toBe(true);
+      for (const path of protectedPaths) expect(await readFile(join(dir, "exports", path), "utf8")).toBe(`previous ${path}`);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
+  test("a skipped optional encoder preserves its older format and publishes an honest new receipt", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "fabdesk-pv-partial-"));
+    await mkdir(join(dir, "renders")); await mkdir(join(dir, "exports"));
+    await writeFile(join(dir, "renders/board.glb"), buildBoxGlb()); await writeFile(join(dir, "exports/product-video.mp4"), "earlier MP4");
+    try {
+      const out = await renderProductVideo({ projectDir: dir, outputDir: join(dir, "exports"), preset: "orbit", durationSec: 2, fps: 8, resolution: "720p", aspect: "landscape", background: "light", captions: false, formats: ["gif", "mp4"], ffmpegPath: join(dir, "missing-ffmpeg"), specs: { name: "Board", lines: [] }, width: 80, height: 64 });
+      expect(out.files.gif).toBe(join(dir, "exports/product-video.gif"));
+      expect(out.files.mp4).toBeUndefined(); expect(out.skipped[0]?.format).toBe("mp4");
+      expect(await readFile(join(dir, "exports/product-video.mp4"), "utf8")).toBe("earlier MP4");
+      const manifest = JSON.parse(await readFile(out.manifest, "utf8"));
+      expect(manifest.files.gif).toBe(out.files.gif); expect(manifest.poster).toBe(out.poster);
+      expect(manifest.revision.outputs.map((row: {path: string}) => row.path)).toEqual(["exports/product-video.gif"]);
+      expect(Number.isNaN(Date.parse(manifest.generatedAt))).toBe(false);
+    } finally { await rm(dir, { recursive: true, force: true }); }
   });
 
   test("concurrent writers to the same output directory cannot mix source records", async () => {
