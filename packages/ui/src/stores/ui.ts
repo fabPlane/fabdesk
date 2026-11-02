@@ -1,5 +1,5 @@
 import type { AssistantSurface } from "../chat/assistant-context";
-import type { BoardSourceSelection } from "@fabdesk/protocol";
+import type { BoardSourceSelection, SchematicFocus } from "@fabdesk/protocol";
 import { create } from "zustand";
 import { DRAFT_KEY_NEW, newChatDraftKey, parseAssemblyMapPosition, type AssemblyMapPosition, type AssemblyMapLayout, workspaceAreaForView, workspaceViews, workspaceTabForArea, type WorkspaceArea, type AssemblySceneSelection, type AssemblyCheckFinding, type RootCheckFinding, type KeptOutputChoice } from "@fabdesk/client-core";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
@@ -70,6 +70,10 @@ export interface UiState {
   setAssemblyMapPosition: (key: string, projectId: string, instanceId: string, position: AssemblyMapPosition) => void;
   resetAssemblyMapLayout: (key: string, projectId: string) => void;
   setAssemblyBoard: (selection: AssemblySceneSelection | null) => void;
+  schematicFocusSeen: Record<string, number>;
+  schematicFocus: { focus: SchematicFocus; endpoint: string } | null;
+  requestSchematicFocus: (focus: SchematicFocus, endpoint: string) => void;
+  clearSchematicFocus: () => void;
   rootFinding: RootCheckFinding | null;
   openRootFinding: (finding: RootCheckFinding) => void;
   dismissRootFinding: () => void;
@@ -175,7 +179,7 @@ export function newChatInProjectState(projectId: string | null) {
 }
 
 function projectNavigationState(s: UiState, activeProjectId: string | null): Partial<UiState> {
-  return { activeProjectId, activeThreadId: null, rootFinding: null, assemblyFinding: null, commentToReveal: null, fileToReveal: null,
+  return { activeProjectId, activeThreadId: null, schematicFocus: null, rootFinding: null, assemblyFinding: null, commentToReveal: null, fileToReveal: null,
     activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false, projectPickerOpen: false,
     ...(s.canvasMode ? { boardOpen: true, assistantOpen: false, canvasNavigationOpen: false } : {}),
     workspaceArea: activeProjectId ? s.workspaceByProject[activeProjectId]?.area ?? "boards" : "boards",
@@ -238,6 +242,19 @@ export function createUiStore(storage?: StateStorage) {
     else delete assemblyBoardByProject[s.activeProjectId];
     return { assemblyBoardByProject, assemblyFinding: null };
   }),
+  schematicFocusSeen: {},
+  schematicFocus: null,
+  requestSchematicFocus: (focus, endpoint) => set(s => {
+    // Consume even ignored requests, so a reconnect cannot replay them after opening another view.
+    const key = `${endpoint}/${focus.id}`;
+    if (s.schematicFocusSeen[key]) return {};
+    const schematicFocusSeen = Object.fromEntries(Object.entries(s.schematicFocusSeen).filter(([, ts]) => Date.now() - ts < 60_000));
+    schematicFocusSeen[key] = focus.requestedAt;
+    if (focus.projectId !== s.activeProjectId || Date.now() - focus.requestedAt > 30_000 || focus.requestedAt > Date.now() + 5_000 || s.settingsOpen || s.sketchOpen || s.inventoryOpen || s.orderFlowOpen || s.activeOpenSourceId || Object.values(s.projectExitBlocks).some(block => block.projectId === focus.projectId)) return { schematicFocusSeen };
+    return { schematicFocusSeen, schematicFocus: { focus: { ...focus, page: { ...focus.page }, points: focus.points.map(point => ({ ...point })) }, endpoint }, workspaceArea: "boards", boardTab: "schematic", boardOpen: true, rootFinding: null, assemblyFinding: null,
+      workspaceByProject: { ...s.workspaceByProject, [focus.projectId]: { area: "boards", tab: "schematic" } } };
+  }),
+  clearSchematicFocus: () => set({ schematicFocus: null }),
   rootFinding: null,
   openRootFinding: (finding) => set(s => finding.projectId === s.activeProjectId ? {
     rootFinding: { ...finding, point: { ...finding.point } }, assemblyFinding: null,

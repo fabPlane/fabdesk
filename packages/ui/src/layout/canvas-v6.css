@@ -609,3 +609,16 @@
 .fd-output-trash-list strong, .fd-output-trash-list small { display: block; }
 .fd-output-trash-list small { margin-top: 6px; color: var(--fd-muted); line-height: 1.5; }
 .fd-output-trash-footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin: 20px 0 16px; }
+
+.fd-schematic-focus-view { position:absolute; inset:0; z-index:8; display:flex; flex-direction:column; min-height:0; background:var(--fd-bg); }
+.fd-schematic-focus-view > header { display:flex; align-items:center; gap:12px; padding:12px 20px; border-bottom:1px solid var(--fd-border); background:var(--fd-panel); }
+.fd-schematic-focus-view > header > div { flex:1; min-width:0; }
+.fd-schematic-focus-view header strong { font-size:15px; }
+.fd-schematic-focus-view header p { color:var(--fd-muted); font-size:12px; margin:4px 0 0; }
+.fd-schematic-focus-view > .fd-svg-viewer { flex:1; min-height:0; }
+.fd-schematic-focus-pending { display:grid; flex:1; place-items:center; }
+.fd-schematic-focus-markers { position:absolute; inset:0; pointer-events:none; }
+.fd-schematic-focus-marker { position:absolute; display:flex; align-items:center; gap:8px; transform:translate(-12px,-12px); color:var(--fd-accent); font-size:13px; font-weight:600; white-space:nowrap; text-shadow:0 1px 2px var(--fd-panel); }
+.fd-schematic-focus-marker > span { width:24px; height:24px; border:2px solid var(--fd-accent); border-radius:50%; box-shadow:0 0 0 5px color-mix(in srgb,var(--fd-accent) 15%,transparent); }
+
+.fd-svg-focus-stage { padding:50vh 50vw; width:max-content; }

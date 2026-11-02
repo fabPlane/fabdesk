@@ -1,3 +1,4 @@
+import { focusSavedSchematic } from "../schematic-focus";
 /** Native KiCad schematic-first authoring and forward annotation. */
 import { z } from "zod/v4";
 import { ToolError, defineTool, mutationInputObject } from "../registry";
@@ -629,7 +630,17 @@ export const pcb_update_from_schematic = defineTool({
   },
 });
 
+export const schematic_focus = defineTool({
+  name: "schematic_focus", toolset: "circuit", title: "Show schematic component",
+  description: "After identifying a component from native schematic evidence, request readable canvas focus and a temporary marker for its exact reference. Pass a real reference, never guessed coordinates. Currently supports one saved root sheet only; ambiguous annotations, members and multi-sheet designs fail explicitly. Does not edit native sources. The result requests navigation; it does not confirm display or engineering checks.",
+  inputSchema: { reference: z.string().min(1).max(128) },
+  annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: false },
+  longRunning: true,
+  handler: async ({ reference }, ctx) => focusSavedSchematic(reference, ctx),
+});
+
 export const schematicTools = [
+  schematic_focus,
   schematic_inspect,
   schematic_edit,
   schematic_review,

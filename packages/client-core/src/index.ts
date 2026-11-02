@@ -233,3 +233,5 @@ export { readOutputSelection, OUTPUT_DOWNLOAD_LIMIT } from "./output-download";
 export { reviewPackageFiles, type ReviewPackageOptions } from "./review-package";
 export { projectJobs, projectJobBoard, jobIsActive, activeModelOutputJobs, type ProjectJob } from "./project-jobs";
 export * from "./output-revision";
+
+export { schematicFocusFilesMatch, schematicFocusFromResult } from "./schematic-focus";

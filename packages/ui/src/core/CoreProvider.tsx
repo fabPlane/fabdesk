@@ -1,10 +1,11 @@
+import { useUiStore } from "../stores/ui";
 /**
  * The desktop's `CoreProvider`: the shared provider from `@fabdesk/client-core` with Route Cinema
  * wired in. Cinema needs a canvas, so its store stays in this package and the reducer receives it
  * as a sink rather than importing it.
  */
 import { CoreProvider as BaseCoreProvider, type CoreProviderProps, type RouteSink } from "@fabdesk/client-core";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useCinemaStore } from "../stores/cinema";
 import { browserHost } from "./host";
 
@@ -18,5 +19,6 @@ export function CoreProvider({ host = browserHost, ...rest }: CoreProviderProps)
     }),
     [],
   );
-  return <BaseCoreProvider host={host} route={route} {...rest} />;
+  const onSchematicFocus = useCallback<NonNullable<CoreProviderProps["onSchematicFocus"]>>(focus => useUiStore.getState().requestSchematicFocus(focus, rest.client.baseUrl), [rest.client.baseUrl]);
+  return <BaseCoreProvider host={host} route={route} onSchematicFocus={onSchematicFocus} {...rest} />;
 }

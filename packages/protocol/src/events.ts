@@ -1,3 +1,4 @@
+import { SchematicFocus } from "./schematic-focus";
 /** Event bus topics shared by core, renderer and CLI. Topic names are dotted; subscriptions glob. */
 import { WorkspaceContext } from "./workspace-context";
 import { z } from "zod/v4";
@@ -91,6 +92,7 @@ export type JobStatus = z.infer<typeof JobStatus>;
 const base = { ts: z.number() };
 
 export const CoreEvent = z.discriminatedUnion("topic", [
+  z.object({ ...base, topic: z.literal("project.schematic_focus"), focus: SchematicFocus }),
   z.object({
     ...base,
     topic: z.literal("agent.started"),

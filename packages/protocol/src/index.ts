@@ -33,3 +33,5 @@ export * from "./bom";
 export * from "./output-revision";
 
 export * from "./output-trash";
+
+export * from "./schematic-focus";

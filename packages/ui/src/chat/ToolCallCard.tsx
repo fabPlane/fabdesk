@@ -1,3 +1,6 @@
+import { schematicFocusFromResult, useCoreClient } from "@fabdesk/client-core";
+import type { SchematicFocus } from "@fabdesk/protocol";
+import { Button } from "../components/ui";
 import type { MessagePart } from "@fabdesk/protocol";
 import { useId, useState } from "react";
 import { Icon } from "../components/Icon";
@@ -88,6 +91,15 @@ function summarizeArgs(input: unknown): string {
     .slice(0, 100);
 }
 
+function ShowSchematicComponent({ focus }: { focus: SchematicFocus }) {
+  const client = useCoreClient(), [notice, setNotice] = useState<string | null>(null);
+  return <div className="px-2.5 pb-2"><Button size="sm" onClick={() => {
+    const request = { ...focus, id: crypto.randomUUID(), requestedAt: Date.now() }, ui = useUiStore.getState();
+    ui.requestSchematicFocus(request, client.baseUrl);
+    setNotice(useUiStore.getState().schematicFocus?.focus.id === request.id ? null : "Finish the current edit and return to this project's workspace before showing the component.");
+  }}><Icon name="search" width={15} height={15} />Show {focus.reference} on schematic</Button>{notice && <p role="status" className="text-xs text-muted">{notice}</p>}</div>;
+}
+
 export function ToolCallCard({ use, result, streaming = false }: { use: ToolUse; result?: ToolResult | undefined; streaming?: boolean }) {
   const [open, setOpen] = useState(false);
   const detailsId = useId();
@@ -102,6 +114,8 @@ export function ToolCallCard({ use, result, streaming = false }: { use: ToolUse;
   const action = error ? "Failed" : pending ? (streaming ? "Running" : "Pending") : command ? "Ran" : "Used";
   const detail = command ? commandText(use.input) || name : [name, summarizeArgs(use.input)].filter(Boolean).join(" · ");
   const imageName = imagePath(use.input);
+  const focusTool = name === "schematic_focus" || name === "capability_call" && !!use.input && typeof use.input === "object" && (use.input as Record<string, unknown>).name === "schematic_focus";
+  const focus = result && !error && focusTool ? schematicFocusFromResult(result.output) : null;
   const label = viewingImage
     ? (error ? "Could not view image" : pending ? (streaming ? "Viewing image" : "Image viewing pending") : "Viewed image") + (imageName ? " · " + imageName : "")
     : action + " " + detail;
@@ -114,6 +128,7 @@ export function ToolCallCard({ use, result, streaming = false }: { use: ToolUse;
         {error && <span className="shrink-0 text-xs text-danger">Error</span>}
         <Icon name={open ? "chevronDown" : "chevronRight"} width={12} height={12} className="shrink-0" />
       </button>
+      {focus?.projectId === projectId && <ShowSchematicComponent focus={focus} />}
       {error && result && <ErrorNotice error={resultText(result.output)} />}
       {images.length > 0 && (
         <div className="flex flex-wrap gap-2 px-2.5 pb-2">

@@ -1,3 +1,4 @@
+import { SchematicFocusView } from "./SchematicFocusView";
 import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
@@ -29,6 +30,12 @@ import { type SvgPoint } from "./svg-coords";
 import { buildCommentsAskPrompt, buildCommentsUserPrompt, pendingBoardComments } from "./comment-requests";
 import { SchematicPreviewStatus } from "./SchematicPreviewStatus";
 import { MissingNativeSource } from "./MissingNativeSource";
+
+export function SvgTab(props: { kind: "schematic" | "pcb"; active?: boolean; onOpenChecks?: () => void }) {
+  const focus = useUiStore(s => s.schematicFocus), projectId = useUiStore(s => s.activeProjectId);
+  const showing = props.kind === "schematic" && props.active !== false && focus?.focus.projectId === projectId;
+  return <div className="relative h-full min-h-0"><div className="h-full" style={showing ? { visibility: "hidden" } : undefined} inert={showing || undefined}><SvgTabContent {...props} /></div>{showing && <SchematicFocusView key={focus.focus.id} focus={focus.focus} endpoint={focus.endpoint} />}</div>;
+}
 
 const RENDER_TOOL = { schematic: "render_schematic_svg", pcb: "render_pcb_svg" } as const;
 
@@ -70,7 +77,7 @@ export function commentPinAnchor(
 }
 
 /** Schematic / PCB tab: shows the daemon's rendered SVG (`renders/<kind>.svg`, drawn by kicad-cli) and offers to render it. */
-export function SvgTab({ kind, active = true, onOpenChecks }: { kind: "schematic" | "pcb"; active?: boolean; onOpenChecks?: () => void }) {
+function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic" | "pcb"; active?: boolean; onOpenChecks?: () => void }) {
   const commentTrigger = useRef<HTMLButtonElement>(null);
   const commentToReveal = useUiStore((s) => s.commentToReveal);
   const canvasMode = useUiStore((s) => s.canvasMode);

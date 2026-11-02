@@ -6,7 +6,7 @@ import { clientPointToSvg, parseSvgViewBox, resolveSvgBox, type SvgBox, type Svg
 import { svgImageCache } from "./svg-image-cache";
 
 /** Zoomable vector image, isolated from the app's DOM and CSS layout. */
-export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false, initialFit = "sheet", onDrawingClick, onDrawingEscape }: {
+export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false, initialFit = "sheet", focusRegion, onRegionFocused, onDrawingClick, onDrawingEscape }: {
   svg: string;
   /** Preserve zoom and scroll when only presentation (such as blend) changes. */
   viewKey?: string;
@@ -14,6 +14,9 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
   overlay?: ReactNode | ((box: SvgBox | null) => ReactNode);
   commentMode?: boolean;
   initialFit?: "sheet" | "width";
+  /** Verified SVG coordinates, never raw native coordinates without a frame check. */
+  focusRegion?: SvgBox & { key: string };
+  onRegionFocused?: () => void;
   onDrawingClick?: (point: SvgPoint, event?: MouseEvent<HTMLDivElement>) => void;
   /** Return true when a source-local selection was dismissed. */
   onDrawingEscape?: () => boolean;
@@ -105,6 +108,22 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
     frame?.addEventListener("wheel", wheel, { passive: false });
     return () => frame?.removeEventListener("wheel", wheel);
   }, [zoom, size, fitSize]);
+  const focusedRegion = useRef<string | null>(null);
+  useEffect(() => {
+    const frame = viewport.current;
+    if (!focusRegion || focusedRegion.current === focusRegion.key || !frame || !box || !size || !current || loaded?.url !== current.url || fitSize.width <= 1 || fitSize.height <= 1) return;
+    focusedRegion.current = focusRegion.key;
+    const next = Math.max(.2, Math.min(64, Math.min((frame.clientWidth - 72) / (focusRegion.width / box.width * fitSize.width), (frame.clientHeight - 120) / (focusRegion.height / box.height * fitSize.height))));
+    const center = { x: (focusRegion.x + focusRegion.width / 2 - box.x) / box.width, y: (focusRegion.y + focusRegion.height / 2 - box.y) / box.height };
+    setZoom(next);
+    const animation = requestAnimationFrame(() => {
+      const host = drawing.current?.getBoundingClientRect(), rect = frame.getBoundingClientRect();
+      if (!host) return;
+      frame.scrollBy(host.left + center.x * host.width - rect.left - frame.clientWidth / 2, host.top + center.y * host.height - rect.top - frame.clientHeight / 2);
+      onRegionFocused?.();
+    });
+    return () => { cancelAnimationFrame(animation); focusedRegion.current = null; };
+  }, [focusRegion?.key, box?.width, box?.height, current?.url, loaded?.url, size, fitSize.width, fitSize.height]);
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
     if (!onDrawingClick || (event.target as HTMLElement | null)?.closest("[data-comment-pin], [data-canvas-tools]")) return;
     const host = drawing.current;
@@ -136,6 +155,7 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
         onPointerCancel={() => { drag.current = null; }} onClickCapture={event => { if (drag.current?.moved) { event.preventDefault(); event.stopPropagation(); } }}>
         {!size && !failed && <div className="flex h-full items-center justify-center" role="status" aria-label="Loading board preview"><Spinner /></div>}
         {failed && <div className="p-4 text-sm text-muted" role="alert">Could not display this SVG preview. Try rendering it again.</div>}
+        <div className={focusRegion ? "fd-svg-focus-stage" : "contents"}>
         <div
           ref={drawing}
           onClick={handleClick}
@@ -168,6 +188,7 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
           />}
           {!viewBox && <div className="fd-svg-document h-full w-full" dangerouslySetInnerHTML={{ __html: svg }} />}
           {typeof overlay === "function" ? overlay(box) : overlay}
+        </div>
         </div>
       </div>
     </div>

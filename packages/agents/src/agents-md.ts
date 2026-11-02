@@ -47,10 +47,12 @@ signed in to fabplane.`;
 const TOOL_NEEDS = `## Tools and runtime
 Both authoring paths are available: \`circuit_build\` compiles \`circuit.netlist.json\`; \`schematic_edit\` edits native symbols and wires. Multi-unit parts share a reference and use distinct unit numbers, including power units.
 Use \`capability_search\` to find a tool and its arguments; \`load_toolset\` loads a toolset.
+When asked to identify a component while viewing a schematic, inspect the real source, explain the reference/value and likely role, then use \`schematic_focus\` for the exact identified reference. If several components are plausible, explain that ambiguity. A focus request is not confirmation that it displayed; report unsupported sheets or unavailable navigation honestly.
 
 | Need | Available tool |
 | --- | --- |
 | Board geometry, pads, copper and object IDs | \`pcb_inspect\` (references/nets/kinds, region/near, limitPerKind) |
+| Show an identified component on the schematic canvas | \`schematic_focus\` with its exact reference after source inspection; single saved root sheet only. Report requested versus visibly confirmed navigation honestly |
 | Schematic pins, unit numbers, dangling item IDs | \`schematic_inspect\` (detail=authoring/full, selectors); live session diagnostics are informational |
 | Saved DRC/ERC results by item | \`verify_drc\` (responseMode=full for all geometry); \`verify_erc\` |
 | Router progress and terminal result | \`route_status\` (latest or runId); returns final state and application outcome |

@@ -4,6 +4,7 @@
  */
 import type {
   CoreEvent,
+  SchematicFocus,
   Message,
   MessagePart,
   RouteFrameLine,
@@ -39,6 +40,7 @@ export interface HandlerCtx {
   qc: QueryClient;
   client: CoreClient;
   route?: RouteSink;
+  onSchematicFocus?: (focus: SchematicFocus) => void;
 }
 
 export function messagesKey(threadId: string) {
@@ -190,6 +192,9 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
   const { qc } = ctx;
   const runs = useRunsStore.getState();
   switch (event.topic) {
+    case "project.schematic_focus":
+      ctx.onSchematicFocus?.(event.focus);
+      break;
     case "agent.started":
       runs.startRun({
         runId: event.runId,
