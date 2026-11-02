@@ -1,3 +1,4 @@
+import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
@@ -38,6 +39,7 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
   const values = parsePartPositionInput(fields);
   const changed = !!selection && !!values && (values.x !== selection.part.x || values.y !== selection.part.y || values.rotation !== ((selection.part.rotation % 360) + 360) % 360);
   const hasProposal = !!selection && (fields.x !== String(selection.part.x) || fields.y !== String(selection.part.y) || fields.rotation !== String(selection.part.rotation));
+  useProjectExitGuard(projectId, busy ? "A native part edit is being saved. Wait for it to finish." : hasProposal ? `Apply or discard the proposed position for ${selection?.part.ref ?? "this part"}.` : null);
   const assistantSurface = { projectId, label: mode === "outline" && open ? "Board size · Awaiting integration" : selection ? `Board · ${selection.part.ref}` : "Board · Selected location", priority: 20, details: JSON.stringify({ board, pointMm: point, part: selection?.part, recordedSourceSha256: selection?.sourceSha256, editor: open ? mode : "location", ...(open && mode === "outline" ? { featureStatus: "Board resizing awaiting teammate integration; no resize preview or Apply is available" } : {}), proposedFields: open && hasProposal ? fields : null, unappliedProposal: hasProposal, sourceChanged, applying: busy, canPosition, error }) };
   useAssistantSurface(visible ? assistantSurface : null);
   const choose = (part: PcbPartPosition, sourceSha256: string, keepRecovery = false) => {

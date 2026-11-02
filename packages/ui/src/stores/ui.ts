@@ -133,7 +133,13 @@ export interface UiState {
   setBoardOpen: (open: boolean) => void;
   setActiveThread: (id: string | null) => void;
   setFocusMessageId: (id: string | null) => void;
-  setActiveProject: (id: string | null) => void;
+  /** A different project can only be opened after explicitly returning to Home. */
+  setActiveProject: (id: string | null) => boolean;
+  projectExitRequested: boolean;
+  requestProjectClose: (open: boolean) => void;
+  closeProject: () => boolean;
+  projectExitBlocks: Record<string, { projectId: string; message: string }>;
+  setProjectExitBlock: (key: string, block: { projectId: string; message: string } | null) => void;
   /** Start a blank conversation in a project (or none). Skips the project picker. */
   startNewChatInProject: (projectId: string | null) => void;
   setSidebarListTab: (tab: SidebarListTab) => void;
@@ -166,6 +172,14 @@ export function newChatInProjectState(projectId: string | null) {
     projectPickerOpen: false,
     sidebarListTab: "projects" as const,
   };
+}
+
+function projectNavigationState(s: UiState, activeProjectId: string | null): Partial<UiState> {
+  return { activeProjectId, activeThreadId: null, rootFinding: null, assemblyFinding: null, commentToReveal: null, fileToReveal: null,
+    activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false, projectPickerOpen: false,
+    ...(s.canvasMode ? { boardOpen: true, assistantOpen: false, canvasNavigationOpen: false } : {}),
+    workspaceArea: activeProjectId ? s.workspaceByProject[activeProjectId]?.area ?? "boards" : "boards",
+    boardTab: activeProjectId ? s.workspaceByProject[activeProjectId]?.tab ?? "pcb" : "pcb" };
 }
 
 /** Keep explicit destinations authoritative while remembering each project's other task tabs. */
@@ -252,6 +266,23 @@ export function createUiStore(storage?: StateStorage) {
   activeThreadId: null,
   focusMessageId: null,
   activeProjectId: null,
+  projectExitRequested: false,
+  projectExitBlocks: {},
+  requestProjectClose: (projectExitRequested) => set({ projectExitRequested }),
+  setProjectExitBlock: (key, block) => set(s => {
+    const projectExitBlocks = { ...s.projectExitBlocks };
+    if (block) projectExitBlocks[key] = block; else delete projectExitBlocks[key];
+    return { projectExitBlocks };
+  }),
+  closeProject: () => {
+    let closed = false;
+    set(s => {
+      if (Object.values(s.projectExitBlocks).some(block => block.projectId === s.activeProjectId)) return { projectExitRequested: true };
+      closed = true;
+      return { ...projectNavigationState(s, null), projectExitRequested: false, paletteOpen: false };
+    });
+    return closed;
+  },
   pinnedProjectIds: [],
   recentProjectsByEndpoint: {},
   recordProjectVisit: (endpoint, projectId) => set(s => {
@@ -324,15 +355,23 @@ export function createUiStore(storage?: StateStorage) {
   whatsNewOpen: false,
   whatsNewSeenId: null,
   composerFocusNonce: 0,
-  toggleSidebar: () => set((s) => s.canvasMode ? { canvasNavigationOpen: !s.canvasNavigationOpen } : { sidebarOpen: !s.sidebarOpen }),
+  toggleSidebar: () => set((s) => s.canvasMode || !s.activeProjectId && !s.activeThreadId ? { canvasNavigationOpen: !s.canvasNavigationOpen } : { sidebarOpen: !s.sidebarOpen }),
   toggleBoard: () => set((s) => ({ boardOpen: !s.boardOpen })),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setBoardOpen: (boardOpen) => set({ boardOpen }),
-  setActiveThread: (activeThreadId) => set(s => ({ activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false, assistantOpen: true, ...(s.canvasMode ? { canvasNavigationOpen: false } : {}) } : {}) })),
+  setActiveThread: (activeThreadId) => set(s => (s.projectExitRequested && activeThreadId ? {} : { activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false, assistantOpen: true, ...(s.canvasMode ? { canvasNavigationOpen: false } : {}) } : {}) })),
   setFocusMessageId: (focusMessageId) => set({ focusMessageId }),
-  setActiveProject: (activeProjectId) => set((s) => ({ activeProjectId, ...(activeProjectId !== s.activeProjectId ? { activeThreadId: null, rootFinding: null, assemblyFinding: null, commentToReveal: null, activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false, ...(s.canvasMode ? { boardOpen: true, assistantOpen: false, canvasNavigationOpen: false } : {}), workspaceArea: activeProjectId ? s.workspaceByProject[activeProjectId]?.area ?? "boards" : "boards", boardTab: activeProjectId ? s.workspaceByProject[activeProjectId]?.tab ?? "pcb" : "pcb" } : {}) })),
+  setActiveProject: (activeProjectId) => {
+    let opened = false;
+    set(s => {
+      if (s.activeProjectId && activeProjectId !== s.activeProjectId) return { projectExitRequested: true };
+      opened = true;
+      return activeProjectId === s.activeProjectId ? {} : projectNavigationState(s, activeProjectId);
+    });
+    return opened;
+  },
   startNewChatInProject: (projectId) =>
-    set((s) => ({ ...newChatInProjectState(projectId), composerFocusNonce: s.composerFocusNonce + 1, assistantOpen: true, ...(s.canvasMode ? { canvasNavigationOpen: false } : {}),
+    set((s) => (s.activeProjectId && projectId !== s.activeProjectId ? { projectExitRequested: true } : { ...newChatInProjectState(projectId), composerFocusNonce: s.composerFocusNonce + 1, assistantOpen: true, ...(s.canvasMode ? { canvasNavigationOpen: false } : {}),
       ...(projectId !== s.activeProjectId ? { rootFinding: null, assemblyFinding: null, workspaceArea: projectId ? s.workspaceByProject[projectId]?.area ?? "boards" : "boards", boardTab: projectId ? s.workspaceByProject[projectId]?.tab ?? "pcb" : "pcb" } : {}) })),
   setSidebarListTab: (sidebarListTab) => set({ sidebarListTab: normalizeSidebarListTab(sidebarListTab) }),
   setActiveOpenSourceId: (activeOpenSourceId) =>

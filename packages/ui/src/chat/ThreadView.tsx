@@ -22,8 +22,8 @@ export function ThreadView({ presentation = "chat", referenceStart = false }: { 
     if (thread && thread.id === useUiStore.getState().activeThreadId) {
       const ui = useUiStore.getState();
       if (ui.activeProjectId !== thread.projectId) {
-        ui.setActiveProject(thread.projectId ?? null);
-        ui.setActiveThread(thread.id);
+        if (ui.setActiveProject(thread.projectId ?? null)) ui.setActiveThread(thread.id);
+        else ui.setActiveThread(null);
       }
     }
   }, [thread]);
@@ -68,6 +68,8 @@ export function ThreadView({ presentation = "chat", referenceStart = false }: { 
     },
     [create, projectId, setActiveThread, client, qc, presentation],
   );
+
+  if (thread && thread.projectId !== projectId) return <p className="p-4 text-sm text-muted">Open other projects from Home.</p>;
 
   return (
     <div data-board-request={preparedBoardRequest} className={`fd-chat-pane flex h-full min-w-0 flex-col bg-bg ${presentation === "start" ? "fd-start-view" : ""}`}>

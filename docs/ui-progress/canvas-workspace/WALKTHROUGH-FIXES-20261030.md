@@ -1,3 +1,11 @@
+## Local Home lifecycle checkpoint · November 2, 2026
+
+Home now owns project search, recent ordering and New/Import entry. An open workspace shows its project identity and a visible Home action; conversations/search are scoped to that project. Direct cross-project navigation requests an explicit close, including the classic layout. Close retains saved sources, chat drafts and per-project task state; the dialog describes session-only Notes retention honestly. Unrestorable comment/part/shopping edits and in-flight saves register concrete exit blockers. Removing an open project or starting a separate catalog remix also requires returning to Home first.
+
+Actual native clicks verified Playbridge → close → Home → test1 → close → Home → Playbridge, with its Notes tab and exact unsaved test draft restored. The disposable draft was discarded through the UI without saving. A drawing-comment draft blocked Home with a specific Save/Cancel instruction; Return to edit preserved it, and Cancel cleared it. The active conversation browser showed only Playbridge; New/Import dialogs opened from Home and were cancelled without creating duplicates. PCB, schematic and manifest remain byte-exact; no NOTES.md was created. Captures12–14 and proof15 remain in the local evidence directory. Background-job continuity, completed fresh create/import landing, and further alternate-navigation cases still need native acceptance; item2 is not fully accepted yet. No whole-queue completion.
+
+Current affected checks: UI typecheck passed; 251 UI tests / 1061 assertions / zero failures. No new full-root, production-build or hosted-CI pass claimed.
+
 ## Publication checkpoint · November 2, 2026
 
 The requested follow-up push published **714d573** (output grouping/actions, schematic navigation, dialog/tooltips and BOM presentation) and **b5c9c53** (source-bound Gerber package with drill files). GitHub previously remained at **c424380**; the two later milestones had been local only. Their actual implementation and native validation are described below. Validation dates remain October 30; this publication does not imply new November 2 native results or a full-root/hosted-CI pass.

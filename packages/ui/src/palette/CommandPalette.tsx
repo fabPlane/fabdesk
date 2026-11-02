@@ -35,6 +35,7 @@ export function CommandPalette() {
   const search = useChatSearch(useDeferredValue(query));
   const searchGroups = new Map<string, { title: string; hits: Array<{ id: string; snippet: string; thread: NonNullable<typeof search.data>["pages"][number]["titles"][number] }> }>();
   for (const hit of search.data?.pages.flatMap((page) => page.messages) ?? []) {
+    if (projectId && hit.thread.projectId !== projectId) continue;
     const group = searchGroups.get(hit.thread.id) ?? { title: hit.thread.title || "Untitled", hits: [] };
     group.hits.push({ id: hit.message.id, snippet: hit.snippet, thread: hit.thread });
     searchGroups.set(hit.thread.id, group);
@@ -58,6 +59,7 @@ export function CommandPalette() {
         />
         <Command.List className="min-h-0 flex-1 overflow-auto p-1.5">
           <Command.Empty>No results.</Command.Empty>
+          {projectId && <Command.Group heading="Project"><Command.Item value="close project return home open different project" onSelect={pick(() => useUiStore.getState().requestProjectClose(true))}>Close project · Home</Command.Item></Command.Group>}
           {canvasMode && projectId && (Object.keys(WORKSPACE_AREAS) as WorkspaceArea[]).map(area => (
             <Command.Group key={area} heading={area === "boards" && assembly ? "Boards" : WORKSPACE_AREAS[area].label}>
               {workspaceViews(area).length === 0 && <Command.Item disabled={!projectId} value="project overview all boards assembly" onSelect={pick(() => useUiStore.getState().setWorkspaceArea(area))}>Project overview</Command.Item>}
@@ -122,7 +124,7 @@ export function CommandPalette() {
               </Command.Item>
             )}
             <Command.Item value="toggle sidebar browse projects & conversations" onSelect={pick(toggleSidebar)}>
-              {canvasMode ? "Browse projects & conversations" : "Toggle sidebar"} <span className="ml-auto"><Kbd>{mod} + B</Kbd></span>
+              {projectId ? "Project conversations" : canvasMode ? "Browse projects & conversations" : "Toggle sidebar"} <span className="ml-auto"><Kbd>{mod} + B</Kbd></span>
             </Command.Item>
             <Command.Item value="toggle board panel switch canvas / conversation" onSelect={pick(toggleBoard)}>
               {canvasMode ? "Switch canvas / conversation" : "Toggle board panel"} <span className="ml-auto"><Kbd>{mod} + Shift + B</Kbd></span>
@@ -135,7 +137,7 @@ export function CommandPalette() {
               </Command.Item>
             ))}
           </Command.Group>}
-          {(!canvasMode || query.trim().length >= 2) && (projects.data?.length ?? 0) > 0 && (
+          {(!projectId && (!canvasMode || query.trim().length >= 2)) && (projects.data?.length ?? 0) > 0 && (
             <Command.Group heading="Projects">
               {projects.data!.map((p) => (
                 <Command.Item key={p.id} value={`project ${p.name}`} onSelect={pick(() => setActiveProject(p.id))}>
@@ -146,8 +148,8 @@ export function CommandPalette() {
           )}
           {!canvasMode && query.trim().length < 2 && (threads.data?.length ?? 0) > 0 && (
             <Command.Group heading="Chats">
-              {threads.data!.map((t) => (
-                <Command.Item key={t.id} value={`thread ${t.title} ${t.id}`} onSelect={pick(() => { setActiveProject(t.projectId ?? null); setActiveThread(t.id); })}>
+              {threads.data!.filter(t => !projectId || t.projectId === projectId).map((t) => (
+                <Command.Item key={t.id} value={`thread ${t.title} ${t.id}`} onSelect={pick(() => { if (setActiveProject(t.projectId ?? null)) setActiveThread(t.id); })}>
                   <span className="truncate">{t.title || "Untitled"}</span>
                   {t.pinned && <span className="ml-auto text-[10px] text-muted">pinned</span>}
                 </Command.Item>
@@ -156,7 +158,7 @@ export function CommandPalette() {
           )}
           {query.trim().length >= 2 && search.data && <>
             {search.data.pages[0]?.titles.length ? <Command.Group heading="Matching chat titles">
-              {search.data.pages[0].titles.map((thread) => <Command.Item key={`title-${thread.id}`} value={`${query} ${thread.title}`} onSelect={() => openChatSearchResult(thread)}>{thread.title || "Untitled"}{thread.archived && <span className="ml-auto text-xs text-muted">Archived</span>}</Command.Item>)}
+              {search.data.pages[0].titles.filter(thread => !projectId || thread.projectId === projectId).map((thread) => <Command.Item key={`title-${thread.id}`} value={`${query} ${thread.title}`} onSelect={() => openChatSearchResult(thread)}>{thread.title || "Untitled"}{thread.archived && <span className="ml-auto text-xs text-muted">Archived</span>}</Command.Item>)}
             </Command.Group> : null}
             {[...searchGroups.entries()].map(([threadId, group]) => <Command.Group key={threadId} heading={`Messages · ${group.title}`}>
               {group.hits.map(({ id, snippet, thread }) => <Command.Item key={id} value={`${query} ${thread.title} ${id}`} onSelect={() => openChatSearchResult(thread, id)}>

@@ -30,13 +30,17 @@ export function OpenSourceView() {
 
   const onRemix = async () => {
     if (!id || remix.isPending) return;
+    if (useUiStore.getState().activeProjectId) {
+      useUiStore.getState().requestProjectClose(true);
+      return;
+    }
     let result;
     try { result = await remix.mutateAsync(id); }
     catch { return; } // Keep the mutation error visible with the existing Retry/Remix action.
     // Finishing an import must not steal navigation after the user left its preview.
     const ui = useUiStore.getState();
     if (!mounted.current || currentClient.current !== client || ui.activeOpenSourceId !== id || ui.activeProjectId !== projectId) return;
-    setActiveProject(result.project.id);
+    if (!setActiveProject(result.project.id)) return;
     setActiveThread(null);
     setActiveOpenSourceId(null);
     setSidebarListTab("projects");
@@ -71,7 +75,7 @@ export function OpenSourceView() {
           </div>
         </div>
         <Button variant="primary" disabled={remix.isPending} onClick={() => void onRemix()} data-testid="remix-button">
-          {remix.isPending ? "Cloning…" : "Remix"}
+          {remix.isPending ? "Cloning…" : projectId ? "Close project to remix" : "Remix"}
         </Button>
       </div>
       <div className="relative min-h-0 flex-1 overflow-hidden bg-[radial-gradient(circle_at_50%_40%,#f6f3e8,#8d887c)] dark:bg-[radial-gradient(circle_at_50%_40%,#2a2e28,#121410)]">

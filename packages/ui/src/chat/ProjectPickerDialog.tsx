@@ -11,6 +11,7 @@ export function ProjectPickerDialog() {
   const setOpen = useUiStore((s) => s.setProjectPickerOpen);
   const startNewChatInProject = useUiStore((s) => s.startNewChatInProject);
   const projects = useProjects();
+  const canvasMode = useUiStore(s => s.canvasMode), activeProjectId = useUiStore(s => s.activeProjectId);
 
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -22,12 +23,14 @@ export function ProjectPickerDialog() {
 
   };
 
+  if (open && activeProjectId) return <Dialog open onClose={() => setOpen(false)} title="Open another project from Home"><p>Close the current project first. Its files and conversations will be kept.</p><div className="mt-4 flex justify-end gap-2"><Button onClick={() => setOpen(false)}>Keep working</Button><Button onClick={() => { setOpen(false); useUiStore.getState().requestProjectClose(true); }}>Close project · Home</Button></div></Dialog>;
+
   if (open && (creating || importing)) return <CreateProjectDialog initialMode={importing ? "github" : "create"} onClose={() => { setCreating(false); setImporting(false); }} onCreated={choose} />;
 
   return (
     <Dialog open={open} onClose={() => setOpen(false)} title="Which project?" className="w-[420px]">
       <p className="mb-4 text-[13px] leading-5 text-muted">
-        Choose a project for this conversation, or continue without one.
+        {canvasMode ? "Open a project for this conversation." : "Choose a project for this conversation, or continue without one."}
       </p>
       <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
         {projects.isPending && <div className="p-3"><Spinner /></div>}
@@ -51,7 +54,7 @@ export function ProjectPickerDialog() {
             New project
           </Button>
           <Button onClick={() => setImporting(true)}>Import from GitHub</Button>
-          <Button onClick={() => choose(null)}>Continue without a project</Button>
+          {!canvasMode && <Button onClick={() => choose(null)}>Continue without a project</Button>}
         </div>
 
     </Dialog>

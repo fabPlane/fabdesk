@@ -562,3 +562,30 @@
 .fd-bom-coverage > details > summary { width:fit-content; max-width:100%; }
 .fd-output-variants { display:flex; align-items:center; gap:8px; padding:4px 8px; color:var(--fd-muted); font-size:11px; }
 .fd-output-variants select { min-width:0; max-width:100%; flex:1; border:1px solid var(--fd-border); border-radius:6px; padding:5px; color:var(--fd-fg); background:var(--fd-panel); }
+
+/* Home owns project selection; each workspace has one current project. */
+.fd-project-identity { max-width:min(38vw,420px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; font-weight:600; }
+.fd-home-header-label { color:var(--fd-muted); font-size:14px; }
+.fd-home-surface { flex:1; min-height:0; overflow:auto; background-color:var(--fd-bg); background-image:radial-gradient(color-mix(in srgb,var(--fd-muted) 20%,transparent) .65px,transparent .75px); background-size:22px 22px; }
+.fd-project-home { max-width:1080px; margin:0 auto; padding:56px 32px 80px; }
+.fd-project-home > header { display:flex; align-items:flex-start; gap:24px; margin-bottom:30px; }
+.fd-project-home > header > div:first-child { flex:1; }
+.fd-project-home h1 { font-size:30px; line-height:1.2; font-weight:650; letter-spacing:-.8px; }
+.fd-project-home p { font-size:13px; line-height:1.7; color:var(--fd-muted); margin-top:8px; }
+.fd-home-actions { display:flex; flex-wrap:wrap; gap:10px; }
+.fd-home-search { display:flex; align-items:center; gap:8px; padding:0 12px; border:1px solid var(--fd-border); border-radius:10px; background:var(--fd-panel); color:var(--fd-muted); }
+.fd-home-search input { border:0; background:transparent; box-shadow:none; min-height:42px; }
+.fd-home-list-heading { display:flex; align-items:center; gap:16px; justify-content:space-between; margin:28px 0 12px; }
+.fd-home-list-heading h2 { font-size:15px; font-weight:600; }
+.fd-home-list-heading > span { font-size:11px; color:var(--fd-muted); }
+.fd-home-projects { list-style:none; padding:0; margin:0; display:grid; gap:10px; }
+.fd-home-projects button { display:flex; align-items:center; gap:16px; width:100%; padding:20px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); text-align:left; box-shadow:var(--fd-soft-shadow); }
+.fd-home-projects button:hover { border-color:var(--fd-accent); background:var(--fd-panel-2); }
+.fd-home-projects button > svg { flex-shrink:0; color:var(--fd-accent); }
+.fd-home-projects button > span:first-of-type { min-width:0; flex:1; }
+.fd-home-projects strong { display:block; font-size:14px; font-weight:600; }
+.fd-home-projects small { display:block; font-size:11px; color:var(--fd-muted); margin-top:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fd-home-open { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--fd-accent); }
+.fd-home-task-badge { padding:4px 8px; border-radius:6px; color:var(--fd-accent); background:var(--fd-panel-2); font-size:11px; }
+.fd-project-home > footer { margin-top:28px; border-top:1px solid var(--fd-border); padding-top:18px; }
+@media(max-width:780px) { .fd-project-home { padding:30px 20px 60px; } .fd-project-home > header { flex-direction:column; } .fd-home-list-heading { align-items:flex-start; flex-direction:column; gap:6px; } .fd-home-projects button { flex-wrap:wrap; } .fd-home-open { margin-left:auto; } }

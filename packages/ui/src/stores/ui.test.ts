@@ -1,15 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import { newChatDraftKey, BOARD_TABS, BOARD_TAB_LABELS, SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, newChatInProjectState, normalizeSidebarListTab, migrateProjectDraftSlot, createUiStore, useUiStore } from "./ui";
 
+/** Existing ownership/restore checks now exercise the explicit Home transition. */
+function openProjectFromHome(store: ReturnType<typeof createUiStore>, projectId: string | null) {
+  if (store.getState().activeProjectId && store.getState().activeProjectId !== projectId) expect(store.getState().closeProject()).toBe(true);
+  expect(store.getState().setActiveProject(projectId)).toBe(true);
+}
+
 test("member comment navigation captures the source selector without aliasing it", () => {
   const store = createUiStore({ getItem: () => null, setItem() {}, removeItem() {} });
-  store.getState().setActiveProject("project-a");
+  openProjectFromHome(store, "project-a");
   const board = { sourceId: "io", manifestSha256: "a".repeat(64) };
   store.getState().openBoardComment("cmt_member", "pcb", board);
   board.sourceId = "other";
   expect(store.getState().commentToReveal?.board?.sourceId).toBe("io");
   expect(store.getState().workspaceArea).toBe("boards");
-  store.getState().setActiveProject("project-b");
+  openProjectFromHome(store, "project-b");
   expect(store.getState().commentToReveal).toBeNull();
 });
 
@@ -20,7 +26,7 @@ test("unfinished notes stay separate across projects, hosts and chat drafts duri
   const a = JSON.stringify(["http://local", "project-a"]), b = JSON.stringify(["http://remote", "project-a"]);
   store.getState().setDraft(newChatDraftKey("project-a"), "Existing unsent question");
   store.getState().setNotesDraft(a, { base: "Saved", content: "Local note draft" });
-  store.getState().setActiveProject("project-b");
+  openProjectFromHome(store, "project-b");
   store.getState().setNotesDraft(b, { base: "Other saved", content: "Remote note draft" });
   expect(store.getState().notesDrafts[a]?.content).toBe("Local note draft");
   expect(store.getState().notesDrafts[b]?.base).toBe("Other saved");
@@ -95,7 +101,7 @@ describe("project context", () => {
     const previous = useUiStore.getState();
     try {
       useUiStore.setState({ activeProjectId: "a", activeThreadId: "chat-a", orderFlowOpen: true, inventoryOpen: true, activeOpenSourceId: "catalog-a" });
-      useUiStore.getState().setActiveProject("b");
+      openProjectFromHome(useUiStore, "b");
       const state = useUiStore.getState();
       expect(state.activeProjectId).toBe("b");
       expect(state.activeThreadId).toBeNull();
@@ -191,22 +197,22 @@ describe("canvas workspace state", () => {
   });
   test("each project restores its own working destination and local tab", () => {
     const store = createUiStore(memory());
-    store.getState().setActiveProject("a");
+    openProjectFromHome(store, "a");
     store.getState().setWorkspaceArea("outputs");
     store.getState().setWorkspaceTab("3d");
-    store.getState().setActiveProject("b");
+    openProjectFromHome(store, "b");
     expect(store.getState().boardTab).toBe("pcb");
     store.getState().setBoardTab("drc");
-    store.getState().setActiveProject("a");
+    openProjectFromHome(store, "a");
     expect(store.getState().workspaceArea).toBe("outputs");
     expect(store.getState().boardTab).toBe("3d");
-    store.getState().setActiveProject("b");
+    openProjectFromHome(store, "b");
     expect(store.getState().workspaceArea).toBe("review");
     expect(store.getState().boardTab).toBe("drc");
   });
   test("file links and conversation selection reveal the intended tool instead of leaving a hidden destination", () => {
     const store = createUiStore(memory());
-    store.getState().setActiveProject("a");
+    openProjectFromHome(store, "a");
     store.getState().openProjectFile("board.kicad_pcb");
     expect(store.getState().workspaceArea).toBe("files");
     store.getState().setActiveThread("chat-a");
@@ -221,13 +227,13 @@ test("review comment navigation stays in its project and never leaks into anothe
   const store = createUiStore();
   store.getState().openBoardComment("cmt_none", "pcb");
   expect(store.getState().commentToReveal).toBeNull();
-  store.getState().setActiveProject("a");
+  openProjectFromHome(store, "a");
   store.getState().setWorkspaceArea("review");
   store.getState().openBoardComment("cmt_a", "schematic");
   expect(store.getState().commentToReveal).toEqual({ projectId: "a", id: "cmt_a", view: "schematic" });
   expect(store.getState().workspaceArea).toBe("boards");
   expect(store.getState().boardTab).toBe("schematic");
-  store.getState().setActiveProject("b");
+  openProjectFromHome(store, "b");
   expect(store.getState().commentToReveal).toBeNull();
   expect(store.getState().boardTab).toBe("pcb");
 });
@@ -235,10 +241,10 @@ test("review comment navigation stays in its project and never leaks into anothe
 
 test("opening another project closes inherited canvas panes without discarding drafts; explicit conversation selection reopens chat", () => {
   const store = createUiStore({ getItem: () => null, setItem: () => {}, removeItem: () => {} });
-  store.getState().setActiveProject("a"); store.getState().setDraft(newChatDraftKey("a"), "Keep this sketch discussion");
+  openProjectFromHome(store, "a"); store.getState().setDraft(newChatDraftKey("a"), "Keep this sketch discussion");
   store.getState().focusComposer(); store.getState().setCanvasNavigationOpen(true);
-  store.getState().setActiveProject("a"); expect(store.getState().assistantOpen).toBe(true);
-  store.getState().setActiveProject("b");
+  openProjectFromHome(store, "a"); expect(store.getState().assistantOpen).toBe(true);
+  openProjectFromHome(store, "b");
   expect(store.getState().assistantOpen).toBe(false); expect(store.getState().canvasNavigationOpen).toBe(false);
   expect(store.getState().drafts[newChatDraftKey("a")]).toBe("Keep this sketch discussion");
   store.getState().setActiveThread("chat-b"); expect(store.getState().assistantOpen).toBe(true);
@@ -246,7 +252,7 @@ test("opening another project closes inherited canvas panes without discarding d
   store.getState().setDraft("chat-b", "Keep this unsent question");
   store.getState().addAttachment("chat-b", { path: "sketches/reference.png", mime: "image/png", label: "reference" });
   store.getState().setCanvasNavigationOpen(true);
-  store.getState().setActiveProject("b"); // Picking a conversation in the current project.
+  openProjectFromHome(store, "b"); // Picking a conversation in the current project.
   store.getState().setActiveThread("chat-b");
   expect(store.getState().canvasNavigationOpen).toBe(false);
   expect(store.getState().activeProjectId).toBe("b");
@@ -267,12 +273,12 @@ test("opening another project closes inherited canvas panes without discarding d
 test("comparison is opt-in and remembered per project without opening it for another project", async () => {
   let snapshot: string | null = null;
   const storage = { getItem: () => snapshot, setItem: (_key: string, value: string) => { snapshot = value; }, removeItem: () => {} };
-  const store = createUiStore(storage); store.getState().setActiveProject("a");
+  const store = createUiStore(storage); openProjectFromHome(store, "a");
   expect(store.getState().boardComparisonByProject.a).toBeUndefined();
-  store.getState().setBoardComparison(true); store.getState().setActiveProject("b");
+  store.getState().setBoardComparison(true); openProjectFromHome(store, "b");
   expect(store.getState().boardComparisonByProject.b).toBeUndefined();
   const reopened = createUiStore(storage); await reopened.persist.rehydrate();
-  reopened.getState().setActiveProject("a"); expect(reopened.getState().boardComparisonByProject.a).toBe(true);
+  openProjectFromHome(reopened, "a"); expect(reopened.getState().boardComparisonByProject.a).toBe(true);
   reopened.getState().setBoardComparison(false); expect(reopened.getState().boardComparisonByProject.a).toBe(false);
 });
 
@@ -280,11 +286,11 @@ test("board workspaces survive reloads, isolate projects and reject cross-projec
   let stored: string | null = null;
   const memory = { getItem: () => stored, setItem: (_key: string, value: string) => { stored = value; }, removeItem: () => { stored = null; } };
   const store = createUiStore(memory);
-  store.getState().setActiveProject("a");
+  openProjectFromHome(store, "a");
   const selection = { projectId: "a", instanceId: "left", sourceId: "io", manifestSha256: "a".repeat(64) };
   store.getState().setAssemblyBoard(selection);
   selection.instanceId = "changed-after-selection";
-  store.getState().setActiveProject("b");
+  openProjectFromHome(store, "b");
   store.getState().setAssemblyBoard({ ...selection, instanceId: "wrong-project" });
   expect(store.getState().assemblyBoardByProject.b).toBeUndefined();
   store.getState().setAssemblyBoard({ ...selection, projectId: "b", instanceId: "right" });
@@ -299,7 +305,7 @@ test("board workspaces survive reloads, isolate projects and reject cross-projec
 test("assembly finding navigation is copied, source-qualified, transient and cleared across projects", () => {
   let saved = "";
   const store = createUiStore({ getItem: () => null, setItem: (_key, value) => { saved = value; }, removeItem: () => {} });
-  store.getState().setActiveProject("p");
+  openProjectFromHome(store, "p");
   const finding = { selection: { projectId: "p", sourceId: "io", instanceId: "right", manifestSha256: "a".repeat(64) }, sourceSha256: "b".repeat(64), point: { x: 107, y: 100 }, description: "Clearance", itemDescription: "Track" };
   store.getState().openAssemblyFinding(finding);
   finding.point.x = 999; finding.selection.sourceId = "other";
@@ -307,19 +313,19 @@ test("assembly finding navigation is copied, source-qualified, transient and cle
   expect(store.getState().assemblyBoardByProject.p?.instanceId).toBe("right");
   expect(store.getState().boardTab).toBe("pcb");
   expect(JSON.parse(saved).state.assemblyFinding).toBeUndefined();
-  store.getState().setActiveProject("q");
+  openProjectFromHome(store, "q");
   expect(store.getState().assemblyFinding).toBeNull();
   store.getState().openAssemblyFinding(finding);
   expect(store.getState().assemblyFinding).toBeNull();
 });
 
 test("saved root check navigation copies its point and cannot leak into another project", () => {
-  const store = createUiStore(); store.getState().setActiveProject("a");
+  const store = createUiStore(); openProjectFromHome(store, "a");
   const finding = { endpoint: "http://local", projectId: "a", sourceSha256: "a".repeat(64), reportFingerprint: "report", point: { x: 2, y: 3 }, description: "Short", itemDescription: "Pad" };
   store.getState().openRootFinding(finding); finding.point.x = 99;
   expect(store.getState().rootFinding?.point.x).toBe(2);
   expect(store.getState().boardTab).toBe("pcb");
-  store.getState().setActiveProject("b");
+  openProjectFromHome(store, "b");
   expect(store.getState().rootFinding).toBeNull();
   store.getState().openRootFinding(finding);
   expect(store.getState().rootFinding).toBeNull();
@@ -330,7 +336,7 @@ test("area tab choices survive other tasks, project switches and reload without 
   const memory = new Map<string, string>();
   const storage = { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); }, removeItem: (key: string) => { memory.delete(key); } };
   const store = createUiStore(storage);
-  store.getState().setActiveProject("a");
+  openProjectFromHome(store, "a");
   store.getState().setDraft(newChatDraftKey("a"), "Keep my question");
   store.getState().addAttachment(newChatDraftKey("a"), { path: "sketches/a.png", mime: "image/png", label: "a" });
   store.getState().setWorkspaceArea("files"); store.getState().setWorkspaceTab("notes");
@@ -338,10 +344,10 @@ test("area tab choices survive other tasks, project switches and reload without 
   store.getState().setWorkspaceArea("outputs"); store.getState().setWorkspaceTab("3d");
   store.getState().setWorkspaceArea("files"); expect(store.getState().boardTab).toBe("notes");
   store.getState().setWorkspaceArea("review"); expect(store.getState().boardTab).toBe("diff");
-  store.getState().setActiveProject("b");
+  openProjectFromHome(store, "b");
   store.getState().setWorkspaceArea("files"); expect(store.getState().boardTab).toBe("files");
   store.getState().setWorkspaceArea("review"); expect(store.getState().boardTab).toBe("updates");
-  store.getState().setActiveProject("a");
+  openProjectFromHome(store, "a");
   const restored = createUiStore(storage);
   restored.getState().setWorkspaceArea("outputs"); expect(restored.getState().boardTab).toBe("3d");
   restored.getState().setWorkspaceArea("files"); expect(restored.getState().boardTab).toBe("notes");
@@ -375,7 +381,7 @@ test("map view positions persist per endpoint and project without changing draft
   const memory = new Map<string, string>();
   const storage = { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); }, removeItem: (key: string) => { memory.delete(key); } };
   const store = createUiStore(storage), local = JSON.stringify(["http://local", "a"]), remote = JSON.stringify(["http://remote", "a"]);
-  store.getState().setActiveProject("a");
+  openProjectFromHome(store, "a");
   store.getState().setDraft(newChatDraftKey("a"), "Unsent project question");
   const tab = store.getState().boardTab, point = { units: "canvas-px" as const, sourceId: "io", x: 30, y: -50 };
   store.getState().setAssemblyMapPosition(local, "a", "left", point);
@@ -393,11 +399,11 @@ test("map view positions persist per endpoint and project without changing draft
 });
 test("stale project events and invalid coordinates cannot save or reset another project map", () => {
   const store = createUiStore({ getItem: () => null, setItem: () => {}, removeItem: () => {} }), a = JSON.stringify(["http://local", "a"]), b = JSON.stringify(["http://local", "b"]);
-  store.getState().setActiveProject("a");
+  openProjectFromHome(store, "a");
   store.getState().setAssemblyMapPosition(a, "a", "left", { units: "canvas-px" as const, sourceId: "io", x: 20, y: 40 });
   for (const x of [NaN, Infinity, -Infinity, 1e6 + 1]) store.getState().setAssemblyMapPosition(a, "a", "left", { units: "canvas-px" as const, sourceId: "io", x, y: 40 });
   expect(store.getState().assemblyMapLayouts[a]?.left?.x).toBe(20);
-  store.getState().setActiveProject("b");
+  openProjectFromHome(store, "b");
   store.getState().setAssemblyMapPosition(a, "a", "left", { units: "canvas-px" as const, sourceId: "io", x: 400, y: 500 });
   store.getState().resetAssemblyMapLayout(a, "a");
   store.getState().setAssemblyMapPosition(b, "b", "left", { units: "canvas-px" as const, sourceId: "carrier", x: 70, y: 80 });
@@ -449,7 +455,7 @@ test("recent project visits survive reload, follow opening order and stay on the
 
 test("catalog selection reveals the preview and assistant entry in canvas, retaining classic behavior", () => {
   const store = createUiStore({ getItem: () => null, setItem() {}, removeItem() {} });
-  store.getState().setActiveProject("project-a");
+  openProjectFromHome(store, "project-a");
   store.getState().setDraft(newChatDraftKey("project-a"), "Keep my project question");
   store.getState().setCanvasNavigationOpen(true);
   store.getState().setBoardOpen(false);
@@ -463,4 +469,47 @@ test("catalog selection reveals the preview and assistant entry in canvas, retai
   store.getState().setCanvasMode(false);
   store.getState().setActiveOpenSourceId("other-catalog");
   expect(store.getState().boardOpen).toBe(false);
+});
+
+
+test("a workspace refuses direct project and cross-project chat transitions until Home, retaining drafts and task views", () => {
+  const store = createUiStore({ getItem: () => null, setItem() {}, removeItem() {} });
+  expect(store.getState().setActiveProject("a")).toBe(true);
+  store.getState().setActiveThread("chat-a");
+  store.getState().setBoardTab("notes");
+  store.getState().setDraft("chat-a", "Keep my unsent question");
+  store.getState().setNotesDraft("notes-a", { base: "saved", content: "draft" });
+  expect(store.getState().setActiveProject("b")).toBe(false);
+  store.getState().setActiveThread("chat-b");
+  expect(store.getState().activeProjectId).toBe("a");
+  expect(store.getState().activeThreadId).toBe("chat-a");
+  expect(store.getState().boardTab).toBe("notes");
+  expect(store.getState().projectExitRequested).toBe(true);
+  store.getState().requestProjectClose(false);
+  store.getState().startNewChatInProject("b");
+  expect(store.getState().activeProjectId).toBe("a");
+  expect(store.getState().activeThreadId).toBe("chat-a");
+  expect(store.getState().closeProject()).toBe(true);
+  expect(store.getState().activeProjectId).toBeNull();
+  expect(store.getState().activeThreadId).toBeNull();
+  expect(store.getState().notesDrafts["notes-a"]?.content).toBe("draft");
+  expect(store.getState().drafts["chat-a"]).toBe("Keep my unsent question");
+  expect(store.getState().setActiveProject("b")).toBe(true);
+  expect(store.getState().boardTab).toBe("pcb");
+  expect(store.getState().closeProject()).toBe(true);
+  expect(store.getState().setActiveProject("a")).toBe(true);
+  expect(store.getState().boardTab).toBe("notes");
+});
+
+test("unrestorable local edits block Close until resolved and never block another project's Home entry", () => {
+  const store = createUiStore({ getItem: () => null, setItem() {}, removeItem() {} });
+  store.getState().setActiveProject("a");
+  store.getState().setProjectExitBlock("part", { projectId: "a", message: "Apply or discard R1" });
+  expect(store.getState().closeProject()).toBe(false);
+  expect(store.getState().activeProjectId).toBe("a");
+  store.getState().setProjectExitBlock("part", null);
+  expect(store.getState().closeProject()).toBe(true);
+  store.getState().setProjectExitBlock("stale", { projectId: "a", message: "Old surface" });
+  store.getState().setActiveProject("b");
+  expect(store.getState().closeProject()).toBe(true);
 });

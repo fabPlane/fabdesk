@@ -1,3 +1,4 @@
+import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { useEffect, useRef, useState } from "react";
 import { Button, Dialog, EmptyState, LoadError, Spinner, Textarea } from "../components/ui";
@@ -17,6 +18,7 @@ export function NotesTab() {
   const [preview, setPreview] = useState(false), [saving, setSaving] = useState(false), [saveError, setSaveError] = useState<string | null>(null);
   const [reviewSaved, setReviewSaved] = useState(false);
   const [discardFor, setDiscardFor] = useState<string | null>(null);
+  useProjectExitGuard(projectId, saving ? "Notes are being saved. Wait for the save to finish." : null);
   const editor = useRef<HTMLTextAreaElement>(null);
   const focusEditor = () => requestAnimationFrame(() => { if (useUiStore.getState().activeProjectId === projectId) editor.current?.focus(); });
   const saved = notes.data?.content ?? "", content = draft?.content ?? saved;

@@ -1,3 +1,4 @@
+import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { CART_ITEM_STATUSES, type BomSyncOptions, type CartItem, type CartItemPatch, type CartItemStatus, type Destination } from "@fabdesk/protocol";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -231,14 +232,16 @@ function ShoppingListContent() {
   const closeAdd = () => { setAdding(false); setAddMounted(false); addButton.current?.focus(); };
   const unsaved = Object.entries(drafts).filter(([id, d]) => cart?.items.some(i => i.id === id) && (d.quantity.trim() === "" || Object.keys(shoppingDraftPatch(d)).length)).length;
 
+  const saving = m.update.isPending || m.remove.isPending || m.add.isPending;
+  const pending = m.create.isPending || m.syncBom.isPending || saving;
+  useProjectExitGuard(projectId, pending ? "Shopping changes are being saved. Wait for them to finish." : unsaved ? "Save or cancel the unfinished shopping item edits." : addMounted ? "Finish or cancel adding the shopping item." : null);
+
   if (!projectId) return <EmptyState title="No project selected" />;
   if (status.isLoading || (ready && list.isLoading)) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   if (status.data && !status.data.available) return <EmptyState title="Shopping lists unavailable">This build of fabPlane has no fabplane.com client.</EmptyState>;
   if (status.isError && !status.data) return <EmptyState title="Couldn’t connect to your shopping list" action={<Button onClick={() => void status.refetch()} disabled={status.isFetching}>Try again</Button>}>{cloudErrorMessage(status.error)}</EmptyState>;
   if (!ready || isCloudSignedOut(list.error)) return <SignedOut />;
   if (list.isError && !cart) return <EmptyState title="Couldn’t load your shopping list" action={<Button onClick={() => void list.refetch()} disabled={list.isFetching}>Try again</Button>}>{cloudErrorMessage(list.error)}</EmptyState>;
-  const saving = m.update.isPending || m.remove.isPending || m.add.isPending;
-  const pending = m.create.isPending || m.syncBom.isPending || saving;
   const error = list.error ?? (m.create.isError ? m.create.error : m.syncBom.isError ? m.syncBom.error : null);
   const syncBom = () => { m.syncBom.reset(); setBomReviewOpen(true); };
   const bomDialog = <ShoppingBomDialog projectId={projectId} open={bomReviewOpen} busy={m.syncBom.isPending} error={m.syncBom.error} onClose={() => setBomReviewOpen(false)} onSync={options => m.syncBom.mutate(options, { onSuccess: ({ summary: s }) => { setBomReviewOpen(false); setNotice(`Synced ${s.parts} part lines · ${s.added} added · ${s.removed} removed · ${s.matched} kept their edits${s.pcbAdded ? " · Board added" : ""}`); } })} />;

@@ -1,3 +1,4 @@
+import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useOutputSource } from "./useOutputSource";
@@ -79,6 +80,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const availableExports = fileExportChoices(manifest).filter(kind => kind !== "export_bom");
   const exportChoices: ExportKind[] = exportFocus ? ["export_gerbers", ...availableExports.filter(kind => kind !== "export_gerbers")] : availableExports;
   const exportKind = exportChoices.includes(requestedExport) ? requestedExport : "export_gerbers";
+  useProjectExitGuard(projectId, packagePhase ? "The Gerber package sequence is running. Wait for its remaining export steps to finish." : null);
   const busy = state.status === "running" || packagePhase !== null;
   const files = project.data?.files ?? [];
   const { assembly, prefix, board, row: source, ready: sourceReady } = outputSource;

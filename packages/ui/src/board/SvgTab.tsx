@@ -1,3 +1,4 @@
+import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -101,6 +102,8 @@ export function SvgTab({ kind, active = true, onOpenChecks }: { kind: "schematic
   const [ref, setRef] = useState("");
   const [net, setNet] = useState("");
   const [pad, setPad] = useState("");
+
+  useProjectExitGuard(projectId, pin.isPending || patch.isPending ? "A drawing comment is being saved. Wait for it to finish." : draftPoint && (question.trim() || ref.trim() || net.trim() || pad.trim()) ? "Save or cancel the unfinished drawing comment." : null);
 
   useEffect(() => { setCanvasPoint(null); setNativeEditBusy(false); }, [projectId, kind]);
   const view = kind as CommentView;

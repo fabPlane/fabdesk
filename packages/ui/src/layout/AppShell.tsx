@@ -59,7 +59,8 @@ function usePaneWidth(initialWidth: number) {
 /** The sidebar owns an outer split; only chat and board share the inner split. */
 export function AppShell(props: AppShellProps) {
   const canvasMode = useUiStore((s) => s.canvasMode);
-  return canvasMode ? <CanvasWorkspace {...props} /> : <ClassicAppShell {...props} />;
+  const home = useUiStore(s => !s.activeProjectId && !s.activeThreadId);
+  return canvasMode || home ? <CanvasWorkspace {...props} /> : <ClassicAppShell {...props} />;
 }
 
 function ClassicAppShell({ onNewChat, coreStatus, banner }: AppShellProps) {

@@ -1,3 +1,4 @@
+import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
 import { useEffect, useState } from "react";
 import { useBoardComments, useBoardCommentMutations } from "@fabdesk/client-core";
 import { commentAnchorLabel, type BoardComment, type BoardSourceSelection } from "@fabdesk/protocol";
@@ -14,6 +15,7 @@ import type { SvgBox, SvgPoint } from "./svg-coords";
 export function useSourceCommentTools({ projectId, board, directory, enabled, canPin, visible }: { projectId: string; board: BoardSourceSelection; directory: string; enabled: boolean; canPin: boolean; visible: boolean }) {
   const comments = useBoardComments(projectId, board, visible && enabled), { pin, patch } = useBoardCommentMutations(projectId, board);
   const [open, setOpen] = useState(false), [point, setPoint] = useState<SvgPoint | null>(null), [question, setQuestion] = useState(""), [selectedId, setSelectedId] = useState<string | null>(null);
+  useProjectExitGuard(projectId, pin.isPending || patch.isPending ? "A board comment is being saved. Wait for it to finish." : point && question.trim() ? "Save or cancel the unfinished board comment." : null);
   const requested = useUiStore(state => state.commentToReveal);
   const all = comments.data?.comments ?? [], selected = all.find(comment => comment.id === selectedId);
   const ready = visible && enabled && !comments.isFetching && !comments.isError;

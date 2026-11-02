@@ -15,6 +15,7 @@ export function FreshStartActions() {
   const ui = () => useUiStore.getState();
   const createArt = async () => {
     if (creating) return;
+    if (ui().activeProjectId) { ui().setBoardTab("art"); return; }
     const originProjectId = ui().activeProjectId;
     const originThreadId = ui().activeThreadId;
     setCreating(true); setError(null);
@@ -34,7 +35,7 @@ export function FreshStartActions() {
     <div className="fd-fresh-actions" aria-label="Start your project">
       <Button onClick={() => ui().setSketchOpen(true, "draw")}><Icon name="compose" width={18} height={18} />Draw or open a sketch</Button>
       <Button onClick={() => ui().setSketchOpen(true, "upload")}><Icon name="image" width={18} height={18} />Upload an image</Button>
-      <Button onClick={() => setImporting(true)}><Icon name="folderOpen" width={18} height={18} />Import from GitHub</Button>
+      {!ui().activeProjectId && <Button onClick={() => setImporting(true)}><Icon name="folderOpen" width={18} height={18} />Import from GitHub</Button>}
     </div>
     <button className="fd-fresh-art-link" disabled={creating} onClick={() => void createArt()}>{creating ? "Creating art board…" : "Create an art board"}</button>
     {error && <p role="alert" className="text-center text-sm text-danger">{error}</p>}

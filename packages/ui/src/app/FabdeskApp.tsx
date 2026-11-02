@@ -8,6 +8,7 @@ import type { CoreClient } from "@fabdesk/client-core";
 import { useAuthState } from "@fabdesk/client-core";
 import { useShortcuts } from "../hooks/useShortcuts";
 import { useTheme } from "../hooks/useTheme";
+import { CloseProjectDialog } from "../layout/CloseProjectDialog";
 import { AppShell } from "../layout/AppShell";
 import { CommandPalette } from "../palette/CommandPalette";
 import { SettingsDialog } from "../settings/SettingsDialog";
@@ -126,6 +127,7 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
   return (
     <>
       <AppShell onNewChat={actions.newChat} coreStatus={coreStatus} banner={banner} />
+      <CloseProjectDialog />
       <CommandPalette />
       <SettingsDialog />
       <WhatsNewDialog />

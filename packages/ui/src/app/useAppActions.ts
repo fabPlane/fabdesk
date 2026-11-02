@@ -19,7 +19,8 @@ export function useAppActions() {
     const active = () => (data && data.id === ui().activeThreadId ? data : undefined);
     return {
       newChat() {
-        if (ui().canvasMode) {
+        if (ui().canvasMode || ui().activeProjectId) {
+          if (!ui().activeProjectId) { ui().setProjectPickerOpen(true); return; }
           ui().startNewChatInProject(ui().activeProjectId);
           ui().setAssistantOpen(true);
           ui().setCanvasNavigationOpen(false);

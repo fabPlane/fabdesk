@@ -5,7 +5,7 @@ import { useUiStore } from "../stores/ui";
 export function openChatSearchResult(thread: Thread, messageId?: string) {
   const ui = useUiStore.getState();
   ui.setSidebarListTab("projects");
-  ui.setActiveProject(thread.projectId);
+  if (!ui.setActiveProject(thread.projectId)) return;
   ui.setActiveThread(thread.id);
   ui.setFocusMessageId(messageId ?? null);
   ui.setPaletteOpen(false);
@@ -15,11 +15,11 @@ function Preview({ snippet }: { snippet: string }) {
   return <span className="line-clamp-2 text-[11px] leading-4 text-muted">{snippet}</span>;
 }
 
-export function SearchResults({ query }: { query: string }) {
+export function SearchResults({ query, projectId }: { query: string; projectId?: string }) {
   const result = useChatSearch(query);
   const pages = result.data?.pages ?? [];
-  const titles: Thread[] = pages[0]?.titles ?? [];
-  const hits: Array<{ message: Message; snippet: string; thread: Thread }> = pages.flatMap((page) => page.messages);
+  const titles: Thread[] = (pages[0]?.titles ?? []).filter(thread => !projectId || thread.projectId === projectId);
+  const hits: Array<{ message: Message; snippet: string; thread: Thread }> = pages.flatMap((page) => page.messages).filter(hit => !projectId || hit.thread.projectId === projectId);
   const groups = new Map<string, { thread: Thread; hits: typeof hits }>();
   for (const hit of hits) {
     const group = groups.get(hit.thread.id) ?? { thread: hit.thread, hits: [] };
