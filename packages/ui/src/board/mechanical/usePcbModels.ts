@@ -1,5 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { loadPcbDisplay, useCoreClient, type PcbDisplay } from "@fabdesk/client-core";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  currentPcbDisplays,
+  refreshPcbDisplays,
+  useCoreClient,
+  type PcbDisplay,
+} from "@fabdesk/client-core";
 import type { SceneModel } from "./MechanicalScene";
 
 export function usePcbModels(
@@ -9,38 +14,31 @@ export function usePcbModels(
 ) {
   const client = useCoreClient();
   const [attempt, retry] = useState(0);
-  const [models, setModels] = useState<Record<string, PcbDisplay>>({});
-  const [modelProject, setModelProject] = useState(projectId);
+  const [snapshot, setSnapshot] = useState({ projectId, models: {} as Record<string, PcbDisplay> });
+  const latest = useRef(snapshot);
+  const consumedAttempt = useRef(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const signature = JSON.stringify(boards);
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
+    const refresh = consumedAttempt.current !== attempt;
+    consumedAttempt.current = attempt;
     setError("");
     setLoading(!!boards.length);
     void (async () => {
-      const next: Record<string, PcbDisplay> = {};
-      const errors: string[] = [];
-      for (const board of boards) {
-        try {
-          const model = await loadPcbDisplay(
-            client,
-            projectId,
-            board.path,
-            board.pcbRevision,
-            attempt > 0,
-          );
-          next[board.path] = model;
-        } catch (e) {
-          errors.push(`${board.path}: ${e instanceof Error ? e.message : String(e)}`);
-        }
-        if (cancelled) return;
-        setModelProject(projectId);
-        setModels({ ...next });
-      }
+      await refreshPcbDisplays(client, projectId, boards, {
+        previous: latest.current,
+        refresh,
+        cancelled: () => cancelled,
+        publish: (models, error) => {
+          latest.current = { projectId, models };
+          setSnapshot(latest.current);
+          setError(error);
+        },
+      });
       if (!cancelled) {
-        setError(errors.join("\n"));
         setLoading(false);
       }
     })();
@@ -50,16 +48,8 @@ export function usePcbModels(
   }, [client, projectId, signature, attempt, active]);
   // Never show the previous revision while its replacement is loading.
   const current = useMemo(
-    () =>
-      Object.fromEntries(
-        boards.flatMap((b) => {
-          const model = models[b.path];
-          return modelProject === projectId && model?.pcbRevision === b.pcbRevision
-            ? [[b.path, model]]
-            : [];
-        }),
-      ) as Record<string, PcbDisplay>,
-    [models, signature, modelProject, projectId],
+    () => currentPcbDisplays(snapshot, projectId, boards),
+    [snapshot, signature, projectId],
   );
   return { models: current, loading, error, retry: () => retry((n) => n + 1) };
 }

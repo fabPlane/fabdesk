@@ -10,6 +10,63 @@ export type PcbDisplay = {
   bounds?: { minX: number; minY: number; minZ: number; maxX: number; maxY: number; maxZ: number };
   data: ArrayBuffer;
 };
+
+export type PcbDisplayRequest = { path: string; pcbRevision: string };
+export type PcbDisplaySnapshot = { projectId: string; models: Record<string, PcbDisplay> };
+
+/** Retain only geometry that still belongs to this exact project and PCB revision. */
+export function currentPcbDisplays(
+  previous: PcbDisplaySnapshot,
+  projectId: string,
+  boards: PcbDisplayRequest[],
+): Record<string, PcbDisplay> {
+  return Object.fromEntries(
+    boards.flatMap((board) => {
+      const model = previous.models[board.path];
+      return previous.projectId === projectId && model?.pcbRevision === board.pcbRevision
+        ? [[board.path, model]]
+        : [];
+    }),
+  );
+}
+
+/** Refresh progressively without replacing other valid boards with placeholders. */
+export async function refreshPcbDisplays(
+  client: CoreClient,
+  projectId: string,
+  boards: PcbDisplayRequest[],
+  options: {
+    previous: PcbDisplaySnapshot;
+    refresh: boolean;
+    cancelled: () => boolean;
+    publish: (models: Record<string, PcbDisplay>, error: string) => void;
+  },
+) {
+  const next = currentPcbDisplays(options.previous, projectId, boards);
+  const errors: string[] = [];
+  if (options.cancelled()) return;
+  options.publish({ ...next }, "");
+  for (const board of boards) {
+    if (options.cancelled()) return;
+    // Selection changes and tab switches do not require exporting unchanged boards again.
+    if (!options.refresh && next[board.path]) continue;
+    try {
+      const model = await loadPcbDisplay(
+        client,
+        projectId,
+        board.path,
+        board.pcbRevision,
+        options.refresh,
+      );
+      next[board.path] = model;
+    } catch (e) {
+      const retained = next[board.path] ? " Keeping the loaded model for this PCB revision." : "";
+      errors.push(`${board.path}: ${e instanceof Error ? e.message : String(e)}${retained}`);
+    }
+    if (options.cancelled()) return;
+    options.publish({ ...next }, errors.join("\n"));
+  }
+}
 const pending = new Map<string, Promise<PcbDisplay>>();
 const sizes = new Map<string, number>();
 function trimModels() {
@@ -38,6 +95,8 @@ export function loadPcbDisplay(
     pending.set(key, cached);
     return cached;
   }
+  const previous = pending.get(key);
+  const previousSize = sizes.get(key);
   sizes.delete(key);
   const request = (async () => {
     const response = await client.callTool("render_glb", {
@@ -71,7 +130,15 @@ export function loadPcbDisplay(
     () => {},
   );
   void request.catch(() => {
-    if (pending.get(key) === request) pending.delete(key);
+    if (pending.get(key) === request) {
+      pending.delete(key);
+      // A failed explicit refresh must not evict a successfully loaded same-revision model.
+      if (previous && previousSize !== undefined) {
+        pending.set(key, previous);
+        sizes.set(key, previousSize);
+        trimModels();
+      }
+    }
   });
   return request;
 }

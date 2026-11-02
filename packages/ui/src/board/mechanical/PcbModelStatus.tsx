@@ -73,7 +73,7 @@ export function PcbModelStatus({
       </div>
       <p>
         {loading
-          ? "Reading the board and its linked component models."
+          ? "Reading board geometry. Already loaded boards stay visible."
           : !entries.length
             ? "The detailed model is unavailable. Resolve the issue below, then refresh."
             : entries.every(([, m]) => m.coverage.total === 0)
@@ -137,8 +137,8 @@ export function PcbModelStatus({
             <p role="alert">{error}</p>
           </details>
           <small>
-            Unavailable boards remain visible as amber bounds in Enclosure. These are estimated
-            references, not detailed models.
+            Loaded models stay visible if a refresh fails. Boards without a model appear as amber
+            bounds in Enclosure; these are estimated references, not detailed geometry.
           </small>
         </>
       )}

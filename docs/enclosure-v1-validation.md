@@ -156,3 +156,13 @@ The full objective remains incomplete. Passing geometry checks or slicing is ins
 - A separately regenerated six-board VAIO case passed native preview with no detected blockers. The new wall was visually inspected in the actual 3D renderer. The isolated-wall screenshot shows the generated geometry; it does not certify the connector dimensions.
 - Still unresolved: the CM5 I/O board's J1 is `USB_Micro-B_Molex-105017-0001`, currently using a generic 7 mm connector-height estimate (7.8 mm opening with default clearance). The [Molex drawing](https://www.molex.com/content/dam/molex/molex-dot-com/products/automated/en-us/salesdrawingpdf/105/105017/1050170001_sd.pdf) was located but its dimensional callouts could not be verified in this environment. Do not treat that opening as exact. Recorded connector/plug evidence and physical validation remain required.
 - Existing imported STL geometry is preserved; rebuilding a generated case does not repair previously imported files. Imported-solid editing remains dependent on the CAD bridge, unavailable locally on Windows.
+
+### 2026-11-02 — Intermittent outline-only boards
+
+- Fixed progressive PCB model refresh: loading one board no longer removes other valid models. A failed refresh retains the loaded model only for the same project and PCB revision. Successful same-revision cache entries survive failed refreshes; tab/selection changes reuse loaded geometry instead of forcing another export after Refresh.
+- Changed PCB revisions and other projects still discard stale models. Cancellation stops obsolete loads from publishing into the next view.
+- Unavailable selected boards now explain that the amber shape is estimated bounds, with model details and retry below.
+- Reproduced in the running desktop with six real VAIO models and controlled delayed responses: before the fix, visible detailed models dropped from six to one, then ended at five after one refresh failed. After the fix, all six remained throughout the same test. The real exporter was restored after fault injection.
+- Three full Add → Arrange → Enclosure and Case → Preview → Boards cycles retained all six models without WebGL context loss. Compared the recovered draft with the pre-reload draft: unchanged. A hidden-window timing test hit the automation timeout; the visible-window repeat passed.
+- Validation: 16 targeted model loading/decoding/batching tests, 63 assertions; root typecheck and desktop production build passed.
+- Separate compatibility limitation: `combined-peripheral-a2` requires KiCad 10.99 or newer and cannot be exported by this installation. Its amber bounds are intentional fallback, not recovered detailed geometry. No source PCB files were converted or changed.

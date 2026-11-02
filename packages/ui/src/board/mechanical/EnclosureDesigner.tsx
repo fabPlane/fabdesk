@@ -1051,6 +1051,13 @@ export function EnclosureDesigner({
             onSelect={selectBoard}
             onFocus={() => selectedBoard && scene.current?.focusModel(`@fit-${selectedBoard}`)}
           />
+          {selectedBoard && !pcbModels.models[selectedBoard] && (
+            <p role="status" className="fd-mechanical-note">
+              {pcbModels.loading
+                ? "Loading this board’s 3D model… Its bounds are shown temporarily."
+                : "This board’s 3D model is unavailable. The amber shape shows estimated bounds only. Open 3D details below for the cause and retry."}
+            </p>
+          )}
           {currentPlacement && (
             <section className="fd-case-placement" aria-label="Selected board controls">
               <div className="fd-case-placement-title">
