@@ -8,6 +8,7 @@ import { useUiStore } from "../stores/ui";
 import { basename } from "../util";
 import { VideoSourceStatus } from "./VideoSourceStatus";
 import { BoardModelExportDetails } from "./BoardModelExportDetails";
+import { MemberModelExportDetails } from "./MemberModelExportDetails";
 
 const ModelCanvas = lazy(() => import("./ModelCanvas"));
 export type PreviewOutput = { path: string; kind: "images" | "videos" | "models"; sourceId?: string; sourceName?: string };
@@ -33,7 +34,7 @@ export function OutputPreviewDialog({ projectId, output, status, warning = false
       }} />
     </>}>
     {output.kind !== "videos" && <p className="fd-output-preview-source" role="status" data-warning={warning}>{status}</p>}
-    {output.path === "renders/board.glb" && <BoardModelExportDetails projectId={projectId} />}
+    {output.kind === "models" && output.sourceId ? <MemberModelExportDetails projectId={projectId} sourceId={output.sourceId} path={output.path} /> : output.path === "renders/board.glb" ? <BoardModelExportDetails projectId={projectId} /> : null}
     {output.kind === "images" ? <ProjectImage retryable projectId={projectId} path={output.path} className="max-h-[70vh] w-full object-contain" />
       : output.kind === "videos" ? <><VideoSourceStatus projectId={projectId} path={output.path} updating={false} /><ProjectVideo projectId={projectId} path={output.path} className="max-h-[70vh]" /></>
       : <div className="fd-output-model-preview"><Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={output.path} /></Suspense></div>}
