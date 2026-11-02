@@ -278,9 +278,6 @@ export function EnclosureDesigner({
   const [focusedIssue, setFocusedIssue] = useState<MechanicalFitIssue | null>(null);
   const [selectedBoard, setSelectedBoard] = useState<string | null>(null);
   const [placementMode, setPlacementMode] = useState<"orbit" | "translate" | "rotate">("orbit");
-  useEffect(() => {
-    if (step !== "PCB") setPlacementMode("orbit");
-  }, [step]);
   const [caseVisible, setCaseVisible] = useState(true);
   const [controlsExpanded, setControlsExpanded] = useState(true);
   const sceneToolsId = useId();
@@ -340,7 +337,7 @@ export function EnclosureDesigner({
   function selectBoard(path: string | null) {
     if (busy || pendingRecovery) return;
     setSelectedBoard(path);
-    setPlacementMode(path && step === "PCB" && manualPlacement ? "translate" : "orbit");
+    if (!path) setPlacementMode("orbit");
     setFocusedIssue(null);
   }
   function changePlacement(next: MechanicalDesign["boards"][number]) {
@@ -1054,6 +1051,79 @@ export function EnclosureDesigner({
             onSelect={selectBoard}
             onFocus={() => selectedBoard && scene.current?.focusModel(`@fit-${selectedBoard}`)}
           />
+          {currentPlacement && (
+            <section className="fd-case-placement" aria-label="Selected board controls">
+              <div className="fd-case-placement-title">
+                <strong>Position selected board</strong>
+                <small>{currentPlacement.locked ? "Locked" : "Case stays fixed"}</small>
+              </div>
+              <div className="fd-case-placement-tools fd-case-placement-modes">
+                {(
+                  [
+                    ["orbit", "Camera"],
+                    ["translate", "Move"],
+                    ["rotate", "Rotate"],
+                  ] as const
+                ).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    disabled={
+                      actionsDisabled ||
+                      (mode !== "orbit" && (!!currentPlacement.locked || !currentFeatures))
+                    }
+                    aria-pressed={placementMode === mode}
+                    onClick={() => setPlacementMode(mode)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="fd-case-placement-tools">
+                <button
+                  disabled={actionsDisabled || !!currentPlacement.locked || !currentFeatures}
+                  onClick={() =>
+                    currentFeatures &&
+                    changePlacement(
+                      editEnclosureBoardPose(
+                        currentPlacement,
+                        currentFeatures.outline,
+                        "rotation",
+                        (currentPlacement.rotation + 90) % 360,
+                      ),
+                    )
+                  }
+                >
+                  Turn 90°
+                </button>
+                <button
+                  disabled={actionsDisabled}
+                  onClick={() =>
+                    edit(
+                      {
+                        ...design!,
+                        boards: design!.boards.map((b) =>
+                          b.path === selectedBoard ? { ...b, locked: !b.locked } : b,
+                        ),
+                      },
+                      "Board position lock",
+                    )
+                  }
+                >
+                  {currentPlacement.locked ? "Unlock board" : "Lock board"}
+                </button>
+              </div>
+              <small role="status">
+                {currentPlacement.locked
+                  ? "Unlock to move or rotate this board."
+                  : placementMode === "translate"
+                    ? "Drag an arrow or square handle. Empty space moves the camera."
+                    : placementMode === "rotate"
+                      ? "Drag the ring, or use Turn 90°."
+                      : "Choose Move or Rotate to position this board."}
+              </small>
+              <small>Moving a board requires a new preview to recheck ports and fit.</small>
+            </section>
+          )}
           {!!design?.boards.length && (
             <details className="fd-case-model-disclosure">
               <summary>
@@ -1889,29 +1959,6 @@ export function EnclosureDesigner({
                           </option>
                         ))}
                       </select>
-                      <div className="fd-case-placement-tools fd-case-placement-modes">
-                        <button
-                          disabled={!!busy}
-                          aria-pressed={placementMode === "orbit"}
-                          onClick={() => setPlacementMode("orbit")}
-                        >
-                          Camera
-                        </button>
-                        <button
-                          disabled={!selectedBoard || !!busy || currentPlacement?.locked}
-                          aria-pressed={placementMode === "translate"}
-                          onClick={() => setPlacementMode("translate")}
-                        >
-                          Move
-                        </button>
-                        <button
-                          disabled={!selectedBoard || !!busy || currentPlacement?.locked}
-                          aria-pressed={placementMode === "rotate"}
-                          onClick={() => setPlacementMode("rotate")}
-                        >
-                          Rotate
-                        </button>
-                      </div>
                       {design.boards.map(
                         (b, i) =>
                           b.path === selectedBoard &&

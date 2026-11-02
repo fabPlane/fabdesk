@@ -146,3 +146,13 @@ The full objective remains incomplete. Passing geometry checks or slicing is ins
 - Further capacitor research did not obtain a verified exact downloadable 3D file. The manufacturer D4 drawing still supports the retained 2.0 mm maximum body-height envelope; neither that drawing nor entered evidence proves assembled solder height or physical strength.
 
 [Machine-readable assembly and evidence results](enclosure-assembly-validation.json).
+
+## 2026-11-02 — board controls and port-wall regression
+
+- Selecting a board exposes Camera, Move, Rotate, Turn 90°, and Lock/Unlock in every enclosure step. Position editing no longer depends on opening a disclosure on the Boards step. Moving or rotating invalidates the old preview; ports and fit must be checked again.
+- Walls with openings now use continuous polygon profiles. The former rectangular subtraction discarded strips under 0.05 mm; a regression with two nearly aligned openings reproduced a slit above the ports. The same test now passes for the joined solid, and wall-vent tests inspect actual mesh openings instead of counting box pieces.
+- Fit review warns about thin material beside an edge or between opening envelopes. This is a conservative spacing check, not a strength certification.
+- Validation: 82 focused tests / 420 assertions pass; root typecheck and Windows core/desktop builds pass. Built-app mouse dragging moved a board center from X 48.18 to 77.2484 mm; the rotation ring changed 90° to 157.1033°. Turn 90°, Undo, and lock gating were exercised. The user's seven-board imported-case draft was restored exactly after testing.
+- A separately regenerated six-board VAIO case passed native preview with no detected blockers. The new wall was visually inspected in the actual 3D renderer. The isolated-wall screenshot shows the generated geometry; it does not certify the connector dimensions.
+- Still unresolved: the CM5 I/O board's J1 is `USB_Micro-B_Molex-105017-0001`, currently using a generic 7 mm connector-height estimate (7.8 mm opening with default clearance). The [Molex drawing](https://www.molex.com/content/dam/molex/molex-dot-com/products/automated/en-us/salesdrawingpdf/105/105017/1050170001_sd.pdf) was located but its dimensional callouts could not be verified in this environment. Do not treat that opening as exact. Recorded connector/plug evidence and physical validation remain required.
+- Existing imported STL geometry is preserved; rebuilding a generated case does not repair previously imported files. Imported-solid editing remains dependent on the CAD bridge, unavailable locally on Windows.

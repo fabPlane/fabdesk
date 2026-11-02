@@ -12,6 +12,45 @@ const features = () =>
   extractBoardFeatures(
     '(kicad_pcb (general (thickness 1.6))(gr_rect(start 0 0)(end 40 20)(layer "Edge.Cuts")))',
   );
+
+test("offset rectangular ports keep the wall above and between openings intact", async () => {
+  const d = defaultEnclosureDesign(null);
+  d.space = {
+    x: 0,
+    y: 0,
+    width: 241,
+    depth: 116,
+    height: 20,
+    wall: 2,
+    floor: 2,
+    lid: 2,
+    clearance: 1,
+  };
+  // Two openings with nearly aligned edges, at different heights. The wall
+  // between them is intentional; cutting the second must not discard it.
+  d.openings = [
+    { name: "Lower port", wall: "minY", offset: 110.58, z: 7.2, width: 8.3, height: 3 },
+    { name: "Upper port", wall: "minY", offset: 110.6, z: 12, width: 8.3, height: 3 },
+  ];
+  const m = await joinedEnclosure(enclosureFromDesign(d, []));
+  const surface = new ShellSurface(readStlTriangles(new TextEncoder().encode(m.baseStl)));
+  const probe = (x: number, z: number) =>
+    surface.intersects({
+      name: "wall sample",
+      x,
+      y: -3,
+      z,
+      width: 0.002,
+      depth: 4,
+      height: 0.002,
+    });
+  expect(probe(110.58, 8)).toBe(false);
+  expect(probe(110.6, 13)).toBe(false);
+  expect(probe(114.74, 10.8)).toBe(true);
+  expect(probe(114.74, 18)).toBe(true);
+  expect(probe(106.44, 18)).toBe(true);
+  expect(m.validation.base.components).toBe(1);
+});
 function fixture() {
   const d = defaultEnclosureDesign(null);
   d.confirmed = true;

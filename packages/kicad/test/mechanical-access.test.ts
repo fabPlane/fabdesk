@@ -20,6 +20,27 @@ function fixture() {
   d.space.depth = 100;
   return { d, boards: d.boards.map((placement) => ({ placement, features })) };
 }
+
+test("nearby openings warn about thin material while separated ports do not", () => {
+  const { d, boards } = fixture();
+  d.openings = [
+    { name: "USB", wall: "minY", offset: 20, z: 7, width: 10, height: 4 },
+    { name: "Card", wall: "minY", offset: 30.1, z: 7, width: 10, height: 4 },
+  ];
+  expect(checkMechanicalFit(d, boards).issues.filter((i) => i.code === "opening-web")).toHaveLength(
+    1,
+  );
+  d.openings[1]!.offset = 40;
+  expect(checkMechanicalFit(d, boards).issues.filter((i) => i.code === "opening-web")).toHaveLength(
+    0,
+  );
+  d.openings[1]!.z = d.space.floor + d.space.height - 4.1;
+  expect(
+    checkMechanicalFit(d, boards).issues.some(
+      (i) => i.code === "opening-web" && i.severity === "review",
+    ),
+  ).toBe(true);
+});
 test("cable endpoints, allowance and stale references are validated by the fit checker", () => {
   const { d, boards } = fixture();
   d.connections = [

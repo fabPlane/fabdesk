@@ -4,6 +4,11 @@ import { Icon } from "../../components/Icon";
 
 type Destination = "Start" | "Space" | "PCB";
 const guidance: Record<string, { title: string; destination: Destination; action: string }> = {
+  "opening-web": {
+    title: "Thin wall beside a port",
+    destination: "Start",
+    action: "Review port spacing and case size",
+  },
   "cable-route-blocked": {
     title: "A cable needs a clear path",
     destination: "Start",

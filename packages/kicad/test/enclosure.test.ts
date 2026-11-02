@@ -219,7 +219,25 @@ describe("enclosure v2", () => {
     expect(honeycomb.vents.length).toBeGreaterThan(2);
     expect(slots.vents.some((v) => v.face === "lid")).toBe(true);
     expect(slots.vents.some((v) => v.face === "wall")).toBe(true);
-    expect(slots.solids.filter((s) => s.role === "wall").length).toBeGreaterThan(4);
+    const surface = new ShellSurface(
+      readStlTriangles(new TextEncoder().encode(meshEnclosure(slots).baseStl)),
+    );
+    for (const vent of slots.vents.filter((v) => v.face === "wall")) {
+      const center = {
+        x: (vent.min.x + vent.max.x) / 2,
+        y: (vent.min.y + vent.max.y) / 2,
+        z: (vent.min.z + vent.max.z) / 2,
+      };
+      expect(
+        surface.intersects({
+          name: "Vent center",
+          ...center,
+          width: 0.01,
+          depth: 0.01,
+          height: 0.01,
+        }),
+      ).toBe(false);
+    }
   });
 
   test("snap-fit clips add through-lid hooks and appear in the mesh", () => {

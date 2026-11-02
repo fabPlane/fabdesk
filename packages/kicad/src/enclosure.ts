@@ -337,49 +337,6 @@ function splitWall(
   );
 }
 
-function subtractAabb(solid: Box3, hole: Box3): Box3[] {
-  const ix0 = Math.max(solid.min.x, hole.min.x);
-  const iy0 = Math.max(solid.min.y, hole.min.y);
-  const iz0 = Math.max(solid.min.z, hole.min.z);
-  const ix1 = Math.min(solid.max.x, hole.max.x);
-  const iy1 = Math.min(solid.max.y, hole.max.y);
-  const iz1 = Math.min(solid.max.z, hole.max.z);
-  if (ix1 - ix0 <= 0.05 || iy1 - iy0 <= 0.05 || iz1 - iz0 <= 0.05) return [solid];
-  const out: Box3[] = [];
-  if (ix0 - solid.min.x > 0.05)
-    out.push({ min: { ...solid.min }, max: { x: ix0, y: solid.max.y, z: solid.max.z } });
-  if (solid.max.x - ix1 > 0.05)
-    out.push({ min: { x: ix1, y: solid.min.y, z: solid.min.z }, max: { ...solid.max } });
-  if (iy0 - solid.min.y > 0.05)
-    out.push({
-      min: { x: ix0, y: solid.min.y, z: solid.min.z },
-      max: { x: ix1, y: iy0, z: solid.max.z },
-    });
-  if (solid.max.y - iy1 > 0.05)
-    out.push({
-      min: { x: ix0, y: iy1, z: solid.min.z },
-      max: { x: ix1, y: solid.max.y, z: solid.max.z },
-    });
-  if (iz0 - solid.min.z > 0.05)
-    out.push({
-      min: { x: ix0, y: iy0, z: solid.min.z },
-      max: { x: ix1, y: iy1, z: iz0 },
-    });
-  if (solid.max.z - iz1 > 0.05)
-    out.push({
-      min: { x: ix0, y: iy0, z: iz1 },
-      max: { x: ix1, y: iy1, z: solid.max.z },
-    });
-  return out;
-}
-
-function punchWall(name: string, wall: Box3, holes: Box3[]): EnclosureSolid[] {
-  let remain: Box3[] = [wall];
-  for (const hole of holes) remain = remain.flatMap((b) => subtractAabb(b, hole));
-  if (!remain.length) return [];
-  return remain.map((b, i) => box(remain.length === 1 ? name : `${name}_${i + 1}`, "wall", b.min, b.max));
-}
-
 /** Build a two-piece case whose cutouts and standoffs track the current board features. */
 export function generateEnclosure(
   features: BoardFeatures,
@@ -591,10 +548,12 @@ export function generateEnclosure(
   for (const [edge, wall] of Object.entries({ minX, maxX, minY, maxY }) as [BoardEdge, Box3][]) {
     const name = `EnclosureWall${edge[0]!.toUpperCase()}${edge.slice(1)}`;
     const rounded = cutouts.filter((c) => c.edge === edge && c.shape === "rounded");
+    const holes = holesFor(edge, wall);
+    // Preserve narrow strips and avoid seams between independently rounded boxes.
     solids.push(
-      ...(rounded.length
-        ? profileWall(name, edge, wall, holesFor(edge, wall), rounded)
-        : punchWall(name, wall, holesFor(edge, wall))),
+      ...(rounded.length || holes.length
+        ? profileWall(name, edge, wall, holes, rounded)
+        : [box(name, "wall", wall.min, wall.max)]),
     );
   }
 

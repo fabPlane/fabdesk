@@ -458,6 +458,18 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
     const vertical = o.wall === "minX" || o.wall === "maxX";
     const lo = vertical ? s.y : s.x,
       hi = lo + (vertical ? s.depth : s.width);
+    const edgeWeb = Math.min(
+      o.offset - o.width / 2 - lo,
+      hi - o.offset - o.width / 2,
+      o.z - s.floor,
+      s.floor + s.height - o.z - o.height,
+    );
+    if (edgeWeb >= 0 && edgeWeb < s.wall)
+      add(
+        "opening-web",
+        `${o.name}: only ${edgeWeb.toFixed(2)} mm of wall remains beside an edge. Review strength; aim for at least the ${s.wall} mm wall thickness.`,
+        "review",
+      );
     if (
       o.offset - o.width / 2 < lo ||
       o.offset + o.width / 2 > hi ||
@@ -484,6 +496,21 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
           },
         ],
       );
+  }
+  for (let i = 0; i < d.openings.length; i++) {
+    const a = d.openings[i]!;
+    for (const b of d.openings.slice(i + 1)) {
+      if (a.wall !== b.wall) continue;
+      const dx = Math.max(0, Math.abs(a.offset - b.offset) - (a.width + b.width) / 2);
+      const dz = Math.max(0, a.z - b.z - b.height, b.z - a.z - a.height);
+      const web = Math.hypot(dx, dz);
+      if (web < s.wall)
+        add(
+          "opening-web",
+          `${a.name} and ${b.name}: opening envelopes leave ${web.toFixed(2)} mm between them. Review the remaining wall before printing; rounded profiles may leave more material.`,
+          "review",
+        );
+    }
   }
   for (const [i, m] of d.mounts.entries()) {
     if (
