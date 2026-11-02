@@ -55,6 +55,8 @@ import {
   enclosureReadiness,
   fitIssueBoardPath,
   enclosureRecoveryAction,
+  enclosureWorkflow,
+  enclosureSelectionKey,
 } from "@fabdesk/client-core";
 
 type Result = {
@@ -156,6 +158,7 @@ export function EnclosureDesigner({
     [board, setBoard] = useState<EnclosureBoardSummary | null>(null);
   const [step, setStep] = useState<Step>("PCB"),
     [files, setFiles] = useState<string[]>([]);
+  const [confirmedSelection, setConfirmedSelection] = useState<string | null>(null);
   const [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
@@ -293,8 +296,8 @@ export function EnclosureDesigner({
     [showSpace, setShowSpace] = useState(true);
   const [focusedIssue, setFocusedIssue] = useState<MechanicalFitIssue | null>(null);
   const [selectedBoard, setSelectedBoard] = useState<string | null>(null);
-  const viewState = useRef({ step, selected: selectedBoard });
-  viewState.current = { step, selected: selectedBoard };
+  const viewState = useRef({ step, selected: selectedBoard, confirmedSelection });
+  viewState.current = { step, selected: selectedBoard, confirmedSelection };
   const [placementMode, setPlacementMode] = useState<"orbit" | "translate" | "rotate">("orbit");
   const [caseVisible, setCaseVisible] = useState(true);
   const [controlsExpanded, setControlsExpanded] = useState(false);
@@ -515,6 +518,9 @@ export function EnclosureDesigner({
       savedDesign.current = structuredClone(initial);
       history.current.reset(initial);
       let restoredDraft: MechanicalDesign | null = null;
+      let approvedSelection = r.design?.confirmed
+        ? enclosureSelectionKey(initial.boards.map((b) => b.path))
+        : null;
       try {
         const store = new EnclosureRecoveryStore(
           localStorage,
@@ -527,6 +533,9 @@ export function EnclosureDesigner({
           restoredView.current = parseWorkspaceView(view?.camera);
           if (steps.includes(view?.step)) setStep(view.step);
           if (typeof view?.selected === "string") setSelectedBoard(view.selected);
+          if (view && "confirmedSelection" in view)
+            approvedSelection =
+              typeof view.confirmedSelection === "string" ? view.confirmedSelection : null;
         } catch {
           /* A missing or invalid view must not prevent draft recovery. */
         }
@@ -547,6 +556,7 @@ export function EnclosureDesigner({
         );
       }
       setLayoutChoice(r.design ? "keep" : "compact");
+      setConfirmedSelection(approvedSelection);
       setDesign(restoredDraft ?? initial);
       setFiles(p.files.map((f) => f.path));
     });
@@ -641,7 +651,7 @@ export function EnclosureDesigner({
       rememberView();
       window.removeEventListener("pagehide", rememberView);
     };
-  }, [active, step, selectedBoard, projectId]);
+  }, [active, step, selectedBoard, confirmedSelection, projectId]);
   useEffect(() => {
     const s = design?.space;
     const validSpace =
@@ -783,6 +793,10 @@ export function EnclosureDesigner({
   }
   async function importCase(file: File) {
     if (!design || pendingRecovery) return;
+    if (!workflow.caseUnlocked) {
+      setError(workflow.caseHint ?? "Complete Boards first.");
+      return;
+    }
     await run("Importing enclosure…", async () => {
       validateEnclosureFile(file.name, file.size);
       const path = `cad/imports/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9_.-]/g, "-").slice(-120)}`;
@@ -871,6 +885,7 @@ export function EnclosureDesigner({
   }
   async function makePreview(choice = layoutChoice) {
     if (!design) return;
+    if (!workflow.caseUnlocked) throw new Error(workflow.caseHint ?? "Complete Boards first.");
     if (design.mode === "generated" && choice !== "keep") {
       await autoArrange(false, true, choice);
       return;
@@ -1122,6 +1137,33 @@ export function EnclosureDesigner({
     />
   );
   const actionsDisabled = !!busy || !!pendingRecovery || !design;
+  const workflow = enclosureWorkflow({
+    paths: design?.boards.map((b) => b.path) ?? [],
+    readyPaths: (design?.boards ?? [])
+      .filter((b) => {
+        const f = featuresFor(b.path);
+        return (
+          f &&
+          Number.isFinite(f.outline.widthMm) &&
+          f.outline.widthMm > 0 &&
+          Number.isFinite(f.outline.heightMm) &&
+          f.outline.heightMm > 0
+        );
+      })
+      .map((b) => b.path),
+    confirmedSelection,
+    hasPreview: !!preview,
+    recovering: !!pendingRecovery,
+  });
+  // Restored views and changes to earlier choices cannot bypass the sequence.
+  useEffect(() => {
+    if (!design || busy || pendingRecovery) return;
+    const selectionChanged =
+      !design.boards.length ||
+      confirmedSelection !== enclosureSelectionKey(design.boards.map((b) => b.path));
+    if (step !== "PCB" && selectionChanged) setStep("PCB");
+    else if (step === "Review" && !preview) setStep("Start");
+  }, [design, busy, pendingRecovery, step, confirmedSelection, preview]);
   const exportReadiness = enclosureReadiness(!!preview, report, pcbModels.loading);
   const currentPlacement = design?.boards.find((b) => b.path === selectedBoard);
   const currentFeatures = selectedBoard ? featuresFor(selectedBoard) : null;
@@ -1197,17 +1239,42 @@ export function EnclosureDesigner({
           )}
         </header>
         <nav aria-label="Enclosure workflow">
-          {steps.map((s) => (
-            <button
-              key={s}
-              aria-current={step === s ? "step" : undefined}
-              disabled={!!busy}
-              onClick={() => setStep(s)}
-            >
-              {stepLabels[s]}
-            </button>
-          ))}
+          {steps.map((s) => {
+            const locked =
+              s === "Start"
+                ? !workflow.caseUnlocked
+                : s === "Review"
+                  ? !workflow.previewUnlocked
+                  : false;
+            const complete =
+              s === "PCB"
+                ? workflow.boardsComplete
+                : s === "Start"
+                  ? workflow.previewUnlocked
+                  : false;
+            const hint =
+              s === "Start" ? workflow.caseHint : s === "Review" ? workflow.previewHint : null;
+            return (
+              <button
+                key={s}
+                aria-current={step === s ? "step" : undefined}
+                disabled={actionsDisabled || locked}
+                title={locked ? (hint ?? undefined) : undefined}
+                onClick={() => setStep(s)}
+              >
+                {(locked || complete) && <MechanicalIcon name={locked ? "lock" : "check"} />}
+                {stepLabels[s]}
+              </button>
+            );
+          })}
         </nav>
+        <p className="fd-case-step-hint" role="status">
+          {step === "PCB"
+            ? fitError || workflow.boardsHint
+            : step === "Start"
+              ? "Choose your case and layout, then create a preview."
+              : "Review the fit before saving your design files."}
+        </p>
         <div className="fd-case-body" ref={body}>
           <PcbModelHealth {...pcbModels} />
           {(selectedBoard || step === "PCB") && (
@@ -1377,7 +1444,10 @@ export function EnclosureDesigner({
             </div>
           )}
           {design && (
-            <fieldset disabled={!!busy || !!pendingRecovery} className="fd-case-fields">
+            <fieldset
+              disabled={!!busy || !!pendingRecovery || (step !== "PCB" && !workflow.caseUnlocked)}
+              className="fd-case-fields"
+            >
               {step === "Start" && (
                 <>
                   <h3>Choose your case</h3>
@@ -2107,7 +2177,10 @@ export function EnclosureDesigner({
                     )}
                     selected={design.boards.map((b) => b.path)}
                     onChange={(paths) => {
-                      edit(selectEnclosureBoards(design, paths), "Choose boards");
+                      edit(
+                        { ...selectEnclosureBoards(design, paths), confirmed: false },
+                        "Choose boards",
+                      );
                       if (design.mode === "generated") setLayoutChoice("compact");
                     }}
                   />
@@ -2566,10 +2639,14 @@ export function EnclosureDesigner({
             {step === "PCB" ? (
               <button
                 className="fd-mechanical-primary"
-                disabled={actionsDisabled || !design?.boards.length}
-                onClick={() => setStep("Start")}
+                disabled={actionsDisabled || !workflow.canContinue}
+                onClick={() => {
+                  if (!design || !workflow.canContinue) return;
+                  setConfirmedSelection(enclosureSelectionKey(design.boards.map((b) => b.path)));
+                  setStep("Start");
+                }}
               >
-                Choose a case
+                Continue to case
               </button>
             ) : step === "Start" ? (
               <button
@@ -2713,7 +2790,9 @@ export function EnclosureDesigner({
                 </button>
               </>
             ) : report?.status === "blocked" && step !== "Review" ? (
-              <button onClick={() => setStep("Review")}>Review fit issues</button>
+              <button disabled={!workflow.previewUnlocked} onClick={() => setStep("Review")}>
+                Review fit issues
+              </button>
             ) : null}
             {!showRisks && <small>Red highlights hidden</small>}
           </div>

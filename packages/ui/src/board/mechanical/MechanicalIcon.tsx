@@ -2,9 +2,16 @@
 export function MechanicalIcon({
   name,
 }: {
-  name: "cube" | "eye" | "eyeOff" | "fit" | "undo" | "redo";
+  name: "cube" | "eye" | "eyeOff" | "fit" | "undo" | "redo" | "lock" | "check";
 }) {
   const paths = {
+    lock: (
+      <>
+        <rect x="5" y="10" width="14" height="11" rx="2" />
+        <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+      </>
+    ),
+    check: <path d="m5 12 4 4L19 6" />,
     cube: (
       <>
         <path d="m12 3 9 5v8l-9 5-9-5V8l9-5Z" />

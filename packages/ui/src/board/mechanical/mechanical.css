@@ -109,11 +109,33 @@
   border: 1px solid var(--fd-border);
 }
 .fd-case-panel nav button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   flex: 1;
   border: 0;
   background: transparent;
   color: var(--fd-muted);
   font-weight: 600;
+}
+.fd-case-panel nav button svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.fd-case-panel nav button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.fd-case-panel nav button[aria-current="step"]:disabled {
+  opacity: 1;
+}
+.fd-case-step-hint {
+  margin: -4px 18px 16px;
+  color: var(--fd-muted);
+  font-size: 11px;
+  line-height: 1.5;
 }
 .fd-case-panel nav button[aria-current="step"] {
   color: var(--fd-fg);
