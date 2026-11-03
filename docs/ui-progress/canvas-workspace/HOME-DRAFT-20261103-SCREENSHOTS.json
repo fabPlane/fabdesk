@@ -26,6 +26,11 @@
       "file": "home-20261103-generated-pcb.png",
       "original": "18-reopened-generated-pcb.png",
       "sha256": "fa08c7c085076ed4b9cd18c045d2ec622a33960b327b24badc740df704dae488"
+    },
+    {
+      "file": "home-20261103-section-break.png",
+      "original": "22-section-break-after.png",
+      "sha256": "bbbfae83508d308302da384b2dc8071e6d3929113fa6cdd06f46634e031bfa5f"
     }
   ]
 }

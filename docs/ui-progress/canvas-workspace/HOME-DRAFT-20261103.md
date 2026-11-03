@@ -77,3 +77,9 @@ The screenshots below are unaltered app captures. The earlier generated concepts
 | ![Draft](home-20261103-draft.png) | ![Setup](home-20261103-project-setup.png) |
 
 ![Reopened generated PCB](home-20261103-generated-pcb.png)
+
+## Follow-up: separate starting and reopening work
+
+At the user's request, the saved-work section now has a pale green surface, an accent divider and the explicit heading “Open a project or draft”, separate from the idea composer. Native Home → View all projects → Home navigation passed; affected UI typecheck and diff checks passed. This small visual follow-up does not rerun or replace the broader acceptance above.
+
+![Home with separated saved-work section](home-20261103-section-break.png)
