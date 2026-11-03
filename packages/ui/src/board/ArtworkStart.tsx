@@ -1,6 +1,7 @@
 import { ProjectImage } from "../chat/ProjectImage";
 import { Icon } from "../components/Icon";
 import { Button } from "../components/ui";
+import { ArtworkInspiration } from "./ArtworkInspiration";
 
 /** Entry choices use the existing upload/sketch loaders; no sample board is implied. */
 export function ArtworkStart({ projectId, sketches, disabled, restoring, onUpload, onSketch, onRetry }: {
@@ -19,9 +20,9 @@ export function ArtworkStart({ projectId, sketches, disabled, restoring, onUploa
     </header>
     <div className="fd-art-start-grid">
       <section className="fd-art-start-upload" aria-label="Upload artwork">
-        <div className="fd-art-start-icon"><Icon name="image" width={32} height={32} aria-hidden="true" /></div>
+        <ArtworkInspiration />
         <h3>Bring your artwork</h3>
-        <p>Drop an image here, or choose a file from your computer.</p>
+        <p>Choose an image or drop it here.</p>
         <Button variant="primary" disabled={disabled} onClick={onUpload}><Icon name="plus" width={16} height={16} />Choose image</Button>
         <span>PNG, JPG, WebP or GIF · up to 12 MB</span>
         {restoring && <span role="status">Loading saved artwork…</span>}

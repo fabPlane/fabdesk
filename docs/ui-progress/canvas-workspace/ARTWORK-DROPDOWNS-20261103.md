@@ -52,3 +52,12 @@ Not tested in this follow-up: every option of all 49 static call sites, dark/hig
 Final UI typecheck passed. UI suite: **279 passed, 0 failed, 1,185 assertions across 57 files**. Final desktop production build passed (renderer 59.12 seconds); zero emitted .map files. Existing Zod annotation and large-chunk warnings remain. git diff --check passed. Native acceptance used the development app; production artifact was built, not launched as a packaged distribution. No full engineering suite or hosted CI was rerun for this styling follow-up; the previous merge report's telemetry timeout remains separately disclosed.
 
 Work is committed locally after these checks. This follow-up does not push or alter the remote PR; the previous explicitly authorized conflict-resolution push remains ca9ea80.
+
+
+## Inspiration follow-up · November 3
+
+User requested example images on the empty Artwork page. Replace the oversized image icon with three compact, original vector illustrations: a sun/bold mark, mountain line art and a halftone motif. Label the group “A little inspiration / Illustrative examples”; keep the upload action prominent, with saved project sketches in their separate panel. These are static inspiration, not sample buttons, project artifacts, native-source previews or fabrication claims. No network images, image-generation dependency or new artwork-generation workflow was added.
+
+Human retest: Home → Projects → existing test1 → Start → Create an art board. The project initially showed its transitional board toolbar before Start settled; a stale AX target was refreshed and the visible Start action used. Actual page shows all three labeled images with no clipping at the current desktop size. Choose image opened the native file picker; Cancel returned to the same empty state. No image selected, no new project created, no source/artwork file saved and no agent request sent. Close project returned to Home; opening recency may update normally. Narrow-window and alternate-theme rendering not retested here.
+
+User baseline and unaltered actual native capture are in [inspiration-20261103](inspiration-20261103/), with SHA256SUMS. UI typecheck and all282UI tests/1199assertions passed; git diff --check passed. No new full engineering suite or production build is claimed for this small vector/CSS addition. Prior feedback build remains separately recorded. Local commit follows; no push or remote PR update.
