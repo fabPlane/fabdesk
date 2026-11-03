@@ -9,12 +9,22 @@ import { proposeEnclosureLayout } from "../../client-core/src/enclosure-layout";
 
 const footprint = "Connector_USB:USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal";
 const microSd = "Connector_Card:microSD_HC_Hirose_DM3D-SF";
+const microUsb = "Connector_USB:USB_Micro-B_Molex-105017-0001";
 test("explicit PCB height supports thin unknown connectors and rejects ambiguous units", () => {
-  for (const [height,expected] of [["1.25 mm",1.25],["0.8",0.8],["2 in",5],["-1",5],["0",5],["999",5]] as const) {
-    const f=extractBoardFeatures(`(kicad_pcb (gr_rect(start 0 0)(end 40 20)(layer "Edge.Cuts"))(footprint "Connector:Unknown" (layer "F.Cu")(at 20 0)(property "Reference" "J1")(property "Height" "${height}")(fp_rect(start -3 -1)(end 3 3)(layer "F.Fab"))(fp_rect(start -4 -2)(end 4 4)(layer "F.CrtYd"))))`);
+  for (const [height, expected] of [
+    ["1.25 mm", 1.25],
+    ["0.8", 0.8],
+    ["2 in", 5],
+    ["-1", 5],
+    ["0", 5],
+    ["999", 5],
+  ] as const) {
+    const f = extractBoardFeatures(
+      `(kicad_pcb (gr_rect(start 0 0)(end 40 20)(layer "Edge.Cuts"))(footprint "Connector:Unknown" (layer "F.Cu")(at 20 0)(property "Reference" "J1")(property "Height" "${height}")(fp_rect(start -3 -1)(end 3 3)(layer "F.Fab"))(fp_rect(start -4 -2)(end 4 4)(layer "F.CrtYd"))))`,
+    );
     expect(f.connectors[0]!.heightMm).toBe(expected);
-    if(expected!==5)expect(f.connectors[0]!.face?.source).toBe("PCB Height property");
-    else expect(f.warnings.some(w=>w.includes("Height property"))).toBe(true);
+    if (expected !== 5) expect(f.connectors[0]!.face?.source).toBe("PCB Height property");
+    else expect(f.warnings.some((w) => w.includes("Height property"))).toBe(true);
   }
 });
 const pcb = (bottom = false, fab = true, name = footprint) =>
@@ -23,6 +33,37 @@ const pcb = (bottom = false, fab = true, name = footprint) =>
   (footprint "${name}"(layer "${bottom ? "B" : "F"}.Cu")(at 20 0)(property "Reference" "J1")
     (fp_rect(start -6 -1)(end 6 8)(layer "F.CrtYd"))
     ${fab ? '(fp_rect(start -4.47 0)(end 4.47 7.35)(layer "F.Fab"))' : ""}))`);
+
+test("exact Micro-USB profile replaces generic USB height without guessing for other parts", () => {
+  const f = pcb(false, true, microUsb);
+  expect(f.connectors[0]!.heightMm).toBe(2.94);
+  expect(connectorOpening(f.connectors[0]!)).toMatchObject({
+    height: 2.94,
+    source: "Molex 105017-0001 catalog maximum",
+  });
+  expect(estimatePartHeightMm(`${microUsb}_Modified`)).toBe(7);
+  expect(estimatePartHeightMm("Connector_USB:USB_A")).toBe(7);
+  for (const bottom of [true, false]) {
+    const b = pcb(bottom, true, microUsb);
+    const d = defaultEnclosureDesign(b);
+    const opening = d.openings[0]!;
+    expect(opening.height).toBeCloseTo(3.74);
+    expect(opening.width).toBeCloseTo(9.74);
+    expect(opening.z).toBeCloseTo(d.boards[0]!.z + (bottom ? -2.94 : b.thicknessMm) - 0.4);
+  }
+});
+
+test("initial case openings use the same physical face and padding as arranged openings", () => {
+  for (const name of [footprint, microSd, microUsb]) {
+    const features = pcb(false, true, name);
+    const initial = defaultEnclosureDesign(features);
+    const arranged = proposeEnclosureLayout(initial, [
+      { placement: initial.boards[0]!, features },
+    ]).design;
+    for (const key of ["width", "height", "shape"] as const)
+      expect(initial.openings[0]![key]).toEqual(arranged.openings[0]![key]);
+  }
+});
 
 test("physical face sizing keeps the larger courtyard for collision checks", () => {
   const c = pcb().connectors[0]!;
@@ -66,6 +107,7 @@ test("microSD uses its documented low body height, without changing unrelated ca
 for (const part of [
   { name: footprint, height: 4.11 },
   { name: microSd, height: 2.35 },
+  { name: microUsb, height: 3.74 },
 ])
   for (const bottom of [false, true])
     for (const rotation of [0, 90, 180, 270]) {

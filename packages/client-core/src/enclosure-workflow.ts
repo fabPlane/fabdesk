@@ -31,7 +31,7 @@ export function enclosureWorkflow({
     boardsComplete,
     caseUnlocked: boardsComplete,
     previewUnlocked: boardsComplete && hasPreview,
-    boardsHint: reason ?? "Your boards are ready. Continue to choose a case.",
+    boardsHint: reason ?? "Your boards are ready. Use automatic setup or choose your case options.",
     caseHint: boardsComplete ? null : (reason ?? "Confirm your boards to unlock case setup."),
     previewHint: boardsComplete
       ? "Create a case preview to unlock this step."

@@ -162,6 +162,11 @@ const EDGE_TOLERANCE_MM = 2.5;
 
 /** Heights above the mounting face for exact part numbers, never connector-wide guesses. */
 function connectorBodyProfile(footprint: string) {
+  // Molex 9876505191, p16: 105017-0001 height 2.45 nominal / 2.94 maximum.
+  // https://cevikltd.com.tr/filestore/pdfs/MolexTabletPCConnectorSystems9876505191.pdf
+  // Use the documented maximum envelope, not a generic USB-A height or a claim of measured fit.
+  if (/(?:^|:)USB_Micro-B_Molex-105017-0001$/.test(footprint))
+    return { heightMm: 2.94, source: "Molex 105017-0001 catalog maximum" as const };
   // GCT USB4105, sheet 1, B4: https://gct.co/files/drawings/usb4105.pdf
   if (/(?:^|:)USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal$/.test(footprint))
     return { heightMm: 3.31, source: "GCT USB4105 drawing" as const };

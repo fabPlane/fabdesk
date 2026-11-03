@@ -163,6 +163,7 @@ export const MechanicalDesignSchema = z
           height: size,
           boardPath: path.optional(),
           ref: z.string().min(1).max(500).optional(),
+          followBoard: z.boolean().optional(),
         }),
       )
       .max(100),

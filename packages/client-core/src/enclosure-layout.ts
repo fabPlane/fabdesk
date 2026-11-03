@@ -69,9 +69,11 @@ type Port = {
     shape: import("@fabdesk/protocol").OpeningShape;
   };
   wall?: Edge;
+  reach?: number;
 };
 export type EnclosureLayoutGoal = "compact" | "assembly" | "ports";
 type Option = {
+  fixed: boolean;
   board: LayoutBoard;
   rotation: number;
   rect: Rect;
@@ -120,6 +122,10 @@ export function connectorAccess(d: MechanicalDesign, path: string, c: Connector)
   );
 }
 function options(d: MechanicalDesign, b: LayoutBoard): Option[] {
+  // A manually positioned cutout anchors its board until the user matches it to the port again.
+  const fixed =
+    !!b.placement.locked ||
+    d.openings.some((o) => o.boardPath === b.placement.path && o.followBoard === false);
   const f = b.features,
     parts = f.components ?? [],
     m = b.modelBounds;
@@ -151,7 +157,7 @@ function options(d: MechanicalDesign, b: LayoutBoard): Option[] {
       ...holes.map((h) => h.y + mounts.find((p) => p.holeId === h.id)!.outer / 2),
     ),
   };
-  const z = b.placement.locked
+  const z = fixed
     ? b.placement.z
     : Math.max(
         b.placement.z,
@@ -171,11 +177,12 @@ function options(d: MechanicalDesign, b: LayoutBoard): Option[] {
       ...parts.filter((p) => !p.bottom).map((p) => f.thicknessMm + p.heightMm),
       m?.maxZ ?? 0,
     );
-  if (b.placement.locked && b.placement.rotation % 90 !== 0)
+  if (fixed && b.placement.rotation % 90 !== 0)
     throw Error(
       `Set ${b.placement.path} to a quarter-turn rotation before locking it for automatic layout.`,
     );
-  return (b.placement.locked ? [b.placement.rotation] : [0, 90, 180, 270]).map((rotation) => ({
+  return (fixed ? [b.placement.rotation] : [0, 90, 180, 270]).map((rotation) => ({
+    fixed,
     board: b,
     rotation,
     rect: rotateRect(rect, rotation),
@@ -191,10 +198,12 @@ function options(d: MechanicalDesign, b: LayoutBoard): Option[] {
         const center = turn(face.x, face.y, rotation);
         return {
           ref: c.ref,
-          bounds: rotateRect(c.bounds!, rotation),
+          // Port reach is measured from the connector body, not its padded courtyard.
+          bounds: rotateRect(c.face?.bounds ?? c.bounds!, rotation),
           edge: rotatedEdge(profile?.face ?? c.edge, rotation),
           aperture: { ...face, ...center },
           ...(profile?.wall ? { wall: profile.wall } : {}),
+          ...(profile?.plug?.reach !== undefined ? { reach: profile.plug.reach } : {}),
           height: c.heightMm,
           bottom: parts.some((p) => p.ref === c.ref && p.bottom),
         };
@@ -210,6 +219,19 @@ function wallGap(p: Port, b: Placed, w: number, h: number) {
       : p.edge === "minY"
         ? r.minY
         : h - r.maxY;
+}
+function reachesWall(
+  p: Port,
+  b: Placed,
+  w: number,
+  h: number,
+  margin: number,
+  d: MechanicalDesign,
+) {
+  const gap = wallGap(p, b, w, h);
+  return p.reach !== undefined
+    ? p.reach + 1e-5 >= gap + d.space.wall + 2 * (d.fitAllowance ?? 0)
+    : gap <= margin + 1.5;
 }
 /** Bounded deterministic search, prioritizing reachable external ports, then case footprint.
  * Does not modify PCB files or claim a global optimum. */
@@ -244,7 +266,7 @@ export function proposeEnclosureLayout(
     d.mode === "imported" ||
     d.boards.some((b) => b.locked) ||
     d.obstacles.length > 0 ||
-    d.openings.some((o) => !o.boardPath);
+    d.openings.some((o) => !o.boardPath || o.followBoard === false);
   const area = all.reduce((sum, opts) => {
     const r = opts[0]!.rect;
     return sum + (r.maxX - r.minX + gap) * (r.maxY - r.minY + gap);
@@ -254,12 +276,32 @@ export function proposeEnclosureLayout(
     margin * 2;
   const dims: Array<[number, number]> = [];
   if (fixed) dims.push([d.space.width, d.space.depth]);
-  else
-    for (let k = 0; k < 15; k++) {
-      const w = Math.ceil(Math.max(longest, Math.sqrt(area) * (0.65 + k * 0.09)) / 5) * 5;
-      for (const factor of [1.05, 1.2, 1.4, 1.65, 2])
-        dims.push([w, Math.ceil(Math.max((area / w) * factor, longest) / 5) * 5]);
+  else {
+    // Include tight rows/columns: small dongles should not inherit a near-square case.
+    for (const rotation of [0, 90]) {
+      const sizes = all.map((opts) => opts.find((o) => o.rotation === rotation)!.rect);
+      const widths = sizes.map((r) => r.maxX - r.minX);
+      const heights = sizes.map((r) => r.maxY - r.minY);
+      dims.push([
+        Math.ceil(widths.reduce((n, v) => n + v, 0) + gap * (sizes.length - 1) + 2 * margin),
+        Math.ceil(Math.max(...heights) + 2 * margin),
+      ]);
+      dims.push([
+        Math.ceil(Math.max(...widths) + 2 * margin),
+        Math.ceil(heights.reduce((n, v) => n + v, 0) + gap * (sizes.length - 1) + 2 * margin),
+      ]);
     }
+    if (d.layoutLimit) {
+      const w = d.layoutLimit.width - 2 * d.space.wall;
+      const h = d.layoutLimit.depth - 2 * d.space.wall;
+      if (w > 0 && h > 0) dims.push([w, h]);
+    }
+    for (let k = 0; k < 15; k++) {
+      const w = Math.ceil(Math.max(longest, Math.sqrt(area) * (0.65 + k * 0.09)));
+      for (const factor of [1.05, 1.2, 1.4, 1.65, 2])
+        dims.push([w, Math.ceil(Math.max((area / w) * factor, longest))]);
+    }
+  }
   let best: { placed: Placed[]; w: number; h: number; matched: number; score: number } | undefined;
   let attempts = 0,
     feasible = 0;
@@ -286,7 +328,7 @@ export function proposeEnclosureLayout(
         const ports = b[0]!.ports.length - a[0]!.ports.length;
         const ar = (o: Option) => (o.rect.maxX - o.rect.minX) * (o.rect.maxY - o.rect.minY);
         return (
-          Number(!!b[0]!.board.placement.locked) - Number(!!a[0]!.board.placement.locked) ||
+          Number(b[0]!.fixed) - Number(a[0]!.fixed) ||
           (order >= 3
             ? order === 3
               ? connected(b[0]!.board.placement.path) - connected(a[0]!.board.placement.path)
@@ -299,13 +341,8 @@ export function proposeEnclosureLayout(
         );
       });
       if (order === 2) {
-        const unlocked = sorted.filter((opts) => !opts[0]!.board.placement.locked).reverse();
-        sorted.splice(
-          0,
-          sorted.length,
-          ...sorted.filter((opts) => opts[0]!.board.placement.locked),
-          ...unlocked,
-        );
+        const unlocked = sorted.filter((opts) => !opts[0]!.fixed).reverse();
+        sorted.splice(0, sorted.length, ...sorted.filter((opts) => opts[0]!.fixed), ...unlocked);
       }
       const placed: Placed[] = [];
       for (const opts of sorted) {
@@ -335,7 +372,7 @@ export function proposeEnclosureLayout(
             ys.add(obstacle.y - d.space.y - bh - margin - 0.001);
             ys.add(obstacle.y - d.space.y + obstacle.depth + margin + 0.001);
           }
-          if (o.board.placement.locked) {
+          if (o.fixed) {
             xs.clear();
             ys.clear();
             xs.add(o.board.placement.x - d.space.x + o.rect.minX);
@@ -382,7 +419,9 @@ export function proposeEnclosureLayout(
               const cables = cableAssessments(d, cableBoards).filter((c) => c.distance !== null);
               if (cables.some((c) => !c.reachable)) continue;
               const distances = o.ports.map((p) => wallGap(p, candidate, w, h));
-              const missed = distances.filter((v) => v > margin + 1.5).length;
+              const missed = o.ports.filter(
+                (p) => !reachesWall(p, candidate, w, h, margin, d),
+              ).length;
               const n =
                 missed * 1e7 +
                 distances.reduce((a, b) => a + b, 0) * 1000 +
@@ -431,7 +470,7 @@ export function proposeEnclosureLayout(
       )
         continue;
       const matched = placed.reduce(
-        (n, b) => n + b.ports.filter((p) => wallGap(p, b, w, h) <= margin + 1.5).length,
+        (n, b) => n + b.ports.filter((p) => reachesWall(p, b, w, h, margin, d)).length,
         0,
       );
       const walls = new Set(placed.flatMap((b) => b.ports.map((p) => p.edge))).size;
@@ -484,11 +523,12 @@ export function proposeEnclosureLayout(
     z: b.z,
     rotation: b.rotation,
   }));
-  const openings = d.openings.filter((o) => !o.boardPath);
+  const openings = d.openings.filter((o) => !o.boardPath || o.followBoard === false);
   const unresolved: string[] = [];
   for (const b of best.placed)
     for (const p of b.ports) {
-      if (wallGap(p, b, best.w, best.h) > margin + 1.5) {
+      if (openings.some((o) => o.boardPath === b.board.placement.path && o.ref === p.ref)) continue;
+      if (!reachesWall(p, b, best.w, best.h, margin, d)) {
         unresolved.push(`${b.board.placement.path}: ${p.ref} cannot reach its facing wall`);
         continue;
       }
@@ -505,6 +545,7 @@ export function proposeEnclosureLayout(
           .slice(0, 45)} · ${p.ref}`.slice(0, 80),
         boardPath: b.board.placement.path,
         ref: p.ref,
+        followBoard: true,
         wall: p.edge,
         offset: vertical ? p.aperture.y + b.y + sy : p.aperture.x + b.x + sx,
         z: centerZ - height / 2 - padding,

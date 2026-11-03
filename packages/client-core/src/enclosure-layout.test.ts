@@ -38,6 +38,61 @@ const fixture = (path: string): LayoutBoard => ({
     ],
   },
 });
+
+test("slim boards get a tight rectangular case instead of spare square space", () => {
+  const b = fixture("dongle.kicad_pcb");
+  b.features.connectors = [];
+  b.features.outline = { minX: 0, minY: 0, maxX: 63.2, maxY: 9.1, widthMm: 63.2, heightMm: 9.1 };
+  const d = defaultEnclosureDesign(null);
+  d.boards = [b.placement];
+  d.space.clearance = 1;
+  const p = proposeEnclosureLayout(d, [b]);
+  expect([p.design.space.width, p.design.space.depth].sort((a, b) => a - b)).toEqual([12, 66]);
+});
+
+test("an exact print limit is tested even when its interior is not on the search grid", () => {
+  const b = fixture("small.kicad_pcb");
+  b.features.connectors = [];
+  b.features.outline = { minX: 0, minY: 0, maxX: 10.3, maxY: 7.3, widthMm: 10.3, heightMm: 7.3 };
+  const d = defaultEnclosureDesign(null);
+  d.space.clearance = 1;
+  d.boards = [b.placement];
+  d.layoutLimit = { width: 16.4, depth: 13.4 };
+  const p = proposeEnclosureLayout(d, [b]);
+  expect(p.design.space.width).toBeCloseTo(12.4);
+  expect(p.design.space.depth).toBeCloseTo(9.4);
+  expect(p.design.boards[0]!.locked).toBeUndefined();
+});
+
+test("padded courtyards cannot falsely count a recessed connector as reaching its wall", () => {
+  const b = fixture("recessed.kicad_pcb");
+  const c = b.features.connectors![0]!;
+  b.features.connectors = [c];
+  c.face = {
+    bounds: { minX: 10, maxX: 12, minY: 6, maxY: 14 },
+    heightMm: 3,
+    centerZ: 1.5,
+    source: "fabrication-outline",
+  };
+  const d = defaultEnclosureDesign(null);
+  d.boards = [b.placement];
+  const p = proposeEnclosureLayout(d, [b]);
+  expect(p.openingsAdded).toBe(0);
+  expect(p.unresolved).toHaveLength(1);
+  expect(p.design.openings).toHaveLength(0);
+  d.portAccess = [
+    {
+      boardPath: b.placement.path,
+      ref: c.ref,
+      access: "external",
+      plug: { width: 8, height: 4, depth: 10, reach: 15 },
+    },
+  ];
+  const reachable = proposeEnclosureLayout(d, [b]);
+  expect(reachable.openingsAdded).toBe(1);
+  expect(reachable.unresolved).toEqual([]);
+  expect(reachable.design.openings).toHaveLength(1);
+});
 test("layout reserves dimensional allowance in rounded openings and native clearance", () => {
   const b = fixture("usb.kicad_pcb");
   const d = defaultEnclosureDesign(null);

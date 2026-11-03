@@ -1,4 +1,9 @@
-import { defaultConnectorAccess, type MechanicalDesign } from "@fabdesk/protocol";
+import {
+  connectorOpening,
+  DEFAULT_OPENING_CLEARANCE,
+  defaultConnectorAccess,
+  type MechanicalDesign,
+} from "@fabdesk/protocol";
 
 export type EnclosureBoardSummary = {
   pcbRevision: string;
@@ -148,24 +153,25 @@ export function defaultEnclosureDesign(board: EnclosureBoardSummary | null): Mec
     openings:
       board?.connectors
         ?.filter((c) => !c.footprint || defaultConnectorAccess(c.footprint) === "external")
-        .map((c) => ({
-          name: c.ref,
-          boardPath: "board.kicad_pcb",
-          ref: c.ref,
-          wall: c.edge,
-          offset: c.bounds
-            ? c.edge.endsWith("X")
-              ? (c.bounds.minY + c.bounds.maxY) / 2
-              : (c.bounds.minX + c.bounds.maxX) / 2
-            : c.edge.endsWith("X")
-              ? c.y
-              : c.x,
-          z: parts.find((p) => p.ref === c.ref)?.bottom
-            ? boardZ - c.heightMm - clearance
-            : boardZ + board.thicknessMm - clearance,
-          width: c.widthMm + clearance * 2,
-          height: c.heightMm + clearance * 2,
-        })) ?? [],
+        .map((c) => {
+          const face = connectorOpening(c);
+          const bottom = parts.find((p) => p.ref === c.ref)?.bottom;
+          const centerZ = bottom
+            ? boardZ - face.centerZ
+            : boardZ + board.thicknessMm + face.centerZ;
+          return {
+            name: c.ref,
+            boardPath: "board.kicad_pcb",
+            ref: c.ref,
+            followBoard: true,
+            wall: c.edge,
+            offset: c.edge.endsWith("X") ? face.y : face.x,
+            z: centerZ - face.height / 2 - DEFAULT_OPENING_CLEARANCE,
+            width: face.width + DEFAULT_OPENING_CLEARANCE * 2,
+            height: face.height + DEFAULT_OPENING_CLEARANCE * 2,
+            shape: face.shape,
+          };
+        }) ?? [],
     mounts:
       board?.holes
         // Connector alignment/pin holes are not screw mounts. Keep them in the PCB geometry.

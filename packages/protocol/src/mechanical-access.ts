@@ -215,7 +215,9 @@ export function portEnvelopes(d: MechanicalDesign, boards: MechanicalAccessBoard
               : s.y + s.depth;
       const front =
         face === "minX" ? r.minX : face === "maxX" ? r.maxX : face === "minY" ? r.minY : r.maxY;
-      const gap = Math.abs(front - wall);
+      // A face protruding into the wall reduces mating distance; abs() incorrectly
+      // made a connector closer to the outside require a longer plug.
+      const gap = negative ? front - wall : wall - front;
       const along = vertical ? (r.minY + r.maxY) / 2 : (r.minX + r.maxX) / 2;
       const centerZ = c.face?.centerZ ?? c.heightMm / 2;
       const z =

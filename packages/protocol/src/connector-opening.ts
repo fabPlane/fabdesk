@@ -8,6 +8,7 @@ export type ConnectorFace = {
     | "fabrication-outline"
     | "GCT USB4105 drawing"
     | "Hirose DM3D-SF drawing"
+    | "Molex 105017-0001 catalog maximum"
     | "PCB Height property";
 };
 

@@ -1,4 +1,5 @@
 import type { MechanicalDesign } from "@fabdesk/protocol";
+import { refreshEnclosureOpenings } from "./enclosure-openings";
 import {
   proposeEnclosureLayout,
   type EnclosureLayoutGoal,
@@ -14,7 +15,7 @@ export function resizeEnclosureToFit(design: MechanicalDesign): MechanicalDesign
   if (
     design.boards.some((b) => b.locked) ||
     design.obstacles.length ||
-    design.openings.some((o) => !o.boardPath)
+    design.openings.some((o) => !o.boardPath || o.followBoard === false)
   )
     throw Error(
       "This case has fixed boards, obstacles or manual openings. Review those constraints before resizing automatically.",
@@ -81,5 +82,7 @@ export function prepareEnclosurePreview(
     return design;
   }
   const ready = { ...design, confirmed: true };
-  return layout === "keep" ? ready : proposeEnclosureLayout(ready, boards, layout).design;
+  return layout === "keep"
+    ? refreshEnclosureOpenings(ready, boards)
+    : proposeEnclosureLayout(ready, boards, layout).design;
 }

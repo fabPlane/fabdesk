@@ -21,6 +21,27 @@ function fixture() {
   return { d, boards: d.boards.map((placement) => ({ placement, features })) };
 }
 
+test("connector protrusion reduces required plug reach instead of increasing it", () => {
+  const { d, boards } = fixture();
+  const b = boards[0]!;
+  d.boards = [b.placement];
+  b.placement.x = -0.5; // minX body face is 1.5 mm into a 2 mm wall.
+  d.portAccess = [
+    {
+      boardPath: b.placement.path,
+      ref: "J1",
+      access: "external",
+      plug: { width: 8, height: 4, depth: 10, reach: 1 },
+    },
+  ];
+  const port = portEnvelopes(d, [b])[0]!;
+  expect(port.gap).toBeCloseTo(-1.5);
+  expect(port.gap + d.space.wall).toBeCloseTo(0.5);
+  expect(checkMechanicalFit(d, [b]).issues.filter((i) => i.code === "plug-reach")).toEqual([]);
+  b.placement.x = 2;
+  expect(checkMechanicalFit(d, [b]).issues.some((i) => i.code === "plug-reach")).toBe(true);
+});
+
 test("nearby openings warn about thin material while separated ports do not", () => {
   const { d, boards } = fixture();
   d.openings = [

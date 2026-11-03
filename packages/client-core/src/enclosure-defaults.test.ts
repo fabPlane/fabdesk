@@ -57,11 +57,11 @@ test("new enclosure defaults include overhangs, underside parts and connector cl
   expect(d.mounts[0]!.height).toBe(z - d.space.floor);
   expect(d.mounts).toHaveLength(1);
   expect(board.holes).toHaveLength(2);
-  expect(d.openings[0]!.width).toBe(4 + 2 * d.space.clearance);
+  expect(d.openings[0]!.width).toBeCloseTo(4.8);
   expect(d.confirmed).toBe(false);
   board.components![2]!.bottom = true;
   const bottom = defaultEnclosureDesign(board);
-  expect(bottom.openings[0]!.z).toBeCloseTo(bottom.boards[0]!.z - 3.6 - bottom.space.clearance);
+  expect(bottom.openings[0]!.z).toBeCloseTo(bottom.boards[0]!.z - 3.6 - 0.4);
 });
 
 test("connector suggestions use body centre rather than an off-centre footprint origin", () => {

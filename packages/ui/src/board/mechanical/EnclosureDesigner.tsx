@@ -14,6 +14,7 @@ import {
   enclosureSourceBoards,
   selectEnclosureBoards,
   prepareEnclosurePreview,
+  refreshEnclosureOpenings,
   resizeEnclosureToFit,
   type EnclosureLayoutGoal,
   decodeMesh,
@@ -903,6 +904,13 @@ export function EnclosureDesigner({
     const next = prepareEnclosurePreview(design, inputs, choice);
     edit(next, "Create case preview");
     await showPreview(next);
+  }
+  function continueFromBoards(create = false) {
+    if (!design || !workflow.canContinue || actionsDisabled || pcbModels.loading) return;
+    setConfirmedSelection(enclosureSelectionKey(design.boards.map((b) => b.path)));
+    setStep("Start");
+    if (create && design.mode === "generated")
+      void run("Reading boards…", () => autoArrange(false, true, "compact"));
   }
   async function autoArrange(
     resize = false,
@@ -2036,6 +2044,10 @@ export function EnclosureDesigner({
                   </details>
                   <details>
                     <summary>Connector openings · {design.openings.length}</summary>
+                    <p className="fd-case-help">
+                      Automatic openings follow their boards. Custom openings keep their board in
+                      place during auto arrange.
+                    </p>
                     {design.openings.map((o, i) => (
                       <div className="fd-case-entry" key={i}>
                         <label>
@@ -2048,7 +2060,11 @@ export function EnclosureDesigner({
                                 ...design,
                                 openings: design.openings.map((p, j) =>
                                   j === i
-                                    ? { ...p, shape: e.target.value as "rectangle" | "rounded" }
+                                    ? {
+                                        ...p,
+                                        followBoard: false,
+                                        shape: e.target.value as "rectangle" | "rounded",
+                                      }
                                     : p,
                                 ),
                               })
@@ -2080,7 +2096,13 @@ export function EnclosureDesigner({
                               edit({
                                 ...design,
                                 openings: design.openings.map((p, j) =>
-                                  j === i ? { ...p, wall: e.target.value as typeof o.wall } : p,
+                                  j === i
+                                    ? {
+                                        ...p,
+                                        followBoard: false,
+                                        wall: e.target.value as typeof o.wall,
+                                      }
+                                    : p,
                                 ),
                               })
                             }
@@ -2111,13 +2133,44 @@ export function EnclosureDesigner({
                                 edit({
                                   ...design,
                                   openings: design.openings.map((p, j) =>
-                                    j === i ? { ...p, [k]: v } : p,
+                                    j === i ? { ...p, followBoard: false, [k]: v } : p,
                                   ),
                                 })
                               }
                             />
                           ))}
                         </div>
+                        {o.boardPath && o.ref && (
+                          <button
+                            disabled={actionsDisabled}
+                            onClick={() =>
+                              void run("Updating port opening…", async () => {
+                                const checked = await call("check", {
+                                  design: { ...design, detailedFit: false, assemblyCheck: false },
+                                });
+                                if (!mounted.current) return;
+                                setFitBoards(checked.boards);
+                                edit(
+                                  refreshEnclosureOpenings(
+                                    {
+                                      ...design,
+                                      openings: design.openings.map((p, j) =>
+                                        j === i ? { ...p, followBoard: true } : p,
+                                      ),
+                                    },
+                                    checked.boards ?? [],
+                                  ),
+                                  "Match opening to port",
+                                );
+                                setNotice(
+                                  "Opening matched to its port. Make a new preview to check the fit.",
+                                );
+                              })
+                            }
+                          >
+                            Match opening to port
+                          </button>
+                        )}
                         <button
                           onClick={() =>
                             edit({ ...design, openings: design.openings.filter((_, j) => j !== i) })
@@ -2663,17 +2716,26 @@ export function EnclosureDesigner({
                 Back
               </button>
             )}
+            {step === "PCB" && design?.mode === "generated" && !design.confirmed && (
+              <button
+                className="fd-case-back"
+                disabled={actionsDisabled || !workflow.canContinue || pcbModels.loading}
+                onClick={() => continueFromBoards()}
+              >
+                Case options
+              </button>
+            )}
             {step === "PCB" ? (
               <button
                 className="fd-mechanical-primary"
-                disabled={actionsDisabled || !workflow.canContinue}
-                onClick={() => {
-                  if (!design || !workflow.canContinue) return;
-                  setConfirmedSelection(enclosureSelectionKey(design.boards.map((b) => b.path)));
-                  setStep("Start");
-                }}
+                disabled={actionsDisabled || !workflow.canContinue || pcbModels.loading}
+                onClick={() =>
+                  continueFromBoards(design?.mode === "generated" && !design.confirmed)
+                }
               >
-                Continue to case
+                {design?.mode === "generated" && !design.confirmed
+                  ? "Create case"
+                  : "Continue to case"}
               </button>
             ) : step === "Start" ? (
               <button

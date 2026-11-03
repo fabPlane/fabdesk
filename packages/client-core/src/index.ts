@@ -171,3 +171,4 @@ export * from "./enclosure-review";
 export * from "./enclosure-mounts";
 export * from "./enclosure-layout";
 export * from "./enclosure-setup";
+export * from "./enclosure-openings";
