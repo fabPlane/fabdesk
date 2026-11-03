@@ -1,4 +1,5 @@
 import { inspectOutputRevision, type OutputRevisionTarget } from "./output-revision";
+import { saveAgentSelection } from "./agent-selection";
 import { inspectKeptOutputIdentity, type KeptOutputKind } from "./kept-output";
 import { pcbToolJson } from "./pcb-parts";
 import { inspectVideoInputRevision } from "./video-input-revision";
@@ -289,17 +290,23 @@ export function usePatchSettings() {
   });
 }
 
-/** Persist only explicit selections, never the agent of a thread merely being viewed. */
+/** Save an explicit choice to this chat first, then to defaults for future chats. */
 export function useSaveAgentPreference() {
   const client = useCoreClient();
   const qc = useQueryClient();
   return useMutation({
     scope: { id: "agent-preference" },
-    mutationFn: (preference: Parameters<typeof client.saveAgentPreference>[0]) => client.saveAgentPreference(preference),
+    mutationFn: (preference: Parameters<typeof client.saveAgentPreference>[0] & { threadId?: string }) => saveAgentSelection(client, preference),
     onSuccess: async (data) => {
+      if (data.thread) {
+        await qc.cancelQueries({ queryKey: ["thread", data.thread.id] });
+        qc.setQueryData(["thread", data.thread.id], (previous: object | undefined) => ({ ...previous, ...data.thread }));
+        void qc.invalidateQueries({ queryKey: ["threads"] });
+      }
+      if (!data.settings) return;
       // An older settings fetch must not restore the previous default after this save.
       await qc.cancelQueries({ queryKey: ["settings"] });
-      qc.setQueryData(["settings"], data);
+      qc.setQueryData(["settings"], data.settings);
     },
   });
 }

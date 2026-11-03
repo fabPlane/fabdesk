@@ -1,4 +1,4 @@
-> Current follow-up: [whole-app workflow acceptance](WHOLE-APP-20261030.md), code `72cd7f1`, supersedes historical implementation/check/runtime status below. Teammate integration notices and exact remaining limits are included there.
+> Latest local follow-up: [agent switching and compact recovery](AGENT-SWITCH-20261103.md), with native Codex replies, preserved failed prompts and exact model/account limits. Earlier [whole-app workflow acceptance](WHOLE-APP-20261030.md) and teammate integration exclusions remain separate.
 
 # Canvas workspace implementation milestone
 

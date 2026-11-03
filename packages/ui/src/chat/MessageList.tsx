@@ -5,7 +5,8 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "rea
 import { Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { activeQuestion, deduplicateChatNotices, splitAgentError, useCoreClient, type ThreadDetail } from "@fabdesk/client-core";
-import { ErrorAgentContext, ErrorNotice } from "../components/ErrorNotice";
+import { ErrorAgentContext, ErrorNotice, ErrorRetryContext } from "../components/ErrorNotice";
+import { reviewFailedPrompt } from "./retry-message";
 import { useRunsStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
@@ -82,7 +83,10 @@ export function ToolGroup({
 function AssistantText({ text, streaming = false }: { text: string; streaming?: boolean }) {
   const failure = splitAgentError(text);
   if (!failure) return <Markdown text={text} className={cn(streaming && "fd-caret")} />;
-  return <>{failure.before && <Markdown text={failure.before} />}<ErrorNotice error={failure.error} />{failure.after && <AssistantText text={failure.after} streaming={streaming} />}</>;
+  // A CLI metadata warning adds no recovery action beside a terminal failure. Keep it in Details,
+  // but preserve ordinary agent prose and warnings (which may describe actual partial work).
+  const metadataWarning = /^⚠\s*Model metadata for [^\n]+ not found\. Defaulting to fallback metadata; this can degrade performance and cause issues\.$/.test(failure.before.trim());
+  return <>{failure.before && !metadataWarning && <Markdown text={failure.before} />}<ErrorNotice error={failure.error} {...(metadataWarning ? { diagnostics: failure.before } : {})} />{failure.after && <AssistantText text={failure.after} streaming={streaming} />}</>;
 }
 
 export function renderParts(m: Message, streaming: boolean): ReactNode[] {
@@ -371,7 +375,9 @@ export function MessageList({
           const split = completed ? splitCompletedActivity(batch, savedRun?.status === "failed" || savedRun?.status === "aborted") : null;
           const day = new Date(m.createdAt).toDateString();
           const previousDay = visible[index - 1] ? new Date(visible[index - 1]!.createdAt).toDateString() : null;
-          return <ErrorAgentContext.Provider key={m.id} value={savedRun?.agentId ?? (run?.runId === m.runId ? run.agentId : undefined)}><div data-message-id={completed ? undefined : m.id} className="scroll-mt-8 rounded-xl">
+          const previousPrompt = visible.slice(0, index).findLast(item => item.role === "user");
+          const reviewPrompt = previousPrompt && m.role === "assistant" && batch.some(item => item.id === lastId) ? () => { reviewFailedPrompt(previousPrompt); } : undefined;
+          return <ErrorAgentContext.Provider key={m.id} value={savedRun?.agentId ?? (run?.runId === m.runId ? run.agentId : undefined)}><ErrorRetryContext.Provider value={reviewPrompt}><div data-message-id={completed ? undefined : m.id} className="scroll-mt-8 rounded-xl">
             {day !== previousDay && <div className="my-3 flex items-center gap-3 text-[11px] text-muted"><span className="h-px flex-1 bg-border" /><time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleDateString([], { dateStyle: "medium" })}</time><span className="h-px flex-1 bg-border" /></div>}
             {run && m.id === firstActiveId && <RunActivity key={run.runId} run={run} waiting={waiting} />}
             {split ? <>
@@ -380,7 +386,7 @@ export function MessageList({
               </WorkedActivity>
               {split.answer && <div data-message-id={split.answer.id}><MessageBubble message={split.answer} streaming={false} latestReply={batch.some(item => item.id === lastId)} /></div>}
             </> : <MessageBubble message={m} latestReply={m.role === "assistant" && m.id === lastId} streaming={!!run && m.runId === run.runId && m.role === "assistant"} />}
-          </div></ErrorAgentContext.Provider>;
+          </div></ErrorRetryContext.Provider></ErrorAgentContext.Provider>;
         })}
         {run && !firstActiveId && <div><RunActivity key={run.runId} run={run} /><div className="text-[13px] text-muted" role="status"><span className="fd-activity-shimmer">Working…</span></div></div>}
         {run?.error && !activeMessages.some(m => m.contentMd.includes(run.error!)) && <ErrorNotice error={run.error} agentId={run.agentId} />}

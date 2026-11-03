@@ -39,6 +39,7 @@ export function errorPayload(input: unknown): { raw: string; message: string; co
 
 const agentNames: Record<string, string> = { claude: "Claude", codex: "Codex", cursor: "Cursor", grok: "Grok" };
 const loginCommands: Record<string, string> = { claude: "claude auth login", codex: "codex login", cursor: "agent login", grok: "grok login" };
+const modelChangeNotice = /^This session was recorded with model \S+ but is resuming with \S+\. Consider switching back to \S+ as it may affect Codex performance\.$/;
 
 export function errorHelp(input: unknown, context: ErrorContext = {}): ErrorHelp {
   const { message, code } = errorPayload(input);
@@ -46,6 +47,11 @@ export function errorHelp(input: unknown, context: ErrorContext = {}): ErrorHelp
   const status = context.status ?? (input instanceof Error && "status" in input && typeof input.status === "number" ? input.status : undefined);
   const agent = context.agentId ? agentNames[context.agentId] ?? "The selected agent" : "The selected agent";
   const command = context.agentId ? loginCommands[context.agentId] : undefined;
+  if (modelChangeNotice.test(text)) return {
+    title: "Model changed for this conversation",
+    message: "This reply uses your newly selected model. Earlier messages remain in the conversation. Review the reply as usual.",
+    severity: "warning",
+  };
   if (/^(?:cancelled|canceled|AbortError: (?:the operation was aborted|aborted))\.?$/i.test(text)) return {
     title: "Task cancelled",
     message: "This task stopped. Files saved before cancellation may remain; review the outputs before starting it again.",
@@ -222,6 +228,7 @@ export function agentErrorText(text: string): string | null {
   // A core-generated warning marker identifies a failure; plain assistant prose does not.
   if (clean.startsWith("⚠ ") && /^(?:Error:|MCP server|No answer was received for the question\.)/i.test(raw)) return raw;
   if (raw.startsWith("Windows denied a Codex overlay symlink (EPERM).")) return raw;
+  if (modelChangeNotice.test(raw)) return raw;
   const failure = /^(?:Failed to authenticate:|OAuth session expired|API Error:|Not logged in|authentication_error|rate_limit_error|insufficient_quota|quota exceeded|credit balance is too low|prompt is too long|model_not_found|context_length_exceeded|failed to start|(?:claude|codex|cursor|grok) (?:could not be started|exited with code)|Queued message could not be sent:|SQLITE_|FOREIGN KEY constraint failed|database is locked|ENOSPC|EACCES|EPERM|ENOENT|ECONNREFUSED|ECONNRESET|ETIMEDOUT|Failed to fetch|fetch failed)/i;
   return failure.test(raw) ? raw : null;
 }
@@ -232,7 +239,7 @@ export function splitAgentError(text: string): { before: string; error: string; 
   const firstParagraphEnd = text.indexOf("\n\n");
   if (firstParagraphEnd >= 0) {
     const first = text.slice(0, firstParagraphEnd).replace(/^\s*⚠\s*/, "").trim();
-    if (first.startsWith("Windows denied a Codex overlay symlink (EPERM)."))
+    if (first.startsWith("Windows denied a Codex overlay symlink (EPERM).") || modelChangeNotice.test(first))
       return { before: "", error: first, after: text.slice(firstParagraphEnd + 2) };
   }
   const whole = agentErrorText(text);

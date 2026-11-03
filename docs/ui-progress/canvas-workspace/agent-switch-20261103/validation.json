@@ -1,0 +1,28 @@
+{
+  "ui": {
+    "passed": 289,
+    "failed": 0,
+    "assertions": 1233
+  },
+  "client": {
+    "passed": 390,
+    "failed": 0,
+    "assertions": 1827
+  },
+  "agents": {
+    "passed": 105,
+    "skipped": 1,
+    "failed": 0,
+    "assertions": 496
+  },
+  "typechecks": [
+    "agents",
+    "client-core",
+    "ui",
+    "desktop"
+  ],
+  "productionDesktopBuild": "passed",
+  "emittedSourceMaps": 0,
+  "nativeOutcome": "GPT-6 Astra Ready in 11s; GPT-5.6 Sol Ready in 5s with compact nonfatal model-change notice",
+  "sourceCheckpoint": "local changes after 81e7f1a; publication not performed"
+}

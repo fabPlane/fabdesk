@@ -117,6 +117,11 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [selectionNotice, setSelectionNotice] = useState<{ agentId: AgentId; model: string; error: unknown; savedForChat: boolean } | null>(null);
+  const explicitChoice = useRef(false);
+  const selectionOwner = thread?.id ?? projectId ?? "home";
+  const currentSelectionOwner = useRef(selectionOwner);
+  currentSelectionOwner.current = selectionOwner;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preparedThread = useRef<Thread | null>(null);
 
@@ -138,6 +143,8 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
   }, [focusNonce, questionKey]);
   const savingEffort = useRef(false);
 
+  useEffect(() => { explicitChoice.current = false; setSelectionNotice(null); }, [thread?.id, projectId]);
+
   useEffect(() => {
     if (thread) {
       setAgentId(thread.agentId);
@@ -149,21 +156,27 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
   const defaultAgent = settings.data?.defaultAgent;
   const defaultModel = defaultAgent ? settings.data?.agents[defaultAgent]?.model ?? "" : "";
   useEffect(() => {
-    if (!thread && defaultAgent && !savePreference.isPending) {
+    if (!thread && defaultAgent && !savePreference.isPending && !explicitChoice.current) {
       setAgentId(defaultAgent);
       setModel(defaultModel);
     }
   }, [thread?.id, defaultAgent, defaultModel, savePreference.isPending]);
 
   const selectAgent = useCallback((id: AgentId, selectedModel: string) => {
-    if (!settings.data || loadingThread || savePreference.isPending || savingEffort.current) return;
-    setAgentId(id);
-    setModel(selectedModel);
+    if (!settings.data || loadingThread || savePreference.isPending || savingEffort.current || run || queued.length > 0) return;
     setError(null);
-    savePreference.mutate({ agentId: id, model: selectedModel || null }, {
-      onError: () => setError("Could not save your agent and model. Check the connection and select them again to retry."),
+    setSelectionNotice(null);
+    savePreference.mutate({ agentId: id, model: selectedModel || null, ...(thread ? { threadId: thread.id } : {}) }, {
+      onSuccess: result => {
+        if (currentSelectionOwner.current !== selectionOwner) return;
+        explicitChoice.current = true;
+        setAgentId(id);
+        setModel(selectedModel);
+        if (result.preferenceError) setSelectionNotice({ agentId: id, model: selectedModel, error: result.preferenceError, savedForChat: true });
+      },
+      onError: failure => { if (currentSelectionOwner.current === selectionOwner) setSelectionNotice({ agentId: id, model: selectedModel, error: failure, savedForChat: false }); },
     });
-  }, [settings.data, loadingThread, savePreference.isPending, savePreference.mutate]);
+  }, [settings.data, loadingThread, savePreference.isPending, savePreference.mutate, thread?.id, selectionOwner, run, queued.length]);
 
   useEffect(() => {
     if (!compactQuestion) textareaRef.current?.focus();
@@ -499,7 +512,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
                   data-testid="agent-model"
                 >
                   <AgentLogo agentId={agentId} />
-                  <span className="min-w-0 truncate">{modelEffortLabel}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
+                  <span className="min-w-0 truncate">{savePreference.isPending ? "Switching…" : modelEffortLabel}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
                 </Button>
                 <AgentModelMenu
                   anchorRef={agentButtonRef}
@@ -543,7 +556,14 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
             <div className="border-t border-warning/20 px-3 py-2"><InstallHint text={selectedAgent.installHint} /></div>
           </details>
         )}
-        {error != null && <ErrorNotice error={error} agentId={agentId} />}
+        {error != null && <ErrorNotice error={error} agentId={agentId} onDismiss={() => setError(null)} />}
+        {selectionNotice && <ErrorNotice error={selectionNotice.error} agentId={selectionNotice.agentId}
+          title={selectionNotice.savedForChat ? `Using ${pickerAgents.find(agent => agent.id === selectionNotice.agentId)?.displayName ?? selectionNotice.agentId} · default not saved` : "Could not switch agent"}
+          description={selectionNotice.savedForChat ? "You can continue in this chat. Retry saving your default, or restart fabPlane if it was recently updated." : "Your previous agent is still selected. Retry the switch when the connection is ready."}
+          tone={selectionNotice.savedForChat ? "warning" : "error"}
+          {...(!run && queued.length === 0 && !sending && !savePreference.isPending ? { onRetry: () => selectAgent(selectionNotice.agentId, selectionNotice.model) } : {})}
+          onDismiss={() => setSelectionNotice(null)}
+          {...(!run && queued.length === 0 && !sending && !savePreference.isPending && selectionNotice.savedForChat && selectionNotice.error instanceof CoreHttpError && selectionNotice.error.status === 404 && host.restartCore ? { onRestart: () => { setSelectionNotice(null); void host.restartCore!().catch(failure => setError(failure)); } } : {})} />}
       </div>
     </div>
   );

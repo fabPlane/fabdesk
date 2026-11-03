@@ -103,12 +103,15 @@ export function CoreProvider({
   subscribe,
   children,
 }: CoreProviderProps) {
-  const [qc] = useState(
+  // A restarted daemon can rotate its token while keeping the same URL. Do not let queries
+  // made with the old client (including a 401) populate the new connection's cache.
+  const qc = useMemo(
     () =>
       queryClient ??
       new QueryClient({
         defaultOptions: { queries: { retry: 1, staleTime: 5_000, refetchOnWindowFocus: false } },
       }),
+    [client, queryClient],
   );
   const [sseStatus, setSseStatus] = useState<SseStatus>("connecting");
   const value = useMemo<CoreContextValue>(

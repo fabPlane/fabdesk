@@ -15,6 +15,18 @@
 .fd-feedback[data-tone="error"] { --feedback-tone: var(--fd-danger); }
 .fd-feedback[data-tone="warning"] { --feedback-tone: var(--fd-warning); }
 .fd-feedback[data-tone="info"], .fd-feedback[data-tone="progress"] { --feedback-tone: var(--fd-muted); }
+.fd-feedback.fd-error-notice { padding: 9px 12px; border-inline-start-width: 3px; border-radius: 9px; }
+.fd-error-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.fd-error-summary > svg { color: var(--feedback-tone); flex-shrink: 0; }
+.fd-error-summary > strong { flex: 1; min-width: 160px; font-size: 12px; font-weight: 600; line-height: 1.5; }
+.fd-error-summary > button { font-size: 11px; min-height: 26px; height: auto; padding: 3px 7px; }
+.fd-error-summary > .fd-error-dismiss { display: grid; place-items: center; min-width: 26px; color: var(--fd-muted); border-radius: 5px; }
+.fd-error-dismiss:hover { background: var(--fd-panel-2); }
+.fd-error-details { margin: 0; }
+.fd-error-details[open] { order: 1; flex-basis: 100%; margin: 2px 0 0 27px; }
+.fd-error-details > summary { width: fit-content; min-height: 22px; padding: 2px 0; background: transparent; border: 0; font-size: 11px; }
+.fd-error-details > p, .fd-error-details > pre, .fd-error-details > button { margin-top: 7px; }
+.fd-error-details > p { line-height: 1.6; }
 .fd-task-feedback { width: calc(100% - 32px); max-width: 1160px; margin: 14px auto; flex-shrink: 0; }
 .fd-shopping-feedback { margin: 12px 24px; flex-shrink: 0; }
 .fd-feedback-announcement { display: flex; align-items: flex-start; gap: 11px; }
