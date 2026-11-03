@@ -6,6 +6,95 @@ import { ShellSurface, readStlTriangles } from "../src/shell-fit";
 import { defaultEnclosureDesign } from "../../client-core/src/enclosure-design";
 import { proposeEnclosureLayout } from "../../client-core/src/enclosure-layout";
 
+test("automatic case fitting reserves board screw heads and blind screw length", () => {
+  const features = extractBoardFeatures(`(kicad_pcb(general(thickness 1.6))
+    (gr_rect(start 0 0)(end 30 20)(layer "Edge.Cuts"))
+    (footprint "MountingHole:MountingHole_3.2mm_M3"(layer "F.Cu")(at 3 3)(property "Reference" "H1")
+      (pad "" np_thru_hole circle(at 0 0)(size 3.2 3.2)(drill 3.2)(layers "*.Cu" "*.Mask"))))`);
+  const d = defaultEnclosureDesign(features);
+  d.confirmed = true;
+  d.fitAllowance = 0.1;
+  d.mounts[0] = {
+    ...d.mounts[0]!,
+    headDiameter: 12,
+    headHeight: 5,
+    screwDiameter: 3,
+    screwLength: 10,
+  };
+  const original = structuredClone(d);
+  const p = proposeEnclosureLayout(d, [{ placement: d.boards[0]!, features }]);
+  const report = checkMechanicalFit(p.design, [{ placement: p.design.boards[0]!, features }]);
+  expect(report.issues.filter((i) => i.severity === "error")).toEqual([]);
+  const m = p.design.mounts[0]!;
+  expect(m.height + features.thicknessMm).toBeGreaterThanOrEqual(
+    m.screwLength! + 2 * d.fitAllowance,
+  );
+  expect(p.design.space.floor + p.design.space.height).toBeGreaterThanOrEqual(
+    p.design.boards[0]!.z + features.thicknessMm + m.headHeight! + d.space.clearance,
+  );
+  expect(m.screwLength).toBe(10);
+  expect(m.headDiameter).toBe(12);
+  expect(d).toEqual(original);
+  const mesh = meshEnclosure(
+    enclosureFromDesign(p.design, [{ placement: p.design.boards[0]!, features }]),
+  );
+  const surface = new ShellSurface(readStlTriangles(new TextEncoder().encode(mesh.baseStl)));
+  const probe = (x: number, z: number) => ({
+    name: "Post section",
+    x,
+    y: m.y - 0.025,
+    z,
+    width: 0.05,
+    depth: 0.05,
+    height: 0.05,
+  });
+  expect(
+    surface.intersects(probe(m.x + m.outer / 2 - 0.025, p.design.space.floor + m.height / 2)),
+  ).toBe(true);
+  expect(surface.intersects(probe(m.x, p.design.space.floor + m.height / 2))).toBe(false);
+  expect(surface.intersects(probe(m.x, p.design.space.floor - 0.025))).toBe(true);
+
+  d.boards[0]!.locked = true;
+  const locked = structuredClone(d);
+  expect(() => proposeEnclosureLayout(d, [{ placement: d.boards[0]!, features }])).toThrow(
+    "Unlock and raise the board",
+  );
+  expect(d).toEqual(locked);
+  d.boards[0]!.locked = false;
+  d.mounts[0]!.screwLength = 1;
+  expect(() => proposeEnclosureLayout(d, [{ placement: d.boards[0]!, features }])).toThrow(
+    "must reach below the PCB",
+  );
+});
+
+test("automatic sizing retains connector and tall-part envelopes in older board summaries", () => {
+  const features = extractBoardFeatures(`(kicad_pcb(general(thickness 1.6))
+    (gr_rect(start 0 0)(end 30 20)(layer "Edge.Cuts"))
+    (footprint "Connector_USB:USB_C"(layer "F.Cu")(at 15 0)(property "Reference" "J1")(property "Height" "5")
+      (fp_rect(start -4 -3)(end 4 5)(layer "F.CrtYd")))
+    (footprint "Capacitor_THT:CP_Radial"(layer "F.Cu")(at 30 10)(property "Reference" "C1")(property "Height" "28")
+      (fp_rect(start -5 -5)(end 5 5)(layer "F.CrtYd"))))`);
+  // Older summaries carry these same bodies in connectors/tallParts instead of components.
+  const { components: _components, ...legacy } = features;
+  const d = defaultEnclosureDesign(features);
+  d.confirmed = true;
+  const full = proposeEnclosureLayout(d, [{ placement: d.boards[0]!, features }]);
+  const older = proposeEnclosureLayout(d, [{ placement: d.boards[0]!, features: legacy }]);
+  expect(
+    checkMechanicalFit(older.design, [
+      { placement: older.design.boards[0]!, features },
+    ]).issues.filter((i) => i.severity === "error"),
+  ).toEqual([]);
+  expect(older.design).toEqual(full.design);
+  const initial = { ...defaultEnclosureDesign(legacy), confirmed: true };
+  expect(
+    checkMechanicalFit(initial, [{ placement: initial.boards[0]!, features }]).issues.filter(
+      (i) => i.code === "outside-space",
+    ),
+  ).toEqual([]);
+  expect(initial.space).toEqual(defaultEnclosureDesign(features).space);
+});
+
 test("automatic case height leaves wall material around tall custom ports on either PCB side", () => {
   for (const bottom of [false, true]) {
     const features = extractBoardFeatures(`(kicad_pcb(general(thickness 1.6))

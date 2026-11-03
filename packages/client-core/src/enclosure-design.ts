@@ -41,6 +41,14 @@ export type EnclosureBoardSummary = {
     heightMm: number;
     bounds?: { minX: number; minY: number; maxX: number; maxY: number };
   }>;
+  /** Older board summaries expose tall bodies separately from the populated component list. */
+  tallParts?: Array<{
+    ref: string;
+    x: number;
+    y: number;
+    heightMm: number;
+    bounds: { minX: number; minY: number; maxX: number; maxY: number };
+  }>;
   components?: Array<{
     ref: string;
     x: number;
@@ -50,6 +58,18 @@ export type EnclosureBoardSummary = {
     bounds: { minX: number; minY: number; maxX: number; maxY: number };
   }>;
 };
+
+/** Match the fit check's legacy fallback; a present component list remains authoritative. */
+export function enclosureComponents(board: EnclosureBoardSummary | null) {
+  if (board?.components) return board.components;
+  return [
+    ...(board?.tallParts ?? []).map((p) => ({ ...p, bottom: false })),
+    ...(board?.connectors ?? []).flatMap((p) => {
+      const bounds = p.bounds ?? p.face?.bounds;
+      return bounds ? [{ ...p, bounds, bottom: false }] : [];
+    }),
+  ];
+}
 /** Keep a centre-mounted gizmo while design/export coordinates retain the PCB's native origin. */
 export function enclosureBoardPose(
   placement: MechanicalDesign["boards"][number],
@@ -116,7 +136,7 @@ export function editEnclosureBoardPose(
 }
 export function defaultEnclosureDesign(board: EnclosureBoardSummary | null): MechanicalDesign {
   const o = board?.outline;
-  const parts = board?.components ?? [];
+  const parts = enclosureComponents(board);
   const clearance = 1,
     floor = 2;
   const boardZ =

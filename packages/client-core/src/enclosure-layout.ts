@@ -12,7 +12,7 @@ import {
   type MechanicalDesign,
 } from "@fabdesk/protocol";
 import { alignEnclosureMounts, linkEnclosureMounts, type MountBoard } from "./enclosure-mounts";
-import type { EnclosureBoardSummary } from "./enclosure-design";
+import { enclosureComponents, type EnclosureBoardSummary } from "./enclosure-design";
 
 type Rect = { minX: number; minY: number; maxX: number; maxY: number };
 type Edge = "minX" | "maxX" | "minY" | "maxY";
@@ -138,7 +138,7 @@ function options(
     !!b.placement.locked ||
     d.openings.some((o) => o.boardPath === b.placement.path && o.followBoard === false);
   const f = b.features,
-    parts = f.components ?? [],
+    parts = enclosureComponents(f),
     m = b.modelBounds;
   const ports: Port[] = (f.connectors ?? [])
     .filter(
@@ -161,31 +161,50 @@ function options(
     });
   const web = fixedCase ? 0 : d.space.wall + 2 * (d.fitAllowance ?? 0);
   const mounts = d.mounts.filter((p) => p.boardPath === b.placement.path);
-  const holes = f.holes.filter((h) => mounts.some((p) => p.holeId === h.id));
+  const supports = mounts.flatMap((mount) => {
+    const hole = f.holes.find((h) => h.id === mount.holeId);
+    return hole
+      ? [{ hole, mount, radius: Math.max(mount.outer, mount.headDiameter ?? 0) / 2 }]
+      : [];
+  });
+  for (const { mount } of supports) {
+    if (mount.screwLength && mount.screwLength <= f.thicknessMm)
+      throw Error(
+        `Choose a longer board screw for ${b.placement.path}; it must reach below the PCB into its post.`,
+      );
+    if (
+      fixed &&
+      mount.screwLength &&
+      mount.screwLength > f.thicknessMm + b.placement.z - d.space.floor
+    )
+      throw Error(
+        `The board screw for ${b.placement.path} extends below its post. Unlock and raise the board, or choose a shorter screw.`,
+      );
+  }
   const rect = {
     minX: Math.min(
       f.outline.minX,
       ...parts.map((p) => p.bounds.minX),
       m?.minX ?? Infinity,
-      ...holes.map((h) => h.x - mounts.find((p) => p.holeId === h.id)!.outer / 2),
+      ...supports.map(({ hole, radius }) => hole.x - radius),
     ),
     minY: Math.min(
       f.outline.minY,
       ...parts.map((p) => p.bounds.minY),
       m?.minY ?? Infinity,
-      ...holes.map((h) => h.y - mounts.find((p) => p.holeId === h.id)!.outer / 2),
+      ...supports.map(({ hole, radius }) => hole.y - radius),
     ),
     maxX: Math.max(
       f.outline.maxX,
       ...parts.map((p) => p.bounds.maxX),
       m?.maxX ?? -Infinity,
-      ...holes.map((h) => h.x + mounts.find((p) => p.holeId === h.id)!.outer / 2),
+      ...supports.map(({ hole, radius }) => hole.x + radius),
     ),
     maxY: Math.max(
       f.outline.maxY,
       ...parts.map((p) => p.bounds.maxY),
       m?.maxY ?? -Infinity,
-      ...holes.map((h) => h.y + mounts.find((p) => p.holeId === h.id)!.outer / 2),
+      ...supports.map(({ hole, radius }) => hole.y + radius),
     ),
   };
   // A wide/off-center opening needs wall length, but is not an interior body
@@ -217,12 +236,16 @@ function options(
           .map((p) => p.heightMm + d.space.clearance + 2 * (d.fitAllowance ?? 0)),
         -(m?.minZ ?? 0) + d.space.clearance + 2 * (d.fitAllowance ?? 0),
         ...ports.map((p) => web - portVerticalBounds(d, p, 0, f.thicknessMm).min),
+        ...supports.map(
+          ({ mount }) => (mount.screwLength ?? 0) - f.thicknessMm + 2 * (d.fitAllowance ?? 0),
+        ),
       );
   const top =
     z +
     Math.max(
       f.thicknessMm,
       ...parts.filter((p) => !p.bottom).map((p) => f.thicknessMm + p.heightMm),
+      ...supports.map(({ mount }) => f.thicknessMm + (mount.headHeight ?? 0)),
       m?.maxZ ?? 0,
     );
   if (fixed && b.placement.rotation % 90 !== 0)
