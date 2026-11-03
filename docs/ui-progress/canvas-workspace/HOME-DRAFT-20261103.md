@@ -42,7 +42,7 @@ The walkthrough used the actual native fabPlane Dev app, starting at Home with n
 | HD-11: draft tabs/title overlap and wrong selected tab | Fixed and screenshot retested | Conversation selected without a sketch; title below toolbar. |
 | HD-12: tiny sketch enlarged to blurry canvas | Fixed and native retest passed | Small raster remains at natural size; large references still fit available space. |
 | HD-13: several Untitled drafts hard to distinguish | Fixed and native retested | Actual saved sketch previews, icon fallback, visible Rename idea, searchable displayed conversation title, and restored latest saved conversation. |
-| HD-14 (P2, deferred): repeated native cosmetic schematic edit timeouts | Record and preserve validated native revision | Diagnose the existing editor timeout separately; do not replace the engineering engine in this Home-flow change. |
+| HD-14 (P2): repeated native cosmetic schematic edit timeouts | Fixed targeted setup prerequisite; actual native retests passed | Cosmetic changes skip unrelated library setup. Two saved text edits passed; cold library symbol add/remove also passed and restored all five protected files exactly. |
 | HD-15 (P3): pending question below fold on short Conversation view | Fixed and native retested | Live question receives focus; empty composer collapses with explicit alternate-message action. Compact native question, USB choice, Submit and real acknowledgment passed. Long/custom questions may still require normal scrolling. |
 
 ## Independent verification
@@ -95,3 +95,22 @@ Checks: root typecheck PASS; UI261/1101 PASS; client-core380/1801 PASS with loop
 ![Compact real planning question](home-20261103-question-compact.png)
 ![Saved draft preview and rename](home-20261103-draft-previews.png)
 ![Image draft search](home-20261103-image-draft-search.png)
+
+## Native editor and restart acceptance · November 3
+
+The repeated native cosmetic failures were traced to registerBundledLibraries, before schematic editing. Caching alone did not resolve the first cold call: the initial follow-up failed in49s and preserved all native file hashes. The final change avoids registration for schematic edits that add no new library symbols, shares successful setup for unchanged project/library tables, invalidates setup on changed tables or replacement sessions, and never caches failed setup. New symbols still require library setup. Its one-time bounded budget is90s; ordinary bridge JSON calls keep their existing15s budget. No automatic edit retries or vendor changes were added.
+
+Native human retest: two saved cosmetic edits succeeded in a48s agent run, adding then replacing one note in unused sheet margin. Actual tool receipts and saved drawing were checked. Comparison with a retained checkpoint matching the baseline SHA256 shows only the added non-electrical text block; PCB, project settings and both library tables were byte-identical. The existing schematic presentation warning about label layout was not rewritten as part of this app fix. Source freshness and electrical checks remain separate.
+
+Cold setup acceptance: the first agent query incorrectly filtered for intentionally absent R99 and stopped on the strict unknown-reference error, with no edits. A corrected visible request inspected the full sheet, added a temporary native Device:R resistor, saved, deleted exactly its returned object ID, and saved again. Both edits succeeded. Independent SHA256 verification confirms all five protected files returned exactly to their state before that temporary test. This demonstrates this library/setup path on the actual synthetic project, not every component library or project type.
+
+The controlled core restarts also exposed HD-16: Home recency used a temporary listening port. It now uses the stable daemon identity, with endpoint fallback for older/unavailable health information. Native Home kept Status light first after port59563→59798. All15 workspaces and old recency records are retained; no deletion, permanent power/security change or teammate integration occurred.
+
+Final native state: Home, no project open, original window size, no active test agent run or job. Actual captures30–33 and before/after hashes/diff are retained locally. No new remote publication or PR edit.
+
+Verification: root typechecks passed after correcting a nullable-state error caught in the final question-scope refinement; native session/design58tests173assertions and bridge11tests27assertions passed. Final UI261tests1101assertions and client-core380tests1801assertions passed. Desktop production renderer build passed in2m19s; no packaged source maps found. Native acceptance used the development app. No freshfullroot-suite or hostedCI claim.
+
+Still untested, rather than observed blockers: induced ambiguous network loss after accepted generation handoff, cross-volume promotion, Windows folder behavior, crash recovery. Previous teammate398/393, BoardArt polish and broader411/412 dependencies remain separate. The remaining observed Home/draft findings HD-13/14/15 and newly observed recency HD-16 are addressed; this is not a declaration that every app capability is complete.
+
+![Actual saved cosmetic note](home-20261103-native-note.png)
+![Actual temporary library-symbol cleanup](home-20261103-native-library-restoration.png)

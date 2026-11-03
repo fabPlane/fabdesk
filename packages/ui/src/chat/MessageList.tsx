@@ -321,20 +321,21 @@ export function MessageList({
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
   const questionId = activeQuestion(messages, run?.runId)?.requestId;
+  const questionKey = questionId ? `${thread?.id}:${run?.runId}:${questionId}` : undefined;
   const revealedQuestion = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!questionId) { revealedQuestion.current = undefined; return; }
-    if (revealedQuestion.current === questionId) return;
+    if (revealedQuestion.current === questionKey) return;
     const viewport = ref.current;
     const card = [...(viewport?.querySelectorAll<HTMLElement>("[data-pending-question]") ?? [])].find(element => element.dataset.pendingQuestion === questionId);
     if (!viewport || !card) return;
-    revealedQuestion.current = questionId;
+    revealedQuestion.current = questionKey;
     // Reveal the beginning of a long question, rather than scrolling past it to the composer.
     stick.current = false;
     viewport.scrollTop += card.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 16;
     const legend = card.querySelector("legend");
     if (legend) { legend.tabIndex = -1; legend.focus({ preventScroll: true }); }
-  }, [questionId, thread?.id]);
+  }, [questionId, questionKey]);
   const lastId = messages.findLast((message) => message.role === "assistant")?.id;
   const visibleMessages = deduplicateChatNotices(messages.filter((message) => message.status !== "queued"));
   const activeMessages = run ? visibleMessages.filter((m) => m.role === "assistant" && m.runId === run.runId) : [];

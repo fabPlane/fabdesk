@@ -116,11 +116,12 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
   const preparedThread = useRef<Thread | null>(null);
 
   const questionId = activeQuestion(messages.data ?? [], run?.runId)?.requestId;
+  const questionKey = questionId ? `${thread?.id}:${run?.runId}:${questionId}` : undefined;
   const [expandedQuestion, setExpandedQuestion] = useState<{ id: string; focusNonce: number } | null>(null);
   const compactQuestion = !!questionId && !draft.trim() && !pending.length && voice.state.phase === "idle" && !sending && !error
-    && !(expandedQuestion?.id === questionId && expandedQuestion.focusNonce === focusNonce);
+    && !(expandedQuestion?.id === questionKey && expandedQuestion?.focusNonce === focusNonce);
   const revealComposer = () => {
-    if (questionId) setExpandedQuestion({ id: questionId, focusNonce });
+    if (questionKey) setExpandedQuestion({ id: questionKey, focusNonce });
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
@@ -128,8 +129,8 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
   useEffect(() => {
     if (previousFocusNonce.current === focusNonce) return;
     previousFocusNonce.current = focusNonce;
-    if (questionId) setExpandedQuestion({ id: questionId, focusNonce });
-  }, [focusNonce, questionId]);
+    if (questionKey) setExpandedQuestion({ id: questionKey, focusNonce });
+  }, [focusNonce, questionKey]);
 
   useEffect(() => {
     if (thread) {

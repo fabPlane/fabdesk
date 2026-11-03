@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { draftConversation, draftWorkspaceTitle, projectSketchImagePaths, useProject, jobIsActive, projectJobs, useCoreClient, useJobs, useProjects, useRunsStore, useThreads } from "@fabdesk/client-core";
+import { draftConversation, draftWorkspaceTitle, projectSketchImagePaths, useCoreIdentity, useProject, jobIsActive, projectJobs, useCoreClient, useJobs, useProjects, useRunsStore, useThreads } from "@fabdesk/client-core";
 import { Button, EmptyState, Input, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { useUiStore } from "../stores/ui";
@@ -11,7 +11,8 @@ import { ThreadView } from "../chat/ThreadView";
 /** Choose one project before entering its workspace. Recency belongs to this core. */
 export function ProjectHome({ onCreate, onImport, onBrowse, listing = false, onViewProjects }: { onCreate: () => void; onImport: () => void; onBrowse: () => void; listing?: boolean; onViewProjects: () => void }) {
   const client = useCoreClient(), projects = useProjects(), jobs = useJobs(), threads = useThreads();
-  const recent = useUiStore(s => s.recentProjectsByEndpoint[client.baseUrl]);
+  const coreIdentity = useCoreIdentity();
+  const recent = useUiStore(s => s.recentProjectsByEndpoint[coreIdentity.data ? `core:${coreIdentity.data}` : client.baseUrl]);
   const live = useRunsStore(s => s.jobs), runs = useRunsStore(s => s.runsByThread);
   const [query, setQuery] = useState("");
   const [action, setAction] = useState<ProjectAction | null>(null);

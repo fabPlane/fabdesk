@@ -44,6 +44,16 @@ import { useAuthStore } from "./stores/auth";
 import { useRunsStore } from "./stores/runs";
 import { activeModelOutputJobs, projectJobs } from "./project-jobs";
 
+/** Stable daemon identity survives its temporary local listening port changing. */
+export function useCoreIdentity() {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["core-identity", client.baseUrl],
+    queryFn: async () => (await client.health()).coreId ?? null,
+    staleTime: Infinity,
+  });
+}
+
 export function useProjects() {
   const client = useCoreClient();
   return useQuery({ queryKey: ["projects"], queryFn: () => client.listProjects() });

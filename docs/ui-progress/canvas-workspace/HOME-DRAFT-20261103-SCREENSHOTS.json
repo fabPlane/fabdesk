@@ -46,6 +46,17 @@
       "file": "home-20261103-image-draft-search.png",
       "original": "29-image-draft-search.png",
       "sha256": "53695dabb3cfc9f59fa59b7140a97ff2a0a64c271525ff6f976a59ddd83d4ac1"
+    },
+    {
+      "file": "home-20261103-native-note.png",
+      "original": "30-native-cosmetic-note-saved-preview.png",
+      "sha256": "263397cb55ae42b1b0183bed8c7388fecf4783eac7253ab53d9efdffb8da0059"
+    },
+    {
+      "file": "home-20261103-native-library-restoration.png",
+      "original": "32-native-library-restoration.png",
+      "sha256": "1f19ae7be8f22f4646950e8a72cdf23ea485837cca5b58bb55d5c06db3ac8875"
     }
-  ]
+  ],
+  "followupSource": "Local follow-up ced5197 and native setup/recency fixes; original sourceCode refers to the initial Home flow."
 }

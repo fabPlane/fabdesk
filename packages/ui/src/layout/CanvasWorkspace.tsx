@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ProjectDetail } from "@fabdesk/protocol";
 import { useRunsStore } from "@fabdesk/client-core";
 import { CreateIdeaProjectDialog } from "./CreateIdeaProjectDialog";
-import { draftConversation as latestDraftConversation, projectSketchImagePaths, useCore, useBoardSources, useProject, useProjects, useThreads, WORKSPACE_AREAS, type WorkspaceArea } from "@fabdesk/client-core";
+import { draftConversation as latestDraftConversation, projectSketchImagePaths, useCoreIdentity, useCore, useBoardSources, useProject, useProjects, useThreads, WORKSPACE_AREAS, type WorkspaceArea } from "@fabdesk/client-core";
 import { BoardPanel } from "../board/BoardPanel";
 import { ThreadView } from "../chat/ThreadView";
 import { ProjectPickerDialog } from "../chat/ProjectPickerDialog";
@@ -37,6 +37,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
   const projects = useProjects();
+  const coreIdentity = useCoreIdentity();
   const isDraft = project.data ? !!project.data.manifest.ideaDraft : !!projects.data?.find(item => item.id === projectId)?.isDraft;
   const [showProjects, setShowProjects] = useState(false);
   const [setupDraft, setSetupDraft] = useState<ProjectDetail | null>(null);
@@ -54,9 +55,9 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
     else state.setWorkspaceArea("boards");
   }, [projectId, boardSources.data, boardSources.isFetching, boardSources.isError, project.data, project.isFetching, project.isError]);
   useEffect(() => {
-    if (projectId && project.data?.id === projectId && !project.isFetching && !project.isError)
-      useUiStore.getState().recordProjectVisit(client.baseUrl, projectId);
-  }, [client.baseUrl, projectId, project.data?.id, project.isFetching, project.isError]);
+    if (projectId && !coreIdentity.isPending && project.data?.id === projectId && !project.isFetching && !project.isError)
+      useUiStore.getState().recordProjectVisit(coreIdentity.data ? `core:${coreIdentity.data}` : client.baseUrl, projectId);
+  }, [client.baseUrl, coreIdentity.data, coreIdentity.isPending, projectId, project.data?.id, project.isFetching, project.isError]);
   const area = useUiStore((s) => s.workspaceArea);
   const boardTab = useUiStore((s) => s.boardTab);
   const areaLabel = area === "boards" && boardSources.data?.mode === "assembly" ? "Boards" : WORKSPACE_AREAS[area].label;

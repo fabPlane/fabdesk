@@ -1,3 +1,11 @@
+# November 3 — remaining Home/draft findings addressed locally
+
+Local UI milestone ced5197 plus native setup/recency follow-up: HD-13 recognizable saved previews/rename/search/conversation restore; HD-15 compact live question with alternate message entry; HD-14 unnecessary native library setup removed for existing-symbol/cosmetic edits, cached unchanged setup and bounded90s first setup; HD-16 stable-core recency. Actual native question/answer, two note saves, temporary symbol add/remove with exact five-file restoration, refreshed drawing and core-port-change recency passed. Local evidence outputs/home-draft-flow-20261103/26–33; detailed report HOME-DRAFT-20261103.md.
+
+Resume boundary: no remote publication until explicitly reauthorized after previous one-push rejection. No merge/deploy. Teammate398/393, BoardArt polish, previous411/412 and source/auth dependencies remain excluded/separate. Network ambiguity, cross-volume/Windows/crash acceptance remain untested, not invented failures. Scoped Home/draft findings addressed; do not declare the entire roadmap complete.
+
+---
+
 # November 3 — Home, idea draft and project setup
 
 Implemented the approved idea-first Home, durable planning drafts and same-ID project setup in `fd5968c` / `cdb9fa9`. Native human-test, fixed findings, actual evidence, verification and explicit untested limits: [Home draft report](HOME-DRAFT-20261103.md).

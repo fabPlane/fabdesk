@@ -849,7 +849,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   };
 
   const schematicEdit = async (projectDir: string, edit: NativeSchematicEdit) => {
-    const { schematic, session } = await deps.sessions.ensureProject(projectDir);
+    // Existing embedded symbols, text, wires and labels need no library-table rewrite.
+    // Register bundled libraries only when resolving newly added library symbols.
+    const { schematic, session } = await deps.sessions.ensureProject(projectDir, {
+      registerLibraries: (edit.symbols?.length ?? 0) > 0,
+    });
     const hierarchy = await schematic.hierarchy();
     const { selected: selectedEntry, flat } = resolveSchematicSheet(hierarchy, edit.sheet);
     const root = schematic.sheet(selectedEntry.path, selectedEntry);
@@ -1321,7 +1325,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     if (save && createdSymbols.length) await deps.sessions.restart(projectDir);
     const resulting =
       save && createdSymbols.length
-        ? (await deps.sessions.ensureProject(projectDir)).schematic
+        ? (await deps.sessions.ensureProject(projectDir, { registerLibraries: false })).schematic
         : schematic;
     const afterItems = await resulting.sheet(selectedEntry.path, selectedEntry).getAllItems();
     const afterById = new Map(afterItems.map((item) => [item.id, signature(item)]));
