@@ -6,6 +6,85 @@ import { estimatePartHeightMm, extractBoardFeatures } from "../src/board-feature
 const fixture = readFileSync(join(import.meta.dir, "fixtures/enclosure/board.kicad_pcb"), "utf8");
 
 describe("extractBoardFeatures", () => {
+  test("pad fallback agrees with native KiCad copper export, including offsets and rounded ends", () => {
+    // pad-bounds.native.svg was exported by KiCad 10.99.0. Its first two polygons
+    // are the rectangle bounds below; the oval is a 2 mm round-capped line.
+    const board = readFileSync(
+      join(import.meta.dir, "fixtures/enclosure/pad-bounds.kicad_pcb"),
+      "utf8",
+    );
+    const parts = extractBoardFeatures(board).components!;
+    expect(parts.find((p) => p.ref === "U1")!.bounds).toEqual({
+      minX: 11,
+      minY: 6,
+      maxX: 13,
+      maxY: 14,
+    });
+    expect(parts.find((p) => p.ref === "U2")!.bounds).toEqual({
+      minX: 31,
+      minY: 4,
+      maxX: 33,
+      maxY: 12,
+    });
+    const oval = parts.find((p) => p.ref === "U3")!.bounds;
+    expect(oval.minX).toBeCloseTo(41.8787, 4);
+    expect(oval.maxX).toBeCloseTo(48.1213, 4);
+    expect(oval.minY).toBeCloseTo(6.8787, 4);
+    expect(oval.maxY).toBeCloseTo(13.1213, 4);
+    // Copper offset must not move the actual manufactured hole.
+    expect(extractBoardFeatures(board).holes[0]).toMatchObject({ x: 32, y: 10, diameterMm: 0.8 });
+  });
+  test("rounded rectangular pads retain their rounded envelope when turned diagonally", () => {
+    const f = extractBoardFeatures(`(kicad_pcb
+      (gr_rect(start 0 0)(end 40 30)(layer "Edge.Cuts"))
+      (footprint "Device:Test"(layer "B.Cu")(at 20 15 90)(property "Reference" "U1")
+        (pad "1" smd roundrect(at 0 0 45)(size 8 4)(roundrect_rratio 0.25)(layers "B.Cu"))))`);
+    const part = f.components![0]!;
+    const halfExtent = 4 / Math.sqrt(2) + 1;
+    expect(part.bottom).toBe(true);
+    expect(part.bounds.minX).toBeCloseTo(20 - halfExtent, 6);
+    expect(part.bounds.maxY).toBeCloseTo(15 + halfExtent, 6);
+  });
+  test("pad-only bounds use board-frame pad rotation independently of footprint rotation", () => {
+    for (const angle of [0, 90, 135, 270]) {
+      const features = extractBoardFeatures(`(kicad_pcb
+        (gr_rect(start 0 0)(end 40 30)(layer "Edge.Cuts"))
+        (footprint "Device:Test"(layer "F.Cu")(at 10 10 90)(property "Reference" "U1")
+          (pad "1" smd rect(at 0 2 ${angle})(size 8 2)(layers "F.Cu"))))`);
+      const r = features.components![0]!.bounds;
+      const a = (angle * Math.PI) / 180;
+      const halfX = 4 * Math.abs(Math.cos(a)) + Math.abs(Math.sin(a));
+      const halfY = 4 * Math.abs(Math.sin(a)) + Math.abs(Math.cos(a));
+      expect(r.minX).toBeCloseTo(12 - halfX, 6);
+      expect(r.maxX).toBeCloseTo(12 + halfX, 6);
+      expect(r.minY).toBeCloseTo(10 - halfY, 6);
+      expect(r.maxY).toBeCloseTo(10 + halfY, 6);
+    }
+  });
+  test("curved footprint outlines include arc extrema and transform into board coordinates", () => {
+    const features = extractBoardFeatures(`(kicad_pcb
+      (gr_rect(start 0 0)(end 40 30)(layer "Edge.Cuts"))
+      (footprint "Connector_Audio:Test"(layer "F.Cu")(at 0 10 90)(property "Reference" "J1")
+        (fp_line(start -4 0)(end 4 0)(layer "F.CrtYd"))
+        (fp_arc(start 4 0)(mid 0 4)(end -4 0)(layer "F.CrtYd"))
+        (fp_line(start -3 0)(end 3 0)(layer "F.Fab"))
+        (fp_arc(start 3 0)(mid 0 3)(end -3 0)(layer "F.Fab"))
+        (pad "1" smd rect(at 0 0)(size 1 1)(layers "F.Cu"))))`);
+    const body = features.components![0]!.bounds;
+    const face = features.connectors[0]!.face!.bounds;
+    for (const [key, value] of Object.entries({ minX: 0, minY: 6, maxX: 4, maxY: 14 }))
+      expect(body[key as keyof typeof body]).toBeCloseTo(value, 6);
+    for (const [key, value] of Object.entries({ minX: 0, minY: 7, maxX: 3, maxY: 13 }))
+      expect(face[key as keyof typeof face]).toBeCloseTo(value, 6);
+  });
+  test("a missing courtyard falls back to the body outline as well as pads", () => {
+    const features = extractBoardFeatures(`(kicad_pcb
+      (gr_rect(start 0 0)(end 40 30)(layer "Edge.Cuts"))
+      (footprint "Device:Test"(layer "F.Cu")(at 20 15)(property "Reference" "U1")
+        (fp_rect(start -6 -4)(end 6 4)(layer "F.Fab"))
+        (pad "1" smd rect(at 7 0)(size 2 2)(layers "F.Cu"))))`);
+    expect(features.components![0]!.bounds).toEqual({ minX: 14, minY: 11, maxX: 28, maxY: 19 });
+  });
   test("connected rectangular segments are closed regardless of order or direction", () => {
     const edges = [
       [100, 74, 100, 50],

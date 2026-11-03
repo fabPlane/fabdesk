@@ -143,7 +143,10 @@ const expand = (r: Rect, x: number, y: number): void => {
   if (y > r.maxY) r.maxY = y;
 };
 const validRect = (r: Rect): boolean =>
-  Number.isFinite(r.minX) && Number.isFinite(r.minY) && r.maxX > r.minX && r.maxY > r.minY;
+  Number.isFinite(r.minX) &&
+  Number.isFinite(r.minY) &&
+  r.maxX - r.minX > 1e-7 &&
+  r.maxY - r.minY > 1e-7;
 const widthOf = (r: Rect) => r.maxX - r.minX;
 const heightOf = (r: Rect) => r.maxY - r.minY;
 /** KiCad RotatePoint: clockwise about the footprint origin (Y down). */
@@ -324,11 +327,15 @@ function courtyardBounds(
   fabrication = false,
 ): Rect {
   const r = emptyRect();
-  const addLocal = (x: number, y: number) => {
-    const p = rotateLocal(x, y, rotationDeg);
-    expand(r, origin.x + p.x, origin.y + p.y);
+  const toBoard = (point: Point) => {
+    const p = rotateLocal(point.x, point.y, rotationDeg);
+    return { x: origin.x + p.x, y: origin.y + p.y };
   };
-  for (const name of ["fp_line", "fp_rect", "fp_poly", "fp_circle"] as const) {
+  const addLocal = (x: number, y: number) => {
+    const p = toBoard({ x, y });
+    expand(r, p.x, p.y);
+  };
+  for (const name of ["fp_line", "fp_rect", "fp_poly", "fp_circle", "fp_arc"] as const) {
     for (const g of children(fp, name)) {
       if (fabrication ? !["F.Fab", "B.Fab"].includes(layerOf(g) ?? "") : !isCourtyard(layerOf(g)))
         continue;
@@ -348,6 +355,17 @@ function courtyardBounds(
         }
       } else if (name === "fp_poly") {
         for (const p of collectPts(g)) addLocal(p.x, p.y);
+      } else if (name === "fp_arc") {
+        const start = xy(child(g, "start"));
+        const mid = xy(child(g, "mid"));
+        const end = xy(child(g, "end"));
+        if (start && end) {
+          if (mid) expandArc(r, toBoard(start), toBoard(mid), toBoard(end));
+          else {
+            const angle = numberAt(child(g, "angle"), 1);
+            if (angle !== null) expandLegacyArc(r, toBoard(start), toBoard(end), angle);
+          }
+        }
       } else {
         const c = xy(child(g, "center"));
         const e = xy(child(g, "end"));
@@ -372,8 +390,29 @@ function padBounds(fp: Sexpr[], origin: Point, rotationDeg: number): Rect {
     const sy = numberAt(size, 2) ?? sx;
     if (!at) continue;
     const p = rotateLocal(at.x, at.y, rotationDeg);
-    expand(r, origin.x + p.x - sx / 2, origin.y + p.y - sy / 2);
-    expand(r, origin.x + p.x + sx / 2, origin.y + p.y + sy / 2);
+    // Pad positions are footprint-local, but saved pad angles are board-absolute.
+    // Do not add the parent rotation a second time (KiCad sexpr parser, T_at).
+    const angle = numberAt(child(pad, "at"), 3) ?? 0;
+    const a = (angle * Math.PI) / 180;
+    const cos = Math.abs(Math.cos(a)),
+      sin = Math.abs(Math.sin(a));
+    const shape = pad[3];
+    const radius =
+      shape === "oval"
+        ? Math.min(sx, sy) / 2
+        : shape === "roundrect"
+          ? Math.min(sx, sy) *
+            Math.min(0.5, Math.max(0, numberAt(child(pad, "roundrect_rratio"), 1) ?? 0))
+          : 0;
+    const halfX =
+      shape === "circle" ? sx / 2 : (sx / 2 - radius) * cos + (sy / 2 - radius) * sin + radius;
+    const halfY =
+      shape === "circle" ? sy / 2 : (sx / 2 - radius) * sin + (sy / 2 - radius) * cos + radius;
+    // KiCad stores copper's offset from the drill anchor inside the drill token.
+    const offset = xy(child(child(pad, "drill") ?? [], "offset")) ?? { x: 0, y: 0 };
+    const shifted = rotateLocal(offset.x, offset.y, angle);
+    expand(r, origin.x + p.x + shifted.x - halfX, origin.y + p.y + shifted.y - halfY);
+    expand(r, origin.x + p.x + shifted.x + halfX, origin.y + p.y + shifted.y + halfY);
   }
   return r;
 }
@@ -607,8 +646,15 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
     if (dnp) continue;
 
     const court = courtyardBounds(fp, origin, placement.rotationDeg);
+    const fab = courtyardBounds(fp, origin, placement.rotationDeg, true);
     const pads = padBounds(fp, origin, placement.rotationDeg);
-    const bounds = validRect(court) ? court : pads;
+    const fallback = emptyRect();
+    for (const r of [fab, pads])
+      if (validRect(r)) {
+        expand(fallback, r.minX, r.minY);
+        expand(fallback, r.maxX, r.maxY);
+      }
+    const bounds = validRect(court) ? court : fallback;
     const body = validRect(bounds)
       ? bounds
       : { minX: origin.x - 1, minY: origin.y - 1, maxX: origin.x + 1, maxY: origin.y + 1 };
@@ -627,7 +673,6 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
       ? { heightMm: suppliedHeight, source: "PCB Height property" as const }
       : connectorBodyProfile(libId);
     const heightMm = measured?.heightMm ?? estimatePartHeightMm(libId, value);
-    const fab = courtyardBounds(fp, origin, placement.rotationDeg, true);
     const mountLabel = `${libId} ${ref}`;
     if (!MOUNT_RE.test(mountLabel) && !FIDUCIAL_RE.test(mountLabel))
       components.push({

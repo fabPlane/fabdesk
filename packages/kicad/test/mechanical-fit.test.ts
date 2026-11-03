@@ -3,6 +3,8 @@ import { MechanicalDesignSchema, type MechanicalDesign } from "@fabdesk/protocol
 import { extractBoardFeatures } from "../src/board-features";
 import { boardVolumes, checkMechanicalFit, enclosureFromDesign } from "../src/mechanical-fit";
 import { meshEnclosure } from "../src/enclosure";
+import { defaultEnclosureDesign } from "../../client-core/src/enclosure-design";
+import { proposeEnclosureLayout } from "../../client-core/src/enclosure-layout";
 
 const pcb = `(kicad_pcb (general (thickness 1.6))
  (gr_rect (start 0 0)(end 40 20)(layer "Edge.Cuts"))
@@ -35,6 +37,30 @@ const design = (): MechanicalDesign => ({
 });
 const boards = (d: MechanicalDesign) => d.boards.map((placement) => ({ placement, features }));
 describe("mechanical fit constraints", () => {
+  test("a body without a courtyard cannot pass through a wall or be cropped by auto sizing", () => {
+    const f = extractBoardFeatures(`(kicad_pcb(general(thickness 1.6))
+      (gr_rect(start 0 0)(end 40 20)(layer "Edge.Cuts"))
+      (footprint "Device:WideBody"(layer "F.Cu")(at 39 10)(property "Reference" "U1")
+        (fp_rect(start -5 -3)(end 5 3)(layer "F.Fab"))
+        (pad "1" smd rect(at 0 0 90)(size 2 1)(layers "F.Cu"))))`);
+    const d = design();
+    const b = { placement: d.boards[0]!, features: f };
+    expect(
+      checkMechanicalFit(d, [b]).issues.some(
+        (i) => i.code === "outside-space" && i.severity === "error",
+      ),
+    ).toBe(true);
+    const automatic = defaultEnclosureDesign(f);
+    automatic.confirmed = true;
+    const proposal = proposeEnclosureLayout(automatic, [{ ...b, placement: automatic.boards[0]! }]);
+    const report = checkMechanicalFit(proposal.design, [
+      { ...b, placement: proposal.design.boards[0]! },
+    ]);
+    expect(report.issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(
+      Math.max(proposal.design.space.width, proposal.design.space.depth),
+    ).toBeGreaterThanOrEqual(46);
+  });
   test("assembly review flags screwdriver access blocked above a mounting hole", () => {
     const d = design();
     d.assemblyCheck = true;
