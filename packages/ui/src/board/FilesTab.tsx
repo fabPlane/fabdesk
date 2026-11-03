@@ -7,7 +7,7 @@ import { CanvasToolButton } from "../components/CanvasToolButton";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
 import { ProjectVideo } from "../chat/ProjectVideo";
-import { Button, EmptyState, IconButton, Input, LoadError, Spinner } from "../components/ui";
+import { Select, Button, EmptyState, IconButton, Input, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { editableSketchPaths, savedOutputs, useCoreClient, usePcbPreviewRevision, useProject, useProjectText, useRunTool } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
@@ -183,7 +183,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const exportControls = { gerberPackage: exportFocus, exportChoices, exportKind, setExportKind, thicknessMm, onThickness: (value: number) => setThickness(projectId, value), laserForm, setLaserForm, busy, canExport, sourceNote, ...(state.error && !exportFocus ? { error: `${EXPORTS[lastExport].title}: ${state.error}` } : {}), onExport: () => void exportFiles() };
   if (exportFocus) return <div className="fd-export-workspace">
     <header><div><h1>Export files</h1><p>{assembly ? "Choose a board, then select the files to export." : hasPcb ? "Choose the files to export from this board. Exported files appear in Library." : "Add a saved KiCad PCB to create manufacturing files."}</p></div><div className="fd-export-header-actions"><CanvasToolButton icon="sparkles" label="Ask about these export settings" onClick={() => askAboutSurface(assistantSurface, "Help me choose and export the files I need for this board. Review its saved source and existing outputs first.")} /><Button size="sm" variant="ghost" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }}><Icon name="library" width={16} height={16} />Saved outputs</Button></div></header>
-    {assembly && <label className="fd-export-board-scope">Board source<select aria-label="Board source for exports" disabled={!scopeReady || busy} value={outputSource.sourceId ?? ""} onChange={event => outputSource.choose(event.target.value)}><option value="" disabled>Choose a board…</option>{!source && outputSource.sourceId && <option value={outputSource.sourceId} disabled>Source definition changed</option>}{sources.data?.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · source unavailable" : ""}</option>)}</select></label>}
+    {assembly && <label className="fd-export-board-scope">Board source<Select aria-label="Board source for exports" disabled={!scopeReady || busy} value={outputSource.sourceId ?? ""} onChange={event => outputSource.choose(event.target.value)}><option value="" disabled>Choose a board…</option>{!source && outputSource.sourceId && <option value={outputSource.sourceId} disabled>Source definition changed</option>}{sources.data?.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · source unavailable" : ""}</option>)}</Select></label>}
     <div className="fd-export-flow">
       <section className="fd-export-reference" aria-label="Export source reference">
         <h2>{source?.source.name ?? "Saved board"}</h2>

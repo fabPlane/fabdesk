@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { createPortal } from "react-dom";
 import type { BoardSourceSelection, PcbPartPosition } from "@fabdesk/protocol";
 import { inspectPcbParts, parsePartPositionInput, pcbPlacementWarnings, pcbToolJsonForSource, useCoreClient, usePcbPartsNear, useRunTool } from "@fabdesk/client-core";
-import { Button, IconButton, Input, Spinner } from "../components/ui";
+import { Select, Button, IconButton, Input, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { NativePartTarget } from "./NativePartTarget";
 import { BoardChecksButton } from "./BoardChecksButton";
@@ -171,7 +171,7 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
     }
   };
   const drawingHost = root.current?.closest<HTMLElement>(".fd-svg-host");
-  const partPicker = current && <label>Part<select aria-label="Select native PCB part" value={selection?.part.ref ?? ""} disabled={busy} onChange={(event) => { const part = current.parts.find((p) => p.ref === event.target.value); if (part) choose(part, current.sourceSha256); }}><option value="">Choose a part</option>{[...current.parts].sort((a, b) => Math.hypot(a.x - point.x, a.y - point.y) - Math.hypot(b.x - point.x, b.y - point.y)).map((part) => <option key={part.ref} value={part.ref}>{part.ref}{part.value ? ` · ${part.value}` : ""}</option>)}</select></label>;
+  const partPicker = current && <label>Part<Select aria-label="Select native PCB part" value={selection?.part.ref ?? ""} disabled={busy} onChange={(event) => { const part = current.parts.find((p) => p.ref === event.target.value); if (part) choose(part, current.sourceSha256); }}><option value="">Choose a part</option>{[...current.parts].sort((a, b) => Math.hypot(a.x - point.x, a.y - point.y) - Math.hypot(b.x - point.x, b.y - point.y)).map((part) => <option key={part.ref} value={part.ref}>{part.ref}{part.value ? ` · ${part.value}` : ""}</option>)}</Select></label>;
 
   return <div className="fd-native-part-control" data-mode={mode} data-open={open} data-visible={visible} ref={root} onKeyDown={(event) => {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); event.stopPropagation(); }

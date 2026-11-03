@@ -6,7 +6,7 @@ import { AssemblySchematicSources } from "./AssemblySchematicSources";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { BoardSourceSelection, ProjectBoardSources } from "@fabdesk/protocol";
 import { filterCheckFindings, assemblyCheckFindingRow, captureAssemblyCheckFinding, normalizeReport, pcbToolJson, restoreAssemblySelection, useAssemblyPcbCheck, useRunTool } from "@fabdesk/client-core";
-import { Badge, Button, EmptyState, LoadError, Spinner } from "../components/ui";
+import { Select, Badge, Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 
 export function AssemblyChecks({ projectId, data, checking, failed, onRetry, contextual = false, onNavigate }: { projectId: string; data: ProjectBoardSources; checking: boolean; failed: boolean; onRetry: () => void; contextual?: boolean; onNavigate?: () => void }) {
@@ -59,7 +59,7 @@ export function AssemblyChecks({ projectId, data, checking, failed, onRetry, con
 
   return <div ref={root} className="fd-member-checks" data-testid="assembly-checks">
     <header><div><h2>Board checks</h2><p>Review saved PCB findings for this source design.</p></div>
-      {!contextual && <label>Board source<select aria-label="Board source for checks" value={board?.sourceId ?? ""} disabled={busy || checking || failed} onChange={event => choose(event.target.value)}><option value="">Choose a board source…</option>{data.sources.map(row => <option key={row.source.id} value={row.source.id} disabled={row.status !== "available"}>{row.source.name}{row.status !== "available" ? " · unavailable" : ""}</option>)}</select></label>}
+      {!contextual && <label>Board source<Select aria-label="Board source for checks" value={board?.sourceId ?? ""} disabled={busy || checking || failed} onChange={event => choose(event.target.value)}><option value="">Choose a board source…</option>{data.sources.map(row => <option key={row.source.id} value={row.source.id} disabled={row.status !== "available"}>{row.source.name}{row.status !== "available" ? " · unavailable" : ""}</option>)}</Select></label>}
     <div className="fd-member-checks-toolbar"><Button size="sm" variant="ghost" disabled={busy || checking} onClick={() => { onRetry(); if (owned) void report.refetch(); }}>Recheck sources</Button>{owned && <Button size="sm" disabled={busy || checking || failed || report.isPending || report.isFetching || report.isError || !report.data} onClick={() => void run()}>{busy ? "Checking PCB…" : "Run PCB-only DRC"}</Button>}</div></header>
     <div className="fd-checks-body" data-detail-open={!!selectedFinding}>
     {board && owned && <div className="fd-checks-context"><div className="fd-member-checks-scope"><strong>{source?.source.name}</strong><span>PCB-only report · Electrical parity and assembly compatibility are not checked.</span></div><AssemblySchematicSources key={`${projectId}/${scope}`} projectId={projectId} board={board} data={data} disabled={busy || checking || failed} {...(onNavigate ? { onNavigate } : {})} /></div>}

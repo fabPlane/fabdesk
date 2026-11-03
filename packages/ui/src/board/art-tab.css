@@ -153,59 +153,7 @@
   width: 36px;
   text-align: center;
 }
-.fd-art-empty {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  padding: 36px 20px;
-  text-align: center;
-}
-.fd-art-empty > svg {
-  color: #c3dca3;
-}
-.fd-art-empty h3 {
-  font-size: 18px;
-  font-weight: 600;
-}
-.fd-art-empty p {
-  max-width: 290px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: #cbd5cb;
-}
-.fd-art-example {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  margin: 8px 0;
-  font-size: 38px;
-}
-.fd-art-example > span:first-child {
-  display: grid;
-  place-items: center;
-  width: 72px;
-  height: 60px;
-  background: #fff;
-  color: #18221b;
-  border-radius: 7px;
-}
-.fd-art-example > span:nth-child(2) {
-  font-size: 24px;
-  color: #a4b3a3;
-}
-.fd-art-example-board {
-  display: grid;
-  place-items: center;
-  width: 80px;
-  height: 60px;
-  border: 2px solid #95ad7b;
-  border-radius: 8px;
-  background: #507144;
-  color: #f7f0d3;
-}
+
 .fd-art-comparison {
   display: flex;
   flex-direction: column;
@@ -408,7 +356,6 @@
 /* Artwork starts with a single choice. Image tools appear after a source is selected. */
 .fd-art { position:relative; }
 .fd-art[data-has-art="false"] .fd-art-preview { flex:1; }
-.fd-art-empty > select { max-width:300px; width:100%; }
 .fd-art-source { font-size:11px; color:inherit; }
 .fd-art-source summary { cursor:pointer; margin-bottom:12px; }
 .fd-art-feedback { position:absolute; z-index:8; top:12px; left:50%; transform:translateX(-50%); max-width:min(600px,90%); border:1px solid var(--fd-border); border-radius:12px; padding:8px 14px; background:var(--fd-panel); box-shadow:0 4px 18px #102a2012; }
@@ -422,12 +369,7 @@
 .fd-canvas-workspace .fd-art-toolbar { padding:9px 12px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); color:var(--fd-muted); }
 .fd-canvas-workspace .fd-art-toolbar button { color:var(--fd-fg); border-color:var(--fd-border); }
 .fd-canvas-workspace .fd-art-toolbar button:hover { background:var(--fd-panel-2); }
-.fd-canvas-workspace .fd-art-empty { flex:0; margin:auto; width:min(460px,100%); padding:30px; border:1px solid var(--fd-border); border-radius:22px; background:var(--fd-panel); box-shadow:0 4px 22px #102a2008; }
-.fd-canvas-workspace .fd-art-empty p { max-width:350px; color:var(--fd-muted); }
-.fd-canvas-workspace .fd-art-empty > svg { color:var(--fd-accent); }
-.fd-canvas-workspace .fd-art-empty h3 { font-size:22px; font-weight:550; letter-spacing:-.45px; }
-.fd-canvas-workspace .fd-art-example { gap:16px; margin:0; transform:scale(.8); }
-.fd-canvas-workspace .fd-art-example > span:first-child { border:1px solid var(--fd-border); }
+
 .fd-canvas-workspace .fd-art-upload { flex-direction:row; flex-wrap:wrap; margin:15px 0; padding:10px; gap:8px; }
 .fd-canvas-workspace .fd-art-upload > svg, .fd-canvas-workspace .fd-art-upload > span:not(.fd-art-filename) { display:none; }
 .fd-canvas-workspace .fd-art-upload > button { width:auto; }
@@ -698,4 +640,52 @@
 }
 .fd-art-print-guidance a {
   text-decoration: underline;
+}
+
+/* Artwork entry shares the page rhythm of Outputs and Review. */
+.fd-art[data-has-art="false"],
+.fd-canvas-workspace .fd-art[data-has-art="false"] {
+  display: block;
+  overflow: auto;
+  padding: 32px clamp(20px, 5vw, 72px) 96px;
+}
+.fd-art[data-has-art="false"] .fd-art-preview {
+  display: block;
+  overflow: visible;
+  background: transparent;
+  color: var(--fd-fg);
+}
+.fd-art-start { max-width: 1080px; margin-inline: auto; }
+.fd-art-start > header { margin-bottom: 28px; }
+.fd-art-start h2 { font-size: 28px; font-weight: 650; line-height: 1.2; letter-spacing: -.8px; }
+.fd-art-start > header > p { max-width: 670px; margin-top: 8px; color: var(--fd-muted); font-size: 13px; line-height: 1.65; }
+.fd-art-start-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(280px, 1fr); gap: 24px; align-items: stretch; }
+.fd-art-start-upload { display: flex; min-height: 340px; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 36px 24px; border: 1px dashed color-mix(in srgb, var(--fd-accent) 30%, var(--fd-border)); border-radius: 14px; background: color-mix(in srgb, var(--fd-accent) 3%, var(--fd-panel)); text-align: center; }
+.fd-art-start-icon { display: grid; place-items: center; width: 64px; height: 64px; border: 1px solid color-mix(in srgb, var(--fd-accent) 15%, var(--fd-border)); border-radius: 16px; background: var(--fd-panel); color: var(--fd-accent); }
+.fd-art-start-upload h3 { margin-top: 4px; font-size: 19px; font-weight: 600; letter-spacing: -.3px; }
+.fd-art-start-upload p { max-width: 330px; color: var(--fd-muted); font-size: 13px; line-height: 1.6; }
+.fd-art-start-upload > span { color: var(--fd-muted); font-size: 11px; }
+.fd-art-start-sketches { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding: 22px; border: 1px solid var(--fd-border); border-radius: 14px; background: var(--fd-panel); }
+.fd-art-start-sketch-heading { display: flex; align-items: center; gap: 8px; width: 100%; }
+.fd-art-start-sketch-heading > svg { color: var(--fd-accent); }
+.fd-art-start-sketch-heading h3 { flex: 1; font-size: 14px; font-weight: 600; }
+.fd-art-start-sketch-heading > span { min-width: 22px; padding: 2px 6px; border-radius: 6px; background: var(--fd-panel-2); color: var(--fd-muted); font-size: 11px; text-align: center; }
+.fd-art-start-sketches > p { color: var(--fd-muted); font-size: 12px; line-height: 1.6; }
+.fd-art-start-sketches ul { align-self: stretch; max-height: 264px; overflow: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+.fd-art-start-sketches li > button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px; border: 1px solid var(--fd-border); border-radius: 9px; text-align: left; }
+.fd-art-start-sketches li > button:not(:disabled):hover { border-color: color-mix(in srgb, var(--fd-accent) 40%, var(--fd-border)); background: color-mix(in srgb, var(--fd-accent) 4%, var(--fd-panel)); }
+.fd-art-start-sketches li > button:disabled { opacity: .5; cursor: not-allowed; }
+.fd-art-start-thumbnail { display: grid; place-items: center; flex-shrink: 0; width: 54px; height: 46px; overflow: hidden; border: 1px solid var(--fd-border); border-radius: 5px; background: var(--fd-bg); color: var(--fd-muted); }
+.fd-art-start-thumbnail img { width: 100%; height: 100%; object-fit: contain; }
+.fd-art-start-sketch-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; }
+.fd-art-start-sketch-name small { display: block; margin-top: 5px; color: var(--fd-muted); font-size: 11px; font-weight: 400; }
+.fd-art-start-sketches > button { margin-top: auto; }
+.fd-art-start-no-sketch { flex: 1; align-self: stretch; display: grid; place-content: center; justify-items: center; gap: 10px; min-height: 140px; border: 1px dashed var(--fd-border); border-radius: 8px; color: var(--fd-muted); font-size: 12px; }
+.fd-art-start > footer { display: flex; align-items: flex-start; gap: 8px; margin-top: 22px; color: var(--fd-muted); font-size: 12px; line-height: 1.6; }
+.fd-art-start > footer > svg { flex-shrink: 0; margin-top: 2px; }
+.fd-art[data-has-art="false"] .fd-art-feedback { position: static; max-width: 1080px; margin: 18px auto 0; transform: none; }
+@container (max-width: 720px) {
+  .fd-art-start-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .fd-art-start-upload { min-height: 290px; }
+  .fd-art-start-sketches ul { max-height: 200px; }
 }

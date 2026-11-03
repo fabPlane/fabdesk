@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { editableSketchPaths } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { ProjectImage } from "../chat/ProjectImage";
-import { Button } from "../components/ui";
+import { Select, Button } from "../components/ui";
 import { Icon } from "../components/Icon";
 
 /** A saved idea stays visible while the existing composer owns its unsent message. */
@@ -44,7 +44,7 @@ export function SketchStartReference({ projectId, paths, preferred, checking, fa
       </div> : <p>Select your sketch to see its tools</p>}
     </div>
     <div className="fd-start-reference-caption">
-      {paths.length > 1 ? <label>Reference<select aria-label="Choose project sketch reference" value={path} onChange={event => { setChoice(event.target.value); setSelectedPath(null); }}>{paths.map(item => <option key={item} value={item}>{item.slice("sketches/".length)}</option>)}</select></label> : <strong title={path}>{path.slice("sketches/".length)}</strong>}
+      {paths.length > 1 ? <label>Reference<Select aria-label="Choose project sketch reference" value={path} onChange={event => { setChoice(event.target.value); setSelectedPath(null); }}>{paths.map(item => <option key={item} value={item}>{item.slice("sketches/".length)}</option>)}</Select></label> : <strong title={path}>{path.slice("sketches/".length)}</strong>}
       <span role="status">{failed ? "Saved references could not be refreshed" : checking ? "Checking saved references…" : "Saved reference · No PCB yet"}</span>
     </div>
   </section>;

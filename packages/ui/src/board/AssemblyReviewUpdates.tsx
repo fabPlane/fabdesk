@@ -6,7 +6,7 @@ import { ASSEMBLY_MANIFEST_PATH, type ProjectBoardSources } from "@fabdesk/proto
 import { overviewBoardImages, restoreAssemblySelection, assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, assemblyCheckNeedsReview, assemblyCheckSummaryLabel, useAssemblyCheckSummaries, assemblyReviewRows, useAssemblyPreviewRevisions, useProject, useRunTool, useVideoInputRevision, videoInputsNeedReview } from "@fabdesk/client-core";
 import { OutputPreviewDialog } from "./OutputPreviewDialog";
 import { videoInputLabel } from "./VideoSourceStatus";
-import { Button, Spinner } from "../components/ui";
+import { Select, Button, Spinner } from "../components/ui";
 import { ReviewDesignSources, ReviewKeepNote, ReviewScope, ReviewUpdateTable, type ReviewOutputRow } from "./ReviewUpdateLayout";
 import { useUiStore } from "../stores/ui";
 
@@ -69,7 +69,7 @@ export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRet
   ] : [];
   const sourceTiles = <div className="fd-review-source-grid">{rows.map(item => <button key={item.sourceId} className="fd-review-source-tile" data-warning={item.warning || attentionSources.has(item.sourceId)} disabled={unavailable || busy} onClick={() => setRequestedScope(item.sourceId)}><strong>{item.name}</strong><small>{item.status}</small><small>{item.instances.length} {item.instances.length === 1 ? "board" : "boards"}{attentionSources.has(item.sourceId) ? " · Review checks or model" : ""}</small></button>)}</div>;
   return <div className="fd-review-updates" data-testid="assembly-review-updates">
-    <ReviewScope><select aria-label="Review board scope" value={scope ?? "all"} disabled={unavailable || busy} onChange={event => setRequestedScope(event.target.value)}><option value="all">All boards</option>{rows.map(item => <option key={item.sourceId} value={item.sourceId}>{item.name}</option>)}</select></ReviewScope>
+    <ReviewScope><Select aria-label="Review board scope" value={scope ?? "all"} disabled={unavailable || busy} onChange={event => setRequestedScope(event.target.value)}><option value="all">All boards</option>{rows.map(item => <option key={item.sourceId} value={item.sourceId}>{item.name}</option>)}</Select></ReviewScope>
     <header><h2>Review updates</h2><p>Review your design sources and choose which saved outputs to update.</p><Button size="sm" variant="ghost" disabled={busy || checking} onClick={() => { onRetry(); void project.refetch(); void checks.refetch(); void models.refetch(); void videoRevision.refetch(); void imageRevision?.refetch(); for (const preview of previews) if (preview.trackable) void preview.refetch(); }}>Recheck sources</Button></header>
     {failed && <p role="alert" className="fd-update-feedback">Project sources could not be refreshed. Retry before choosing a board or updating an output.</p>}
     {row ? <>

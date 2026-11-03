@@ -87,15 +87,25 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
   },
 );
 
+/** A styled select picker is in the document's top layer, not an OS popup. */
+function selectPickerIsOpen(element: Element | null): boolean {
+  return !!element && typeof CSS !== "undefined" && CSS.supports("selector(select:open)") && !!element.closest("select")?.matches(":open");
+}
+
 export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(function Select(
-  { className, ...rest },
+  { className, onKeyDownCapture, ...rest },
   ref,
 ) {
   return (
     <select
       ref={ref}
+      onKeyDownCapture={event => {
+        onKeyDownCapture?.(event);
+        // Let the browser close its picker without dismissing a parent task.
+        if (event.key === "Escape" && selectPickerIsOpen(event.currentTarget)) event.stopPropagation();
+      }}
       className={cn(
-        "h-9 min-w-0 max-w-full rounded-md border border-border bg-bg/50 px-2.5 text-[13px] text-fg outline-none transition-colors focus:border-accent",
+        "fd-select h-9 min-w-0 max-w-full rounded-md border border-border bg-panel px-2.5 text-[13px] text-fg outline-none transition-colors focus:border-accent",
         className,
       )}
       {...rest}
@@ -205,6 +215,7 @@ export function Dialog({ open, onClose, closeDisabled = false, title, headerActi
       }
       if (e.key === "Escape") {
         e.stopPropagation();
+        if (selectPickerIsOpen(document.activeElement)) return;
         if (!closeDisabled) onClose();
       }
     };

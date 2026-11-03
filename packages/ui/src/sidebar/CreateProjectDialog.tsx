@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCore, sortImportedBoards, importedBoardLabel, isBackupBoard, type ImportedBoardSort } from "@fabdesk/client-core";
 import { parsePublicGitHubUrl } from "@fabdesk/protocol";
-import { Button, Dialog, Input } from "../components/ui";
+import { Select, Button, Dialog, Input } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useUiStore } from "../stores/ui";
@@ -86,7 +86,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
     {result ? <div className="space-y-4">
       {result.boards.length === 0 ? <p className="text-sm leading-6 text-muted">Project imported. No KiCad board was found. You can add one later.</p> : <>
         <p className="text-sm text-muted">Choose the board to open. Other versions stay in Files.</p>
-        <label className="flex items-center justify-between gap-2 text-sm">Sort boards<select aria-label="Sort imported boards" value={sort} disabled={pending} onChange={event => setSort(event.target.value as ImportedBoardSort)} className="rounded-md border border-border bg-panel px-2 py-2"><option value="version">Version · newest first</option><option value="path">Path · A–Z</option></select></label>
+        <label className="flex items-center justify-between gap-2 text-sm">Sort boards<Select aria-label="Sort imported boards" value={sort} disabled={pending} onChange={event => setSort(event.target.value as ImportedBoardSort)} className="rounded-md border border-border bg-panel px-2 py-2"><option value="version">Version · newest first</option><option value="path">Path · A–Z</option></Select></label>
         <div className="max-h-[45vh] space-y-2 overflow-y-auto" role="group" aria-label="KiCad boards">
           {[false, true].map(backup => {
             const paths = sortImportedBoards(result.boards.filter(path => isBackupBoard(path) === backup), sort);

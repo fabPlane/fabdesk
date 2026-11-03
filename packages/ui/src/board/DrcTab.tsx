@@ -3,7 +3,7 @@ import { ErrorNotice } from "../components/ErrorNotice";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { CheckFindingDetails } from "./CheckFindingDetails";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Badge, Button, EmptyState, LoadError, Spinner } from "../components/ui";
+import { Select, Badge, Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { captureRootCheckFinding, rootCheckFindingRow, useCoreClient, usePcbCheckRevision, useProjectJson } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { CheckReportStatus } from "./CheckReportStatus";
@@ -106,7 +106,7 @@ function SingleBoardChecks({ projectId, scopeVerified, contextual, onNavigate }:
 
       {!loading && !failed && !noReports && <CheckReportStatus projectId={projectId} drc={drc.data} erc={erc.data} />}
       <div className="fd-single-checks-filters">
-      {!loading && !failed && !noReports && <div className="fd-single-checks-filter"><label>Findings<select aria-label="Filter saved check findings" value={filter} onChange={event => { setFilter(event.target.value as typeof filter); filterFindings("", "all"); }}><option value="all">All checks</option><option value="drc">PCB · DRC</option><option value="erc">Schematic · ERC</option></select></label></div>}
+      {!loading && !failed && !noReports && <div className="fd-single-checks-filter"><label>Findings<Select aria-label="Filter saved check findings" value={filter} onChange={event => { setFilter(event.target.value as typeof filter); filterFindings("", "all"); }}><option value="all">All checks</option><option value="drc">PCB · DRC</option><option value="erc">Schematic · ERC</option></Select></label></div>}
       {!loading && !failed && !noReports && <CheckFindingFilters rows={scopedRows} count={filteredRows.length} query={findingQuery} severity={severity} onChange={filterFindings} />}</div>
       {failed ? <LoadError title="Checks could not be verified" onRetry={() => { void drc.refetch(); void erc.refetch(); }} /> : loading ? (
         <div className="flex flex-1 items-center justify-center">

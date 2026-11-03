@@ -34,6 +34,7 @@ import type { PreviewResult } from "./art-preview.worker";
 import { ArtSavedBoardPreview } from "./ArtSavedBoardPreview";
 import { ArtPlacementControls, ArtPlacementOverlay } from "./ArtPlacementEditor";
 import { buildSketchPngFile } from "./art-sketch-upload";
+import { ArtworkStart } from "./ArtworkStart";
 import { ArtColorControls } from "./ArtColorControls";
 import { artImageName, buildArtPng } from "./art-image-export";
 import { artDraftStore, bytesToBase64, base64ToBytes, type ArtDraft } from "./art-draft";
@@ -850,22 +851,9 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
           </div>
         )}
         {!svg && !loading && !converting && (
-          <div className="fd-art-empty">
-            <Icon name="image" width={38} height={38} aria-hidden="true" />
-            <h3>Start with artwork</h3>
-            <p>Add a logo, drawing or photo. Save its image and settings now, then return as your project develops.</p>
-            <div className="fd-art-example" aria-hidden="true">
-              <span>★</span>
-              <span>→</span>
-              <span className="fd-art-example-board">★</span>
-            </div>
-            <Button variant="primary" disabled={loading} onClick={choose}>
-              Upload image
-            </Button>
-            <p>PNG, JPG, WebP, GIF · up to 12 MB<br />Or drop an image on this canvas.</p>
-            {restoreFailed && <Button onClick={() => { setError(null); setRestoreNonce(value => value + 1); }}>Retry saved artwork</Button>}
-            {sketches.length > 0 && <Select aria-label="Existing sketch" value="" disabled={busy || loading} onChange={event => void onSketch(event.target.value)}><option value="" disabled>Use a project sketch…</option>{sketches.map(file => <option key={file.path} value={file.path}>{file.path.split("/").pop()}</option>)}</Select>}
-          </div>
+          <ArtworkStart projectId={projectId} sketches={sketches} disabled={busy || loading || !hydrated} restoring={loading}
+            onUpload={choose} onSketch={path => void onSketch(path)}
+            {...(restoreFailed ? { onRetry: () => { setError(null); setRestoreNonce(value => value + 1); } } : {})} />
         )}
         {svg && showPcbPreview && projectId ? <ArtSavedBoardPreview projectId={projectId} enabled={sources.data?.mode === "single" && !sources.isFetching && !sources.isError} {...(sources.isError ? { onRetrySource: () => void sources.refetch() } : {})} overlayUrl={overlaySvg} widthMm={widthMm} heightMm={heightMm} crop={crop} placement={resolvedPlacement} lock={lockProportions} placing={placing} busy={busy || loading || converting} silkOnly={layers.length === 1 && layers[0] === "silk"} marks={marks} onPlace={setPlacement} onFit={(width, height) => { setWidthMm(width); setHeightMm(height); setOutline("rectangle"); if (gray) setPlacement(fitArtPlacement(gray, width, height, resolvedPlacement?.rotationDeg ?? 0, 2, crop)); }} /> : svg && (
           <div className="fd-art-comparison">

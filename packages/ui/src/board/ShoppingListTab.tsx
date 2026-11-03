@@ -140,13 +140,13 @@ export function ShoppingItemRow({ item, options, onPatch, onRemove, draftState }
       <span aria-hidden="true" />
       <Icon name="chevronRight" className="shopping-expand" width={15} height={15} />
     </button>
-    <select className="shopping-status shopping-quick-status" data-status={item.status} aria-label={`Order status for ${label}`} title={dirty ? "Save or discard your draft before changing status here" : "Change order status"} value={item.status} disabled={busy || dirty} onChange={async e => {
+    <Select className="shopping-status shopping-quick-status" data-status={item.status} aria-label={`Order status for ${label}`} title={dirty ? "Save or discard your draft before changing status here" : "Change order status"} value={item.status} disabled={busy || dirty} onChange={async e => {
       const nextStatus = e.target.value as CartItemStatus;
       setBusy(true); setQuickError(null);
       try { await onPatch({ status: nextStatus }); if (draft) { setDraft(undefined); setExpanded(false); } }
       catch (error) { setQuickError(cloudErrorMessage(error)); }
       finally { setBusy(false); }
-    }}>{CART_ITEM_STATUSES.map(status => <option key={status} value={status}>{STATUS_LABEL[status]}</option>)}</select>
+    }}>{CART_ITEM_STATUSES.map(status => <option key={status} value={status}>{STATUS_LABEL[status]}</option>)}</Select>
     </div>
     {quickError && <p role="alert" className="shopping-error shopping-quick-error">{quickError} Choose the status again to retry.</p>}
     <div id={detailsId} className="shopping-disclosure" hidden={!expanded} inert={!expanded}>{draft && <ItemEditor item={item} draft={draft} onDraft={setDraft} onBusy={setBusy} options={options} onSave={onPatch} onRemove={onRemove} onClose={() => { setDraft(undefined); setExpanded(false); button.current?.focus(); }} />}</div>

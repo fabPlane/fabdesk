@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { CoreHttpError, savedOutputs, editableSketchPaths, projectSketchImagePaths, useBoardSources, useProject, useProjectOrder, usePcbPreviewRevision, useBoardModelRevision, useEnclosureSourceRevision, usePcbCheckRevision, useVideoInputRevision, videoInputsNeedReview } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { ProjectImage } from "../chat/ProjectImage";
-import { Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui";
+import { Select, Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui";
 import { AssemblyOverview } from "./AssemblyOverview";
 import { Icon } from "../components/Icon";
 import { WorkspaceMenu } from "./WorkspaceMenu";
@@ -109,7 +109,7 @@ function SingleBoardOverview() {
         }}><Icon name="sparkles" width={16} height={16} />Use in conversation</Button>
         <Button size="sm" variant="ghost" onClick={() => ui().openProjectFile(reference)}><Icon name="folderOpen" width={16} height={16} />Open file</Button>
       </div>}
-      <div className="fd-overview-board-caption"><strong>Design reference</strong><span>Saved image · No saved PCB</span>{references.length > 1 ? <label>Reference<select aria-label="Saved project reference" value={reference} onChange={event => { setChosenReference(event.target.value); setSelectedKey(null); }}>{references.map(path => <option key={path} value={path}>{path.slice("sketches/".length)}</option>)}</select></label> : <span>{reference.slice("sketches/".length)}</span>}<Button size="sm" variant="ghost" onClick={() => ui().setSketchOpen(true, "draw", editableReference ? reference : undefined)}>{editableReference ? "Open drawing copy" : "Draw or open a sketch"}</Button></div>
+      <div className="fd-overview-board-caption"><strong>Design reference</strong><span>Saved image · No saved PCB</span>{references.length > 1 ? <label>Reference<Select aria-label="Saved project reference" value={reference} onChange={event => { setChosenReference(event.target.value); setSelectedKey(null); }}>{references.map(path => <option key={path} value={path}>{path.slice("sketches/".length)}</option>)}</Select></label> : <span>{reference.slice("sketches/".length)}</span>}<Button size="sm" variant="ghost" onClick={() => ui().setSketchOpen(true, "draw", editableReference ? reference : undefined)}>{editableReference ? "Open drawing copy" : "Draw or open a sketch"}</Button></div>
     </div> : <div className="fd-overview-empty"><Icon name="pcb" width={54} height={54} /><h2>Start with an idea or a sketch</h2><p>Your project is ready. Add a design or describe what you want to build.</p><Button onClick={() => { ui().setAssistantOpen(true); ui().focusComposer(); }}>Describe your board</Button><Button variant="ghost" onClick={() => ui().setSketchOpen(true)}>Add a sketch</Button></div>}
     <nav className="fd-overview-facts" aria-label="Project resources">
       <button onClick={() => ui().setBoardTab("files")}><Icon name="folder" width={18} height={18} /><strong>{files.length}</strong><span>project files</span></button>

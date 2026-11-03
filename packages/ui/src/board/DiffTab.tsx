@@ -99,11 +99,11 @@ export function DiffTab() {
   const prefix = source?.source.location === "project" && source.source.directory !== "." ? `${source.source.directory}/` : "";
   const ready = !sources.isFetching && !sources.isError && (!assembly || source?.status === "available");
   return <>
-    {assembly && <ReviewScope><select aria-label="Board for Changes" value={sourceId ?? ""} disabled={sources.isFetching} onChange={event => {
+    {assembly && <ReviewScope><Select aria-label="Board for Changes" value={sourceId ?? ""} disabled={sources.isFetching} onChange={event => {
       const id = event.target.value; setRequested(id);
       const selection = captureAssemblySourceSelection(data, id, useUiStore.getState().assemblyBoardByProject[projectId]);
       if (selection && data.sources.find(row => row.source.id === id)?.status === "available") useUiStore.getState().setAssemblyBoard(selection);
-    }}>{!source && <option value={sourceId ?? ""} disabled>Source definition changed · choose a board</option>}{data.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · source unavailable" : ""}</option>)}</select></ReviewScope>}
+    }}>{!source && <option value={sourceId ?? ""} disabled>Source definition changed · choose a board</option>}{data.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · source unavailable" : ""}</option>)}</Select></ReviewScope>}
     {assembly && source?.status !== "available" ? <EmptyState title="Add this board’s source to compare changes"><p>{source?.reason ?? "Choose an imported board source, or locate this board’s native files."}</p><Button onClick={() => useUiStore.getState().openProjectFile("fabplane.assembly.json")}>Review source definition</Button></EmptyState> : <BoardRevisionDiff key={`${projectId}:${board?.sourceId ?? "root"}:${board?.manifestSha256 ?? ""}`} projectId={projectId} prefix={prefix} {...(board ? { board } : {})} sourceLabel={source?.source.name ?? "Main board"} scopeReady={ready} onOpenNative={surface => {
       const ui = useUiStore.getState();
       if (!ready || ui.activeProjectId !== projectId) return;

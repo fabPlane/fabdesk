@@ -4,7 +4,7 @@ import { isEditableSketchSource, MAX_EDITABLE_SKETCH_BYTES } from "@fabdesk/prot
 import type { ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Spinner } from "../components/ui";
+import { Select, Button, Dialog, Spinner } from "../components/ui";
 import { sketchRecoverySignature, sketchRecoveryKey, editableSketchPaths, createSketchDraftSession, useCoreClient, useProject } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { basename } from "../util";
@@ -293,10 +293,10 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
                 {hasDrawing && <Button size="sm" disabled={busy || recovering || completed.current || needsProjectChat} onClick={() => sourceInput.current?.click()}>Replace draft from file…</Button>}
                 {savedDrawings.length > 0 && <div className="fd-sketch-saved-options">
                   <label>Saved drawings
-                    <select aria-label="Saved drawings" value={savedPath} disabled={busy || recovering || completed.current} onChange={event => setSavedPath(event.target.value)}>
+                    <Select aria-label="Saved drawings" value={savedPath} disabled={busy || recovering || completed.current} onChange={event => setSavedPath(event.target.value)}>
                       <option value="">Choose a drawing…</option>
                       {savedDrawings.map(path => <option key={path} value={path}>{basename(path)}</option>)}
-                    </select>
+                    </Select>
                   </label>
                   <Button size="sm" disabled={busy || recovering || completed.current || !savedDrawings.includes(savedPath)} onClick={() => void openSavedDrawing()}>{hasDrawing ? "Replace draft with saved copy" : "Open a copy"}</Button>
                   <p>The saved original stays unchanged.</p>

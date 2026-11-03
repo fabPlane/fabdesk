@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@fontsource-variable/inter";
+@import "./components/select.css";
 @source "./";
 
 @custom-variant dark (&:where(.dark, .dark *));

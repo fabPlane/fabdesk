@@ -2,7 +2,7 @@ import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useEffect, useRef, useState } from "react";
 import type { ProjectBoardSources } from "@fabdesk/protocol";
 import { assemblySelectionState, captureAssemblySchematicInspection, pcbToolJson, useAssemblySchematicPreview, useRunTool, type AssemblySceneSelection } from "@fabdesk/client-core";
-import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
+import { Select, Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import { SvgViewer } from "./SvgViewer";
 import { parseSvgViewBox } from "./svg-coords";
@@ -55,7 +55,7 @@ export function AssemblySchematicPreview({ projectId, data, selection, enabled, 
   return <div className="fd-assembly-schematic" data-testid="assembly-schematic-preview">
     <div className="fd-assembly-model-status" role="status" data-warning={["source-changed", "artifact-changed", "scope-unverified"].includes(state ?? "")}><strong>{label}</strong><details className="fd-schematic-preview-details"><DisclosureSummary icon="image" label="Preview details" variant="compact" /><span>Read-only native sheet · ERC, PCB parity, external symbol libraries and assembly compatibility are unverified.</span>{!showPrimaryRender && renderAction}</details></div>
     {(pages.length > 1 || showPrimaryRender) && <div className="fd-assembly-schematic-toolbar">
-      {(preview.data?.sheets.length ?? 0) > 1 && <label>Sheet <Button size="sm" variant="ghost" aria-label="Previous schematic sheet" disabled={busy || pageIndex <= 0} onClick={() => setPage(pages[pageIndex - 1]!.path)}>←</Button><select aria-label="Schematic preview sheet" disabled={busy} value={preview.data?.sheet?.path ?? ""} onChange={event => setPage(event.target.value)}>{preview.data?.sheets.map((sheet, index) => <option key={sheet.path} value={sheet.path}>{index + 1} · {sheet.name.replace(/\.svg$/i, "")}</option>)}</select><Button size="sm" variant="ghost" aria-label="Next schematic sheet" disabled={busy || pageIndex < 0 || pageIndex >= pages.length - 1} onClick={() => setPage(pages[pageIndex + 1]!.path)}>→</Button></label>}
+      {(preview.data?.sheets.length ?? 0) > 1 && <label>Sheet <Button size="sm" variant="ghost" aria-label="Previous schematic sheet" disabled={busy || pageIndex <= 0} onClick={() => setPage(pages[pageIndex - 1]!.path)}>←</Button><Select aria-label="Schematic preview sheet" disabled={busy} value={preview.data?.sheet?.path ?? ""} onChange={event => setPage(event.target.value)}>{preview.data?.sheets.map((sheet, index) => <option key={sheet.path} value={sheet.path}>{index + 1} · {sheet.name.replace(/\.svg$/i, "")}</option>)}</Select><Button size="sm" variant="ghost" aria-label="Next schematic sheet" disabled={busy || pageIndex < 0 || pageIndex >= pages.length - 1} onClick={() => setPage(pages[pageIndex + 1]!.path)}>→</Button></label>}
       {showPrimaryRender && renderAction}
     </div>}
     {drawing ? <SvgViewer svg={drawing} initialFit="width" viewKey={`${projectId}/${board.sourceId}/${board.manifestSha256}/${preview.data?.sheet?.path}`} /> : <EmptyState title="See this board’s schematic">Create a preview of its saved native sheets to inspect them here.</EmptyState>}

@@ -3,7 +3,7 @@ import { CanvasToolButton } from "../components/CanvasToolButton";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useState } from "react";
 import { useOutputRevisions, outputRevisionLabel, outputInputsNeedReview, useProject, useRunTool } from "@fabdesk/client-core";
-import { Button, LoadError, Spinner } from "../components/ui";
+import { Select, Button, LoadError, Spinner } from "../components/ui";
 import { ProjectImage } from "../chat/ProjectImage";
 import { useUiStore } from "../stores/ui";
 import { useOutputSource } from "./useOutputSource";
@@ -27,7 +27,7 @@ export function BoardImageOutput({ projectId, onAsk }: { projectId: string; onAs
   };
   return <div className="fd-image-output">
     <div className="fd-image-output-intro"><p>Create an image from a saved PCB. Missing component models may affect its appearance.</p><CanvasToolButton icon="sparkles" label="Ask about this image" onClick={() => { askAboutSurface(assistantSurface, "Help me create a useful board image from the selected source and explain any missing inputs."); onAsk(); }} /></div>
-    {scope.assembly && <label>Board source<select aria-label="Board source for image" disabled={busy || scope.sources.isFetching} value={scope.sourceId ?? ""} onChange={event => scope.choose(event.target.value)}><option value="" disabled>Choose a board…</option>{!scope.row && scope.sourceId && <option value={scope.sourceId} disabled>Source definition changed</option>}{scope.data?.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · unavailable" : ""}</option>)}</select></label>}
+    {scope.assembly && <label>Board source<Select aria-label="Board source for image" disabled={busy || scope.sources.isFetching} value={scope.sourceId ?? ""} onChange={event => scope.choose(event.target.value)}><option value="" disabled>Choose a board…</option>{!scope.row && scope.sourceId && <option value={scope.sourceId} disabled>Source definition changed</option>}{scope.data?.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · unavailable" : ""}</option>)}</Select></label>}
     <div className="fd-image-output-views" role="group" aria-label="Image view">{(["top", "bottom", "perspective", "side"] as const).map(item => <Button key={item} size="sm" disabled={busy} aria-pressed={item === view} onClick={() => setView(item)}>{item[0]!.toUpperCase() + item.slice(1)}</Button>)}</div>
     {scope.sources.isError ? <LoadError title="Could not check board sources" onRetry={() => void scope.sources.refetch()} /> : <>
       {present ? <><ProjectImage retryable projectId={projectId} path={path} alt={`${view} board image`} /><p role="status" data-warning={outputInputsNeedReview(receipt?.data)}>{imageStatus}</p></> : <div className="fd-image-output-placeholder">{scope.sources.isFetching ? <Spinner /> : ready ? "Choose a view, then render the image." : "Select an available board with a saved KiCad PCB."}</div>}

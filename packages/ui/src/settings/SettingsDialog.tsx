@@ -47,6 +47,23 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   );
 }
 
+function AgentModelSetting({ name, models, value, onChange }: { name: string; models: string[]; value: string | null; onChange: (value: string | null) => void }) {
+  const [custom, setCustom] = useState(false);
+  const usingCustom = custom || !!value && !models.includes(value);
+  return <div className="min-w-0 space-y-2">
+    <Select aria-label={`${name} model`} className="w-full" value={usingCustom ? "__custom_model__" : value ?? ""} onChange={event => {
+      const next = event.target.value;
+      setCustom(next === "__custom_model__");
+      if (next !== "__custom_model__") onChange(next || null);
+    }}>
+      <option value="">Agent default</option>
+      {models.map(model => <option key={model} value={model}>{model}</option>)}
+      <option value="__custom_model__">Custom model ID…</option>
+    </Select>
+    {usingCustom && <Input aria-label={`${name} custom model ID`} autoComplete="off" value={value ?? ""} placeholder="Enter a model ID" onChange={event => onChange(event.target.value || null)} />}
+  </div>;
+}
+
 export function SettingsDialog() {
   const { host } = useCore();
   const open = useUiStore((s) => s.settingsOpen);
@@ -57,6 +74,7 @@ export function SettingsDialog() {
   const storedTheme = useUiStore((s) => s.themeId);
   const originalTheme = useRef(storedTheme);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [modelReset, setModelReset] = useState(0);
   // Keep the displayed section and the assistant’s current-window context in one store.
   const section = requestedSection ?? "agents";
   const projectId = useUiStore(s => s.activeProjectId);
@@ -83,7 +101,7 @@ export function SettingsDialog() {
   // The router default and TraceMaker manifest URL are saved by their own controls
   // (see withoutRouterDefault); they are not part of the draft.
   const dirty = (!!draft && !!settings.data && JSON.stringify(withoutRouterDefault(draft)) !== JSON.stringify(withoutRouterDefault(settings.data))) || storedTheme !== originalTheme.current;
-  const reset = () => { if (settings.data) setDraft(structuredClone(settings.data)); setThemeId(originalTheme.current); };
+  const reset = () => { setModelReset(value => value + 1); if (settings.data) setDraft(structuredClone(settings.data)); setThemeId(originalTheme.current); };
   const close = () => { if (patch.isPending) return; if (dirty) setConfirmClose(true); else setOpen(false); };
   const save = () => {
     if (draft) patch.mutate(withoutRouterDefault(draft), { onSuccess: () => { originalTheme.current = useUiStore.getState().themeId; } });
@@ -139,12 +157,7 @@ export function SettingsDialog() {
                       <Input value={cfg.binaryPath ?? ""} onChange={(e) => updateAgent(a.id, { binaryPath: e.target.value || null })} placeholder={a.path ?? "auto-detect"} />
                     </Row>
                     <Row label="Model">
-                      <Input list={`settings-models-${a.id}`} value={cfg.model ?? ""} onChange={(e) => updateAgent(a.id, { model: e.target.value || null })} placeholder="agent default" />
-                      <datalist id={`settings-models-${a.id}`}>
-                        {a.models.map((m) => (
-                          <option key={m} value={m} />
-                        ))}
-                      </datalist>
+                      <AgentModelSetting key={`${a.id}:${modelReset}`} name={a.displayName} models={a.models} value={cfg.model} onChange={model => updateAgent(a.id, { model })} />
                     </Row>
                     <Row label="Models in picker" hint="Comma-separated; empty shows the first three known models">
                       <Input

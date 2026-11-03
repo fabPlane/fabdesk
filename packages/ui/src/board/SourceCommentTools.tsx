@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useBoardComments, useBoardCommentMutations } from "@fabdesk/client-core";
 import { commentAnchorLabel, type BoardComment, type BoardSourceSelection } from "@fabdesk/protocol";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
-import { Button, Dialog, EmptyState, LoadError, Spinner, Textarea } from "../components/ui";
+import { Select, Button, Dialog, EmptyState, LoadError, Spinner, Textarea } from "../components/ui";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { Icon } from "../components/Icon";
 import { useUiStore } from "../stores/ui";
@@ -44,7 +44,7 @@ export function useSourceCommentTools({ projectId, board, directory, enabled, ca
       {!canPin && <p role="status" className="text-xs text-warning">Refresh the saved PCB preview and source ownership before saving this location.</p>}
       {pin.isError && <ErrorNotice error={pin.error} />}
     </div> : <div className="space-y-3">
-      {!all.length ? <EmptyState title="No comments on this source yet">Select a location on the PCB, then choose Pin comment.</EmptyState> : <select className="w-full rounded-md border border-border bg-panel p-2 text-sm" aria-label="Board source comment" value={selectedId ?? ""} onChange={event => setSelectedId(event.target.value)}><option value="" disabled>Choose a comment…</option>{all.map(comment => <option key={comment.id} value={comment.id}>{comment.status} · {comment.question.slice(0, 100)}</option>)}</select>}
+      {!all.length ? <EmptyState title="No comments on this source yet">Select a location on the PCB, then choose Pin comment.</EmptyState> : <Select className="w-full rounded-md border border-border bg-panel p-2 text-sm" aria-label="Board source comment" value={selectedId ?? ""} onChange={event => setSelectedId(event.target.value)}><option value="" disabled>Choose a comment…</option>{all.map(comment => <option key={comment.id} value={comment.id}>{comment.status} · {comment.question.slice(0, 100)}</option>)}</Select>}
       {selected && <><p className="text-xs text-muted">{selected.anchor.view} · {commentAnchorLabel(selected.anchor)} · {selected.status}</p><p className="text-sm font-medium">{selected.question}</p>{selected.answer && <p className="whitespace-pre-wrap text-sm">{selected.answer}</p>}<div className="flex flex-wrap gap-2"><Button size="sm" onClick={() => ask(selected)}><Icon name="sparkles" width={14} height={14} />Ask fabPlane</Button><Button size="sm" variant="ghost" disabled={!ready || patch.isPending} onClick={() => patch.mutate({ commentId: selected.id, patch: { status: selected.status === "resolved" ? "open" : "resolved" } })}>{selected.status === "resolved" ? "Reopen" : "Resolve"}</Button>{selected.anchor.view === "pcb" && <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Show on board</Button>}</div><p className="text-xs text-muted">Pins record discussion. Recheck the latest source before relying on their locations or answers.</p></>}
       {patch.isError && <ErrorNotice error={patch.error} />}
     </div>}

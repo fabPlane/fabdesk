@@ -1,0 +1,118 @@
+/* The desktop's Chromium renders these pickers in its top layer, using the
+ * same tokens as workspace menus. Keep real select/option semantics for forms,
+ * labels, disabled fieldsets, keyboard navigation and existing change handlers.
+ * Older paired browsers retain a usable control through progressive enhancement.
+ * https://developer.chrome.com/blog/a-customizable-select */
+:where(select) {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--fd-border);
+  border-radius: 8px;
+  background: var(--fd-panel);
+  color: var(--fd-fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+@supports (appearance: base-select) {
+  select:not([multiple]):not([size]),
+  select:not([multiple]):not([size])::picker(select) {
+    appearance: base-select;
+  }
+
+  select:not([multiple]):not([size]) {
+    align-items: center;
+    gap: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  select::picker-icon {
+    content: "";
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    margin-inline-start: auto;
+    margin-inline-end: 2px;
+    border-inline-end: 1.5px solid var(--fd-muted);
+    border-block-end: 1.5px solid var(--fd-muted);
+    transform: translateY(-2px) rotate(45deg);
+  }
+  select:open::picker-icon {
+    transform: translateY(2px) rotate(225deg);
+  }
+  select::picker(select) {
+    min-inline-size: anchor-size(self-inline);
+    inline-size: max-content;
+    max-inline-size: min(480px, calc(100vw - 24px));
+    max-block-size: min(360px, 65dvh);
+    margin-block: 6px;
+    padding: 5px;
+    overflow: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--fd-border);
+    border-radius: 10px;
+    background: var(--fd-panel);
+    color: var(--fd-fg);
+    box-shadow: 0 12px 32px #102a2018, 0 2px 6px #102a2008;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 400;
+    text-align: start;
+  }
+  select option {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 8px 12px 8px 32px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--fd-fg);
+    font: inherit;
+    line-height: 1.45;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+  select option::checkmark {
+    position: absolute;
+    inset-inline-start: 10px;
+    color: var(--fd-accent);
+  }
+  select option:checked {
+    background: color-mix(in srgb, var(--fd-accent) 8%, var(--fd-panel));
+    color: var(--fd-accent);
+    font-weight: 550;
+  }
+  select option:not(:disabled):is(:hover, :focus-visible) {
+    background: var(--fd-panel-2);
+    outline: 2px solid transparent;
+  }
+  select option:focus-visible {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fd-accent) 55%, var(--fd-border));
+  }
+  select option:disabled {
+    color: var(--fd-muted);
+    cursor: default;
+  }
+  select optgroup {
+    color: var(--fd-muted);
+    font: inherit;
+    font-size: 12px;
+  }
+}
+
+:where(select):disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+@media (forced-colors: active) {
+  select::picker(select), select option:focus-visible { border: 1px solid CanvasText; }
+  select option:checked { color: HighlightText; background: Highlight; }
+}

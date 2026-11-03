@@ -2,7 +2,7 @@ import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { lazy, Suspense, useState } from "react";
 import { useAssemblyBoardModel, useCoreClient, useProject, useRunTool, useModelOutputActivity } from "@fabdesk/client-core";
 import type { BoardSourceSelection } from "@fabdesk/protocol";
-import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
+import { Select, Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import { ProductVideoPanel, type ProductVideoForm } from "./ProductVideoPanel";
 import { useOutputSource } from "./useOutputSource";
@@ -13,7 +13,7 @@ export function MemberOutputStudio({ projectId }: { projectId: string }) {
   const scope = useOutputSource(projectId);
   const owned = scope.board && scope.board.manifestSha256 === scope.data?.manifestSha256 && scope.row?.status === "available" && !!scope.row.pcbSha256;
   return <div className="fd-member-output-studio">
-    <header><div><h2>Models & video</h2><p>Create outputs for one board source. Assembly position and fit stay separate.</p></div><label>Board source<select aria-label="Board source for models and video" disabled={scope.sources.isFetching} value={scope.sourceId ?? ""} onChange={event => scope.choose(event.target.value)}><option value="" disabled>Choose a board…</option>{!scope.row && scope.sourceId && <option value={scope.sourceId} disabled>Source definition changed</option>}{scope.data?.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · unavailable" : ""}</option>)}</select></label></header>
+    <header><div><h2>Models & video</h2><p>Create outputs for one board source. Assembly position and fit stay separate.</p></div><label>Board source<Select aria-label="Board source for models and video" disabled={scope.sources.isFetching} value={scope.sourceId ?? ""} onChange={event => scope.choose(event.target.value)}><option value="" disabled>Choose a board…</option>{!scope.row && scope.sourceId && <option value={scope.sourceId} disabled>Source definition changed</option>}{scope.data?.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · unavailable" : ""}</option>)}</Select></label></header>
     {!scope.data ? <div role="status"><Spinner />Checking sources…</div> : !owned || !scope.board || !scope.row?.pcbSha256 ? <EmptyState title="Select an available board source"><p>{scope.sources.isError ? "Board sources could not be verified. Recheck before creating outputs." : "Missing or changed source definitions must be resolved before generation."}</p><Button onClick={() => scope.sourceId && scope.row?.status === "available" ? scope.choose(scope.sourceId) : void scope.sources.refetch()}>{scope.row?.status === "available" ? "Select source again" : "Recheck sources"}</Button><Button onClick={() => useUiStore.getState().openProjectFile("fabplane.assembly.json")}>Review source files</Button></EmptyState> : <MemberStudio key={`${scope.board.sourceId}:${scope.board.manifestSha256}`} projectId={projectId} board={scope.board} prefix={scope.prefix} sourceSha256={scope.row.pcbSha256} enabled={scope.ready} />}
   </div>;
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { commentAnchorLabel, commentMillimetrePoint, type BoardComment } from "@fabdesk/protocol";
 import { captureAssemblySourceSelection, useBoardComments, useBoardCommentMutations } from "@fabdesk/client-core";
-import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
+import { Select, Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { Icon } from "../components/Icon";
 import { useUiStore } from "../stores/ui";
@@ -40,13 +40,13 @@ export function ReviewComments() {
   };
   if (!projectId) return <EmptyState title="Choose a project to review comments" />;
   return <>
-    {assembly && <ReviewScope><select id="comment-source" aria-label="Comment board source" disabled={scope.sources.isFetching || patch.isPending} value={legacy ? "__project__" : scope.sourceId ?? ""} onChange={event => { const root = event.target.value === "__project__"; setLegacy(root); if (!root) scope.choose(event.target.value); }}>
+    {assembly && <ReviewScope><Select id="comment-source" aria-label="Comment board source" disabled={scope.sources.isFetching || patch.isPending} value={legacy ? "__project__" : scope.sourceId ?? ""} onChange={event => { const root = event.target.value === "__project__"; setLegacy(root); if (!root) scope.choose(event.target.value); }}>
       {!scope.row && !legacy && <option value={scope.sourceId ?? ""} disabled>Choose a board source…</option>}
       {scope.data?.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · unavailable" : ""}</option>)}<option value="__project__">Legacy project comments</option>
-    </select></ReviewScope>}
+    </Select></ReviewScope>}
     <div className="fd-review-comments">
       <header><div><h1>Comments</h1><p>{assembly ? legacy ? "Earlier project-level discussion. These pins do not identify an assembly board." : `Discussion for ${scope.row?.source.name ?? "the selected source"}. Shared board instances use the same pins.` : "Questions and answers pinned to this project’s design."}</p></div>
-        <select aria-label="Filter comments" value={filter} onChange={event => setFilter(event.target.value)}><option value="active">Active ({all.filter(c => c.status !== "resolved").length})</option><option value="resolved">Resolved ({all.filter(c => c.status === "resolved").length})</option><option value="all">All ({all.length})</option></select>
+        <Select aria-label="Filter comments" value={filter} onChange={event => setFilter(event.target.value)}><option value="active">Active ({all.filter(c => c.status !== "resolved").length})</option><option value="resolved">Resolved ({all.filter(c => c.status === "resolved").length})</option><option value="all">All ({all.length})</option></Select>
       </header>
       {scope.sources.isError ? <LoadError title="Could not verify comment source" onRetry={() => void scope.sources.refetch()} /> : !scope.data || scope.sources.isFetching ? <Spinner /> : !ready ? <EmptyState title="Select an available board source">Comments are never loaded from another board in its place.<div className="mt-3"><Button disabled={!scope.sourceId || scope.row?.status !== "available"} onClick={() => scope.sourceId && scope.choose(scope.sourceId)}>Select source again</Button></div></EmptyState> : comments.isError ? <LoadError title="Could not load comments" onRetry={() => void comments.refetch()} /> : comments.isPending ? <Spinner /> : <>
         {patch.isError && <ErrorNotice error={patch.error} />}

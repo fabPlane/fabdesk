@@ -5,7 +5,7 @@ import { DisclosureSummary } from "../components/DisclosureSummary";
 import { lazy, Suspense, useState } from "react";
 import type { ProjectBoardSources } from "@fabdesk/protocol";
 import { assemblySelectionState, captureAssemblySourceSelection, pcbToolJson, restoreAssemblySelection, useAssemblyBoardModel, useRunTool, type AssemblySceneSelection } from "@fabdesk/client-core";
-import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
+import { Select, Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 const ModelCanvas = lazy(() => import("./ModelCanvas"));
 
@@ -59,7 +59,7 @@ export function AssemblyModels({ projectId, data, checking, failed, onRetry }: {
     setSelection(next); ui.setAssemblyBoard(next);
   };
   return <div className="fd-assembly-models">
-    <header><div><h2>Board models</h2><p>Choose a source design. Shared physical boards use one exported model.</p></div><label>Board source<select aria-label="Board source for 3D model" disabled={checking || failed} value={selection?.sourceId ?? ""} onChange={event => choose(event.target.value)}><option value="">Choose a board source…</option>{data.sources.map(row => <option key={row.source.id} value={row.source.id} disabled={row.status !== "available"}>{row.source.name}{row.status !== "available" ? " · unavailable" : ""}</option>)}</select></label></header>
+    <header><div><h2>Board models</h2><p>Choose a source design. Shared physical boards use one exported model.</p></div><label>Board source<Select aria-label="Board source for 3D model" disabled={checking || failed} value={selection?.sourceId ?? ""} onChange={event => choose(event.target.value)}><option value="">Choose a board source…</option>{data.sources.map(row => <option key={row.source.id} value={row.source.id} disabled={row.status !== "available"}>{row.source.name}{row.status !== "available" ? " · unavailable" : ""}</option>)}</Select></label></header>
     {failed ? <LoadError title="Board sources could not be verified" onRetry={onRetry} /> : checking ? <p role="status"><Spinner />Checking sources…</p> : !selection ? <EmptyState title="Choose a board to see its model" /> : !owned ? <EmptyState title="Board definition changed">Select the source again to continue.<div className="mt-3"><Button size="sm" disabled={!data.manifestSha256 || data.sources.find(row => row.source.id === selection.sourceId)?.status !== "available"} onClick={() => choose(selection.sourceId)}>Select source again</Button></div></EmptyState> : <AssemblyBoardModel key={`${selection.sourceId}/${selection.manifestSha256}`} projectId={projectId} data={data} selection={selection} enabled />}
     <p className="fd-assembly-models-note">Models are viewed individually. Create board videos in Outputs. Assembly alignment and enclosure fit remain unverified.</p>
   </div>;
