@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { deduplicateChatNotices, splitAgentError, useCoreClient, type ThreadDetail } from "@fabdesk/client-core";
+import { activeQuestion, deduplicateChatNotices, splitAgentError, useCoreClient, type ThreadDetail } from "@fabdesk/client-core";
 import { ErrorAgentContext, ErrorNotice } from "../components/ErrorNotice";
 import { useRunsStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
@@ -320,6 +320,21 @@ export function MessageList({
     const el = ref.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
+  const questionId = activeQuestion(messages, run?.runId)?.requestId;
+  const revealedQuestion = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!questionId) { revealedQuestion.current = undefined; return; }
+    if (revealedQuestion.current === questionId) return;
+    const viewport = ref.current;
+    const card = [...(viewport?.querySelectorAll<HTMLElement>("[data-pending-question]") ?? [])].find(element => element.dataset.pendingQuestion === questionId);
+    if (!viewport || !card) return;
+    revealedQuestion.current = questionId;
+    // Reveal the beginning of a long question, rather than scrolling past it to the composer.
+    stick.current = false;
+    viewport.scrollTop += card.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 16;
+    const legend = card.querySelector("legend");
+    if (legend) { legend.tabIndex = -1; legend.focus({ preventScroll: true }); }
+  }, [questionId, thread?.id]);
   const lastId = messages.findLast((message) => message.role === "assistant")?.id;
   const visibleMessages = deduplicateChatNotices(messages.filter((message) => message.status !== "queued"));
   const activeMessages = run ? visibleMessages.filter((m) => m.role === "assistant" && m.runId === run.runId) : [];

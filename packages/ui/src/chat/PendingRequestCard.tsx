@@ -145,6 +145,7 @@ export function PendingQuestionCard({ threadId, part }: { threadId: string; part
         pending ? "border-accent/60 bg-accent/5" : "border-border bg-panel-2/40",
       )}
       data-testid="question-card"
+      data-pending-question={pending ? part.requestId : undefined}
     >
       <div className="mb-2 text-xs text-muted" role="status">
         {pending

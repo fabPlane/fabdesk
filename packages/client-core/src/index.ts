@@ -6,6 +6,7 @@
  */
 export { CoreClient, CoreHttpError, parseJsonl } from "./CoreClient";
 export { nativeSourceCandidates } from "./native-source-candidates";
+export { activeQuestion, draftConversation, draftWorkspaceTitle } from "./draft-navigation";
 export { deduplicateChatNotices } from "./chat-notices";
 export { errorHelp, errorMessage, errorPayload, agentErrorText, splitAgentError } from "./error-help";
 export type { ErrorHelp, ErrorAction, ErrorContext } from "./error-help";

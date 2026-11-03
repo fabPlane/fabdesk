@@ -31,6 +31,21 @@
       "file": "home-20261103-section-break.png",
       "original": "22-section-break-after.png",
       "sha256": "bbbfae83508d308302da384b2dc8071e6d3929113fa6cdd06f46634e031bfa5f"
+    },
+    {
+      "file": "home-20261103-question-compact.png",
+      "original": "26-pending-question-compact.png",
+      "sha256": "a49124cf3a2f2947d6364d4bc57cc4e81e350b1585e1520db7c1547ec12b2282"
+    },
+    {
+      "file": "home-20261103-draft-previews.png",
+      "original": "27-home-draft-preview-rename.png",
+      "sha256": "c3e7cf17c3c517525e65071ec4085a246d0a9bdbaac3a6ca0d06240321e0e34c"
+    },
+    {
+      "file": "home-20261103-image-draft-search.png",
+      "original": "29-image-draft-search.png",
+      "sha256": "53695dabb3cfc9f59fa59b7140a97ff2a0a64c271525ff6f976a59ddd83d4ac1"
     }
   ]
 }

@@ -10,7 +10,7 @@ import { Icon } from "../components/Icon";
 import { InstallHint } from "../components/InstallHint";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useCore } from "@fabdesk/client-core";
-import { CoreHttpError, formatVoiceShortcut, parseVoiceShortcut, useDoctor, useSettings, useSpeechStatus, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt, useBoardSources, useProject } from "@fabdesk/client-core";
+import { activeQuestion, CoreHttpError, formatVoiceShortcut, parseVoiceShortcut, useDoctor, useSettings, useSpeechStatus, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt, useBoardSources, useProject } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
@@ -115,6 +115,22 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preparedThread = useRef<Thread | null>(null);
 
+  const questionId = activeQuestion(messages.data ?? [], run?.runId)?.requestId;
+  const [expandedQuestion, setExpandedQuestion] = useState<{ id: string; focusNonce: number } | null>(null);
+  const compactQuestion = !!questionId && !draft.trim() && !pending.length && voice.state.phase === "idle" && !sending && !error
+    && !(expandedQuestion?.id === questionId && expandedQuestion.focusNonce === focusNonce);
+  const revealComposer = () => {
+    if (questionId) setExpandedQuestion({ id: questionId, focusNonce });
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  const previousFocusNonce = useRef(focusNonce);
+  useEffect(() => {
+    if (previousFocusNonce.current === focusNonce) return;
+    previousFocusNonce.current = focusNonce;
+    if (questionId) setExpandedQuestion({ id: questionId, focusNonce });
+  }, [focusNonce, questionId]);
+
   useEffect(() => {
     if (thread) {
       setAgentId(thread.agentId);
@@ -126,8 +142,8 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
   }, [thread, settings.data]);
 
   useEffect(() => {
-    textareaRef.current?.focus();
-  }, [focusNonce, thread?.id]);
+    if (!compactQuestion) textareaRef.current?.focus();
+  }, [focusNonce, thread?.id, compactQuestion]);
 
   useLayoutEffect(() => {
     const el = textareaRef.current;
@@ -141,7 +157,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [draft]);
+  }, [draft, compactQuestion]);
 
   const agents = doctor.data?.agents ?? [];
   const pickerAgents = agents.length > 0 ? agents : FALLBACK_AGENTS;
@@ -282,6 +298,13 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
                 <Icon name="play" width={14} height={14} />
                 <span className="fd-action-label">Finish it</span>
               </Button>;
+
+  if (compactQuestion) return <div className="fd-composer-dock bg-bg px-5 pb-3 pt-2">
+    <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-panel px-3 py-2 text-xs">
+      <span className="text-muted">Answer the question above{queued.length ? ` · ${queued.length} queued` : ""}</span>
+      <Button size="sm" variant="ghost" onClick={revealComposer}><Icon name="compose" width={14} height={14} />Write a message instead</Button>
+    </div>
+  </div>;
 
   return (
     <div className="fd-composer-dock bg-bg px-5 pb-4 pt-3">

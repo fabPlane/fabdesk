@@ -7,6 +7,7 @@ export interface ProjectAction {
   id: string;
   name: string;
   action: "rename" | "delete";
+  isDraft?: boolean;
 }
 
 export function ProjectActionDialog({ project, onClose }: { project: ProjectAction; onClose: () => void }) {
@@ -38,11 +39,11 @@ export function ProjectActionDialog({ project, onClose }: { project: ProjectActi
     } catch { /* The mutation error stays visible; keep the dialog open for retry. */ }
   };
   if (deleting && activeProjectId === project.id) return <Dialog open onClose={close} title="Close this project first" className="!w-[420px]"><p className="text-sm leading-6 text-muted">Return to Home before removing this project. This keeps your unfinished edits protected.</p><div className="mt-5 flex justify-end gap-2"><Button onClick={close}>Keep working</Button><Button onClick={() => { onClose(); useUiStore.getState().requestProjectClose(true); }}>Close project · Home</Button></div></Dialog>;
-  return <Dialog open onClose={close} closeDisabled={pending} title={deleting ? "Delete project?" : "Rename project"} className="!w-[420px]"
+  return <Dialog open onClose={close} closeDisabled={pending} title={deleting ? "Delete project?" : project.isDraft ? "Rename idea" : "Rename project"} className="!w-[420px]"
     fallbackFocus={() => document.querySelector<HTMLElement>(`[data-testid="project-menu-${CSS.escape(project.id)}"]`) ?? document.querySelector<HTMLElement>('[data-testid="sidebar-new-chat"]') ?? document.querySelector<HTMLElement>(".fd-project-switcher summary")}>
     <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
       {deleting ? <p className="break-words text-sm leading-6 text-muted">Remove <strong className="text-fg">{project.name}</strong> from your projects? Files on your computer will be kept. Chats will move to No project.</p> :
-        <label className="flex flex-col gap-2 text-sm">Project name
+        <label className="flex flex-col gap-2 text-sm">{project.isDraft ? "Idea name" : "Project name"}
           <Input autoFocus required maxLength={80} value={name} disabled={pending} onChange={(e) => setName(e.target.value)} data-testid="rename-project-name" />
         </label>}
       {error && <p role="alert" className="text-sm text-danger">{error.message}</p>}

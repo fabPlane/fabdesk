@@ -41,9 +41,9 @@ The walkthrough used the actual native fabPlane Dev app, starting at Home with n
 | HD-10: Home first Send rejected | Fixed and native retest passed | One click creates ownership and sends once, without mismatched context or silent failed-send navigation. |
 | HD-11: draft tabs/title overlap and wrong selected tab | Fixed and screenshot retested | Conversation selected without a sketch; title below toolbar. |
 | HD-12: tiny sketch enlarged to blurry canvas | Fixed and native retest passed | Small raster remains at natural size; large references still fit available space. |
-| HD-13: several Untitled drafts hard to distinguish | Improved; chat drafts show conversation title on recent cards | Image-only drafts still need a user-chosen name; consider thumbnails/rename affordance in a later polish pass. |
+| HD-13: several Untitled drafts hard to distinguish | Fixed and native retested | Actual saved sketch previews, icon fallback, visible Rename idea, searchable displayed conversation title, and restored latest saved conversation. |
 | HD-14 (P2, deferred): repeated native cosmetic schematic edit timeouts | Record and preserve validated native revision | Diagnose the existing editor timeout separately; do not replace the engineering engine in this Home-flow change. |
-| HD-15 (P3, deferred): pending question below fold on short Conversation view | Functional with scrolling | Consider collapsing the empty composer while answering, then retest that question and Submit are visible together. |
+| HD-15 (P3): pending question below fold on short Conversation view | Fixed and native retested | Live question receives focus; empty composer collapses with explicit alternate-message action. Compact native question, USB choice, Submit and real acknowledgment passed. Long/custom questions may still require normal scrolling. |
 
 ## Independent verification
 
@@ -83,3 +83,15 @@ The screenshots below are unaltered app captures. The earlier generated concepts
 At the user's request, the saved-work section now has a pale green surface, an accent divider and the explicit heading “Open a project or draft”, separate from the idea composer. Native Home → View all projects → Home navigation passed; affected UI typecheck and diff checks passed. This small visual follow-up does not rerun or replace the broader acceptance above.
 
 ![Home with separated saved-work section](home-20261103-section-break.png)
+
+## Remaining-finding follow-up · November 3
+
+HD-13 and HD-15 are now addressed locally. Existing idea drafts show their actual saved sketch/image previews with an icon fallback and a separate Rename idea control. Rename does not promote or move a draft. Native walkthrough renamed both the chat/sketch draft and image-only draft, searched the latter, reopened it and retained its reference. Reopening the chat draft restores its saved conversation; Conversation no longer opens an empty New chat while the saved conversation is hidden in a menu. Search now includes the same conversation title shown on the card.
+
+A real Codex planning-only request produced a clickable USB/Battery question. At the supported compact window, the question, all options and Submit were visible together. The empty composer used a compact “Answer the question above” footer; Write a message instead restored normal entry. Selecting USB and clicking Submit produced an actual USB acknowledgment. No new engineering work was requested. The initial model response took about 95 seconds; model latency is separate from question layout. Actual captures26–29 retained locally, three selected captures included here.
+
+Checks: root typecheck PASS; UI261/1101 PASS; client-core380/1801 PASS with loopback-server access. The sandboxed client suite initially could not bind its temporary server; the transport subset8/41 and full suite subsequently passed with that access. No remote publication attempted. Native timeout investigation remains in progress separately; no claim that passing UI tests fixes native edits.
+
+![Compact real planning question](home-20261103-question-compact.png)
+![Saved draft preview and rename](home-20261103-draft-previews.png)
+![Image draft search](home-20261103-image-draft-search.png)

@@ -579,16 +579,16 @@
 .fd-home-list-heading h2 { font-size:15px; font-weight:600; }
 .fd-home-list-heading > span { font-size:11px; color:var(--fd-muted); }
 .fd-home-projects { list-style:none; padding:0; margin:0; display:grid; gap:10px; }
-.fd-home-projects button { display:flex; align-items:center; gap:16px; width:100%; padding:20px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); text-align:left; box-shadow:var(--fd-soft-shadow); }
-.fd-home-projects button:hover { border-color:var(--fd-accent); background:var(--fd-panel-2); }
-.fd-home-projects button > svg { flex-shrink:0; color:var(--fd-accent); }
-.fd-home-projects button > span:first-of-type { min-width:0; flex:1; }
+.fd-home-projects .fd-home-workspace-open { display:flex; align-items:center; gap:16px; width:100%; padding:20px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); text-align:left; box-shadow:var(--fd-soft-shadow); }
+.fd-home-projects .fd-home-workspace-open:hover { border-color:var(--fd-accent); background:var(--fd-panel-2); }
+.fd-home-projects .fd-home-workspace-open > svg { flex-shrink:0; color:var(--fd-accent); }
+
 .fd-home-projects strong { display:block; font-size:14px; font-weight:600; }
 .fd-home-projects small { display:block; font-size:11px; color:var(--fd-muted); margin-top:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .fd-home-open { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--fd-accent); }
 .fd-home-task-badge { padding:4px 8px; border-radius:6px; color:var(--fd-accent); background:var(--fd-panel-2); font-size:11px; }
 .fd-project-home > footer { margin-top:28px; border-top:1px solid var(--fd-border); padding-top:18px; }
-@media(max-width:780px) { .fd-project-home { padding:30px 20px 60px; } .fd-project-home > header { flex-direction:column; } .fd-home-list-heading { align-items:flex-start; flex-direction:column; gap:6px; } .fd-home-projects button { flex-wrap:wrap; } .fd-home-open { margin-left:auto; } }
+@media(max-width:780px) { .fd-project-home { padding:30px 20px 60px; } .fd-project-home > header { flex-direction:column; } .fd-home-list-heading { align-items:flex-start; flex-direction:column; gap:6px; } .fd-home-projects .fd-home-workspace-open { flex-wrap:wrap; } .fd-home-open { margin-left:auto; } }
 .fd-imported-board-identity { min-width:0; flex:0 1 auto; }
 .fd-imported-board-identity > summary { max-width:240px; gap:8px; }
 .fd-imported-board-identity > summary > svg { flex:none; }
@@ -640,7 +640,7 @@
 .fd-home-resume-description { margin:6px 0 0; font-size:12px; color:var(--fd-muted); }
 @media(max-width:780px) { .fd-home-resume { padding:18px; } }
 .fd-idea-home .fd-home-projects { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
-.fd-idea-home .fd-home-projects button { padding:18px; min-height:90px; width:100%; gap:12px; }
+.fd-idea-home .fd-home-projects .fd-home-workspace-open { padding:18px; min-height:90px; width:100%; gap:12px; }
 .fd-idea-home .fd-home-open { display:none; }
 .fd-idea-home .fd-home-projects small { font-size:11px; }
 .fd-idea-badge { display:inline-flex; align-items:center; margin-left:10px; padding:3px 9px; border:1px solid color-mix(in srgb,var(--fd-accent) 30%,transparent); border-radius:7px; background:color-mix(in srgb,var(--fd-accent) 6%,var(--fd-panel)); color:var(--fd-accent); font-style:normal; font-size:11px; font-weight:500; }
@@ -660,3 +660,21 @@
 .fd-canvas-workspace:has(.fd-draft-build-strip) .fd-start-reference[data-conversation=true] { bottom:112px; }
 .fd-canvas-workspace:has(.fd-draft-build-strip):has(.fd-assistant-dock:not([hidden])) .fd-draft-build-strip { left:calc((100% - 450px)/2); }
 @media(max-width:900px) { .fd-canvas-workspace:has(.fd-draft-build-strip):has(.fd-assistant-dock:not([hidden])) .fd-draft-build-strip { left:16px; transform:none; max-width:calc(100% - 480px); flex-direction:column; gap:6px; align-items:flex-start; padding:9px; } }
+
+/* Saved work has one open target and a separate, consistently placed rename action. */
+.fd-home-workspace-card { position:relative; min-width:0; }
+.fd-home-projects .fd-home-workspace-open { height:100%; padding-right:50px; }
+.fd-home-projects .fd-home-workspace-preview { display:flex; flex:0 0 48px; align-items:center; justify-content:center; width:48px; height:48px; overflow:hidden; border-radius:8px; background:var(--fd-panel-2); color:var(--fd-accent); }
+.fd-home-workspace-preview img { width:100%; height:100%; object-fit:contain; border:0; border-radius:0; }
+.fd-home-projects .fd-home-workspace-copy { min-width:0; flex:1; }
+.fd-home-workspace-copy strong { display:flex; align-items:center; gap:6px; }
+.fd-home-workspace-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fd-home-workspace-copy .fd-idea-badge { flex-shrink:0; margin:0; }
+.fd-home-projects .fd-home-workspace-rename { position:absolute; right:10px; top:10px; width:30px; height:30px; min-height:0; padding:6px; border:0; box-shadow:none; background:transparent; border-radius:6px; color:var(--fd-muted); }
+.fd-home-projects .fd-home-workspace-rename:hover { color:var(--fd-accent); background:var(--fd-panel-2); }
+.fd-home-workspace-rename:focus-visible { outline:2px solid var(--fd-accent); outline-offset:2px; }
+.fd-idea-home .fd-home-workspace-open { flex-wrap:wrap; align-content:center; }
+.fd-idea-home .fd-home-workspace-copy { flex-basis:calc(100% - 60px); }
+.fd-idea-home .fd-home-open { margin-left:auto; }
+.fd-idea-home .fd-home-projects .fd-home-workspace-open { padding-right:50px; }
+@media(min-width:781px) and (max-width:1100px) { .fd-idea-home .fd-home-projects { grid-template-columns:repeat(2,minmax(0,1fr)); } }
