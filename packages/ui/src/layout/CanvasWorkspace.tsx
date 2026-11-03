@@ -115,6 +115,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       {isDraft && <span className="fd-idea-badge">Draft</span>}
       {referenceStart && <span className="fd-canvas-breadcrumb"><span>/</span><strong>Start with sketch</strong></span>}
       <div className="fd-canvas-header-actions">
+        {home && !showProjects && <Button size="sm" onClick={() => setCreating("create")}><Icon name="plus" width={16} height={16} />New project</Button>}
         {home && <Button size="sm" onClick={() => setShowProjects(!showProjects)}><Icon name={showProjects ? "chevronLeft" : "folder"} width={16} height={16} />{showProjects ? "Home" : "Projects"}</Button>}
         {projectId && <ProjectActivity key={`${client.baseUrl}/${projectId}`} projectId={projectId} />}
         <span className="fd-canvas-connection" title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`}><i data-connected={connected} />{connected ? local ? "Local workspace" : "Remote workspace" : "Reconnecting…"}</span>

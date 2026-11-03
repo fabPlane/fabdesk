@@ -38,7 +38,8 @@ export function FreshStartActions() {
     <div className="fd-fresh-actions" aria-label="Start your project">
       <Button onClick={() => ui().setSketchOpen(true, "draw")}><Icon name="compose" width={18} height={18} />Draw a sketch</Button>
       <Button onClick={() => ui().setSketchOpen(true, "upload")}><Icon name="image" width={18} height={18} />Upload an image</Button>
-      {!ui().activeProjectId && <Button onClick={() => setImporting(true)}><Icon name="folderOpen" width={18} height={18} />Import from GitHub</Button>}
+      {home && <Button disabled={creating} onClick={() => void createArt()}><Icon name="image" width={18} height={18} />{creating ? "Creating art board…" : "Start with artwork"}</Button>}
+      {home && <Button onClick={() => setImporting(true)}><Icon name="folderOpen" width={18} height={18} />Import from GitHub</Button>}
     </div>
     {!home && !project.data?.manifest.ideaDraft && <button className="fd-fresh-art-link" disabled={creating} onClick={() => void createArt()}>{creating ? "Creating art board…" : "Create an art board"}</button>}
     {error && <p role="alert" className="text-center text-sm text-danger">{error}</p>}
