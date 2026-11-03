@@ -6,6 +6,9 @@ import {
   enclosureOpeningClearance,
   enclosureFitsSizeLimit,
   enclosureInteriorLimits,
+  enclosureHardwareDimensions,
+  enclosureOpeningBounds,
+  chooseLidScrews,
   type MechanicalDesign,
 } from "@fabdesk/protocol";
 import { alignEnclosureMounts, linkEnclosureMounts, type MountBoard } from "./enclosure-mounts";
@@ -241,6 +244,47 @@ function caseHeight(d: MechanicalDesign, placed: Placed[], fixed: boolean, margi
       : 0;
   return Math.ceil(Math.max(boardHeight, screwHeight));
 }
+
+function placementOpenings(
+  d: MechanicalDesign,
+  placed: Placed[],
+  width: number,
+  depth: number,
+  margin: number,
+) {
+  const openings = d.openings.filter((o) => !o.boardPath || o.followBoard === false);
+  const unresolved: string[] = [];
+  for (const b of placed)
+    for (const p of b.ports) {
+      if (openings.some((o) => o.boardPath === b.board.placement.path && o.ref === p.ref)) continue;
+      if (!reachesWall(p, b, width, depth, margin, d)) {
+        unresolved.push(`${b.board.placement.path}: ${p.ref} cannot reach its facing wall`);
+        continue;
+      }
+      const padding = enclosureOpeningClearance(d);
+      const centerZ =
+        b.z + (p.bottom ? -p.aperture.centerZ : b.board.features.thicknessMm + p.aperture.centerZ);
+      openings.push({
+        name: `${b.board.placement.path
+          .split("/")
+          .at(-1)!
+          .replace(/\.kicad_pcb$/i, "")
+          .slice(0, 45)} · ${p.ref}`.slice(0, 80),
+        boardPath: b.board.placement.path,
+        ref: p.ref,
+        followBoard: true,
+        wall: p.edge,
+        offset: p.edge.endsWith("X")
+          ? p.aperture.y + b.y + d.space.y
+          : p.aperture.x + b.x + d.space.x,
+        z: centerZ - p.aperture.height / 2 - padding,
+        width: p.aperture.width + 2 * padding,
+        height: p.aperture.height + 2 * padding,
+        shape: p.aperture.shape,
+      });
+    }
+  return { openings, unresolved };
+}
 /** Bounded deterministic search, prioritizing reachable external ports, then case footprint.
  * Does not modify PCB files or claim a global optimum. */
 export function proposeEnclosureLayout(
@@ -318,7 +362,23 @@ export function proposeEnclosureLayout(
       .sort((a, b) => a.placement.path.localeCompare(b.placement.path))
       .map((b, i) => [b.placement.path, i]),
   );
-  const uniqueDims = [...new Map(dims.map((v) => [v.join(","), v])).values()];
+  const openingWidth = Math.max(
+    0,
+    ...all.flatMap((opts) =>
+      opts[0]!.ports.map((p) =>
+        Math.max(
+          p.aperture.width + 2 * enclosureOpeningClearance(d),
+          d.portAccess?.find(
+            (access) => access.boardPath === opts[0]!.board.placement.path && access.ref === p.ref,
+          )?.plug?.width ?? 0,
+        ),
+      ),
+    ),
+  );
+  const hardwareDims = fixed
+    ? dims
+    : dims.flatMap(([w, h]) => enclosureHardwareDimensions(d, w, h, openingWidth));
+  const uniqueDims = [...new Map(hardwareDims.map((v) => [v.join(","), v])).values()];
   for (const [w, h] of uniqueDims)
     for (let order = 0; order < orderCount; order++) {
       attempts++;
@@ -360,6 +420,10 @@ export function proposeEnclosureLayout(
             bh = o.rect.maxY - o.rect.minY;
           const xs = new Set([margin, w - margin - bw]),
             ys = new Set([margin, h - margin - bh]);
+          if (d.closure?.kind === "screws") {
+            xs.add((w - bw) / 2);
+            ys.add((h - bh) / 2);
+          }
           for (const b of placed) {
             xs.add(b.world.maxX + gap);
             xs.add(b.world.minX - bw - gap);
@@ -429,6 +493,30 @@ export function proposeEnclosureLayout(
                 y * w +
                 x;
               if (n < score) {
+                if (d.closure?.kind === "screws") {
+                  const prospective = [...placed, candidate];
+                  const caseDesign = {
+                    ...d,
+                    space: {
+                      ...d.space,
+                      width: w,
+                      depth: h,
+                      height: caseHeight(d, prospective, fixed, margin),
+                    },
+                    openings: placementOpenings(d, prospective, w, h, margin).openings,
+                  };
+                  const plugs = portEnvelopes(caseDesign, cableBoards).flatMap((p) =>
+                    p.plug ? [p.plug] : [],
+                  );
+                  if (
+                    chooseLidScrews(caseDesign, [
+                      ...enclosureOpeningBounds(caseDesign),
+                      ...plugs,
+                      ...d.obstacles,
+                    ]).conflicts > 0
+                  )
+                    continue;
+                }
                 score = n;
                 chosen = candidate;
               }
@@ -510,7 +598,7 @@ export function proposeEnclosureLayout(
     }
   if (!best)
     throw Error(
-      "No collision-free layout found with these locks, print-area limits, wall choices, plug dimensions and cable lengths. Increase the usable space or review a constraint.",
+      "No collision-free layout found for these boards, ports and lid screws. Try a larger case or print area, or review locked boards, port walls and cable lengths.",
     );
   const sx = d.space.x,
     sy = d.space.y;
@@ -521,37 +609,7 @@ export function proposeEnclosureLayout(
     z: b.z,
     rotation: b.rotation,
   }));
-  const openings = d.openings.filter((o) => !o.boardPath || o.followBoard === false);
-  const unresolved: string[] = [];
-  for (const b of best.placed)
-    for (const p of b.ports) {
-      if (openings.some((o) => o.boardPath === b.board.placement.path && o.ref === p.ref)) continue;
-      if (!reachesWall(p, b, best.w, best.h, margin, d)) {
-        unresolved.push(`${b.board.placement.path}: ${p.ref} cannot reach its facing wall`);
-        continue;
-      }
-      const vertical = p.edge === "minX" || p.edge === "maxX";
-      const z = p.bottom ? b.z - p.height : b.z + b.board.features.thicknessMm;
-      const padding = enclosureOpeningClearance(d);
-      const height = p.aperture.height;
-      const centerZ = p.bottom ? b.z - p.aperture.centerZ : z + p.aperture.centerZ;
-      openings.push({
-        name: `${b.board.placement.path
-          .split("/")
-          .at(-1)!
-          .replace(/\.kicad_pcb$/i, "")
-          .slice(0, 45)} · ${p.ref}`.slice(0, 80),
-        boardPath: b.board.placement.path,
-        ref: p.ref,
-        followBoard: true,
-        wall: p.edge,
-        offset: vertical ? p.aperture.y + b.y + sy : p.aperture.x + b.x + sx,
-        z: centerZ - height / 2 - padding,
-        width: p.aperture.width + 2 * padding,
-        height: height + 2 * padding,
-        shape: p.aperture.shape,
-      });
-    }
+  const { openings, unresolved } = placementOpenings(d, best.placed, best.w, best.h, margin);
   const next: MechanicalDesign = {
     ...d,
     boards,

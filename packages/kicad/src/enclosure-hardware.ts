@@ -1,8 +1,7 @@
 import {
   portEnvelopes,
-  lidScrewCandidates,
-  lidScrewFootprint,
-  fitsEnclosureSizeLimit,
+  chooseLidScrews,
+  enclosureOpeningBounds,
   type MechanicalDesign,
   type MechanicalFitIssue,
   type MechanicalBox,
@@ -99,20 +98,7 @@ export function enclosureHardware(d: MechanicalDesign, boards: Board[]) {
     height: m.height,
   }));
   const plugs = portEnvelopes(d, boards).flatMap((p) => (p.plug ? [p.plug] : []));
-  const openings: MechanicalBox[] = d.openings.map((o) => {
-    const vertical = o.wall.endsWith("X"),
-      negative = o.wall.startsWith("min");
-    const wall = vertical ? (negative ? s.x : s.x + s.width) : negative ? s.y : s.y + s.depth;
-    return {
-      name: o.name,
-      x: vertical ? wall - s.wall : o.offset - o.width / 2,
-      y: vertical ? o.offset - o.width / 2 : wall - s.wall,
-      z: o.z,
-      width: vertical ? s.wall * 2 : o.width,
-      depth: vertical ? o.width : s.wall * 2,
-      height: o.height,
-    };
-  });
+  const openings = enclosureOpeningBounds(d);
   if (d.mode !== "generated" && (d.holders?.length || d.closure?.kind === "screws"))
     add(
       "hardware-mode",
@@ -138,36 +124,9 @@ export function enclosureHardware(d: MechanicalDesign, boards: Board[]) {
       );
     // Search a bounded set of positions along both wall pairs. Keep four lugs
     // separated, preferring the corners unless a port needs that space.
-    const candidates = lidScrewCandidates(d);
-    const withinLimit = candidates.filter((points) =>
-      fitsEnclosureSizeLimit(d, lidScrewFootprint(d, points)),
-    );
     const access = [...plugs, ...openings, ...components, ...pcbs, ...d.obstacles];
-    const conflicts = (points: Array<[number, number]>) =>
-      points.reduce(
-        (n, [x, y]) =>
-          n +
-          access.filter((a) =>
-            overlaps(
-              {
-                name: "Lid screw",
-                x: x - r,
-                y: y - r,
-                z: 0,
-                width: r * 2,
-                depth: r * 2,
-                height: ceiling + s.lid,
-              },
-              a,
-            ),
-          ).length,
-        0,
-      );
-    const positions =
-      // Keep requested hardware visible even when the limit is impossible; the fit check blocks export.
-      (withinLimit.length ? withinLimit : candidates)
-        .map((points) => ({ points, score: conflicts(points) }))
-        .sort((a, b) => a.score - b.score)[0]?.points ?? [];
+    // Keep conflicting hardware visible when no valid arrangement exists; fit checks block export.
+    const positions = chooseLidScrews(d, access).points;
     if (!positions.length)
       add("closure-size", "The case is too small for four separate screw lugs.");
     for (const [i, [x, y]] of positions.entries()) {

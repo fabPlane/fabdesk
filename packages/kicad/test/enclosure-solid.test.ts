@@ -77,6 +77,86 @@ function fixture() {
   d.holders = [{ boardPath: d.boards[0]!.path, kind: "corner-clamps" }];
   return { d, boards: [{ placement: d.boards[0]!, features: features() }] };
 }
+
+test("a tiny PCB gets a joined screw case within the chosen print area", async () => {
+  const { d } = fixture();
+  d.holders = [];
+  d.layoutLimit = { width: 25.4, depth: 24 };
+  const f = extractBoardFeatures(
+    '(kicad_pcb(general(thickness 1.6))(gr_rect(start 0 0)(end 5 5)(layer "Edge.Cuts")))',
+  );
+  const p = proposeEnclosureLayout(d, [{ placement: d.boards[0]!, features: f }]);
+  const boards = [{ placement: p.design.boards[0]!, features: f }];
+  const report = checkMechanicalFit(p.design, boards);
+  expect(report.issues.filter((i) => i.severity === "error")).toEqual([]);
+  expect(report.outsideSize?.width).toBeCloseTo(25.4);
+  expect(report.outsideSize?.depth).toBe(24);
+  expect(
+    enclosureHardware(p.design, boards).solids.filter((s) => s.name.startsWith("LidScrew")),
+  ).toHaveLength(8);
+  const mesh = await joinedEnclosure(enclosureFromDesign(p.design, boards));
+  expect(mesh.validation.base.components).toBe(1);
+  expect(mesh.validation.lid.components).toBe(1);
+  d.layoutLimit = { width: 25, depth: 23 };
+  expect(() => proposeEnclosureLayout(d, [{ placement: d.boards[0]!, features: f }])).toThrow(
+    "No collision-free layout",
+  );
+  d.boards[0]!.locked = true;
+  d.space.width = 7;
+  d.space.depth = 7;
+  delete d.layoutLimit;
+  expect(() => proposeEnclosureLayout(d, [{ placement: d.boards[0]!, features: f }])).toThrow(
+    "No collision-free layout",
+  );
+});
+
+test("auto layout leaves a real USB opening clear between screw lugs", async () => {
+  const f = extractBoardFeatures(`(kicad_pcb(general(thickness 1.6))
+    (gr_rect(start 0 0)(end 10 8)(layer "Edge.Cuts"))
+    (footprint "Connector_USB:USB_C"(layer "F.Cu")(at 0 4)(property "Reference" "J1")(property "Height" "3")
+      (fp_rect(start 0 -2)(end 3 2)(layer "F.CrtYd"))(fp_rect(start 0 -2)(end 3 2)(layer "F.Fab"))))`);
+  const d = defaultEnclosureDesign(f);
+  d.confirmed = true;
+  d.closure = fixture().d.closure!;
+  d.layoutLimit = { width: 30.4, depth: 28 };
+  d.portAccess = [{ boardPath: d.boards[0]!.path, ref: "J1", access: "external", wall: "minX" }];
+  const input = [{ placement: d.boards[0]!, features: f }];
+  const p = proposeEnclosureLayout(d, input);
+  const boards = [{ placement: p.design.boards[0]!, features: f }];
+  const report = checkMechanicalFit(p.design, boards);
+  expect(report.issues.filter((i) => i.severity === "error")).toEqual([]);
+  expect(report.outsideSize!.width).toBeCloseTo(30.4, 5);
+  expect(report.outsideSize!.depth).toBeCloseTo(26.8, 5);
+  expect(p.design.openings).toHaveLength(1);
+  const o = p.design.openings[0]!;
+  expect(o.offset).toBeCloseTo(p.design.space.y + p.design.space.depth / 2, 5);
+  const mesh = await joinedEnclosure(enclosureFromDesign(p.design, boards));
+  const surface = new ShellSurface(readStlTriangles(new TextEncoder().encode(mesh.baseStl)));
+  expect(
+    surface.intersects({
+      name: "Port access",
+      x: p.design.space.x - 12,
+      y: o.offset - 0.05,
+      z: o.z + o.height / 2,
+      width: 14,
+      depth: 0.1,
+      height: 0.1,
+    }),
+  ).toBe(false);
+  expect(mesh.validation.base.components).toBe(1);
+  expect(mesh.validation.lid.components).toBe(1);
+  d.layoutLimit.depth = 24;
+  expect(() => proposeEnclosureLayout(d, input)).toThrow("No collision-free layout");
+  // The plug body can be wider than the opening. Reserve its real width too.
+  d.layoutLimit.depth = 32;
+  d.portAccess[0]!.plug = { width: 8, height: 5, depth: 10, reach: 3 };
+  const plugged = proposeEnclosureLayout(d, input);
+  expect(
+    checkMechanicalFit(plugged.design, [
+      { ...input[0]!, placement: plugged.design.boards[0]! },
+    ]).issues.filter((i) => i.severity === "error"),
+  ).toEqual([]);
+});
 test("boolean export produces one closed solid per part, with joined floor, walls and lip", async () => {
   const spec = generateEnclosure(features());
   const m = await joinedEnclosure(spec);

@@ -50,6 +50,30 @@ test("slim boards get a tight rectangular case instead of spare square space", (
   expect([p.design.space.width, p.design.space.depth].sort((a, b) => a - b)).toEqual([12, 66]);
 });
 
+test("tiny boards grow only the case span needed for four lid screws", () => {
+  const b = fixture("tiny.kicad_pcb");
+  b.features.connectors = [];
+  b.features.holes = [];
+  b.features.outline = { minX: 0, minY: 0, maxX: 5, maxY: 5, widthMm: 5, heightMm: 5 };
+  const d = defaultEnclosureDesign(null);
+  d.boards = [b.placement];
+  d.closure = {
+    kind: "screws",
+    screwDiameter: 3,
+    screwLength: 8,
+    pilotDiameter: 2.5,
+    clearanceDiameter: 3.4,
+    bossDiameter: 8,
+  };
+  const p = proposeEnclosureLayout(d, [b]);
+  expect([p.design.space.width, p.design.space.depth].sort((a, b) => a - b)).toEqual([7, 20]);
+  expect(p.design.closure).toEqual(d.closure);
+  d.layoutLimit = { width: 25.4, depth: 24 };
+  const limited = proposeEnclosureLayout(d, [b]);
+  expect(limited.design.space.width).toBeCloseTo(7, 8);
+  expect(limited.design.space.depth).toBe(20);
+});
+
 test("an exact print limit is tested even when its interior is not on the search grid", () => {
   const b = fixture("small.kicad_pcb");
   b.features.connectors = [];
@@ -282,7 +306,7 @@ test("print area bounds include case walls and failure never silently ignores th
   expect(p.design.space.depth + 2 * d.space.wall).toBeLessThanOrEqual(110);
   expect(p.search.orders).toBeGreaterThan(3);
   d.layoutLimit = { width: 20, depth: 20 };
-  expect(() => proposeEnclosureLayout(d, bs)).toThrow("print-area");
+  expect(() => proposeEnclosureLayout(d, bs)).toThrow(/print[- ]area/);
 });
 test("planned cables are checked against posts at their proposed positions", () => {
   const bs = [fixture("first.kicad_pcb"), fixture("second.kicad_pcb")],

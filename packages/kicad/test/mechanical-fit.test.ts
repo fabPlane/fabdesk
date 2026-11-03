@@ -37,6 +37,18 @@ const design = (): MechanicalDesign => ({
 });
 const boards = (d: MechanicalDesign) => d.boards.map((placement) => ({ placement, features }));
 describe("mechanical fit constraints", () => {
+  test("an isolated mounting post cannot pass through the lid", () => {
+    const d = design();
+    d.boards = [];
+    d.mounts = [{ x: 20, y: 10, diameter: 2, outer: 5, height: d.space.height + 0.1 }];
+    const result = checkMechanicalFit(d, []);
+    expect(result.issues.some((i) => i.code === "mount-bounds" && i.severity === "error")).toBe(
+      true,
+    );
+    expect(result.status).toBe("blocked");
+    d.mounts[0]!.height = d.space.height;
+    expect(checkMechanicalFit(d, []).issues.some((i) => i.code === "mount-bounds")).toBe(false);
+  });
   test("a body without a courtyard cannot pass through a wall or be cropped by auto sizing", () => {
     const f = extractBoardFeatures(`(kicad_pcb(general(thickness 1.6))
       (gr_rect(start 0 0)(end 40 20)(layer "Edge.Cuts"))

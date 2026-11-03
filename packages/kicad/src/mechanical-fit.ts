@@ -578,11 +578,17 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
       m.x - m.outer / 2 < s.x ||
       m.x + m.outer / 2 > s.x + s.width ||
       m.y - m.outer / 2 < s.y ||
-      m.y + m.outer / 2 > s.y + s.depth
+      m.y + m.outer / 2 > s.y + s.depth ||
+      m.height > s.height + eps
     )
-      add("mount-bounds", "A mounting point extends outside the interior.", "error", [
-        mountRegion(m),
-      ]);
+      add(
+        "mount-bounds",
+        m.height > s.height + eps
+          ? "A mounting post is taller than the case interior. Shorten the post or increase the case height."
+          : "A mounting point extends outside the interior.",
+        "error",
+        [mountRegion(m)],
+      );
   }
   add(
     "coverage",
