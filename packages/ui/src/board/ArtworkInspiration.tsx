@@ -21,7 +21,7 @@ const dots = Array.from({ length: 13 * 9 }, (_, index) => {
 
 export function ArtworkInspiration() {
   return <div className="fd-art-inspiration" aria-label="Artwork inspiration · illustrative examples">
-    <p>A little inspiration <span>Illustrative examples</span></p>
+    <p>Artwork inspiration · illustrative examples</p>
     <div className="fd-art-inspiration-examples">
       <Example label="Bold marks" color="#175c49">
         <circle cx="80" cy="54" r="16" stroke="none" />
