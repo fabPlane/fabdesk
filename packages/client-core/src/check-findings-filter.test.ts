@@ -29,3 +29,14 @@ test("filtering does not mutate the report or reorder saved findings", () => {
   expect(filterCheckFindings(frozen).map(row => row.index)).toEqual([0, 1, 2, 3]);
   expect(JSON.stringify(rows)).toBe(before);
 });
+
+test("warnings from the exporter cannot bury errors or retarget a sorted selection", () => {
+  const report = Object.freeze([rows[2]!, rows[0]!, rows[3]!, { ...rows[0]!, severity: "ERROR", description: "Missing connection", items: [{ description: "Pad R1", pos: { x: 10, y: 20 } }] }, rows[1]!]);
+  const display = filterCheckFindings(report);
+  expect(display.map(row => row.index)).toEqual([1, 3, 0, 4, 2]);
+  expect(report[display[1]!.index]).toBe(display[1]!.finding);
+  expect(display[1]!.finding.items[0]?.pos).toEqual({ x: 10, y: 20 });
+  expect(filterCheckFindings(report, { query: "R1" }).map(row => row.index)).toEqual([3]);
+  expect(filterCheckFindings(report, { severity: "warning" }).map(row => row.index)).toEqual([0, 4]);
+  expect(report[0]).toBe(rows[2]!);
+});
