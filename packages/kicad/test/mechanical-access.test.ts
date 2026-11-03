@@ -21,6 +21,37 @@ function fixture() {
   return { d, boards: d.boards.map((placement) => ({ placement, features })) };
 }
 
+test("a measured connector face retains plug checks even without courtyard bounds", () => {
+  const { d, boards } = fixture();
+  const b = boards[0]!;
+  const { bounds, ...connector } = b.features.connectors[0]!;
+  const summary = {
+    ...b,
+    features: {
+      ...b.features,
+      connectors: [
+        {
+          ...connector,
+          face: { bounds, heightMm: 3, centerZ: 1.5, source: "fabrication-outline" as const },
+        },
+      ],
+    },
+  };
+  d.portAccess = [
+    {
+      boardPath: b.placement.path,
+      ref: "J1",
+      access: "external",
+      plug: { width: 10, height: 5, depth: 15, reach: 3 },
+    },
+  ];
+  const p = portEnvelopes(d, [summary])[0]!;
+  expect(p.gap).toBeCloseTo(1);
+  expect(p.plug?.width).toBe(15);
+  expect(p.plug?.depth).toBe(10);
+  expect(p.reach).toBe(3);
+});
+
 test("connector protrusion reduces required plug reach instead of increasing it", () => {
   const { d, boards } = fixture();
   const b = boards[0]!;

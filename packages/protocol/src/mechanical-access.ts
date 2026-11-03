@@ -182,14 +182,17 @@ export function portEnvelopes(d: MechanicalDesign, boards: MechanicalAccessBoard
   for (const b of boards)
     for (const c of b.features.connectors ?? []) {
       const p = d.portAccess?.find((p) => p.boardPath === b.placement.path && p.ref === c.ref);
-      if ((p?.access ?? defaultConnectorAccess(c.footprint ?? "")) !== "external" || !c.bounds)
+      if (
+        (p?.access ?? defaultConnectorAccess(c.footprint ?? "")) !== "external" ||
+        !(c.face?.bounds || c.bounds)
+      )
         continue;
       const order = ["maxX", "maxY", "minX", "minY"] as const;
       const turns = (((b.placement.rotation % 360) + 360) % 360) / 90;
       if (!Number.isInteger(turns)) continue;
       const face = order[(order.indexOf(p?.face ?? c.edge) + turns) % 4]!;
       const a = (b.placement.rotation * Math.PI) / 180;
-      const body = c.face?.bounds ?? c.bounds;
+      const body = c.face?.bounds ?? c.bounds!;
       const points = [body.minX, body.maxX].flatMap((x) =>
         [body.minY, body.maxY].map((y) => ({
           x: b.placement.x + x * Math.cos(a) - y * Math.sin(a),

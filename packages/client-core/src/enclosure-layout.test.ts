@@ -88,6 +88,20 @@ test("an exact print limit is tested even when its interior is not on the search
   expect(p.design.boards[0]!.locked).toBeUndefined();
 });
 
+test("rearranging retains a usable fractional case size instead of rounding it up", () => {
+  const b = fixture("small.kicad_pcb");
+  b.features.connectors = [];
+  b.features.outline = { minX: 0, minY: 0, maxX: 10.3, maxY: 7.3, widthMm: 10.3, heightMm: 7.3 };
+  const d = defaultEnclosureDesign(null);
+  d.boards = [b.placement];
+  d.space.width = 12.4;
+  d.space.depth = 9.4;
+  const p = proposeEnclosureLayout(d, [b]);
+  expect(p.design.space.width).toBe(12.4);
+  expect(p.design.space.depth).toBe(9.4);
+  expect(proposeEnclosureLayout(p.design, [b]).design).toEqual(p.design);
+});
+
 test("padded courtyards cannot falsely count a recessed connector as reaching its wall", () => {
   const b = fixture("recessed.kicad_pcb");
   const c = b.features.connectors![0]!;

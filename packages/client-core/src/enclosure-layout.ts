@@ -82,6 +82,7 @@ type Option = {
   board: LayoutBoard;
   rotation: number;
   rect: Rect;
+  wallRect: Rect;
   ports: Port[];
   z: number;
   top: number;
@@ -126,7 +127,12 @@ export function connectorAccess(d: MechanicalDesign, path: string, c: Connector)
     defaultConnectorAccess(c.footprint ?? "")
   );
 }
-function options(d: MechanicalDesign, b: LayoutBoard): Option[] {
+function options(
+  d: MechanicalDesign,
+  b: LayoutBoard,
+  margin: number,
+  fixedCase: boolean,
+): Option[] {
   // A manually positioned cutout anchors its board until the user matches it to the port again.
   const fixed =
     !!b.placement.locked ||
@@ -134,6 +140,26 @@ function options(d: MechanicalDesign, b: LayoutBoard): Option[] {
   const f = b.features,
     parts = f.components ?? [],
     m = b.modelBounds;
+  const ports: Port[] = (f.connectors ?? [])
+    .filter(
+      (c) => connectorAccess(d, b.placement.path, c) === "external" && (c.face?.bounds || c.bounds),
+    )
+    .map((c) => {
+      const profile = d.portAccess?.find(
+        (p) => p.boardPath === b.placement.path && p.ref === c.ref,
+      );
+      return {
+        ref: c.ref,
+        bounds: c.face?.bounds ?? c.bounds!,
+        edge: profile?.face ?? c.edge,
+        aperture: connectorOpening(c, profile?.face ?? c.edge, profile?.aperture),
+        ...(profile?.wall ? { wall: profile.wall } : {}),
+        ...(profile?.plug?.reach !== undefined ? { reach: profile.plug.reach } : {}),
+        height: c.heightMm,
+        bottom: parts.some((p) => p.ref === c.ref && p.bottom),
+      };
+    });
+  const web = fixedCase ? 0 : d.space.wall + 2 * (d.fitAllowance ?? 0);
   const mounts = d.mounts.filter((p) => p.boardPath === b.placement.path);
   const holes = f.holes.filter((h) => mounts.some((p) => p.holeId === h.id));
   const rect = {
@@ -162,6 +188,25 @@ function options(d: MechanicalDesign, b: LayoutBoard): Option[] {
       ...holes.map((h) => h.y + mounts.find((p) => p.holeId === h.id)!.outer / 2),
     ),
   };
+  // A wide/off-center opening needs wall length, but is not an interior body
+  // that should push other boards away during collision-free packing.
+  const wallRect = { ...rect };
+  for (const p of ports) {
+    if (
+      d.openings.some(
+        (o) => o.boardPath === b.placement.path && o.ref === p.ref && o.followBoard === false,
+      )
+    )
+      continue;
+    const half = Math.max(0, p.aperture.width / 2 + enclosureOpeningClearance(d) + web - margin);
+    if (p.edge.endsWith("X")) {
+      wallRect.minY = Math.min(wallRect.minY, p.aperture.y - half);
+      wallRect.maxY = Math.max(wallRect.maxY, p.aperture.y + half);
+    } else {
+      wallRect.minX = Math.min(wallRect.minX, p.aperture.x - half);
+      wallRect.maxX = Math.max(wallRect.maxX, p.aperture.x + half);
+    }
+  }
   const z = fixed
     ? b.placement.z
     : d.space.floor +
@@ -171,6 +216,7 @@ function options(d: MechanicalDesign, b: LayoutBoard): Option[] {
           .filter((p) => p.bottom)
           .map((p) => p.heightMm + d.space.clearance + 2 * (d.fitAllowance ?? 0)),
         -(m?.minZ ?? 0) + d.space.clearance + 2 * (d.fitAllowance ?? 0),
+        ...ports.map((p) => web - portVerticalBounds(d, p, 0, f.thicknessMm).min),
       );
   const top =
     z +
@@ -188,29 +234,22 @@ function options(d: MechanicalDesign, b: LayoutBoard): Option[] {
     board: b,
     rotation,
     rect: rotateRect(rect, rotation),
+    wallRect: rotateRect(wallRect, rotation),
     z,
     top,
-    ports: (f.connectors ?? [])
-      .filter((c) => connectorAccess(d, b.placement.path, c) === "external" && c.bounds)
-      .map((c) => {
-        const profile = d.portAccess?.find(
-          (p) => p.boardPath === b.placement.path && p.ref === c.ref,
-        );
-        const face = connectorOpening(c, profile?.face ?? c.edge, profile?.aperture);
-        const center = turn(face.x, face.y, rotation);
-        return {
-          ref: c.ref,
-          // Port reach is measured from the connector body, not its padded courtyard.
-          bounds: rotateRect(c.face?.bounds ?? c.bounds!, rotation),
-          edge: rotatedEdge(profile?.face ?? c.edge, rotation),
-          aperture: { ...face, ...center },
-          ...(profile?.wall ? { wall: profile.wall } : {}),
-          ...(profile?.plug?.reach !== undefined ? { reach: profile.plug.reach } : {}),
-          height: c.heightMm,
-          bottom: parts.some((p) => p.ref === c.ref && p.bottom),
-        };
-      }),
+    ports: ports.map((p) => ({
+      ...p,
+      bounds: rotateRect(p.bounds, rotation),
+      edge: rotatedEdge(p.edge, rotation),
+      aperture: { ...p.aperture, ...turn(p.aperture.x, p.aperture.y, rotation) },
+    })),
   }));
+}
+
+function portVerticalBounds(d: MechanicalDesign, p: Port, z: number, thickness: number) {
+  const center = z + (p.bottom ? -p.aperture.centerZ : thickness + p.aperture.centerZ);
+  const half = p.aperture.height / 2 + enclosureOpeningClearance(d);
+  return { min: center - half, max: center + half };
 }
 function wallGap(p: Port, b: Placed, w: number, h: number) {
   const r = shift(p.bounds, b.x, b.y);
@@ -238,11 +277,23 @@ function reachesWall(
 function caseHeight(d: MechanicalDesign, placed: Placed[], fixed: boolean, margin: number) {
   if (fixed) return d.space.height;
   const boardHeight = Math.max(...placed.map((b) => b.top)) + margin - d.space.floor + 1;
+  const openingHeight = Math.max(
+    0,
+    ...placed.flatMap((b) =>
+      b.ports.map(
+        (p) =>
+          portVerticalBounds(d, p, b.z, b.board.features.thicknessMm).max +
+          d.space.wall +
+          2 * (d.fitAllowance ?? 0) -
+          d.space.floor,
+      ),
+    ),
+  );
   const screwHeight =
     d.closure?.kind === "screws"
       ? d.closure.screwLength - d.space.lid + 2 * (d.fitAllowance ?? 0) + 1
       : 0;
-  return Math.ceil(Math.max(boardHeight, screwHeight));
+  return Math.ceil(Math.max(boardHeight, screwHeight, openingHeight));
 }
 
 function placementOpenings(
@@ -262,8 +313,7 @@ function placementOpenings(
         continue;
       }
       const padding = enclosureOpeningClearance(d);
-      const centerZ =
-        b.z + (p.bottom ? -p.aperture.centerZ : b.board.features.thicknessMm + p.aperture.centerZ);
+      const vertical = portVerticalBounds(d, p, b.z, b.board.features.thicknessMm);
       openings.push({
         name: `${b.board.placement.path
           .split("/")
@@ -277,7 +327,7 @@ function placementOpenings(
         offset: p.edge.endsWith("X")
           ? p.aperture.y + b.y + d.space.y
           : p.aperture.x + b.x + d.space.x,
-        z: centerZ - p.aperture.height / 2 - padding,
+        z: vertical.min,
         width: p.aperture.width + 2 * padding,
         height: p.aperture.height + 2 * padding,
         shape: p.aperture.shape,
@@ -304,7 +354,6 @@ export function proposeEnclosureLayout(
     throw Error("A cable endpoint is missing. Choose both connector references before arranging.");
   if (d.mounts.some((m) => !m.boardPath || !m.holeId))
     throw Error("Link manual posts to PCB holes before arranging boards automatically.");
-  const all = inputs.map((b) => options(d, b));
   // Corner holders extend 1.75 mm beyond each PCB edge. Reserve their room
   // during placement, including between two retained boards.
   const allowance = 2 * (d.fitAllowance ?? 0);
@@ -319,21 +368,32 @@ export function proposeEnclosureLayout(
     d.boards.some((b) => b.locked) ||
     d.obstacles.length > 0 ||
     d.openings.some((o) => !o.boardPath || o.followBoard === false);
+  const all = inputs.map((b) => options(d, b, margin, fixed));
   const area = all.reduce((sum, opts) => {
-    const r = opts[0]!.rect;
+    const r = opts[0]!.wallRect;
     return sum + (r.maxX - r.minX + gap) * (r.maxY - r.minY + gap);
   }, 0);
   const longest =
-    Math.max(...all.map((opts) => Math.min(...opts.map((o) => o.rect.maxX - o.rect.minX)))) +
+    Math.max(
+      ...all.map((opts) => Math.min(...opts.map((o) => o.wallRect.maxX - o.wallRect.minX))),
+    ) +
     margin * 2;
   const dims: Array<[number, number]> = [];
   if (fixed) dims.push([d.space.width, d.space.depth]);
   else {
+    // Retest the current case too: changing search estimates must not discard an
+    // already usable size just because it falls between generated candidates.
+    dims.push([d.space.width, d.space.depth]);
     // Include tight rows/columns: small dongles should not inherit a near-square case.
     for (const rotation of [0, 90]) {
-      const sizes = all.map((opts) => opts.find((o) => o.rotation === rotation)!.rect);
+      const sizes = all.map((opts) => opts.find((o) => o.rotation === rotation)!.wallRect);
       const widths = sizes.map((r) => r.maxX - r.minX);
       const heights = sizes.map((r) => r.maxY - r.minY);
+      // Other boards may fit beside the space reserved only for a wide port.
+      dims.push([
+        Math.ceil(Math.max(...widths) + 2 * margin),
+        Math.ceil(Math.max(...heights) + 2 * margin),
+      ]);
       dims.push([
         Math.ceil(widths.reduce((n, v) => n + v, 0) + gap * (sizes.length - 1) + 2 * margin),
         Math.ceil(Math.max(...heights) + 2 * margin),
@@ -418,8 +478,12 @@ export function proposeEnclosureLayout(
           if (o.ports.some((p) => p.wall && p.wall !== p.edge)) continue;
           const bw = o.rect.maxX - o.rect.minX,
             bh = o.rect.maxY - o.rect.minY;
-          const xs = new Set([margin, w - margin - bw]),
-            ys = new Set([margin, h - margin - bh]);
+          const left = o.rect.minX - o.wallRect.minX,
+            right = o.wallRect.maxX - o.rect.maxX;
+          const front = o.rect.minY - o.wallRect.minY,
+            back = o.wallRect.maxY - o.rect.maxY;
+          const xs = new Set([margin + left, w - margin - bw - right]),
+            ys = new Set([margin + front, h - margin - bh - back]);
           if (d.closure?.kind === "screws") {
             xs.add((w - bw) / 2);
             ys.add((h - bh) / 2);
@@ -446,10 +510,10 @@ export function proposeEnclosureLayout(
             for (const y of ys) {
               const world = { minX: x, minY: y, maxX: x + bw, maxY: y + bh };
               if (
-                x < margin - 1e-5 ||
-                y < margin - 1e-5 ||
-                world.maxX > w - margin + 1e-5 ||
-                world.maxY > h - margin + 1e-5 ||
+                x - left < margin - 1e-5 ||
+                y - front < margin - 1e-5 ||
+                world.maxX + right > w - margin + 1e-5 ||
+                world.maxY + back > h - margin + 1e-5 ||
                 placed.some((b) => overlap(world, b.world, gap))
               )
                 continue;
@@ -470,6 +534,15 @@ export function proposeEnclosureLayout(
                 continue;
               if (fixed && o.top + margin > d.space.floor + d.space.height) continue;
               const candidate = { ...o, x: x - o.rect.minX, y: y - o.rect.minY, world };
+              if (
+                fixed &&
+                placementOpenings(d, [...placed, candidate], w, h, margin).openings.some(
+                  (opening) =>
+                    opening.z < d.space.floor - 1e-5 ||
+                    opening.z + opening.height > d.space.floor + d.space.height + 1e-5,
+                )
+              )
+                continue;
               const cableBoards = [...placed, candidate].map((p) => ({
                 ...p.board,
                 placement: {
