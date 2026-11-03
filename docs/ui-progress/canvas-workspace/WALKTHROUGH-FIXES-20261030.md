@@ -1,3 +1,9 @@
+# November 4 — beginner idea-to-order test
+
+[Current report, nine findings, native evidence and resume checklist](BEGINNER-ORDER-20261104.md). Code d3782e6 adds progress/recovery, missing-model clarity, batch BOM planning, errors-first checks, usable video, manufacturing blockers and coherent order review. Partial test board is not order-ready: required Extended connector exception pending,16unroutedconnections,2missingmodelassets. Root types/core+desktop builds pass; full default workspace2417pass/36skip/8fail and scripts93pass/1timeout. No test budgets weakened. Eight local milestones plus prior agent-switch fix are prepared for one final authorized push. This supersedes older local-publication restrictions for this run; no merge/deploy. Other roadmap and teammate exclusions remain.
+
+---
+
 # November 3 — remaining Home/draft findings addressed locally
 
 Local UI milestone ced5197 plus native setup/recency follow-up: HD-13 recognizable saved previews/rename/search/conversation restore; HD-15 compact live question with alternate message entry; HD-14 unnecessary native library setup removed for existing-symbol/cosmetic edits, cached unchanged setup and bounded90s first setup; HD-16 stable-core recency. Actual native question/answer, two note saves, temporary symbol add/remove with exact five-file restoration, refreshed drawing and core-port-change recency passed. Local evidence outputs/home-draft-flow-20261103/26–33; detailed report HOME-DRAFT-20261103.md.

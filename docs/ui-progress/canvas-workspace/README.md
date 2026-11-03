@@ -1,3 +1,5 @@
+> Latest beginner acceptance: [idea-to-order human test and fixes](BEGINNER-ORDER-20261104.md). Previews and draft exports work; final routing/order readiness remains blocked on an explicit sourcing exception. Full default suite is not green.
+
 > Latest local follow-up: [agent switching and compact recovery](AGENT-SWITCH-20261103.md), with native Codex replies, preserved failed prompts and exact model/account limits. Earlier [whole-app workflow acceptance](WHOLE-APP-20261030.md) and teammate integration exclusions remain separate.
 
 # Canvas workspace implementation milestone
