@@ -1,6 +1,7 @@
 import type { SVGProps } from "react";
 
 export type IconName =
+  | "info"
   | "filter"
   | "fileLayers"
   | "download"
@@ -55,6 +56,7 @@ export type IconName =
 /** One stroke language for the desktop chrome. Icons inherit the control's color. */
 export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
+    info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v6m0-10h.01" /></>,
     filter: <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="2" fill="var(--fd-panel)" /><circle cx="15" cy="17" r="2" fill="var(--fd-panel)" /></>,
     fileLayers: <><path d="M14 3H5v18h14V8l-5-5Zm0 0v5h5" /><path d="m8 13 4-2 4 2-4 2-4-2Zm0 4 4 2 4-2" /></>,
     download: <><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5" /></>,

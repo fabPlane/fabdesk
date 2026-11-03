@@ -1,3 +1,4 @@
+import { FeedbackNotice } from "../components/FeedbackNotice";
 import { overviewBoardImages, useOutputRevisions, outputRevisionLabel, outputInputsNeedReview } from "@fabdesk/client-core";
 import { useState } from "react";
 import { OutputPreviewDialog } from "./OutputPreviewDialog";
@@ -87,8 +88,8 @@ function SingleBoardUpdates({ scopeReady }: { scopeReady: boolean }) {
     {scopeReady && image && previewPath === image.path && <OutputPreviewDialog key={`${projectId}:${image.path}`} projectId={projectId} output={{ path: image.path, kind: "images" }} status={imageStatus} warning={imageWarning} onClose={() => setPreviewPath(null)} />}
     <Button size="sm" variant="ghost" className="fd-review-browse-outputs" onClick={() => open("renders")}>Browse all saved outputs</Button>
     {scopeReady && videoPath && previewPath === videoPath && <OutputPreviewDialog key={`${projectId}:${videoPath}`} projectId={projectId} output={{ path: videoPath, kind: "videos" }} status={video.isError ? "Video inputs could not be checked" : videoInputLabel(video.data)} warning={videoInputsNeedReview(video.data)} onClose={() => setPreviewPath(null)} />}
-    {busy && <p role="status" className="fd-update-feedback"><Spinner />Updating the selected output…</p>}
-    {update.state.error && <p role="alert" className="fd-update-feedback">{update.state.error}</p>}
+    {busy && <FeedbackNotice className="fd-task-feedback" tone="progress" title="Updating output">The selected output is being regenerated. Its source status is checked separately.</FeedbackNotice>}
+    {update.state.error && <FeedbackNotice className="fd-task-feedback" tone="error" title="Output update did not finish">{update.state.error}</FeedbackNotice>}
 
   </div>;
 }

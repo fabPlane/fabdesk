@@ -155,7 +155,7 @@ export function renderParts(m: Message, streaming: boolean): ReactNode[] {
 export function MessageActions({ message, latestReply = false }: { message: Message; latestReply?: boolean }) {
   const [feedback, setFeedback] = useState<"" | "copied" | "error">("");
   useEffect(() => {
-    if (!feedback) return;
+    if (feedback !== "copied") return;
     const timer = setTimeout(() => setFeedback(""), 2500);
     return () => clearTimeout(timer);
   }, [feedback]);

@@ -1,3 +1,4 @@
+import { FeedbackNotice } from "../components/FeedbackNotice";
 import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { CART_ITEM_STATUSES, type BomSyncOptions, type CartItem, type CartItemPatch, type CartItemStatus, type Destination } from "@fabdesk/protocol";
@@ -267,9 +268,9 @@ function ShoppingListContent() {
         {(["all", ...CART_ITEM_STATUSES] as const).map(s => <button key={s} type="button" disabled={saving} aria-pressed={filter === s} onClick={() => setFilter(s)}>{s === "all" ? "All items" : STATUS_LABEL[s]}<span>{s === "all" ? cart.items.length : cart.items.filter(i => i.status === s).length}</span></button>)}
       </div>
     </header>
-    {error && <div role="alert" className="shopping-banner shopping-error"><span>{cloudErrorMessage(error)}</span>{list.isError && <Button size="sm" onClick={() => void list.refetch()} disabled={list.isFetching}>Try again</Button>}</div>}
-    <div role="status" aria-atomic="true">{notice && !error && <div className="shopping-banner"><Icon name="check" width={15} height={15} /><span>{notice}</span><IconButton size="xs" title="Dismiss update" onClick={() => setNotice(null)}><Icon name="close" width={13} height={13} /></IconButton></div>}</div>
-    {destinations.isError && <div role="alert" className="shopping-banner"><span>Couldn’t refresh suppliers. Your current supplier and standard suppliers remain available.</span><Button size="sm" onClick={() => void destinations.refetch()} disabled={destinations.isFetching}>Try again</Button></div>}
+    {error && <FeedbackNotice className="fd-shopping-feedback" tone="error" title="Shopping list needs attention" actions={list.isError ? <Button size="sm" onClick={() => void list.refetch()} disabled={list.isFetching}>Try again</Button> : undefined}>{cloudErrorMessage(error)}</FeedbackNotice>}
+    {notice && !error && <FeedbackNotice className="fd-shopping-feedback" tone="success" title="Shopping list updated" onDismiss={() => setNotice(null)}>{notice}</FeedbackNotice>}
+    {destinations.isError && <FeedbackNotice className="fd-shopping-feedback" tone="warning" title="Couldn’t refresh suppliers" actions={<Button size="sm" onClick={() => void destinations.refetch()} disabled={destinations.isFetching}>Try again</Button>}>Your current supplier and standard suppliers remain available.</FeedbackNotice>}
     <div className="shopping-scroll">
       <div id="shopping-add-panel" className="shopping-disclosure" hidden={!adding} inert={!adding}>{addMounted && <ShoppingAddItem key={projectId} options={options} fab={cart.fabDestinationId} onClose={closeAdd} onAdd={async ({ label, quantity, destinationId }) => {
         await m.add.mutateAsync([{ kind: "part", quantity, destinationId, ...(looksLikeMpn(label) ? { mpn: label } : { description: label }) }]);

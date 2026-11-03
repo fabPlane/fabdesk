@@ -417,8 +417,6 @@
 .fd-finding-fallback { position:relative; min-height:210px; }
 .fd-member-checks-detail p button { margin-left:8px; }
 
-.fd-live-preview-notice { position:absolute; z-index:25; left:50%; bottom:96px; transform:translateX(-50%); display:flex; align-items:center; gap:8px; max-width:calc(100% - 32px); padding:7px 10px 7px 14px; border:1px solid var(--fd-border); border-radius:14px; background:var(--fd-panel); box-shadow:0 6px 22px #102a2020; font-size:12px; }
-.fd-live-preview-notice > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 .fd-assembly-pcb-surface, .fd-assembly-model { flex:1; min-height:0; display:flex; flex-direction:column; }
 .fd-assembly-pcb-surface[hidden] { display:none; }
@@ -611,7 +609,7 @@
 .fd-export-config { min-height:0; overflow:auto; padding:20px; background:var(--fd-panel); border:1px solid var(--fd-border); border-radius:18px; box-shadow:0 4px 22px #102a2008; }
 .fd-export-config .fd-export-controls > div:last-child { position:sticky; bottom:-20px; z-index:2; padding:12px 0 20px; background:var(--fd-panel); }
 .fd-export-source-note { line-height:1.6; }
-.fd-export-feedback { flex:none; font-size:12px; padding:10px 14px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); }
+.fd-export-feedback { flex:none; }
 @media(max-width:800px) {
   .fd-export-workspace { overflow:auto; padding:12px 14px 88px; }
   .fd-export-flow { display:flex; flex-direction:column; flex:none; }

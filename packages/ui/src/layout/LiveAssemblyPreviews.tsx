@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import type { ProjectBoardSources } from "@fabdesk/protocol";
 import { LiveAssemblyPreviewQueue, restoreAssemblySelection, useAssemblyPreviewRevisions, useRunTool, type LiveAssemblyPreview } from "@fabdesk/client-core";
 import { Button } from "../components/ui";
-import { Icon } from "../components/Icon";
+import { FeedbackNotice } from "../components/FeedbackNotice";
 import { useUiStore } from "../stores/ui";
 
 /** Only cheap, tracked PCB previews follow live saved changes; checks and heavy outputs remain independent. */
 export function LiveAssemblyPreviews({ projectId, data, enabled }: { projectId: string; data: ProjectBoardSources; enabled: boolean }) {
   const queue = useRef(new LiveAssemblyPreviewQueue()), running = useRef(false), mounted = useRef(true);
+  const region = useRef<HTMLDivElement>(null);
   const previews = useAssemblyPreviewRevisions(projectId, data.sources), tool = useRunTool();
   const [notice, setNotice] = useState<{ target: LiveAssemblyPreview; status: "running" | "done" | "failed"; error?: string } | null>(null);
   const [revision, setRevision] = useState(0);
@@ -39,8 +40,12 @@ export function LiveAssemblyPreviews({ projectId, data, enabled }: { projectId: 
   const verified = current && currentPreview;
   const superseded = notice.status !== "running" && !current && currentPreview;
   const canView = notice.status === "done" && verified || superseded;
-  return <div className="fd-live-preview-notice" role="status"><Icon name={notice.status === "failed" && !superseded ? "warning" : "pcb"} width={16} height={16} /><span>{superseded ? `${notice.target.name} preview matches PCB · older update skipped` : notice.status === "running" ? `Updating ${notice.target.name} preview…` : notice.status === "failed" ? current ? `${notice.target.name} preview needs review` : `${notice.target.name} earlier preview update failed · source changed` : verified ? `${notice.target.name} preview updated` : current ? `${notice.target.name} preview rendered · checking source` : `${notice.target.name} preview update finished · source changed`}</span>
-    {notice.status !== "running" && <Button size="sm" variant="ghost" disabled={!enabled} title={superseded ? "The current preview matches the saved PCB. An older preview update was skipped." : notice.error} onClick={() => { const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId) return; if (canView && selection) { const preferred = restoreAssemblySelection(data, ui.assemblyBoardByProject[projectId]); ui.setAssemblyBoard(preferred?.sourceId === selection.sourceId ? preferred : selection); ui.setBoardTab("pcb"); } else ui.setBoardTab("updates"); }}>{canView ? "View" : "Review"}</Button>}
-    <button className="fd-assembly-dismiss" aria-label="Dismiss preview activity" onClick={event => { const workspace = event.currentTarget.closest(".fd-canvas-workspace"); const target = workspace?.querySelector<HTMLElement>(".fd-svg-host[tabindex]") ?? workspace?.querySelector<HTMLElement>(".fd-assembly-viewport") ?? workspace?.querySelector<HTMLElement>(".fd-canvas-destinations summary"); setNotice(null); requestAnimationFrame(() => target?.focus({ preventScroll: true })); }}><Icon name="close" width={14} height={14} /></button>
-  </div>;
+  const label = superseded ? `${notice.target.name} preview matches PCB · older update skipped` : notice.status === "running" ? `Updating ${notice.target.name} preview…` : notice.status === "failed" ? current ? `${notice.target.name} preview needs review` : `${notice.target.name} earlier preview update failed · source changed` : verified ? `${notice.target.name} preview updated` : current ? `${notice.target.name} preview rendered · checking source` : `${notice.target.name} preview update finished · source changed`;
+  const action = notice.status !== "running" ? <Button size="sm" variant="ghost" disabled={!enabled} title={superseded ? "The current preview matches the saved PCB. An older preview update was skipped." : notice.error} onClick={() => { const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId) return; if (canView && selection) { const preferred = restoreAssemblySelection(data, ui.assemblyBoardByProject[projectId]); ui.setAssemblyBoard(preferred?.sourceId === selection.sourceId ? preferred : selection); ui.setBoardTab("pcb"); } else ui.setBoardTab("updates"); }}>{canView ? "View" : "Review"}</Button> : undefined;
+  const dismiss = () => {
+    const workspace = region.current?.closest(".fd-canvas-workspace");
+    const target = workspace?.querySelector<HTMLElement>(".fd-svg-host[tabindex]") ?? workspace?.querySelector<HTMLElement>(".fd-assembly-viewport") ?? workspace?.querySelector<HTMLElement>(".fd-canvas-destinations summary");
+    setNotice(null); requestAnimationFrame(() => target?.focus({ preventScroll: true }));
+  };
+  return <div ref={region} className="fd-background-feedback"><FeedbackNotice tone={notice.status === "running" ? "progress" : notice.status === "failed" && !superseded ? "warning" : verified ? "success" : "info"} title={label} actions={action} onDismiss={dismiss}>{notice.error && !superseded ? notice.error : notice.status === "running" ? "Only the preview is being updated. Design checks remain separate." : undefined}</FeedbackNotice></div>;
 }

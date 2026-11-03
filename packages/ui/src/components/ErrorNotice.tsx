@@ -3,6 +3,7 @@ import { errorHelp, errorPayload, type ErrorContext } from "@fabdesk/client-core
 import { createContext, useContext } from "react";
 import { useUiStore } from "../stores/ui";
 import { Button } from "./ui";
+import { Icon } from "./Icon";
 
 export const ErrorAgentContext = createContext<string | undefined>(undefined);
 
@@ -18,8 +19,8 @@ export function ErrorNotice({ error, agentId }: { error: unknown; agentId?: stri
   const setAgentPickerOpen = useUiStore((s) => s.setAgentPickerOpen);
   const action = help.action;
   const warning = help.severity === "warning";
-  return <div role={warning ? "status" : "alert"} className={`my-2 rounded-lg border px-3 py-2 text-sm ${warning ? "border-warning/25 bg-warning/5" : "border-danger/25 bg-danger/5"}`} data-testid="error-notice" data-severity={warning ? "warning" : "error"}>
-    <div className={`font-semibold ${warning ? "text-warning" : "text-danger"}`}>{help.title}</div>
+  return <div role={warning ? "status" : "alert"} className="fd-feedback my-2 text-sm" data-tone={warning ? "warning" : "error"} data-testid="error-notice" data-severity={warning ? "warning" : "error"}>
+    <div className="flex items-center gap-2.5 font-semibold"><span className="fd-feedback-icon" aria-hidden="true"><Icon name="warning" width={20} height={20} /></span>{help.title}</div>
     <p className="mt-1 text-fg">{help.message}</p>
     {help.command && <p className="mt-2 text-xs">Open a terminal and run <code className="select-all rounded bg-panel-2 px-1 py-0.5">{help.command}</code>, then finish signing in in your browser.</p>}
     {action && <Button size="sm" className="mt-2" onClick={() => {

@@ -1,3 +1,4 @@
+import { FeedbackNotice } from "../components/FeedbackNotice";
 import { useOutputTrashReview } from "@fabdesk/client-core";
 import { OutputTrashDialog } from "./OutputTrashDialog";
 import { useOutputRevisions, outputRevisionLabel, outputInputsNeedReview } from "@fabdesk/client-core";
@@ -157,10 +158,10 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
       <div className="fd-output-filters" role="group" aria-label="Filter saved outputs">{FILTERS.map(item => <Button ref={item.id === "manufacturing" ? manufacturingFilter : undefined} size="sm" key={item.id} aria-pressed={filter === item.id} onClick={() => { setFilter(item.id); setSelectedPaths([]); }}>{item.label}</Button>)}</div>
 
     </div>
-    {reviewOnly && <p role="status" className="fd-output-feedback"><Icon name="warning" width={16} height={16} /><span>Showing outputs with recorded source or input concerns. Each card names the source and reason; open it to inspect the saved file.</span><Button size="sm" variant="ghost" onClick={() => setReviewOnly(false)}>Show all outputs</Button></p>}
-    {deletionReview.isError && <p className="fd-output-feedback"><Button size="sm" variant="ghost" onClick={() => void deletionReview.refetch()}>Retry output removal check</Button><span>Preview and download remain available.</span></p>}
-    {generate.state.status === "running" && <p role="status" className="fd-output-feedback"><Spinner />Creating output…</p>}
-    {(error || generate.state.error) && <p role="alert" className="fd-output-feedback">{error || generate.state.error}</p>}
+    {reviewOnly && <FeedbackNotice className="fd-task-feedback" tone="warning" title="Outputs needing review" actions={<Button size="sm" variant="ghost" onClick={() => setReviewOnly(false)}>Show all outputs</Button>}>Showing outputs with recorded source or input concerns. Each card names the source and reason; open it to inspect the saved file.</FeedbackNotice>}
+    {deletionReview.isError && <FeedbackNotice className="fd-task-feedback" tone="warning" title="Output removal check unavailable" actions={<Button size="sm" variant="ghost" onClick={() => void deletionReview.refetch()}>Retry removal check</Button>}>Preview and download remain available.</FeedbackNotice>}
+    {generate.state.status === "running" && <FeedbackNotice className="fd-task-feedback" tone="progress" title="Creating output">The result will appear in this library when the task finishes.</FeedbackNotice>}
+    {(error || generate.state.error) && <FeedbackNotice className="fd-task-feedback" tone="error" title="Output action did not finish">{error || generate.state.error}</FeedbackNotice>}
     {shown.length > 0 && <label className="fd-output-select-all"><input ref={selectAll} type="checkbox" checked={allSelected} aria-label="Select all matching outputs" onChange={() => setSelectedPaths(allSelected ? [] : shown.map(file => file.path))} />Select all {shown.length} {shown.length === 1 ? "file" : "files"}</label>}
     {selectedFiles.length > 0 && <div className="fd-output-selected" data-testid="output-actions">
       <div className="fd-output-action-bar"><span className="fd-output-selection-count">{selectedFiles.length} {selectedFiles.length === 1 ? "file" : "files"} selected</span>{active ? <strong title={active.path}>{basename(active.path)}{active.sourceName && <small> · {active.sourceName}</small>}</strong> : <strong>Actions for the selected files</strong>}

@@ -194,7 +194,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
       </section>
       <section className="fd-export-config" aria-label="Export options"><FileExportControls {...exportControls} /><div className="fd-export-parts-link"><span>Need a component list?</span><Button size="sm" variant="ghost" onClick={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().setBoardTab("bom"); }}>Open Parts & BOM</Button></div>{sources.isError && <Button size="sm" onClick={() => void sources.refetch()}>Retry source check</Button>}</section>
     </div>
-    {lastScope === scopeKey && (state.status !== "idle" || packagePhase || packageError) && <div className="fd-export-feedback" role={state.error || packageError ? "alert" : "status"}>
+    {lastScope === scopeKey && (state.status !== "idle" || packagePhase || packageError) && <div className="fd-feedback fd-export-feedback" data-tone={state.error || packageError ? "error" : busy ? "progress" : "success"} role={state.error || packageError ? "alert" : "status"}>
       {packageError ? <p>{packageError}</p> : state.error ? <ErrorNotice error={state.error} /> : busy ? <p>{packagePhase ?? `Exporting ${EXPORTS[lastExport].title.toLowerCase()}…`}</p> : packageResult ? <p>Gerber package saved · {packageResult.files.length} files, including Gerber layers and drills. Review design checks before fabrication.</p> : <p>{EXPORTS[lastExport].title} saved under {prefix}exports/.</p>}
       {state.note && <p>{state.note}</p>}
       {!busy && !packageError && state.status === "done" && !packageResult && <ExportCompletionDetails kind={lastExport} result={state.result} />}
