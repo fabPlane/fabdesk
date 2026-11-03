@@ -9,10 +9,19 @@ PR #398 adds a guarded prototype enclosure workflow. Software checks and slicing
 | Few-click setup and clear controls | Boards → Case → Preview gates; Create case performs arrangement, sizing and preview; dimensions and move/rotate controls remain accessible. Navigation tests and live warning-link checks pass. | Advanced hardware and measured plug settings remain optional manual inputs. |
 | Automatic sizing, spacing and fit | 256 affected tests pass, including ports, board screws, holders, fixed obstacles, printer limits and exported geometry. Real VAIO previews complete with no detected blockers. | Search and geometric checks are bounded; absent physical dimensions cannot be inferred accurately. |
 | Reliable native board geometry | Isolated native export directories pass 21 real-board exports with unchanged measured geometry. Two original-project previews check 199 closed bodies without unavailable checks. | Missing component files, including the exact J1 Micro-USB model, remain explicit review items. |
-| Printable, coordinated outputs | Joined-solid tests plus recorded independent STL slicing, STEP import and ZIP-hash checks. | Actual printer/material strength, retention and assembled cable fit have not been physically verified. |
-| Branch and PR delivery | Feature branch is pushed to PR #398 with two main screenshots and short feature descriptions. | PR remains draft. The latest completed verification job fails authenticating checkout of private `fabPlane/fab_pcb`, before tests run. |
+| Printable, coordinated outputs | Latest seven-board export: 29 archive hashes verified, matching design/report, closed case/lid meshes, independent STEP import and two warning-free slicer runs. | Actual printer/material strength, retention and assembled cable fit have not been physically verified. |
+| Branch and PR delivery | Feature branch targets PR #398 with a concise before/after comparison and three selected screenshots. | PR remains draft. CI, mobile and board-regression verification fail authenticating checkout of private `fabPlane/fab_pcb`, before feature tests run. |
 
-Evidence below is chronological. Later entries supersede earlier measurements and resolved limitations; earlier test counts describe their respective snapshots, not the current full suite.
+The latest live summary comes first; earlier evidence follows chronologically. Newer entries supersede older measurements and resolved limitations; earlier test counts describe their respective snapshots, not the current full suite.
+
+## Latest live seven-board check — 3 November 2026
+
+- Tested the actual desktop app in a separate QA project containing seven real VAIO-repository PCB files. All seven detailed board models remained visible. Native mouse orbit, wheel zoom, board selection, movement and rotation worked; locking disabled movement. Undo restored the exact draft after rotation, movement and locking.
+- Compact arrangement generated a **164.4 × 210 × 19 mm** case with five port openings. The completed preview reports **0 blockers and 41 review findings**. Deliberately moving the microSD board outside the case produced a red highlight and an `outside-space` blocker; editing invalidated the old preview.
+- Saved a fresh coordinated export through the app. All **29 manifest hashes** verified; all seven source PCBs stayed unchanged. Exported design and fit report exactly match the live preview. Independent STL checks found a closed, single-component case, lid and print-oriented lid with positive volumes. OpenCascade imported both STEP parts. Fresh Bambu Studio case/lid slices completed without warnings and produced nonempty G-code/3MF.
+- The collection includes test/debug and alternative board revisions, not a verified final electrical assembly. Missing component models, plug dimensions, board retention, screwdriver access and physical fit remain review items. No physical print was performed.
+
+Screenshots: [finished seven-board enclosure](screenshots/mechanical-workspace/74-live-seven-board-case.png), [deliberate outside-space warning](screenshots/mechanical-workspace/75-live-board-fit-warning.png). The PR's before image is an earlier PR iteration with a demo board, not current `main` or the same seven-board scene.
 
 ## Multi-board follow-up — 2 November 2026
 
