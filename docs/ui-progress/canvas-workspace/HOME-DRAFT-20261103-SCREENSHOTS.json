@@ -1,0 +1,31 @@
+{
+  "kind": "Unaltered native fabPlane Dev captures; not generated concepts",
+  "sourceCode": "fd5968c + cdb9fa9",
+  "screenshots": [
+    {
+      "file": "home-20261103-before.png",
+      "original": "01-home-before.png",
+      "sha256": "bac7ecd01eca1e2a34647a25821ab106d6ddc1da72a7a970259b1ab222d46df1"
+    },
+    {
+      "file": "home-20261103-after.png",
+      "original": "19-home-final.png",
+      "sha256": "b8594a52bad4096ddc1c2c3516c1d3798936fab70877009f39326573c3a7323b"
+    },
+    {
+      "file": "home-20261103-draft.png",
+      "original": "16-text-sketch-saved.png",
+      "sha256": "5f91f15dfcdcafd342ff8169669c3fe5c3300ae079efd862f61e9c3d22261683"
+    },
+    {
+      "file": "home-20261103-project-setup.png",
+      "original": "17-clear-project-naming.png",
+      "sha256": "c47a8da1ce477e49950add8048be21dd79c75bd16732e816caee21f7c78739dd"
+    },
+    {
+      "file": "home-20261103-generated-pcb.png",
+      "original": "18-reopened-generated-pcb.png",
+      "sha256": "fa08c7c085076ed4b9cd18c045d2ec622a33960b327b24badc740df704dae488"
+    }
+  ]
+}

@@ -1,3 +1,11 @@
+# November 3 — Home, idea draft and project setup
+
+Implemented the approved idea-first Home, durable planning drafts and same-ID project setup in `fd5968c` / `cdb9fa9`. Native human-test, fixed findings, actual evidence, verification and explicit untested limits: [Home draft report](HOME-DRAFT-20261103.md).
+
+Resume checklist: [x] chat/sketch/image entry; [x] setup cancel; [x] restricted planning tools; [x] chosen-folder promotion retaining chat/sketch; [x] automatic real generation continuation; [x] reopen; [x] actual screenshots; [x] types/targeted tests/build. Follow-ups: [ ] bounded native schematic presentation timeout diagnosis; [ ] short-window question presentation; [ ] network/crash/cross-volume acceptance. Previous broader app dependencies below remain open and are not erased by this flow.
+
+---
+
 # November 2 — core-flow handoff checkpoint
 
 Code through `51bd9c9` adds shared Files model previews (`c58ea02`), visible stencil completion notes (`2ef0b17`) and contained export scrolling so navigation/Ask stay at the canvas edges. Actual native before/after evidence is [recorded here](WALKTHROUGH-20261102-VISUALS.md); all original captures remain preserved.
