@@ -171,6 +171,96 @@ test("retention requires a suitable outline, screwed lid and screw engagement", 
   boards[0]!.features.warnings = ["Non-rectangular Edge.Cuts contour"];
   expect(checkMechanicalFit(d, boards).issues.some((i) => i.code === "holder-outline")).toBe(true);
 });
+
+test("outside print limits include lid screws and agree with the exported base and lid", async () => {
+  const { d, boards } = fixture();
+  d.layoutLimit = { width: 64, depth: 58.4 };
+  const report = checkMechanicalFit(d, boards);
+  expect(report.issues.filter((i) => i.code === "case-size-limit")).toEqual([]);
+  expect(report.outsideSize!.width).toBeCloseTo(64);
+  expect(report.outsideSize!.depth).toBeCloseTo(58.4);
+  const m = await joinedEnclosure(enclosureFromDesign(d, boards));
+  for (const stl of [m.baseStl, m.lidStl]) {
+    const vertices = readStlTriangles(new TextEncoder().encode(stl));
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    for (let i = 0; i < vertices.length; i += 3) {
+      minX = Math.min(minX, vertices[i]!);
+      maxX = Math.max(maxX, vertices[i]!);
+      minY = Math.min(minY, vertices[i + 1]!);
+      maxY = Math.max(maxY, vertices[i + 1]!);
+    }
+    expect(maxX - minX).toBeCloseTo(report.outsideSize!.width, 3);
+    expect(maxY - minY).toBeCloseTo(report.outsideSize!.depth, 3);
+  }
+});
+
+test("an impossible print limit blocks the case without silently deleting screw mounts", () => {
+  const { d, boards } = fixture();
+  d.layoutLimit = { width: 64, depth: 44 };
+  const report = checkMechanicalFit(d, boards);
+  expect(report.status).toBe("blocked");
+  expect(report.issues.some((i) => i.code === "case-size-limit" && i.severity === "error")).toBe(
+    true,
+  );
+  expect(
+    enclosureHardware(d, boards).solids.filter((s) => s.name.startsWith("LidScrew")),
+  ).toHaveLength(8);
+  d.closure!.kind = "lift-off";
+  expect(checkMechanicalFit(d, boards).issues.some((i) => i.code === "case-size-limit")).toBe(
+    false,
+  );
+});
+
+test("outside dimensions still expose oversized manual posts on an invalid draft", () => {
+  const { d, boards } = fixture();
+  d.closure!.kind = "lift-off";
+  d.mounts = [{ x: 80, y: 10, diameter: 2, outer: 6, height: 40 }];
+  const report = checkMechanicalFit(d, boards);
+  expect(report.status).toBe("blocked");
+  expect(report.outsideSize).toEqual({ width: 85, depth: 44, height: 42 });
+});
+
+test("auto layout can use an exact fractional print limit with screw lugs on the other walls", () => {
+  const { d } = fixture();
+  d.holders = [];
+  const f = features();
+  f.outline = {
+    ...f.outline,
+    minX: 0,
+    minY: 0,
+    maxX: 30.3,
+    maxY: 9.3,
+    widthMm: 30.3,
+    heightMm: 9.3,
+  };
+  d.layoutLimit = { width: 36.4, depth: 30.4 };
+  const boards = [{ placement: d.boards[0]!, features: f }];
+  const result = proposeEnclosureLayout(d, boards);
+  const placed = [{ ...boards[0]!, placement: result.design.boards[0]! }];
+  const report = checkMechanicalFit({ ...result.design, confirmed: true }, placed);
+  expect(report.issues.filter((i) => i.severity === "error")).toEqual([]);
+  expect(report.outsideSize!.width).toBeLessThanOrEqual(36.4 + 1e-5);
+  expect(report.outsideSize!.depth).toBeLessThanOrEqual(30.4 + 1e-5);
+  expect(
+    enclosureHardware(result.design, placed).solids.filter((s) => s.name.startsWith("LidScrew")),
+  ).toHaveLength(8);
+});
+
+test("compact height retains room for the specified lid screws and dimensional allowance", () => {
+  const { d, boards } = fixture();
+  d.holders = [];
+  d.fitAllowance = 0.1;
+  d.closure!.screwLength = 12;
+  const next = proposeEnclosureLayout(d, boards).design;
+  const placed = [{ ...boards[0]!, placement: next.boards[0]! }];
+  expect(next.space.height).toBeGreaterThanOrEqual(11.2);
+  expect(
+    checkMechanicalFit(next, placed).issues.filter((i) => i.code === "closure-length"),
+  ).toEqual([]);
+});
 test("lid lugs try the other walls, then block export if neither pair is clear", () => {
   const { d, boards } = fixture();
   d.openings = [{ name: "USB", wall: "minX", offset: 5, z: 5, width: 8, height: 4 }];

@@ -9,6 +9,11 @@ import { Icon } from "../../components/Icon";
 
 type Destination = "Start" | "Space" | "PCB";
 const guidance: Record<string, { title: string; destination: Destination; action: string }> = {
+  "case-size-limit": {
+    title: "The whole case is too large for your print area",
+    destination: "Start",
+    action: "Review size limit",
+  },
   "opening-web": {
     title: "Thin wall beside a port",
     destination: "Start",

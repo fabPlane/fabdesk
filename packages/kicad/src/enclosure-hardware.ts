@@ -1,5 +1,8 @@
 import {
   portEnvelopes,
+  lidScrewCandidates,
+  lidScrewFootprint,
+  fitsEnclosureSizeLimit,
   type MechanicalDesign,
   type MechanicalFitIssue,
   type MechanicalBox,
@@ -133,25 +136,12 @@ export function enclosureHardware(d: MechanicalDesign, boards: Board[]) {
         "closure-length",
         "Lid screw engagement must remain at least two screw diameters, with 1 mm above the floor, after the selected dimensional allowance. Check screw length and lid thickness.",
       );
-    const candidates: Array<Array<[number, number]>> = [];
     // Search a bounded set of positions along both wall pairs. Keep four lugs
     // separated, preferring the corners unless a port needs that space.
-    const offsets = (length: number) =>
-      Array.from({ length: 9 }, (_, i) => r + 1 + ((length / 2 - 2 * r - 2) * i) / 8);
-    if (s.depth >= c.bossDiameter * 2 + 4)
-      for (const offset of offsets(s.depth))
-        candidates.push(
-          [s.x - s.wall - r + 0.8, s.x + s.width + s.wall + r - 0.8].flatMap((x) =>
-            [s.y + offset, s.y + s.depth - offset].map((y) => [x, y] as [number, number]),
-          ),
-        );
-    if (s.width >= c.bossDiameter * 2 + 4)
-      for (const offset of offsets(s.width))
-        candidates.push(
-          [s.y - s.wall - r + 0.8, s.y + s.depth + s.wall + r - 0.8].flatMap((y) =>
-            [s.x + offset, s.x + s.width - offset].map((x) => [x, y] as [number, number]),
-          ),
-        );
+    const candidates = lidScrewCandidates(d);
+    const withinLimit = candidates.filter((points) =>
+      fitsEnclosureSizeLimit(d, lidScrewFootprint(d, points)),
+    );
     const access = [...plugs, ...openings, ...components, ...pcbs, ...d.obstacles];
     const conflicts = (points: Array<[number, number]>) =>
       points.reduce(
@@ -174,7 +164,8 @@ export function enclosureHardware(d: MechanicalDesign, boards: Board[]) {
         0,
       );
     const positions =
-      candidates
+      // Keep requested hardware visible even when the limit is impossible; the fit check blocks export.
+      (withinLimit.length ? withinLimit : candidates)
         .map((points) => ({ points, score: conflicts(points) }))
         .sort((a, b) => a.score - b.score)[0]?.points ?? [];
     if (!positions.length)

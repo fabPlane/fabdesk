@@ -202,6 +202,8 @@ export type MechanicalFitIssue = {
   regions?: MechanicalBox[];
 };
 export type MechanicalFitReport = {
+  /** Generated case and lid, including projecting hardware; millimetres. */
+  outsideSize?: { width: number; depth: number; height: number };
   modelGaps?: Array<{ boardPath: string; parts: PcbModelGap[] }>;
   geometry?: { closed: boolean; baseParts: number; lidParts: number; engine: string };
   status: "blocked" | "review";

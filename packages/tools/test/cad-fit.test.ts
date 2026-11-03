@@ -16,6 +16,29 @@ const pcb =
 const planeStl = (z: number) =>
   `solid case\nfacet normal 0 0 1\nouter loop\nvertex -5 -5 ${z}\nvertex 50 -5 ${z}\nvertex -5 50 ${z}\nendloop\nendfacet\nendsolid case`;
 
+test("export rejects a case whose screw mounts exceed the chosen print area", async () => {
+  const { invoke, design, project } = await setup();
+  design.closure = {
+    kind: "screws",
+    screwDiameter: 3,
+    screwLength: 8,
+    pilotDiameter: 2.5,
+    clearanceDiameter: 3.4,
+    bossDiameter: 8,
+  };
+  design.layoutLimit = { width: 48, depth: 28 };
+  const preview = (await invoke({ action: "preview", design })).json as {
+    report: MechanicalFitReport;
+    revision: string;
+  };
+  expect(preview.report.issues.some((i) => i.code === "case-size-limit")).toBe(true);
+  expect(preview.report.outsideSize!.width).toBeGreaterThan(48);
+  await expect(
+    invoke({ action: "build", design, expectedRevision: preview.revision }),
+  ).rejects.toThrow("exceeding");
+  expect(await readdir(project.dir)).not.toContain("exports");
+});
+
 test("coordinated exports include local models and reject a changed model after preview", async () => {
   const { invoke, design, project } = await setup();
   const source = pcb.replace(

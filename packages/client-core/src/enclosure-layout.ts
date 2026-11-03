@@ -4,6 +4,8 @@ import {
   defaultConnectorAccess,
   connectorOpening,
   enclosureOpeningClearance,
+  enclosureFitsSizeLimit,
+  enclosureInteriorLimits,
   type MechanicalDesign,
 } from "@fabdesk/protocol";
 import { alignEnclosureMounts, linkEnclosureMounts, type MountBoard } from "./enclosure-mounts";
@@ -159,16 +161,13 @@ function options(d: MechanicalDesign, b: LayoutBoard): Option[] {
   };
   const z = fixed
     ? b.placement.z
-    : Math.max(
-        b.placement.z,
-        d.space.floor +
-          Math.max(
-            3,
-            ...parts
-              .filter((p) => p.bottom)
-              .map((p) => p.heightMm + d.space.clearance + 2 * (d.fitAllowance ?? 0)),
-            -(m?.minZ ?? 0) + d.space.clearance + 2 * (d.fitAllowance ?? 0),
-          ),
+    : d.space.floor +
+      Math.max(
+        3,
+        ...parts
+          .filter((p) => p.bottom)
+          .map((p) => p.heightMm + d.space.clearance + 2 * (d.fitAllowance ?? 0)),
+        -(m?.minZ ?? 0) + d.space.clearance + 2 * (d.fitAllowance ?? 0),
       );
   const top =
     z +
@@ -233,6 +232,15 @@ function reachesWall(
     ? p.reach + 1e-5 >= gap + d.space.wall + 2 * (d.fitAllowance ?? 0)
     : gap <= margin + 1.5;
 }
+function caseHeight(d: MechanicalDesign, placed: Placed[], fixed: boolean, margin: number) {
+  if (fixed) return d.space.height;
+  const boardHeight = Math.max(...placed.map((b) => b.top)) + margin - d.space.floor + 1;
+  const screwHeight =
+    d.closure?.kind === "screws"
+      ? d.closure.screwLength - d.space.lid + 2 * (d.fitAllowance ?? 0) + 1
+      : 0;
+  return Math.ceil(Math.max(boardHeight, screwHeight));
+}
 /** Bounded deterministic search, prioritizing reachable external ports, then case footprint.
  * Does not modify PCB files or claim a global optimum. */
 export function proposeEnclosureLayout(
@@ -291,11 +299,7 @@ export function proposeEnclosureLayout(
         Math.ceil(heights.reduce((n, v) => n + v, 0) + gap * (sizes.length - 1) + 2 * margin),
       ]);
     }
-    if (d.layoutLimit) {
-      const w = d.layoutLimit.width - 2 * d.space.wall;
-      const h = d.layoutLimit.depth - 2 * d.space.wall;
-      if (w > 0 && h > 0) dims.push([w, h]);
-    }
+    dims.push(...enclosureInteriorLimits(d));
     for (let k = 0; k < 15; k++) {
       const w = Math.ceil(Math.max(longest, Math.sqrt(area) * (0.65 + k * 0.09)));
       for (const factor of [1.05, 1.2, 1.4, 1.65, 2])
@@ -319,11 +323,7 @@ export function proposeEnclosureLayout(
     for (let order = 0; order < orderCount; order++) {
       attempts++;
       if (w > 2000 || h > 2000) continue;
-      if (
-        d.layoutLimit &&
-        (w + 2 * d.space.wall > d.layoutLimit.width || h + 2 * d.space.wall > d.layoutLimit.depth)
-      )
-        continue;
+      if (!enclosureFitsSizeLimit({ ...d, space: { ...d.space, width: w, depth: h } })) continue;
       const sorted = [...all].sort((a, b) => {
         const ports = b[0]!.ports.length - a[0]!.ports.length;
         const ar = (o: Option) => (o.rect.maxX - o.rect.minX) * (o.rect.maxY - o.rect.minY);
@@ -480,9 +480,7 @@ export function proposeEnclosureLayout(
           ...d.space,
           width: w,
           depth: h,
-          height: fixed
-            ? d.space.height
-            : Math.ceil(Math.max(...placed.map((b) => b.top)) + margin - d.space.floor + 1),
+          height: caseHeight(d, placed, fixed, margin),
         },
       };
       const cableBoards = placed.map((p) => ({
@@ -562,9 +560,7 @@ export function proposeEnclosureLayout(
       ...d.space,
       width: best.w,
       depth: best.h,
-      height: fixed
-        ? d.space.height
-        : Math.ceil(Math.max(...best.placed.map((b) => b.top)) + margin - d.space.floor + 1),
+      height: caseHeight(d, best.placed, fixed, margin),
     },
   };
   const aligned = alignEnclosureMounts(

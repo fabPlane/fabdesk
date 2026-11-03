@@ -11,6 +11,8 @@ import {
   connectorOpening,
   enclosureOpeningClearance,
   openingContains,
+  enclosureFootprint,
+  fitsEnclosureSizeLimit,
 } from "@fabdesk/protocol";
 import type { BoardFeatures, Rect } from "./board-features";
 import { generateEnclosure, type EnclosureCutout } from "./enclosure";
@@ -72,7 +74,18 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
   const s = d.space,
     allowance = 2 * (d.fitAllowance ?? 0),
     c = s.clearance + allowance;
-  const issues: MechanicalFitIssue[] = [...enclosureHardware(d, boards).issues];
+  const hardware = enclosureHardware(d, boards);
+  const issues: MechanicalFitIssue[] = [...hardware.issues];
+  const outside =
+    d.mode === "generated"
+      ? enclosureFootprint(d, [
+          ...hardware.solids,
+          ...d.mounts.map((m) => ({
+            min: { x: m.x - m.outer / 2, y: m.y - m.outer / 2, z: s.floor },
+            max: { x: m.x + m.outer / 2, y: m.y + m.outer / 2, z: s.floor + m.height },
+          })),
+        ])
+      : null;
   const add = (
     code: string,
     message: string,
@@ -90,6 +103,11 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
   });
   if (!d.confirmed)
     add("dimensions", "Confirm enclosure dimensions and units before building or exporting.");
+  if (outside && !fitsEnclosureSizeLimit(d, outside))
+    add(
+      "case-size-limit",
+      `The case including screw mounts is ${outside.width.toFixed(2)} × ${outside.depth.toFixed(2)} mm outside, exceeding your ${d.layoutLimit!.width} × ${d.layoutLimit!.depth} mm limit. Auto arrange within the limit, use a larger print area, or change the lid fastening.`,
+    );
   if (!boards.length)
     add(
       "no-board",
@@ -578,6 +596,9 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
       "review",
     );
   return {
+    ...(outside
+      ? { outsideSize: { width: outside.width, depth: outside.depth, height: outside.height } }
+      : {}),
     status: issues.some((i) => i.severity === "error") ? "blocked" : "review",
     issues,
     boardRevisions: Object.fromEntries(

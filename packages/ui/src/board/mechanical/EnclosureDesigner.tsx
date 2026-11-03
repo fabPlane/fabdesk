@@ -955,7 +955,7 @@ export function EnclosureDesigner({
     setNotice(
       `Arranged ${design.boards.length} board${design.boards.length === 1 ? "" : "s"}. ` +
         (resize
-          ? `Case sized to ${space.width + 2 * space.wall} × ${space.depth + 2 * space.wall} × ${space.floor + space.height + space.lid} mm outside. Previous size limit removed. `
+          ? `Case sized to ${space.width} × ${space.depth} × ${space.height} mm inside. Previous size limit removed. `
           : "") +
         (review ? `${review} port connection${review === 1 ? "" : "s"} need review. ` : "") +
         "Preview to check the fit. Undo restores your previous layout.",
@@ -1014,6 +1014,15 @@ export function EnclosureDesigner({
           ?.querySelector('[aria-label="Selected board controls"]')
           ?.scrollIntoView({ block: "nearest" }),
       );
+      return;
+    }
+    if (code === "case-size-limit") {
+      setStep("Start");
+      setLayoutDetails(true);
+      setNotice(
+        "Auto arrange to fit your print area, or change the size limit below. Screw mounts count toward the outside size.",
+      );
+      requestAnimationFrame(() => layoutSettings.current?.scrollIntoView({ block: "start" }));
       return;
     }
     if (code === "no-board" || code === "board-geometry") {
@@ -2568,6 +2577,17 @@ export function EnclosureDesigner({
               {step === "Review" && (
                 <>
                   <h3>Your case preview</h3>
+                  {report?.outsideSize && (
+                    <p>
+                      <strong>
+                        {Number(report.outsideSize.width.toFixed(2))} ×{" "}
+                        {Number(report.outsideSize.depth.toFixed(2))} ×{" "}
+                        {Number(report.outsideSize.height.toFixed(2))} mm outside
+                      </strong>
+                      <br />
+                      <small>Includes walls, lid and screw mounts</small>
+                    </p>
+                  )}
                   <p>
                     {design.boards.length} boards · {design.space.width} × {design.space.depth} ×{" "}
                     {design.space.height} mm inside

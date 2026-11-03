@@ -255,6 +255,23 @@ test("native model bounds reveal underside and lid clearance missed by estimates
   b.modelBounds.minZ = -5;
   expect(nativeEnclosureClearanceIssues(d, [b])[0]!.severity).toBe("error");
 });
+
+test("automatic layout removes accidental empty height while respecting underside models and locks", () => {
+  const b = fixture("raised.kicad_pcb");
+  b.features.connectors = [];
+  b.placement.z = 105;
+  b.modelBounds = { minX: 0, minY: 0, maxX: 40, maxY: 20, minZ: -7, maxZ: 8 };
+  const d = defaultEnclosureDesign(null);
+  d.boards = [b.placement];
+  const next = proposeEnclosureLayout(d, [b]).design;
+  expect(next.boards[0]!.z).toBe(10);
+  expect(next.space.height).toBeLessThan(25);
+  expect(nativeEnclosureClearanceIssues(next, [{ ...b, placement: next.boards[0]! }])).toEqual([]);
+  expect(d.boards[0]!.z).toBe(105);
+  d.boards[0] = { ...next.boards[0]!, z: 15, locked: true };
+  d.space = { ...next.space, height: 30 };
+  expect(proposeEnclosureLayout(d, [b]).design.boards[0]!.z).toBe(15);
+});
 test("print area bounds include case walls and failure never silently ignores the limit", () => {
   const bs = Array.from({ length: 6 }, (_, i) => fixture(`print-${i}.kicad_pcb`)),
     d = defaultEnclosureDesign(null);

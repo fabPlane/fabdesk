@@ -586,8 +586,8 @@ export function EnclosureLayoutPanel({
         {design.layoutLimit && (
           <>
             <p>
-              Usable print area after brim and edge margin. Includes case walls; check the exported
-              lid and slicer placement separately.
+              Usable print area after brim and edge margin. Includes case walls and lid-screw
+              mounts. Print the base and lid separately; check their placement in your slicer.
             </p>
             <div className="fd-case-grid">
               {(["width", "depth"] as const).map((key) => (
