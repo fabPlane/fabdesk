@@ -1,5 +1,6 @@
 import { inspectOutputRevision, type OutputRevisionTarget } from "./output-revision";
 import { saveAgentSelection } from "./agent-selection";
+import { projectAssistantRuns } from "./project-assistant-runs";
 import { inspectKeptOutputIdentity, type KeptOutputKind } from "./kept-output";
 import { pcbToolJson } from "./pcb-parts";
 import { inspectVideoInputRevision } from "./video-input-revision";
@@ -31,7 +32,7 @@ import type {
   RouterCatalogId,
 } from "@fabdesk/protocol";
 import { useInfiniteQuery, useIsMutating, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useCoreClient } from "./provider";
 import { messagesKey } from "./events";
 import {
@@ -168,6 +169,13 @@ export function useThreads(params?: { q?: string; projectId?: string | null }) {
     // the screen from flashing "no chats match" between keystrokes.
     placeholderData: (previous) => previous,
   });
+}
+
+export function useProjectAssistantRuns(projectId: string) {
+  const threads = useThreads({ projectId });
+  const live = useRunsStore(state => state.runsByThread);
+  const runs = useMemo(() => projectAssistantRuns(projectId, threads.data ?? [], live), [projectId, threads.data, live]);
+  return { runs, isPending: threads.isPending, isError: threads.isError };
 }
 
 export function useChatSearch(query: string) {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { captureAssemblySourceSelection, jobIsActive, projectJobs, projectJobBoard, useBoardSources, useCancelJob, useCoreClient, useJobs, useRunsStore, useToolManifest, type ProjectJob } from "@fabdesk/client-core";
+import { captureAssemblySourceSelection, jobIsActive, projectJobs, projectJobBoard, useBoardSources, useCancelJob, useCoreClient, useJobs, useProjectAssistantRuns, useRunsStore, useToolManifest, type ProjectJob } from "@fabdesk/client-core";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { Button, Dialog, EmptyState, LoadError, Spinner, Tabs } from "../components/ui";
 import { CanvasToolButton } from "../components/CanvasToolButton";
@@ -13,18 +13,20 @@ const STATUS = { queued: "Queued", running: "Working", done: "Completed", failed
 export function ProjectActivity({ projectId }: { projectId: string }) {
   const client = useCoreClient(), jobs = useJobs(true, projectId), manifest = useToolManifest(), sources = useBoardSources(projectId), cancel = useCancelJob();
   const live = useRunsStore(state => state.jobs);
+  const assistants = useProjectAssistantRuns(projectId);
   const [open, setOpen] = useState(false), [filter, setFilter] = useState<"active" | "recent">("active");
   const filterChosen = useRef(false);
   const [error, setError] = useState<unknown>(null), [requested, setRequested] = useState<string | null>(null);
   const rows = useMemo(() => projectJobs(projectId, jobs.data ?? [], live, client.baseUrl), [projectId, jobs.data, live, client.baseUrl]);
   const active = rows.filter(jobIsActive), recent = rows.filter(row => !jobIsActive(row));
+  const activityCount = active.length + assistants.runs.length;
   const visible = filter === "active" ? active : recent.slice(0, 20);
   useEffect(() => { if (open && !filterChosen.current && active.length) setFilter("active"); }, [open, active.length]);
   const title = (job: ProjectJob) => {
     const name = job.kind.replace(/^tool:/, "");
     return manifest.data?.find(tool => tool.name === name)?.title ?? name.replaceAll("_", " ");
   };
-  const surface = { projectId, label: "Project activity", priority: 50, details: JSON.stringify({ endpoint: client.baseUrl, filter, jobs: visible.slice(0, 20).map(job => ({ id: job.id, tool: job.kind, status: job.status, progress: job.progress, note: job.note?.slice(0, 1000), error: job.error?.slice(0, 2000), board: projectJobBoard(job) })) }) };
+  const surface = { projectId, label: "Project activity", priority: 50, details: JSON.stringify({ endpoint: client.baseUrl, filter, assistants: assistants.runs.map(({ thread, run }) => ({ threadId: thread.id, title: thread.title, agentId: run.agentId, startedAt: run.startedAt })), jobs: visible.slice(0, 20).map(job => ({ id: job.id, tool: job.kind, status: job.status, progress: job.progress, note: job.note?.slice(0, 1000), error: job.error?.slice(0, 2000), board: projectJobBoard(job) })) }) };
   useAssistantSurface(open ? surface : null);
   const current = () => useUiStore.getState().activeProjectId === projectId;
   const requestCancel = async (job: ProjectJob) => {
@@ -57,13 +59,14 @@ export function ProjectActivity({ projectId }: { projectId: string }) {
     else { setOpen(false); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }
   };
   return <>
-    <CanvasToolButton icon="history" label={active.length ? `Project activity · ${active.length} active` : "Project activity"} active={active.length > 0} onClick={() => { filterChosen.current = false; setError(null); setFilter(active.length ? "active" : "recent"); setOpen(true); void jobs.refetch(); }} />
-    {active.length > 0 && <span className="fd-project-activity-count" aria-live="polite">{active.length}</span>}
+    <CanvasToolButton icon="history" label={activityCount ? `Project activity · ${activityCount} active` : "Project activity"} active={activityCount > 0} onClick={() => { filterChosen.current = false; setError(null); setFilter(active.length ? "active" : "recent"); setOpen(true); void jobs.refetch(); }} />
+    {activityCount > 0 && <span className="fd-project-activity-count" aria-live="polite">{activityCount}</span>}
     <Dialog open={open} onClose={() => setOpen(false)} title="Project activity" className="fd-project-activity">
-      <p>Renders, exports and checks keep running when you change pages. Review their progress or cancel work you no longer need.</p>
-      <div className="fd-project-activity-toolbar"><Tabs value={filter} onChange={next => { filterChosen.current = true; setFilter(next); }} tabs={[{ id: "active", label: `Active · ${active.length}` }, { id: "recent", label: `Recent · ${recent.length}` }]} /><Button size="sm" variant="ghost" disabled={jobs.isFetching} onClick={() => void jobs.refetch()}>{jobs.isFetching ? "Refreshing…" : "Refresh"}</Button></div>
+      <p>Follow assistant conversations, renders, exports and checks. Work continues when you change pages.</p>
+      {assistants.runs.length > 0 && <section aria-label="Working assistant conversations" className="fd-project-activity-assistants"><h3>Assistant · Working</h3>{assistants.runs.map(({ thread }) => <div key={thread.id}><span><Spinner />{thread.title || "Conversation"}</span><Button size="sm" onClick={() => { if (!current()) return; const ui = useUiStore.getState(); ui.setActiveThread(thread.id); ui.focusComposer(); setOpen(false); }}>Open conversation</Button></div>)}</section>}
+      <div className="fd-project-activity-toolbar"><Tabs value={filter} onChange={next => { filterChosen.current = true; setFilter(next); }} tabs={[{ id: "active", label: `Active tasks · ${active.length}` }, { id: "recent", label: `Recent tasks · ${recent.length}` }]} /><Button size="sm" variant="ghost" disabled={jobs.isFetching} onClick={() => void jobs.refetch()}>{jobs.isFetching ? "Refreshing…" : "Refresh"}</Button></div>
       {jobs.isError && <LoadError title="Could not refresh task history" onRetry={() => void jobs.refetch()} />}
-      {jobs.isPending && !rows.length ? <p role="status"><Spinner />Loading this project’s tasks…</p> : !visible.length ? <EmptyState title={filter === "active" ? "No tasks running" : "No recent tasks"}>{filter === "active" ? "You can continue working. New renders and exports appear here." : "Completed, cancelled and failed tasks will appear here."}</EmptyState> : <ul className="fd-project-activity-list">{visible.map(job => {
+      {jobs.isPending && !rows.length ? <p role="status"><Spinner />Loading this project’s tasks…</p> : !visible.length ? <EmptyState title={filter === "active" ? "No background tasks running" : "No recent background tasks"}>{filter === "active" ? "New renders, exports and checks appear here. Assistant conversations are shown separately above." : "Completed, cancelled and failed renders, exports and checks will appear here."}</EmptyState> : <ul className="fd-project-activity-list">{visible.map(job => {
         const running = jobIsActive(job), board = projectJobBoard(job), source = sources.data?.sources.find(row => row.source.id === board?.sourceId)?.source.name;
         return <li key={job.id} data-status={job.status}>
           <div className="fd-project-activity-heading"><strong>{title(job)}</strong><span>{requested === job.id && running ? "Cancellation requested…" : STATUS[job.status]}</span></div>

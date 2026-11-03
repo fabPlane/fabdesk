@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ProjectBoardSources } from "@fabdesk/protocol";
-import { nativeSourceCandidates, useCore, useProject, type AssemblySceneSelection } from "@fabdesk/client-core";
+import { nativeSourceCandidates, useCore, useProject, useProjectAssistantRuns, type AssemblySceneSelection } from "@fabdesk/client-core";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { CanvasToolButton } from "../components/CanvasToolButton";
 import { DisclosureSummary } from "../components/DisclosureSummary";
@@ -11,6 +11,7 @@ import { newChatDraftKey, useUiStore } from "../stores/ui";
 /** Shared recovery: inspect known repository files, attach an import, or request a proposed design. */
 export function MissingNativeSource({ projectId, kind, enabled, visible = true, directory = ".", selection, membership, name }: { projectId: string; kind: "pcb" | "schematic"; enabled: boolean; visible?: boolean; directory?: string; selection?: AssemblySceneSelection; membership?: ProjectBoardSources; name?: string }) {
   const { host } = useCore(), project = useProject(projectId);
+  const assistants = useProjectAssistantRuns(projectId);
   const [picking, setPicking] = useState(false), [error, setError] = useState<string | null>(null), alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const candidates = nativeSourceCandidates(project.data?.files ?? [], kind, directory, membership), label = kind === "pcb" ? "PCB" : "schematic";
@@ -39,6 +40,14 @@ export function MissingNativeSource({ projectId, kind, enabled, visible = true, 
     } catch (failure) { if (alive.current) setError(failure instanceof Error ? failure.message : String(failure)); }
     finally { if (alive.current) setPicking(false); }
   };
+  if (assistants.runs.length > 0 && !picking) return <div className="fd-canvas-empty h-full" data-testid={`board-${kind}-working`}><EmptyState title="Assistant is working" icon={<Icon name="sparkles" width={36} height={36} />} action={<Button onClick={() => {
+    if (!active()) return;
+    const ui = useUiStore.getState();
+    const conversation = assistants.runs.find(item => item.thread.id === ui.activeThreadId) ?? assistants.runs[0];
+    if (conversation) { ui.setActiveThread(conversation.thread.id); ui.focusComposer(); }
+  }}>Open conversation</Button>}>
+    Follow the work in Ask fabPlane. No {label} has been linked to this view yet.
+  </EmptyState></div>;
   return <div className="fd-canvas-empty h-full" data-testid={`board-${kind}-missing-source`}><EmptyState title={`Add ${name ? "this board’s" : "a"} ${label}`} icon={<Icon name={kind === "pcb" ? "pcb" : "schematic"} width={42} height={42} />} action={<div className="fd-schematic-start-actions"><div className="flex flex-wrap items-center justify-center gap-2"><Button disabled={!enabled || picking} onClick={() => request("find")}><Icon name="search" width={16} height={16} />{candidates.length ? "Find matching source" : "Find with agent"}</Button><CanvasToolButton icon="folderOpen" label={picking ? "Choosing files…" : `Import ${label}`} variant="secondary" disabled={!enabled || picking} onClick={() => void chooseFiles()} /><CanvasToolButton icon="sparkles" label="Generate with agent" variant="secondary" disabled={!enabled || picking} onClick={() => request("generate")} /></div><p>Review the request in Ask fabPlane, then send when ready.</p></div>}>
     {candidates.length ? `${candidates.length} possible native ${candidates.length === 1 ? "file is" : "files are"} already in this source folder. Check which design belongs to this board before linking it.` : project.isError ? "The project file list could not be read. Retry or ask the agent to inspect the source." : `No linked native ${label} was found. Find an existing design, import your files or ask fabPlane to create one.`}
     {candidates.length > 0 && <details className="mt-4 text-left"><DisclosureSummary icon="folderOpen" label="Possible source files" badge={String(candidates.length)} variant="compact" /><div className="mt-2 flex max-h-48 flex-col gap-1 overflow-auto">{candidates.map(path => <Button key={path} variant="ghost" size="sm" disabled={!enabled || picking} className="justify-start break-all text-left" onClick={() => { if (active()) useUiStore.getState().openProjectFile(path); }}>{path}</Button>)}</div></details>}

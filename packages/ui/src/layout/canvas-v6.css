@@ -512,6 +512,11 @@
 .fd-project-activity-actions { margin-top:12px; justify-content:flex-start; }
 .fd-project-activity-list details { margin-top:10px; }
 .fd-project-activity-id { font-family:monospace; }
+.fd-project-activity-assistants { margin-top:18px; padding:14px 16px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); }
+.fd-project-activity-assistants h3 { margin:0 0 10px; font-size:13px; }
+.fd-project-activity-assistants > div,.fd-project-activity-assistants > div > span { display:flex; align-items:center; gap:10px; }
+.fd-project-activity-assistants > div { justify-content:space-between; flex-wrap:wrap; margin-top:8px; }
+.fd-project-activity-assistants > div > span { min-width:0; flex:1; font-size:12px; overflow-wrap:anywhere; }
 
 .fd-schematic-availability-heading { display:flex; align-items:flex-start; gap:12px; }
 .fd-schematic-availability-heading > svg { flex-shrink:0; color:var(--fd-accent); margin-top:2px; }
