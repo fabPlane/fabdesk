@@ -1,6 +1,7 @@
 import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { ErrorNotice } from "../components/ErrorNotice";
+import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useOutputSource } from "./useOutputSource";
 import { boardFileDestination, sha256Blob, exportGerberPackage, gerberPackageFilename } from "@fabdesk/client-core";
 import { CanvasToolButton } from "../components/CanvasToolButton";
@@ -16,6 +17,7 @@ import { cn } from "../util";
 import { buildFileTree, fileAppearance, formatFileSize, type ExplorerNode } from "./file-explorer";
 import { FileGlyph } from "./FileGlyph";
 import { FileExportControls } from "./FileExportControls";
+import { ManufacturingHandoff } from "./ManufacturingHandoff";
 import { OutputPreviewDialog } from "./OutputPreviewDialog";
 import { ExportCompletionDetails } from "./ExportCompletionDetails";
 import { FILE_EXPORTS as EXPORTS, fileExportChoices, type FileExportKind as ExportKind } from "./file-exports";
@@ -192,7 +194,15 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
         <Button disabled={busy || !sourceReady} size="sm" onClick={() => { const ui = useUiStore.getState(); if (assembly && outputSource.sourceId) outputSource.choose(outputSource.sourceId); ui.setBoardTab("pcb"); }}>Inspect board</Button>
         {assembly && !sourceReady && <Button size="sm" disabled={busy} onClick={() => source?.status === "available" && outputSource.sourceId ? outputSource.choose(outputSource.sourceId) : useUiStore.getState().openProjectFile("fabplane.assembly.json")}>{source?.status === "available" ? "Select source again" : "Review source files"}</Button>}
       </section>
-      <section className="fd-export-config" aria-label="Export options"><FileExportControls {...exportControls} /><div className="fd-export-parts-link"><span>Need a component list?</span><Button size="sm" variant="ghost" onClick={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().setBoardTab("bom"); }}>Open Parts & BOM</Button></div>{sources.isError && <Button size="sm" onClick={() => void sources.refetch()}>Retry source check</Button>}</section>
+      <section className="fd-export-config" aria-label="Export options">
+        {scopeReady && !assembly && hasPcb && <ManufacturingHandoff projectId={projectId} disabled={busy}
+          onChecks={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().setBoardTab("drc"); }}
+          onOrder={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().setOrderFlowOpen(true); }} />}
+        {assembly && sourceReady && <div className="fd-manufacturing-handoff"><h2>Review this board before ordering</h2><p>Exports use this selected source. They do not verify other boards, assembly connections or component stock.</p><Button size="sm" disabled={busy} onClick={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().setBoardTab("drc"); }}>Review board checks</Button></div>}
+        <FileExportControls {...exportControls} />
+        <details className="fd-export-assembly-guide"><DisclosureSummary icon="checklist" label="What do I need for an assembled order?" /><div><p><strong>Bare PCB:</strong> the Gerber package contains copper layers and drill files.</p><p><strong>Assembled PCB:</strong> also prepare a bill of materials (BOM) with manufacturer part IDs and a component placement list (CPL / pick and place). Review polarity, rotations, stock and Basic / Extended status with your manufacturer.</p><p>The design BOM CSV is a reference list, not a manufacturer-specific upload. A fabrication ZIP only includes saved files; it does not convert or approve them.</p><div className="fd-manufacturing-actions"><Button size="sm" disabled={busy} onClick={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().setBoardTab("bom"); }}>Parts & BOM</Button>{exportChoices.includes("export_pos") && <Button size="sm" disabled={busy} onClick={() => setExportKind("export_pos")}>Choose placement export</Button>}<Button size="sm" variant="ghost" disabled={busy} onClick={() => askAboutSurface(assistantSurface, "Help me prepare an assembled board order. Review this selected board’s saved checks, BOM, placements and manufacturing exports. Explain what is still missing, verify supplier IDs and immediate assembly stock for the intended quantity, and flag any required Basic / Extended exceptions. Do not place an order, upload files or change the design without review.")}>Ask about assembly files</Button></div></div></details>
+        {sources.isError && <Button size="sm" onClick={() => void sources.refetch()}>Retry source check</Button>}
+      </section>
     </div>
     {lastScope === scopeKey && (state.status !== "idle" || packagePhase || packageError) && <div className="fd-feedback fd-export-feedback" data-tone={state.error || packageError ? "error" : busy ? "progress" : "success"} role={state.error || packageError ? "alert" : "status"}>
       {packageError ? <p>{packageError}</p> : state.error ? <ErrorNotice error={state.error} /> : busy ? <p>{packagePhase ?? `Exporting ${EXPORTS[lastExport].title.toLowerCase()}…`}</p> : packageResult ? <p>Gerber package saved · {packageResult.files.length} files, including Gerber layers and drills. Review design checks before fabrication.</p> : <p>{EXPORTS[lastExport].title} saved under {prefix}exports/.</p>}

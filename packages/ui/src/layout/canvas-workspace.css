@@ -598,6 +598,17 @@
 .fd-canvas-workspace .fd-video-setup form > div:has(> [data-testid="make-video"]) { position:sticky; bottom:0; z-index:2; padding:12px 0; border-top:1px solid var(--fd-border); background:var(--fd-panel); }
 
 /* Export files is a focused output task; Files keeps the full source explorer. */
+.fd-manufacturing-handoff { margin-bottom:20px; padding:16px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel-2); font-size:12px; line-height:1.65; }
+.fd-manufacturing-handoff[data-blocked="true"] { border-color:color-mix(in srgb,var(--fd-warning) 40%,var(--fd-border)); }
+.fd-manufacturing-heading { display:flex; align-items:center; gap:8px; }
+.fd-manufacturing-heading h2 { font-size:14px; font-weight:600; margin:0; }
+.fd-manufacturing-handoff[data-blocked="true"] .fd-manufacturing-heading { color:var(--fd-warning); }
+.fd-manufacturing-handoff ul { margin:8px 0; padding-left:20px; list-style:disc; }
+.fd-manufacturing-handoff p { margin:8px 0; color:var(--fd-muted); }
+.fd-manufacturing-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; }
+.fd-export-assembly-guide { margin-top:20px; border-top:1px solid var(--fd-border); padding-top:16px; font-size:12px; line-height:1.7; }
+.fd-export-assembly-guide > summary { cursor:pointer; font-weight:550; }
+.fd-export-assembly-guide p { margin:10px 0; color:var(--fd-muted); }
 .fd-export-workspace { height:100%; min-height:0; display:flex; flex-direction:column; gap:16px; padding:18px 24px 88px; }
 .fd-export-workspace > header { text-align:center; }
 .fd-export-workspace h1 { font-size:21px; font-weight:550; letter-spacing:-.45px; margin:4px 0 7px; }
