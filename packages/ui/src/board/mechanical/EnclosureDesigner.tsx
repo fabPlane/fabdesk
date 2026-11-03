@@ -51,6 +51,7 @@ import { EnclosureBoardDimensions } from "./EnclosureBoardDimensions";
 import { EnclosureHardwarePanel } from "./EnclosureHardwarePanel";
 import { PcbModelStatus } from "./PcbModelStatus";
 import { PcbModelHealth } from "./PcbModelHealth";
+import { revealEnclosureControl } from "./reveal-enclosure-control";
 import { parseWorkspaceView, type WorkspaceView } from "./workspace-view";
 import {
   enclosureReadiness,
@@ -58,6 +59,8 @@ import {
   enclosureRecoveryAction,
   enclosureWorkflow,
   enclosureSelectionKey,
+  enclosureIssueRoute,
+  type EnclosureIssueTarget,
 } from "@fabdesk/client-core";
 
 type Result = {
@@ -106,8 +109,10 @@ export function EnclosureDesigner({
   const [layoutDetails, setLayoutDetails] = useState(false);
   const [manualPlacement, setManualPlacement] = useState(false);
   const [customSize, setCustomSize] = useState(false);
-  const caseSettings = useRef<HTMLDetailsElement>(null);
-  const layoutSettings = useRef<HTMLDetailsElement>(null);
+  const [issueControl, setIssueControl] = useState<{
+    target: EnclosureIssueTarget;
+    boardPath: string | null;
+  } | null>(null);
   const [layoutProposals, setLayoutProposals] = useState<LayoutChoice[] | null>(null);
   const cancelLayout = useRef<(() => void) | null>(null);
   useEffect(() => () => cancelLayout.current?.(), [projectId]);
@@ -444,6 +449,11 @@ export function EnclosureDesigner({
     if (body.current) body.current.scrollTop = 0;
   }, [step, error]);
   useEffect(() => setNotice(""), [step]);
+  useEffect(() => {
+    // Reveal after the step's scroll reset, even when the window is in the background.
+    if (issueControl)
+      revealEnclosureControl(body.current, issueControl.target, issueControl.boardPath);
+  }, [issueControl]);
   const [capabilities, setCapabilities] = useState({ pcb: false, cad: false });
   const [openLid, setOpenLid] = useState(true),
     [transparent, setTransparent] = useState(false);
@@ -977,88 +987,33 @@ export function EnclosureDesigner({
     issue?: MechanicalFitIssue,
   ) {
     const path = issue && fitIssueBoardPath(issue.message, design?.boards.map((b) => b.path) ?? []);
-    if (["detailed-missing", "detailed-open", "detailed-unavailable"].includes(code)) {
-      setStep("PCB");
-      requestAnimationFrame(() => {
-        const disclosure = body.current?.querySelector<HTMLDetailsElement>(
-          ".fd-case-model-disclosure",
-        );
-        if (disclosure) {
-          disclosure.open = true;
-          disclosure.scrollIntoView({ block: "nearest" });
-        }
-      });
+    const route = enclosureIssueRoute(code);
+    if (!route) {
+      setStep(destination === "PCB" ? "PCB" : "Start");
       return;
     }
-    if (
-      [
-        "native-clearance",
-        "outside-space",
-        "board-collision",
-        "detailed-collision",
-        "detailed-clearance",
-        "shell-surface",
-        "shell-clearance",
-      ].includes(code)
-    ) {
-      setStep("Start");
+    setStep(route.step);
+    if (route.disclosure === "case") setCaseDetails(true);
+    if (route.disclosure === "layout") setLayoutDetails(true);
+    if (route.disclosure === "size") setCustomSize(true);
+    if (route.target === "placement") {
       if (path) {
         selectBoard(path);
         setPlacementMode("translate");
+      } else if (!selectedBoard) {
+        setStep("PCB");
+        setManualPlacement(true);
       }
       setNotice(
         "Move the highlighted board, or choose Auto arrange in Case. Preview again after making changes.",
       );
-      requestAnimationFrame(() =>
-        body.current
-          ?.querySelector('[aria-label="Selected board controls"]')
-          ?.scrollIntoView({ block: "nearest" }),
-      );
-      return;
     }
     if (code === "case-size-limit") {
-      setStep("Start");
-      setLayoutDetails(true);
       setNotice(
         "Auto arrange to fit your print area, or change the size limit below. Screw mounts count toward the outside size.",
       );
-      requestAnimationFrame(() => layoutSettings.current?.scrollIntoView({ block: "start" }));
-      return;
     }
-    if (code === "no-board" || code === "board-geometry") {
-      setStep("PCB");
-      return;
-    }
-    setStep("Start");
-    if (destination === "Space") {
-      setCaseDetails(true);
-      requestAnimationFrame(() => {
-        const root = caseSettings.current;
-        const target = [...(root?.querySelectorAll("summary") ?? [])].find((s) =>
-          s.textContent?.includes(
-            code.includes("opening")
-              ? "Connector openings"
-              : code === "obstacle"
-                ? "Obstacles"
-                : "PCB holes & screw posts",
-          ),
-        );
-        if (target?.parentElement instanceof HTMLDetailsElement) target.parentElement.open = true;
-        (target ?? root)?.scrollIntoView({ block: "start" });
-      });
-    } else if (destination === "PCB") {
-      setLayoutDetails(true);
-      requestAnimationFrame(() => {
-        const root = layoutSettings.current;
-        const target = [...(root?.querySelectorAll("summary") ?? [])].find((s) =>
-          s.textContent?.includes(
-            code.startsWith("cable") ? "Cable connections" : "Ports & plug access",
-          ),
-        );
-        if (target?.parentElement instanceof HTMLDetailsElement) target.parentElement.open = true;
-        (target ?? root)?.scrollIntoView({ block: "start" });
-      });
-    } else setCustomSize(true);
+    setIssueControl({ target: route.target, boardPath: path ?? null });
   }
   async function download(path: string) {
     const blob = await client.readFileBlob(projectId, path);
@@ -1339,7 +1294,11 @@ export function EnclosureDesigner({
             </p>
           )}
           {currentPlacement && (
-            <section className="fd-case-placement" aria-label="Selected board controls">
+            <section
+              className="fd-case-placement"
+              aria-label="Selected board controls"
+              data-enclosure-control="placement"
+            >
               <div className="fd-case-placement-title">
                 <strong>Position selected board</strong>
                 <small>{currentPlacement.locked ? "Locked" : "Case stays fixed"}</small>
@@ -1412,7 +1371,7 @@ export function EnclosureDesigner({
             </section>
           )}
           {!!design?.boards.length && (
-            <details className="fd-case-model-disclosure">
+            <details className="fd-case-model-disclosure" data-enclosure-control="models">
               <summary>
                 {pcbModels.loading
                   ? "Reading board shapes…"
@@ -1634,6 +1593,7 @@ export function EnclosureDesigner({
                       </p>
                       <details
                         open={customSize}
+                        data-enclosure-control="dimensions"
                         onToggle={(e) => setCustomSize(e.currentTarget.open)}
                         className="fd-case-advanced"
                       >
@@ -1700,7 +1660,7 @@ export function EnclosureDesigner({
                         For an existing case, measure the empty space inside. Sizes are in
                         millimetres.
                       </p>
-                      <div className="fd-case-grid">
+                      <div className="fd-case-grid" data-enclosure-control="dimensions">
                         {field("width", "Inside width")}
                         {field("depth", "Inside depth")}
                         {field("height", "Inside height")}
@@ -1732,7 +1692,6 @@ export function EnclosureDesigner({
               )}
               {step === "Start" && (
                 <details
-                  ref={caseSettings}
                   className="fd-case-advanced"
                   open={caseDetails}
                   onToggle={(e) => setCaseDetails(e.currentTarget.open)}
@@ -1741,7 +1700,7 @@ export function EnclosureDesigner({
                   <h3>Leave room for the real parts</h3>
                   <p>Add space occupied by batteries, hinges and other fixed parts.</p>
                   {field("clearance", "Minimum clearance", 0)}
-                  <details>
+                  <details data-enclosure-control="obstacles">
                     <summary>Obstacles · {design.obstacles.length}</summary>
                     {design.obstacles.map((o, i) => (
                       <div className="fd-case-entry" key={i}>
@@ -1813,7 +1772,7 @@ export function EnclosureDesigner({
                       Add obstacle
                     </button>
                   </details>
-                  <details>
+                  <details data-enclosure-control="mounts">
                     <summary>PCB holes & screw posts · {design.mounts.length} posts</summary>
                     <p>
                       Posts use the saved drill centres and follow linked boards. Bores are
@@ -2051,7 +2010,7 @@ export function EnclosureDesigner({
                       Add mounting point
                     </button>
                   </details>
-                  <details>
+                  <details data-enclosure-control="openings">
                     <summary>Connector openings · {design.openings.length}</summary>
                     <p className="fd-case-help">
                       Automatic openings follow their boards. Custom openings keep their board in
@@ -2214,7 +2173,6 @@ export function EnclosureDesigner({
               )}
               {step === "Start" && (
                 <details
-                  ref={layoutSettings}
                   className="fd-case-advanced"
                   open={layoutDetails}
                   onToggle={(e) => setLayoutDetails(e.currentTarget.open)}
@@ -2275,6 +2233,7 @@ export function EnclosureDesigner({
                   />
                   <details
                     className="fd-case-advanced"
+                    data-enclosure-control="placement"
                     open={manualPlacement}
                     onToggle={(e) => setManualPlacement(e.currentTarget.open)}
                   >

@@ -231,6 +231,13 @@ export function checkMechanicalFit(d: MechanicalDesign, boards: FitBoard[]): Mec
           add("screw-shaft", `${label}: the screw shaft is wider than the PCB hole.`, "error", [
             post,
           ]);
+        if (m.screwDiameter && m.diameter + allowance >= m.screwDiameter - eps)
+          add(
+            "screw-engagement",
+            `${label}: the ${m.diameter} mm post bore is too wide for the ${m.screwDiameter} mm screw to grip${allowance ? " with the selected dimensional allowance" : ""}. Set a suitable pilot bore for the actual fastener or choose another retention method.`,
+            "error",
+            [post],
+          );
         if (
           m.screwLength &&
           (m.screwLength <= b.features.thicknessMm ||

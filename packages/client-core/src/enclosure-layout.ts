@@ -15,6 +15,7 @@ import { alignEnclosureMounts, linkEnclosureMounts, type MountBoard } from "./en
 import { enclosureComponents, type EnclosureBoardSummary } from "./enclosure-design";
 
 type Rect = { minX: number; minY: number; maxX: number; maxY: number };
+type Volume = Rect & { minZ: number; maxZ: number };
 type Edge = "minX" | "maxX" | "minY" | "maxY";
 export type LayoutBoard = MountBoard & { modelBounds?: Rect & { minZ: number; maxZ: number } };
 /** Loaded native bounds supplement estimated envelopes; they do not prove solid-to-solid fit. */
@@ -86,6 +87,7 @@ type Option = {
   ports: Port[];
   z: number;
   top: number;
+  obstacleRegions: Volume[];
 };
 type Placed = Option & { x: number; y: number; world: Rect };
 const turn = (x: number, y: number, r: number) => {
@@ -248,6 +250,50 @@ function options(
       ...supports.map(({ mount }) => f.thicknessMm + (mount.headHeight ?? 0)),
       m?.maxZ ?? 0,
     );
+  const obstacleRegions: Volume[] = [
+    { ...f.outline, minZ: z, maxZ: z + f.thicknessMm },
+    ...parts.map((p) => ({
+      ...p.bounds,
+      minZ: p.bottom ? z - p.heightMm : z + f.thicknessMm,
+      maxZ: p.bottom ? z : z + f.thicknessMm + p.heightMm,
+    })),
+    ...(m ? [{ ...m, minZ: z + m.minZ, maxZ: z + m.maxZ }] : []),
+    ...supports.flatMap(({ hole, mount }) => [
+      {
+        minX: hole.x - mount.outer / 2,
+        minY: hole.y - mount.outer / 2,
+        maxX: hole.x + mount.outer / 2,
+        maxY: hole.y + mount.outer / 2,
+        minZ: d.space.floor,
+        maxZ: z,
+      },
+      ...(mount.headDiameter && mount.headHeight
+        ? [
+            {
+              minX: hole.x - mount.headDiameter / 2,
+              minY: hole.y - mount.headDiameter / 2,
+              maxX: hole.x + mount.headDiameter / 2,
+              maxY: hole.y + mount.headDiameter / 2,
+              minZ: z + f.thicknessMm,
+              maxZ: z + f.thicknessMm + mount.headHeight,
+            },
+          ]
+        : []),
+    ]),
+  ];
+  if (d.holders?.some((holder) => holder.boardPath === b.placement.path)) {
+    // Holder feet and lid captures span the cavity. Keep their envelope conservative
+    // until the preview chooses and checks the individual support positions.
+    const inset = 1.75 + 2 * (d.fitAllowance ?? 0);
+    obstacleRegions.push({
+      minX: f.outline.minX - inset,
+      minY: f.outline.minY - inset,
+      maxX: f.outline.maxX + inset,
+      maxY: f.outline.maxY + inset,
+      minZ: d.space.floor,
+      maxZ: d.space.floor + d.space.height + d.space.lid,
+    });
+  }
   if (fixed && b.placement.rotation % 90 !== 0)
     throw Error(
       `Set ${b.placement.path} to a quarter-turn rotation before locking it for automatic layout.`,
@@ -260,6 +306,7 @@ function options(
     wallRect: rotateRect(wallRect, rotation),
     z,
     top,
+    obstacleRegions: obstacleRegions.map((v) => ({ ...v, ...rotateRect(v, rotation) })),
     ports: ports.map((p) => ({
       ...p,
       bounds: rotateRect(p.bounds, rotation),
@@ -542,16 +589,23 @@ export function proposeEnclosureLayout(
                 continue;
               if (
                 d.obstacles.some((b) =>
-                  overlap(
-                    world,
-                    {
-                      minX: b.x - d.space.x,
-                      minY: b.y - d.space.y,
-                      maxX: b.x - d.space.x + b.width,
-                      maxY: b.y - d.space.y + b.depth,
-                    },
-                    margin,
-                  ),
+                  o.obstacleRegions.some((v) => {
+                    const clearance = d.space.clearance + allowance;
+                    return (
+                      v.minZ < b.z + b.height + clearance - 1e-5 &&
+                      v.maxZ > b.z - clearance + 1e-5 &&
+                      overlap(
+                        shift(v, x - o.rect.minX, y - o.rect.minY),
+                        {
+                          minX: b.x - d.space.x,
+                          minY: b.y - d.space.y,
+                          maxX: b.x - d.space.x + b.width,
+                          maxY: b.y - d.space.y + b.depth,
+                        },
+                        clearance,
+                      )
+                    );
+                  }),
                 )
               )
                 continue;

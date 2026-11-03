@@ -14,7 +14,11 @@ export function EnclosureBoardPicker({
   const [search, setSearch] = useState("");
   const shown = files.filter((p) => p.toLowerCase().includes(search.toLowerCase()));
   return (
-    <section className="fd-case-board-picker" aria-label="Choose boards">
+    <section
+      className="fd-case-board-picker"
+      aria-label="Choose boards"
+      data-enclosure-control="boards"
+    >
       <div className="fd-case-intro">
         <h3>What goes inside?</h3>
         <p>Choose the boards for this case. We’ll read their sizes for you.</p>

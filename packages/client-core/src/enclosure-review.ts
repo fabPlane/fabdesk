@@ -66,6 +66,7 @@ export const enclosureIssueSummary: Record<string, string> = {
     "The board has an unusual or incomplete outline. Its size is estimated as a rectangle.",
   "screw-tool-access": "A part may get in the way of the screwdriver.",
   "screw-head-unknown": "Add the size of the screws you plan to use.",
+  "screw-engagement": "The hole in the support is too wide for this screw to hold the board.",
   "port-measurements": "The port or plug size is estimated. Check its real size before printing.",
   "detailed-missing": "Some parts have no 3D shape, so the app could not check whether they fit.",
   "detailed-open": "Some 3D shapes are incomplete, so the fit check could not use them.",

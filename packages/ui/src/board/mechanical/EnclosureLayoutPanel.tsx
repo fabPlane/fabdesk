@@ -104,7 +104,7 @@ export function EnclosureLayoutPanel({
             </label>
           ))}
         </details>
-        <details>
+        <details data-enclosure-control="ports">
           <summary>
             Ports & plug access{" "}
             <span>
@@ -377,7 +377,7 @@ export function EnclosureLayoutPanel({
             <span>Show plug & cable guides in 3D</span>
           </label>
         </details>
-        <details>
+        <details data-enclosure-control="cables">
           <summary>
             Cable connections <span>{design.connections?.length ?? 0} defined</span>
           </summary>
@@ -569,7 +569,7 @@ export function EnclosureLayoutPanel({
             Add connection
           </button>
         </details>
-        <label className="fd-case-confirm">
+        <label className="fd-case-confirm" data-enclosure-control="print-area">
           <input
             type="checkbox"
             checked={!!design.layoutLimit}

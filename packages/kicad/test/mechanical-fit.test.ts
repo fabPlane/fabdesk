@@ -37,6 +37,73 @@ const design = (): MechanicalDesign => ({
 });
 const boards = (d: MechanicalDesign) => d.boards.map((placement) => ({ placement, features }));
 describe("mechanical fit constraints", () => {
+  test("a specified board screw must grip its blind post bore without changing entered sizes", () => {
+    const holePcb = `(kicad_pcb (general (thickness 1.6))
+      (gr_rect (start 0 0)(end 40 20)(layer "Edge.Cuts"))
+      ${[
+        [5, 5],
+        [35, 5],
+        [5, 15],
+        [35, 15],
+      ]
+        .map(
+          ([x, y], i) => `
+        (footprint "MountingHole" (layer "F.Cu")(at ${x} ${y})(property "Reference" "H${i + 1}")
+          (pad "" np_thru_hole circle (at 0 0)(size 3.2 3.2)(drill 3.2)))`,
+        )
+        .join("")})`;
+    const f = extractBoardFeatures(holePcb);
+    const d = defaultEnclosureDesign(f);
+    d.confirmed = true;
+    d.space = {
+      x: -3,
+      y: -3,
+      width: 46,
+      depth: 26,
+      height: 20,
+      wall: 2,
+      floor: 2,
+      lid: 2,
+      clearance: 1,
+    };
+    d.boards[0]!.z = 5;
+    d.mounts = d.mounts.map((m) => ({
+      ...m,
+      height: 3,
+      screwDiameter: 3,
+      screwLength: 4,
+      headDiameter: 6,
+      headHeight: 2,
+    }));
+    const checked = [{ placement: d.boards[0]!, features: f }];
+    const before = structuredClone(d);
+    const fit = checkMechanicalFit(d, checked);
+    expect(fit.status).toBe("blocked");
+    expect(fit.issues.filter((i) => i.code === "screw-engagement")).toHaveLength(4);
+    expect(
+      fit.issues
+        .filter((i) => i.code === "screw-engagement")
+        .every((i) => i.severity === "error" && i.regions?.length === 1),
+    ).toBe(true);
+    expect(d).toEqual(before);
+    expect(enclosureFromDesign(d, checked).standoffs.map((s) => s.innerDiameterMm)).toEqual([
+      3.2, 3.2, 3.2, 3.2,
+    ]);
+    for (const m of d.mounts) m.diameter = 3;
+    expect(
+      checkMechanicalFit(d, checked).issues.filter((i) => i.code === "screw-engagement"),
+    ).toHaveLength(4);
+    for (const m of d.mounts) m.diameter = 2.5;
+    expect(checkMechanicalFit(d, checked).issues.filter((i) => i.severity === "error")).toEqual([]);
+    d.fitAllowance = 0.25;
+    expect(
+      checkMechanicalFit(d, checked).issues.filter((i) => i.code === "screw-engagement"),
+    ).toHaveLength(4);
+    d.fitAllowance = 0.2;
+    expect(checkMechanicalFit(d, checked).issues.some((i) => i.code === "screw-engagement")).toBe(
+      false,
+    );
+  });
   test("an isolated mounting post cannot pass through the lid", () => {
     const d = design();
     d.boards = [];

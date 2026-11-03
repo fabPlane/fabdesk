@@ -202,6 +202,103 @@ test("fixed imported dimensions and obstacles cannot be silently enlarged or mov
   d.space.depth = 10;
   expect(() => proposeEnclosureLayout(d, [b])).toThrow("No collision-free");
 });
+
+test("boards can be arranged below overhead obstacles while preserving vertical clearance", () => {
+  const b = fixture("display-controller.kicad_pcb");
+  b.features.connectors = [];
+  const d = defaultEnclosureDesign(null);
+  d.boards = [b.placement];
+  d.space = {
+    x: 0,
+    y: 0,
+    width: 50,
+    depth: 30,
+    height: 25,
+    wall: 2,
+    floor: 2,
+    lid: 2,
+    clearance: 1,
+  };
+  d.obstacles = [{ name: "Lid display", x: 0, y: 0, z: 16, width: 50, depth: 30, height: 4 }];
+  const proposal = proposeEnclosureLayout(d, [b]);
+  expect(proposal.design.obstacles).toEqual(d.obstacles);
+  expect(proposal.design.space).toEqual(d.space);
+  expect(proposal.design.boards[0]!.z + b.features.thicknessMm + d.space.clearance).toBeLessThan(
+    16,
+  );
+  d.obstacles[0]!.z = 7;
+  expect(() => proposeEnclosureLayout(d, [b])).toThrow("No collision-free");
+});
+
+test("obstacle height checks include underside parts and native model geometry", () => {
+  const b = fixture("raised.kicad_pcb");
+  b.features.connectors = [];
+  b.placement = { ...b.placement, x: 5, y: 5, z: 6, locked: true };
+  const d = defaultEnclosureDesign(null);
+  d.boards = [b.placement];
+  d.space = {
+    x: 0,
+    y: 0,
+    width: 50,
+    depth: 30,
+    height: 25,
+    wall: 2,
+    floor: 2,
+    lid: 2,
+    clearance: 1,
+  };
+  d.obstacles = [{ name: "Lower bracket", x: 20, y: 10, z: 2, width: 5, depth: 5, height: 1.5 }];
+  expect(proposeEnclosureLayout(d, [b]).design.boards).toEqual(d.boards);
+  b.features.components = [
+    {
+      ref: "U1",
+      x: 17.5,
+      y: 7.5,
+      bounds: { minX: 15, minY: 5, maxX: 20, maxY: 10 },
+      heightMm: 2,
+      bottom: true,
+    },
+  ];
+  expect(() => proposeEnclosureLayout(d, [b])).toThrow("No collision-free");
+  b.features.components = [];
+  b.modelBounds = { ...b.features.outline, minZ: -2, maxZ: 1.6 };
+  expect(() => proposeEnclosureLayout(d, [b])).toThrow("No collision-free");
+});
+
+test("vertical obstacle clearance includes post bodies, screw heads and holder captures", () => {
+  const b = fixture("retained.kicad_pcb");
+  b.features.connectors = [];
+  b.placement = { ...b.placement, x: 5, y: 5, z: 6, locked: true };
+  const d = defaultEnclosureDesign(null);
+  d.boards = [b.placement];
+  d.space = {
+    x: 0,
+    y: 0,
+    width: 50,
+    depth: 30,
+    height: 25,
+    wall: 2,
+    floor: 2,
+    lid: 2,
+    clearance: 1,
+  };
+  d.obstacles = [{ name: "Lower bracket", x: 8, y: 8, z: 2, width: 4, depth: 4, height: 1 }];
+  expect(proposeEnclosureLayout(d, [b]).design.boards).toEqual(d.boards);
+  d.mounts = [
+    { boardPath: b.placement.path, holeId: "h", x: 10, y: 10, diameter: 2.2, outer: 5, height: 4 },
+  ];
+  expect(() => proposeEnclosureLayout(d, [b])).toThrow("No collision-free");
+  // A bracket beneath the middle of the PCB does not collide with its corner post.
+  d.obstacles[0]!.x = 20;
+  expect(proposeEnclosureLayout(d, [b]).design.boards).toEqual(d.boards);
+  d.obstacles = [{ name: "Lid display", x: 0, y: 0, z: 11, width: 50, depth: 30, height: 4 }];
+  expect(proposeEnclosureLayout(d, [b]).design.boards).toEqual(d.boards);
+  Object.assign(d.mounts[0]!, { headDiameter: 6, headHeight: 3 });
+  expect(() => proposeEnclosureLayout(d, [b])).toThrow("No collision-free");
+  d.mounts = [];
+  d.holders = [{ boardPath: b.placement.path, kind: "corner-clamps" }];
+  expect(() => proposeEnclosureLayout(d, [b])).toThrow("No collision-free");
+});
 test("unlinked manual mounting points require explicit review", () => {
   const b = fixture("one.kicad_pcb"),
     d = defaultEnclosureDesign(null);

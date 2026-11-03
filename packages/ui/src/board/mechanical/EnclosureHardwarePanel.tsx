@@ -12,11 +12,11 @@ export function EnclosureHardwarePanel({
 }) {
   const screws = design.closure?.kind === "screws";
   return (
-    <details className="fd-case-hardware">
+    <details className="fd-case-hardware" data-enclosure-control="hardware">
       <summary>
         {design.mode === "generated" ? "Lid, holders & detailed fit" : "Detailed fit"}
       </summary>
-      <label className="fd-case-confirm">
+      <label className="fd-case-confirm" data-enclosure-control="model-checks">
         <input
           type="checkbox"
           checked={design.detailedFit ?? false}
@@ -34,7 +34,7 @@ export function EnclosureHardwarePanel({
         Slower, more detailed collision checks using KiCad models. Missing models stay flagged for
         review.
       </p>
-      <label className="fd-case-confirm">
+      <label className="fd-case-confirm" data-enclosure-control="assembly-checks">
         <input
           type="checkbox"
           checked={design.assemblyCheck ?? false}
@@ -55,7 +55,7 @@ export function EnclosureHardwarePanel({
       </p>
       {design.mode === "generated" && (
         <>
-          <label className="fd-case-confirm">
+          <label className="fd-case-confirm" data-enclosure-control="allowance">
             <input
               type="checkbox"
               checked={(design.fitAllowance ?? 0) > 0}
@@ -86,7 +86,7 @@ export function EnclosureHardwarePanel({
               </select>
             </label>
           )}
-          <label>
+          <label data-enclosure-control="lid">
             Lid fastening
             <select
               aria-label="Lid fastening"
@@ -115,7 +115,7 @@ export function EnclosureHardwarePanel({
             access.
           </p>
           {screws && design.closure && (
-            <details>
+            <details data-enclosure-control="lid-screws">
               <summary>Screw dimensions</summary>
               {(
                 [
@@ -160,7 +160,7 @@ export function EnclosureHardwarePanel({
             </details>
           )}
           {design.boards.map((b) => (
-            <label key={b.path}>
+            <label key={b.path} data-enclosure-control="holders" data-board-path={b.path}>
               {enclosureFileLabel(b.path)}
               <select
                 aria-label={`${b.path} board retention`}

@@ -17,7 +17,7 @@ const guidance: Record<string, { title: string; destination: Destination; action
   "opening-web": {
     title: "Thin wall beside a port",
     destination: "Start",
-    action: "Review port spacing and case size",
+    action: "Review port openings",
   },
   "cable-route-blocked": {
     title: "A cable needs a clear path",
@@ -27,12 +27,12 @@ const guidance: Record<string, { title: string; destination: Destination; action
   "screw-tool-access": {
     title: "A screw is hard to reach",
     destination: "PCB",
-    action: "Review the assembly order",
+    action: "Review board position",
   },
   "assembly-obstruction": {
     title: "A part needs a different assembly path",
     destination: "PCB",
-    action: "Review placement and assembly order",
+    action: "Review board position",
   },
   "assembly-sampled": {
     title: "Straight-down assembly sampled",
@@ -42,7 +42,7 @@ const guidance: Record<string, { title: string; destination: Destination; action
   "assembly-unavailable": {
     title: "Assembly check is incomplete",
     destination: "Start",
-    action: "Enable detailed model checks",
+    action: "Review model checks",
   },
   "fit-allowance": {
     title: "Room for small sizing differences",
@@ -213,6 +213,11 @@ const guidance: Record<string, { title: string; destination: Destination; action
     title: "Screw length does not fit the post",
     destination: "Space",
     action: "Adjust screw or post height",
+  },
+  "screw-engagement": {
+    title: "Screw cannot grip the post",
+    destination: "Space",
+    action: "Check the post hole and screw size",
   },
   "shell-surface": {
     title: "Possible case interference",

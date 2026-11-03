@@ -20,6 +20,7 @@ test("automatic case fitting reserves board screw heads and blind screw length",
     headHeight: 5,
     screwDiameter: 3,
     screwLength: 10,
+    diameter: 2.5,
   };
   const original = structuredClone(d);
   const p = proposeEnclosureLayout(d, [{ placement: d.boards[0]!, features }]);
