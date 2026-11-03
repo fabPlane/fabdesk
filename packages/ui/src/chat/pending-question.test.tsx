@@ -41,7 +41,10 @@ test("answers survive history rendering and closed questions never look answered
   expect(answered).toContain("Answer submitted");
   expect(answered).toContain("My custom connector");
   expect(answered).not.toContain("<form");
+  expect(answered).not.toContain("Answer in chat");
   const closed = render({ ...part, answer: "" });
   expect(closed).toContain("Question closed without an answer");
   expect(closed).not.toContain("Answer submitted");
+  expect(closed).toContain("Answer in chat");
+  expect(closed).not.toContain("<form");
 });

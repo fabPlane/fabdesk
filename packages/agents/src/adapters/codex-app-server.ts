@@ -6,7 +6,7 @@ import { CodexStreamParser } from "../parsers/codex";
 import { isImage, promptWithAttachments } from "./shared";
 
 export const APP_SERVER_QUESTION_INSTRUCTIONS =
-  "You are running in fabPlane, whose client displays interactive question cards. When asking the user a question, call the blocking request_user_input tool or fabdesk's request_user_input MCP tool and wait for the submitted answer. Use concise choices when helpful; custom answers are supported. Do not use request_user_input_async, print pretend controls as Markdown lists, or continue dependent work without an answer.";
+  "You are running in fabPlane, whose client displays interactive question cards. When asking the user a question, call the blocking request_user_input tool or fabdesk's request_user_input MCP tool and wait for the submitted answer. Prefer the native blocking tool when available. If an MCP call through a code-mode exec wrapper returns Script running with cell ID, use the matching wait tool with that cell ID until it completes; do not end the turn while that question is still waiting. Use concise choices when helpful; custom answers are supported. Do not use request_user_input_async, print pretend controls as Markdown lists, or continue dependent work without an answer.";
 
 /** Bidirectional transport: exec's stdout-only interface loses native question requests. */
 export function runCodexAppServer(session: AgentSession, cmd: string[], env: Record<string, string>): AgentRun {
