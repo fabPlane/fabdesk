@@ -12,11 +12,13 @@ export function CloseProjectDialog() {
   const chatDrafts = [...keys].filter(key => drafts[key]?.trim() || attachments[key]?.length).length;
   const note = notes[JSON.stringify([client.baseUrl, projectId])], noteDraft = note && note.content !== note.base;
   const active = projectId ? projectJobs(projectId, jobs.data ?? [], live, client.baseUrl).filter(jobIsActive).length + (threads.data ?? []).filter(thread => thread.projectId === projectId && runs[thread.id]).length : 0;
+  const idea = !!project.data?.manifest.ideaDraft;
+  const noun = idea ? "idea" : "project";
   const cancel = () => useUiStore.getState().requestProjectClose(false);
-  return <Dialog open={open && !!projectId} onClose={cancel} title={pending.length ? "Finish your open edit first" : "Close project?"} className="!w-[520px]">
-    <p className="text-sm leading-6">{pending.length ? "Resolve these edits before returning to Home:" : <>Close <strong>{project.data?.name ?? "this project"}</strong> and return to Home to open another project.</>}</p>
+  return <Dialog open={open && !!projectId} onClose={cancel} title={pending.length ? "Finish your open edit first" : idea ? "Close idea?" : "Close project?"} className="!w-[520px]">
+    <p className="text-sm leading-6">{pending.length ? "Resolve these edits before returning to Home:" : <>Close <strong>{project.data?.name ?? "this project"}</strong> and return to Home.</>}</p>
     {pending.length > 0 && <ul className="my-4 list-disc space-y-2 pl-5 text-sm">{pending.map((block, index) => <li key={index}>{block.message}</li>)}</ul>}
-    {!pending.length && <div className="my-4 space-y-2 text-sm text-muted"><p>Saved files and conversations stay with this project.</p>{(chatDrafts > 0 || noteDraft) && <p>{chatDrafts > 0 ? `${chatDrafts} unsent conversation ${chatDrafts === 1 ? "draft is" : "drafts are"} kept. ` : ""}{noteDraft ? "Your unsaved Notes draft stays available while this app remains open; it has not been saved to NOTES.md." : ""}</p>}<p>{active ? `${active} running ${active === 1 ? "task continues" : "tasks continue"} on the connected core. Reopen this project to see progress and results.` : "Any running tasks continue on the connected core. Reopen the project to review its activity."}</p></div>}
-    <div className="mt-5 flex justify-end gap-2"><Button onClick={cancel}>{pending.length ? "Return to edit" : "Keep working"}</Button>{!pending.length && <Button variant="primary" onClick={() => useUiStore.getState().closeProject()}>Close project</Button>}</div>
+    {!pending.length && <div className="my-4 space-y-2 text-sm text-muted"><p>Saved files and conversations stay with this {noun}.</p>{(chatDrafts > 0 || noteDraft) && <p>{chatDrafts > 0 ? `${chatDrafts} unsent conversation ${chatDrafts === 1 ? "draft is" : "drafts are"} kept. ` : ""}{noteDraft ? "Your unsaved Notes draft stays available while this app remains open; it has not been saved to NOTES.md." : ""}</p>}<p>{active ? `${active} running ${active === 1 ? "task continues" : "tasks continue"} on the connected core. Reopen this project to see progress and results.` : "Any running tasks continue on the connected core. Reopen the project to review its activity."}</p></div>}
+    <div className="mt-5 flex justify-end gap-2"><Button onClick={cancel}>{pending.length ? "Return to edit" : "Keep working"}</Button>{!pending.length && <Button variant="primary" onClick={() => useUiStore.getState().closeProject()}>Close {noun}</Button>}</div>
   </Dialog>;
 }

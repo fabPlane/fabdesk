@@ -10,7 +10,7 @@ import { Icon } from "../components/Icon";
 import { InstallHint } from "../components/InstallHint";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useCore } from "@fabdesk/client-core";
-import { CoreHttpError, formatVoiceShortcut, parseVoiceShortcut, useDoctor, useSettings, useSpeechStatus, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt, useBoardSources } from "@fabdesk/client-core";
+import { CoreHttpError, formatVoiceShortcut, parseVoiceShortcut, useDoctor, useSettings, useSpeechStatus, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt, useBoardSources, useProject } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
@@ -48,8 +48,8 @@ export interface ComposerProps {
   /** First-start actions already expose sketch creation; advanced automation stays requested. */
   startMode?: boolean;
   thread: Thread | null;
-  /** Creates a thread for a first message; returns the new thread id. */
-  onCreateThread: (input: { agentId: AgentId; model?: string }) => Promise<string>;
+  /** Creates ownership before sending; navigation waits for the accepted message. */
+  onCreateThread: (input: { agentId: AgentId; model?: string }) => Promise<Thread>;
 }
 
 const FALLBACK_AGENTS = [
@@ -73,7 +73,9 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
   const boardSources = useBoardSources(projectId);
   const assistantState = useUiStore(useShallow(selectAssistantState));
   const workspaceContext = captureAssistantContext(assistantState, boardSources.data, boardSources.isFetching || boardSources.isError, matchingContexts);
-  const rootAutomation = boardSources.data?.mode === "single";
+  const project = useProject(projectId);
+  const ideaDraft = !!project.data?.manifest.ideaDraft;
+  const rootAutomation = !ideaDraft && boardSources.data?.mode === "single";
   const pending = useUiStore((s) => s.attachments[draftKey] ?? EMPTY);
   const addAttachment = useUiStore((s) => s.addAttachment);
   const removeAttachment = useUiStore((s) => s.removeAttachment);
@@ -111,6 +113,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const preparedThread = useRef<Thread | null>(null);
 
   useEffect(() => {
     if (thread) {
@@ -185,17 +188,18 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
     const workspaceContext = captureAssistantContext(selectAssistantState(useUiStore.getState()), boardSources.data, boardSources.isFetching || boardSources.isError, matchingContexts);
     setSending(true);
     setError(null);
-    let createdThreadId: string | null = null;
     try {
       let threadId = thread?.id;
+      let created = preparedThread.current;
       if (!threadId) {
         // No title: the daemon names the thread after this first message (and tells every client).
-        threadId = await onCreateThread({ agentId, ...(model ? { model } : {}) });
-        createdThreadId = threadId;
+        created ??= await onCreateThread({ agentId, ...(model ? { model } : {}) });
+        preparedThread.current = created;
+        threadId = created.id;
       }
       const input = {
         content,
-        workspaceContext,
+        workspaceContext: created && !thread ? { ...workspaceContext, projectId: created.projectId } : workspaceContext,
         attachments: pending.map((a) => ({ path: a.path, mime: a.mime })),
         agentId,
         ...(model ? { model } : {}),
@@ -209,15 +213,13 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
       if (!thread) setDraft(threadId, "");
       void qc.invalidateQueries({ queryKey: ["messages", threadId] });
       void qc.invalidateQueries({ queryKey: ["threads"] });
-    } catch (e) {
-      if (createdThreadId) {
-        setDraft(createdThreadId, draft);
-        for (const context of matchingContexts ?? []) setDraftBoardContext(createdThreadId, context);
-        for (const attachment of pending) addAttachment(createdThreadId, attachment);
-        setDraft(draftKey, "");
-        clearAttachments(draftKey);
-        setDraftBoardContext(draftKey, null);
+      if (created && !thread) {
+        const ui = useUiStore.getState();
+        if (ui.activeProjectId === projectId && ui.activeThreadId === null && ui.setActiveProject(created.projectId)) ui.setActiveThread(created.id);
+        preparedThread.current = null;
       }
+    } catch (e) {
+      // Retain this prepared thread and the visible draft for a normal retry.
       setError(e);
     } finally {
       setSending(false);
@@ -267,9 +269,10 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
 
   const suggestions = slashSuggestions(draft).filter(command => rootAutomation || !isFinishItCommand(`/${command.name}`));
   const mod = modKey(host.platform);
-  const placeholder = thread
+  const placeholder = ideaDraft
+    ? "Ask or describe the next step…" : thread
     ? "Message the agent..."
-    : startMode ? "Describe your project…" : projectId
+    : startMode ? "Describe your idea or ask a question…" : projectId
       ? "Ask about this project or describe a change…"
       : "Describe your idea or start with a sketch...";
 
@@ -402,7 +405,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
               onHoldEnd={voice.holdEnd}
               onToggle={voice.toggle}
             />
-            {thread && <PermissionsMenu key={thread.id} thread={thread} />}
+            {thread && !ideaDraft && <PermissionsMenu key={thread.id} thread={thread} />}
             {projectId && rootAutomation && (startMode ? <WorkspaceMenu className="fd-composer-more" label={<span aria-label="Assistant tools"><Icon name="more" width={18} height={18} /></span>}>
               <div className="fd-menu-caption">Automation</div>
               {finishAction}

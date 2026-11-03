@@ -15,7 +15,7 @@ export const selectAssistantState = (state: UiState) => ({
 export function captureAssistantContext(state: ReturnType<typeof selectAssistantState>, sources: ProjectBoardSources | undefined, checking: boolean, attached: readonly { label: string; instruction: string }[] = [], now = new Date().toISOString()): WorkspaceContext {
   const projectId = state.activeProjectId;
   const view = workspaceViews(state.workspaceArea).find(view => view.tab === state.boardTab)?.label;
-  const page = state.settingsOpen ? `Settings / ${state.settingsSection ?? "General"}` : state.sketchOpen ? "Sketch editor" : state.inventoryOpen ? "Parts inventory" : state.orderFlowOpen ? "Order review" : state.activeOpenSourceId ? "Open source project" : `${state.workspaceArea[0]!.toUpperCase()}${state.workspaceArea.slice(1)}${view ? ` / ${view}` : ""}`;
+  const page = state.settingsOpen ? `Settings / ${state.settingsSection ?? "General"}` : state.sketchOpen ? "Sketch editor" : state.inventoryOpen ? "Parts inventory" : state.orderFlowOpen ? "Order review" : state.activeOpenSourceId ? "Open source project" : !projectId ? "New idea" : `${state.workspaceArea[0]!.toUpperCase()}${state.workspaceArea.slice(1)}${view ? ` / ${view}` : ""}`;
   const showingWorkspace = !state.settingsOpen && !state.sketchOpen && !state.inventoryOpen && !state.orderFlowOpen && !state.activeOpenSourceId;
   const activeScope = state.inventoryOpen ? "inventory" : state.orderFlowOpen ? "order" : state.activeOpenSourceId ? "catalog" : "workspace";
   const surface = !state.settingsOpen && !state.sketchOpen ? Object.values(state.assistantSurfaces).filter(item => item.projectId === projectId && (item.scope ?? "workspace") === activeScope).sort((a, b) => b.priority - a.priority)[0] : undefined;

@@ -55,3 +55,11 @@ test("secondary windows select only their own context and keep catalog identity"
   expect(catalog.label).toBe("Catalog / Sensor");
   expect(JSON.parse(catalog.details).catalogProjectId).toBe("catalog-sensor");
 });
+
+test("Home context identifies a new idea rather than an imaginary PCB", () => {
+  const snapshot = { ...state(), activeProjectId: null, workspaceArea: "boards" as const, boardTab: "pcb" as const };
+  const context = captureAssistantContext(snapshot, undefined, false);
+  expect(context.projectId).toBeNull();
+  expect(context.label).toBe("New idea");
+  expect(context.details).not.toContain("Boards / PCB");
+});

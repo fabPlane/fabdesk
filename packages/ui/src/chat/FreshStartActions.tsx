@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCoreClient } from "@fabdesk/client-core";
+import { useCoreClient, useProject } from "@fabdesk/client-core";
 import { Button } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { CreateProjectDialog } from "../sidebar/CreateProjectDialog";
@@ -13,6 +13,9 @@ export function FreshStartActions() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ui = () => useUiStore.getState();
+  const home = useUiStore(s => !s.activeProjectId);
+  const projectId = useUiStore(s => s.activeProjectId);
+  const project = useProject(projectId);
   const createArt = async () => {
     if (creating) return;
     if (ui().activeProjectId) { ui().setBoardTab("art"); return; }
@@ -33,11 +36,11 @@ export function FreshStartActions() {
   };
   return <>
     <div className="fd-fresh-actions" aria-label="Start your project">
-      <Button onClick={() => ui().setSketchOpen(true, "draw")}><Icon name="compose" width={18} height={18} />Draw or open a sketch</Button>
+      <Button onClick={() => ui().setSketchOpen(true, "draw")}><Icon name="compose" width={18} height={18} />Draw a sketch</Button>
       <Button onClick={() => ui().setSketchOpen(true, "upload")}><Icon name="image" width={18} height={18} />Upload an image</Button>
       {!ui().activeProjectId && <Button onClick={() => setImporting(true)}><Icon name="folderOpen" width={18} height={18} />Import from GitHub</Button>}
     </div>
-    <button className="fd-fresh-art-link" disabled={creating} onClick={() => void createArt()}>{creating ? "Creating art board…" : "Create an art board"}</button>
+    {!home && !project.data?.manifest.ideaDraft && <button className="fd-fresh-art-link" disabled={creating} onClick={() => void createArt()}>{creating ? "Creating art board…" : "Create an art board"}</button>}
     {error && <p role="alert" className="text-center text-sm text-danger">{error}</p>}
     {importing && <CreateProjectDialog initialMode="github" onClose={() => setImporting(false)} onCreated={(id) => { ui().setActiveProject(id); ui().setBoardOpen(true); setImporting(false); }} />}
   </>;

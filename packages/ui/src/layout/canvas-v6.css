@@ -626,3 +626,25 @@
 /* Planning keeps the same workspace entry as design tasks, with Notes directly available. */
 .fd-canvas-destinations { display:flex; align-items:center; gap:16px; }
 .fd-canvas-main[data-area=start] .fd-start-reference { top:80px; }
+
+/* Home begins with an idea; saved work remains one explicit destination away. */
+.fd-idea-home { max-width:1120px; padding-top:clamp(50px,9vh,100px); }
+.fd-home-idea .fd-start-view { height:auto; background:transparent; }
+.fd-home-idea .fd-start-view .fd-new-chat-body { flex:none; overflow:visible; padding:0 0 20px; }
+.fd-home-idea .fd-start-view .fd-empty-hero { margin-bottom:32px; }
+.fd-home-idea .fd-start-view .fd-composer-dock { max-width:790px; }
+.fd-home-idea .fd-fresh-actions { margin-top:26px; }
+.fd-home-idea .fd-home-draft-note { text-align:center; margin:0 0 44px; font-size:12px; }
+.fd-idea-home .fd-home-projects { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+.fd-idea-home .fd-home-projects button { padding:18px; min-height:90px; width:100%; gap:12px; }
+.fd-idea-home .fd-home-open { display:none; }
+.fd-idea-home .fd-home-projects small { font-size:11px; }
+.fd-idea-badge { display:inline-flex; align-items:center; margin-left:10px; padding:3px 9px; border:1px solid color-mix(in srgb,var(--fd-accent) 30%,transparent); border-radius:7px; background:color-mix(in srgb,var(--fd-accent) 6%,var(--fd-panel)); color:var(--fd-accent); font-style:normal; font-size:11px; font-weight:500; }
+.fd-draft-build-strip { position:absolute; z-index:12; left:50%; bottom:24px; transform:translateX(-50%); display:flex; align-items:center; justify-content:center; gap:24px; padding:10px 12px 10px 18px; border:1px solid var(--fd-border); border-radius:18px; background:var(--fd-panel); box-shadow:0 4px 18px #102a200a; max-width:calc(100% - 32px); }
+.fd-draft-build-strip > span { display:flex; align-items:center; gap:9px; white-space:nowrap; color:var(--fd-muted); font-size:12px; }
+.fd-canvas-destinations button[aria-pressed=true] { background:color-mix(in srgb,var(--fd-accent) 8%,var(--fd-panel)); color:var(--fd-accent); }
+.fd-canvas-workspace:has(.fd-draft-build-strip) .fd-canvas-conversation-surface { top:64px; padding-bottom:84px; }
+@media(max-width:780px) { .fd-idea-home { padding-top:42px; } .fd-idea-home .fd-home-projects { grid-template-columns:1fr; } .fd-draft-build-strip { gap:12px; bottom:14px; } .fd-draft-build-strip > span { white-space:normal; font-size:11px; } }
+.fd-canvas-workspace:has(.fd-draft-build-strip) .fd-start-reference[data-conversation=true] { bottom:112px; }
+.fd-canvas-workspace:has(.fd-draft-build-strip):has(.fd-assistant-dock:not([hidden])) .fd-draft-build-strip { left:calc((100% - 450px)/2); }
+@media(max-width:900px) { .fd-canvas-workspace:has(.fd-draft-build-strip):has(.fd-assistant-dock:not([hidden])) .fd-draft-build-strip { left:16px; transform:none; max-width:calc(100% - 480px); flex-direction:column; gap:6px; align-items:flex-start; padding:9px; } }

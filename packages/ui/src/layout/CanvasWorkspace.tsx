@@ -1,7 +1,10 @@
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { HostedReviewTools } from "../board/HostedReviewTools";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ProjectDetail } from "@fabdesk/protocol";
+import { useRunsStore } from "@fabdesk/client-core";
+import { CreateIdeaProjectDialog } from "./CreateIdeaProjectDialog";
 import { projectSketchImagePaths, useCore, useBoardSources, useProject, useProjects, useThreads, WORKSPACE_AREAS, type WorkspaceArea } from "@fabdesk/client-core";
 import { BoardPanel } from "../board/BoardPanel";
 import { ThreadView } from "../chat/ThreadView";
@@ -33,6 +36,13 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const { host, sseStatus, client } = useCore();
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
+  const projects = useProjects();
+  const isDraft = project.data ? !!project.data.manifest.ideaDraft : !!projects.data?.find(item => item.id === projectId)?.isDraft;
+  const [showProjects, setShowProjects] = useState(false);
+  const [setupDraft, setSetupDraft] = useState<ProjectDetail | null>(null);
+  const [draftView, setDraftView] = useState<"sketch" | "conversation">("sketch");
+  const seenRequest = useRef("");
+  useEffect(() => { if (!projectId) setShowProjects(false); setDraftView("sketch"); }, [projectId]);
   const boardSources = useBoardSources(projectId);
   useEffect(() => {
     const state = useUiStore.getState();
@@ -43,7 +53,6 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
     else if (!project.data.files.some(file => file.path === "board.kicad_pcb") && project.data.files.some(file => file.path === "board.kicad_sch")) state.setBoardTab("schematic");
     else state.setWorkspaceArea("boards");
   }, [projectId, boardSources.data, boardSources.isFetching, boardSources.isError, project.data, project.isFetching, project.isError]);
-  const projects = useProjects();
   useEffect(() => {
     if (projectId && project.data?.id === projectId && !project.isFetching && !project.isError)
       useUiStore.getState().recordProjectVisit(client.baseUrl, projectId);
@@ -70,17 +79,24 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const [projectAction, setProjectAction] = useState<ProjectAction | null>(null);
   const ui = () => useUiStore.getState();
   const name = project.data?.name ?? projects.data?.find((item) => item.id === projectId)?.name ?? (projectId ? "Untitled project" : "New project");
-  const conversationOnly = !boardOpen || (!projectId && !!threadId);
-  const hasNativeDesign = project.data?.files.some((file) => file.path === "board.kicad_pcb" || file.path === "board.kicad_sch");
-  const fresh = !threadId && !sourceId && !inventory && !order && (!projectId || (!!project.data && !boardSources.isError && boardSources.data?.mode === "single" && !hasNativeDesign && area === "boards" && boardTab === "pcb"));
   const sketchPaths = projectSketchImagePaths(project.data?.files ?? []);
+  const draftRunning = useRunsStore(s => !!threadId && !!s.runsByThread[threadId]);
+  const requestedBuild = project.data?.manifest.ideaDraft?.requestedBuild;
+  useEffect(() => {
+    const key = `${projectId}:${requestedBuild}`;
+    if (isDraft && requestedBuild && !draftRunning && key !== seenRequest.current && project.data) { seenRequest.current = key; setSetupDraft(project.data); }
+  }, [isDraft, requestedBuild, draftRunning, projectId, project.data]);
+  const draftConversation = draftView === "conversation" || !sketchPaths.length;
+  const conversationOnly = !boardOpen || (!projectId && !!threadId) || (isDraft && draftConversation);
+  const hasNativeDesign = project.data?.files.some((file) => file.path === "board.kicad_pcb" || file.path === "board.kicad_sch");
+  const fresh = !(isDraft && sketchPaths.length) && !threadId && !sourceId && !inventory && !order && (!projectId || (!!project.data && !boardSources.isError && boardSources.data?.mode === "single" && !hasNativeDesign && area === "boards" && boardTab === "pcb"));
   const draftAttachments = useUiStore(s => s.attachments[s.activeThreadId ?? newChatDraftKey(projectId)]);
   const attachedSketch = draftAttachments?.slice().reverse().find(item => sketchPaths.includes(item.path))?.path;
   const referenceCanvas = !!projectId && !!project.data && !hasNativeDesign && !boardSources.isError && boardSources.data?.mode === "single" && (area === "overview" || area === "boards" && boardTab === "pcb") && boardOpen;
   const sketchReference = referenceCanvas ? attachedSketch ?? sketchPaths[0] : undefined;
   const referenceStart = fresh && !!sketchReference;
-  useAssistantSurface(projectId && (fresh || !!sketchReference) ? {
-    projectId, label: sketchReference ? "Project sketch" : "Project idea", priority: 5,
+  useAssistantSurface(projectId && (isDraft || fresh || !!sketchReference) ? {
+    projectId, label: isDraft ? sketchReference && !conversationOnly ? "Idea draft / Sketch" : "Idea draft / Conversation" : sketchReference ? "Project sketch" : "Project idea", priority: 5,
     details: JSON.stringify({ stage: "Planning before a native board exists", savedReference: sketchReference ?? null, savedSketches: sketchPaths.slice(0, 20), instruction: "Use the actual saved references and project notes. A planning sketch is not a native schematic, PCB, checked circuit or generated board." }),
   } : null);
   const secondary = !!sourceId || inventory || order;
@@ -91,16 +107,18 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
 
   return <div className="fd-canvas-workspace flex h-full min-w-0 flex-col" data-testid="canvas-workspace">
     <header className="fd-canvas-header" style={{ paddingLeft: host.platform === "darwin" ? 84 : undefined, WebkitAppRegion: "drag" } as React.CSSProperties}>
-      <button className="fd-canvas-brand" title="Project overview" onClick={() => projectId ? openArea("overview") : ui().setActiveThread(null)}>
+      <button className="fd-canvas-brand" title="Project overview" onClick={() => { if (projectId) openArea("overview"); else { ui().setActiveThread(null); setShowProjects(false); } }}>
         <FabPlaneLogo /><span>fabPlane</span>
       </button>
-      {projectId ? <><strong className="fd-project-identity" title={name}>{name}</strong><Button size="sm" variant="ghost" onClick={() => ui().requestProjectClose(true)} title="Close project and return to Home">Home</Button></> : <span className="fd-home-header-label">Home</span>}
+      {projectId ? <><strong className="fd-project-identity" title={name}>{name}</strong><Button size="sm" variant="ghost" onClick={() => ui().requestProjectClose(true)} title="Close project and return to Home">Home</Button></> : <span className="fd-home-header-label">{showProjects ? "Projects" : "Home"}</span>}
+      {isDraft && <span className="fd-idea-badge">Draft</span>}
       {referenceStart && <span className="fd-canvas-breadcrumb"><span>/</span><strong>Start with sketch</strong></span>}
       <div className="fd-canvas-header-actions">
+        {home && <Button size="sm" onClick={() => setShowProjects(!showProjects)}><Icon name={showProjects ? "chevronLeft" : "folder"} width={16} height={16} />{showProjects ? "Home" : "Projects"}</Button>}
         {projectId && <ProjectActivity key={`${client.baseUrl}/${projectId}`} projectId={projectId} />}
         <span className="fd-canvas-connection" title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`}><i data-connected={connected} />{connected ? local ? "Local workspace" : "Remote workspace" : "Reconnecting…"}</span>
-        {projectId && !fresh && <Button size="sm" variant="ghost" title="Review source and output updates" aria-current={area === "review" && boardTab === "updates" ? "page" : undefined} onClick={() => ui().setBoardTab("updates")}>Review</Button>}
-        {projectId && !fresh && <HostedReviewTools key={projectId} projectId={projectId} shareButton />}
+        {projectId && !fresh && !isDraft && <Button size="sm" variant="ghost" title="Review source and output updates" aria-current={area === "review" && boardTab === "updates" ? "page" : undefined} onClick={() => ui().setBoardTab("updates")}>Review</Button>}
+        {projectId && !fresh && !isDraft && <HostedReviewTools key={projectId} projectId={projectId} shareButton />}
         <WorkspaceMenu className="fd-workspace-overflow" label={<span aria-label="Workspace options"><Icon name="more" width={20} height={20} /></span>}>
           {projectId && <><div className="fd-menu-caption">Current project</div><button onClick={() => setProjectAction({ id: projectId, name, action: "rename" })}><Icon name="compose" width={16} height={16} />Rename project</button><button onClick={() => ui().requestProjectClose(true)}><Icon name="close" width={16} height={16} />Close project · Home</button><button onClick={() => setNavigationOpen(true)}><Icon name="sidebar" width={16} height={16} />Project conversations</button><div className="fd-menu-divider" /></>}
           <button onClick={() => ui().setPaletteOpen(true)}><Icon name="search" width={16} height={16} />Search commands</button>
@@ -114,18 +132,18 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
     </header>
     {banner}
     {projectId && boardSources.data?.mode === "assembly" && <LiveAssemblyPreviews key={`${client.baseUrl}/${projectId}/${boardSources.data.manifestSha256}`} projectId={projectId} data={boardSources.data} enabled={!boardSources.isFetching && !boardSources.isError && connected && boardSources.data.editing === "explicit-source-tools"} />}
-    {home ? <main className="fd-home-surface"><ProjectHome onCreate={() => setCreating("create")} onImport={() => setCreating("github")} onBrowse={() => { ui().setSidebarListTab("open_source"); setNavigationOpen(true); }} /></main> : <main className="fd-canvas-main" data-task-toolbar={!!projectId && !secondary && !conversationOnly} data-area={fresh ? "start" : area}>
-      {projectId && !secondary && !conversationOnly && <nav className="fd-canvas-destinations" aria-label="Project workspace">
-        <WorkspaceMenu label={<><Icon name="library" width={16} height={16} /><span>{fresh ? "Start" : areaLabel}</span><Icon name="chevronDown" width={14} height={14} /></>}>
+    {home ? <main className="fd-home-surface"><ProjectHome listing={showProjects} onViewProjects={() => setShowProjects(true)} onCreate={() => setCreating("create")} onImport={() => setCreating("github")} onBrowse={() => { ui().setSidebarListTab("open_source"); setNavigationOpen(true); }} /></main> : <main className="fd-canvas-main" data-task-toolbar={!!projectId && !secondary && (!conversationOnly || isDraft)} data-area={fresh ? "start" : area}>
+      {projectId && !secondary && (!conversationOnly || isDraft) && <nav className="fd-canvas-destinations" aria-label="Project workspace">
+        {isDraft ? <><Button size="sm" variant="ghost" aria-pressed={!draftConversation} onClick={() => { setDraftView("sketch"); if (!sketchPaths.length) ui().setSketchOpen(true, "draw"); }}><Icon name="compose" width={16} height={16} />Sketch</Button><Button size="sm" variant="ghost" aria-pressed={draftConversation} onClick={() => setDraftView("conversation")}><Icon name="sparkles" width={16} height={16} />Conversation</Button></> : <WorkspaceMenu label={<><Icon name="library" width={16} height={16} /><span>{fresh ? "Start" : areaLabel}</span><Icon name="chevronDown" width={14} height={14} /></>}>
           <div className="fd-menu-caption">Project workspace</div>
           {(Object.keys(WORKSPACE_AREAS) as WorkspaceArea[]).map((key) => <button key={key} aria-current={area === key ? "page" : undefined} onClick={() => openArea(key)}>{key === "boards" && boardSources.data?.mode === "single" && !hasNativeDesign ? "Start" : key === "boards" && boardSources.data?.mode === "assembly" ? "Boards" : WORKSPACE_AREAS[key].label}</button>)}
-        </WorkspaceMenu>
-        {fresh && <Button size="sm" variant="ghost" onClick={() => ui().setBoardTab("notes")}><Icon name="compose" width={16} height={16} />Project notes</Button>}
+        </WorkspaceMenu>}
+        {fresh && !isDraft && <Button size="sm" variant="ghost" onClick={() => ui().setBoardTab("notes")}><Icon name="compose" width={16} height={16} />Project notes</Button>}
       </nav>}
-      {sketchReference && !fresh && !secondary && !conversationOnly && <span className="fd-reference-view-label">Project reference</span>}
+      {sketchReference && !isDraft && !fresh && !secondary && !conversationOnly && <span className="fd-reference-view-label">Project reference</span>}
       {secondary && !order && <Button className="fd-canvas-back" size="sm" onClick={() => { ui().setActiveOpenSourceId(null); ui().setInventoryOpen(false); ui().setOrderFlowOpen(false); ui().setBoardOpen(true); }}>← Return to canvas</Button>}
       <div className="fd-canvas-surface">
-        {order ? <OrderFlow /> : inventory ? <InventoryView /> : sourceId ? <OpenSourceView /> : projectId && boardSources.isError && !conversationOnly && (area === "boards" || area === "overview") ? <EmptyState title="Could not verify project board sources" action={<><Button onClick={() => void boardSources.refetch()}>Try again</Button><Button variant="ghost" onClick={() => ui().setBoardTab("files")}>Open project files</Button></>}><p role="alert">Review the project files or retry the source check before opening a board.</p>{boardSources.error instanceof Error && <details className="mt-3 max-w-xl text-left"><DisclosureSummary icon="warning" label="Source check details" variant="compact" /><p className="mt-2 break-words">{boardSources.error.message}</p></details>}</EmptyState> : projectId && sketchReference && !conversationOnly ? <SketchStartReference key={projectId} projectId={projectId} paths={sketchPaths} preferred={sketchReference} checking={project.isFetching} failed={project.isError} conversation={!!threadId || area === "overview"} assistantOpen={assistantOpen} attached={attachedSketch} /> : fresh || conversationOnly ? null : area === "overview" || area === "boards" && boardSources.data?.mode === "assembly" && boardTab !== "cinema" ? <ProjectOverview key={projectId} boardPicker={area === "boards"} /> : <BoardPanel canvas />}
+        {order ? <OrderFlow /> : inventory ? <InventoryView /> : sourceId ? <OpenSourceView /> : projectId && boardSources.isError && !conversationOnly && (area === "boards" || area === "overview") ? <EmptyState title="Could not verify project board sources" action={<><Button onClick={() => void boardSources.refetch()}>Try again</Button><Button variant="ghost" onClick={() => ui().setBoardTab("files")}>Open project files</Button></>}><p role="alert">Review the project files or retry the source check before opening a board.</p>{boardSources.error instanceof Error && <details className="mt-3 max-w-xl text-left"><DisclosureSummary icon="warning" label="Source check details" variant="compact" /><p className="mt-2 break-words">{boardSources.error.message}</p></details>}</EmptyState> : projectId && sketchReference && !conversationOnly ? <SketchStartReference key={projectId} projectId={projectId} paths={sketchPaths} preferred={sketchReference} checking={project.isFetching} failed={project.isError} conversation={isDraft || !!threadId || area === "overview"} assistantOpen={assistantOpen} attached={attachedSketch} /> : fresh || conversationOnly ? null : area === "overview" || area === "boards" && boardSources.data?.mode === "assembly" && boardTab !== "cinema" ? <ProjectOverview key={projectId} boardPicker={area === "boards"} /> : <BoardPanel canvas />}
       </div>
         <section className={referenceStart ? "fd-canvas-reference-composer" : fresh ? "fd-canvas-start-surface" : conversationOnly ? "fd-canvas-conversation-surface" : "fd-assistant-dock"} aria-label="fabPlane assistant" hidden={!fresh && !conversationOnly && !assistantOpen} onKeyDown={(event) => {
           if (!fresh && !conversationOnly && event.key === "Escape" && !(event.target as HTMLElement).closest("details[open]")) { event.stopPropagation(); closeAssistant(); }
@@ -141,13 +159,14 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
           <ThreadView presentation={fresh ? "start" : "chat"} referenceStart={referenceStart} />
         </section>
         {showAssistant && !assistantOpen && <button className="fd-ask-fabdesk" data-assistant-launcher onClick={() => { setAssistantOpen(true); ui().focusComposer(); }}><Icon name="sparkles" width={19} height={19} /><span>Ask fabPlane</span><Icon name="mic" width={19} height={19} /></button>}
-      {fresh && <div className="fd-canvas-start-note">Your ideas and files stay with your project</div>}
+      {isDraft ? <div className="fd-draft-build-strip"><span><Icon name="compose" width={16} height={16} />Idea draft · No engineering files yet</span><Button variant="primary" disabled={draftRunning} onClick={() => { if (project.data) setSetupDraft(project.data); }}>{draftRunning ? "Reply in progress…" : "Create a project"}</Button></div> : fresh && <div className="fd-canvas-start-note">Your ideas and files stay with your project</div>}
     </main>}
     <Dialog open={navigationOpen} onClose={() => setNavigationOpen(false)} bare ariaLabel={projectId ? "Project conversations" : "Projects and conversations"} className="fd-canvas-drawer">
       <div className="fd-canvas-drawer-inner"><div className="fd-assistant-heading"><span>{projectId ? "Project conversations" : "Projects & conversations"}</span><IconButton size="sm" title="Close navigation" onClick={() => setNavigationOpen(false)}><Icon name="close" width={17} height={17} /></IconButton></div>
       <ThreadSidebar projectOnly={!!projectId} onNewChat={onNewChat} onOpenProject={(id) => { ui().setActiveProject(id); ui().setBoardOpen(true); setNavigationOpen(false); }} /></div>
     </Dialog>
     {creating && <CreateProjectDialog initialMode={creating} onClose={() => setCreating(null)} onCreated={(id) => { ui().setActiveProject(id); ui().setBoardOpen(true); setCreating(null); }} />}
+    {setupDraft && <CreateIdeaProjectDialog key={setupDraft.id} project={setupDraft} threadId={threadId} onClose={() => setSetupDraft(null)} />}
     {projectAction && <ProjectActionDialog key={projectAction.id} project={projectAction} onClose={() => setProjectAction(null)} />}
     <ProjectPickerDialog />
   </div>;

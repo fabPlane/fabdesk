@@ -720,7 +720,7 @@
 .fd-start-reference-tools > p { color:var(--fd-muted); font-size:12px; }
 .fd-start-reference-tools .fd-board-context-tools { top:0; }
 .fd-start-reference-image { display:flex; align-items:center; justify-content:center; flex:1; min-height:0; max-width:100%; border-radius:14px; }
-.fd-start-reference-image img { width:auto; height:100%; max-width:100%; max-height:100%; object-fit:contain; border:0; border-radius:12px; filter:drop-shadow(0 8px 18px #102a2010); }
+.fd-start-reference-image img { width:auto; height:auto; max-width:100%; max-height:100%; object-fit:contain; border:0; border-radius:12px; filter:drop-shadow(0 8px 18px #102a2010); }
 .fd-start-reference-image[aria-pressed=true] { outline:2px solid color-mix(in srgb,var(--fd-accent) 35%,transparent); outline-offset:6px; }
 .fd-start-reference-caption { display:flex; flex-direction:column; align-items:center; gap:6px; max-width:100%; flex:none; font-size:11px; color:var(--fd-muted); }
 .fd-start-reference-caption strong { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }

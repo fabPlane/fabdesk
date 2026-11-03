@@ -287,7 +287,7 @@ function SketchSession({ scenes }: { scenes: Scenes }) {
           <details ref={sourceOptions} className="fd-sketch-options">
             <DisclosureSummary icon={mode === "draw" ? "settings" : "image"} label={mode === "draw" ? "Drawing options" : "Image details"} variant="compact" />
             <div>
-              <p>{target.projectId ? mode === "draw" ? "Save an editable PNG in this project and attach it to your next message. Each save keeps a new copy." : "Save the original image in this project and attach it to your next message." : "Saving creates a project automatically. Your sketch stays with it; nothing is sent to the agent yet."}</p>
+              <p>{target.projectId ? mode === "draw" ? "Save an editable PNG in this project and attach it to your next message. Each save keeps a new copy." : "Save the original image in this project and attach it to your next message." : "Saving keeps an idea draft. Create a project when you’re ready to build; nothing is sent to the agent yet."}</p>
               {mode === "draw" && <>
                 <p>{sourceName ? `${sourceName} · Original file will be preserved when you save.` : "Import opens a copy; nothing is written until you save."}</p>
                 {hasDrawing && <Button size="sm" disabled={busy || recovering || completed.current || needsProjectChat} onClick={() => sourceInput.current?.click()}>Replace draft from file…</Button>}
