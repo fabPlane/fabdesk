@@ -9,7 +9,7 @@ export function newChatDraftKey(projectId: string | null): string {
 
 /** A save session owns its destination: retries never create a second project. */
 export function createSketchDraftSession({ client, projectId: initialProjectId, onProjectCreated }: {
-  client: Pick<CoreClient, "createProject" | "uploadSketch">;
+  client: Pick<CoreClient, "uploadSketch"> & { createIdeaDraft: CoreClient["createIdeaDraft"] };
   projectId: string | null;
   onProjectCreated: (projectId: string) => void;
 }) {
@@ -19,7 +19,7 @@ export function createSketchDraftSession({ client, projectId: initialProjectId, 
   const ensureProject = (): Promise<string> => {
     if (projectId) return Promise.resolve(projectId);
     if (!creating) {
-      creating = client.createProject("Untitled project").then((project) => {
+      creating = client.createIdeaDraft().then((project) => {
         projectId = project.id;
         onProjectCreated(project.id);
         return project.id;

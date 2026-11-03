@@ -196,9 +196,9 @@ export function runCodexAppServer(session: AgentSession, cmd: string[], env: Rec
     const options = {
       cwd: session.cwd,
       ...(session.model ? { model: session.model } : {}),
-      approvalPolicy: session.permission === "bypass" ? "never" : "on-request",
+      approvalPolicy: session.planningOnly || session.permission === "bypass" ? "never" : "on-request",
       approvalsReviewer: session.permission === "bypass" ? "user" : "auto_review",
-      sandbox: session.permission === "bypass" ? "danger-full-access" : "workspace-write",
+      sandbox: session.planningOnly ? "read-only" : session.permission === "bypass" ? "danger-full-access" : "workspace-write",
       developerInstructions: APP_SERVER_QUESTION_INSTRUCTIONS,
     };
     const result = await rpc(session.resume ? "thread/resume" : "thread/start", { ...options, ...(session.resume ? { threadId: session.resume } : {}) });

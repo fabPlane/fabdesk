@@ -43,6 +43,9 @@ export const ProjectManifest = z.object({
   schema: z.literal(1),
   id: ProjectId,
   name: z.string().min(1),
+  /** Planning workspace: engineering tools stay locked until explicit promotion. */
+  ideaDraft: z.object({ requestedBuild: z.string().max(12000).optional() }).optional(),
+  promotedAt: z.string().datetime().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   board: BoardSettings,
@@ -65,6 +68,7 @@ export const ProjectSummary = z.object({
   path: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  isDraft: z.boolean().optional(),
 });
 export type ProjectSummary = z.infer<typeof ProjectSummary>;
 
@@ -83,7 +87,7 @@ export const ProjectDetail = ProjectSummary.extend({
 });
 export type ProjectDetail = z.infer<typeof ProjectDetail>;
 
-export const CreateProject = z.object({ name: z.string().min(1).max(80), parentDirectory: z.string().min(1).optional() });
+export const CreateProject = z.object({ name: z.string().min(1).max(80), parentDirectory: z.string().min(1).optional(), draft: z.boolean().optional() });
 
 /**
  * `full`: the agent runs with the permission mode from Settings. `supervised`: the daemon pauses

@@ -68,6 +68,19 @@ export const load_toolset = defineTool({
   },
 });
 
+export const request_project_creation = defineTool({
+  name: "request_project_creation", toolset: "core", title: "Prepare an idea for project setup",
+  description: "When a user asks to generate or edit engineering files in an idea draft, record the requested next action and show project setup in fabPlane. This does not create a board or run engineering tools. After this call, stop and explain that the user can create the project or keep exploring.",
+  inputSchema: { instruction: z.string().trim().min(1).max(12000).describe("The user's concrete requested engineering action, with the agreed requirements. Do not add unrequested work.") },
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  handler: async ({ instruction }, ctx) => {
+    const project = ctx.requireProject();
+    if (!project.manifest().ideaDraft) throw new ToolError("This is already a project. Use its existing engineering tools.", "precondition");
+    await project.updateManifest({ ideaDraft: { requestedBuild: instruction } });
+    return ok("Project setup is ready. No engineering files have been created. The user can create the project to continue this request, or keep exploring.", { projectSetupRequired: true, projectId: project.id });
+  },
+});
+
 /** Describe the available workbench interfaces. */
 export const pcb_environment = defineTool({
   name: "pcb_environment",
@@ -1052,6 +1065,7 @@ export const render_board = defineTool({
 
 export const coreTools = [
   load_toolset,
+  request_project_creation,
   pcb_environment,
   project_status,
   circuit_build,

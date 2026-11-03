@@ -41,6 +41,8 @@ export interface AgentAttachment {
 }
 
 export interface AgentSession {
+  /** Draft planning: no native writes or engineering tools, regardless of account permissions. */
+  planningOnly?: boolean;
   cwd: string;
   prompt: string;
   attachments: AgentAttachment[];

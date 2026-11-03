@@ -67,8 +67,15 @@ export function claudeArgs(session: AgentSession, bin: string): string[] {
     claudeMcpConfig(session.mcp.url),
     "--strict-mcp-config",
     "--permission-mode",
-    supervised ? "manual" : permissionMode(session.permission),
+    session.planningOnly ? "default" : supervised ? "manual" : permissionMode(session.permission),
   ];
+  if (session.planningOnly) {
+    // Limit the native inventory, not merely its pre-approved subset. MCP is gated by core.
+    args.push("--tools", "Read", "--allowedTools", "Read", `mcp__${MCP_SERVER_NAME}__request_project_creation`, `mcp__${MCP_SERVER_NAME}__request_user_input`);
+    if (session.resume) args.push("--resume", session.resume);
+    if (session.model) args.push("--model", session.model);
+    return args;
+  }
   if (supervised) {
     args.push("--permission-prompt-tool", `mcp__${MCP_SERVER_NAME}__${PERMISSION_PROMPT_TOOL}`);
   }

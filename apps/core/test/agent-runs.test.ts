@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ProjectManifest } from "@fabdesk/protocol";
 import type { AgentEvent, AgentRun, AgentSession } from "@fabdesk/agents";
 import type { ProjectHandle } from "@fabdesk/tools";
 import { AgentRunManager, type AgentAdapterLike } from "../src/agent-runs";
@@ -64,7 +65,7 @@ function harness(
       ...(opts.resolveProject ? { resolveProject: opts.resolveProject } : {}),
     });
     const project = (id: string): ProjectHandle =>
-      ({ id, name: id, dir: join(dir, id) }) as unknown as ProjectHandle;
+      ({ id, name: id, dir: join(dir, id), manifest: () => ProjectManifest.parse({ schema: 1, id, name: id, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), board: {} }) }) as unknown as ProjectHandle;
     const thread = (title = "chat") => store.threads.create({ agentId: "claude", title });
     const start = (threadId: string, p: ProjectHandle | null, prompt = "go") =>
       manager.start({ threadId, project: p, agentId: "claude", prompt, attachments: [] });
@@ -349,4 +350,27 @@ describe("captured workspace context", () => {
     await h.manager.drainQueue(t.id); expect(h.runs).toHaveLength(1);
     expect(h.store.threads.messages(t.id).some(message => message.contentMd.includes("queued workspace context belongs to another project"))).toBe(true);
   });
+});
+
+test("idea planning is restricted and promotion carries history into a fresh engineering session once", async () => {
+  const h = await harness(), p = h.project("idea-plan"), t = h.thread();
+  let manifest = { ...p.manifest(), ideaDraft: {} };
+  p.manifest = () => manifest;
+  h.store.threads.addMessage({ threadId: t.id, role: "user", contentMd: "Use a 1k resistor" });
+  await h.start(t.id, p, "Discuss my idea");
+  expect(h.runs[0]?.session.planningOnly).toBe(true);
+  expect(new URL(h.runs[0]!.session.mcp.url).searchParams.get("profile")).toBe("planning");
+  expect(h.runs[0]?.session.prompt).toContain("Do not create, edit, generate");
+  h.runs[0]!.finish([{ type: "text", delta: "We agreed on a 20mm outline" }]); await settle();
+  const { ideaDraft: _draft, ...rest } = manifest;
+  manifest = { ...rest, promotedAt: new Date().toISOString() } as typeof manifest;
+  await h.start(t.id, p, "Generate the agreed circuit");
+  expect(h.runs[1]?.session.planningOnly).toBeUndefined();
+  expect(h.runs[1]?.session.resume).toBeUndefined();
+  expect(h.runs[1]?.session.prompt).toContain("Use a 1k resistor");
+  expect(h.runs[1]?.session.prompt).toContain("20mm outline");
+  h.runs[1]!.finish(); await settle();
+  await h.start(t.id, p, "Explain the result");
+  expect(h.runs[2]?.session.resume).toBe("s2");
+  h.runs[2]!.finish(); await settle();
 });

@@ -614,7 +614,8 @@ describe("http daemon", () => {
     const a = await connect(daemon.token);
     const names = (await a.client.listTools()).tools.map((t) => t.name);
     // Core plus the circuit, verify and render toolsets: both schematic authoring paths start listed.
-    expect(names).toHaveLength(37);
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toContain("request_project_creation");
     expect(names).toEqual(
       expect.arrayContaining([
         "capability_call",
@@ -646,14 +647,15 @@ describe("http daemon", () => {
 
     await a.client.callTool({ name: "load_toolset", arguments: { toolset: "export" } });
     const exportNames = (await a.client.listTools()).tools.map((tool) => tool.name);
-    expect(exportNames).toHaveLength(47);
+    expect(exportNames.length).toBeGreaterThan(names.length);
+    expect(exportNames).toEqual(expect.arrayContaining(names));
     expect(exportNames).toEqual(
       expect.arrayContaining(["silk_art", "export_stencil", "export_laser_stencil"]),
     );
 
     // A second session starts with only the default toolsets (state is per session).
     const b = await connect(daemon.token);
-    expect((await b.client.listTools()).tools.length).toBe(37);
+    expect((await b.client.listTools()).tools.map(tool => tool.name).sort()).toEqual([...names].sort());
     expect(daemon.mcp.activeCount()).toBe(2);
 
     // Clients that cannot process tools/list_changed can request the complete
@@ -673,6 +675,9 @@ describe("http daemon", () => {
     expect(nativeNames).toContain("circuit_read_errors");
     expect(nativeNames).not.toContain("load_toolset");
     expect(nativeNames).not.toContain("native_edit_transaction");
+
+    const planning = await connect(daemon.token, "?profile=planning");
+    expect((await planning.client.listTools()).tools.map(tool => tool.name)).toEqual(["request_project_creation"]);
 
     const substrate = await connect(daemon.token, "?profile=substrate");
     expect((await substrate.client.listTools()).tools).toEqual([]);
@@ -725,6 +730,7 @@ describe("http daemon", () => {
     await a.transport.terminateSession();
     await all.transport.terminateSession();
     await native.transport.terminateSession();
+    await planning.transport.terminateSession();
     await apps.transport.terminateSession();
     await nativeApps.transport.terminateSession();
     await apps.client.close();
@@ -733,6 +739,7 @@ describe("http daemon", () => {
     await b.client.close();
     await all.client.close();
     await native.client.close();
+    await planning.client.close();
     await substrate.client.close();
     await c.client.close();
     await new Promise((r) => setTimeout(r, 20));
@@ -926,4 +933,34 @@ describe("http daemon", () => {
     expect(kept.preferredRouter).toBe("fab_router");
     await api("/settings", { method: "PATCH", body: JSON.stringify({ preferredRouter: null }) });
   });
+});
+
+ test("idea drafts save references, reject engineering writes, and promote without replacing conversation ownership", async () => {
+  const created = await api("/projects", { method: "POST", body: JSON.stringify({ name: "HTTP idea draft", draft: true }) });
+  expect(created.status).toBe(201);
+  const draft = await created.json() as { id: string; path: string; isDraft: boolean };
+  expect(draft.isDraft).toBe(true);
+  const write = await api(`/projects/${draft.id}/files/board.kicad_pcb`, { method: "PUT", body: "forbidden board" });
+  expect(write.status).toBe(412);
+  const unsafePatch = await api(`/projects/${draft.id}`, { method: "PATCH", body: JSON.stringify({ manifest: { ideaDraft: null } }) });
+  expect(unsafePatch.status).toBe(400);
+  const read = await api(`/projects/${draft.id}/files/fabdesk.json`);
+  expect(read.status).toBe(200);
+  const t = await (await api("/threads", { method: "POST", body: JSON.stringify({ projectId: draft.id, agentId: "claude" }) })).json() as { id: string };
+  daemon.store.threads.addMessage({ threadId: t.id, role: "user", contentMd: "Keep my planning conversation" });
+  const token = daemon.tokens.mintRunToken({ runId: "idea-security-test", projectId: draft.id, threadId: t.id });
+  const agentPromote = await api(`/projects/${draft.id}/promote`, { method: "POST", headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ name: "Not user approved" }) });
+  expect(agentPromote.status).toBe(403);
+  const agentNew = await api("/projects", { method: "POST", headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ name: "Bypass draft" }) });
+  expect(agentNew.status).toBe(403);
+  daemon.tokens.revoke(token);
+  const promotion = await api(`/projects/${draft.id}/promote`, { method: "POST", body: JSON.stringify({ name: "HTTP promoted idea" }) });
+  expect(promotion.status).toBe(200);
+  const promoted = await promotion.json() as { id: string; manifest: Record<string, unknown> };
+  expect(promoted.id).toBe(draft.id);
+  expect(promoted.manifest.ideaDraft).toBeUndefined();
+  expect(daemon.store.threads.get(t.id)?.projectId).toBe(draft.id);
+  expect(daemon.store.threads.messages(t.id)[0]?.contentMd).toBe("Keep my planning conversation");
+  const retry = await api(`/projects/${draft.id}/promote`, { method: "POST", body: JSON.stringify({ name: "Duplicate" }) });
+  expect(retry.status).toBe(412);
 });

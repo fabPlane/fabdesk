@@ -460,3 +460,19 @@ describe("MCP isolation", () => {
     expect(readFileSync(snapshot, "utf8")).toBe("possibly rotated token");
   });
 });
+
+test("draft planning cannot inherit bypass or extra native write tools", () => {
+  const s = session({ planningOnly: true, permission: "bypass", extraAllowedTools: ["Bash", "Write"], resume: "draft-session" });
+  const codex = codexArgs(s, "codex", ["foreign"]);
+  expect(codex).toContain('sandbox_mode="read-only"');
+  expect(codex).toContain('approval_policy="never"');
+  expect(codex).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+  expect(codex).not.toContain("--approve-for-me");
+  expect(codex).toContain('mcp_servers.fabdesk.enabled_tools=["request_project_creation","request_user_input"]');
+  const claude = claudeArgs(s, "claude");
+  expect(claude[claude.indexOf("--tools") + 1]).toBe("Read");
+  expect(claude[claude.indexOf("--permission-mode") + 1]).toBe("default");
+  expect(claude).not.toContain("Bash");
+  expect(claude).not.toContain("Write");
+  expect(claude).not.toContain("bypassPermissions");
+});

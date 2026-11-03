@@ -31,11 +31,16 @@ export function createContextFactory(deps: ContextDeps): ContextFactory {
   return async (req) => {
     let project: ProjectHandle | null = null;
     const info = deps.tokens?.lookup(req.token) ?? null;
+    const runProject = info?.kind === "run" && info.projectId ? await deps.projects.handle(info.projectId) : null;
+    if (runProject?.manifest().ideaDraft && (req.def.name !== "request_project_creation" || req.projectRef && req.projectRef !== runProject.id))
+      throw new ToolError("This is an idea draft. Use request_project_creation before generating or changing engineering files. Other project tools are unavailable during planning.", "precondition");
     if (req.projectRef) project = await deps.projects.resolve(req.projectRef);
     if (!project && !req.projectRef) {
       if (info?.projectId) project = await deps.projects.handle(info.projectId);
       if (!project && deps.defaultProject) project = await deps.defaultProject();
     }
+    if (project && deps.projects.isPromoting(project.id)) throw new ToolError("Project setup is in progress. Try again once it finishes.", "precondition");
+    if (project?.manifest().ideaDraft && req.def.name !== "request_project_creation") throw new ToolError("Create a project from this idea before using engineering tools.", "precondition");
     const board = req.board ? Object.freeze(BoardSourceSelection.parse(req.board)) : undefined;
     let runInScope: (<T>(operation: () => Promise<T>) => Promise<T>) | undefined;
     let boardRoot: Readonly<{ id: string; dir: string }> | undefined;

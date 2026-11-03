@@ -229,6 +229,12 @@ export class CoreClient {
   createProject(name: string, parentDirectory?: string): Promise<ProjectSummary> {
     return this.request("/projects", { method: "POST", json: { name, ...(parentDirectory ? { parentDirectory } : {}) } });
   }
+  createIdeaDraft(): Promise<ProjectSummary> {
+    return this.request("/projects", { method: "POST", json: { name: "Untitled idea", draft: true } });
+  }
+  promoteIdeaDraft(id: string, name: string, parentDirectory?: string): Promise<ProjectDetail> {
+    return this.request(`/projects/${encodeURIComponent(id)}/promote`, { method: "POST", json: { name, ...(parentDirectory ? { parentDirectory } : {}) } });
+  }
   getProject(id: string): Promise<ProjectDetail> {
     return this.request(`/projects/${encodeURIComponent(id)}`);
   }

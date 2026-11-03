@@ -268,6 +268,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const token = extractToken(c.req.raw, { allowQuery });
     const info = deps.tokens.lookup(token);
     if (!info) return c.json({ error: "unauthorized" }, 401);
+    if (info.kind === "run" && info.projectId && (await deps.projects.handle(info.projectId))?.manifest().ideaDraft && c.req.path !== "/mcp" && c.req.method !== "GET")
+      return c.json({ error: "Idea drafts cannot change engineering files or create projects through an agent. Use project setup in fabPlane.", code: "draft_project_required" }, 403);
     // The relay link stamps its requests; the listeners strip the header from theirs (serve.ts),
     // so it is the daemon's own knowledge of the path, never the phone's claim.
     if (info.kind === "device" && info.deviceId)
@@ -338,7 +340,16 @@ export function createApp(deps: AppDeps): Hono<Env> {
       return c.json({ error: "Choosing a parent directory requires the local desktop connection" }, 403);
     }
     const body = CreateProject.parse(input);
-    return c.json(await deps.projects.create(body.name, body.parentDirectory), 201);
+    return c.json(await deps.projects.create(body.name, body.parentDirectory, body.draft), 201);
+  });
+  app.post("/projects/:id/promote", async c => {
+    const id = c.req.param("id"), input = await c.req.json();
+    if (deps.tokens.lookup(c.get("token"))?.kind === "run") return c.json({ error: "Project setup requires the user interface.", code: "forbidden" }, 403);
+    if (deps.listener === "remote" && input?.parentDirectory !== undefined) return c.json({ error: "Choosing a parent directory requires the local desktop connection" }, 403);
+    const body = CreateProject.omit({ draft: true }).parse(input);
+    const busy = deps.runs?.projectBusyMessage(id);
+    if (busy || deps.jobs.list().some(job => job.projectId === id && ["queued", "running"].includes(job.status))) return c.json({ error: "Wait for the current reply or task to finish before creating the project.", code: "precondition" }, 412);
+    return c.json(await deps.projects.promoteDraft(id, body.name, body.parentDirectory));
   });
   app.get("/projects/:id", async (c) => {
     const d = await deps.projects.detail(c.req.param("id"));
@@ -358,6 +369,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
       .parse(await c.req.json());
     const h = await deps.projects.handle(id);
     if (!h) return c.json({ error: "not found" }, 404);
+    if (body.manifest && ("ideaDraft" in body.manifest || "promotedAt" in body.manifest)) return c.json({ error: "Use project setup to change draft ownership.", code: "precondition" }, 400);
     if (body.manifest) await h.updateManifest(body.manifest as never);
     if (body.name) await deps.projects.rename(id, body.name);
     deps.bus.emit({
@@ -399,6 +411,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const h = await deps.projects.handle(id);
     if (!h) return c.json({ error: "not found" }, 404);
     const rel = decodeURIComponent(c.req.path.split("/files/")[1] ?? "");
+    if (h.manifest().ideaDraft && rel !== "NOTES.md") return c.json({ error: "Create a project before editing engineering files.", code: "draft_project_required" }, 412);
     if (rel === PROJECT_FILES.manifest) return c.json({ error: "use PATCH /projects/:id" }, 400);
     const abs = await jailPath(h.dir, rel);
     await writeAtomic(abs, new Uint8Array(await c.req.arrayBuffer()));
@@ -604,6 +617,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     // everything is synchronous, so no other request can take the thread or the project between
     // them and the user message being stored.
     const project = t.projectId ? await deps.projects.handle(t.projectId) : null;
+    if (t.projectId && deps.projects.isPromoting(t.projectId)) return c.json({ error: "Project setup is in progress. Your message has not been sent.", code: "precondition" }, 412);
     const agentId: AgentId = body.agentId ?? t.agentId;
     const queue =
       body.queue === true || c.req.query("queue") === "1" || c.req.query("queue") === "true";

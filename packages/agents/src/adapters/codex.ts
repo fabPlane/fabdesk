@@ -91,7 +91,7 @@ export function codexArgs(
   const args = [bin, ...(standalone ? ["--no-daemon"] : []), "exec"];
   // This is an `exec` option rather than an `exec resume` option, so it must precede the
   // subcommand. Keeping it here also lets follow-up messages use approval-requiring MCP tools.
-  if (session.permission !== "bypass") args.push("--approve-for-me");
+  if (!session.planningOnly && session.permission !== "bypass") args.push("--approve-for-me");
   if (session.resume) args.push("resume", session.resume);
   args.push("--json", "--skip-git-repo-check", ...ISOLATION_CONFIG);
   // `exec resume` also exposes Codex's own question tools, whose UI events this adapter cannot
@@ -107,7 +107,9 @@ export function codexArgs(
         .map((name) => `${tomlString(name)}={enabled=false}`)
         .join(",")}}`,
     );
-  if (session.permission === "bypass") {
+  if (session.planningOnly) {
+    args.push("-c", 'sandbox_mode="read-only"', "-c", 'approval_policy="never"');
+  } else if (session.permission === "bypass") {
     args.push("--dangerously-bypass-approvals-and-sandbox");
   } else {
     // `codex exec` is non-interactive, so approval-requiring MCP tools otherwise fail with
@@ -131,6 +133,7 @@ export function codexArgs(
     "-c",
     `mcp_servers.${MCP_SERVER_NAME}.bearer_token_env_var=${tomlString(TOKEN_ENV)}`,
   );
+  if (session.planningOnly) args.push("-c", `mcp_servers.${MCP_SERVER_NAME}.enabled_tools=["request_project_creation","request_user_input"]`);
   for (const a of session.attachments) if (isImage(a)) args.push("-i", a.path);
   // Prompts commonly start with Markdown list markers (`- ...`). Without the option terminator,
   // Codex parses such prompts as CLI flags and exits with code 2 before emitting JSONL.

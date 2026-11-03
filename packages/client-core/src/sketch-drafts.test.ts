@@ -10,7 +10,7 @@ function fixture(projectId: string | null = null) {
   const destinations: string[] = [];
   const adopted: string[] = [];
   const client = {
-    async createProject() {
+    async createIdeaDraft() {
       creates++;
       if (failCreate) throw new Error("create failed");
       return { id: "draft-project" } as Awaited<ReturnType<CoreClient["createProject"]>>;
@@ -76,7 +76,7 @@ test("import saves the captured original before the image and retries without re
   let fail = true;
   const source = { file: new Blob(['{"original":"unchanged"}']), name: "existing.excalidraw" };
   const session = createSketchDraftSession({ projectId: "owned", onProjectCreated: () => { throw new Error("unexpected creation"); }, client: {
-    createProject: async () => { throw new Error("unexpected creation"); },
+    createIdeaDraft: async () => { throw new Error("unexpected creation"); },
     uploadSketch: async (id, blob, name = "sketch.png") => { calls.push(`${id}/${name}`); if (name.endsWith(".png") && fail) throw new Error("image failed"); if (name.endsWith(".excalidraw")) expect(await blob.text()).toBe('{"original":"unchanged"}'); return { path: `sketches/${name}` }; },
   } });
   await expect(session.save(new Blob(), "first.png", source)).rejects.toThrow("image failed");
@@ -90,7 +90,7 @@ test("failed source upload prevents image upload and can retry the original", as
   let fail = true;
   const source = { file: new Blob(), name: "drawing.excalidraw" };
   const session = createSketchDraftSession({ projectId: "owned", onProjectCreated: () => {}, client: {
-    createProject: async () => { throw new Error("unexpected creation"); },
+    createIdeaDraft: async () => { throw new Error("unexpected creation"); },
     uploadSketch: async (_id, _blob, name = "sketch.png") => { calls.push(name); if (fail) throw new Error("source failed"); return { path: `sketches/${name}` }; },
   } });
   await expect(session.save(new Blob(), "image.png", source)).rejects.toThrow("source failed");
