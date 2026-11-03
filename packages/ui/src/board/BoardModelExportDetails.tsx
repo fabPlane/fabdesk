@@ -1,6 +1,6 @@
 import { useBoardModelRevision, useProjectJson } from "@fabdesk/client-core";
 import { BoardModelRevision, BOARD_MODEL_REVISION_PATH } from "@fabdesk/protocol";
-import { DisclosureSummary } from "../components/DisclosureSummary";
+import { ModelExportNotes } from "./ModelExportNotes";
 
 /** Historical exporter context is shown only while its saved artifact still matches. */
 export function BoardModelExportDetails({ projectId }: { projectId: string }) {
@@ -9,9 +9,5 @@ export function BoardModelExportDetails({ projectId }: { projectId: string }) {
   if (revision.isFetching || !["source-unchanged", "source-changed"].includes(revision.data ?? "") || !parsed.success) return null;
   const receipt = parsed.data;
   if (!receipt.modelProjectDirectory && !receipt.warnings?.length) return null;
-  return <details className="fd-model-export-details">
-    <DisclosureSummary icon="folderOpen" label="Model export details" variant="compact" badge={receipt.warnings?.length ? `${receipt.warnings.length} warnings` : undefined} />
-    {receipt.modelProjectDirectory && <p>Imported component-model folder: <code>{receipt.modelProjectDirectory}</code>. This records the export context; component files and full model coverage remain unverified.</p>}
-    {!!receipt.warnings?.length && <><p>The native exporter reported:</p><ul>{receipt.warnings.map((message, index) => <li key={index}>{message}</li>)}</ul></>}
-  </details>;
+  return <ModelExportNotes projectId={projectId} warnings={receipt.warnings ?? []} modelProjectDirectory={receipt.modelProjectDirectory} />;
 }

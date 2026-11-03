@@ -602,6 +602,12 @@
 .fd-overview-board-caption .fd-imported-board-identity .fd-workspace-menu-content { bottom:calc(100% + 8px); top:auto; }
 .fd-model-export-details { padding: 8px 16px; font-size: 12px; overflow-wrap: anywhere; }
 .fd-model-export-details p, .fd-model-export-details ul { margin: 8px 0; }
+.fd-model-export-details ul { max-height: 160px; overflow: auto; }
+.fd-board-model-status-floating .fd-model-export-notes { max-width: 420px; }
+.fd-model-export-summary { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px 0; }
+.fd-model-export-summary > div { flex: 1; min-width: 0; }
+.fd-model-export-summary strong { color: var(--fd-warning); font-size: 13px; }
+.fd-model-export-summary p { margin: 4px 0; font-size: 12px; line-height: 1.5; }
 
 /* Output removal follows the same compact, source-aware dialog language as export. */
 .fd-output-trash-dialog { width: 720px; max-width: 100%; }

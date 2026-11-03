@@ -1,6 +1,6 @@
 import { useAssemblyBoardModel, useBoardSources } from "@fabdesk/client-core";
 import type { BoardSourceSelection } from "@fabdesk/protocol";
-import { DisclosureSummary } from "../components/DisclosureSummary";
+import { ModelExportNotes } from "./ModelExportNotes";
 
 /** Only display exporter notes for the exact declared member and verified model bytes. */
 export function MemberModelExportDetails({ projectId, sourceId, path }: { projectId: string; sourceId: string; path: string }) {
@@ -15,9 +15,5 @@ export function MemberModelExportDetails({ projectId, sourceId, path }: { projec
 function VerifiedMemberNotes({ projectId, board, path }: { projectId: string; board: BoardSourceSelection; path: string }) {
   const model = useAssemblyBoardModel(projectId, board);
   if (model.isFetching || model.isError || model.data?.path !== path || !["source-unchanged", "source-changed"].includes(model.data.state) || !model.data.warnings.length) return null;
-  return <details className="fd-model-export-details">
-    <DisclosureSummary icon="warning" label="Model export details" variant="compact" warning badge={`${model.data.warnings.length} warnings`} />
-    <p>The native exporter reported these notes for this saved model. Component-model coverage and physical fit are not verified.</p>
-    <ul>{model.data.warnings.map((message, index) => <li key={index}>{message}</li>)}</ul>
-  </details>;
+  return <ModelExportNotes projectId={projectId} path={path} sourceId={board.sourceId} manifestSha256={board.manifestSha256} warnings={model.data.warnings} />;
 }
