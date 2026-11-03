@@ -23,6 +23,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { runKicadCli, type KicadCli } from "./cli";
+import { parseGlbContainer } from "./glb-container";
 
 export const MECHANICAL_COLLECTOR = { name: "fabdesk.mechanical-glb", version: "1.0.0" } as const;
 export const MECHANICAL_CONTRACT = { name: "fabdesk.mechanical", version: "1.0.0" } as const;
@@ -380,16 +381,8 @@ export function measureGlb(
 ): { generator: string | null; roots: GlbRootNode[] } {
   let totalTriangles = 0;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (bytes.byteLength < 20 || view.getUint32(0, true) !== 0x46546c67)
-    throw new Error("not a binary glTF file");
-  if (view.getUint32(4, true) !== 2) throw new Error("unsupported glTF version");
-  const jsonLength = view.getUint32(12, true);
-  if (view.getUint32(16, true) !== 0x4e4f534a) throw new Error("glTF JSON chunk missing");
-  const gltf = JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + jsonLength))) as Gltf;
-  let binOffset = -1;
-  const binHeader = 20 + jsonLength;
-  if (binHeader + 8 <= bytes.byteLength && view.getUint32(binHeader + 4, true) === 0x004e4942)
-    binOffset = binHeader + 8;
+  const { json, binOffset, binLength } = parseGlbContainer(bytes);
+  const gltf = json as Gltf;
   const nodes = gltf.nodes ?? [];
   const scene = gltf.scenes?.[gltf.scene ?? 0];
   if (!scene) throw new Error("glTF has no scene");
@@ -424,7 +417,7 @@ export function measureGlb(
           throw new Error("glTF POSITION data outside the GLB binary chunk");
         const stride = bufferView.byteStride ?? 12;
         const start = binOffset + (bufferView.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
-        if (start + stride * (accessor.count - 1) + 12 > bytes.byteLength)
+        if (start + stride * (accessor.count - 1) + 12 > binOffset + binLength)
           throw new Error("glTF accessor exceeds buffer");
         const m = world;
         const positions: Vec3[] = [];
@@ -468,7 +461,7 @@ export function measureGlb(
             const width = a.componentType === 5121 ? 1 : a.componentType === 5123 ? 2 : 4;
             const start = binOffset + (b.byteOffset ?? 0) + (a.byteOffset ?? 0),
               stride = b.byteStride ?? width;
-            if (start + stride * (a.count - 1) + width > bytes.length)
+            if (start + stride * (a.count - 1) + width > binOffset + binLength)
               throw new Error("Triangle indices exceed GLB buffer");
             for (let i = 0; i < a.count; i++)
               indices.push(

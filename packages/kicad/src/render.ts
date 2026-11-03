@@ -1,6 +1,10 @@
 // ported from fabplane packages/pcb/src/kicad-cli.ts; replace with @pcb/pcb/kicad-cli once it lands on fabplane main
 import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { readFile, rename, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { lastLines, runKicadCli, type KicadCli } from "./cli";
+import { parseGlbContainer } from "./glb-container";
 
 export type BoardView = "top" | "bottom" | "perspective" | "side";
 
@@ -69,30 +73,43 @@ export interface ExportGlbOptions {
 /**
  * Exports a binary glTF with substituted STEP models, pads, silkscreen and solder mask. KiCad
  * reports a failure exit code when `--fuse-shapes` hits geometry it cannot fuse even though it
- * still writes the file, so a written file is accepted; when nothing was written the export is
- * retried unfused.
+ * still writes a valid file. Validate the complete GLB before publishing it; retry an invalid or
+ * missing result once unfused. Failed/cancelled attempts never replace an existing good export.
  */
 export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promise<{ fused: boolean; warnings: string[] }> {
   const base = ["pcb", "export", "glb", "--force", "--subst-models", "--include-pads", "--include-silkscreen", "--include-soldermask"];
   if (!options.includeDnp) base.push("--no-dnp");
   if (options.mechanical) base.push("--user-origin", "0x0mm");
-  const tail = ["-o", options.output, options.board];
   const attempt = async (fused: boolean) => {
-    const result = await runKicadCli(cli, [...base, ...(fused ? ["--fuse-shapes"] : []), ...tail], {
-      tolerateExit: true,
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
-    const warnings = `${result.stdout}\n${result.stderr}`
-      .split("\n")
-      .filter((line) => /file not found|problems encountered|warning|could not add|failed/i.test(line))
-      .map((line) => line.trim());
-    return { ok: existsSync(options.output), warnings, exitCode: result.exitCode, stderr: result.stderr };
+    options.signal?.throwIfAborted();
+    const temporary = join(dirname(options.output), `${randomUUID()}.glb`);
+    try {
+      const result = await runKicadCli(cli, [...base, ...(fused ? ["--fuse-shapes"] : []), "-o", temporary, options.board], {
+        tolerateExit: true,
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
+      const warnings = `${result.stdout}\n${result.stderr}`
+        .split("\n")
+        .filter((line) => /file not found|problems encountered|warning|could not add|failed/i.test(line))
+        .map((line) => line.trim());
+      let invalid: string | null = null;
+      try {
+        parseGlbContainer(await readFile(temporary));
+      } catch (error) {
+        invalid = error instanceof Error ? error.message : String(error);
+      }
+      options.signal?.throwIfAborted();
+      if (!invalid) await rename(temporary, options.output);
+      return { ok: invalid === null, warnings, exitCode: result.exitCode, stderr: result.stderr, invalid };
+    } finally {
+      await rm(temporary, { force: true });
+    }
   };
   const fused = await attempt(!options.mechanical);
   if (fused.ok) return { fused: !options.mechanical, warnings: fused.warnings };
   const plain = await attempt(false);
-  if (plain.ok) return { fused: false, warnings: plain.warnings };
-  throw new Error(`pcb export glb failed (${plain.exitCode}): ${lastLines(plain.stderr)}`);
+  if (plain.ok) return { fused: false, warnings: [...plain.warnings, "The first 3D export was incomplete; a fresh retry succeeded."] };
+  throw new Error(`pcb export glb failed (${plain.exitCode}): ${plain.invalid ?? lastLines(plain.stderr)}`);
 }
 
 export interface BoardStats {
