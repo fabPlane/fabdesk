@@ -1,6 +1,18 @@
-# Enclosure software validation — 30 October 2026
+# Enclosure software validation
 
 PR #398 adds a guarded prototype enclosure workflow. Software checks and slicing are evidence for review; they do not certify a manufactured assembly.
+
+## Current status — 3 November 2026
+
+| Requirement | Current evidence | Remaining boundary |
+| --- | --- | --- |
+| Few-click setup and clear controls | Boards → Case → Preview gates; Create case performs arrangement, sizing and preview; dimensions and move/rotate controls remain accessible. Navigation tests and live warning-link checks pass. | Advanced hardware and measured plug settings remain optional manual inputs. |
+| Automatic sizing, spacing and fit | 256 affected tests pass, including ports, board screws, holders, fixed obstacles, printer limits and exported geometry. Real VAIO previews complete with no detected blockers. | Search and geometric checks are bounded; absent physical dimensions cannot be inferred accurately. |
+| Reliable native board geometry | Isolated native export directories pass 21 real-board exports with unchanged measured geometry. Two original-project previews check 199 closed bodies without unavailable checks. | Missing component files, including the exact J1 Micro-USB model, remain explicit review items. |
+| Printable, coordinated outputs | Joined-solid tests plus recorded independent STL slicing, STEP import and ZIP-hash checks. | Actual printer/material strength, retention and assembled cable fit have not been physically verified. |
+| Branch and PR delivery | Feature branch is pushed to PR #398 with two main screenshots and short feature descriptions. | PR remains draft. The latest completed verification job fails authenticating checkout of private `fabPlane/fab_pcb`, before tests run. |
+
+Evidence below is chronological. Later entries supersede earlier measurements and resolved limitations; earlier test counts describe their respective snapshots, not the current full suite.
 
 ## Multi-board follow-up — 2 November 2026
 
@@ -320,3 +332,9 @@ Measured final Arrange & fit case run: 24.8 seconds from click to completed seve
 - **256 tests / 1,735 assertions pass** across 34 files. Root typecheck and the Windows core build pass; no source maps in the output. The existing desktop UI is unchanged by this fix. The full monorepo suite was not rerun.
 - The original VAIO project was refreshed twice in the running app, with the isolated directories observed during actual export. Both previews completed with **199 closed native bodies checked**, **0 detected blockers**, **0 unavailable checks**, and **38 review findings**, preserving the original **119 × 244 × 24 mm outside** case and board arrangement. Missing source models and physical fit remain explicit review items; this resolves the reproduced concurrency corruption, not those absent inputs.
 - Current PR CI was inspected separately: [verify run 41609783186](https://github.com/TensorFleet/fabdesk/actions/runs/41609783186/job/125828626017) failed while fetching the pinned private `fabPlane/fab_pcb` workspace (`could not read Username`), before verification commands ran. This is a checkout-authentication failure, not passing CI or a test failure attributable to the enclosure code. Other verification jobs were still queued when inspected.
+
+## Warning guidance preserved across sections (2026-11-03)
+
+- The final workflow audit found that the section-change effect cleared placement and printer-limit instructions immediately after a warning navigated from Preview to Case. Guidance now appears after that reset, alongside the revealed control.
+- Live built-app checks confirm both instructions remain visible after navigation, with the Case section selected. **15 focused workflow/navigation/review tests and 103 assertions pass**; UI typecheck and desktop build pass. The earlier 256-test run covers the unchanged geometry/export implementation. No PCB or enclosure dimensions changed during this UI check.
+- At pushed revision `0877ee6c`, [verification again failed before tests](https://github.com/TensorFleet/fabdesk/actions/runs/41610982176/job/125832536659) on private dependency authentication. The configured `FAB_PCB_RELEASE_TOKEN` secret exists, but the runner cannot authenticate its checkout; its contents were not retrieved or replaced. An authorized repository administrator must repair its access before CI can validate the PR.

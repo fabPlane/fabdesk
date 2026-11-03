@@ -112,6 +112,7 @@ export function EnclosureDesigner({
   const [issueControl, setIssueControl] = useState<{
     target: EnclosureIssueTarget;
     boardPath: string | null;
+    notice: string;
   } | null>(null);
   const [layoutProposals, setLayoutProposals] = useState<LayoutChoice[] | null>(null);
   const cancelLayout = useRef<(() => void) | null>(null);
@@ -451,8 +452,10 @@ export function EnclosureDesigner({
   useEffect(() => setNotice(""), [step]);
   useEffect(() => {
     // Reveal after the step's scroll reset, even when the window is in the background.
-    if (issueControl)
+    if (issueControl) {
       revealEnclosureControl(body.current, issueControl.target, issueControl.boardPath);
+      setNotice(issueControl.notice);
+    }
   }, [issueControl]);
   const [capabilities, setCapabilities] = useState({ pcb: false, cad: false });
   const [openLid, setOpenLid] = useState(true),
@@ -996,6 +999,7 @@ export function EnclosureDesigner({
     if (route.disclosure === "case") setCaseDetails(true);
     if (route.disclosure === "layout") setLayoutDetails(true);
     if (route.disclosure === "size") setCustomSize(true);
+    let notice = "";
     if (route.target === "placement") {
       if (path) {
         selectBoard(path);
@@ -1004,16 +1008,14 @@ export function EnclosureDesigner({
         setStep("PCB");
         setManualPlacement(true);
       }
-      setNotice(
-        "Move the highlighted board, or choose Auto arrange in Case. Preview again after making changes.",
-      );
+      notice =
+        "Move the highlighted board, or choose Auto arrange in Case. Preview again after making changes.";
     }
     if (code === "case-size-limit") {
-      setNotice(
-        "Auto arrange to fit your print area, or change the size limit below. Screw mounts count toward the outside size.",
-      );
+      notice =
+        "Auto arrange to fit your print area, or change the size limit below. Screw mounts count toward the outside size.";
     }
-    setIssueControl({ target: route.target, boardPath: path ?? null });
+    setIssueControl({ target: route.target, boardPath: path ?? null, notice });
   }
   async function download(path: string) {
     const blob = await client.readFileBlob(projectId, path);
