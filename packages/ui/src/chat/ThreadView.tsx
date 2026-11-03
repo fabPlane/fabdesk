@@ -36,6 +36,11 @@ export function ThreadView({ presentation = "chat", referenceStart = false }: { 
     async (input: { agentId: AgentId; model?: string }) => {
       let destination = projectId;
       let createdProject = false;
+      if (activeThreadId) throw new Error("Wait for the current chat to load before sending.");
+      if (!destination && presentation !== "start") {
+        useUiStore.getState().setProjectPickerOpen(true);
+        throw new Error("Choose or create a project before sending a message.");
+      }
       try {
         if (!destination && presentation === "start") {
           const project = await client.createIdeaDraft();
@@ -64,7 +69,7 @@ export function ThreadView({ presentation = "chat", referenceStart = false }: { 
         throw error;
       }
     },
-    [create, projectId, client, qc, presentation],
+    [create, projectId, client, qc, presentation, activeThreadId],
   );
 
   if (thread && thread.projectId !== projectId) return <p className="p-4 text-sm text-muted">Open other projects from Home.</p>;
@@ -97,7 +102,7 @@ export function ThreadView({ presentation = "chat", referenceStart = false }: { 
           {presentation !== "start" && !projectId && <p className="mt-3 text-xs text-muted">Saving a sketch creates a project automatically.</p>}
         </div>
       )}
-      <Composer thread={thread} onCreateThread={onCreateThread} startMode={presentation === "start"} />
+      <Composer thread={thread} loadingThread={!!activeThreadId && !thread} onCreateThread={onCreateThread} startMode={presentation === "start"} />
       {presentation === "start" && !activeThreadId && !referenceStart && <FreshStartActions />}
       </div>
     </div>

@@ -561,6 +561,8 @@ function routeRunTool(inputSchema: typeof RouteRunArgs) {
       idempotentHint: false,
     },
     longRunning: true,
+    // Requests wait at most one minute; the durable run outlives the request.
+    mcpHeartbeat: false,
     handler: (args, ctx) =>
       runRoute(
         {

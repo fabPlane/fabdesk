@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, statSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { detectBinary, resolveFirst } from "../detect";
-import { readCodexConfiguredModel } from "../codex-model";
+import { readCodexConfiguredModel, readCodexModelEfforts } from "../codex-model";
 import { readCodexModelCatalog } from "../codex-models";
 import { CodexStreamParser } from "../parsers/codex";
 import { runAgentProcess } from "../process";
@@ -119,6 +119,7 @@ export function codexArgs(
   }
   if (!session.resume) args.push("-C", session.cwd);
   if (session.model) args.push("-m", session.model);
+  if (session.effort) args.push("-c", `model_reasoning_effort=${tomlString(session.effort)}`);
   args.push(
     "-c",
     // Codex snapshots MCP tools at turn start and does not currently apply
@@ -222,7 +223,7 @@ export const codexAdapter: AgentAdapter = {
     const detected = await detectBinary(CANDIDATES, binaryPath);
     const catalog = detected.installed && detected.path ? await readCodexModelCatalog(detected.path, detected.version) : undefined;
     const defaultModel = detected.installed ? readCodexConfiguredModel() ?? catalog?.defaultModel : undefined;
-    return { ...detected, ...catalog, ...(defaultModel ? { defaultModel } : {}) };
+    return { ...detected, ...catalog, ...(defaultModel ? { defaultModel } : {}), ...(detected.installed ? { modelEfforts: readCodexModelEfforts() } : {}) };
   },
   models: () => [
     "gpt-5.5",

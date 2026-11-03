@@ -236,3 +236,4 @@ export { projectJobs, projectJobBoard, jobIsActive, activeModelOutputJobs, type 
 export * from "./output-revision";
 
 export { schematicFocusFilesMatch, schematicFocusFromResult } from "./schematic-focus";
+export { PersistentDraft, localDraft } from "./persistent-draft";

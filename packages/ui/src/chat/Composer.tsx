@@ -2,19 +2,20 @@ import { useShallow } from "zustand/react/shallow";
 import { captureAssistantContext, selectAssistantState } from "./assistant-context";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { modelDisplayName } from "./model-display-name";
-import type { AgentId, Thread } from "@fabdesk/protocol";
+import type { AgentId, ReasoningEffort, Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, IconButton, Textarea } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { InstallHint } from "../components/InstallHint";
 import { ErrorNotice } from "../components/ErrorNotice";
-import { useCore } from "@fabdesk/client-core";
+import { useCore, useSaveAgentPreference, useSaveAgentEffort } from "@fabdesk/client-core";
 import { activeQuestion, CoreHttpError, formatVoiceShortcut, parseVoiceShortcut, useDoctor, useSettings, useSpeechStatus, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt, useBoardSources, useProject } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
 import { AgentLogo } from "../components/AgentLogo";
+import { reasoningEffortLabel } from "./EffortSection";
 import { AgentModelMenu } from "./AgentModelMenu";
 import { PermissionsMenu } from "./PermissionsMenu";
 import { expandSlashCommand, isFinishItCommand, slashSuggestions } from "@fabdesk/client-core";
@@ -48,6 +49,7 @@ export interface ComposerProps {
   /** First-start actions already expose sketch creation; advanced automation stays requested. */
   startMode?: boolean;
   thread: Thread | null;
+  loadingThread?: boolean;
   /** Creates ownership before sending; navigation waits for the accepted message. */
   onCreateThread: (input: { agentId: AgentId; model?: string }) => Promise<Thread>;
 }
@@ -58,7 +60,7 @@ const FALLBACK_AGENTS = [
 
 const EMPTY: never[] = [];
 
-export function Composer({ thread, onCreateThread, startMode = false }: ComposerProps) {
+export function Composer({ thread, loadingThread = false, onCreateThread, startMode = false }: ComposerProps) {
   const agentButtonRef = useRef<HTMLButtonElement>(null);
   const { client, host } = useCore();
   const qc = useQueryClient();
@@ -85,6 +87,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
   const focusNonce = useUiStore((s) => s.composerFocusNonce);
   const agentPickerOpen = useUiStore((s) => s.agentPickerOpen);
   const setAgentPickerOpen = useUiStore((s) => s.setAgentPickerOpen);
+  const setProjectPickerOpen = useUiStore((s) => s.setProjectPickerOpen);
   const run = useRunsStore((s) => (thread ? s.runsByThread[thread.id] : undefined));
   const messages = useMessages(thread?.id ?? null);
   const queued = (messages.data ?? []).filter((message) => message.status === "queued");
@@ -92,6 +95,8 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
   const unqueueMessage = useUnqueueMessage();
   const doctor = useDoctor();
   const settings = useSettings();
+  const savePreference = useSaveAgentPreference();
+  const saveEffort = useSaveAgentEffort();
   const speech = useSpeechStatus();
   const voice = useVoiceInput({
     client,
@@ -108,7 +113,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
   const stopFinishIt = useStopFinishIt();
   const setActiveThread = useUiStore((s) => s.setActiveThread);
   const [agentId, setAgentId] = useState<AgentId>(thread?.agentId ?? settings.data?.defaultAgent ?? "claude");
-  const [model, setModel] = useState<string>(thread?.model ?? "");
+  const [model, setModel] = useState<string>(thread ? thread.model ?? "" : settings.data?.agents[settings.data.defaultAgent]?.model ?? "");
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -131,16 +136,34 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
     previousFocusNonce.current = focusNonce;
     if (questionKey) setExpandedQuestion({ id: questionKey, focusNonce });
   }, [focusNonce, questionKey]);
+  const savingEffort = useRef(false);
 
   useEffect(() => {
     if (thread) {
       setAgentId(thread.agentId);
       setModel(thread.model ?? "");
-    } else if (settings.data) {
-      setAgentId(settings.data.defaultAgent);
-      setModel(settings.data.agents[settings.data.defaultAgent]?.model ?? "");
     }
-  }, [thread, settings.data]);
+    // Refetching the same thread or saving defaults must not undo an explicit picker choice.
+  }, [thread?.id, thread?.agentId, thread?.model]);
+
+  const defaultAgent = settings.data?.defaultAgent;
+  const defaultModel = defaultAgent ? settings.data?.agents[defaultAgent]?.model ?? "" : "";
+  useEffect(() => {
+    if (!thread && defaultAgent && !savePreference.isPending) {
+      setAgentId(defaultAgent);
+      setModel(defaultModel);
+    }
+  }, [thread?.id, defaultAgent, defaultModel, savePreference.isPending]);
+
+  const selectAgent = useCallback((id: AgentId, selectedModel: string) => {
+    if (!settings.data || loadingThread || savePreference.isPending || savingEffort.current) return;
+    setAgentId(id);
+    setModel(selectedModel);
+    setError(null);
+    savePreference.mutate({ agentId: id, model: selectedModel || null }, {
+      onError: () => setError("Could not save your agent and model. Check the connection and select them again to retry."),
+    });
+  }, [settings.data, loadingThread, savePreference.isPending, savePreference.mutate]);
 
   useEffect(() => {
     if (!compactQuestion) textareaRef.current?.focus();
@@ -166,15 +189,29 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
   const agentMissing = selectedAgent ? !selectedAgent.installed : false;
   const displayedModel = model || settings.data?.agents[agentId]?.model || selectedAgent?.defaultModel || "";
   const modelLabel = displayedModel ? modelDisplayName(displayedModel, selectedAgent?.modelAliases) : "Choose model";
-  const pickerLabel = `${pickerAgents.find((agent) => agent.id === agentId)?.displayName ?? agentId}: ${modelLabel}`;
+  const effortLevels = selectedAgent?.modelEfforts?.[displayedModel] ?? EMPTY;
+  const savedEffort = settings.data?.agents[agentId]?.effort;
+  const effort = savedEffort && effortLevels.includes(savedEffort) ? savedEffort : null;
+  const modelEffortLabel = effortLevels.length ? `${modelLabel} ${reasoningEffortLabel(effort)}` : modelLabel;
+  const pickerLabel = `${pickerAgents.find((agent) => agent.id === agentId)?.displayName ?? agentId}: ${modelEffortLabel}`;
+  const changeEffort = async (next: ReasoningEffort | null) => {
+    if (!settings.data || loadingThread || savePreference.isPending || run || queued.length > 0 || savingEffort.current) return false;
+    savingEffort.current = true;
+    setError(null);
+    try {
+      await saveEffort.mutateAsync({ agentId, effort: next });
+      return true;
+    } catch (failure) { setError(failure); return false; }
+    finally { savingEffort.current = false; }
+  };
 
   const finishItSession = finishIt.data ?? null;
   const finishedNeedsWork = useFinishItNeedsWork(projectId, finishItSession?.status === "completed");
   const alreadyFinished = finishItSession?.status === "completed" && finishedNeedsWork.data !== true;
-  const finishItBusy = finishItActive(finishItSession) || startFinishIt.isPending || stopFinishIt.isPending;
+  const finishItBusy = finishItActive(finishItSession) || startFinishIt.isPending || stopFinishIt.isPending || saveEffort.isPending;
 
   const beginFinishIt = useCallback(async () => {
-    if (!projectId || finishItBusy || alreadyFinished) return;
+    if (!projectId || finishItBusy || alreadyFinished || loadingThread || !settings.data || savePreference.isPending || savingEffort.current) return;
     if (!rootAutomation) { setError("Finish it currently supports single-board projects. Ask about the selected board instead."); return; }
     setError(null);
     try {
@@ -189,11 +226,15 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [projectId, rootAutomation, finishItBusy, alreadyFinished, startFinishIt, thread?.id, agentId, model, setActiveThread, qc]);
+  }, [projectId, rootAutomation, finishItBusy, alreadyFinished, loadingThread, settings.data, savePreference.isPending, startFinishIt, thread?.id, agentId, model, setActiveThread, qc]);
 
   const send = useCallback(async () => {
     const typed = draft.trim();
-    if (!typed || sending) return;
+    if (!typed || sending || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending || savingEffort.current) return;
+    if (!thread && !projectId && !startMode) {
+      setProjectPickerOpen(true);
+      return;
+    }
     if (isFinishItCommand(typed)) {
       if (rootAutomation) setDraft(draftKey, "");
       await beginFinishIt();
@@ -241,7 +282,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
     } finally {
       setSending(false);
     }
-  }, [draft, rootAutomation, matchingContexts, boardSources.data, boardSources.isFetching, boardSources.isError, setDraftBoardContext, sending, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
+  }, [draft, rootAutomation, matchingContexts, boardSources.data, boardSources.isFetching, boardSources.isError, setDraftBoardContext, sending, saveEffort.isPending, loadingThread, settings.data, savePreference.isPending, startMode, projectId, setProjectPickerOpen, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
 
   const stop = useCallback(async () => {
     if (!run || stopping) return;
@@ -258,11 +299,11 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
     composerHandlers.voiceToggle = () => voice.toggle();
     composerHandlers.finishIt = () => void beginFinishIt();
     composerHandlers.setAgent = (id, m) => {
+      if (savingEffort.current) return false;
       const offered = doctor.data?.agents ?? FALLBACK_AGENTS;
       const agent = offered.find((a) => a.id === id);
-      if (!agent) return false;
-      setAgentId(agent.id);
-      setModel(m ?? settings.data?.agents[agent.id]?.model ?? "");
+      if (!agent || !settings.data || loadingThread || savePreference.isPending || run || queued.length > 0) return false;
+      selectAgent(agent.id, m ?? settings.data.agents[agent.id]?.model ?? "");
       return true;
     };
     return () => {
@@ -272,7 +313,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
       composerHandlers.setAgent = null;
       composerHandlers.voiceToggle = null;
     };
-  }, [send, stop, run, doctor.data, settings.data, voice.toggle, beginFinishIt]);
+  }, [send, stop, run, doctor.data, settings.data, loadingThread, voice.toggle, beginFinishIt, selectAgent, savePreference.isPending, queued.length]);
 
   const showStop = !!run && !draft.trim() && !sending;
 
@@ -295,7 +336,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
 
   const finishAction = <Button variant="secondary" size="sm" aria-label="Finish it"
                 title={alreadyFinished ? "Board already finished. Make changes to enable Finish it again." : "Finish schematic, place, route and verify without step-by-step prompts"}
-                onClick={() => void beginFinishIt()} disabled={finishItBusy || alreadyFinished || agentMissing} data-testid="finish-it">
+                onClick={() => void beginFinishIt()} disabled={finishItBusy || alreadyFinished || agentMissing || loadingThread || !settings.data || savePreference.isPending} data-testid="finish-it">
                 <Icon name="play" width={14} height={14} />
                 <span className="fd-action-label">Finish it</span>
               </Button>;
@@ -310,6 +351,12 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
   return (
     <div className="fd-composer-dock bg-bg px-5 pb-4 pt-3">
       <div className="mx-auto max-w-3xl">
+        {!thread && !loadingThread && !projectId && !startMode && (
+          <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-border bg-panel px-3 py-2 text-xs">
+            <span>Choose or create a project before sending. Your draft will be kept.</span>
+            <Button size="sm" onClick={() => setProjectPickerOpen(true)}>Choose project</Button>
+          </div>
+        )}
         {queued.length > 0 && <div className="mb-2 max-h-36 space-y-1 overflow-y-auto rounded-xl border border-border bg-panel p-2" aria-label="Queued messages">
           <div className="px-1 text-[11px] text-muted">Queued · sends in order after the current run</div>
           {queued.map((message, index) => <div key={message.id} className="flex items-center gap-2 rounded-lg bg-panel-2 px-2 py-1.5 text-xs">
@@ -446,13 +493,13 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
                   title={`${pickerLabel} (${mod} + /)`}
                   aria-label={`Agent and model: ${pickerLabel}`}
                   onClick={() => setAgentPickerOpen(!agentPickerOpen)}
-                  disabled={!!run || queued.length > 0}
+                  disabled={!!run || queued.length > 0 || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending}
                   aria-haspopup="menu"
                   aria-expanded={agentPickerOpen}
                   data-testid="agent-model"
                 >
                   <AgentLogo agentId={agentId} />
-                  <span className="min-w-0 truncate">{modelLabel}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
+                  <span className="min-w-0 truncate">{modelEffortLabel}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
                 </Button>
                 <AgentModelMenu
                   anchorRef={agentButtonRef}
@@ -463,11 +510,10 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
                   model={model}
                   defaultModel={(id) => settings.data?.agents[id]?.model ?? ""}
                   configuredModels={(id) => settings.data?.agents[id]?.pickerModels ?? []}
-                  onSelect={(id, m) => {
-                    setAgentId(id);
-                    setModel(m);
-                  }}
+                  onSelect={selectAgent}
                   onOpenSettings={() => setSettingsOpen(true, "agents")}
+                  effort={{ levels: effortLevels, value: effort, agentName: selectedAgent?.displayName ?? agentId,
+                    disabled: !!run || queued.length > 0 || loadingThread || !settings.data || savePreference.isPending, saving: saveEffort.isPending, onChange: changeEffort }}
                 />
               </div>
               <Button
@@ -478,7 +524,7 @@ export function Composer({ thread, onCreateThread, startMode = false }: Composer
                 aria-label={showStop ? "Stop current run; queued messages stay scheduled" : sending ? "Sending message" : run ? "Queue message" : "Send message"}
                 aria-busy={showStop ? stopping : sending}
                 onClick={() => void (showStop ? stop() : send())}
-                disabled={showStop ? stopping : !draft.trim() || sending}
+                disabled={showStop ? stopping : !draft.trim() || sending || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending || (!thread && !projectId && !startMode)}
                 title={showStop ? "Stop current run. Queued messages stay scheduled." : run ? "Queue message (Enter). Stop current run with " + mod + " + ." : "Send message (Enter)"}
               >
                 <Icon name={showStop ? "stop" : run ? "queue" : "arrowUp"} width={18} height={18} {...(showStop ? { fill: "currentColor" } : {})} />

@@ -4,6 +4,9 @@ import { z } from "zod/v4";
 export const BoardArtworkSettings = z.object({
   style: z.enum(["realistic", "retro", "poster"]),
   color: z.enum(["green", "black", "blue", "red", "purple", "white", "yellow"]),
+  colorMode: z.enum(["monotone", "multicolor"]).optional(),
+  printedBackground: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+  inkColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   crop: z.enum(["none", "circle", "rounded"]),
   outline: z.enum(["rectangle", "rounded", "circle"]),
   widthMm: z.number().finite().positive().max(400),

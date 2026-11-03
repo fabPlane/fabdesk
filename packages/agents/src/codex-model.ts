@@ -1,6 +1,28 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { ReasoningEffort } from "@fabdesk/protocol";
+
+/** Read only public model capabilities from the CLI's locally cached catalog. */
+export function parseCodexModelEfforts(value: unknown): Record<string, ReasoningEffort[]> {
+  const result: Record<string, ReasoningEffort[]> = Object.create(null);
+  const rows = (value as { models?: unknown } | null)?.models;
+  if (!Array.isArray(rows)) return result;
+  for (const row of rows) {
+    if (typeof row?.slug !== "string" || !Array.isArray(row.supported_reasoning_levels)) continue;
+    result[row.slug] = row.supported_reasoning_levels.flatMap((level: { effort?: unknown } | null) => {
+      const parsed = ReasoningEffort.safeParse(level?.effort);
+      return parsed.success ? [parsed.data] : [];
+    });
+  }
+  return result;
+}
+
+export function readCodexModelEfforts(env: NodeJS.ProcessEnv = process.env): Record<string, ReasoningEffort[]> {
+  const home = resolve(env["CODEX_HOME"] || join(env["HOME"] || env["USERPROFILE"] || homedir(), ".codex"));
+  try { return parseCodexModelEfforts(JSON.parse(readFileSync(join(home, "models_cache.json"), "utf8"))); }
+  catch { return {}; }
+}
 
 /** Display metadata only: do not pin, rewrite, or change the CLI's model selection. */
 export function parseCodexConfiguredModel(toml: string): string | undefined {

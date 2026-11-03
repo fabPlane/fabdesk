@@ -240,6 +240,7 @@ describe("registry", () => {
     const names = reg.list().map((t) => t.name);
     expect(names).toEqual([
       "load_toolset",
+      "request_project_creation",
       "pcb_environment",
       "project_status",
       "circuit_build",
@@ -275,6 +276,7 @@ describe("registry", () => {
       "native_edit_rollback",
       "pcb_edit_copper",
       "pcb_edit_graphics",
+      "schematic_focus",
       "schematic_inspect",
       "schematic_edit",
       "schematic_review",
@@ -351,7 +353,7 @@ describe("registry", () => {
       "cad_enclosure",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
-    expect(reg.byToolset("core").length).toBe(9);
+    expect(reg.byToolset("core").length).toBe(10);
     expect(() =>
       defineTool({
         name: "bad.name",

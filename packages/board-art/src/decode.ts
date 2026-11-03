@@ -8,7 +8,13 @@ export function sniffImageMime(bytes: Uint8Array): string | null {
   if (isPng(bytes)) return "image/png";
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
   if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return "image/gif";
-  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45) {
+  if (
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45
+  ) {
     return "image/webp";
   }
   return null;
@@ -24,7 +30,9 @@ export async function decodeRaster(bytes: Uint8Array): Promise<RgbaImage> {
     }
   }
   if (isPng(bytes)) return decodePng(bytes);
-  throw new Error("only PNG is supported in this environment; JPEG, WebP and GIF need a browser or the desktop Art tab");
+  throw new Error(
+    "only PNG is supported in this environment; JPEG, WebP and GIF need a browser or the desktop Art tab",
+  );
 }
 
 async function decodeViaBitmap(bytes: Uint8Array): Promise<RgbaImage> {
@@ -43,5 +51,6 @@ async function decodeViaBitmap(bytes: Uint8Array): Promise<RgbaImage> {
 }
 
 export async function decodeGray(bytes: Uint8Array): Promise<GrayImage> {
-  return rgbaToGray(await decodeRaster(bytes));
+  const raster = await decodeRaster(bytes);
+  return { ...rgbaToGray(raster), rgba: raster.data };
 }

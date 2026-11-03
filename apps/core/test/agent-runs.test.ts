@@ -26,6 +26,7 @@ function harness(
     ignoreAbort?: boolean;
     run?: AgentAdapterLike["run"];
     resolveProject?: (id: string) => Promise<ProjectHandle | null>;
+    detect?: NonNullable<AgentAdapterLike["detect"]>;
   } = {},
 ) {
   return (async () => {
@@ -58,7 +59,7 @@ function harness(
       emit: () => {},
       tokens: new TokenSet("daemon-token"),
       mcpUrl: "http://localhost/mcp",
-      adapters: { claude: { id: "claude", run } },
+      adapters: { claude: { id: "claude", run, ...(opts.detect ? { detect: opts.detect } : {}) } },
       settings: () => store.settings.get(),
       workspaceDir: dir,
       abortSettleTimeoutMs: 100,
@@ -74,6 +75,22 @@ function harness(
 }
 
 const settle = () => Bun.sleep(20);
+
+test("saved effort survives storage reload and applies to new chats only when supported", async () => {
+  const h = await harness({ detect: async () => ({ installed: true, defaultModel: "test-model", modelEfforts: { "test-model": ["low", "high"] } }) });
+  h.store.settings.patch({ agents: { claude: { effort: "high", permissionMode: "auto", pickerModels: ["test-model"] } } });
+  const reopened = Store.open(join(h.dir, "core.sqlite"));
+  try { expect(reopened.settings.get().agents.claude?.effort).toBe("high"); } finally { reopened.close(); }
+  for (const effort of ["high", "low", "ultra", null] as const) {
+    const current = h.store.settings.get();
+    h.store.settings.patch({ agents: { ...current.agents, claude: { ...current.agents.claude, effort } } });
+    await h.start(h.thread().id, null);
+    const latest = h.runs.at(-1)!;
+    expect(latest.session.effort).toBe(effort === "high" || effort === "low" ? effort : undefined);
+    expect(latest.session.permission).toBe("auto");
+    latest.finish(); await settle();
+  }
+});
 
 describe("AgentRunManager project lease", () => {
   test("a CLI failure emitted as text and repeated errors is saved only once", async () => {

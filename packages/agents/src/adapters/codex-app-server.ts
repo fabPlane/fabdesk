@@ -205,7 +205,7 @@ export function runCodexAppServer(session: AgentSession, cmd: string[], env: Rec
     threadId = result.thread.id;
     push({ type: "init", sessionId: threadId! });
     const input = [{ type: "text", text: promptWithAttachments(session.prompt, session.attachments, { skipImages: true }), text_elements: [] }, ...session.attachments.filter(isImage).map((a) => ({ type: "localImage", path: a.path }))];
-    await rpc("turn/start", { threadId, input });
+    await rpc("turn/start", { threadId, input, ...(session.effort ? { effort: session.effort } : {}) });
   })().catch(fail);
   return {
     pid: child.pid,

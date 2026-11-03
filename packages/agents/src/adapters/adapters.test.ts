@@ -39,6 +39,18 @@ function session(overrides: Partial<AgentSession> = {}): AgentSession {
   };
 }
 
+test("effort reaches new and resumed Codex/Claude runs and Auto leaves CLI settings alone", () => {
+  for (const resume of [undefined, "previous-session"]) {
+    const input = session({ effort: "high", ...(resume ? { resume } : {}) });
+    expect(codexArgs(input, "codex")).toContain('model_reasoning_effort="high"');
+    const claude = claudeArgs(input, "claude");
+    expect(claude[claude.indexOf("--effort") + 1]).toBe("high");
+    expect(claude.indexOf("--effort")).toBeLessThan(claude.indexOf("--allowedTools"));
+  }
+  expect(codexArgs(session(), "codex").some(arg => arg.startsWith("model_reasoning_effort="))).toBe(false);
+  expect(claudeArgs(session(), "claude")).not.toContain("--effort");
+});
+
 describe("shared", () => {
   test("agentEnv carries the token in FABDESK_TOKEN and session env overrides", () => {
     const env = agentEnv(session({ env: { FOO: "bar" } }));

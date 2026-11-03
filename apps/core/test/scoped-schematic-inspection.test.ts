@@ -30,7 +30,7 @@ async function fixture(native = false) {
       return incomplete ? { ...result, complete: false, issues: [{ kind: "missing" as const, path: "child.kicad_sch", detail: "Missing native sheet" }] } : result;
     },
   } });
-  const registry = createRegistry(), factory = createContextFactory({ services, projects: { resolve: async () => project } as unknown as ProjectStore, tokens: null });
+  const registry = createRegistry(), factory = createContextFactory({ services, projects: { isPromoting: () => false, resolve: async () => project } as unknown as ProjectStore, tokens: null });
   const invoke = (args: Record<string, unknown>) => registry.invoke("schematic_inspect", { project: project.id, ...args }, (projectRef, def, selected) => factory({ projectRef, def, ...(selected ? { board: selected } : {}), signal: new AbortController().signal, progress: () => {} }));
   return { project, root, board, invoke, calls: () => calls, incomplete: () => { incomplete = true; }, mutate: () => { mutate = true; } };
 }

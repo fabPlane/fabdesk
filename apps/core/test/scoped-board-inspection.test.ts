@@ -25,7 +25,7 @@ async function fixture(assembly = true) {
     await assertNativeBoardOwnership(dir); calls.push(dir);
     return [{ ref: dir.endsWith("/a") ? "RA" : dir.endsWith("/b") ? "RB" : "ROOT", x: 1, y: 2 }];
   };
-  const projects = { resolve: async (ref: string) => ref === project.id ? project : null, handle: async (id: string) => id === project.id ? project : null } as unknown as ProjectStore;
+  const projects = { isPromoting: () => false, resolve: async (ref: string) => ref === project.id ? project : null, handle: async (id: string) => id === project.id ? project : null } as unknown as ProjectStore;
   const factory = createContextFactory({ services, projects, tokens: null, defaultProject: async () => project });
   const inspection = await inspectProjectBoardSources(project), registry = createRegistry();
   const board = { sourceId: "a", manifestSha256: inspection.manifestSha256! };

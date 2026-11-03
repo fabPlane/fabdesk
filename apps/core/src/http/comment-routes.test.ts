@@ -170,7 +170,7 @@ test("member HTTP pins stay with one source, retain legacy root discussion, and 
 
 test("comment MCP tools bind list/answer/resolve to the same source and recheck ownership before save", async () => {
   const { project, board } = await assemblyCommentsFixture(), services = mockServices([project]);
-  const registry = createRegistry(), factory = createContextFactory({ services, projects: { resolve: async () => project } as unknown as ProjectStore, tokens: null });
+  const registry = createRegistry(), factory = createContextFactory({ services, projects: { isPromoting: () => false, resolve: async () => project } as unknown as ProjectStore, tokens: null });
   const invoke = (name: string, args: Record<string, unknown>) => registry.invoke(name, { project: project.id, ...args }, (projectRef, def, selector) => factory({ projectRef, def, ...(selector ? { board: selector } : {}), signal: new AbortController().signal, progress: () => {} }));
   const pin = await invoke("comment_pin", { board, question: "Scoped question", view: "pcb", xMm: 1, yMm: 2 });
   const id = (pin.json as { comment: { id: string } }).comment.id;

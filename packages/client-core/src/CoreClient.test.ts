@@ -1,6 +1,35 @@
 import { describe, expect, test } from "bun:test";
 import { CoreClient } from "./CoreClient";
 
+test("saving a composer preference sends only the explicit choice", async () => {
+  const calls: Array<{ url: string; method?: string; body: unknown }> = [];
+  const client = new CoreClient({
+    baseUrl: "http://127.0.0.1:47831", token: "tok",
+    fetch: async (url, init) => {
+      calls.push({ url, ...(init?.method ? { method: init.method } : {}), body: JSON.parse(String(init?.body)) });
+      return Response.json({ defaultAgent: "codex" });
+    },
+  });
+  await client.saveAgentPreference({ agentId: "codex", model: "selected-model" });
+  expect(calls).toEqual([{
+    url: "http://127.0.0.1:47831/settings/agent-preference", method: "PUT",
+    body: { agentId: "codex", model: "selected-model" },
+  }]);
+});
+
+test("saving effort sends only the agent and effort, including Auto", async () => {
+  const calls: unknown[] = [];
+  const client = new CoreClient({ baseUrl: "http://test.invalid", token: "test", fetch: async (url, init) => {
+    calls.push({ url, method: init?.method, body: JSON.parse(String(init?.body)) });
+    return Response.json({});
+  } });
+  await client.saveAgentEffort({ agentId: "codex", effort: "high" });
+  await client.saveAgentEffort({ agentId: "codex", effort: null });
+  expect(calls).toEqual(["high", null].map((effort) => ({
+    url: "http://test.invalid/settings/agent-effort", method: "PUT", body: { agentId: "codex", effort },
+  })));
+});
+
 describe("CoreClient open-source preview URL", () => {
   test("openSourcePreviewUrl is a loopback img src with the query token", () => {
     const client = new CoreClient({

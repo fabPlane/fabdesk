@@ -80,3 +80,13 @@ test("unsafe paths and invalid dimensions are rejected before writing", async ()
   f.args.settings = settings(); const saved = await saveBoardArtwork(f.args), changed = { ...saved.record, source: { ...saved.record.source, path: "../board.kicad_pcb" } };
   f.files.set(`one/${BOARD_ARTWORK_PATH}`, new Blob([JSON.stringify(changed)])); await expect(loadBoardArtwork(f.client, "one")).rejects.toThrow();
 });
+
+test("saved artwork retains incoming color settings alongside guarded placement and view", async () => {
+  const f = fixture();
+  Object.assign(f.args.settings, { colorMode: "multicolor", printedBackground: "#abcdef", inkColor: "#123456" });
+  await saveBoardArtwork(f.args);
+  const loaded = await loadBoardArtwork(f.client, "one");
+  expect(loaded?.record.settings).toEqual(f.args.settings);
+  expect(loaded?.record.view).toEqual(view);
+  expect(f.writes.every(path => path.startsWith("one/artwork/"))).toBe(true);
+});

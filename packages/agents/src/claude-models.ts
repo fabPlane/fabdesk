@@ -1,6 +1,7 @@
 import { tmpdir } from "node:os";
+import { ReasoningEffort } from "@fabdesk/protocol";
 
-interface ModelCatalog { models: string[]; modelAliases: Record<string, string>; defaultModel?: string }
+interface ModelCatalog { models: string[]; modelAliases: Record<string, string>; defaultModel?: string; modelEfforts?: Record<string, ReasoningEffort[]> }
 
 /** Read only the model catalog; ignore commands, account information and other initialization data. */
 export function parseClaudeModelCatalog(value: unknown): ModelCatalog | undefined {
@@ -10,16 +11,26 @@ export function parseClaudeModelCatalog(value: unknown): ModelCatalog | undefine
   if (!Array.isArray(rows)) return;
   const models: string[] = [];
   const modelAliases: Record<string, string> = Object.create(null);
+  const modelEfforts: Record<string, ReasoningEffort[]> = Object.create(null);
   let defaultModel: string | undefined;
   for (const row of rows) {
     if (!row || typeof row.value !== "string" || typeof row.resolvedModel !== "string" || !row.value || !row.resolvedModel) continue;
+    const levels = row.supportsEffort === true && Array.isArray(row.supportedEffortLevels)
+      ? row.supportedEffortLevels.flatMap((level: unknown) => { const parsed = ReasoningEffort.safeParse(level); return parsed.success ? [parsed.data] : []; }) : [];
+    if (levels.length) {
+      modelEfforts[row.value] = levels;
+      modelEfforts[row.resolvedModel] = levels;
+    }
     if (row.value === "default") { defaultModel = row.resolvedModel; continue; }
     if (!models.includes(row.value)) models.push(row.value);
     modelAliases[row.value] = row.resolvedModel;
     const family = /^claude-(opus|sonnet|haiku|fable)-/.exec(row.resolvedModel)?.[1];
-    if (family && !modelAliases[family]) modelAliases[family] = row.resolvedModel;
+    if (family && !modelAliases[family]) {
+      modelAliases[family] = row.resolvedModel;
+      if (levels.length) modelEfforts[family] = levels;
+    }
   }
-  return models.length ? { models, modelAliases, ...(defaultModel ? { defaultModel } : {}) } : undefined;
+  return models.length ? { models, modelAliases, ...(defaultModel ? { defaultModel } : {}), ...(Object.keys(modelEfforts).length ? { modelEfforts } : {}) } : undefined;
 }
 
 const cache = new Map<string, { expires: number; value: Promise<ModelCatalog | undefined> }>();

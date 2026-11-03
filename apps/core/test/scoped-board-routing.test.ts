@@ -23,7 +23,7 @@ async function fixture() {
   const query = services.design.query, route = services.design.route;
   services.design.query = async (dir, ...args) => { await assertNativeBoardOwnership(dir); queried.push(dir); return query(dir, ...args); };
   services.design.route = async (dir, ...args) => { await assertNativeBoardOwnership(dir); const result = await route(dir, ...args); await writeFile(join(dir, "board.kicad_pcb"), boardText.replace('"source"', '"candidate"')); return result; };
-  const factory = createContextFactory({ services, projects: { resolve: async () => project } as unknown as ProjectStore, tokens: null });
+  const factory = createContextFactory({ services, projects: { isPromoting: () => false, resolve: async () => project } as unknown as ProjectStore, tokens: null });
   const invoke = (name: string, args: Record<string, unknown>, source = board) => registry.invoke(name, { project: project.id, board: source, ...args }, (projectRef, def, selected) => factory({ projectRef, def, ...(selected ? { board: selected } : {}), signal: new AbortController().signal, progress: () => {} }));
   return { project, root, services, board, queried, invoke };
 }

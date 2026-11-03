@@ -29,7 +29,7 @@ async function fixture(native = false) {
       return result;
     },
   } });
-  const registry = createRegistry(), factory = createContextFactory({ services, projects: { resolve: async () => project } as unknown as ProjectStore, tokens: null });
+  const registry = createRegistry(), factory = createContextFactory({ services, projects: { isPromoting: () => false, resolve: async () => project } as unknown as ProjectStore, tokens: null });
   const invoke = (args: Record<string, unknown>) => registry.invoke("render_schematic_svg", { project: project.id, ...args }, (projectRef, def, selected) => factory({ projectRef, def, ...(selected ? { board: selected } : {}), signal: controller.signal, progress: () => {} }));
   const cleanup = async () => { await rm(project.dir, { recursive: true, force: true }); await rm(nativeFixture.dir, { recursive: true, force: true }); };
   return { project, root, leaf, board, declaration, hierarchy, invoke, cleanup, calls: () => calls, fault: (next: typeof fault) => { fault = next; } };

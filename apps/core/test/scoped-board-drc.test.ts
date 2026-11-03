@@ -31,7 +31,7 @@ async function fixture(native = false) {
       return result;
     },
   } });
-  const registry = createRegistry(), factory = createContextFactory({ services, projects: { resolve: async () => project } as unknown as ProjectStore, tokens: null });
+  const registry = createRegistry(), factory = createContextFactory({ services, projects: { isPromoting: () => false, resolve: async () => project } as unknown as ProjectStore, tokens: null });
   const invoke = (args: Record<string, unknown>) => registry.invoke("verify_drc", { project: project.id, ...args }, (projectRef, def, selected) => factory({ projectRef, def, ...(selected ? { board: selected } : {}), signal: new AbortController().signal, progress: () => {} }));
   return { project, board, source, declaration, revision, registry, services, factory, invoke, setFault: (value: typeof fault) => { fault = value; }, calls: () => calls };
 }

@@ -14,6 +14,13 @@ import {
 
 export const ProjectId = z.string().min(1);
 
+/** Explicit composer choice, saved atomically as the defaults for future chats. */
+export const AgentPreference = z.object({
+  agentId: AgentId,
+  model: z.string().nullable(),
+});
+export type AgentPreference = z.infer<typeof AgentPreference>;
+
 /** Default port for the daemon's opt-in remote listener (see docs/mobile.md). */
 export const REMOTE_DEFAULT_PORT = 47820;
 
@@ -212,6 +219,11 @@ export const ToolManifestEntry = z.object({
 });
 export type ToolManifestEntry = z.infer<typeof ToolManifestEntry>;
 
+export const ReasoningEffort = z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
+export type ReasoningEffort = z.infer<typeof ReasoningEffort>;
+export const AgentEffortPreference = z.object({ agentId: AgentId, effort: ReasoningEffort.nullable() });
+export type AgentEffortPreference = z.infer<typeof AgentEffortPreference>;
+
 export const AgentInfo = z.object({
   id: AgentId,
   displayName: z.string(),
@@ -224,6 +236,8 @@ export const AgentInfo = z.object({
   modelAliases: z.record(z.string(), z.string()).optional(),
   /** Resolved CLI default, for display; absence means the version is unknown. */
   defaultModel: z.string().optional(),
+  /** Effort levels advertised by the installed agent, keyed by model ID or alias. */
+  modelEfforts: z.record(z.string(), z.array(ReasoningEffort)).optional(),
   /** Whether the adapter can pause a tool call for approval (`runtimeMode: "supervised"`). Absent = no. */
   supportsSupervised: z.boolean().optional(),
 });
@@ -275,6 +289,8 @@ export const Settings = z.object({
       z.object({
         binaryPath: z.string().nullable().default(null),
         model: z.string().nullable().default(null),
+        /** Remembered across chats; null/unset leaves effort to the agent. */
+        effort: ReasoningEffort.nullable().optional(),
         permissionMode: z.enum(["acceptEdits", "auto", "bypass"]).default("acceptEdits"),
         extraAllowedTools: z.array(z.string()).default([]),
         /** Models offered in the composer's agent/model dropdown; empty shows the adapter's first three. */

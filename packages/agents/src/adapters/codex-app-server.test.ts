@@ -8,7 +8,7 @@ import type { AgentEvent, AgentSession } from "../types";
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "fabdesk-question-rpc-")); });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
-function fixture(asyncQuestions = false, behavior: { batches?: number; secret?: boolean; reasoning?: boolean; interruptError?: boolean; tools?: boolean } = {}) {
+function fixture(asyncQuestions = false, behavior: { batches?: number; secret?: boolean; reasoning?: boolean; interruptError?: boolean; tools?: boolean; captureEffort?: boolean } = {}) {
   const path = join(dir, "server.ts");
   writeFileSync(path, `
 const send = (m) => console.log(JSON.stringify(m));
@@ -21,6 +21,11 @@ for await (const line of console) {
     turns++;
     send({id:m.id,result:{turn:{id:'turn'}}});
     send({method:'turn/started',params:{threadId:'native-thread',turn:{id:'turn'}}});
+    if (${!!behavior.captureEffort}) {
+      send({method:'item/agentMessage/delta',params:{threadId:'native-thread',itemId:'effort',delta:JSON.stringify({effort:m.params.effort ?? null})}});
+      send({method:'turn/completed',params:{threadId:'native-thread',turn:{id:'turn',status:'completed'}}});
+      continue;
+    }
     if (${!!behavior.tools}) {
       // Field names match the installed CLI's generated v2 ThreadItem protocol.
       const items = [
@@ -75,6 +80,13 @@ async function collect(run: ReturnType<typeof runCodexAppServer>) {
   finally { run.abort(); }
   return events;
 }
+
+test("app-server effort is applied on new and resumed turns", async () => {
+  for (const resume of [undefined, "previous-thread"]) {
+    const events = await collect(runCodexAppServer({ ...session(), effort: "high", ...(resume ? { resume } : {}) }, fixture(false, { captureEffort: true }), {}));
+    expect(events.find(e => e.type === "text")).toMatchObject({ delta: '{"effort":"high"}' });
+  }
+});
 
 test("separate question items in one turn resume together exactly once", async () => {
   let count = 0;

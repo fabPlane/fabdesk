@@ -29,7 +29,7 @@ describe.skipIf(!haveKicad())("explicit native member mutations", () => {
         return { kicad: server.kicad, path } as unknown as ProjectSession;
       };
       const design = createFpPcbDesign({ bridge: () => ({}) as never, sessions }); services.design = design;
-      const projects = { resolve: async () => project, handle: async () => project } as unknown as ProjectStore;
+      const projects = { isPromoting: () => false, resolve: async () => project, handle: async () => project } as unknown as ProjectStore;
       const factory = createContextFactory({ services, projects, tokens: null });
       const membership = await inspectProjectBoardSources(project), board = { sourceId: "a", manifestSha256: membership.manifestSha256! };
       const run = (name: string, args: Record<string, unknown>) => registry.invoke(name, { project: project.id, board, ...args }, (projectRef, def, selector) => factory({ projectRef, def, ...(selector ? { board: selector } : {}), signal: new AbortController().signal, progress: () => {} }));

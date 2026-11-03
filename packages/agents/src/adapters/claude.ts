@@ -81,6 +81,7 @@ export function claudeArgs(session: AgentSession, bin: string): string[] {
   }
   if (session.resume) args.push("--resume", session.resume);
   if (session.model) args.push("--model", session.model);
+  if (session.effort) args.push("--effort", session.effort);
   // Variadic: keep last so it cannot swallow the prompt. Supervised runs do not pre-allow the
   // fabdesk tools: the daemon decides per call (reads pass straight through). The user's own
   // extra allow rules still apply — they opted into those explicitly.

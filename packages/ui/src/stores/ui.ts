@@ -144,7 +144,7 @@ export interface UiState {
   closeProject: () => boolean;
   projectExitBlocks: Record<string, { projectId: string; message: string }>;
   setProjectExitBlock: (key: string, block: { projectId: string; message: string } | null) => void;
-  /** Start a blank conversation in a project (or none). Skips the project picker. */
+  /** Start a blank conversation; a missing project opens the picker. */
   startNewChatInProject: (projectId: string | null) => void;
   setSidebarListTab: (tab: SidebarListTab) => void;
   setActiveOpenSourceId: (id: string | null) => void;
@@ -173,7 +173,7 @@ export function newChatInProjectState(projectId: string | null) {
     activeOpenSourceId: null,
     orderFlowOpen: false,
     inventoryOpen: false,
-    projectPickerOpen: false,
+    projectPickerOpen: !projectId,
     sidebarListTab: "projects" as const,
   };
 }

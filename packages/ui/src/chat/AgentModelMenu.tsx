@@ -5,6 +5,7 @@ import { cn } from "../util";
 import { AgentLogo } from "../components/AgentLogo";
 import { Icon } from "../components/Icon";
 import { modelDisplayName } from "./model-display-name";
+import { EffortSection, type EffortSectionProps } from "./EffortSection";
 
 export interface AgentModelMenuProps {
   open: boolean;
@@ -20,12 +21,13 @@ export interface AgentModelMenuProps {
   configuredModels: (id: AgentId) => string[];
   onSelect: (agentId: AgentId, model: string) => void;
   onOpenSettings: () => void;
+  effort: EffortSectionProps;
 }
 
 /** Agent-first accordion: expanding a provider never changes the selected model. */
-export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, model, defaultModel, configuredModels, onSelect, onOpenSettings }: AgentModelMenuProps) {
+export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, model, defaultModel, configuredModels, onSelect, onOpenSettings, effort }: AgentModelMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const [expanded, setExpanded] = useState<AgentId | null>(null);
+  const [expanded, setExpanded] = useState<AgentId | "effort" | null>(null);
   useEffect(() => { if (!open) setExpanded(null); }, [open]);
   const [position, setPosition] = useState({ left: 8, top: 8, maxHeight: 300 });
   useLayoutEffect(() => {
@@ -35,7 +37,7 @@ export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, mode
       if (!anchor) return;
       const above = anchor.top - 12;
       const below = innerHeight - anchor.bottom - 12;
-      const maxHeight = Math.max(80, Math.min(440, Math.max(above, below)));
+      const maxHeight = Math.max(80, Math.min(expanded === "effort" ? 760 : 440, Math.max(above, below)));
       const height = Math.min(ref.current?.scrollHeight ?? maxHeight, maxHeight);
       const width = ref.current?.getBoundingClientRect().width ?? 280;
       setPosition({ left: Math.max(8, Math.min(anchor.right - width, innerWidth - width - 8)), top: above >= below ? Math.max(8, anchor.top - height - 6) : anchor.bottom + 6, maxHeight });
@@ -47,7 +49,7 @@ export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, mode
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, anchorRef, expanded, agents]);
+  }, [open, anchorRef, expanded, agents, agentId, model, effort.levels, effort.saving]);
   useEffect(() => {
     if (!open) return;
     ref.current?.querySelector<HTMLElement>(`[data-agent="${agentId}"]`)?.focus();
@@ -83,6 +85,7 @@ export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, mode
   if (!open) return null;
 
   const choose = (id: AgentId, m: string) => {
+    if (effort.saving) return;
     onSelect(id, m);
     onClose();
   };
@@ -99,7 +102,7 @@ export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, mode
         const defaultLabel = fallback || agent.defaultModel || "";
         const choices = [...new Set([...configuredModels(agent.id), ...agent.models, ...(selected && model ? [model] : [])])].filter(Boolean);
         return <div key={agent.id}>
-          <button type="button" role="menuitem" aria-expanded={isOpen} aria-controls={`agent-models-${agent.id}`} data-agent={agent.id}
+          <button type="button" role="menuitem" disabled={effort.saving} aria-expanded={isOpen} aria-controls={`agent-models-${agent.id}`} data-agent={agent.id}
             className="grid min-h-10 w-full grid-cols-[18px_minmax(0,1fr)_auto_15px] items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-fg hover:bg-panel-2 focus-visible:bg-panel-2"
             onClick={() => setExpanded(isOpen ? null : agent.id)}
             onKeyDown={(event) => {
@@ -124,6 +127,7 @@ export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, mode
           </div>}
         </div>;
       })}
+      <EffortSection {...effort} open={expanded === "effort"} onToggle={(next) => setExpanded(next ? "effort" : null)} />
       <div className="mt-1 border-t border-border pt-1">
         <Item onClick={() => { onClose(); onOpenSettings(); }}><Icon name="settings" width={15} height={15} /><span className="text-muted">Model settings</span></Item>
       </div>
