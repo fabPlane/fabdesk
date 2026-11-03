@@ -647,7 +647,15 @@
 .fd-draft-build-strip { position:absolute; z-index:12; left:50%; bottom:24px; transform:translateX(-50%); display:flex; align-items:center; justify-content:center; gap:24px; padding:10px 12px 10px 18px; border:1px solid var(--fd-border); border-radius:18px; background:var(--fd-panel); box-shadow:0 4px 18px #102a200a; max-width:calc(100% - 32px); }
 .fd-draft-build-strip > span { display:flex; align-items:center; gap:9px; white-space:nowrap; color:var(--fd-muted); font-size:12px; }
 .fd-canvas-destinations button[aria-pressed=true] { background:color-mix(in srgb,var(--fd-accent) 8%,var(--fd-panel)); color:var(--fd-accent); }
-.fd-canvas-workspace:has(.fd-draft-build-strip) .fd-canvas-conversation-surface { top:64px; padding-bottom:84px; }
+/* Draft navigation owns a layout row; conversation headers cannot sit behind it. */
+.fd-canvas-main[data-draft-view] { display:grid; grid-template-rows:auto minmax(0,1fr); }
+.fd-canvas-main[data-draft-view]::before { display:none; }
+.fd-canvas-main[data-draft-view] > .fd-canvas-destinations { position:relative; inset:auto; min-height:64px; padding:14px var(--fd-canvas-gutter); background:var(--fd-panel); border-bottom:1px solid var(--fd-border); }
+.fd-canvas-main[data-draft-view] > .fd-canvas-surface { grid-row:2; position:relative; height:auto; min-height:0; }
+.fd-canvas-main[data-draft-view=conversation] > .fd-canvas-surface { display:none; }
+.fd-canvas-main[data-draft-view] > :is(.fd-canvas-conversation-surface,.fd-canvas-start-surface) { grid-row:2; position:relative; inset:auto; min-height:0; padding-bottom:84px; }
+.fd-canvas-main[data-draft-view] .fd-start-reference { top:16px; }
+.fd-canvas-main[data-draft-view] .fd-canvas-conversation-surface .fd-thread-header { padding-left:var(--fd-canvas-gutter); padding-right:var(--fd-canvas-gutter); }
 @media(max-width:780px) { .fd-idea-home { padding-top:42px; } .fd-idea-home .fd-home-projects { grid-template-columns:1fr; } .fd-draft-build-strip { gap:12px; bottom:14px; } .fd-draft-build-strip > span { white-space:normal; font-size:11px; } }
 .fd-canvas-workspace:has(.fd-draft-build-strip) .fd-start-reference[data-conversation=true] { bottom:112px; }
 .fd-canvas-workspace:has(.fd-draft-build-strip):has(.fd-assistant-dock:not([hidden])) .fd-draft-build-strip { left:calc((100% - 450px)/2); }
