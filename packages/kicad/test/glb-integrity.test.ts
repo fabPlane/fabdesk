@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { parseGlbContainer } from "../src/glb-container";
 import { exportGlb } from "../src/render";
 import { measureGlb } from "../src/mechanical";
@@ -13,18 +13,20 @@ function model(
     scenes: [{ nodes: [] }],
     buffers: [{ byteLength: 4 }],
   },
+  binary = Buffer.alloc(4),
 ) {
   let json = JSON.stringify(document);
   while (json.length % 4) json += " ";
-  const bytes = Buffer.alloc(28 + json.length + 4);
+  const bytes = Buffer.alloc(28 + json.length + binary.length);
   bytes.writeUInt32LE(0x46546c67, 0);
   bytes.writeUInt32LE(2, 4);
   bytes.writeUInt32LE(bytes.length, 8);
   bytes.writeUInt32LE(json.length, 12);
   bytes.writeUInt32LE(0x4e4f534a, 16);
   bytes.write(json, 20);
-  bytes.writeUInt32LE(4, 20 + json.length);
+  bytes.writeUInt32LE(binary.length, 20 + json.length);
   bytes.writeUInt32LE(0x004e4942, 24 + json.length);
+  binary.copy(bytes, 28 + json.length);
   return bytes;
 }
 
@@ -82,6 +84,74 @@ async function destination() {
   temporary.push(dir);
   return { dir, output: join(dir, "board.glb"), board: join(dir, "board.kicad_pcb") };
 }
+
+test("concurrent board exports isolate KiCad's fixed scratch filename and preserve each model", async () => {
+  const { dir } = await destination();
+  const outputs = [join(dir, "first.glb"), join(dir, "second.glb")];
+  const boards = [join(dir, "first.kicad_pcb"), join(dir, "second.kicad_pcb")];
+  const models = [10, 20].map((width, index) => {
+    const binary = Buffer.alloc(36);
+    binary.writeFloatLE(width / 1000, 12);
+    binary.writeFloatLE(0.001, 28);
+    return model(
+      {
+        asset: { version: "2.0" },
+        scene: 0,
+        scenes: [{ nodes: [0] }],
+        nodes: [{ name: `board-${index}`, mesh: 0 }],
+        meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+        accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: "VEC3" }],
+        bufferViews: [{ buffer: 0, byteLength: binary.length }],
+        buffers: [{ byteLength: binary.length }],
+      },
+      binary,
+    );
+  });
+  let firstWritten!: () => void, secondWritten!: () => void;
+  const firstReady = new Promise<void>((resolve) => {
+    firstWritten = resolve;
+  });
+  const secondReady = new Promise<void>((resolve) => {
+    secondWritten = resolve;
+  });
+  const directories: string[] = [];
+  const cli: KicadCli = {
+    path: "unused",
+    version: "test",
+    trace: async ({ command }) => {
+      const index = boards.indexOf(command.at(-1)!);
+      const output = command[command.indexOf("-o") + 1]!;
+      const scratch = join(dirname(output), "$tempfile$.glb");
+      directories.push(dirname(output));
+      // Native KiCad writes this fixed name before renaming it to the requested output.
+      // Force both writes to overlap so a shared directory deterministically loses a model.
+      if (index === 1) await firstReady;
+      await writeFile(scratch, models[index]!);
+      if (index === 0) {
+        firstWritten();
+        await secondReady;
+      } else secondWritten();
+      await rename(scratch, output);
+      return { exitCode: 0, stdout: "", stderr: "" };
+    },
+  };
+  const results = await Promise.allSettled(
+    boards.map((board, index) =>
+      exportGlb(cli, { board, output: outputs[index]!, mechanical: true }),
+    ),
+  );
+  expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
+  expect(directories).toHaveLength(2);
+  expect(new Set(directories).size).toBe(2);
+  for (const [index, output] of outputs.entries()) {
+    const bytes = await readFile(output);
+    expect(bytes).toEqual(models[index]!);
+    const measured = measureGlb(bytes);
+    expect(measured.roots[0]?.name).toBe(`board-${index}`);
+    expect(measured.roots[0]?.bounds?.maxX).toBeCloseTo((index + 1) * 10, 4);
+  }
+  expect((await readdir(dir)).sort()).toEqual(["first.glb", "second.glb"]);
+});
 
 test("an incomplete successful-process export retries once and publishes only valid bytes", async () => {
   const { dir, output, board } = await destination();
@@ -146,7 +216,9 @@ test("cancelled exports do not retry or replace an earlier valid model", async (
     version: "test",
     trace: async ({ command }) => {
       attempts++;
-      await writeFile(command[command.indexOf("-o") + 1]!, good);
+      const output = command[command.indexOf("-o") + 1]!;
+      await writeFile(join(dirname(output), "$tempfile$.glb"), good);
+      await writeFile(output, good);
       abort.abort(new Error("cancelled"));
       return { exitCode: 0, stdout: "", stderr: "" };
     },

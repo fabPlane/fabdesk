@@ -1,8 +1,7 @@
 // ported from fabplane packages/pcb/src/kicad-cli.ts; replace with @pcb/pcb/kicad-cli once it lands on fabplane main
 import { existsSync } from "node:fs";
-import { randomUUID } from "node:crypto";
-import { readFile, rename, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdtemp, readFile, rename, rm } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { lastLines, runKicadCli, type KicadCli } from "./cli";
 import { parseGlbContainer } from "./glb-container";
 
@@ -82,7 +81,11 @@ export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promi
   if (options.mechanical) base.push("--user-origin", "0x0mm");
   const attempt = async (fused: boolean) => {
     options.signal?.throwIfAborted();
-    const temporary = join(dirname(options.output), `${randomUUID()}.glb`);
+    // KiCad WriteGLTF uses "$tempfile$.glb" inside the output directory before
+    // renaming it. Unique filenames alone cannot isolate concurrent exports.
+    // Keep each attempt on the destination filesystem for an atomic publication.
+    const scratch = await mkdtemp(join(dirname(resolve(options.output)), ".fabdesk-glb-"));
+    const temporary = join(scratch, "model.glb");
     try {
       const result = await runKicadCli(cli, [...base, ...(fused ? ["--fuse-shapes"] : []), "-o", temporary, options.board], {
         tolerateExit: true,
@@ -102,7 +105,7 @@ export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promi
       if (!invalid) await rename(temporary, options.output);
       return { ok: invalid === null, warnings, exitCode: result.exitCode, stderr: result.stderr, invalid };
     } finally {
-      await rm(temporary, { force: true });
+      await rm(scratch, { recursive: true, force: true });
     }
   };
   const fused = await attempt(!options.mechanical);
