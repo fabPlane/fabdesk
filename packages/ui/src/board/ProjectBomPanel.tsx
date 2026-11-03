@@ -182,6 +182,10 @@ export function ProjectBomPanel() {
   const [filters, setFilters] = useState<PartKind[]>([]);
   const [query, setQuery] = useState("");
   const [bomQuery, setBomQuery] = useState("");
+  const [buildQuantity, setBuildQuantity] = useState("5");
+  useEffect(() => { setBuildQuantity("5"); }, [projectId]);
+  const batchCount = Number(buildQuantity);
+  const validBatch = Number.isInteger(batchCount) && batchCount > 0 && batchCount <= 10000;
   const [kinds, setKinds] = useState<PartKind[]>([]);
   const [pendingReveal, setPendingReveal] = useState<{ projectId: string; lineId: string } | null>(null);
   const [highlightedLine, setHighlightedLine] = useState<string | null>(null);
@@ -194,12 +198,13 @@ export function ProjectBomPanel() {
   const editable = partsState.status === "ok";
   const addedCatalogIds = new Set(parts.parts.map((part) => part.catalogId));
   const lines = bom.data?.lines ?? [];
+  const partsPerBuild = lines.reduce((sum, line) => sum + line.qty, 0);
   useEffect(() => { setAllowPartial(false); }, [bom.data?.revision]);
-  useAssistantSurface(projectId ? { projectId, label: "Parts / Design BOM", priority: 10, details: JSON.stringify({ revision: bom.data?.revision, sourceCoverage: bom.data?.coverage, completeSourceCoverage: bom.data?.complete, lines: lines.length, electricalParity: "not established by BOM", error: bom.error instanceof Error ? bom.error.message : undefined }) } : null);
+  useAssistantSurface(projectId ? { projectId, label: "Parts / Design BOM", priority: 10, details: JSON.stringify({ revision: bom.data?.revision, sourceCoverage: bom.data?.coverage, completeSourceCoverage: bom.data?.complete, lines: lines.length, buildQuantity: validBatch ? batchCount : null, partsPerBuild, electricalParity: "not established by BOM", error: bom.error instanceof Error ? bom.error.message : undefined }) } : null);
   const searchTerm = bomQuery.trim().toLowerCase();
   const shown = lines.filter((line) =>
     (filters.length === 0 || filters.includes(line.kind)) &&
-    (!searchTerm || [line.name, line.refs.join(" "), line.mpn, line.footprint].join(" ").toLowerCase().includes(searchTerm)),
+    (!searchTerm || [line.name, line.refs.join(" "), line.mpn, line.sku, line.footprint].join(" ").toLowerCase().includes(searchTerm)),
   );
   const hits = useMemo(
     () => searchOffboardCatalog(query, { limit: Number.MAX_SAFE_INTEGER }).filter((part) => kinds.length === 0 || kinds.includes(part.kind)),
@@ -305,12 +310,12 @@ export function ProjectBomPanel() {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold">Parts for this build</h2>
-            <span className="text-xs text-muted">{lines.length} BOM {lines.length === 1 ? "line" : "lines"} · {lines.reduce((sum, line) => sum + line.qty, 0)} total quantity</span>
+            <span className="text-xs text-muted">{lines.length} BOM {lines.length === 1 ? "line" : "lines"} · {partsPerBuild} parts per build</span>
             <Badge tone="accent" title="Off-board parts are separate from components mounted on the PCB.">
               {parts.parts.length} off-board
             </Badge>
           </div>
-          <p className="mt-1 text-xs text-muted">Board parts from saved design sources, plus project hardware. Quantities follow declared physical boards.</p>
+          <p className="mt-1 text-xs text-muted">Quantities cover one complete build, including all declared boards and project hardware.</p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           <Button ref={addTrigger} variant="primary" size="sm" onClick={() => setLibraryOpen(true)}><Icon name="plus" width={15} height={15} />Add hardware</Button>
@@ -330,6 +335,15 @@ export function ProjectBomPanel() {
         <details><DisclosureSummary variant="compact" icon="pcb" label={bom.data.complete ? "Parts source details" : "Review missing parts sources"} warning={!bom.data.complete} badge={`${bom.data.coverage.filter(source => source.multiplier > 0 && source.status === "native-schematic").length} of ${bom.data.coverage.filter(source => source.multiplier > 0).length} native sources${bom.data.complete ? "" : " · incomplete"}`} />
         <div className="mt-2 grid gap-2 sm:grid-cols-2">{bom.data.coverage.map(source => <div key={source.sourceId ?? "main"} className="rounded-lg border border-border px-3 py-2 text-xs"><div className="flex items-start justify-between gap-2"><div className="font-medium">{source.name}<span className="ml-2 text-muted">{source.multiplier} {source.multiplier === 1 ? "board" : "boards"} · {source.status === "native-schematic" || source.status === "saved-netlist" ? `${source.componentCount * source.multiplier} listed parts` : source.status === "unused" ? "Not included" : "Parts not listed"}</span></div><CanvasToolButton icon="sparkles" label={`Ask about ${source.name} parts`} onClick={() => askAboutSurface({ projectId, label: `Parts / ${source.name}`, priority: 40, details: JSON.stringify({ revision: bom.data?.revision, manifestSha256: bom.data?.manifestSha256, source, instruction: "This is captured BOM coverage, not a PCB parity or electrical-check result. Inspect the declared source and preserve independent boards." }) }, (source.status === "native-schematic" || source.status === "saved-netlist") ? "Explain the listed parts and quantities for this board, including exclusions and shared instances. Flag missing purchasing information before suggesting changes." : "Help recover this board’s parts list. Find its saved schematic or design netlist in the project first, explain what is missing, and propose how to import or create it without guessing parts or changing unrelated boards.")} /></div><p className={cn("mt-1", source.status === "native-schematic" || source.status === "saved-netlist" || source.status === "unused" ? "text-muted" : "text-warning")}>{source.status === "native-schematic" ? "Saved native schematic · BOM exclusions respected" : source.status === "saved-netlist" ? "Saved design netlist · source freshness unverified" : source.reason ?? source.status}</p></div>)}</div>
         <p className="mt-2 text-xs text-muted">Source coverage does not establish schematic/PCB parity or passed electrical checks. Hardware is counted once for the project.</p></details>
+      </div>}
+      {lines.length > 0 && <div className="fd-bom-batch shrink-0">
+        <label className="flex items-center gap-2 text-sm">Build quantity<Input type="number" min={1} max={10000} step={1} value={buildQuantity} onChange={event => setBuildQuantity(event.target.value)} aria-label="Build quantity" className="w-24" /></label>
+        <span className="text-sm" role="status">{validBatch ? `${(partsPerBuild * batchCount).toLocaleString()} parts for ${batchCount.toLocaleString()} ${batchCount === 1 ? "build" : "builds"}` : "Enter a whole quantity from 1 to 10,000."}</span>
+        <Button size="sm" disabled={!validBatch || bom.isFetching || bom.isError} onClick={() => {
+          if (!projectId || !validBatch) return;
+          askAboutSurface({ projectId, label: "Parts / Batch sourcing", priority: 40, details: JSON.stringify({ revision: bom.data?.revision, coverage: bom.data?.coverage, buildQuantity: batchCount, lines: lines.map(line => ({ refs: line.refs, name: line.name, mpn: line.mpn, sku: line.sku, qtyPerBuild: line.qty, required: line.qty * batchCount })) }) }, `Review sourcing for ${batchCount} complete builds. Verify current immediate assembly stock for every assembled component and its required quantity, exact part identifier and Basic/Extended status. Flag missing information and request approval for any exception before choosing a replacement. Do not change the design while sourcing is unresolved.`);
+        }}><Icon name="sparkles" width={15} height={15} />Ask about sourcing</Button>
+        <p className="w-full text-xs text-muted">Planning calculation only. The design CSV keeps per-build quantities; manufacturer assembly uploads use per-board quantities. Saved part numbers do not verify current stock.</p>
       </div>}
       {lines.length > 0 && <div className="shrink-0 border-b border-border px-2 py-2" data-testid="bom-filter">
         <PartsToolbar label="Search BOM" query={bomQuery} onQueryChange={setBomQuery} selected={filters} onChange={setFilters} includePcb />
@@ -364,7 +378,8 @@ export function ProjectBomPanel() {
                     <th className="px-2 py-1.5">Ref</th>
                     <th className="px-2 py-1.5">Part</th>
                     <th className="px-2 py-1.5">Type</th>
-                    <th className="w-20 px-2 py-1.5">Qty</th>
+                    <th className="w-20 px-2 py-1.5">Per build</th>
+                    <th className="px-2 py-1.5">{validBatch ? `For ${batchCount.toLocaleString()} builds` : "Batch quantity"}</th>
                     <th className="px-2 py-1.5">Part number</th>
                     <th className="px-2 py-1.5" />
                   </tr>
@@ -402,7 +417,8 @@ export function ProjectBomPanel() {
                           line.qty
                         )}
                       </td>
-                      <td className="px-2 py-1.5 font-mono text-[11px] text-muted">{line.mpn ?? ""}</td>
+                      <td className="px-2 py-1.5 tabular-nums">{validBatch ? (line.qty * batchCount).toLocaleString() : "—"}</td>
+                      <td className="px-2 py-1.5 text-[11px] text-muted"><span className="font-mono">{line.mpn ?? "—"}</span>{line.sku && <div className="mt-1">Saved supplier ID: <span className="font-mono">{line.sku}</span></div>}</td>
                       <td className="px-2 py-1.5 text-right">
                         {line.source === "offboard" && line.lineId && editable && (
                           <IconButton size="sm" title={`Remove ${line.refs[0] ?? line.name}`} className="text-muted hover:text-danger" onClick={() => removeLine(line.lineId!)}>
@@ -421,6 +437,7 @@ export function ProjectBomPanel() {
         <div className="space-y-4 text-sm">
           <p>{lines.length} listed items. The CSV includes board-qualified references, quantities, footprints and saved part numbers.</p>
           {!bom.data?.complete && <div className="rounded-lg border border-warning/30 bg-warning/5 p-3"><p className="font-medium text-warning">Some board sources need review</p><p className="mt-1 text-xs text-muted">Missing sources are omitted. Saved netlist parts have not been checked against native schematic exclusions.</p><label className="mt-3 flex items-start gap-2"><input type="checkbox" checked={allowPartial} onChange={event => setAllowPartial(event.target.checked)} disabled={downloading} /><span>Export only the listed parts</span></label></div>}
+          <p className="text-xs text-muted">This is a design CSV with per-build quantities, including project hardware. The batch planning quantity does not change this file. It is not a manufacturer-specific assembly upload.</p>
           <p className="text-xs text-muted">Saved to Outputs as bom.csv with a source coverage receipt, then downloaded. This does not mark the design as electrically checked.</p>
           {(downloadError || exportBom.state.error) && <p role="alert" className="text-danger">{downloadError || exportBom.state.error}</p>}
           <div className="flex justify-end gap-2"><Button disabled={downloading} onClick={() => setExportOpen(false)}>Cancel</Button><Button variant="primary" disabled={downloading || bom.isFetching || bom.isError || !lines.length || (!bom.data?.complete && !allowPartial)} onClick={() => void downloadBom()}>{downloading ? "Exporting…" : "Export and download CSV"}</Button></div>
