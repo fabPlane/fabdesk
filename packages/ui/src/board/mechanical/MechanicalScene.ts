@@ -12,6 +12,7 @@ import { createFitOverlay } from "./fit-overlay";
 import { assemblyClipRange, fittedCameraDistance } from "./camera-fit";
 import { batchPcbGeometry } from "./batchPcbGeometry";
 import { parseWorkspaceView } from "./workspace-view";
+import { MeasurementOverlay } from "./measurement-overlay";
 
 export type BoardGeometry = {
   outline: { minX: number; minY: number; maxX: number; maxY: number };
@@ -105,7 +106,7 @@ export class MechanicalScene {
     T.Material,
     { opacity: number; transparent: boolean; depthWrite: boolean }
   >();
-  private measurement: T.Group | null = null;
+  private measurement: MeasurementOverlay | null = null;
   private fitOverlay: T.Group | null = null;
   private holeMarkers: T.Group | null = null;
   private spaceOutline: T.LineSegments | null = null;
@@ -332,31 +333,13 @@ export class MechanicalScene {
         this.clearMeasure();
         this.point = hit.point.clone();
         this.callbacks.measured(null);
-        this.measurement = new T.Group();
-        const dot = new T.Mesh(
-          new T.SphereGeometry(this.fitDistance * 0.003, 12, 8),
-          new T.MeshBasicMaterial({ color: 0xaddb75, depthTest: false }),
-        );
-        dot.position.copy(hit.point);
-        this.measurement.add(dot);
+        this.measurement = new MeasurementOverlay(hit.point);
         this.scene.add(this.measurement);
         this.render();
       } else {
         const start = this.point;
         this.clearMeasure();
-        this.measurement = new T.Group();
-        const geo = new T.BufferGeometry().setFromPoints([start, hit.point]);
-        this.measurement.add(
-          new T.Line(geo, new T.LineBasicMaterial({ color: 0xaddb75, depthTest: false })),
-        );
-        for (const p of [start, hit.point]) {
-          const dot = new T.Mesh(
-            new T.SphereGeometry(this.fitDistance * 0.003, 12, 8),
-            new T.MeshBasicMaterial({ color: 0xaddb75, depthTest: false }),
-          );
-          dot.position.copy(p);
-          this.measurement.add(dot);
-        }
+        this.measurement = new MeasurementOverlay(start, hit.point);
         this.scene.add(this.measurement);
         this.callbacks.measured(start.distanceTo(hit.point));
         this.render();
@@ -370,7 +353,7 @@ export class MechanicalScene {
   private clearMeasure() {
     if (this.measurement) {
       this.scene.remove(this.measurement);
-      disposeObject(this.measurement);
+      this.measurement.dispose();
       this.measurement = null;
     }
     this.point = null;
@@ -394,6 +377,7 @@ export class MechanicalScene {
         this.camera.far = far;
         this.camera.updateProjectionMatrix();
       }
+      this.measurement?.updateViewport(this.camera, this.host.clientWidth, this.host.clientHeight);
       this.renderer.render(this.scene, this.camera);
       const percent = Math.max(
         1,
@@ -874,13 +858,15 @@ export class MechanicalScene {
   }
   setMode(mode: SceneMode) {
     if (this.gizmo.dragging) this.interruptGesture();
+    const changed = mode !== this.mode;
     this.mode = mode;
     this.gizmo.showX = this.gizmo.showY = !(this.planarPlacement && mode === "rotate");
     this.gizmo.showZ = true;
-    this.clearMeasure();
+    if (changed) this.clearMeasure();
     this.select(this.selection);
   }
   setPlanarPlacement(value: boolean) {
+    if (value === this.planarPlacement) return;
     this.planarPlacement = value;
     this.setMode(this.mode);
   }

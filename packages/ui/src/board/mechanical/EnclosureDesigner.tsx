@@ -46,6 +46,7 @@ import { EnclosureFitReview } from "./EnclosureFitReview";
 import { MechanicalIcon } from "./MechanicalIcon";
 import { MechanicalViewCube } from "./MechanicalViewCube";
 import { EnclosureConnections } from "./EnclosureConnections";
+import EnclosureLayoutWorker from "./enclosure-layout.worker?worker&inline";
 import "./enclosure-compact.css";
 import { detailedBoardSource, usePcbModels } from "./usePcbModels";
 import { NumberField } from "./EnclosureNumberField";
@@ -180,9 +181,8 @@ export function EnclosureDesigner({
     goal?: EnclosureLayoutGoal,
   ) {
     cancelLayout.current?.();
-    const worker = new Worker(new URL("./enclosure-layout.worker.ts", import.meta.url), {
-      type: "module",
-    });
+    // Keep the worker with this loaded UI: a desktop rebuild may replace external hashed assets.
+    const worker = new EnclosureLayoutWorker();
     const result = await new Promise<LayoutChoice[]>((resolve, reject) => {
       const finish = () => {
         clearTimeout(timer);
