@@ -1,6 +1,12 @@
 # Placement integration — November 4
 
 
+## Background style follow-up
+
+Applied the approved preview background: off-white `#fbfcfa`, subtle sage-gray dots `#d6dfdc`, radius0.7px on a20px screen-space grid. Home and workspace share the same tokens; dark mode has a matching low-contrast color. Placement uses that shared CSS grid rather than painting a second zoom-dependent background. Native placement/Fit redraw visually checked; no source changes. UI types and desktop production build pass (2m21s), zero packaged source maps.
+
+![Applied preview background](placement-integration-20261104/17-preview-style-background.png)
+
 ## Implemented canvas integration
 
 The approved proposal is now implemented for source-bound placement drafts. The analysis and simulated HTML below are retained as the **earlier baseline/proposal**, not the current implementation status. PR393's engine/worker/catalog are reused; no backend, vendor or Mechanical implementation was rebuilt.

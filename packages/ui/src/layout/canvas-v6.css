@@ -5,12 +5,14 @@
   --fd-control-radius:8px;
   --fd-surface-radius:12px;
   --fd-soft-shadow:0 2px 8px #102a2009;
-  --fd-bg:#fcfcfa;
+  --fd-bg:#fbfcfa;
+  --fd-canvas-dot:#d6dfdc;
+  --fd-canvas-grid-size:20px;
   --fd-panel-2:#f3f5f3;
   --fd-fg:#12243c;
   --fd-muted:#6e7e97;
 }
-.dark .fd-canvas-workspace { --fd-bg:#151b1b; --fd-panel-2:#263232; --fd-fg:#e3eee9; --fd-muted:#9aaea6; }
+.dark .fd-canvas-workspace { --fd-bg:#151b1b; --fd-canvas-dot:#35443e; --fd-panel-2:#263232; --fd-fg:#e3eee9; --fd-muted:#9aaea6; }
 .fd-canvas-header { height:56px; padding-inline:var(--fd-canvas-gutter); gap:22px; }
 .fd-canvas-brand { font-weight:650; letter-spacing:-.6px; }
 .fd-project-switcher > summary { font-size:13px; min-height:36px; border-radius:var(--fd-control-radius); box-shadow:var(--fd-soft-shadow); }
@@ -21,7 +23,8 @@
 .fd-canvas-header-actions > .fd-button[data-variant=secondary]:not(:disabled):not([aria-current=page]):hover,.fd-board-task-actions > .fd-button[data-variant=secondary]:not(:disabled):not([aria-current=page]):hover { background:var(--fd-panel-2); border-color:color-mix(in srgb,var(--fd-accent) 55%,var(--fd-border)); }
 
 .fd-canvas-header-actions > button[aria-current=page] { color:var(--fd-accent); background:var(--fd-panel-2); }
-.fd-canvas-main { background-size:22px 22px; background-image:radial-gradient(color-mix(in srgb,var(--fd-muted) 20%,transparent) .65px,transparent .75px); }
+/* Shared with Home so every workspace uses the approved preview's quiet dot grid. */
+.fd-canvas-main,.fd-home-surface { background-color:var(--fd-bg); background-image:radial-gradient(var(--fd-canvas-dot) .7px,transparent .7px); background-size:var(--fd-canvas-grid-size) var(--fd-canvas-grid-size); }
 .fd-canvas-main[data-task-toolbar=true]::before { content:""; position:absolute; inset:0 0 auto; height:64px; background:color-mix(in srgb,var(--fd-panel) 86%,transparent); border-bottom:1px solid var(--fd-border); pointer-events:none; }
 .fd-canvas-destinations { top:14px; left:var(--fd-canvas-gutter); }
 .fd-canvas-destinations > .fd-workspace-menu > summary { min-width:146px; height:36px; }
@@ -593,7 +596,7 @@
 /* Home owns project selection; each workspace has one current project. */
 .fd-project-identity { max-width:min(38vw,420px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; font-weight:600; }
 .fd-home-header-label { color:var(--fd-muted); font-size:14px; }
-.fd-home-surface { flex:1; min-height:0; overflow:auto; background-color:var(--fd-bg); background-image:radial-gradient(color-mix(in srgb,var(--fd-muted) 20%,transparent) .65px,transparent .75px); background-size:22px 22px; }
+.fd-home-surface { flex:1; min-height:0; overflow:auto; }
 .fd-project-home { max-width:1080px; margin:0 auto; padding:56px 32px 80px; }
 .fd-project-home > header { display:flex; align-items:flex-start; gap:24px; margin-bottom:30px; }
 .fd-project-home > header > div:first-child { flex:1; }

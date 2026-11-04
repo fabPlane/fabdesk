@@ -195,12 +195,16 @@ export function PlacementCanvas({
       color = (name: string) => theme.getPropertyValue(name).trim();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = color("--fd-bg");
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = color("--fd-border");
-    const step = Math.max(16, 5 * v.scale);
-    for (let x = ((v.x % step) + step) % step; x < w; x += step)
-      for (let y = ((v.y % step) + step) % step; y < h; y += step) ctx.fillRect(x, y, 1, 1);
+    // Canvas mode shares the workspace's screen-space grid. Painting a second,
+    // zoom-dependent grid here would interrupt that background at the stage edges.
+    if (!el.closest(".fd-placement-canvas-workspace")) {
+      ctx.fillStyle = color("--fd-bg");
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = color("--fd-border");
+      const step = Math.max(16, 5 * v.scale);
+      for (let x = ((v.x % step) + step) % step; x < w; x += step)
+        for (let y = ((v.y % step) + step) % step; y < h; y += step) ctx.fillRect(x, y, 1, 1);
+    }
     ctx.translate(v.x, v.y);
     ctx.scale(v.scale, v.scale);
     const trace = (loops: Point[][]) => {
