@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
 import {
   MechanicalDesignSchema,
   portEnvelopes,
@@ -33,6 +33,7 @@ import {
   validateEnclosureFile,
   type EnclosureRecovery,
   type EnclosureBoardSummary,
+  type MechanicalItem,
   mountingCandidates,
   mountAtHole,
   alignEnclosureMounts,
@@ -43,6 +44,8 @@ import {
 import { MechanicalScene, type SceneModel, type BoardGeometry } from "./MechanicalScene";
 import { EnclosureFitReview } from "./EnclosureFitReview";
 import { MechanicalIcon } from "./MechanicalIcon";
+import { MechanicalViewCube } from "./MechanicalViewCube";
+import { EnclosureConnections } from "./EnclosureConnections";
 import "./enclosure-compact.css";
 import { detailedBoardSource, usePcbModels } from "./usePcbModels";
 import { NumberField } from "./EnclosureNumberField";
@@ -90,17 +93,43 @@ const unpack = (v: unknown) => {
 const steps = ["PCB", "Start", "Review"] as const;
 const stepLabels = { PCB: "Boards", Start: "Case", Review: "Preview" };
 type Step = (typeof steps)[number];
+export type EnclosureWorkspaceController = {
+  transformBoard: (
+    id: string,
+    position: [number, number, number],
+    rotation: [number, number, number],
+  ) => void;
+  openConnections: () => void;
+  openGenerator: () => void;
+  openReview: () => void;
+  openExport: () => void;
+  saveDraft: () => Promise<void>;
+  undo: (redo?: boolean) => void;
+  useImportedCase: (item: MechanicalItem, mesh: Blob) => Promise<void>;
+};
 /** Guided enclosure workflow; all preview coordinates are in the saved PCB frame, in mm. */
 export function EnclosureDesigner({
   projectId,
   active = true,
   onStatusChange,
   cadRuntime = null,
+  controllerRef,
+  onAssemblyModelsChange,
+  onContextChange,
+  onReviewCountChange,
+  onConnectionsChange,
+  onHistoryChange,
 }: {
   projectId: string;
   active?: boolean;
   onStatusChange?: (status: string) => void;
   cadRuntime?: CadRuntimeState | null;
+  controllerRef?: RefObject<EnclosureWorkspaceController | null>;
+  onAssemblyModelsChange?: (models: SceneModel[]) => void;
+  onContextChange?: (context: string | null) => void;
+  onReviewCountChange?: (count: number) => void;
+  onConnectionsChange?: (open: boolean) => void;
+  onHistoryChange?: (history: { canUndo: boolean; canRedo: boolean }) => void;
 }) {
   const client = useCoreClient();
   const viewKey = useRef<string | null>(null);
@@ -109,7 +138,16 @@ export function EnclosureDesigner({
   const [caseDetails, setCaseDetails] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [choosingBoards, setChoosingBoards] = useState(false);
+  const [connectionsOpen, setConnectionsOpen] = useState(false);
+  const [viewMenu, setViewMenu] = useState(false);
+  const [zoom, setZoom] = useState(100);
+  const [orientation, setOrientation] = useState<[number, number, number, number]>([0, 0, 0, 1]);
+  const [selectedCase, setSelectedCase] = useState<string | null>(null);
+  const [measured, setMeasured] = useState<number | null>(null);
+  const [annotation, setAnnotation] = useState<{ x: number; y: number } | null>(null);
+  const updateAnnotation = useRef(() => {});
   const previewStart = useRef<{
     design: MechanicalDesign;
     layout: EnclosureLayoutGoal | "keep";
@@ -119,6 +157,11 @@ export function EnclosureDesigner({
     previewStart.current = null;
     setAdvanced(false);
     setReviewOpen(false);
+    setExportOpen(false);
+    setChoosingBoards(false);
+    setConnectionsOpen(false);
+    setSelectedCase(null);
+    setViewMenu(false);
   }, [projectId]);
   const [layoutDetails, setLayoutDetails] = useState(false);
   const [manualPlacement, setManualPlacement] = useState(false);
@@ -195,20 +238,6 @@ export function EnclosureDesigner({
   const [archive, setArchive] = useState<string | null>(null),
     [component, setComponent] = useState(""),
     [move, setMove] = useState({ x: 0, y: 0, rotation: 0 });
-  useEffect(() => {
-    onStatusChange?.(
-      busy ||
-        (pendingRecovery
-          ? "Local draft available"
-          : error
-            ? "Enclosure needs attention"
-            : dirty
-              ? "Unsaved enclosure changes"
-              : preview
-                ? "Enclosure preview"
-                : "Enclosure settings loaded"),
-    );
-  }, [busy, dirty, preview, error, pendingRecovery, onStatusChange]);
   const [hole, setHole] = useState({ x: 0, y: 0, diameter: 3 }),
     [editReview, setEditReview] = useState<"outline" | "move" | "hole" | null>(null);
   const [pcbEditMode, setPcbEditMode] = useState<"outline" | "move" | "hole">("outline");
@@ -228,8 +257,37 @@ export function EnclosureDesigner({
           ?.features ?? (placement.path === "board.kicad_pcb" ? board : null);
       return features ? [{ path: placement.path, pcbRevision: features.pcbRevision }] : [];
     }),
-    active,
+    active || !!onAssemblyModelsChange,
   );
+  useEffect(() => {
+    onStatusChange?.(
+      busy ||
+        (pendingRecovery
+          ? "Local draft available"
+          : error
+            ? "Enclosure needs attention"
+            : pcbModels.loading
+              ? `Loading board models · ${Object.keys(pcbModels.models).length}/${pcbModels.requested}`
+              : pcbModels.error
+                ? "Board models need attention"
+                : dirty
+                  ? "Unsaved enclosure changes"
+                  : preview
+                    ? "Enclosure preview"
+                    : "Enclosure settings loaded"),
+    );
+  }, [
+    busy,
+    dirty,
+    preview,
+    error,
+    pendingRecovery,
+    pcbModels.loading,
+    pcbModels.error,
+    pcbModels.models,
+    pcbModels.requested,
+    onStatusChange,
+  ]);
   const report = useMemo<MechanicalFitReport | null>(() => {
     if (!baseReport || !design) return baseReport;
     const extra = nativeEnclosureClearanceIssues(
@@ -258,7 +316,12 @@ export function EnclosureDesigner({
         return [
           {
             ...reference,
-            item: { ...source.item, name: "PCB bounds · detailed model unavailable" },
+            item: {
+              ...source.item,
+              name: pcbModels.loading
+                ? "Loading PCB model…"
+                : "PCB bounds · detailed model unavailable",
+            },
             volume: {
               x: geometry.outline.minX,
               y: geometry.outline.minY,
@@ -312,7 +375,16 @@ export function EnclosureDesigner({
           })
         : []),
     ],
-    [modelSources, pcbModels.models, showPlugs, design, fitBoards, preview, board],
+    [
+      modelSources,
+      pcbModels.models,
+      pcbModels.loading,
+      showPlugs,
+      design,
+      fitBoards,
+      preview,
+      board,
+    ],
   );
   const [fitState, setFitState] = useState(""),
     [fitError, setFitError] = useState("");
@@ -322,7 +394,9 @@ export function EnclosureDesigner({
   const [selectedBoard, setSelectedBoard] = useState<string | null>(null);
   const viewState = useRef({ step, selected: selectedBoard, confirmedSelection });
   viewState.current = { step, selected: selectedBoard, confirmedSelection };
-  const [placementMode, setPlacementMode] = useState<"orbit" | "translate" | "rotate">("orbit");
+  const [placementMode, setPlacementMode] = useState<"orbit" | "translate" | "rotate" | "measure">(
+    "orbit",
+  );
   const [caseVisible, setCaseVisible] = useState(true);
   const [controlsExpanded, setControlsExpanded] = useState(false);
   const sceneToolsId = useId();
@@ -382,6 +456,7 @@ export function EnclosureDesigner({
   function selectBoard(path: string | null) {
     if (busy || pendingRecovery) return;
     setSelectedBoard(path);
+    setSelectedCase(null);
     if (!path) setPlacementMode("orbit");
     setFocusedIssue(null);
   }
@@ -408,9 +483,23 @@ export function EnclosureDesigner({
     setNotice(`${redo ? "Redid" : "Undid"}: ${label}`);
   }
   placementHandlers.current = {
-    select: (id) => selectBoard(id?.startsWith("@fit-") ? id.slice(5) : null),
+    select: (id) => {
+      if (busy || pendingRecovery) return;
+      if (id && (id.startsWith("@case-") || id === design?.source?.path)) {
+        setSelectedBoard(null);
+        setSelectedCase(id);
+        setPlacementMode("orbit");
+      } else selectBoard(id?.startsWith("@fit-") ? id.slice(5) : null);
+    },
     transform: (id, position, rotation) => {
       if (busy || pendingRecovery || !design) return;
+      if (id === design.source?.path) {
+        edit(
+          { ...design, confirmed: false, source: { ...design.source, position, rotation } },
+          "Position enclosure",
+        );
+        return;
+      }
       const path = id.startsWith("@fit-") ? id.slice(5) : "";
       const current = design.boards.find((b) => b.path === path),
         features = featuresFor(path);
@@ -422,13 +511,146 @@ export function EnclosureDesigner({
     framed.current = false;
   }, [projectId, design?.source?.path, design?.mode]);
   useEffect(() => {
-    scene.current?.select(selectedBoard ? `@fit-${selectedBoard}` : null);
+    scene.current?.select(selectedBoard ? `@fit-${selectedBoard}` : selectedCase);
+    scene.current?.setPlanarPlacement(!selectedCase);
     scene.current?.setMode(
-      busy || pendingRecovery || design?.boards.find((b) => b.path === selectedBoard)?.locked
+      busy ||
+        pendingRecovery ||
+        design?.boards.find((b) => b.path === selectedBoard)?.locked ||
+        (selectedCase?.startsWith("@case-") && placementMode !== "measure")
         ? "orbit"
         : placementMode,
     );
-  }, [selectedBoard, placementMode, busy, pendingRecovery, renderedSources, design]);
+  }, [selectedBoard, selectedCase, placementMode, busy, pendingRecovery, renderedSources, design]);
+  useEffect(() => {
+    onAssemblyModelsChange?.(
+      renderedSources
+        .filter((m) => m.item.kind === "board" || m.guide)
+        .map((m) => ({
+          ...m,
+          item:
+            m.item.kind === "board"
+              ? {
+                  ...m.item,
+                  name: enclosureFileLabel(m.item.id.slice(5)).replace(/\.kicad_pcb$/i, ""),
+                }
+              : m.item,
+          ...(m.item.kind === "board"
+            ? {
+                transformable:
+                  !busy &&
+                  !pendingRecovery &&
+                  !design?.boards.find((b) => `@fit-${b.path}` === m.item.id)?.locked,
+              }
+            : {}),
+        })),
+    );
+  }, [renderedSources, onAssemblyModelsChange, design?.boards, busy, pendingRecovery]);
+  useEffect(() => {
+    onHistoryChange?.({
+      canUndo: !busy && !pendingRecovery && !!history.current.undoLabel,
+      canRedo: !busy && !pendingRecovery && !!history.current.redoLabel,
+    });
+  }, [design, busy, pendingRecovery, onHistoryChange]);
+  useEffect(() => {
+    onContextChange?.(
+      preview
+        ? "Enclosure preview"
+        : design?.source
+          ? enclosureFileLabel(design.source.path)
+          : null,
+    );
+  }, [preview, design?.source?.path, onContextChange]);
+  useEffect(() => {
+    onReviewCountChange?.(report?.issues.length ?? 0);
+  }, [report, onReviewCountChange]);
+  useEffect(() => {
+    onConnectionsChange?.(connectionsOpen);
+  }, [connectionsOpen, onConnectionsChange]);
+  useEffect(() => {
+    if (!controllerRef) return;
+    controllerRef.current = {
+      transformBoard: (...args) => placementHandlers.current.transform(...args),
+      openConnections: () => {
+        if (pendingRecovery) {
+          setAdvanced(true);
+          return;
+        }
+        setAdvanced(false);
+        setConnectionsOpen(true);
+        setReviewOpen(false);
+        setExportOpen(false);
+        setViewMenu(false);
+        setShowPlugs(true);
+      },
+      openGenerator: () => {
+        if (pendingRecovery) {
+          setAdvanced(true);
+          return;
+        }
+        setAdvanced(false);
+        setConnectionsOpen(false);
+        setReviewOpen(false);
+        setExportOpen(false);
+        setViewMenu(false);
+        setShowPlugs(false);
+      },
+      openReview: () => {
+        if (pendingRecovery) {
+          setAdvanced(true);
+          return;
+        }
+        setAdvanced(false);
+        setConnectionsOpen(false);
+        setReviewOpen(true);
+        setExportOpen(false);
+      },
+      openExport: () => {
+        if (pendingRecovery) {
+          setAdvanced(true);
+          return;
+        }
+        setAdvanced(false);
+        setConnectionsOpen(false);
+        setReviewOpen(false);
+        setExportOpen(true);
+      },
+      saveDraft: () => run("Saving settings…", save),
+      undo: restoreHistory,
+      useImportedCase: async (item, mesh) => {
+        if (!design || busy || pendingRecovery) return;
+        await run("Preparing existing case…", async () => {
+          const path = `cad/imports/${crypto.randomUUID()}-fit-${item.name
+            .replace(/\.[^.]+$/, "")
+            .replace(/[^a-zA-Z0-9_-]/g, "-")
+            .slice(-80)}.stl`;
+          await client.writeFile(projectId, path, mesh);
+          if (!mounted.current) return;
+          const { closure: _closure, holders: _holders, ...rest } = design;
+          edit(
+            {
+              ...rest,
+              mode: "imported",
+              confirmed: false,
+              source: { path, scale: 1, position: [0, 0, 0], rotation: [0, 0, 0] },
+            },
+            "Use imported enclosure",
+          );
+          setFiles((f) => [...f, path]);
+          setLayoutChoice("keep");
+          setConnectionsOpen(false);
+          setAdvanced(false);
+          setSelectedBoard(null);
+          setSelectedCase(path);
+          setStep("Start");
+          setNotice("Original model preserved. Confirm the usable inside size before previewing.");
+        });
+      },
+    };
+    return () => {
+      controllerRef.current = null;
+    };
+  });
   useEffect(() => {
     scene.current?.setCaseVisible(caseVisible);
   }, [caseVisible]);
@@ -478,8 +700,12 @@ export function EnclosureDesigner({
   const [openLid, setOpenLid] = useState(true),
     [transparent, setTransparent] = useState(false);
   useEffect(() => {
-    scene.current?.setExplode(openLid && preview?.meshes?.lid ? 25 : 0, false);
-  }, [openLid, preview?.meshes?.lid]);
+    const separation = Math.max(
+      25,
+      Math.min(180, Math.max(design?.space.width ?? 0, design?.space.depth ?? 0) * 0.65),
+    );
+    scene.current?.setExplode(openLid && preview?.meshes?.lid ? separation : 0, false);
+  }, [openLid, preview?.meshes?.lid, design?.space.width, design?.space.depth]);
   useEffect(() => {
     scene.current?.setTranslucent(transparent);
   }, [transparent, renderedSources]);
@@ -488,7 +714,7 @@ export function EnclosureDesigner({
   }
   // Debounce edits; old responses never paint a newer design or replace a preview's report.
   useEffect(() => {
-    if (!active || !design || preview || busy) return;
+    if ((!active && !onAssemblyModelsChange) || !design || preview || busy) return;
     const parsed = MechanicalDesignSchema.safeParse(design);
     setFocusedIssue(null);
     setReport(null);
@@ -620,8 +846,10 @@ export function EnclosureDesigner({
         select: (id) => placementHandlers.current.select(id),
         transform: (id, position, rotation) =>
           placementHandlers.current.transform(id, position, rotation),
-        measured: () => {},
-        zoom: () => {},
+        measured: setMeasured,
+        zoom: setZoom,
+        orientation: setOrientation,
+        viewChanged: () => updateAnnotation.current(),
         error: setError,
       });
       scene.current = s;
@@ -636,6 +864,7 @@ export function EnclosureDesigner({
     }
   }, []);
   useEffect(() => {
+    if (!active) return;
     let cancel = false;
     void scene.current
       ?.setModels(renderedSources, false)
@@ -663,7 +892,7 @@ export function EnclosureDesigner({
     return () => {
       cancel = true;
     };
-  }, [renderedSources]);
+  }, [renderedSources, active]);
   function rememberView() {
     if (!viewKey.current || !scene.current || !framed.current) return;
     try {
@@ -779,7 +1008,14 @@ export function EnclosureDesigner({
         if (!cancelled)
           setModelSources([
             ...models,
-            { item, data, origin: [0, 0, 0], selectable: false, enclosure: true },
+            {
+              item,
+              data,
+              origin: [0, 0, 0],
+              selectable: true,
+              transformable: true,
+              enclosure: true,
+            },
           ]);
       })().catch((e) => {
         if (!cancelled) setError(enclosureErrorMessage(e));
@@ -889,7 +1125,8 @@ export function EnclosureDesigner({
               ),
               data: decodeMesh(bytes),
               origin: [0, 0, 0],
-              selectable: false,
+              selectable: true,
+              transformable: false,
               enclosure: true,
             });
         }
@@ -907,7 +1144,9 @@ export function EnclosureDesigner({
       }
       setModelSources(models);
       setNotice("");
-      setTransparent(true);
+      setTransparent(false);
+      setSelectedBoard(null);
+      setSelectedCase("@case-base.stl");
       setShowSpace(false);
       setStep("Review");
     }
@@ -1057,7 +1296,7 @@ export function EnclosureDesigner({
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   }
-  async function build() {
+  async function build(downloadFiles = false) {
     if (!preview?.revision) return;
     await save(design);
     if (!mounted.current) return;
@@ -1066,6 +1305,7 @@ export function EnclosureDesigner({
     setArchive(r.archive ?? null);
     previewStart.current = null;
     setNotice("Your case and board files are ready to download.");
+    if (downloadFiles && r.archive) await download(r.archive);
   }
   async function applyEdit() {
     if (!design || !board || !editReview) return;
@@ -1181,10 +1421,49 @@ export function EnclosureDesigner({
     currentPlacement && currentFeatures
       ? enclosureBoardPose(currentPlacement, currentFeatures.outline)
       : null;
+  const visibleIssue =
+    focusedIssue ??
+    report?.issues.find((i) => i.severity === "error" && i.regions?.length) ??
+    report?.issues.find((i) => /^(port-|opening-|connector-|plug-)/.test(i.code));
+  updateAnnotation.current = () => {
+    const region = visibleIssue?.regions?.[0];
+    const point = region
+      ? scene.current?.projectPoint(
+          region.x + region.width / 2,
+          region.y + region.depth / 2,
+          region.z + region.height / 2,
+        )
+      : preview
+        ? scene.current?.projectModel("@case-base.stl")
+        : null;
+    const next = point ? { x: Math.round(point.x), y: Math.round(point.y) } : null;
+    setAnnotation((old) => (old?.x === next?.x && old?.y === next?.y ? old : next));
+  };
+  useEffect(() => {
+    updateAnnotation.current();
+  }, [visibleIssue, preview]);
+  useEffect(() => {
+    if (!active || advanced) return;
+    const update = () =>
+      scene.current?.setViewportInsets({
+        left: (host.current?.clientWidth ?? 1000) < 650 ? 0 : 300,
+        right: 20,
+        top: (host.current?.clientWidth ?? 1000) < 650 ? 330 : 30,
+        bottom: 76,
+      });
+    update();
+    const observer = new ResizeObserver(update);
+    if (host.current) observer.observe(host.current);
+    return () => observer.disconnect();
+  }, [active, advanced]);
+  useEffect(() => {
+    if (advanced) scene.current?.setViewportInsets({ left: 0, right: 0, top: 0, bottom: 0 });
+  }, [advanced]);
   return (
     <section
       className="fd-case-workflow fd-case-compact"
       data-advanced={advanced}
+      data-connections={connectionsOpen}
       hidden={!active}
       data-controls-expanded={controlsExpanded}
       aria-label="Enclosure designer"
@@ -1231,10 +1510,18 @@ export function EnclosureDesigner({
       }}
     >
       <div className="fd-case-canvas" ref={host} />
-      {!advanced && (
+      {!advanced && !connectionsOpen && (
         <aside className="fd-enclosure-card" aria-label="Generate enclosure">
           <header>
             <h2>{design?.mode === "imported" ? "Fit existing case" : "Generate enclosure"}</h2>
+            <button
+              className="fd-enclosure-menu-trigger"
+              aria-label="View options"
+              aria-expanded={viewMenu}
+              onClick={() => setViewMenu(!viewMenu)}
+            >
+              •••
+            </button>
           </header>
           {design ? (
             <>
@@ -1349,6 +1636,18 @@ export function EnclosureDesigner({
           )}
         </aside>
       )}
+      {!advanced && connectionsOpen && design && (
+        <EnclosureConnections
+          design={design}
+          boards={mountingBoards()}
+          disabled={actionsDisabled}
+          onChange={(next) => edit(next, "Edit connections")}
+          onClose={() => {
+            setConnectionsOpen(false);
+            setShowPlugs(false);
+          }}
+        />
+      )}
       {!advanced && choosingBoards && design && (
         <aside className="fd-enclosure-board-choice" aria-label="Choose enclosure boards">
           <EnclosureBoardPicker
@@ -1381,16 +1680,16 @@ export function EnclosureDesigner({
           </div>
           {(
             [
-              ["orbit", "Camera"],
               ["translate", "Move"],
               ["rotate", "Rotate"],
+              ["measure", "Measure"],
             ] as const
           ).map(([mode, label]) => (
             <button
               key={mode}
-              disabled={actionsDisabled || (mode !== "orbit" && !!currentPlacement.locked)}
+              disabled={actionsDisabled || (mode !== "measure" && !!currentPlacement.locked)}
               aria-pressed={placementMode === mode}
-              onClick={() => setPlacementMode(mode)}
+              onClick={() => setPlacementMode(placementMode === mode ? "orbit" : mode)}
             >
               {label}
             </button>
@@ -1419,6 +1718,37 @@ export function EnclosureDesigner({
       )}
       {!advanced && (
         <>
+          {viewMenu && (
+            <aside className="fd-enclosure-view-menu" aria-label="View options">
+              <MechanicalViewCube
+                orientation={orientation}
+                onView={(view) => scene.current?.view(view)}
+              />
+              <button aria-pressed={transparent} onClick={() => setTransparent(!transparent)}>
+                See through
+              </button>
+              <button aria-pressed={!caseVisible} onClick={() => setCaseVisible(!caseVisible)}>
+                {caseVisible ? "Hide case" : "Show case"}
+              </button>
+              {preview?.meshes?.lid && (
+                <button aria-pressed={openLid} onClick={() => setOpenLid(!openLid)}>
+                  {openLid ? "Close lid" : "Open lid"}
+                </button>
+              )}
+              <button
+                disabled={actionsDisabled || !history.current.undoLabel}
+                onClick={() => restoreHistory()}
+              >
+                Undo
+              </button>
+              <button
+                disabled={actionsDisabled || !history.current.redoLabel}
+                onClick={() => restoreHistory(true)}
+              >
+                Redo
+              </button>
+            </aside>
+          )}
           <div className="fd-enclosure-viewbar" aria-label="View controls">
             <button onClick={() => scene.current?.fit()}>
               <MechanicalIcon name="fit" /> Fit
@@ -1426,39 +1756,113 @@ export function EnclosureDesigner({
             <button aria-label="Zoom out" onClick={() => scene.current?.zoom(1.2)}>
               −
             </button>
+            <output aria-label="Zoom level">{zoom}%</output>
             <button aria-label="Zoom in" onClick={() => scene.current?.zoom(1 / 1.2)}>
               +
             </button>
-            <button onClick={() => scene.current?.view("top")}>Top</button>
-            <button onClick={() => scene.current?.view("iso")}>3D</button>
-            {preview && (
-              <button
-                aria-pressed={transparent}
-                onClick={() => setTransparent(!transparent)}
-                title="See inside"
-              >
-                <MechanicalIcon name="eye" />
-              </button>
-            )}
-            <button
-              aria-label="Undo enclosure edit"
-              disabled={actionsDisabled || !history.current.undoLabel}
-              onClick={() => restoreHistory()}
-            >
-              <MechanicalIcon name="undo" />
-            </button>
           </div>
+          {placementMode === "measure" && (
+            <div className="fd-enclosure-measurement" role="status">
+              {measured === null
+                ? "Select two points to measure"
+                : `${Number(measured.toFixed(2))} mm`}
+              <button onClick={() => setPlacementMode("orbit")} aria-label="Finish measurement">
+                ×
+              </button>
+            </div>
+          )}
+          {preview && visibleIssue && annotation && !reviewOpen && (
+            <button
+              className="fd-enclosure-callout"
+              data-blocked={visibleIssue.severity === "error"}
+              style={{
+                left: Math.max(
+                  310,
+                  Math.min(annotation.x + 34, (host.current?.clientWidth ?? 1000) - 250),
+                ),
+                top: Math.max(
+                  70,
+                  Math.min(annotation.y, (host.current?.clientHeight ?? 700) - 130),
+                ),
+              }}
+              title={visibleIssue.message}
+              onClick={() => {
+                setReviewOpen(true);
+                showIssue(visibleIssue);
+              }}
+            >
+              <span aria-hidden="true">⚠</span>
+              {visibleIssue.severity === "error"
+                ? "Fit needs attention"
+                : "Connector openings need review"}
+            </button>
+          )}
           {report?.issues.length || fitError || pcbModels.error ? (
             <button
               className="fd-enclosure-review-toggle"
               data-blocked={report?.status === "blocked"}
               aria-expanded={reviewOpen}
-              onClick={() => setReviewOpen(!reviewOpen)}
+              onClick={() => {
+                setReviewOpen(!reviewOpen);
+                setExportOpen(false);
+              }}
             >
-              △ {report?.status === "blocked" ? "Check fit" : "Review"}
+              <span aria-hidden="true">⚠</span>{" "}
+              {report?.status === "blocked" ? "Check fit" : "Review updates"}
               {report?.issues.length ? ` · ${report.issues.length}` : ""}
             </button>
           ) : null}
+          {exportOpen && (
+            <aside className="fd-enclosure-review fd-enclosure-export" aria-label="Export design">
+              <header>
+                <h2>Export design</h2>
+                <button aria-label="Close export" onClick={() => setExportOpen(false)}>
+                  ×
+                </button>
+              </header>
+              <p>
+                {archive
+                  ? "Your matched enclosure and board files are ready."
+                  : preview
+                    ? "Apply this preview to prepare your matched design files."
+                    : "Create a preview to export your enclosure and boards together."}
+              </p>
+              <div className="fd-enclosure-export-formats">
+                <span>
+                  STL<span>3D printing</span>
+                </span>
+                <span>
+                  STEP<span>CAD editing</span>
+                </span>
+                <span>
+                  PCB<span>Board files</span>
+                </span>
+              </div>
+              {preview && !exportReadiness.canExport && (
+                <p role="status">{busy || "Review the fit checks before exporting."}</p>
+              )}
+              <button
+                className="fd-mechanical-primary"
+                disabled={
+                  actionsDisabled ||
+                  (!!preview && (!exportReadiness.canExport || !!preview.verificationPending))
+                }
+                onClick={() => {
+                  if (!preview) {
+                    setExportOpen(false);
+                    setConnectionsOpen(false);
+                    return;
+                  }
+                  void run("Preparing download…", async () => {
+                    if (archive) await download(archive);
+                    else await build(true);
+                  });
+                }}
+              >
+                {preview ? (archive ? "Download files" : "Apply & download") : "Return to preview"}
+              </button>
+            </aside>
+          )}
           {reviewOpen && (
             <aside className="fd-enclosure-review" aria-label="Fit review">
               <header>
@@ -1492,15 +1896,8 @@ export function EnclosureDesigner({
                     ? "Applied"
                     : report?.status === "blocked"
                       ? "Fit needs attention"
-                      : "Preview"}
+                      : "Preview · not applied"}
               </span>
-              {report?.outsideSize && (
-                <small>
-                  {Number(report.outsideSize.width.toFixed(1))} ×{" "}
-                  {Number(report.outsideSize.depth.toFixed(1))} ×{" "}
-                  {Number(report.outsideSize.height.toFixed(1))} mm
-                </small>
-              )}
               {!archive && (
                 <button
                   disabled={actionsDisabled}

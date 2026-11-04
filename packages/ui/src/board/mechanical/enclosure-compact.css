@@ -7,8 +7,11 @@
 .fd-case-compact[data-advanced="false"] {
   display: block;
 }
+.fd-case-compact[data-connections="false"] {
+  top: 72px;
+}
 .fd-case-compact[data-advanced="false"] .fd-case-canvas {
-  inset: 0 0 76px 310px;
+  inset: 0;
 }
 .fd-enclosure-card,
 .fd-enclosure-selection,
@@ -26,8 +29,8 @@
 .fd-enclosure-card {
   top: 0;
   left: 0;
-  width: 284px;
-  padding: 20px;
+  width: 264px;
+  padding: 18px;
   max-height: calc(100% - 76px);
   overflow-y: auto;
 }
@@ -46,12 +49,12 @@
   letter-spacing: -0.015em;
 }
 .fd-enclosure-card fieldset {
-  margin: 22px 0 0;
+  margin: 16px 0 0;
   padding: 0;
   border: 0;
   min-width: 0;
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 .fd-enclosure-around {
   display: grid;
@@ -76,14 +79,14 @@
 .fd-enclosure-card .fd-case-number {
   margin: 0;
   display: grid;
-  grid-template-columns: 1fr 110px;
+  grid-template-columns: 1fr 100px;
   align-items: center;
   gap: 14px;
   font-size: 12px;
   color: var(--fd-muted);
 }
 .fd-enclosure-card .fd-case-number > div {
-  width: 110px;
+  width: 100px;
   min-width: 0;
   border: 1px solid var(--fd-border);
   border-radius: 8px;
@@ -105,8 +108,8 @@
   display: flex;
   gap: 12px;
   align-items: center;
-  margin: 20px 0 16px;
-  padding: 14px 0 0;
+  margin: 16px 0 12px;
+  padding: 12px 0 0;
   border: 0;
   border-top: 1px solid var(--fd-border);
   border-radius: 0;
@@ -125,6 +128,7 @@
   min-height: 36px;
   border-radius: 8px;
   font-weight: 600;
+  padding: 8px 14px;
 }
 .fd-enclosure-error {
   color: var(--fd-danger, #f18e83);
@@ -197,7 +201,7 @@
 }
 .fd-enclosure-apply {
   bottom: 4px;
-  left: calc(50% + 130px);
+  left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -208,6 +212,8 @@
 .fd-enclosure-apply > span {
   font-size: 12px;
   color: var(--fd-muted);
+  border-right: 1px solid var(--fd-border);
+  padding-right: 16px;
 }
 .fd-enclosure-apply > small {
   font-size: 11px;
@@ -237,6 +243,150 @@
   padding: 8px 12px;
   font-size: 12px;
 }
+.fd-enclosure-review-toggle > span {
+  margin-right: 5px;
+}
+.fd-enclosure-card .fd-enclosure-menu-trigger {
+  border: 0;
+  padding: 4px;
+  background: transparent;
+  color: var(--fd-muted);
+  line-height: 1;
+  letter-spacing: 1px;
+  min-height: 20px;
+  height: 20px;
+}
+.fd-enclosure-viewbar {
+  border-radius: 24px;
+  padding: 5px 8px;
+}
+.fd-enclosure-viewbar > button:first-child {
+  border-right: 1px solid var(--fd-border);
+  border-radius: 0;
+  margin-right: 3px;
+  padding-right: 14px;
+}
+.fd-enclosure-viewbar output {
+  min-width: 44px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.fd-enclosure-view-menu {
+  position: absolute;
+  z-index: 6;
+  top: 42px;
+  left: 180px;
+  width: 160px;
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+  background: var(--fd-panel);
+  border: 1px solid var(--fd-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px #0004;
+}
+.fd-enclosure-view-menu > button {
+  border: 0;
+  background: transparent;
+  color: var(--fd-fg);
+  padding: 9px 12px;
+  text-align: left;
+  border-radius: 6px;
+}
+.fd-enclosure-view-menu > button:hover {
+  background: var(--fd-bg);
+}
+.fd-reference-viewcube {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  color: var(--fd-fg);
+}
+.fd-reference-viewcube polygon {
+  fill: color-mix(in srgb, var(--fd-muted) 16%, var(--fd-panel));
+  stroke: var(--fd-border);
+  stroke-width: 1;
+}
+.fd-reference-viewcube g {
+  cursor: pointer;
+  outline: none;
+}
+.fd-reference-viewcube g:hover polygon,
+.fd-reference-viewcube g:focus polygon {
+  fill: color-mix(in srgb, var(--fd-accent) 24%, var(--fd-panel));
+}
+.fd-reference-viewcube text {
+  font: 9px system-ui;
+  pointer-events: none;
+}
+.fd-reference-viewcube g text {
+  fill: var(--fd-fg);
+}
+.fd-reference-viewcube button {
+  border: 0;
+  border-radius: 5px;
+  background: var(--fd-panel);
+  color: var(--fd-muted);
+  padding: 3px 8px;
+}
+.fd-enclosure-callout {
+  position: absolute;
+  z-index: 2;
+  max-width: 240px;
+  padding: 9px 12px;
+  border: 1px solid #d8b87555;
+  border-radius: 7px;
+  background: color-mix(in srgb, #d8b875 15%, var(--fd-panel));
+  color: #e7c88c;
+  font-size: 11px;
+  box-shadow: 0 3px 12px #0002;
+}
+.fd-enclosure-callout > span {
+  margin-right: 6px;
+}
+.fd-enclosure-callout::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  width: 30px;
+  height: 1px;
+  background: currentColor;
+}
+.fd-enclosure-callout::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 3px);
+  right: calc(100% + 27px);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.fd-enclosure-callout[data-blocked="true"] {
+  color: #f18e83;
+  border-color: #f18e8355;
+}
+.fd-enclosure-measurement {
+  position: absolute;
+  bottom: 62px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  background: var(--fd-panel);
+  border: 1px solid var(--fd-border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  color: var(--fd-fg);
+}
+.fd-enclosure-measurement button {
+  margin-left: 12px;
+  border: 0;
+  background: transparent;
+  color: var(--fd-muted);
+}
 .fd-enclosure-review-toggle[data-blocked="true"] {
   color: #f18e83;
   border-color: #f18e8355;
@@ -257,6 +407,33 @@
   background: transparent;
   color: var(--fd-muted);
   font-size: 21px;
+}
+.fd-enclosure-export p {
+  color: var(--fd-muted);
+  line-height: 1.6;
+  font-size: 12px;
+}
+.fd-enclosure-export-formats {
+  display: flex;
+  gap: 10px;
+  margin: 20px 0;
+}
+.fd-enclosure-export-formats > span {
+  flex: 1;
+  border: 1px solid var(--fd-border);
+  border-radius: 8px;
+  padding: 12px;
+  font-weight: 600;
+}
+.fd-enclosure-export-formats span span {
+  display: block;
+  margin-top: 5px;
+  color: var(--fd-muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+.fd-enclosure-export > button {
+  width: 100%;
 }
 .fd-enclosure-review summary {
   padding: 14px 0;
@@ -296,7 +473,10 @@
     max-height: calc(100% - 110px);
   }
   .fd-case-compact[data-advanced="false"] .fd-case-canvas {
-    inset: 300px 0 100px;
+    inset: 0;
+  }
+  .fd-enclosure-callout {
+    display: none;
   }
   .fd-enclosure-selection {
     top: auto;

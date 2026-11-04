@@ -1,6 +1,6 @@
 # Enclosure design and PCB fit
 
-Open **CAD → Enclosure**. Work through **Start → Space → PCB → Review**. Related editing controls stay in the left inspector; **View & fit** contains camera and visibility controls. The footer keeps the next action, Save and undo/redo in consistent positions.
+Open **CAD → Generate enclosure** from the Add enclosure card. Choose the boards under **Around**, adjust **Clearance** or **Wall** if needed, then **Preview**. **Cancel** restores the starting layout; **Apply** saves the matched design. More options contains detailed editing controls, and Review updates opens the actual fit findings. The latest [reference comparison](mechanical-workspace.md#reference-driven-layout) shows the compact layout.
 
 ## Start with boards or an existing case
 
@@ -15,13 +15,14 @@ The app shows backend readiness where the dependent action appears. The bundled 
 
 | Location                      | Controls                                                                                    |
 | ----------------------------- | ------------------------------------------------------------------------------------------- |
-| Start                         | New/existing case, source import, dimensions and confirmation                               |
-| Space                         | Clearance, obstacles, mounting posts and connector openings                                 |
-| PCB → Position boards         | Board selection, Camera/Move/Rotate, center X/Y, height, rotation, focus, center and remove |
-| PCB → Edit actual project PCB | Separate Outline, Component and Hole choices with only the relevant fields                  |
-| Review                        | Fit findings, Show in 3D, Preview, Apply and matched export                                 |
-| View & fit                    | Standard views, transparency, hide case, interior/risk overlays                             |
-| Footer                        | Save, next/back, undo and redo                                                              |
+| Add enclosure                 | Import STL/STEP/OBJ/GLB or generate around selected boards                                  |
+| Compact generator             | Around, Clearance, Wall, More options and Preview                                          |
+| Selected part                 | Move, rotate and measure; imported models also have Align and unit confirmation             |
+| Connections                   | Explicit board/port endpoints, cable length and reserved space                             |
+| More options                  | Case dimensions, obstacles, posts/openings, actual PCB editing and detailed fit settings   |
+| Review updates                | Findings and Show in 3D, with blocking checks preserved                                    |
+| Bottom controls               | Fit / zoom percentage; Preview / Cancel / Apply                                            |
+| Export                        | Apply and download matched STL/STEP/PCB files after checks                                 |
 
 Choose a board from the list or click it in 3D. Move uses axis/plane handles; Rotate and the numeric rotation field both pivot around its center. X/Y fields describe that center in enclosure coordinates. Saved placements retain native PCB offsets. Placement does not change PCB source files.
 

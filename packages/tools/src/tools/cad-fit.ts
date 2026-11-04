@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readFile, mkdir, rm } from "node:fs/promises";
-import { join, extname } from "node:path";
+import { readFile, mkdir, rm, stat } from "node:fs/promises";
+import { join, extname, isAbsolute } from "node:path";
 import { z } from "zod/v4";
 import { zipSync, strToU8 } from "fflate";
 import {
@@ -28,6 +28,83 @@ import { detailedEnclosureFit } from "./enclosure-detailed-fit";
 import { bundleEnclosureModels } from "./enclosure-model-bundle";
 
 const sha = (v: string | Uint8Array) => createHash("sha256").update(v).digest("hex");
+const MAX_MODEL_PREVIEW_BYTES = 50 * 1024 * 1024;
+
+/** Tessellate a copy in its own bridge session, without opening or saving the project's model. */
+async function modelPreview(ctx: ToolContext, sourcePath: string | undefined) {
+  if (!sourcePath || isAbsolute(sourcePath) || !/\.(step|stp)$/i.test(sourcePath))
+    throw new ToolError("Choose a project-relative STEP (.step or .stp) file.", "invalid_args");
+  const dir = ctx.requireProject().dir;
+  const source = await jailPath(dir, sourcePath);
+  const info = await stat(source).catch(() => null);
+  if (!info?.isFile()) throw new ToolError("The STEP file could not be found.", "not_found");
+  if (info.size > MAX_MODEL_PREVIEW_BYTES)
+    throw new ToolError("STEP imports are limited to 50 MB.", "invalid_args");
+  const cad = ctx.services.cad;
+  if (
+    !cad ||
+    !(await cad
+      .status()
+      .then((s) => s.reachable)
+      .catch(() => false))
+  )
+    throw new ToolError(
+      "Viewing STEP files requires the FreeCAD bridge. Connect FreeCAD in Settings → CAD, or import an STL, OBJ or GLB file.",
+      "unavailable",
+    );
+  const bytes = await readFile(source);
+  if (bytes.length > MAX_MODEL_PREVIEW_BYTES)
+    throw new ToolError("STEP imports are limited to 50 MB.", "invalid_args");
+  const scratch = await jailPath(dir, `.fabdesk/model-preview/${randomUUID()}`);
+  await mkdir(scratch, { recursive: true });
+  try {
+    const input = join(scratch, "source.step"),
+      output = join(scratch, "preview.stl");
+    await writeAtomic(input, bytes);
+    const plan = JSON.stringify({ input, output, maxBytes: MAX_MODEL_PREVIEW_BYTES });
+    const result = await cad.python(
+      scratch,
+      `import json, os
+import Part, MeshPart
+p = json.loads(${JSON.stringify(plan)})
+# Part.read returns a standalone shape; no project document objects are added or changed.
+shape = Part.read(p['input'])
+if shape.isNull() or len(shape.Faces) == 0: raise ValueError('The STEP file contains no surfaces to display.')
+mesh = MeshPart.meshFromShape(Shape=shape, LinearDeflection=0.1, AngularDeflection=0.2, Relative=False)
+if mesh.CountFacets == 0: raise ValueError('The STEP file produced no visible triangles.')
+if 84 + mesh.CountFacets * 50 > p['maxBytes']: raise ValueError('The STEP preview exceeds 50 MB. Simplify the model before importing it.')
+mesh.write(p['output'], 'STL')
+if os.path.getsize(p['output']) > p['maxBytes']: raise ValueError('The STEP preview exceeds 50 MB.')
+`,
+      "exec",
+    );
+    if (result.exception)
+      throw new ToolError(`STEP preview failed: ${result.exception}`, "precondition");
+    const meshInfo = await stat(output).catch(() => null);
+    if (!meshInfo?.isFile())
+      throw new ToolError("FreeCAD did not produce a STEP preview.", "precondition");
+    if (meshInfo.size > MAX_MODEL_PREVIEW_BYTES)
+      throw new ToolError("The STEP preview exceeds 50 MB. Simplify the model.", "precondition");
+    const mesh = await readFile(output);
+    // Mesh.write(..., 'STL') produces binary STL. Check its bounds and coordinates, not
+    // watertightness: open shells are legitimate imports for viewing and measurement.
+    const count = mesh.length >= 84 ? mesh.readUInt32LE(80) : 0;
+    if (!count || mesh.length > MAX_MODEL_PREVIEW_BYTES || 84 + count * 50 !== mesh.length)
+      throw new ToolError("FreeCAD produced an unreadable STEP preview.", "precondition");
+    for (let i = 0; i < count; i++) {
+      for (let j = 0; j < 12; j++) {
+        const value = mesh.readFloatLE(84 + i * 50 + j * 4);
+        if (!Number.isFinite(value) || Math.abs(value) > 1e9)
+          throw new ToolError("The STEP preview contains invalid coordinates.", "precondition");
+      }
+    }
+    return ok("STEP model preview", { mesh: mesh.toString("base64"), format: "stl" });
+  } finally {
+    // Releasing before deleting is required on Windows, where the session owns model.FCStd.
+    await cad.release(scratch).catch(() => undefined);
+    await rm(scratch, { recursive: true, force: true });
+  }
+}
 // Repeated placement checks reuse the parsed surface; bound retained mesh memory.
 const shellSurfaces = new Map<string, ShellSurface>();
 function reviewSurface(
@@ -249,10 +326,11 @@ export const cad_fit = defineTool({
   toolset: "cad",
   title: "Design enclosure space and edit PCB fit",
   description:
-    "Save confirmed interior dimensions, board placements, obstacles, mounts and openings; check conservative clearance envelopes; preview/build a case; apply native PCB outline, mounting-hole and component edits; export a revision-matched design ZIP. Imported STL/STEP modification uses FreeCAD and preserves the original. Fit checks are not a fabrication certification.",
+    "Save confirmed interior dimensions, board placements, obstacles, mounts and openings; check conservative clearance envelopes; preview/build a case; apply native PCB outline, mounting-hole and component edits; export a revision-matched design ZIP. model_preview displays a project-relative STEP sourcePath using an isolated FreeCAD session, without changing the original or project CAD model. Imported STL/STEP modification uses FreeCAD and preserves the original. Fit checks are not a fabrication certification.",
   inputSchema: {
     action: z.enum([
       "status",
+      "model_preview",
       "save",
       "check",
       "preview_shape",
@@ -262,6 +340,7 @@ export const cad_fit = defineTool({
       "export",
     ]),
     design: MechanicalDesignSchema.optional(),
+    sourcePath: z.string().min(1).max(4096).optional(),
     expectedRevision: z.string().length(64).optional(),
     expectedDesignRevision: z.string().length(64).nullable().optional(),
     expectedPcbRevision: z.string().length(64).optional(),
@@ -276,6 +355,7 @@ export const cad_fit = defineTool({
   handler: async (args, ctx) =>
     locked(ctx.requireProject().dir, async () => {
       const dir = ctx.requireProject().dir;
+      if (args.action === "model_preview") return modelPreview(ctx, args.sourcePath);
       const designPath = await jailPath(dir, MECHANICAL_DESIGN_PATH);
       const saved = await readJsonIfPresent<unknown>(designPath);
       const designRevision = saved === null ? null : sha(JSON.stringify(saved));

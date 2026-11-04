@@ -35,6 +35,8 @@ export type SceneModel = {
   guide?: { from: [number, number, number]; to: [number, number, number]; color: number };
   selectable?: boolean;
   enclosure?: boolean;
+  /** Enclosure geometry can be selected without moving it; transforms require an explicit opt-in. */
+  transformable?: boolean;
   post?: { diameter: number; outer: number; height: number };
 };
 export type SceneMode = "orbit" | "translate" | "rotate" | "measure";
@@ -47,6 +49,10 @@ type Callbacks = {
   ) => void;
   measured: (distance: number | null) => void;
   zoom: (percent: number) => void;
+  /** Inverse camera quaternion: rotates world axes into the current camera orientation. */
+  orientation?: (quaternion: [number, number, number, number]) => void;
+  /** Demand-render notification for projected HTML labels. Callers should avoid unchanged state updates. */
+  viewChanged?: () => void;
   error: (message: string) => void;
 };
 function disposeObject(object: T.Object3D) {
@@ -75,6 +81,9 @@ export class MechanicalScene {
   private models = new Map<string, { source: SceneModel; object: T.Group }>();
   private selection: string | null = null;
   private selectionBox: T.BoxHelper | null = null;
+  private selectionOutline: T.Group | null = null;
+  private selectionEdges: Array<{ line: T.LineSegments; mesh: T.Mesh }> = [];
+  private selectionObject: T.Object3D | null = null;
   private hoverBox: T.BoxHelper | null = null;
   private hovered: string | null = null;
   private lastHover = 0;
@@ -86,6 +95,9 @@ export class MechanicalScene {
   private generation = 0;
   private frame = 0;
   private fitDistance = 100;
+  private viewportInsets = { left: 0, right: 0, top: 0, bottom: 0 };
+  private lastZoom: number | null = null;
+  private lastOrientation: T.Quaternion | null = null;
   private clippingBounds = new T.Box3();
   private explode = 0;
   private translucent = false;
@@ -156,7 +168,7 @@ export class MechanicalScene {
     });
     this.gizmo.addEventListener("mouseUp", () => {
       const object = this.gizmo.object;
-      if (object && this.selection)
+      if (object && this.selection && this.canTransform(this.selection))
         this.callbacks.transform(
           this.selection,
           object.position.toArray() as [number, number, number],
@@ -184,8 +196,7 @@ export class MechanicalScene {
         h = host.clientHeight;
       if (!w || !h) return;
       this.renderer.setSize(w, h);
-      this.camera.aspect = w / h;
-      this.camera.updateProjectionMatrix();
+      this.updateViewportProjection();
       this.fit();
       this.render();
     });
@@ -370,6 +381,10 @@ export class MechanicalScene {
     this.frame = requestAnimationFrame(() => {
       this.frame = 0;
       this.selectionBox?.update();
+      for (const { line, mesh } of this.selectionEdges) {
+        mesh.updateWorldMatrix(true, false);
+        line.matrix.copy(mesh.matrixWorld);
+      }
       const box = this.clippingBounds.clone();
       if (this.spaceOutline) box.expandByObject(this.spaceOutline);
       if (this.gizmo.dragging && this.gizmo.object) box.expandByObject(this.gizmo.object);
@@ -380,9 +395,19 @@ export class MechanicalScene {
         this.camera.updateProjectionMatrix();
       }
       this.renderer.render(this.scene, this.camera);
-      this.callbacks.zoom(
+      const percent = Math.max(
+        1,
         Math.round((this.fitDistance / this.camera.position.distanceTo(this.orbit.target)) * 100),
       );
+      if (percent !== this.lastZoom) {
+        this.lastZoom = percent;
+        this.callbacks.zoom(percent);
+      }
+      if (this.callbacks.orientation && !this.lastOrientation?.equals(this.camera.quaternion)) {
+        this.lastOrientation = this.camera.quaternion.clone();
+        this.callbacks.orientation(this.camera.quaternion.clone().invert().toArray());
+      }
+      this.callbacks.viewChanged?.();
     });
   };
   async setModels(sources: SceneModel[], autoFit = true) {
@@ -492,15 +517,34 @@ export class MechanicalScene {
       data,
       origin: [0, 0, 0],
     });
+    try {
+      return this.worldStl(model);
+    } finally {
+      disposeObject(model);
+    }
+  }
+  /** Export an immutable STL in scene millimetres, retaining the imported model's pivot, units and pose. */
+  exportModelStl(id: string): Blob {
+    const model = this.models.get(id);
+    if (!model || model.source.item.kind !== "import" || !model.source.data)
+      throw Error("Select a loaded imported STL, OBJ or GLB model to use as an enclosure.");
+    return MechanicalScene.worldStl(model.object);
+  }
+  private static worldStl(model: T.Object3D): Blob {
     const baked = new T.Group();
     try {
-      model.updateMatrixWorld(true);
+      model.updateWorldMatrix(true, true);
       // STL has no transforms or mirrored-face culling. Bake each mesh and correct
       // winding after the handedness change from KiCad Y-up to PCB coordinates.
-      model.traverse((node) => {
-        if (!(node instanceof T.Mesh)) return;
-        const geometry = node.geometry.clone().applyMatrix4(node.matrixWorld);
-        if (node.matrixWorld.determinant() < 0) {
+      let vertices = 0;
+      const bake = (node: T.Mesh, matrix: T.Matrix4) => {
+        vertices += node.geometry.getAttribute("position")?.count ?? 0;
+        if (vertices > 6_000_000)
+          throw Error(
+            "The transformed model is too complex to export (limit: 6 million vertices).",
+          );
+        const geometry = node.geometry.clone().applyMatrix4(matrix);
+        if (matrix.determinant() < 0) {
           const indices = geometry.index
             ? Array.from(geometry.index.array)
             : Array.from({ length: geometry.getAttribute("position").count }, (_, i) => i);
@@ -509,12 +553,24 @@ export class MechanicalScene {
           geometry.setIndex(indices);
         }
         baked.add(new T.Mesh(geometry, new T.MeshBasicMaterial()));
+      };
+      model.traverse((node) => {
+        if (!(node instanceof T.Mesh)) return;
+        if (node instanceof T.InstancedMesh) {
+          const instance = new T.Matrix4();
+          for (let i = 0; i < node.count; i++) {
+            node.getMatrixAt(i, instance);
+            bake(node, instance.premultiply(node.matrixWorld));
+          }
+        } else bake(node, node.matrixWorld);
       });
+      if (!baked.children.length) throw Error("The imported model has no mesh geometry to export.");
       const stl = new STLExporter().parse(baked, { binary: true });
-      return new Blob([new Uint8Array(stl.buffer as ArrayBuffer)], { type: "model/stl" });
+      return new Blob([new Uint8Array(stl.buffer as ArrayBuffer, stl.byteOffset, stl.byteLength)], {
+        type: "model/stl",
+      });
     } finally {
       disposeObject(baked);
-      disposeObject(model);
     }
   }
   static async decode(source: SceneModel, batch = true): Promise<T.Group> {
@@ -522,9 +578,9 @@ export class MechanicalScene {
     group.userData["modelId"] = source.item.id;
     const material = () =>
       new T.MeshStandardMaterial({
-        color: source.item.kind === "import" ? 0xaeb7bd : 0xc8cdd0,
-        roughness: 0.34,
-        metalness: 0.25,
+        color: source.item.kind === "import" ? 0xaeb7bd : 0xa5adb2,
+        roughness: 0.42,
+        metalness: 0.18,
         side: T.DoubleSide,
       });
     if (source.guide) {
@@ -737,20 +793,75 @@ export class MechanicalScene {
     camera.far = radius * 6;
     camera.updateProjectionMatrix();
   }
-  select(id: string | null) {
-    this.clearHover();
-    this.selection = id;
-    this.gizmo.detach();
+  private clearSelectionOutline() {
     if (this.selectionBox) {
       this.scene.remove(this.selectionBox);
       disposeObject(this.selectionBox);
       this.selectionBox = null;
     }
-    const object = id ? this.models.get(id)?.object : undefined;
+    if (this.selectionOutline) {
+      this.scene.remove(this.selectionOutline);
+      disposeObject(this.selectionOutline);
+      this.selectionOutline = null;
+    }
+    this.selectionEdges = [];
+    this.selectionObject = null;
+  }
+  private canTransform(id: string) {
+    const source = this.models.get(id)?.source;
+    return (
+      !!source &&
+      source.transformable !== false &&
+      (!source.enclosure || source.transformable === true)
+    );
+  }
+  private outlineSelection(object: T.Group, enclosure: boolean) {
+    this.clearSelectionOutline();
+    this.selectionObject = object;
+    if (enclosure) {
+      const meshes: T.Mesh[] = [];
+      let vertices = 0;
+      object.traverse((part) => {
+        if (part instanceof T.Mesh) {
+          meshes.push(part);
+          vertices += part.geometry.getAttribute("position")?.count ?? 0;
+        }
+      });
+      // Detailed imported meshes keep a cheap bounds highlight; generated cases use their real edges.
+      if (vertices <= 300_000) {
+        this.selectionOutline = new T.Group();
+        for (const mesh of meshes) {
+          const line = new T.LineSegments(
+            new T.EdgesGeometry(mesh.geometry, 25),
+            new T.LineBasicMaterial({
+              color: 0x25d9d0,
+              transparent: true,
+              opacity: 0.95,
+              depthWrite: false,
+            }),
+          );
+          line.matrixAutoUpdate = false;
+          line.renderOrder = 20;
+          this.selectionOutline.add(line);
+          this.selectionEdges.push({ line, mesh });
+        }
+        this.scene.add(this.selectionOutline);
+        return;
+      }
+    }
+    this.selectionBox = new T.BoxHelper(object, enclosure ? 0x25d9d0 : 0xaddb75);
+    this.scene.add(this.selectionBox);
+  }
+  select(id: string | null) {
+    this.clearHover();
+    this.selection = id;
+    this.gizmo.detach();
+    const model = id ? this.models.get(id) : undefined;
+    const object = model?.object;
     if (object?.visible) {
-      this.selectionBox = new T.BoxHelper(object, 0xaddb75);
-      this.scene.add(this.selectionBox);
+      if (this.selectionObject !== object) this.outlineSelection(object, !!model?.source.enclosure);
       if (
+        this.canTransform(id!) &&
         (this.mode === "translate" || this.mode === "rotate") &&
         (!this.explode ||
           (this.planarPlacement && this.models.get(id!)?.source.item.kind === "board"))
@@ -758,7 +869,7 @@ export class MechanicalScene {
         this.gizmo.setMode(this.mode);
         this.gizmo.attach(object);
       }
-    }
+    } else this.clearSelectionOutline();
     this.render();
   }
   setMode(mode: SceneMode) {
@@ -871,6 +982,112 @@ export class MechanicalScene {
     if (!m) return null;
     return new T.Box3().setFromObject(m.object);
   }
+  /** Keep the full canvas while fitting into the area left clear by floating controls. */
+  setViewportInsets(insets: { left?: number; right?: number; top?: number; bottom?: number }) {
+    const size = (value: number | undefined) => (Number.isFinite(value) ? Math.max(0, value!) : 0);
+    const next = {
+      left: size(insets.left),
+      right: size(insets.right),
+      top: size(insets.top),
+      bottom: size(insets.bottom),
+    };
+    if (
+      (Object.keys(next) as Array<keyof typeof next>).every(
+        (key) => next[key] === this.viewportInsets[key],
+      )
+    )
+      return;
+    this.viewportInsets = next;
+    this.updateViewportProjection();
+    this.fit();
+    this.render();
+  }
+  private viewportFrame() {
+    const width = Math.max(1, this.host.clientWidth),
+      height = Math.max(1, this.host.clientHeight);
+    const requested = this.viewportInsets;
+    const x = Math.min(1, Math.max(0, width - 200) / Math.max(1, requested.left + requested.right));
+    const y = Math.min(
+      1,
+      Math.max(0, height - 200) / Math.max(1, requested.top + requested.bottom),
+    );
+    const left = requested.left * x,
+      right = requested.right * x;
+    const top = requested.top * y,
+      bottom = requested.bottom * y;
+    return {
+      width,
+      height,
+      left,
+      right,
+      top,
+      bottom,
+      availableWidth: width - left - right,
+      availableHeight: height - top - bottom,
+    };
+  }
+  private updateViewportProjection() {
+    const frame = this.viewportFrame();
+    this.camera.aspect = frame.width / frame.height;
+    if (frame.left || frame.right || frame.top || frame.bottom)
+      this.camera.setViewOffset(
+        frame.width,
+        frame.height,
+        -(frame.left - frame.right) / 2,
+        -(frame.top - frame.bottom) / 2,
+        frame.width,
+        frame.height,
+      );
+    else this.camera.clearViewOffset();
+    this.camera.updateProjectionMatrix();
+  }
+  private fittedDistance(box: T.Box3) {
+    const frame = this.viewportFrame();
+    const verticalFov = T.MathUtils.radToDeg(
+      2 *
+        Math.atan(
+          (Math.tan(T.MathUtils.degToRad(this.camera.fov / 2)) * frame.availableHeight) /
+            frame.height,
+        ),
+    );
+    return T.MathUtils.clamp(
+      fittedCameraDistance(
+        box,
+        this.camera.quaternion,
+        verticalFov,
+        frame.availableWidth / frame.availableHeight,
+      ),
+      this.orbit.minDistance,
+      this.orbit.maxDistance,
+    );
+  }
+  /** Project a world-space point to CSS pixels relative to this scene's host. Offscreen points return null. */
+  projectPoint(x: number, y: number, z: number): { x: number; y: number } | null {
+    if (!this.host.clientWidth || !this.host.clientHeight || ![x, y, z].every(Number.isFinite))
+      return null;
+    this.camera.updateMatrixWorld();
+    const point = new T.Vector3(x, y, z).project(this.camera);
+    if (
+      ![point.x, point.y, point.z].every(Number.isFinite) ||
+      Math.abs(point.x) > 1 ||
+      Math.abs(point.y) > 1 ||
+      Math.abs(point.z) > 1
+    )
+      return null;
+    return {
+      x: ((point.x + 1) * this.host.clientWidth) / 2,
+      y: ((1 - point.y) * this.host.clientHeight) / 2,
+    };
+  }
+  /** Project the visible model's bounds centre to CSS pixels relative to this scene's host. */
+  projectModel(id: string): { x: number; y: number } | null {
+    const model = this.models.get(id);
+    if (!model?.object.visible) return null;
+    const box = this.bounds(id);
+    if (!box || box.isEmpty()) return null;
+    const point = box.getCenter(new T.Vector3());
+    return this.projectPoint(point.x, point.y, point.z);
+  }
   fit() {
     const box = new T.Box3();
     for (const m of this.models.values()) if (m.object.visible) box.expandByObject(m.object);
@@ -880,12 +1097,7 @@ export class MechanicalScene {
   }
   private fitBox(box: T.Box3) {
     const center = box.getCenter(new T.Vector3());
-    this.fitDistance = fittedCameraDistance(
-      box,
-      this.camera.quaternion,
-      this.camera.fov,
-      this.camera.aspect,
-    );
+    this.fitDistance = this.fittedDistance(box);
     const direction = this.camera.position.clone().sub(this.orbit.target).normalize();
     this.orbit.target.copy(center);
     this.camera.position.copy(center).addScaledVector(direction, this.fitDistance);
@@ -893,7 +1105,14 @@ export class MechanicalScene {
     this.render();
   }
   zoom(factor: number) {
-    this.camera.position.sub(this.orbit.target).multiplyScalar(factor).add(this.orbit.target);
+    if (!Number.isFinite(factor) || factor <= 0) return;
+    const offset = this.camera.position.clone().sub(this.orbit.target);
+    const distance = T.MathUtils.clamp(
+      offset.length() * factor,
+      this.orbit.minDistance,
+      this.orbit.maxDistance,
+    );
+    this.camera.position.copy(this.orbit.target).addScaledVector(offset.normalize(), distance);
     this.orbit.update();
     this.render();
   }
@@ -906,19 +1125,28 @@ export class MechanicalScene {
     this.camera.position.fromArray(view.position);
     this.orbit.target.fromArray(view.target);
     this.orbit.update();
+    const bounds = this.clippingBounds.clone();
+    if (this.spaceOutline) bounds.expandByObject(this.spaceOutline);
+    if (!bounds.isEmpty()) this.fitDistance = this.fittedDistance(bounds);
     this.render();
     return true;
   }
-  view(view: "iso" | "top" | "front" | "right") {
+  view(view: "iso" | "top" | "front" | "right" | "bottom" | "back" | "left") {
     const d = this.camera.position.distanceTo(this.orbit.target),
       direction =
         view === "top"
           ? new T.Vector3(0, -0.0001, 1)
-          : view === "front"
-            ? new T.Vector3(0, -1, 0.0001)
-            : view === "right"
-              ? new T.Vector3(1, 0, 0.0001)
-              : new T.Vector3(1, -1, 1);
+          : view === "bottom"
+            ? new T.Vector3(0, -0.0001, -1)
+            : view === "front"
+              ? new T.Vector3(0, -1, 0.0001)
+              : view === "back"
+                ? new T.Vector3(0, 1, 0.0001)
+                : view === "right"
+                  ? new T.Vector3(1, 0, 0.0001)
+                  : view === "left"
+                    ? new T.Vector3(-1, 0, 0.0001)
+                    : new T.Vector3(1, -1, 1);
     this.camera.position.copy(this.orbit.target).addScaledVector(direction.normalize(), d);
     this.orbit.update();
     this.fit();
@@ -951,7 +1179,7 @@ export class MechanicalScene {
     window.removeEventListener("blur", this.interruptGesture);
     document.removeEventListener("visibilitychange", this.visibilityChanged);
     this.clearHover();
-    if (this.selectionBox) disposeObject(this.selectionBox);
+    this.clearSelectionOutline();
     this.renderer.domElement.removeEventListener("webglcontextlost", this.contextLost);
     this.renderer.dispose();
     this.environment.dispose();

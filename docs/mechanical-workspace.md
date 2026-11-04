@@ -1,30 +1,38 @@
 # Mechanical workspace
 
-Open a project and choose **CAD** in the board workspace. CAD starts in focus mode; **Show chat** restores the split workspace and **Focus CAD** expands it again. This preference is remembered on this device. The existing FreeCAD screen and kernel tree are under **Advanced CAD**.
+Open a project and choose **CAD** in the board workspace. CAD starts in focus mode; **Show chat** in the overflow menu restores the split workspace and **Focus CAD** expands it again. The existing FreeCAD screen and kernel tree are under **Advanced CAD** in the same menu.
 
-**Enclosure now opens the guided Start → Space → PCB → Review workflow.** See [enclosure design and PCB fit](enclosure-design.md) for the current controls, coordinated export, native bridge requirements and validation. The original viewer screenshots below document the assembly controls; the latest enclosure screenshots are in that guide.
+**Assembly → Generate enclosure** opens a compact Around / Clearance / Wall card. Preview keeps changes temporary; Cancel restores the starting layout, and Apply saves the matched design. Detailed settings are under More options. The bottom-right Ask FabDesk input from the concepts is deliberately omitted.
 
 ## Reference-driven layout
 
-These are captures of the running desktop app, using the repository's enclosure regression fixture. The block-shaped components are explicitly labelled estimates, not replacement artwork for detailed PCB models. A generated `renders/board.glb` supplies the actual KiCad geometry and materials when available.
+The latest captures use seven actual VAIO project boards and their native KiCad models. Layout and controls follow the supplied concepts in the existing app theme; the physical parts are the project geometry, not the illustrative laptop models.
 
 | Requested reference | Implemented interaction |
 | --- | --- |
-| Assembly canvas with a floating import/generate card | Dotted canvas, theme colours, remembered focus mode, docked/collapsible panels, project save status and an Add → Arrange → Enclosure → Export workflow. |
-| Selected imported case with movement tools | STL/OBJ/GLB import, selection, XYZ movement/rotation handles, precise values, uniform scale, centre-on-PCB and surface measurement. |
-| Enclosure form and exploded preview with Apply/Cancel | Actual generated base/lid meshes, clearance/wall/options, explode slider, transparency, non-writing preview and explicit Apply. |
+| Assembly canvas with a floating import/generate card | Shared native boards remain visible, project breadcrumbs, Assembly/Connections, drop hint, review badge and a compact upper-right Add enclosure card. |
+| Selected imported case with movement tools | Cyan mesh outline, Move / Align / Measure toolbar, unit confirmation, rotation and precise transforms in overflow, live orientation cube and original-file preservation. |
+| Enclosure form and exploded preview with Apply/Cancel | Floating compact form, full canvas, automatically separated lid, spatial fit callout, actual zoom percentage and bottom-centre Preview / Cancel / Apply. |
 
 ### Visual comparisons
 
-The left column contains the supplied design concepts; the right column shows the implemented app. The screenshots use a small regression fixture, so component detail and enclosure shape differ from the illustrative laptop assets. The app retains its existing theme.
+The left column contains the supplied concepts; the right column shows the running app with real project boards. Export provides actual downloadable files in place of an unimplemented sharing service.
 
 | Supplied design concept | Running FabDesk |
 | --- | --- |
-| ![Reference: assembly and import card](screenshots/mechanical-workspace/reference-01-assembly.png) | ![Implemented: add model and generate enclosure](screenshots/mechanical-workspace/01-add-model.png) |
-| ![Reference: imported case and movement tools](screenshots/mechanical-workspace/reference-02-imported-case.png) | ![Implemented: imported case, move handles and transparency](screenshots/mechanical-workspace/02-import-transform.png) |
-| ![Reference: enclosure preview and Apply/Cancel](screenshots/mechanical-workspace/reference-03-preview.png) | ![Implemented: enclosure preview with Apply and Cancel](screenshots/mechanical-workspace/03-enclosure-preview.png) |
+| ![Reference: assembly and import card](screenshots/mechanical-workspace/reference-01-assembly.png) | ![Implemented: seven native boards and Add enclosure](screenshots/mechanical-workspace/78-reference-assembly.png) |
+| ![Reference: imported case and movement tools](screenshots/mechanical-workspace/reference-02-imported-case.png) | ![Implemented: selected imported case and compact tools](screenshots/mechanical-workspace/79-reference-import.png) |
+| ![Reference: enclosure preview and Apply/Cancel](screenshots/mechanical-workspace/reference-03-preview.png) | ![Implemented: compact preview and Apply/Cancel](screenshots/mechanical-workspace/80-reference-preview.png) |
 
-### Usability refinement
+### Current validation — 2026-11-04
+
+- Root typecheck and desktop production build pass; no source maps in the desktop output.
+- 248 UI tests, 24 client lifecycle tests and 20 CAD tool tests pass.
+- Live seven-board checks: Assembly/Connections/generator transitions, connection creation and undo, shared board movement and undo after deselection, true 100/120% zoom, native orbit/Move gestures, surface measurement, absolute mm/cm conversion, board-centre alignment, source-preserving import handoff, Preview/Cancel and Apply/export.
+- STEP conversion ran in native FreeCAD 1.1.3: 2,814 triangles, 150 × 210 × 19 mm, exact matching bounds and unchanged source/model files. The app's FreeCAD bridge is disconnected locally; its unavailable/retry UI and isolated bridge contract are tested, but a complete live bridge import is still unverified.
+- Screenshots show actual computed review findings. Physical assembly, cable dimensions, missing component models and material strength remain review items; these UI tests do not certify manufacture.
+
+### Earlier layout history
 
 Panels reserve space beside the 3D render surface, so Fit no longer frames models underneath controls. Narrow layouts show one inspector at a time. Existing assemblies open with the Parts list. The inspector groups X/Y/Z into rows, labels units once per group, explains uniform scale, and separates Move/Rotate/Measure from secondary actions. Save status remains visible beside chat. Labels and buttons are larger, and SVG icons share the app's stroke style.
 
@@ -40,18 +48,18 @@ Panels reserve space beside the 3D render surface, so Fit no longer frames model
 
 ## Controls and persistence
 
-- Drag empty canvas to orbit, scroll to zoom, right-drag to pan. Fit and a clickable top/front/right view cube plus isometric view are available. **F** fits the visible assembly; **Esc** leaves the active tool/selection. **Ctrl/Cmd+Z** undoes and **Ctrl/Cmd+Shift+Z** redoes assembly edits. Text fields keep their normal editing shortcuts.
+- Drag empty canvas to orbit, scroll to zoom, right-drag to pan. Fit shows 100%; the live cube supports all six faces and isometric view. **F** fits the visible assembly; **Esc** leaves the active tool/selection. **Ctrl/Cmd+Z** undoes and **Ctrl/Cmd+Shift+Z** redoes assembly edits. Text fields keep their normal editing shortcuts.
 - Select a model, then Move or Rotate to use the 3D handles. The inspector shows world-space X × Y × Z dimensions in millimetres and **Position, rotation & scale** fields for exact edits. Numeric edits commit on Enter or blur, with one undo step per edit.
 - Measure picks two surface points and reports millimetres. It does not snap to vertices or certify fit.
 - Assembly visibility, transforms and imported-file references persist in `cad/assembly-layout.json`. Undo/redo lasts for the current workspace session. Original PCB and imported files remain unchanged. Removing a part only removes its assembly reference.
-- Imports accept STL/OBJ in millimetres and self-contained GLB in metres, converted to millimetres. Use scale 25.4 for an inch-based STL/OBJ. Limit: 50 MiB per file, six million vertices per model, 100 assembly entries. Unsupported compression or external GLB resources are rejected.
-- The guided enclosure preview does not replace design/export files. Generated cases use the local geometry generator; modifying an imported case requires the native CAD bridge. Apply rejects stale previews and saves a coordinated ZIP. Its explicit PCB-coordinate placements are separate from Arrange's assembly poses.
+- Imports accept STL, OBJ, self-contained GLB and STEP. STEP uses an isolated native CAD bridge conversion and stores a separate display mesh; failures retain the original and offer Retry STEP. GLB metres are converted to millimetres once. Unit confirmation applies absolute mm/cm/in scale, never cumulative multiplication. Limits: 50 MiB per file, six million vertices per model, 100 assembly entries.
+- Enclosure preview does not replace design/export files. Generated cases use the local geometry generator; modifying an imported case requires the native CAD bridge. Apply rejects stale previews and saves a coordinated ZIP. Shared PCB positions use the same enclosure design in both views, with planar rotation and lock guards.
 - Exploded view has a visible **Return to editing** action; Fit includes the exploded lid. Hover gives a model highlight, with subtle ground shadows and no idle rendering.
 - **Review** shows actual warnings in amber. The separate **Export** panel provides generated base STL, lid STL and STEP downloads. Downloads retain generated dimensions; assembly transforms do not bake into export files.
 
 ## Scope and limits
 
-Assembly import supports STL, OBJ and GLB. The guided enclosure workflow also accepts STEP through the native CAD bridge and adds conservative fit checks, constrained PCB edits and imported-case cavity/post/opening operations. It does not add connection authoring, exact imported-mesh collision checking, arbitrary solid editing or transformed-assembly export. Enclosures retain the generator's printability limits.
+Connections explicitly link selected board ports and reserve cable length/space; electrical wiring is not inferred. Use as enclosure bakes an imported model's displayed units, pivot and pose into a separate STL copy. Original assets remain unchanged. Conservative fit checks and the generator's physical-validation limits still apply; this is not unrestricted solid editing or an exact cable simulation.
 
 The board fallback is an outline bounding envelope with estimated component sizes. Use **Load detailed PCB** on the envelope label or generate a detailed PCB model from Arrange for actual KiCad geometry; that requires an installed KiCad CLI compatible with the project's PCB version. The new imported-case script passed a real FreeCAD 1.1 solid test; the app's native bridge integration remains unverified locally.
 

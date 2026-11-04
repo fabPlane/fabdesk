@@ -1,12 +1,16 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { CadRuntimeState } from "@fabdesk/protocol";
 import {
   useCoreClient,
   useProject,
+  useProjects,
   mechanicalItem,
+  enclosureErrorMessage,
   enclosurePose,
   parseMechanicalLayout,
   validateModelFile,
+  validateEnclosureFile,
+  decodeMesh,
   MECHANICAL_LAYOUT_PATH,
   type MechanicalItem,
 } from "@fabdesk/client-core";
@@ -18,14 +22,19 @@ import {
 } from "./MechanicalScene";
 import { Dialog } from "../../components/ui";
 import { Icon } from "../../components/Icon";
+import { CircuitLogo } from "../../components/CircuitLogo";
+import { useUiStore } from "../../stores/ui";
 import { MechanicalIcon } from "./MechanicalIcon";
-import { EnclosureDesigner } from "./EnclosureDesigner";
+import { MechanicalViewCube } from "./MechanicalViewCube";
+import { EnclosureDesigner, type EnclosureWorkspaceController } from "./EnclosureDesigner";
 import { detailedBoardSource, usePcbModels } from "./usePcbModels";
 import { PcbModelStatus } from "./PcbModelStatus";
 import "./mechanical.css";
 import "./mechanical-entry.css";
 
 type EnclosureResult = {
+  mesh?: string;
+  format?: string;
   exists?: boolean;
   pcbRevision?: string;
   previewOnly?: boolean;
@@ -65,7 +74,38 @@ function result(value: unknown): EnclosureResult {
   return { ...data, ...(board ? { board } : {}) };
 }
 const tuple = (values: number[]) => values as [number, number, number];
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const message = enclosureErrorMessage;
+
+function ImportToolIcon({ name }: { name: "move" | "align" | "measure" }) {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {name === "move" ? (
+        <path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3" />
+      ) : name === "align" ? (
+        <>
+          <path d="M12 3v18M3 12h18" />
+          <rect x="5" y="5" width="5" height="5" rx="1" />
+          <rect x="14" y="14" width="5" height="5" rx="1" />
+        </>
+      ) : (
+        <>
+          <path d="m3 16 13-13 5 5L8 21l-5-5Z" />
+          <path d="m13 6 2 2m-5 1 2 2m-5 1 2 2m-5 1 2 2" />
+        </>
+      )}
+    </svg>
+  );
+}
 
 /** Commit one undoable edit on blur; allow temporary '-' and decimal text while typing. */
 function TransformNumber({
@@ -124,7 +164,29 @@ export function MechanicalWorkspace({
   cadRuntime?: CadRuntimeState | null;
 }) {
   const client = useCoreClient(),
-    project = useProject(projectId);
+    project = useProject(projectId),
+    projects = useProjects();
+  const setActiveProject = useUiStore((s) => s.setActiveProject);
+  const enclosureController = useRef<EnclosureWorkspaceController | null>(null);
+  const [sharedBoardModels, setSharedBoardModels] = useState<SceneModel[]>([]);
+  const [hiddenSharedBoards, setHiddenSharedBoards] = useState<Set<string>>(() => new Set());
+  const [workspaceTab, setWorkspaceTab] = useState<"assembly" | "connections">("assembly");
+  const [enclosureContext, setEnclosureContext] = useState<string | null>(null);
+  const [enclosureReviewCount, setEnclosureReviewCount] = useState(0);
+  const [enclosureHistory, setEnclosureHistory] = useState({ canUndo: false, canRedo: false });
+  const [importDetailsOpen, setImportDetailsOpen] = useState(false);
+  const [unitScale, setUnitScale] = useState(1);
+  const [alignTarget, setAlignTarget] = useState("");
+  const [confirmedScales, setConfirmedScales] = useState<Record<string, number>>({});
+  const [formatsOpen, setFormatsOpen] = useState(false);
+  const [stepRetry, setStepRetry] = useState<{ path: string; name: string } | null>(null);
+  const onConnectionsChange = useCallback(
+    (open: boolean) => setWorkspaceTab(open ? "connections" : "assembly"),
+    [],
+  );
+  const lastSceneModels = useRef("");
+  const loadedProject = useRef<string | null>(null);
+  const historyScope = useRef<"assembly" | "enclosure">("assembly");
   const host = useRef<HTMLDivElement>(null),
     scene = useRef<MechanicalScene | null>(null),
     input = useRef<HTMLInputElement>(null);
@@ -142,7 +204,7 @@ export function MechanicalWorkspace({
   const [panel, setPanel] = useState<"add" | "generate" | "design" | "assembly" | null>(() => {
       try {
         const saved = sessionStorage.getItem(panelKey);
-        return saved === "design" || saved === "assembly" ? saved : "add";
+        return saved === "design" ? saved : "add";
       } catch {
         return "add";
       }
@@ -155,22 +217,13 @@ export function MechanicalWorkspace({
       /* Optional view preference. */
     }
   }, [panelKey, panel]);
-  const [enclosureOpened, setEnclosureOpened] = useState(false);
   const [enclosureStatus, setEnclosureStatus] = useState("Loading enclosure…");
-  useEffect(() => {
-    if (panel === "design") setEnclosureOpened(true);
-  }, [panel]);
-  const [expanded, setExpanded] = useState(() => {
-    try {
-      return localStorage.getItem("fd:mechanical:focus") !== "false";
-    } catch {
-      return true;
-    }
-  });
+  const [expanded, setExpanded] = useState(true);
   const [showExport, setShowExport] = useState(false);
   const [partFilter, setPartFilter] = useState("");
   const [modelRevision, setModelRevision] = useState(0);
   const [dimensions, setDimensions] = useState<string | null>(null);
+  const [orientation, setOrientation] = useState<[number, number, number, number]>([0, 0, 0, 1]);
   const [busy, setBusy] = useState(""),
     [error, setError] = useState<string | null>(null),
     [saveState, setSaveState] = useState("Loading…");
@@ -189,8 +242,32 @@ export function MechanicalWorkspace({
     [, setHistoryVersion] = useState(0);
   const lifecycle = useRef(new AbortController());
   const operation = useRef(false);
-  const current = items.find((i) => i.id === selected),
+  const assemblyBoards = useMemo(
+    () =>
+      sharedBoardModels.map((model) => ({
+        ...model,
+        item: {
+          ...model.item,
+          visible: model.item.visible && !hiddenSharedBoards.has(model.item.id),
+        },
+      })),
+    [sharedBoardModels, hiddenSharedBoards],
+  );
+  const assemblyItems = useMemo(
+    () => [
+      ...items.filter((item) => item.kind !== "board" || !assemblyBoards.length),
+      ...assemblyBoards.filter((model) => model.item.kind === "board").map((model) => model.item),
+    ],
+    [items, assemblyBoards],
+  );
+  const current = assemblyItems.find((i) => i.id === selected),
     view = preview ?? status;
+  const currentTransformable =
+    assemblyBoards.find((model) => model.item.id === selected)?.transformable !== false;
+  useEffect(() => {
+    setImportDetailsOpen(false);
+    setUnitScale(current?.scale ?? 1);
+  }, [current?.id, current?.scale]);
   const pcbModels = usePcbModels(
     projectId,
     view.board?.pcbRevision
@@ -203,7 +280,7 @@ export function MechanicalWorkspace({
     ...(view.warnings ?? []),
   ];
   const editable = loaded && !busy && !preview && explode === 0;
-  const visibleParts = items.filter((item) =>
+  const visibleParts = assemblyItems.filter((item) =>
     `${item.name} ${item.path} ${item.kind}`
       .toLowerCase()
       .includes(partFilter.trim().toLowerCase()),
@@ -222,6 +299,20 @@ export function MechanicalWorkspace({
     !compactImport &&
     (panel === "assembly" || panel === "generate") &&
     (!preview || panel === "generate");
+  useEffect(() => {
+    if (panel === "design" || !host.current) return;
+    const frame = () =>
+      scene.current?.setViewportInsets({
+        left: leftPanel ? 320 : 24,
+        right: addEntry ? 356 : rightPanel ? 320 : 24,
+        top: compactImport ? 170 : 64,
+        bottom: 76,
+      });
+    frame();
+    const observer = new ResizeObserver(frame);
+    observer.observe(host.current);
+    return () => observer.disconnect();
+  }, [panel, leftPanel, rightPanel, addEntry, compactImport]);
   function selectModel(id: string | null) {
     setSelected(id);
     if (id) {
@@ -247,6 +338,7 @@ export function MechanicalWorkspace({
       });
   }
   function commit(next: MechanicalItem[], record = true) {
+    historyScope.current = "assembly";
     if (record) {
       history.current = [...history.current.slice(-39), itemsRef.current];
       future.current = [];
@@ -257,6 +349,30 @@ export function MechanicalWorkspace({
     save(next);
   }
   function patch(id: string, change: Partial<MechanicalItem>) {
+    if (id.startsWith("@fit-")) {
+      const board = assemblyItems.find((item) => item.id === id);
+      if (!board) return;
+      if (typeof change.visible === "boolean") {
+        setHiddenSharedBoards((previous) => {
+          const next = new Set(previous);
+          if (change.visible) next.delete(id);
+          else next.add(id);
+          return next;
+        });
+      }
+      if (
+        (change.position || change.rotation) &&
+        assemblyBoards.find((model) => model.item.id === id)?.transformable !== false
+      ) {
+        historyScope.current = "enclosure";
+        enclosureController.current?.transformBoard(
+          id,
+          change.position ?? board.position,
+          change.rotation ?? board.rotation,
+        );
+      }
+      return;
+    }
     commit(itemsRef.current.map((i) => (i.id === id ? { ...i, ...change } : i)));
   }
   const transform = useRef((id: string, p: [number, number, number], r: [number, number, number]) =>
@@ -278,6 +394,7 @@ export function MechanicalWorkspace({
         transform: (...args) => transform.current(...args),
         measured: setMeasured,
         zoom: setZoom,
+        orientation: setOrientation,
         error: setError,
       });
       scene.current = s;
@@ -296,6 +413,26 @@ export function MechanicalWorkspace({
   }, []);
   useEffect(() => {
     let canceled = false;
+    loadedProject.current = null;
+    setLoaded(false);
+    setSelected(null);
+    setStepRetry(null);
+    setError(null);
+    setPreview(null);
+    setStatus({});
+    setConfirmedScales({});
+    setHiddenSharedBoards(new Set());
+    setItems([]);
+    itemsRef.current = [];
+    setSources([]);
+    setSharedBoardModels([]);
+    buffers.current.clear();
+    history.current = [];
+    future.current = [];
+    historyScope.current = "assembly";
+    saveVersion.current += 1;
+    lastSceneModels.current = "";
+    void scene.current?.setModels([], false);
     void (async () => {
       try {
         const details = await client.getProject(projectId);
@@ -340,14 +477,9 @@ export function MechanicalWorkspace({
               Number(res.params?.["floorMm"] ?? 2) + Number(res.params?.["standoffMm"] ?? 3);
         itemsRef.current = next;
         setItems(next);
-        setPanel((current) =>
-          current === "design" || current === "assembly"
-            ? current
-            : next.length
-              ? "assembly"
-              : "add",
-        );
+        setPanel((current) => (current === "design" || current === "assembly" ? current : "add"));
         setSaveState("Saved in project");
+        loadedProject.current = projectId;
         setLoaded(true);
       } catch (e) {
         if (!canceled) {
@@ -362,7 +494,7 @@ export function MechanicalWorkspace({
     };
   }, [client, projectId]);
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || loadedProject.current !== projectId) return;
     let canceled = false;
     void (async () => {
       try {
@@ -373,6 +505,7 @@ export function MechanicalWorkspace({
           ? [(outline.minX + outline.maxX) / 2, (outline.minY + outline.maxY) / 2, 0]
           : [0, 0, 0];
         for (const item of items) {
+          if (item.kind === "board" && assemblyBoards.length) continue;
           if (preview && (item.kind === "base" || item.kind === "lid")) continue;
           if (item.kind === "board" && view.board?.pcbRevision) {
             const model = pcbModels.models["board.kicad_pcb"];
@@ -393,7 +526,11 @@ export function MechanicalWorkspace({
               if (canceled) return;
               buffers.current.set(item.path, data);
             }
-            all.push({ item, data, ...(item.kind !== "import" ? { origin } : {}) });
+            all.push({
+              item,
+              data,
+              ...(item.kind === "import" ? { enclosure: true, transformable: true } : { origin }),
+            });
           } catch {
             missing.push(item.name);
           }
@@ -426,8 +563,18 @@ export function MechanicalWorkspace({
                 missing.join(", ") +
                 ". Other models remain available. Reimport or remove the missing models from Assembly.",
             );
-          setSources(all);
-          await scene.current?.setModels(all);
+          const combined = [...all, ...assemblyBoards];
+          setSources(combined);
+          const modelIds = combined
+            .filter((model) => !model.guide)
+            .map((model) => model.item.id)
+            .sort()
+            .join("\n");
+          await scene.current?.setModels(combined, false);
+          if (!canceled && modelIds !== lastSceneModels.current) {
+            lastSceneModels.current = modelIds;
+            scene.current?.fit();
+          }
           if (!canceled) setModelRevision((n) => n + 1);
         }
       } catch (e) {
@@ -437,13 +584,26 @@ export function MechanicalWorkspace({
     return () => {
       canceled = true;
     };
-  }, [items, loaded, preview, status, revision, client, projectId, pcbModels.models]);
+  }, [
+    items,
+    loaded,
+    preview,
+    status,
+    revision,
+    client,
+    projectId,
+    pcbModels.models,
+    assemblyBoards,
+  ]);
   useEffect(() => {
     scene.current?.select(selected);
+    scene.current?.setPlanarPlacement(selected?.startsWith("@fit-") ?? false);
   }, [selected]);
   useEffect(() => {
-    scene.current?.setMode(editable ? mode : "orbit");
-  }, [mode, editable]);
+    scene.current?.setMode(
+      editable && (mode === "measure" || currentTransformable) ? mode : "orbit",
+    );
+  }, [mode, editable, currentTransformable]);
   useEffect(() => {
     scene.current?.setExplode(explode);
   }, [explode]);
@@ -466,7 +626,9 @@ export function MechanicalWorkspace({
   }
   async function importModel(file: File) {
     await perform("Importing model…", async () => {
-      validateModelFile(file.name, file.size);
+      const stepFile = /\.(?:step|stp)$/i.test(file.name);
+      if (stepFile) validateEnclosureFile(file.name, file.size);
+      else validateModelFile(file.name, file.size);
       if (itemsRef.current.length >= 100)
         throw new Error(
           "An assembly can contain up to 100 models. Remove a model before importing another.",
@@ -474,8 +636,13 @@ export function MechanicalWorkspace({
       if (!scene.current)
         throw new Error("The 3D viewer is unavailable. Reopen the CAD tab before importing.");
       const name = file.name.replace(/[^a-zA-Z0-9_.-]/g, "-").slice(-120),
-        path = `cad/imports/${crypto.randomUUID()}-${name}`,
-        item = mechanicalItem(path, "import", file.name.slice(0, 200)),
+        path = `cad/imports/${crypto.randomUUID()}-${name}`;
+      if (stepFile) {
+        await client.writeFile(projectId, path, file);
+        if (live.current) await importStepPreview(path, file.name.slice(0, 200));
+        return;
+      }
+      const item = mechanicalItem(path, "import", file.name.slice(0, 200)),
         data = await file.arrayBuffer();
       await scene.current?.validate({ item, data });
       if (!live.current) return;
@@ -487,6 +654,45 @@ export function MechanicalWorkspace({
       setPanel("assembly");
       setMode("translate");
     });
+  }
+  async function importStepPreview(path: string, name: string) {
+    setStepRetry({ path, name });
+    try {
+      if (itemsRef.current.length >= 100)
+        throw new Error("Remove a model before importing another.");
+      const response = await client.callTool("cad_fit", {
+        projectId,
+        action: "model_preview",
+        sourcePath: path,
+      });
+      let previewResult = result(response);
+      if (response.jobId) {
+        const job = await client.waitJob(response.jobId, { signal: lifecycle.current.signal });
+        if (job.status !== "done") throw new Error(job.error ?? "STEP preview did not finish.");
+        previewResult = result({ result: job.result });
+      }
+      if (!previewResult.mesh || previewResult.format !== "stl")
+        throw new Error(
+          "The CAD bridge did not return a STEP preview. Check the FreeCAD connection in Advanced CAD.",
+        );
+      const data = decodeMesh(previewResult.mesh),
+        previewPath = `${path}.preview.stl`;
+      validateModelFile(previewPath, data.byteLength);
+      const item = mechanicalItem(previewPath, "import", name);
+      if (!scene.current) throw new Error("The 3D viewer is unavailable. Reopen CAD and retry.");
+      await scene.current.validate({ item, data, enclosure: true, transformable: true });
+      if (!live.current) return;
+      await client.writeFile(projectId, previewPath, new Blob([data], { type: "model/stl" }));
+      if (!live.current) return;
+      buffers.current.set(previewPath, data);
+      commit([...itemsRef.current, item]);
+      selectModel(item.id);
+      setPanel("assembly");
+      setMode("translate");
+      setStepRetry(null);
+    } catch (error) {
+      throw new Error(`${message(error)} Your original STEP file is preserved.`);
+    }
   }
   async function previewEnclosure() {
     await perform("Building preview…", async () => {
@@ -558,6 +764,10 @@ export function MechanicalWorkspace({
     });
   }
   function undo(redo = false) {
+    if (historyScope.current === "enclosure") {
+      enclosureController.current?.undo(redo);
+      return;
+    }
     const from = redo ? future : history,
       to = redo ? history : future,
       previous = from.current.pop();
@@ -566,9 +776,15 @@ export function MechanicalWorkspace({
       commit(previous, false);
     }
   }
-  function align() {
+  function align(targetId?: string) {
     if (!current) return;
-    const target = items.find((i) => i.kind === "board" && i.id !== current.id),
+    const target = assemblyItems.find(
+        (i) =>
+          i.kind === "board" &&
+          i.id !== current.id &&
+          i.visible &&
+          (!targetId || i.id === targetId),
+      ),
       a = scene.current?.bounds(current.id),
       b = target && scene.current?.bounds(target.id);
     if (!a || !b) return;
@@ -623,6 +839,68 @@ export function MechanicalWorkspace({
     );
   }, [selected, modelRevision]);
   const title = project.data?.name ?? "Project";
+  const canUndo =
+    historyScope.current === "enclosure" ? enclosureHistory.canUndo : !!history.current.length;
+  const canRedo =
+    historyScope.current === "enclosure" ? enclosureHistory.canRedo : !!future.current.length;
+  const breadcrumb = panel === "design" ? enclosureContext : current?.name;
+  const reviewCount = enclosureReviewCount || errors.length || (view.alignment?.stale ? 1 : 0);
+  const projectSaveState =
+    busy ||
+    (saveState === "Saving…" || saveState === "Save failed"
+      ? saveState
+      : panel === "design" || sharedBoardModels.length
+        ? enclosureStatus
+        : saveState);
+  function openAssembly() {
+    setWorkspaceTab("assembly");
+    setPanel("add");
+    setSelected(null);
+    setMode("orbit");
+    setShowReview(false);
+    setShowExport(false);
+  }
+  function openConnections() {
+    setWorkspaceTab("connections");
+    setPanel("design");
+    setSelected(null);
+    setShowReview(false);
+    setShowExport(false);
+    enclosureController.current?.openConnections();
+  }
+  function openEnclosure() {
+    setWorkspaceTab("assembly");
+    setPanel("design");
+    setSelected(null);
+    setShowReview(false);
+    setShowExport(false);
+    enclosureController.current?.openGenerator();
+  }
+  function openReview() {
+    if (sharedBoardModels.length || panel === "design") {
+      setPanel("design");
+      enclosureController.current?.openReview();
+    } else {
+      setShowReview(true);
+      setShowExport(false);
+      setSelected(null);
+    }
+  }
+  function openExport() {
+    if (panel === "design" || sharedBoardModels.length) {
+      setPanel("design");
+      enclosureController.current?.openExport();
+    } else {
+      setShowExport(true);
+      setShowReview(false);
+      setSelected(null);
+    }
+  }
+  function confirmScale() {
+    if (!current || current.kind !== "import" || !editable) return;
+    if (current.scale !== unitScale) patch(current.id, { scale: unitScale });
+    setConfirmedScales((previous) => ({ ...previous, [current.id]: unitScale }));
+  }
   return (
     <section
       className={`fd-mechanical${expanded ? " is-expanded" : ""}${leftPanel ? " has-left-panel" : ""}${rightPanel ? " has-right-panel" : ""}${preview ? " has-preview" : ""}${explode > 0 && !preview ? " is-exploded" : ""}`}
@@ -668,126 +946,205 @@ export function MechanicalWorkspace({
       }}
     >
       <div className="fd-mechanical-stage" ref={host} />
-      <header className="fd-mechanical-header">
-        <div>
-          <span className="fd-mechanical-mark">
-            <MechanicalIcon name="cube" />
+      <header className="fd-mechanical-header fd-mechanical-reference-header">
+        <div className="fd-mechanical-breadcrumbs">
+          <span className="fd-mechanical-brand">
+            <CircuitLogo width={22} height={22} viewBox="6 6 40 40" />
+            <strong>fabPlane</strong>
           </span>
-          <strong>Mechanical</strong>
+          <select
+            aria-label="Mechanical project"
+            className="fd-mechanical-project-select"
+            value={projectId}
+            disabled={!!busy}
+            onChange={(e) => setActiveProject(e.target.value)}
+          >
+            {!projects.data?.some((p) => p.id === projectId) && (
+              <option value={projectId}>{title}</option>
+            )}
+            {projects.data?.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
           <span className="fd-mechanical-divider">/</span>
-          <span>{current?.name ?? title}</span>
+          <button className="fd-mechanical-breadcrumb-link" onClick={openAssembly}>
+            Mechanical
+          </button>
+          {breadcrumb && (
+            <>
+              <span className="fd-mechanical-divider">/</span>
+              <span className="fd-mechanical-current-context" title={breadcrumb}>
+                {breadcrumb}
+              </span>
+            </>
+          )}
         </div>
-        <div>
+        <div className="fd-mechanical-header-actions">
           <span className="fd-mechanical-save" role="status">
-            ● {panel === "design" ? enclosureStatus : saveState}
+            <span className="fd-mechanical-save-dot" />{" "}
+            {projectSaveState === "Saved in project" ||
+            projectSaveState === "Enclosure settings loaded"
+              ? "Saved"
+              : projectSaveState}
           </span>
           {panel !== "design" && saveState === "Save failed" && (
             <button onClick={() => save(itemsRef.current)}>Retry save</button>
           )}
-          <button onClick={() => setAdvancedOpen(true)}>Advanced CAD</button>
-          <button
-            title={expanded ? "Show chat beside CAD" : "Give CAD the full workspace"}
-            aria-label={expanded ? "Show chat" : "Focus CAD"}
-            onClick={() => setExpanded(!expanded)}
-          >
-            <Icon name="panel" /> {expanded ? "Show chat" : "Focus CAD"}
+          <button onClick={openExport} disabled={!!busy}>
+            <Icon name="export" /> Export
           </button>
+          <details className="fd-mechanical-workspace-menu">
+            <summary aria-label="Workspace options">
+              <Icon name="more" />
+            </summary>
+            <div>
+              <button
+                onClick={(e) => {
+                  e.currentTarget.closest("details")?.removeAttribute("open");
+                  openAssembly();
+                }}
+              >
+                Add enclosure or model
+              </button>
+              <button
+                onClick={(e) => {
+                  e.currentTarget.closest("details")?.removeAttribute("open");
+                  setWorkspaceTab("assembly");
+                  setPanel("assembly");
+                  setSelected(null);
+                }}
+              >
+                Parts & arrangement
+              </button>
+              <button
+                onClick={(e) => {
+                  e.currentTarget.closest("details")?.removeAttribute("open");
+                  openEnclosure();
+                }}
+              >
+                Generate enclosure
+              </button>
+              <button
+                onClick={(e) => {
+                  e.currentTarget.closest("details")?.removeAttribute("open");
+                  enclosureController.current?.saveDraft();
+                }}
+              >
+                Save enclosure draft
+              </button>
+              <button
+                onClick={(e) => {
+                  e.currentTarget.closest("details")?.removeAttribute("open");
+                  setAdvancedOpen(true);
+                }}
+              >
+                Advanced CAD
+              </button>
+              <button
+                aria-pressed={ghost}
+                onClick={(e) => {
+                  e.currentTarget.closest("details")?.removeAttribute("open");
+                  setGhost(!ghost);
+                }}
+              >
+                {ghost ? "Show solid surfaces" : "See through models"}
+              </button>
+              <button
+                disabled={!sources.some((source) => source.item.kind === "lid")}
+                onClick={(e) => {
+                  e.currentTarget.closest("details")?.removeAttribute("open");
+                  setExplode(explode ? 0 : 25);
+                }}
+              >
+                {explode ? "Close exploded view" : "Explode lid"}
+              </button>
+              <button
+                disabled={!editable || !canUndo}
+                onClick={(e) => {
+                  e.currentTarget.closest("details")?.removeAttribute("open");
+                  undo();
+                }}
+              >
+                Undo assembly edit
+              </button>
+              <button
+                disabled={!editable || !canRedo}
+                onClick={(e) => {
+                  e.currentTarget.closest("details")?.removeAttribute("open");
+                  undo(true);
+                }}
+              >
+                Redo assembly edit
+              </button>
+              <button
+                onClick={(e) => {
+                  e.currentTarget.closest("details")?.removeAttribute("open");
+                  setExpanded(!expanded);
+                }}
+              >
+                {expanded ? "Show chat" : "Focus CAD"}
+              </button>
+            </div>
+          </details>
         </div>
       </header>
       <div className="fd-mechanical-top">
-        <div className="fd-mechanical-segment">
-          {(["add", "assembly", "design"] as const).map((p) => (
-            <button
-              key={p}
-              aria-pressed={panel === p}
-              disabled={!!preview || !!busy}
-              onClick={() => {
-                setPanel(p);
-                setSelected(null);
-                setShowExport(false);
-                setShowReview(false);
-                setMode("orbit");
-              }}
-            >
-              {p === "assembly" ? "Arrange" : p === "add" ? "Add" : "Enclosure"}
-            </button>
-          ))}
-        </div>
-        <div className="fd-mechanical-actions" hidden={panel === "add" && !items.length}>
+        <div
+          className="fd-mechanical-segment"
+          hidden={panel === "design" && workspaceTab !== "connections"}
+        >
           <button
-            className={`fd-mechanical-review${errors.length || view.alignment?.stale ? " has-warnings" : ""}`}
-            aria-pressed={showReview}
-            onClick={() => {
-              setShowReview(!showReview);
-              setShowExport(false);
-              setSelected(null);
-            }}
+            aria-pressed={workspaceTab === "assembly"}
+            disabled={!!preview || !!busy}
+            onClick={openAssembly}
           >
-            <Icon name={errors.length || view.alignment?.stale ? "warning" : "checklist"} />
-            {errors.length || view.alignment?.stale ? `Review · ${errors.length || 1}` : "Review"}
+            Assembly
           </button>
           <button
-            className="fd-mechanical-export"
-            aria-pressed={showExport}
-            onClick={() => {
-              setShowExport(!showExport);
-              setShowReview(false);
-              setSelected(null);
-            }}
+            aria-pressed={workspaceTab === "connections"}
+            disabled={!!preview || !!busy}
+            onClick={openConnections}
           >
-            <Icon name="export" /> Export
+            Connections
+          </button>
+        </div>
+        <div
+          className="fd-mechanical-actions fd-mechanical-reference-actions"
+          hidden={panel === "design"}
+        >
+          <button
+            className={`fd-mechanical-review${reviewCount ? " has-warnings" : ""}`}
+            aria-pressed={showReview}
+            onClick={openReview}
+          >
+            <Icon name={reviewCount ? "warning" : "checklist"} />
+            {reviewCount ? `Review updates · ${reviewCount}` : "Review fit"}
           </button>
         </div>
       </div>
-      {(panel === "design" || enclosureOpened) && (
-        <EnclosureDesigner
-          key={projectId}
-          projectId={projectId}
-          active={panel === "design"}
-          onStatusChange={setEnclosureStatus}
-          cadRuntime={cadRuntime}
+      <EnclosureDesigner
+        key={projectId}
+        projectId={projectId}
+        active={panel === "design"}
+        onStatusChange={setEnclosureStatus}
+        cadRuntime={cadRuntime}
+        controllerRef={enclosureController}
+        onAssemblyModelsChange={setSharedBoardModels}
+        onContextChange={setEnclosureContext}
+        onReviewCountChange={setEnclosureReviewCount}
+        onConnectionsChange={onConnectionsChange}
+        onHistoryChange={setEnclosureHistory}
+      />
+      <div
+        className="fd-mechanical-viewport-tools"
+        hidden={panel === "design" || addEntry || !sources.length}
+      >
+        <MechanicalViewCube
+          orientation={orientation}
+          onView={(view) => scene.current?.view(view)}
         />
-      )}
-      <div className="fd-mechanical-viewport-tools" hidden={panel === "design" || !sources.length}>
-        <nav className="fd-mechanical-views" aria-label="Camera views">
-          <svg
-            className="fd-mechanical-cube"
-            viewBox="0 0 80 76"
-            width="72"
-            height="68"
-            aria-label="Orientation cube"
-          >
-            {(
-              [
-                ["top", "M40 3 75 21 40 39 5 21Z", 40, 24, "Top"],
-                ["front", "M5 21 40 39 40 73 5 55Z", 22, 48, "Front"],
-                ["right", "M40 39 75 21 75 55 40 73Z", 57, 48, "Right"],
-              ] as const
-            ).map(([view, d, x, y, label]) => (
-              <g
-                key={view}
-                role="button"
-                tabIndex={0}
-                aria-label={`${label} view`}
-                onClick={() => scene.current?.view(view)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    scene.current?.view(view);
-                  }
-                }}
-              >
-                <path d={d} />
-                <text x={x} y={y} textAnchor="middle">
-                  {label}
-                </text>
-              </g>
-            ))}
-          </svg>
-          <button title="Isometric view" onClick={() => scene.current?.view("iso")}>
-            3D
-          </button>
-        </nav>
         {explode > 0 && !preview && (
           <div className="fd-mechanical-edit-banner" role="status">
             <span>Exploded view · editing paused</span>
@@ -802,9 +1159,14 @@ export function MechanicalWorkspace({
         >
           <div className="fd-mechanical-card-heading">
             <h2>Add enclosure</h2>
-            <button aria-label="Close panel" onClick={() => setPanel(null)}>
-              <Icon name="close" />
-            </button>
+            <details className="fd-mechanical-workspace-menu">
+              <summary aria-label="Add enclosure options">
+                <Icon name="more" />
+              </summary>
+              <div>
+                <button onClick={() => setPanel(null)}>Hide panel</button>
+              </div>
+            </details>
           </div>
           <button
             className="fd-mechanical-entry-action"
@@ -820,11 +1182,7 @@ export function MechanicalWorkspace({
             </span>
             <Icon name="chevronRight" />
           </button>
-          <button
-            className="fd-mechanical-entry-action"
-            disabled={!!busy}
-            onClick={() => setPanel("design")}
-          >
+          <button className="fd-mechanical-entry-action" disabled={!!busy} onClick={openEnclosure}>
             <span className="fd-mechanical-entry-icon">
               <svg
                 width="22"
@@ -847,10 +1205,51 @@ export function MechanicalWorkspace({
             <Icon name="chevronRight" />
           </button>
           <footer>
-            <span>STL · OBJ · GLB</span>
-            <button onClick={() => setAdvancedOpen(true)}>STEP in Advanced CAD</button>
+            <span>STL · STEP · OBJ · GLB</span>
+            <button onClick={() => setFormatsOpen(true)}>Other supported formats…</button>
           </footer>
         </aside>
+      )}
+      {addEntry && sources.length > 0 && (
+        <button
+          className="fd-mechanical-drop-hint"
+          disabled={!editable}
+          onClick={() => input.current?.click()}
+        >
+          <svg
+            className="fd-drop-arrow"
+            width="90"
+            height="90"
+            viewBox="0 0 90 90"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M8 84C8 29 36 10 78 10m-7-5 8 5-8 6"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeDasharray="4 4"
+            />
+          </svg>
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M7 18H5a4 4 0 0 1-.5-8A7 7 0 0 1 18 8a5 5 0 0 1 1 10h-2M12 21V12m-3 3 3-3 3 3" />
+          </svg>
+          <span>
+            Drop a model
+            <br />
+            onto the canvas
+          </span>
+        </button>
       )}
       {panel === "assembly" && !preview && !compactImport && (
         <aside className="fd-mechanical-card fd-mechanical-left fd-mechanical-parts-panel">
@@ -858,8 +1257,8 @@ export function MechanicalWorkspace({
             <h2>Parts</h2>
             <span>
               {partFilter.trim()
-                ? `${visibleParts.length} / ${items.length}`
-                : `${items.length} ${items.length === 1 ? "part" : "parts"}`}
+                ? `${visibleParts.length} / ${assemblyItems.length}`
+                : `${assemblyItems.length} ${assemblyItems.length === 1 ? "part" : "parts"}`}
             </span>
             <button aria-label="Close panel" onClick={() => setPanel(null)}>
               <Icon name="close" />
@@ -903,8 +1302,10 @@ export function MechanicalWorkspace({
             ))}
             {!visibleParts.length && (
               <p className="fd-mechanical-empty-search">
-                {items.length ? "No matching parts." : "Import a model to start your assembly."}
-                {items.length > 0 && (
+                {assemblyItems.length
+                  ? "No matching parts."
+                  : "Import a model to start your assembly."}
+                {assemblyItems.length > 0 && (
                   <button onClick={() => setPartFilter("")}>Clear search</button>
                 )}
               </p>
@@ -918,7 +1319,7 @@ export function MechanicalWorkspace({
             >
               <Icon name="plus" /> Import model
             </button>
-            {
+            {!sharedBoardModels.length && (
               <button
                 className="fd-mechanical-wide"
                 disabled={!loaded || !!busy || !!preview}
@@ -930,7 +1331,7 @@ export function MechanicalWorkspace({
                   ? "Refresh PCB model"
                   : "Generate detailed PCB model"}
               </button>
-            }
+            )}
             <p>Moving parts keeps original files unchanged.</p>
           </footer>
         </aside>
@@ -1045,51 +1446,235 @@ export function MechanicalWorkspace({
         <div
           className={`fd-mechanical-selection fd-mechanical-card${compactImport ? " fd-mechanical-import-toolbar" : ""}`}
         >
-          <div className="fd-mechanical-selection-tools">
-            <div className="fd-mechanical-card-heading">
-              <h2 title={current.name}>{current.name}</h2>
-              <button
-                aria-label="Close selection"
-                onClick={() => {
-                  setSelected(null);
-                  setMode("orbit");
-                }}
+          {compactImport ? (
+            <>
+              <div
+                className="fd-import-context-row"
+                role="toolbar"
+                aria-label="Selected model tools"
               >
-                <Icon name="close" />
+                <span className="fd-import-context-name" title={current.name}>
+                  <MechanicalIcon name="cube" />
+                  <strong>{current.name}</strong>
+                </span>
+                <button
+                  aria-pressed={mode === "translate"}
+                  disabled={!editable}
+                  onClick={() => setMode(mode === "translate" ? "orbit" : "translate")}
+                >
+                  <ImportToolIcon name="move" />
+                  Move
+                </button>
+                <details className="fd-import-popover">
+                  <summary aria-label="Align model">
+                    <ImportToolIcon name="align" />
+                    <span>Align</span>
+                  </summary>
+                  <div>
+                    <label>
+                      Align with
+                      <select
+                        aria-label="Alignment target board"
+                        value={alignTarget}
+                        onChange={(e) => setAlignTarget(e.target.value)}
+                      >
+                        <option value="">First visible board</option>
+                        {assemblyItems
+                          .filter((item) => item.kind === "board" && item.visible)
+                          .map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <button
+                      disabled={
+                        !editable ||
+                        !assemblyItems.some((item) => item.kind === "board" && item.visible)
+                      }
+                      onClick={(e) => {
+                        align(alignTarget || undefined);
+                        e.currentTarget.closest("details")?.removeAttribute("open");
+                      }}
+                    >
+                      Center over board
+                    </button>
+                    <small>Keeps the model’s height and rotation.</small>
+                  </div>
+                </details>
+                <button
+                  aria-pressed={mode === "measure"}
+                  disabled={!editable}
+                  onClick={() => setMode(mode === "measure" ? "orbit" : "measure")}
+                >
+                  <ImportToolIcon name="measure" />
+                  Measure
+                </button>
+                <details className="fd-import-popover fd-import-more">
+                  <summary aria-label="More model actions">
+                    <Icon name="more" />
+                  </summary>
+                  <div>
+                    <button
+                      disabled={!editable}
+                      aria-pressed={mode === "rotate"}
+                      onClick={(e) => {
+                        setMode(mode === "rotate" ? "orbit" : "rotate");
+                        e.currentTarget.closest("details")?.removeAttribute("open");
+                      }}
+                    >
+                      Rotate model
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        setImportDetailsOpen(!importDetailsOpen);
+                        e.currentTarget.closest("details")?.removeAttribute("open");
+                      }}
+                    >
+                      Position, rotation & scale
+                    </button>
+                    <button
+                      disabled={!editable}
+                      onClick={(e) => {
+                        e.currentTarget.closest("details")?.removeAttribute("open");
+                        void perform("Opening enclosure fit…", async () => {
+                          const viewer = scene.current,
+                            controller = enclosureController.current;
+                          if (!viewer || !controller)
+                            throw new Error(
+                              "The enclosure workspace is still loading. Try again in a moment.",
+                            );
+                          const mesh = await viewer.exportModelStl(current.id);
+                          await controller.useImportedCase(current, mesh);
+                          if (live.current) {
+                            setWorkspaceTab("assembly");
+                            setPanel("design");
+                            setSelected(null);
+                          }
+                        });
+                      }}
+                    >
+                      Use as enclosure
+                    </button>
+                    <button
+                      disabled={!editable}
+                      onClick={(e) => {
+                        patch(current.id, { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 });
+                        e.currentTarget.closest("details")?.removeAttribute("open");
+                      }}
+                    >
+                      Reset transform
+                    </button>
+                    <button
+                      disabled={!editable}
+                      className="fd-import-remove"
+                      onClick={() => {
+                        commit(items.filter((item) => item.id !== current.id));
+                        setSelected(null);
+                      }}
+                    >
+                      Remove from assembly
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelected(null);
+                        setMode("orbit");
+                      }}
+                    >
+                      Close selection
+                    </button>
+                  </div>
+                </details>
+              </div>
+              <div className="fd-import-scale-row">
+                <label>
+                  Units:{" "}
+                  <select
+                    aria-label="Imported model units"
+                    disabled={!editable || /\.glb$/i.test(current.path)}
+                    title={
+                      /\.glb$/i.test(current.path)
+                        ? "GLB units are converted to millimetres automatically"
+                        : "Choose the units used by this STL or OBJ"
+                    }
+                    value={unitScale}
+                    onChange={(e) => setUnitScale(Number(e.target.value))}
+                  >
+                    <option value={1}>mm</option>
+                    <option value={10}>cm</option>
+                    <option value={25.4}>in</option>
+                    {![1, 10, 25.4].includes(unitScale) && (
+                      <option value={unitScale}>Custom ×{unitScale}</option>
+                    )}
+                  </select>
+                </label>
+                <button
+                  disabled={
+                    !editable ||
+                    !dimensions ||
+                    (confirmedScales[current.id] === unitScale && current.scale === unitScale)
+                  }
+                  onClick={confirmScale}
+                >
+                  {confirmedScales[current.id] === unitScale && current.scale === unitScale
+                    ? "Scale confirmed"
+                    : "Confirm scale"}
+                </button>
+              </div>
+              {importDetailsOpen && (
+                <p className="fd-import-bounds">
+                  {dimensions ?? "Reading dimensions…"} · world bounds
+                </p>
+              )}
+            </>
+          ) : (
+            <div className="fd-mechanical-selection-tools">
+              <div className="fd-mechanical-card-heading">
+                <h2 title={current.name}>{current.name}</h2>
+                <button
+                  aria-label="Close selection"
+                  onClick={() => {
+                    setSelected(null);
+                    setMode("orbit");
+                  }}
+                >
+                  <Icon name="close" />
+                </button>
+              </div>
+              <p className="fd-mechanical-dimensions">
+                {dimensions ?? "Loading dimensions…"}
+                <small>World bounds · X × Y × Z</small>
+              </p>
+              <div className="fd-mechanical-tool-row">
+                {(
+                  [
+                    ["translate", "Move"],
+                    ["rotate", "Rotate"],
+                    ["measure", "Measure"],
+                  ] as const
+                ).map(([m, label]) => (
+                  <button
+                    key={m}
+                    aria-pressed={mode === m}
+                    disabled={!editable || (m !== "measure" && !currentTransformable)}
+                    onClick={() => setMode(mode === m ? "orbit" : m)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <button
+                className="fd-mechanical-align"
+                disabled={!editable || current.kind === "board"}
+                onClick={() => align()}
+              >
+                Center on PCB
               </button>
             </div>
-            <p className="fd-mechanical-dimensions">
-              {dimensions ?? "Loading dimensions…"}
-              <small>World bounds · X × Y × Z</small>
-            </p>
-            <div className="fd-mechanical-tool-row">
-              {(
-                [
-                  ["translate", "Move"],
-                  ["rotate", "Rotate"],
-                  ["measure", "Measure"],
-                ] as const
-              ).map(([m, label]) => (
-                <button
-                  key={m}
-                  aria-pressed={mode === m}
-                  disabled={!editable}
-                  onClick={() => setMode(mode === m ? "orbit" : m)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <button
-              className="fd-mechanical-align"
-              disabled={!editable || current.kind === "board"}
-              onClick={align}
-            >
-              Center on PCB
-            </button>
-          </div>
-          {mode !== "measure" && (
-            <details key={current.id} open={!compactImport}>
+          )}
+          {mode !== "measure" && (!compactImport || importDetailsOpen) && (
+            <details key={current.id} open>
               <summary>{compactImport ? "Position, rotation & scale" : "Transform"}</summary>
               <div className="fd-mechanical-transform">
                 {(
@@ -1109,7 +1694,11 @@ export function MechanicalWorkspace({
                           key={`${current.id}-${key}-${axis}`}
                           label={`${label} ${axis}`}
                           step={key === "rotation" ? 1 : 0.1}
-                          disabled={!editable}
+                          disabled={
+                            !editable ||
+                            !currentTransformable ||
+                            (current.id.startsWith("@fit-") && key === "rotation" && index !== 2)
+                          }
                           value={Math.round(current[key][index]! * 100) / 100}
                           onCommit={(value) => {
                             patch(current.id, {
@@ -1130,30 +1719,32 @@ export function MechanicalWorkspace({
                     label="Model scale"
                     min={0.001}
                     max={10000}
-                    disabled={!editable}
+                    disabled={!editable || current.id.startsWith("@fit-")}
                     value={current.scale}
                     onCommit={(scale) => patch(current.id, { scale })}
                   />
                 </label>
-                <div className="fd-mechanical-part-actions">
-                  <button
-                    disabled={!editable}
-                    onClick={() =>
-                      patch(current.id, { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 })
-                    }
-                  >
-                    Reset transform
-                  </button>
-                  <button
-                    disabled={!editable}
-                    onClick={() => {
-                      commit(items.filter((i) => i.id !== current.id));
-                      setSelected(null);
-                    }}
-                  >
-                    Remove from assembly
-                  </button>
-                </div>
+                {!current.id.startsWith("@fit-") && (
+                  <div className="fd-mechanical-part-actions">
+                    <button
+                      disabled={!editable}
+                      onClick={() =>
+                        patch(current.id, { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 })
+                      }
+                    >
+                      Reset transform
+                    </button>
+                    <button
+                      disabled={!editable}
+                      onClick={() => {
+                        commit(items.filter((i) => i.id !== current.id));
+                        setSelected(null);
+                      }}
+                    >
+                      Remove from assembly
+                    </button>
+                  </div>
+                )}
               </div>
             </details>
           )}
@@ -1264,9 +1855,29 @@ export function MechanicalWorkspace({
       {error && (
         <div className="fd-mechanical-error" role="alert">
           <span>{error}</span>
+          {stepRetry && (
+            <button
+              disabled={!!busy}
+              onClick={() =>
+                void perform("Preparing STEP preview…", () =>
+                  importStepPreview(stepRetry.path, stepRetry.name),
+                )
+              }
+            >
+              Retry STEP
+            </button>
+          )}
           <button onClick={() => setError(null)} aria-label="Dismiss error">
             <Icon name="close" />
           </button>
+        </div>
+      )}
+      {compactImport && (
+        <div className="fd-import-model-notes">
+          <span>Imported mesh · original preserved</span>
+          <span>
+            <Icon name="warning" /> Fit not checked
+          </span>
         </div>
       )}
       <div className="fd-mechanical-bottom">
@@ -1303,7 +1914,7 @@ export function MechanicalWorkspace({
           <button
             title="Undo assembly edit (Ctrl/Cmd+Z)"
             aria-label="Undo assembly edit"
-            disabled={!editable || !history.current.length}
+            disabled={!editable || !canUndo}
             onClick={() => undo()}
           >
             <MechanicalIcon name="undo" />
@@ -1311,7 +1922,7 @@ export function MechanicalWorkspace({
           <button
             title="Redo assembly edit (Ctrl/Cmd+Shift+Z)"
             aria-label="Redo assembly edit"
-            disabled={!editable || !future.current.length}
+            disabled={!editable || !canRedo}
             onClick={() => undo(true)}
           >
             <MechanicalIcon name="redo" />
@@ -1369,13 +1980,50 @@ export function MechanicalWorkspace({
         type="file"
         hidden
         disabled={!editable}
-        accept=".stl,.obj,.glb"
+        accept=".stl,.step,.stp,.obj,.glb"
         onChange={(e) => {
           const file = e.target.files?.[0];
           e.target.value = "";
           if (file) void importModel(file);
         }}
       />
+      {formatsOpen && (
+        <Dialog
+          open
+          title="Supported 3D files"
+          className="w-[440px]"
+          onClose={() => setFormatsOpen(false)}
+        >
+          <div className="fd-mechanical-format-help">
+            <p>
+              <strong>STL · OBJ</strong>
+              <span>Import a mesh. Choose its source units and confirm the scale.</span>
+            </p>
+            <p>
+              <strong>STEP · STP</strong>
+              <span>
+                Uses the connected FreeCAD bridge to create a preview. The original CAD file stays
+                unchanged.
+              </span>
+            </p>
+            <p>
+              <strong>GLB</strong>
+              <span>
+                Import a self-contained 3D model. Standard GLB units are converted to millimetres.
+              </span>
+            </p>
+            <small>Up to 50 MiB per file. Use Move, Align or Measure after importing.</small>
+            <button
+              onClick={() => {
+                setFormatsOpen(false);
+                setAdvancedOpen(true);
+              }}
+            >
+              Open CAD setup
+            </button>
+          </div>
+        </Dialog>
+      )}
       {advancedOpen && (
         <Dialog
           open
