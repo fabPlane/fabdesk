@@ -151,12 +151,12 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
           if (!fresh && !conversationOnly && event.key === "Escape" && !(event.target as HTMLElement).closest("details[open]")) { event.stopPropagation(); closeAssistant(); }
         }}>
           {!fresh && !conversationOnly && <div className="fd-assistant-heading"><span><Icon name="sparkles" width={17} height={17} />Ask fabPlane</span><div>
-            <WorkspaceMenu label={<span aria-label="Project conversations"><Icon name="chevronDown" width={16} height={16} /></span>}>
+            <WorkspaceMenu label={<span aria-label="Project conversations"><Icon name="sidebar" width={16} height={16} /></span>}>
               <div className="fd-menu-caption">Project conversations</div>
               {(threads.data ?? []).filter((t) => t.projectId === projectId && !t.archived).map((t) => <button key={t.id} onClick={() => ui().setActiveThread(t.id)}>{t.title || "Untitled conversation"}</button>)}
               <button onClick={onNewChat}><Icon name="plus" width={16} height={16} />New conversation</button>
             </WorkspaceMenu>
-            <IconButton size="sm" title="Close assistant" onClick={closeAssistant}><Icon name="close" width={17} height={17} /></IconButton>
+            <IconButton size="sm" title="Minimize assistant" onClick={closeAssistant}><Icon name="minus" width={17} height={17} /></IconButton>
           </div></div>}
           <ThreadView presentation={fresh ? "start" : "chat"} referenceStart={referenceStart} />
         </section>

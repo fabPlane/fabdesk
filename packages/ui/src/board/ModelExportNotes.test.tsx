@@ -8,7 +8,13 @@ test("export notes count missing references rather than duplicate path warnings"
   const html = renderToStaticMarkup(<ModelExportNotes projectId="p" warnings={warnings} />);
   expect(html).toContain("2 component models missing");
   expect(html).toContain("SW1, J1");
-  expect(html).toContain("Ask about model warnings");
+  expect(html).toContain("Review missing models");
+  expect(html).toContain("Components missing 3D models");
+  expect(html.match(/3D model not included/g)).toHaveLength(2);
+  expect(html).not.toContain("4 notes");
+  expect(html).toContain("Technical details");
+  expect(html).toContain("Find missing models");
+  expect(html).toContain("incomplete preview");
   expect(html).toContain("switch.step");
   expect(html).toContain("<details");
   expect(html).not.toContain("<details open");

@@ -603,10 +603,19 @@
 .fd-model-export-details { padding: 8px 16px; font-size: 12px; overflow-wrap: anywhere; }
 .fd-model-export-details p, .fd-model-export-details ul { margin: 8px 0; }
 .fd-model-export-details ul { max-height: 160px; overflow: auto; }
+.fd-model-export-details .fd-model-missing-list { list-style:none; padding:0; display:grid; gap:8px; }
+.fd-model-missing-list li { display:flex; align-items:center; gap:16px; padding:10px 12px; border:1px solid var(--fd-border); border-radius:8px; }
+.fd-model-missing-list strong { min-width:36px; color:var(--fd-fg); }
+.fd-model-missing-list span,.fd-model-missing-help { color:var(--fd-muted); line-height:1.5; }
+.fd-model-export-technical { margin-top:12px; }
+.fd-model-export-technical pre { margin:8px 0; max-height:180px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; line-height:1.6; color:var(--fd-muted); }
+
 .fd-board-model-status-floating .fd-model-export-notes { max-width: 420px; }
 .fd-model-export-summary { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px 0; }
 .fd-model-export-summary > div { flex: 1; min-width: 0; }
 .fd-model-export-summary strong { color: var(--fd-warning); font-size: 13px; }
+.fd-model-export-next-step { padding:12px 16px 0; }
+.fd-model-export-next-step p { margin:8px 0; color:var(--fd-muted); font-size:12px; line-height:1.5; }
 .fd-model-export-summary p { margin: 4px 0; font-size: 12px; line-height: 1.5; }
 
 /* Output removal follows the same compact, source-aware dialog language as export. */
