@@ -289,11 +289,13 @@ export function FitProblem({
   title,
   blocked = false,
   focused = false,
+  onReveal,
   children,
 }: {
   title: string;
   blocked?: boolean;
   focused?: boolean;
+  onReveal?: () => void;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(focused);
@@ -313,7 +315,10 @@ export function FitProblem({
         aria-expanded={open}
         aria-controls={contentId}
         aria-label={`${open ? "Hide" : "Show"} solution: ${title}`}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          setOpen(!open);
+          if (!open) onReveal?.();
+        }}
       >
         {open ? "Hide solution" : "Show solution"}
       </button>
@@ -325,6 +330,13 @@ export function FitProblem({
   );
 }
 
+export function fitProblemTitle(issue: MechanicalFitIssue) {
+  return (
+    guidance[issue.code]?.title ??
+    (issue.code.replace(/[-_]/g, " ").replace(/^./, (c) => c.toUpperCase()) || "Fit needs review")
+  );
+}
+
 /** Presentation only. Each original finding and its fix/3D action stays with its problem. */
 export function EnclosureFitReview({
   report,
@@ -332,12 +344,14 @@ export function EnclosureFitReview({
   onShowIssue,
   focusedIssue,
   readiness,
+  canShowIssue = (issue) => !!issue.regions?.length,
 }: {
   report: MechanicalFitReport;
   onNavigate: (step: Destination, code: string, issue: MechanicalFitIssue) => void;
   onShowIssue: (issue: MechanicalFitIssue) => void;
   focusedIssue: MechanicalFitIssue | null;
   readiness?: { kind: string; title: string; detail: string };
+  canShowIssue?: (issue: MechanicalFitIssue) => boolean;
 }) {
   if (report.issues.some((issue) => issue.code === "verification-pending"))
     return (
@@ -372,14 +386,14 @@ export function EnclosureFitReview({
       {ordered.map(([key, issues]) => {
         const first = issues[0]!;
         const info = guidance[first.code];
-        const title =
-          info?.title ?? first.code.replace(/[-_]/g, " ").replace(/^./, (c) => c.toUpperCase());
+        const title = fitProblemTitle(first);
         return (
           <FitProblem
             key={key}
             title={title || "Fit needs review"}
             blocked={first.severity === "error"}
             focused={!!focusedIssue && issues.includes(focusedIssue)}
+            onReveal={() => onShowIssue(first)}
           >
             {enclosureIssueSummary[first.code] && <p>{enclosureIssueSummary[first.code]}</p>}
             {issues.map((issue, index) => {
@@ -412,7 +426,7 @@ export function EnclosureFitReview({
                         <Icon name="chevronRight" aria-hidden="true" />
                       </button>
                     )}
-                    {!!issue.regions?.length && (
+                    {canShowIssue(issue) && (
                       <button
                         type="button"
                         aria-pressed={focusedIssue === issue}
@@ -432,6 +446,15 @@ export function EnclosureFitReview({
       <FitProblem
         title="Physical fit needs checking"
         focused={!!focusedIssue && methodIssues.has(focusedIssue)}
+        onReveal={() => {
+          onShowIssue(
+            method?.issues[0] ?? {
+              code: "coverage",
+              severity: "review",
+              message: "Physical fit needs checking on the assembled parts.",
+            },
+          );
+        }}
       >
         <p>
           Try a test print before making the final case. The preview cannot guarantee a perfect fit.

@@ -335,6 +335,9 @@
   position: absolute;
   z-index: 2;
   max-width: 240px;
+  min-height: 44px;
+  text-align: left;
+  line-height: 1.5;
   padding: 9px 12px;
   border: 1px solid #d8b87555;
   border-radius: 7px;
@@ -346,24 +349,27 @@
 .fd-enclosure-callout > span {
   margin-right: 6px;
 }
-.fd-enclosure-callout::before {
-  content: "";
+.fd-enclosure-review-leader {
   position: absolute;
-  top: 50%;
-  right: 100%;
-  width: 30px;
-  height: 1px;
-  background: currentColor;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+  color: #e7c88c;
+  overflow: hidden;
 }
-.fd-enclosure-callout::after {
-  content: "";
-  position: absolute;
-  top: calc(50% - 3px);
-  right: calc(100% + 27px);
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
+.fd-enclosure-review-leader line {
+  stroke: currentColor;
+  stroke-width: 1.5px;
+}
+.fd-enclosure-review-leader circle {
+  fill: currentColor;
+  stroke: var(--fd-bg);
+  stroke-width: 1.5px;
+}
+.fd-enclosure-review-leader[data-blocked="true"] {
+  color: #f18e83;
 }
 .fd-enclosure-callout[data-blocked="true"] {
   color: #f18e83;

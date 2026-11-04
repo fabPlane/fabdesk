@@ -168,6 +168,7 @@ export * from "./pcb-display";
 export * from "./enclosure-readiness";
 export * from "./enclosure-workflow";
 export * from "./enclosure-review";
+export * from "./enclosure-review-target";
 export * from "./enclosure-issue-navigation";
 export * from "./enclosure-mounts";
 export * from "./enclosure-layout";
