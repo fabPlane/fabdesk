@@ -95,7 +95,9 @@ export class MechanicalScene {
   private disposed = false;
   private generation = 0;
   private frame = 0;
+  private viewportSize = { width: 0, height: 0, pixelRatio: 0 };
   private fitDistance = 100;
+  private pendingFitBox: T.Box3 | null = null;
   private viewportInsets = { left: 0, right: 0, top: 0, bottom: 0 };
   private lastZoom: number | null = null;
   private lastOrientation: T.Quaternion | null = null;
@@ -150,6 +152,9 @@ export class MechanicalScene {
       "Interactive mechanical assembly. Drag to orbit, scroll to zoom, right-drag to pan.",
     );
     this.renderer.domElement.tabIndex = 0;
+    // Preserve the last complete frame while layout changes, until the next draw.
+    this.renderer.domElement.style.width = "100%";
+    this.renderer.domElement.style.height = "100%";
     host.appendChild(this.renderer.domElement);
     this.camera.up.set(0, 0, 1);
     this.camera.position.set(95, -125, 105);
@@ -192,16 +197,10 @@ export class MechanicalScene {
     const fill = new T.DirectionalLight(0xd8ecff, 1);
     fill.position.set(100, 70, 80);
     this.scene.add(fill);
-    this.observer = new ResizeObserver(() => {
-      const w = host.clientWidth,
-        h = host.clientHeight;
-      if (!w || !h) return;
-      this.renderer.setSize(w, h);
-      this.updateViewportProjection();
-      this.fit();
-      this.render();
-    });
+    // Changing the drawing buffer here would clear it before the next frame paints.
+    this.observer = new ResizeObserver(this.render);
     this.observer.observe(host);
+    window.addEventListener("resize", this.render);
     this.themeObserver = new MutationObserver(this.render);
     this.themeObserver.observe(document.documentElement, {
       attributes: true,
@@ -361,39 +360,58 @@ export class MechanicalScene {
   }
   render = () => {
     if (this.disposed || this.frame) return;
-    this.frame = requestAnimationFrame(() => {
-      this.frame = 0;
-      this.selectionBox?.update();
-      for (const { line, mesh } of this.selectionEdges) {
-        mesh.updateWorldMatrix(true, false);
-        line.matrix.copy(mesh.matrixWorld);
-      }
-      const box = this.clippingBounds.clone();
-      if (this.spaceOutline) box.expandByObject(this.spaceOutline);
-      if (this.gizmo.dragging && this.gizmo.object) box.expandByObject(this.gizmo.object);
-      const { near, far } = assemblyClipRange(box, this.camera.position, this.camera.quaternion);
-      if (near !== this.camera.near || far !== this.camera.far) {
-        this.camera.near = near;
-        this.camera.far = far;
-        this.camera.updateProjectionMatrix();
-      }
-      this.measurement?.updateViewport(this.camera, this.host.clientWidth, this.host.clientHeight);
-      this.renderer.render(this.scene, this.camera);
-      const percent = Math.max(
-        1,
-        Math.round((this.fitDistance / this.camera.position.distanceTo(this.orbit.target)) * 100),
-      );
-      if (percent !== this.lastZoom) {
-        this.lastZoom = percent;
-        this.callbacks.zoom(percent);
-      }
-      if (this.callbacks.orientation && !this.lastOrientation?.equals(this.camera.quaternion)) {
-        this.lastOrientation = this.camera.quaternion.clone();
-        this.callbacks.orientation(this.camera.quaternion.clone().invert().toArray());
-      }
-      this.callbacks.viewChanged?.();
-    });
+    this.frame = requestAnimationFrame(() => this.drawFrame());
   };
+  private drawFrame() {
+    this.frame = 0;
+    if (this.disposed) return;
+    const width = this.host.clientWidth,
+      height = this.host.clientHeight,
+      pixelRatio = Math.min(globalThis.devicePixelRatio || 1, 2);
+    if (!width || !height) return;
+    const previous = this.viewportSize;
+    if (
+      width !== previous.width ||
+      height !== previous.height ||
+      pixelRatio !== previous.pixelRatio
+    ) {
+      // Buffer resize and draw are synchronous in this frame: no blank frame in between.
+      this.renderer.setDrawingBufferSize(width, height, pixelRatio);
+      this.viewportSize = { width, height, pixelRatio };
+    }
+    // Insets can change while hidden, even if the pane reopens at its previous size.
+    this.updateViewportProjection();
+    if (this.pendingFitBox) this.fitBox(this.pendingFitBox);
+    this.selectionBox?.update();
+    for (const { line, mesh } of this.selectionEdges) {
+      mesh.updateWorldMatrix(true, false);
+      line.matrix.copy(mesh.matrixWorld);
+    }
+    const box = this.clippingBounds.clone();
+    if (this.spaceOutline) box.expandByObject(this.spaceOutline);
+    if (this.gizmo.dragging && this.gizmo.object) box.expandByObject(this.gizmo.object);
+    const { near, far } = assemblyClipRange(box, this.camera.position, this.camera.quaternion);
+    if (near !== this.camera.near || far !== this.camera.far) {
+      this.camera.near = near;
+      this.camera.far = far;
+      this.camera.updateProjectionMatrix();
+    }
+    this.measurement?.updateViewport(this.camera, this.host.clientWidth, this.host.clientHeight);
+    this.renderer.render(this.scene, this.camera);
+    const percent = Math.max(
+      1,
+      Math.round((this.fitDistance / this.camera.position.distanceTo(this.orbit.target)) * 100),
+    );
+    if (percent !== this.lastZoom) {
+      this.lastZoom = percent;
+      this.callbacks.zoom(percent);
+    }
+    if (this.callbacks.orientation && !this.lastOrientation?.equals(this.camera.quaternion)) {
+      this.lastOrientation = this.camera.quaternion.clone();
+      this.callbacks.orientation(this.camera.quaternion.clone().invert().toArray());
+    }
+    this.callbacks.viewChanged?.();
+  }
   async setModels(sources: SceneModel[], autoFit = true) {
     if (this.gizmo.dragging) this.interruptGesture();
     this.clearHover();
@@ -969,7 +987,10 @@ export class MechanicalScene {
     return new T.Box3().setFromObject(m.object);
   }
   /** Keep the full canvas while fitting into the area left clear by floating controls. */
-  setViewportInsets(insets: { left?: number; right?: number; top?: number; bottom?: number }) {
+  setViewportInsets(
+    insets: { left?: number; right?: number; top?: number; bottom?: number },
+    autoFit = true,
+  ) {
     const size = (value: number | undefined) => (Number.isFinite(value) ? Math.max(0, value!) : 0);
     const next = {
       left: size(insets.left),
@@ -985,7 +1006,7 @@ export class MechanicalScene {
       return;
     this.viewportInsets = next;
     this.updateViewportProjection();
-    this.fit();
+    if (autoFit) this.fit();
     this.render();
   }
   private viewportFrame() {
@@ -1078,10 +1099,19 @@ export class MechanicalScene {
     const box = new T.Box3();
     for (const m of this.models.values()) if (m.object.visible) box.expandByObject(m.object);
     if (this.spaceOutline) box.expandByObject(this.spaceOutline);
-    if (box.isEmpty()) return;
+    if (box.isEmpty()) {
+      this.pendingFitBox = null;
+      return;
+    }
     this.fitBox(box);
   }
   private fitBox(box: T.Box3) {
+    if (!this.host.clientWidth || !this.host.clientHeight) {
+      // Async models can finish while a pane is hidden. Fit only once it has real dimensions.
+      this.pendingFitBox = box.clone();
+      return;
+    }
+    this.pendingFitBox = null;
     const center = box.getCenter(new T.Vector3());
     this.fitDistance = this.fittedDistance(box);
     const direction = this.camera.position.clone().sub(this.orbit.target).normalize();
@@ -1108,6 +1138,7 @@ export class MechanicalScene {
   restoreView(value: unknown) {
     const view = parseWorkspaceView(value);
     if (!view) return false;
+    this.pendingFitBox = null;
     this.camera.position.fromArray(view.position);
     this.orbit.target.fromArray(view.target);
     this.orbit.update();
@@ -1167,6 +1198,7 @@ export class MechanicalScene {
     this.clearHover();
     this.clearSelectionOutline();
     this.renderer.domElement.removeEventListener("webglcontextlost", this.contextLost);
+    window.removeEventListener("resize", this.render);
     this.renderer.dispose();
     this.environment.dispose();
     disposeObject(this.ground);

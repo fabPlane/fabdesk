@@ -1530,15 +1530,18 @@ export function EnclosureDesigner({
   }, [annotations.map((a) => a.id).join(",")]);
   useEffect(() => {
     if (!active || advanced) return;
-    const update = () =>
-      scene.current?.setViewportInsets({
-        left: reviewOpen || (host.current?.clientWidth ?? 1000) < 650 ? 0 : 300,
-        right: reviewOpen ? 390 : 20,
-        top: !reviewOpen && (host.current?.clientWidth ?? 1000) < 650 ? 330 : 30,
-        bottom: 76,
-      });
+    const update = (autoFit = true) =>
+      scene.current?.setViewportInsets(
+        {
+          left: reviewOpen || (host.current?.clientWidth ?? 1000) < 650 ? 0 : 300,
+          right: reviewOpen ? 390 : 20,
+          top: !reviewOpen && (host.current?.clientWidth ?? 1000) < 650 ? 330 : 30,
+          bottom: 76,
+        },
+        autoFit,
+      );
     update();
-    const observer = new ResizeObserver(update);
+    const observer = new ResizeObserver(() => update(false));
     if (host.current) observer.observe(host.current);
     return () => observer.disconnect();
   }, [active, advanced, reviewOpen]);

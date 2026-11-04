@@ -299,15 +299,18 @@ export function MechanicalWorkspace({
     (!preview || panel === "generate");
   useEffect(() => {
     if (panel === "design" || !host.current) return;
-    const frame = () =>
-      scene.current?.setViewportInsets({
-        left: leftPanel ? 320 : 24,
-        right: addEntry ? 356 : rightPanel ? 320 : 24,
-        top: compactImport ? 170 : 64,
-        bottom: 76,
-      });
+    const frame = (autoFit = true) =>
+      scene.current?.setViewportInsets(
+        {
+          left: leftPanel ? 320 : 24,
+          right: addEntry ? 356 : rightPanel ? 320 : 24,
+          top: compactImport ? 170 : 64,
+          bottom: 76,
+        },
+        autoFit,
+      );
     frame();
-    const observer = new ResizeObserver(frame);
+    const observer = new ResizeObserver(() => frame(false));
     observer.observe(host.current);
     return () => observer.disconnect();
   }, [panel, leftPanel, rightPanel, addEntry, compactImport]);
