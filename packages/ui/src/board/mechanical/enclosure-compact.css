@@ -331,8 +331,14 @@
   color: var(--fd-muted);
   padding: 3px 8px;
 }
+.fd-enclosure-review-callouts {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
 .fd-enclosure-callout {
   position: absolute;
+  pointer-events: auto;
   z-index: 2;
   max-width: 240px;
   min-height: 44px;
@@ -368,7 +374,7 @@
   stroke: var(--fd-bg);
   stroke-width: 1.5px;
 }
-.fd-enclosure-review-leader[data-blocked="true"] {
+.fd-enclosure-review-leader [data-blocked="true"] {
   color: #f18e83;
 }
 .fd-enclosure-callout[data-blocked="true"] {
@@ -480,9 +486,6 @@
   }
   .fd-case-compact[data-advanced="false"] .fd-case-canvas {
     inset: 0;
-  }
-  .fd-enclosure-callout {
-    display: none;
   }
   .fd-enclosure-selection {
     top: auto;

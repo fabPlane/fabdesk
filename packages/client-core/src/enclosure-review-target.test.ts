@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { MechanicalDesign, MechanicalFitIssue } from "@fabdesk/protocol";
 import { defaultEnclosureDesign, type EnclosureBoardSummary } from "./enclosure-design";
-import { enclosureReviewTarget } from "./enclosure-review-target";
+import { enclosureReviewTarget, enclosureReviewTargets } from "./enclosure-review-target";
 
 const features: EnclosureBoardSummary = {
   pcbRevision: "revision",
@@ -209,4 +209,97 @@ test("invalid report extents cannot produce non-finite or inverted scene targets
     ],
   };
   expect(enclosureReviewTarget(finding, design, boards)).toBeNull();
+});
+
+test("a review naming several parts yields a separate target for every known part", () => {
+  const { design, a, boards } = fixture();
+  const finding = issue(`${a.path}: missing bodies for J2, J20, C3, R1.`, "detailed-missing");
+  const targets = enclosureReviewTargets(finding, design, boards);
+  expect(targets.map((target) => target.reference)).toEqual(["J2", "J20", "C3", "R1"]);
+  expect(targets.map((target) => target.kind)).toEqual([
+    "connector",
+    "connector",
+    "component",
+    "component",
+  ]);
+  expect(targets.map((target) => target.regions.map((region) => region.name))).toEqual([
+    ["J2"],
+    [],
+    ["C3"],
+    ["R1"],
+  ]);
+  // No body exists for J20, but its known position remains useful as a pointer.
+  for (const [i, value] of [-184, 70, 10.6].entries())
+    expect(targets[1]!.point[i]).toBeCloseTo(value);
+  for (const [i, value] of [-190, 90, 7.5].entries())
+    expect(targets[3]!.point[i]).toBeCloseTo(value);
+  expect(targets.every((target) => target.boardPath === a.path)).toBe(true);
+  expect(
+    enclosureReviewTarget(finding, design, boards)!.regions.map((region) => region.name),
+  ).toEqual(["J2", "C3", "R1"]);
+});
+
+test("every explicit collision region gets its own point rather than reusing the first region", () => {
+  const { design, boards } = fixture();
+  const regions = [
+    { name: "PCB A", x: 2, y: 3, z: 4, width: 2, depth: 4, height: 6 },
+    { name: "PCB B", x: 30, y: 20, z: 1, width: 5, depth: 8, height: 2 },
+  ];
+  const finding = { ...issue("Two boards intersect.", "board-collision"), regions };
+  const before = structuredClone(finding);
+  const targets = enclosureReviewTargets(finding, design, boards);
+  expect(targets.map((target) => target.point)).toEqual([
+    [3, 5, 7],
+    [32.5, 24, 2],
+  ]);
+  expect(targets.map((target) => target.regions)).toEqual([[regions[0]!], [regions[1]!]]);
+  expect(finding).toEqual(before);
+});
+
+test("simultaneous reviews retain current multi-board positions and exclude global guidance", () => {
+  const { design, a, b, boards } = fixture();
+  const findings = [
+    issue(`${a.path}: J2 needs checking.`),
+    issue(`${b.path}: J2 needs checking.`),
+    issue(`${a.path}: no aligned board supports.`, "mount-none"),
+    issue("Check the assembled parts before printing.", "coverage"),
+  ];
+  const targets = findings.flatMap((finding) => enclosureReviewTargets(finding, design, boards));
+  expect(targets).toHaveLength(3);
+  expect(targets.map((target) => target.boardPath)).toEqual([a.path, b.path, a.path]);
+  expect(targets[0]!.point).not.toEqual(targets[1]!.point);
+  expect(targets[2]!.kind).toBe("board");
+  const moved = { ...design, boards: design.boards.map((p) => ({ ...p, x: p.x + 15 })) };
+  const updated = findings.flatMap((finding) => enclosureReviewTargets(finding, moved, boards));
+  updated.forEach((target, index) => {
+    expect(target.point[0]).toBeCloseTo(targets[index]!.point[0] + 15);
+    expect(target.point[1]).toBeCloseTo(targets[index]!.point[1]);
+    expect(target.point[2]).toBeCloseTo(targets[index]!.point[2]);
+  });
+});
+
+test("several bottom-side connector pointers use individual face heights", () => {
+  const { design, a, boards } = fixture();
+  boards[0]!.features = {
+    ...features,
+    components: [
+      ...features.components!.map((part) => ({ ...part, bottom: true })),
+      {
+        ref: "J20",
+        x: 110,
+        y: 204,
+        heightMm: 2,
+        bottom: true,
+        bounds: { minX: 109, minY: 203, maxX: 111, maxY: 205 },
+      },
+    ],
+  };
+  const targets = enclosureReviewTargets(
+    issue(`${a.path}: J2 and J20 need checking.`),
+    design,
+    boards,
+  );
+  expect(targets.map((target) => target.reference)).toEqual(["J2", "J20"]);
+  expect(targets[0]!.point[2]).toBeCloseTo(6.2);
+  expect(targets[1]!.point[2]).toBeCloseTo(7);
 });

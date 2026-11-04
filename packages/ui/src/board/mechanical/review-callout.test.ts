@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { placeReviewCallout, type ReviewRect } from "./review-callout";
+import {
+  placeReviewCallout,
+  placeReviewCallouts,
+  type PlacedReviewCallout,
+  type ReviewCalloutItem,
+  type ReviewRect,
+} from "./review-callout";
 
 test("the leader joins the exact projected part to the visible label border", () => {
   const target = { x: 500.25, y: 300.75 };
@@ -148,4 +154,109 @@ test("invalid transient measurements do not leak nonfinite SVG positions", () =>
       ],
     }),
   ).toEqual(placeReviewCallout(input));
+});
+
+function assertSeparateLabels(results: PlacedReviewCallout[], items: ReviewCalloutItem[]) {
+  for (const result of results) {
+    expect(result.target).toEqual(items.find((item) => item.id === result.id)!.target);
+    for (const other of results) {
+      if (other === result) continue;
+      const a = result.label,
+        b = other.label;
+      expect(
+        a.x + a.width <= b.x ||
+          b.x + b.width <= a.x ||
+          a.y + a.height <= b.y ||
+          b.y + b.height <= a.y,
+      ).toBe(true);
+    }
+    for (const { target } of items) {
+      const label = result.label;
+      expect(
+        target.x >= label.x &&
+          target.x <= label.x + label.width &&
+          target.y >= label.y &&
+          target.y <= label.y + label.height,
+      ).toBe(false);
+    }
+  }
+}
+
+test("four simultaneous findings keep separate labels and markers, including shared parts", () => {
+  const items = [
+    { id: "mount", target: { x: 360, y: 260 }, label: { width: 220, height: 44 } },
+    { id: "outline", target: { x: 360, y: 260 }, label: { width: 220, height: 44 } },
+    { id: "connector", target: { x: 700, y: 420 }, label: { width: 220, height: 44 } },
+    { id: "clearance", target: { x: 920, y: 220 }, label: { width: 220, height: 44 } },
+  ];
+  const input = {
+    items,
+    viewport: { width: 1440, height: 900 },
+    obstacles: [{ x: 1080, y: 40, width: 360, height: 700 }],
+  };
+  const result = placeReviewCallouts(input);
+  expect(result.map((entry) => entry.id)).toEqual(items.map((entry) => entry.id));
+  assertSeparateLabels(result, items);
+  for (const { label } of result) expect(label.x + label.width).toBeLessThanOrEqual(1068);
+  expect(placeReviewCallouts(input)).toEqual(result);
+});
+
+test("four reviews sharing one location remain separately accessible", () => {
+  const items = Array.from({ length: 4 }, (_, i) => ({
+    id: `part-${i}`,
+    target: { x: 500, y: 350 },
+    label: { width: 220, height: 44 },
+  }));
+  const result = placeReviewCallouts({ items, viewport: { width: 1000, height: 700 } });
+  expect(result).toHaveLength(4);
+  assertSeparateLabels(result, items);
+});
+
+test("the first label cannot hide a later part marker", () => {
+  const items = [
+    { id: "first", target: { x: 200, y: 200 }, label: { width: 220, height: 44 } },
+    // This marker would be beneath the preferred right-hand label for the first finding.
+    { id: "later", target: { x: 350, y: 200 }, label: { width: 220, height: 44 } },
+  ];
+  const result = placeReviewCallouts({ items, viewport: { width: 900, height: 600 } });
+  expect(result).toHaveLength(2);
+  assertSeparateLabels(result, items);
+});
+
+test("narrow panels and camera motion retain exact points without overlapping labels", () => {
+  for (const offset of [0, 20, -20]) {
+    const items = [
+      { id: "top", target: { x: 250 + offset, y: 90 }, label: { width: 180, height: 44 } },
+      { id: "middle", target: { x: 270 + offset, y: 280 }, label: { width: 180, height: 44 } },
+      { id: "bottom", target: { x: 230 + offset, y: 470 }, label: { width: 180, height: 44 } },
+      { id: "shared", target: { x: 230 + offset, y: 470 }, label: { width: 180, height: 44 } },
+    ];
+    const result = placeReviewCallouts({
+      items,
+      viewport: { width: 600, height: 650 },
+      obstacles: [{ x: 0, y: 580, width: 600, height: 70 }],
+    });
+    expect(result).toHaveLength(4);
+    assertSeparateLabels(result, items);
+    for (const { label } of result) {
+      expect(label.x).toBeGreaterThanOrEqual(12);
+      expect(label.x + label.width).toBeLessThanOrEqual(588);
+      expect(label.y + label.height).toBeLessThanOrEqual(568);
+    }
+  }
+});
+
+test("offscreen and covered reviews do not prevent other reviews from appearing", () => {
+  const items = [
+    { id: "offscreen", target: { x: -1, y: 200 }, label: { width: 180, height: 44 } },
+    { id: "covered", target: { x: 850, y: 200 }, label: { width: 180, height: 44 } },
+    { id: "visible", target: { x: 400, y: 300 }, label: { width: 180, height: 44 } },
+  ];
+  const result = placeReviewCallouts({
+    items,
+    viewport: { width: 1000, height: 600 },
+    obstacles: [{ x: 800, y: 0, width: 200, height: 600 }],
+  });
+  expect(result.map((entry) => entry.id)).toEqual(["visible"]);
+  expect(result[0]!.target).toEqual({ x: 400, y: 300 });
 });

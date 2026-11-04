@@ -80,14 +80,10 @@ function edgeAnchor(target: ReviewPoint, label: ReviewRect): ReviewPoint {
  * All inputs and outputs are canvas-local CSS pixels, including occupied UI rectangles.
  * A hidden/offscreen target or a crowded viewport returns null rather than a misleading pin.
  */
-export function placeReviewCallout({
-  target,
-  viewport,
-  label: size,
-  obstacles = [],
-  margin = 12,
-  gap = 24,
-}: CalloutInput): ReviewCallout | null {
+function placeCallout(
+  { target, viewport, label: size, obstacles = [], margin = 12, gap = 24 }: CalloutInput,
+  protectedTargets: readonly ReviewRect[] = [],
+): ReviewCallout | null {
   if (
     !finite(
       target.x,
@@ -115,6 +111,9 @@ export function placeReviewCallout({
     (rect) => finite(rect.x, rect.y, rect.width, rect.height) && rect.width > 0 && rect.height > 0,
   );
   if (occupied.some((rect) => contains(rect, target))) return null;
+  // Target dots reserve label space, but are not controls. Leaders may share a
+  // point when several findings refer to the same physical part.
+  const labelObstacles = [...occupied, ...protectedTargets];
 
   const maxX = viewport.width - margin - size.width;
   const maxY = viewport.height - margin - size.height;
@@ -126,7 +125,10 @@ export function placeReviewCallout({
     target.x - size.width / 2,
     margin,
     maxX,
-    ...occupied.flatMap((rect) => [rect.x - margin - size.width, rect.x + rect.width + margin]),
+    ...labelObstacles.flatMap((rect) => [
+      rect.x - margin - size.width,
+      rect.x + rect.width + margin,
+    ]),
   ];
   const ys = [
     target.y - size.height / 2,
@@ -134,14 +136,17 @@ export function placeReviewCallout({
     target.y + gap,
     margin,
     maxY,
-    ...occupied.flatMap((rect) => [rect.y - margin - size.height, rect.y + rect.height + margin]),
+    ...labelObstacles.flatMap((rect) => [
+      rect.y - margin - size.height,
+      rect.y + rect.height + margin,
+    ]),
   ];
   let best: ReviewCallout | null = null;
   let distance = Infinity;
   for (const x of new Set(xs.map((value) => clamp(value, margin, maxX))))
     for (const y of new Set(ys.map((value) => clamp(value, margin, maxY)))) {
       const label = { x, y, ...size };
-      if (occupied.some((rect) => overlaps(label, rect, margin))) continue;
+      if (labelObstacles.some((rect) => overlaps(label, rect, margin))) continue;
       const nearestX = clamp(target.x, x, x + size.width);
       const nearestY = clamp(target.y, y, y + size.height);
       if (contains(label, target) || Math.hypot(nearestX - target.x, nearestY - target.y) < gap)
@@ -152,7 +157,50 @@ export function placeReviewCallout({
       if (length < distance) {
         distance = length;
         best = { label, target: { ...target }, anchor };
+        // No permitted placement can beat the minimum target-to-label gap.
+        if (length <= gap) return best;
       }
     }
   return best;
+}
+
+export function placeReviewCallout(input: CalloutInput): ReviewCallout | null {
+  return placeCallout(input);
+}
+
+export type ReviewCalloutItem = {
+  id: string;
+  target: ReviewPoint;
+  label: { width: number; height: number };
+};
+export type PlacedReviewCallout = ReviewCallout & { id: string };
+
+/** Place all visible findings in priority order, reserving every part's marker. */
+export function placeReviewCallouts({
+  items,
+  viewport,
+  obstacles = [],
+}: {
+  items: readonly ReviewCalloutItem[];
+  viewport: { width: number; height: number };
+  obstacles?: readonly ReviewRect[];
+}): PlacedReviewCallout[] {
+  const visible = items.filter(
+    ({ target }) => finite(target.x, target.y) && contains({ x: 0, y: 0, ...viewport }, target),
+  );
+  const protectedTargets = visible.map(({ target }) => ({
+    x: target.x - 5,
+    y: target.y - 5,
+    width: 10,
+    height: 10,
+  }));
+  const occupied = [...obstacles];
+  const results: PlacedReviewCallout[] = [];
+  for (const item of visible) {
+    const placed = placeCallout({ ...item, viewport, obstacles: occupied }, protectedTargets);
+    if (!placed) continue;
+    results.push({ ...placed, id: item.id });
+    occupied.push(placed.label);
+  }
+  return results;
 }

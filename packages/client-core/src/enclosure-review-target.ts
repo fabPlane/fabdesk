@@ -99,79 +99,102 @@ function mentions(message: string, ref: string) {
 /**
  * Resolve a review item to evidence-backed scene coordinates. Placement always comes from
  * the current design, because feature responses may carry an older board arrangement.
- * Unlocated checks deliberately return null instead of pointing at the case centre.
+ * Unlocated checks deliberately return no targets instead of pointing at the case centre.
  */
-export function enclosureReviewTarget(
+export function enclosureReviewTargets(
   issue: MechanicalFitIssue,
   design: MechanicalDesign,
   boards: readonly EnclosureReviewBoard[],
-): EnclosureReviewTarget | null {
-  if (unlocated.has(issue.code)) return null;
+): EnclosureReviewTarget[] {
+  if (unlocated.has(issue.code)) return [];
   const paths = design.boards.map((board) => board.path);
   const boardPath = fitIssueBoardPath(issue.message, paths);
   const location = boardPath ? { boardPath, modelId: `@fit-${boardPath}` } : {};
   const explicit = issue.regions?.filter(validRegion) ?? [];
   if (explicit.length)
-    return { kind: "regions", point: center(explicit[0]!), regions: explicit, ...location };
-  if (!boardPath) return null;
+    return explicit.map((region) => ({
+      kind: "regions",
+      point: center(region),
+      regions: [region],
+      ...location,
+    }));
+  if (!boardPath) return [];
   const placement = design.boards.find((board) => board.path === boardPath)!;
   const features = boards.find((board) => board.placement.path === boardPath)?.features;
-  if (!features) return null;
+  if (!features) return [];
   // Never mistake a reference in the filename (e.g. J2-adapter.kicad_pcb) for a named part.
   const message = issue.message.slice(boardPath.length);
   const components = enclosureComponents(features);
   const connectors =
     features.connectors?.filter((connector) => mentions(message, connector.ref)) ?? [];
-  if (connectors.length) {
-    const first = connectors[0]!;
-    const points: Point[] = [];
-    const regions: MechanicalBox[] = [];
-    for (const connector of connectors) {
-      const bounds = connector.face?.bounds ?? connector.bounds;
-      const bottom = components.some((part) => part.ref === connector.ref && part.bottom);
-      const height = connector.face?.heightMm ?? connector.heightMm;
-      const centerZ = connector.face?.centerZ ?? height / 2;
-      const baseZ = bottom ? -centerZ - height / 2 : features.thicknessMm + centerZ - height / 2;
-      let x = connector.x,
-        y = connector.y;
-      if (bounds && validRect(bounds)) {
-        x = (bounds.minX + bounds.maxX) / 2;
-        y = (bounds.minY + bounds.maxY) / 2;
-        // Aim at the connector mouth, not the footprint/pad origin or the enclosure wall.
-        if (connector.edge === "minX") x = bounds.minX;
-        if (connector.edge === "maxX") x = bounds.maxX;
-        if (connector.edge === "minY") y = bounds.minY;
-        if (connector.edge === "maxY") y = bounds.maxY;
-      }
-      points.push(worldPoint(placement, x, y, bottom ? -centerZ : features.thicknessMm + centerZ));
-      const region = worldBounds(placement, bounds, baseZ, height, connector.ref);
-      if (region) regions.push(region);
+  const targets: EnclosureReviewTarget[] = [];
+  for (const connector of connectors) {
+    const bounds = connector.face?.bounds ?? connector.bounds;
+    const bottom = components.some((part) => part.ref === connector.ref && part.bottom);
+    const height = connector.face?.heightMm ?? connector.heightMm;
+    const centerZ = connector.face?.centerZ ?? height / 2;
+    const baseZ = bottom ? -centerZ - height / 2 : features.thicknessMm + centerZ - height / 2;
+    let x = connector.x,
+      y = connector.y;
+    if (bounds && validRect(bounds)) {
+      x = (bounds.minX + bounds.maxX) / 2;
+      y = (bounds.minY + bounds.maxY) / 2;
+      // Aim at the connector mouth, not the footprint/pad origin or the enclosure wall.
+      if (connector.edge === "minX") x = bounds.minX;
+      if (connector.edge === "maxX") x = bounds.maxX;
+      if (connector.edge === "minY") y = bounds.minY;
+      if (connector.edge === "maxY") y = bounds.maxY;
     }
-    if (points[0]!.every(Number.isFinite))
-      return { kind: "connector", point: points[0]!, regions, reference: first.ref, ...location };
+    const point = worldPoint(placement, x, y, bottom ? -centerZ : features.thicknessMm + centerZ);
+    const region = worldBounds(placement, bounds, baseZ, height, connector.ref);
+    if (point.every(Number.isFinite))
+      targets.push({
+        kind: "connector",
+        point,
+        regions: region ? [region] : [],
+        reference: connector.ref,
+        ...location,
+      });
   }
-  const parts = components.filter((part) => mentions(message, part.ref));
-  if (parts.length) {
-    const first = parts[0]!;
+  const connectorRefs = new Set(targets.map((target) => target.reference));
+  const parts = components.filter(
+    (part) => !connectorRefs.has(part.ref) && mentions(message, part.ref),
+  );
+  for (const part of parts) {
     const point = worldPoint(
       placement,
-      first.x,
-      first.y,
-      first.bottom ? -first.heightMm / 2 : features.thicknessMm + first.heightMm / 2,
+      part.x,
+      part.y,
+      part.bottom ? -part.heightMm / 2 : features.thicknessMm + part.heightMm / 2,
     );
-    const regions = parts.flatMap((part) => {
-      const region = worldBounds(
-        placement,
-        part.bounds,
-        part.bottom ? -part.heightMm : features.thicknessMm,
-        part.heightMm,
-        part.ref,
-      );
-      return region ? [region] : [];
-    });
+    const region = worldBounds(
+      placement,
+      part.bounds,
+      part.bottom ? -part.heightMm : features.thicknessMm,
+      part.heightMm,
+      part.ref,
+    );
     if (point.every(Number.isFinite))
-      return { kind: "component", point, regions, reference: first.ref, ...location };
+      targets.push({
+        kind: "component",
+        point,
+        regions: region ? [region] : [],
+        reference: part.ref,
+        ...location,
+      });
   }
+  if (targets.length) return targets;
   const bounds = worldBounds(placement, features.outline, 0, features.thicknessMm, "PCB");
-  return bounds ? { kind: "board", point: center(bounds), regions: [bounds], ...location } : null;
+  return bounds ? [{ kind: "board", point: center(bounds), regions: [bounds], ...location }] : [];
+}
+
+/** The focused review retains every implicated region while aiming at the first part. */
+export function enclosureReviewTarget(
+  issue: MechanicalFitIssue,
+  design: MechanicalDesign,
+  boards: readonly EnclosureReviewBoard[],
+): EnclosureReviewTarget | null {
+  const targets = enclosureReviewTargets(issue, design, boards);
+  const first = targets[0];
+  return first ? { ...first, regions: targets.flatMap((target) => target.regions) } : null;
 }

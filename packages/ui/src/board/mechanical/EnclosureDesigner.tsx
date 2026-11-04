@@ -41,10 +41,12 @@ import {
   type LayoutBoard,
   nativeEnclosureClearanceIssues,
   enclosureReviewTarget,
+  enclosureReviewTargets,
+  type EnclosureReviewTarget,
 } from "@fabdesk/client-core";
 import { MechanicalScene, type SceneModel, type BoardGeometry } from "./MechanicalScene";
 import { EnclosureFitReview, FitProblem, fitProblemTitle } from "./EnclosureFitReview";
-import { placeReviewCallout, type ReviewCallout } from "./review-callout";
+import { placeReviewCallouts, type PlacedReviewCallout } from "./review-callout";
 import { MechanicalIcon } from "./MechanicalIcon";
 import { MechanicalViewCube } from "./MechanicalViewCube";
 import { EnclosureConnections } from "./EnclosureConnections";
@@ -149,9 +151,9 @@ export function EnclosureDesigner({
   const [orientation, setOrientation] = useState<[number, number, number, number]>([0, 0, 0, 1]);
   const [selectedCase, setSelectedCase] = useState<string | null>(null);
   const [measured, setMeasured] = useState<number | null>(null);
-  const [annotation, setAnnotation] = useState<ReviewCallout | null>(null);
-  const callout = useRef<HTMLButtonElement>(null);
-  const calloutSize = useRef({ width: 220, height: 44 });
+  const [annotations, setAnnotations] = useState<PlacedReviewCallout[]>([]);
+  const callouts = useRef<HTMLDivElement>(null);
+  const calloutSizes = useRef(new Map<string, { width: number; height: number }>());
   const updateAnnotation = useRef(() => {});
   const previewStart = useRef<{
     design: MechanicalDesign;
@@ -395,6 +397,7 @@ export function EnclosureDesigner({
   const [showRisks, setShowRisks] = useState(true),
     [showSpace, setShowSpace] = useState(false);
   const [focusedIssue, setFocusedIssue] = useState<MechanicalFitIssue | null>(null);
+  const [focusedTarget, setFocusedTarget] = useState<EnclosureReviewTarget | null>(null);
   const [selectedBoard, setSelectedBoard] = useState<string | null>(null);
   const viewState = useRef({ step, selected: selectedBoard, confirmedSelection });
   viewState.current = { step, selected: selectedBoard, confirmedSelection };
@@ -930,7 +933,7 @@ export function EnclosureDesigner({
     scene.current?.setFitOverlay(
       showRisks
         ? focusedIssue
-          ? (reviewTarget(focusedIssue)?.regions ?? [])
+          ? ((focusedTarget ?? reviewTarget(focusedIssue))?.regions ?? [])
           : (report?.issues
               .filter(
                 (i) =>
@@ -950,9 +953,10 @@ export function EnclosureDesigner({
           }
         : null,
     );
-  }, [report, focusedIssue, showRisks, showSpace, design, fitBoards, preview]);
-  function showIssue(issue: MechanicalFitIssue) {
+  }, [report, focusedIssue, focusedTarget, showRisks, showSpace, design, fitBoards, preview]);
+  function showIssue(issue: MechanicalFitIssue, target: EnclosureReviewTarget | null = null) {
     setFocusedIssue(issue);
+    setFocusedTarget(target);
     setShowRisks(true);
   }
   useEffect(() => {
@@ -1433,17 +1437,20 @@ export function EnclosureDesigner({
     currentPlacement && currentFeatures
       ? enclosureBoardPose(currentPlacement, currentFeatures.outline)
       : null;
-  const visibleIssue =
-    focusedIssue ??
-    report?.issues.find((i) => i.severity === "error" && reviewTarget(i)) ??
-    report?.issues.find(
-      (i) => /^(port-|opening-|connector-|plug-)/.test(i.code) && reviewTarget(i),
-    ) ??
-    report?.issues.find((i) => reviewTarget(i));
+  const reviewItems = useMemo(() => {
+    if (!design || !report) return [];
+    const boards = mountingBoards();
+    return report.issues.flatMap((issue, issueIndex) =>
+      enclosureReviewTargets(issue, design, boards).map((target, targetIndex) => ({
+        id: `${issueIndex}:${targetIndex}`,
+        issue,
+        target,
+        label: `${fitProblemTitle(issue)}${target.reference ? ` · ${target.reference}` : ""}`,
+      })),
+    );
+  }, [report, design, fitBoards, preview, board]);
   updateAnnotation.current = () => {
     const canvas = host.current;
-    const target = visibleIssue && reviewTarget(visibleIssue);
-    const point = target ? scene.current?.projectPoint(...target.point) : null;
     const bounds = canvas?.getBoundingClientRect();
     const obstacles = bounds
       ? Array.from(
@@ -1463,20 +1470,30 @@ export function EnclosureDesigner({
           })
       : [];
     const next =
-      point && canvas && !advanced && !connectionsOpen && !exportOpen
-        ? placeReviewCallout({
-            target: { x: Math.round(point.x), y: Math.round(point.y) },
+      canvas && !advanced && !connectionsOpen && !exportOpen
+        ? placeReviewCallouts({
+            items: reviewItems.flatMap(({ id, target }) => {
+              const point = scene.current?.projectPoint(...target.point);
+              return point
+                ? [
+                    {
+                      id,
+                      target: { x: Math.round(point.x), y: Math.round(point.y) },
+                      label: calloutSizes.current.get(id) ?? { width: 220, height: 44 },
+                    },
+                  ]
+                : [];
+            }),
             viewport: { width: canvas.clientWidth, height: canvas.clientHeight },
-            label: calloutSize.current,
             obstacles,
           })
-        : null;
-    setAnnotation((old) => (JSON.stringify(old) === JSON.stringify(next) ? old : next));
+        : [];
+    setAnnotations((old) => (JSON.stringify(old) === JSON.stringify(next) ? old : next));
   };
   useEffect(() => {
     updateAnnotation.current();
   }, [
-    visibleIssue,
+    reviewItems,
     preview,
     reviewOpen,
     exportOpen,
@@ -1488,16 +1505,29 @@ export function EnclosureDesigner({
     measured,
   ]);
   useEffect(() => {
-    if (!callout.current) return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (!entry) return;
-      const rect = entry.target.getBoundingClientRect();
-      calloutSize.current = { width: Math.ceil(rect.width), height: Math.ceil(rect.height) };
-      updateAnnotation.current();
+    if (!callouts.current) return;
+    const observer = new ResizeObserver((entries) => {
+      let changed = false;
+      for (const entry of entries) {
+        const id = (entry.target as HTMLElement).dataset["reviewId"];
+        if (!id) continue;
+        const rect = entry.target.getBoundingClientRect();
+        // Removed/offscreen labels can deliver a final zero-size observation.
+        // Keep their last usable size so they reappear when the camera returns.
+        if (!entry.target.isConnected || !rect.width || !rect.height) continue;
+        const size = { width: Math.ceil(rect.width), height: Math.ceil(rect.height) };
+        const previous = calloutSizes.current.get(id);
+        if (previous?.width === size.width && previous.height === size.height) continue;
+        calloutSizes.current.set(id, size);
+        changed = true;
+      }
+      if (changed) updateAnnotation.current();
     });
-    observer.observe(callout.current);
+    callouts.current
+      .querySelectorAll(".fd-enclosure-callout")
+      .forEach((el) => observer.observe(el));
     return () => observer.disconnect();
-  }, [!!annotation]);
+  }, [annotations.map((a) => a.id).join(",")]);
   useEffect(() => {
     if (!active || advanced) return;
     const update = () =>
@@ -1517,12 +1547,12 @@ export function EnclosureDesigner({
   }, [advanced]);
   useEffect(() => {
     if (!focusedIssue) return;
-    const target = reviewTarget(focusedIssue);
+    const target = focusedTarget ?? reviewTarget(focusedIssue);
     if (!target) return;
     // Keep the board around a small connector visible, so the marker has useful context.
     if (target.modelId && target.kind !== "regions") scene.current?.focusModel(target.modelId);
     else scene.current?.focusFitRegions(target.regions);
-  }, [focusedIssue, reviewOpen, advanced]);
+  }, [focusedIssue, focusedTarget, reviewOpen, advanced]);
   return (
     <section
       className="fd-case-workflow fd-case-compact"
@@ -1835,43 +1865,59 @@ export function EnclosureDesigner({
               </button>
             </div>
           )}
-          {visibleIssue && annotation && (
-            <>
-              <svg
-                className="fd-enclosure-review-leader"
-                aria-hidden="true"
-                data-blocked={visibleIssue.severity === "error"}
-              >
-                <line
-                  x1={annotation.target.x}
-                  y1={annotation.target.y}
-                  x2={annotation.anchor.x}
-                  y2={annotation.anchor.y}
-                />
-                <circle cx={annotation.target.x} cy={annotation.target.y} r={4} />
+          {!!annotations.length && (
+            <div
+              className="fd-enclosure-review-callouts"
+              ref={callouts}
+              role="group"
+              aria-label="Part reviews"
+            >
+              <svg className="fd-enclosure-review-leader" aria-hidden="true">
+                {annotations.map((annotation) => {
+                  const item = reviewItems.find((item) => item.id === annotation.id);
+                  return item ? (
+                    <g
+                      key={item.id}
+                      data-review-id={item.id}
+                      data-blocked={item.issue.severity === "error"}
+                    >
+                      <line
+                        x1={annotation.target.x}
+                        y1={annotation.target.y}
+                        x2={annotation.anchor.x}
+                        y2={annotation.anchor.y}
+                      />
+                      <circle cx={annotation.target.x} cy={annotation.target.y} r={4} />
+                    </g>
+                  ) : null;
+                })}
               </svg>
-              <button
-                ref={callout}
-                className="fd-enclosure-callout"
-                data-blocked={visibleIssue.severity === "error"}
-                style={{
-                  left: annotation.label.x,
-                  top: annotation.label.y,
-                  width: annotation.label.width,
-                }}
-                title={visibleIssue.message}
-                onClick={() => {
-                  setReviewOpen(true);
-                  showIssue(visibleIssue);
-                }}
-              >
-                <span aria-hidden="true">⚠</span>
-                {fitProblemTitle(visibleIssue)}
-                {reviewTarget(visibleIssue)?.reference
-                  ? ` · ${reviewTarget(visibleIssue)!.reference}`
-                  : ""}
-              </button>
-            </>
+              {annotations.map((annotation) => {
+                const item = reviewItems.find((item) => item.id === annotation.id);
+                return item ? (
+                  <button
+                    key={item.id}
+                    className="fd-enclosure-callout"
+                    data-review-id={item.id}
+                    data-blocked={item.issue.severity === "error"}
+                    aria-label={`${item.label}${item.target.boardPath ? ` — ${enclosureFileLabel(item.target.boardPath)}` : ""}`}
+                    style={{
+                      left: annotation.label.x,
+                      top: annotation.label.y,
+                      width: annotation.label.width,
+                    }}
+                    title={item.issue.message}
+                    onClick={() => {
+                      setReviewOpen(true);
+                      showIssue(item.issue, item.target);
+                    }}
+                  >
+                    <span aria-hidden="true">⚠</span>
+                    {item.label}
+                  </button>
+                ) : null;
+              })}
+            </div>
           )}
           {report?.issues.length || fitError || pcbModels.error ? (
             <button
