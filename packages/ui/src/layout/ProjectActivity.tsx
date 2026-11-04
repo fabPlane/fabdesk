@@ -68,11 +68,13 @@ export function ProjectActivity({ projectId }: { projectId: string }) {
       {jobs.isError && <LoadError title="Could not refresh task history" onRetry={() => void jobs.refetch()} />}
       {jobs.isPending && !rows.length ? <p role="status"><Spinner />Loading this project’s tasks…</p> : !visible.length ? <EmptyState title={filter === "active" ? "No background tasks running" : "No recent background tasks"}>{filter === "active" ? "New renders, exports and checks appear here. Assistant conversations are shown separately above." : "Completed, cancelled and failed renders, exports and checks will appear here."}</EmptyState> : <ul className="fd-project-activity-list">{visible.map(job => {
         const running = jobIsActive(job), board = projectJobBoard(job), source = sources.data?.sources.find(row => row.source.id === board?.sourceId)?.source.name;
+        const recordedAt = job.endedAt ?? job.startedAt;
         return <li key={job.id} data-status={job.status}>
           <div className="fd-project-activity-heading"><strong>{title(job)}</strong><span>{requested === job.id && running ? "Cancellation requested…" : STATUS[job.status]}</span></div>
+          <p>{recordedAt && Number.isFinite(Date.parse(recordedAt)) ? <time dateTime={recordedAt} title={recordedAt}>{job.endedAt ? "Finished" : "Started"} {new Date(recordedAt).toLocaleString()}</time> : "Time not recorded"}</p>
           {source && <p>{source}</p>}
           {running && job.progress !== null && <progress aria-label={`${title(job)} progress`} max={1} value={job.progress} />}
-          {job.note && <p>{job.note}</p>}
+          {job.note && !(job.status === "done" && job.note.trim().toLowerCase() === "done") && <p>{job.note}</p>}
           {job.error && job.status !== "cancelled" && <ErrorNotice error={job.error} />}
           <div className="fd-project-activity-actions">
             {running ? <Button size="sm" disabled={cancel.isPending || requested === job.id} onClick={() => void requestCancel(job)}>{cancel.isPending && cancel.variables === job.id ? "Requesting cancellation…" : "Cancel task"}</Button> : job.status === "done" && /render|export|route|verify|drc|erc|glb|video/.test(job.kind) ? <Button size="sm" onClick={() => openResult(job)}>{/route/.test(job.kind) ? "Review routing" : /verify|drc|erc/.test(job.kind) ? "Open checks" : "Open outputs"}</Button> : null}
