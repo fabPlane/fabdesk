@@ -289,26 +289,40 @@ export function FitProblem({
   title,
   blocked = false,
   focused = false,
+  count = 1,
+  expanded,
+  onExpandedChange,
   onReveal,
   children,
 }: {
   title: string;
   blocked?: boolean;
   focused?: boolean;
+  count?: number;
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
   onReveal?: () => void;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(focused);
+  const [localOpen, setLocalOpen] = useState(focused);
+  const open = expanded ?? localOpen;
   const contentId = useId();
   useEffect(() => {
-    if (focused) setOpen(true);
+    if (focused) setLocalOpen(true);
   }, [focused]);
   return (
     <article
       className={`fd-fit-problem${blocked ? " is-blocker" : ""}${focused ? " is-focused" : ""}`}
       aria-label={blocked ? `${title} — required fix` : title}
     >
-      <h3>{title}</h3>
+      <div className="fd-fit-problem-heading">
+        <h3>{title}</h3>
+        {count > 1 && (
+          <span className="fd-fit-problem-count" aria-label={`${count} findings`}>
+            {count}
+          </span>
+        )}
+      </div>
       <button
         type="button"
         className="fd-fit-solution-toggle"
@@ -316,7 +330,8 @@ export function FitProblem({
         aria-controls={contentId}
         aria-label={`${open ? "Hide" : "Show"} solution: ${title}`}
         onClick={() => {
-          setOpen(!open);
+          setLocalOpen(!open);
+          onExpandedChange?.(!open);
           if (!open) onReveal?.();
         }}
       >
@@ -337,11 +352,43 @@ export function fitProblemTitle(issue: MechanicalFitIssue) {
   );
 }
 
-/** Presentation only. Each original finding and its fix/3D action stays with its problem. */
+/** Presentation groups keep repeated findings together without changing any fit results. */
+export function fitProblemGroups(issues: MechanicalFitIssue[]) {
+  const methodIssues =
+    enclosureReviewGroups(issues).find((group) => group.id === "method")?.issues ?? [];
+  const methodSet = new Set(methodIssues);
+  const grouped = new Map<string, MechanicalFitIssue[]>();
+  for (const issue of issues) {
+    if (methodSet.has(issue)) continue;
+    const key = `${issue.severity}:${issue.code}`;
+    const group = grouped.get(key) ?? [];
+    group.push(issue);
+    grouped.set(key, group);
+  }
+  const problems = [...grouped]
+    .map(([key, findings]) => ({ key, issues: findings }))
+    .sort(
+      (a, b) =>
+        Number(b.issues[0]!.severity === "error") - Number(a.issues[0]!.severity === "error"),
+    );
+  return { problems, methodIssues };
+}
+
+/** Match the number of problem cards, rather than the number of repeated findings. */
+export function fitProblemCount(report: MechanicalFitReport) {
+  if (report.issues.some((issue) => issue.code === "verification-pending")) return 0;
+  const extraBlocker =
+    report.status === "blocked" && !report.issues.some((issue) => issue.severity === "error");
+  return fitProblemGroups(report.issues).problems.length + 1 + Number(extraBlocker);
+}
+
+/** One problem and one finding at a time; every original fix remains reachable. */
 export function EnclosureFitReview({
   report,
   onNavigate,
   onShowIssue,
+  onClearIssue,
+  partPicker,
   focusedIssue,
   readiness,
   canShowIssue = (issue) => !!issue.regions?.length,
@@ -349,106 +396,158 @@ export function EnclosureFitReview({
   report: MechanicalFitReport;
   onNavigate: (step: Destination, code: string, issue: MechanicalFitIssue) => void;
   onShowIssue: (issue: MechanicalFitIssue) => void;
+  onClearIssue?: () => void;
+  partPicker?: ReactNode;
   focusedIssue: MechanicalFitIssue | null;
   readiness?: { kind: string; title: string; detail: string };
   canShowIssue?: (issue: MechanicalFitIssue) => boolean;
 }) {
+  const { problems, methodIssues } = fitProblemGroups(report.issues);
+  const focusedGroup = focusedIssue
+    ? problems.find((group) => group.issues.includes(focusedIssue))
+    : null;
+  const focusedKey =
+    focusedGroup?.key ??
+    (focusedIssue && (methodIssues.includes(focusedIssue) || focusedIssue.code === "coverage")
+      ? "method"
+      : null);
+  const focusedIndex = focusedIssue && focusedGroup ? focusedGroup.issues.indexOf(focusedIssue) : 0;
+  const [openKey, setOpenKey] = useState<string | null>(focusedKey);
+  const [findingIndices, setFindingIndices] = useState<Record<string, number>>(
+    focusedKey ? { [focusedKey]: focusedIndex } : {},
+  );
+  useEffect(() => {
+    setOpenKey((current) =>
+      focusedIssue === null && current === "blocked" ? current : focusedKey,
+    );
+    if (focusedKey) setFindingIndices((indices) => ({ ...indices, [focusedKey]: focusedIndex }));
+  }, [focusedIssue, focusedKey, focusedIndex]);
+  const openProblem = (key: string, open: boolean) => {
+    setOpenKey(open ? key : null);
+    if (!open) onClearIssue?.();
+  };
+
   if (report.issues.some((issue) => issue.code === "verification-pending"))
     return (
       <section className="fd-fit-review" aria-label="Fit review">
         <p className="fd-fit-pending" role="status">
-          Checking fit… Export is available when checks finish.
+          Checking fit... Export is available when checks finish.
         </p>
       </section>
     );
 
-  const method = enclosureReviewGroups(report.issues).find((group) => group.id === "method");
-  const methodIssues = new Set(method?.issues ?? []);
-  const problems = new Map<string, MechanicalFitIssue[]>();
-  for (const issue of report.issues) {
-    if (methodIssues.has(issue)) continue;
-    const key = `${issue.severity}:${issue.code}`;
-    const group = problems.get(key) ?? [];
-    group.push(issue);
-    problems.set(key, group);
-  }
-  const ordered = [...problems].sort(
-    ([, a], [, b]) => Number(b[0]!.severity === "error") - Number(a[0]!.severity === "error"),
-  );
   return (
     <section className="fd-fit-review fd-fit-problems" aria-label="Fit review">
       {report.status === "blocked" &&
         !report.issues.some((issue) => issue.severity === "error") && (
-          <FitProblem title="Fit check needs attention" blocked>
+          <FitProblem
+            title="Fit check needs attention"
+            blocked
+            expanded={openKey === "blocked"}
+            onExpandedChange={(open) => openProblem("blocked", open)}
+            onReveal={() => onClearIssue?.()}
+          >
             <p>{readiness?.detail ?? "Run the fit check again before exporting."}</p>
           </FitProblem>
         )}
-      {ordered.map(([key, issues]) => {
+      {problems.map(({ key, issues }) => {
         const first = issues[0]!;
         const info = guidance[first.code];
-        const title = fitProblemTitle(first);
+        const index = Math.min(findingIndices[key] ?? 0, issues.length - 1);
+        const issue = issues[index]!;
+        const path = fitIssueBoardPath(issue.message, Object.keys(report.boardRevisions));
+        const selectFinding = (next: number) => {
+          const finding = issues[next];
+          if (!finding) return;
+          setFindingIndices((indices) => ({ ...indices, [key]: next }));
+          onShowIssue(finding);
+        };
         return (
           <FitProblem
             key={key}
-            title={title || "Fit needs review"}
+            title={fitProblemTitle(first)}
+            count={issues.length}
             blocked={first.severity === "error"}
-            focused={!!focusedIssue && issues.includes(focusedIssue)}
-            onReveal={() => onShowIssue(first)}
+            focused={openKey === key}
+            expanded={openKey === key}
+            onExpandedChange={(open) => openProblem(key, open)}
+            onReveal={() => onShowIssue(issue)}
           >
             {enclosureIssueSummary[first.code] && <p>{enclosureIssueSummary[first.code]}</p>}
-            {issues.map((issue, index) => {
-              const path = fitIssueBoardPath(issue.message, Object.keys(report.boardRevisions));
-              return (
-                <div className="fd-fit-finding" key={index}>
-                  {path && (
-                    <strong className="fd-fit-board" title={path}>
-                      {path === "board.kicad_pcb" ? "Project PCB" : enclosureFileLabel(path)}
-                    </strong>
-                  )}
-                  {enclosureIssueSummary[first.code] ? (
-                    <details className="fd-fit-exact">
-                      <summary>Details</summary>
-                      <p>{issue.message}</p>
-                    </details>
-                  ) : (
-                    <p>{issue.message}</p>
-                  )}
-                  <div className="fd-fit-solution-actions">
-                    {info && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onShowIssue(issue);
-                          onNavigate(info.destination, issue.code, issue);
-                        }}
-                      >
-                        {info.action}
-                        <Icon name="chevronRight" aria-hidden="true" />
-                      </button>
-                    )}
-                    {canShowIssue(issue) && (
-                      <button
-                        type="button"
-                        aria-pressed={focusedIssue === issue}
-                        onClick={() => onShowIssue(issue)}
-                      >
-                        <Icon name="search" aria-hidden="true" />
-                        Show in 3D
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+            {issues.length > 1 && (
+              <nav className="fd-fit-finding-nav" aria-label={`${fitProblemTitle(first)} findings`}>
+                <button
+                  type="button"
+                  aria-label="Previous finding"
+                  disabled={index === 0}
+                  onClick={() => selectFinding(index - 1)}
+                >
+                  <Icon name="chevronLeft" aria-hidden="true" />
+                </button>
+                <span aria-live="polite">
+                  {index + 1} of {issues.length}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Next finding"
+                  disabled={index === issues.length - 1}
+                  onClick={() => selectFinding(index + 1)}
+                >
+                  <Icon name="chevronRight" aria-hidden="true" />
+                </button>
+              </nav>
+            )}
+            <div className="fd-fit-finding">
+              {path && (
+                <strong className="fd-fit-board" title={path}>
+                  {path === "board.kicad_pcb" ? "Project PCB" : enclosureFileLabel(path)}
+                </strong>
+              )}
+              {openKey === key && partPicker}
+              {enclosureIssueSummary[first.code] ? (
+                <details className="fd-fit-exact" key={`${key}:${index}`}>
+                  <summary>Details</summary>
+                  <p>{issue.message}</p>
+                </details>
+              ) : (
+                <p>{issue.message}</p>
+              )}
+              <div className="fd-fit-solution-actions">
+                {info && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onShowIssue(issue);
+                      onNavigate(info.destination, issue.code, issue);
+                    }}
+                  >
+                    {info.action}
+                    <Icon name="chevronRight" aria-hidden="true" />
+                  </button>
+                )}
+                {canShowIssue(issue) && (
+                  <button
+                    type="button"
+                    aria-pressed={focusedIssue === issue}
+                    onClick={() => onShowIssue(issue)}
+                  >
+                    <Icon name="search" aria-hidden="true" />
+                    Show in 3D
+                  </button>
+                )}
+              </div>
+            </div>
           </FitProblem>
         );
       })}
       <FitProblem
         title="Physical fit needs checking"
-        focused={!!focusedIssue && methodIssues.has(focusedIssue)}
+        focused={openKey === "method"}
+        expanded={openKey === "method"}
+        onExpandedChange={(open) => openProblem("method", open)}
         onReveal={() => {
           onShowIssue(
-            method?.issues[0] ?? {
+            methodIssues[0] ?? {
               code: "coverage",
               severity: "review",
               message: "Physical fit needs checking on the assembled parts.",
@@ -465,13 +564,13 @@ export function EnclosureFitReview({
           <li>Try your actual plugs and cables.</li>
         </ul>
         <p>Your printer may make openings slightly smaller or larger.</p>
-        {!!method?.issues.length && (
+        {!!methodIssues.length && (
           <details className="fd-fit-check-limits">
             <summary>What was checked</summary>
             {report.geometry?.closed && (
               <p>Case geometry is joined; this does not prove physical fit.</p>
             )}
-            {method.issues.map((issue, index) => (
+            {methodIssues.map((issue, index) => (
               <p key={index}>{issue.message}</p>
             ))}
           </details>

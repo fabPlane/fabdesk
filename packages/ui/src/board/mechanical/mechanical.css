@@ -2784,3 +2784,60 @@
   line-height: 1.6;
   color: var(--fd-muted);
 }
+
+/* Group repeated review findings without filling the panel with repeated cards. */
+.fd-fit-problem-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.fd-fit-problem-heading h3 {
+  margin: 0;
+  color: var(--fd-fg);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.fd-fit-problem.is-blocker .fd-fit-problem-heading h3 {
+  color: var(--fd-danger);
+}
+.fd-fit-problem-count {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--fd-border);
+  border-radius: 5px;
+  color: var(--fd-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.fd-fit-finding-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--fd-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.fd-fit-finding-nav > button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  min-height: 30px;
+  padding: 4px;
+  border: 1px solid var(--fd-border);
+  border-radius: 6px;
+  background: var(--fd-panel);
+  color: var(--fd-fg);
+}
+.fd-fit-finding-nav > button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.fd-fit-finding-nav svg {
+  width: 14px;
+  height: 14px;
+}

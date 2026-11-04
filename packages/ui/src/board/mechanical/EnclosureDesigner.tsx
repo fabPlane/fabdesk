@@ -45,7 +45,12 @@ import {
   type EnclosureReviewTarget,
 } from "@fabdesk/client-core";
 import { MechanicalScene, type SceneModel, type BoardGeometry } from "./MechanicalScene";
-import { EnclosureFitReview, FitProblem, fitProblemTitle } from "./EnclosureFitReview";
+import {
+  EnclosureFitReview,
+  FitProblem,
+  fitProblemCount,
+  fitProblemTitle,
+} from "./EnclosureFitReview";
 import { placeReviewCallouts, type PlacedReviewCallout } from "./review-callout";
 import { MechanicalIcon } from "./MechanicalIcon";
 import { MechanicalViewCube } from "./MechanicalViewCube";
@@ -932,7 +937,7 @@ export function EnclosureDesigner({
       s.height > 0;
     scene.current?.setFitOverlay(
       showRisks
-        ? focusedIssue
+        ? focusedIssue && (advanced || reviewOpen)
           ? ((focusedTarget ?? reviewTarget(focusedIssue))?.regions ?? [])
           : (report?.issues
               .filter(
@@ -953,12 +958,60 @@ export function EnclosureDesigner({
           }
         : null,
     );
-  }, [report, focusedIssue, focusedTarget, showRisks, showSpace, design, fitBoards, preview]);
+  }, [
+    report,
+    focusedIssue,
+    focusedTarget,
+    showRisks,
+    showSpace,
+    design,
+    fitBoards,
+    preview,
+    advanced,
+    reviewOpen,
+  ]);
   function showIssue(issue: MechanicalFitIssue, target: EnclosureReviewTarget | null = null) {
     setFocusedIssue(issue);
-    setFocusedTarget(target);
+    setFocusedTarget(
+      target ??
+        (!advanced && design
+          ? (enclosureReviewTargets(issue, design, mountingBoards())[0] ?? null)
+          : null),
+    );
     setShowRisks(true);
   }
+  function clearIssue() {
+    setFocusedIssue(null);
+    setFocusedTarget(null);
+  }
+  function closeReview() {
+    setReviewOpen(false);
+    clearIssue();
+  }
+  useEffect(() => {
+    if (!focusedIssue || focusedIssue.code === "coverage") return;
+    const current = report?.issues.find(
+      (issue) =>
+        issue.code === focusedIssue.code &&
+        issue.severity === focusedIssue.severity &&
+        issue.message === focusedIssue.message,
+    );
+    if (current !== focusedIssue) {
+      setFocusedIssue(current ?? null);
+      setFocusedTarget((previous) =>
+        current && previous && design
+          ? (enclosureReviewTargets(current, design, mountingBoards()).find(
+              (target) =>
+                target.kind === previous.kind &&
+                target.boardPath === previous.boardPath &&
+                (previous.reference
+                  ? target.reference === previous.reference
+                  : target.regions[0]?.name === previous.regions[0]?.name),
+            ) ?? null)
+          : null,
+      );
+    }
+  }, [report, focusedIssue]);
   useEffect(() => {
     if (preview || !design) return;
     let cancelled = false;
@@ -1424,6 +1477,7 @@ export function EnclosureDesigner({
     else if (step === "Review" && !preview) setStep("Start");
   }, [design, busy, pendingRecovery, step, confirmedSelection, preview]);
   const exportReadiness = enclosureReadiness(!!preview, report, pcbModels.loading);
+  const reviewCount = (report ? fitProblemCount(report) : 0) + (fitError ? 1 : 0);
   const stepNeedsAttention =
     !!error || !!fitError || (step === "Review" && report?.status === "blocked");
   const modelNeedsAttention =
@@ -1438,17 +1492,36 @@ export function EnclosureDesigner({
       ? enclosureBoardPose(currentPlacement, currentFeatures.outline)
       : null;
   const reviewItems = useMemo(() => {
-    if (!design || !report) return [];
+    if (!design || !report || !focusedIssue) return [];
     const boards = mountingBoards();
-    return report.issues.flatMap((issue, issueIndex) =>
-      enclosureReviewTargets(issue, design, boards).map((target, targetIndex) => ({
-        id: `${issueIndex}:${targetIndex}`,
-        issue,
-        target,
-        label: `${fitProblemTitle(issue)}${target.reference ? ` · ${target.reference}` : ""}`,
-      })),
+    const issue = report.issues.find(
+      (candidate) =>
+        candidate === focusedIssue ||
+        (candidate.code === focusedIssue.code &&
+          candidate.severity === focusedIssue.severity &&
+          candidate.message === focusedIssue.message),
     );
-  }, [report, design, fitBoards, preview, board]);
+    if (!issue) return [];
+    const issueIndex = report.issues.indexOf(issue);
+    return enclosureReviewTargets(issue, design, boards).map((target, targetIndex) => ({
+      id: `${issueIndex}:${targetIndex}`,
+      issue,
+      target,
+      label: `${fitProblemTitle(issue)}${target.reference ? ` · ${target.reference}` : ""}`,
+    }));
+  }, [report, design, fitBoards, preview, board, focusedIssue]);
+  const reviewItemIndex = Math.max(
+    0,
+    reviewItems.findIndex(
+      ({ target }) =>
+        target.reference === focusedTarget?.reference &&
+        target.boardPath === focusedTarget?.boardPath &&
+        target.point.every((value, index) => value === focusedTarget?.point[index]),
+    ),
+  );
+  const activeReviewItems = reviewOpen
+    ? reviewItems.slice(reviewItemIndex, reviewItemIndex + 1)
+    : [];
   updateAnnotation.current = () => {
     const canvas = host.current;
     const bounds = canvas?.getBoundingClientRect();
@@ -1472,7 +1545,7 @@ export function EnclosureDesigner({
     const next =
       canvas && !advanced && !connectionsOpen && !exportOpen
         ? placeReviewCallouts({
-            items: reviewItems.flatMap(({ id, target }) => {
+            items: activeReviewItems.flatMap(({ id, target }) => {
               const point = scene.current?.projectPoint(...target.point);
               return point
                 ? [
@@ -1494,6 +1567,7 @@ export function EnclosureDesigner({
     updateAnnotation.current();
   }, [
     reviewItems,
+    focusedTarget,
     preview,
     reviewOpen,
     exportOpen,
@@ -1549,7 +1623,7 @@ export function EnclosureDesigner({
     if (advanced) scene.current?.setViewportInsets({ left: 0, right: 0, top: 0, bottom: 0 });
   }, [advanced]);
   useEffect(() => {
-    if (!focusedIssue) return;
+    if (!focusedIssue || (!advanced && !reviewOpen)) return;
     const target = focusedTarget ?? reviewTarget(focusedIssue);
     if (!target) return;
     // Keep the board around a small connector visible, so the marker has useful context.
@@ -1927,12 +2001,23 @@ export function EnclosureDesigner({
               className="fd-enclosure-review-toggle"
               data-blocked={report?.status === "blocked"}
               aria-expanded={reviewOpen}
+              aria-label={
+                reviewCount
+                  ? `Review updates: ${reviewCount} ${reviewCount === 1 ? "problem" : "problems"}`
+                  : "Review updates"
+              }
               onClick={() => {
-                setReviewOpen(!reviewOpen);
+                if (reviewOpen) closeReview();
+                else setReviewOpen(true);
                 setExportOpen(false);
               }}
             >
               <span aria-hidden="true">⚠</span> Review updates
+              {!!reviewCount && (
+                <b className="fd-enclosure-review-count" aria-hidden="true">
+                  {reviewCount}
+                </b>
+              )}
             </button>
           ) : null}
           {exportOpen && (
@@ -1990,10 +2075,11 @@ export function EnclosureDesigner({
             <aside className="fd-enclosure-review" aria-label="Review updates">
               <header>
                 <h2>Review updates</h2>
-                <button aria-label="Close review updates" onClick={() => setReviewOpen(false)}>
+                <button aria-label="Close review updates" onClick={closeReview}>
                   ×
                 </button>
               </header>
+
               {fitError && (
                 <FitProblem title="Fit check could not finish" blocked>
                   <p role="alert">{fitError}</p>
@@ -2005,6 +2091,32 @@ export function EnclosureDesigner({
                   readiness={exportReadiness}
                   onNavigate={navigateIssue}
                   onShowIssue={showIssue}
+                  onClearIssue={clearIssue}
+                  partPicker={
+                    reviewItems.length > 1 ? (
+                      <label className="fd-enclosure-review-part">
+                        Part
+                        <select
+                          aria-label="Part to review"
+                          value={reviewItemIndex}
+                          onChange={(event) => {
+                            const item = reviewItems[Number(event.target.value)];
+                            if (item) showIssue(item.issue, item.target);
+                          }}
+                        >
+                          {reviewItems.map((item, index) => (
+                            <option key={item.id} value={index}>
+                              {item.target.reference ??
+                                item.target.regions[0]?.name ??
+                                (item.target.boardPath
+                                  ? enclosureFileLabel(item.target.boardPath)
+                                  : `Part ${index + 1}`)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null
+                  }
                   canShowIssue={(issue) => !!reviewTarget(issue)}
                   focusedIssue={focusedIssue}
                 />
@@ -3416,6 +3528,7 @@ export function EnclosureDesigner({
                       readiness={exportReadiness}
                       onNavigate={navigateIssue}
                       onShowIssue={showIssue}
+                      onClearIssue={clearIssue}
                       canShowIssue={(issue) => !!reviewTarget(issue)}
                       focusedIssue={focusedIssue}
                     />

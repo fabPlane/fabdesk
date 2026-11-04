@@ -247,6 +247,35 @@
 .fd-enclosure-review-toggle > span {
   margin-right: 5px;
 }
+.fd-enclosure-review-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  margin-left: 8px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.fd-enclosure-review-part {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  color: var(--fd-muted);
+  font-size: 12px;
+}
+.fd-enclosure-review-part select {
+  width: 100%;
+  padding: 8px 10px;
+  color: var(--fd-fg);
+  background: var(--fd-bg);
+  border: 1px solid var(--fd-border);
+  border-radius: 8px;
+}
 .fd-enclosure-card .fd-enclosure-menu-trigger {
   border: 0;
   padding: 4px;
