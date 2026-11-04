@@ -42,7 +42,7 @@ import {
   nativeEnclosureClearanceIssues,
 } from "@fabdesk/client-core";
 import { MechanicalScene, type SceneModel, type BoardGeometry } from "./MechanicalScene";
-import { EnclosureFitReview } from "./EnclosureFitReview";
+import { EnclosureFitReview, FitProblem } from "./EnclosureFitReview";
 import { MechanicalIcon } from "./MechanicalIcon";
 import { MechanicalViewCube } from "./MechanicalViewCube";
 import { EnclosureConnections } from "./EnclosureConnections";
@@ -1814,8 +1814,7 @@ export function EnclosureDesigner({
               }}
             >
               <span aria-hidden="true">⚠</span>{" "}
-              {report?.status === "blocked" ? "Check fit" : "Review updates"}
-              {report?.issues.length ? ` · ${report.issues.length}` : ""}
+              {report?.status === "blocked" ? "Check fit" : "Review fit"}
             </button>
           ) : null}
           {exportOpen && (
@@ -1877,7 +1876,11 @@ export function EnclosureDesigner({
                   ×
                 </button>
               </header>
-              {fitError && <p role="alert">{fitError}</p>}
+              {fitError && (
+                <FitProblem title="Fit check could not finish" blocked>
+                  <p role="alert">{fitError}</p>
+                </FitProblem>
+              )}
               {report && (
                 <EnclosureFitReview
                   report={report}
@@ -1887,10 +1890,6 @@ export function EnclosureDesigner({
                   focusedIssue={focusedIssue}
                 />
               )}
-              <details>
-                <summary>3D model details</summary>
-                <PcbModelStatus {...pcbModels} />
-              </details>
             </aside>
           )}
           {preview && (
@@ -3280,45 +3279,59 @@ export function EnclosureDesigner({
               )}
               {step === "Review" && (
                 <>
-                  <h3>Your case preview</h3>
                   {report?.outsideSize && (
-                    <p>
-                      <strong>
-                        {Number(report.outsideSize.width.toFixed(2))} ×{" "}
-                        {Number(report.outsideSize.depth.toFixed(2))} ×{" "}
-                        {Number(report.outsideSize.height.toFixed(2))} mm outside
-                      </strong>
-                      <br />
-                      <small>Includes walls, lid and screw mounts</small>
+                    <p className="fd-case-hint">
+                      Outside: {Number(report.outsideSize.width.toFixed(2))} ×{" "}
+                      {Number(report.outsideSize.depth.toFixed(2))} ×{" "}
+                      {Number(report.outsideSize.height.toFixed(2))} mm
                     </p>
                   )}
-                  <p>
-                    {design.boards.length} boards · {design.space.width} × {design.space.depth} ×{" "}
-                    {design.space.height} mm inside
-                  </p>
-                  <div className="fd-case-preview-tools">
-                    <button aria-pressed={transparent} onClick={() => setTransparent(!transparent)}>
-                      See inside
-                    </button>
-                    <button onClick={() => scene.current?.fit()}>Fit view</button>
-                  </div>
-                  {design.mode === "generated" &&
-                    report?.issues.some(
-                      (i) =>
-                        i.severity === "error" &&
-                        ["native-clearance", "outside-space", "board-collision"].includes(i.code),
-                    ) && (
-                      <button
-                        onClick={() => {
-                          setLayoutChoice("assembly");
-                          void run("Finding more room…", () => makePreview("assembly"));
-                        }}
-                      >
-                        Try a roomier layout
-                      </button>
-                    )}
+                  {fitError && (
+                    <FitProblem title="Fit check could not finish" blocked>
+                      <p role="alert">{fitError}</p>
+                    </FitProblem>
+                  )}
+                  {report && (
+                    <EnclosureFitReview
+                      report={report}
+                      readiness={exportReadiness}
+                      onNavigate={navigateIssue}
+                      onShowIssue={showIssue}
+                      focusedIssue={focusedIssue}
+                    />
+                  )}
+                  {!preview && (
+                    <p className="fd-case-hint">
+                      Make a preview to see your case and check the fit.
+                    </p>
+                  )}
+                  {design.mode === "imported" && !capabilities.cad && connectionCard("cad")}
                   <details className="fd-case-recheck">
-                    <summary>Run checks again</summary>
+                    <summary>Preview options</summary>
+                    <div className="fd-case-preview-tools">
+                      <button
+                        aria-pressed={transparent}
+                        onClick={() => setTransparent(!transparent)}
+                      >
+                        See inside
+                      </button>
+                      <button onClick={() => scene.current?.fit()}>Fit view</button>
+                    </div>
+                    {design.mode === "generated" &&
+                      report?.issues.some(
+                        (i) =>
+                          i.severity === "error" &&
+                          ["native-clearance", "outside-space", "board-collision"].includes(i.code),
+                      ) && (
+                        <button
+                          onClick={() => {
+                            setLayoutChoice("assembly");
+                            void run("Finding more room…", () => makePreview("assembly"));
+                          }}
+                        >
+                          Try a roomier layout
+                        </button>
+                      )}
                     <button
                       onClick={() =>
                         void run("Checking clearances…", async () => {
@@ -3341,51 +3354,31 @@ export function EnclosureDesigner({
                         })
                       }
                     >
-                      Check fit
+                      Check fit again
                     </button>
                     <p className="fd-case-fit-state" role="status">
                       {preview && !preview.verificationPending
                         ? "Fit checked with preview"
                         : fitState}
                     </p>
+                    {preview && (
+                      <button
+                        onClick={() => {
+                          setPreview(null);
+                          setModelSources([]);
+                          setArchive(null);
+                          setNotice("");
+                        }}
+                      >
+                        Discard preview
+                      </button>
+                    )}
                   </details>
-                  {fitError && (
-                    <p role="alert" className="fd-case-message is-error">
-                      {fitError}
-                    </p>
-                  )}
-                  {report && (
-                    <EnclosureFitReview
-                      report={report}
-                      readiness={exportReadiness}
-                      onNavigate={navigateIssue}
-                      onShowIssue={showIssue}
-                      focusedIssue={focusedIssue}
-                    />
-                  )}
-                  {!preview && (
-                    <p className="fd-case-hint">
-                      Make a preview to see your case and check the fit.
-                    </p>
-                  )}
-                  {design.mode === "imported" && !capabilities.cad && connectionCard("cad")}
-                  {preview && (
-                    <button
-                      onClick={() => {
-                        setPreview(null);
-                        setModelSources([]);
-                        setArchive(null);
-                        setNotice("");
-                      }}
-                    >
-                      Discard preview
-                    </button>
-                  )}
                 </>
               )}
             </fieldset>
           )}
-          {!!design?.boards.length && (
+          {step !== "Review" && !!design?.boards.length && (
             <details className="fd-case-model-disclosure" data-enclosure-control="models">
               <summary>
                 {pcbModels.loading

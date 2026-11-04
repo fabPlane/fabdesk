@@ -1,3 +1,4 @@
+import { useEffect, useId, useState, type ReactNode } from "react";
 import type { MechanicalFitIssue, MechanicalFitReport } from "@fabdesk/protocol";
 import {
   enclosureFileLabel,
@@ -283,7 +284,48 @@ const guidance: Record<string, { title: string; destination: Destination; action
   },
 };
 
-/** Presentation only: preserve the complete fit findings under Technical details. */
+/** Keep the first view to a problem name and one action; details remain available on demand. */
+export function FitProblem({
+  title,
+  blocked = false,
+  focused = false,
+  children,
+}: {
+  title: string;
+  blocked?: boolean;
+  focused?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(focused);
+  const contentId = useId();
+  useEffect(() => {
+    if (focused) setOpen(true);
+  }, [focused]);
+  return (
+    <article
+      className={`fd-fit-problem${blocked ? " is-blocker" : ""}${focused ? " is-focused" : ""}`}
+      aria-label={blocked ? `${title} — required fix` : title}
+    >
+      <h3>{title}</h3>
+      <button
+        type="button"
+        className="fd-fit-solution-toggle"
+        aria-expanded={open}
+        aria-controls={contentId}
+        aria-label={`${open ? "Hide" : "Show"} solution: ${title}`}
+        onClick={() => setOpen(!open)}
+      >
+        {open ? "Hide solution" : "Show solution"}
+      </button>
+      <div className="fd-fit-solution" id={contentId} hidden={!open}>
+        {blocked && <p className="fd-fit-required">Fix this before exporting.</p>}
+        {children}
+      </div>
+    </article>
+  );
+}
+
+/** Presentation only. Each original finding and its fix/3D action stays with its problem. */
 export function EnclosureFitReview({
   report,
   onNavigate,
@@ -299,197 +341,119 @@ export function EnclosureFitReview({
 }) {
   if (report.issues.some((issue) => issue.code === "verification-pending"))
     return (
-      <section className="fd-fit-review" aria-label="Fit review summary">
-        <div className="fd-fit-overview fd-export-readiness" role="status">
-          <span className="fd-fit-status-icon">
-            <Icon name="search" aria-hidden="true" />
-          </span>
-          <div>
-            <strong>Case shape is ready</strong>
-            <p>
-              Model and fit checks must finish before export. You can rotate and inspect the case
-              now.
-            </p>
-          </div>
-        </div>
+      <section className="fd-fit-review" aria-label="Fit review">
+        <p className="fd-fit-pending" role="status">
+          Checking fit… Export is available when checks finish.
+        </p>
       </section>
     );
-  const blockers = report.issues.filter((i) => i.severity === "error");
-  const groups = enclosureReviewGroups(report.issues);
-  const tasks = groups.filter((group) => group.id !== "method");
-  const blocked = report.status === "blocked" || blockers.length > 0;
-  const imported = report.issues.some((i) => i.code === "import-coverage");
-  const shellChecked = report.issues.some((i) => i.code === "shell-coverage");
-  function card(issue: MechanicalFitIssue, index: number) {
-    const info = guidance[issue.code];
-    const path = fitIssueBoardPath(issue.message, Object.keys(report.boardRevisions));
-    const detail =
-      path && issue.message.startsWith(`${path}: `)
-        ? issue.message.slice(path.length + 2)
-        : issue.message;
-    const description = (issue.severity !== "error" && enclosureIssueSummary[issue.code]) || detail;
-    return (
-      <article
-        className={`fd-fit-card ${issue.severity === "error" ? "is-blocker" : "is-review"}${focusedIssue === issue ? " is-focused" : ""}`}
-        key={`${issue.code}-${index}`}
-      >
-        <div className="fd-fit-card-heading">
-          <Icon name={issue.severity === "error" ? "warning" : "search"} aria-hidden="true" />
-          <h4>
-            {info?.title ??
-              (issue.severity === "error" ? "Fit needs attention" : "Check this detail")}
-          </h4>
-        </div>
-        {path && (
-          <span className="fd-fit-source" title={path}>
-            <Icon name="pcb" aria-hidden="true" />
-            {path === "board.kicad_pcb" ? "Project PCB" : enclosureFileLabel(path)}
-          </span>
-        )}
-        <p>{description}</p>
-        {description !== detail && (
-          <details className="fd-fit-exact">
-            <summary>Exact finding</summary>
-            <p>{detail}</p>
-          </details>
-        )}
-        <div className="fd-fit-card-actions">
-          {!!issue.regions?.length && (
-            <button
-              type="button"
-              className="fd-fit-locate"
-              aria-pressed={focusedIssue === issue}
-              onClick={() => onShowIssue(issue)}
-            >
-              <Icon name="search" aria-hidden="true" />
-              Show in 3D
-            </button>
-          )}
-          {info && (
-            <button
-              type="button"
-              className="fd-fit-link"
-              onClick={() => {
-                onShowIssue(issue);
-                onNavigate(info.destination, issue.code, issue);
-              }}
-            >
-              {info.action}
-              <Icon name="chevronRight" aria-hidden="true" />
-            </button>
-          )}
-        </div>
-      </article>
-    );
+
+  const method = enclosureReviewGroups(report.issues).find((group) => group.id === "method");
+  const methodIssues = new Set(method?.issues ?? []);
+  const problems = new Map<string, MechanicalFitIssue[]>();
+  for (const issue of report.issues) {
+    if (methodIssues.has(issue)) continue;
+    const key = `${issue.severity}:${issue.code}`;
+    const group = problems.get(key) ?? [];
+    group.push(issue);
+    problems.set(key, group);
   }
+  const ordered = [...problems].sort(
+    ([, a], [, b]) => Number(b[0]!.severity === "error") - Number(a[0]!.severity === "error"),
+  );
   return (
-    <section className="fd-fit-review" aria-label="Fit review summary">
-      <div
-        className={`fd-fit-overview ${blocked ? "is-blocker" : "is-review"}${readiness ? " fd-export-readiness" : ""}`}
-        role="status"
+    <section className="fd-fit-review fd-fit-problems" aria-label="Fit review">
+      {report.status === "blocked" &&
+        !report.issues.some((issue) => issue.severity === "error") && (
+          <FitProblem title="Fit check needs attention" blocked>
+            <p>{readiness?.detail ?? "Run the fit check again before exporting."}</p>
+          </FitProblem>
+        )}
+      {ordered.map(([key, issues]) => {
+        const first = issues[0]!;
+        const info = guidance[first.code];
+        const title =
+          info?.title ?? first.code.replace(/[-_]/g, " ").replace(/^./, (c) => c.toUpperCase());
+        return (
+          <FitProblem
+            key={key}
+            title={title || "Fit needs review"}
+            blocked={first.severity === "error"}
+            focused={!!focusedIssue && issues.includes(focusedIssue)}
+          >
+            {enclosureIssueSummary[first.code] && <p>{enclosureIssueSummary[first.code]}</p>}
+            {issues.map((issue, index) => {
+              const path = fitIssueBoardPath(issue.message, Object.keys(report.boardRevisions));
+              return (
+                <div className="fd-fit-finding" key={index}>
+                  {path && (
+                    <strong className="fd-fit-board" title={path}>
+                      {path === "board.kicad_pcb" ? "Project PCB" : enclosureFileLabel(path)}
+                    </strong>
+                  )}
+                  {enclosureIssueSummary[first.code] ? (
+                    <details className="fd-fit-exact">
+                      <summary>Details</summary>
+                      <p>{issue.message}</p>
+                    </details>
+                  ) : (
+                    <p>{issue.message}</p>
+                  )}
+                  <div className="fd-fit-solution-actions">
+                    {info && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onShowIssue(issue);
+                          onNavigate(info.destination, issue.code, issue);
+                        }}
+                      >
+                        {info.action}
+                        <Icon name="chevronRight" aria-hidden="true" />
+                      </button>
+                    )}
+                    {!!issue.regions?.length && (
+                      <button
+                        type="button"
+                        aria-pressed={focusedIssue === issue}
+                        onClick={() => onShowIssue(issue)}
+                      >
+                        <Icon name="search" aria-hidden="true" />
+                        Show in 3D
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </FitProblem>
+        );
+      })}
+      <FitProblem
+        title="Physical fit needs checking"
+        focused={!!focusedIssue && methodIssues.has(focusedIssue)}
       >
-        <span className="fd-fit-status-icon">
-          <Icon name={blocked ? "warning" : "search"} aria-hidden="true" />
-        </span>
-        <div>
-          <strong>{readiness?.title ?? (blocked ? "Let’s fix the fit" : "Preview checked")}</strong>
-          <p>
-            {readiness?.detail ??
-              (blocked
-                ? "Fix the red items below before saving files."
-                : "Look around the case, then check the notes before making it.")}
-          </p>
-        </div>
-      </div>
-      <dl className="fd-fit-stats">
-        <div>
-          <dd>{report.checkedBoards}</dd>
-          <dt>{report.checkedBoards === 1 ? "Board checked" : "Boards checked"}</dt>
-        </div>
-        <div className={blocked ? "has-blockers" : ""}>
-          <dd>{blockers.length}</dd>
-          <dt>Must fix</dt>
-        </div>
-        <div>
-          <dd>{tasks.length}</dd>
-          <dt>Check types</dt>
-        </div>
-      </dl>
-      {blockers.length > 0 && (
-        <div className="fd-fit-group">
-          <h3>
-            Needs attention <span>Required</span>
-          </h3>
-          {blockers.map(card)}
-        </div>
-      )}
-      {tasks.length > 0 && (
-        <div className="fd-fit-tasks">
-          <h3>Before printing</h3>
-          <p>Open a check to see which boards need attention.</p>
-          {tasks.map((group) => (
-            <details className="fd-fit-group fd-case-review-notes" key={group.id}>
-              <summary>
-                <span className="fd-fit-task-label">
-                  <strong>{group.title}</strong>
-                  <small>
-                    {group.issues.length} {group.issues.length === 1 ? "finding" : "findings"}
-                  </small>
-                </span>
-              </summary>
-              <p>{group.detail}</p>
-              {group.issues.map(card)}
-            </details>
-          ))}
-        </div>
-      )}
-      <details className="fd-fit-print-note">
-        <summary>Try a test print first</summary>
-        <p>The preview cannot guarantee a perfect fit. Before making the final case:</p>
-        <ul className="fd-fit-simple-checks">
-          <li>
-            <strong>Does everything fit?</strong>
-            <span>Check the lid closes without pressing on parts or cables.</span>
-          </li>
-          <li>
-            <strong>Do the boards stay put?</strong>
-            <span>Check the screws or holders keep them in place.</span>
-          </li>
-          <li>
-            <strong>Can you plug things in?</strong>
-            <span>Try your actual plugs and cables.</span>
-          </li>
+        <p>
+          Try a test print before making the final case. The preview cannot guarantee a perfect fit.
+        </p>
+        <ul>
+          <li>Close the lid without pressing on parts or cables.</li>
+          <li>Check that screws or holders keep the boards in place.</li>
+          <li>Try your actual plugs and cables.</li>
         </ul>
         <p>Your printer may make openings slightly smaller or larger.</p>
-        {(imported || shellChecked) && (
-          <p>Also check the boards against the walls of your existing case.</p>
+        {!!method?.issues.length && (
+          <details className="fd-fit-check-limits">
+            <summary>What was checked</summary>
+            {report.geometry?.closed && (
+              <p>Case geometry is joined; this does not prove physical fit.</p>
+            )}
+            {method.issues.map((issue, index) => (
+              <p key={index}>{issue.message}</p>
+            ))}
+          </details>
         )}
-      </details>
-      <details className="fd-fit-technical">
-        <summary>Full check report · {report.issues.length} findings</summary>
-        <p>Original measurements and check limits. Nothing is removed from this report.</p>
-        {report.geometry?.closed && (
-          <p>
-            {report.geometry.lidParts
-              ? "Case and lid are each one joined piece."
-              : "The case is one joined piece."}{" "}
-            A test print is still needed to check the fit.
-          </p>
-        )}
-        {report.issues.map((issue, n) => {
-          const path = fitIssueBoardPath(issue.message, Object.keys(report.boardRevisions));
-          return (
-            <details className="fd-fit-report-entry" key={n}>
-              <summary>
-                {issue.severity === "error" ? "Must fix: " : ""}
-                {guidance[issue.code]?.title ?? "Check details"}
-                {path ? ` — ${enclosureFileLabel(path)}` : ""}
-              </summary>
-              <p>{issue.message}</p>
-            </details>
-          );
-        })}
-      </details>
+      </FitProblem>
     </section>
   );
 }

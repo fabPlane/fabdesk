@@ -2672,3 +2672,115 @@
   margin-top: 8px;
   color: var(--fd-muted);
 }
+
+/* One problem and one action per row, shared by Check fit and Preview. */
+.fd-fit-problems {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+}
+.fd-fit-problem {
+  padding: 13px 14px;
+  border: 1px solid var(--fd-border);
+  border-radius: 10px;
+  background: var(--fd-bg);
+  min-width: 0;
+}
+.fd-fit-problem.is-blocker {
+  border-left: 3px solid var(--fd-danger);
+}
+.fd-fit-problem.is-focused {
+  outline: 1px solid var(--fd-accent);
+  outline-offset: 2px;
+}
+.fd-fit-problem > h3 {
+  margin: 0;
+  color: var(--fd-fg);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.fd-fit-problem.is-blocker > h3 {
+  color: var(--fd-danger);
+}
+.fd-fit-problem > button.fd-fit-solution-toggle {
+  display: block;
+  min-height: 32px;
+  padding: 6px 0;
+  margin: 4px 0 -3px;
+  border: 0;
+  background: transparent;
+  color: var(--fd-accent);
+  font-size: 12px;
+  text-align: left;
+}
+.fd-fit-solution-toggle:hover {
+  text-decoration: underline;
+}
+.fd-fit-solution-toggle:focus-visible {
+  outline: 2px solid var(--fd-accent);
+  outline-offset: 3px;
+}
+.fd-fit-solution[hidden] {
+  display: none;
+}
+.fd-fit-solution {
+  padding-top: 12px;
+  margin-top: 10px;
+  border-top: 1px solid var(--fd-border);
+  color: var(--fd-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.fd-fit-solution p {
+  margin: 0 0 10px;
+}
+.fd-fit-solution .fd-fit-required {
+  color: var(--fd-danger);
+}
+.fd-fit-solution ul {
+  padding-left: 18px;
+  margin: 0 0 12px;
+}
+.fd-fit-finding + .fd-fit-finding {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--fd-border);
+}
+.fd-fit-board {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--fd-fg);
+  font-weight: 500;
+}
+.fd-fit-solution-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fd-fit-solution-actions > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 7px 9px;
+  color: var(--fd-fg);
+  background: var(--fd-panel);
+  border: 1px solid var(--fd-border);
+  border-radius: 7px;
+  white-space: normal;
+  text-align: left;
+  font-size: 11px;
+}
+.fd-fit-solution-actions svg {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+}
+.fd-fit-pending {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-muted);
+}

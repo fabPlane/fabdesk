@@ -1120,7 +1120,7 @@ export function MechanicalWorkspace({
             onClick={openReview}
           >
             <Icon name={reviewCount ? "warning" : "checklist"} />
-            {reviewCount ? `Review updates · ${reviewCount}` : "Review fit"}
+            Review fit
           </button>
         </div>
       </div>
