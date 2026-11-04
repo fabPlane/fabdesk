@@ -1706,7 +1706,7 @@ export function EnclosureDesigner({
             reviewProblems: report?.issues.slice(0, 8),
             error: error || fitError || null,
             instruction:
-              "This is mechanical enclosure work. Board membership is the explicitly selected paths, not every PCB found in the repository. An unapplied preview is not a saved enclosure. Missing component models and unverified connector/cable dimensions limit fit evidence. Inspect the named source and explain next actions before editing; never claim electrical compatibility or manufacturer approval.",
+              "This is mechanical enclosure work. The enclosure contains only the explicitly selected source paths; this selection does not establish project assembly membership, installed positions or electrical connections. An unapplied preview is not a saved enclosure. Missing component models and unverified connector/cable dimensions limit fit evidence. Inspect the named source and explain next actions before editing; never claim electrical compatibility or manufacturer approval.",
           }),
         }
       : null,
