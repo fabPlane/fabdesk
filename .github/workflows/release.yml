@@ -64,7 +64,7 @@ jobs:
           repository: fabPlane/fab_pcb
           ref: ${{ steps.fab-pcb.outputs.commit }}
           path: vendor/fab_pcb
-          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          token: ${{ github.token }}
           persist-credentials: false
 
       - uses: oven-sh/setup-bun@v2
@@ -182,7 +182,7 @@ jobs:
           repository: fabPlane/fab_pcb
           ref: ${{ steps.fab-pcb.outputs.commit }}
           path: vendor/fab_pcb
-          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          token: ${{ github.token }}
           persist-credentials: false
 
       - uses: oven-sh/setup-bun@v2
@@ -274,12 +274,12 @@ jobs:
       - name: Build renderer/main
         run: bun run --cwd apps/desktop build
 
-      # Backend artifacts are native-smoked in the private fab_pcb repository. Pin the release to
+      # Backend artifacts are native-smoked in the public fab_pcb repository. Pin the release to
       # the exact submodule commit so the desktop cannot silently pick a different API contract.
       - name: Stage FabPlane PCB backend
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           commit="$(git -C vendor/fab_pcb rev-parse HEAD)"
@@ -290,11 +290,11 @@ jobs:
           asset="fp-pcb-backend-${target}.tar.gz"
           mkdir -p "dist/pcb/$target" "$RUNNER_TEMP/fp-pcb"
           if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error::Missing FAB_PCB_RELEASE_TOKEN (Contents read on fabPlane/fab_pcb)"
+            echo "::error::Missing workflow token for public fabPlane/fab_pcb release reads"
             exit 1
           fi
           if ! gh release download "$tag" --repo fabPlane/fab_pcb --pattern "$asset" --dir "$RUNNER_TEMP/fp-pcb"; then
-            echo "::error title=missing FabPCB backend release::fabPlane/fab_pcb has no GitHub Release $tag for vendor/fab_pcb pin $commit. Publish that tag with fp-pcb-backend-<target>.tar.gz for linux-x64, darwin-x64, darwin-arm64, and windows-x64, or pin vendor/fab_pcb to a commit that already has a matching backend-<sha10> release. Download uses secret FAB_PCB_RELEASE_TOKEN."
+            echo "::error title=missing FabPCB backend release::fabPlane/fab_pcb has no GitHub Release $tag for vendor/fab_pcb pin $commit. Publish that tag with fp-pcb-backend-<target>.tar.gz for linux-x64, darwin-x64, darwin-arm64, and windows-x64, or pin vendor/fab_pcb to a commit that already has a matching backend-<sha10> release. Download uses the workflow token for this public release."
             exit 1
           fi
           archive="$RUNNER_TEMP/fp-pcb/$asset"
@@ -577,7 +577,7 @@ jobs:
           repository: fabPlane/fab_pcb
           ref: ${{ steps.fab-pcb.outputs.commit }}
           path: vendor/fab_pcb
-          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          token: ${{ github.token }}
           persist-credentials: false
 
       - name: Install (root)

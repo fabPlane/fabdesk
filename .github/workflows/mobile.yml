@@ -74,7 +74,7 @@ jobs:
           repository: fabPlane/fab_pcb
           ref: ${{ steps.fab-pcb.outputs.commit }}
           path: source/vendor/fab_pcb
-          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          token: ${{ github.token }}
           persist-credentials: false
 
       - name: Install (root)
@@ -211,7 +211,7 @@ jobs:
           repository: fabPlane/fab_pcb
           ref: ${{ steps.fab-pcb.outputs.commit }}
           path: vendor/fab_pcb
-          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          token: ${{ github.token }}
           persist-credentials: false
 
       - name: Install (root and apps/mobile)
