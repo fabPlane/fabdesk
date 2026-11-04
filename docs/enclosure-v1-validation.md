@@ -2,17 +2,27 @@
 
 PR #398 adds a guarded prototype enclosure workflow. Software checks and slicing are evidence for review; they do not certify a manufactured assembly.
 
-## Current status — 3 November 2026
+## Current status — 4 November 2026
 
 | Requirement | Current evidence | Remaining boundary |
 | --- | --- | --- |
-| Few-click setup and clear controls | Boards → Case → Preview gates; Create case performs arrangement, sizing and preview; dimensions and move/rotate controls remain accessible. Navigation tests and live warning-link checks pass. | Advanced hardware and measured plug settings remain optional manual inputs. |
+| Few-click setup and clear controls | Compact Around/Clearance/Wall generator, contextual board tools, and floating Cancel/Apply controls. Placement, sizing and checks run behind Preview; detailed settings and review open on demand. | Advanced hardware and measured plug settings remain optional manual inputs. |
 | Automatic sizing, spacing and fit | 256 affected tests pass, including ports, board screws, holders, fixed obstacles, printer limits and exported geometry. Real VAIO previews complete with no detected blockers. | Search and geometric checks are bounded; absent physical dimensions cannot be inferred accurately. |
 | Reliable native board geometry | Isolated native export directories pass 21 real-board exports with unchanged measured geometry. Two original-project previews check 199 closed bodies without unavailable checks. | Missing component files, including the exact J1 Micro-USB model, remain explicit review items. |
 | Printable, coordinated outputs | Latest seven-board export: 29 archive hashes verified, matching design/report, closed case/lid meshes, independent STEP import and two warning-free slicer runs. | Actual printer/material strength, retention and assembled cable fit have not been physically verified. |
 | Branch and PR delivery | Feature branch targets PR #398 with a concise before/after comparison and three selected screenshots. | PR remains draft. CI, mobile and board-regression verification fail authenticating checkout of private `fabPlane/fab_pcb`, before feature tests run. |
 
 The latest live summary comes first; earlier evidence follows chronologically. Newer entries supersede older measurements and resolved limitations; earlier test counts describe their respective snapshots, not the current full suite.
+
+## Compact enclosure UI — 4 November 2026
+
+- Replaced the default full-height wizard with a compact generator matching the supplied reference layout in the app theme. Around selects one board or opens a compact multi-board picker; clearance and wall retain automatic sizing. More options exposes the detailed controls. A separate Add enclosure card offers Import and Generate, while selected imports keep numeric transforms collapsed.
+- Selection reveals a small board toolbar with dimensions, Move and Rotate. View controls stay at the bottom; fit findings open from one review badge. Checks and export guards still run; blocking findings prevent Apply.
+- Preview now uses the backend's unsaved design preview. Cancel restores the starting draft and Apply saves with the existing revision guard before building coordinated outputs. Recovery conflicts cannot be hidden, and local recovery warnings remain visible.
+- **46 targeted tests / 227 assertions pass** across client setup/workflow/readiness/history/recovery, backend CAD and UI review/navigation. UI typecheck and desktop production build pass. No source maps were generated in the app output.
+- Live seven-board QA: Preview left the saved design SHA-256 unchanged; Cancel restored the exact draft without changing that file. Apply completed and exposed Download. The current QA project's lift-off case is 150 × 210 × 19 mm, with 40 review findings. Compact multi-board selection, More options/back, review open/close and a 600-pixel panel layout passed. Physical fit and missing models remain unverified.
+
+Screenshots: [compact generator](screenshots/mechanical-workspace/76-compact-enclosure.png), [Add enclosure card](screenshots/mechanical-workspace/77-compact-add-card.png).
 
 ## Latest live seven-board check — 3 November 2026
 

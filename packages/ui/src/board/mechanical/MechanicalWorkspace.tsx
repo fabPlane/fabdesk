@@ -23,6 +23,7 @@ import { EnclosureDesigner } from "./EnclosureDesigner";
 import { detailedBoardSource, usePcbModels } from "./usePcbModels";
 import { PcbModelStatus } from "./PcbModelStatus";
 import "./mechanical.css";
+import "./mechanical-entry.css";
 
 type EnclosureResult = {
   exists?: boolean;
@@ -214,8 +215,13 @@ export function MechanicalWorkspace({
       /* Storage may be unavailable. */
     }
   }, [expanded]);
-  const rightPanel = (!!current && !preview) || showReview || showExport;
-  const leftPanel = panel !== null && (!preview || panel === "generate");
+  const compactImport = current?.kind === "import" && !preview;
+  const addEntry = panel === "add" && !preview && !current && !showReview && !showExport;
+  const rightPanel = (!!current && !preview && !compactImport) || showReview || showExport;
+  const leftPanel =
+    !compactImport &&
+    (panel === "assembly" || panel === "generate") &&
+    (!preview || panel === "generate");
   function selectModel(id: string | null) {
     setSelected(id);
     if (id) {
@@ -622,6 +628,8 @@ export function MechanicalWorkspace({
       className={`fd-mechanical${expanded ? " is-expanded" : ""}${leftPanel ? " has-left-panel" : ""}${rightPanel ? " has-right-panel" : ""}${preview ? " has-preview" : ""}${explode > 0 && !preview ? " is-exploded" : ""}`}
       data-testid="mechanical-workspace"
       data-enclosure-design={panel === "design"}
+      data-add-entry={addEntry}
+      data-import-selected={compactImport}
       tabIndex={-1}
       onKeyDown={(e) => {
         if (
@@ -705,7 +713,7 @@ export function MechanicalWorkspace({
             </button>
           ))}
         </div>
-        <div className="fd-mechanical-actions">
+        <div className="fd-mechanical-actions" hidden={panel === "add" && !items.length}>
           <button
             className={`fd-mechanical-review${errors.length || view.alignment?.stale ? " has-warnings" : ""}`}
             aria-pressed={showReview}
@@ -740,7 +748,7 @@ export function MechanicalWorkspace({
           cadRuntime={cadRuntime}
         />
       )}
-      <div className="fd-mechanical-viewport-tools" hidden={panel === "design"}>
+      <div className="fd-mechanical-viewport-tools" hidden={panel === "design" || !sources.length}>
         <nav className="fd-mechanical-views" aria-label="Camera views">
           <svg
             className="fd-mechanical-cube"
@@ -787,47 +795,64 @@ export function MechanicalWorkspace({
           </div>
         )}
       </div>
-      {panel === "add" && !preview && (
-        <aside className="fd-mechanical-card fd-mechanical-add">
+      {addEntry && (
+        <aside
+          className="fd-mechanical-card fd-mechanical-add fd-mechanical-entry"
+          aria-label="Add enclosure"
+        >
           <div className="fd-mechanical-card-heading">
-            <h2>Add to your assembly</h2>
+            <h2>Add enclosure</h2>
             <button aria-label="Close panel" onClick={() => setPanel(null)}>
               <Icon name="close" />
             </button>
           </div>
           <button
-            className="fd-mechanical-choice"
+            className="fd-mechanical-entry-action"
             disabled={!editable}
             onClick={() => input.current?.click()}
           >
-            <MechanicalIcon name="cube" />
-            <div>
+            <span className="fd-mechanical-entry-icon">
+              <MechanicalIcon name="cube" />
+            </span>
+            <span className="fd-mechanical-entry-label">
               <strong>Import 3D model</strong>
-              <small>Bring in an existing case or part</small>
-            </div>
+              <small>Use your existing case or part</small>
+            </span>
             <Icon name="chevronRight" />
           </button>
           <button
-            className="fd-mechanical-choice"
+            className="fd-mechanical-entry-action"
             disabled={!!busy}
             onClick={() => setPanel("design")}
           >
-            <Icon name="plus" />
-            <div>
+            <span className="fd-mechanical-entry-icon">
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m10 3 2.5 6.5L19 12l-6.5 2.5L10 21l-2.5-6.5L1 12l6.5-2.5L10 3Z" />
+                <path d="m20 2 1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z" />
+              </svg>
+            </span>
+            <span className="fd-mechanical-entry-label">
               <strong>Generate enclosure</strong>
-              <small>Build a case around your PCB</small>
-            </div>
+              <small>Start from your boards</small>
+            </span>
             <Icon name="chevronRight" />
           </button>
           <footer>
-            Drop STL, OBJ or GLB onto the canvas.
-            <br />
-            STEP and native editing:{" "}
-            <button onClick={() => setAdvancedOpen(true)}>Advanced CAD</button>
+            <span>STL · OBJ · GLB</span>
+            <button onClick={() => setAdvancedOpen(true)}>STEP in Advanced CAD</button>
           </footer>
         </aside>
       )}
-      {panel === "assembly" && !preview && (
+      {panel === "assembly" && !preview && !compactImport && (
         <aside className="fd-mechanical-card fd-mechanical-left fd-mechanical-parts-panel">
           <div className="fd-mechanical-card-heading">
             <h2>Parts</h2>
@@ -1017,7 +1042,9 @@ export function MechanicalWorkspace({
         </aside>
       )}
       {current && !preview && (
-        <div className="fd-mechanical-selection fd-mechanical-card">
+        <div
+          className={`fd-mechanical-selection fd-mechanical-card${compactImport ? " fd-mechanical-import-toolbar" : ""}`}
+        >
           <div className="fd-mechanical-selection-tools">
             <div className="fd-mechanical-card-heading">
               <h2 title={current.name}>{current.name}</h2>
@@ -1062,8 +1089,8 @@ export function MechanicalWorkspace({
             </button>
           </div>
           {mode !== "measure" && (
-            <details open>
-              <summary>Transform</summary>
+            <details key={current.id} open={!compactImport}>
+              <summary>{compactImport ? "Position, rotation & scale" : "Transform"}</summary>
               <div className="fd-mechanical-transform">
                 {(
                   [
@@ -1207,15 +1234,25 @@ export function MechanicalWorkspace({
         </aside>
       )}
       {!sources.length && loaded && !error && !busy && (
-        <div className="fd-mechanical-empty">
+        <div className={`fd-mechanical-empty${addEntry ? " fd-mechanical-entry-empty" : ""}`}>
           <span>
             <MechanicalIcon name="cube" />
           </span>
-          <h2>Your mechanical workspace</h2>
-          <p>Import a model or open a project with a PCB to start assembling.</p>
-          <button className="fd-mechanical-primary" onClick={() => input.current?.click()}>
-            Import 3D model
-          </button>
+          {addEntry ? (
+            <p>
+              Drop a model
+              <br />
+              onto the canvas
+            </p>
+          ) : (
+            <>
+              <h2>Your mechanical workspace</h2>
+              <p>Import a model or open a project with a PCB to start assembling.</p>
+              <button className="fd-mechanical-primary" onClick={() => input.current?.click()}>
+                Import 3D model
+              </button>
+            </>
+          )}
         </div>
       )}
       {busy && (

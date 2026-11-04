@@ -43,6 +43,7 @@ import {
 import { MechanicalScene, type SceneModel, type BoardGeometry } from "./MechanicalScene";
 import { EnclosureFitReview } from "./EnclosureFitReview";
 import { MechanicalIcon } from "./MechanicalIcon";
+import "./enclosure-compact.css";
 import { detailedBoardSource, usePcbModels } from "./usePcbModels";
 import { NumberField } from "./EnclosureNumberField";
 import { EnclosureLayoutPanel, type LayoutChoice } from "./EnclosureLayoutPanel";
@@ -106,6 +107,19 @@ export function EnclosureDesigner({
   const restoredView = useRef<WorkspaceView | null>(null);
   const [layoutChoice, setLayoutChoice] = useState<EnclosureLayoutGoal | "keep">("compact");
   const [caseDetails, setCaseDetails] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [choosingBoards, setChoosingBoards] = useState(false);
+  const previewStart = useRef<{
+    design: MechanicalDesign;
+    layout: EnclosureLayoutGoal | "keep";
+    confirmed: string | null;
+  } | null>(null);
+  useEffect(() => {
+    previewStart.current = null;
+    setAdvanced(false);
+    setReviewOpen(false);
+  }, [projectId]);
   const [layoutDetails, setLayoutDetails] = useState(false);
   const [manualPlacement, setManualPlacement] = useState(false);
   const [customSize, setCustomSize] = useState(false);
@@ -173,6 +187,9 @@ export function EnclosureDesigner({
     [preview, setPreview] = useState<Result | null>(null),
     [baseReport, setReport] = useState<MechanicalFitReport | null>(null);
   const [pendingRecovery, setPendingRecovery] = useState<EnclosureRecovery | null>(null);
+  useEffect(() => {
+    if (pendingRecovery) setAdvanced(true);
+  }, [pendingRecovery]);
   const [recoveryWarning, setRecoveryWarning] = useState("");
   const recoveryStore = useRef<EnclosureRecoveryStore | null>(null);
   const [archive, setArchive] = useState<string | null>(null),
@@ -300,7 +317,7 @@ export function EnclosureDesigner({
   const [fitState, setFitState] = useState(""),
     [fitError, setFitError] = useState("");
   const [showRisks, setShowRisks] = useState(true),
-    [showSpace, setShowSpace] = useState(true);
+    [showSpace, setShowSpace] = useState(false);
   const [focusedIssue, setFocusedIssue] = useState<MechanicalFitIssue | null>(null);
   const [selectedBoard, setSelectedBoard] = useState<string | null>(null);
   const viewState = useRef({ step, selected: selectedBoard, confirmedSelection });
@@ -843,8 +860,6 @@ export function EnclosureDesigner({
   async function showPreview(next = design) {
     if (!next) return;
     const design = next;
-    await save(design);
-    if (!mounted.current) return;
     // Display the joined shell while fresh native model checks continue.
     for (const action of design.mode === "generated" ? ["preview_shape", "preview"] : ["preview"]) {
       setBusy(action === "preview_shape" ? "Creating case shape…" : "Checking models & fit…");
@@ -897,9 +912,17 @@ export function EnclosureDesigner({
       setStep("Review");
     }
   }
-  async function makePreview(choice = layoutChoice) {
+  async function makePreview(choice = layoutChoice, confirmBoards = false) {
     if (!design) return;
-    if (!workflow.caseUnlocked) throw new Error(workflow.caseHint ?? "Complete Boards first.");
+    if (!workflow.caseUnlocked && !(confirmBoards && workflow.canContinue))
+      throw new Error(workflow.caseHint ?? "Choose boards first.");
+    previewStart.current ??= {
+      design: structuredClone(design),
+      layout: layoutChoice,
+      confirmed: confirmedSelection,
+    };
+    if (confirmBoards)
+      setConfirmedSelection(enclosureSelectionKey(design.boards.map((b) => b.path)));
     if (design.mode === "generated" && choice !== "keep") {
       await autoArrange(false, true, choice);
       return;
@@ -931,6 +954,12 @@ export function EnclosureDesigner({
     goal: EnclosureLayoutGoal = "compact",
   ) {
     if (!design) return;
+    if (previewAfter)
+      previewStart.current ??= {
+        design: structuredClone(design),
+        layout: layoutChoice,
+        confirmed: confirmedSelection,
+      };
     const input = resize ? resizeEnclosureToFit(design) : design;
     if (design.mode === "imported" && !design.confirmed)
       throw new Error("Confirm the inside dimensions of your existing case before auto arranging.");
@@ -989,6 +1018,8 @@ export function EnclosureDesigner({
     code: string,
     issue?: MechanicalFitIssue,
   ) {
+    setReviewOpen(false);
+    setAdvanced(true);
     const path = issue && fitIssueBoardPath(issue.message, design?.boards.map((b) => b.path) ?? []);
     const route = enclosureIssueRoute(code);
     if (!route) {
@@ -1028,9 +1059,12 @@ export function EnclosureDesigner({
   }
   async function build() {
     if (!preview?.revision) return;
+    await save(design);
+    if (!mounted.current) return;
     const r = await call("build", { design, expectedRevision: preview.revision });
     if (!mounted.current) return;
     setArchive(r.archive ?? null);
+    previewStart.current = null;
     setNotice("Your case and board files are ready to download.");
   }
   async function applyEdit() {
@@ -1149,7 +1183,8 @@ export function EnclosureDesigner({
       : null;
   return (
     <section
-      className="fd-case-workflow"
+      className="fd-case-workflow fd-case-compact"
+      data-advanced={advanced}
       hidden={!active}
       data-controls-expanded={controlsExpanded}
       aria-label="Enclosure designer"
@@ -1196,13 +1231,336 @@ export function EnclosureDesigner({
       }}
     >
       <div className="fd-case-canvas" ref={host} />
-      <aside className="fd-case-panel" data-step-attention={stepNeedsAttention}>
+      {!advanced && (
+        <aside className="fd-enclosure-card" aria-label="Generate enclosure">
+          <header>
+            <h2>{design?.mode === "imported" ? "Fit existing case" : "Generate enclosure"}</h2>
+          </header>
+          {design ? (
+            <>
+              <fieldset disabled={actionsDisabled}>
+                <label className="fd-enclosure-around">
+                  Around
+                  <select
+                    aria-label="Boards for enclosure"
+                    value={design.boards.length === 1 ? design.boards[0]!.path : "selected"}
+                    onChange={(e) => {
+                      if (e.target.value === "choose") {
+                        setChoosingBoards(true);
+                        return;
+                      }
+                      edit(
+                        { ...selectEnclosureBoards(design, [e.target.value]), confirmed: false },
+                        "Choose board",
+                      );
+                      setLayoutChoice("compact");
+                    }}
+                  >
+                    {design.boards.length !== 1 && (
+                      <option value="selected" disabled>
+                        {design.boards.length
+                          ? `${design.boards.length} selected boards`
+                          : "Choose boards…"}
+                      </option>
+                    )}
+                    {enclosureSourceBoards(
+                      files,
+                      design.boards.map((b) => b.path),
+                    ).map((path) => (
+                      <option key={path} value={path}>
+                        {enclosureFileLabel(path)}
+                      </option>
+                    ))}
+                    <option value="choose">Choose multiple boards…</option>
+                  </select>
+                </label>
+                {(["clearance", "wall"] as const).map((key) => (
+                  <NumberField
+                    key={key}
+                    label={key === "wall" ? "Wall" : "Clearance"}
+                    value={design.space[key]}
+                    min={key === "wall" ? 0.5 : 0}
+                    max={20}
+                    onChange={(value) => {
+                      edit(
+                        { ...design, confirmed: false, space: { ...design.space, [key]: value } },
+                        "Case clearance and wall",
+                      );
+                      if (design.mode === "generated") setLayoutChoice("compact");
+                    }}
+                  />
+                ))}
+              </fieldset>
+              <button
+                className="fd-enclosure-more"
+                disabled={actionsDisabled}
+                onClick={() => {
+                  if (workflow.canContinue)
+                    setConfirmedSelection(enclosureSelectionKey(design.boards.map((b) => b.path)));
+                  setStep(workflow.canContinue ? "Start" : "PCB");
+                  setAdvanced(true);
+                }}
+              >
+                <span aria-hidden="true">›</span> More options
+              </button>
+              {error && (
+                <p className="fd-enclosure-error" role="alert">
+                  {error}
+                </p>
+              )}
+              {recoveryWarning && (
+                <p className="fd-enclosure-error" role="status">
+                  {recoveryWarning}
+                </p>
+              )}
+              <button
+                className="fd-mechanical-primary fd-enclosure-preview"
+                disabled={actionsDisabled || pcbModels.loading || !workflow.canContinue}
+                onClick={() => {
+                  if (
+                    design.mode === "imported" &&
+                    (!design.confirmed || !design.source?.path || !capabilities.cad)
+                  ) {
+                    setConfirmedSelection(enclosureSelectionKey(design.boards.map((b) => b.path)));
+                    setStep("Start");
+                    setAdvanced(true);
+                    return;
+                  }
+                  previewStart.current ??= {
+                    design: structuredClone(design),
+                    layout: layoutChoice,
+                    confirmed: confirmedSelection,
+                  };
+                  setReviewOpen(false);
+                  void run("Preparing preview…", () => makePreview(layoutChoice, true));
+                }}
+              >
+                {busy
+                  ? "Creating preview…"
+                  : pcbModels.loading
+                    ? "Loading boards…"
+                    : preview
+                      ? "Update preview"
+                      : "Preview"}
+              </button>
+            </>
+          ) : (
+            <p role="status">Loading boards…</p>
+          )}
+        </aside>
+      )}
+      {!advanced && choosingBoards && design && (
+        <aside className="fd-enclosure-board-choice" aria-label="Choose enclosure boards">
+          <EnclosureBoardPicker
+            files={enclosureSourceBoards(
+              files,
+              design.boards.map((b) => b.path),
+            )}
+            selected={design.boards.map((b) => b.path)}
+            onChange={(paths) => {
+              edit({ ...selectEnclosureBoards(design, paths), confirmed: false }, "Choose boards");
+              if (design.mode === "generated") setLayoutChoice("compact");
+            }}
+          />
+          <button className="fd-mechanical-primary" onClick={() => setChoosingBoards(false)}>
+            Done
+          </button>
+        </aside>
+      )}
+      {!advanced && currentPlacement && currentFeatures && (
+        <div className="fd-enclosure-selection" aria-label="Selected board">
+          <div>
+            <strong title={currentPlacement.path}>
+              {enclosureFileLabel(currentPlacement.path)}
+            </strong>
+            <small>
+              {Number(currentFeatures.outline.widthMm.toFixed(1))} ×{" "}
+              {Number(currentFeatures.outline.heightMm.toFixed(1))} × {currentFeatures.thicknessMm}{" "}
+              mm
+            </small>
+          </div>
+          {(
+            [
+              ["orbit", "Camera"],
+              ["translate", "Move"],
+              ["rotate", "Rotate"],
+            ] as const
+          ).map(([mode, label]) => (
+            <button
+              key={mode}
+              disabled={actionsDisabled || (mode !== "orbit" && !!currentPlacement.locked)}
+              aria-pressed={placementMode === mode}
+              onClick={() => setPlacementMode(mode)}
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            aria-label="Turn selected board 90 degrees"
+            title="Turn 90°"
+            disabled={actionsDisabled || !!currentPlacement.locked}
+            onClick={() =>
+              changePlacement(
+                editEnclosureBoardPose(
+                  currentPlacement,
+                  currentFeatures.outline,
+                  "rotation",
+                  (currentPlacement.rotation + 90) % 360,
+                ),
+              )
+            }
+          >
+            90°
+          </button>
+          <button aria-label="Clear board selection" onClick={() => selectBoard(null)}>
+            ×
+          </button>
+        </div>
+      )}
+      {!advanced && (
+        <>
+          <div className="fd-enclosure-viewbar" aria-label="View controls">
+            <button onClick={() => scene.current?.fit()}>
+              <MechanicalIcon name="fit" /> Fit
+            </button>
+            <button aria-label="Zoom out" onClick={() => scene.current?.zoom(1.2)}>
+              −
+            </button>
+            <button aria-label="Zoom in" onClick={() => scene.current?.zoom(1 / 1.2)}>
+              +
+            </button>
+            <button onClick={() => scene.current?.view("top")}>Top</button>
+            <button onClick={() => scene.current?.view("iso")}>3D</button>
+            {preview && (
+              <button
+                aria-pressed={transparent}
+                onClick={() => setTransparent(!transparent)}
+                title="See inside"
+              >
+                <MechanicalIcon name="eye" />
+              </button>
+            )}
+            <button
+              aria-label="Undo enclosure edit"
+              disabled={actionsDisabled || !history.current.undoLabel}
+              onClick={() => restoreHistory()}
+            >
+              <MechanicalIcon name="undo" />
+            </button>
+          </div>
+          {report?.issues.length || fitError || pcbModels.error ? (
+            <button
+              className="fd-enclosure-review-toggle"
+              data-blocked={report?.status === "blocked"}
+              aria-expanded={reviewOpen}
+              onClick={() => setReviewOpen(!reviewOpen)}
+            >
+              △ {report?.status === "blocked" ? "Check fit" : "Review"}
+              {report?.issues.length ? ` · ${report.issues.length}` : ""}
+            </button>
+          ) : null}
+          {reviewOpen && (
+            <aside className="fd-enclosure-review" aria-label="Fit review">
+              <header>
+                <h2>Review fit</h2>
+                <button aria-label="Close fit review" onClick={() => setReviewOpen(false)}>
+                  ×
+                </button>
+              </header>
+              {fitError && <p role="alert">{fitError}</p>}
+              {report && (
+                <EnclosureFitReview
+                  report={report}
+                  readiness={exportReadiness}
+                  onNavigate={navigateIssue}
+                  onShowIssue={showIssue}
+                  focusedIssue={focusedIssue}
+                />
+              )}
+              <details>
+                <summary>3D model details</summary>
+                <PcbModelStatus {...pcbModels} />
+              </details>
+            </aside>
+          )}
+          {preview && (
+            <div className="fd-enclosure-apply" aria-label="Preview actions">
+              <span role="status">
+                {busy
+                  ? "Checking…"
+                  : archive
+                    ? "Applied"
+                    : report?.status === "blocked"
+                      ? "Fit needs attention"
+                      : "Preview"}
+              </span>
+              {report?.outsideSize && (
+                <small>
+                  {Number(report.outsideSize.width.toFixed(1))} ×{" "}
+                  {Number(report.outsideSize.depth.toFixed(1))} ×{" "}
+                  {Number(report.outsideSize.height.toFixed(1))} mm
+                </small>
+              )}
+              {!archive && (
+                <button
+                  disabled={actionsDisabled}
+                  onClick={() =>
+                    void run("Restoring layout…", async () => {
+                      const previous = previewStart.current;
+                      if (previous) {
+                        edit(previous.design, "Cancel preview");
+                        applyDraft(previous.design);
+                        setLayoutChoice(previous.layout);
+                        setConfirmedSelection(previous.confirmed);
+                      } else {
+                        setPreview(null);
+                        setModelSources([]);
+                        setArchive(null);
+                      }
+                      previewStart.current = null;
+                      setReviewOpen(false);
+                      setStep("Start");
+                    })
+                  }
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                className="fd-mechanical-primary"
+                disabled={
+                  actionsDisabled || !exportReadiness.canExport || !!preview.verificationPending
+                }
+                onClick={() =>
+                  void run(archive ? "Preparing download…" : "Applying enclosure…", async () => {
+                    if (archive) await download(archive);
+                    else {
+                      await build();
+                      previewStart.current = null;
+                    }
+                  })
+                }
+              >
+                {archive ? "Download" : "Apply"}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+      <aside hidden={!advanced} className="fd-case-panel" data-step-attention={stepNeedsAttention}>
+        <button
+          className="fd-enclosure-back"
+          disabled={!!pendingRecovery}
+          onClick={() => setAdvanced(false)}
+        >
+          ‹ Back to enclosure
+        </button>
         <header>
           <div>
             <h2>Enclosure</h2>
             <p>Choose boards. Make a case. Check the fit.</p>
           </div>
-          {dirty ? (
+          {dirty && !preview ? (
             <button
               className="fd-case-save-draft"
               disabled={actionsDisabled}
@@ -1211,7 +1569,9 @@ export function EnclosureDesigner({
               Save draft
             </button>
           ) : (
-            <small role="status">{revision.current ? "Saved" : "New case"}</small>
+            <small role="status">
+              {preview ? "Preview" : revision.current ? "Saved" : "New case"}
+            </small>
           )}
         </header>
         <nav aria-label="Enclosure workflow">
@@ -2143,7 +2503,10 @@ export function EnclosureDesigner({
                         )}
                         <button
                           onClick={() =>
-                            edit({ ...design, openings: design.openings.filter((_, j) => j !== i) })
+                            edit({
+                              ...design,
+                              openings: design.openings.filter((_, j) => j !== i),
+                            })
                           }
                         >
                           Remove opening
@@ -2776,109 +3139,113 @@ export function EnclosureDesigner({
           </div>
         </footer>
       </aside>
-      <div className="fd-case-hud" data-collapsed={!controlsExpanded}>
-        <button
-          className="fd-case-controls-toggle"
-          aria-expanded={controlsExpanded}
-          aria-controls={sceneToolsId}
-          onClick={() => setControlsExpanded(!controlsExpanded)}
-        >
-          <span>View options</span>
-          <span aria-hidden="true">{controlsExpanded ? "−" : "+"}</span>
-        </button>
-        <div className="fd-case-tools-body" id={sceneToolsId} hidden={!controlsExpanded}>
-          <section className="fd-case-view-section" aria-label="Scene view">
-            <h3>View</h3>
-            <div className="fd-case-view-tools">
-              <button onClick={() => scene.current?.view("top")}>Top view</button>
-              <button onClick={() => scene.current?.view("iso")}>3D view</button>
-              {(design?.source || preview) && (
-                <button aria-pressed={!caseVisible} onClick={() => setCaseVisible(!caseVisible)}>
-                  {caseVisible ? "Hide case" : "Show case"}
+      {advanced && (
+        <div className="fd-case-hud" data-collapsed={!controlsExpanded}>
+          <button
+            className="fd-case-controls-toggle"
+            aria-expanded={controlsExpanded}
+            aria-controls={sceneToolsId}
+            onClick={() => setControlsExpanded(!controlsExpanded)}
+          >
+            <span>View options</span>
+            <span aria-hidden="true">{controlsExpanded ? "−" : "+"}</span>
+          </button>
+          <div className="fd-case-tools-body" id={sceneToolsId} hidden={!controlsExpanded}>
+            <section className="fd-case-view-section" aria-label="Scene view">
+              <h3>View</h3>
+              <div className="fd-case-view-tools">
+                <button onClick={() => scene.current?.view("top")}>Top view</button>
+                <button onClick={() => scene.current?.view("iso")}>3D view</button>
+                {(design?.source || preview) && (
+                  <button aria-pressed={!caseVisible} onClick={() => setCaseVisible(!caseVisible)}>
+                    {caseVisible ? "Hide case" : "Show case"}
+                  </button>
+                )}
+                <button aria-pressed={showRisks} onClick={() => setShowRisks(!showRisks)}>
+                  Fit risks
                 </button>
+                <button aria-pressed={showSpace} onClick={() => setShowSpace(!showSpace)}>
+                  Usable space
+                </button>
+                {preview?.meshes?.lid && (
+                  <button aria-pressed={openLid} onClick={() => setOpenLid(!openLid)}>
+                    {openLid ? "Close lid" : "Open lid"}
+                  </button>
+                )}
+                <button aria-pressed={transparent} onClick={() => setTransparent(!transparent)}>
+                  See through
+                </button>
+              </div>
+            </section>
+            <div className="fd-case-fit-legend" aria-label="Fit overlay legend">
+              <h3>Fit guidance</h3>
+              {design?.mode === "imported" && (
+                <>
+                  <strong>Check the actual case walls</strong>
+                  <small>
+                    {report?.issues.some((i) => i.code === "shell-coverage")
+                      ? "STL surface risks are highlighted using estimated part boxes. Review real shapes and mounting holes."
+                      : "Red checks use your defined interior. Surface checks are unavailable for this case; inspect its walls visually."}
+                  </small>
+                  <button
+                    onClick={() => {
+                      setStep("Start");
+                      setShowSpace(true);
+                    }}
+                  >
+                    Set usable interior
+                  </button>
+                </>
               )}
-              <button aria-pressed={showRisks} onClick={() => setShowRisks(!showRisks)}>
-                Fit risks
-              </button>
-              <button aria-pressed={showSpace} onClick={() => setShowSpace(!showSpace)}>
-                Usable space
-              </button>
-              {preview?.meshes?.lid && (
-                <button aria-pressed={openLid} onClick={() => setOpenLid(!openLid)}>
-                  {openLid ? "Close lid" : "Open lid"}
-                </button>
-              )}
-              <button aria-pressed={transparent} onClick={() => setTransparent(!transparent)}>
-                See through
-              </button>
-            </div>
-          </section>
-          <div className="fd-case-fit-legend" aria-label="Fit overlay legend">
-            <h3>Fit guidance</h3>
-            {design?.mode === "imported" && (
-              <>
-                <strong>Check the actual case walls</strong>
-                <small>
-                  {report?.issues.some((i) => i.code === "shell-coverage")
-                    ? "STL surface risks are highlighted using estimated part boxes. Review real shapes and mounting holes."
-                    : "Red checks use your defined interior. Surface checks are unavailable for this case; inspect its walls visually."}
-                </small>
-                <button
-                  onClick={() => {
-                    setStep("Start");
-                    setShowSpace(true);
-                  }}
-                >
-                  Set usable interior
-                </button>
-              </>
-            )}
-            <span>
-              <i className="is-risk" />
-              Red: affected parts / clearance risk
-            </span>
-            {showSpace && (
               <span>
-                <i className="is-space" />
-                Dashed: usable interior
+                <i className="is-risk" />
+                Red: affected parts / clearance risk
               </span>
-            )}
-            <small>Estimated bounds · Not exact surface collisions</small>
-            {!preview && <small role="status">{fitState}</small>}
-            {focusedIssue ? (
-              <>
-                <strong>
-                  Selected: {[...new Set(focusedIssue.regions?.map((r) => r.name))].join(", ")}
-                </strong>
-                <button
-                  onClick={() => {
-                    setFocusedIssue(null);
-                    scene.current?.fit();
-                  }}
-                >
-                  Show all issues
+              {showSpace && (
+                <span>
+                  <i className="is-space" />
+                  Dashed: usable interior
+                </span>
+              )}
+              <small>Estimated bounds · Not exact surface collisions</small>
+              {!preview && <small role="status">{fitState}</small>}
+              {focusedIssue ? (
+                <>
+                  <strong>
+                    Selected: {[...new Set(focusedIssue.regions?.map((r) => r.name))].join(", ")}
+                  </strong>
+                  <button
+                    onClick={() => {
+                      setFocusedIssue(null);
+                      scene.current?.fit();
+                    }}
+                  >
+                    Show all issues
+                  </button>
+                </>
+              ) : report?.status === "blocked" && step !== "Review" ? (
+                <button disabled={!workflow.previewUnlocked} onClick={() => setStep("Review")}>
+                  Review fit issues
                 </button>
-              </>
-            ) : report?.status === "blocked" && step !== "Review" ? (
-              <button disabled={!workflow.previewUnlocked} onClick={() => setStep("Review")}>
-                Review fit issues
-              </button>
-            ) : null}
-            {!showRisks && <small>Red highlights hidden</small>}
+              ) : null}
+              {!showRisks && <small>Red highlights hidden</small>}
+            </div>
           </div>
         </div>
-      </div>
-      <div className="fd-case-canvas-note">
-        <strong>
-          {preview
-            ? "Enclosure preview"
-            : design?.mode === "imported" && design.source
-              ? "Original enclosure · Unchanged"
-              : "PCB reference"}
-        </strong>
-        <span>Click a board to select · Drag empty space to orbit · Scroll to zoom</span>
-        <button onClick={() => scene.current?.fit()}>Fit view</button>
-      </div>
+      )}
+      {advanced && (
+        <div className="fd-case-canvas-note">
+          <strong>
+            {preview
+              ? "Enclosure preview"
+              : design?.mode === "imported" && design.source
+                ? "Original enclosure · Unchanged"
+                : "PCB reference"}
+          </strong>
+          <span>Click a board to select · Drag empty space to orbit · Scroll to zoom</span>
+          <button onClick={() => scene.current?.fit()}>Fit view</button>
+        </div>
+      )}
       <input
         hidden
         ref={importInput}
