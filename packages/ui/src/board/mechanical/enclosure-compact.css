@@ -511,3 +511,125 @@
   margin-top: 12px;
   min-height: 36px;
 }
+
+/* Extra settings use one quiet inspector; the primary generator stays compact. */
+.fd-case-compact[data-advanced="true"] {
+  --case-inspector-width: 340px;
+}
+.fd-enclosure-options > header {
+  padding: 16px;
+  gap: 8px;
+}
+.fd-enclosure-options > header h2 {
+  font-size: 14px;
+  white-space: nowrap;
+}
+.fd-enclosure-options-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fd-enclosure-options > header .fd-case-save-draft {
+  padding: 6px 3px;
+  border-color: transparent;
+  color: var(--fd-muted);
+  font-size: 10px;
+}
+.fd-enclosure-options-done {
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--fd-border);
+  border-radius: 7px;
+  color: var(--fd-fg);
+  background: var(--fd-bg);
+  font-size: 11px;
+}
+.fd-enclosure-options > nav {
+  margin: 0 16px 14px;
+  padding: 3px;
+  gap: 3px;
+}
+.fd-enclosure-options > nav button {
+  min-height: 32px;
+  padding: 6px;
+  font-size: 12px;
+}
+.fd-enclosure-options .fd-case-body {
+  padding: 0 16px 16px;
+}
+.fd-enclosure-options-hint {
+  margin: 0 0 12px;
+  color: var(--fd-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.fd-enclosure-options .fd-case-fields > .fd-enclosure-option-row {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  color: var(--fd-muted);
+}
+.fd-enclosure-options .fd-enclosure-option-row select {
+  min-height: 36px;
+  padding: 8px;
+  text-overflow: ellipsis;
+}
+.fd-enclosure-options .fd-case-fields > details,
+.fd-enclosure-options .fd-case-fields > details.fd-case-advanced {
+  margin: 0;
+  padding: 8px 0;
+  border: 0;
+  border-top: 1px solid var(--fd-border);
+  border-radius: 0;
+}
+.fd-enclosure-options .fd-case-fields > details > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-block: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.fd-enclosure-options .fd-case-fields > details > summary > small {
+  margin-left: auto;
+  color: var(--fd-muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+.fd-enclosure-options .fd-case-fields > details[open] {
+  padding-bottom: 16px;
+}
+.fd-enclosure-options .fd-case-fields > details > p:first-of-type {
+  margin-top: 6px;
+}
+.fd-enclosure-options .fd-layout-planner {
+  padding: 0;
+  margin: 10px 0 0;
+  border: 0;
+  border-radius: 0;
+}
+.fd-enclosure-options .fd-case-model-disclosure {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--fd-border);
+}
+.fd-enclosure-options .fd-case-model-disclosure > summary {
+  color: var(--fd-muted);
+  font-size: 11px;
+}
+.fd-enclosure-options > footer {
+  padding: 10px 16px 14px;
+}
+@container (max-width: 650px) {
+  .fd-case-compact[data-advanced="true"] {
+    --case-inspector-width: 320px;
+  }
+  .fd-enclosure-options > header {
+    flex-wrap: wrap;
+  }
+  .fd-enclosure-options-actions {
+    margin-left: auto;
+  }
+}

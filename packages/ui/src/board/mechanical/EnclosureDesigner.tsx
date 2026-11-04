@@ -1271,6 +1271,7 @@ export function EnclosureDesigner({
     if (route.disclosure === "size") setCustomSize(true);
     let notice = "";
     if (route.target === "placement") {
+      setStep("PCB");
       if (path) {
         selectBoard(path);
         setPlacementMode("translate");
@@ -1415,6 +1416,11 @@ export function EnclosureDesigner({
   const exportReadiness = enclosureReadiness(!!preview, report, pcbModels.loading);
   const stepNeedsAttention =
     !!error || !!fitError || (step === "Review" && report?.status === "blocked");
+  const modelNeedsAttention =
+    !!pcbModels.error ||
+    !!pcbModels.setupError ||
+    !!pcbModels.readiness?.needsSetup ||
+    (!pcbModels.loading && Object.keys(pcbModels.models).length < pcbModels.requested);
   const currentPlacement = design?.boards.find((b) => b.path === selectedBoard);
   const currentFeatures = selectedBoard ? featuresFor(selectedBoard) : null;
   const currentPose =
@@ -1944,32 +1950,32 @@ export function EnclosureDesigner({
           )}
         </>
       )}
-      <aside hidden={!advanced} className="fd-case-panel" data-step-attention={stepNeedsAttention}>
-        <button
-          className="fd-enclosure-back"
-          disabled={!!pendingRecovery}
-          onClick={() => setAdvanced(false)}
-        >
-          ‹ Back to enclosure
-        </button>
+      <aside
+        hidden={!advanced}
+        className="fd-case-panel fd-enclosure-options"
+        data-step-attention={stepNeedsAttention}
+        aria-label="Enclosure options"
+      >
         <header>
-          <div>
-            <h2>Enclosure</h2>
-            <p>Choose boards. Make a case. Check the fit.</p>
-          </div>
-          {dirty && !preview ? (
+          <h2>Enclosure options</h2>
+          <div className="fd-enclosure-options-actions">
+            {dirty && !preview && (
+              <button
+                className="fd-case-save-draft"
+                disabled={actionsDisabled}
+                onClick={() => void run("Saving settings…", save)}
+              >
+                Save draft
+              </button>
+            )}
             <button
-              className="fd-case-save-draft"
-              disabled={actionsDisabled}
-              onClick={() => void run("Saving settings…", save)}
+              className="fd-enclosure-options-done"
+              disabled={!!pendingRecovery}
+              onClick={() => setAdvanced(false)}
             >
-              Save draft
+              Done
             </button>
-          ) : (
-            <small role="status">
-              {preview ? "Preview" : revision.current ? "Saved" : "New case"}
-            </small>
-          )}
+          </div>
         </header>
         <nav aria-label="Enclosure workflow">
           {steps.map((s) => {
@@ -2017,25 +2023,23 @@ export function EnclosureDesigner({
                   {(locked || complete) && <MechanicalIcon name={locked ? "lock" : "check"} />}
                   {stepLabels[s]}
                 </span>
-                <small>{stateLabel}</small>
               </button>
             );
           })}
         </nav>
-        <p className="fd-case-step-hint" role="status">
-          <strong>
-            {stepLabels[step]}
-            {stepNeedsAttention ? " · Needs attention" : " · Current section"}
-          </strong>
-          {step === "PCB"
-            ? fitError || workflow.boardsHint
-            : step === "Start"
-              ? "Choose your case and layout, then create a preview."
-              : "Review the fit before saving your design files."}
-        </p>
         <div className="fd-case-body" ref={body}>
-          <PcbModelHealth {...pcbModels} />
-          {(selectedBoard || step === "PCB") && (
+          {modelNeedsAttention && <PcbModelHealth {...pcbModels} />}
+          {step === "PCB" && !workflow.canContinue && (
+            <p className="fd-enclosure-options-hint" role="status">
+              {workflow.boardsHint}
+            </p>
+          )}
+          {fitError && step !== "Review" && (
+            <p className="fd-case-message is-error" role="alert">
+              {fitError}
+            </p>
+          )}
+          {step === "PCB" && (
             <EnclosureBoardDimensions
               paths={design?.boards.map((b) => b.path) ?? []}
               selected={selectedBoard}
@@ -2045,14 +2049,14 @@ export function EnclosureDesigner({
               onFocus={() => selectedBoard && scene.current?.focusModel(`@fit-${selectedBoard}`)}
             />
           )}
-          {selectedBoard && !pcbModels.models[selectedBoard] && (
+          {step === "PCB" && selectedBoard && !pcbModels.models[selectedBoard] && (
             <p role="status" className="fd-mechanical-note">
               {pcbModels.loading
                 ? "Loading this board’s 3D model… Its bounds are shown temporarily."
                 : "This board’s 3D model is unavailable. The amber shape shows estimated bounds only. Open 3D details below for the cause and retry."}
             </p>
           )}
-          {currentPlacement && (
+          {step === "PCB" && currentPlacement && (
             <section
               className="fd-case-placement"
               aria-label="Selected board controls"
@@ -2129,19 +2133,6 @@ export function EnclosureDesigner({
               <small>Moving a board requires a new preview to recheck ports and fit.</small>
             </section>
           )}
-          {!!design?.boards.length && (
-            <details className="fd-case-model-disclosure" data-enclosure-control="models">
-              <summary>
-                {pcbModels.loading
-                  ? "Reading board shapes…"
-                  : pcbModels.error ||
-                      Object.values(pcbModels.models).some((m) => m.coverage.missing.length)
-                    ? "Some 3D parts need checking"
-                    : "3D details & board downloads"}
-              </summary>
-              <PcbModelStatus {...pcbModels} />
-            </details>
-          )}
           {pendingRecovery && (
             <div className="fd-case-recovery" role="status">
               <strong>Resume your unsaved work?</strong>
@@ -2212,34 +2203,26 @@ export function EnclosureDesigner({
             >
               {step === "Start" && (
                 <>
-                  <h3>Choose your case</h3>
-                  <p>We can size a new case for you, or use one you already have.</p>
-                  <div className="fd-case-choices">
-                    <button
-                      aria-pressed={design.mode === "generated"}
-                      onClick={() => {
-                        if (design.mode !== "generated") {
+                  <label className="fd-enclosure-option-row">
+                    Case type
+                    <select
+                      aria-label="Case type"
+                      value={design.mode}
+                      onChange={(e) => {
+                        if (e.target.value === "generated") {
                           edit({ ...design, mode: "generated", confirmed: false });
                           setLayoutChoice("compact");
+                        } else {
+                          // Generated hardware is unavailable when fitting an existing case.
+                          const { closure: _closure, holders: _holders, ...rest } = design;
+                          edit({ ...rest, mode: "imported", confirmed: false });
                         }
                       }}
                     >
-                      <strong>New case</strong>
-                      <small>Size automatically</small>
-                    </button>
-                    <button
-                      aria-pressed={design.mode === "imported"}
-                      onClick={() => {
-                        // Generated-only hardware must not leave an imported case blocked
-                        // by settings that are hidden in this mode.
-                        const { closure: _closure, holders: _holders, ...rest } = design;
-                        edit({ ...rest, mode: "imported", confirmed: false });
-                      }}
-                    >
-                      <strong>Existing case</strong>
-                      <small>Import a file</small>
-                    </button>
-                  </div>
+                      <option value="generated">New case</option>
+                      <option value="imported">Existing case</option>
+                    </select>
+                  </label>
                   {design.mode === "imported" && (
                     <>
                       <label>
@@ -2326,7 +2309,7 @@ export function EnclosureDesigner({
                   )}
                   {design.mode === "generated" && (
                     <>
-                      <label className="fd-case-layout-choice">
+                      <label className="fd-case-layout-choice fd-enclosure-option-row">
                         Board layout
                         <select
                           value={layoutChoice}
@@ -2356,8 +2339,11 @@ export function EnclosureDesigner({
                         onToggle={(e) => setCustomSize(e.currentTarget.open)}
                         className="fd-case-advanced"
                       >
-                        <summary>Set a size or wall thickness</summary>
-                        <p>Use a specific size instead of automatic sizing.</p>
+                        <summary>
+                          <span>Size & thickness</span>
+                          <small>{layoutChoice === "keep" ? "Custom" : "Automatic"}</small>
+                        </summary>
+                        <p>Set an inside size, or let the case fit your boards.</p>
                         <button
                           type="button"
                           onClick={() => {
@@ -2390,15 +2376,13 @@ export function EnclosureDesigner({
                             </small>
                           </div>
                         )}
-                        <h3>Inside size</h3>
-                        <p>Change only what you need. Sizes are in millimetres.</p>
                         <div className="fd-case-grid">
                           {field("width", "Inside width")}
                           {field("depth", "Inside depth")}
                           {field("height", "Inside height")}
                         </div>
                         <details>
-                          <summary>Wall thickness and origin</summary>
+                          <summary>Thickness & origin</summary>
                           <div className="fd-case-grid">
                             {field("wall", "Wall thickness", 0.5)}
                             {field("floor", "Floor thickness", 0.5)}
@@ -2455,9 +2439,8 @@ export function EnclosureDesigner({
                   open={caseDetails}
                   onToggle={(e) => setCaseDetails(e.currentTarget.open)}
                 >
-                  <summary>Fixed parts, screws & openings</summary>
-                  <h3>Leave room for the real parts</h3>
-                  <p>Add space occupied by batteries, hinges and other fixed parts.</p>
+                  <summary>Supports & openings</summary>
+                  <p>Make room for fixed parts, add board supports or adjust cutouts.</p>
                   {field("clearance", "Minimum clearance", 0)}
                   <details data-enclosure-control="obstacles">
                     <summary>Obstacles · {design.obstacles.length}</summary>
@@ -2939,7 +2922,7 @@ export function EnclosureDesigner({
                   open={layoutDetails}
                   onToggle={(e) => setLayoutDetails(e.currentTarget.open)}
                 >
-                  <summary>Ports, cables & fixed boards</summary>
+                  <summary>Ports & cables</summary>
                   <EnclosureLayoutPanel
                     design={design}
                     boards={mountingBoards()}
@@ -2999,7 +2982,7 @@ export function EnclosureDesigner({
                     open={manualPlacement}
                     onToggle={(e) => setManualPlacement(e.currentTarget.open)}
                   >
-                    <summary>Move boards yourself</summary>
+                    <summary>Board positions & PCB editing</summary>
                     <section
                       className="fd-case-placement"
                       aria-label="Position boards in the enclosure"
@@ -3402,6 +3385,20 @@ export function EnclosureDesigner({
               )}
             </fieldset>
           )}
+          {!!design?.boards.length && (
+            <details className="fd-case-model-disclosure" data-enclosure-control="models">
+              <summary>
+                {pcbModels.loading
+                  ? "Loading 3D models…"
+                  : modelNeedsAttention ||
+                      Object.values(pcbModels.models).some((m) => m.coverage.missing.length)
+                    ? "3D models · needs review"
+                    : "3D models & downloads"}
+              </summary>
+              {!modelNeedsAttention && <PcbModelHealth {...pcbModels} />}
+              <PcbModelStatus {...pcbModels} />
+            </details>
+          )}
         </div>
         <footer>
           <div className="fd-case-footer-status">
@@ -3417,7 +3414,9 @@ export function EnclosureDesigner({
                     : design?.confirmed
                       ? "Ready to preview"
                       : design?.mode === "generated"
-                        ? "We’ll size the case for you"
+                        ? layoutChoice === "keep"
+                          ? "Using your current layout"
+                          : "We’ll size the case for you"
                         : "Check your case measurements")}
             </span>
             <div className="fd-case-history" aria-label="Enclosure edit history">
