@@ -104,6 +104,10 @@ test("screw posts reject misalignment, support gaps, oversized bores and small h
   d.mounts[0]!.screwLength = 1;
   expect(codes()).toContain("screw-length");
   d.mounts[0]!.screwLength = 4;
+  expect(codes()).toEqual(["screw-engagement"]);
+  // A clearance hole through the PCB is not a pilot bore that can grip the screw.
+  // This explicit fixture bore tests geometric engagement, not physical thread strength.
+  d.mounts[0]!.diameter = 2.5;
   expect(codes()).toEqual([]);
 });
 test("screw head collisions, lid clearance, overlapping posts and missing linked holes block export", () => {
