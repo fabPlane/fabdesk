@@ -241,6 +241,9 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
             </>}
             toolbar={
               <>
+                {kind === "pcb" && <Button size="sm" variant="secondary" onClick={() => useUiStore.getState().setBoardTab("placement")} title="Arrange components in a placement draft">
+                  <Icon name="pcb" width={14} height={14} /> Edit placement
+                </Button>}
                 <Button
                   size="sm"
                   variant={commentMode ? "primary" : "secondary"}

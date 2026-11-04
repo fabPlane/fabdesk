@@ -11,6 +11,7 @@ import { Button } from "../components/ui";
 import { ReviewUpdates } from "./ReviewUpdates";
 import { OutputsLibrary } from "./OutputsLibrary";
 import { Tabs } from "../components/ui";
+import { lazy, Suspense } from "react";
 import { BoardViewMenu } from "./BoardViewMenu";
 import { CircuitLogo } from "../components/CircuitLogo";
 import { workspaceViews } from "@fabdesk/client-core";
@@ -32,6 +33,8 @@ import { SvgTab } from "./SvgTab";
 import { ThreeDTab } from "./ThreeDTab";
 import { OrderChecksButton } from "./OrderChecksButton";
 
+const PlacementTab = lazy(() => import("./placement/PlacementTab").then(module => ({ default: module.PlacementTab })));
+
 function TabBody({ tab, canvas = false, onOpenChecks }: { tab: BoardTab; canvas?: boolean; onOpenChecks?: () => void }) {
   switch (tab) {
     case "updates":
@@ -40,6 +43,8 @@ function TabBody({ tab, canvas = false, onOpenChecks }: { tab: BoardTab; canvas?
       return <SvgTab kind="schematic" {...(onOpenChecks ? { onOpenChecks } : {})} />;
     case "pcb":
       return <SvgTab kind="pcb" {...(onOpenChecks ? { onOpenChecks } : {})} />;
+    case "placement":
+      return <Suspense fallback={<div className="p-6 text-sm text-muted">Opening placement workspace…</div>}><PlacementTab /></Suspense>;
     case "cinema":
       return <CinemaTab canvas={canvas} {...(onOpenChecks ? { onOpenChecks } : {})} />;
     case "3d":
@@ -91,7 +96,7 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
   const project = projects.data?.find((item) => item.id === projectId);
   const mod = modKey(host.platform);
   const visibleTabs = workspaceViews(area)
-    .filter(item => area !== "boards" || item.tab !== "cinema" && item.tab !== "art")
+    .filter(item => area !== "boards" || item.tab !== "cinema" && item.tab !== "art" && item.tab !== "placement")
     .map(item => ({
       id: item.tab,
       label: item.label,
@@ -100,7 +105,7 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
     <div className="fd-canvas-controls">
       {area === "boards" && projectId && sources.data?.mode === "single" && <ImportedBoardIdentity projectId={projectId} />}
       {area === "boards" && tab === "cinema" ? <div className="fd-routing-toolbar-slot" data-routing-toolbar-slot /> : area === "boards" ? <BoardViewTabs value={tab} onChange={setWorkspaceTab} /> : workspaceViews(area).length > 1 && <Tabs tabs={visibleTabs} value={tab} onChange={setWorkspaceTab} />}
-      {area === "boards" && tab !== "cinema" && <WorkspaceMenu className="fd-board-tools fd-canvas-tool-menu" label={<><span aria-label="More board tools"><Icon name="more" width={18} height={18} /></span><span className="fd-canvas-tool-label" aria-hidden="true">More board tools</span></>}><div className="fd-menu-caption">Board tools</div><button aria-current={tab === "art" ? "page" : undefined} onClick={() => setWorkspaceTab("art")}>Artwork</button>{order.data && <button onClick={openOrder}>Order options</button>}</WorkspaceMenu>}
+      {area === "boards" && tab !== "cinema" && <WorkspaceMenu className="fd-board-tools fd-canvas-tool-menu" label={<><span aria-label="More board tools"><Icon name="more" width={18} height={18} /></span><span className="fd-canvas-tool-label" aria-hidden="true">More board tools</span></>}><div className="fd-menu-caption">Board tools</div><button aria-current={tab === "placement" ? "page" : undefined} onClick={() => setWorkspaceTab("placement")}>Placement draft</button><button aria-current={tab === "art" ? "page" : undefined} onClick={() => setWorkspaceTab("art")}>Artwork</button>{order.data && <button onClick={openOrder}>Order options</button>}</WorkspaceMenu>}
       {area === "review" && tab === "diff" && projectId && <HostedReviewTools key={projectId} projectId={projectId} />}
       {area === "review" && (tab === "updates" || tab === "diff" || tab === "comments") && <div className="fd-review-scope-slot" data-review-scope-slot />}
       {compareAvailable && <CanvasToolButton label={compare ? "Close comparison" : `Show ${tab === "pcb" ? "schematic" : "PCB"} alongside`} icon="panel" active={compare} onClick={() => useUiStore.getState().setBoardComparison(!compare)} />}

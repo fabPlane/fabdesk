@@ -1,3 +1,5 @@
+Latest integration analysis: [PR393 merge resolution and proposed canvas workflow](PLACEMENT-INTEGRATION-20261104.md).
+
 Latest UI follow-up: [files, Back navigation, output grouping and finding details](FILES-NAVIGATION-OUTPUTS-20261104.md).
 
 Latest UI follow-up: [clear check cards and workspace selector alignment](CHECKS-UI-20261104.md).

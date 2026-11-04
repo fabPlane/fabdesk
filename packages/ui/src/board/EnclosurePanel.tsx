@@ -398,7 +398,7 @@ export function EnclosureScreen({
           <h3 className="text-sm font-medium">Files for printing and CAD</h3>
           <p className="mt-1 text-xs leading-5 text-muted">
             Download the base and lid for 3D printing, or STEP for CAD editing. These files are also
-            saved in your project’s exports folder.
+            saved in your project alongside the enclosure specification.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {view.files

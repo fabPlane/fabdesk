@@ -1,7 +1,7 @@
 /** Existing destinations, grouped without removing their tools or changing keyboard tab order. */
 export const WORKSPACE_AREAS = {
   overview: { label: "Overview", views: [] },
-  boards: { label: "Board", views: [{ tab: "pcb", label: "PCB" }, { tab: "schematic", label: "Schematic" }, { tab: "3d", label: "3D" }, { tab: "cinema", label: "Routing" }, { tab: "art", label: "Artwork" }] },
+  boards: { label: "Board", views: [{ tab: "pcb", label: "PCB" }, { tab: "schematic", label: "Schematic" }, { tab: "3d", label: "3D" }, { tab: "cinema", label: "Routing" }, { tab: "art", label: "Artwork" }, { tab: "placement", label: "Placement" }] },
   mechanical: { label: "Mechanical", views: [{ tab: "cad", label: "Enclosure & CAD" }] },
   parts: { label: "Parts", views: [{ tab: "bom", label: "Parts & shopping" }] },
   outputs: { label: "Outputs", views: [{ tab: "renders", label: "Library" }, { tab: "3d", label: "Models & video" }, { tab: "files", label: "Export files" }] },
@@ -34,6 +34,7 @@ export function workspaceTabForArea(area: WorkspaceArea, remembered: unknown): W
 export function workspaceViewSearchTerms(area: WorkspaceArea, view: { tab: WorkspaceView; label: string }): string {
   const aliases: Partial<Record<`${WorkspaceArea}:${WorkspaceView}`, string>> = {
     "boards:pcb": "pcb layout placement position rotate resize board dimensions",
+    "boards:placement": "edit placement arrange parts footprint replace resize dimensions reserved areas draft unrouted",
     "boards:schematic": "schematic circuit sheets",
     "boards:cinema": "route board router cinema playback",
     "parts:bom": "bill of materials bom parts shopping list off-board items quantities",
