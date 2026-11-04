@@ -1,4 +1,5 @@
 import { Tabs } from "../components/ui";
+import { lazy, Suspense } from "react";
 import { BoardViewMenu } from "./BoardViewMenu";
 import { CircuitLogo } from "../components/CircuitLogo";
 import { useCore } from "@fabdesk/client-core";
@@ -18,12 +19,16 @@ import { SvgTab } from "./SvgTab";
 import { ThreeDTab } from "./ThreeDTab";
 import { OrderChecksButton } from "./OrderChecksButton";
 
+const PlacementTab = lazy(() => import("./placement/PlacementTab").then(module => ({ default: module.PlacementTab })));
+
 function TabBody({ tab }: { tab: BoardTab }) {
   switch (tab) {
     case "schematic":
       return <SvgTab kind="schematic" />;
     case "pcb":
       return <SvgTab kind="pcb" />;
+    case "placement":
+      return <Suspense fallback={<div className="p-6 text-sm text-muted">Opening placement workspace…</div>}><PlacementTab /></Suspense>;
     case "cinema":
       return <CinemaTab />;
     case "3d":

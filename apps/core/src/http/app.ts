@@ -4,6 +4,8 @@ import { threadTitleFrom } from "../thread-title";
 import { basename, extname, isAbsolute, join } from "node:path";
 import { Hono, type Context } from "hono";
 import {
+  AgentPreference,
+  AgentEffortPreference,
   CreateProject,
   CreateThread,
   DevicePushRegistration,
@@ -1009,6 +1011,32 @@ export function createApp(deps: AppDeps): Hono<Env> {
 
   /* ---------- settings ---------- */
   app.get("/settings", (c) => c.json(deps.store.settings.get()));
+  app.put("/settings/agent-effort", async (c) => {
+    const { agentId, effort } = AgentEffortPreference.parse(await c.req.json());
+    // Read and merge synchronously on the daemon, preserving settings changed by other clients.
+    const current = deps.store.settings.get();
+    const next = deps.store.settings.patch({
+      agents: { ...current.agents, [agentId]: { ...current.agents[agentId], effort } },
+    });
+    try { deps.onSettingsChanged?.(next); }
+    catch (e) { logger.warn("onSettingsChanged failed", { error: errMsg(e) }); }
+    return c.json(next);
+  });
+  app.put("/settings/agent-preference", async (c) => {
+    const { agentId, model } = AgentPreference.parse(await c.req.json());
+    // Merge on the daemon so a picker cannot overwrite paths, permissions, or another agent.
+    const current = deps.store.settings.get();
+    const next = deps.store.settings.patch({
+      defaultAgent: agentId,
+      agents: {
+        ...current.agents,
+        [agentId]: { ...current.agents[agentId], model: model || null },
+      },
+    });
+    try { deps.onSettingsChanged?.(next); }
+    catch (e) { logger.warn("onSettingsChanged failed", { error: errMsg(e) }); }
+    return c.json(next);
+  });
   app.get("/privacy", (c) => (deps.privacy ? c.json(deps.privacy()) : c.json({ error: "not found" }, 404)));
   app.patch("/settings", async (c) => {
     const raw: unknown = await c.req.json();

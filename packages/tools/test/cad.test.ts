@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
   createRegistry,
@@ -280,6 +280,93 @@ describe("cad_enclosure", () => {
       "existing specification",
     );
   });
+  test("placement snapshot uses isolated files and never edits the source or CAD model", async () => {
+    const cad = fakeCad(),
+      { invoke, project } = await setup(cad);
+    await writeFile(join(project.dir, "board.kicad_pcb"), ENCLOSURE_BOARD);
+    await writeFile(join(project.dir, "enclosure.json"), "{}");
+    await mkdir(join(project.dir, "placement"), { recursive: true });
+    const draft = ENCLOSURE_BOARD.replace("(at 20 0)", "(at 28 0)");
+    await writeFile(join(project.dir, "placement/draft.kicad_pcb"), draft);
+    const out = await invoke("cad_enclosure", {
+      action: "generate",
+      boardPath: "placement/draft.kicad_pcb",
+      name: "placement-case",
+      applyToCad: true,
+    });
+    const json = out.json as {
+      stl: string;
+      spec: string;
+      appliedToCad: boolean;
+      cutouts: { center: { x: number } }[];
+    };
+    expect(json.stl).toBe("placement/enclosure/placement-case.stl");
+    expect(json.spec).toBe("placement/enclosure.json");
+    expect(json.appliedToCad).toBe(false);
+    expect(cad.calls).toHaveLength(0);
+    expect(json.cutouts[0]!.center.x).toBe(28);
+    expect(await readFile(join(project.dir, "enclosure.json"), "utf8")).toBe("{}");
+    expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(ENCLOSURE_BOARD);
+    expect(await readFile(join(project.dir, json.stl), "utf8")).toStartWith(
+      "solid fabplane_enclosure_base",
+    );
+    await expect(invoke("cad_enclosure", { boardPath: "../outside.kicad_pcb" })).rejects.toThrow(
+      /escapes/,
+    );
+  });
+  test("placement previews preserve isolated paths and check the selected board revision on apply", async () => {
+    const cad = fakeCad(),
+      { invoke, project } = await setup(cad);
+    await writeFile(join(project.dir, "board.kicad_pcb"), ENCLOSURE_BOARD);
+    await writeFile(join(project.dir, "enclosure.json"), "original project specification");
+    await mkdir(join(project.dir, "placement"), { recursive: true });
+    const boardPath = "placement/draft.kicad_pcb";
+    const draft = ENCLOSURE_BOARD.replace("(at 20 0)", "(at 28 0)");
+    await writeFile(join(project.dir, boardPath), draft);
+    const preview = await invoke("cad_enclosure", {
+      action: "preview",
+      boardPath,
+      name: "draft-case",
+      applyToCad: true,
+    });
+    const json = preview.json as {
+      previewOnly: boolean;
+      pcbRevision: string;
+      spec: string;
+      stl: string;
+      meshes: { base: string };
+      cutouts: { center: { x: number } }[];
+    };
+    expect(json.previewOnly).toBe(true);
+    expect(json.spec).toBe("placement/enclosure.json");
+    expect(json.stl).toBe("placement/enclosure/draft-case.stl");
+    expect(json.meshes.base).toStartWith("solid fabplane_enclosure_base");
+    expect(json.cutouts[0]!.center.x).toBe(28);
+    await expect(readFile(join(project.dir, json.spec))).rejects.toThrow();
+    await expect(readFile(join(project.dir, json.stl))).rejects.toThrow();
+    expect(cad.calls).toHaveLength(0);
+    // Updating the unrelated canonical PCB must not invalidate this placement preview.
+    await writeFile(
+      join(project.dir, "board.kicad_pcb"),
+      ENCLOSURE_BOARD.replace("(end 40 20)", "(end 45 20)"),
+    );
+    const args = {
+      action: "generate",
+      boardPath,
+      name: "draft-case",
+      expectedBoardRevision: json.pcbRevision,
+      applyToCad: true,
+    };
+    await invoke("cad_enclosure", args);
+    const applied = await readFile(join(project.dir, json.stl), "utf8");
+    expect(cad.calls).toHaveLength(0);
+    expect(await readFile(join(project.dir, "enclosure.json"), "utf8")).toBe(
+      "original project specification",
+    );
+    await writeFile(join(project.dir, boardPath), draft.replace("(end 40 20)", "(end 45 20)"));
+    await expect(invoke("cad_enclosure", args)).rejects.toThrow(/board changed/);
+    expect(await readFile(join(project.dir, json.stl), "utf8")).toBe(applied);
+  });
   test("generates STL/STEP without FreeCAD and checks alignment after a board move", async () => {
     const { invoke, project } = await setup();
     await writeFile(join(project.dir, "board.kicad_pcb"), ENCLOSURE_BOARD);
@@ -321,7 +408,12 @@ describe("cad_enclosure", () => {
     expect((out.json as { appliedToCad: boolean }).appliedToCad).toBe(true);
     expect(cad.calls.some((c) => c.startsWith("add App::DocumentObjectGroup"))).toBe(true);
     expect(cad.calls.some((c) => c.startsWith("add Part::Box"))).toBe(true);
-    expect(cad.calls.some((c) => c.startsWith("python ") && c.includes("face.extrude") && c.includes("profile['rings']"))).toBe(true);
+    expect(
+      cad.calls.some(
+        (c) =>
+          c.startsWith("python ") && c.includes("face.extrude") && c.includes("profile['rings']"),
+      ),
+    ).toBe(true);
     const spec = JSON.parse(await readFile(join(project.dir, "enclosure.json"), "utf8")) as {
       standoffs: Array<{ innerDiameterMm: number; outerDiameterMm: number }>;
     };

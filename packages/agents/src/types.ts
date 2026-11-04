@@ -1,4 +1,4 @@
-import type { AgentId } from "@fabdesk/protocol";
+import type { AgentId, ReasoningEffort } from "@fabdesk/protocol";
 
 /** Normalised stream of what an agent CLI is doing; every adapter maps its own wire format onto this. */
 export type AgentEvent =
@@ -48,6 +48,7 @@ export interface AgentSession {
   resume?: string;
   model?: string;
   permission: AgentPermission;
+  effort?: ReasoningEffort;
   /** `supervised` pauses writes for approval; adapters that cannot must not be started with it. */
   runtimeMode?: AgentRuntimeMode;
   supervisor?: AgentSupervisor;
@@ -71,6 +72,7 @@ export interface DetectResult {
   models?: string[];
   modelAliases?: Record<string, string>;
   defaultModel?: string;
+  modelEfforts?: Record<string, ReasoningEffort[]>;
 }
 
 export interface AgentAdapter {

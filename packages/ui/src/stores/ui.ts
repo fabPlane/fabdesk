@@ -3,11 +3,12 @@ import { persist } from "zustand/middleware";
 import { readStoredThemeId, type ThemeId } from "../theme/resolve";
 import { stencilThicknessMm } from "./stencil-thickness";
 
-export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "cad", "drc", "renders", "files", "bom", "art", "notes", "diff"] as const;
+export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "cad", "drc", "renders", "files", "bom", "art", "notes", "placement", "diff"] as const;
 export type BoardTab = (typeof BOARD_TABS)[number];
 export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
   schematic: "Schematic",
   pcb: "PCB",
+  placement: "Placement",
   cinema: "Route Cinema",
   "3d": "3D export",
   cad: "CAD",
@@ -84,7 +85,7 @@ export interface UiState {
   setActiveThread: (id: string | null) => void;
   setFocusMessageId: (id: string | null) => void;
   setActiveProject: (id: string | null) => void;
-  /** Start a blank conversation in a project (or none). Skips the project picker. */
+  /** Start a blank conversation; a missing project opens the picker. */
   startNewChatInProject: (projectId: string | null) => void;
   setSidebarListTab: (tab: SidebarListTab) => void;
   setActiveOpenSourceId: (id: string | null) => void;
@@ -115,7 +116,7 @@ export function newChatInProjectState(projectId: string | null) {
     activeOpenSourceId: null,
     orderFlowOpen: false,
     inventoryOpen: false,
-    projectPickerOpen: false,
+    projectPickerOpen: !projectId,
     sidebarListTab: "projects" as const,
   };
 }

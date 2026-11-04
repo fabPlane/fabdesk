@@ -20,7 +20,14 @@ import {
   type VentPattern,
 } from "@fabdesk/kicad/enclosure";
 import { joinedEnclosure } from "@fabdesk/kicad/enclosure-solid";
-import { PROJECT_FILES, projectRelative, readJsonOrNull, writeAtomic, writeJson } from "../fs";
+import {
+  PROJECT_FILES,
+  jailPath,
+  projectRelative,
+  readJsonOrNull,
+  writeAtomic,
+  writeJson,
+} from "../fs";
 import { defineTool, ToolError, type ProjectHandle } from "../registry";
 import type { CadService } from "../services";
 import { findBoard, ok, p, requireBoard, table } from "./common";
@@ -31,13 +38,15 @@ const ENCLOSURE_NAME = z
   .default("enclosure")
   .describe("Output base name under exports/ and enclosure.json");
 
-async function loadFeatures(project: ProjectHandle) {
-  const board = await requireBoard(project);
+async function loadFeatures(project: ProjectHandle, boardPath?: string) {
+  const board = boardPath ? await jailPath(project.dir, boardPath) : await requireBoard(project);
   return extractBoardFeatures(await readFile(board, "utf8"));
 }
 
-async function loadSpec(project: ProjectHandle): Promise<EnclosureSpec | null> {
-  const raw = await readJsonOrNull<unknown>(p(project, PROJECT_FILES.enclosure));
+async function loadSpec(project: ProjectHandle, draft = false): Promise<EnclosureSpec | null> {
+  const raw = await readJsonOrNull<unknown>(
+    p(project, draft ? "placement/enclosure.json" : PROJECT_FILES.enclosure),
+  );
   return normalizeEnclosureSpec(raw) ?? (isEnclosureSpec(raw) ? raw : null);
 }
 
@@ -140,13 +149,14 @@ doc.getObject(p['group']).addObject(obj)
   return created;
 }
 
-function filesJson(project: ProjectHandle, name: string) {
+function filesJson(project: ProjectHandle, name: string, draft = false) {
+  const output = draft ? "placement/enclosure" : PROJECT_FILES.exports;
   const paths = {
-    spec: p(project, PROJECT_FILES.enclosure),
-    stl: p(project, PROJECT_FILES.exports, `${name}.stl`),
-    lidStl: p(project, PROJECT_FILES.exports, `${name}-lid.stl`),
-    step: p(project, PROJECT_FILES.exports, `${name}.step`),
-    preview: p(project, PROJECT_FILES.exports, `${name}-preview.svg`),
+    spec: p(project, draft ? "placement/enclosure.json" : PROJECT_FILES.enclosure),
+    stl: p(project, output, `${name}.stl`),
+    lidStl: p(project, output, `${name}-lid.stl`),
+    step: p(project, output, `${name}.step`),
+    preview: p(project, output, `${name}-preview.svg`),
   };
   return {
     spec: projectRelative(project.dir, paths.spec),
@@ -165,6 +175,13 @@ export const cad_enclosure = defineTool({
   description:
     "Generate a printable two-piece enclosure from board.kicad_pcb (Edge.Cuts outline, NPTH / mounting holes, edge connectors, tall parts). v2 adds a separate outline offset, vent patterns (grid / slots / honeycomb), snap-fit clips, an SVG preview, and STL/STEP export. Cutouts and standoffs stay keyed to the board hash. Writes enclosure.json plus exports/<name>.stl, <name>-lid.stl, <name>.step and <name>-preview.svg. FreeCAD is optional — when the CAD bridge is up, the same primitives are mirrored into model.FCStd.",
   inputSchema: {
+    boardPath: z
+      .string()
+      .regex(/\.kicad_pcb$/i)
+      .optional()
+      .describe(
+        "Optional project-relative placement snapshot. Uses isolated placement/enclosure outputs and never mirrors into FreeCAD.",
+      ),
     action: z
       .enum(["generate", "preview", "status", "check"])
       .default("generate")
@@ -210,9 +227,11 @@ export const cad_enclosure = defineTool({
   handler: async (args, ctx) => {
     const project = ctx.requireProject();
     if (args.action === "status") {
-      const board = await findBoard(project);
+      const board = args.boardPath
+        ? await jailPath(project.dir, args.boardPath)
+        : await findBoard(project);
       if (!board) {
-        const spec = await loadSpec(project);
+        const spec = await loadSpec(project, !!args.boardPath);
         if (!spec)
           return ok("No board.kicad_pcb yet. Add a board to generate an enclosure.", {
             exists: false,
@@ -225,14 +244,14 @@ export const cad_enclosure = defineTool({
         });
       }
     }
-    const features = await loadFeatures(project);
+    const features = await loadFeatures(project, args.boardPath);
     if (args.expectedBoardRevision && args.expectedBoardRevision !== features.pcbRevision)
       throw new ToolError(
         "The board changed since this preview. Preview again before applying.",
         "precondition",
       );
     if (args.action === "status" || args.action === "check") {
-      const spec = await loadSpec(project);
+      const spec = await loadSpec(project, !!args.boardPath);
       if (!spec) {
         if (args.action === "check")
           throw new ToolError("no enclosure.json; run cad_enclosure generate", "precondition");
@@ -245,7 +264,15 @@ export const cad_enclosure = defineTool({
         );
       }
       const alignment = checkEnclosureAlignment(spec, features);
-      const payload = resultPayload(project, spec, alignment, args.name, features, false);
+      const payload = resultPayload(
+        project,
+        spec,
+        alignment,
+        args.name,
+        features,
+        false,
+        !!args.boardPath,
+      );
       if (args.action === "check" && !alignment.ok)
         return ok(enclosureSummary(spec, alignment), payload, { isError: true });
       return ok(enclosureSummary(spec, alignment), payload);
@@ -281,12 +308,14 @@ export const cad_enclosure = defineTool({
           checkEnclosureAlignment(spec, features),
           args.name,
           features,
+          false,
+          !!args.boardPath,
         ),
         previewOnly: true,
         meshes: { base: mesh.baseStl, lid: mesh.lidStl },
       });
     }
-    const files = filesJson(project, args.name);
+    const files = filesJson(project, args.name, !!args.boardPath);
     await writeJson(files.paths.spec, spec);
     await writeAtomic(files.paths.stl, mesh.baseStl);
     await writeAtomic(files.paths.lidStl, mesh.lidStl);
@@ -296,7 +325,7 @@ export const cad_enclosure = defineTool({
     let appliedToCad = false;
     let cadObjects: string[] = [];
     let cadError: string | undefined;
-    if (args.applyToCad && ctx.services.cad) {
+    if (args.applyToCad && !args.boardPath && ctx.services.cad) {
       try {
         cadObjects = await applyEnclosureToCad(ctx.services.cad, project.dir, spec);
         appliedToCad = true;
@@ -305,7 +334,7 @@ export const cad_enclosure = defineTool({
       }
     }
     const payload = {
-      ...resultPayload(project, spec, alignment, args.name, features, true),
+      ...resultPayload(project, spec, alignment, args.name, features, true, !!args.boardPath),
       generated: true,
       appliedToCad,
       cadObjects,
@@ -347,8 +376,9 @@ function resultPayload(
   name: string,
   features: Awaited<ReturnType<typeof loadFeatures>>,
   includePreviewSvg = false,
+  draft = false,
 ) {
-  const files = filesJson(project, name);
+  const files = filesJson(project, name, draft);
   return {
     exists: true,
     spec: files.spec,

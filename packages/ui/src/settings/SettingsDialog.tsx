@@ -111,7 +111,7 @@ export function SettingsDialog() {
             <Spinner />
           ) : section === "agents" ? (
             <div className="space-y-4">
-              <Row label="Default agent">
+              <Row label="Default agent" hint="New chats remember the agent and model you select in the composer.">
                 <Select value={draft.defaultAgent} onChange={(e) => update((s) => ({ ...s, defaultAgent: e.target.value as AgentId }))}>
                   {(doctor.data?.agents ?? []).map((a) => (
                     <option key={a.id} value={a.id}>

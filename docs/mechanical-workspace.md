@@ -27,7 +27,7 @@ The left column contains the supplied concepts; the right column shows the runni
 ### Current validation — 2026-11-04
 
 - Root typecheck and desktop production build pass; no source maps in the desktop output.
-- 248 UI tests, 24 client lifecycle tests and 20 CAD tool tests pass.
+- After integrating current main: all 259 UI tests, all 274 client-core tests and 35 focused CAD tests pass, including placement preview/apply isolation and revision checks.
 - Live seven-board checks: Assembly/Connections/generator transitions, connection creation and undo, shared board movement and undo after deselection, true 100/120% zoom, native orbit/Move gestures, surface measurement, absolute mm/cm conversion, board-centre alignment, source-preserving import handoff, Preview/Cancel and Apply/export.
 - STEP conversion ran in native FreeCAD 1.1.3: 2,814 triangles, 150 × 210 × 19 mm, exact matching bounds and unchanged source/model files. The app's FreeCAD bridge is disconnected locally; its unavailable/retry UI and isolated bridge contract are tested, but a complete live bridge import is still unverified.
 - Screenshots show actual computed review findings. Physical assembly, cable dimensions, missing component models and material strength remain review items; these UI tests do not certify manufacture.

@@ -37,7 +37,7 @@ import type {
   AgentSupervisor,
 } from "@fabdesk/agents";
 
-export type AgentAdapterLike = Pick<AgentAdapter, "id" | "run"> & { supportsSupervised?: boolean };
+export type AgentAdapterLike = Pick<AgentAdapter, "id" | "run"> & Partial<Pick<AgentAdapter, "detect" | "supportsSupervised">>;
 
 /** A request nobody answered for this long resolves as `deny` with `by: "timeout"`. */
 export const APPROVAL_TIMEOUT_MS = 30 * 60_000;
@@ -554,8 +554,14 @@ export class AgentRunManager {
         .prepareProject(input.project, input.agentId)
         .catch((e) => logger.warn("prepareProject failed", { error: errMsg(e) }));
 
-    const run = store.runs.create({ threadId: input.threadId, agentId: input.agentId });
     const selectedModel = input.model ?? agentSettings?.model;
+    const capabilities = agentSettings?.effort
+      ? await adapter.detect?.(agentSettings.binaryPath ?? undefined) : undefined;
+    const effortModel = selectedModel || capabilities?.defaultModel;
+    // A remembered preference must not force an unsupported level after a model switch.
+    const effort = effortModel && agentSettings?.effort && capabilities?.modelEfforts?.[effortModel]?.includes(agentSettings.effort)
+      ? agentSettings.effort : undefined;
+    const run = store.runs.create({ threadId: input.threadId, agentId: input.agentId });
     let agentTrace: AgentTrace | undefined;
     try {
       agentTrace = await this.deps.telemetry?.startAgentRun({
@@ -683,6 +689,7 @@ export class AgentRunManager {
       },
       ...(resume ? { resume } : {}),
       ...(selectedModel ? { model: selectedModel } : {}),
+      ...(effort ? { effort } : {}),
       permission: agentSettings?.permissionMode ?? "acceptEdits",
       ...(workbenchEnv && Object.keys(workbenchEnv).length ? { env: workbenchEnv } : {}),
       runtimeMode,

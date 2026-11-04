@@ -165,9 +165,7 @@ async function openThread(id: string): Promise<UiSnapshot> {
 
 async function newChat(): Promise<UiSnapshot> {
   const ui = useUiStore.getState();
-  ui.setActiveOpenSourceId(null);
-  ui.setOrderFlowOpen(false);
-  ui.setActiveThread(null);
+  // Match the sidebar/shortcut: cancelling project selection keeps the current chat.
   ui.setProjectPickerOpen(true);
   await settle();
   return state();

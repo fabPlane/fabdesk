@@ -8,6 +8,7 @@ import { PrivacyStatus } from "@fabdesk/protocol";
 import type { AgentEvent, AgentRun, AgentSession } from "@fabdesk/agents";
 import type { CoreServices } from "@fabdesk/tools";
 import { serve, type Daemon } from "../src/serve";
+import { SettingsRepo } from "../src/db";
 import { mockServices } from "../../../packages/tools/test/mock-services";
 
 let daemon: Daemon;
@@ -87,6 +88,77 @@ const api = (path: string, init: RequestInit = {}) =>
   });
 
 describe("http daemon", () => {
+  test("effort saves preserve concurrent model choices and unrelated agent settings", async () => {
+    const before = daemon.store.settings.get();
+    try {
+      daemon.store.settings.patch({ defaultAgent: "claude", agents: {
+        codex: { binaryPath: "custom-codex", model: "old", permissionMode: "bypass", pickerModels: ["custom"] },
+        claude: { model: "sonnet", effort: "low" },
+      } });
+      const configured = daemon.store.settings.get();
+      const responses = await Promise.all([
+        api("/settings/agent-preference", { method: "PUT", body: JSON.stringify({ agentId: "codex", model: "new" }) }),
+        api("/settings/agent-effort", { method: "PUT", body: JSON.stringify({ agentId: "codex", effort: "high" }) }),
+      ]);
+      expect(responses.map((r) => r.status)).toEqual([200, 200]);
+      const saved = new SettingsRepo(daemon.store.db).get();
+      expect(saved.defaultAgent).toBe("codex");
+      expect(saved.agents.codex).toEqual({ ...configured.agents.codex, model: "new", effort: "high" });
+      expect(saved.agents.claude).toEqual(configured.agents.claude);
+      const reset = await api("/settings/agent-effort", { method: "PUT", body: JSON.stringify({ agentId: "codex", effort: null }) });
+      expect(reset.status).toBe(200);
+      expect((await reset.json()).agents.codex.effort).toBeNull();
+      const valid = daemon.store.settings.get();
+      for (const input of [{ agentId: "unknown", effort: "high" }, { agentId: "codex", effort: "invalid" }, { agentId: "codex" }]) {
+        expect((await api("/settings/agent-effort", { method: "PUT", body: JSON.stringify(input) })).status).toBe(400);
+        expect(daemon.store.settings.get()).toEqual(valid);
+      }
+    } finally { daemon.store.settings.patch(before); }
+  });
+
+  test("composer preferences persist without changing threads or other agent settings", async () => {
+    const before = daemon.store.settings.get();
+    const thread = daemon.store.threads.create({ agentId: "claude", model: "original-model" });
+    try {
+      daemon.store.settings.patch({
+        agents: {
+          codex: { binaryPath: "custom-codex", model: "old-model", permissionMode: "bypass", extraAllowedTools: ["tool_a"], pickerModels: ["model-a"] },
+          claude: { binaryPath: "custom-claude", model: "claude-model" },
+        },
+      });
+      const configured = daemon.store.settings.get();
+      const response = await api("/settings/agent-preference", {
+        method: "PUT", body: JSON.stringify({ agentId: "codex", model: "model-b" }),
+      });
+      expect(response.status).toBe(200);
+      const saved = await response.json();
+      expect(saved.defaultAgent).toBe("codex");
+      expect(saved.agents.codex).toEqual({ ...configured.agents.codex, model: "model-b" });
+      expect(saved.agents.claude).toEqual(configured.agents.claude);
+      // A fresh repository reads the committed preference, not the in-memory cache.
+      expect(new SettingsRepo(daemon.store.db).get()).toEqual(saved);
+      expect(daemon.store.threads.get(thread.id)).toMatchObject({ agentId: "claude", model: "original-model" });
+
+      const resetModel = await api("/settings/agent-preference", {
+        method: "PUT", body: JSON.stringify({ agentId: "codex", model: null }),
+      });
+      expect((await resetModel.json()).agents.codex.model).toBeNull();
+      const addAgent = await api("/settings/agent-preference", {
+        method: "PUT", body: JSON.stringify({ agentId: "grok", model: "grok-model" }),
+      });
+      expect(addAgent.status).toBe(200);
+      expect((await addAgent.json()).agents.grok).toMatchObject({ model: "grok-model", permissionMode: "acceptEdits" });
+      const valid = daemon.store.settings.get();
+      for (const input of [{ agentId: "unknown", model: null }, { agentId: "codex", model: 42 }, { agentId: "codex" }]) {
+        expect((await api("/settings/agent-preference", { method: "PUT", body: JSON.stringify(input) })).status).toBe(400);
+        expect(daemon.store.settings.get()).toEqual(valid);
+      }
+    } finally {
+      daemon.store.settings.patch(before);
+      daemon.store.threads.delete(thread.id);
+    }
+  });
+
   test("thread snapshots retain timing for older replies and copied branch history", async () => {
     const store = daemon.store;
     const thread = store.threads.create({ agentId: "claude" });
