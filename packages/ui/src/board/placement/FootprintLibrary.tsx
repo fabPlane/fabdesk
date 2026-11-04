@@ -137,6 +137,7 @@ export function FootprintLibrary({
             CC-BY-SA with design exception
           </a>
         </p>
+        <p>Footprint geometry only. Matching pad numbers does not verify electrical function, component value, supplier availability or BOM compatibility.</p>
         <div className="fd-placement-library-search">
           <input
             aria-label="Search footprint library"
@@ -151,7 +152,7 @@ export function FootprintLibrary({
               disabled={!target}
               onChange={(e) => setCompatible(e.target.checked)}
             />{" "}
-            Matching pads only
+            Matching numbered pads only
           </label>
         </div>
         <div className="fd-placement-library-columns">

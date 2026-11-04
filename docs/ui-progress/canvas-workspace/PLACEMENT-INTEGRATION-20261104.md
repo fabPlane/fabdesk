@@ -1,4 +1,60 @@
-# Placement integration analysis — November 4
+# Placement integration — November 4
+
+
+## Implemented canvas integration
+
+The approved proposal is now implemented for source-bound placement drafts. The analysis and simulated HTML below are retained as the **earlier baseline/proposal**, not the current implementation status. PR393's engine/worker/catalog are reused; no backend, vendor or Mechanical implementation was rebuilt.
+
+- Board → PCB → **Edit placement** (or Board tools → Placement draft) keeps PCB selected. Arrange, Resize, Review draft and contextual Ask share the task row. One canvas remains; the inspector starts closed, collapses and resets its scroll for a new task. Parts selection retains zoom; Focus is explicit.
+- Draft, cache and device recovery bind to core endpoint, project, exact PCB path, source ID and SHA-256. Saved draft envelopes include the source receipt; revision-specific paths preserve earlier drafts. Assembly members require an explicit available, owned project source. Unbound legacy drafts remain preserved, never silently adopted.
+- Resize and footprint comparison retain worker preview/cancel/apply and undo. The common preview strip says **Preview — not applied / Apply to draft**. Clean source opening is not an unsaved edit. Save persists the editable draft; original native files stay unchanged.
+- Footprint review names the actual old/new package and shows numbered-pad/net geometry. Matching pads do not establish function, value, supplier/BOM compatibility or electrical safety. No footprint change was applied in the native walkthrough.
+- Contextual Ask attaches source path/hash, selected refs, dimensions, draft revision/save state, unapplied preview and geometric analysis. It prepares an unsent question and preserves existing text; no agent message was sent in this test.
+- Export creates a separate unrouted PCB and records its hash/revision/dimensions. **Continue in a working copy** creates a separate project, copies native source hierarchy/local assets, installs the exported PCB at its source path and opens Routing for that project. Original files remain read-only. Generated renders/reports/exports and old job data are excluded, so inherited checks cannot be presented as fresh evidence. A provenance receipt is saved in `placement/working-copy.json`.
+- Copy preflight verifies source/candidate hashes and bounded source size; copying rechecks files and source membership before activation. A failed partial copy stays inspectable and is not activated. External libraries outside the project remain unverified.
+- Existing guarded saved-PCB position editing stays available with its original semantics. Resize/compare entries clearly open a separate draft. Mechanical/enclosure remains teammate-owned and unchanged.
+
+### Native human-test result
+
+Testing used visible clicks and normal typing in fabPlane Dev, the existing preserved profile, the six-part Button light project and the declared VAIO assembly. File-hash diagnostics and code tests below are separate evidence.
+
+| Journey | Outcome / evidence |
+| --- | --- |
+| PCB → Edit placement; Resize 30→34 mm → Cancel | **Passed.** Preview was separate; Cancel returned to 30 mm. Compact controls and collapsing inspector remained usable. |
+| Resize → Apply to draft → Save → tab/project revisit | **Passed.** Draft dimensions restored; final root draft is 32×20 mm. The original saved PCB remains 30×20 mm. A later renderer remount reported saved-draft restoration. |
+| Export and Inspect exported copy | **Passed.** Exact separate PCB opens in Files; Back returns to the task. A Save/Export refetch initially reset the editor and hid its result; stable source-query identity fixed this, and repeat export retained the handoff controls. |
+| VAIO I/O → Arrange → R6 X78.5→78.75 mm → RH → I/O → Save | **Passed.** I/O is 36.8×27.4 mm /22 parts; RH is 67×17.7 mm /11 parts. RH did not inherit the edit; I/O retained and saved it. All original member files stayed exact. |
+| R6 → Compare footprint → Preview → Cancel | **Passed.** 0805 old/new dimensions and pad/net geometry shown; change list names the footprint delta. No replacement applied. |
+| Ask about placement draft | **Passed.** Unsent prompt and expanded attachment identify the exact I/O source/hash and draft. Existing conversation drafts were retained; no Send. |
+| Export 32×20 mm → Continue in working copy → Create copy & open routing | **Passed.** New Button light placement-copy project received the exact exported PCB and local sources; original evidence was not inherited. |
+| Working copy → Start routing → Review candidate → Keep saved PCB | **Passed with engineering limitation.** Actual Freerouting result is **partial**, with `USB_CC2` and `USB_CC1` unrouted. Review states this explicitly. Candidate was left unapplied; working PCB still matches the exported unrouted copy. This is not a clean routing/check/manufacturing result. |
+
+Source preservation after the entire walkthrough: **54 protected root files and 137 original VAIO files unchanged**. The copy's canonical PCB SHA-256 equals its exported candidate receipt. Native captures are original/unmodified; screenshot hashes and the read-only preservation result are included beside this report. Temporary developmental draft/export iterations remain preserved locally.
+
+### Current checks and resume checklist
+
+- UI/client-core typechecks passed. UI suite **299 pass /1,299 assertions**; unrestricted client suite **427 pass /1,967 assertions** before the final copy-race regression. Final focused ownership/copy tests **8 pass /41 assertions**, including the new race rejection. Initial restricted client run could not bind loopback fixture servers; the unrestricted rerun passed. No failure is represented as a pass.
+- Final desktop production build passed in **1m21s**, with **zero packaged source maps**. `git diff --check` passed. No new full-root/mobile/installer/hosted-CI success is claimed.
+- [x] Source identity/revision isolation, root and explicit member drafts.
+- [x] One canvas/task row, collapsed contextual inspector and shared preview actions.
+- [x] Native resize cancel/apply/save, source/member switching and footprint preview/cancel.
+- [x] Contextual unsent Ask; separate export and explicit working-copy routing handoff.
+- [x] Actual copy routing review, partial outcome disclosed, original sources preserved.
+- [ ] Full cold process restart: **not independently verified**. View → Reload attempts retained runtime UI state in this development session; do not treat those as a cold restart pass. Saved-file restoration after remount/member/project switching and scoped recovery tests passed.
+- [ ] Native full assembly-copy creation, saved-PCB resize/compare side-entry clicks, narrow viewport and copy failure/size-limit UI are not newly exercised. Assembly source-tree preservation and concurrent/stale-copy failure have unit coverage.
+- [ ] Fresh candidate DRC/ERC, image/model/video/Gerber/order sequence is not newly completed here. The copy intentionally starts without inherited evidence; its routing currently has two unrouted nets. Existing beginner release acceptance applies to the original 30×20 mm source checkpoint only.
+- [ ] Mechanical/enclosure remains deferred to its owner. Full app/engineering roadmap is not declared complete.
+
+![Default placement canvas, inspector closed](placement-integration-20261104/16-ready-placement-canvas.png)
+![Compact resize preview on the actual PCB](placement-integration-20261104/06-compact-preview-controls.png)
+![Source-bound assembly draft](placement-integration-20261104/09-member-io-placement.png)
+![Geometry-only footprint comparison](placement-integration-20261104/12-footprint-geometry-comparison.png)
+![Separate working-copy routing](placement-integration-20261104/14-working-copy-routing.png)
+![Actual partial routing review, left unapplied](placement-integration-20261104/15-routing-partial-review.png)
+
+---
+
+## Historical analysis and proposal
 
 ## Merge result and scope
 

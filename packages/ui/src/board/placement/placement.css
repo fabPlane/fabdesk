@@ -888,3 +888,58 @@
     flex-wrap: wrap;
   }
 }
+
+/* Canvas workspace: a single stage with optional contextual details. */
+.fd-placement-canvas-workspace { position: relative; background: transparent; }
+.fd-placement-mode-tools { display: flex; gap: 6px; align-items: center; }
+.fd-placement-mode-tools button[aria-pressed="true"] { color: var(--fd-accent); background: color-mix(in srgb, var(--fd-accent) 8%, var(--fd-panel)); border-color: color-mix(in srgb, var(--fd-accent) 35%, var(--fd-border)); }
+.fd-placement-canvas-workspace > .fd-placement-header { position: absolute; z-index: 5; right: 18px; top: 16px; padding: 0; border: 0; background: transparent; }
+.fd-placement-canvas-workspace .fd-placement-title { display: none; }
+.fd-placement-canvas-workspace .fd-placement-actions { gap: 8px; }
+.fd-placement-canvas-workspace .fd-placement-save-state { display: none; }
+.fd-placement-canvas-workspace .fd-placement-overview,
+.fd-placement-canvas-workspace .fd-placement-footer,
+.fd-placement-canvas-workspace .fd-placement-canvas-hint { display: none; }
+.fd-placement-canvas-workspace .fd-placement-body { display: block; position: relative; width: 100%; height: 100%; }
+.fd-placement-canvas-workspace .fd-placement-stage { height: 100%; min-height: 0; background: transparent; }
+.fd-placement-canvas-workspace .fd-placement-view-controls { position: absolute; z-index: 3; top: 64px; left: 18px; padding: 0; background: transparent; }
+.fd-placement-canvas-workspace .fd-placement-view-controls > span { display: none; }
+.fd-placement-canvas-workspace .fd-placement-canvas { background: transparent; }
+.fd-placement-source-chip { position: absolute; z-index: 4; top: 20px; left: 18px; display: flex; gap: 8px; align-items: center; pointer-events: none; font-size: 12px; }
+.fd-placement-source-chip small { color: var(--fd-muted); font-size: 11px; }
+.fd-placement-toolbox { position: absolute; z-index: 7; left: 18px; bottom: 18px; }
+.fd-placement-toolbox .fd-placement-toolbar { width: 290px; border: 0; padding: 12px; display: flex; align-items: flex-start; flex-wrap: wrap; background: var(--fd-panel); }
+.fd-placement-toolbox .fd-placement-toolbar > label { width: 100%; }
+.fd-placement-canvas-workspace .fd-placement-zoom { left: 158px; right: auto; bottom: 18px; height: 36px; border-radius: 999px; box-shadow: 0 3px 12px #00000008; }
+.fd-placement-canvas-workspace .fd-placement-gap { bottom: 66px; }
+.fd-placement-canvas-workspace .fd-placement-inspector { position: absolute; z-index: 6; top: 112px; right: 18px; bottom: 80px; width: 320px; background: var(--fd-panel); border: 1px solid var(--fd-border); border-radius: 16px; box-shadow: 0 6px 24px #0000000b; overflow: hidden; }
+.fd-placement-inspector[hidden] { display: none; }
+.fd-placement-inspector-heading { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--fd-border); }
+.fd-placement-canvas-workspace .fd-placement-inspector-content { display: block; }
+.fd-placement-canvas-workspace > .fd-placement-preview { position: absolute; z-index: 8; bottom: 22px; left: 50%; transform: translateX(-50%); width: max-content; max-width: min(720px, calc(100% - 390px)); padding: 12px 16px; border: 1px solid var(--fd-border); border-radius: 16px; background: var(--fd-panel); box-shadow: 0 5px 24px #00000012; }
+.fd-placement-canvas-workspace > .fd-placement-preview p { max-width: 370px; }
+.fd-placement-canvas-workspace > .fd-placement-message { position: absolute; z-index: 9; top: 108px; left: 18px; max-width: 420px; background: var(--fd-panel); border: 1px solid var(--fd-border); border-radius: 10px; box-shadow: 0 3px 12px #00000009; }
+.fd-placement-canvas-workspace .fd-placement-section { min-width: 0; }
+@container (max-width: 950px) {
+  .fd-placement-source-chip small { display: none; }
+  .fd-placement-canvas-workspace > .fd-placement-preview { max-width: calc(100% - 36px); bottom: 66px; }
+  .fd-placement-canvas-workspace .fd-placement-inspector { width: min(320px, calc(100% - 36px)); }
+}
+.fd-placement .fd-workspace-menu { margin-top: 0; }
+.fd-placement .fd-workspace-menu > summary { padding: 7px 12px; color: var(--fd-fg); font-size: 12px; white-space: nowrap; }
+.fd-placement-header .fd-workspace-menu-content { right: 0; left: auto; }
+.fd-placement-toolbox .fd-workspace-menu-content { top: auto; bottom: calc(100% + 10px); width: 300px; }
+.fd-placement-canvas-workspace .fd-placement-stage { padding: 112px 0 86px; }
+.fd-placement-canvas-workspace.has-inspector .fd-placement-stage { width: calc(100% - 356px); }
+.fd-placement-fit { position: absolute; left: 286px; bottom: 18px; }
+.fd-placement-fit > button { border-radius: 999px; height: 36px; background: var(--fd-panel); }
+.fd-placement-canvas-workspace .fd-placement-view-controls { top: 58px; }
+.fd-placement-canvas-workspace .fd-placement-zoom { gap: 8px; }
+@container (max-width: 780px) {
+  .fd-placement-canvas-workspace.has-inspector .fd-placement-stage { width: 100%; }
+  .fd-placement-canvas-workspace .fd-placement-source-chip { top: 64px; }
+  .fd-placement-canvas-workspace .fd-placement-view-controls { top: 92px; }
+  .fd-placement-canvas-workspace .fd-placement-stage { padding-top: 140px; }
+}
+.fd-placement-canvas-workspace > .fd-placement-preview p { display: none; }
+.fd-placement-canvas-workspace > .fd-placement-preview small { display: block; margin-top: 4px; color: var(--fd-muted); font-size: 11px; }

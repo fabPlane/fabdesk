@@ -1,4 +1,4 @@
-Latest integration analysis: [PR393 merge resolution and proposed canvas workflow](PLACEMENT-INTEGRATION-20261104.md).
+Latest integration: [source-bound PCB placement canvas, working-copy routing and native acceptance](PLACEMENT-INTEGRATION-20261104.md). Includes actual partial routing limits; earlier proposal and captures retained.
 
 Latest UI follow-up: [files, Back navigation, output grouping and finding details](FILES-NAVIGATION-OUTPUTS-20261104.md).
 
