@@ -40,6 +40,7 @@ export type IconName =
   | "pin"
   | "pinFilled"
   | "more"
+  | "moreVertical"
   | "stop"
   | "command"
   | "folder"
@@ -105,6 +106,7 @@ export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconN
     pin: <><path d="M8 3h8l-1 7 3 3v2H6v-2l3-3-1-7Z" /><path d="M12 15v7" /></>,
     pinFilled: <><path d="M8 3h8l-1 7 3 3v2H6v-2l3-3-1-7Z" fill="currentColor" /><path d="M12 15v7" /></>,
     more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>,
+    moreVertical: <><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></>,
     stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
     command: <><path d="M9 7V5a2 2 0 1 0-2 2h10a2 2 0 1 0-2-2v14a2 2 0 1 0 2-2H7a2 2 0 1 0 2 2V7Z" /></>,
   };

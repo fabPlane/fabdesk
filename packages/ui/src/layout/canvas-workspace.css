@@ -109,6 +109,9 @@
 .fd-overview-facts button + button { border-left:1px solid var(--fd-border); }
 .fd-board-context-tools .fd-workspace-menu { flex-shrink:0; }
 .fd-board-context-tools .fd-workspace-menu summary { font-size:12px; min-height:30px; padding:5px 8px; }
+.fd-board-context-tools .fd-context-more > summary,.fd-assembly-context .fd-context-more > summary { width:32px; height:32px; min-height:32px; padding:6px; justify-content:center; gap:0; color:var(--fd-fg); }
+.fd-context-more > summary:hover,.fd-context-more[open] > summary { background:var(--fd-panel-2); border-color:var(--fd-accent); }
+.fd-board-context-tools > button:not(:disabled),.fd-assembly-context > button:not(:disabled) { cursor:pointer; }
 .fd-overview-facts svg { grid-row:span 2; align-self:center; color:var(--fd-muted); }
 .fd-overview-facts strong { font-size:13px; font-weight:550; }
 .fd-overview-facts span { font-size:11px; color:var(--fd-muted); }

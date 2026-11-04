@@ -86,11 +86,11 @@ function SingleBoardOverview() {
       </button>
       {selected && <div className="fd-board-context-tools" aria-label="Board actions">
         <span><Icon name={designTab === "schematic" ? "compose" : "pcb"} width={17} height={17} />{designLabel}</span>
-        <Button variant="ghost" size="sm" onClick={() => ui().setBoardTab(pcb || schematic ? designTab : "files")}><Icon name={pcb || schematic ? "compose" : "folderOpen"} width={16} height={16} />{!pcb && !schematic ? "Open project files" : designTab === "schematic" ? "Open schematic" : "Open board"}</Button>
-        <Button variant="ghost" size="sm" onClick={() => {
+        <Button variant="primary" size="sm" onClick={() => ui().setBoardTab(pcb || schematic ? designTab : "files")}><Icon name={pcb ? "pcb" : schematic ? "schematic" : "folderOpen"} width={16} height={16} />{!pcb && !schematic ? "Open project files" : designTab === "schematic" ? "Open schematic" : "Open board"}</Button>
+        <Button size="sm" onClick={() => {
           if (assistantSurface) askAboutSurface(assistantSurface, "Review this design’s available saved schematic and PCB sources. Explain its purpose and any changes that need attention before proposing edits.");
         }}><Icon name="sparkles" width={16} height={16} />Ask</Button>
-        <WorkspaceMenu label={<><span>More</span><Icon name="chevronDown" width={14} height={14} /></>}>
+        <WorkspaceMenu className="fd-context-more" ariaLabel="More board actions" label={<Icon name="moreVertical" width={18} height={18} />}>
           <button onClick={() => ui().setBoardTab(designTab === "schematic" ? "pcb" : "schematic")}>{designTab === "schematic" ? "PCB" : "Schematic"}</button>
           <button onClick={() => ui().setBoardTab("3d")}>3D model</button>
           <button onClick={() => ui().setWorkspaceArea("mechanical")}>Enclosure</button>
