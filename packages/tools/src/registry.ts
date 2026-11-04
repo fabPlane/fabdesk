@@ -158,6 +158,9 @@ export type ToolDef<I extends z.ZodRawShape = z.ZodRawShape> = {
   localOnly?: boolean;
   /** Supports an explicit assembly source selector. Other tools reject that argument. */
   boardScoped?: boolean;
+  /** Project mechanical workspace; handlers require explicit jailed source paths and revisions.
+   * Does not imply membership or permit unscoped native member edits. */
+  assemblyWide?: boolean;
   handler: ToolHandler<I>;
 };
 

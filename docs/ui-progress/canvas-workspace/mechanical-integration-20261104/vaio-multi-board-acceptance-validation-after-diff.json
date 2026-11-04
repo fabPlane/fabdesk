@@ -1,0 +1,14 @@
+{
+  "changed": [],
+  "removed": [
+    "boards/io/~board.kicad_pro.lck"
+  ],
+  "added": [
+    "boards/lcd/board.kicad_prl",
+    "boards/carrier/board.kicad_prl",
+    "renders/pcb-models/115324eb-253e-4fe6-ac18-83651b85874a.glb",
+    "renders/pcb-models/0aef490e-f5f4-4844-9972-a34ea7155e9e.glb",
+    "renders/pcb-models/1890064c-d6fe-4ab6-adb9-e43f94dbeccf.glb"
+  ],
+  "preservedNativeSources": true
+}

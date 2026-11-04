@@ -188,3 +188,20 @@ test("HTTP member resize retains the selected source, required source SHA and ex
   const invalid = await app.request("/tools/pcb_resize_outline", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: f.project.id, args: { ...args, expectedSourceSha256: undefined } }) });
   expect(invalid.status).toBe(400); expect(calls).toHaveLength(1);
 });
+
+
+test("mechanical workspace uses explicit paths without weakening assembly native guards", async () => {
+  const f = await fixture();
+  const run = (name: string, args: Record<string, unknown>) => f.registry.invoke(name, { project: f.project.id, ...args }, (projectRef, def, board) => f.factory({ projectRef, def, ...(board ? { board } : {}), signal: new AbortController().signal, progress: () => {} }));
+  const status = await run("cad_fit", { action: "status" });
+  expect(status.json).toMatchObject({ board: null, capabilities: { pcb: false } });
+  // An explicit path reaches the revision guard, rather than inferring a canonical board.
+  await expect(run("render_pcb_display", { boardPath: "boards/a/board.kicad_pcb", expectedPcbRevision: "0".repeat(64) })).rejects.toThrow("PCB changed");
+  await expect(run("render_pcb_display", { boardPath: "../escape.kicad_pcb", expectedPcbRevision: "0".repeat(64) })).rejects.toThrow();
+  await expect(run("cad_fit", { action: "edit_board" })).rejects.toThrow("supported explicit assembly board source");
+  await expect(run("render_glb", {})).rejects.toThrow("explicit assembly board source");
+  await expect(run("pcb_define_outline", { widthMm: 10, heightMm: 10 })).rejects.toThrow("not yet board-scoped");
+  expect(await readFile(join(f.root, "board.kicad_pcb"), "utf8")).toBe("root source");
+  expect(await readFile(join(f.root, "boards/a/board.kicad_pcb"), "utf8")).toBe("source a");
+  expect(f.calls).toEqual([]);
+});

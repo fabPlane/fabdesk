@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { dirname, extname, posix } from "node:path";
 import { readSavedBoardModels, resolveModelPath } from "@fabdesk/kicad";
 import { jailPath, projectRelative } from "../fs";
@@ -44,7 +44,15 @@ export async function bundleEnclosureModels(dir: string, boards: Record<string, 
       try {
         // Validate every candidate before reading any of them, including substituted STEP files.
         const safe = await Promise.all(paths.map((p) => jailPath(dir, p)));
-        for (const path of safe) {
+        const seen = new Set<string>();
+        for (const candidate of safe) {
+          // Case-insensitive filesystems can resolve .step and .STEP to the same file.
+          // Canonicalize only after every candidate has passed the project jail.
+          const canonical = await realpath(candidate).catch(() => null);
+          if (!canonical) continue; // Missing substitution candidates are ordinary dependencies.
+          const path = await jailPath(await realpath(dir), canonical);
+          if (seen.has(path)) continue;
+          seen.add(path);
           let content = sources.get(path);
           if (!content) {
             const info = await stat(path).catch(() => null);

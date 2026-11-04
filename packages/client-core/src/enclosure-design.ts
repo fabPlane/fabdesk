@@ -219,6 +219,8 @@ export function validateEnclosureFile(name: string, bytes: number) {
     throw new Error("Choose an enclosure between 1 byte and 50 MiB.");
 }
 export function enclosureFileLabel(path: string): string {
+  // Common PCB basenames are otherwise indistinguishable in an assembly picker.
+  if (/\.kicad_pcb$/i.test(path) && path.includes("/")) return path;
   return (path.split("/").at(-1) ?? path).replace(
     /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}-/i,
     "",

@@ -337,6 +337,9 @@ const cli = await findKicadCli();
 const packaged = cli !== null && /^10\./.test(cli.version);
 
 describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
+  // These integration cases launch real KiCad processes repeatedly (including cold exports).
+  // Keep unit-test deadlines unchanged; allow the native assertions to finish under load.
+  const nativeTest = (name: string, fn: () => Promise<void>) => test(name, fn, 30_000);
   let dir = "";
   let first: MechanicalSection;
   const collect = () =>
@@ -353,7 +356,7 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     return [value.minX, value.maxX, value.minY, value.maxY, value.minZ, value.maxZ];
   };
 
-  test("the fixture model is independently a 2 x 4 x 1.13 mm box in millimetres", async () => {
+  nativeTest("the fixture model is independently a 2 x 4 x 1.13 mm box in millimetres", async () => {
     const step = await readFile(join(FIXTURE, "models", "box.step"), "utf8");
     expect(step).toContain("SI_UNIT(.MILLI.,.METRE.)");
     const points = [...step.matchAll(/CARTESIAN_POINT\('[^']*',\(([^)]*)\)\)/g)].map((m) =>
@@ -370,7 +373,7 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     ]);
   });
 
-  test("measures placement, sides, heights, coverage and overlap labelling", async () => {
+  nativeTest("measures placement, sides, heights, coverage and overlap labelling", async () => {
     dir = await fixtureCopy();
     first = await collect();
     expect(first.source.cache.status).toBe("miss");
@@ -461,7 +464,7 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     return text.includes("99.999") || text.includes("4242") || text.includes("evil");
   };
 
-  test("unchanged content hits the process-local cache; hits cannot be poisoned", async () => {
+  nativeTest("unchanged content hits the process-local cache; hits cannot be poisoned", async () => {
     expect(await readdir(scratch())).toEqual([]); // temporary GLB removed after success
     const pristine = structuredClone(first);
     // Mutating the object a miss returned must not reach the cache.
@@ -488,7 +491,7 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     first = pristine;
   });
 
-  test("project-local result JSON never influences returned evidence", async () => {
+  nativeTest("project-local result JSON never influences returned evidence", async () => {
     const key = first.source.cache.key!;
     const real = () => JSON.parse(JSON.stringify(first));
     const fabricated = real();
@@ -547,7 +550,7 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     }
   });
 
-  test("placement-only and model-file-only changes miss", async () => {
+  nativeTest("placement-only and model-file-only changes miss", async () => {
     const boardPath = join(dir, "board.kicad_pcb");
     const moved = placeFootprints(await readFile(boardPath, "utf8"), [
       { ref: "U1", x: 112, y: 100 },
@@ -567,7 +570,7 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     expect(bounds(afterModel, "U9")).toEqual([119, 121, 103, 107, 1.615, 2.745]);
   });
 
-  test("a model or substitution changing during export fails before evidence or cache", async () => {
+  nativeTest("a model or substitution changing during export fails before evidence or cache", async () => {
     const isolated = await fixtureCopy();
     const scratchDir = join(isolated, ".fabdesk", "cache", "mechanical");
     const board = join(isolated, "board.kicad_pcb");

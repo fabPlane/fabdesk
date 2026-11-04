@@ -25,6 +25,7 @@ import { pcbModelReadiness, renderPcbDisplay } from "./pcb-display";
 
 export const render_pcb_readiness = defineTool({
   name: "render_pcb_readiness",
+  assemblyWide: true,
   toolset: "render",
   title: "Check PCB model setup",
   description:
@@ -37,6 +38,22 @@ export const render_pcb_readiness = defineTool({
     idempotentHint: true,
   },
   handler: ({ boardPaths }, ctx) => pcbModelReadiness(ctx, boardPaths),
+});
+
+/** Display caches are project-owned and never replace a canonical/member model receipt. */
+export const render_pcb_display = defineTool({
+  name: "render_pcb_display",
+  toolset: "render",
+  assemblyWide: true,
+  title: "Display a selected PCB model",
+  description: "Create an isolated display model for an explicit project-relative PCB path and captured PCB revision. Does not infer assembly membership, replace the saved board model, edit sources, or verify physical fit.",
+  inputSchema: {
+    boardPath: z.string().min(1),
+    expectedPcbRevision: z.string().regex(/^[a-f0-9]{64}$/),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  longRunning: true,
+  handler: ({ boardPath, expectedPcbRevision }, ctx) => renderPcbDisplay(ctx, boardPath, expectedPcbRevision),
 });
 
 async function fileRevision(
@@ -588,6 +605,7 @@ export const render_product_video = defineTool({
 
 export const renderTools = [
   render_pcb_readiness,
+  render_pcb_display,
   render_schematic_svg,
   render_pcb_svg,
   render_view,

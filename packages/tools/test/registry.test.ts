@@ -298,6 +298,7 @@ describe("registry", () => {
       "verify_viagrid",
       "release_build",
       "render_pcb_readiness",
+      "render_pcb_display",
       "render_schematic_svg",
       "render_pcb_svg",
       "render_view",

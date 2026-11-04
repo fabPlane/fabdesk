@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { WorkspaceMenu } from "../../layout/WorkspaceMenu";
+import { Button } from "../../components/ui";
+import { useAssistantSurface, askAboutSurface } from "../../chat/useAssistantSurface";
+import type { AssistantSurface } from "../../chat/assistant-context";
 import type { CadRuntimeState } from "@fabdesk/protocol";
 import {
   useCoreClient,
@@ -26,11 +31,16 @@ import { CircuitLogo } from "../../components/CircuitLogo";
 import { useUiStore } from "../../stores/ui";
 import { MechanicalIcon } from "./MechanicalIcon";
 import { MechanicalViewCube } from "./MechanicalViewCube";
-import { EnclosureDesigner, type EnclosureWorkspaceController } from "./EnclosureDesigner";
+import {
+  EnclosureDesigner,
+  type EnclosureWorkspaceController,
+  type EnclosureViewState,
+} from "./EnclosureDesigner";
 import { detailedBoardSource, usePcbModels } from "./usePcbModels";
 import { PcbModelStatus } from "./PcbModelStatus";
 import "./mechanical.css";
 import "./mechanical-entry.css";
+import "./canvas-mechanical.css";
 
 type EnclosureResult = {
   mesh?: string;
@@ -163,6 +173,11 @@ export function MechanicalWorkspace({
   advanced: ReactNode;
   cadRuntime?: CadRuntimeState | null;
 }) {
+  const canvas = useUiStore((s) => s.canvasMode);
+  const [toolbarHost, setToolbarHost] = useState<Element | null>(null);
+  useEffect(() => {
+    setToolbarHost(canvas ? document.querySelector("[data-mechanical-toolbar-slot]") : null);
+  }, [canvas]);
   const client = useCoreClient(),
     project = useProject(projectId),
     projects = useProjects();
@@ -172,6 +187,12 @@ export function MechanicalWorkspace({
   const [sharedBoardModels, setSharedBoardModels] = useState<SceneModel[]>([]);
   const [hiddenSharedBoards, setHiddenSharedBoards] = useState<Set<string>>(() => new Set());
   const [workspaceTab, setWorkspaceTab] = useState<"assembly" | "connections">("assembly");
+  const [enclosureView, setEnclosureView] = useState<EnclosureViewState>({
+    panel: "generator",
+    preview: "none",
+    busy: false,
+    saved: false,
+  });
   const [enclosureContext, setEnclosureContext] = useState<string | null>(null);
   const [enclosureReviewCount, setEnclosureReviewCount] = useState(0);
   const [enclosureHistory, setEnclosureHistory] = useState({ canUndo: false, canRedo: false });
@@ -304,7 +325,7 @@ export function MechanicalWorkspace({
         {
           left: leftPanel ? 320 : 24,
           right: addEntry ? 356 : rightPanel ? 320 : 24,
-          top: compactImport ? 170 : 64,
+          top: compactImport ? 170 : canvas ? 24 : 64,
           bottom: 76,
         },
         autoFit,
@@ -313,7 +334,7 @@ export function MechanicalWorkspace({
     const observer = new ResizeObserver(() => frame(false));
     observer.observe(host.current);
     return () => observer.disconnect();
-  }, [panel, leftPanel, rightPanel, addEntry, compactImport]);
+  }, [panel, leftPanel, rightPanel, addEntry, compactImport, canvas]);
   function selectModel(id: string | null) {
     setSelected(id);
     if (id) {
@@ -445,7 +466,8 @@ export function MechanicalWorkspace({
           ).items;
         let res: EnclosureResult = {};
         try {
-          res = result(await client.callTool("cad_enclosure", { projectId, action: "status" }));
+          if (!canvas)
+            res = result(await client.callTool("cad_enclosure", { projectId, action: "status" }));
         } catch (e) {
           if (!canceled) setError("Board enclosure is unavailable: " + message(e));
         }
@@ -493,7 +515,7 @@ export function MechanicalWorkspace({
     return () => {
       canceled = true;
     };
-  }, [client, projectId]);
+  }, [client, projectId, canvas]);
   useEffect(() => {
     if (!loaded || loadedProject.current !== projectId) return;
     let canceled = false;
@@ -902,9 +924,132 @@ export function MechanicalWorkspace({
     if (current.scale !== unitScale) patch(current.id, { scale: unitScale });
     setConfirmedScales((previous) => ({ ...previous, [current.id]: unitScale }));
   }
+  const assistantSurface: AssistantSurface = {
+    projectId,
+    label: `Mechanical / ${workspaceTab === "connections" ? "Connections" : current ? current.name : "Assembly"}`,
+    priority: 15,
+    details: JSON.stringify({
+      task: panel,
+      selectedModel: current
+        ? {
+            name: current.name,
+            path: current.path,
+            kind: current.kind,
+            position: current.position,
+            rotation: current.rotation,
+            scale: current.scale,
+            unitsConfirmed: confirmedScales[current.id] === current.scale,
+          }
+        : null,
+      saveState: projectSaveState,
+      preview: !!preview,
+      busy: busy || null,
+      boardModels: assemblyItems
+        .filter((i) => i.kind === "board")
+        .map((i) => ({ name: i.name, path: i.path })),
+      warnings: errors.slice(0, 12),
+      instruction:
+        "Use the current saved sources and named model paths. Original PCB/import files are preserved; assembly transforms and an unapplied preview do not establish physical fit or manufacturability. Explain the next visible action; inspect before proposing edits.",
+    }),
+  };
+  useAssistantSurface(panel !== "design" ? assistantSurface : null);
+  const askMechanical = () => {
+    const currentSurface =
+      Object.values(useUiStore.getState().assistantSurfaces)
+        .filter((s) => s.projectId === projectId)
+        .sort((a, b) => b.priority - a.priority)[0] ?? assistantSurface;
+    askAboutSurface(
+      currentSurface,
+      "Help me with this mechanical view. Explain what is selected, what needs review, and the next useful action. Inspect the saved sources before proposing changes.",
+    );
+  };
+  const openCanvasAssembly = () => {
+    if (enclosureView.saved || enclosureView.preview !== "none") {
+      setWorkspaceTab("assembly");
+      setPanel("design");
+      enclosureController.current?.openAssembly();
+    } else openAssembly();
+  };
+  const taskTools = (
+    <div className="fd-mechanical-canvas-tasks">
+      <div className="fd-mechanical-task-tabs" role="tablist" aria-label="Mechanical views">
+        <Button
+          size="sm"
+          role="tab"
+          aria-selected={workspaceTab === "assembly"}
+          disabled={!!busy || !!preview || enclosureView.busy}
+          onClick={openCanvasAssembly}
+        >
+          Assembly
+        </Button>
+        <Button
+          size="sm"
+          role="tab"
+          aria-selected={workspaceTab === "connections"}
+          disabled={!!busy || !!preview || enclosureView.busy}
+          onClick={openConnections}
+        >
+          Connections
+        </Button>
+      </div>
+      <Button
+        size="sm"
+        title="Ask about the current mechanical view"
+        aria-label="Ask about this mechanical view"
+        onClick={askMechanical}
+      >
+        <Icon name="sparkles" width={18} height={18} />
+      </Button>
+      <span className="fd-mechanical-canvas-save" role="status">
+        {projectSaveState}
+      </span>
+      <Button
+        size="sm"
+        aria-expanded={panel === "design" ? enclosureView.panel === "review" : showReview}
+        onClick={openReview}
+      >
+        <Icon name={reviewCount ? "warning" : "checklist"} width={16} height={16} />
+        Fit review{reviewCount ? ` · ${reviewCount}` : ""}
+      </Button>
+      <Button
+        size="sm"
+        aria-expanded={panel === "design" ? enclosureView.panel === "export" : showExport}
+        disabled={!!busy || enclosureView.busy}
+        onClick={openExport}
+      >
+        <Icon name="export" width={16} height={16} />
+        Export
+      </Button>
+      <WorkspaceMenu
+        label={
+          <span aria-label="More mechanical tools">
+            <Icon name="moreVertical" width={18} height={18} />
+          </span>
+        }
+      >
+        <button onClick={openAssembly}>Add enclosure or model</button>
+        <button
+          onClick={() => {
+            setWorkspaceTab("assembly");
+            setPanel("assembly");
+            setSelected(null);
+          }}
+        >
+          Parts & arrangement
+        </button>
+        <button onClick={openEnclosure}>Generate enclosure</button>
+        <button onClick={() => enclosureController.current?.saveDraft()}>
+          Save enclosure settings
+        </button>
+        <div className="fd-menu-divider" />
+        <button onClick={() => setAdvancedOpen(true)}>Advanced CAD…</button>
+      </WorkspaceMenu>
+    </div>
+  );
   return (
     <section
       className={`fd-mechanical${expanded && boardVisible ? " is-expanded" : ""}${leftPanel ? " has-left-panel" : ""}${rightPanel ? " has-right-panel" : ""}${preview ? " has-preview" : ""}${explode > 0 && !preview ? " is-exploded" : ""}`}
+      data-canvas={canvas}
       data-testid="mechanical-workspace"
       data-enclosure-design={panel === "design"}
       data-add-entry={addEntry}
@@ -946,153 +1091,156 @@ export function MechanicalWorkspace({
           void importModel(e.dataTransfer.files[0]);
       }}
     >
+      {canvas && (toolbarHost ? createPortal(taskTools, toolbarHost) : taskTools)}
       <div className="fd-mechanical-stage" ref={host} />
-      <header className="fd-mechanical-header fd-mechanical-reference-header">
-        <div className="fd-mechanical-breadcrumbs">
-          <span className="fd-mechanical-brand">
-            <CircuitLogo width={22} height={22} viewBox="6 6 40 40" />
-            <strong>fabPlane</strong>
-          </span>
-          <select
-            aria-label="Mechanical project"
-            className="fd-mechanical-project-select"
-            value={projectId}
-            disabled={!!busy}
-            onChange={(e) => setActiveProject(e.target.value)}
-          >
-            {!projects.data?.some((p) => p.id === projectId) && (
-              <option value={projectId}>{title}</option>
+      {!canvas && (
+        <header className="fd-mechanical-header fd-mechanical-reference-header">
+          <div className="fd-mechanical-breadcrumbs">
+            <span className="fd-mechanical-brand">
+              <CircuitLogo width={22} height={22} viewBox="6 6 40 40" />
+              <strong>fabPlane</strong>
+            </span>
+            <select
+              aria-label="Mechanical project"
+              className="fd-mechanical-project-select"
+              value={projectId}
+              disabled={!!busy}
+              onChange={(e) => setActiveProject(e.target.value)}
+            >
+              {!projects.data?.some((p) => p.id === projectId) && (
+                <option value={projectId}>{title}</option>
+              )}
+              {projects.data?.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <span className="fd-mechanical-divider">/</span>
+            <button className="fd-mechanical-breadcrumb-link" onClick={openAssembly}>
+              Mechanical
+            </button>
+            {breadcrumb && (
+              <>
+                <span className="fd-mechanical-divider">/</span>
+                <span className="fd-mechanical-current-context" title={breadcrumb}>
+                  {breadcrumb}
+                </span>
+              </>
             )}
-            {projects.data?.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <span className="fd-mechanical-divider">/</span>
-          <button className="fd-mechanical-breadcrumb-link" onClick={openAssembly}>
-            Mechanical
-          </button>
-          {breadcrumb && (
-            <>
-              <span className="fd-mechanical-divider">/</span>
-              <span className="fd-mechanical-current-context" title={breadcrumb}>
-                {breadcrumb}
-              </span>
-            </>
-          )}
-        </div>
-        <div className="fd-mechanical-header-actions">
-          <span className="fd-mechanical-save" role="status">
-            <span className="fd-mechanical-save-dot" />{" "}
-            {projectSaveState === "Saved in project" ||
-            projectSaveState === "Enclosure settings loaded"
-              ? "Saved"
-              : projectSaveState}
-          </span>
-          {panel !== "design" && saveState === "Save failed" && (
-            <button onClick={() => save(itemsRef.current)}>Retry save</button>
-          )}
-          <button onClick={openExport} disabled={!!busy}>
-            <Icon name="export" /> Export
-          </button>
-          <details className="fd-mechanical-workspace-menu">
-            <summary aria-label="Workspace options">
-              <Icon name="more" />
-            </summary>
-            <div>
-              <button
-                onClick={(e) => {
-                  e.currentTarget.closest("details")?.removeAttribute("open");
-                  openAssembly();
-                }}
-              >
-                Add enclosure or model
-              </button>
-              <button
-                onClick={(e) => {
-                  e.currentTarget.closest("details")?.removeAttribute("open");
-                  setWorkspaceTab("assembly");
-                  setPanel("assembly");
-                  setSelected(null);
-                }}
-              >
-                Parts & arrangement
-              </button>
-              <button
-                onClick={(e) => {
-                  e.currentTarget.closest("details")?.removeAttribute("open");
-                  openEnclosure();
-                }}
-              >
-                Generate enclosure
-              </button>
-              <button
-                onClick={(e) => {
-                  e.currentTarget.closest("details")?.removeAttribute("open");
-                  enclosureController.current?.saveDraft();
-                }}
-              >
-                Save enclosure draft
-              </button>
-              <button
-                onClick={(e) => {
-                  e.currentTarget.closest("details")?.removeAttribute("open");
-                  setAdvancedOpen(true);
-                }}
-              >
-                Advanced CAD
-              </button>
-              <button
-                aria-pressed={ghost}
-                onClick={(e) => {
-                  e.currentTarget.closest("details")?.removeAttribute("open");
-                  setGhost(!ghost);
-                }}
-              >
-                {ghost ? "Show solid surfaces" : "See through models"}
-              </button>
-              <button
-                disabled={!sources.some((source) => source.item.kind === "lid")}
-                onClick={(e) => {
-                  e.currentTarget.closest("details")?.removeAttribute("open");
-                  setExplode(explode ? 0 : 25);
-                }}
-              >
-                {explode ? "Close exploded view" : "Explode lid"}
-              </button>
-              <button
-                disabled={!editable || !canUndo}
-                onClick={(e) => {
-                  e.currentTarget.closest("details")?.removeAttribute("open");
-                  undo();
-                }}
-              >
-                Undo assembly edit
-              </button>
-              <button
-                disabled={!editable || !canRedo}
-                onClick={(e) => {
-                  e.currentTarget.closest("details")?.removeAttribute("open");
-                  undo(true);
-                }}
-              >
-                Redo assembly edit
-              </button>
-              <button
-                aria-pressed={expanded}
-                onClick={(e) => {
-                  e.currentTarget.closest("details")?.removeAttribute("open");
-                  setExpanded(!expanded);
-                }}
-              >
-                {expanded ? "Show chat" : "Focus CAD"}
-              </button>
-            </div>
-          </details>
-        </div>
-      </header>
-      <div className="fd-mechanical-top">
+          </div>
+          <div className="fd-mechanical-header-actions">
+            <span className="fd-mechanical-save" role="status">
+              <span className="fd-mechanical-save-dot" />{" "}
+              {projectSaveState === "Saved in project" ||
+              projectSaveState === "Enclosure settings loaded"
+                ? "Saved"
+                : projectSaveState}
+            </span>
+            {panel !== "design" && saveState === "Save failed" && (
+              <button onClick={() => save(itemsRef.current)}>Retry save</button>
+            )}
+            <button onClick={openExport} disabled={!!busy}>
+              <Icon name="export" /> Export
+            </button>
+            <details className="fd-mechanical-workspace-menu">
+              <summary aria-label="Workspace options">
+                <Icon name="more" />
+              </summary>
+              <div>
+                <button
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    openAssembly();
+                  }}
+                >
+                  Add enclosure or model
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    setWorkspaceTab("assembly");
+                    setPanel("assembly");
+                    setSelected(null);
+                  }}
+                >
+                  Parts & arrangement
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    openEnclosure();
+                  }}
+                >
+                  Generate enclosure
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    enclosureController.current?.saveDraft();
+                  }}
+                >
+                  Save enclosure draft
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    setAdvancedOpen(true);
+                  }}
+                >
+                  Advanced CAD
+                </button>
+                <button
+                  aria-pressed={ghost}
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    setGhost(!ghost);
+                  }}
+                >
+                  {ghost ? "Show solid surfaces" : "See through models"}
+                </button>
+                <button
+                  disabled={!sources.some((source) => source.item.kind === "lid")}
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    setExplode(explode ? 0 : 25);
+                  }}
+                >
+                  {explode ? "Close exploded view" : "Explode lid"}
+                </button>
+                <button
+                  disabled={!editable || !canUndo}
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    undo();
+                  }}
+                >
+                  Undo assembly edit
+                </button>
+                <button
+                  disabled={!editable || !canRedo}
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    undo(true);
+                  }}
+                >
+                  Redo assembly edit
+                </button>
+                <button
+                  aria-pressed={expanded}
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    setExpanded(!expanded);
+                  }}
+                >
+                  {expanded ? "Show chat" : "Focus CAD"}
+                </button>
+              </div>
+            </details>
+          </div>
+        </header>
+      )}
+      <div className="fd-mechanical-top" hidden={canvas}>
         <div
           className="fd-mechanical-segment"
           hidden={panel === "design" && workspaceTab !== "connections"}
@@ -1138,6 +1286,7 @@ export function MechanicalWorkspace({
         onReviewCountChange={setEnclosureReviewCount}
         onConnectionsChange={onConnectionsChange}
         onHistoryChange={setEnclosureHistory}
+        onViewChange={setEnclosureView}
       />
       <div
         className="fd-mechanical-viewport-tools"

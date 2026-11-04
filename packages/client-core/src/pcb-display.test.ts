@@ -20,7 +20,8 @@ test("model requests deduplicate, refresh on demand and reject mismatched revisi
   let calls = 0;
   const client = {
     baseUrl: "test-display",
-    callTool: async (_name: string, args: Record<string, string>) => {
+    callTool: async (name: string, args: Record<string, string>) => {
+      expect(name).toBe("render_pcb_display");
       calls++;
       return {
         result: {

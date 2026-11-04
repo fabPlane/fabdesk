@@ -1,0 +1,202 @@
+/* Mechanical shares the workspace header, task row, quiet canvas and corner assistant. */
+.fd-mechanical-toolbar-slot {
+  flex: 1;
+  min-width: 0;
+}
+.fd-mechanical-canvas-tasks {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+.fd-mechanical-task-tabs {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--fd-border);
+  border-radius: 8px;
+  background: var(--fd-panel);
+}
+.fd-mechanical-task-tabs > button {
+  border: 0;
+  box-shadow: none;
+  height: 30px;
+  min-height: 30px;
+}
+.fd-mechanical-task-tabs > button[aria-selected="true"] {
+  color: var(--fd-accent);
+  background: color-mix(in srgb, var(--fd-accent) 9%, var(--fd-panel));
+}
+.fd-mechanical-canvas-save {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--fd-muted);
+  font-size: 11px;
+  margin-inline: 8px;
+}
+.fd-mechanical[data-canvas="true"] {
+  min-height: 0;
+  background-color: var(--fd-bg);
+  background-image: radial-gradient(var(--fd-canvas-dot) 0.7px, transparent 0.7px);
+  background-size: var(--fd-canvas-grid-size) var(--fd-canvas-grid-size);
+}
+.fd-mechanical[data-canvas="true"] > .fd-mechanical-top {
+  display: none;
+}
+.fd-mechanical[data-canvas="true"] > .fd-mechanical-entry {
+  top: 18px;
+}
+.fd-mechanical[data-canvas="true"] > .fd-case-workflow.fd-case-compact {
+  top: 18px;
+  bottom: 82px;
+}
+.fd-mechanical[data-canvas="true"] .fd-mechanical-left,
+.fd-mechanical[data-canvas="true"] > .fd-mechanical-review-panel {
+  top: 18px;
+  max-height: calc(100% - 110px);
+}
+.fd-mechanical[data-canvas="true"] .fd-mechanical-viewport-tools {
+  top: 18px;
+}
+.fd-mechanical[data-canvas="true"] .fd-mechanical-drop-hint {
+  top: 155px;
+}
+.fd-mechanical[data-canvas="true"] .fd-mechanical-bottom {
+  bottom: 20px;
+  max-width: calc(100% - 335px);
+  flex-wrap: wrap;
+}
+.fd-mechanical[data-canvas="true"] .fd-mechanical-help {
+  bottom: 76px;
+  max-width: calc(100% - 50px);
+}
+.fd-mechanical[data-canvas="true"] .fd-mechanical-pill {
+  background: var(--fd-panel);
+  border-color: var(--fd-border);
+  box-shadow: var(--fd-soft-shadow);
+}
+.fd-mechanical[data-canvas="true"] .fd-mechanical-pill button {
+  color: var(--fd-fg);
+}
+.fd-mechanical[data-canvas="true"] .fd-case-compact .fd-enclosure-review-toggle {
+  display: none;
+}
+.fd-mechanical[data-canvas="true"] .fd-case-compact .fd-enclosure-viewbar {
+  bottom: -56px;
+}
+.fd-mechanical[data-canvas="true"] .fd-case-compact .fd-enclosure-apply {
+  bottom: 0;
+}
+.fd-mechanical[data-canvas="true"] button:enabled:hover {
+  filter: brightness(0.98);
+}
+.fd-mechanical[data-canvas="true"] button:disabled {
+  cursor: not-allowed;
+}
+.fd-mechanical[data-canvas="true"] .fd-mechanical-workspace-menu > div {
+  border-radius: 12px;
+  box-shadow: 0 12px 32px #102a2018;
+}
+@container (max-width:850px) {
+  .fd-mechanical[data-canvas="true"] .fd-mechanical-display {
+    display: none;
+  }
+  .fd-mechanical[data-canvas="true"] .fd-mechanical-bottom {
+    max-width: calc(100% - 30px);
+    bottom: 76px;
+  }
+}
+@media (max-width: 1000px) {
+  .fd-mechanical-canvas-save {
+    display: none;
+  }
+  .fd-mechanical-canvas-tasks {
+    gap: 5px;
+  }
+}
+.fd-mechanical[data-canvas="true"] .fd-enclosure-callout {
+  color: var(--fd-warning);
+  border-color: color-mix(in srgb, var(--fd-warning) 45%, var(--fd-border));
+}
+.fd-mechanical[data-canvas="true"] .fd-enclosure-review-leader {
+  color: var(--fd-warning);
+}
+.fd-mechanical[data-canvas="true"] .fd-enclosure-callout[data-blocked="true"],
+.fd-mechanical[data-canvas="true"] .fd-enclosure-review-leader [data-blocked="true"] {
+  color: var(--fd-danger);
+  border-color: var(--fd-danger);
+}
+.fd-mechanical .fd-enclosure-card[data-collapsed="true"] > :not(header) {
+  display: none;
+}
+.fd-mechanical .fd-enclosure-collapse {
+  margin-left: auto;
+  border: 1px solid var(--fd-border);
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+}
+.fd-mechanical .fd-enclosure-card[data-collapsed="true"] {
+  padding-block: 12px;
+}
+.fd-enclosure-canvas-notice {
+  position: absolute;
+  left: 0;
+  bottom: 64px;
+  z-index: 5;
+  display: flex;
+  align-items: start;
+  gap: 12px;
+  max-width: 340px;
+  padding: 12px 14px;
+  border: 1px solid var(--fd-border);
+  border-radius: 12px;
+  background: var(--fd-panel);
+  box-shadow: var(--fd-soft-shadow);
+  color: var(--fd-fg);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.fd-enclosure-canvas-notice button {
+  border: 0;
+  padding: 2px;
+  width: 24px;
+  min-width: 24px;
+}
+
+/* Board selection is a distinct action, not an option that opens beneath a still-open picker. */
+.fd-mechanical[data-canvas="true"] .fd-enclosure-choose-boards {
+  width: 100%;
+  margin-top: 12px;
+  min-height: 36px;
+  border: 1px solid var(--fd-border);
+  border-radius: 8px;
+  color: var(--fd-fg);
+  background: var(--fd-panel);
+}
+.fd-mechanical[data-canvas="true"] .fd-case-board-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  margin: 0;
+  border: 1px solid var(--fd-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.fd-mechanical[data-canvas="true"] .fd-case-picker-toolbar button {
+  color: var(--fd-fg);
+  border: 1px solid var(--fd-border);
+  border-radius: 6px;
+  padding: 5px 9px;
+}
+
+.fd-mechanical[data-canvas="true"] .fd-enclosure-connections-sr {
+  clip-path: inset(50%);
+}
