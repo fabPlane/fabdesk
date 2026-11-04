@@ -322,7 +322,7 @@
 }
 .fd-art-precise summary {
   cursor: pointer;
-  color: var(--fd-muted);
+  color: var(--fd-fg);
 }
 .fd-art-actions {
   padding: 14px 0 18px;

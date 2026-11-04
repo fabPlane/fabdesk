@@ -46,7 +46,7 @@ export function ToolGroup({
   const label = pending.length > 0 ? (commandsOnly ? "Commands" : "Tool activity") : commandsOnly ? "Ran commands" : "Used tools";
   return (
     <div className="fd-tool-group my-2 min-w-0 text-[13px]" data-testid="tool-group">
-      {history.length > 0 && <button type="button" className="flex min-h-8 max-w-full items-center gap-2 rounded-md py-1.5 text-left text-muted hover:text-fg"
+      {history.length > 0 && <button type="button" className="flex min-h-8 max-w-full items-center gap-2 rounded-md py-1.5 text-left text-fg hover:bg-panel-2/70"
         onClick={() => setOpen((o) => !o)} title={open ? "Hide tool calls" : "Show tool calls"} aria-expanded={open} aria-controls={visibleCalls.length > 0 ? detailsId : undefined}>
         <Icon name={commandsOnly ? "terminal" : "tool"} width={16} height={16} className="shrink-0" />
         <span>{label}</span>

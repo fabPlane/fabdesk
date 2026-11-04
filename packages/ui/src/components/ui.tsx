@@ -9,7 +9,7 @@ type Size = "sm" | "md";
 const variants: Record<Variant, string> = {
   primary: "bg-primary text-primary-fg font-semibold hover:brightness-105 border-transparent shadow-sm",
   secondary: "bg-panel-2/70 text-fg hover:bg-panel-2 border-border",
-  ghost: "bg-transparent text-muted hover:text-fg hover:bg-panel-2/70 border-transparent",
+  ghost: "bg-transparent text-fg hover:bg-panel-2/70 hover:border-border border-transparent",
   danger: "bg-danger/10 text-danger hover:bg-danger/20 border-danger/20",
 };
 const sizes: Record<Size, string> = {
@@ -30,8 +30,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       type={type}
+      data-variant={variant}
       className={cn(
-        "inline-flex items-center justify-center rounded-md border font-medium transition-[background-color,color,border-color,filter,box-shadow] duration-150 disabled:cursor-not-allowed disabled:opacity-40 disabled:saturate-50 disabled:pointer-events-none select-none whitespace-nowrap",
+        "fd-button inline-flex cursor-pointer items-center justify-center rounded-md border font-medium transition-[background-color,color,border-color,filter,box-shadow] duration-150 disabled:cursor-not-allowed disabled:opacity-40 disabled:saturate-50 disabled:pointer-events-none select-none whitespace-nowrap",
         variants[variant],
         sizes[size],
         className,
@@ -47,7 +48,7 @@ export function IconButton({ className, title, size = "md", style, ...rest }: Om
     <Button
       variant="ghost"
       size="sm"
-      className={cn("fd-icon-button shrink-0 text-fg/75 hover:text-fg", className)}
+      className={cn("fd-icon-button shrink-0", className)}
       style={{ width: pixels, height: pixels, padding: 0, ...style }}
       title={title}
       aria-label={title}
@@ -295,7 +296,7 @@ export function Tabs<T extends string>({
             "px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
             variant === "underline"
               ? "fd-underline-tab"
-              : cn("h-8 rounded-md", t.id === value ? "bg-panel-2 text-fg shadow-sm" : "text-muted hover:text-fg hover:bg-panel-2/60"),
+              : cn("h-8 rounded-md", t.id === value ? "bg-panel-2 text-fg shadow-sm" : "text-fg hover:bg-panel-2/60"),
           )}
         >
           {t.icon ? <><Icon name={t.icon} width={18} height={18} aria-hidden="true" />{iconOnly ? <span className="fd-canvas-tool-label" aria-hidden="true">{t.label}</span> : <span>{t.label}</span>}</> : t.label}

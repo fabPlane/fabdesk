@@ -44,7 +44,7 @@ export function HostedReviewTools({ projectId, shareButton = false }: { projectI
     } catch (failure) { setError(failure); } finally { setBusy(false); }
   };
   return <>
-    {shareButton ? <Button size="sm" variant="ghost" onClick={() => setView("share")}><Icon name="share" width={17} height={17} />Share</Button> : <WorkspaceMenu className="fd-review-publishing" label={<><span>Review tools</span><Icon name="chevronDown" width={14} height={14} /></>}>
+    {shareButton ? <Button size="sm" variant="secondary" onClick={() => setView("share")}><Icon name="share" width={17} height={17} />Share</Button> : <WorkspaceMenu className="fd-review-publishing" label={<><span>Review tools</span><Icon name="chevronDown" width={14} height={14} /></>}>
       <button onClick={() => setView("share")}>Download review package…</button><button onClick={() => setView("sync")}>Review repository changes…</button><button onClick={() => setView("history")}>Saved versions…</button>
     </WorkspaceMenu>}
     <Dialog open={view !== null} onClose={close} closeDisabled={busy} title={view ? TITLES[view] : "Review tools"} className="fd-review-integration-dialog" headerActions={<CanvasToolButton icon="sparkles" label="Ask about this review" disabled={busy} onClick={() => ask("Help me review this project and prepare a clear handoff. Check the saved sources and outputs before recommending what to share.")} />}>

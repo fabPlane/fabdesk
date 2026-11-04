@@ -111,7 +111,7 @@ export function MicButton({
     <button
       type="button"
       className={cn(
-        "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border-0 text-muted transition-colors hover:bg-panel-2/70 hover:text-fg disabled:pointer-events-none disabled:opacity-45",
+        "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border-0 text-fg transition-colors hover:bg-panel-2/70 disabled:pointer-events-none disabled:opacity-45",
         active && "bg-danger/10 text-danger hover:bg-danger/15 hover:text-danger",
       )}
       title={title}

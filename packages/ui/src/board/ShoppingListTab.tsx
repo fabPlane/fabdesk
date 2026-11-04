@@ -195,7 +195,7 @@ export function ShoppingListTab() {
       {(["bom", "order"] as const).map((value) => (
         <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)}
           data-testid={value === "bom" ? "bom-view-project" : "bom-view-shopping"}
-          className={`rounded-md px-2 py-1 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${view === value ? "bg-panel text-fg shadow-sm" : "text-muted hover:text-fg"}`}>
+          className={`cursor-pointer rounded-md px-2 py-1 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${view === value ? "bg-panel text-fg shadow-sm" : "text-fg hover:bg-panel-2/70"}`}>
           {value === "bom" ? "Design BOM" : "Shopping"}
         </button>
       ))}

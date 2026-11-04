@@ -108,7 +108,7 @@ export function ThreadSidebar({ onNewChat, onOpenProject, projectOnly: requested
           className={cn(
             "fd-chat-row flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors",
             running[t.id] && "pr-9",
-            t.id === activeThreadId ? "bg-panel-2 font-medium text-fg shadow-sm" : "text-fg/85 hover:bg-panel-2/60 hover:text-fg",
+            t.id === activeThreadId ? "bg-panel-2 font-medium text-fg shadow-sm" : "text-fg hover:bg-panel-2/60",
           )}
           title={t.title || "Untitled"}
           onClick={() => openThread(t.id, t.projectId)}
@@ -175,7 +175,7 @@ export function ThreadSidebar({ onNewChat, onOpenProject, projectOnly: requested
                 type="button"
                 className={cn(
                   "fd-project-row flex min-h-9 min-w-0 flex-1 items-center justify-between rounded-md px-2 text-left text-[13px] hover:bg-panel-2/60 hover:text-fg",
-                  group.kind === "project" && group.projectId === projectId ? "bg-panel-2/50 text-fg" : "text-muted",
+                  group.kind === "project" && group.projectId === projectId ? "bg-panel-2/50 text-fg" : "text-fg",
                 )}
                 aria-current={group.kind === "project" && group.projectId === projectId ? "true" : undefined}
                 aria-expanded={!onOpenProject && group.kind === "project" ? expanded : undefined}
@@ -209,7 +209,7 @@ export function ThreadSidebar({ onNewChat, onOpenProject, projectOnly: requested
                 ><Icon name="more" /></IconButton>
                 <IconButton
                   title={`New chat in ${group.title}`}
-                  className="fd-project-add absolute right-0 top-0 text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-fg"
+                  className="fd-project-add absolute right-0 top-0 text-fg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-fg"
                   onClick={(e) => {
                     e.stopPropagation();
                     setExpandedProjects((current) => ({ ...current, [group.key]: true }));

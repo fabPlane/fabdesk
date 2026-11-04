@@ -117,7 +117,7 @@ export function SettingsDialog() {
               onClick={() => setOpen(true, s)}
               className={cn(
                 "mb-0.5 block min-h-9 w-full rounded-lg px-3 py-2 text-left text-[13px] transition-colors",
-                s === section ? "bg-panel-2 font-semibold text-fg" : "text-muted hover:bg-panel-2/50 hover:text-fg",
+                s === section ? "bg-panel-2 font-semibold text-fg" : "text-fg hover:bg-panel-2/50",
               )}
             >
               {LABELS[s]}

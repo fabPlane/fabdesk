@@ -56,7 +56,7 @@ export function CodeBlock({ code, lang }: { code: string; lang: string }) {
       <div className="absolute right-1.5 top-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
         <span className="rounded bg-panel px-1.5 py-0.5 font-mono text-[10px] text-muted">{lang}</span>
         <button
-          className="rounded bg-panel px-1.5 py-0.5 text-[10px] text-muted hover:text-fg"
+          className="rounded bg-panel px-1.5 py-0.5 text-[10px] text-fg hover:bg-panel-2/70"
           onClick={() => {
             void navigator.clipboard.writeText(code).then(() => {
               setCopied(true);

@@ -228,7 +228,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
             <div className="relative min-w-0 flex-1">
               <Icon name="search" width={14} height={14} className="pointer-events-none absolute left-2 top-2 text-muted" />
               <Input ref={searchInput} aria-label="Find project files" placeholder="Find a file…" value={query} onChange={(e) => setQuery(e.target.value)} className="h-7 pl-7 pr-7 text-xs" />
-              {query && <button type="button" aria-label="Clear file search" className="absolute right-1 top-1 rounded-md p-0.5 text-muted hover:bg-panel-2 hover:text-fg" onClick={() => { setQuery(""); searchInput.current?.focus(); }}><Icon name="close" width={16} height={16} /></button>}
+              {query && <button type="button" aria-label="Clear file search" className="absolute right-1 top-1 rounded-md p-0.5 cursor-pointer text-fg hover:bg-panel-2" onClick={() => { setQuery(""); searchInput.current?.focus(); }}><Icon name="close" width={16} height={16} /></button>}
             </div>
             <IconButton title="Collapse all folders" size="sm" disabled={!!query.trim()} onClick={() => setExpanded(new Set())}><Icon name="minus" width={14} height={14} /></IconButton>
           </div>

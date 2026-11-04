@@ -121,7 +121,7 @@ function PartFilters({ label, selected, onChange, includePcb = false }: {
             onClick={() => onChange(value === "all" ? [] : selected.includes(value) ? selected.filter((k) => k !== value) : [...selected, value])}
             className={cn(
               "inline-flex h-8 items-center gap-1 rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent",
-              active ? "border-accent bg-accent/15 text-accent" : "border-border bg-panel text-muted hover:bg-panel-2 hover:text-fg",
+              active ? "border-accent bg-accent/15 text-accent" : "border-border bg-panel text-fg hover:bg-panel-2",
             )}
           >
             {value === "all" ? "All parts" : value === "pcb" ? "On PCB" : value === "accessory" ? "Accessories" : `${OFFBOARD_KIND_LABELS[value]}s`}

@@ -91,7 +91,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
           {[false, true].map(backup => {
             const paths = sortImportedBoards(result.boards.filter(path => isBackupBoard(path) === backup), sort);
             const choices = paths.map(path => <Button key={path} type="button" disabled={pending} className="!h-auto min-h-12 w-full !whitespace-normal !items-start !flex-col !gap-1 !py-3 text-left" title={path} onClick={() => void adopt(path)}><strong>{importedBoardLabel(path)}</strong><span className="min-w-0 w-full break-all text-xs font-normal leading-5 text-muted">{path}</span></Button>);
-            return backup ? paths.length > 0 && <details key="backups"><summary className="cursor-pointer py-3 text-sm text-muted">Backups & archives · {paths.length}</summary><div className="space-y-2">{choices}</div></details> : <div key="boards" className="space-y-2">{choices}</div>;
+            return backup ? paths.length > 0 && <details key="backups"><summary className="cursor-pointer py-3 text-sm text-fg">Backups & archives · {paths.length}</summary><div className="space-y-2">{choices}</div></details> : <div key="boards" className="space-y-2">{choices}</div>;
           })}
         </div>
       </>}

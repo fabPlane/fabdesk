@@ -16,6 +16,10 @@
 .fd-project-switcher > summary { font-size:13px; min-height:36px; border-radius:var(--fd-control-radius); box-shadow:var(--fd-soft-shadow); }
 .fd-canvas-header-actions { gap:12px; }
 .fd-canvas-header-actions > button { border:1px solid var(--fd-border); box-shadow:none; }
+/* Bordered actions use ink labels; muted text is reserved for descriptions. */
+.fd-canvas-header-actions > .fd-button[data-variant=secondary]:not(:disabled):not([aria-current=page]),.fd-board-task-actions > .fd-button[data-variant=secondary]:not(:disabled):not([aria-current=page]) { border-color:color-mix(in srgb,var(--fd-fg) 18%,var(--fd-border)); }
+.fd-canvas-header-actions > .fd-button[data-variant=secondary]:not(:disabled):not([aria-current=page]):hover,.fd-board-task-actions > .fd-button[data-variant=secondary]:not(:disabled):not([aria-current=page]):hover { background:var(--fd-panel-2); border-color:color-mix(in srgb,var(--fd-accent) 55%,var(--fd-border)); }
+
 .fd-canvas-header-actions > button[aria-current=page] { color:var(--fd-accent); background:var(--fd-panel-2); }
 .fd-canvas-main { background-size:22px 22px; background-image:radial-gradient(color-mix(in srgb,var(--fd-muted) 20%,transparent) .65px,transparent .75px); }
 .fd-canvas-main[data-task-toolbar=true]::before { content:""; position:absolute; inset:0 0 auto; height:64px; background:color-mix(in srgb,var(--fd-panel) 86%,transparent); border-bottom:1px solid var(--fd-border); pointer-events:none; }
@@ -238,7 +242,7 @@
 .fd-review-checks-summary > summary { cursor:pointer; }
 .fd-review-checks-summary > section { margin-top:18px; }
 .fd-review-source-summary { max-width:var(--fd-content-width); margin:26px auto; }
-.fd-review-source-summary > summary { color:var(--fd-muted); font-size:12px; cursor:pointer; }
+.fd-review-source-summary > summary { color:var(--fd-fg); font-size:12px; cursor:pointer; }
 .fd-review-source-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-top:16px; }
 .fd-review-source-tile { border:1px solid var(--fd-border); border-radius:10px; padding:18px; text-align:left; background:var(--fd-panel); }
 .fd-review-source-tile strong { display:block; font-size:14px; }

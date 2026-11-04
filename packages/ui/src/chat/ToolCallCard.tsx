@@ -121,7 +121,7 @@ export function ToolCallCard({ use, result, streaming = false }: { use: ToolUse;
     : action + " " + detail;
   return (
     <div className="fd-tool-call min-w-0 text-[13px]" data-active={active || undefined} data-kind={viewingImage ? "image" : command ? "command" : "tool"}>
-      <button type="button" className="flex min-h-8 w-full min-w-0 items-center gap-2 rounded-md py-1.5 text-left text-muted hover:text-fg"
+      <button type="button" className="flex min-h-8 w-full min-w-0 items-center gap-2 rounded-md py-1.5 text-left text-fg hover:bg-panel-2/70"
         onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls={open ? detailsId : undefined} title={use.name + ": " + label}>
         <Icon name={viewingImage ? "image" : command ? "terminal" : "tool"} width={16} height={16} className={cn("shrink-0", error && "text-danger")} />
         <span className="min-w-0 flex-1 truncate"><span className={cn(active && "fd-activity-shimmer")}>{label}</span></span>

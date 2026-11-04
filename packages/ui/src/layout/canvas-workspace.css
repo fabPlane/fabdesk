@@ -34,7 +34,7 @@
 .fd-canvas-board { display:flex; flex-direction:column; height:100%; min-width:0; }
 .fd-canvas-controls { display:flex; align-items:center; gap:14px; padding:22px 28px 14px 190px; min-height:76px; flex:none; }
 .fd-canvas-controls [role=tablist] { display:inline-flex; align-items:center; padding:3px; border:1px solid var(--fd-border); border-radius:10px; background:var(--fd-panel); box-shadow:0 1px 4px #102a2008; }
-.fd-canvas-controls [role=tab] { min-height:30px; padding:5px 15px; border-radius:7px; font-size:12px; border:0; box-shadow:none; background:transparent; color:var(--fd-muted); white-space:nowrap; }
+.fd-canvas-controls [role=tab] { min-height:30px; padding:5px 15px; border-radius:7px; font-size:12px; border:0; box-shadow:none; background:transparent; color:var(--fd-fg); white-space:nowrap; }
 .fd-canvas-controls [role=tab][aria-selected=true] { background:var(--fd-primary); color:var(--fd-primary-fg); }
 .fd-canvas-checks { margin-left:auto; }
 .fd-canvas-checks .fd-order-checks { border:1px solid var(--fd-border); border-radius:9px; background:var(--fd-panel); }
@@ -433,7 +433,7 @@
 .fd-assembly-model-actions { display:flex; flex:none; justify-content:flex-end; align-items:center; flex-wrap:wrap; gap:8px; padding:4px 20px 10px; }
 .fd-assembly-model-actions[data-empty="true"] { justify-content:center; padding:0; }
 .fd-assembly-model-warnings { padding:8px 20px; font-size:12px; max-height:150px; overflow:auto; }
-.fd-assembly-model-warnings summary { cursor:pointer; color:var(--fd-muted); }
+.fd-assembly-model-warnings summary { cursor:pointer; color:var(--fd-fg); }
 .fd-assembly-model-warnings li { margin-top:5px; overflow-wrap:anywhere; }
 .fd-assembly-models { height:100%; display:flex; flex-direction:column; min-height:0; padding:16px 24px; }
 .fd-assembly-models > header { display:flex; justify-content:space-between; flex-wrap:wrap; gap:14px; padding:10px 0; }
@@ -566,13 +566,13 @@
 .fd-canvas-workspace .fd-diff-revisions select { width:100%; min-width:0; max-width:240px; }
 .fd-canvas-workspace .fd-diff-revisions > span:last-child { flex-basis:100%; margin-left:0; font-size:11px; }
 .fd-canvas-workspace .fd-diff-content .fd-svg-viewer { --fd-viewer-inset:88; }
-.fd-comment-optional > summary { cursor:pointer; color:var(--fd-muted); font-size:11px; }
+.fd-comment-optional > summary { cursor:pointer; color:var(--fd-fg); font-size:11px; }
 
 /* Models and video share Outputs; the video form is revealed deliberately. */
 .fd-video-body { display:flex; flex-direction:column; overflow:auto; }
 .fd-video-setup { flex:none; border-bottom:1px solid var(--fd-border); }
 .fd-video-setup > summary { cursor:pointer; padding:16px; font-size:13px; font-weight:550; }
-.fd-video-output-settings > summary { cursor:pointer; font-size:12px; color:var(--fd-muted); }
+.fd-video-output-settings > summary { cursor:pointer; font-size:12px; color:var(--fd-fg); }
 .fd-video-duration > label { grid-column:1/-1; }
 .fd-video-preview { flex:1; }
 .fd-video-preview > :not(.fd-video-player) { flex-shrink:0; }
@@ -741,7 +741,7 @@
 .fd-root-finding-card > div { display:flex; flex-wrap:wrap; gap:6px; }
 
 /* Keep selected-part actions compact; exact positioning and source details are requested. */
-.fd-native-part-details > summary { cursor:pointer; color:var(--fd-muted); font-size:12px; }
+.fd-native-part-details > summary { cursor:pointer; color:var(--fd-fg); font-size:12px; }
 .fd-native-part-details[open] > summary { margin-bottom:12px; }
 .fd-native-part-details .fd-native-part-footprint { margin-bottom:10px; }
 .fd-native-part-details .fd-native-part-note { margin-top:8px; }
@@ -837,7 +837,7 @@
 .fd-review-integration-dialog .fd-review-integration-note { font-size:11px; margin-top:16px; }
 
 .fd-review-sync-options { margin-top:12px; font-size:12px; }
-.fd-review-sync-options summary { cursor:pointer; color:var(--fd-muted); }
+.fd-review-sync-options summary { cursor:pointer; color:var(--fd-fg); }
 .fd-review-sync-options > div { display:flex; flex-wrap:wrap; gap:8px; }
 
 .fd-assembly-view-menu { position:absolute; left:190px; top:22px; z-index:16; }

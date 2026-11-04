@@ -20,7 +20,7 @@ details > summary.fd-disclosure-summary:focus-visible {
 details[open] > summary.fd-disclosure-summary[data-variant] { margin-bottom:12px; }
 summary.fd-disclosure-summary > .fd-disclosure-icon { flex:none; color:var(--fd-accent); }
 summary.fd-disclosure-summary > .fd-disclosure-label { min-width:0; margin:0; overflow-wrap:anywhere; }
-summary.fd-disclosure-summary > .fd-disclosure-chevron { flex:none; margin-left:auto; color:var(--fd-muted); transition:transform .12s; }
+summary.fd-disclosure-summary > .fd-disclosure-chevron { flex:none; margin-left:auto; color:var(--fd-fg); transition:transform .12s; }
 details[open] > summary.fd-disclosure-summary > .fd-disclosure-chevron { transform:rotate(90deg); }
 summary.fd-disclosure-summary > .fd-disclosure-badge {
   flex:0 1 auto; min-width:0; padding:3px 8px; border-radius:6px;
@@ -39,7 +39,7 @@ details > summary.fd-disclosure-summary[data-variant=compact]:hover,
 details[open] > summary.fd-disclosure-summary[data-variant=compact] {
   background:var(--fd-panel-2); border-color:var(--fd-border);
 }
-summary.fd-disclosure-summary[data-variant=compact] > .fd-disclosure-icon { width:15px; height:15px; color:var(--fd-muted); }
+summary.fd-disclosure-summary[data-variant=compact] > .fd-disclosure-icon { width:15px; height:15px; color:var(--fd-fg); }
 summary.fd-disclosure-summary[data-variant=compact] > .fd-disclosure-chevron { width:14px; height:14px; margin-left:4px; }
 /* The video task already has a container; its heading remains one continuous surface. */
 .fd-video-setup > summary.fd-disclosure-summary[data-variant] { border:0; border-radius:0; padding:18px 20px; }

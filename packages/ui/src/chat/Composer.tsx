@@ -374,7 +374,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
           <div className="px-1 text-[11px] text-muted">Queued · sends in order after the current run</div>
           {queued.map((message, index) => <div key={message.id} className="flex items-center gap-2 rounded-lg bg-panel-2 px-2 py-1.5 text-xs">
             <span className="shrink-0 text-muted">{index + 1}.</span><span className="min-w-0 flex-1 truncate" title={message.contentMd}>{message.contentMd}</span>
-            <button type="button" className="shrink-0 text-muted hover:text-fg" disabled={unqueueMessage.isPending} aria-label={`Cancel queued message ${index + 1}`} onClick={() => void unqueueMessage.mutateAsync({ threadId: thread!.id, messageId: message.id }).catch((failure: unknown) => {
+            <button type="button" className="shrink-0 cursor-pointer text-fg hover:bg-panel-2" disabled={unqueueMessage.isPending} aria-label={`Cancel queued message ${index + 1}`} onClick={() => void unqueueMessage.mutateAsync({ threadId: thread!.id, messageId: message.id }).catch((failure: unknown) => {
               void messages.refetch();
               setError(failure instanceof CoreHttpError && failure.status === 409
                 ? "This message has already started and cannot be canceled."
@@ -392,7 +392,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
               >
                 <span className="text-muted">{a.mime.startsWith("image/") ? "img" : "file"}</span> {a.label}
                 <button
-                  className="text-muted hover:text-fg"
+                  className="text-fg hover:bg-panel-2/70"
                   onClick={() => removeAttachment(draftKey, a.path)}
                   aria-label="Remove attachment"
                 >
