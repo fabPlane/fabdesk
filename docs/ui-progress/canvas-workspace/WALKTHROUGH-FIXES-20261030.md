@@ -1,3 +1,9 @@
+# November 4 resumed verification
+
+Owner declined ExtendedC165948; Basic-only and blocked ordering remain. B10 Library Refresh outputs recovery committedc99c655; actual idle failure captured, scoped query regression proves failure recovery/isolation, native healthy refresh tested after development reload cleared errors. Fresh live MCP question remained open>1minute and acknowledged explicit answer; original draft/native sources preserved. UI297/clientblob6/types/productiondesktopbuildPASS0maps. See [current report](BEGINNER-ORDER-20261104.md). No final engineering/whole-app readiness claim.
+
+---
+
 # November 4 — beginner idea-to-order test
 
 [Current report, nine findings, native evidence and resume checklist](BEGINNER-ORDER-20261104.md). Code d3782e6 adds progress/recovery, missing-model clarity, batch BOM planning, errors-first checks, usable video, manufacturing blockers and coherent order review. Partial test board is not order-ready: required Extended connector exception pending,16unroutedconnections,2missingmodelassets. Root types/core+desktop builds pass; full default workspace2417pass/36skip/8fail and scripts93pass/1timeout. No test budgets weakened. Eight local milestones plus prior agent-switch fix are prepared for one final authorized push. This supersedes older local-publication restrictions for this run; no merge/deploy. Other roadmap and teammate exclusions remain.

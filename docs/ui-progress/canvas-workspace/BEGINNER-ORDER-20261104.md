@@ -2,14 +2,34 @@
 
 Tested actual fabPlane Dev through visible clicks, scrolling and normal typing, starting at Home with no project open. No direct routes, APIs or database edits were used to advance the journey. Read-only transcript/source/artifact checks are diagnostics, not UI acceptance. Existing user drafts/projects were preserved. The isolated new project is **Button light — beginner order test**: a 5V USB-powered green LED that lights while a push button is held, five assembled boards, no purchasing.
 
-**Outcome: the app reaches circuit/PCB, schematic, 3D, image/video and draft manufacturing exports. It has not produced an order-ready board.** C165948 is Extended and needs the explicit owner exception required by workspace sourcing rules; the question is pending. Routing was deliberately paused. The saved PCB has16unroutedconnections; the current DRC has23findings,16errors/7warnings. No manufacturer upload, quote or purchase occurred.
+**Outcome: the app reaches circuit/PCB, schematic, 3D, image/video and draft manufacturing exports. It has not produced an order-ready board.** C165948 is Extended and needs the explicit owner exception required by workspace sourcing rules; the owner has now declined it and requested Basic-only with ordering blocked. Routing was deliberately paused. The saved PCB has16unroutedconnections; the current DRC has23findings,16errors/7warnings. No manufacturer upload, quote or purchase occurred.
+
+## Resumed UI recovery and owner decision · November 4
+
+The owner explicitly chose **Keep Basic-only; leave ordering blocked.** C165948 is declined. Earlier pending-approval wording in historical checkpoints is superseded; no repeat exception request or engineering continuation.
+
+B10: returning to the actual app after idle showed image fetch errors and an unavailable video thumbnail, while opening the same saved top.png displayed correctly. Added a consistent **Refresh outputs** action to retry this project’s listing and active binary previews at the same core endpoint. It does not regenerate files, alter engineering or refresh another project/core. Query integration regression proves failed-preview recovery, endpoint/project/query-kind isolation and error propagation.
+
+Native limitation: the development reload cleared the original failed thumbnails before the new button was clicked. The button was then exercised successfully with healthy thumbnails; a fresh induced network-failure→click recovery was not demonstrated natively. The query test covers that path; the before/after captures do not establish the button alone caused recovery.
+
+A fresh discussion-only assistant conversation now proves the previously missing live question path: an actual MCP question stayed answerable beyond one minute, Steady light → explicit Submit produced acknowledgment, and the run completed in1m13s. No engineering/file action was requested; all five protected native/project hashes stayed unchanged. Original unsent batch/order-review draft was restored through Project conversations and left intact. This demonstrates one successful live question/answer, not universal prevention of every agent early exit.
+
+Code c99c655: affected UI/client types pass; query/blob tests6pass/23assertions; full UI297pass/1278assertions; production desktop build1m20s pass, zero packaged source maps. Initial client typecheck caught an optional Map lookup in the new test; fixed before commit. No fresh full-root or hosted-CI pass is claimed; earlier reproduced default timeouts remain.
+
+| Initial idle Library failure | Library with refresh action |
+| --- | --- |
+| ![Initial thumbnail failures](beginner-order-20261104/29-idle-library-preview-failure.png) | ![Refreshed Library and new action](beginner-order-20261104/30-library-refresh-after.png) |
+
+| Live waiting question | Explicit answer acknowledged |
+| --- | --- |
+| ![Live question waiting](beginner-order-20261104/31-live-question-waiting.png) | ![Steady light acknowledged](beginner-order-20261104/32-live-question-acknowledged.png) |
 
 ## Human journey and fixes
 
 | Path | Observed friction → resulting behavior | Human retest / limit |
 | --- | --- | --- |
 | Home → idea → project | Activity omitted the working assistant; empty PCB offered a second Generate action | Verified owned conversation now appears separately in Activity; neutral working state links to it. Setup carried requirements and chat into the named project |
-| Connector question | Blocking question closed after a yielded tool wrapper; card had no usable answer | Answer in chat prepares a reviewable unsent reply and preserves existing draft/attachments. Explicit Send received continuation. Prevention guidance is tested but not live-proven in the already-running core |
+| Connector question | Blocking question closed after a yielded tool wrapper; card had no usable answer | Answer in chat prepares a reviewable unsent reply and preserves existing draft/attachments. Explicit Send received continuation. Fresh isolated question/answer now passed; no universal prevention claim |
 | Schematic / PCB | Saved native circuit and PCB are discoverable | Schematic renders and Fit works. Drawings are not parity approval |
 | Board 3D / Outputs | Missing J1/SW1 models appeared only as four technical warnings | Concise two-component summary, bounded original details and contextual Ask. Orbit works; exact STEP assets still absent |
 | Parts | Six components looked like the total for a five-board order | Per-build counts and batch planner:6×5=30, resistor line2×5=10; invalid0 clearly rejected. Saved part IDs visible. Design CSV remains per-build, not a JLC upload format |
@@ -46,17 +66,17 @@ Native ERC completed but full saved-source freshness/parity was not independentl
 - [x] Fresh DRC, prioritized findings and exact PCB location.
 - [x] Draft Gerber/drill ZIP and placement export/download.
 - [x] Existing vendor gates prevent this unfinished board proceeding.
-- [ ] Required C165948 Extended exception or approved compliant alternative: owner decision pending.
+- [x] Owner decision: Basic-only; C165948 exception declined; ordering remains blocked. A compliant alternative has not been selected.
 - [ ] Fresh immediate assembly stock for all parts×five; then final routing, zero DRC errors and reviewed warnings.
 - [ ] Final ERC, source comparison and manufacturer-specific BOM/CPL mapping/polarity/rotation.
 - [ ] Exact missing component model assets, then fit review where applicable.
 - [ ] Final regenerated package and manufacturer preview; purchase requires separate user action.
-- [ ] Fresh live blocking question proving the adapter guidance avoids early closure.
+- [x] Fresh live blocking question remained answerable beyond one minute; explicit answer acknowledged. Broader agent interruption paths remain unproven.
 - [ ] Reproduced KiCad/telemetry/npm-fixture performance failures need separate diagnosis; no false green result.
 
 ## Selected actual native evidence
 
-All originals are retained locally under work/overnight-run/20261103-beginner-order (28PNG captures with SHA256SUMS and detailed REPORT.md). These four selected captures are unaltered; their manifest is [here](beginner-order-20261104/SHA256SUMS).
+All originals are retained locally under work/overnight-run/20261103-beginner-order (32PNG captures with SHA256SUMS and detailed REPORT.md). These four selected captures are unaltered; their manifest is [here](beginner-order-20261104/SHA256SUMS).
 
 | Video before | Video after |
 | --- | --- |
