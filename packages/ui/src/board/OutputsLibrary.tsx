@@ -1,4 +1,6 @@
 import { FeedbackNotice } from "../components/FeedbackNotice";
+import { useQueryClient } from "@tanstack/react-query";
+import { refreshProjectPreviews } from "@fabdesk/client-core";
 import { useOutputTrashReview } from "@fabdesk/client-core";
 import { OutputTrashDialog } from "./OutputTrashDialog";
 import { useOutputRevisions, outputRevisionLabel, outputInputsNeedReview } from "@fabdesk/client-core";
@@ -25,6 +27,8 @@ const FILTERS = [{ id: "all", label: "All" }, { id: "images", label: "Images" },
 /** Open a preview directly; explicit checkboxes select files for single or batch download. */
 export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   const client = useCoreClient(), project = useProject(projectId), generate = useRunTool();
+  const queries = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<OutputKind | "all">("all"), [selectedPaths, setSelectedPaths] = useState<string[]>([]);
   const selected = selectedPaths.length === 1 ? selectedPaths[0] ?? null : null;
   const selectAll = useRef<HTMLInputElement>(null);
@@ -104,6 +108,15 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
     [...(library.current?.querySelectorAll<HTMLInputElement>(".fd-output-checkbox") ?? [])].find(card => card.dataset.path === selectedPaths[0])?.focus();
     setSelectedPaths([]);
   };
+  const refresh = async () => {
+    if (!projectId || refreshing) return;
+    setRefreshing(true); setError(null);
+    try {
+      await Promise.all([project.refetch({ throwOnError: true }), refreshProjectPreviews(queries, client.baseUrl, projectId)]);
+    } catch {
+      if (useUiStore.getState().activeProjectId === projectId) setError("Could not refresh all outputs. Check the connection, then use Refresh outputs to try again. Saved files have not been changed.");
+    } finally { setRefreshing(false); }
+  };
   const download = async (files = selectedFiles) => {
     if (!files.length || !projectId || downloading) return;
     const captured = [...files];
@@ -136,6 +149,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
   }}>
     <header className="fd-output-library-heading">
       <div><h2>Saved outputs</h2><p>Images, videos, models and manufacturing files from this project.</p></div>
+      <CanvasToolButton icon="refresh" label={refreshing ? "Refreshing outputs…" : "Refresh outputs"} disabled={refreshing} onClick={() => void refresh()} />
       {(reviewCount > 0 || reviewOnly) && <Button className="fd-output-review" size="sm" variant="ghost" aria-pressed={reviewOnly} onClick={() => { setReviewOnly(value => !value); setSelectedPaths([]); setError(null); }}><Icon name="warning" width={16} height={16} />Needs review · {reviewCount} {reviewCount === 1 ? "output" : "outputs"}</Button>}
       <Button data-testid="output-trash-open" variant="ghost" onClick={() => setTrash({ paths: null })}><Icon name="trash" width={17} height={17} />Trash</Button>
       <Button variant="primary" disabled={!sourceReady || !assembly && !hasPcb || generate.state.status === "running"} onClick={() => create("render")}><Icon name="image" width={18} height={18} />Render board image</Button>

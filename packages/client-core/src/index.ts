@@ -226,6 +226,7 @@ export { inspectVideoInputRevision, videoInputsNeedReview, type VideoInputRevisi
 export * from "./kept-output";
 
 export * from "./stable-project-blob";
+export { refreshProjectPreviews } from "./refresh-project-previews";
 export * from "./overview-images";
 export * from "./diff-preview";
 export * from "./board-file-destination";
