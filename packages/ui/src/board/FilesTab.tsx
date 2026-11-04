@@ -5,7 +5,7 @@ import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useOutputSource } from "./useOutputSource";
 import { boardFileDestination, sha256Blob, exportGerberPackage, gerberPackageFilename } from "@fabdesk/client-core";
 import { CanvasToolButton } from "../components/CanvasToolButton";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
 import { ProjectVideo } from "../chat/ProjectVideo";
 import { Select, Button, EmptyState, IconButton, Input, LoadError, Spinner } from "../components/ui";
@@ -27,6 +27,8 @@ import {
   type LaserStencilFormState,
 } from "./LaserStencilPresetPanel";
 
+const ProjectPdf = lazy(() => import("./ProjectPdf"));
+
 const MAX_TEXT_BYTES = 1_000_000;
 
 export function FilesTab({ exportFocus = false }: { exportFocus?: boolean } = {}) {
@@ -42,9 +44,12 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const outputSource = useOutputSource(projectId), sources = outputSource.sources;
   const thicknessMm = useUiStore((s) => stencilThicknessMm(s.stencilThicknessByProject?.[projectId]));
   const setThickness = useUiStore((s) => s.setStencilThickness);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(() => useUiStore.getState().selectedFileByProject[projectId] ?? null);
   const [modelPreviewPath, setModelPreviewPath] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [fileListOpen, setFileListOpen] = useState(true);
+  useEffect(() => { if (selected) useUiStore.getState().rememberProjectFile(projectId, selected); }, [projectId, selected]);
+  const [pdfToolbarHost, setPdfToolbarHost] = useState<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [downloadPath, setDownloadPath] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<{ path: string; message: string } | null>(null);
@@ -56,6 +61,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
     if (!exportFocus) revealFocus.current = { intent: fileToReveal, previous: document.activeElement };
     const path = fileToReveal.path;
     setSelected(path);
+    setFileListOpen(true);
     setQuery("");
     const parts = path.split("/");
     setExpanded((previous) => {
@@ -100,6 +106,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const previewRevision = usePcbPreviewRevision(projectId, previewPresent && !assembly);
   const previewLabel = assembly ? "Saved PCB drawing · Review checks separately" : previewRevision.isFetching ? "Checking saved preview…" : previewRevision.isError ? "Preview source check unavailable" : previewRevision.data === "matches-source" ? "Preview matches saved PCB" : previewRevision.data === "source-changed" ? "PCB changed · Preview is older" : "Saved preview · Source unverified";
   const tree = useMemo(() => buildFileTree(files, query), [project.data?.files, query]);
+  const matchingFileCount = query.trim() ? files.filter(file => file.path.replaceAll("\\", "/").toLowerCase().includes(query.trim().toLowerCase())).length : files.length;
   const file = files.find((f) => f.path === selected);
   const appearance = file ? fileAppearance(file.path) : null;
   const canPreviewModel = !!file && /\.(glb|stl|obj)$/i.test(file.path);
@@ -216,14 +223,9 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   </div>;
   return (
     <div className="fd-files flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-        <Icon name="folderOpen" className="text-muted" />
-        <span className="text-xs font-semibold">Project files</span>
-        <span className="text-[11px] text-muted">{files.length}</span>
-        <Button size="sm" variant="ghost" className="ml-auto" onClick={() => { const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId) return; ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }}><Icon name="library" width={16} height={16} />Outputs</Button>
-      </div>
       <div className="fd-files-body flex min-h-0 flex-1">
-        <nav ref={fileTree} aria-label="Project file explorer" className="fd-files-list flex w-72 shrink-0 flex-col border-r border-border bg-panel/40">
+        <nav ref={fileTree} hidden={!fileListOpen} aria-label="Project file explorer" className="fd-files-list flex w-72 shrink-0 flex-col border-r border-border bg-panel/40">
+          <div className="fd-files-list-heading"><h2>Project files</h2><output className="fd-file-count" aria-live="polite" title={query.trim() ? "Files matching your search out of all project files" : "Total saved files in this project"}>{query.trim() ? `${matchingFileCount} of ${files.length} files` : `${files.length} ${files.length === 1 ? "file" : "files"}`}</output><CanvasToolButton icon="library" label="Open saved outputs" onClick={() => { const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId) return; ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }} /></div>
           <div className="flex shrink-0 items-center gap-1 border-b border-border p-2">
             <div className="relative min-w-0 flex-1">
               <Icon name="search" width={14} height={14} className="pointer-events-none absolute left-2 top-2 text-muted" />
@@ -241,11 +243,13 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
             Choose a saved file to preview it here. Images, models and manufacturing files are collected in Outputs.
           </EmptyState>}
           {file && appearance && <>
-            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-panel/40 px-3 py-2">
+            <div className="fd-file-preview-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-panel/40 px-3 py-2">
+              <IconButton title={fileListOpen ? "Hide file list" : "Show file list"} size="sm" aria-expanded={fileListOpen} onClick={() => setFileListOpen(value => !value)}><Icon name="sidebar" width={16} height={16} /></IconButton>
               <FileGlyph kind={appearance.kind} />
-              <span className="fd-file-preview-path flex-1 break-all text-xs" title={file.path}>{file.path.replaceAll("\\", "/").split("/").join(" / ")}</span>
-              <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted">{appearance.label}</span>
-              <span className="text-[10px] text-muted">{formatFileSize(file.size)}</span>
+              <span className="fd-file-preview-path min-w-0 flex-1 truncate text-xs" title={file.path}>{file.path.replaceAll("\\", "/").split("/").join(" / ")}</span>
+              <span className="fd-file-format rounded border border-border px-1.5 py-0.5 text-[10px] text-muted">{appearance.label}</span>
+              <span className="fd-file-bytes text-[10px] text-muted">{formatFileSize(file.size)}</span>
+              {appearance.preview === "pdf" && <div ref={setPdfToolbarHost} className="fd-file-pdf-controls" />}
               <div role="group" aria-label="Selected file actions" className="flex max-w-full shrink-0 flex-wrap items-center gap-1">
               {designDestination && <Button size="sm" variant="ghost" onClick={() => {
                 const ui = useUiStore.getState();
@@ -269,8 +273,9 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
               }}><Icon name="sparkles" width={14} height={14} />Use in conversation</Button>}
               </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-auto p-4">
+            <div className={cn("min-h-0 flex-1", appearance.preview === "pdf" ? "fd-file-pdf-preview" : "overflow-auto p-4")}>
               {downloadError?.path === file.path && <p role="alert" className="mb-3 text-xs text-danger">{downloadError.message}</p>}
+              {appearance.preview === "pdf" && <Suspense fallback={<div className="fd-pdf-loading" role="status"><Spinner />Loading PDF reader…</div>}><ProjectPdf key={file.path} projectId={projectId} path={file.path} toolbarHost={pdfToolbarHost} /></Suspense>}
               {appearance.preview === "image" && <ProjectImage retryable projectId={projectId} path={file.path} className="fd-file-image max-h-none max-w-full" />}
               {appearance.preview === "video" && <ProjectVideo projectId={projectId} path={file.path} className="fd-file-video max-w-full" />}
               {appearance.preview === "none" && <EmptyState title={`${appearance.label} file`} icon={<FileGlyph kind={appearance.kind} className="!h-10 !w-10" />} {...(canPreviewModel ? { action: <Button onClick={() => setModelPreviewPath(file.path)}><Icon name="cube" width={16} height={16} />Preview model</Button> } : {})}>

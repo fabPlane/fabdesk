@@ -1,3 +1,4 @@
+import { recordWorkspaceHistory, sameWorkspaceLocation, type WorkspaceHistoryEntry } from "@fabdesk/client-core";
 import type { AssistantSurface } from "../chat/assistant-context";
 import type { BoardSourceSelection, SchematicFocus } from "@fabdesk/protocol";
 import { create } from "zustand";
@@ -49,6 +50,12 @@ export interface PendingAttachment {
 }
 
 export interface UiState {
+  navigationHistory: WorkspaceHistoryEntry[];
+  navigationEndpoint: string | null;
+  setNavigationEndpoint: (endpoint: string) => void;
+  navigateBack: () => void;
+  selectedFileByProject: Record<string, string>;
+  rememberProjectFile: (projectId: string, path: string) => void;
   /** Theme chosen in Settings → Appearance; null = derive from the core setting / OS. */
   themeId: ThemeId | null;
   setThemeId: (id: UiState["themeId"]) => void;
@@ -198,10 +205,44 @@ function workspaceNavigationState(state: UiState, area: WorkspaceArea, tab: Boar
     workspaceTabsByProject: { ...history, [id]: tabs } };
 }
 
+function historyLocation(s: UiState): WorkspaceHistoryEntry | null {
+  if (!s.activeProjectId) return null;
+  return { projectId: s.activeProjectId, area: s.workspaceArea, tab: s.boardTab, boardOpen: s.boardOpen, openSourceId: s.activeOpenSourceId, inventoryOpen: s.inventoryOpen, orderFlowOpen: s.orderFlowOpen,
+    board: s.assemblyBoardByProject[s.activeProjectId] ?? null, filePath: s.selectedFileByProject[s.activeProjectId] ?? null };
+}
+
 export function createUiStore(storage?: StateStorage) {
   return create<UiState>()(
   persist(
-    (set) => ({
+    (rawSet) => {
+      let navigationBatch = false;
+      const set = (update: Partial<UiState> | ((state: UiState) => Partial<UiState>)) => rawSet(state => {
+        const patch = typeof update === "function" ? update(state) : update;
+        if ("navigationHistory" in patch) return patch;
+        const before = historyLocation(state), after = historyLocation({ ...state, ...patch });
+        const history = recordWorkspaceHistory(state.navigationHistory, before, after, navigationBatch);
+        if (before && after && !sameWorkspaceLocation(before, after)) {
+          navigationBatch = true; queueMicrotask(() => { navigationBatch = false; });
+        }
+        return history === state.navigationHistory ? patch : { ...patch, navigationHistory: history };
+      });
+      return ({
+  navigationHistory: [],
+  navigationEndpoint: null,
+  setNavigationEndpoint: (navigationEndpoint) => set(s => navigationEndpoint === s.navigationEndpoint ? {} : { navigationEndpoint, navigationHistory: [], selectedFileByProject: {} }),
+  selectedFileByProject: {},
+  rememberProjectFile: (projectId, path) => set(s => s.activeProjectId !== projectId || s.selectedFileByProject[projectId] === path ? {} : { selectedFileByProject: { ...s.selectedFileByProject, [projectId]: path } }),
+  navigateBack: () => set(s => {
+    const previous = s.navigationHistory.at(-1);
+    if (!previous || previous.projectId !== s.activeProjectId) return { navigationHistory: [] };
+    const tab = (BOARD_TABS as readonly string[]).includes(previous.tab) ? previous.tab as BoardTab : "pcb";
+    const assemblyBoardByProject = { ...s.assemblyBoardByProject };
+    if (previous.board) assemblyBoardByProject[previous.projectId] = { ...previous.board }; else delete assemblyBoardByProject[previous.projectId];
+    return { ...workspaceNavigationState(s, previous.area, tab), boardOpen: previous.boardOpen,
+      activeOpenSourceId: previous.openSourceId, inventoryOpen: previous.inventoryOpen, orderFlowOpen: previous.orderFlowOpen,
+      assemblyBoardByProject, fileToReveal: previous.area === "files" && previous.filePath ? { projectId: previous.projectId, path: previous.filePath } : null,
+      navigationHistory: s.navigationHistory.slice(0, -1), canvasNavigationOpen: false };
+  }),
   // Seed from localStorage so the first React render matches the pre-paint boot script.
   themeId: readStoredThemeId(),
   setThemeId: (themeId) => set({ themeId }),
@@ -421,7 +462,8 @@ export function createUiStore(storage?: StateStorage) {
   setWhatsNewOpen: (whatsNewOpen) => set({ whatsNewOpen }),
   markWhatsNewSeen: (whatsNewSeenId) => set({ whatsNewSeenId }),
   focusComposer: () => set((s) => ({ composerFocusNonce: s.composerFocusNonce + 1, assistantOpen: true })),
-}),
+});
+},
     {
       name: "fabdesk.ui",
       storage: createJSONStorage(() => storage ?? localStorage),

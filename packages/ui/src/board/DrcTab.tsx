@@ -1,6 +1,6 @@
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
-import { CheckFindingDetails } from "./CheckFindingDetails";
+import { CheckFindingDetails, CheckFindingItem } from "./CheckFindingDetails";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Select, Badge, Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { captureRootCheckFinding, rootCheckFindingRow, useCoreClient, usePcbCheckRevision, useProjectJson } from "@fabdesk/client-core";
@@ -153,25 +153,17 @@ function SingleBoardChecks({ projectId, scopeVerified, contextual, onNavigate }:
             </table>
           </div>
           {sel && (
-            <CheckFindingDetails>
-              <div className="fd-member-checks-detail-heading"><h3>Finding details</h3><Button size="sm" variant="ghost" onClick={() => { root.current?.querySelector<HTMLElement>(`[data-check-row="${selected}"]`)?.focus({ preventScroll: true }); setSelected(null); }}>Close details</Button></div><strong>{sel.description}</strong>
+            <CheckFindingDetails onClose={() => { root.current?.querySelector<HTMLElement>(`[data-check-row="${selected}"]`)?.focus({ preventScroll: true }); setSelected(null); }}>
+              <Badge tone={sel.severity === "error" ? "danger" : sel.severity === "warning" ? "warning" : "neutral"}>{sel.source.toUpperCase()} · {sel.severity}</Badge><strong>{sel.description}</strong>
               {sel.items.length === 0 && <div className="text-muted">No item details.</div>}
               {sel.items.map((it, i) => (
-                <p key={i}>
-                  {it.pos ? (
-                    <span className="fd-checks-coordinates">
-                      ({it.pos.x.toFixed(3)}, {it.pos.y.toFixed(3)}) mm
-                    </span>
-                  ) : (
-                    <span className="fd-checks-coordinates">No position in this report</span>
-                  )}
-                  <span>{it.description}</span>
-                  {sel.source === "drc" && selected !== null && captureRootCheckFinding(client.baseUrl, projectId, drc.data, selected, i) && <Button size="sm" variant="ghost" disabled={!sourceReady || busy || drc.isFetching || drc.isError || checkRevision.isFetching || checkRevision.isError || checkRevision.data !== "source-unchanged"} onClick={() => {
+                <CheckFindingItem key={i} index={i} description={it.description} pos={it.pos}>
+                  {sel.source === "drc" && selected !== null && captureRootCheckFinding(client.baseUrl, projectId, drc.data, selected, i) && <Button size="sm" variant="secondary" className="fd-checks-locate" title={checkRevision.data === "source-unchanged" ? `Locate item ${i + 1} on the saved PCB` : "Re-run PCB checks before locating a finding on the changed board"} disabled={!sourceReady || busy || drc.isFetching || drc.isError || checkRevision.isFetching || checkRevision.isError || checkRevision.data !== "source-unchanged"} onClick={() => {
                     const state = useUiStore.getState(); if (state.activeProjectId !== projectId || !sourceReady || busy || drc.isFetching || checkRevision.isFetching || checkRevision.isError || checkRevision.data !== "source-unchanged") return;
                     const finding = captureRootCheckFinding(client.baseUrl, projectId, drc.data, selected, i);
                     if (finding) { state.openRootFinding(finding); onNavigate?.(); }
-                  }}>Show on PCB</Button>}
-                </p>
+                  }}><Icon name="pin" width={15} height={15} />Show on PCB</Button>}
+                </CheckFindingItem>
               ))}
             </CheckFindingDetails>
           )}

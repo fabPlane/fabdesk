@@ -31,9 +31,10 @@ test("files and directories with similar names are not confused", () => {
 });
 
 test("binary CAD, drawings and unknown formats never enter the text preview", () => {
-  for (const path of ["part.STL", "part.3mf", "part.step", "shape.DXF", "paper.pdf", "part.zip", "unknown.bin", "extensionless"]) {
+  for (const path of ["part.STL", "part.3mf", "part.step", "shape.DXF", "part.zip", "unknown.bin", "extensionless"]) {
     expect(fileAppearance(path).preview).toBe("none");
   }
+  expect(fileAppearance("exports/Schematic.PDF")).toEqual({ kind: "text", label: "PDF", preview: "pdf" });
   expect(fileAppearance("shape.DXF")).toEqual({ kind: "drawing", label: "DXF", preview: "none" });
   expect(fileAppearance("folder.PNG/readme.TXT").preview).toBe("text");
   expect(fileAppearance("exports/F-Paste.SVG").preview).toBe("image");

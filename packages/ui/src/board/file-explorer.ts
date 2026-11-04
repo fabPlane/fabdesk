@@ -1,5 +1,5 @@
 export type FileKind = "board" | "schematic" | "code" | "text" | "data" | "image" | "video" | "drawing" | "model" | "archive" | "file";
-export type PreviewKind = "text" | "image" | "video" | "none";
+export type PreviewKind = "text" | "image" | "video" | "pdf" | "none";
 
 /** Unknown and potentially binary formats must not be fetched as UTF-8 text. */
 export function fileAppearance(path: string): { kind: FileKind; label: string; preview: PreviewKind } {
@@ -10,7 +10,8 @@ export function fileAppearance(path: string): { kind: FileKind; label: string; p
   if (["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "ico", "avif"].includes(ext)) return { kind: "image", label: ext.toUpperCase(), preview: "image" };
   if (["mp4", "webm"].includes(ext)) return { kind: "video", label: ext.toUpperCase(), preview: "video" };
   if (["stl", "step", "stp", "3mf", "glb", "gltf", "obj", "fcstd"].includes(ext)) return { kind: "model", label: ext.toUpperCase(), preview: "none" };
-  if (["dxf", "dwg", "pdf"].includes(ext)) return { kind: "drawing", label: ext.toUpperCase(), preview: "none" };
+  if (ext === "pdf") return { kind: "text", label: "PDF", preview: "pdf" };
+  if (["dxf", "dwg"].includes(ext)) return { kind: "drawing", label: ext.toUpperCase(), preview: "none" };
   if (["zip", "gz", "7z", "rar", "tar"].includes(ext)) return { kind: "archive", label: ext.toUpperCase(), preview: "none" };
   if (["ts", "tsx", "js", "jsx", "py", "c", "h", "cpp", "rs", "go", "sh", "ps1", "html", "css", "scad"].includes(ext)) return { kind: "code", label: "CODE", preview: "text" };
   if (["json", "yaml", "yml", "toml", "xml", "csv", "tsv", "lbrn", "lbrn2", "kicad_pro", "kicad_prl", "kicad_sym", "kicad_mod", "gbr", "gbrjob", "gbl", "gtl", "gtp", "gbp", "gts", "gbs", "gto", "gbo", "gm1", "drl", "net", "d356", "ipc2581"].includes(ext)) return { kind: "data", label: ext.toUpperCase(), preview: "text" };

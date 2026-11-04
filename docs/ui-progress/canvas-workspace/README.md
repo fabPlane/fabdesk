@@ -1,3 +1,5 @@
+Latest UI follow-up: [files, Back navigation, output grouping and finding details](FILES-NAVIGATION-OUTPUTS-20261104.md).
+
 Latest UI follow-up: [clear check cards and workspace selector alignment](CHECKS-UI-20261104.md).
 
 Latest focused wrap-up: [November4 stabilization checkpoint](STABILIZATION-20261104.md).

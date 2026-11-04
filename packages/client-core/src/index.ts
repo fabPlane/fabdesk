@@ -238,3 +238,5 @@ export * from "./output-revision";
 
 export { schematicFocusFilesMatch, schematicFocusFromResult } from "./schematic-focus";
 export { PersistentDraft, localDraft } from "./persistent-draft";
+export { sameWorkspaceLocation, recordWorkspaceHistory } from "./workspace-history";
+export type { WorkspaceHistoryEntry } from "./workspace-history";

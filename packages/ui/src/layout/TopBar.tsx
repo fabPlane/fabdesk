@@ -1,3 +1,4 @@
+import { WorkspaceBackButton } from "./WorkspaceBackButton";
 import { Badge, Button, IconButton } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { UpdateBadge } from "../components/UpdateBadge";
@@ -67,6 +68,7 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
       )}
       {project && <span className="fd-topbar-project min-w-0 max-w-60 truncate border-l border-border pl-3 text-[12px] font-medium text-muted" title={project.name}>{project.name}</span>}
       <div data-topbar-actions className="fd-topbar-actions ml-auto flex min-w-0 items-center gap-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+        {projectId && <WorkspaceBackButton />}
         {projectId && <Button variant="ghost" size="sm" onClick={() => useUiStore.getState().requestProjectClose(true)}>Home</Button>}
         <Button variant="ghost" size="sm" onClick={() => useUiStore.getState().setCanvasMode(true)} title="Return to the canvas workspace"><Icon name="pcb" width={16} height={16} />Canvas</Button>
         <WhatsNewLink />

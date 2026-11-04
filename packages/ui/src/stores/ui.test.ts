@@ -529,3 +529,42 @@ test("unrestorable local edits block Close until resolved and never block anothe
   store.getState().setActiveProject("b");
   expect(store.getState().closeProject()).toBe(true);
 });
+
+test("Back restores the previous task and selected file without touching unsaved work", async () => {
+  const store = createUiStore();
+  store.getState().setActiveProject("back-test");
+  store.getState().setNavigationEndpoint("http://local");
+  await Promise.resolve();
+  store.getState().setBoardTab("files");
+  store.getState().rememberProjectFile("back-test", "exports/schematic.pdf");
+  store.getState().setDraft(newChatDraftKey("back-test"), "Keep my question");
+  store.getState().setNotesDraft("notes", { base: "Saved", content: "Unsaved note" });
+  await Promise.resolve();
+  const count = store.getState().navigationHistory.length;
+  store.getState().setWorkspaceArea("outputs");
+  store.getState().setWorkspaceTab("3d"); // One click can set both the area and an explicit tab.
+  expect(store.getState().navigationHistory.length).toBe(count + 1);
+  store.getState().navigateBack();
+  expect(store.getState().workspaceArea).toBe("files");
+  expect(store.getState().boardTab).toBe("files");
+  expect(store.getState().fileToReveal).toEqual({ projectId: "back-test", path: "exports/schematic.pdf" });
+  expect(store.getState().drafts[newChatDraftKey("back-test")]).toBe("Keep my question");
+  expect(store.getState().notesDrafts.notes?.content).toBe("Unsaved note");
+  store.getState().setNavigationEndpoint("http://other");
+  expect(store.getState().navigationHistory).toEqual([]);
+  expect(store.getState().selectedFileByProject).toEqual({});
+});
+
+test("closing a project clears Back history, while a blocked close retains it", async () => {
+  const store = createUiStore();
+  store.getState().setActiveProject("history");
+  await Promise.resolve();
+  store.getState().setBoardTab("drc");
+  expect(store.getState().navigationHistory.length).toBe(1);
+  store.getState().setProjectExitBlock("editor", { projectId: "history", message: "Unsaved edit" });
+  expect(store.getState().closeProject()).toBe(false);
+  expect(store.getState().navigationHistory.length).toBe(1);
+  store.getState().setProjectExitBlock("editor", null);
+  expect(store.getState().closeProject()).toBe(true);
+  expect(store.getState().navigationHistory).toEqual([]);
+});
