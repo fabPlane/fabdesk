@@ -1,4 +1,5 @@
 import type { PlacementJob, PlacementResult } from "./placement.worker";
+import PlacementWorker from "./placement.worker?worker&inline";
 /** A fresh worker bounds each operation and permits immediate cancellation on project change. */
 export function placementJob(job: PlacementJob, signal: AbortSignal): Promise<PlacementResult> {
   return new Promise((resolve, reject) => {
@@ -6,7 +7,7 @@ export function placementJob(job: PlacementJob, signal: AbortSignal): Promise<Pl
       reject(new DOMException("Canceled", "AbortError"));
       return;
     }
-    const worker = new Worker(new URL("./placement.worker.ts", import.meta.url), { type: "module" });
+    const worker = new PlacementWorker();
     const cleanup = () => {
       clearTimeout(timeout);
       signal.removeEventListener("abort", abort);

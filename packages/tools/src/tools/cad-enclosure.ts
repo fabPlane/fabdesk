@@ -12,7 +12,6 @@ import {
   generateEnclosure,
   isEnclosureSpec,
   normalizeEnclosureSpec,
-  meshEnclosure,
   previewEnclosureSvg,
   type AlignmentReport,
   type EnclosureParams,
@@ -20,6 +19,7 @@ import {
   type VentFace,
   type VentPattern,
 } from "@fabdesk/kicad/enclosure";
+import { joinedEnclosure } from "@fabdesk/kicad/enclosure-solid";
 import {
   PROJECT_FILES,
   jailPath,
@@ -74,6 +74,32 @@ async function applyEnclosureToCad(
     const dx = solid.max.x - solid.min.x;
     const dy = solid.max.y - solid.min.y;
     const dz = solid.max.z - solid.min.z;
+    if (solid.kind === "profile" && solid.profile) {
+      const data = JSON.stringify({ solid, document: model.document, group: group.name });
+      const result = await cad.python(
+        dir,
+        `import json, FreeCAD as App, Part
+p=json.loads(${JSON.stringify(data)})
+s=p['solid']; profile=s['profile']; axis=profile['axis']; start=s['min'][axis]
+doc=App.getDocument(p['document'])
+faces=[]
+for ring in profile['rings']:
+    pts=[App.Vector(start,u,v) if axis=='x' else App.Vector(u,start,v) for u,v in ring]
+    faces.append(Part.Face(Part.makePolygon(pts+[pts[0]])))
+face=faces[0]
+for hole in faces[1:]: face=face.cut(hole)
+depth=s['max'][axis]-start
+shape=face.extrude(App.Vector(depth,0,0) if axis=='x' else App.Vector(0,depth,0))
+if not shape.isValid(): raise ValueError('Invalid enclosure wall profile')
+obj=doc.addObject('Part::Feature',s['name']); obj.Shape=shape
+doc.getObject(p['group']).addObject(obj)
+`,
+        "exec",
+      );
+      if (result.exception) throw new Error(result.exception);
+      created.push(solid.name);
+      continue;
+    }
     if (solid.kind === "cylinder" && solid.radiusMm) {
       const cx = (solid.min.x + solid.max.x) / 2;
       const cy = (solid.min.y + solid.max.y) / 2;
@@ -157,11 +183,15 @@ export const cad_enclosure = defineTool({
         "Optional project-relative placement snapshot. Uses isolated placement/enclosure outputs and never mirrors into FreeCAD.",
       ),
     action: z
-      .enum(["generate", "status", "check"])
+      .enum(["generate", "preview", "status", "check"])
       .default("generate")
       .describe(
-        "generate writes the case; status reports sync; check compares cutouts to the current board",
+        "preview returns meshes without writing; generate writes the case; status reports sync; check compares cutouts to the current board",
       ),
+    expectedBoardRevision: z
+      .string()
+      .optional()
+      .describe("Reject apply if the board changed since preview"),
     wallMm: z.number().positive().max(20).optional(),
     clearanceMm: z.number().nonnegative().max(20).optional(),
     outlineOffsetMm: z
@@ -215,6 +245,11 @@ export const cad_enclosure = defineTool({
       }
     }
     const features = await loadFeatures(project, args.boardPath);
+    if (args.expectedBoardRevision && args.expectedBoardRevision !== features.pcbRevision)
+      throw new ToolError(
+        "The board changed since this preview. Preview again before applying.",
+        "precondition",
+      );
     if (args.action === "status" || args.action === "check") {
       const spec = await loadSpec(project, !!args.boardPath);
       if (!spec) {
@@ -263,8 +298,23 @@ export const cad_enclosure = defineTool({
       ...(args.snapCount !== undefined ? { snapCount: args.snapCount } : {}),
     };
     const spec = generateEnclosure(features, params);
-    const mesh = meshEnclosure(spec);
+    const mesh = await joinedEnclosure(spec);
     const previewSvg = previewEnclosureSvg(spec);
+    if (args.action === "preview") {
+      return ok("Enclosure preview — not applied.", {
+        ...resultPayload(
+          project,
+          spec,
+          checkEnclosureAlignment(spec, features),
+          args.name,
+          features,
+          false,
+          !!args.boardPath,
+        ),
+        previewOnly: true,
+        meshes: { base: mesh.baseStl, lid: mesh.lidStl },
+      });
+    }
     const files = filesJson(project, args.name, !!args.boardPath);
     await writeJson(files.paths.spec, spec);
     await writeAtomic(files.paths.stl, mesh.baseStl);
@@ -303,7 +353,14 @@ export const cad_enclosure = defineTool({
 
 function summarizeFeatures(features: Awaited<ReturnType<typeof loadFeatures>>) {
   return {
+    pcbRevision: features.pcbRevision,
     outlineMm: { width: features.outline.widthMm, height: features.outline.heightMm },
+    geometry: {
+      outline: features.outline,
+      holes: features.holes,
+      parts: [...features.tallParts, ...features.connectors],
+      connectors: features.connectors,
+    },
     thicknessMm: features.thicknessMm,
     holes: features.holes.length,
     connectors: features.connectors.map((c) => ({ ref: c.ref, edge: c.edge, x: c.x, y: c.y })),

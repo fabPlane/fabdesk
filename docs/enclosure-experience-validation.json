@@ -1,0 +1,54 @@
+{
+  "pcbHashes": {
+    "hardware/axk750147g-breakout/axk750147g-breakout.kicad_pcb": "f0d8fbd9d3b3e231b6ab56cbc62f4cb720b6b2ef7dee475ceede404b79ecfdd4",
+    "hardware/battery-adapter-a6-gh10/battery-adapter-a6-gh10.kicad_pcb": "18d4a7e32ab9c88fffb0948e008bede243887704d7055b4fa6b5260a93cbfdcc",
+    "hardware/battery-controller-b6/battery-controller-b6.kicad_pcb": "56d9d02cfee1155c17effcb4d74d3a4494329b88a8b75ad0df8a59e3717d17d4",
+    "hardware/battery-interface-a7-debug/battery-interface-a7-debug.kicad_pcb": "a266b3c8281737c22af459b9745091b6713a318ccc92f97df527e73b9364bf6d",
+    "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb": "002e7da598ce98b026c14c28a506a4f45a63881d4ededed3194a78b35f6a2bcf",
+    "hardware/combined-peripheral-a2/combined-peripheral-a2.kicad_pcb": "4bad50642edb8d0b5ddbe0771f41c4e974b34e3b379114ce47bda7d3ad687dd0",
+    "hardware/koyomi-lvds-hat/koyomi-lvds-hat.kicad_pcb": "033da7951e7d6321df0732353e38c57be2c26263d40926e9d678976001b110b6",
+    "hardware/microsd-extender-a1/microsd-extender-a1.kicad_pcb": "2b3d16d9642d5dd919f457f19a2b7cbc9c4a38be32ec78da23dfbea201e5bb56",
+    "hardware/sony-battery-escape-a0/sony-battery-escape-a0.kicad_pcb": "9a7805e7dfa891aa94e8912042edf2e9bd11d0687959b76477b4773c6c08933f",
+    "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb": "fd4c2e7346abb29aea73e58d1d7735b38a81094e190e46e219c08e4bf433bb2a",
+    "hardware/tf-battery-board-b8/tf-battery-board-b8.kicad_pcb": "dd4c9dc0baad17d7819926f324597ab4cfb52f3c0be904512fa922ad2c27a951"
+  },
+  "unchangedBoards": 11,
+  "undoRestoredInitialDesign": true,
+  "preview": {
+    "durationMs": 24800.200000047684,
+    "readiness": "Needs review before printing\n\n39 items need your review. Prototype export is available; physical fit is unverified.",
+    "errors": []
+  },
+  "recovery": {
+    "automaticRecovery": true,
+    "draftX": -159,
+    "selected": "@fit-hardware/battery-controller-b6/battery-controller-b6.kicad_pcb",
+    "cameraRestored": true,
+    "before": {
+      "position": [
+        242.0974866640288,
+        -106.59748666402854,
+        206.59748666402862
+      ],
+      "target": [
+        45.5,
+        90,
+        10
+      ]
+    },
+    "after": {
+      "position": [
+        242.09748666402876,
+        -106.59748666402851,
+        206.59748666402848
+      ],
+      "target": [
+        45.5,
+        90,
+        10
+      ]
+    },
+    "step": "Case",
+    "notice": false
+  }
+}

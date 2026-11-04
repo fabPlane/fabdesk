@@ -1,0 +1,1158 @@
+{
+  "date": "2026-11-02",
+  "uiWorker": {
+    "elapsedMs": 1107.2999999523163,
+    "ticks": 55,
+    "maxGap": 36.5,
+    "cards": [
+      "Compact\nPrioritize a smaller footprint\n190 \u00d7 225 \u00d7 20 mm inside\nLayouts checked\n900\nAccessible ports\n6 / 6\nPort walls\n3\nBoard spacing\n3 mm\nAssumptions & checks\nUse compact",
+      "Assembly space\nLeave more space between boards\n225 \u00d7 195 \u00d7 20 mm inside\nLayouts checked\n900\nAccessible ports\n6 / 6\nPort walls\n3\nBoard spacing\n8 mm\nAssumptions & checks\nUse assembly space",
+      "Ports together\nPrefer fewer case walls for ports\n225 \u00d7 190 \u00d7 20 mm inside\nLayouts checked\n900\nAccessible ports\n6 / 6\nPort walls\n2\nBoard spacing\n3 mm\nAssumptions & checks\nUse ports together"
+    ],
+    "workerScript": []
+  },
+  "scope": "Six- and eleven-board mechanical stress collections from real VAIO sources. Includes alternative revisions; not an electrically qualified complete VAIO product. No custom harness was created.",
+  "features": [
+    "Up to 12 deterministic board orders and obstacle-edge placement candidates",
+    "Optional case-body print-area limit",
+    "Layout comparisons run in a Web Worker; native intersection checks stay in Preview",
+    "Optional conservative 3D cable corridors, bend radii, routed length and previously planned cable reservations",
+    "Assumed screwdriver access checks for mounting holes",
+    "Planar artwork excluded before solid conversion; per-board temporary solids released; failed boards do not exhaust later board budgets"
+  ],
+  "benchmarks": [
+    {
+      "size": 6,
+      "version": "baseline",
+      "elapsedMs": 79.40839999999997,
+      "sources": [
+        {
+          "path": "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb",
+          "sha256": "fd4c2e7346abb29aea73e58d1d7735b38a81094e190e46e219c08e4bf433bb2a",
+          "nativeBounds": true,
+          "parts": 149
+        },
+        {
+          "path": "hardware/koyomi-lvds-hat/koyomi-lvds-hat.kicad_pcb",
+          "sha256": "033da7951e7d6321df0732353e38c57be2c26263d40926e9d678976001b110b6",
+          "nativeBounds": true,
+          "parts": 31
+        },
+        {
+          "path": "hardware/combined-peripheral-a2/combined-peripheral-a2.kicad_pcb",
+          "sha256": "4bad50642edb8d0b5ddbe0771f41c4e974b34e3b379114ce47bda7d3ad687dd0",
+          "nativeBounds": false,
+          "parts": 104
+        },
+        {
+          "path": "hardware/battery-controller-b6/battery-controller-b6.kicad_pcb",
+          "sha256": "56d9d02cfee1155c17effcb4d74d3a4494329b88a8b75ad0df8a59e3717d17d4",
+          "nativeBounds": true,
+          "parts": 47
+        },
+        {
+          "path": "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb",
+          "sha256": "002e7da598ce98b026c14c28a506a4f45a63881d4ededed3194a78b35f6a2bcf",
+          "nativeBounds": true,
+          "parts": 13
+        },
+        {
+          "path": "hardware/microsd-extender-a1/microsd-extender-a1.kicad_pcb",
+          "sha256": "2b3d16d9642d5dd919f457f19a2b7cbc9c4a38be32ec78da23dfbea201e5bb56",
+          "nativeBounds": true,
+          "parts": 11
+        }
+      ],
+      "space": {
+        "x": 0,
+        "y": 0,
+        "width": 215,
+        "depth": 120,
+        "height": 16,
+        "wall": 2,
+        "floor": 2,
+        "lid": 2,
+        "clearance": 1
+      },
+      "ports": 4,
+      "totalPorts": 4,
+      "blockers": [],
+      "reviews": [
+        {
+          "code": "mount-none",
+          "message": "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 2.180000000000007,
+              "y": 1.000000000000003,
+              "z": 6,
+              "width": 92,
+              "depth": 74.00000000000001,
+              "height": 1.2
+            }
+          ]
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb: J5 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb: J3 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "board-geometry",
+          "message": "hardware/koyomi-lvds-hat/koyomi-lvds-hat.kicad_pcb: Non-rectangular Edge.Cuts contour; enclosure fit uses a rectangular bounding estimate.",
+          "severity": "review"
+        },
+        {
+          "code": "screw-head-unknown",
+          "message": "hardware/koyomi-lvds-hat/koyomi-lvds-hat.kicad_pcb: enter the actual screw shaft, length and head dimensions for its mounting posts.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "Mounting post",
+              "x": 200.0050039339066,
+              "y": 59.925001847743985,
+              "z": 2,
+              "width": 5.15,
+              "depth": 5.15,
+              "height": 5
+            }
+          ]
+        },
+        {
+          "code": "mount-none",
+          "message": "hardware/combined-peripheral-a2/combined-peripheral-a2.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 97.385,
+              "y": 70.47500184774398,
+              "z": 6,
+              "width": 73.99999999999999,
+              "depth": 46,
+              "height": 1.6
+            }
+          ]
+        },
+        {
+          "code": "screw-head-unknown",
+          "message": "hardware/battery-controller-b6/battery-controller-b6.kicad_pcb: enter the actual screw shaft, length and head dimensions for its mounting posts.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "Mounting post",
+              "x": 2.7,
+              "y": 78.2,
+              "z": 2,
+              "width": 4.6,
+              "depth": 4.6,
+              "height": 4
+            }
+          ]
+        },
+        {
+          "code": "board-geometry",
+          "message": "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb: Non-rectangular Edge.Cuts contour; enclosure fit uses a rectangular bounding estimate.",
+          "severity": "review"
+        },
+        {
+          "code": "screw-head-unknown",
+          "message": "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb: enter the actual screw shaft, length and head dimensions for its mounting posts.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "Mounting post",
+              "x": 123.53000000000002,
+              "y": 1.9500000000000028,
+              "z": 2,
+              "width": 5.1,
+              "depth": 5.1,
+              "height": 4
+            }
+          ]
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb: J1 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "mount-none",
+          "message": "hardware/microsd-extender-a1/microsd-extender-a1.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 132.5800002384186,
+              "y": 1.0000000000000073,
+              "z": 6,
+              "width": 14.5,
+              "depth": 39,
+              "height": 1
+            }
+          ]
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/microsd-extender-a1/microsd-extender-a1.kicad_pcb: J2 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "coverage",
+          "message": "Checks use PCB outlines, component bounding boxes and estimated heights. Review actual component heights, cables, fasteners and manufacturing tolerances.",
+          "severity": "review"
+        }
+      ]
+    },
+    {
+      "size": 6,
+      "version": "improved",
+      "elapsedMs": 171.20480000000003,
+      "sources": [
+        {
+          "path": "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb",
+          "sha256": "fd4c2e7346abb29aea73e58d1d7735b38a81094e190e46e219c08e4bf433bb2a",
+          "nativeBounds": true,
+          "parts": 149
+        },
+        {
+          "path": "hardware/koyomi-lvds-hat/koyomi-lvds-hat.kicad_pcb",
+          "sha256": "033da7951e7d6321df0732353e38c57be2c26263d40926e9d678976001b110b6",
+          "nativeBounds": true,
+          "parts": 31
+        },
+        {
+          "path": "hardware/combined-peripheral-a2/combined-peripheral-a2.kicad_pcb",
+          "sha256": "4bad50642edb8d0b5ddbe0771f41c4e974b34e3b379114ce47bda7d3ad687dd0",
+          "nativeBounds": false,
+          "parts": 104
+        },
+        {
+          "path": "hardware/battery-controller-b6/battery-controller-b6.kicad_pcb",
+          "sha256": "56d9d02cfee1155c17effcb4d74d3a4494329b88a8b75ad0df8a59e3717d17d4",
+          "nativeBounds": true,
+          "parts": 47
+        },
+        {
+          "path": "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb",
+          "sha256": "002e7da598ce98b026c14c28a506a4f45a63881d4ededed3194a78b35f6a2bcf",
+          "nativeBounds": true,
+          "parts": 13
+        },
+        {
+          "path": "hardware/microsd-extender-a1/microsd-extender-a1.kicad_pcb",
+          "sha256": "2b3d16d9642d5dd919f457f19a2b7cbc9c4a38be32ec78da23dfbea201e5bb56",
+          "nativeBounds": true,
+          "parts": 11
+        }
+      ],
+      "space": {
+        "x": 0,
+        "y": 0,
+        "width": 255,
+        "depth": 100,
+        "height": 16,
+        "wall": 2,
+        "floor": 2,
+        "lid": 2,
+        "clearance": 1
+      },
+      "ports": 4,
+      "totalPorts": 4,
+      "search": {
+        "attempts": 675,
+        "feasible": 387,
+        "orders": 9,
+        "dimensions": 75
+      },
+      "blockers": [],
+      "reviews": [
+        {
+          "code": "mount-none",
+          "message": "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 2.180000000000007,
+              "y": 1.000000000000003,
+              "z": 6,
+              "width": 92,
+              "depth": 74.00000000000001,
+              "height": 1.2
+            }
+          ]
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb: J5 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb: J3 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "board-geometry",
+          "message": "hardware/koyomi-lvds-hat/koyomi-lvds-hat.kicad_pcb: Non-rectangular Edge.Cuts contour; enclosure fit uses a rectangular bounding estimate.",
+          "severity": "review"
+        },
+        {
+          "code": "screw-head-unknown",
+          "message": "hardware/koyomi-lvds-hat/koyomi-lvds-hat.kicad_pcb: enter the actual screw shaft, length and head dimensions for its mounting posts.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "Mounting post",
+              "x": 156.105001847744,
+              "y": 39.42500011920929,
+              "z": 2,
+              "width": 5.15,
+              "depth": 5.15,
+              "height": 5
+            }
+          ]
+        },
+        {
+          "code": "mount-none",
+          "message": "hardware/combined-peripheral-a2/combined-peripheral-a2.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 205.58000202655793,
+              "y": 1.205000000000001,
+              "z": 6,
+              "width": 46,
+              "depth": 74,
+              "height": 1.6
+            }
+          ]
+        },
+        {
+          "code": "screw-head-unknown",
+          "message": "hardware/battery-controller-b6/battery-controller-b6.kicad_pcb: enter the actual screw shaft, length and head dimensions for its mounting posts.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "Mounting post",
+              "x": 98.88000000000001,
+              "y": 1.2000000000000002,
+              "z": 2,
+              "width": 4.6,
+              "depth": 4.6,
+              "height": 4
+            }
+          ]
+        },
+        {
+          "code": "board-geometry",
+          "message": "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb: Non-rectangular Edge.Cuts contour; enclosure fit uses a rectangular bounding estimate.",
+          "severity": "review"
+        },
+        {
+          "code": "screw-head-unknown",
+          "message": "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb: enter the actual screw shaft, length and head dimensions for its mounting posts.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "Mounting post",
+              "x": 196.53000178813934,
+              "y": 1.9500000000000028,
+              "z": 2,
+              "width": 5.1,
+              "depth": 5.1,
+              "height": 4
+            }
+          ]
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb: J1 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "mount-none",
+          "message": "hardware/microsd-extender-a1/microsd-extender-a1.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 0.999999999999986,
+              "y": 78.0000010728836,
+              "z": 6,
+              "width": 39,
+              "depth": 14.500000000000028,
+              "height": 1
+            }
+          ]
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/microsd-extender-a1/microsd-extender-a1.kicad_pcb: J2 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "coverage",
+          "message": "Checks use PCB outlines, component bounding boxes and estimated heights. Review actual component heights, cables, fasteners and manufacturing tolerances.",
+          "severity": "review"
+        }
+      ]
+    },
+    {
+      "size": 11,
+      "version": "baseline",
+      "elapsedMs": 282.5036,
+      "sources": [
+        {
+          "path": "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb",
+          "sha256": "fd4c2e7346abb29aea73e58d1d7735b38a81094e190e46e219c08e4bf433bb2a",
+          "nativeBounds": true,
+          "parts": 149
+        },
+        {
+          "path": "hardware/koyomi-lvds-hat/koyomi-lvds-hat.kicad_pcb",
+          "sha256": "033da7951e7d6321df0732353e38c57be2c26263d40926e9d678976001b110b6",
+          "nativeBounds": true,
+          "parts": 31
+        },
+        {
+          "path": "hardware/sony-battery-escape-a0/sony-battery-escape-a0.kicad_pcb",
+          "sha256": "9a7805e7dfa891aa94e8912042edf2e9bd11d0687959b76477b4773c6c08933f",
+          "nativeBounds": true,
+          "parts": 13
+        },
+        {
+          "path": "hardware/combined-peripheral-a2/combined-peripheral-a2.kicad_pcb",
+          "sha256": "4bad50642edb8d0b5ddbe0771f41c4e974b34e3b379114ce47bda7d3ad687dd0",
+          "nativeBounds": false,
+          "parts": 104
+        },
+        {
+          "path": "hardware/battery-interface-a7-debug/battery-interface-a7-debug.kicad_pcb",
+          "sha256": "a266b3c8281737c22af459b9745091b6713a318ccc92f97df527e73b9364bf6d",
+          "nativeBounds": true,
+          "parts": 59
+        },
+        {
+          "path": "hardware/battery-controller-b6/battery-controller-b6.kicad_pcb",
+          "sha256": "56d9d02cfee1155c17effcb4d74d3a4494329b88a8b75ad0df8a59e3717d17d4",
+          "nativeBounds": true,
+          "parts": 47
+        },
+        {
+          "path": "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb",
+          "sha256": "002e7da598ce98b026c14c28a506a4f45a63881d4ededed3194a78b35f6a2bcf",
+          "nativeBounds": true,
+          "parts": 13
+        },
+        {
+          "path": "hardware/tf-battery-board-b8/tf-battery-board-b8.kicad_pcb",
+          "sha256": "dd4c9dc0baad17d7819926f324597ab4cfb52f3c0be904512fa922ad2c27a951",
+          "nativeBounds": true,
+          "parts": 46
+        },
+        {
+          "path": "hardware/battery-adapter-a6-gh10/battery-adapter-a6-gh10.kicad_pcb",
+          "sha256": "18d4a7e32ab9c88fffb0948e008bede243887704d7055b4fa6b5260a93cbfdcc",
+          "nativeBounds": true,
+          "parts": 2
+        },
+        {
+          "path": "hardware/axk750147g-breakout/axk750147g-breakout.kicad_pcb",
+          "sha256": "f0d8fbd9d3b3e231b6ab56cbc62f4cb720b6b2ef7dee475ceede404b79ecfdd4",
+          "nativeBounds": true,
+          "parts": 3
+        },
+        {
+          "path": "hardware/microsd-extender-a1/microsd-extender-a1.kicad_pcb",
+          "sha256": "2b3d16d9642d5dd919f457f19a2b7cbc9c4a38be32ec78da23dfbea201e5bb56",
+          "nativeBounds": true,
+          "parts": 11
+        }
+      ],
+      "space": {
+        "x": 0,
+        "y": 0,
+        "width": 325,
+        "depth": 130,
+        "height": 20,
+        "wall": 2,
+        "floor": 2,
+        "lid": 2,
+        "clearance": 1
+      },
+      "ports": 6,
+      "totalPorts": 6,
+      "blockers": [],
+      "reviews": [
+        {
+          "code": "mount-none",
+          "message": "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 2.180000000000007,
+              "y": 1.000000000000003,
+              "z": 6,
+              "width": 92,
+              "depth": 74.00000000000001,
+              "height": 1.2
+            }
+          ]
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb: J5 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb: J3 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "board-geometry",
+          "message": "hardware/koyomi-lvds-hat/koyomi-lvds-hat.kicad_pcb: Non-rectangular Edge.Cuts contour; enclosure fit uses a rectangular bounding estimate.",
+          "severity": "review"
+        },
+        {
+          "code": "screw-head-unknown",
+          "message": "hardware/koyomi-lvds-hat/koyomi-lvds-hat.kicad_pcb: enter the actual screw shaft, length and head dimensions for its mounting posts.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "Mounting post",
+              "x": 313.9050033885241,
+              "y": 101.925001847744,
+              "z": 2,
+              "width": 5.15,
+              "depth": 5.15,
+              "height": 5
+            }
+          ]
+        },
+        {
+          "code": "screw-head-unknown",
+          "message": "hardware/sony-battery-escape-a0/sony-battery-escape-a0.kicad_pcb: enter the actual screw shaft, length and head dimensions for its mounting posts.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "Mounting post",
+              "x": 103.52999969303609,
+              "y": 2.1300000000000257,
+              "z": 2,
+              "width": 5.1,
+              "depth": 5.1,
+              "height": 6
+            }
+          ]
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/sony-battery-escape-a0/sony-battery-escape-a0.kicad_pcb: J2 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "mount-none",
+          "message": "hardware/combined-peripheral-a2/combined-peripheral-a2.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 151.5800005275011,
+              "y": 51.38500000000001,
+              "z": 6,
+              "width": 46,
+              "depth": 74,
+              "height": 1.6
+            }
+          ]
+        },
+        {
+          "code": "mount-none",
+          "message": "hardware/battery-interface-a7-debug/battery-interface-a7-debug.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 151.5800005275011,
+              "y": 2.180000000000007,
+              "z": 6,
+              "width": 74,
+              "depth": 46,
+              "height": 1.2
+            }
+          ]
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/battery-interface-a7-debug/battery-interface-a7-debug.kicad_pcb: J3 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "screw-head-unknown",
+          "message": "hardware/battery-controller-b6/battery-controller-b6.kicad_pcb: enter the actual screw shaft, length and head dimensions for its mounting posts.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "Mounting post",
+              "x": 2.7,
+              "y": 78.2,
+              "z": 2,
+              "width": 4.6,
+              "depth": 4.6,
+              "height": 4
+            }
+          ]
+        },
+        {
+          "code": "board-geometry",
+          "message": "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb: Non-rectangular Edge.Cuts contour; enclosure fit uses a rectangular bounding estimate.",
+          "severity": "review"
+        },
+        {
+          "code": "screw-head-unknown",
+          "message": "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb: enter the actual screw shaft, length and head dimensions for its mounting posts.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "Mounting post",
+              "x": 254.93000052750114,
+              "y": 1.9500000000000028,
+              "z": 2,
+              "width": 5.1,
+              "depth": 5.1,
+              "height": 4
+            }
+          ]
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb: J1 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "mount-none",
+          "message": "hardware/tf-battery-board-b8/tf-battery-board-b8.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 201.98000052750112,
+              "y": 69.00000655651093,
+              "z": 6,
+              "width": 50,
+              "depth": 28,
+              "height": 1
+            }
+          ]
+        },
+        {
+          "code": "mount-none",
+          "message": "hardware/battery-adapter-a6-gh10/battery-adapter-a6-gh10.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 201.98000052750112,
+              "y": 100.00000816583633,
+              "z": 6,
+              "width": 52,
+              "depth": 24,
+              "height": 1.6
+            }
+          ]
+        },
+        {
+          "code": "mount-none",
+          "message": "hardware/axk750147g-breakout/axk750147g-breakout.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 74.00000178813934,
+              "y": 99.18000000000002,
+              "z": 6,
+              "width": 66,
+              "depth": 21,
+              "height": 1.6
+            }
+          ]
+        },
+        {
+          "code": "mount-none",
+          "message": "hardware/microsd-extender-a1/microsd-extender-a1.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 263.9800007659197,
+              "y": 1.0000000000000073,
+              "z": 6,
+              "width": 14.5,
+              "depth": 39,
+              "height": 1
+            }
+          ]
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/microsd-extender-a1/microsd-extender-a1.kicad_pcb: J2 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "coverage",
+          "message": "Checks use PCB outlines, component bounding boxes and estimated heights. Review actual component heights, cables, fasteners and manufacturing tolerances.",
+          "severity": "review"
+        }
+      ]
+    },
+    {
+      "size": 11,
+      "version": "improved",
+      "elapsedMs": 933.6804000000001,
+      "sources": [
+        {
+          "path": "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb",
+          "sha256": "fd4c2e7346abb29aea73e58d1d7735b38a81094e190e46e219c08e4bf433bb2a",
+          "nativeBounds": true,
+          "parts": 149
+        },
+        {
+          "path": "hardware/koyomi-lvds-hat/koyomi-lvds-hat.kicad_pcb",
+          "sha256": "033da7951e7d6321df0732353e38c57be2c26263d40926e9d678976001b110b6",
+          "nativeBounds": true,
+          "parts": 31
+        },
+        {
+          "path": "hardware/sony-battery-escape-a0/sony-battery-escape-a0.kicad_pcb",
+          "sha256": "9a7805e7dfa891aa94e8912042edf2e9bd11d0687959b76477b4773c6c08933f",
+          "nativeBounds": true,
+          "parts": 13
+        },
+        {
+          "path": "hardware/combined-peripheral-a2/combined-peripheral-a2.kicad_pcb",
+          "sha256": "4bad50642edb8d0b5ddbe0771f41c4e974b34e3b379114ce47bda7d3ad687dd0",
+          "nativeBounds": false,
+          "parts": 104
+        },
+        {
+          "path": "hardware/battery-interface-a7-debug/battery-interface-a7-debug.kicad_pcb",
+          "sha256": "a266b3c8281737c22af459b9745091b6713a318ccc92f97df527e73b9364bf6d",
+          "nativeBounds": true,
+          "parts": 59
+        },
+        {
+          "path": "hardware/battery-controller-b6/battery-controller-b6.kicad_pcb",
+          "sha256": "56d9d02cfee1155c17effcb4d74d3a4494329b88a8b75ad0df8a59e3717d17d4",
+          "nativeBounds": true,
+          "parts": 47
+        },
+        {
+          "path": "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb",
+          "sha256": "002e7da598ce98b026c14c28a506a4f45a63881d4ededed3194a78b35f6a2bcf",
+          "nativeBounds": true,
+          "parts": 13
+        },
+        {
+          "path": "hardware/tf-battery-board-b8/tf-battery-board-b8.kicad_pcb",
+          "sha256": "dd4c9dc0baad17d7819926f324597ab4cfb52f3c0be904512fa922ad2c27a951",
+          "nativeBounds": true,
+          "parts": 46
+        },
+        {
+          "path": "hardware/battery-adapter-a6-gh10/battery-adapter-a6-gh10.kicad_pcb",
+          "sha256": "18d4a7e32ab9c88fffb0948e008bede243887704d7055b4fa6b5260a93cbfdcc",
+          "nativeBounds": true,
+          "parts": 2
+        },
+        {
+          "path": "hardware/axk750147g-breakout/axk750147g-breakout.kicad_pcb",
+          "sha256": "f0d8fbd9d3b3e231b6ab56cbc62f4cb720b6b2ef7dee475ceede404b79ecfdd4",
+          "nativeBounds": true,
+          "parts": 3
+        },
+        {
+          "path": "hardware/microsd-extender-a1/microsd-extender-a1.kicad_pcb",
+          "sha256": "2b3d16d9642d5dd919f457f19a2b7cbc9c4a38be32ec78da23dfbea201e5bb56",
+          "nativeBounds": true,
+          "parts": 11
+        }
+      ],
+      "space": {
+        "x": 0,
+        "y": 0,
+        "width": 325,
+        "depth": 130,
+        "height": 20,
+        "wall": 2,
+        "floor": 2,
+        "lid": 2,
+        "clearance": 1
+      },
+      "ports": 6,
+      "totalPorts": 6,
+      "search": {
+        "attempts": 900,
+        "feasible": 572,
+        "orders": 12,
+        "dimensions": 75
+      },
+      "blockers": [],
+      "reviews": [
+        {
+          "code": "mount-none",
+          "message": "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 2.180000000000007,
+              "y": 1.000000000000003,
+              "z": 6,
+              "width": 92,
+              "depth": 74.00000000000001,
+              "height": 1.2
+            }
+          ]
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb: J5 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/sv-test-battery-a7.4/sv-test-battery-a7.4.kicad_pcb: J3 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "board-geometry",
+          "message": "hardware/koyomi-lvds-hat/koyomi-lvds-hat.kicad_pcb: Non-rectangular Edge.Cuts contour; enclosure fit uses a rectangular bounding estimate.",
+          "severity": "review"
+        },
+        {
+          "code": "screw-head-unknown",
+          "message": "hardware/koyomi-lvds-hat/koyomi-lvds-hat.kicad_pcb: enter the actual screw shaft, length and head dimensions for its mounting posts.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "Mounting post",
+              "x": 313.9050033885241,
+              "y": 101.925001847744,
+              "z": 2,
+              "width": 5.15,
+              "depth": 5.15,
+              "height": 5
+            }
+          ]
+        },
+        {
+          "code": "screw-head-unknown",
+          "message": "hardware/sony-battery-escape-a0/sony-battery-escape-a0.kicad_pcb: enter the actual screw shaft, length and head dimensions for its mounting posts.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "Mounting post",
+              "x": 103.52999969303609,
+              "y": 2.1300000000000257,
+              "z": 2,
+              "width": 5.1,
+              "depth": 5.1,
+              "height": 6
+            }
+          ]
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/sony-battery-escape-a0/sony-battery-escape-a0.kicad_pcb: J2 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "mount-none",
+          "message": "hardware/combined-peripheral-a2/combined-peripheral-a2.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 151.5800005275011,
+              "y": 51.38500000000001,
+              "z": 6,
+              "width": 46,
+              "depth": 74,
+              "height": 1.6
+            }
+          ]
+        },
+        {
+          "code": "mount-none",
+          "message": "hardware/battery-interface-a7-debug/battery-interface-a7-debug.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 151.5800005275011,
+              "y": 2.180000000000007,
+              "z": 6,
+              "width": 74,
+              "depth": 46,
+              "height": 1.2
+            }
+          ]
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/battery-interface-a7-debug/battery-interface-a7-debug.kicad_pcb: J3 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "screw-head-unknown",
+          "message": "hardware/battery-controller-b6/battery-controller-b6.kicad_pcb: enter the actual screw shaft, length and head dimensions for its mounting posts.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "Mounting post",
+              "x": 2.7,
+              "y": 78.2,
+              "z": 2,
+              "width": 4.6,
+              "depth": 4.6,
+              "height": 4
+            }
+          ]
+        },
+        {
+          "code": "board-geometry",
+          "message": "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb: Non-rectangular Edge.Cuts contour; enclosure fit uses a rectangular bounding estimate.",
+          "severity": "review"
+        },
+        {
+          "code": "screw-head-unknown",
+          "message": "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb: enter the actual screw shaft, length and head dimensions for its mounting posts.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "Mounting post",
+              "x": 254.93000052750114,
+              "y": 1.9500000000000028,
+              "z": 2,
+              "width": 5.1,
+              "depth": 5.1,
+              "height": 4
+            }
+          ]
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/cm5io-usb2-sdio-test-hat-a2/cm5io-usb2-sdio-test-hat.kicad_pcb: J1 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "mount-none",
+          "message": "hardware/tf-battery-board-b8/tf-battery-board-b8.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 201.98000052750112,
+              "y": 69.00000655651093,
+              "z": 6,
+              "width": 50,
+              "depth": 28,
+              "height": 1
+            }
+          ]
+        },
+        {
+          "code": "mount-none",
+          "message": "hardware/battery-adapter-a6-gh10/battery-adapter-a6-gh10.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 201.98000052750112,
+              "y": 100.00000816583633,
+              "z": 6,
+              "width": 52,
+              "depth": 24,
+              "height": 1.6
+            }
+          ]
+        },
+        {
+          "code": "mount-none",
+          "message": "hardware/axk750147g-breakout/axk750147g-breakout.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 74.00000178813934,
+              "y": 99.18000000000002,
+              "z": 6,
+              "width": 66,
+              "depth": 21,
+              "height": 1.6
+            }
+          ]
+        },
+        {
+          "code": "mount-none",
+          "message": "hardware/microsd-extender-a1/microsd-extender-a1.kicad_pcb: no aligned supporting screw posts. Choose a retention method; boards without mounting holes need a holder or another reviewed restraint.",
+          "severity": "review",
+          "regions": [
+            {
+              "name": "PCB",
+              "x": 263.9800007659197,
+              "y": 1.0000000000000073,
+              "z": 6,
+              "width": 14.5,
+              "depth": 39,
+              "height": 1
+            }
+          ]
+        },
+        {
+          "code": "port-measurements",
+          "message": "hardware/microsd-extender-a1/microsd-extender-a1.kicad_pcb: J2 dimensions are missing or assumed. Record the connector and plug drawing/measurement references; entering numbers alone does not confirm real hardware access.",
+          "severity": "review"
+        },
+        {
+          "code": "coverage",
+          "message": "Checks use PCB outlines, component bounding boxes and estimated heights. Review actual component heights, cables, fasteners and manufacturing tolerances.",
+          "severity": "review"
+        }
+      ]
+    }
+  ],
+  "printAreaLayouts": [
+    {
+      "boards": 6,
+      "space": {
+        "x": 0,
+        "y": 0,
+        "width": 165,
+        "depth": 155,
+        "height": 16,
+        "wall": 2,
+        "floor": 2,
+        "lid": 2,
+        "clearance": 1
+      },
+      "ports": 4,
+      "search": {
+        "attempts": 675,
+        "feasible": 208,
+        "orders": 9,
+        "dimensions": 75
+      }
+    },
+    {
+      "boards": 11,
+      "space": {
+        "x": 0,
+        "y": 0,
+        "width": 190,
+        "depth": 225,
+        "height": 20,
+        "wall": 2,
+        "floor": 2,
+        "lid": 2,
+        "clearance": 1
+      },
+      "ports": 6,
+      "search": {
+        "attempts": 900,
+        "feasible": 66,
+        "orders": 12,
+        "dimensions": 75
+      }
+    }
+  ],
+  "native": {
+    "boards": 11,
+    "status": "review",
+    "previewSeconds": 32.81299999996554,
+    "previousPreviewSeconds": 40.14000000001397,
+    "issueCounts": {
+      "mount-none": 7,
+      "port-measurements": 6,
+      "screw-head-unknown": 4,
+      "screw-tool-access": 5,
+      "board-geometry": 2,
+      "coverage": 1,
+      "detailed-missing": 8,
+      "detailed-layers": 10,
+      "detailed-open": 1,
+      "detailed-unavailable": 1,
+      "assembly-sampled": 11,
+      "assembly-unavailable": 1,
+      "detailed-coverage": 1
+    },
+    "blockers": [],
+    "coverage": [
+      "Checked 314 closed native bodies against case, lid, other boards and reserved obstacles. Minimum gaps between independent boards and obstacles were checked. Missing/open models, support contacts, cable routing and physical fit still need review."
+    ],
+    "unavailable": [
+      "hardware/combined-peripheral-a2/combined-peripheral-a2.kicad_pcb: detailed fit incomplete \u2014 pcb export glb failed (3): Failed to load board: KiCad was unable to open this file because it was created with a more recent version than the one you are running.\r | \r | To open it you will need to upgrade KiCad to version 10.99 or later (file format dated 20260831 or later)."
+    ],
+    "assemblySamples": 132
+  },
+  "exports": {
+    "manifestHashes": true,
+    "step": {
+      "reader": "OpenCascade",
+      "success": true,
+      "meshes": 2
+    },
+    "slices": [
+      {
+        "part": "case.stl",
+        "grams": 136.81690979003906,
+        "warning": "",
+        "triangles": 7070
+      },
+      {
+        "part": "lid-print.stl",
+        "grams": 96.22290802001953,
+        "warning": "",
+        "triangles": 58
+      }
+    ]
+  },
+  "tests": {
+    "focused": {
+      "passed": 118,
+      "assertions": 735,
+      "files": 12
+    },
+    "typecheck": "passed",
+    "coreBuild": "passed",
+    "desktopBuild": "passed",
+    "sourceMaps": "none in build outputs",
+    "broaderWindowsPackages": {
+      "passed": 732,
+      "failed": 5,
+      "note": "Four existing CLI-probe shim failures and one CRLF-sensitive stencil fixture failure; the same five occur in prior baseline-compared logs. Protocol, client-core and UI packages pass."
+    },
+    "previousCiFailureFixed": "Updated the measured-aperture fixture to provide dimension evidence; unknown values are still tested as review items."
+  },
+  "limitations": [
+    "Bounded search does not prove a global optimum.",
+    "Cable planning uses conservative boxes and a limited set of orthogonal detours; connector exits, flat-ribbon orientation, exact holder/lug geometry and physical cable specifications need review. Cables are reserved sequentially, not globally optimized.",
+    "No verified inter-board cable map was supplied for this collection; real layout benchmarks do not claim verified cable reach.",
+    "Combined peripheral A2 needs KiCad 10.99 or later; its native body remains unavailable on the installed KiCad 10.0.",
+    "Missing component models, actual screw/tool dimensions, retention and electrical compatibility remain review items.",
+    "Cooling, mass distribution, material strength, screw pullout and physical assembly are not simulated or certified.",
+    "Print-area planning limits the rectangular case body. Exported hardware and slicer placement must still be checked."
+  ]
+}

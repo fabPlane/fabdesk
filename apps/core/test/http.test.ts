@@ -702,6 +702,7 @@ describe("http daemon", () => {
         "verify_erc",
         "release_build",
         "render_view",
+        "render_pcb_readiness",
         "render_product_video",
       ]),
     );
@@ -727,7 +728,9 @@ describe("http daemon", () => {
 
     // A second session starts with only the default toolsets (state is per session).
     const b = await connect(daemon.token);
-    expect((await b.client.listTools()).tools.map(tool => tool.name).sort()).toEqual([...names].sort());
+    const secondSessionNames = (await b.client.listTools()).tools.map((tool) => tool.name);
+    expect(secondSessionNames.sort()).toEqual([...names].sort());
+    expect(secondSessionNames).not.toContain("export_stencil");
     expect(daemon.mcp.activeCount()).toBe(2);
 
     // Clients that cannot process tools/list_changed can request the complete

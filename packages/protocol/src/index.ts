@@ -35,3 +35,8 @@ export * from "./output-revision";
 export * from "./output-trash";
 
 export * from "./schematic-focus";
+export * from "./mechanical-design";
+export * from "./mechanical-access";
+export * from "./enclosure-footprint";
+export * from "./connector-opening";
+export * from "./opening-profile";
