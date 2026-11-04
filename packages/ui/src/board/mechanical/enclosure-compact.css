@@ -11,6 +11,7 @@
   top: 72px;
 }
 .fd-case-compact[data-advanced="false"] .fd-case-canvas {
+  display: block;
   inset: 0;
 }
 .fd-enclosure-card,

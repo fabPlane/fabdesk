@@ -5,6 +5,9 @@
   padding: 0 16px;
   gap: 18px;
 }
+.fd-mechanical.is-expanded > .fd-mechanical-reference-header {
+  padding-right: 58px;
+}
 .fd-mechanical-reference-header .fd-mechanical-breadcrumbs {
   flex: 1;
   gap: 14px;

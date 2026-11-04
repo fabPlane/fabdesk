@@ -167,6 +167,7 @@ export function MechanicalWorkspace({
     project = useProject(projectId),
     projects = useProjects();
   const setActiveProject = useUiStore((s) => s.setActiveProject);
+  const boardVisible = useUiStore((s) => s.boardOpen && !s.activeOpenSourceId && !s.inventoryOpen);
   const enclosureController = useRef<EnclosureWorkspaceController | null>(null);
   const [sharedBoardModels, setSharedBoardModels] = useState<SceneModel[]>([]);
   const [hiddenSharedBoards, setHiddenSharedBoards] = useState<Set<string>>(() => new Set());
@@ -218,7 +219,7 @@ export function MechanicalWorkspace({
     }
   }, [panelKey, panel]);
   const [enclosureStatus, setEnclosureStatus] = useState("Loading enclosure…");
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [partFilter, setPartFilter] = useState("");
   const [modelRevision, setModelRevision] = useState(0);
@@ -286,12 +287,9 @@ export function MechanicalWorkspace({
       .includes(partFilter.trim().toLowerCase()),
   );
   useEffect(() => {
-    try {
-      localStorage.setItem("fd:mechanical:focus", String(expanded));
-    } catch {
-      /* Storage may be unavailable. */
-    }
-  }, [expanded]);
+    // Reopening the board panel must not restore an overlay over the chat.
+    if (!boardVisible) setExpanded(false);
+  }, [boardVisible]);
   const compactImport = current?.kind === "import" && !preview;
   const addEntry = panel === "add" && !preview && !current && !showReview && !showExport;
   const rightPanel = (!!current && !preview && !compactImport) || showReview || showExport;
@@ -903,7 +901,7 @@ export function MechanicalWorkspace({
   }
   return (
     <section
-      className={`fd-mechanical${expanded ? " is-expanded" : ""}${leftPanel ? " has-left-panel" : ""}${rightPanel ? " has-right-panel" : ""}${preview ? " has-preview" : ""}${explode > 0 && !preview ? " is-exploded" : ""}`}
+      className={`fd-mechanical${expanded && boardVisible ? " is-expanded" : ""}${leftPanel ? " has-left-panel" : ""}${rightPanel ? " has-right-panel" : ""}${preview ? " has-preview" : ""}${explode > 0 && !preview ? " is-exploded" : ""}`}
       data-testid="mechanical-workspace"
       data-enclosure-design={panel === "design"}
       data-add-entry={addEntry}
@@ -1079,6 +1077,7 @@ export function MechanicalWorkspace({
                 Redo assembly edit
               </button>
               <button
+                aria-pressed={expanded}
                 onClick={(e) => {
                   e.currentTarget.closest("details")?.removeAttribute("open");
                   setExpanded(!expanded);
