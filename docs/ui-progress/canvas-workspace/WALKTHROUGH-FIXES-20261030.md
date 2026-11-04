@@ -1,3 +1,5 @@
+> November4 stabilization: [final beginner test, Activity timestamp fix and remaining integration work](STABILIZATION-20261104.md). Existing parts are allowed for this isolated test; prior Basic-only test pause is superseded. No new feature expansion, manufacturer upload or order.
+
 # November 4 resumed verification
 
 Owner declined ExtendedC165948; Basic-only and blocked ordering remain. B10 Library Refresh outputs recovery committedc99c655; actual idle failure captured, scoped query regression proves failure recovery/isolation, native healthy refresh tested after development reload cleared errors. Fresh live MCP question remained open>1minute and acknowledged explicit answer; original draft/native sources preserved. UI297/clientblob6/types/productiondesktopbuildPASS0maps. See [current report](BEGINNER-ORDER-20261104.md). No final engineering/whole-app readiness claim.

@@ -1,3 +1,5 @@
+> **Current status:** the owner later authorized existing parts for this isolated test. Routing and final native checks now pass, media and manufacturing files were regenerated, and the current wrap-up is [Stabilization checkpoint](STABILIZATION-20261104.md). The earlier Basic-only/blocked decisions below are historical and superseded for this test; production sourcing is not certified.
+
 # Beginner idea-to-order human test · November 3–4
 
 Tested actual fabPlane Dev through visible clicks, scrolling and normal typing, starting at Home with no project open. No direct routes, APIs or database edits were used to advance the journey. Read-only transcript/source/artifact checks are diagnostics, not UI acceptance. Existing user drafts/projects were preserved. The isolated new project is **Button light — beginner order test**: a 5V USB-powered green LED that lights while a push button is held, five assembled boards, no purchasing.
