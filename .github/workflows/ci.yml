@@ -61,8 +61,8 @@ jobs:
       - name: Test shared Mac runner job hooks
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/ci/macos/tests -p 'test_*.py'
 
-      # The deploy key still provides read-only access to fabplane.com. The new fabPlane
-      # organization disables deploy keys, so fab_pcb is checked out with its repository token.
+      # The deploy key still provides read-only access to fabplane.com. The public
+      # fab_pcb checkout below uses this job's token without persisting credentials.
       - uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
@@ -80,7 +80,7 @@ jobs:
           repository: fabPlane/fab_pcb
           ref: ${{ steps.fab-pcb.outputs.commit }}
           path: vendor/fab_pcb
-          token: ${{ secrets.FAB_PCB_RELEASE_TOKEN }}
+          token: ${{ github.token }}
           persist-credentials: false
 
       - uses: oven-sh/setup-bun@v2
