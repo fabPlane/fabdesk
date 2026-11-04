@@ -14,6 +14,8 @@
 .fd-canvas-connection i[data-connected=true] { background:var(--fd-success); }
 .fd-workspace-menu { position:relative; }
 .fd-workspace-menu > summary { cursor:pointer; display:flex; align-items:center; gap:12px; min-height:36px; padding:6px 12px; border:1px solid var(--fd-border); border-radius:8px; background:var(--fd-panel); list-style:none; user-select:none; box-shadow:0 1px 3px #102a2008; }
+.fd-workspace-menu > summary > svg { flex-shrink:0; }
+.fd-workspace-menu > summary > svg:last-child:not(:first-child) { margin-left:auto; }
 .fd-workspace-menu > summary::-webkit-details-marker { display:none; }
 .fd-workspace-menu > summary > span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .fd-project-switcher > summary { min-width:190px; max-width:260px; justify-content:space-between; font-size:14px; }
@@ -724,7 +726,6 @@
 .fd-single-checks-header { flex-shrink:0; padding:16px; border-bottom:1px solid var(--fd-border); }
 .fd-single-checks-header h2 { margin:0; font-size:16px; font-weight:600; }
 .fd-single-checks-header p { margin:5px 0 0; font-size:12px; color:var(--fd-muted); line-height:1.6; }
-.fd-single-checks-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:12px; }
 .fd-single-checks-header .fd-single-checks-prerequisite { margin-top:10px; }
 .fd-single-checks-filter { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:8px; margin-top:14px; font-size:11px; color:var(--fd-muted); }
 .fd-single-checks-filter label { display:flex; align-items:center; gap:8px; }

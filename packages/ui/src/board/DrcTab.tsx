@@ -1,4 +1,3 @@
-import { SchematicAvailability } from "./SchematicAvailability";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { CheckFindingDetails } from "./CheckFindingDetails";
@@ -7,6 +6,7 @@ import { Select, Badge, Button, EmptyState, LoadError, Spinner } from "../compon
 import { captureRootCheckFinding, rootCheckFindingRow, useCoreClient, usePcbCheckRevision, useProjectJson } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { CheckReportStatus } from "./CheckReportStatus";
+import { Icon } from "../components/Icon";
 import { cn } from "../util";
 import { useRunTool } from "@fabdesk/client-core";
 
@@ -76,18 +76,19 @@ function SingleBoardChecks({ projectId, scopeVerified, contextual, onNavigate }:
   const failed = drc.isError || erc.isError || drc.parseError || erc.parseError;
   const loading = drc.isLoading || erc.isLoading;
   const noReports = drc.data === null && erc.data === null;
+  const openSource = (tab: "pcb" | "schematic") => {
+    const ui = useUiStore.getState(); if (!sourceReady || busy || ui.activeProjectId !== projectId) return;
+    onNavigate?.(); ui.setBoardTab(tab);
+  };
+  const pcbAction = (<Button size="sm" variant="primary" disabled={busy || !sourceReady || !hasPcb} title={!hasPcb ? "Save a native PCB before running DRC" : !hasSchematic ? "Check PCB design rules only; schematic parity is unavailable" : "Check PCB design rules and available schematic parity"} onClick={() => void run("drc")}>
+          {busy && runningCheck === "drc" ? "Checking PCB…" : hasSchematic ? "Run PCB checks" : "Run PCB-only checks"}
+        </Button>);
+  const schematicAction = (<Button size="sm" variant="primary" disabled={busy || !sourceReady || !hasSchematic} title={!hasSchematic ? "Save a native schematic before running ERC" : "Check the complete saved schematic hierarchy"} onClick={() => void run("erc")}>
+          {busy && runningCheck === "erc" ? "Checking schematic…" : "Run schematic checks"}
+        </Button>);
   const toolbar = (
     <header className="fd-single-checks-header">
       <div><h2>Design checks</h2><p>Check the saved PCB and schematic. Review findings after each design change.</p></div>
-      <div className="fd-single-checks-actions">
-        <Button size="sm" disabled={busy || !sourceReady || !hasPcb} title={!hasPcb ? "Save a native PCB before running DRC" : !hasSchematic ? "Check PCB design rules only; schematic parity is unavailable" : "Check PCB design rules and available schematic parity"} onClick={() => void run("drc")}>
-          {busy && runningCheck === "drc" ? "Checking PCB…" : hasSchematic ? "Run PCB checks" : "Run PCB-only checks"}
-        </Button>
-        <Button size="sm" variant="ghost" disabled={busy || !sourceReady || !hasSchematic} title={!hasSchematic ? "Save a native schematic before running ERC" : "Check the complete saved schematic hierarchy"} onClick={() => void run("erc")}>
-          {busy && runningCheck === "erc" ? "Checking schematic…" : "Run schematic checks"}
-        </Button>
-        {busy && <Spinner />}
-      </div>
       {project.isError ? <LoadError title="Could not inspect saved design files" onRetry={() => void project.refetch()} /> : !sourceReady ? <p role="status">Checking project sources…</p> : (!hasPcb || !hasSchematic) && <p className="fd-single-checks-prerequisite">{!hasPcb && !hasSchematic ? "Save a PCB or schematic to start checking your design." : !hasSchematic ? "No saved schematic yet. PCB checks are available; electrical rule checking needs a schematic." : "No saved PCB yet. Schematic checks are available; PCB design rules need a board."}</p>}
       {tool.state.error && <ErrorNotice error={tool.state.error} />}
 
@@ -99,25 +100,22 @@ function SingleBoardChecks({ projectId, scopeVerified, contextual, onNavigate }:
     <div ref={root} className="fd-single-checks flex h-full min-h-0 flex-col">
       {toolbar}
       <div className="fd-checks-body" data-detail-open={!!sel}>
-      {sourceReady && <div className="fd-checks-context"><div className="fd-member-checks-scope"><strong>{project.data?.name}</strong><span>Saved project sources · Review each check’s coverage below.</span></div><SchematicAvailability available={hasSchematic} disabled={busy} onOpen={() => {
-        const ui = useUiStore.getState(); if (!sourceReady || busy || ui.activeProjectId !== projectId) return;
-        onNavigate?.(); ui.setBoardTab("schematic");
-      }} /></div>}
-
-      {!loading && !failed && !noReports && <CheckReportStatus projectId={projectId} drc={drc.data} erc={erc.data} />}
+      <CheckReportStatus projectId={projectId} drc={drc.data} erc={erc.data} hasPcb={hasPcb} hasSchematic={hasSchematic} sourceReady={sourceReady} loading={loading} drcError={!!drc.isError || !!drc.parseError} ercError={!!erc.isError || !!erc.parseError} runningCheck={busy ? runningCheck : null} pcbAction={pcbAction} schematicAction={schematicAction} onOpenPcb={() => openSource("pcb")} onOpenSchematic={() => openSource("schematic")} />
+      <div className="fd-checks-findings-heading"><h3>Saved findings</h3><p>Findings belong to the saved reports above. Re-run a check when its source changes.</p></div>
       <div className="fd-single-checks-filters">
-      {!loading && !failed && !noReports && <div className="fd-single-checks-filter"><label>Findings<Select aria-label="Filter saved check findings" value={filter} onChange={event => { setFilter(event.target.value as typeof filter); filterFindings("", "all"); }}><option value="all">All checks</option><option value="drc">PCB · DRC</option><option value="erc">Schematic · ERC</option></Select></label></div>}
-      {!loading && !failed && !noReports && <CheckFindingFilters rows={scopedRows} count={filteredRows.length} query={findingQuery} severity={severity} onChange={filterFindings} />}</div>
+      {!loading && !failed && rows.length > 0 && <div className="fd-single-checks-filter"><label>Findings<Select aria-label="Filter saved check findings" value={filter} onChange={event => { setFilter(event.target.value as typeof filter); filterFindings("", "all"); }}><option value="all">All checks</option><option value="drc">PCB · DRC</option><option value="erc">Schematic · ERC</option></Select></label></div>}
+      {!loading && !failed && rows.length > 0 && <CheckFindingFilters rows={scopedRows} count={filteredRows.length} query={findingQuery} severity={severity} onChange={filterFindings} />}</div>
       {failed ? <LoadError title="Checks could not be verified" onRetry={() => { void drc.refetch(); void erc.refetch(); }} /> : loading ? (
         <div className="flex flex-1 items-center justify-center">
           <Spinner />
         </div>
       ) : filteredRows.length === 0 ? (
-        <EmptyState title={noReports ? "Start with a design check" : rows.length > 0 ? "No findings match these filters" : "No findings in saved reports"} action={rows.length > 0 ? <Button size="sm" onClick={clearFilters}>Clear finding filters</Button> : undefined}>
-          {noReports
-            ? "PCB checks (DRC) look for layout problems such as clearances and unconnected pads. Schematic checks (ERC) look for electrical connection problems. Choose a check above when its source is ready."
-            : rows.length > 0 ? "Clear the finding filters to see the other saved findings." : "These saved reports contain no listed findings. Re-run checks after design changes; missing or incomplete checks do not establish a pass."}
-        </EmptyState>
+        <section className="fd-checks-empty" aria-label="Saved finding results">
+          <Icon name={checkRevision.data === "source-changed" ? "warning" : "checklist"} width={26} height={26} />
+          <h4>{noReports ? "No saved results yet" : rows.length > 0 ? "No findings match these filters" : checkRevision.data === "source-changed" ? "Run PCB checks again" : "No findings listed in the saved reports"}</h4>
+          <p>{noReports ? "Start with PCB checks or schematic checks above. Each reviews a different part of your design." : rows.length > 0 ? "Clear the finding filters to see the other saved findings." : checkRevision.data === "source-changed" ? "The current PCB has not been checked against this saved report. An empty older report does not establish a pass for the changed board." : "Review each report’s source status above. Missing, incomplete or outdated checks do not establish a pass."}</p>
+          {rows.length > 0 && <Button size="sm" onClick={clearFilters}>Clear finding filters</Button>}
+        </section>
       ) : (
         <div className="fd-checks-results min-h-0 flex-1" data-detail-open={!!sel}>
           <div className="fd-checks-table min-h-0 overflow-auto">

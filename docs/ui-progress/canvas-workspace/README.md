@@ -1,3 +1,5 @@
+Latest UI follow-up: [clear check cards and workspace selector alignment](CHECKS-UI-20261104.md).
+
 Latest focused wrap-up: [November4 stabilization checkpoint](STABILIZATION-20261104.md).
 
 > Latest beginner acceptance: [idea-to-order human test and fixes](BEGINNER-ORDER-20261104.md). Previews and draft exports work; final routing/order readiness remains blocked on an explicit sourcing exception. Full default suite is not green.
