@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   loadPlacementLibrary,
   replacementPreview,
@@ -78,6 +78,7 @@ export function FootprintLibrary({
   onClose: () => void;
   onPreview: (entry: FootprintChoice) => void;
 }) {
+  const fileInput = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<FootprintChoice[]>([]),
     [choice, setChoice] = useState<FootprintChoice | null>(initial ?? null),
     [query, setQuery] = useState(""),
@@ -127,7 +128,7 @@ export function FootprintLibrary({
     <Dialog
       open
       className={`w-[1060px]${dragging ? " fd-placement-library-dragging" : ""}`}
-      title={target ? `Compare footprint for ${target.ref}` : "Footprint library"}
+      title={target ? `Compare pad patterns for ${target.ref}` : "Add an unconnected footprint"}
       onClose={onClose}
     >
       <div className="fd-placement-library" data-testid="placement-library">
@@ -137,7 +138,7 @@ export function FootprintLibrary({
             CC-BY-SA with design exception
           </a>
         </p>
-        <p>Footprint geometry only. Matching pad numbers does not verify electrical function, component value, supplier availability or BOM compatibility.</p>
+        <p className="fd-placement-library-purpose">{target ? "Compare the physical pads and size of this component. This does not choose a replacement electronic part or change the schematic." : "A footprint is a physical pad pattern on the PCB. Add one for layout exploration only; it has no circuit connections or BOM part."}</p>
         <div className="fd-placement-library-search">
           <input
             aria-label="Search footprint library"
@@ -145,7 +146,7 @@ export function FootprintLibrary({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <label>
+          {target && <label>
             <input
               type="checkbox"
               checked={compatible}
@@ -153,9 +154,9 @@ export function FootprintLibrary({
               onChange={(e) => setCompatible(e.target.checked)}
             />{" "}
             Matching numbered pads only
-          </label>
+          </label>}
         </div>
-        <div className="fd-placement-library-columns">
+        <div className={`fd-placement-library-columns${choice ? "" : " has-no-choice"}`}>
           <div className="fd-placement-library-grid">
             <small>
               {filtered.length} of {items.length} footprints
@@ -164,7 +165,7 @@ export function FootprintLibrary({
               <button
                 key={x.name}
                 className={choice?.name === x.name ? "is-selected" : ""}
-                aria-label={`Compare ${x.title}`}
+                aria-label={`Choose ${x.title}`}
                 draggable
                 onDragStart={(e) => {
                   e.dataTransfer.setData(
@@ -187,7 +188,7 @@ export function FootprintLibrary({
               </button>
             ))}
           </div>
-          <section className="fd-placement-comparison">
+          <section className="fd-placement-comparison" hidden={!choice}>
             {choice ? (
               <>
                 <h3>
@@ -234,7 +235,7 @@ export function FootprintLibrary({
                   </>
                 ) : (
                   <p>
-                    New component · no electrical connections. Add at the board center, or drag a
+                    New pad pattern · no electrical connections. Add at the board center, or drag a
                     library card onto the board.
                   </p>
                 )}
@@ -250,9 +251,10 @@ export function FootprintLibrary({
         </div>
         {error && <p role="alert">{error}</p>}
         <footer>
-          <label className="fd-placement-file-button">
-            Open .kicad_mod…
+          <div className="fd-placement-file-button"><Button variant="secondary" onClick={() => fileInput.current?.click()}>Import footprint file…</Button>
             <input
+              ref={fileInput}
+              hidden
               type="file"
               accept=".kicad_mod"
               onChange={async (e) => {
@@ -269,7 +271,7 @@ export function FootprintLibrary({
                 }
               }}
             />
-          </label>
+          </div>
           <Button onClick={onClose} variant="ghost">
             Cancel
           </Button>
@@ -279,7 +281,7 @@ export function FootprintLibrary({
               if (choice) onPreview(choice);
             }}
           >
-            Preview {target ? "replacement" : "addition"}
+            Preview {target ? "pad change" : "unconnected footprint"}
           </Button>
         </footer>
       </div>

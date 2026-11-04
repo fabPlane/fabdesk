@@ -150,3 +150,7 @@ Open [the clickable UI proposal](placement-integration-20261104/proposal.html). 
 ![Current merged placement editor: several stacked tool rows](placement-integration-20261104/02-current-editor-selected.png)
 ![Current footprint comparison](placement-integration-20261104/03-footprint-compare.png)
 ![Current resize inspector](placement-integration-20261104/04-current-resize-panel.png)
+
+## Placement usability revision — November 4
+
+Dedicated Edit placement / Back to PCB, persistent Select/Pan/Undo/Redo, scoped shortcuts that respect text entry, visible labeled airwires, Save layout / Create PCB copy handoff, and task-specific pad-pattern library are implemented. Native retest and exact limitations: [placement UX human-test](placement-ux-20261104/REPORT.md).299 UI tests, UI types, desktop build pass; no source maps; all existing test-project files hash-identical. Explicit native copy export added one unrouted PCB file. No manufacturing success inferred. Next: push389 then branch for398Mechanicalintegration as authorized.

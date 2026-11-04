@@ -267,21 +267,6 @@ export function PlacementCanvas({
       ctx.font = `${10 / v.scale}px sans-serif`;
       ctx.fillText(a.name, a.x + 3 / v.scale, a.y + 12 / v.scale);
     }
-    if (!drag.current && net !== "off") {
-      ctx.strokeStyle = color("--fd-accent");
-      ctx.lineWidth = 0.8 / v.scale;
-      ctx.globalAlpha = net ? 0.7 : 0.22;
-      ctx.beginPath();
-      for (const e of edges) {
-        if (net && e.name !== net) continue;
-        if (!net && selection.length && !selection.includes(e.a.id) && !selection.includes(e.b.id))
-          continue;
-        ctx.moveTo(...e.a.xy);
-        ctx.lineTo(...e.b.xy);
-      }
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
     for (const p of visible(state)) {
       const b = worldBounds(p);
       if (
@@ -371,6 +356,30 @@ export function PlacementCanvas({
         ctx.textAlign = "center";
         ctx.fillStyle = color(active ? "--fd-accent" : "--fd-fg");
         ctx.fillText(p.ref + (p.locked ? " · locked" : ""), p.x, b.minY - 4 / v.scale);
+      }
+    }
+    // Airwires sit above footprint fills: they are guides, not saved copper.
+    if (!drag.current && net !== "off") {
+      const selected = new Set(selection), visibleIds = new Set(visible(state).map(part => part.id));
+      const guides = edges.filter(edge => visibleIds.has(edge.a.id) && visibleIds.has(edge.b.id) &&
+        (net === "selected" ? selected.has(edge.a.id) || selected.has(edge.b.id) : !net || edge.name === net));
+      for (const edge of guides) {
+        ctx.beginPath(); ctx.moveTo(...edge.a.xy); ctx.lineTo(...edge.b.xy);
+        ctx.strokeStyle = color("--fd-panel"); ctx.lineWidth = 4 / v.scale; ctx.stroke();
+        ctx.strokeStyle = color("--fd-accent"); ctx.lineWidth = 1.5 / v.scale;
+        ctx.setLineDash([5 / v.scale, 3 / v.scale]); ctx.stroke(); ctx.setLineDash([]);
+        for (const point of [edge.a.xy, edge.b.xy]) {
+          ctx.beginPath(); ctx.arc(point[0], point[1], 3 / v.scale, 0, Math.PI * 2);
+          ctx.fillStyle = color("--fd-accent"); ctx.fill();
+          ctx.strokeStyle = color("--fd-panel"); ctx.lineWidth = 1 / v.scale; ctx.stroke();
+        }
+        if (guides.length <= 8) {
+          const x = (edge.a.xy[0] + edge.b.xy[0]) / 2, y = (edge.a.xy[1] + edge.b.xy[1]) / 2;
+          ctx.font = `600 ${11 / v.scale}px sans-serif`; ctx.textAlign = "center";
+          const width = ctx.measureText(edge.name).width;
+          ctx.fillStyle = color("--fd-panel"); ctx.fillRect(x - width / 2 - 3 / v.scale, y - 14 / v.scale, width + 6 / v.scale, 15 / v.scale);
+          ctx.fillStyle = color("--fd-accent"); ctx.fillText(edge.name, x, y - 3 / v.scale);
+        }
       }
     }
     if (gap?.from && gap.to && (!drag.current || drag.current.mode === "move")) {
