@@ -1,6 +1,7 @@
+import { useAssistantSurface } from "../chat/useAssistantSurface";
 import type { InventoryItem } from "@fabdesk/protocol";
 import { useEffect, useState } from "react";
-import { Badge, Button, EmptyState, IconButton, Input, Spinner } from "../components/ui";
+import { Badge, Button, EmptyState, IconButton, Input, LoadError, Spinner } from "../components/ui";
 import {
   cloudErrorMessage,
   isCloudSignedOut,
@@ -68,7 +69,7 @@ function AddItemForm({ onDone }: { onDone: () => void }) {
       </label>
       <div className="col-span-2 flex items-center justify-end gap-2">
         {create.isError && <span className="mr-auto text-danger">{cloudErrorMessage(create.error)}</span>}
-        <Button size="sm" onClick={onDone}>
+        <Button size="sm" disabled={create.isPending} onClick={onDone}>
           Cancel
         </Button>
         <Button type="submit" size="sm" variant="primary" disabled={!valid || create.isPending}>
@@ -134,6 +135,8 @@ export function InventoryView() {
   const inventory = useInventory(query, ready);
   const [adding, setAdding] = useState(false);
   const org = status.data?.orgs.find((o) => o.id === status.data?.activeOrgId);
+  const projectId = useUiStore(s => s.activeProjectId);
+  useAssistantSurface(projectId ? { projectId, scope: "inventory", label: "Parts inventory", priority: 10, details: JSON.stringify({ search: query, view: adding ? "Add inventory item" : "Inventory list", access: status.isLoading ? "Checking access" : status.isError ? "Service check failed" : status.data?.available === false ? "Unavailable in this build" : ready ? "Signed in" : "Sign-in required", loading: status.isLoading || inventory.isLoading, inventoryLoadFailed: inventory.isError, listedItems: inventory.data?.items.length, instruction: "Organization inventory is separate from the project BOM and board part replacement. Check the active organization and existing quantities before proposing inventory changes." }) } : null);
 
   if (status.isLoading)
     return (
@@ -141,12 +144,13 @@ export function InventoryView() {
         <Spinner />
       </div>
     );
+  if (status.isError) return <LoadError title="Could not check inventory access" onRetry={() => void status.refetch()} />;
   if (status.data && !status.data.available)
     return <EmptyState title="Inventory unavailable">This build of fabPlane has no fabplane.com client.</EmptyState>;
   if (!ready || isCloudSignedOut(inventory.error))
     return (
       <EmptyState
-        title="Sign in to fabplane"
+        title="Sign in to fabPlane"
         action={
           <Button variant="primary" size="sm" onClick={() => setSettingsOpen(true, "auth")}>
             Open Account settings
@@ -180,7 +184,7 @@ export function InventoryView() {
         </IconButton>
       </div>
       {adding && <AddItemForm onDone={() => setAdding(false)} />}
-      {inventory.error && <div className="border-b border-border px-4 py-1.5 text-xs text-danger">{cloudErrorMessage(inventory.error)}</div>}
+      {inventory.error && <div role="alert" className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-1.5 text-xs text-danger"><span>{cloudErrorMessage(inventory.error)}</span><Button size="sm" variant="ghost" disabled={inventory.isFetching} onClick={() => void inventory.refetch()}>Retry inventory</Button></div>}
       <div className="min-h-0 flex-1 overflow-auto">
         {inventory.isLoading && (
           <div className="flex justify-center py-6">

@@ -5,6 +5,8 @@
  * view packages.
  */
 export { CoreClient, CoreHttpError, parseJsonl } from "./CoreClient";
+export { nativeSourceCandidates } from "./native-source-candidates";
+export { activeQuestion, draftConversation, draftWorkspaceTitle } from "./draft-navigation";
 export { deduplicateChatNotices } from "./chat-notices";
 export { errorHelp, errorMessage, errorPayload, agentErrorText, splitAgentError } from "./error-help";
 export type { ErrorHelp, ErrorAction, ErrorContext } from "./error-help";
@@ -104,13 +106,15 @@ export { useRunsStore } from "./stores/runs";
 export type { LiveRun, LiveJob } from "./stores/runs";
 
 export { useRunTool, resolveToolName, TOOL_PATTERNS } from "./tools";
+export { exportGerberPackage, gerberPackageFilename } from "./manufacturing-package";
 export type { ToolKind, ToolRunState } from "./tools";
 
-export { groupThreadsByProject, sidebarSections } from "./group-threads";
+export { groupThreadsByProject, sidebarSections, searchProjectGroups } from "./group-threads";
 export type { ProjectThreadGroup, ProjectThreadGroupKind } from "./group-threads";
 export { pickerModelChoices, agentModelLabel } from "./agent-model-choices";
 
 export * from "./queries";
+export * from "./route-review";
 
 /** Route Cinema: the pure painter and the live-frame hub (`packages/client-core/src/cinema`). */
 export * from "./cinema";
@@ -158,7 +162,84 @@ export {
   DEFAULT_VOICE_SHORTCUT,
 } from "./speech/shortcut";
 export type { VoiceShortcut } from "./speech/shortcut";
+
+export { DRAFT_KEY_NEW, newChatDraftKey, createSketchDraftSession, editableSketchPaths, projectSketchImagePaths } from "./sketch-drafts";
+export { WORKSPACE_AREAS, workspaceAreaForView, workspaceViews, workspaceViewSearchTerms, workspaceTabForArea } from "./workspace-navigation";
+export type { WorkspaceArea, WorkspaceView } from "./workspace-navigation";
+
+export * from "./pcb-preview-revision";
+
+export * from "./model-import";
+
+export * from "./enclosure-revision";
+
+export * from "./pcb-parts";
+
+export { parsePcbOutlineInspection, inspectPcbOutline, outlineDimensionInput, resizedOutlinePoints } from "./pcb-outline";
+
+export { usePcbOutline } from "./queries";
+
+export { inspectPcbCheckRevision, type PcbCheckRevisionState } from "./check-revision";
+export { usePcbCheckRevision } from "./queries";
+
+export { snapNativePoint, nudgeNativePoint } from "./native-target";
+
+export * from "./board-model-revision";
+export { useBoardModelRevision } from "./queries";
+
+export * from "./output-library";
+export * from "./imported-boards";
+
+export * from "./assembly-scene";
+export * from "./assembly-map-layout";
+export * from "./sketch-recovery";
+
+export * from "./assembly-review";
+
+export * from "./assembly-checks";
+export * from "./check-findings";
+export { useAssemblyPcbCheck } from "./queries";
+
+export * from "./assembly-check-summary";
+export { useAssemblyCheckSummaries } from "./queries";
+
+export * from "./assembly-check-finding";
+export * from "./live-assembly-previews";
+export * from "./assembly-board-model";
+export * from "./model-camera";
+
+export * from "./assembly-model-summary";
+export { useAssemblyModelSummaries } from "./queries";
+
+export * from "./assembly-schematic-inspection";
+
+export * from "./assembly-schematic-preview";
+export { useAssemblySchematicPreview } from "./queries";
+export { enclosureSizeLabel } from "./enclosure-display";
+export { loadBoardArtwork, saveBoardArtwork, createArtworkSessionStore, artworkSessions, type ArtworkSessionDraft } from "./board-artwork";
+
+export { captureRootCheckFinding, rootCheckFindingRow, type RootCheckFinding } from "./root-check-finding";
+
+export { useVideoInputRevision, useVideoInputRevisions } from "./queries";
+export { inspectVideoInputRevision, videoInputsNeedReview, type VideoInputRevisionState } from "./video-input-revision";
+
+export * from "./kept-output";
+
+export * from "./stable-project-blob";
+export { refreshProjectPreviews } from "./refresh-project-previews";
+export * from "./overview-images";
+export * from "./diff-preview";
+export * from "./board-file-destination";
+
+export { readOutputSelection, OUTPUT_DOWNLOAD_LIMIT } from "./output-download";
+export { reviewPackageFiles, type ReviewPackageOptions } from "./review-package";
+export { projectJobs, projectJobBoard, jobIsActive, activeModelOutputJobs, type ProjectJob } from "./project-jobs";
+export * from "./output-revision";
+
+export { schematicFocusFilesMatch, schematicFocusFromResult } from "./schematic-focus";
 export { PersistentDraft, localDraft } from "./persistent-draft";
+export { sameWorkspaceLocation, recordWorkspaceHistory } from "./workspace-history";
+export type { WorkspaceHistoryEntry } from "./workspace-history";
 export * from "./mechanical";
 export * from "./enclosure-design";
 export * from "./enclosure-history";

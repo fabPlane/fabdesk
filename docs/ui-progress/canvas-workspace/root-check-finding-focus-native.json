@@ -1,0 +1,33 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "flow": [
+    "Overview readiness notes opened Checks",
+    "Native Run PCB-only checks completed",
+    "18 saved findings shown with missing ERC/parity explicitly unverified",
+    "Selected actual shorting finding and Show on PCB",
+    "Fresh navigation focused Selected saved PCB finding after the image painted",
+    "Escape removed finding and focused Drawing canvas"
+  ],
+  "report": {
+    "counts": {
+      "errors": 10,
+      "warnings": 5,
+      "unconnected": 3
+    },
+    "pcbRevision": {
+      "sha256": "623d182c8b5a79c654b5cf6a50534cb4d97863076ec717d36be2f96433563df8",
+      "bytes": 8035
+    },
+    "schematicParityChecked": false,
+    "sha256": "942eacefda8a534be773ecc67cb318ae5b645bb2706973978dce8ef28f66715c"
+  },
+  "preservation": {
+    "baselineFiles": 25,
+    "allExact": true,
+    "intentionalNewFiles": [
+      "project.parts.json (empty hardware test result)",
+      "reports/drc.json (actual native PCB-only check)"
+    ]
+  },
+  "scope": "Navigation and source preservation proof; the test fixture has actual errors and has not passed engineering checks."
+}

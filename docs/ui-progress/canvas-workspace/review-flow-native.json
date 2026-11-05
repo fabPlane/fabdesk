@@ -1,0 +1,26 @@
+{
+  "path": "boards/io/reports/drc.json",
+  "priorAbsent": true,
+  "restoredActualEarlierReportSha256": "51c5037d2d7b2d62c3ca6d95a96ba4c80b2a278a61acc8afea5c2ef3dbf27abb",
+  "nativeSourceUnchanged": true,
+  "restoredPriorReportAbsence": true,
+  "recordedHashesUnchanged": 24,
+  "validated": [
+    "Known14DRCfindings visible with Checks/model closed despite matching source",
+    "Requested details \u2192 correct IOsourceChecks",
+    "RightIO\u2192Review\u2192Openboard retained RightIO and PCB view",
+    "Native source inspection recovered:3parts15x15mm",
+    "VAIO6sources5previewmatches1unresolved; all default details closed, Resolve source visible"
+  ],
+  "checks": {
+    "uiTypecheck": "PASS",
+    "uiTests": 225,
+    "failures": 0
+  },
+  "limits": [
+    "No DRC rerun, preview regeneration, agent message or native design edit for UI validation",
+    "184 precedes final accessible summary wording and row spacing;185 is final VAIOlayout",
+    "Compact window acceptance still pending"
+  ],
+  "runtimeRecovery": "Existing installed official PCB bridge restarted loopback4020/taskworkspace with short /tmp/fabplane-canvas-pcb socket directory. Source launcher lacked submodule workspace dependency; no install or source change. Longsocket attempt stopped only ownPID67094; unrelated installed bridge955 untouched."
+}

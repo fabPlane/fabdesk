@@ -1,14 +1,17 @@
+import { DisclosureSummary } from "../components/DisclosureSummary";
 import type { Message, MessagePart, Thread } from "@fabdesk/protocol";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { deduplicateChatNotices, splitAgentError, useCoreClient, type ThreadDetail } from "@fabdesk/client-core";
-import { ErrorAgentContext, ErrorNotice } from "../components/ErrorNotice";
+import { activeQuestion, deduplicateChatNotices, splitAgentError, useCoreClient, type ThreadDetail } from "@fabdesk/client-core";
+import { ErrorAgentContext, ErrorNotice, ErrorRetryContext } from "../components/ErrorNotice";
+import { reviewFailedPrompt } from "./retry-message";
 import { useRunsStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
 import { Markdown } from "./Markdown";
+import { MessageAttachment } from "./MessageAttachment";
 import { ProjectImage } from "./ProjectImage";
 import { splitCompletedActivity } from "./completed-activity";
 import { RunActivity, WorkedActivity } from "./RunActivity";
@@ -43,7 +46,7 @@ export function ToolGroup({
   const label = pending.length > 0 ? (commandsOnly ? "Commands" : "Tool activity") : commandsOnly ? "Ran commands" : "Used tools";
   return (
     <div className="fd-tool-group my-2 min-w-0 text-[13px]" data-testid="tool-group">
-      {history.length > 0 && <button type="button" className="flex min-h-8 max-w-full items-center gap-2 rounded-md py-1.5 text-left text-muted hover:text-fg"
+      {history.length > 0 && <button type="button" className="flex min-h-8 max-w-full items-center gap-2 rounded-md py-1.5 text-left text-fg hover:bg-panel-2/70"
         onClick={() => setOpen((o) => !o)} title={open ? "Hide tool calls" : "Show tool calls"} aria-expanded={open} aria-controls={visibleCalls.length > 0 ? detailsId : undefined}>
         <Icon name={commandsOnly ? "terminal" : "tool"} width={16} height={16} className="shrink-0" />
         <span>{label}</span>
@@ -77,19 +80,13 @@ export function ToolGroup({
   );
 }
 
-function ImagePart({ path }: { path: string }) {
-  const projectId = useUiStore((s) => s.activeProjectId);
-  return (
-    <div className="my-1.5">
-      <ProjectImage projectId={projectId} path={path} />
-    </div>
-  );
-}
-
 function AssistantText({ text, streaming = false }: { text: string; streaming?: boolean }) {
   const failure = splitAgentError(text);
   if (!failure) return <Markdown text={text} className={cn(streaming && "fd-caret")} />;
-  return <>{failure.before && <Markdown text={failure.before} />}<ErrorNotice error={failure.error} />{failure.after && <AssistantText text={failure.after} streaming={streaming} />}</>;
+  // A CLI metadata warning adds no recovery action beside a terminal failure. Keep it in Details,
+  // but preserve ordinary agent prose and warnings (which may describe actual partial work).
+  const metadataWarning = /^⚠\s*Model metadata for [^\n]+ not found\. Defaulting to fallback metadata; this can degrade performance and cause issues\.$/.test(failure.before.trim());
+  return <>{failure.before && !metadataWarning && <Markdown text={failure.before} />}<ErrorNotice error={failure.error} {...(metadataWarning ? { diagnostics: failure.before } : {})} />{failure.after && <AssistantText text={failure.after} streaming={streaming} />}</>;
 }
 
 export function renderParts(m: Message, streaming: boolean): ReactNode[] {
@@ -143,7 +140,7 @@ export function renderParts(m: Message, streaming: boolean): ReactNode[] {
         }
         break;
       case "image":
-        out.push(<ImagePart key={i} path={p.path} />);
+        out.push(<MessageAttachment key={i} path={p.path} mime={p.mime} />);
         break;
       case "approval":
         out.push(<PendingApprovalCard key={p.requestId} threadId={m.threadId} part={p} />);
@@ -162,7 +159,7 @@ export function renderParts(m: Message, streaming: boolean): ReactNode[] {
 export function MessageActions({ message, latestReply = false }: { message: Message; latestReply?: boolean }) {
   const [feedback, setFeedback] = useState<"" | "copied" | "error">("");
   useEffect(() => {
-    if (!feedback) return;
+    if (feedback !== "copied") return;
     const timer = setTimeout(() => setFeedback(""), 2500);
     return () => clearTimeout(timer);
   }, [feedback]);
@@ -232,11 +229,12 @@ export function MessageBubble({ message, streaming, latestReply = false }: { mes
         {isUser ? (
           <>
             {message.contentMd && <div className="whitespace-pre-wrap">{message.contentMd}</div>}
+            {message.parts.filter(part => part.type === "workspace_context").map((part, index) => part.type === "workspace_context" && <details key={`context-${index}`} className="fd-message-workspace-context"><DisclosureSummary icon="sparkles" label={`Context · ${part.context.label}`} variant="compact" /><pre>{part.context.details}</pre></details>)}
             {/* A photo attached on the phone arrives as an image part next to the text. */}
             {message.parts
               .filter((p) => p.type === "image")
               .map((p, i) => (
-                <ImagePart key={i} path={(p as { path: string }).path} />
+                <MessageAttachment key={i} path={p.path} mime={p.mime} />
               ))}
           </>
         ) : (
@@ -326,6 +324,22 @@ export function MessageList({
     const el = ref.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
+  const questionId = activeQuestion(messages, run?.runId)?.requestId;
+  const questionKey = questionId ? `${thread?.id}:${run?.runId}:${questionId}` : undefined;
+  const revealedQuestion = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!questionId) { revealedQuestion.current = undefined; return; }
+    if (revealedQuestion.current === questionKey) return;
+    const viewport = ref.current;
+    const card = [...(viewport?.querySelectorAll<HTMLElement>("[data-pending-question]") ?? [])].find(element => element.dataset.pendingQuestion === questionId);
+    if (!viewport || !card) return;
+    revealedQuestion.current = questionKey;
+    // Reveal the beginning of a long question, rather than scrolling past it to the composer.
+    stick.current = false;
+    viewport.scrollTop += card.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 16;
+    const legend = card.querySelector("legend");
+    if (legend) { legend.tabIndex = -1; legend.focus({ preventScroll: true }); }
+  }, [questionId, questionKey]);
   const lastId = messages.findLast((message) => message.role === "assistant")?.id;
   const visibleMessages = deduplicateChatNotices(messages.filter((message) => message.status !== "queued"));
   const activeMessages = run ? visibleMessages.filter((m) => m.role === "assistant" && m.runId === run.runId) : [];
@@ -361,7 +375,9 @@ export function MessageList({
           const split = completed ? splitCompletedActivity(batch, savedRun?.status === "failed" || savedRun?.status === "aborted") : null;
           const day = new Date(m.createdAt).toDateString();
           const previousDay = visible[index - 1] ? new Date(visible[index - 1]!.createdAt).toDateString() : null;
-          return <ErrorAgentContext.Provider key={m.id} value={savedRun?.agentId ?? (run?.runId === m.runId ? run.agentId : undefined)}><div data-message-id={completed ? undefined : m.id} className="scroll-mt-8 rounded-xl">
+          const previousPrompt = visible.slice(0, index).findLast(item => item.role === "user");
+          const reviewPrompt = previousPrompt && m.role === "assistant" && batch.some(item => item.id === lastId) ? () => { reviewFailedPrompt(previousPrompt); } : undefined;
+          return <ErrorAgentContext.Provider key={m.id} value={savedRun?.agentId ?? (run?.runId === m.runId ? run.agentId : undefined)}><ErrorRetryContext.Provider value={reviewPrompt}><div data-message-id={completed ? undefined : m.id} className="scroll-mt-8 rounded-xl">
             {day !== previousDay && <div className="my-3 flex items-center gap-3 text-[11px] text-muted"><span className="h-px flex-1 bg-border" /><time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleDateString([], { dateStyle: "medium" })}</time><span className="h-px flex-1 bg-border" /></div>}
             {run && m.id === firstActiveId && <RunActivity key={run.runId} run={run} waiting={waiting} />}
             {split ? <>
@@ -370,7 +386,7 @@ export function MessageList({
               </WorkedActivity>
               {split.answer && <div data-message-id={split.answer.id}><MessageBubble message={split.answer} streaming={false} latestReply={batch.some(item => item.id === lastId)} /></div>}
             </> : <MessageBubble message={m} latestReply={m.role === "assistant" && m.id === lastId} streaming={!!run && m.runId === run.runId && m.role === "assistant"} />}
-          </div></ErrorAgentContext.Provider>;
+          </div></ErrorRetryContext.Provider></ErrorAgentContext.Provider>;
         })}
         {run && !firstActiveId && <div><RunActivity key={run.runId} run={run} /><div className="text-[13px] text-muted" role="status"><span className="fd-activity-shimmer">Working…</span></div></div>}
         {run?.error && !activeMessages.some(m => m.contentMd.includes(run.error!)) && <ErrorNotice error={run.error} agentId={run.agentId} />}

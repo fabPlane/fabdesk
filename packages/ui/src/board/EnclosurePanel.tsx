@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { useCoreClient } from "@fabdesk/client-core";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { enclosureSizeLabel, useCoreClient, useProject } from "@fabdesk/client-core";
 import { Button, Input, Select, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import "./enclosure-panel.css";
@@ -25,6 +25,8 @@ export type EnclosureView = {
   stale: boolean;
   ok: boolean;
   summary: string;
+  sizeLabel?: string;
+  cadError?: string;
   issues: string[];
   cutouts: Array<{ ref: string; edge: string }>;
   holes: number;
@@ -64,11 +66,14 @@ export function enclosureFromTool(result: unknown): EnclosureView {
     .filter((v): v is string => typeof v === "string");
   const text = typeof rec?.["text"] === "string" ? rec["text"] : "";
   const previewSvg = typeof data["previewSvg"] === "string" ? data["previewSvg"] : undefined;
+  const sizeLabel = enclosureSizeLabel(data["outerMm"]);
   return {
     exists: data["exists"] !== false && (Boolean(alignment) || files.length > 0),
     stale: alignment?.["stale"] === true,
     ok: data["exists"] !== false && alignment?.["ok"] !== false && issues.length === 0,
     summary: firstLine(text) || (data["exists"] === false ? "No enclosure yet." : "Enclosure"),
+    ...(sizeLabel ? { sizeLabel } : {}),
+    ...(typeof data["cadError"] === "string" ? { cadError: data["cadError"] } : {}),
     issues,
     cutouts,
     holes: typeof features?.["holes"] === "number" ? features["holes"] : 0,
@@ -190,6 +195,7 @@ export function EnclosureScreen({
   onDownload,
   onOpenFiles,
   downloading,
+  checkNote,
 }: {
   view: EnclosureView | null;
   draft: EnclosureDraft;
@@ -201,6 +207,7 @@ export function EnclosureScreen({
   onDownload?: (path: string) => void;
   onOpenFiles?: (path: string) => void;
   downloading?: string | null;
+  checkNote?: string | null;
 }) {
   const offsetError = enclosureDimensionError(draft.outlineOffsetMm, 40, "Outline offset");
   const clearanceError = enclosureDimensionError(draft.clearanceMm, 20, "Clearance");
@@ -220,8 +227,7 @@ export function EnclosureScreen({
             {view?.exists ? "Your enclosure" : "Create a printable enclosure"}
           </h2>
           <p className="mt-1 text-sm text-muted" data-testid="enclosure-summary">
-            {view?.summary ??
-              "Generate a printable case from the board outline, holes and connectors."}
+            {view?.exists ? view.sizeLabel ? `Saved case · ${view.sizeLabel}` : "Saved generated case" : view?.summary ?? "Generate a printable case from the board outline, holes and connectors."}
           </p>
         </div>
         {busy && <Spinner />}
@@ -278,6 +284,7 @@ export function EnclosureScreen({
             </span>
           )}
         </label>
+        <details className="fd-enclosure-extra-settings"><summary>Vents and fastening<span>{draft.ventPattern === "none" ? "No vents" : `${draft.ventPattern} vents`}{draft.snapFit ? " · Snap-fit clips" : ""}</span></summary><div className="fd-enclosure-secondary-controls">
         <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted">
           Vent pattern
           <Select
@@ -320,6 +327,7 @@ export function EnclosureScreen({
           />
           Snap-fit clips
         </label>
+        </div></details>
       </div>
       {settingsChanged && (
         <div
@@ -345,20 +353,49 @@ export function EnclosureScreen({
           {error}
         </p>
       )}
+      {view?.cadError && <p className="mt-2 text-xs text-danger" role="alert">Case files were generated, but the CAD model could not be updated: {view.cadError}</p>}
+      {checkNote && <p role="status" className="mt-2 text-xs text-muted">{checkNote}</p>}
       {view?.exists && (
         <p className="mt-1 text-xs text-muted" data-testid="enclosure-meta">
           {settingsChanged
             ? "Preview and downloads show the last generated settings."
             : view.stale
-              ? "Board changed — regenerate so cutouts stay aligned."
+              ? "PCB changed · Review before regenerating."
               : view.ok
-                ? `In sync · ${view.cutouts.length} cutout(s) · ${view.holes} hole(s) · ${view.vents} vent(s) · ${view.clips} clip(s)`
+                ? `Saved case · ${view.cutouts.length} cutout(s) · ${view.holes} hole(s) · ${view.vents} vent(s) · ${view.clips} clip(s)`
                 : (view.issues[0] ?? "Cutouts need attention.")}
         </p>
       )}
+      {!!view && view.issues.length > 1 && <details className="fd-enclosure-findings mt-3 text-xs"><summary className="cursor-pointer">Alignment findings · {view.issues.length}</summary><ul className="mt-2 list-disc space-y-1 pl-4">{view.issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul></details>}
+      {view?.exists && (
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-xs text-muted"
+            disabled={busy}
+            onClick={onCheck}
+            data-testid="enclosure-check"
+            title="Compare cutouts and mounting holes with the saved PCB. This does not check the full assembly or physical fit."
+          >
+            Check alignment
+          </Button>
+          {!settingsChanged && (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy || invalid}
+              onClick={onGenerate}
+              data-testid="enclosure-generate"
+            >
+              Regenerate
+            </Button>
+          )}
+        </div>
+      )}
       {view?.exists && view.files.some((path) => /\.(stl|step)$/i.test(path)) && (
-        <div className="mt-5 border-t border-border pt-4">
-          <h3 className="text-sm font-medium">Open in your slicer or CAD app</h3>
+        <details className="fd-enclosure-downloads mt-4 border-t border-border pt-3"><summary>Downloads and files</summary><div className="mt-3">
+          <h3 className="text-sm font-medium">Files for printing and CAD</h3>
           <p className="mt-1 text-xs leading-5 text-muted">
             Download the base and lid for 3D printing, or STEP for CAD editing. These files are also
             saved in your project alongside the enclosure specification.
@@ -391,9 +428,8 @@ export function EnclosureScreen({
           >
             View generated files →
           </button>
-        </div>
+        </div></details>
       )}
-      <p className="mt-4 text-xs text-muted">No CAD bridge installation required.</p>
       {view && view.issues.length > 1 && (
         <ul className="mt-1 list-disc pl-4 text-xs text-warning" data-testid="enclosure-issues">
           {view.issues.slice(0, 6).map((issue) => (
@@ -402,49 +438,29 @@ export function EnclosureScreen({
         </ul>
       )}
       {view?.previewSvg && (
-        <div
+        <details className="fd-enclosure-drawing"><summary>Cutout drawing</summary><div
           className="mt-2 max-w-full overflow-auto rounded-md border border-border bg-bg [&_svg]:h-auto [&_svg]:max-w-full"
           data-testid="enclosure-preview"
           dangerouslySetInnerHTML={{ __html: view.previewSvg }}
-        />
+        /></details>
       )}
-      {view?.exists && (
-        <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-xs text-muted"
-            disabled={busy}
-            onClick={onCheck}
-            data-testid="enclosure-check"
-          >
-            Check alignment
-          </Button>
-          {!settingsChanged && (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={busy || invalid}
-              onClick={onGenerate}
-              data-testid="enclosure-generate"
-            >
-              Regenerate
-            </Button>
-          )}
-        </div>
-      )}
+
     </section>
   );
 }
 
-export function EnclosurePanel() {
+export function EnclosurePanel({ initialDraft, onDraftSnapshot }: { initialDraft?: EnclosureDraft; onDraftSnapshot?: (draft: EnclosureDraft | null) => void } = {}) {
   const client = useCoreClient();
   const projectId = useUiStore((s) => s.activeProjectId);
+  const project = useProject(projectId);
+  const checkedRevision = useRef<string | null>(null);
+  const sourceRevision = project.data ? `${projectId}:${project.dataUpdatedAt}` : null;
   const [view, setView] = useState<EnclosureView | null>(null);
-  const [draft, setDraft] = useState<EnclosureDraft>(DEFAULT_ENCLOSURE_DRAFT);
+  const [draft, setDraft] = useState<EnclosureDraft>(initialDraft ?? DEFAULT_ENCLOSURE_DRAFT);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [checkNote, setCheckNote] = useState<string | null>(null);
 
   const download = async (path: string) => {
     if (!projectId || downloading) return;
@@ -466,10 +482,11 @@ export function EnclosurePanel() {
   };
 
   const call = useCallback(
-    async (action: "generate" | "status" | "check", extras: Record<string, unknown> = {}) => {
+    async (action: "generate" | "status" | "check", extras: Record<string, unknown> = {}, preserveDraft = false) => {
       if (!projectId) return;
       setBusy(true);
       setError(null);
+      setCheckNote(null);
       try {
         const res = await client.callTool("cad_enclosure", {
           projectId,
@@ -480,7 +497,9 @@ export function EnclosurePanel() {
           client.readFile(projectId, path),
         );
         setView(next);
-        if (action !== "generate") setDraft(next.draft);
+        if (action === "check") setCheckNote(next.ok && !next.stale ? "Cutout and mounting-hole check completed. Full physical fit is not verified." : "Board-feature check completed. Review the alignment findings before regenerating.");
+        if (action === "generate") { setDraft(next.draft); onDraftSnapshot?.(null); }
+        else if (!preserveDraft) setDraft(next.draft);
         const rec = asRecord(res);
         if (rec && rec["ok"] === false && typeof rec["text"] === "string") setError(rec["text"]);
       } catch (e) {
@@ -491,21 +510,22 @@ export function EnclosurePanel() {
               client.readFile(projectId, path),
             ),
           );
+        if (action === "check" && failure.result) setCheckNote("Board-feature check found issues. Review the alignment findings.");
         if (failure.message) setError(failure.message);
       } finally {
         setBusy(false);
       }
     },
-    [client, projectId],
+    [client, projectId, onDraftSnapshot],
   );
 
   useEffect(() => {
-    if (!projectId) {
-      setView(null);
-      return;
-    }
-    void call("status");
-  }, [projectId, call]);
+    if (!projectId || !sourceRevision || busy || checkedRevision.current === sourceRevision) return;
+    const initial = checkedRevision.current === null;
+    checkedRevision.current = sourceRevision;
+    // Background source changes update the report without replacing unsaved controls.
+    void call("status", {}, !initial || !!initialDraft);
+  }, [projectId, sourceRevision, busy, call]);
 
   if (!projectId) return null;
   return (
@@ -515,7 +535,9 @@ export function EnclosurePanel() {
       busy={busy}
       error={error}
       onDraftChange={(patch) => {
-        setDraft((cur) => ({ ...cur, ...patch }));
+        const next = { ...draft, ...patch };
+        setDraft(next);
+        onDraftSnapshot?.(view?.exists && !enclosureDraftChanged(next, view.draft) ? null : next);
         setError(null);
       }}
       onGenerate={() =>
@@ -528,10 +550,11 @@ export function EnclosurePanel() {
           snapFit: draft.snapFit,
         })
       }
-      onCheck={() => void call("check")}
+      onCheck={() => void call("check", {}, true)}
       onDownload={(path) => void download(path)}
       onOpenFiles={(path) => useUiStore.getState().openProjectFile(path)}
       downloading={downloading}
+      checkNote={checkNote}
     />
   );
 }

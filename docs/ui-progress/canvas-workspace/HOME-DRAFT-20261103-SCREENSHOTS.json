@@ -1,0 +1,62 @@
+{
+  "kind": "Unaltered native fabPlane Dev captures; not generated concepts",
+  "sourceCode": "fd5968c + cdb9fa9",
+  "screenshots": [
+    {
+      "file": "home-20261103-before.png",
+      "original": "01-home-before.png",
+      "sha256": "bac7ecd01eca1e2a34647a25821ab106d6ddc1da72a7a970259b1ab222d46df1"
+    },
+    {
+      "file": "home-20261103-after.png",
+      "original": "19-home-final.png",
+      "sha256": "b8594a52bad4096ddc1c2c3516c1d3798936fab70877009f39326573c3a7323b"
+    },
+    {
+      "file": "home-20261103-draft.png",
+      "original": "16-text-sketch-saved.png",
+      "sha256": "5f91f15dfcdcafd342ff8169669c3fe5c3300ae079efd862f61e9c3d22261683"
+    },
+    {
+      "file": "home-20261103-project-setup.png",
+      "original": "17-clear-project-naming.png",
+      "sha256": "c47a8da1ce477e49950add8048be21dd79c75bd16732e816caee21f7c78739dd"
+    },
+    {
+      "file": "home-20261103-generated-pcb.png",
+      "original": "18-reopened-generated-pcb.png",
+      "sha256": "fa08c7c085076ed4b9cd18c045d2ec622a33960b327b24badc740df704dae488"
+    },
+    {
+      "file": "home-20261103-section-break.png",
+      "original": "22-section-break-after.png",
+      "sha256": "bbbfae83508d308302da384b2dc8071e6d3929113fa6cdd06f46634e031bfa5f"
+    },
+    {
+      "file": "home-20261103-question-compact.png",
+      "original": "26-pending-question-compact.png",
+      "sha256": "a49124cf3a2f2947d6364d4bc57cc4e81e350b1585e1520db7c1547ec12b2282"
+    },
+    {
+      "file": "home-20261103-draft-previews.png",
+      "original": "27-home-draft-preview-rename.png",
+      "sha256": "c3e7cf17c3c517525e65071ec4085a246d0a9bdbaac3a6ca0d06240321e0e34c"
+    },
+    {
+      "file": "home-20261103-image-draft-search.png",
+      "original": "29-image-draft-search.png",
+      "sha256": "53695dabb3cfc9f59fa59b7140a97ff2a0a64c271525ff6f976a59ddd83d4ac1"
+    },
+    {
+      "file": "home-20261103-native-note.png",
+      "original": "30-native-cosmetic-note-saved-preview.png",
+      "sha256": "263397cb55ae42b1b0183bed8c7388fecf4783eac7253ab53d9efdffb8da0059"
+    },
+    {
+      "file": "home-20261103-native-library-restoration.png",
+      "original": "32-native-library-restoration.png",
+      "sha256": "1f19ae7be8f22f4646950e8a72cdf23ea485837cca5b58bb55d5c06db3ac8875"
+    }
+  ],
+  "followupSource": "Local follow-up ced5197 and native setup/recency fixes; original sourceCode refers to the initial Home flow."
+}

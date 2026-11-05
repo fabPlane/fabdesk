@@ -1,0 +1,51 @@
+{
+  "projectId": "prj_mvqyacun3e60075ae8",
+  "physicalInstances": 3,
+  "sourceDesigns": 2,
+  "declaredUnverifiedLinks": 1,
+  "scopedNativeInspections": [
+    {
+      "sourceId": "io",
+      "parts": 3,
+      "widthMm": 15,
+      "heightMm": 15
+    },
+    {
+      "sourceId": "carrier",
+      "parts": 3,
+      "widthMm": 20,
+      "heightMm": 15
+    }
+  ],
+  "sameSizePreservedTimestampChangeDetected": true,
+  "sharedInstancesWarnTogether": true,
+  "sourceUpdatesCountedOnce": true,
+  "explicitDetailAndCanvasRefreshPassed": true,
+  "otherSourceAndManifestUnchangedDuringRefresh": true,
+  "detailZoomKeptPercent": 125,
+  "graphCameraKeptOnReturn": true,
+  "changedManifestDisablesOldSelection": true,
+  "minimumWindow": {
+    "width": 960,
+    "height": 720,
+    "horizontalOverflow": false,
+    "contextToolbarWithinWindow": true
+  },
+  "askPreparedDraftWithoutSending": true,
+  "darkThemeVisuallyChecked": true,
+  "fixtureRestored": true,
+  "restoredHashes": {
+    "fabplane.assembly.json": "ffe6b12399cec942549f829855f4d6e532a18db08d843a44f6c2624f7dd4885c",
+    "boards/io/board.kicad_pcb": "34f1e8d8592b9fce278642e7ab15b94cf53631740cccf25c439a1311e7bc77c6",
+    "boards/io/renders/pcb.svg": "c3daabe16c421794a8c86fffa74ed5d8308407aed8c439b65d166adc386d6dbb",
+    "boards/io/renders/pcb.svg.revision.json": "d013dcce6655c9a0e570fab0881b107e6dc529e724666d8c28331f7f9e6a771e",
+    "boards/carrier/board.kicad_pcb": "406b12f63e656f59751b39fe9e7f346cb2c9beb65eb16cdc4400ab20fe471d99",
+    "boards/carrier/renders/pcb.svg": "1dc8e9220bdcf210e6968f4332792ecc1f28955525de2123d27ac1191c5207ab",
+    "boards/carrier/renders/pcb.svg.revision.json": "a91c67ab69d30119e0e3952d344afdf9e5c9688872adcdaf23b6ae644322b51c"
+  },
+  "standardTests": {
+    "pass": 2121,
+    "skip": 29,
+    "fail": 0
+  }
+}

@@ -545,3 +545,16 @@ describe("pairing over http", () => {
     expect(claim.deviceToken).not.toBe(daemon.token);
   });
 });
+
+test("message workspace metadata remains separate from user text and rejects another project's context", async () => {
+  const created = await local("/threads", { method: "POST", body: JSON.stringify({ agentId: "claude", title: "Workspace context API" }) });
+  const thread = await created.json() as { id: string };
+  const context = { projectId: null, label: "Outputs / Preview", details: "Selected renders/top.png", capturedAt: "2026-10-29T00:00:00Z" };
+  const wrong = await local(`/threads/${thread.id}/messages`, { method: "POST", body: JSON.stringify({ content: "Review it", workspaceContext: { ...context, projectId: "other" } }) });
+  expect(wrong.status).toBe(400);
+  expect(await (await local(`/threads/${thread.id}/messages`)).json()).toEqual([]);
+  const sent = await local(`/threads/${thread.id}/messages`, { method: "POST", body: JSON.stringify({ content: "Review it", workspaceContext: context }) });
+  expect(sent.status).toBe(202);
+  const messages = await (await local(`/threads/${thread.id}/messages`)).json() as Array<{ role: string; contentMd: string; parts: Array<{ type: string; context?: unknown }> }>;
+  const user = messages.find(message => message.role === "user"); expect(user?.contentMd).toBe("Review it"); expect(user?.parts.find(part => part.type === "workspace_context")?.context).toEqual(context);
+});

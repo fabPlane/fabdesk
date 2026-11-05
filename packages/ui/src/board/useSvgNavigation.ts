@@ -7,6 +7,7 @@ export function useSvgNavigation(
   zoom: number,
   setZoom: Dispatch<SetStateAction<number>>,
   viewKey: string,
+  commentMode = false,
 ) {
   const currentZoom = useRef(zoom);
   const anchor = useRef<{ x: number; y: number; clientX: number; clientY: number } | null>(null);
@@ -42,7 +43,7 @@ export function useSvgNavigation(
       event.preventDefault();
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? frame.clientHeight : 1;
       const delta = Math.max(-240, Math.min(240, event.deltaY * unit));
-      const next = Math.max(0.2, Math.min(8, currentZoom.current * Math.exp(-delta * 0.002)));
+      const next = Math.max(0.2, Math.min(64, currentZoom.current * Math.exp(-delta * 0.002)));
       if (next === currentZoom.current) return;
       anchor.current = {
         x: (event.clientX - rect.left) / rect.width,
@@ -55,8 +56,9 @@ export function useSvgNavigation(
     };
     const down = (event: PointerEvent) => {
       if (drag || event.pointerType === "touch" || (event.button !== 0 && event.button !== 1)) return;
+      if (commentMode && event.button === 0) return;
       const target = event.target;
-      if (!(target instanceof Element) || target.closest("button, a, input, textarea, select, [data-comment-pin]")) return;
+      if (!(target instanceof Element) || target.closest("button, a, input, textarea, select, [data-comment-pin], [data-canvas-tools]")) return;
       if (event.button === 1) event.preventDefault(); // Disable middle-button autoscroll.
       moved = false;
       // Capture on the original target so a stationary click still reaches the
@@ -108,7 +110,7 @@ export function useSvgNavigation(
       if (drag?.target.hasPointerCapture(drag.id)) drag.target.releasePointerCapture(drag.id);
       anchor.current = null;
     };
-  }, [viewport, drawing, setZoom, viewKey]);
+  }, [viewport, drawing, setZoom, viewKey, commentMode]);
 
   return dragging;
 }

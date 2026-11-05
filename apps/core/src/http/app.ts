@@ -1,9 +1,12 @@
 /** Hono application: auth + origin guard, control API, tools/jobs, MCP, events. */
 import { readFile, stat, mkdir } from "node:fs/promises";
 import { threadTitleFrom } from "../thread-title";
+import { withRouterRuntime } from "./router-runtime";
 import { basename, extname, isAbsolute, join } from "node:path";
 import { Hono, type Context } from "hono";
 import {
+  isEditableSketchSource,
+  MAX_EDITABLE_SKETCH_BYTES,
   AgentPreference,
   AgentEffortPreference,
   CreateProject,
@@ -40,6 +43,9 @@ import {
 import { z } from "zod/v4";
 import {
   PROJECT_FILES,
+  inspectProjectBoardSources,
+  readProjectBom,
+  makeContext,
   ToolError,
   jailPath,
   toolRoutes,
@@ -77,7 +83,9 @@ import { parsePublicGitHubUrl } from "../github-import";
 import { applyErrorReporting, captureCoreException } from "../sentry";
 import { parseTopics, sseResponse } from "./sse";
 import { cloudRoutes } from "./cloud-routes";
+import { resolveNativeBoardBinding } from "../assembly-board-binding";
 import { commentRoutes } from "./comment-routes";
+import { outputTrashRoutes } from "./output-trash-routes";
 import { createSpeechService, SpeechProviderError, type SpeechService } from "../speech";
 
 export type AppDeps = {
@@ -262,6 +270,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const token = extractToken(c.req.raw, { allowQuery });
     const info = deps.tokens.lookup(token);
     if (!info) return c.json({ error: "unauthorized" }, 401);
+    if (info.kind === "run" && info.projectId && (await deps.projects.handle(info.projectId))?.manifest().ideaDraft && c.req.path !== "/mcp" && c.req.method !== "GET")
+      return c.json({ error: "Idea drafts cannot change engineering files or create projects through an agent. Use project setup in fabPlane.", code: "draft_project_required" }, 403);
     // The relay link stamps its requests; the listeners strip the header from theirs (serve.ts),
     // so it is the daemon's own knowledge of the path, never the phone's claim.
     if (info.kind === "device" && info.deviceId)
@@ -274,14 +284,14 @@ export function createApp(deps: AppDeps): Hono<Env> {
 
   app.get("/doctor", async (c) => c.json(await deps.doctor()));
   app.get("/agents", async (c) => c.json(await deps.agents()));
-  app.get("/routers", (c) => {
+  app.get("/routers", async (c) => {
     const preferred = deps.store.settings.get().preferredRouter;
-    return c.json(
-      deps.services.routers?.list(preferred ?? undefined) ?? {
+    const list = deps.services.routers?.list(preferred ?? undefined) ?? {
         routers: [],
         ...(preferred ? { preferredRouter: preferred } : {}),
-      },
-    );
+      };
+    const status = await deps.services.design.status().catch(error => ({ url: "", ok: false, reason: errMsg(error) }));
+    return c.json(withRouterRuntime(list, status));
   });
   app.post("/routers/:id/install", async (c) => {
     const id = RouterCatalogId.parse(c.req.param("id"));
@@ -332,11 +342,24 @@ export function createApp(deps: AppDeps): Hono<Env> {
       return c.json({ error: "Choosing a parent directory requires the local desktop connection" }, 403);
     }
     const body = CreateProject.parse(input);
-    return c.json(await deps.projects.create(body.name, body.parentDirectory), 201);
+    return c.json(await deps.projects.create(body.name, body.parentDirectory, body.draft), 201);
+  });
+  app.post("/projects/:id/promote", async c => {
+    const id = c.req.param("id"), input = await c.req.json();
+    if (deps.tokens.lookup(c.get("token"))?.kind === "run") return c.json({ error: "Project setup requires the user interface.", code: "forbidden" }, 403);
+    if (deps.listener === "remote" && input?.parentDirectory !== undefined) return c.json({ error: "Choosing a parent directory requires the local desktop connection" }, 403);
+    const body = CreateProject.omit({ draft: true }).parse(input);
+    const busy = deps.runs?.projectBusyMessage(id);
+    if (busy || deps.jobs.list().some(job => job.projectId === id && ["queued", "running"].includes(job.status))) return c.json({ error: "Wait for the current reply or task to finish before creating the project.", code: "precondition" }, 412);
+    return c.json(await deps.projects.promoteDraft(id, body.name, body.parentDirectory));
   });
   app.get("/projects/:id", async (c) => {
     const d = await deps.projects.detail(c.req.param("id"));
     return d ? c.json(d) : c.json({ error: "not found" }, 404);
+  });
+  app.get("/projects/:id/board-sources", async (c) => {
+    const project = await deps.projects.handle(c.req.param("id"));
+    return project ? c.json(await inspectProjectBoardSources(project)) : c.json({ error: "not found" }, 404);
   });
   app.patch("/projects/:id", async (c) => {
     const id = c.req.param("id");
@@ -348,6 +371,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
       .parse(await c.req.json());
     const h = await deps.projects.handle(id);
     if (!h) return c.json({ error: "not found" }, 404);
+    if (body.manifest && ("ideaDraft" in body.manifest || "promotedAt" in body.manifest)) return c.json({ error: "Use project setup to change draft ownership.", code: "precondition" }, 400);
     if (body.manifest) await h.updateManifest(body.manifest as never);
     if (body.name) await deps.projects.rename(id, body.name);
     deps.bus.emit({
@@ -389,6 +413,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const h = await deps.projects.handle(id);
     if (!h) return c.json({ error: "not found" }, 404);
     const rel = decodeURIComponent(c.req.path.split("/files/")[1] ?? "");
+    if (h.manifest().ideaDraft && rel !== "NOTES.md") return c.json({ error: "Create a project before editing engineering files.", code: "draft_project_required" }, 412);
     if (rel === PROJECT_FILES.manifest) return c.json({ error: "use PATCH /projects/:id" }, 400);
     const abs = await jailPath(h.dir, rel);
     await writeAtomic(abs, new Uint8Array(await c.req.arrayBuffer()));
@@ -397,6 +422,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
 
   commentRoutes(app, deps);
+  outputTrashRoutes(app, deps);
 
   app.get("/projects/:id/sketches", async (c) => {
     const h = await deps.projects.handle(c.req.param("id"));
@@ -421,9 +447,12 @@ export function createApp(deps: AppDeps): Hono<Env> {
       data = new Uint8Array(await c.req.arrayBuffer());
       name = c.req.query("name") ?? "sketch.png";
     }
-    if (!isPng(data) && !isJpeg(data)) return c.json({ error: "PNG or JPEG required" }, 415);
+    const sceneFile = /\.excalidraw$/i.test(name);
+    if (sceneFile && data.length > MAX_EDITABLE_SKETCH_BYTES) return c.json({ error: "Editable drawings must be 10 MiB or smaller" }, 413);
+    const scene = sceneFile && isEditableSketchSource(new TextDecoder().decode(data));
+    if (sceneFile ? !scene : !isPng(data) && !isJpeg(data)) return c.json({ error: "PNG, JPEG or a supported .excalidraw drawing required" }, 415);
     const safe = basename(name).replace(/[^A-Za-z0-9._-]/g, "_") || "sketch.png";
-    const stamped = /\.(png|jpe?g)$/i.test(safe) ? safe : `${safe}.png`;
+    const stamped = scene ? safe : /\.(png|jpe?g)$/i.test(safe) ? safe : `${safe}.png`;
     const dir = join(h.dir, PROJECT_FILES.sketches);
     await mkdir(dir, { recursive: true });
     let final = stamped;
@@ -584,16 +613,19 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const t = deps.store.threads.get(c.req.param("id"));
     if (!t) return c.json({ error: "not found" }, 404);
     const body = SendMessage.parse(await c.req.json());
+    if (body.workspaceContext && body.workspaceContext.projectId !== t.projectId) return c.json({ error: "The workspace context belongs to another project. Reopen this conversation and send again.", code: "precondition" }, 400);
     if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
     // The last await before `runs.start`: from the checks below to the lease `start` reserves
     // everything is synchronous, so no other request can take the thread or the project between
     // them and the user message being stored.
     const project = t.projectId ? await deps.projects.handle(t.projectId) : null;
+    if (t.projectId && deps.projects.isPromoting(t.projectId)) return c.json({ error: "Project setup is in progress. Your message has not been sent.", code: "precondition" }, 412);
     const agentId: AgentId = body.agentId ?? t.agentId;
     const queue =
       body.queue === true || c.req.query("queue") === "1" || c.req.query("queue") === "true";
     const parts = [
       { type: "text" as const, text: body.content },
+      ...(body.workspaceContext ? [{ type: "workspace_context" as const, context: body.workspaceContext }] : []),
       ...body.attachments.map((a) => ({ type: "image" as const, path: a.path, mime: a.mime })),
     ];
     if (deps.runs.isRunning(t.id)) {
@@ -648,6 +680,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
         agentId,
         ...((body.model ?? t.model) ? { model: (body.model ?? t.model) as string } : {}),
         prompt: body.content,
+        ...(body.workspaceContext ? { workspaceContext: body.workspaceContext } : {}),
         attachments: body.attachments,
       });
     } catch (e) {
@@ -870,7 +903,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
 
   /* ---------- fabplane.com shopping lists & inventory ---------- */
-  app.route("/", cloudRoutes<Env["Variables"]>({ cloud: () => deps.services.cloud, projects: deps.projects }));
+  app.route("/", cloudRoutes<Env["Variables"]>({ cloud: () => deps.services.cloud, projects: deps.projects, readBom: project => readProjectBom(makeContext({ project, services: deps.services })) }));
 
   /* ---------- folders ---------- */
   app.get("/folders", (c) => c.json(deps.store.folders.list()));
@@ -906,9 +939,13 @@ export function createApp(deps: AppDeps): Hono<Env> {
         (deps.listener === "local" && deps.tokens.lookup(token)?.kind !== "device"),
     }),
   );
-  app.get("/jobs", (c) =>
-    c.json(deps.jobs.list().length ? deps.jobs.list() : deps.store.jobs.list()),
-  );
+  app.get("/jobs", (c) => {
+    const projectId = c.req.query("projectId");
+    // New work must not hide persisted history from before a daemon restart.
+    const jobs = new Map(deps.store.jobs.list(100, projectId).map(job => [job.id, job]));
+    for (const job of deps.jobs.list()) if (!projectId || job.projectId === projectId) jobs.set(job.id, job);
+    return c.json([...jobs.values()]);
+  });
   app.get("/jobs/:id", (c) => {
     const j = deps.jobs.get(c.req.param("id")) ?? deps.store.jobs.get(c.req.param("id"));
     return j ? c.json(j) : c.json({ error: "not found" }, 404);
@@ -921,7 +958,14 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const rec = deps.store.routeRuns.get(c.req.param("id"));
     if (!rec) return c.json({ error: "not found" }, 404);
     const from = Number(c.req.query("from") ?? 0) || 0;
-    const project = await deps.projects.handle(rec.projectId);
+    let project = await deps.projects.handle(rec.projectId);
+    if (rec.board) {
+      if (!project || !/^run_[A-Za-z0-9_-]+$/.test(rec.id)) throw new ToolError("Routing source ownership is unavailable.", "precondition");
+      const binding = await resolveNativeBoardBinding(project, rec.board);
+      const sourceDir = binding.boardDir.slice(binding.rootDir.length + 1).replaceAll("\\", "/") || ".";
+      if (sourceDir !== rec.sourceDirectory) throw new ToolError("Routing artifact source does not match its recorded owner.", "precondition");
+      project = { ...project, dir: binding.boardDir };
+    }
     const currentPath = project
       ? join(project.dir, PROJECT_FILES.runs, rec.id, "frames.jsonl")
       : null;

@@ -1,0 +1,94 @@
+{
+  "status": "Native transaction verified; UI Apply still pending",
+  "projectId": "prj_mvrufz7w4a1b4caa95",
+  "transaction": {
+    "transactionId": "native-mvrw6832-8667ed5e",
+    "before": {
+      "schematic": null,
+      "pcb": "34f1e8d8592b9fce278642e7ab15b94cf53631740cccf25c439a1311e7bc77c6"
+    },
+    "after": {
+      "schematic": null,
+      "pcb": "9b7c1e434cf0f08d846c3ce49dd2cbda592fdde840c4cff29ae86b802b7fd044"
+    }
+  },
+  "graphicCount": 31,
+  "nativeIds": [
+    "cf841801-cf9d-4c8e-8822-e3f1d0bf2362",
+    "5f11f0ce-dd2a-491b-9692-ebf348cdfa76",
+    "96069811-71a1-4db8-a849-b4ccc6359a7e",
+    "a5e68ed0-fc89-45e7-9c26-283d4655f743",
+    "332d3825-1465-4b5c-bc22-37e8eb934ede",
+    "e337306b-4fac-4a47-8b23-b25ebb2d41a9",
+    "18b5da6a-8421-449f-9116-95813224de28",
+    "a2049562-8a5d-499f-aaa2-b23c9a3fe3d3",
+    "bdd9f84b-718a-4eeb-8344-c7f78342b602",
+    "8773b7c0-3eb6-4c7e-924f-6be280bde68f",
+    "21790cef-b78d-4bc7-b50b-69f09b332074",
+    "f1f9d533-f76e-4c3b-b165-f71361b5a3c6",
+    "606fdfea-0b56-4df7-bae3-8684c498ff56",
+    "941f8030-d643-473d-ae7a-14a3e1fd56b7",
+    "6c3676d3-d302-46de-acbf-cd9bcf4886dc",
+    "20cf3c41-5f70-4a7b-9d25-8881d0258800",
+    "b6c18432-0692-4295-ae19-0a8b2af6abb6",
+    "25bf8940-7bca-40d8-90a9-896b8865f69b",
+    "43ca9a17-8e38-4317-bfd5-71041a5137f8",
+    "0e1671a2-25f7-49bc-9f2e-e4155d7573cd",
+    "4d33bb41-7273-40cf-9174-d3c2002c4ec5",
+    "86f75b14-b627-4720-9050-8c8dde07b746",
+    "8b018c89-b9f6-45c8-a36a-d09d971de4e5",
+    "fb41807f-fe90-4f67-b9e7-ef197be76454",
+    "82781f24-b670-4487-8c66-28cf666f0b86",
+    "ac579e49-b575-42da-935c-dcd041cef4d8",
+    "7206e219-ddc2-4a44-ba07-75f0542cdf51",
+    "c3fa03c1-812e-4aab-88b6-5b6046535107",
+    "d5f32daa-8e65-4ab8-84c8-e269e91be3c3",
+    "8e7889cb-525c-473e-a11f-659d144bdf8c",
+    "fba2255b-9599-457b-b4e0-bed1bbb33af8"
+  ],
+  "preservedKinds": [
+    "components",
+    "pads",
+    "tracks",
+    "vias",
+    "zones",
+    "nets"
+  ],
+  "sourcePcbUnchanged": true,
+  "verificationNote": "First follow-up used an unsupported named silkscreen filter. Numeric native layer40 returned all31 expected graphics; comparing against unchanged original source fixture proves preserved native circuit geometry. No second apply occurred.",
+  "designChecksRun": false,
+  "uiApplyImplemented": false,
+  "rendered": {
+    "path": "/Users/amliomnie/Documents/Codex/2026-10-27/https-github-com-tensorfleet-placement-lab/work/sketch-first-projects/untitled-art-board/renders/pcb.svg",
+    "url": "file:///Users/amliomnie/Documents/Codex/2026-10-27/https-github-com-tensorfleet-placement-lab/work/sketch-first-projects/untitled-art-board/renders/pcb.svg",
+    "fileUrl": "file:///Users/amliomnie/Documents/Codex/2026-10-27/https-github-com-tensorfleet-placement-lab/work/sketch-first-projects/untitled-art-board/renders/pcb.svg",
+    "_contract": {
+      "version": "option-1-mcp/1.0.0",
+      "sha256": "e147773c3f55bfda5565f846e1970bc9c291fe1b4b1bd078655aacff1c8071f7"
+    }
+  },
+  "originalProjectFilesUnchanged": 2,
+  "sourceAndDestination": "Original PCB fixture unchanged; separate private art-study project intentionally retains copied PCB, native31silkscreen marks, backup transaction and actual SVG/receipt.",
+  "relatedArtFirstCheck": {
+    "temporaryNativePcbRestoredAbsent": true,
+    "pcbUnchangedThroughArtSave": true,
+    "savedArtRemainsX": 41,
+    "generatedCircuit": false
+  },
+  "helperChecks": {
+    "boardArtTypecheck": "PASS",
+    "boardArtTests": 33,
+    "assertions": 5217,
+    "uiTypecheck": "PASS",
+    "newMathTests": 4
+  },
+  "limitations": [
+    "This validates an existing native tool, not a completed UI Apply workflow",
+    "Native named F.SilkS inspection filter returned no rows; verified numeric BoardLayer40 used instead",
+    "Existing inspector cap200rows; geometry transaction cap2000marks; conversion rejects excess rather than dropping marks",
+    "Silkscreen only for circuit proposals; mask/copper requires a separate workflow",
+    "No electrical, physical fit, clearance or fabrication pass claimed; designChecksRun false",
+    "First setup assumed optional board.kicad_pro and next inspection used excessive row limit; both stopped before native mutation, then corrected",
+    "No second artwork apply was performed after the layer-filter check failed; recovery inspected the actual saved31marks and unchanged original circuit"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "feature": "Local missing-source recovery directly from assembly Review",
+  "verified": [
+    "Requested Keyboardsource details display saved reason/sourceId/provenance with Declared origin unverified label",
+    "Open project definition navigates to Files and focuses selected fabplane.assembly.json",
+    "No assistant action needed for inspecting the declaration",
+    "Compact960\u00d7720 longURL/revision/path wrap and action remains reachable",
+    "Returnoverview remains6boards5links2sourcesreview; no resolution inferred",
+    "16protectedVAIO files plus actual90findingDRCreport exact"
+  ],
+  "tests": "UItypecheckPASS;233tests912assertions/0fail",
+  "boundaries": [
+    "Provenance is saved project metadata, not fetched/validated origin",
+    "No new import, upload, source edit, reconciliation, compatibility pass or agent message",
+    "Existing Resolve source assistant draft remains separate",
+    "Existing capturedproject/source refresh/busy checks guard definition action"
+  ],
+  "screenshots": [
+    "review-missing-source-details.png",
+    "review-recovery-exact-definition.png",
+    "review-source-details-compact.png"
+  ]
+}

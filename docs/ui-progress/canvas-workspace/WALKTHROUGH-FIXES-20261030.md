@@ -1,0 +1,497 @@
+> November4 stabilization: [final beginner test, Activity timestamp fix and remaining integration work](STABILIZATION-20261104.md). Existing parts are allowed for this isolated test; prior Basic-only test pause is superseded. No new feature expansion, manufacturer upload or order.
+
+# November 4 resumed verification
+
+Owner declined ExtendedC165948; Basic-only and blocked ordering remain. B10 Library Refresh outputs recovery committedc99c655; actual idle failure captured, scoped query regression proves failure recovery/isolation, native healthy refresh tested after development reload cleared errors. Fresh live MCP question remained open>1minute and acknowledged explicit answer; original draft/native sources preserved. UI297/clientblob6/types/productiondesktopbuildPASS0maps. See [current report](BEGINNER-ORDER-20261104.md). No final engineering/whole-app readiness claim.
+
+---
+
+# November 4 — beginner idea-to-order test
+
+[Current report, nine findings, native evidence and resume checklist](BEGINNER-ORDER-20261104.md). Code d3782e6 adds progress/recovery, missing-model clarity, batch BOM planning, errors-first checks, usable video, manufacturing blockers and coherent order review. Partial test board is not order-ready: required Extended connector exception pending,16unroutedconnections,2missingmodelassets. Root types/core+desktop builds pass; full default workspace2417pass/36skip/8fail and scripts93pass/1timeout. No test budgets weakened. Eight local milestones plus prior agent-switch fix are prepared for one final authorized push. This supersedes older local-publication restrictions for this run; no merge/deploy. Other roadmap and teammate exclusions remain.
+
+---
+
+# November 3 — remaining Home/draft findings addressed locally
+
+Local UI milestone ced5197 plus native setup/recency follow-up: HD-13 recognizable saved previews/rename/search/conversation restore; HD-15 compact live question with alternate message entry; HD-14 unnecessary native library setup removed for existing-symbol/cosmetic edits, cached unchanged setup and bounded90s first setup; HD-16 stable-core recency. Actual native question/answer, two note saves, temporary symbol add/remove with exact five-file restoration, refreshed drawing and core-port-change recency passed. Local evidence outputs/home-draft-flow-20261103/26–33; detailed report HOME-DRAFT-20261103.md.
+
+Resume boundary: no remote publication until explicitly reauthorized after previous one-push rejection. No merge/deploy. Teammate398/393, BoardArt polish, previous411/412 and source/auth dependencies remain excluded/separate. Network ambiguity, cross-volume/Windows/crash acceptance remain untested, not invented failures. Scoped Home/draft findings addressed; do not declare the entire roadmap complete.
+
+---
+
+# November 3 — Home, idea draft and project setup
+
+Implemented the approved idea-first Home, durable planning drafts and same-ID project setup in `fd5968c` / `cdb9fa9`. Native human-test, fixed findings, actual evidence, verification and explicit untested limits: [Home draft report](HOME-DRAFT-20261103.md).
+
+Resume checklist: [x] chat/sketch/image entry; [x] setup cancel; [x] restricted planning tools; [x] chosen-folder promotion retaining chat/sketch; [x] automatic real generation continuation; [x] reopen; [x] actual screenshots; [x] types/targeted tests/build. Follow-ups: [ ] bounded native schematic presentation timeout diagnosis; [ ] short-window question presentation; [ ] network/crash/cross-volume acceptance. Previous broader app dependencies below remain open and are not erased by this flow.
+
+---
+
+# November 2 — core-flow handoff checkpoint
+
+Code through `51bd9c9` adds shared Files model previews (`c58ea02`), visible stencil completion notes (`2ef0b17`) and contained export scrolling so navigation/Ask stay at the canvas edges. Actual native before/after evidence is [recorded here](WALKTHROUGH-20261102-VISUALS.md); all original captures remain preserved.
+
+**Current checks:** UI260tests/1098assertions and41focused cross-package tests/228assertions pass. Affected UI types pass through the final TypeScript changes; last full-root typecheck passed at `17e566d`. Production desktop build passed at `51bd9c9` (renderer38.47s), with zero source maps. No fresh full-root test-suite or hosted-CI pass is claimed; earlier default-suite timeouts are historical observations, not assumed current failures.
+
+Actual Playbridge additional-export walkthrough passed: printable STL240openings/23340triangles plus SVG; laser244openings/4fiducials with a visible frame-hole note; standalone drill;80-row placements;3DXF layers;27-file saved fabrication ZIP, with missing BOM disclosed, CRC and byte-exact download. Four native/project metadata hashes unchanged. Actual local VAIO I/O proof and19-item acceptance remain below.
+
+At final review, teammate PR398 is still OPEN/DRAFT (`46bc6c1`);393 is OPEN/unmerged (`222f574`). Neither was integrated or merged. Remaining comparison visualization411, member/multi-sheet semantic focus412, missing VAIO RH revision/model assets and authenticated supplier acceptance remain ticketed/dependency limits. This is a reviewable core UI-flow checkpoint, not universal app/engineering completion. No new code cycle should be implied after final handoff; continue from the next user test or newly available dependency.
+
+---
+
+# November 2 — current broad acceptance checkpoint
+
+This section supersedes older progress and “pending” summaries below. Work continues on `feat/sketch-first-drafts`; local code through `8763362` / `ea97851` is not yet published. PR389 last independently verified at `3a8eb63` (259 commits); one final normal push remains authorized at final handoff. No merge/deploy.
+
+Recent UI fixes: fresh Sketch/Notes entry and saved drawing copies, consistent Download arrows, an in-place Library Needs review filter with exact output reasons, compact contextual Share/Checks controls, inclusion of owned member comments in review ZIPs, recovery from an unverified empty schematic preview, verified member-model exporter warnings, and removal of a stray model “done” message from video setup. Parts first-load now has an explanatory status instead of an isolated spinner; affected UI types pass, but the transient new loading text was not captured after a fast reload.
+
+## Nineteen-item acceptance summary
+
+| Item | Current result | Practical limit |
+| --- | --- | --- |
+| 1 Import ordering | Native Playbridge version/path sorting, backups, exact selected source verified (17–21) | Ordering is not a validity recommendation |
+| 2 Home lifecycle | Close/reopen, A/B isolation, drafts, running video activity, create/import landing verified | No deletion or auth change |
+| 3 Large schematic | Fit/width, vector zoom/pan and actual paired source rendering verified | Multi-sheet navigation/focus remains bounded below |
+| 4 Semantic assistant focus | Root single-sheet source-qualified focus verified | Member/multi-sheet extension tracked in issue412 |
+| 5 Video deliverables | Grouped formats, hidden intermediates, cancellation preservation and cold reopen verified | Encoder dependencies remain explicit |
+| 6 Output removal | Single/bulk Trash and exact-path byte-preserving restoration verified, root/member | Referenced inputs stay guarded |
+| 7 Render entry | Prominent action; actual I/O top image and Overview preference verified (118/121) | Saved image alone is not source/fit proof |
+| 8 Popup spacing | Actual wide/compact image/video/3D/Share/Checks exercised (122–135) | Not every dialog/error branch exhaustively exercised |
+| 9 Tooltip edges | Portal placement and right-edge keyboard label verified (123–125) | Hover and all four edges not exhaustively observed |
+| 10 Library selection | Per-card actions, checkbox/bulk selection, filtering/hidden-selection clearing verified | Groups expose contained file counts |
+| 11 BOM clarity | Filters/coverage/quantities/CSV verified; actual local I/O14lines22quantity | Multi-board missing sources are not invented |
+| 12 Export Ask | Deliberate contextual action verified | Questions remain unsent unless explicitly executed |
+| 13 Output chronology | Regenerated image/model/video/package ordering verified | No exhaustive filesystem timestamp edge-case claim |
+| 14 Download icons | Manufacturing neutral type icon and file/candidate downward Download arrows | Internal action names unchanged |
+| 15 Import identity | Exact selected path/version/hash retained on reopen, Files and Ask | Does not certify latest remote revision |
+| 16 Model coverage | Actual Playbridge connectors/video and member warnings visible (141) | RH J5 STEP absent; full geometry/fit not claimed |
+| 17 Preview Close | Actual video playback/Close returns to same Library | No download cancellation claim from Close |
+| 18 Gerber package | Root/member actual ZIPs include drill, CRC and byte-exact downloads | Packaging is not electrical/fabrication approval |
+| 19 Readiness navigation | Root exact notes/actions; selected/missing member source review verified | Existing findings and missing sources stay visible |
+
+## Actual local VAIO continuation
+
+At the user's direction, used the existing local `TensorFleet/vaio_p_modding` clone. Its original modified `.kicad_pro` files and untracked files were preserved. Independent no-hardlink checkout of saved main `11db1b6` succeeded; bounded60s latest fetch timed out. No latest-remote or GitHub-import success is claimed.
+
+Home/Create made an isolated test project. Explicit byte-exact canonical-name copies of real `REVH_MAIN_A18` PCB/schematic/project files establish a single-board local-source test, not an inferred six-board assembly. Actual visible Overview → PCB → Schematic → Generate3D → Models & video → Make video → Parts → Activity/Open outputs → Play → Export files → Gerber package → Save passed. Video:6s/24fps/144frames, MP4/WebM/GIF; Parts14lines22quantity; package28entries with Excellon drill, CRCpass, download byte exact. Native copies and six listed original modified/untracked file hashes plus original Git status unchanged. History directories were not recursively hashed. Captures142–148 and proof149 are local evidence.
+
+The repository's instrumented `io-main` release preflight passed before fabrication generation; this is separate from DRC/ERC/physical-fit approval. Native work is recorded under `pcb_iteration` run `20261102T181839-98fa3f22`; its UI wall intervals include navigation/review and are not native CPU timings. Actual window is again2880×1740physical; no settings/security/power changes.
+
+## Verification and remaining work
+
+Full root typecheck passed at `17e566d`; newer UI-only changes pass affected UI typechecks. Recent focused suites: output grouping/download16tests75assertions; review-package ownership3/5; member preview/inspection13/47; member model3/18. UI257/1090 passed before the last Share/Checks/preview/warning small patches; those have targeted checks/types/native evidence. No new full-root test/build/hosted-CI pass is claimed.
+
+Continue broader delivery-format and remaining interaction checks. Do not repeatedly retry unavailable dependencies: comparator drawing defect [411](https://github.com/TensorFleet/fabdesk/issues/411), member/multi-sheet focus [412](https://github.com/TensorFleet/fabdesk/issues/412), missing VAIO RH repository/assets and authenticated shopping acceptance are recorded limits. Teammate398 enclosure/assembly,393 replacement/resize and Board Art Apply/polish remain deferred. Overall app completion is not declared. Automation stays PAUSED, keep-awake RELEASED.
+
+---
+
+# November 2 — broad native workflow checkpoint, continuing
+
+Local HEAD eff209d follows20de919(import access recovery),58d9bbb(member model action layout),6929212/37ab084(first video setup and cold saved-output load),593c3e8(video caption fitting). Overview now has contextual Review updates bound to the selected source; read-only missing-source review preserves the exact declared Keyboard scope without granting native ownership. Native LCD/Keyboard repeats109–110, scene14tests/87assertions and affected UI/client types pass. No full-root/build/hosted-CI pass claimed.
+
+The independent multi-board acceptance project was created through Home then explicitly populated with33 byte-verified preserved VAIO study files (proof78); this is NOT a successful VAIO GitHub import. Real VAIO GitHub import requests authentication and remains blocked; corrected public-import guidance retains URL/name. RH walkthrough exercised source-qualified PCB/check markers, missing-schematic recovery draft, native GLB with missing J5 asset warning, actual4s/96frame/3format video playback/download,28file Gerber/drill ZIP download with CRC, incomplete1of6-source BOM14lines/22quantity export with acknowledgement, Shopping Account settings entry, member Trash/byte-exact restore, source comments/unsent contextual Ask, routing candidate review/Apply and fresh DRC. Engineering findings remain:51before routing,45after; no electrical/fit/fabrication approval. Long video titles now fit actual exported frames; native93/94 and product-video37tests/150assertions/types verify. First-video controls open when needed and saved review closes setup; UI focused4tests/20assertions/types pass.
+
+Important source-state update: UI Apply intentionally changed ONLY the isolated RH native PCB. All33 original study files and assembly manifest remain byte exact; other6copied native PCB/SCH/PRO files unchanged. AppliedPCB equals candidate; savedpointa48a5701 retains pre-route native source (proof107). Output review106 correctly marks old3D/video stale and updated PCB preview current. Files search→source preview→Open board retainsRH. Comparison visualization has diagonal outline artifacts, now filed as [GitHub411](https://github.com/TensorFleet/fabdesk/issues/411) per user instruction; defer deep renderer work and keep broader app flows moving. Other bounded issues are in local work/walkthrough-fixes-20261030/ISSUES.md.
+
+Remaining: fresh-project Sketch/Notes and remaining19-item acceptance; member/multi-sheet semantic focus, missing source/model assets and authenticated shopping acceptance are limited as recorded. Exact earlier fresh-circuit prompt remains unavailable; do not invent it. Teammate398 enclosure/assembly and393 replacement/resize, plus Board Art Apply/polish, remain deferred. Continue immediately after local milestones. RemotePR389 last independently verified3a8eb63/259commits with corrected title/body; later commits remain local, one final normal push at actual handoff/stop/interruption. Issue411 is published, no new branch push/PR edit/merge/deploy. AutomationPAUSED/keepawakeRELEASED, no new scheduler/settings.
+
+---
+
+# November 2 — model-error recovery validated locally
+
+After local focus commit99e1731, exact standalone Codex account-model rejections (including the observed structured JSON envelope) and capacity errors now show concise recovery guidance with Choose model. That button opens the existing in-chat picker; it does not change provider/model, alter global settings or resend automatically. Partial replies and original diagnostics remain available; quota, sign-in and rate-limit errors retain distinct guidance. Native75–76 show the real saved rejection and working picker; selected GPT-5.6 Sol remained unchanged and no extra inference request was sent. Metadata warning prose remains preserved rather than silently hidden. UI/client types, UI257tests/1089assertions and focused client24/67 passed. No forced capacity event or account-access success is claimed. Official catalog/access distinction: https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server . Next continue remaining native/multi-board queue and journeys. Remote3a8eb63, later commits local. AutomationPAUSED/keepawakeRELEASED; no merge/deploy.
+
+---
+
+# November 2 — saved schematic component focus validated locally
+
+Local Trash milestone is committed as5cc5839. The next increment adds a source-bound schematic_focus capability: an agent supplies an actual component reference, native inspection and immutable export establish its saved symbol origins and millimetre SVG frame, and a connected client verifies both hashes before showing a temporary marker. Fresh same-project requests navigate to Schematic without replacing the corner conversation. Stale/replayed/cross-project requests and unsaved-edit/settings interruptions are ignored. Show component in a successful tool result, Focus again and Return preserve access without a second agent call; the previous drawing stays mounted with its original zoom/pan. The cache is app-only and does not add duplicate Library outputs or edit sources.
+
+Native Playbridge validation: the exact main-chip question first failed on the offered GPT-6.1 Sol model (Codex reported it unsupported with this ChatGPT account). Per-chat GPT-5.6 Sol then identified U1/ESP32-WROOM-32E, but the first focus attempt correctly rejected a mismatched owned hierarchy revision. Correcting inspection to use the existing owned-export contract enabled a subsequent Show U1 request. Actual source-qualified marker, corner Schematic/U1 context, replay button and Focus again were visible; Return restored the prior8.0x drawing. This is a recovered walkthrough, not a clean first-attempt claim. Six original PCB/schematic/project/model/video/receipt files remain byte exact; cache name matches its SHA. Local captures68–73 and proof74 preserve successes and failures. The native sheet itself has crowded/clipped content at its page edge; this increment highlights saved origins, not a verified component outline or repaired source layout.
+
+Validation: final focused9tests/47assertions and UI256/1084 pass; affected tools/protocol/client/UI/core/agents types pass. Protocol95/395, client371/1754 and agents99pass/1skip/463assertions passed in their recorded runs. Initial client local-server and agents process tests failed under sandbox socket/ps restrictions; legitimate unrestricted reruns passed, without changing test limits. Initial owned-hierarchy mismatch and malformed test expectations were corrected before reruns. No new root/build/hosted-CI pass is claimed.
+
+Limits: this increment intentionally supports one complete saved root sheet only. Member/multi-sheet focus and multi-candidate choice remain unfinished; no guessed mapping or semantic/engineering validation is claimed. The offered Codex-model/account rejection is an observed remaining recovery issue. Native multi-board Trash acceptance and other queue edges/journeys remain pending. Next: finish remaining source-qualified/keyboard/multi-board flows using existing engineering functionality. Remote PR389 independently remains3a8eb63 with updated November2 description/title; later increments remain local until final handoff or explicit publication. No merge/deploy. AutomationPAUSED/keepawakeRELEASED; no new settings/scheduler.
+
+---
+
+# November 2 — recoverable output deletion validated locally
+
+Library supports per-format Move to Trash and an explicitly reviewed bulk subset. Actual source ownership, file permissions/aliases, recorded dependent inputs and active project work determine eligibility independently of preview/download selection. Confirmation binds the inspected bytes and assembly manifest; execution rechecks them. Per-file results disclose partial success. Output Trash survives project/core reopen and restores to the original path without overwriting a newer file. No purge endpoint was added; source/receipt/intermediate files are not automatically included. Active jobs/agents conservatively block moves/restores throughout their project.
+
+Native walkthrough used a project created through Home and clearly labelled disposable local fixture assets; no pictured Playbridge outputs were deleted. Cancel preserved all fixture files. Mixed selection excluded shared model/read-only CSV; unchecking PCB moved exactly four files. Home/reopen retained Trash. Restore returned three byte-exact files and refused a controlled collision, retaining both the new file and old recovery payload. Per-card removal/immediate Restore passed. A real video task disabled Trash while selection/download remained available; Activity later confirmed cancellation at frame132/144. The first in-use test completed before cancellation and is recorded as completed. Native video generation intentionally regenerated the fixture model/video (with disclosed missing-model warnings); this is not a claim that those copied artifacts stayed unchanged. All six original Playbridge validation baseline files remain byte exact. Evidence47–67 and proof66 are local under outputs/walkthrough-fixes-2026-10-30; recovery remains visible after final core reload.
+
+Checks: affected core/client/UI types pass; focused24tests/126assertions, UI254/1074 and protocol95/395 pass. The initial UI LoadError-prop type failure was corrected before rerunning. Initial final-proof path selected the older similarly named project; proof66 records the correction to the actual six-file baseline project. No root/build/hosted-CI pass is claimed. Safety tests cover stale confirmations, membership changes, concurrent requests, malformed dependency/recovery records, links, busy work, partial failures and no-overwrite restoration. Multi-board native Trash acceptance remains pending (declared membership is unit-covered); no forced native disk/permission failure. Rechecks are not a cross-process filesystem transaction and recorded receipts cannot prove arbitrary external dependency absence.
+
+Next: remaining nineteen-item acceptance, source-bound main-chip focus and the agreed user journeys. Teammate398/393 and Board Art deferrals unchanged. Remote publication remains verified3a8eb63; this new increment is local until final handoff or another explicit publication request. AutomationPAUSED/keepawakeRELEASED. Continue immediately after local commit.
+
+---
+
+# November 2 — requested publication checkpoint
+
+The user requested publication of the latest verified work. This checkpoint includes five November 2 implementation commits after the previously published d1d6927:
+
+- df0da09: explicit Home/open/close lifecycle, scoped conversations and unsaved-edit exit guards.
+- 5468fb1: persisted imported-board path/time/hash and readable source identity.
+- 883cd09: output ordering by recorded, byte-verified completed export time.
+- 98c4b61: native GLB exports retain the recorded import folder's component-model context; actual Playbridge connector geometry and video were verified.
+- 753d0fa: temporary video encoding preserves saved deliverables on cancel/failure; active progress survives Home/reopen and unfinished formats cannot be downloaded.
+
+Latest affected UI/client/product-video typechecks passed; focused video/activity checks passed 23 tests / 97 assertions, and UI passed 253 tests / 1068 assertions. Earlier milestone-specific core/tools/kicad/protocol checks and actual native evidence are recorded below. Native cancellation preserved all seven protected video/source files byte for byte; subsequent four-second export completed and played with matching recorded artifact/input hashes. Evidence40–46 remains in the local walkthrough evidence directory; no new screenshot upload or whole-root/build/hosted-CI pass is claimed.
+
+This is an interim publication, not app completion. Next: recoverable output deletion, remaining nineteen-item acceptance, semantic component focus and the agreed user journeys. Teammate enclosure/assembly #398, replacement/resizing #393 and Board Art Apply/polish remain deferred. No merge, deployment, force push, permanent security/power change or new automation. Earlier local-only statements below are historical; verify publication against this checkpoint commit and the PR head.
+
+---
+
+# November 2 — safe video regeneration and recovered activity validated locally
+
+Models & video now recovers active exports from project job history after page changes/Home reopen, blocks duplicate generation, hides unfinished playback/downloads and excludes zero-byte formats. Board-scoped work uses known source ownership; an unscoped persisted job conservatively blocks another export in that project. Task-history failures offer Retry. Previous posters are labelled explicitly during regeneration.
+
+The existing video renderer now encodes in temporary storage, verifies recorded mesh bytes again, and publishes completed artifacts by atomic per-file replacement with the receipt last. Cancellation, render failure, changed meshes or no encoded formats preserve previous deliverables. Skipped optional formats retain earlier files without falsely including them in the new receipt. This is not a cross-file disk-failure transaction/rollback.
+
+Native Playbridge: repeat export → Home running badge → reopen retained frame progress and disabled generation/downloads → Activity Cancel → Cancelled frame76/144. All five previous video/poster/receipt files plus PCB/schematic remain byte exact (proof44). A subsequent4s export completed, three formats grouped newest, MP4 played, X returned to Library, recorded output/input hashes match (proof46). Captures40–46. Existing models/original versions preserved. Local prior milestone98c4b61 fixes imported component-model context. Remote stilld1d6927; no new push.
+
+UI/client/product-video typechecks pass. Focused23tests/97assertions and UI253/1068 pass. One initial optional-format test assumed null disabled automatic ffmpeg discovery; corrected to an explicit missing executable and reran successfully. No full-root/build/CI or complete electrical/model dependency approval. Next: recoverable output deletion and remaining native acceptance; Ask main-chip canvas focus needs a source-bound semantic navigation contract, not guessed thumbnail coordinates. Keep working; teammate398/393/Art deferrals and paused automation/released keepawake unchanged.
+
+---
+
+# November 2 — imported 3D component context validated locally
+
+Observed GLB mismatch traced to the editable root PCB losing the imported folder's `${KIPRJMOD}` component-model context. The explicitly recorded selected import folder now supplies that variable to the native exporter; the editable PCB and original model assets are not rewritten or duplicated. Root model receipts retain actual exporter warnings and the relative folder; optional export details disclose that this is not full dependency/geometry/fit verification. Legacy projects without a recorded import are not guessed.
+
+Actual native Playbridge repeat: regenerated GLB contains J1/J2 and shows both connector housings; generated six-second video through UI, closed to Home with a visible running-task badge, reopened Activity at frame107/144, then played/seeked MP4 and closed via X back to Library. MP4/WebM/GIF hashes match the manifest and its input matches the corrected GLB. Completed group/export time are visible. Original PCB/schematic, import identity and repository versions unchanged. Evidence31–39; proof39. User generated schematic preview during the repeat; it correctly appears newer than the video.
+
+Affected UI/tools/kicad/core typechecks pass. Focused11tests/39assertions, UI251/1061, protocol95/395 pass. No whole-root/build/hosted-CI or full engineering approval claim. This milestone is local after883cd09; remote independently remainsd1d6927, title updated. Next observed regression: Models & video exposes zero-byte WebM and loses local making-state after reopen during active encoding; fix persisted activity awareness and format availability, then remaining19queue and authorized journeys. No completion/stop at commit. Teammate398/393 and Art deferrals unchanged; automationPAUSED/keepawakeRELEASED.
+
+---
+
+## Local output chronology checkpoint · November 2, 2026
+
+Library now orders files and grouped cards by recorded completed export time when a recognized receipt matches the exact artifact bytes. Untracked, malformed, changed and zero-byte artifacts retain a clearly labelled file-time fallback. Date labels include time, and grouping uses the latest effective file time while retaining stable path selection. The core reuses existing exporter receipts with bounded cached streaming hashes; it does not equate generation dates with source freshness. Future video manifests record completion time; older videos are not backdated.
+
+Native isolated Playbridge repeat: rendered Top image; a running-task Close warning appeared, and reopening showed its completed task and saved result. A fresh 26-file Gerber/drill ZIP and layer group appeared before the earlier image. Regenerating Top moved it first without losing the selected ZIP. Manufacturing filtering and Home close/reopen retained the expected order. Captures22–27 and proof28 preserve evidence. The initial Home capture had no active badge by capture time; that longer-task acceptance remains pending. A new model/video timestamp repeat and preview/download non-reordering acceptance remain pending. Native PCB/schematic and import receipt are unchanged; artifact hashes and ZIP CRC/drill entry pass. This is not electrical/fabrication approval.
+
+Affected types pass (core, client-core, UI, product-video). Focused chronology/output/video tests23/95 and final chronology/project/output tests22/111 pass; UI251/1061 pass. No whole-root/build/hosted-CI claim. Local previous milestones df0da09 (Home) and5468fb1 (import identity); remote remains d1d6927. Continue model coverage investigation and remaining queue after this local commit.
+
+## Local imported-board identity checkpoint · November 2, 2026
+
+Item15 now records the exact repository PCB path, adoption time and byte hash in the project manifest. Overview and the single-board toolbar show a readable version label with the exact path, separate working/imported Files actions and a source-aware unsent Ask question. This is historical import provenance, not proof that the working copy or outputs remain unchanged; existing projects without a receipt are not guessed or backfilled.
+
+Native repeat imported the public Playbridge repository into a separate validation project through Home. Version ordering, Path A–Z, secondary backup candidates and wrapped paths were exercised; clicking v4.1 opened its PCB. Both Files actions selected the expected exact file. Ask prepared its context/question without sending; the disposable draft was cleared. Home close/reopen retained the visible receipt. Its recorded hash equals both the selected repository file and initial working copy; git diff confirms original repository versions remain unchanged. Captures17–20 and proof21 preserve evidence locally. The real fresh-import Home landing therefore passed; background-job continuity and fresh-create landing remain pending for item2.
+
+Checks: core/UI typechecks pass; remix tests8/31, protocol95/395 and UI251/1061 pass, zero failures. An initial test used an unsupported ArrayBuffer crypto input; it was corrected to Uint8Array and rerun successfully. No new full-root/build/hosted-CI claim. Home milestone df0da09 and this increment remain local after the explicitly requested remote checkpoint d1d6927. The queue and additional journeys are unfinished.
+
+## Local Home lifecycle checkpoint · November 2, 2026
+
+Home now owns project search, recent ordering and New/Import entry. An open workspace shows its project identity and a visible Home action; conversations/search are scoped to that project. Direct cross-project navigation requests an explicit close, including the classic layout. Close retains saved sources, chat drafts and per-project task state; the dialog describes session-only Notes retention honestly. Unrestorable comment/part/shopping edits and in-flight saves register concrete exit blockers. Removing an open project or starting a separate catalog remix also requires returning to Home first.
+
+Actual native clicks verified Playbridge → close → Home → test1 → close → Home → Playbridge, with its Notes tab and exact unsaved test draft restored. The disposable draft was discarded through the UI without saving. A drawing-comment draft blocked Home with a specific Save/Cancel instruction; Return to edit preserved it, and Cancel cleared it. The active conversation browser showed only Playbridge; New/Import dialogs opened from Home and were cancelled without creating duplicates. PCB, schematic and manifest remain byte-exact; no NOTES.md was created. Captures12–14 and proof15 remain in the local evidence directory. Fresh import landing also passed in the import-identity repeat below. Background-job continuity, completed fresh create landing, and further alternate-navigation cases still need native acceptance; item2 is not fully accepted yet. No whole-queue completion.
+
+Current affected checks: UI typecheck passed; 251 UI tests / 1061 assertions / zero failures. No new full-root, production-build or hosted-CI pass claimed.
+
+## Publication checkpoint · November 2, 2026
+
+The requested follow-up push published **714d573** (output grouping/actions, schematic navigation, dialog/tooltips and BOM presentation) and **b5c9c53** (source-bound Gerber package with drill files). GitHub previously remained at **c424380**; the two later milestones had been local only. Their actual implementation and native validation are described below. Validation dates remain October 30; this publication does not imply new November 2 native results or a full-root/hosted-CI pass.
+
+The Home → Open → Close → Home implementation was excluded from that publication; the later local checkpoint above records its validation and commit. Output deletion, import provenance, component focus, model-coverage investigation and the remaining acceptance cases are unfinished. This is an interim publication, not completion of the nineteen-item queue or the additional user journeys. No merge or deployment.
+
+The earlier “local” headings and pending statements below are chronological checkpoints. This section governs publication status; the newest manufacturing checkpoint supersedes the older statement that Gerber orchestration is unfinished.
+
+## Manufacturing checkpoint
+
+Outputs → Export files now creates a named Gerber ZIP by sequencing the existing source-guarded Gerber and drill exporters. The ZIP receives only this run’s returned filenames, excluding obsolete layers or optional earlier BOM/placements. A missing/failed drill stage, changed source, mismatched ZIP manifest or changed project cannot produce the completed-download state. Individual advanced exporters retain their existing behavior. The UI names the package, shows progress/error details and preserves source context.
+
+Native Playbridge acceptance: visible Create Gerber package → 26-file result → Download → native Save. Archive CRC check passed, board.drl and copper/mask/paste/edge layers are present; downloaded bytes equal the saved archive. PCB, schematic and fabdesk.json remain byte-exact against the pre-export capture. Evidence: local 09-gerber-package-result.png and 10-gerber-package-proof.json. This verifies packaging, not DRC/fabrication approval.
+
+UI/client/tools typechecks passed; UI 249/993 passed; focused package/output/native-preservation tests 23/114 passed. Member selection/source guards have unit coverage; the corresponding new multi-board native package repeat remains pending. Home lifecycle is next; the other remaining19-item acceptance requirements and new journeys are still active.
+
+## Local second checkpoint — in progress
+
+Schematic previews open at Fit width, with drag pan, pointer-centered zoom and Fit sheet reset. Library groups canonical video formats, schematic sheets and manufacturing layers; private video frames and a completed video’s supporting poster stay in Files. Each card has exact-file Files/Download actions; checkbox selection names and counts the grouped files. Render board image is directly available. Shared preview actions sit in the dialog header, labels escape clipping and follow loading dialog layout, and BOM shows lines versus summed quantity with compact source/filter controls.
+
+Actual native checks in the isolated Playbridge import: one counted readiness note opened its exact DRC release-gate reason and explicit PCB-check destination without running checks; schematic Fit width → drag → Fit sheet → Fit width worked; video MP4 played to 0:05/0:06 and Close returned to Library; video group selected 3 files, plus one image selected 4, then Clear removed the selection; Render board image opened its existing saved Top view without regeneration; BOM showed 73 lines / 77 quantity and its filter icon opened the category controls. New captures 02–08 remain under the local walkthrough-fixes-2026-10-30 evidence directory.
+
+Checks: affected UI/client-core typechecks pass; UI 249 tests / 993 assertions pass; output-library 12 tests / 54 assertions pass. Native model coverage discrepancy, output deletion, import provenance, Home lifecycle, focus-by-component and Gerber/drill package acceptance remain unfinished. Gerber orchestration is local work in progress, excluded from this checkpoint commit. No whole-queue completion or new full-root/build/hosted-CI pass claimed.
+
+# Walkthrough feedback and fix pass · October 30
+
+This is the current **19-item acceptance queue**, collected during the fresh imported Playbridge journey and the user's screenshot review. The user has now authorized fixes and requested an immediate remote checkpoint. Earlier completion statements in WHOLE-APP-20261030.md describe the previous implementation pass, not acceptance of this new feedback.
+
+## Current implementation checkpoint
+
+- **Item1 implemented; native acceptance pending:** imported-board picker now shows stable numeric versions newest first (root candidates first), a Path A–Z option, separately folded backups/archives, readable labels and wrapped exact paths. It preserves explicit source choice; first position does not mean validated/recommended.
+- **Item19 implemented for single-board Overview; native acceptance pending:** the readiness badge opens the exact current reasons/warnings counted by Overview. Each note has a check/export/source next action, plus an explicit unsent Ask action. No check runs on opening; note visibility does not resolve it. Assembly source review keeps its existing source-focused behavior and still needs representative acceptance.
+- Other items remain **unfinished**. The source identity work in item15 is not included in the sorting change. No model/geometry or Gerber/drill completeness fix is claimed.
+- Validation: UI and client-core typechecks passed; UI suite249passed/993assertions/0failed; new imported-board tests3passed/9assertions cover numeric versions, root/unversioned ordering, stable ties and backup classification. No new full root suite, production build or hosted CI pass is claimed.
+- Native before capture retained in outputs/walkthrough-fixes-2026-10-30/01-overview-before.png. Current user-led app activity was left undisturbed; after screenshots and full click acceptance for these changes remain pending. Older walkthrough captures are baseline evidence, not new fix acceptance.
+- Local milestone work continues on feat/sketch-first-drafts / PR389. This checkpoint is being published at the user's explicit request; it does not finish the fix pass. No merge/deploy.
+- Enclosure/assembly#398, replacement/resize#393 and Board Art Apply/polish stay deferred. No existing output was deleted. Temporary keep-awake record remains RELEASED; recurring automation stays paused.
+
+## Requirements and acceptance
+
+The sections below preserve the collected requested behavior. “Deferred”/“do not fix yet” inside historical collection notes describe their recording time; the current fix authorization and checkpoint above govern execution. Screenshot filenames identify preserved local evidence, not hosted attachments. Acceptance must be demonstrated rather than inferred from tests.
+
+## 1. Sort imported board choices clearly
+
+Status: requested, not implemented.
+
+Surface: GitHub import → Project imported → Choose the board to open.
+
+User observation: the list mixes v4.1, v3.0, v4.0 and deeply nested backups, making the intended choice unclear.
+
+Evidence: `codex-clipboard-58e58385-e394-4e65-a679-f471d40c2a18.png` (retained local screenshot).
+
+Current code: `CreateProjectDialog.tsx` renders `result.boards` directly. The import endpoint returns the recursive discovery order from `listKicadPcbFiles` without explicit sorting. Plain `backups` directories are not among its skipped directories; existing `pickKicadPcb` ranking is not used for this list.
+
+Requested behavior:
+
+- Use a stable, visible ordering rather than filesystem discovery order.
+- Put root-level board candidates first; within version folders, sort recognizable version numbers newest first (v4.1, v4.0, v3.0; v10 after v9 numerically).
+- Keep backup/archive candidates accessible but separate and secondary, preferably in a collapsed group. Folder names indicate organization only, not verified validity or currentness.
+- Offer a simple sort control such as Version (newest first) / Path (A–Z), with deterministic path ordering for unversioned ties.
+- Make long paths readable without horizontal clipping, retaining the exact relative path for disambiguation.
+- Preserve explicit user choice; do not automatically adopt a board merely because it sorts first or label it latest/current without evidence.
+
+Acceptance: repeat the screenshot's import case, verify numeric version ordering and backup grouping, keyboard selection and full-path access, and confirm that the clicked path is the board actually opened. Include root, unversioned and v9/v10 candidates in meaningful sorting checks.
+
+## 2. Focus one project; switch through Home
+
+Status: requested, not implemented. User explicitly changes the redesign direction away from easy in-workspace project switching; this supersedes the earlier recent-project header-switcher preference.
+
+User intent: a VS Code/CapCut-style project lifecycle. Choose a project, open it, and focus on that project. To open a different project, first close the current project and return to Home. Closing a project does not mean quitting the app or deleting the project.
+
+Requested behavior:
+
+- Home is the place to browse/search recent projects, create a project, or import one. Opening a project enters its dedicated workspace.
+- Show the active project name as workspace identity, without a direct project-switching dropdown or recent-project list. Project actions such as rename can remain available without offering another project.
+- Provide a discoverable Close project / Back to Home action. Opening a different project follows this explicit exit, then selection on Home; no direct switching through chat lists, command shortcuts or secondary project menus.
+- Keep board selection, workspace tabs and conversations within the active project available; these are not project switches. Separate any app-level settings/account access from project selection.
+- On exit, protect actual unsaved edits and drafts using the existing guards. Preserve saved files, conversations and appropriate project view state for reopening.
+- Explain running tasks on exit and preserve discoverable progress/results on Home or reopening. Do not silently cancel tasks, discard edits, or imply jobs stop just because the project closes.
+- Move useful recent-project ordering to Home rather than removing the history. Preserve connected-core ownership and unavailable/deleted-project handling.
+
+Acceptance: Home → open A → navigate boards/chat/files → close A → Home → open B. No in-project action switches directly to B. Verify unsaved-work handling, running-task continuity, reopen state, and create/import entry and landing paths. Compare the resulting Home/workspace navigation with the approved canvas references, adapting the earlier project dropdown to this newer explicit user direction.
+
+## 3. Make large schematics inspectable
+
+Status: requested, not implemented.
+
+Surface: Board → Schematic; screenshot shows a very tall sheet fitted into a narrow, unreadable strip, surrounded by empty canvas. Zoom reads 100%, which does not communicate the effective drawing scale.
+
+Evidence: `codex-clipboard-5894cd8a-4bbe-4425-8d2f-0c0d51df5cb0.png` (retained local screenshot).
+
+Requested outcome: inspect component labels, connections and sections comfortably inside the app rather than only seeing the entire sheet as a thumbnail.
+
+- Ensure zoom actually reveals drawing detail without a fit-to-container size cap. Support pointer-centered wheel/trackpad zoom, accessible +/- controls and intuitive pan, retaining sharp vector detail where available.
+- Distinguish Fit sheet, Fit width and actual zoom clearly. Fit width should let the user read and pan/scroll a tall sheet; the zoom percentage must describe a defined scale rather than showing a misleading 100% for an unreadable overview.
+- Make navigation discoverable with short tooltips/hints and keyboard access. Consider a small overview/minimap when zoomed into an unusually large sheet, only if it materially helps orientation.
+- Where the source contains multiple sheets, provide a clear sheet/hierarchy selector rather than forcing the user through a combined thumbnail. Do not invent hierarchy for a single tall sheet.
+- Evaluate find-by-reference/net and selection → details / Ask handoffs against existing parsed-source capabilities. Only expose semantic selection or net tracing where actual source data supports it; image inspection alone must not imply electrical connectivity checks.
+- Preserve the selected board, sheet and viewport when opening/closing assistant or detail tools, and keep corner controls from covering the drawing/navigation.
+
+Acceptance: use this imported tall schematic, zoom into a component until labels are readable, pan to a distant section, return via Fit, and repeat with fit-width and keyboard controls. Verify no clipping/dead zoom, accurate scale feedback, supported multi-sheet navigation, and stable board/context on Ask/detail return. Source inspection and visual navigation do not count as ERC or parity validation.
+
+## 4. Ask fabPlane to identify the main chip from Schematic
+
+Status: requested; investigation and implementation deferred until the main workflow reaches this item. User explicitly asked to record the task rather than investigate now.
+
+Surface: the same imported project's Board → Schematic page as item 3.
+
+Requested journey: open corner Ask fabPlane on that page and ask “Which is the main chip in this schematic?” The expected interaction is an answer coupled to the canvas: identify the actual component, open its sheet if needed, and automatically pan/zoom to a readable view with a clear temporary highlight or position marker. Text-only identification does not meet this request. This depends on item 3's inspectable schematic canvas.
+
+Acceptance: provide the component reference and part name, explain its likely role using actual schematic/source evidence, and visibly focus/highlight that same component in the correct board and sheet without a separate manual search. Keep the answer available while showing the component; allow clearing the highlight and returning to the earlier view. If there are multiple plausible main chips, explain the ambiguity and offer candidates that focus their actual locations. Do not guess coordinates from the thumbnail, confuse another project's source, or claim a highlight/navigation action succeeded unless it actually happened. If semantic positions cannot be resolved, explain the limitation rather than zooming arbitrarily; record that as an unmet part of this task. Verify the complete question → answer → actual canvas focus behavior when the main workflow reaches this item.
+
+## 5. Keep video export intermediates out of the default output library
+
+Status: requested; investigation and implementation deferred. Collect this feedback while the main chat continues its walkthrough.
+
+Surface: Outputs → Library after starting/exporting a product video. Before screenshot shows 6 saved files; later screenshot shows 154, including individual `frame-0143.png`, `frame-0142.png`, etc. The screenshot also shows MP4/GIF variants and a 0 B WebM with Preview unavailable while the header still indicates one active task. Do not infer that all encoding has completed from this screenshot alone.
+
+Evidence:
+
+- `codex-clipboard-0e136935-d68a-4229-b507-4e0a08e14b67.png` (retained local screenshot)
+- `codex-clipboard-cf1d0527-97ea-4132-94aa-6698c58ed58d.png` (retained local screenshot)
+
+Requested behavior:
+
+- Default Library shows user-facing deliverables, not every temporary frame, encoder placeholder, cached preview, poster dependency or metadata file. Confirm actual file roles in the video pipeline before filtering; do not hide a user-created image simply because its name resembles a frame.
+- Present a video as one understandable output with available format variants (for example MP4/GIF/WebM) in its preview/download actions or grouped details. Preserve independently created outputs and meaningful versions.
+- Keep intermediate assets available through Files or explicit advanced/source details when useful; avoid adding every frame to the normal Images tab, output counts and Select all downloads.
+- Represent running/partial/failed exports honestly. A zero-byte or unfinished file is not a completed playable output; expose relevant progress or recovery without a misleading play card. A failed optional format must not conceal valid completed formats.
+- Preserve original user files and completed deliverables. Do not delete frames needed for active rendering; any cleanup must be limited to verified task-owned intermediates with safe lifecycle handling.
+
+Acceptance: record the Library before export, during rendering and after completion; show a small, understandable set of final deliverables with working previews/download variants. Verify default counts/filters/bulk selection exclude internal frames, advanced access remains possible, and cancellation/failure/re-export does not leave ghost outputs or erase a previous valid result. Investigate the 0 B WebM state against the actual task outcome rather than assuming success or permanent failure.
+
+## 6. Delete unwanted outputs individually and in bulk
+
+Status: requested; investigation and implementation deferred. No files are authorized for deletion by recording this feature request.
+
+Surface: Outputs → Library, including exported video variants, images and models.
+
+Evidence: `codex-clipboard-f1ee5a04-0a1b-48b5-8898-b50d42037b79.png` (retained local screenshot).
+
+Requested behavior:
+
+- Provide an understandable Delete action for one output and a bulk Delete selected action using the existing multi-selection controls. Show the count and exact scope before removing resources; use existing trash/recovery support where available and state clearly if deletion is permanent.
+- Determine deletion eligibility from actual ownership, protection and active-use information. Disable Delete for resources that cannot be deleted and explain the concrete reason (for example protected source, read-only location or an active task using the resource). Do not disable ordinary preview/download selection merely because deletion is unavailable.
+- For mixed selections, clearly distinguish eligible and protected items. Offer deletion of the explicitly identified eligible subset without silently deleting dependencies or implying every selected item was removed. Disable bulk Delete when none are eligible.
+- Coordinate with item 5's grouped outputs: distinguish deleting a format variant from deleting a whole output group. Explain any supporting assets included; do not unexpectedly delete other video variants, source boards, shared models or unrelated files.
+- Recheck eligibility when executing, handle partial failures truthfully, and refresh selection/counts/previews after success. An output's removal must be reflected in affected views without fabricated freshness or validation success.
+
+Acceptance: select several unwanted generated outputs on a disposable fixture, delete the confirmed eligible items, and verify they disappear after refresh/reopen. Test protected and in-use resources, mixed selections, cancel/confirmation and partial failure behavior. Verify source files and retained/shared dependencies remain unchanged. This is an implementation task, not a request to delete the currently pictured project files now.
+
+## 7. Make board image rendering a prominent frequent action
+
+Status: requested; investigation and implementation deferred.
+
+Surface/evidence: same Outputs → Library screenshot as item 6. Render board images currently appears under the generic Create output menu. User reports the navigation is too difficult and explicitly identifies board rendering as an expected frequently used feature; prioritize its discoverability accordingly.
+
+Requested behavior:
+
+- Make Render board images directly visible and easy to reach from Outputs, rather than requiring discovery inside a generic creation menu. Keep less frequent creation options secondary; reuse the same rendering flow rather than creating duplicate pages or competing dialogs.
+- Provide a short path from inspecting the active board to rendering that board, using its captured source context. In a multi-board project, clearly show which board will render and allow an explicit choice when needed.
+- Use sensible remembered/default settings for quick rendering, with advanced controls folded away. Show prerequisites and useful recovery if the current board/model is unavailable; do not send the user through unrelated pages without a clear reason.
+- After Render, show progress and the resulting image in a suitable preview with Download, Render again and optional settings adjustment. Keep the result discoverable through Library and Activity if the user navigates away.
+- Keep terminology, icons and control placement consistent with the approved canvas UI. Avoid duplicate output creation, unnoticed source switches, or claiming that a render validates the design.
+
+Acceptance: from Library and from an open board, a user can immediately find rendering, confirm the intended board, produce an image with minimal navigation, inspect/download it, and render again. Verify both single- and multi-board source ownership, prerequisite recovery, and background progress/result return. Review the actual click count and clarity during the main walkthrough.
+
+## 8. Remove excessive top whitespace across popups
+
+Status: requested; implementation deferred with the walkthrough change list.
+
+Scope update: user reports this affects almost every popup, not only Render board image. Audit the shared dialog/action layout and its consumers, including image/video/model/file previews and tool dialogs. Preserve useful intentional content spacing.
+
+Original surface: Render board image dialog. Screenshot shows a large empty band between the title divider and “Create an image from a saved PCB…”, with the Ask sparkle isolated at the right. The later video preview screenshot shows a similar action-only gap beneath its title.
+
+Evidence: `codex-clipboard-2a413b81-a0e6-4a2b-85e6-538b9dd5f1aa.png` (retained local screenshot).
+
+Requested behavior: remove the oversized empty band so the description sits beneath the header with normal dialog spacing. Place the contextual Ask icon in the header or the description row without a dedicated tall row. Keep room for a board selector only when needed, without reserving that space on a single-board project. Preserve clear separation between description, view controls, preview and footer, with the preview receiving the recovered space.
+
+Acceptance: compare this same dialog before/after on the single-board project and check the multi-board selector, shorter viewport, keyboard focus and Ask access. No clipped footer/preview or overlapping header controls. Coordinate with item 7's simplified rendering flow; this is a layout fix, not a new rendering function.
+
+Also inspect representative popup families at normal and shorter/narrower sizes. Use consistent compact header/action placement and body padding; do not fix one dialog with a blanket spacing change that clips content or disrupts others. Additional evidence: `codex-clipboard-2378e5f1-619e-4c3a-a7f7-b6dd62428f59.png` (retained local screenshot).
+
+## 9. Keep popup tooltips readable at edges
+
+Status: requested; implementation deferred. User asks to recheck tooltip display; screenshot shows “Ask about this out…” clipped by the video dialog's right boundary. Treat the observed cutoff as the defect to resolve.
+
+Evidence: `codex-clipboard-2378e5f1-619e-4c3a-a7f7-b6dd62428f59.png` (retained local screenshot).
+
+Requested behavior: position edge tooltips inward or flip placement so the complete short label remains visible within the viewport. Use a bounded width with wrapping for longer text, avoid clipping by dialog scroll/overflow containers, and retain correct layering. Apply consistently to hover and keyboard-focus labels without making a tooltip persist over unrelated content.
+
+Acceptance: hover/focus the video preview's top-right Ask and folder actions, plus matching controls in other popups. Test right/left/top/bottom viewport edges and narrower sizes; all labels remain readable with no accidental cropping, unwanted page scroll or interference with dialog controls. Coordinate with item 8's relocated popup actions.
+
+## 10. Separate per-card output actions from bulk selection actions
+
+Status: requested; implementation deferred.
+
+Surface: Outputs → Library selection bar and output cards. User does not want Play or Show file presented as multi-selection operations. Each card should offer small Show in Files and Download icons directly.
+
+Evidence: `codex-clipboard-4da12294-aea0-4491-954d-f92de38a747e.png` (retained local screenshot).
+
+Requested behavior:
+
+- Keep the selection bar focused on genuine bulk actions: Download selected, Delete selected with item 6's eligibility rules, and Clear selection/count. Remove Play/Preview and Show file from that bulk toolbar; do not arbitrarily open just one of several selected files.
+- Add small, consistent Show in Files and Download icon buttons on each card. Show in Files opens the app's Files page and reveals/focuses that exact file in the active project, rather than an unspecified folder or another project.
+- Keep Play/Preview as a clear action on the individual card/thumbnail where supported, separate from its checkbox. Icon actions must not accidentally toggle selection or launch the card preview.
+- Supply concise complete hover/focus labels and accessible names. Keep icons discoverable on keyboard/touch, and avoid overlap with selection checkboxes or media playback controls.
+- Coordinate with item 5's grouped video variants: card/group actions must make clear whether they download a selected format or a group; file navigation must identify an actual file. Avoid one-item-only overflow menus when direct icons cover their actions.
+- Clarify the card status “Recorded model inputs unchanged”, which the user finds confusing. Explain in plain language that the recorded inputs used to generate the video still match, without implying that the model matches the latest PCB, all dependencies were inspected, or engineering checks passed. Candidate short wording: “Model unchanged since video export”, only if the actual receipt supports that scope. Put checked inputs, generation time and unchecked dependencies in optional source details; use an actionable stale/unknown status when appropriate. Review equivalent technical status wording across output cards for the same problem.
+
+Acceptance: select two or more outputs and confirm the toolbar offers only valid bulk operations. Independently Show in Files and Download from selected and unselected cards; verify exact file targeting, unchanged selection, keyboard access, and no unintended playback. Test all supported output types and grouped video formats.
+
+## 11. Simplify BOM source coverage and use a Filters icon
+
+Status: requested; implementation deferred.
+
+Surface: Parts → Design BOM. Source coverage currently occupies a full-width disclosure, source card and technical explanatory line above the search/table. User requests a better presentation and an icon instead of the Filters text control.
+
+Evidence: `codex-clipboard-f57e3aad-d921-4825-89e6-52bdd7e5ba2c.png` (retained local screenshot).
+
+Requested behavior:
+
+- Replace the bulky Source coverage presentation with a concise readable summary near the BOM heading or toolbar, for example “Parts from 1 of 1 board sources”, using actual coverage semantics and counts. Keep per-source details, inclusion/exclusion rules and technical limitations in an optional disclosure/popover.
+- Missing, incomplete or unavailable sources must remain noticeable with a useful next action; do not tuck actionable problems away as if coverage were complete. Preserve distinctions between design sources, physical board quantities and project-level hardware. Explain any different item/part counts without crowding the default page.
+- Do not imply that BOM coverage establishes schematic/PCB agreement or passed electrical checks. Keep that limitation available in context without making a long technical warning the main visual element.
+- Retain main-report C07: distinguish grouped BOM lines from total component quantity so “73 items” and “77 listed parts” have clear, noncontradictory labels.
+- Replace Filters text with a consistent filter/sliders icon button next to search. Provide a complete hover/focus label and accessible name, visible expanded state, and an active-filter indicator/count with a clear reset action when needed.
+
+Acceptance: compare the single-source layout with this screenshot, then verify multi-source and missing-source cases. Source details and Ask remain accessible, search/filter/table receive appropriate space, quantities retain their meaning, and icon-only Filters works with mouse, keyboard and narrow layouts.
+
+## 12. Give Export files Ask a deliberate, consistent position
+
+Status: requested; implementation deferred.
+
+Surface: Outputs → Export files. The isolated sparkle sits far from the page title and Saved outputs action, appearing to float in unused header space. User explicitly finds its placement awkward.
+
+Evidence: `codex-clipboard-c6cc3e8c-c4bc-43e0-9eb8-f21a8867bb99.png` (retained local screenshot).
+
+Requested behavior: remove the arbitrary floating position. Prefer the persistent corner Ask for page-wide export help, with the actual board, chosen format and visible options captured. If a separate contextual Ask shortcut is useful, align it deliberately in the page action group or export panel heading using the same placement/spacing pattern as other pages. Avoid two indistinguishable entry points for the same question. Keep distinct pre-prompt behavior only where it adds useful specific context, and make that purpose clear through a complete tooltip/accessibility label.
+
+Additional user feedback: “Choose a board and the files you need. Saved outputs stay in the library.” is misleading for a single-board project with no selector. Use conditional copy: single-board “Choose the files to export from this board. Exported files appear in Library.” Show the actual board identity without an unnecessary selector. For multi-board projects, provide a real source/board selector and wording such as “Choose a board, then select the files to export.” Only describe choices that are present and usable. Board selection remains within the open project, consistent with item 2; it is not project switching. If no usable board is available, show the actual prerequisite/recovery instead of this instruction.
+
+Acceptance: inspect Export files at normal and narrow widths, verify intentional alignment and no stray sparkle/overlap, and confirm corner/contextual Ask identifies the selected board and export settings without sending automatically. Coordinate with global popup/action spacing and tooltip items 8–9.
+
+## 13. Sort output cards by most recently created/exported
+
+Status: requested; implementation deferred. User first asked “sort by last exported”, then clarified “or last created”. Intent: the newest generated deliverable should be easy to find at the top.
+
+Surface: Outputs → Library, including grouped Manufacturing files. Evidence: `codex-clipboard-f92d4ccf-2832-4c54-8b90-2de3d370c4b4.png` (retained local screenshot).
+
+Requested behavior: default to newest created/exported first with a clear sort label. Use recorded output generation/export time where available; do not claim filesystem modification time is creation time when it is only a fallback. Regenerating an existing output should bring the newly completed result to the top; merely previewing/downloading/checking it should not. Apply the same chronological ordering to image/video/model cards and grouped manufacturing outputs instead of pinning a newly exported manufacturing group last. Use an appropriate recorded completed generation time for a group and deterministic ties; never invent dates for unknown legacy outputs. Keep group-internal file ordering separate from Library card chronology.
+
+Acceptance: generate/export different output types in sequence, including a manufacturing group and a replacement of an existing output, and verify latest completed results appear first across All and filtered views after reload. Opening or downloading an older output must not reorder it as newly created. Preserve selection by stable identity when refreshed ordering changes. Coordinate with item 5's grouped variants and hidden intermediates so transient frames do not dominate the sort.
+
+## 14. Replace the manufacturing-file upload/share-style icon
+
+Status: requested; implementation deferred.
+
+Surface: Outputs → Library → Manufacturing. Both large placeholder thumbnails and small file-type icons use an arrow rising from a tray, which reads as an upload/share action rather than an existing manufacturing file.
+
+Evidence: `codex-clipboard-cb05fdb1-0eca-42d7-b2cd-47068d03da0b.png` (retained local screenshot).
+
+Requested behavior: use an appropriate file/document or PCB-layer icon from the established icon set for Gerber/drill/manufacturing artifacts, with extension/layer labels for disambiguation. Update both thumbnail fallback and filename icon consistently. Keep Download a separate action using its directional action icon per item 10; do not substitute another action glyph as file identity. Do not imply a real geometry preview exists when only an icon is shown.
+
+Acceptance: check representative Gerber, mask/paste, outline and drill files and grouped manufacturing outputs for consistent neutral file identity, readable format labels and distinct Show in Files/Download actions.
+
+## 15. Keep selected imported board/version identity visible (main C04)
+
+Status: observed in main click-only report; queued, not fixed. After choosing `versions/v4.1-controller-serial-bridge/board.kicad_pcb`, the workspace only prominently identifies the repository/Board. Keep the chosen board/version and exact source path discoverable through board identity/details; do not imply all repository versions are the same board. Coordinate with item 1 and the one-project workspace in item 2. Main capture05 is the existing evidence.
+
+## 16. Audit inconsistent component model coverage (main C05)
+
+Status: observed visual discrepancy, cause unconfirmed; correctness investigation queued, not fixed. Top PNG shows two lower connector models absent in the first 3D capture/video opening frame. Compare actual source revision, model inputs and component geometry across 3D/image/video before diagnosing or claiming parity. Explain missing geometry consistently; a recorded input-unchanged label is insufficient. Preserve sources and completed outputs. Main captures07/09 and video evidence apply.
+
+## 17. Recheck video preview Close hit target (main C06)
+
+Status: candidate issue, not confirmed; queued, not fixed. Main report records three coordinate clicks on the MP4 modal's visible X did not dismiss it, while backdrop dismissal did; other image-modal close worked. Recheck exact hit target, focus and concurrent-input/layout conditions in the actual UI before diagnosing. Coordinate with items 8–9. Do not claim a confirmed broken control from coordinate clicks alone.
+
+## 18. Audit Gerber package completeness and direct download (main C08)
+
+Status: observed missing visible drill entry; full package correctness unconfirmed; queued, not fixed. Gerber generation and a 22-file ZIP/native save succeeded, but no drill file was visible among layer entries. Inspect the actual generated package and drill-handling contract; successful ZIP download is not fabrication readiness. Provide a direct named package Download plus a readable manifest/completeness status after export, retaining individual-file and bulk ZIP access. Do not label missing required fabrication files as a successful complete package. Main captures13–15 and saved ZIP are existing evidence.
+
+
+## 19. Make Overview readiness notes specific and actionable
+
+Status: implementation started after user authorization; native acceptance pending.
+
+Surface: Overview → Needs review · 2 readiness notes → Review → Checks.
+
+User observation: Overview promises two readiness notes, but clicking it opens a generic Design checks page with “Start with a design check” and Run PCB checks / Run schematic checks. The destination does not identify the two notes or make clear what the user should focus on. Screenshots establish this navigation/clarity mismatch; the underlying note reasons have not been investigated and must not be invented.
+
+Evidence:
+
+- Overview badge: `codex-clipboard-af447f62-1f10-4c00-b19e-c07fed087c40.png` (retained local screenshot).
+- Destination: `codex-clipboard-dfe36c17-8d9d-43af-8e8b-0b5fd22859c3.png` (retained local screenshot).
+
+Requested behavior:
+
+- Clicking the readiness badge reveals or navigates directly to the exact notes contributing to its count, in the same project and board scope. Focus/filter/highlight that list so it is immediately apparent why the user arrived.
+- Each note states what needs attention, the affected board/source/output, why it matters and a concrete next action. Provide contextual Ask where useful without sending automatically.
+- Distinguish checks not yet run, unavailable/missing prerequisites, stale results, source/output readiness and actual reported findings. Do not present “not checked” as a discovered design error or imply an available schematic has passed checks.
+- Keep the Overview count and destination list consistent, with understandable counting/grouping semantics. If a note belongs in Updates or another surface, route to that specific issue or provide a focused readiness summary linking to it; do not send all notes to an unrelated generic Checks empty state.
+- Preserve existing DRC/ERC coverage boundaries and honest statuses. Opening a note does not resolve it or run a check automatically. Handle changed/resolved notes by explaining the refreshed state rather than showing a stale unexplained count.
+
+Acceptance: reproduce the pictured two-note state and click the badge; both actual reasons must be immediately identifiable with working next actions and correct board scope. Verify single/multi-board cases, not-run versus stale/failed/reported states, count refresh after a real resolution, and return navigation. No live checks, agent sends, app changes or fixes were performed while recording this item.

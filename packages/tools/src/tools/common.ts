@@ -97,6 +97,7 @@ export async function inspectSavedHierarchy(
   const projectFile = p(project, PROJECT_FILES.boardPro);
   return ctx.services.kicad.inspectSchematicHierarchy(packagedCli, {
     projectDir: project.dir,
+    ...(ctx.board ? { ownedFilesOnly: true } : {}),
     rootSchematic: schematic,
     ...((await exists(projectFile)) ? { projectFile } : {}),
     signal: ctx.signal,

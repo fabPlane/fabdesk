@@ -3,6 +3,9 @@ import type { PlacementSession, PlacementAnalysis } from "./types";
 export * from "./types";
 export * from "./editing";
 export * from "./recovery";
+export * from "./source";
+export * from "./working-copy";
+import type { PlacementCandidate } from "./working-copy";
 export {
   saveAutosave,
   decodeAutosave,
@@ -142,13 +145,14 @@ export function redoPlacement(history: PlacementHistory): PlacementHistory {
 }
 
 /** In-memory recovery survives tab/project changes, including a failed explicit draft save. */
-const drafts = new Map<string, { history: PlacementHistory; savedRevision: number }>();
+const drafts = new Map<string, { history: PlacementHistory; savedRevision: number; candidate?: PlacementCandidate }>();
 export const placementDrafts = {
   hasUnsaved: () =>
     [...drafts.values()].some((draft) => draft.history.revision !== draft.savedRevision),
   get: (projectId: string) => drafts.get(projectId),
-  set: (projectId: string, history: PlacementHistory, savedRevision: number) => {
-    drafts.set(projectId, { history, savedRevision });
+  set: (projectId: string, history: PlacementHistory, savedRevision: number, candidate?: PlacementCandidate) => {
+    const retained = candidate ?? drafts.get(projectId)?.candidate;
+    drafts.set(projectId, { history, savedRevision, ...(retained ? { candidate: retained } : {}) });
   },
 };
 

@@ -42,8 +42,10 @@ export async function loadComments(project: ProjectHandle): Promise<BoardComment
   return parsed.data;
 }
 
-export async function saveComments(project: ProjectHandle, file: BoardCommentsFile): Promise<void> {
-  await writeJson(await commentsPath(project), BoardCommentsFile.parse(file));
+export async function saveComments(project: ProjectHandle, file: BoardCommentsFile, beforeSave?: () => Promise<void>): Promise<void> {
+  const path = await commentsPath(project), parsed = BoardCommentsFile.parse(file);
+  await beforeSave?.();
+  await writeJson(path, parsed);
 }
 
 const commentLocks = new Map<string, Promise<unknown>>();
@@ -56,6 +58,7 @@ const commentLocks = new Map<string, Promise<unknown>>();
 export async function updateComments<T>(
   project: ProjectHandle,
   mutate: (file: BoardCommentsFile) => { file: BoardCommentsFile; result: T } | Promise<{ file: BoardCommentsFile; result: T }>,
+  beforeSave?: () => Promise<void>,
 ): Promise<T> {
   const key = await commentsPath(project);
   const prev = commentLocks.get(key) ?? Promise.resolve();
@@ -63,7 +66,7 @@ export async function updateComments<T>(
     .catch(() => {})
     .then(async () => {
       const { file, result } = await mutate(await loadComments(project));
-      await saveComments(project, file);
+      await saveComments(project, file, beforeSave);
       return result;
     });
   commentLocks.set(key, run);

@@ -193,6 +193,10 @@ describe("durable asynchronous routing", () => {
     expect(appliedRevision).toBe(ready.candidate.sha256);
     expect(await hash(h.boardPath)).toBe(appliedRevision);
 
+    const other = await tempProject("async-other-project"), reg = createRegistry(), otherFactory = contextFactory(h.services, other);
+    await expect(reg.invoke("route_apply", { runId: firstId, expectedPcbRevision: before }, projectRef => otherFactory({ def: reg.get("route_apply")!, projectRef, signal: new AbortController().signal, progress: () => {} }))).rejects.toThrow("another project");
+    expect(await hash(h.boardPath)).toBe(appliedRevision);
+
     await writeFile(h.boardPath, '(kicad_pcb (net "N1") (property "test" "v3"))\n');
     const current = await hash(h.boardPath);
     const second = await h.call("route_run", { timeoutMs: 5_000, applyPolicy: "manual" });

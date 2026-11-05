@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import type { CinemaShape, RouteFrame, RouteMeta, RouteStatic } from "@fabdesk/protocol";
 import {
   CinemaPainter,
+  LIGHT_THEME,
   applyLine,
   applyLines,
   computeBounds,
@@ -164,6 +165,14 @@ describe("drawScene", () => {
     expect(b.calls.filter((c) => c.startsWith("stroke:"))).toEqual(["stroke:#e5484d", "stroke:#ffd166"]);
   });
 
+  test("fresh copper stays visible on a light canvas", () => {
+    const run = applyLines(emptyRun("r1"), [meta, frame(0, [1])]);
+    const { ctx, calls } = fakeCtx();
+    drawScene(ctx, { run, cursor: 0, hiddenLayers: new Set(), width: 100, height: 100, theme: LIGHT_THEME });
+    expect(calls).toContain("stroke:#006b55");
+    expect(calls).not.toContain("stroke:#ffffff");
+  });
+
   test("returns null without bounds", () => {
     const { ctx } = fakeCtx();
     expect(drawScene(ctx, { run: emptyRun("r1"), cursor: -1, hiddenLayers: new Set(), width: 10, height: 10 })).toBeNull();
@@ -193,6 +202,15 @@ describe("incremental painter", () => {
     };
     return { ctx, calls };
   }
+
+  test("cached playback also uses the light theme's visible copper highlight", () => {
+    const run = applyLines(emptyRun("r1"), [meta, frame(0, [1])]);
+    const statics = offscreen(), copper = offscreen(), screen = offscreen();
+    const painter = new CinemaPainter({ statics: statics.ctx, copper: copper.ctx, image: value => value });
+    painter.paint(screen.ctx, { run, cursor: 0, hiddenLayers: new Set(), width: 100, height: 100, theme: LIGHT_THEME });
+    expect(screen.calls).toContain("stroke:#006b55");
+    expect(screen.calls).not.toContain("stroke:#ffffff");
+  });
 
   test("paints statics once, extends copper by the delta while following live, rebuilds on seek", () => {
     const run = applyLines(emptyRun("r1"), [

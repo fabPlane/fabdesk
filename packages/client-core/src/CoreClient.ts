@@ -1,10 +1,15 @@
 /** Typed fetch wrapper over the fabdesk-core control API plus SSE subscription. */
+import { BoardSourceSelection } from "@fabdesk/protocol";
 import type {
+  OutputTrashReview,
+  OutputTrashEntry,
+  OutputTrashBatchResult,
   AgentId,
   AgentPreference,
   AgentEffortPreference,
   AuthState,
   BomSyncSummary,
+  BomSyncOptions,
   Cart,
   CartItem,
   CartItemInput,
@@ -37,6 +42,7 @@ import type {
   PatchBoardComment,
   PrivacyStatus,
   ProjectDetail,
+  ProjectBoardSources,
   ProjectSummary,
   RemixResult,
   RemoteStatus,
@@ -54,6 +60,12 @@ import type {
 } from "@fabdesk/protocol";
 /** `GET /threads/:id`: the thread, saved run history, latest run, and current activity. */
 export type ThreadDetail = Thread & { run?: Run | null; runs?: Run[]; running?: boolean };
+
+function commentScopeQuery(board?: BoardSourceSelection): string {
+  if (!board) return "";
+  const captured = BoardSourceSelection.parse(board);
+  return `?sourceId=${encodeURIComponent(captured.sourceId)}&manifestSha256=${captured.manifestSha256}`;
+}
 
 /** One row of `GET /runs/live`. */
 export interface LiveRunSummary {
@@ -107,6 +119,7 @@ export interface PatchThreadInput {
 }
 
 export interface SendMessageInput {
+  workspaceContext?: import("@fabdesk/protocol").WorkspaceContext;
   content: string;
   attachments?: Array<{ path: string; mime: string }>;
   agentId?: Thread["agentId"];
@@ -122,6 +135,8 @@ export type HealthInfo = { ok?: boolean; version?: string; [k: string]: unknown 
 export interface RouteRunRecord {
   id: string;
   projectId: string;
+  board?: BoardSourceSelection;
+  sourceDirectory?: string;
   router: string;
   status:
     | "queued"
@@ -136,6 +151,7 @@ export interface RouteRunRecord {
   framesPath: string;
   startedAt: string;
   endedAt: string | null;
+  candidate?: { available: boolean };
   result: RouteResult | null;
   error: string | null;
 }
@@ -215,8 +231,17 @@ export class CoreClient {
   createProject(name: string, parentDirectory?: string): Promise<ProjectSummary> {
     return this.request("/projects", { method: "POST", json: { name, ...(parentDirectory ? { parentDirectory } : {}) } });
   }
+  createIdeaDraft(): Promise<ProjectSummary> {
+    return this.request("/projects", { method: "POST", json: { name: "Untitled idea", draft: true } });
+  }
+  promoteIdeaDraft(id: string, name: string, parentDirectory?: string): Promise<ProjectDetail> {
+    return this.request(`/projects/${encodeURIComponent(id)}/promote`, { method: "POST", json: { name, ...(parentDirectory ? { parentDirectory } : {}) } });
+  }
   getProject(id: string): Promise<ProjectDetail> {
     return this.request(`/projects/${encodeURIComponent(id)}`);
+  }
+  inspectBoardSources(id: string): Promise<ProjectBoardSources> {
+    return this.request(`/projects/${encodeURIComponent(id)}/board-sources`);
   }
   fileUrl(projectId: string, path: string): string {
     const clean = path.replace(/^\/+/, "").split("/").map(encodeURIComponent).join("/");
@@ -235,14 +260,15 @@ export class CoreClient {
   async readJson<T = unknown>(projectId: string, path: string): Promise<T> {
     return JSON.parse(await this.readFile(projectId, path)) as T;
   }
-  listComments(projectId: string): Promise<BoardCommentsFile> {
-    return this.request(`/projects/${encodeURIComponent(projectId)}/comments`);
+  listComments(projectId: string, board?: BoardSourceSelection): Promise<BoardCommentsFile> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/comments${commentScopeQuery(board)}`);
   }
   pinComment(
     projectId: string,
     input: CreateBoardComment,
+    board?: BoardSourceSelection,
   ): Promise<{ comment: BoardComment; label: string }> {
-    return this.request(`/projects/${encodeURIComponent(projectId)}/comments`, {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/comments${commentScopeQuery(board)}`, {
       method: "POST",
       json: input,
     });
@@ -251,9 +277,10 @@ export class CoreClient {
     projectId: string,
     commentId: string,
     patch: PatchBoardComment,
+    board?: BoardSourceSelection,
   ): Promise<{ comment: BoardComment; label: string }> {
     return this.request(
-      `/projects/${encodeURIComponent(projectId)}/comments/${encodeURIComponent(commentId)}`,
+      `/projects/${encodeURIComponent(projectId)}/comments/${encodeURIComponent(commentId)}${commentScopeQuery(board)}`,
       { method: "PATCH", json: patch },
     );
   }
@@ -269,6 +296,18 @@ export class CoreClient {
       json: { content },
     });
   }
+  reviewOutputTrash(projectId: string, paths: string[]): Promise<OutputTrashReview> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/output-trash/review`, { method: "POST", json: { paths } });
+  }
+  moveOutputsToTrash(projectId: string, files: Array<{ path: string; token: string }>): Promise<OutputTrashBatchResult> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/output-trash`, { method: "POST", json: { files } });
+  }
+  listOutputTrash(projectId: string): Promise<{ files: OutputTrashEntry[] }> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/output-trash`);
+  }
+  restoreOutputTrash(projectId: string, ids: string[]): Promise<OutputTrashBatchResult> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/output-trash/restore`, { method: "POST", json: { ids } });
+  }
   async writeFile(projectId: string, path: string, content: string | Blob): Promise<void> {
     const res = await this.fetchImpl(this.fileUrl(projectId, path), {
       method: "PUT",
@@ -279,11 +318,11 @@ export class CoreClient {
   }
   async uploadSketch(
     projectId: string,
-    png: Blob,
+    file: Blob,
     filename = "sketch.png",
   ): Promise<{ path: string }> {
     const form = new FormData();
-    form.append("file", png, filename);
+    form.append("file", file, filename);
     const res = await this.fetchImpl(
       `${this.baseUrl}/projects/${encodeURIComponent(projectId)}/sketches`,
       {
@@ -379,9 +418,11 @@ export class CoreClient {
   }
   syncShoppingBom(
     projectId: string,
+    options?: BomSyncOptions,
   ): Promise<{ cart: Cart; summary: BomSyncSummary; cartUrl: string }> {
     return this.request(`/projects/${encodeURIComponent(projectId)}/shopping-list/sync-bom`, {
       method: "POST",
+      ...(options ? { json: options } : {}),
     });
   }
   cloudDestinations(): Promise<{ destinations: Destination[] }> {

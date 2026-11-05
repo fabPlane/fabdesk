@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   clientPointToSvg,
+  commentPointForDrawing,
   parseSvgViewBox,
   resolveSvgBox,
   svgElementBox,
@@ -55,4 +56,14 @@ describe("svg pin coordinates", () => {
       expect(svgPointToPercent(box, point)).toEqual({ left: 75, top: 25 });
     }
   });
+});
+
+test("PCB pin projection refuses unknown origins when moving between legacy and native previews", () => {
+  const legacy = { view: "pcb" as const, x: 5, y: 6, xMm: 5, yMm: 6 };
+  expect(commentPointForDrawing(legacy, true)).toBeNull();
+  expect(commentPointForDrawing(legacy, false)).toEqual({ x: 5, y: 6 });
+  const native = { ...legacy, coordinateSystem: "kicad-pcb-mm" as const, x: 105, y: 100, xMm: 105, yMm: 100 };
+  expect(commentPointForDrawing(native, true)).toEqual({ x: 105, y: 100 });
+  expect(commentPointForDrawing(native, false)).toBeNull();
+  expect(commentPointForDrawing({ view: "schematic", x: 5, y: 6 }, true)).toEqual({ x: 5, y: 6 });
 });

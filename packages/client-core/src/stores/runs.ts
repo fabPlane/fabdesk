@@ -1,5 +1,5 @@
 /** Live agent runs and jobs as seen through the event stream. */
-import type { AgentId, Job } from "@fabdesk/protocol";
+import type { AgentId, BoardSourceSelection, Job } from "@fabdesk/protocol";
 import { create } from "zustand";
 
 export interface LiveRun {
@@ -15,6 +15,8 @@ export interface LiveJob {
   jobId: string;
   kind: string;
   projectId?: string;
+  endpoint?: string;
+  board?: BoardSourceSelection;
   status: Job["status"];
   progress?: number;
   note?: string;

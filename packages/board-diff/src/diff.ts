@@ -38,15 +38,13 @@ function padsGeometryChanged(before?: PadSnapshot[], after?: PadSnapshot[]): boo
   const left = before ?? [];
   const right = after ?? [];
   if (left.length !== right.length) return true;
-  const byPin = new Map(left.map((pad) => [pad.pin, pad]));
-  if (byPin.size !== right.length) return true;
+  // Connectors often repeat an electrical pad number (e.g. two MP anchors).
+  // Preserve multiplicity instead of collapsing them into one Map entry.
+  const remaining = [...left];
   for (const pad of right) {
-    const prev = byPin.get(pad.pin);
-    if (!prev) return true;
-    if ((prev.shape ?? "") !== (pad.shape ?? "")) return true;
-    if (!nearlyEqual(prev.width, pad.width, PAD_TOL_MM)) return true;
-    if (!nearlyEqual(prev.height, pad.height, PAD_TOL_MM)) return true;
-    if (!nearlyEqual(prev.drill, pad.drill, PAD_TOL_MM)) return true;
+    const index = remaining.findIndex(prev => prev.pin === pad.pin && (prev.shape ?? "") === (pad.shape ?? "") && nearlyEqual(prev.width, pad.width, PAD_TOL_MM) && nearlyEqual(prev.height, pad.height, PAD_TOL_MM) && nearlyEqual(prev.drill, pad.drill, PAD_TOL_MM));
+    if (index === -1) return true;
+    remaining.splice(index, 1);
   }
   return false;
 }

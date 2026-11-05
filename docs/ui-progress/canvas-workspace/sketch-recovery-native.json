@@ -1,0 +1,49 @@
+{
+  "projectId": "prj_mvr8ts5ybaf179c2d3",
+  "secondProject": "prj_mvr7n2n5db55576304",
+  "unsavedNativeTextRecoveredAfterReload": true,
+  "originalFileRecoveredUnchanged": true,
+  "noProjectWritesUntilSave": true,
+  "firstObjectInSecondProjectPersisted": true,
+  "projectDraftIsolation": true,
+  "saveClearedOnlyOwnRecoveryRecord": true,
+  "secondProjectDraftStillPresent": true,
+  "priorSavedFilesUnchanged": true,
+  "recoveredObjectsMatchSavedPng": true,
+  "objects": [
+    {
+      "id": "oJojcDwLHSJhcfWkkN6ba",
+      "type": "rectangle",
+      "x": 405,
+      "y": 176.75,
+      "width": 250,
+      "height": 160
+    },
+    {
+      "id": "_ZFnUrXw9n03iXmi3Uxl2",
+      "type": "text",
+      "text": "AIO I/O board\nUnsaved recovery study",
+      "x": 450,
+      "y": 231.75,
+      "width": 193.271484375,
+      "height": 50
+    }
+  ],
+  "addedProjectFiles": [
+    "sketch-1793141473246.excalidraw.png",
+    "sketch-import-source-2.excalidraw"
+  ],
+  "noAgentMessageSent": true,
+  "privateStorageOnly": true,
+  "blankCancelCreatesNoRecovery": true,
+  "quotaFailureWarningObserved": true,
+  "quotaFailureRetainedPriorBackup": true,
+  "quotaRetryPersistedBothObjects": true,
+  "temporaryFaultRemoved": true,
+  "compactControlsValidated": {
+    "width": 960,
+    "height": 720,
+    "canvasZoomUsed": true
+  },
+  "vaioSourcesAndPreviewsUnchanged": true
+}

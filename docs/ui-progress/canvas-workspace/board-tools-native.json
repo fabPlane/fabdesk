@@ -1,0 +1,23 @@
+{
+  "change": "Root-board primary PCB/Schematic/3D tabs plus requested Tools for Routing and Artwork",
+  "verified": [
+    "Root Board shows3 primary tabs, Tools closed, existing comparison and check actions",
+    "Tools opens Routing and Artwork",
+    "Routing reaches actual recorded failed fab_router run; no new run started",
+    "Artwork reaches existing Start with artwork screen; no upload/save/apply",
+    "Return PCB keeps source-matching preview and saved pin",
+    "Compact960\u00d7720 toolbar/canvas/actions fit",
+    "34protected donor files byte-identical"
+  ],
+  "tests": "UI typecheck PASS;233tests912assertions/0fail",
+  "boundaries": [
+    "Workspace navigation model and shortcuts retain all existing views",
+    "No backend/router/nativeediting/Artwork implementation changes",
+    "Assembly members retain their separately source-qualified PCB/Schematic/3D workspace"
+  ],
+  "screenshots": [
+    "board-primary-tabs-tools.png",
+    "board-tools-routing.png",
+    "board-tools-compact.png"
+  ]
+}

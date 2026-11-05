@@ -1,0 +1,28 @@
+{
+  "projectId": "prj_mvqj0m3hcb749c86ac",
+  "reference": "sketches/reference-image.png",
+  "nativeWalkthrough": [
+    "Overview showed actual saved image with No saved PCB instead of an empty start message",
+    "Selection revealed contextual Use in conversation/Open file",
+    "Use in conversation attached existing path, opened assistant and did not send",
+    "Repeated action kept one attachment",
+    "Removed only the study attachment and closed assistant",
+    "Open file navigated to the original image selected in Files",
+    "Returning to Overview closed contextual tools by default"
+  ],
+  "originalReferenceFilesPreserved": 3,
+  "validation": {
+    "rootTypecheck": "pass",
+    "standardSuite": {
+      "pass": 2223,
+      "skip": 36,
+      "fail": 0
+    },
+    "focusedSketchTests": 10
+  },
+  "limits": [
+    "Additional reference picker branch has unit path filtering coverage but was not newly exercised in native UI",
+    "Screenshot237predates final No saved PCB wording",
+    "No new board or agent-generated result claimed"
+  ]
+}

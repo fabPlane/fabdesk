@@ -15,9 +15,9 @@ export function FirstInstallPrivacy() {
   return (
     <div className="flex h-full items-center justify-center overflow-y-auto bg-bg p-6" style={{ alignItems: "safe center" }}>
       <div className="w-full max-w-md rounded-2xl border border-border bg-panel p-6 shadow-xl">
-        <h1 className="text-lg font-semibold">Help improve Fabdesk</h1>
+        <h1 className="text-lg font-semibold">Help improve fabPlane</h1>
         <p className="mt-3 text-sm text-muted">
-          Share your sessions with us so we can see where Fabdesk gets stuck and make it better. This
+          Share your sessions with us so we can see where fabPlane gets stuck and make it better. This
           includes your conversations and agent activity, past ones too, and can include your prompts
           and project files. We keep it private.
         </p>
@@ -28,7 +28,7 @@ export function FirstInstallPrivacy() {
             onChange={(event) => setShareUsage(event.target.checked)}
             className="mt-1"
           />
-          <span>Share usage data to help improve Fabdesk</span>
+          <span>Share usage data to help improve fabPlane</span>
         </label>
         <p className="mt-3 text-xs text-muted">
           You can turn this off anytime in Settings → Privacy. Turning it off stops future sharing; it

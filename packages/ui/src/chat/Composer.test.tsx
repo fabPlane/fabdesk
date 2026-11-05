@@ -4,13 +4,13 @@ import { QueryClient } from "@tanstack/react-query";
 import { Settings, type Thread } from "@fabdesk/protocol";
 import { CoreClient, CoreProvider, nullHost } from "@fabdesk/client-core";
 import { Composer } from "./Composer";
-import { useUiStore } from "../stores/ui";
+import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { useAppActions, type AppActions } from "../app/useAppActions";
 
 const client = new CoreClient({ baseUrl: "http://test.invalid", token: "test" });
 const settings = Settings.parse({ defaultAgent: "codex", agents: { codex: { model: "gpt-6-astra" } } });
 
-function renderComposer(projectId: string | null, thread: Thread | null = null, loadingThread = false, withSettings = true, effort?: string | null, levels?: string[]) {
+function renderComposer(projectId: string | null, thread: Thread | null = null, loadingThread = false, withSettings = true, effort?: string | null, levels?: string[], startMode = false) {
   // Zustand's server renderer reads its initial snapshot, rather than the live browser state.
   const initial = useUiStore.getInitialState();
   const previous = { ...initial };
@@ -22,10 +22,10 @@ function renderComposer(projectId: string | null, thread: Thread | null = null, 
     id: "codex", displayName: "Codex", installed: true, models: ["gpt-6-astra"],
     modelEfforts: { "gpt-6-astra": levels },
   }] });
-  Object.assign(initial, { activeProjectId: projectId, drafts: { [thread?.id ?? "__new__"]: "Build a board" } });
+  Object.assign(initial, { activeProjectId: projectId, drafts: { [thread?.id ?? newChatDraftKey(projectId)]: "Build a board" } });
   try {
     return renderToStaticMarkup(<CoreProvider client={client} host={nullHost} queryClient={qc}>
-      <Composer thread={thread} loadingThread={loadingThread} onCreateThread={async () => { throw new Error("Rendering must not create a chat"); }} />
+      <Composer startMode={startMode} thread={thread} loadingThread={loadingThread} onCreateThread={async () => { throw new Error("Rendering must not create a chat"); }} />
     </CoreProvider>);
   } finally {
     Object.assign(initial, previous);
@@ -85,4 +85,10 @@ test("the model label shows the effective effort, including Auto and unsupported
   expect(label(null, ["low", "high"])).toContain(">GPT-6 Astra Auto</span>");
   expect(label("ultra", ["low", "high"])).toContain(">GPT-6 Astra Auto</span>");
   expect(label("high", [])).toContain(">GPT-6 Astra</span>");
+});
+
+test("Home can begin an idea draft without requiring a project picker", () => {
+  const html = renderComposer(null, null, false, true, undefined, undefined, true);
+  expect(sendButton(html)).not.toContain(' disabled=""');
+  expect(html).not.toContain("Choose project");
 });

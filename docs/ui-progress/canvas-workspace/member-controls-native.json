@@ -1,0 +1,95 @@
+{
+  "projectId": "prj_mvqyacun3e60075ae8",
+  "sourceId": "io",
+  "physicalInstancesSharingSource": 2,
+  "nativeKeyboardProposalOnly": true,
+  "nativeAppliedR1X": 105.1,
+  "originalR1X": 105,
+  "nativePhysicalResizeProposalOnly": true,
+  "originalSizeMm": [
+    15,
+    15
+  ],
+  "savedSizeMm": [
+    20,
+    15
+  ],
+  "edgeIdentityAndOriginKept": true,
+  "resizeKeptPlacedPartsPadsCopper": true,
+  "otherSourceAndParentBytesUnchangedDuringEdits": true,
+  "bothSharedInstancePreviewsUpdated": true,
+  "otherSourceUiR1XBeforeProposal": 105,
+  "otherSourceInitialSelectionEmpty": true,
+  "staleMembershipDisabledApply": true,
+  "unsavedFieldsKeptOnStaleMembership": true,
+  "sourceSpecificAskDraftNoSend": true,
+  "memberChecksRootShortcutRemoved": true,
+  "rootCommentsNotReused": true,
+  "compactLayout": {
+    "width": 960,
+    "height": 720,
+    "overflow": false,
+    "popup": {
+      "x": 451.703125,
+      "y": 316,
+      "width": 390,
+      "height": 391.5,
+      "top": 316,
+      "right": 841.703125,
+      "bottom": 707.5,
+      "left": 451.703125
+    },
+    "target": {
+      "x": 399.421875,
+      "y": 366.046875,
+      "width": 28,
+      "height": 28,
+      "top": 366.046875,
+      "right": 427.421875,
+      "bottom": 394.046875,
+      "left": 399.421875
+    }
+  },
+  "popupFollowedFinalSvgFitAfterResize": true,
+  "allFixtureBytesRestored": true,
+  "nativeRestoredGeometryAndPartPositionVerified": true,
+  "restoredHashes": {
+    "fabdesk.json": "a0527b15fead3e9b4b0c30e3cf741d3edfc6798e093091ebf288711054ddb9a4",
+    "fabplane.assembly.json": "ffe6b12399cec942549f829855f4d6e532a18db08d843a44f6c2624f7dd4885c",
+    "boards/io/board.kicad_pcb": "34f1e8d8592b9fce278642e7ab15b94cf53631740cccf25c439a1311e7bc77c6",
+    "boards/io/renders/pcb.svg": "c3daabe16c421794a8c86fffa74ed5d8308407aed8c439b65d166adc386d6dbb",
+    "boards/io/renders/pcb.svg.revision.json": "d013dcce6655c9a0e570fab0881b107e6dc529e724666d8c28331f7f9e6a771e",
+    "boards/carrier/board.kicad_pcb": "406b12f63e656f59751b39fe9e7f346cb2c9beb65eb16cdc4400ab20fe471d99",
+    "boards/carrier/renders/pcb.svg": "1dc8e9220bdcf210e6968f4332792ecc1f28955525de2123d27ac1191c5207ab",
+    "boards/carrier/renders/pcb.svg.revision.json": "a91c67ab69d30119e0e3952d344afdf9e5c9688872adcdaf23b6ae644322b51c"
+  },
+  "standardTests": {
+    "pass": 2127,
+    "skip": 30,
+    "fail": 0
+  },
+  "rootTypecheck": "passed",
+  "finalUiTests": 223,
+  "finalUiTypecheck": "passed",
+  "helperTests": {
+    "pass": 16,
+    "assertions": 61
+  },
+  "limitations": [
+    "Native replacement, undo/recovery UX, member checks/comments/schematic/3D/CAD still pending",
+    "No electrical or mechanical compatibility claim",
+    "No real VAIO source was edited"
+  ],
+  "finalRuntimeVaioReadOnlyInspection": {
+    "sourceId": "io",
+    "reference": "F1",
+    "value": "1.5A",
+    "x": 88.5,
+    "y": 56.5,
+    "rotation": 180,
+    "partsOnBoard": 22,
+    "applyDisabledWithoutProposal": true,
+    "allImportedSourceAndPreviewHashesUnchanged": true,
+    "allSecondaryToolsClosedAfterInspection": true
+  }
+}

@@ -2,7 +2,12 @@ import { expect, test } from "bun:test";
 import { readFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copperBoard, netFacts, quality, qualityText, recordRemoval, referenceFacts, consumeReference } from "../src/routing-quality";
+import { copperBoard, netFacts, quality, qualityText, recordRemoval, referenceFacts, consumeReference, routingCopperLayers } from "../src/routing-quality";
+
+test("routing playback layers come from the native board instead of parent project defaults", () => {
+  expect(routingCopperLayers('(kicad_pcb (layers (0 "F.Cu" signal) (31 "B.Cu" signal) (2 "In2.Cu" power) (1 "In1.Cu" signal) (44 "Edge.Cuts" user)))')).toEqual(["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]);
+  expect(() => routingCopperLayers('(kicad_pcb (layers (0 "F.Cu" signal)))')).toThrow("could not be verified");
+});
 
 test("FFC seed and routed candidate match independent accept_lib fixtures", async () => {
   const root = join(import.meta.dir,"fixtures/routing-quality");

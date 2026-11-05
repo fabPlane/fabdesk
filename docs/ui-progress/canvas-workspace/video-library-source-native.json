@@ -1,0 +1,19 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "sourceChange": {
+    "videoCard": "PCB changed since the video’s board model",
+    "reviewCount": 3,
+    "contextualPlay": true,
+    "previewWarning": true,
+    "nativePlayback": true,
+    "closeRestoresPlayFocus": true
+  },
+  "restored": {
+    "videoCard": "Recorded model inputs unchanged",
+    "reviewBadgeRemoved": true,
+    "baselineFiles": 25,
+    "allExact": true,
+    "sourceFault": "RESTORED"
+  },
+  "limitation": "Escape from native media controls was consumed; visible Close works and restores Play focus. No new generation or downloads."
+}

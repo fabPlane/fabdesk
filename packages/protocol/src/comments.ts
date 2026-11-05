@@ -31,6 +31,7 @@ export type CommentArea = z.infer<typeof CommentArea>;
 export const CommentAnchor = z
   .object({
     view: CommentView,
+    coordinateSystem: z.enum(["kicad-pcb-mm", "svg"]).optional(),
     x: z.number().finite().optional(),
     y: z.number().finite().optional(),
     xMm: z.number().finite().optional(),
@@ -108,6 +109,15 @@ export function emptyBoardCommentsFile(): BoardCommentsFile {
   return { contract: { ...BOARD_COMMENTS_CONTRACT }, comments: [] };
 }
 
+/** Legacy PCB pins copied SVG x/y into xMm/yMm without recording the origin. */
+export function commentMillimetrePoint(anchor: CommentAnchor): { x: number; y: number } | null {
+  if (anchor.coordinateSystem === "svg") return null;
+  if (anchor.view === "pcb" && anchor.coordinateSystem !== "kicad-pcb-mm" && (anchor.x !== undefined || anchor.y !== undefined)) return null;
+  if (anchor.xMm !== undefined && anchor.yMm !== undefined) return { x: anchor.xMm, y: anchor.yMm };
+  if (anchor.coordinateSystem === "kicad-pcb-mm" && anchor.x !== undefined && anchor.y !== undefined) return { x: anchor.x, y: anchor.y };
+  return null;
+}
+
 /** Short label like `U12 · pad 1 · SPI.CS` or `pcb · (12.4, 8.0)`. */
 export function commentAnchorLabel(anchor: CommentAnchor): string {
   const parts: string[] = [];
@@ -121,10 +131,10 @@ export function commentAnchorLabel(anchor: CommentAnchor): string {
     );
   }
   if (parts.length === 0) {
-    if (anchor.xMm !== undefined && anchor.yMm !== undefined)
-      parts.push(`(${fmt(anchor.xMm)}, ${fmt(anchor.yMm)}) mm`);
+    const native = commentMillimetrePoint(anchor);
+    if (native) parts.push(`(${fmt(native.x)}, ${fmt(native.y)}) mm`);
     else if (anchor.x !== undefined && anchor.y !== undefined)
-      parts.push(`(${fmt(anchor.x)}, ${fmt(anchor.y)})`);
+      parts.push(`(${fmt(anchor.x)}, ${fmt(anchor.y)})${anchor.view === "pcb" ? " drawing units" : ""}`);
   }
   return parts.length ? parts.join(" · ") : anchor.view;
 }
@@ -150,8 +160,10 @@ export function buildCommentAskPrompt(comment: BoardComment): string {
   ];
   if (comment.anchor.ref) lines.push(`Reference: ${comment.anchor.ref}`);
   if (comment.anchor.net) lines.push(`Net: ${comment.anchor.net}`);
-  if (comment.anchor.xMm !== undefined && comment.anchor.yMm !== undefined)
-    lines.push(`Near (mm): ${comment.anchor.xMm}, ${comment.anchor.yMm}`);
+  const native = commentMillimetrePoint(comment.anchor);
+  if (native) lines.push(`Near (mm): ${native.x}, ${native.y}`);
+  else if (comment.anchor.view === "pcb" && (comment.anchor.x !== undefined || comment.anchor.y !== undefined))
+    lines.push("The drawing origin is unverified. Do not use these drawing coordinates as native PCB millimetres. Locate the reference/net or ask the user to re-pin this comment on an updated preview.");
   return lines.join("\n");
 }
 

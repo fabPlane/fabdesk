@@ -1,0 +1,22 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "before": {
+    "readyState": 4,
+    "error": null,
+    "currentTime": 5.182284,
+    "duration": 6,
+    "paused": false,
+    "loop": true
+  },
+  "after": {
+    "readyState": 4,
+    "error": null,
+    "currentTime": 0,
+    "duration": 6,
+    "paused": true,
+    "loop": true
+  },
+  "differentSourceUrl": true,
+  "scope": "Actual byte change: original MP4 plus harmless trailing newline. No new rendered scene or generation job.",
+  "artifactFault": "RESTORED; all 25 baseline file hashes exact"
+}

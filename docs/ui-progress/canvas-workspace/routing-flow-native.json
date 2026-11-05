@@ -1,0 +1,50 @@
+{
+  "scope": "Routing task UI reuses existing router jobs, frame painter and durable run APIs",
+  "checks": [
+    {
+      "fixture": "root",
+      "checkedFiles": 14,
+      "changed": []
+    },
+    {
+      "fixture": "assembly",
+      "checkedFiles": 8,
+      "changed": []
+    },
+    {
+      "fixture": "vaio",
+      "checkedFiles": 16,
+      "changed": []
+    }
+  ],
+  "studyPriorFiles": {
+    "count": 18,
+    "changed": []
+  },
+  "actualRun": {
+    "id": "run_mvrqc7by6euqy6",
+    "projectId": "prj_mvrlt1yx802c210b69",
+    "status": "failed",
+    "router": "fab_router",
+    "error": "FabPlane PCB bridge 400 on /sessions/b28915a1e0a3/route: fab-router unavailable: fab_router unavailable from @fabplane/fab-router: Cannot find package '@fabplane/fab-router' imported from /$bunfs/root/fp-pcb-bridge; install the router or set FAB_ROUTER_MODULE"
+  },
+  "nativeWalkthrough": [
+    "961x721 saved-board reference and router setup; Manage routers opened existing Routers settings, closed without settings change",
+    "Actual private-study routing attempt failed because installed bridge lacks @fabplane/fab-router; exact error retained under Failure details",
+    "Recorded failed run shows static geometry only, with playback disabled because no routing frames were produced",
+    "New run reveals setup; Escape closes and returns focus; layers/details disclose and close; exact failure details disclose and close",
+    "Other root project had no inherited run; switching back restored owning study failed run",
+    "VAIO canvas stays on the owned member workspace rather than exposing root routing; classic task entry verified source guard",
+    "Reference-only project remains fresh start in canvas; classic routing entry verified disabled Route board with saved-PCB prerequisite; canvas layout restored"
+  ],
+  "validation": {
+    "uiTypecheck": "PASS /tmp/canvas-routing-flow-verified-types.log",
+    "uiTests": "225 PASS 0 FAIL /tmp/canvas-routing-flow-verified-tests.log"
+  },
+  "limitations": [
+    "No successful router/playback frame sequence in this environment",
+    "Exact-run cancel wired to existing route_cancel, not exercised against an active worker in this pass",
+    "Background foreign-run recovery is guarded in code; no second concurrent routing worker launched",
+    "Study run diagnostics under .fabdesk/runs and durable failed-run record intentionally retained; canonical PCB and all18priorstudyfiles unchanged"
+  ]
+}

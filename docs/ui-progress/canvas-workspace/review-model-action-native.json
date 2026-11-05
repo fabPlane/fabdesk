@@ -1,0 +1,26 @@
+{
+  "scope": "Review updates existing root board model action",
+  "currentSource": "Open model navigates to existing 3D model; no export job",
+  "changedSource": "Owned newline-only PCB fault showed PCB source changed and Update model; update was not clicked",
+  "restoration": "Guard restored exact original PCB; UI automatically returned to Open model",
+  "preservation": {
+    "protectedFiles": 48,
+    "changedFiles": [],
+    "faultStatus": "RESTORED"
+  },
+  "validation": {
+    "uiTypecheck": "PASS /tmp/canvas-review-model-action-types.log",
+    "uiTests": "229 pass / 0 fail / 874 assertions"
+  },
+  "limitations": [
+    "External component models and physical fit remain unverified",
+    "No generation or model update ran",
+    "Root-only existing workflow; Mechanical unchanged"
+  ],
+  "screenshots": [
+    "372-review-current-model-open-action.png",
+    "373-review-opens-saved-model.png",
+    "374-review-changed-source-update-model.png",
+    "375-review-restored-source-open-model.png"
+  ]
+}

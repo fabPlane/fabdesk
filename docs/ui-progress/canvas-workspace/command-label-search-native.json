@@ -1,0 +1,16 @@
+{
+  "before": "Native browse projects query returned No results despite visible Browse projects & conversations action",
+  "after": {
+    "browse projects": "Finds action; Return opens Projects and conversations drawer; closed using Close navigation",
+    "open sketch pad": "Finds action; Return opens existing Sketch or image tool; closed without edits or Save",
+    "switch canvas": "Finds Switch canvas / conversation action; dismissed without switching"
+  },
+  "screenshot": "408-command-search-visible-project-label.png",
+  "validation": "UI typecheck PASS /tmp/canvas-command-label-ui-types.log",
+  "limits": [
+    "Dashboard alias reviewed/typechecked only; no external dashboard opened",
+    "No new broad-suite run for label-only changes",
+    "No source edits or agent Send; no existing sketch content altered"
+  ],
+  "finalState": "app26 quiet VAIO Overview, Light, 1440x870"
+}

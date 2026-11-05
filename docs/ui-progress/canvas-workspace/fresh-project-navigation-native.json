@@ -1,0 +1,31 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "name": "Canvas navigation \u2014 fresh-start study",
+  "sketchOpen": true,
+  "viewport": {
+    "href": "http://localhost:5173/",
+    "title": "fabPlane",
+    "width": 1440,
+    "height": 870,
+    "dpr": 2,
+    "composerMounted": true
+  },
+  "createdThroughNativeUI": true,
+  "sentMessages": false,
+  "path": "/Users/amliomnie/Documents/Codex/2026-10-27/https-github-com-tensorfleet-placement-lab/work/sketch-first-projects/canvas-navigation-fresh-start-study",
+  "filesAfterSketchOpenClose": [
+    ".gitignore",
+    "fabdesk.json"
+  ],
+  "menuRecentLimit": 5,
+  "allExistingProjectsAvailableInBrowser": 19,
+  "nativeFlow": [
+    "Project menu New project \u2192 native create dialog \u2192 Create project",
+    "Fresh start has no other workspace tools open",
+    "Sketch or image \u2192 Draw or open a sketch \u2192 Import drawing button visible",
+    "Close sketch returns focus to Sketch or image",
+    "Renderer reload restores the same fresh project and quiet start",
+    "Recent-project VAIO selection restores I/O board workspace with assistant closed"
+  ],
+  "savedSketch": false
+}

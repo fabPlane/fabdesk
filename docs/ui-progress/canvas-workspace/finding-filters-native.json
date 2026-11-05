@@ -1,0 +1,72 @@
+{
+  "baseImplementation": "6deccfe",
+  "projectId": "prj_mvr2ofe307592e4a2e",
+  "reportSha256": "c7cf61a0b13a6f6256a6e0e701a74f6a8b98de38804e35dead219956e9dc00e9",
+  "nativeChecks": {
+    "warningsFilter": "4of90",
+    "ruleAndAffectedNetSearch": "hole_to_hole VBUS_5V ->4of90",
+    "noMatch": "0of90, explicit filtered-empty explanation",
+    "clearReturnsAllAndFocusesSearch": true,
+    "filteredOriginalRowIndex": 86,
+    "actualWarning": "hole_to_hole",
+    "firstItem": {
+      "description": "Via [VBUS_5V] on F.Cu - B.Cu",
+      "point": {
+        "x": 80.25,
+        "y": 75.45
+      }
+    },
+    "secondItem": {
+      "description": "Via [GND] on F.Cu - B.Cu",
+      "point": {
+        "x": 79.75,
+        "y": 75.45
+      }
+    },
+    "showPcbPointVerified": true,
+    "backToChecksRestoresExactDuplicateRowDetailsAndFocus": true,
+    "sourceChangeCarrierThenIoResetsFilter": "90of90,emptyquery",
+    "filtersDoNotPersistAcrossTaskUnmount": true,
+    "compact960x720Fits": true,
+    "restored1440x870": true,
+    "noNewAgentMessageOrNativeRun": true
+  },
+  "protectedHashes": {
+    "fabplane.assembly.json": "1dac5bb4e85c2cad241039b813069ad97fefcf65602a03e664d4ca85c7599002",
+    "boards/carrier/board.kicad_pcb": "2b1eaa1217c7b4d407f98ccbe5950f1861bec380a3f890b99e803fe2703a00ba",
+    "boards/carrier/renders/pcb.svg": "3ddb718e7f2314a3c29b183a76e765f077c1d2aa7b74fdf32432b75af429cd02",
+    "boards/carrier/renders/pcb.svg.revision.json": "94bed1d29b353964e31c8578e9ddec50eec9dcec4c3d9ea6531dc157962861f4",
+    "boards/lcd/board.kicad_pcb": "2c4ad5850ad3c5aa3003b52681b9efa6fe05064146077ef75c2c82f58c709807",
+    "boards/lcd/renders/pcb.svg": "f441ad93fc79cf691d3f47dcc68c11e4339489514be1d931a8a72896aaf77180",
+    "boards/lcd/renders/pcb.svg.revision.json": "49f33e04197f28130d1bc9da6fc2893ae817782ed352031a14e158821d4c23ea",
+    "boards/io/board.kicad_pcb": "f4e8b6f53313955dcec724cf5cf8853d9b0f965af404e6a9c1b006033b2ab25d",
+    "boards/io/renders/pcb.svg": "c79ce84df77d7d9673eaa2b73c4b048b2be59c80514f13ddc52658b460a25c16",
+    "boards/io/renders/pcb.svg.revision.json": "dc1dc15328dd6bbe358d39916daa7402da0025b181f23d844fe17ed125c53541",
+    "boards/rh/board.kicad_pcb": "021719a3e0d64b7aaa3171b01981fcd935d8c932c0e8d399b70730f19f956aa8",
+    "boards/rh/renders/pcb.svg": "9126bbfc05c15c11975c9651fb210b4c490e6fa5e32e7c0bfaac7f78e69ae2c5",
+    "boards/rh/renders/pcb.svg.revision.json": "a4a2bc13ad0459f2bf78637ea4c8946c31a91ae161cead61523deede9373dd12",
+    "boards/battery/board.kicad_pcb": "32307f45f9775c132a68d3ebff51b7215f8d775b5890c66e79ba26756d7aafa7",
+    "boards/battery/renders/pcb.svg": "8b8cae23c2cf978c00afb45f9f840b896ef20e30d6bd13ce027aef29dc44a149",
+    "boards/battery/renders/pcb.svg.revision.json": "490ddead219727d44e1115929ddf30b11b5567a92149a13c5f5bbc090d3fb677"
+  },
+  "validation": {
+    "clientTypecheck": "PASS /tmp/canvas-finding-filter-client-types.log",
+    "uiTypecheck": "PASS /tmp/canvas-finding-filter-ui-types.log",
+    "focused": "9passed/53assertions /tmp/canvas-finding-filter-focused.log",
+    "clientTests": "316passed/1522assertions /tmp/canvas-finding-filter-client-tests.log",
+    "uiTests": "231passed/901assertions /tmp/canvas-finding-filter-ui-tests.log",
+    "priorRoot": "dd9fa35 roottypes/full2262passed36skipped0failed; not rerun yet for these shared/UI changes"
+  },
+  "screenshots": {
+    "447-vaio-drc-warnings-filter.png": "finding-filters-warnings.png",
+    "448-filtered-warning-correct-pcb-location.png": "finding-filters-pcb-location.png",
+    "449-filtered-duplicate-warning-exact-return.png": "finding-filters-exact-return.png",
+    "450-finding-search-no-match-recovery.png": "finding-filters-no-match.png",
+    "451-finding-search-compact-results.png": "finding-filters-compact.png"
+  },
+  "limits": [
+    "This searches saved reports; it does not rerun or fix checks.",
+    "The retained report still has86errors/4warnings and allengineering coverage limits remain.",
+    "Exact return indexes require the same report fingerprint, source/declaration ownership and item coordinates; legacy ambiguous captures remain rejected."
+  ]
+}

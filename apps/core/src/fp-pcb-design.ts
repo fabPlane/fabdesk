@@ -4,6 +4,9 @@
  * through the typed client on the project's session. Positions come back in millimetres; the
  * client speaks nanometres.
  */
+import { assertNativeBoardOwnership } from "./assembly-board-binding";
+import { resizeNativeOutlineShapes, nativeGroupLocksAny } from "./pcb-outline-resize";
+import { createHash } from "node:crypto";
 import { resolveSchematicSheet } from "./schematic-sheet";
 import {
   assertConsistentSymbolMetadata,
@@ -846,7 +849,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   };
 
   const schematicEdit = async (projectDir: string, edit: NativeSchematicEdit) => {
-    const { schematic, session } = await deps.sessions.ensureProject(projectDir);
+    // Existing embedded symbols, text, wires and labels need no library-table rewrite.
+    // Register bundled libraries only when resolving newly added library symbols.
+    const { schematic, session } = await deps.sessions.ensureProject(projectDir, {
+      registerLibraries: (edit.symbols?.length ?? 0) > 0,
+    });
     const hierarchy = await schematic.hierarchy();
     const { selected: selectedEntry, flat } = resolveSchematicSheet(hierarchy, edit.sheet);
     const root = schematic.sheet(selectedEntry.path, selectedEntry);
@@ -1318,7 +1325,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     if (save && createdSymbols.length) await deps.sessions.restart(projectDir);
     const resulting =
       save && createdSymbols.length
-        ? (await deps.sessions.ensureProject(projectDir)).schematic
+        ? (await deps.sessions.ensureProject(projectDir, { registerLibraries: false })).schematic
         : schematic;
     const afterItems = await resulting.sheet(selectedEntry.path, selectedEntry).getAllItems();
     const afterById = new Map(afterItems.map((item) => [item.id, signature(item)]));
@@ -1442,7 +1449,18 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     projectDir: string,
     pointsMm: Array<{ x: number; y: number }>,
     replace: boolean,
+    options: { expectedSourceSha256?: string } = {},
   ) => {
+    const assertExpectedSource = async () => {
+      if (!options.expectedSourceSha256) return;
+      const bytes = await readFile(join(projectDir, BOARD_PCB)).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") throw new NativeRevisionConflict("The saved PCB is missing. Reopen the project before resizing its outline.");
+        throw error;
+      });
+      if (createHash("sha256").update(bytes).digest("hex") !== options.expectedSourceSha256)
+        throw new NativeRevisionConflict("The PCB changed since this outline was inspected. Refresh the board before resizing it.");
+    };
+    await assertExpectedSource();
     const { board } = await deps.sessions.ensureProject(projectDir);
     const property = "fabdesk.generated-outline";
     const value = "native-atomic-edit";
@@ -1461,10 +1479,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       return edge;
     });
     const existing = (await board.getShapes()).filter(
-      (shape) =>
-        shape.proto.layer === BoardLayer.BL_Edge_Cuts &&
-        shape.proto.shape?.geometry.case === "segment",
+      (shape) => shape.proto.layer === BoardLayer.BL_Edge_Cuts,
     );
+    // Curved boundaries and cutouts cannot be compared or replaced by the segment-only tool.
+    if (existing.some((edge) => edge.proto.shape?.geometry.case !== "segment"))
+      throw new ToolError("This board has curved or non-segment Edge.Cuts geometry. Review and edit its boundary in KiCad.", "precondition");
     const generated = existing.filter((edge) => edge.customProperties[property] === value);
     const segmentKey = (a: { x: number; y: number }, b: { x: number; y: number }) => {
       const first = `${a.x},${a.y}`;
@@ -1492,8 +1511,12 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         })
         .sort();
     const matches =
-      JSON.stringify(keys(generated.length ? generated : existing)) ===
+      JSON.stringify(keys(existing)) ===
       JSON.stringify(keys(newEdges));
+    if ((await board.modified()) !== false)
+      throw new NativeRevisionConflict("Save the open PCB before resizing its outline.");
+    await deps.sessions.assertSchematicSaved(projectDir);
+    await assertExpectedSource();
     if (matches) {
       return {
         created: 0,
@@ -1502,14 +1525,17 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         saved: true,
       };
     }
-    if (existing.length && (!generated.length || !replace))
+    if (existing.length && (generated.length !== existing.length || !replace))
       throw new ToolError(
-        generated.length
-          ? "the requested outline differs from the Fabdesk-owned outline; preview the board and pass replace=true to update it"
+        generated.length === existing.length
+          ? "the requested outline differs from the fabPlane-owned outline; review the board and pass replace=true to update it"
           : "the requested outline differs from a human-authored Edge.Cuts boundary; edit it in KiCad or remove it explicitly",
         "precondition",
       );
-    await board.commit("Fabdesk: define native PCB outline", async (tx) => {
+    if (existing.some((edge) => edge.locked))
+      throw new ToolError("The board outline contains locked edges. Unlock them in KiCad before resizing.", "precondition");
+    await assertExpectedSource();
+    await board.commit("fabPlane: define native PCB outline", async (tx) => {
       if (generated.length) await tx.delete(generated);
       await tx.create(newEdges);
     });
@@ -1523,11 +1549,54 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     };
   };
 
+  const resizeBoardOutline = async (projectDir: string, request: { edgeIds: string[]; widthMm: number; heightMm: number; expectedSourceSha256: string }) => {
+    const ids = new Set(request.edgeIds);
+    if (![1, 4].includes(request.edgeIds.length) || ids.size !== request.edgeIds.length)
+      throw new ToolError("Inspect and select one rectangle or four unique outline edges.", "invalid_args");
+    if (![request.widthMm, request.heightMm].every(Number.isFinite) || request.widthMm < .000001 || request.heightMm < .000001 || request.widthMm > 1000 || request.heightMm > 1000)
+      throw new ToolError("Outline dimensions must be between 0.000001 and 1000 mm.", "invalid_args");
+    const assertSource = async () => {
+      const bytes = await readFile(join(projectDir, BOARD_PCB)).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") throw new NativeRevisionConflict("The saved PCB is missing. Reopen the project before resizing its outline.");
+        throw error;
+      });
+      if (createHash("sha256").update(bytes).digest("hex") !== request.expectedSourceSha256)
+        throw new NativeRevisionConflict("The PCB changed since this outline was inspected. Reload the outline before resizing.");
+    };
+    await assertSource();
+    const board = await deps.sessions.board(projectDir);
+    const edges = (await board.getShapes()).filter(shape => shape.layerId === BoardLayer.BL_Edge_Cuts);
+    if (edges.length !== ids.size || edges.some(edge => !ids.has(edge.id)))
+      throw new ToolError("The selected IDs do not cover the complete current Edge.Cuts boundary. Reload the outline; complex boundaries and cutouts require KiCad editing.", "precondition");
+    if (nativeGroupLocksAny([...ids], await board.getGroups()))
+      throw new ToolError("The outline belongs to a locked group. Unlock the group in KiCad before resizing.", "precondition");
+    const proposal = resizeNativeOutlineShapes(edges, request.widthMm, request.heightMm);
+    if ((await board.modified()) !== false) throw new NativeRevisionConflict("Save the open PCB before resizing its outline.");
+    await deps.sessions.assertSchematicSaved(projectDir);
+    await assertSource();
+    if (proposal.changed) {
+      await board.commit("fabPlane: resize native PCB outline", async tx => { await tx.update(proposal.updates); });
+      await board.save();
+      await keepNetClass(projectDir);
+    }
+    return { saved: true as const, changed: proposal.changed, edgeIds: edges.map(edge => edge.id), revision: Number((await board.revision()) ?? 0n), bounds: proposal.bounds };
+  };
+
   const placeFootprints = async (
     projectDir: string,
     placements: PcbFootprintEdit[],
-    options: { staleCopper?: "keep" | "remove" } = {},
+    options: { staleCopper?: "keep" | "remove"; expectedSourceSha256?: string } = {},
   ): Promise<PcbPlacementResult> => {
+    const assertExpectedSource = async () => {
+      if (!options.expectedSourceSha256) return;
+      const bytes = await readFile(join(projectDir, BOARD_PCB)).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") throw new NativeRevisionConflict("The saved PCB is missing. Reopen the project before placing parts.");
+        throw error;
+      });
+      if (createHash("sha256").update(bytes).digest("hex") !== options.expectedSourceSha256)
+        throw new NativeRevisionConflict("The PCB changed since this part was inspected. Refresh the part before applying its position.");
+    };
+    await assertExpectedSource();
     const board = await deps.sessions.board(projectDir);
     const footprints = await board.getFootprints();
     const byReference = new Map(footprints.map((footprint) => [footprint.reference, footprint]));
@@ -1575,6 +1644,16 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         return moved ? [placement.reference] : [];
       }),
     );
+    if (geometryReferences.size) {
+      const groups = await board.getGroups();
+      for (const { placement, footprint } of planned) {
+        if (!geometryReferences.has(placement.reference)) continue;
+        if (nativeGroupLocksAny([footprint.id], groups))
+          throw new ToolError(`Footprint ${placement.reference} belongs to a locked group. Unlock the group in KiCad before positioning it.`, "precondition");
+        if (footprint.locked && placement.lock !== false)
+          throw new ToolError(`Footprint ${placement.reference} is locked. Unlock it before positioning it.`, "precondition");
+      }
+    }
     if ((await board.modified()) !== false)
       throw new NativeRevisionConflict(
         "save the open PCB before placing footprints; placement recovery may restart KiCad",
@@ -1600,6 +1679,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         }),
       })),
     );
+    // Recheck after asynchronous preflight; the native save guard covers later external writes.
+    await assertExpectedSource();
     const moved: string[] = [];
     let staleAnalysis: ReturnType<typeof analyzeStaleCopper> = {
       reports: {},
@@ -1609,7 +1690,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     let zoneRefill: { refilled: boolean; error?: string } | undefined;
     let revision = 0;
     try {
-      await board.commit("Fabdesk: place native PCB footprints", async (tx) => {
+      await board.commit("fabPlane: place native PCB footprints", async (tx) => {
         // KiCad's native flip transforms pads, fields, graphics and layers together.
         const toFlip = planned.filter(
           ({ placement, footprint }) =>
@@ -2064,7 +2145,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         ];
       }
       case "components": {
-        return (await board.getFootprints())
+        const [footprints, groups] = await Promise.all([board.getFootprints(), board.getGroups()]);
+        return footprints
           .map((fp) => ({
             ref: fp.reference,
             value: fp.value,
@@ -2074,7 +2156,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
             layer: fp.layerId,
             rotation: fp.orientation,
             flipped: fp.isFlipped,
-            locked: fp.locked,
+            locked: fp.locked || nativeGroupLocksAny([fp.id], groups),
             symbolPath: fp.symbolPath,
           }))
           .filter((r) => keep(r.ref, r.value, r.footprint));
@@ -2195,13 +2277,17 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         const shapeRow = (shape: BoardShape, owner: string) => ({
           id: shape.id,
           owner,
+          locked: shape.locked,
+          toolOwnedOutline: shape.proto.layer === BoardLayer.BL_Edge_Cuts && shape.customProperties["fabdesk.generated-outline"] === "native-atomic-edit",
           kind: shape.kind,
           layer: shape.layerId,
           start: { x: mm(shape.start.x), y: mm(shape.start.y) },
           end: { x: mm(shape.end.x), y: mm(shape.end.y) },
         });
-        if (select === "board_geometry")
-          return (await board.getShapes()).map((shape) => shapeRow(shape, "board"));
+        if (select === "board_geometry") {
+          const [shapes, groups] = await Promise.all([board.getShapes(), board.getGroups()]);
+          return shapes.map(shape => ({ ...shapeRow(shape, "board"), locked: shape.locked || nativeGroupLocksAny([shape.id], groups) }));
+        }
         const footprints = await board.getFootprints();
         return footprints.flatMap((footprint) =>
           footprint.items
@@ -2666,6 +2752,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   const nativeOperation =
     <Args extends unknown[], Result>(operation: (dir: string, ...args: Args) => Promise<Result>) =>
     async (dir: string, ...args: Args): Promise<Result> => {
+      await assertNativeBoardOwnership(dir);
       if (recovering.has(dir))
         throw new NativeRevisionConflict(
           "native project recovery is active; retry after it finishes",
@@ -2712,6 +2799,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     schematicEdit: nativeOperation(schematicEdit),
     syncSchematicToPcb: nativeOperation(syncSchematicToPcb),
     defineBoardOutline: nativeOperation(defineBoardOutline),
+    resizeBoardOutline: nativeOperation(resizeBoardOutline),
     placeFootprints: nativeOperation(placeFootprints),
     editBoardGeometry: nativeOperation(editBoardGeometry),
     inspectBoardGeometry: nativeOperation(inspectBoardGeometry),

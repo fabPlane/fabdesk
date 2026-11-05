@@ -17,6 +17,7 @@ export const pcb_define_outline = defineTool({
     heightMm: z.number().positive().optional(),
     points: z.array(Point).min(3).max(100).optional(),
     replace: z.boolean().default(false),
+    expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Saved PCB hash from pcb_inspect. Reject outline changes when the source has changed."),
   },
   annotations: {
     readOnlyHint: false,
@@ -24,7 +25,7 @@ export const pcb_define_outline = defineTool({
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async ({ widthMm, heightMm, points, replace }, ctx) => {
+  handler: async ({ widthMm, heightMm, points, replace, expectedSourceSha256 }, ctx) => {
     if (!points && !(widthMm && heightMm))
       throw new ToolError("provide points or both widthMm and heightMm", "invalid_args");
     const outline = points ?? [
@@ -34,7 +35,7 @@ export const pcb_define_outline = defineTool({
       { x: 0, y: heightMm! },
     ];
     const project = ctx.requireProject();
-    const result = await ctx.services.design.defineBoardOutline(project.dir, outline, replace);
+    const result = await ctx.services.design.defineBoardOutline(project.dir, outline, replace, expectedSourceSha256 ? { expectedSourceSha256 } : undefined);
     return ok(
       `PCB outline saved at revision ${result.revision}: ${result.created} segments created, ${result.replaced} replaced.`,
       result,
@@ -42,12 +43,32 @@ export const pcb_define_outline = defineTool({
   },
 });
 
+export const pcb_resize_outline = defineTool({
+  name: "pcb_resize_outline",
+  boardScoped: true,
+  toolset: "circuit",
+  title: "Resize native PCB outline",
+  description: "Resize the complete inspected rectangular Edge.Cuts boundary from its existing minimum X/Y corner. Supports one native rectangle or four axis-aligned segments, including imported boards. Updates the same primitive IDs and preserves style/metadata; footprints and copper do not scale. Requires exact inspected edge IDs and saved-source SHA. Locked, curved, partial, disconnected or multi-boundary outlines fail without a write.",
+  inputSchema: {
+    edgeIds: z.array(z.string().min(1).max(100)).min(1).max(4).refine(ids => [1, 4].includes(ids.length) && new Set(ids).size === ids.length, "Select one or four unique outline edge IDs"),
+    widthMm: z.number().finite().min(.000001).max(1000),
+    heightMm: z.number().finite().min(.000001).max(1000),
+    expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
+  handler: async (request, ctx) => {
+    const result = await ctx.services.design.resizeBoardOutline(ctx.requireProject().dir, request);
+    return ok(`Saved native outline ${request.widthMm} × ${request.heightMm} mm at (${result.bounds.minX}, ${result.bounds.minY}) mm. Existing edge IDs, footprints and copper were preserved; review clearances and mechanical fit.`, result);
+  },
+});
+
 export const pcb_place = defineTool({
   name: "pcb_place",
+  boardScoped: true,
   toolset: "circuit",
   title: "Place PCB footprints",
   description:
-    "Place native PCB footprints and adjust their silkscreen reference fields at explicit millimetre coordinates. Reports routed copper made stale or shorted by a transform. Existing embedded geometry is preserved; the source footprint library is not required. Unknown references fail without a partial placement. Save any open PCB and schematic first: placement recovery may restart KiCad.",
+    "Place native PCB footprints and adjust their silkscreen reference fields at explicit millimetre coordinates. Reports routed copper made stale or shorted by a transform. Locked groups block geometry edits; locked footprints require an explicit lock=false to unlock. Existing embedded geometry is preserved; the source footprint library is not required. Unknown references fail without a partial placement. Save any open PCB and schematic first: placement recovery may restart KiCad.",
   inputSchema: {
     placements: z
       .array(
@@ -66,6 +87,7 @@ export const pcb_place = defineTool({
       )
       .min(1)
       .max(500),
+    expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Saved PCB hash from pcb_inspect. Reject the edit if the board changed since inspection."),
     staleCopper: z
       .enum(["keep", "remove"])
       .default("keep")
@@ -79,11 +101,13 @@ export const pcb_place = defineTool({
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async ({ placements, staleCopper }, ctx) => {
+  handler: async ({ placements, staleCopper, expectedSourceSha256 }, ctx) => {
+    if (ctx.board && !expectedSourceSha256) throw new ToolError("An assembly placement requires expectedSourceSha256 from a fresh inspection of the selected source.", "precondition");
     const project = ctx.requireProject();
     const copperBefore = staleCopper === "remove" ? await readCopper(project.dir) : null;
     const result = await ctx.services.design.placeFootprints(project.dir, placements, {
       staleCopper,
+      ...(expectedSourceSha256 ? { expectedSourceSha256 } : {}),
     });
     const removedFacts =
       copperBefore && result.removedCopper
@@ -117,4 +141,4 @@ export const pcb_place = defineTool({
   },
 });
 
-export const pcbTools = [pcb_define_outline, pcb_place];
+export const pcbTools = [pcb_define_outline, pcb_resize_outline, pcb_place];

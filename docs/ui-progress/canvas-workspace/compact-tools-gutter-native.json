@@ -1,0 +1,17 @@
+{
+  "projectId": "prj_mvrlt1yx802c210b69",
+  "unchangedStableOriginalFiles": 19,
+  "excludedEphemeralLock": true,
+  "viewport": "960x720",
+  "gutterWidth": 280,
+  "popupWidth": 244,
+  "gap": 24,
+  "nativeFlows": [
+    "R1 actual 106/100/0 position and footprint fields readable",
+    "Quick +90 rotation proposal then Discard; Apply disabled and dialog focus restored",
+    "Width15\u219218 proposal then Discard15; Apply disabled and dialog focus restored",
+    "Escape restores trigger focus",
+    "1440x870 resize restores preferred390px outline tools"
+  ],
+  "sourceEdits": false
+}

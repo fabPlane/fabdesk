@@ -1,7 +1,10 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { useCoreClient, useProject } from "@fabdesk/client-core";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCoreClient, useProject, useBoardSources, sha256Blob, captureAssemblySourceSelection } from "@fabdesk/client-core";
 import {
-  PLACEMENT_DRAFT_PATH,
+  createPlacementWorkingCopy, type PlacementCandidate, placementSourceTarget, placementSourceKey, placementSourceDraftPath, encodePlacementDraft, decodePlacementDraft,
+  type PlacementSource,
   MAX_PLACEMENT_BYTES,
   clone,
   placementBoardFiles,
@@ -33,13 +36,17 @@ import {
   swapPlacement,
 } from "@fabdesk/client-core/placement";
 import { useUiStore } from "../../stores/ui";
-import { Button, Dialog, EmptyState, Spinner } from "../../components/ui";
+import { Button, Dialog, EmptyState, Input, Select, Spinner } from "../../components/ui";
 import { Icon } from "../../components/Icon";
 import { PlacementCanvas } from "./PlacementCanvas";
 import { placementJob } from "./placement-jobs";
 import type { PlacementJob, PlacementResult } from "./placement.worker";
 import "./placement.css";
 import { FootprintLibrary, FootprintPicture, type FootprintChoice } from "./FootprintLibrary";
+import { WorkspaceMenu } from "../../layout/WorkspaceMenu";
+import { CanvasToolButton } from "../../components/CanvasToolButton";
+import { askAboutSurface, useAssistantSurface } from "../../chat/useAssistantSurface";
+import { takePlacementEntry } from "./placement-entry";
 import { PlacementEnclosure } from "./PlacementEnclosure";
 
 const fmt = (n: number) => Number(n.toFixed(2)).toString();
@@ -110,22 +117,50 @@ function NumberField({
   );
 }
 
-export function PlacementTab() {
+export function PlacementTab({ canvas = false }: { canvas?: boolean }) {
   const projectId = useUiStore((s) => s.activeProjectId);
+  const sources = useBoardSources(projectId);
+  const client = useCoreClient();
+  const savedSelection = useUiStore(state => projectId ? state.assemblyBoardByProject[projectId] : undefined);
+  const target = placementSourceTarget(sources.data, savedSelection);
+  const sourcePath = target?.path;
+  const baseline = useQuery({
+    queryKey: ["placement-baseline", client.baseUrl, projectId, sourcePath, target?.sourceId],
+    enabled: !!projectId && !!sourcePath && !sources.isFetching && !sources.isError,
+    queryFn: async () => {
+      const bytes = await client.readFileBlob(projectId!, sourcePath!);
+      return { projectId: projectId!, path: sourcePath!, sha256: await sha256Blob(bytes), ...(target?.sourceId ? { sourceId: target.sourceId } : {}) };
+    },
+  });
+  // Recheck bytes without replacing the query identity on every inspection timestamp.
+  // A file-list refresh after Save/Export must not unmount the editor and lose its result.
+  useEffect(() => { if (projectId && sourcePath && !sources.isFetching && !sources.isError) void baseline.refetch(); }, [projectId, sourcePath, target?.sourceId, sources.data?.observedAt, sources.isFetching, sources.isError]);
   if (!projectId)
     return (
       <EmptyState title="Arrange your board">
         <span>Choose a project to start placing components.</span>
       </EmptyState>
     );
-  return <PlacementWorkspace key={projectId} projectId={projectId} />;
+  if (sources.isPending) return <EmptyState title="Checking board source"><Spinner /></EmptyState>;
+  if (sources.isError || !sourcePath) return <EmptyState title={sources.isError ? "Board source unavailable" : "Choose a board for this draft"} action={<Button size="sm" onClick={() => useUiStore.getState().setWorkspaceArea("overview")}>Choose board in overview</Button>}>
+    <p>Placement uses the selected board’s saved native source. Select an available board before opening its draft.</p>
+  </EmptyState>;
+  if (baseline.isError) return <EmptyState title="Choose a saved PCB first" action={<Button onClick={() => useUiStore.getState().setBoardTab("pcb")}>Back to PCB</Button>}>Placement needs this project’s active native PCB. Open or import it before creating a draft.</EmptyState>;
+  if (!baseline.data) return <EmptyState title="Opening saved PCB"><Spinner /></EmptyState>;
+  return <PlacementWorkspace key={placementSourceKey(client.baseUrl, baseline.data)} projectId={projectId} baseline={baseline.data} canvas={canvas} />;
 }
 
-function PlacementWorkspace({ projectId }: { projectId: string }) {
+function PlacementWorkspace({ projectId, baseline, canvas }: { projectId: string; baseline: PlacementSource; canvas: boolean }) {
   const panelId = useId();
+  const queryClient = useQueryClient();
   const client = useCoreClient(),
     project = useProject(projectId);
-  const cached = useRef(placementDrafts.get(projectId));
+  const scopeKey = placementSourceKey(client.baseUrl, baseline);
+  const recoveryKey = "fabdesk-placement-source:" + scopeKey;
+  const draftPath = placementSourceDraftPath(baseline);
+  const cached = useRef(placementDrafts.get(scopeKey));
+  const [toolbarHost, setToolbarHost] = useState<Element | null>(null);
+  useLayoutEffect(() => { if (canvas) setToolbarHost(document.querySelector("[data-placement-toolbar-slot]")); }, [canvas]);
   const [history, setHistory] = useState<PlacementHistory | null>(cached.current?.history ?? null);
   const [savedRevision, setSavedRevision] = useState(cached.current?.savedRevision ?? -1);
   const [selection, setSelection] = useState<string[]>([]);
@@ -141,9 +176,13 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [inspector, setInspector] = useState<"parts" | "review" | "board">("parts");
+  const [inspector, changeInspector] = useState<"parts" | "review" | "board">("parts");
+  const [inspectorOpen, setInspectorOpen] = useState(!canvas);
+  const inspectorContent = useRef<HTMLDivElement>(null);
+  const setInspector = (tab: "parts" | "review" | "board") => { changeInspector(tab); setInspectorOpen(true); };
+  useEffect(() => { inspectorContent.current?.scrollTo({ top: 0 }); }, [inspector, inspectorOpen]);
   const [side, setSide] = useState("both"),
-    [net, setNet] = useState("off");
+    [net, setNet] = useState("selected");
   const [grid, setGrid] = useState(0.25),
     [push, setPush] = useState(true);
   const [mode, setMode] = useState<"select" | "pan" | "area">("select");
@@ -164,6 +203,10 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
     [zoomPercent, setZoomPercent] = useState(100);
   const issueCursor = useRef(-1);
   const [focus, setFocus] = useState({ ids: [] as string[], nonce: 0 });
+  const [exported, setExported] = useState<PlacementCandidate | null>(cached.current?.candidate ?? null);
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [copyName, setCopyName] = useState("");
   const [exportOpen, setExportOpen] = useState(false),
     [replaceOpen, setReplaceOpen] = useState(false),
     [help, setHelp] = useState(false);
@@ -171,7 +214,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
     [axis, setAxis] = useState("x");
   const [width, setWidth] = useState(30),
     [height, setHeight] = useState(20);
-  const [source, setSource] = useState("");
+  const [source, setSource] = useState(cached.current ? draftPath : baseline.path);
   const input = useRef<HTMLInputElement>(null),
     operation = useRef<AbortController | null>(null),
     initialized = useRef(!!cached.current);
@@ -180,7 +223,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
   const session = preview?.session ?? history?.present;
   const dirty = !!history && history.revision !== savedRevision;
   const blocked = !!busy || !!preview;
-  const files = placementBoardFiles(project.data?.files ?? []);
+  const files = canvas ? (project.data?.files.some(f => f.path === baseline.path) ? [baseline.path] : []) : placementBoardFiles(project.data?.files ?? []);
   const one =
     selection.length === 1 ? session?.parts.find((p) => p.id === selection[0]) : undefined;
   const selectedGroupIds = useMemo(
@@ -188,17 +231,8 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
     [session, selection],
   );
   const groupLocked = !!session?.parts.some((p) => selectedGroupIds.has(p.id) && p.locked);
-  const nets = useMemo(
-    () =>
-      [
-        ...new Set(
-          session?.parts
-            .flatMap((p) => p.pads.map((pad) => pad.net))
-            .filter((n) => n && n !== "0") ?? [],
-        ),
-      ].sort(),
-    [session],
-  );
+  const nets = useMemo(() => [...new Set(analysis.edges.map(edge => edge.name))].sort(), [analysis.edges]);
+  const visibleEdges = analysis.edges.filter(edge => net === "off" ? false : net === "selected" ? selection.includes(edge.a.id) || selection.includes(edge.b.id) : !net || edge.name === net);
   const filtered =
     session?.parts.filter(
       (p) =>
@@ -231,6 +265,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
       setSwap(null);
     }
     setSelection(ids);
+    if (ids.length) setInspector("parts");
   };
   const rotate = () => {
     if (selection.length) change((next) => rotateParts(next, selection));
@@ -243,6 +278,21 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
   };
 
   useEffect(() => {
+    if (!session) return;
+    const entry = takePlacementEntry(projectId, baseline.sourceId);
+    if (!entry) return;
+    if (entry.sourceSha256 && entry.sourceSha256 !== baseline.sha256) {
+      setNotice("The saved PCB changed after selecting that part. Select the footprint again in this draft.");
+      return;
+    }
+    if (entry.tool === "resize") setInspector("board");
+    else {
+      const part = session.parts.find(part => part.ref === entry.ref);
+      if (part) { setSelection([part.id]); setInspector("parts"); setLibrary({ target: part.id }); }
+      else setNotice("That reference is not present in this draft. Choose a component to compare.");
+    }
+  }, [!!session, projectId, baseline.sourceId]);
+  useEffect(() => {
     mounted.current = true;
     installDraftCloseGuard();
     return () => {
@@ -252,23 +302,27 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
     };
   }, []);
   useEffect(() => {
-    if (history) placementDrafts.set(projectId, history, savedRevision);
-  }, [projectId, history, savedRevision]);
+    if (history) placementDrafts.set(scopeKey, history, savedRevision, exported ?? undefined);
+  }, [scopeKey, history, savedRevision, exported]);
   useEffect(() => {
     if (!history) return;
     const version = ++recoveryVersion.current;
+    if (!dirty) {
+      try { localStorage.removeItem(recoveryKey); setRecovery("No unsaved changes"); } catch { setRecovery("Device recovery unavailable"); }
+      return;
+    }
     setRecovery("Saving recovery copy…");
     let queued = false;
     const flush = () => {
       if (queued) return;
       queued = true;
-      const text = JSON.stringify(history.present);
+      const text = encodePlacementDraft(baseline, history.present);
       recoveryQueue.current = recoveryQueue.current
         .catch(() => {})
         .then(async () => {
           if (version !== recoveryVersion.current) return;
           try {
-            await saveAutosave(localStorage, "fabdesk-placement:" + projectId, text);
+            await saveAutosave(localStorage, recoveryKey, text);
             if (mounted.current && version === recoveryVersion.current)
               setRecovery("Recovery copy saved on this device");
           } catch {
@@ -282,15 +336,16 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
       clearTimeout(timer);
       flush();
     };
-  }, [history, projectId]);
+  }, [history, recoveryKey, dirty]);
   useEffect(() => {
     if (!session || !selection.length) {
       setContext({ neighbors: [], gap: null });
       return;
     }
     const c = new AbortController();
+    setContext({ neighbors: [], gap: null });
     void placementJob({ kind: "context", session, ids: selection }, c.signal)
-      .then((r) => setContext(r.context!))
+      .then((r) => { if (!c.signal.aborted) setContext(r.context!); })
       .catch(() => {});
     return () => c.abort();
   }, [session, selection]);
@@ -306,6 +361,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
     setChecking(true);
     placementJob({ kind: "analyze", session }, controller.signal)
       .then((result) => {
+        if (controller.signal.aborted) return;
         setAnalysis(result.analysis!);
         setChecking(false);
       })
@@ -328,7 +384,13 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
       const listed = project.data?.files.find((f) => f.path === path);
       if ((local?.size ?? listed?.size ?? 0) > MAX_PLACEMENT_BYTES)
         throw new Error("Choose a board or session smaller than 20 MB.");
-      const text = local ? await local.text() : await client.readFile(projectId, path);
+      let text = local ? await local.text() : await client.readFile(projectId, path);
+      if (canvas && (local || path !== baseline.path)) {
+        // Source-bound mode must not save an unrelated imported layout as this board.
+        if (!text.trimStart().startsWith("{")) {
+          if (await sha256Blob(new Blob([text])) !== baseline.sha256) throw new Error("This is a different PCB. Open that board in its project before starting a placement draft.");
+        } else text = decodePlacementDraft(text, baseline);
+      } else if (text.trimStart().startsWith("{") && JSON.parse(text)?.contract === "fabplane.placement-draft.v1") text = JSON.stringify(JSON.parse(text).session);
       const result = await placementJob(
         { kind: "load", text, name: path.split(/[\\/]/).at(-1)! },
         controller.signal,
@@ -338,7 +400,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
         ? commitPlacement(history, result.session!)
         : placementHistory(result.session!);
       setHistory(nextHistory);
-      setSavedRevision(path === PLACEMENT_DRAFT_PATH && !local ? nextHistory.revision : -1);
+      setSavedRevision(path === draftPath && !local ? nextHistory.revision : -1);
       setSelection([]);
       setPreview(null);
       setAnalysis(EMPTY_ANALYSIS);
@@ -346,7 +408,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
       setNet("off");
       setFocus((f) => ({ ids: [], nonce: f.nonce + 1 }));
       setNotice(
-        path === PLACEMENT_DRAFT_PATH
+        path === draftPath
           ? "Saved placement draft restored."
           : "Working in a draft. Your source board is unchanged.",
       );
@@ -359,22 +421,27 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (initialized.current || history || !project.data) return;
     initialized.current = true;
-    const saved = project.data.files.some((f) => f.path === PLACEMENT_DRAFT_PATH);
+    const saved = project.data.files.some((f) => f.path === draftPath);
     const controller = new AbortController();
     operation.current = controller;
     setBusy("Restoring placement…");
     void restorePlacement({
-      readRecovery: () => localStorage.getItem("fabdesk-placement:" + projectId),
-      readFile: (path) => client.readFile(projectId, path),
+      readRecovery: () => localStorage.getItem(recoveryKey),
+      readFile: async (path) => {
+        if (path !== baseline.path) return client.readFile(projectId, path);
+        const bytes = await client.readFileBlob(projectId, path);
+        if (await sha256Blob(bytes) !== baseline.sha256) throw new Error("The saved PCB changed while opening this draft. Reopen Placement to inspect the current source.");
+        return bytes.text();
+      },
       parse: async (text, name) =>
-        (await placementJob({ kind: "load", text, name }, controller.signal)).session!,
-      paths: [...(saved ? [PLACEMENT_DRAFT_PATH] : []), ...files.slice(0, 1)],
+        (await placementJob({ kind: "load", text: name === baseline.path.split("/").at(-1) ? text : decodePlacementDraft(text, baseline), name }, controller.signal)).session!,
+      paths: [...(saved ? [draftPath] : []), baseline.path],
       signal: controller.signal,
     })
       .then((result) => {
         if (controller.signal.aborted || !mounted.current || !result) return;
         setHistory(placementHistory(result.session));
-        setSavedRevision(result.source === PLACEMENT_DRAFT_PATH ? 0 : -1);
+        setSavedRevision(result.source === DEVICE_PLACEMENT_RECOVERY ? -1 : 0);
         setSource(result.source);
         setError(null);
         setFocus((f) => ({ ids: [], nonce: f.nonce + 1 }));
@@ -387,9 +454,9 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                 " instead."
             : result.source === DEVICE_PLACEMENT_RECOVERY
               ? "Recovered your placement edits from this device."
-              : result.source === PLACEMENT_DRAFT_PATH
+              : result.source === draftPath
                 ? "Saved placement draft restored."
-                : "Working in a draft. Your source board is unchanged.",
+                : null,
         );
       })
       .catch((error) => {
@@ -408,22 +475,22 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
   };
   async function save() {
     if (!history || blocked) return;
-    setBusy("Saving draft…");
+    setBusy("Saving layout…");
     setError(null);
     try {
-      await client.writeFile(projectId, PLACEMENT_DRAFT_PATH, JSON.stringify(history.present));
-      placementDrafts.set(projectId, history, history.revision);
+      await client.writeFile(projectId, draftPath, encodePlacementDraft(baseline, history.present));
+      placementDrafts.set(scopeKey, history, history.revision);
       if (mounted.current) {
         setSavedRevision(history.revision);
         setNotice(
-          "Draft saved to this project. You can reopen it or share its .placement.json file.",
+          "Layout saved. The original PCB is unchanged; create a PCB copy when you are ready to route this layout.",
         );
         void project.refetch();
       }
     } catch (e) {
       if (mounted.current)
         setError(
-          `Draft was not saved: ${e instanceof Error ? e.message : e}. Your edits are still here.`,
+          `Layout was not saved: ${e instanceof Error ? e.message : e}. Your edits are still here.`,
         );
     } finally {
       if (mounted.current) setBusy("");
@@ -467,6 +534,9 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
       await client.writeFile(projectId, path, result.text!);
       if (mounted.current) {
         setExportOpen(false);
+        setExported({ path, sha256: await sha256Blob(new Blob([result.text!])), revision: history?.revision ?? 0, widthMm: session.board.w, heightMm: session.board.h });
+        setInspector("review");
+        if (canvas) { setCopyName(`${project.data?.name ?? session.name} — placement copy`.slice(0, 80)); setCopyOpen(true); }
         setNotice(
           `Exported ${path}. Tracks, vias and zones were removed; route and run DRC before manufacturing.`,
         );
@@ -480,10 +550,29 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
     }
   }
 
+  async function continueCopy() {
+    if (!exported || blocked || !copyName.trim()) return;
+    setBusy("Preparing working copy…"); setError(null);
+    try {
+      const next = await createPlacementWorkingCopy(client, { source: baseline, candidate: exported, name: copyName,
+        onProgress: (done, total) => { if (mounted.current) setBusy(`Copying source files ${done} of ${total}…`); },
+      });
+      const sources = await client.inspectBoardSources(next.id);
+      const selected = baseline.sourceId ? captureAssemblySourceSelection(sources, baseline.sourceId) : null;
+      if (baseline.sourceId && !selected) throw new Error("Working copy created, but its member source could not be verified. Open the new project from Home to inspect it.");
+      if (!mounted.current || useUiStore.getState().activeProjectId !== projectId) return;
+      const ui = useUiStore.getState();
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      if (!ui.closeProject() || !ui.setActiveProject(next.id)) throw new Error("Working copy is ready. Close the current project and open it from Home to continue.");
+      if (selected) ui.setAssemblyBoard(selected);
+      ui.setBoardTab("cinema");
+    } catch (error) { if (mounted.current) { setError(error instanceof Error ? error.message : String(error)); setCopyOpen(false); } }
+    finally { if (mounted.current) setBusy(""); }
+  }
   const downloadSession = () => {
     if (!history) return;
     const url = URL.createObjectURL(
-        new Blob([JSON.stringify(history.present)], { type: "application/json" }),
+        new Blob([encodePlacementDraft(baseline, history.present)], { type: "application/json" }),
       ),
       a = document.createElement("a");
     a.href = url;
@@ -497,12 +586,46 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
     if (example)
       replace(() => void load(name + ".kicad_pcb", new File([example.text], name + ".kicad_pcb")));
   };
+  const surface = { projectId, label: "PCB / Placement draft", priority: 25, details: JSON.stringify({
+    source: baseline, openedFrom: source, draftPath, savedPCB: "unchanged by this editor", unsaved: dirty,
+    preview: preview?.label ?? null, dimensionsMm: session?.board,
+    selected: session?.parts.filter(p => selection.includes(p.id)).map(p => ({ ref: p.ref, value: p.value, footprint: p.footprint, x: p.x, y: p.y, angle: p.angle })),
+    placementFindings: analysis.findings.length, coverage: "Geometry only; electrical, routing and manufacturing checks are separate",
+  }) };
+  useAssistantSurface(session ? surface : null);
+  useEffect(() => {
+    const handle = (event: KeyboardEvent) => {
+      const ui = useUiStore.getState();
+      if (ui.activeProjectId !== projectId || ui.boardTab !== "placement" || event.defaultPrevented || library || help || exportOpen || copyOpen || replaceOpen || enclosure || leaveOpen) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest('input,textarea,select,[contenteditable="true"],[role="combobox"],[role="listbox"]')) return;
+      const key = event.key.toLowerCase(), mod = event.metaKey || event.ctrlKey;
+      if (mod && !event.altKey && (key === "z" || key === "y")) {
+        event.preventDefault(); event.stopPropagation();
+        if (!blocked) key === "y" || event.shiftKey ? redo() : undo();
+      } else if (!mod && !event.altKey && (key === "v" || key === "h")) {
+        event.preventDefault(); event.stopPropagation(); setMode(key === "v" ? "select" : "pan");
+        document.querySelector<HTMLCanvasElement>(".fd-placement-canvas")?.focus({ preventScroll: true });
+      }
+    };
+    window.addEventListener("keydown", handle, true);
+    return () => window.removeEventListener("keydown", handle, true);
+  }, [projectId, blocked, library, help, exportOpen, copyOpen, replaceOpen, enclosure, leaveOpen]);
+  const exitPlacement = () => { if (preview) setLeaveOpen(true); else useUiStore.getState().setBoardTab("pcb"); };
+  const taskTools = <div className="fd-placement-mode-tools">
+    <Button size="sm" variant="secondary" disabled={!!busy} onClick={exitPlacement}><Icon name="chevronLeft" width={16} height={16} />Back to PCB</Button>
+    <Button size="sm" variant="secondary" aria-pressed={inspectorOpen && inspector === "parts"} onClick={() => setInspector("parts")}>Arrange</Button>
+    <Button size="sm" variant="secondary" aria-pressed={inspectorOpen && inspector === "board"} onClick={() => setInspector("board")}>Resize</Button>
+    <Button size="sm" variant="secondary" aria-pressed={inspectorOpen && inspector === "review"} onClick={() => setInspector("review")}>Layout checks</Button>
+    <CanvasToolButton icon="sparkles" label="Ask about this placement draft" onClick={() => { setInspectorOpen(false); askAboutSurface(surface, selection.length ? "Review the selected footprints in my placement draft. Explain placement concerns and suggest the next step before making changes." : "Review this placement draft and suggest the next step. Explain geometry concerns separately from electrical checks. The saved PCB is unchanged."); }} />
+  </div>;
   return (
     <section
-      className="fd-placement"
+      className={`fd-placement${canvas ? " fd-placement-canvas-workspace" : ""}${inspectorOpen ? " has-inspector" : ""}`}
       data-testid="placement-workspace"
       aria-label="Placement workspace"
     >
+      {canvas && (toolbarHost ? createPortal(taskTools, toolbarHost) : taskTools)}
       <header className="fd-placement-header">
         <div className="fd-placement-title">
           <span className="fd-placement-symbol">
@@ -513,48 +636,30 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
             <p>{session ? session.name : "Give every component its place"}</p>
           </div>
         </div>
+        {canvas && session && <div className="fd-placement-source-chip"><Icon name="pcb" width={14} height={14} /><span><strong>Editing placement</strong>{dirty ? " · Unsaved changes" : " · Layout saved"} · {fmt(session.board.w)} × {fmt(session.board.h)} mm · {session.parts.length} parts</span><small>Edits stay separate from the original PCB</small></div>}
         <div className="fd-placement-actions">
           {session && (
             <span className={`fd-placement-save-state ${dirty ? "is-dirty" : ""}`}>
-              {dirty ? "Unsaved draft" : "Draft saved"}
+              {dirty ? "Unsaved draft" : "No unsaved changes"}
             </span>
           )}
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setHelp(true)}
-            aria-label="Placement help"
-          >
-            ?
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={blocked}
-            onClick={() => input.current?.click()}
-          >
-            <Icon name="folderOpen" width={14} height={14} /> Open
-          </Button>
+          <WorkspaceMenu label={<><Icon name="moreVertical" width={18} height={18} /><span className="sr-only">More placement options</span></>}>
+            <div className="fd-menu-caption">Layout files</div>
+            <button disabled={blocked} onClick={() => input.current?.click()}>{canvas ? "Open saved layout…" : "Open board or draft…"}</button>
+            <button disabled={!session || blocked} onClick={downloadSession}>Download layout file</button>
+            <button disabled={!session || blocked} onClick={() => setLibrary({ target: null })}>Add unconnected footprint…</button>
+            {!canvas && <button disabled={!session || blocked} onClick={() => setEnclosure(true)}>Enclosure / STL…</button>}
+            <button onClick={() => setHelp(true)}>Placement help</button>
+          </WorkspaceMenu>
           {session && (
             <>
-              <Button size="sm" variant="secondary" disabled={blocked} onClick={downloadSession}>
-                Download session
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={blocked}
-                onClick={() => setEnclosure(true)}
-              >
-                Enclosure / STL
-              </Button>
               <Button
                 size="sm"
                 variant="secondary"
                 disabled={blocked}
                 onClick={() => setExportOpen(true)}
               >
-                <Icon name="export" width={14} height={14} /> Export PCB
+                <Icon name="export" width={14} height={14} /> Create PCB copy…
               </Button>
               <Button
                 size="sm"
@@ -562,7 +667,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                 disabled={blocked || !dirty}
                 onClick={() => void save()}
               >
-                Save draft
+                Save layout
               </Button>
             </>
           )}
@@ -687,59 +792,20 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
               <button onClick={() => setSwap(null)}>Cancel swap</button>
             </div>
           )}
-          <div className="fd-placement-toolbar" aria-label="Placement tools">
-            <div className="fd-placement-segment">
-              <button aria-pressed={mode === "select"} onClick={() => setMode("select")}>
-                Select
-              </button>
-              <button aria-pressed={mode === "pan"} onClick={() => setMode("pan")}>
-                Pan
-              </button>
-            </div>
-            <button
-              onClick={() => setFocus((f) => ({ ids: [], nonce: f.nonce + 1 }))}
-              title="Fit board (Home)"
-            >
-              Fit board
-            </button>
-            <button
-              disabled={!selection.length}
-              onClick={() => setFocus((f) => ({ ids: selection, nonce: f.nonce + 1 }))}
-              title="Focus selection (F)"
-            >
-              Focus
-            </button>
-            <button disabled={blocked} onClick={() => setLibrary({ target: null })}>
-              + Footprint
-            </button>
-            <button
-              disabled={blocked}
-              aria-pressed={mode === "area"}
-              onClick={() => {
-                setMode(mode === "area" ? "select" : "area");
-                setInspector("board");
-              }}
-            >
-              Draw reserved area
-            </button>
-            <span className="fd-placement-divider" />
-            <button
-              disabled={blocked || !history?.past.length}
-              onClick={undo}
-              title="Undo (Ctrl/Cmd+Z)"
-            >
-              ↶ Undo
-            </button>
-            <button
-              disabled={blocked || !history?.future.length}
-              onClick={redo}
-              title="Redo (Ctrl/Cmd+Shift+Z)"
-            >
-              ↷ Redo
-            </button>
+          <div className="fd-placement-toolbox">
+            <div className="fd-placement-edit-tools" role="toolbar" aria-label="Placement editing tools">
+              <Button size="sm" variant={mode === "select" ? "secondary" : "ghost"} aria-pressed={mode === "select"} title="Select and move components (V)" onClick={() => setMode("select")}><Icon name="cursor" width={17} height={17} />Select</Button>
+              <Button size="sm" variant={mode === "pan" ? "secondary" : "ghost"} aria-pressed={mode === "pan"} title="Pan canvas (H). Hold Space and drag for temporary pan." onClick={() => setMode("pan")}><Icon name="hand" width={17} height={17} />Pan</Button>
+              <span className="fd-placement-divider" />
+              <Button size="sm" variant="ghost" disabled={blocked || !history?.past.length} title="Undo (⌘Z / Ctrl+Z)" aria-label="Undo placement change" onClick={undo}><Icon name="undo" width={17} height={17} /></Button>
+              <Button size="sm" variant="ghost" disabled={blocked || !history?.future.length} title="Redo (⌘⇧Z / Ctrl+Shift+Z / Ctrl+Y)" aria-label="Redo placement change" onClick={redo}><Icon name="redo" width={17} height={17} /></Button>
+              <span className="fd-placement-divider" />
+              <WorkspaceMenu label={<><Icon name="settings" width={17} height={17} /><span className="sr-only">Placement settings</span></>}>
+          <div className="fd-placement-toolbar" aria-label="Placement settings">
+            <div className="fd-menu-caption">Movement</div>
             <label>
               Snap{" "}
-              <select
+              <Select
                 aria-label="Placement snap grid"
                 value={grid}
                 onChange={(e) => setGrid(Number(e.target.value))}
@@ -750,7 +816,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                     {n} mm
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label className="fd-placement-check">
               <input
@@ -761,11 +827,16 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
               />
               Push neighbors
             </label>
+            <button disabled={!selection.length} onClick={() => setFocus(f => ({ ids: selection, nonce: f.nonce + 1 }))}>Focus selected parts (F)</button>
+            <button disabled={blocked} aria-pressed={mode === "area"} onClick={() => { setMode(mode === "area" ? "select" : "area"); setInspector("board"); }}>Reserve board space…</button>
+            <p>Reserved space is a placement guide, not an enclosure.</p>
           </div>
+          </WorkspaceMenu></div></div>
           {preview && (
             <div className="fd-placement-preview" role="status">
               <div>
-                <strong>{preview.label} · preview</strong>
+                <strong>Preview — not applied · {preview.label}</strong>
+                {canvas && <small>{preview.review.changed.length} {preview.review.changed.length === 1 ? "part" : "parts"} changed · review the canvas before applying</small>}
                 {preview.comparison && (
                   <p>
                     Estimated connections {fmt(preview.comparison.before)} →{" "}
@@ -786,19 +857,20 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
               </Button>
               <Button
                 size="sm"
+                variant="primary"
                 onClick={() => {
                   commit(preview.session);
                   setPreview(null);
                 }}
               >
-                Apply changes
+                Use this layout
               </Button>
             </div>
           )}
           <div className="fd-placement-body">
             <div className="fd-placement-stage">
               <div className="fd-placement-view-controls">
-                <select
+                <Select
                   aria-label="Board side"
                   value={side}
                   onChange={(e) => {
@@ -809,24 +881,27 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                   <option value="both">Both sides</option>
                   <option value="F">Front</option>
                   <option value="B">Back</option>
-                </select>
-                <select
+                </Select>
+                <Select
                   aria-label="Show net connections"
                   value={net}
                   onChange={(e) => setNet(e.target.value)}
                 >
-                  <option value="off">Connections off</option>
+                  <option value="selected">Selected part</option>
+                  <option value="off">Hide connections</option>
                   <option value="">All connections</option>
                   {nets.map((n) => (
                     <option key={n} value={n}>
                       {n}
                     </option>
                   ))}
-                </select>
+                </Select>
                 <span>
                   {fmt(session.board.w)} × {fmt(session.board.h)} mm
                 </span>
               </div>
+              {canvas && <p className="fd-placement-interaction-hint">{mode === "pan" ? "Pan: drag anywhere to move the view. Select (V) to move components." : mode === "area" ? "Drag to reserve space. Escape cancels." : "Select: click or drag a component · Shift-click selects more · Space + drag pans"}</p>}
+              {canvas && net !== "off" && <div className="fd-placement-connection-legend"><span className="fd-placement-airwire-sample" /><span>{net === "selected" && !selection.length ? "Select a component to see its connections" : `${net && net !== "selected" ? net + " · " : ""}${visibleEdges.length} airwire${visibleEdges.length === 1 ? "" : "s"}`}</span><small>Connection guides, not routed copper</small></div>}
               <PlacementCanvas
                 session={session}
                 baseline={preview ? history?.present : undefined}
@@ -896,6 +971,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                   +
                 </button>
               </div>
+              {canvas && <div className="fd-placement-fit"><Button size="sm" onClick={() => setFocus(f => ({ ids: [], nonce: f.nonce + 1 }))}>Fit board</Button></div>}
               {context.gap && (
                 <div className="fd-placement-gap">
                   {context.gap.overlap ? "Envelope overlap" : fmt(context.gap.distance) + " mm gap"}{" "}
@@ -913,7 +989,8 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                 </div>
               )}
             </div>
-            <aside className="fd-placement-inspector" aria-label="Placement inspector">
+            <aside className="fd-placement-inspector" aria-label="Placement inspector" hidden={!inspectorOpen}>
+              <div className="fd-placement-inspector-heading"><strong>{inspector === "board" ? "Board dimensions" : inspector === "review" ? "Layout checks" : "Arrange parts"}</strong><CanvasToolButton icon="close" label="Collapse placement inspector" onClick={() => setInspectorOpen(false)} /></div>
               <div
                 className="fd-placement-inspector-tabs"
                 role="tablist"
@@ -953,13 +1030,14 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                     {tab === "parts"
                       ? "Parts"
                       : tab === "review"
-                        ? `Review${!checking && analysis.findings.length ? ` (${analysis.findings.length})` : ""}`
+                        ? `Checks${!checking && analysis.findings.length ? ` (${analysis.findings.length})` : ""}`
                         : "Board"}
                   </button>
                 ))}
               </div>
               <div
                 className="fd-placement-inspector-content"
+                ref={inspectorContent}
                 role="tabpanel"
                 id={panelId}
                 aria-labelledby={`${panelId}-${inspector}`}
@@ -1058,7 +1136,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                           </button>
                           <label className="fd-placement-field">
                             <span>Edge anchor</span>
-                            <select
+                            <Select
                               disabled={blocked || groupLocked}
                               value={one.anchor?.edge ?? ""}
                               onChange={(e) =>
@@ -1075,7 +1153,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                               {["left", "right", "top", "bottom"].map((edge) => (
                                 <option key={edge}>{edge}</option>
                               ))}
-                            </select>
+                            </Select>
                           </label>
                         </>
                       ) : (
@@ -1190,10 +1268,10 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                           <div className="fd-placement-field-pair">
                             <label className="fd-placement-field">
                               <span>Direction</span>
-                              <select value={axis} onChange={(e) => setAxis(e.target.value)}>
+                              <Select value={axis} onChange={(e) => setAxis(e.target.value)}>
                                 <option value="x">Horizontal</option>
                                 <option value="y">Vertical</option>
-                              </select>
+                              </Select>
                             </label>
                             <NumberField
                               label="Gap · mm"
@@ -1275,7 +1353,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                             aria-pressed={selection.includes(p.id)}
                             onClick={(e) => {
                               const ids = expanded(session, [p.id]);
-                              focusParts(
+                              selectParts(
                                 e.shiftKey
                                   ? selection.includes(p.id)
                                     ? selection.filter((id) => !ids.includes(id))
@@ -1397,6 +1475,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                         ))}
                       </details>
                     </div>
+                    {exported && <div className="fd-placement-section fd-placement-exported"><h3>PCB copy ready</h3><p>This copy has no tracks, vias or zones. It is separate from the saved PCB used by Routing and Checks.</p><p className="fd-placement-footprint">{exported.path}</p><Button size="sm" variant="primary" disabled={blocked} onClick={() => { setCopyName(`${project.data?.name ?? session.name} — placement copy`.slice(0, 80)); setCopyOpen(true); }}>Continue in a working copy</Button><Button size="sm" onClick={() => useUiStore.getState().openProjectFile(exported.path)}>Inspect exported copy</Button><Button size="sm" variant="secondary" onClick={() => askAboutSurface({ ...surface, label: "Placement / Exported unrouted copy", details: JSON.stringify({ ...JSON.parse(surface.details), exportedCopy: exported }) }, "Help me continue from this exported placement copy. Explain how to work on this copy separately, route it and run checks without replacing the original PCB.")}>Ask how to continue</Button></div>}
                     <div className="fd-placement-section">
                       <h3>Findings to review</h3>
                       {checking ? (
@@ -1445,7 +1524,13 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                           >
                             <strong>{p.ref}</strong>
                             <span>
-                              {p.from?.map(fmt).join(", ") ?? "New"} → {p.to.map(fmt).join(", ")}
+                              {(() => {
+                                const before = history?.present.parts.find(part => part.id === p.id);
+                                const after = preview.session.parts.find(part => part.id === p.id);
+                                if (before && after && before.footprint !== after.footprint) return `Footprint: ${before.footprint} → ${after.footprint}`;
+                                if (before && after && before.value !== after.value) return `Value: ${before.value} → ${after.value}`;
+                                return `${p.from?.map(fmt).join(", ") ?? "New"} → ${p.to.map(fmt).join(", ")}`;
+                              })()}
                             </span>
                           </button>
                         ))}
@@ -1455,51 +1540,6 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                 )}
                 {inspector === "board" && (
                   <>
-                    <div className="fd-placement-section">
-                      <h3>Project board</h3>
-                      <label className="fd-placement-field">
-                        <span>Try an example</span>
-                        <select
-                          aria-label="Example board"
-                          value=""
-                          disabled={blocked}
-                          onChange={(e) => void loadExample(e.target.value)}
-                        >
-                          <option value="">Choose an example…</option>
-                          <option value="usb-timer">USB timer</option>
-                          <option value="constraint-board">Connectors &amp; cutout</option>
-                        </select>
-                      </label>
-                      <p>
-                        Open a board from this project. Existing placement edits stay in your draft
-                        until you replace it.
-                      </p>
-                      <select
-                        aria-label="Project board file"
-                        value={files.includes(source) ? source : ""}
-                        disabled={blocked}
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            const path = e.target.value;
-                            replace(() => void load(path));
-                          }
-                        }}
-                      >
-                        <option value="">Choose a project board…</option>
-                        {files.map((path) => (
-                          <option key={path}>{path}</option>
-                        ))}
-                      </select>
-                      {project.data?.files.some((f) => f.path === PLACEMENT_DRAFT_PATH) && (
-                        <button
-                          className="fd-placement-wide"
-                          disabled={blocked}
-                          onClick={() => replace(() => void load(PLACEMENT_DRAFT_PATH))}
-                        >
-                          Reopen saved draft
-                        </button>
-                      )}
-                    </div>
                     <div className="fd-placement-section">
                       <h3>Board dimensions</h3>
                       <label className="fd-placement-check">
@@ -1545,6 +1585,51 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                         Preview resize
                       </button>
                     </div>
+                    <details className="fd-placement-section">
+                      <summary>Open another source or example</summary>
+                      {!canvas && <label className="fd-placement-field">
+                        <span>Try an example</span>
+                        <Select
+                          aria-label="Example board"
+                          value=""
+                          disabled={blocked}
+                          onChange={(e) => void loadExample(e.target.value)}
+                        >
+                          <option value="">Choose an example…</option>
+                          <option value="usb-timer">USB timer</option>
+                          <option value="constraint-board">Connectors &amp; cutout</option>
+                        </Select>
+                      </label>}
+                      <p>
+                        Open a board from this project. Existing placement edits stay in your draft
+                        until you replace it.
+                      </p>
+                      <Select
+                        aria-label="Project board file"
+                        value={files.includes(source) ? source : ""}
+                        disabled={blocked}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            const path = e.target.value;
+                            replace(() => void load(path));
+                          }
+                        }}
+                      >
+                        <option value="">Choose a project board…</option>
+                        {files.map((path) => (
+                          <option key={path}>{path}</option>
+                        ))}
+                      </Select>
+                      {project.data?.files.some((f) => f.path === draftPath) && (
+                        <button
+                          className="fd-placement-wide"
+                          disabled={blocked}
+                          onClick={() => replace(() => void load(draftPath))}
+                        >
+                          Reopen saved draft
+                        </button>
+                      )}
+                    </details>
                     <div className="fd-placement-section">
                       <h3>Reserved space</h3>
                       <p>Keep room for mounting hardware or mechanical features.</p>
@@ -1614,7 +1699,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                           </div>
                           <label className="fd-placement-field">
                             <span>Side</span>
-                            <select
+                            <Select
                               value={a.side}
                               disabled={blocked}
                               onChange={(e) =>
@@ -1627,7 +1712,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
                               <option value="both">Both</option>
                               <option value="F">Front</option>
                               <option value="B">Back</option>
-                            </select>
+                            </Select>
                           </label>
                           <div className="fd-placement-button-grid">
                             <button
@@ -1722,7 +1807,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
         onClose={() => {
           if (!busy) setExportOpen(false);
         }}
-        title="Export an unrouted PCB copy"
+        title="Create a PCB copy from this layout"
       >
         <div className="fd-placement-dialog">
           <p>
@@ -1731,7 +1816,7 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
           </p>
           <p>
             <strong>Tracks, vias and copper zones are removed.</strong> The schematic and original
-            PCB are unchanged. Route this copy and run KiCad DRC before manufacturing.
+            PCB are unchanged. This copy is not active in Routing or Checks. Inspect it in Files, or open it in a separate project before routing and running KiCad DRC.
           </p>
           <p>
             Groups, edge anchors, reserved areas and spacing guidelines are retained in the
@@ -1742,10 +1827,14 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
               Cancel
             </Button>
             <Button disabled={!!busy} onClick={() => void exportPcb()}>
-              {busy || "Export unrouted copy"}
+              {busy || (canvas ? "Create copy & continue…" : "Export unrouted copy")}
             </Button>
           </div>
         </div>
+      </Dialog>
+      <Dialog open={leaveOpen} title="Leave this preview?" onClose={() => setLeaveOpen(false)}><div className="fd-placement-dialog"><p>The preview has not been applied. Your earlier layout edits stay available when you return.</p><div><Button variant="secondary" onClick={() => setLeaveOpen(false)}>Keep reviewing</Button><Button onClick={() => { setPreview(null); useUiStore.getState().setBoardTab("pcb"); }}>Leave preview & return to PCB</Button></div></div></Dialog>
+      <Dialog open={copyOpen} onClose={() => { if (!busy) setCopyOpen(false); }} title="Continue in a separate working copy">
+        <div className="fd-placement-dialog"><p>Create a new project with the source files and local assets, then use the exported unrouted PCB in that copy. The original project stays unchanged.</p><p>Generated previews, reports and manufacturing outputs are excluded. Re-run routing and checks; copied files do not establish electrical compatibility or manufacturing readiness.</p>{exported && history && exported.revision !== history.revision && <p>This export comes from an earlier draft revision. Cancel and export again to include your latest edits.</p>}<label>Project name<Input aria-label="Placement working copy name" maxLength={80} value={copyName} disabled={!!busy} onChange={event => setCopyName(event.target.value)} /></label><div><Button variant="secondary" disabled={!!busy} onClick={() => setCopyOpen(false)}>Cancel</Button><Button variant="primary" disabled={!!busy || !copyName.trim()} onClick={() => void continueCopy()}>{busy || "Create copy & open routing"}</Button></div></div>
       </Dialog>
       <Dialog
         open={replaceOpen}
@@ -1814,11 +1903,11 @@ function PlacementWorkspace({ projectId }: { projectId: string }) {
             cleanup.
           </p>
           <p>
-            <strong>2. Review.</strong> Open Review to inspect geometric findings or preview a
+            <strong>2. Review.</strong> Open Layout checks to inspect geometric findings or preview a
             better layout. Apply accepts the whole preview; Cancel keeps your layout.
           </p>
           <p>
-            <strong>3. Save.</strong> Save draft keeps your work across restarts. Export PCB creates
+            <strong>3. Save.</strong> Save layout keeps your work across restarts. Export PCB creates
             an unrouted copy for routing and DRC. Unsaved edits survive tab switches, but save
             before closing the app.
           </p>

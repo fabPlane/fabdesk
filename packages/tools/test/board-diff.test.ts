@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createRegistry } from "../src";
+import { createRegistry, makeContext } from "../src";
 import { assertGitRef, pickDesignFile, pickDesignPaths, projectRelGitPaths } from "../src/tools/board-diff";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 import { PCB_FROM, PCB_TO } from "../../board-diff/test/fixtures";
@@ -179,5 +179,62 @@ describe("board revision tools", () => {
     };
     expect(vsHeadReport.to.paths.pcb).toBeUndefined();
     expect(vsHeadReport.diff.components.added.map((c) => c.ref)).not.toContain("R2");
+  });
+});
+
+describe("comparison points and explicit members", () => {
+  test("non-Git comparison points preserve native bytes and reject tampering", async () => {
+    const project = await tempProject("saved-diff"), services = mockServices([project]), registry = createRegistry(), factory = contextFactory(services, project);
+    const invoke = (name: string, args: Record<string, unknown>) => registry.invoke(name, args, ref => factory({ def: registry.get(name)!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    await writeFile(join(project.dir, "board.kicad_pcb"), PCB_FROM);
+    const saved = await invoke("board_revision_checkpoint", { label: "Before resizing" });
+    const ref = (saved.json as { revision: { ref: string } }).revision.ref;
+    expect(ref).toMatch(/^saved:[a-f0-9]{64}$/);
+    expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(PCB_FROM);
+    await writeFile(join(project.dir, "board.kicad_pcb"), PCB_TO);
+    expect((await invoke("board_revision_diff", { from: ref, to: "worktree" })).text).toContain("Added: C1");
+    expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(PCB_TO);
+    expect((await invoke("board_revision_list", {})).text).toContain("1 saved comparison");
+    const path = join(project.dir, ".fabdesk/board-revisions", ref.slice(6) + ".json");
+    const tampered = JSON.parse(await readFile(path, "utf8")); tampered.sources.kicadPcb = PCB_TO;
+    await writeFile(path, JSON.stringify(tampered));
+    await expect(invoke("board_revision_diff", { from: ref, to: "worktree" })).rejects.toThrow(/changed/);
+  });
+
+  test("member comparison reports stay in their leaf, reject another source and refuse fallback", async () => {
+    const root = await tempProject("member-diff"), services = mockServices([root]), registry = createRegistry();
+    const leaf = join(root.dir, "boards/io"), sibling = join(root.dir, "boards/lcd");
+    await mkdir(leaf, { recursive: true }); await mkdir(sibling, { recursive: true });
+    await writeFile(join(leaf, "board.kicad_pcb"), PCB_FROM); await writeFile(join(sibling, "board.kicad_pcb"), PCB_TO);
+    const board = { sourceId: "io", manifestSha256: "a".repeat(64) };
+    const invoke = (name: string, args: Record<string, unknown>, source = board) => registry.invoke(name, { ...args, board: source }, (_ref, _def, captured) => makeContext({ services, project: { ...root, dir: leaf }, board: captured!, boardRoot: root, runInScope: operation => operation() }));
+    const saved = await invoke("board_revision_checkpoint", {}), ref = (saved.json as { revision: { ref: string } }).revision.ref;
+    await writeFile(join(leaf, "board.kicad_pcb"), PCB_TO);
+    const diff = await invoke("board_revision_diff", { from: ref, to: "worktree" });
+    expect(diff.text).toContain("Added: C1");
+    expect((diff.json as { _board: { sourceId: string } })._board.sourceId).toBe("io");
+    expect(await Bun.file(join(leaf, "reports/board-diff.json")).exists()).toBe(true);
+    expect(await Bun.file(join(root.dir, "reports/board-diff.json")).exists()).toBe(false);
+    expect(await Bun.file(join(sibling, "reports/board-diff.json")).exists()).toBe(false);
+    await expect(invoke("board_revision_diff", { from: ref, to: "worktree" }, { ...board, sourceId: "lcd" })).rejects.toThrow(/does not belong/);
+    await unlink(join(leaf, "board.kicad_pcb")); await mkdir(join(leaf, "unrelated")); await writeFile(join(leaf, "unrelated/board.kicad_pcb"), PCB_FROM);
+    await expect(invoke("board_revision_diff", { from: "worktree", to: "worktree" })).rejects.toThrow(/no board/);
+    expect(await readFile(join(sibling, "board.kicad_pcb"), "utf8")).toBe(PCB_TO);
+  });
+
+  test("member Git history requires the same declared source location", async () => {
+    const root = await tempProject("member-history"), services = mockServices([root]), registry = createRegistry();
+    const leaf = join(root.dir, "boards/io"); await mkdir(leaf, { recursive: true });
+    const declaration = { contract: "fabplane.assembly.v1", sources: [{ id: "io", name: "IO", location: "project", directory: "boards/previous" }], instances: [{ id: "io", sourceId: "io", name: "IO" }], connections: [] };
+    await writeFile(join(root.dir, "fabplane.assembly.json"), JSON.stringify(declaration)); await writeFile(join(leaf, "board.kicad_pcb"), PCB_FROM);
+    await git(root.dir, ["init"]); await git(root.dir, ["config", "user.name", "Diff Test"]); await git(root.dir, ["config", "user.email", "diff@test"]); await git(root.dir, ["config", "commit.gpgsign", "false"]);
+    await git(root.dir, ["add", "."]); await git(root.dir, ["commit", "-m", "Prior mapping"]);
+    const board = { sourceId: "io", manifestSha256: "a".repeat(64) };
+    const invoke = () => registry.invoke("board_revision_diff", { from: "HEAD", to: "worktree", board }, (_ref, _def, captured) => makeContext({ services, project: { ...root, dir: leaf }, board: captured!, boardRoot: root, runInScope: operation => operation() }));
+    await expect(invoke()).rejects.toThrow(/not declared at the same location/);
+    declaration.sources[0]!.directory = "boards/io";
+    await writeFile(join(root.dir, "fabplane.assembly.json"), JSON.stringify(declaration)); await git(root.dir, ["add", "."]); await git(root.dir, ["commit", "-m", "Explicit IO"]);
+    await writeFile(join(leaf, "board.kicad_pcb"), PCB_TO);
+    expect((await invoke()).text).toContain("Added: C1");
   });
 });

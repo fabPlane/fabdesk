@@ -135,6 +135,11 @@ describe.skipIf(!hasCli)("kicad-cli on a real board", () => {
     const pos = await exportPos(kicad(), { board, output: join(dir, "mini-pos.csv") });
     expect(existsSync(pos.paths[0]!)).toBe(true);
     const svg = await exportPcbSvg(kicad(), { board, output: join(dir, "pcb.svg") });
-    expect(await Bun.file(svg.paths[0]!).text()).toContain("<svg");
+    const content = await Bun.file(svg.paths[0]!).text();
+    expect(content).toContain('data-fabplane-coordinate-system="kicad-pcb-mm-v1"');
+    // The fixture lives around (100,95), not at a rebased SVG (0,0).
+    const firstPoint = content.match(/\bd="M\s*([-+\d.eE]+)[,\s]+([-+\d.eE]+)/);
+    expect(Number(firstPoint?.[1])).toBeGreaterThan(90);
+    expect(Number(firstPoint?.[2])).toBeGreaterThan(90);
   }, 120_000);
 });

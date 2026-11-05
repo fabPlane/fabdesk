@@ -1,0 +1,32 @@
+{
+  "complete": {
+    "result": "fabPlane\nAssembly source ownership \u2014 validation fixture\n/\nReview\nLocal workspace\nExport\nReview\nUpdates\nChanges\nComments\nChecks\nOrder checks\nBoard checks\n\nChoose a source design to review its PCB checks. Boards sharing that design use the same report.\n\nBoard source\nChoose a board source\u2026\nCarrier source\nI/O source\nRecheck sources\nRun PCB-only DRC\nSchematic sources\n\nInspect this source\u2019s saved sheets before reviewing electrical checks or synchronization.\n\nReinspect schematic sources\nSaved hierarchy inspected\n\n0 components \u00b7 0 nets \u00b7 2 referenced sheets. This is a saved netlist snapshot; ERC, PCB parity, external libraries and assembly compatibility are not checked.\n\nInspected files and issues\nboard.kicad_sch \u00b7 /\nchild.kicad_sch \u00b7 /Child/\nI/O source\nLeft I/O \u00b7 Right I/O\nPCB-only \u00b7 Schematic parity, ERC, inter-board connections and enclosure fit are not checked.\n\nNo saved PCB check for this source.\n\nAsk fabPlane"
+  },
+  "createdNativeHashes": {
+    "boards/io/board.kicad_sch": "0ea1e53baec9990ea99a353aee11af7cdb713bf2816e2e880dcf8e65098a841f",
+    "boards/io/child.kicad_sch": "c1103b2b07666ead27424fccce0f275a0a255cb74629c47f375267957ab6f8ec"
+  },
+  "childChanged": {
+    "result": "fabPlane\nAssembly source ownership \u2014 validation fixture\n/\nReview\nLocal workspace\nExport\nReview\nUpdates\nChanges\nComments\nChecks\nOrder checks\nBoard checks\n\nChoose a source design to review its PCB checks. Boards sharing that design use the same report.\n\nBoard source\nChoose a board source\u2026\nCarrier source\nI/O source\nRecheck sources\nRun PCB-only DRC\nSchematic sources\n\nInspect this source\u2019s saved sheets before reviewing electrical checks or synchronization.\n\nReinspect schematic sources\nProject changed since inspection \u00b7 reinspect before using these facts\n\n0 components \u00b7 0 nets \u00b7 2 referenced sheets. This is a saved netlist snapshot; ERC, PCB parity, external libraries and assembly compatibility are not checked.\n\nInspected files and issues\nI/O source\nLeft I/O \u00b7 Right I/O\nPCB-only \u00b7 Schematic parity, ERC, inter-board connections and enclosure fit are not checked.\n\nNo saved PCB check for this source.\n\nAsk fabPlane"
+  },
+  "incomplete": {
+    "result": "fabPlane\nAssembly source ownership \u2014 validation fixture\nLocal workspace\nExport\nReview\nUpdates\nChanges\nComments\nChecks\nOrder checks\nBoard checks\n\nChoose a source design to review its PCB checks. Boards sharing that design use the same report.\n\nBoard source\nChoose a board source\u2026\nCarrier source\nI/O source\nRecheck sources\nRun PCB-only DRC\nSchematic sources\n\nInspect this source\u2019s saved sheets before reviewing electrical checks or synchronization.\n\nReinspect schematic sources\nSaved hierarchy incomplete\n\nElectrical totals are unavailable until every referenced sheet can be inspected. This is a saved netlist snapshot; ERC, PCB parity, external libraries and assembly compatibility are not checked.\n\nInspected files and issues\nboard.kicad_sch \u00b7 /\nchild.kicad_sch \u00b7 ENOENT: no such file or directory, lstat '/Users/amliomnie/Documents/Codex/2026-10-27/https-github-com-tensorfleet-placement-lab/work/sketch-first-projects/assembly-source-ownership-validation-fixture/boards/io/child.kicad_sch'\nI/O source\nLeft I/O \u00b7 Right I/O\nPCB-only \u00b7 Schematic parity, ERC, inter-board connections and enclosure fit are not checked.\n\nNo saved PCB check for this source.\n\nAsk fabPlane"
+  },
+  "otherSource": {
+    "result": "fabPlane\nAssembly source ownership \u2014 validation fixture\nLocal workspace\nExport\nReview\nUpdates\nChanges\nComments\nChecks\nOrder checks\nBoard checks\n\nChoose a source design to review its PCB checks. Boards sharing that design use the same report.\n\nBoard source\nChoose a board source\u2026\nCarrier source\nI/O source\nRecheck sources\nRun PCB-only DRC\nSchematic sources\n\nNo saved schematic for this source. Import its native schematic and referenced sheets to review them here.\n\nCarrier source\nMain carrier\nPCB-only \u00b7 Schematic parity, ERC, inter-board connections and enclosure fit are not checked.\n\nNo saved PCB check for this source.\n\nAsk fabPlane"
+  },
+  "restoredFixtureHashes": {
+    "fabdesk.json": "a0527b15fead3e9b4b0c30e3cf741d3edfc6798e093091ebf288711054ddb9a4",
+    "fabplane.assembly.json": "ffe6b12399cec942549f829855f4d6e532a18db08d843a44f6c2624f7dd4885c",
+    "boards/io/board.kicad_pcb": "34f1e8d8592b9fce278642e7ab15b94cf53631740cccf25c439a1311e7bc77c6",
+    "boards/io/renders/pcb.svg": "c3daabe16c421794a8c86fffa74ed5d8308407aed8c439b65d166adc386d6dbb",
+    "boards/io/renders/pcb.svg.revision.json": "d013dcce6655c9a0e570fab0881b107e6dc529e724666d8c28331f7f9e6a771e",
+    "boards/carrier/board.kicad_pcb": "406b12f63e656f59751b39fe9e7f346cb2c9beb65eb16cdc4400ab20fe471d99",
+    "boards/carrier/renders/pcb.svg": "1dc8e9220bdcf210e6968f4332792ecc1f28955525de2123d27ac1191c5207ab",
+    "boards/carrier/renders/pcb.svg.revision.json": "a91c67ab69d30119e0e3952d344afdf9e5c9688872adcdaf23b6ae644322b51c"
+  },
+  "temporaryNativeFilesRestoredAbsent": true,
+  "realVaioRecordedHashesUnchanged": true,
+  "finalDisclosure": "Source inventory is closed by default; real VAIO native AX and screenshot172 verified folded state and explicit expansion shows no saved schematic; returned to quiet wide Overview.",
+  "limitations": "Two temporary zero-component native KiCad sheets validate hierarchy/source ownership only. No real VAIO schematic import, ERC, PCB parity, rendering or synchronization claim."
+}

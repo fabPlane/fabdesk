@@ -1,0 +1,43 @@
+{
+  "change": "Saved deliverables remain visible for explicitly declared project sources with missing native PCBs; source warnings follow cards into requested previews",
+  "listingGuard": "Only available/missing declared project directories can label outputs. Blocked/unresolved/undeclared sources are excluded; a nested blocked declaration shadows its available parent rather than borrowing ownership. Root assembly project outputs remain source-unverified. No source membership inferred from historical PCB files.",
+  "native": {
+    "memberProject": "prj_mvs6704td18dae52b4",
+    "before": "Two saved source drawings became one when I/O PCB was held; original I/O SVG was still on disk",
+    "after": "Both drawings remain; I/O card and requested image preview say PCB source missing; exact restoration clears the warning in the open preview",
+    "rootProject": "prj_mvs5abwp2ff3301fe3",
+    "root": "Retained root SVG/GLB cards warn when PCB missing; requested GLB preview carries warning; exact restoration returns PCB unchanged \u00b7 Model dependencies unverified",
+    "jobsOrMessages": 0
+  },
+  "preservation": {
+    "memberOriginals": 12,
+    "memberSavedDrcSha256": "dc4d493090605ad3650ff89bc3c578ff94b3b384b6dbd298a5cc042a07ba6f84",
+    "rootProtectedFiles": 48,
+    "changed": [],
+    "memberGuard": "RESTORED",
+    "rootGuard": "RESTORED",
+    "heldFilesAbsent": true
+  },
+  "checks": {
+    "clientTypecheck": "PASS /tmp/canvas-retained-missing-output-client-types.log",
+    "uiTypecheck": "PASS /tmp/canvas-retained-missing-output-ui-types.log",
+    "clientTests": "308 pass / 0 fail / 1479 assertions",
+    "uiTests": "231 pass / 0 fail / 890 assertions",
+    "fullRootCheckpoint": "c8c2996 before this slice:2260pass/36skip/0fail, not rerun for this listing/presentation change"
+  },
+  "limitations": [
+    "Browse/preview of saved bytes is not native edit authority, fabrication readiness, model dependency validation or compatibility",
+    "No Mechanical/Board Art-specific change or remote publication",
+    "Direct BoardModelStatus warning-color expansion is typechecked; native walkthrough here exercises library image/model previews"
+  ],
+  "screenshots": [
+    "398-member-outputs-before-source-loss.png",
+    "399-member-output-hidden-when-source-missing-before.png",
+    "400-member-output-retained-with-missing-source-warning.png",
+    "401-retained-member-preview-keeps-source-warning.png",
+    "402-retained-member-preview-source-restored.png",
+    "403-root-output-missing-source-warnings.png",
+    "404-retained-root-model-preview-source-warning.png",
+    "405-retained-root-model-source-restored.png"
+  ]
+}

@@ -2,7 +2,8 @@
  * Remix a catalog clone into a fabPlane project: adopt the cloned `.kicad_pcb` as the project
  * board and render `renders/pcb.svg` with kicad-cli so the PCB tab shows it without a chat turn.
  */
-import { copyFile, mkdir, readdir, stat } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { join, relative, sep } from "node:path";
 import type { OpenCatalogEntry, RemixResult } from "@fabdesk/protocol";
 import { PROJECT_FILES, type CoreServices, type ProjectHandle } from "@fabdesk/tools";
@@ -70,6 +71,7 @@ export async function hydrateClonedBoard(opts: {
   try {
     const abs = join(opts.project.dir, pcbPath);
     const target = join(opts.project.dir, PROJECT_FILES.boardPcb);
+    const pcbSha256 = createHash("sha256").update(await readFile(abs)).digest("hex");
     if (abs !== target) await copyFile(abs, target);
     for (const [ext, dest] of [
       [".kicad_pro", PROJECT_FILES.boardPro],
@@ -79,6 +81,7 @@ export async function hydrateClonedBoard(opts: {
       const to = join(opts.project.dir, dest);
       if (sibling !== to && (await stat(sibling).catch(() => null))) await copyFile(sibling, to);
     }
+    await opts.project.updateManifest({ importedBoard: { path: pcbPath, adoptedAt: new Date().toISOString(), pcbSha256 } });
     const cli = await opts.resolveCli();
     if (cli) {
       const stats = (await opts.boardStats(cli, { board: target, scratchFile: join(opts.project.dir, PROJECT_FILES.reports, "stats.json") }).catch(() => ({}))) as Record<string, unknown>;

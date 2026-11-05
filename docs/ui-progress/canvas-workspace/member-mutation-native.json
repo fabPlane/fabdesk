@@ -1,0 +1,40 @@
+{
+  "standardSuite": {
+    "pass": 2124,
+    "skip": 30,
+    "fail": 0
+  },
+  "rootTypecheck": "passed",
+  "installedNativeTests": {
+    "passed": 2,
+    "failed": 0,
+    "assertions": 34,
+    "files": [
+      "apps/core/test/scoped-board-mutation.kicad.test.ts",
+      "apps/core/test/assembly-binding.kicad.test.ts"
+    ]
+  },
+  "focusedTransportStatusTests": {
+    "passed": 22,
+    "assertions": 117
+  },
+  "nativeChecks": [
+    "Missing and stale placement source hashes rejected before native session creation",
+    "Source A R1 moved 0.1 mm through registry and captured native scope",
+    "Source A rectangle 15x15 to 20x15 at native origin 100,95 with same edge ID",
+    "Tracks/vias/zones/nets preserved; resize preserves placed component/pad data",
+    "Source B and unrelated root PCB byte-identical",
+    "Stale resize revision and stale assembly membership rejected",
+    "Native close/reopen retains position and outline",
+    "Host ignoring selector refused",
+    "Changed declaration before save preserves disk and unsaved live edit"
+  ],
+  "canvasMemberEditing": "read-only until explicit client/action/query scope is wired",
+  "realVaioSourcesEdited": false,
+  "limitations": [
+    "Optimistic ownership/source preconditions, not a cross-process filesystem transaction",
+    "No compatibility, DRC, fit or undo-integration claim",
+    "Other member workflows remain unavailable"
+  ],
+  "initialBroadRun": "HTTP capability assertion still expected single-board-only; updated for explicit-source-tools, full rerun passed"
+}

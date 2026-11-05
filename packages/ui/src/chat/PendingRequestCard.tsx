@@ -9,6 +9,7 @@ import { useId, useRef, useState } from "react";
 import { Button, Spinner, Textarea } from "../components/ui";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { cn } from "../util";
+import { reviewClosedQuestion } from "./review-closed-question";
 
 function stringifyInput(input: unknown): string {
   if (typeof input === "string") return input;
@@ -104,6 +105,7 @@ export function PendingQuestionCard({ threadId, part }: { threadId: string; part
   const client = useCoreClient();
   const id = useId();
   const options = part.options ?? [];
+  const [recovering, setRecovering] = useState(false);
   const [selected, setSelected] = useState<number | "custom" | null>(
     options.length ? null : "custom",
   );
@@ -121,6 +123,10 @@ export function PendingQuestionCard({ threadId, part }: { threadId: string; part
         ? (options[selected] ?? "")
         : "";
   const answer = async (value: string) => {
+    if (!pending) {
+      if (recovering && reviewClosedQuestion(threadId, part, value)) setRecovering(false);
+      return;
+    }
     if (!value.trim() || sending.current || !pending) return;
     sending.current = true;
     setBusy(true);
@@ -145,6 +151,7 @@ export function PendingQuestionCard({ threadId, part }: { threadId: string; part
         pending ? "border-accent/60 bg-accent/5" : "border-border bg-panel-2/40",
       )}
       data-testid="question-card"
+      data-pending-question={pending ? part.requestId : undefined}
     >
       <div className="mb-2 text-xs text-muted" role="status">
         {pending
@@ -153,13 +160,14 @@ export function PendingQuestionCard({ threadId, part }: { threadId: string; part
             ? "Answer submitted"
             : "Question closed without an answer"}
       </div>
-      {pending ? (
+      {(pending || recovering) ? (
         <form
           onSubmit={(e) => {
             e.preventDefault();
             void answer(value);
           }}
         >
+          {recovering && <p className="mb-3 text-xs text-muted">The original request ended. Prepare a follow-up in the message box, then review and send it to continue.</p>}
           <fieldset disabled={busy} className="min-w-0 space-y-2">
             <legend className="mb-3 whitespace-pre-wrap font-medium">{part.question}</legend>
             {options.map((option, index) => (
@@ -224,7 +232,7 @@ export function PendingQuestionCard({ threadId, part }: { threadId: string; part
                 : "Submit your answer to continue."}
             </span>
             <Button size="sm" variant="primary" type="submit" disabled={busy || !value}>
-              {busy ? "Submitting…" : "Submit answer"}
+              {busy ? "Submitting…" : recovering ? "Review answer in chat" : "Submit answer"}
             </Button>
           </div>
         </form>
@@ -232,8 +240,9 @@ export function PendingQuestionCard({ threadId, part }: { threadId: string; part
         <div>
           <div className="font-medium whitespace-pre-wrap">{part.question}</div>
           <div className="mt-2 whitespace-pre-wrap break-words text-muted">
-            {resolvedAnswer || "No answer was sent. Ask again in the chat to continue."}
+            {resolvedAnswer || "No answer was sent. You can continue with a follow-up message."}
           </div>
+          {!resolvedAnswer && <Button size="sm" className="mt-3" onClick={() => setRecovering(true)}>Answer in chat</Button>}
         </div>
       )}
       {error !== null && pending && <ErrorNotice error={error} />}

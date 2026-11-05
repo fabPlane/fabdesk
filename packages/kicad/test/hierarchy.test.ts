@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inspectSchematicHierarchy, type KicadCli } from "../src";
@@ -9,7 +9,7 @@ const schematic = (n: number) =>
   `(kicad_sch (version 20231120) (generator eeschema) (uuid "${id(n)}") (paper "A4") (lib_symbols) (sheet_instances (path "/" (page "${n}"))))\n`;
 
 async function fixture(sheetCount = 2) {
-  const projectDir = await mkdtemp(join(tmpdir(), "fabdesk-hierarchy-test-"));
+  const projectDir = await realpath(await mkdtemp(join(tmpdir(), "fabdesk-hierarchy-test-")));
   const sheets = Array.from({ length: sheetCount }, (_, index) => ({
     filename: index ? `child-${index}.kicad_sch` : "board.kicad_sch",
     name: index ? `Child ${index}` : "Root",
@@ -222,3 +222,73 @@ async function nestedFixture(format: "quoted" | "unquoted" | "mixed") {
     });
   return { projectDir, cli, inspect };
 }
+
+describe("independently owned member hierarchy snapshots", () => {
+  const inspect = (projectDir: string, cli: KicadCli) => inspectSchematicHierarchy(cli, { projectDir, rootSchematic: join(projectDir, "board.kicad_sch"), ownedFilesOnly: true });
+  test("exports captured native bytes from scratch, binds project metadata and preserves originals", async () => {
+    const { projectDir, cli } = await fixture();
+    try {
+      const pcb = join(projectDir, "board.kicad_sch"), original = await readFile(pcb, "utf8");
+      let scratch = "";
+      const checked = { ...cli, trace: async (args: Parameters<NonNullable<KicadCli["trace"]>>[0]) => {
+        scratch = args.command.at(-1)!;
+        expect(scratch).not.toBe(pcb); expect(await readFile(scratch, "utf8")).toBe(original);
+        expect(await readFile(join((await import("node:path")).dirname(scratch), "child-1.kicad_sch"), "utf8")).toBe(schematic(2));
+        return cli.trace!(args);
+      } };
+      const first = await inspect(projectDir, checked); expect(first.complete).toBe(true);
+      expect(await readFile(pcb, "utf8")).toBe(original);
+      await expect(readFile(scratch)).rejects.toThrow();
+      const pro = join(projectDir, "board.kicad_pro"); await writeFile(pro, (await readFile(pro, "utf8")) + "\n");
+      expect((await inspect(projectDir, cli)).aggregateRevision).not.toBe(first.aggregateRevision);
+    } finally { await rm(projectDir, { recursive: true, force: true }); }
+  });
+  for (const alias of ["symlink", "hardlink", "parent-symlink"] as const) test(`rejects a ${alias} child without exporting external native bytes`, async () => {
+    const { projectDir, cli } = await fixture(); const external = await fixture(1); let exported = false;
+    try {
+      const { symlink, link, mkdir } = await import("node:fs/promises");
+      const child = join(projectDir, "child-1.kicad_sch"); await rm(child);
+      if (alias === "parent-symlink") {
+        const pro = join(projectDir, "board.kicad_pro"), metadata = JSON.parse(await readFile(pro, "utf8")); metadata.schematic.top_level_sheets[1].filename = "nested/child.kicad_sch"; await writeFile(pro, JSON.stringify(metadata));
+        await mkdir(join(external.projectDir, "nested")); await writeFile(join(external.projectDir, "nested", "child.kicad_sch"), schematic(2)); await symlink(join(external.projectDir, "nested"), join(projectDir, "nested"));
+      } else await (alias === "symlink" ? symlink : link)(join(external.projectDir, "board.kicad_sch"), child);
+      const result = await inspect(projectDir, { ...cli, trace: async args => { exported = true; return cli.trace!(args); } });
+      expect(result.complete).toBe(false); expect(result.issues.some(issue => issue.kind === "unreadable")).toBe(true); expect(exported).toBe(false);
+      expect(await readFile(join(external.projectDir, "board.kicad_sch"), "utf8")).toBe(schematic(1));
+    } finally { await rm(projectDir, { recursive: true, force: true }); await rm(external.projectDir, { recursive: true, force: true }); }
+  });
+  for (const changed of ["child", "metadata", "new-metadata"] as const) test(`rejects ${changed} changes during native snapshot measurement`, async () => {
+    const { projectDir, cli } = await fixture(changed === "new-metadata" ? 1 : 2);
+    try {
+      const pro = join(projectDir, "board.kicad_pro"), originalPro = await readFile(pro);
+      if (changed === "new-metadata") await rm(pro);
+      const result = await inspect(projectDir, { ...cli, trace: async args => {
+        const source = args.command.at(-1)!; expect(source.startsWith(projectDir)).toBe(false);
+        if (changed === "child") await writeFile(join(projectDir, "child-1.kicad_sch"), schematic(2) + "\n");
+        else await writeFile(pro, changed === "new-metadata" ? originalPro : Buffer.concat([originalPro, Buffer.from("\n")]));
+        return cli.trace!(args);
+      } });
+      expect(result.complete).toBe(false); expect(result.issues.some(issue => issue.kind === "unreadable")).toBe(true);
+    } finally { await rm(projectDir, { recursive: true, force: true }); }
+  });
+  test("rejects aliased project metadata and missing children; ordinary root hierarchy policy remains separate", async () => {
+    const { projectDir, cli } = await fixture();
+    try {
+      const { symlink } = await import("node:fs/promises"); const pro = join(projectDir, "board.kicad_pro"), other = join(projectDir, "original.json");
+      await writeFile(other, await readFile(pro)); await rm(pro); await symlink(other, pro);
+      expect((await inspect(projectDir, cli)).complete).toBe(false);
+      await rm(pro); await writeFile(pro, await readFile(other)); await rm(join(projectDir, "child-1.kicad_sch"));
+      const missing = await inspect(projectDir, cli); expect(missing.complete).toBe(false); expect(missing.issues.some(issue => issue.kind === "missing")).toBe(true);
+    } finally { await rm(projectDir, { recursive: true, force: true }); }
+  });
+});
+
+test("owned snapshots preserve repeated native sheet instances without copying unrelated orphans", async () => {
+  const f = await nestedFixture("quoted"); const projectDir = await realpath(f.projectDir);
+  try {
+    const root = join(projectDir, "board.kicad_sch"); await writeFile(root, (await readFile(root, "utf8")).replace("right.kicad_sch", "left.kicad_sch"));
+    const result = await inspectSchematicHierarchy(f.cli, { projectDir, rootSchematic: root, ownedFilesOnly: true });
+    expect(result.complete).toBe(true); expect(result.sheets.map(sheet => sheet.nativePath)).toEqual(["board.kicad_sch", "left.kicad_sch", "left.kicad_sch"]);
+    expect(result.sheets[1]!.sha256).toBe(result.sheets[2]!.sha256); expect(result.orphanFiles).toEqual(["right.kicad_sch"]);
+  } finally { await rm(projectDir, { recursive: true, force: true }); }
+});

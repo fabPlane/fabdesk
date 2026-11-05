@@ -1,0 +1,13 @@
+{
+  "unchangedFilesByProject": {
+    "prj_mvrlt1yx802c210b69": 19,
+    "prj_mvr2ofe307592e4a2e": 16
+  },
+  "nativeFlows": [
+    "Root Deselect returns drawing focus; Enter opens center location; Escape returns drawing focus",
+    "Source I/O Deselect returns exact source drawing focus; Enter opens source location; Escape closes it and keeps focus",
+    "Existing pinned comment opened/read/closed without editing or sending"
+  ],
+  "noSourceEdits": true,
+  "viewport": "1440x870"
+}

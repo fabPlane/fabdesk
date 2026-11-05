@@ -193,12 +193,12 @@ export class McpSessionManager {
       query.get("toolsets") === "all" ? [...TOOLSETS] : [...DEFAULT_AGENT_TOOLSETS];
     const profile = query.get("profile");
     const initialTools =
-      profile === "native" ? [...NATIVE_AGENT_TOOLS] : profile === "substrate" ? [] : undefined;
+      profile === "planning" ? ["request_project_creation"] : profile === "native" ? [...NATIVE_AGENT_TOOLS] : profile === "substrate" ? [] : undefined;
     // MCP Apps views: `auto` lists them for clients that advertise io.modelcontextprotocol/ui;
     // `?apps=on` forces them (stdio proxy started with --apps). The agent profiles never get them.
     const appsParam = query.get("apps");
     const apps: McpAppsMode =
-      profile === "native" || profile === "substrate"
+      profile === "native" || profile === "substrate" || profile === "planning"
         ? "off"
         : appsParam === "on" || appsParam === "off"
           ? appsParam
@@ -209,6 +209,7 @@ export class McpSessionManager {
       ...(initialTools ? { initialTools } : {}),
       ...(profile === "native" ? { capabilityExclude: [...NATIVE_CAPABILITY_EXCLUDE] } : {}),
       ...(profile === "substrate" ? { capabilities: false, toolsOnly: true } : {}),
+      ...(profile === "planning" ? { capabilities: false, toolsOnly: true } : {}),
     });
     const prompt = this.opts.permissionPrompt;
     if (userInput && canAsk) {

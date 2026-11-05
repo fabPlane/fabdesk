@@ -2,24 +2,35 @@
  * Compare two git revisions (or the worktree) of a board: structured part/net/track
  * diff plus generated PCB/schematic SVGs. Writes reports/board-diff.json and renders/diff/*.
  */
-import { mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
+import { createHash } from "node:crypto";
 import { z } from "zod/v4";
+import { ASSEMBLY_MANIFEST_PATH, BoardSourceSelection, ProjectAssembly } from "@fabdesk/protocol";
 import {
   compareRevisions,
   diffSummary,
   type RevisionSources,
 } from "@fabdesk/board-diff";
-import { PROJECT_FILES, exists, writeJson } from "../fs";
-import { ToolError, defineTool, type ProjectHandle } from "../registry";
+import { PROJECT_FILES, exists, jailPath, writeAtomic, writeJson } from "../fs";
+import { ToolError, defineTool, type ProjectHandle, type ToolContext } from "../registry";
 import { ok, p } from "./common";
 
 const WORKTREE = "worktree";
+const SAVED_REVISION = /^saved:[a-f0-9]{64}$/;
+const SAVED_DIRECTORY = ".fabdesk/board-revisions";
+const SavedRevision = z.object({
+  contract: z.literal("fabplane.board-comparison-point.v1"),
+  ref: z.string().regex(SAVED_REVISION), title: z.string(), date: z.string(),
+  board: BoardSourceSelection.optional(),
+  sources: z.object({ kicadPcb: z.string().optional(), kicadSch: z.string().optional(), netlistJson: z.unknown().optional(), pcbSvg: z.string().optional(), schematicSvg: z.string().optional() }),
+});
 
 const REF_RE = /^(?:worktree|HEAD(?:[:~^][0-9a-zA-Z/_-]+)?|[0-9a-f]{7,40}|[A-Za-z][A-Za-z0-9._/-]*)$/;
 
 export function assertGitRef(ref: string): string {
   const trimmed = ref.trim();
+  if (SAVED_REVISION.test(trimmed)) return trimmed;
   if (!REF_RE.test(trimmed) || trimmed.includes("..") || trimmed.includes("\0")) {
     throw new ToolError(`invalid git revision: ${ref}`, "invalid_args");
   }
@@ -147,9 +158,15 @@ async function readRevisionSources(
   project: ProjectHandle,
   ref: string,
   signal?: AbortSignal,
+  member = false,
 ): Promise<{ sources: RevisionSources; paths: DesignPaths; commit?: string }> {
+  // A member is exactly its canonical source. Never borrow a nested board or an unverified netlist.
+  const pick = (paths: string[]) => member ? Object.fromEntries([
+    ["pcb", PROJECT_FILES.boardPcb], ["schematic", PROJECT_FILES.boardSch],
+    ["pcbSvg", "renders/pcb.svg"], ["schematicSvg", "renders/schematic.svg"],
+  ].filter((entry): entry is [string, string] => !!entry[1] && paths.includes(entry[1]))) as DesignPaths : pickDesignPaths(paths);
   if (ref === WORKTREE) {
-    const paths = pickDesignPaths(await walkFiles(project.dir));
+    const paths = pick(await walkFiles(project.dir));
     const sources: RevisionSources = {};
     if (paths.netlist && (await exists(p(project, paths.netlist)))) {
       try {
@@ -170,7 +187,7 @@ async function readRevisionSources(
   }
 
   const prefix = await projectGitPrefix(project.dir, signal);
-  const paths = pickDesignPaths(await listTree(project.dir, ref, signal, prefix));
+  const paths = pick(await listTree(project.dir, ref, signal, prefix));
   const sources: RevisionSources = {};
   if (paths.netlist) {
     const raw = await gitShow(project.dir, ref, paths.netlist, signal, prefix);
@@ -206,8 +223,57 @@ async function readRevisionSources(
   };
 }
 
+async function savedRevision(ctx: ToolContext, ref: string) {
+  const path = await jailPath(ctx.requireProject().dir, `${SAVED_DIRECTORY}/${ref.slice(6)}.json`);
+  const raw = await readFile(path, "utf8").catch(() => { throw new ToolError("This comparison point is unavailable. Choose another saved revision.", "not_found"); });
+  const parsed = SavedRevision.safeParse(JSON.parse(raw));
+  if (!parsed.success || parsed.data.ref !== ref || parsed.data.board?.sourceId !== ctx.board?.sourceId)
+    throw new ToolError("This comparison point does not belong to the selected board source.", "precondition");
+  // Verify native bytes even if a comparison file was replaced outside the app.
+  if (comparisonRef(parsed.data.sources as RevisionSources, parsed.data.board?.sourceId) !== ref)
+    throw new ToolError("This comparison point changed. Its saved native sources cannot be verified.", "precondition");
+  return parsed.data;
+}
+
+function comparisonRef(sources: RevisionSources, sourceId?: string): string {
+  return `saved:${createHash("sha256").update(JSON.stringify({ sourceId: sourceId ?? null, pcb: sources.kicadPcb ?? null, schematic: sources.kicadSch ?? null, netlist: sources.netlistJson ?? null })).digest("hex")}`;
+}
+
+async function assertHistoricalMember(ctx: ToolContext, ref: string) {
+  if (!ctx.board || ref === WORKTREE || SAVED_REVISION.test(ref)) return;
+  if (!ctx.boardRoot) throw new ToolError("The host did not supply assembly history ownership.", "precondition");
+  const root = ctx.boardRoot, prefix = await projectGitPrefix(root.dir, ctx.signal);
+  const raw = await gitShow(root.dir, ref, ASSEMBLY_MANIFEST_PATH, ctx.signal, prefix);
+  const declaration = ProjectAssembly.safeParse(raw ? JSON.parse(raw) : null);
+  const source = declaration.success ? declaration.data.sources.find(source => source.id === ctx.board!.sourceId) : null;
+  const directory = relative(root.dir, ctx.requireProject().dir).replaceAll("\\", "/") || ".";
+  if (!source || source.location !== "project" || source.directory !== directory)
+    throw new ToolError(`The selected board source is not declared at the same location in ${ref}. Choose a comparison point or a commit with matching source ownership.`, "precondition");
+}
+
+export const board_revision_checkpoint = defineTool({
+  name: "board_revision_checkpoint", boardScoped: true, toolset: "kicad", title: "Save board comparison point",
+  description: "Save current native PCB/schematic bytes as a local comparison point without Git or modifying the design. Returns a saved: reference accepted by board_revision_diff. Assembly members require an explicit captured board selector.",
+  inputSchema: { label: z.string().trim().min(1).max(120).default("Saved comparison point") },
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  handler: async ({ label }, ctx) => {
+    const { sources } = await readRevisionSources(ctx.requireProject(), WORKTREE, ctx.signal, !!ctx.board);
+    if (!sources.kicadPcb && !sources.kicadSch && !sources.netlistJson) throw new ToolError("Add a native PCB or schematic before saving a comparison point.", "precondition");
+    // Re-read native inputs so a mixed snapshot is never published while another edit saves.
+    const ref = comparisonRef(sources, ctx.board?.sourceId);
+    const after = await readRevisionSources(ctx.requireProject(), WORKTREE, ctx.signal, !!ctx.board);
+    if (comparisonRef(after.sources, ctx.board?.sourceId) !== ref) throw new ToolError("The design changed while saving. Try again after the edit finishes.", "precondition");
+    await ctx.runInScope?.(async () => {});
+    const path = await jailPath(ctx.requireProject().dir, `${SAVED_DIRECTORY}/${ref.slice(6)}.json`);
+    if (!(await exists(path))) await writeJson(path, { contract: "fabplane.board-comparison-point.v1", ref, title: label, date: new Date().toISOString(), sources, ...(ctx.board ? { board: ctx.board } : {}) });
+    const saved = await savedRevision(ctx, ref);
+    return ok("Saved a comparison point. Native design files are unchanged.", { revision: { ref: saved.ref, title: saved.title, date: saved.date } });
+  },
+});
+
 export const board_revision_list = defineTool({
   name: "board_revision_list",
+  boardScoped: true,
   toolset: "kicad",
   title: "List board revisions",
   description:
@@ -226,8 +292,14 @@ export const board_revision_list = defineTool({
     const revisions: Array<{ ref: string; title: string; date?: string; commit?: string }> = [
       { ref: WORKTREE, title: "Current worktree" },
     ];
+    const saved = await readdir(await jailPath(project.dir, SAVED_DIRECTORY)).catch(() => []);
+    const points = await Promise.all(saved.filter(file => /^[a-f0-9]{64}\.json$/.test(file)).map(async file => {
+      try { const point = await savedRevision(ctx, `saved:${file.slice(0, -5)}`); return { ref: point.ref, title: point.title, date: point.date }; }
+      catch { return null; }
+    }));
+    revisions.push(...points.filter(point => point !== null).sort((a, b) => b.date.localeCompare(a.date)).slice(0, limit));
     if (await isGitRepo(project.dir, ctx.signal)) {
-      const log = await git(project.dir, ["log", `-n${limit}`, "--format=%H\t%s\t%cI"], ctx.signal);
+      const log = await git(project.dir, ["log", `-n${limit}`, "--format=%H\t%s\t%cI", ...(ctx.board ? ["--", "board.kicad_pcb", "board.kicad_sch"] : [])], ctx.signal);
       if (log.ok) {
         for (const line of log.stdout.split("\n")) {
           if (!line.trim()) continue;
@@ -244,8 +316,8 @@ export const board_revision_list = defineTool({
     }
     return ok(
       revisions.length === 1
-        ? "Project is not a git checkout; only the current worktree is available."
-        : `${revisions.length - 1} git revision(s) plus the worktree.`,
+        ? "No comparison point yet. Save one before editing, or use a project with Git history."
+        : `${revisions.length - 1} saved comparison point(s) or Git revision(s), plus current files.`,
       { revisions },
     );
   },
@@ -253,13 +325,14 @@ export const board_revision_list = defineTool({
 
 export const board_revision_diff = defineTool({
   name: "board_revision_diff",
+  boardScoped: true,
   toolset: "kicad",
   title: "Visual board revision diff",
   description:
-    "Compare two git revisions of this board (default: HEAD → worktree). Highlights added/removed/moved components, net membership changes, and copper/schematic tracks. Writes reports/board-diff.json and renders/diff/{pcb,schematic}-{structured,overlay,side-by-side}.svg. `from`/`to` are git refs or `worktree`.",
+    "Compare two git revisions of this board (default: HEAD → worktree). Highlights added/removed/moved components, net membership changes, and copper/schematic tracks. Writes reports/board-diff.json and renders/diff/{pcb,schematic}-{structured,overlay,side-by-side}.svg. `from`/`to` accept Git refs, saved comparison-point references, or `worktree`.",
   inputSchema: {
-    from: z.string().min(1).default("HEAD").describe("Older git ref, or `worktree`."),
-    to: z.string().min(1).default(WORKTREE).describe("Newer git ref, or `worktree`."),
+    from: z.string().min(1).default("HEAD").describe("Older Git ref, saved:<SHA-256> comparison point, or worktree."),
+    to: z.string().min(1).default(WORKTREE).describe("Newer Git ref, saved:<SHA-256> comparison point, or worktree."),
   },
   annotations: {
     readOnlyHint: false,
@@ -271,7 +344,7 @@ export const board_revision_diff = defineTool({
     const project = ctx.requireProject();
     const fromRef = assertGitRef(fromRaw);
     const toRef = assertGitRef(toRaw);
-    if (fromRef !== WORKTREE || toRef !== WORKTREE) {
+    if ([fromRef, toRef].some(ref => ref !== WORKTREE && !SAVED_REVISION.test(ref))) {
       if (!(await isGitRepo(project.dir, ctx.signal))) {
         throw new ToolError(
           "This project is not a git checkout. Import or clone the board, or pass from=worktree and to=worktree after saving two snapshots yourself.",
@@ -280,9 +353,11 @@ export const board_revision_diff = defineTool({
       }
     }
     ctx.progress(0.15, "reading revisions");
+    await Promise.all([assertHistoricalMember(ctx, fromRef), assertHistoricalMember(ctx, toRef)]);
+    const read = async (ref: string): Promise<{ sources: RevisionSources; paths: DesignPaths; commit?: string }> => SAVED_REVISION.test(ref) ? { sources: (await savedRevision(ctx, ref)).sources as RevisionSources, paths: {} } : readRevisionSources(project, ref, ctx.signal, !!ctx.board);
     const [fromRev, toRev] = await Promise.all([
-      readRevisionSources(project, fromRef, ctx.signal),
-      readRevisionSources(project, toRef, ctx.signal),
+      read(fromRef),
+      read(toRef),
     ]);
     if (!fromRev.sources.kicadPcb && !fromRev.sources.kicadSch && !fromRev.sources.netlistJson) {
       throw new ToolError(`no board, schematic, or netlist at ${fromRef}`, "precondition");
@@ -293,34 +368,41 @@ export const board_revision_diff = defineTool({
     ctx.progress(0.55, "diffing");
     const compared = compareRevisions(fromRev.sources, toRev.sources);
     const summary = diffSummary(compared.diff);
-    const dir = p(project, PROJECT_FILES.renders, "diff");
+    await ctx.runInScope?.(async () => {});
+    const digest = createHash("sha256").update(JSON.stringify([fromRef, toRef, fromRev.sources, toRev.sources])).digest("hex").slice(0, 24);
+    const artifactPrefix = `${PROJECT_FILES.renders}/diff/${digest}`;
+    const dir = await jailPath(project.dir, artifactPrefix);
     await mkdir(dir, { recursive: true });
     const files: Record<string, string> = {
-      pcbStructured: "renders/diff/pcb-structured.svg",
-      schematicStructured: "renders/diff/schematic-structured.svg",
+      pcbStructured: `${artifactPrefix}/pcb-structured.svg`,
+      schematicStructured: `${artifactPrefix}/schematic-structured.svg`,
     };
-    await writeFile(join(project.dir, files.pcbStructured!), compared.pcb.structured);
-    await writeFile(join(project.dir, files.schematicStructured!), compared.schematic.structured);
-    files.pcbOverlay = "renders/diff/pcb-overlay.svg";
-    files.pcbSideBySide = "renders/diff/pcb-side-by-side.svg";
-    files.schematicOverlay = "renders/diff/schematic-overlay.svg";
-    files.schematicSideBySide = "renders/diff/schematic-side-by-side.svg";
-    await writeFile(join(project.dir, files.pcbOverlay), compared.pcb.overlay);
-    await writeFile(join(project.dir, files.pcbSideBySide), compared.pcb.sideBySide);
-    await writeFile(join(project.dir, files.schematicOverlay), compared.schematic.overlay);
-    await writeFile(join(project.dir, files.schematicSideBySide), compared.schematic.sideBySide);
+    const publish = async (path: string, content: string) => writeAtomic(await jailPath(project.dir, path), content);
+    await publish(files.pcbStructured!, compared.pcb.structured);
+    await publish(files.schematicStructured!, compared.schematic.structured);
+    files.pcbOverlay = `${artifactPrefix}/pcb-overlay.svg`;
+    files.pcbSideBySide = `${artifactPrefix}/pcb-side-by-side.svg`;
+    files.schematicOverlay = `${artifactPrefix}/schematic-overlay.svg`;
+    files.schematicSideBySide = `${artifactPrefix}/schematic-side-by-side.svg`;
+    await publish(files.pcbOverlay, compared.pcb.overlay);
+    await publish(files.pcbSideBySide, compared.pcb.sideBySide);
+    await publish(files.schematicOverlay, compared.schematic.overlay);
+    await publish(files.schematicSideBySide, compared.schematic.sideBySide);
     const report = {
       from: { ref: fromRef, ...(fromRev.commit ? { commit: fromRev.commit } : {}), paths: fromRev.paths },
       to: { ref: toRef, ...(toRev.commit ? { commit: toRev.commit } : {}), paths: toRev.paths },
       summary,
+      documents: { pcb: !!(fromRev.sources.kicadPcb || toRev.sources.kicadPcb), schematic: !!(fromRev.sources.kicadSch || toRev.sources.kicadSch) },
       diff: compared.diff,
       files,
       text: compared.text,
+      ...(ctx.board ? { boardSource: { projectId: project.id, ...ctx.board } } : {}),
     };
-    await writeJson(p(project, PROJECT_FILES.reports, "board-diff.json"), report);
+    await ctx.runInScope?.(async () => {});
+    await writeJson(await jailPath(project.dir, `${PROJECT_FILES.reports}/board-diff.json`), report);
     ctx.progress(1, "done");
     return ok(`Board diff ${fromRef} → ${toRef}\n${compared.text}\nWrote reports/board-diff.json`, report);
   },
 });
 
-export const boardDiffTools = [board_revision_list, board_revision_diff];
+export const boardDiffTools = [board_revision_list, board_revision_checkpoint, board_revision_diff];

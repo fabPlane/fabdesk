@@ -1,7 +1,12 @@
+import { expectedPcbSource } from "../pcb-output";
+import { renderMemberSchematicPreview } from "../member-schematic-preview";
 /** Render toolset: schematic/PCB images, GLB, and product videos. */
 import { createHash } from "node:crypto";
-import { readFile, rm, stat } from "node:fs/promises";
+import { AssemblyBoardModelRevision, BoardModelRevision, BOARD_MODEL_REVISION_PATH, PCB_PREVIEW_REVISION_PATH } from "@fabdesk/protocol";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { z } from "zod/v4";
+import { tmpdir } from "node:os";
+import { dirname, join, relative, sep } from "node:path";
 import {
   extractSpecs,
   renderProductVideo,
@@ -11,14 +16,16 @@ import {
   VIDEO_PRESETS,
   VIDEO_RESOLUTIONS,
 } from "@fabdesk/product-video";
-import { PROJECT_FILES, ensureDir, exists, mtimeMs } from "../fs";
+import { PROJECT_FILES, ensureDir, exists, jailPath, writeAtomic, writeJson } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import { fileUrl, loadNetlist, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
+import { pcbPreviewFileHash, recordPcbPreviewRevision } from "../pcb-preview-revision";
 import { rowPoints } from "./spatial";
 import { pcbModelReadiness, renderPcbDisplay } from "./pcb-display";
 
 export const render_pcb_readiness = defineTool({
   name: "render_pcb_readiness",
+  assemblyWide: true,
   toolset: "render",
   title: "Check PCB model setup",
   description:
@@ -31,6 +38,22 @@ export const render_pcb_readiness = defineTool({
     idempotentHint: true,
   },
   handler: ({ boardPaths }, ctx) => pcbModelReadiness(ctx, boardPaths),
+});
+
+/** Display caches are project-owned and never replace a canonical/member model receipt. */
+export const render_pcb_display = defineTool({
+  name: "render_pcb_display",
+  toolset: "render",
+  assemblyWide: true,
+  title: "Display a selected PCB model",
+  description: "Create an isolated display model for an explicit project-relative PCB path and captured PCB revision. Does not infer assembly membership, replace the saved board model, edit sources, or verify physical fit.",
+  inputSchema: {
+    boardPath: z.string().min(1),
+    expectedPcbRevision: z.string().regex(/^[a-f0-9]{64}$/),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  longRunning: true,
+  handler: ({ boardPath, expectedPcbRevision }, ctx) => renderPcbDisplay(ctx, boardPath, expectedPcbRevision),
 });
 
 async function fileRevision(
@@ -51,11 +74,13 @@ async function fileIdentity(path: string): Promise<{ sha256: string; bytes: numb
 
 export const render_schematic_svg = defineTool({
   name: "render_schematic_svg",
+  boardScoped: true,
   toolset: "render",
   title: "Render schematic",
   description:
-    "Export board.kicad_sch as SVG and return PNG image pixels bound to the source file revision.",
+    "Export schematic SVG previews. Single-board projects also receive PNG pixels. Assembly members require expectedHierarchyRevision from schematic_inspect and publish all captured sheets with a source-qualified receipt; maxWidth only affects single-board PNGs.",
   inputSchema: {
+    expectedHierarchyRevision: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Required for an assembly member: aggregate revision from its saved schematic inspection"),
     maxWidth: z.number().int().min(320).max(4096).default(1600),
   },
   annotations: {
@@ -65,7 +90,8 @@ export const render_schematic_svg = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async ({ maxWidth }, ctx) => {
+  handler: async ({ maxWidth, expectedHierarchyRevision }, ctx) => {
+    if (ctx.board) return renderMemberSchematicPreview(ctx, expectedHierarchyRevision);
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const schematic = await requireSchematic(project);
@@ -141,10 +167,11 @@ export const render_schematic_svg = defineTool({
 
 export const render_pcb_svg = defineTool({
   name: "render_pcb_svg",
+  boardScoped: true,
   toolset: "render",
   title: "Render PCB SVG",
   description: "Render board.kicad_pcb copper, silkscreen, and edge cuts to renders/pcb.svg.",
-  inputSchema: {},
+  inputSchema: { expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Captured saved PCB hash; reject if a queued preview would render newer bytes") },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
@@ -152,14 +179,36 @@ export const render_pcb_svg = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async (_args, ctx) => {
+  handler: async ({ expectedSourceSha256 }, ctx) => {
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const board = await requireBoard(project);
-    await ensureDir(p(project, PROJECT_FILES.renders));
-    const output = p(project, PROJECT_FILES.renders, "pcb.svg");
+    const output = await jailPath(project.dir, `${PROJECT_FILES.renders}/pcb.svg`);
+    await jailPath(project.dir, PCB_PREVIEW_REVISION_PATH);
     ctx.progress(0.2, "exporting svg");
-    await ctx.services.kicad.exportPcbSvg(cli, { board, output, signal: ctx.signal });
+    const sourceBytes = await readFile(board);
+    const sourceRevision = createHash("sha256").update(sourceBytes).digest("hex");
+    if (expectedSourceSha256 && sourceRevision !== expectedSourceSha256) throw new ToolError("PCB changed before preview rendering. Review the latest source and try again.", "precondition");
+    const scratch = await mkdtemp(join(tmpdir(), "fabplane-pcb-preview-"));
+    try {
+      // Render immutable input; a live edit cannot mix source revisions in one SVG.
+      const snapshot = join(scratch, "board.kicad_pcb");
+      const svg = join(scratch, "pcb.svg");
+      await writeFile(snapshot, sourceBytes);
+      await ctx.services.kicad.exportPcbSvg(cli, { board: snapshot, output: svg, signal: ctx.signal });
+      if (await pcbPreviewFileHash(board) !== sourceRevision) {
+        throw new ToolError("PCB changed while rendering. Review the saved board and render the preview again.", "precondition");
+      }
+      const artifactBytes = await readFile(svg);
+      // A queued/exporting member must retain its original source ownership and output jail.
+      await jailPath(project.dir, `${PROJECT_FILES.renders}/pcb.svg`);
+      await jailPath(project.dir, PCB_PREVIEW_REVISION_PATH);
+      await ctx.runInScope?.(async () => {});
+      await writeAtomic(output, artifactBytes);
+      await recordPcbPreviewRevision(project.dir, sourceRevision, createHash("sha256").update(artifactBytes).digest("hex"));
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
     ctx.progress(1, "done");
     const url = fileUrl(output);
     return ok(
@@ -172,11 +221,13 @@ export const render_pcb_svg = defineTool({
 
 export const render_glb = defineTool({
   name: "render_glb",
+  boardScoped: true,
   toolset: "render",
   title: "Export 3D GLB",
   description:
     "Export a 3D model (GLB) of the KiCad board to renders/board.glb for the app's 3D tab. Requires kicad-cli and board.kicad_pcb.",
   inputSchema: {
+    expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Required for an assembly member: hash of its inspected saved PCB"),
     boardPath: z.string().optional(),
     expectedPcbRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   },
@@ -188,17 +239,45 @@ export const render_glb = defineTool({
   },
   longRunning: true,
   handler: async (args, ctx) => {
+    const { expectedSourceSha256 } = args;
     if (args.boardPath || args.expectedPcbRevision) {
       if (!args.boardPath || !args.expectedPcbRevision)
         throw new ToolError("Provide both boardPath and expectedPcbRevision.", "invalid_args");
       return renderPcbDisplay(ctx, args.boardPath, args.expectedPcbRevision);
     }
     const project = ctx.requireProject();
+    if (ctx.board && !expectedSourceSha256) throw new ToolError("Inspect the selected member PCB and provide expectedSourceSha256 before exporting its model.", "precondition");
     const cli = await requireKicad(ctx);
     const board = await requireBoard(project);
-    const output = p(project, PROJECT_FILES.renders, "board.glb");
+    const output = await jailPath(project.dir, `${PROJECT_FILES.renders}/board.glb`);
+    const receiptPath = await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
     ctx.progress(0.2, "exporting glb");
-    const res = await ctx.services.kicad.exportGlb(cli, { board, output, signal: ctx.signal });
+    const sourceSha256 = await pcbPreviewFileHash(board);
+    if (expectedSourceSha256 && sourceSha256 !== expectedSourceSha256) throw new ToolError("The saved PCB changed since inspection. Inspect the selected source again before exporting its model.", "precondition");
+    // The editable PCB is copied to the root during import. Its project-relative
+    // component models still belong to the explicitly selected repository directory.
+    const imported = !ctx.board ? project.manifest().importedBoard : undefined;
+    const modelProjectDir = imported ? dirname(await jailPath(project.dir, imported.path)) : project.dir;
+    if (!(await stat(modelProjectDir).catch(() => null))?.isDirectory()) throw new ToolError("The imported board's component-model directory is missing. Restore that source folder before exporting the model.", "precondition");
+    const modelProjectDirectory = relative(project.dir, modelProjectDir).split(sep).join("/");
+    const scratch = await mkdtemp(join(tmpdir(), "fabplane-board-model-"));
+    let res: { fused: boolean; warnings: string[] };
+    try {
+      // Keep the source in its real project so relative component models/project variables
+      // resolve normally. Only publish a newly written export, after rechecking saved PCB bytes.
+      const temporary = join(scratch, "board.glb");
+      res = await ctx.services.kicad.exportGlb(cli, { board, output: temporary, ...(modelProjectDirectory ? { modelProjectDir } : {}), signal: ctx.signal });
+      if (await pcbPreviewFileHash(board) !== sourceSha256)
+        throw new ToolError("PCB changed while exporting the model. The previous model was kept; review the saved PCB and try again.", "precondition");
+      const bytes = await readFile(temporary);
+      const receipt = (ctx.board ? AssemblyBoardModelRevision : BoardModelRevision).parse({ contract: "fabplane.board-model-revision.v1", source: "board.kicad_pcb", artifact: "renders/board.glb", sourceSha256, artifactSha256: createHash("sha256").update(bytes).digest("hex"), generatedAt: new Date().toISOString(), dependencies: "unverified", warnings: res.warnings, ...(modelProjectDirectory ? { modelProjectDirectory } : {}), ...(ctx.board ? { boardSource: { projectId: project.id, ...ctx.board } } : {}) });
+      await jailPath(project.dir, `${PROJECT_FILES.renders}/board.glb`);
+      await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
+      await ctx.runInScope?.(async () => {});
+      ctx.signal.throwIfAborted();
+      await writeAtomic(output, bytes);
+      await writeJson(receiptPath, receipt);
+    } finally { await rm(scratch, { recursive: true, force: true }); }
     ctx.progress(1, "done");
     const url = fileUrl(output);
     return ok(
@@ -366,13 +445,17 @@ function highlightShape(row: Record<string, unknown>): string {
   return `<circle cx="${point.x}" cy="${point.y}" r="${radius}" />`;
 }
 
+const activeMemberVideos = new Set<string>();
+
 export const render_product_video = defineTool({
   name: "render_product_video",
+  boardScoped: true,
   toolset: "render",
   title: "Make a product video",
   description:
     "Render a short product video of the project's 3D scene (board GLB plus enclosure/mechanical meshes when present) for design reviews, customer updates and launch pages. Presets: orbit, explode (exploded → assembled), flip (top/bottom), push_in, review (title + orbit + flip + assemble + specs). Writes exports/product-video.mp4 / .webm / .gif plus a poster PNG. MP4 and WebM need ffmpeg on PATH (or FABDESK_FFMPEG); GIF is always produced. If renders/board.glb is missing, exports it first when a board exists.",
   inputSchema: {
+    expectedSourceSha256: expectedPcbSource,
     preset: z.enum(VIDEO_PRESETS).default("review"),
     durationSec: z.number().min(2).max(20).default(6),
     resolution: z.enum(VIDEO_RESOLUTIONS).default("720p"),
@@ -393,16 +476,61 @@ export const render_product_video = defineTool({
   longRunning: true,
   handler: async (args, ctx) => {
     const project = ctx.requireProject();
+    if (ctx.board) {
+      if (activeMemberVideos.has(project.dir)) throw new ToolError("A video export is already running for this source. Wait for it to finish.", "precondition");
+      activeMemberVideos.add(project.dir);
+      try {
+      if (!args.expectedSourceSha256) throw new ToolError("Inspect the selected saved PCB before making a video.", "precondition");
+      const board = await requireBoard(project), sourceHash = await pcbPreviewFileHash(board);
+      if (sourceHash !== args.expectedSourceSha256) throw new ToolError("PCB changed before video generation. Recheck this source.", "precondition");
+      const modelPath = await jailPath(project.dir, "renders/board.glb"), receiptPath = await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
+      let receipt: unknown; try { receipt = JSON.parse(await readFile(receiptPath, "utf8")); } catch { receipt = null; }
+      const parsed = AssemblyBoardModelRevision.safeParse(receipt);
+      const current = parsed.success && parsed.data.boardSource.projectId === project.id && parsed.data.boardSource.sourceId === ctx.board.sourceId && parsed.data.boardSource.manifestSha256 === ctx.board.manifestSha256 && parsed.data.sourceSha256 === sourceHash && await exists(modelPath) && await pcbPreviewFileHash(modelPath) === parsed.data.artifactSha256;
+      if (!current) await render_glb.handler({ expectedSourceSha256: sourceHash }, { ...ctx, progress: (fraction, note) => ctx.progress(fraction * .1, note) });
+      const model = await readFile(modelPath), modelHash = createHash("sha256").update(model).digest("hex");
+      const scratch = await mkdtemp(join(tmpdir(), "fabplane-member-video-"));
+      try {
+        // A board video contains this source's board only; unrelated meshes and parent metadata are not inferred.
+        await ensureDir(join(scratch, "renders")); await writeFile(join(scratch, "renders/board.glb"), model);
+        const { width, height, ...options } = args;
+        const result = await renderProductVideo({ ...options, ...(width ? { width } : {}), ...(height ? { height } : {}), projectDir: scratch, outputDir: join(scratch, "exports"), specs: extractSpecs({ name: project.name }), signal: ctx.signal, progress: (fraction, note) => ctx.progress(.1 + fraction * .85, note) });
+        const paths = [...Object.values(result.files).filter((path): path is string => !!path), result.poster, result.manifest];
+        const recorded = JSON.parse(await readFile(result.manifest, "utf8")) as Record<string, unknown>;
+        recorded.boardSource = { projectId: project.id, ...ctx.board };
+        await writeFile(result.manifest, JSON.stringify(recorded, null, 2) + "\n");
+        const publications = await Promise.all(paths.map(async path => ({ target: await jailPath(project.dir, path.slice(scratch.length + 1)), data: path === result.manifest ? Buffer.from((await readFile(path, "utf8")).replaceAll(scratch, project.dir)) : await readFile(path) })));
+        const publish = async () => {
+          ctx.signal.throwIfAborted();
+          if (await pcbPreviewFileHash(board) !== sourceHash || await pcbPreviewFileHash(modelPath) !== modelHash) throw new ToolError("PCB or model changed while rendering. Previous videos were kept; review inputs and try again.", "precondition");
+          for (const file of publications) await jailPath(project.dir, file.target);
+          for (const file of publications) await writeAtomic(file.target, file.data);
+        };
+        await ctx.runInScope!(publish);
+        const files = Object.fromEntries(Object.entries(result.files).map(([format, path]) => [format, path?.replace(scratch, project.dir)])), poster = result.poster.replace(scratch, project.dir);
+        return ok(`Saved a ${args.preset} video of this board (${result.width}×${result.height}, ${result.frameCount} frames). Component-model dependencies and captions remain unverified.${result.skipped.length ? ` Skipped: ${result.skipped.map(item => `${item.format} (${item.reason})`).join("; ")}` : ""}`, { ...result, files, poster, manifest: result.manifest.replace(scratch, project.dir), url: fileUrl(files.mp4 ?? files.gif ?? poster) }, { images: [{ path: poster, mime: "image/png" }] });
+      } finally { await rm(scratch, { recursive: true, force: true }); }
+      } finally { activeMemberVideos.delete(project.dir); }
+    }
     const boardGlb = p(project, PROJECT_FILES.renders, "board.glb");
     const board = p(project, PROJECT_FILES.boardPcb);
-    const pcbMtime = await mtimeMs(board);
-    const glbMtime = await mtimeMs(boardGlb);
-    const glbStale = glbMtime === null || (pcbMtime !== null && pcbMtime > glbMtime);
-    if (glbStale && (await exists(board))) {
-      const cli = await requireKicad(ctx);
-      ctx.progress(0.05, "exporting glb");
-      await ensureDir(p(project, PROJECT_FILES.renders));
-      await ctx.services.kicad.exportGlb(cli, { board, output: boardGlb, signal: ctx.signal });
+    if (await exists(board)) {
+      // Reuse the guarded exporter and its source receipt. File timestamps cannot establish
+      // whether an imported/restored PCB matches a saved model.
+      let receipt: unknown;
+      try {
+        const text = await readFile(p(project, BOARD_MODEL_REVISION_PATH), "utf8");
+        try { receipt = JSON.parse(text); } catch { receipt = null; }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      const parsed = BoardModelRevision.safeParse(receipt);
+      const current = parsed.success && await exists(boardGlb)
+        && await pcbPreviewFileHash(board) === parsed.data.sourceSha256
+        && await pcbPreviewFileHash(boardGlb) === parsed.data.artifactSha256;
+      if (!current) {
+        await render_glb.handler({}, { ...ctx, progress: (fraction, note) => ctx.progress(fraction * .1, note) });
+      }
     }
     const manifest = project.manifest();
     let components: Array<{ ref: string; value: string; footprint?: string }> = [];
@@ -477,6 +605,7 @@ export const render_product_video = defineTool({
 
 export const renderTools = [
   render_pcb_readiness,
+  render_pcb_display,
   render_schematic_svg,
   render_pcb_svg,
   render_view,

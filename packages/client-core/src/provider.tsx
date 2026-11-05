@@ -1,3 +1,4 @@
+import type { SchematicFocus } from "@fabdesk/protocol";
 import type { ReleaseNotes, UpdateCheckResult, UpdateDownloadState } from "@fabdesk/protocol";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -81,6 +82,7 @@ export interface CoreProviderProps {
   queryClient?: QueryClient;
   /** Where `route.*` frames go; omitted on clients with no Route Cinema (mobile). */
   route?: RouteSink;
+  onSchematicFocus?: (focus: SchematicFocus) => void;
   /** Opens the event stream. Defaults to the client's SSE subscription; mobile passes a WebSocket one. */
   subscribe?: CoreEventSubscribe;
   children: ReactNode;
@@ -97,15 +99,19 @@ export function CoreProvider({
   host = nullHost,
   queryClient,
   route,
+  onSchematicFocus,
   subscribe,
   children,
 }: CoreProviderProps) {
-  const [qc] = useState(
+  // A restarted daemon can rotate its token while keeping the same URL. Do not let queries
+  // made with the old client (including a 401) populate the new connection's cache.
+  const qc = useMemo(
     () =>
       queryClient ??
       new QueryClient({
         defaultOptions: { queries: { retry: 1, staleTime: 5_000, refetchOnWindowFocus: false } },
       }),
+    [client, queryClient],
   );
   const [sseStatus, setSseStatus] = useState<SseStatus>("connecting");
   const value = useMemo<CoreContextValue>(
@@ -119,6 +125,7 @@ export function CoreProvider({
           client={client}
           onStatus={setSseStatus}
           {...(route ? { route } : {})}
+          {...(onSchematicFocus ? { onSchematicFocus } : {})}
           {...(subscribe ? { subscribe } : {})}
         />
         {children}
@@ -131,10 +138,12 @@ function CoreEventBridge(props: {
   client: CoreClient;
   onStatus: (s: SseStatus) => void;
   route?: RouteSink;
+  onSchematicFocus?: (focus: SchematicFocus) => void;
   subscribe?: CoreEventSubscribe;
 }) {
   useCoreEvents(props.client, props.onStatus, {
     ...(props.route ? { route: props.route } : {}),
+    ...(props.onSchematicFocus ? { onSchematicFocus: props.onSchematicFocus } : {}),
     ...(props.subscribe ? { subscribe: props.subscribe } : {}),
   });
   return null;
@@ -144,16 +153,16 @@ function CoreEventBridge(props: {
 export function useCoreEvents(
   client: CoreClient,
   onStatus?: (s: SseStatus) => void,
-  opts: { route?: RouteSink; subscribe?: CoreEventSubscribe } = {},
+  opts: { route?: RouteSink; onSchematicFocus?: (focus: SchematicFocus) => void; subscribe?: CoreEventSubscribe } = {},
 ): void {
   const qc = useQueryClient();
-  const { route, subscribe } = opts;
+  const { route, onSchematicFocus, subscribe } = opts;
   useEffect(() => {
     const open = subscribe ?? ((topics, onEvent, onSt) => client.subscribe(topics, onEvent, onSt));
     let wasOpen = false;
     const sub = open(
       EVENT_TOPICS,
-      (event) => handleCoreEvent(event, { qc, client, ...(route ? { route } : {}) }),
+      (event) => handleCoreEvent(event, { qc, client, ...(route ? { route } : {}), ...(onSchematicFocus ? { onSchematicFocus } : {}) }),
       (status) => {
         // A stream that comes back after a gap (daemon restart, sleep, network blip) may have missed
         // events beyond the bus's replay window; refetching what is on screen is the cheap correct answer.
@@ -169,7 +178,7 @@ export function useCoreEvents(
       },
     );
     return () => sub.close();
-  }, [client, qc, onStatus, route, subscribe]);
+  }, [client, qc, onStatus, route, onSchematicFocus, subscribe]);
 }
 
 /** Whether a stream status change is a reconnect (open again after having been open) that needs a refetch. */

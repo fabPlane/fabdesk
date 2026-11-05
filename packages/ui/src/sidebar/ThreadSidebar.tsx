@@ -9,7 +9,7 @@ import { useBranchThread } from "../hooks/threadActions";
 import { useRunsStore } from "@fabdesk/client-core";
 import { SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, normalizeSidebarListTab, useUiStore } from "../stores/ui";
 import { cn } from "../util";
-import { groupThreadsByProject, sidebarSections, type ProjectThreadGroup } from "@fabdesk/client-core";
+import { groupThreadsByProject, sidebarSections, searchProjectGroups, type ProjectThreadGroup } from "@fabdesk/client-core";
 import { OpenSourceList } from "./OpenSourceList";
 import { UserFooter } from "./UserFooter";
 import { SearchResults } from "../chat/SearchResults";
@@ -18,6 +18,8 @@ import { ProjectActionDialog, type ProjectAction } from "./ProjectActionDialog";
 
 export interface ThreadSidebarProps {
   onNewChat: () => void;
+  onOpenProject?: (projectId: string) => void;
+  projectOnly?: boolean;
 }
 
 interface Menu {
@@ -26,18 +28,20 @@ interface Menu {
   thread: Thread;
 }
 
-export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
+export function ThreadSidebar({ onNewChat, onOpenProject, projectOnly: requestedProjectOnly = false }: ThreadSidebarProps) {
 
   const [q, setQ] = useState("");
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   const setActiveProject = useUiStore((s) => s.setActiveProject);
   const startNewChatInProject = useUiStore((s) => s.startNewChatInProject);
   const projectId = useUiStore((s) => s.activeProjectId);
+  const projectOnly = requestedProjectOnly || !!projectId;
   const pinnedProjectIds = useUiStore((s) => s.pinnedProjectIds);
   const setProjectPinned = useUiStore((s) => s.setProjectPinned);
   const activeThreadId = useUiStore((s) => s.activeThreadId);
   const setActiveThread = useUiStore((s) => s.setActiveThread);
-  const sidebarListTab = normalizeSidebarListTab(useUiStore((s) => s.sidebarListTab));
+  const storedListTab = useUiStore((s) => s.sidebarListTab);
+  const sidebarListTab = projectOnly ? "projects" : normalizeSidebarListTab(storedListTab);
   const setSidebarListTab = useUiStore((s) => s.setSidebarListTab);
   const setActiveOpenSourceId = useUiStore((s) => s.setActiveOpenSourceId);
   const projects = useProjects();
@@ -53,10 +57,11 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
     }
   }, [activeThreadId, threads.data]);
   const projectGroups = useMemo(
-    () => groupThreadsByProject(threads.data ?? [], projects.data ?? [], pinnedProjectIds),
-    [threads.data, projects.data, pinnedProjectIds],
+    () => groupThreadsByProject(threads.data ?? [], projects.data ?? [], pinnedProjectIds).filter(group => !projectOnly || group.projectId === projectId),
+    [threads.data, projects.data, pinnedProjectIds, projectOnly, projectId],
   );
   const sections = useMemo(() => sidebarSections(projectGroups, pinnedProjectIds), [projectGroups, pinnedProjectIds]);
+  const projectMatches = useMemo(() => searchProjectGroups(projectGroups, q), [projectGroups, q]);
   const { patch } = useThreadMutations();
   const branch = useBranchThread();
   const [deletingChat, setDeletingChat] = useState<Thread | null>(null);
@@ -103,7 +108,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           className={cn(
             "fd-chat-row flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors",
             running[t.id] && "pr-9",
-            t.id === activeThreadId ? "bg-panel-2 font-medium text-fg shadow-sm" : "text-fg/85 hover:bg-panel-2/60 hover:text-fg",
+            t.id === activeThreadId ? "bg-panel-2 font-medium text-fg shadow-sm" : "text-fg hover:bg-panel-2/60",
           )}
           title={t.title || "Untitled"}
           onClick={() => openThread(t.id, t.projectId)}
@@ -150,8 +155,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
 
   const openThread = (id: string, threadProjectId?: string | null) => {
     setActiveOpenSourceId(null);
-    setActiveProject(threadProjectId ?? null);
-    setActiveThread(id);
+    if (setActiveProject(threadProjectId ?? null)) setActiveThread(id);
   };
 
   const renderProject = (group: ProjectThreadGroup) => {
@@ -160,18 +164,26 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           return (
           <div key={group.key} className="fd-sidebar-project-group" data-testid={`sidebar-group-${group.key}`}>
             <div className="fd-project-heading group relative flex items-center gap-0.5 px-0.5" data-menu-open={projectMenu?.id === group.projectId}>
+              {onOpenProject && group.kind === "project" && <IconButton
+                size="sm"
+                title={`${expanded ? "Hide" : "Show"} chats in ${group.title}`}
+                aria-expanded={expanded}
+                aria-controls={`project-chats-${group.key}`}
+                onClick={() => setExpandedProjects(current => ({ ...current, [group.key]: !expanded }))}
+              ><Icon name={expanded ? "chevronDown" : "chevronRight"} width={14} height={14} /></IconButton>}
               <button
                 type="button"
                 className={cn(
                   "fd-project-row flex min-h-9 min-w-0 flex-1 items-center justify-between rounded-md px-2 text-left text-[13px] hover:bg-panel-2/60 hover:text-fg",
-                  group.kind === "project" && group.projectId === projectId ? "bg-panel-2/50 text-fg" : "text-muted",
+                  group.kind === "project" && group.projectId === projectId ? "bg-panel-2/50 text-fg" : "text-fg",
                 )}
                 aria-current={group.kind === "project" && group.projectId === projectId ? "true" : undefined}
-                aria-expanded={group.kind === "project" ? expanded : undefined}
-                aria-controls={group.kind === "project" ? `project-chats-${group.key}` : undefined}
+                aria-expanded={!onOpenProject && group.kind === "project" ? expanded : undefined}
+                aria-controls={!onOpenProject && group.kind === "project" ? `project-chats-${group.key}` : undefined}
                 onClick={() => {
                   if (group.kind === "project" && group.projectId) {
-                    setExpandedProjects((current) => ({ ...current, [group.key]: !expanded }));
+                    if (onOpenProject) onOpenProject(group.projectId);
+                    else setExpandedProjects((current) => ({ ...current, [group.key]: !expanded }));
                   }
                 }}
               >
@@ -197,7 +209,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
                 ><Icon name="more" /></IconButton>
                 <IconButton
                   title={`New chat in ${group.title}`}
-                  className="fd-project-add absolute right-0 top-0 text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-fg"
+                  className="fd-project-add absolute right-0 top-0 text-fg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-fg"
                   onClick={(e) => {
                     e.stopPropagation();
                     setExpandedProjects((current) => ({ ...current, [group.key]: true }));
@@ -227,10 +239,10 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
   return (
     <div className="fd-sidebar flex h-full flex-col">
       <nav className="fd-sidebar-nav" aria-label="Workspace navigation">
-        {SIDEBAR_LIST_TABS.map((id) => (
+        {(projectOnly ? ["projects"] as const : SIDEBAR_LIST_TABS).map((id) => (
           <button key={id} type="button" aria-current={sidebarListTab === id ? "page" : undefined} onClick={() => setSidebarListTab(id)}>
             <Icon name={id === "projects" ? "folder" : "library"} width={17} height={17} />
-            {SIDEBAR_LIST_TAB_LABELS[id]}
+            {projectOnly ? "Conversations" : SIDEBAR_LIST_TAB_LABELS[id]}
           </button>
         ))}
       </nav>
@@ -243,7 +255,7 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
           </div>
           <div className="fd-sidebar-search relative mx-3 mb-1 mt-2">
             <Icon name="search" width={15} height={15} className="pointer-events-none absolute left-2.5 top-2.5 text-muted" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search chats" aria-label="Search chats" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={projectOnly ? "Find conversations…" : "Find projects or chats…"} aria-label={projectOnly ? "Find conversations" : "Find projects or chats"} />
           </div>
         </>
       )}
@@ -251,7 +263,17 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         <OpenSourceList />
       ) : (
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-1">
-        {q.trim().length >= 2 ? <SearchResults query={q} /> : <>
+        {q.trim().length >= 2 ? <>
+          {!projectOnly && <section aria-label="Project search results" className="mb-4">
+            <h2 className="px-2 py-2 text-[11px] font-medium text-muted">Projects</h2>
+            {projects.isLoading ? <p className="px-2 py-2 text-xs text-muted">Loading projects…</p> : projects.isError ? <p role="alert" className="px-2 py-2 text-xs text-danger">Could not load projects. <button className="underline" onClick={() => void projects.refetch()}>Try again</button></p> : projectMatches.length ? projectMatches.map(group => <button key={group.key} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[13px] hover:bg-panel-2 focus-visible:outline focus-visible:outline-accent" onClick={() => {
+              if (!group.projectId) return;
+              if (onOpenProject) onOpenProject(group.projectId);
+              else { setActiveOpenSourceId(null); setActiveProject(group.projectId); setActiveThread(null); }
+            }}><Icon name="folder" width={17} height={17} className="shrink-0" /><ScrollingTitle text={group.title} /></button>) : <p className="px-2 py-2 text-xs text-muted">No matching projects.</p>}
+          </section>}
+          <SearchResults query={q} {...(projectOnly && projectId ? { projectId } : {})} />
+        </> : <>
         {threads.isLoading && <div className="px-2 py-3 text-xs text-muted">Loading...</div>}
         {threads.isError && <div className="px-2 py-3 text-xs text-danger">Could not load chats</div>}
         {(sections.pinnedProjects.length > 0 || sections.pinnedChats.length > 0) && <section aria-labelledby="sidebar-pinned-heading" className="mb-4" data-testid="sidebar-pinned-section">
@@ -261,8 +283,8 @@ export function ThreadSidebar({ onNewChat }: ThreadSidebarProps) {
         </section>}
         <section aria-labelledby="sidebar-projects-heading" data-testid="sidebar-projects-section">
           <div className="flex min-h-9 items-center justify-between px-2">
-            <h2 id="sidebar-projects-heading" className="text-[11px] font-medium text-muted">Projects</h2>
-            <IconButton title="New project" onClick={() => setCreatingProject(true)}><Icon name="plus" /></IconButton>
+            <h2 id="sidebar-projects-heading" className="text-[11px] font-medium text-muted">{projectOnly ? "This project" : "Projects"}</h2>
+            {!projectOnly && <IconButton title="New project" onClick={() => setCreatingProject(true)}><Icon name="plus" /></IconButton>}
           </div>
           {sections.projects.map(renderProject)}
           {!projects.isLoading && !projects.isError && projectGroups.filter((group) => group.kind === "project").length === 0 && <div className="px-2 py-3 text-xs text-muted">No projects yet.</div>}

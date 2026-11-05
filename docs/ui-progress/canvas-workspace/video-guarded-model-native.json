@@ -1,0 +1,83 @@
+{
+  "id": "prj_mvs2pdo1b489bfbfb7",
+  "name": "Video \u2014 saved PCB source validation",
+  "path": "/Users/amliomnie/Documents/Codex/2026-10-27/https-github-com-tensorfleet-placement-lab/work/sketch-first-projects/video-saved-pcb-source-validation",
+  "createdAt": "2026-10-28T12:10:58.801Z",
+  "updatedAt": "2026-10-28T12:10:58.801Z",
+  "manifest": {
+    "schema": 1,
+    "id": "prj_mvs2pdo1b489bfbfb7",
+    "name": "Video \u2014 saved PCB source validation",
+    "createdAt": "2026-10-28T12:10:58.801Z",
+    "updatedAt": "2026-10-28T12:10:58.801Z",
+    "board": {
+      "layers": 2
+    },
+    "agent": {},
+    "allowedDrcWarnings": []
+  },
+  "files": [
+    {
+      "path": ".gitignore",
+      "size": 28,
+      "mtime": "2026-10-28T12:10:58.803Z"
+    },
+    {
+      "path": "fabdesk.json",
+      "size": 266,
+      "mtime": "2026-10-28T12:10:58.803Z"
+    }
+  ],
+  "status": "native UI Make video completed; guarded GLB receipt matches PCB despite backdated source; inputs/outputs verified",
+  "sourceSha256": "8f31d7c224ac8eb64e16449890716193ac12707981c668f82a1618a2c6c3d168",
+  "originalMetadataSha256": "c3faace9ab19b24f310d182483f1be9066894af95167118c15089b467b6bfb34",
+  "donorHashes": {
+    "board.kicad_pcb": "623d182c8b5a79c654b5cf6a50534cb4d97863076ec717d36be2f96433563df8",
+    "renders/board.glb": "b0c4c16247fe8341f21794dc7770aebb6238da5c8bcce57fd4fe384133c09605",
+    "renders/board.glb.revision.json": "89f5502b2451c74da23e137b0541ce14928f0a7d2261a7d553b17be411c60131"
+  },
+  "modelReceipt": {
+    "contract": "fabplane.board-model-revision.v1",
+    "source": "board.kicad_pcb",
+    "artifact": "renders/board.glb",
+    "sourceSha256": "8f31d7c224ac8eb64e16449890716193ac12707981c668f82a1618a2c6c3d168",
+    "artifactSha256": "a728a98a9fa14b72d9df751b65c56e8ba075730740f79d5ba50a634ef0c1ba1b",
+    "generatedAt": "2026-10-28T12:12:08.528Z",
+    "dependencies": "unverified"
+  },
+  "videoRevision": {
+    "contract": "fabplane.video-input-revision.v1",
+    "inputs": [
+      {
+        "path": "renders/board.glb",
+        "sha256": "a728a98a9fa14b72d9df751b65c56e8ba075730740f79d5ba50a634ef0c1ba1b"
+      }
+    ],
+    "outputs": [
+      {
+        "path": "exports/product-video.gif",
+        "sha256": "6d6b7264b9680c99f478d10a752a68dee5f388bad3c0081789b935f2069dd5a5"
+      },
+      {
+        "path": "exports/product-video.mp4",
+        "sha256": "543268c00bbcff53d2ee6acdc53bc80db4fca0f3f68e81a7be1639fc8c89a751"
+      },
+      {
+        "path": "exports/product-video.webm",
+        "sha256": "7ba766d796b7a649d2a871ab0035f31074b33f200fc28116ed4392a4d7f31780"
+      }
+    ]
+  },
+  "nativePlayObserved": true,
+  "donorFilesUnchanged": true,
+  "sourceAndMetadataUnchanged": true,
+  "nativePauseSeconds": 3.26103,
+  "tests": {
+    "videoTool": "4pass/17assertions",
+    "allToolsFirstRun": "418pass/1skip/1MCPheartbeat-countfail",
+    "mcpFocusedRerun": "10pass/626assertions",
+    "allToolsRecheck": "419pass/1skip/0fail",
+    "ui": "228pass/870assertions",
+    "standardRootSuite": "Earlier2136pass/36skip/1packaged mechanical-truth5000mstimeout; no full-root rerun/pass claim at this final UI milestone"
+  }
+}

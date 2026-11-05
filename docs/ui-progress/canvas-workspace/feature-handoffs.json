@@ -1,0 +1,650 @@
+{
+  "title": "fabPlane shared UI structure \u2014 feature handoffs",
+  "sourceHead": "b38683d",
+  "completionTarget": "Structure-first and ready for feature delegation; individual feature completion is explicitly separate.",
+  "publication": "Local only. No push, remote PR update, merge or deployment.",
+  "designReference": "outputs/fabplane-workspace-v6; prior concepts preserved",
+  "validation": {
+    "root": "Full root types and2277 pass/36 skip/0 failures at e5d9c63; later structural UI changes use targeted checks.",
+    "ui": "Latest v6 pass: typecheckPASS;234 tests917assertions/0fail",
+    "navigation": "Read-only UI navigation and rendered-shell diagnostics; no export/generation/sync/pass claim",
+    "protected": "34 protected files byte-identical before/after"
+  },
+  "features": [
+    {
+      "id": "shell",
+      "title": "Project workspace and navigation",
+      "home": "Header project chooser; workspace switcher; corner assistant",
+      "featureStatus": "Connected",
+      "owner": "Coworker to assign",
+      "working": [
+        "One primary surface, secondary tools closed; official fabPlane logo/name.",
+        "Task restore and adaptive first-open default; project/chat drawer is requested.",
+        "v6 shared56px header/64px task row, consistent typography/surfaces and icon/focus controls; no duplicate workspace breadcrumb."
+      ],
+      "remaining": [
+        "Keep one navigation system as new features land; preserve project and endpoint ownership."
+      ],
+      "dependencies": [
+        "UI store and project/source queries"
+      ],
+      "entryFiles": [
+        "packages/ui/src/layout/CanvasWorkspace.tsx",
+        "packages/client-core/src/workspace-navigation.ts",
+        "packages/ui/src/stores/ui.ts"
+      ],
+      "evidence": [
+        "fresh-start-clarity-native.json",
+        "header-review-native.json"
+      ],
+      "stateCoverage": [
+        "Fresh/empty, populated, selected task, reconnect/error recovery; compact/wide; keyboard tab recovery"
+      ]
+    },
+    {
+      "id": "start",
+      "title": "Fresh start and editable sketches",
+      "home": "Start composer \u2192 Draw/open sketch, Upload image, GitHub import",
+      "featureStatus": "Connected with agent dependency",
+      "owner": "Coworker to assign",
+      "working": [
+        "One composer; direct input alternatives and quiet art entry.",
+        "Existing editable sketch saving/import/copy and draft recovery retained."
+      ],
+      "remaining": [
+        "Resume actual sketch-to-board agent validation after provider model compatibility is fixed."
+      ],
+      "dependencies": [
+        "Codex model-routing ticket; native generation tools"
+      ],
+      "entryFiles": [
+        "packages/ui/src/chat/FreshStartActions.tsx",
+        "packages/ui/src/sketch/SketchPad.tsx",
+        "packages/ui/src/sidebar/CreateProjectDialog.tsx"
+      ],
+      "evidence": [
+        "fresh-start-clarity-native.json",
+        "editable-sketch-native.json"
+      ],
+      "stateCoverage": [
+        "Empty, drawing/upload selection, import dialog, retained failure recovery; no automatic send"
+      ]
+    },
+    {
+      "id": "overview",
+      "title": "Project and board overview",
+      "home": "Overview \u2192 Connections; select board/link",
+      "featureStatus": "Connected",
+      "owner": "Coworker to assign",
+      "working": [
+        "Actual declared boards/links; source-qualified warnings; missing-source recovery.",
+        "Device-local card arrangement, zoom/Fit, reload/reset; connection endpoints open owned boards.",
+        "v6 board card captions/status inside unchanged logical map bounds; dashed unavailable-source cards."
+      ],
+      "remaining": [
+        "Complete missing source imports and compatibility evidence as separate feature work."
+      ],
+      "dependencies": [
+        "Assembly manifest and actual native source files"
+      ],
+      "entryFiles": [
+        "packages/ui/src/layout/ProjectOverview.tsx",
+        "packages/ui/src/layout/AssemblyOverview.tsx",
+        "packages/client-core/src/assembly-map-layout.ts"
+      ],
+      "evidence": [
+        "board-map-layout-native.json",
+        "assembly-view-structure-native.json"
+      ],
+      "stateCoverage": [
+        "Quiet, selected board/link, source checking, stale/unavailable source, retry; compact/wide"
+      ]
+    },
+    {
+      "id": "assembly3d",
+      "title": "Assembled 3D project view",
+      "home": "Overview \u2192 Connections menu \u2192 3D assembly",
+      "featureStatus": "Pending integration",
+      "owner": "Coworker to assign",
+      "working": [
+        "Requested pending state and working route to individual board models."
+      ],
+      "remaining": [
+        "Connect an assembled scene with owned board transforms and cable contracts; distinguish exploded view from installed positions."
+      ],
+      "dependencies": [
+        "Shared transform/coordinate contract; complete models; fit ownership with Mechanical teammate"
+      ],
+      "entryFiles": [
+        "packages/ui/src/layout/AssemblyOverview.tsx",
+        "packages/ui/src/board/AssemblyBoardModel.tsx"
+      ],
+      "evidence": [
+        "assembly-view-structure-native.json"
+      ],
+      "stateCoverage": [
+        "Closed by default; explicit pending/disabled scene; real missing-model fallback"
+      ]
+    },
+    {
+      "id": "board",
+      "title": "Native part position and board size",
+      "home": "Boards \u2192 PCB \u2192 select location \u2192 Parts / Board size",
+      "featureStatus": "Connected, bounded",
+      "owner": "Coworker to assign",
+      "working": [
+        "Native reference selection, position/rotation proposals and guarded Apply; limited eligible reverts.",
+        "Board-size proposal/anchor workflow retained; source ownership and freshness guards."
+      ],
+      "remaining": [
+        "Broaden supported outlines only under native safety contracts; do not infer rerouting or schematic reconciliation."
+      ],
+      "dependencies": [
+        "Native inspection/edit APIs, source hashes, preview receipts"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/NativePartTools.tsx",
+        "packages/ui/src/board/NativeOutlinePanel.tsx",
+        "packages/ui/src/board/NativePartTarget.tsx"
+      ],
+      "evidence": [
+        "pending-native-actions-structure.json",
+        "board-switcher-native.json"
+      ],
+      "stateCoverage": [
+        "Requested tools/properties, selected reference, draft proposal, locked/stale/error/busy, limited revert; compact"
+      ]
+    },
+    {
+      "id": "replacement",
+      "title": "Part replacement",
+      "home": "Selected native part \u2192 More part actions \u2192 Replace reference",
+      "featureStatus": "Pending integration",
+      "owner": "Coworker to assign",
+      "working": [
+        "Clear selected-reference home; explicit pending label and disabled action."
+      ],
+      "remaining": [
+        "Implement selection of compatible replacement, native preview and guarded apply preserving references/nets/pads; validate source preservation."
+      ],
+      "dependencies": [
+        "Native replacement transaction and compatibility contract; no lossy PCB rewrite"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/NativePartTools.tsx"
+      ],
+      "evidence": [
+        "pending-native-actions-structure.json"
+      ],
+      "stateCoverage": [
+        "Closed disclosure by default; selected real reference; unfinished action disabled"
+      ]
+    },
+    {
+      "id": "schematic",
+      "title": "Schematic and side-by-side inspection",
+      "home": "Boards \u2192 Schematic; Show PCB/schematic alongside",
+      "featureStatus": "Connected, bounded",
+      "owner": "Coworker to assign",
+      "working": [
+        "Existing root/member schematic views and missing-file recovery.",
+        "Stable PCB/Schematic/3D task locations; direct member switching retains the task.",
+        "Declared native schematic opens automatically via source-bound preview rendering; missing schematic offers Find, KiCad file picker/import request, Generate request.",
+        "Root and assembly board views share accessible PCB/Schematic/3D icon controls; root arrow-key behavior preserved."
+      ],
+      "remaining": [
+        "Complete member schematic hierarchy/library import; connect full comparison separately.",
+        "Automatic pairing of noncanonical files elsewhere in a repository; complete native import/generation through the prepared agent requests and verify compatibility."
+      ],
+      "dependencies": [
+        "Native schematic hierarchy, symbol libraries and source ownership"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/SvgTab.tsx",
+        "packages/ui/src/board/AssemblySchematicPreview.tsx",
+        "packages/ui/src/board/BoardComparison.tsx"
+      ],
+      "evidence": [
+        "schematic-source-recovery-native.json",
+        "board-switcher-native.json",
+        "schematic-flow-native.json"
+      ],
+      "stateCoverage": [
+        "Saved/missing source, load/export failure/retry, requested comparison; no parity claim"
+      ]
+    },
+    {
+      "id": "models",
+      "title": "Individual 3D board models",
+      "home": "Boards \u2192 3D; Outputs \u2192 Models & video",
+      "featureStatus": "Connected, bounded",
+      "owner": "Coworker to assign",
+      "working": [
+        "Existing orbit/zoom/Fit viewer, deliberate generation, model download and source status.",
+        "Member source picker; honest missing-model/dependency status."
+      ],
+      "remaining": [
+        "Complete external component-model dependencies and member video/assembly alignment as separate work."
+      ],
+      "dependencies": [
+        "Native exporter, model dependencies and revision receipts"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/AssemblyBoardModel.tsx",
+        "packages/ui/src/board/ThreeDTab.tsx",
+        "packages/ui/src/board/ModelCanvas.tsx"
+      ],
+      "evidence": [
+        "assembly-view-structure-native.json",
+        "output-parts-ownership-native.json"
+      ],
+      "stateCoverage": [
+        "Missing/loading/error/current/outdated model; source scope; deliberate generation"
+      ]
+    },
+    {
+      "id": "routing",
+      "title": "Routing and playback",
+      "home": "Board \u2192 Tools \u2192 Routing",
+      "featureStatus": "Connected, bounded",
+      "owner": "Coworker to assign",
+      "working": [
+        "Existing run/playback/detail workflow; setup requested, failure remains visible.",
+        "Primary board tabs remain keyboard reachable from the tool."
+      ],
+      "remaining": [
+        "Feature owner should verify router installation and a new real run in their environment; retain actual board-level scope."
+      ],
+      "dependencies": [
+        "Installed router/native bridge; recorded run identity"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/cinema/CinemaTab.tsx",
+        "packages/ui/src/board/BoardPanel.tsx"
+      ],
+      "evidence": [
+        "board-tools-native.json",
+        "primary-tab-focus-native.json"
+      ],
+      "stateCoverage": [
+        "No/recorded run, requested setup/detail, active/error; actual retained fab_router failure observed"
+      ]
+    },
+    {
+      "id": "art",
+      "title": "Board artwork",
+      "home": "Board \u2192 Tools \u2192 Artwork; fresh-start art link",
+      "featureStatus": "Deferred by user",
+      "owner": "Coworker to assign",
+      "working": [
+        "Existing art preview/persistence structure preserved; reachable requested tool."
+      ],
+      "remaining": [
+        "UI Apply integration and further artwork polish deferred; define safe additive operation before connecting it."
+      ],
+      "dependencies": [
+        "Artwork/native fabrication contract; original source preservation"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/ArtTab.tsx"
+      ],
+      "evidence": [
+        "board-tools-native.json"
+      ],
+      "stateCoverage": [
+        "Existing empty/upload/preview structure retained; no new Art work in this milestone"
+      ]
+    },
+    {
+      "id": "mechanical",
+      "title": "Mechanical and enclosure",
+      "home": "Workspace \u2192 Mechanical",
+      "featureStatus": "Teammate-owned",
+      "owner": "Existing teammate",
+      "working": [
+        "Existing navigation and implementation preserved without changes."
+      ],
+      "remaining": [
+        "Existing import/generation/fit/polish work belongs to the assigned teammate."
+      ],
+      "dependencies": [
+        "Teammate-owned CAD/import/generation contracts"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/CadTab.tsx"
+      ],
+      "evidence": [],
+      "stateCoverage": [
+        "Not reopened or modified in final audit; excluded from this agent completion criteria"
+      ]
+    },
+    {
+      "id": "parts",
+      "title": "Parts, BOM and procurement",
+      "home": "Workspace \u2192 Parts & BOM \u2192 Parts / Shopping",
+      "featureStatus": "Connected, bounded",
+      "owner": "Coworker to assign",
+      "working": [
+        "Existing project hardware/netlist table, search/filter, CSV export and requested add/edit controls.",
+        "Manufacturing screen links here; Shopping has its own authentication/list/error states."
+      ],
+      "remaining": [
+        "Connect source-qualified member/aggregate BOM and physical quantities; do not treat project extras as complete board coverage."
+      ],
+      "dependencies": [
+        "Complete netlists/parts sources; cloud shopping auth for procurement"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/ProjectBomPanel.tsx",
+        "packages/ui/src/board/ShoppingListTab.tsx"
+      ],
+      "evidence": [
+        "output-parts-ownership-native.json"
+      ],
+      "stateCoverage": [
+        "Table/empty, requested filters/add/edit, loading/error, signed out; explicit coverage caveat"
+      ]
+    },
+    {
+      "id": "outputs",
+      "title": "Saved-output library",
+      "home": "Outputs \u2192 Library",
+      "featureStatus": "Connected",
+      "owner": "Coworker to assign",
+      "working": [
+        "Saved images/videos/models/manufacturing in one library; search/category/exact source filters.",
+        "Selection reveals Preview/Download/Show file; no zoom controls on collections."
+      ],
+      "remaining": [
+        "Add further provenance coverage only with real dependency receipts."
+      ],
+      "dependencies": [
+        "Saved files and qualified source identities; authenticated blob reads"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/OutputsLibrary.tsx",
+        "packages/client-core/src/output-library.ts"
+      ],
+      "evidence": [
+        "output-discovery-native.json"
+      ],
+      "stateCoverage": [
+        "Empty/no-match, selected, loading/read-error/retry, source current/outdated/unverified; compact"
+      ]
+    },
+    {
+      "id": "media",
+      "title": "Renders and product video",
+      "home": "Outputs \u2192 Library / Models & video",
+      "featureStatus": "Connected, bounded",
+      "owner": "Coworker to assign",
+      "working": [
+        "Existing saved media, download formats, model/video source status; creation options requested."
+      ],
+      "remaining": [
+        "Broaden tracked dependencies and member-scoped export; keep explicit user generation choices."
+      ],
+      "dependencies": [
+        "Native model/render/video tools and actual input receipts"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/ThreeDTab.tsx",
+        "packages/ui/src/board/VideoSourceStatus.tsx",
+        "packages/ui/src/board/RendersTab.tsx"
+      ],
+      "evidence": [
+        "output-parts-ownership-native.json"
+      ],
+      "stateCoverage": [
+        "Saved/missing media, buffering/error, outdated inputs, requested preset/duration/output settings"
+      ]
+    },
+    {
+      "id": "manufacturing",
+      "title": "Manufacturing files and stencils",
+      "home": "Outputs \u2192 Export files; legacy Files exporter retained",
+      "featureStatus": "Connected, bounded",
+      "owner": "Coworker to assign",
+      "working": [
+        "Existing Gerber/drill/placement/DXF/ZIP/printed and laser stencil access; advanced formats requested.",
+        "BOM canonical home is Parts; legacy export access retained."
+      ],
+      "remaining": [
+        "Connect member-scoped manufacturing only with captured scope and source-preserving native validation."
+      ],
+      "dependencies": [
+        "Saved native PCB, installed exporters and source receipts; assembly export scope incomplete"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/FilesTab.tsx",
+        "packages/ui/src/board/file-exports.ts",
+        "packages/ui/src/board/FileExportControls.tsx"
+      ],
+      "evidence": [
+        "output-parts-ownership-native.json"
+      ],
+      "stateCoverage": [
+        "Source/missing/blocked scope, requested formats/settings, busy/error/completion; no readiness inferred"
+      ]
+    },
+    {
+      "id": "freshness",
+      "title": "Freshness and source reconciliation",
+      "home": "Header Review \u2192 Updates \u2192 Design sources / Generated outputs / Saved checks",
+      "featureStatus": "Connected provenance; pending reconciliation",
+      "owner": "Coworker to assign",
+      "working": [
+        "Actual receipt-based statuses and per-output choices; source checks kept separate from engineering pass.",
+        "Requested pending synchronization options expose both directions; Ask draft remains separate."
+      ],
+      "remaining": [
+        "Implement non-mutating source comparison and explicit guarded direction plan/apply; broaden receipts for untracked outputs."
+      ],
+      "dependencies": [
+        "Directional native reconciliation, captured source hashes, conflict review"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/ReviewUpdates.tsx",
+        "packages/ui/src/board/AssemblyReviewUpdates.tsx",
+        "packages/ui/src/board/KeepSavedOutput.tsx"
+      ],
+      "evidence": [
+        "review-groups-native.json",
+        "review-source-recovery-native.json",
+        "pending-native-actions-structure.json"
+      ],
+      "stateCoverage": [
+        "Current/outdated/unverified/missing/error; requested details; explicit pending sync; no automatic design overwrite"
+      ]
+    },
+    {
+      "id": "diff",
+      "title": "Local changes and revisions",
+      "home": "Review \u2192 Changes",
+      "featureStatus": "Connected root-board comparison",
+      "owner": "Coworker to assign",
+      "working": [
+        "Existing revision selectors, saved diff modes/change list and drawing navigation retained."
+      ],
+      "remaining": [
+        "Add member/source-qualified diff and source-qualified pins before enabling them for assemblies."
+      ],
+      "dependencies": [
+        "Git history, native comparison artifacts and source ownership"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/DiffTab.tsx"
+      ],
+      "evidence": [
+        "hosted-review-structure-native.json"
+      ],
+      "stateCoverage": [
+        "No history, missing/member unsupported state, loading/error/saved comparison, selected change"
+      ]
+    },
+    {
+      "id": "comments",
+      "title": "Comments and pinned review",
+      "home": "Review \u2192 Comments; selected drawing \u2192 Pin comment",
+      "featureStatus": "Connected root board",
+      "owner": "Coworker to assign",
+      "working": [
+        "Existing active/resolved comments, drawing pins, details and assistant draft context retained."
+      ],
+      "remaining": [
+        "Add member/source-qualified anchors and hosted discussion integration; do not attach root pins to member geometry."
+      ],
+      "dependencies": [
+        "Comment source-anchor contract and hosted review stack"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/ReviewComments.tsx",
+        "packages/ui/src/board/SvgTab.tsx"
+      ],
+      "evidence": [],
+      "stateCoverage": [
+        "Empty/list, active/resolved, selected pin, save/retry; member scope remains explicitly limited"
+      ]
+    },
+    {
+      "id": "checks",
+      "title": "PCB/schematic checks and findings",
+      "home": "Review \u2192 Checks; contextual board check entries",
+      "featureStatus": "Connected, bounded",
+      "owner": "Coworker to assign",
+      "working": [
+        "Existing DRC/ERC reports, query/severity filters, exact finding navigation and source receipts.",
+        "Member PCB-only report scope and shared-source identity retained."
+      ],
+      "remaining": [
+        "Complete schematic hierarchy/ERC/parity and inter-board compatibility separately; real findings are not a pass."
+      ],
+      "dependencies": [
+        "Native check tools, source dependencies and captured report identities"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/DrcTab.tsx",
+        "packages/ui/src/board/AssemblyChecks.tsx",
+        "packages/ui/src/board/CheckFindingFilters.tsx"
+      ],
+      "evidence": [
+        "finding-filters-native.json",
+        "root-finding-filters-native.json"
+      ],
+      "stateCoverage": [
+        "No report, checking/error/retry, source changed/current, filtered/no-match, selected exact finding"
+      ]
+    },
+    {
+      "id": "hosted",
+      "title": "Share, KiCad push/pull and general recovery",
+      "home": "Review \u2192 Changes \u2192 Publish & sync",
+      "featureStatus": "Pending integration",
+      "owner": "Coworker to assign",
+      "working": [
+        "Requested Share/Sync/History states, explicit pending labels/disabled unfinished actions; local fallback paths work."
+      ],
+      "remaining": [
+        "Connect actual hosted status/review links/permissions; reviewed-file push and previewed pull; implement general undo journal separately."
+      ],
+      "dependencies": [
+        "Separate hosted feature stack; exact reviewed revision and protected pull semantics; native recovery journal"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/HostedReviewTools.tsx"
+      ],
+      "evidence": [
+        "hosted-review-structure-native.json"
+      ],
+      "stateCoverage": [
+        "Closed by default, explicit pending states, local fallback navigation, Escape/focus; compact"
+      ]
+    },
+    {
+      "id": "files",
+      "title": "Files and project notes",
+      "home": "Workspace \u2192 Files \u2192 Files / Notes",
+      "featureStatus": "Connected",
+      "owner": "Coworker to assign",
+      "working": [
+        "Existing searchable folder explorer, selected preview/actions, download, image/sketch copy and failure recovery.",
+        "Project notes drafts, preview, explicit save and outside-change handling retained."
+      ],
+      "remaining": [
+        "Broaden preview/import formats only with clear source ownership; preserve unsaved drafts."
+      ],
+      "dependencies": [
+        "Authenticated file APIs, project events and conflict-aware notes persistence"
+      ],
+      "entryFiles": [
+        "packages/ui/src/board/FilesTab.tsx",
+        "packages/ui/src/board/NotesTab.tsx"
+      ],
+      "evidence": [
+        "file-download-native.json",
+        "image-preview-recovery-native.json"
+      ],
+      "stateCoverage": [
+        "Empty/selected/large/unavailable/error/retry; draft/dirty/conflict/save; requested format/tool access"
+      ]
+    },
+    {
+      "id": "assistant",
+      "title": "Assistant, voice and project context",
+      "home": "Corner Ask fabPlane; central fresh composer; requested conversations",
+      "featureStatus": "UI connected; provider deferred",
+      "owner": "Coworker to assign",
+      "working": [
+        "One mounted composer; project-scoped drafts/attachments and explicit conversation selection.",
+        "Voice/model/settings entry points preserved; no hidden automatic send.",
+        "Captured board contexts are collapsed separately from editable prose; prepared board request uses a compact dock; assembly root Finish it is unavailable."
+      ],
+      "remaining": [
+        "Resolve documented Codex CLI model compatibility and rerun actual agent reasoning workflow; do not retry blocked provider setup in UI handoff."
+      ],
+      "dependencies": [
+        "Local work/codex-model-compatibility-ticket.json; existing provider/voice services"
+      ],
+      "entryFiles": [
+        "packages/ui/src/chat/ThreadView.tsx",
+        "packages/ui/src/chat/Composer.tsx",
+        "packages/ui/src/layout/CanvasWorkspace.tsx"
+      ],
+      "evidence": [
+        "fresh-start-clarity-native.json"
+      ],
+      "stateCoverage": [
+        "Closed/requested dock, fresh start, retained draft/attachment, busy/error/provider failure; reasoning unverified"
+      ]
+    },
+    {
+      "id": "utilities",
+      "title": "Settings, routers, inventory and order flow",
+      "home": "Workspace options; Parts/Order checks; project menu",
+      "featureStatus": "Existing functionality preserved",
+      "owner": "Coworker to assign",
+      "working": [
+        "Requested settings/account/router/voice/appearance/privacy/shortcut controls; inventory and order flow retain return-to-canvas routes."
+      ],
+      "remaining": [
+        "Feature owners validate their service/account/install prerequisites; no implicit manufacturing readiness."
+      ],
+      "dependencies": [
+        "Existing settings/services/installed routers; no global credential/security changes"
+      ],
+      "entryFiles": [
+        "packages/ui/src/settings/SettingsDialog.tsx",
+        "packages/ui/src/inventory/InventoryView.tsx",
+        "packages/ui/src/order/OrderFlow.tsx"
+      ],
+      "evidence": [],
+      "stateCoverage": [
+        "Requested secondary surfaces, connection/auth/install/error states; existing implementation retained"
+      ]
+    }
+  ],
+  "structureReady": true,
+  "featureImplementationComplete": false,
+  "followUp": "Schematic page UX follow-up after f5693ce; see SCHEMATIC-FLOW.md and schematic-flow-native.json",
+  "latestVisualFollowUp": "v6 consistency: V6-CONSISTENCY.md and v6-consistency-native.json; source baseline f2b257d"
+}

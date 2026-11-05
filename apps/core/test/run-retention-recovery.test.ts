@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync, linkSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { realpath, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/db";
@@ -9,8 +9,9 @@ import { ProjectStore } from "../src/projects";
 import { RUN_DUMP_RETENTION, RunRetention } from "../src/run-retention";
 import { RunTelemetry } from "../src/run-telemetry";
 
+// Use canonical temp roots so intentional symlink guards do not reject macOS /var aliases.
 test("project purge reconciles cached directory and shared bytes before enforcing the pending cap", async () => {
-  const root = await mkdtemp(join(tmpdir(), "fabdesk-purge-accounting-"));
+  const root = await mkdtemp(join(await realpath(tmpdir()), "fabdesk-purge-accounting-"));
   const store = Store.open(join(root, "fabdesk.db"));
   const projects = new ProjectStore(store.projects, join(root, "projects"), () => {}, { watch: false });
   try {
@@ -45,7 +46,7 @@ test("project purge reconciles cached directory and shared bytes before enforcin
 });
 
 test("an abruptly interrupted capture remains indexed and is pruned after 50 completed captures", async () => {
-  const root = await mkdtemp(join(tmpdir(), "fabdesk-interrupted-retention-"));
+  const root = await mkdtemp(join(await realpath(tmpdir()), "fabdesk-interrupted-retention-"));
   let store: Store | undefined;
   let telemetry: RunTelemetry | undefined;
   try {
@@ -73,7 +74,7 @@ test("an abruptly interrupted capture remains indexed and is pruned after 50 com
 });
 
 test("legacy interrupted captures are recovered only from owned runs.log_path directories", async () => {
-  const root = await mkdtemp(join(tmpdir(), "fabdesk-legacy-interrupted-"));
+  const root = await mkdtemp(join(await realpath(tmpdir()), "fabdesk-legacy-interrupted-"));
   let store = Store.open(join(root, "fabdesk.db"));
   try {
     const thread = store.threads.create({ agentId: "claude" });
@@ -93,7 +94,7 @@ test("legacy interrupted captures are recovered only from owned runs.log_path di
 });
 
 test("dump creation failure leaves a measured history that normal folder retention can clean", async () => {
-  const root = await mkdtemp(join(tmpdir(), "fabdesk-failed-finalization-"));
+  const root = await mkdtemp(join(await realpath(tmpdir()), "fabdesk-failed-finalization-"));
   const store = Store.open(join(root, "fabdesk.db"));
   const telemetry = new RunTelemetry({ version: "test", runDumps: store.runDumps });
   try {
@@ -114,7 +115,7 @@ test("dump creation failure leaves a measured history that normal folder retenti
 });
 
 test("capture ownership and destinations survive restart while active growth is never cached", async () => {
-  const root = await mkdtemp(join(tmpdir(), "fabdesk-active-capture-"));
+  const root = await mkdtemp(join(await realpath(tmpdir()), "fabdesk-active-capture-"));
   const store = Store.open(join(root, "fabdesk.db"));
   try {
     const directory = join(root, ".fabdesk/runs/active");
@@ -143,7 +144,7 @@ test("capture ownership and destinations survive restart while active growth is 
 });
 
 test("pending cap includes current active bytes while preserving the active capture", async () => {
-  const root = await mkdtemp(join(tmpdir(), "fabdesk-active-bytes-"));
+  const root = await mkdtemp(join(await realpath(tmpdir()), "fabdesk-active-bytes-"));
   const store = Store.open(join(root, "fabdesk.db"));
   try {
     store.runDumps.put({ runId: "old", traceId: "trace", threadId: "absent", agentId: "test", projectId: null,

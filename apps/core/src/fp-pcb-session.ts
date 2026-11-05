@@ -11,6 +11,7 @@
  * exist yet.
  */
 import { join } from "node:path";
+import { assertNativeBoardOwnership } from "./assembly-board-binding";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { KiCad, type Board, type Schematic } from "@fp-pcb/client";
@@ -39,6 +40,8 @@ export class FpPcbSessions {
   private readonly documentGenerations = new Map<string, number>();
   private readonly recovering = new Set<string>();
   private readonly reconciliation = new Map<string, Promise<void>>();
+  private readonly libraryRevisions = new WeakMap<ProjectSession, string>();
+  private readonly libraryRegistration = new WeakMap<ProjectSession, Promise<void>>();
 
   constructor(
     private readonly bridge: () => FpPcbBridgeClient,
@@ -135,7 +138,7 @@ export class FpPcbSessions {
       }
       // Read-only inspection must not rewrite retained project library tables. Mutation and
       // construction paths can explicitly use bundled libraries through the default behavior.
-      if (options.registerLibraries !== false) await this.bridge().registerBundledLibraries(s.id);
+      if (options.registerLibraries !== false) await this.ensureBundledLibraries(projectDir, s);
       let schematic = await s.kicad.currentSchematic();
       if (!schematic) {
         if (await exists(sch)) schematic = await s.kicad.openSchematic(sch);
@@ -158,6 +161,34 @@ export class FpPcbSessions {
         board: await this.guardSave(projectDir, BOARD_PCB, board),
       };
     });
+  }
+
+  /** Hundreds of table-row RPCs are setup, not a prerequisite to repeat on every edit. */
+  private async ensureBundledLibraries(projectDir: string, session: ProjectSession): Promise<void> {
+    const pending = this.libraryRegistration.get(session);
+    if (pending) {
+      await pending;
+      // Recheck after waiting: another writer may have changed the saved tables.
+      return this.ensureBundledLibraries(projectDir, session);
+    }
+    const revision = await this.libraryRevision(projectDir);
+    if (this.libraryRevisions.get(session) === revision) return;
+    // A second caller may have started setup while the file reads yielded.
+    if (this.libraryRegistration.has(session)) return this.ensureBundledLibraries(projectDir, session);
+    this.libraryRevisions.delete(session);
+    const registration = (async () => {
+      await this.bridge().registerBundledLibraries(session.id);
+      this.libraryRevisions.set(session, await this.libraryRevision(projectDir));
+    })();
+    this.libraryRegistration.set(session, registration);
+    try { await registration; }
+    finally {
+      if (this.libraryRegistration.get(session) === registration) this.libraryRegistration.delete(session);
+    }
+  }
+
+  private async libraryRevision(projectDir: string): Promise<string> {
+    return JSON.stringify(await Promise.all([BOARD_PRO, "sym-lib-table", "fp-lib-table"].map(filename => this.diskRevision(join(projectDir, filename)))));
   }
 
   /** Runs `fn` on the session, reconnecting once when the bridge no longer knows it. */
@@ -377,6 +408,7 @@ export class FpPcbSessions {
       );
     const save = document.save.bind(document);
     document.save = async () => {
+      await assertNativeBoardOwnership(projectDir);
       if (
         this.recovering.has(projectDir) ||
         generation !== (this.generations.get(projectDir) ?? 0) ||

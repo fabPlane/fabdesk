@@ -9,7 +9,7 @@ export type DiffHeadlineSummary = {
 };
 
 export function diffHeadline(report: { summary?: DiffHeadlineSummary } | null): string {
-  if (!report?.summary) return "Compare two git revisions of this board.";
+  if (!report?.summary) return "Compare a saved point or Git revision with current files.";
   const s = report.summary;
   return `+${s.added} / −${s.removed} / ~${s.changed} parts · ${s.moved} moved · nets +${s.netsAdded}/−${s.netsRemoved}/~${s.netsChanged}`;
 }

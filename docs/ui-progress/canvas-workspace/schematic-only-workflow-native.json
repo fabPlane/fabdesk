@@ -1,0 +1,31 @@
+{
+  "schematicOverviewProject": "prj_mvryufgk550fb26292",
+  "adaptiveFirstOpenProject": "prj_mvrz6yxi98962cc3d6",
+  "nativeWalkthrough": [
+    "Schematic-only Overview recognizes saved native design and reveals Open schematic on selection",
+    "Open schematic selected correct task; requested native renderer created real saved preview",
+    "Overview displayed real saved schematic preview with freshness unverified and tools closed",
+    "Previously unopened project with only native schematic automatically selected Schematic",
+    "Explicit Overview selection retained across source removal/restoration: design card updated from file events without task retargeting",
+    "Native render executed in background while Overview stayed open; actual new preview and4savedoutputs appeared automatically",
+    "Renderer reload restored Overview instead of overriding it with the first-open default"
+  ],
+  "preservation": {
+    "initialErcStudyFiles": 3,
+    "initialNavigationStudyFiles": 3,
+    "sourceGameBoyFiles": 9,
+    "allUnchanged": true,
+    "temporarySourceAbsenceRestored": true,
+    "nativePreviewsIntentionallyRetained": true
+  },
+  "validation": {
+    "uiTypecheck": "pass",
+    "uiTests": 228,
+    "assertions": 870
+  },
+  "limits": [
+    "Root schematic preview remains freshness unverified; no PCB creation or parity claim",
+    "Background tool/source events were exercised without sending an agent message",
+    "Other project defaults and already-saved PCB/assembly workflows retain their existing implementation; no complete parity claim"
+  ]
+}

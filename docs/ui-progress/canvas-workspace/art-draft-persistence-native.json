@@ -1,0 +1,39 @@
+{
+  "status": "LOCAL ONLY \u2014 issue394 partial implementation",
+  "viewportCss": "961x721",
+  "nativeVerified": [
+    "Loaded saved reference image; Line hatch and41mmX restored after tab navigation before save",
+    "Saved artwork image/settings through existing file PUT APIs; metadata exact owner prj_mvqj0m3hcb749c86ac/root; immutable source SHA256 matched original bytes",
+    "Actual renderer reload recovered saved image, Line hatch and41mmX from project files",
+    "Unsaved42mmX survived leaving for the empty art project and returning; other project showed no image",
+    "Restored draft42\u219241without saving and saved indicator matched; New conversation composer retained project art; no agent message sent",
+    "Deliberate metadata newline blockedSave and retained draft; external bytes stayed unchanged; guardedrestore/retry succeeded; no fault remains"
+  ],
+  "intentionallyRetainedFiles": [
+    "work/sketch-first-projects/untitled-project/artwork/board-art.json",
+    "work/sketch-first-projects/untitled-project/artwork/sources/b0b80d4afa9ed204a28ac4c14167d1b492416a816f0c54f4d5c1af1618d1dcea.png"
+  ],
+  "preservation": {
+    "originalReferenceFilesUnchanged": 3,
+    "newEmptyArtProjectUnchanged": 2,
+    "nativePcbCreated": false
+  },
+  "validation": {
+    "rootTypecheck": "PASS",
+    "clientTests": 278,
+    "protocolTests": 94,
+    "uiTests": 227,
+    "newArtworkHelperTests": 10,
+    "failures": 0,
+    "sandboxNote": "Initial client run could not bind ephemeral transport server; authorized local-socket rerun passed all278."
+  },
+  "limits": [
+    "One root-board artwork record per project; assembly artwork application unsupported",
+    "Explicit save restores after renderer reload; unsaved session drafts do not promise process/reload recovery",
+    "Metadata conflict checks are optimistic, not atomic compare-and-swap",
+    "Unassigned classic-art save and HTTP failure UI not newly native-exercised; helper rejection cases tested",
+    "Native circuit-first additive Apply and existing-board geometry overlay are still required by394; legacy standalone generator never presented as Apply",
+    "No native app process restart, circuit generation or application performed in this milestone",
+    "Enclosure remains teammate-owned and untouched"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "validated": [
+    "Current saved root finding exposes Ask about finding beside drawing",
+    "Existing draft preserved and appended with exact description, report item, position and source SHA",
+    "Composer focused in corner assistant; no message sent",
+    "Original empty draft restored; assistant closed",
+    "Compact 960x720 card fits canvas"
+  ],
+  "preservation": {
+    "files": 48,
+    "allExact": true
+  },
+  "checks": {
+    "uiTypes": "PASS"
+  },
+  "limitations": [
+    "Configured Claude authentication still pending; no agent reasoning claimed",
+    "Root saved findings only; stale/unverified finding action disabled"
+  ]
+}

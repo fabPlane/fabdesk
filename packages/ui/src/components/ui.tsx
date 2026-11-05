@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { cn } from "../util";
-import { Icon } from "./Icon";
+import { Icon, type IconName } from "./Icon";
 import { tabDestination, tabStopIndices } from "./keyboard";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
@@ -9,7 +9,7 @@ type Size = "sm" | "md";
 const variants: Record<Variant, string> = {
   primary: "bg-primary text-primary-fg font-semibold hover:brightness-105 border-transparent shadow-sm",
   secondary: "bg-panel-2/70 text-fg hover:bg-panel-2 border-border",
-  ghost: "bg-transparent text-muted hover:text-fg hover:bg-panel-2/70 border-transparent",
+  ghost: "bg-transparent text-fg hover:bg-panel-2/70 hover:border-border border-transparent",
   danger: "bg-danger/10 text-danger hover:bg-danger/20 border-danger/20",
 };
 const sizes: Record<Size, string> = {
@@ -30,8 +30,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       type={type}
+      data-variant={variant}
       className={cn(
-        "inline-flex items-center justify-center rounded-md border font-medium transition-[background-color,color,border-color,filter,box-shadow] duration-150 disabled:cursor-not-allowed disabled:opacity-40 disabled:saturate-50 disabled:pointer-events-none select-none whitespace-nowrap",
+        "fd-button inline-flex cursor-pointer items-center justify-center rounded-md border font-medium transition-[background-color,color,border-color,filter,box-shadow] duration-150 disabled:cursor-not-allowed disabled:opacity-40 disabled:saturate-50 disabled:pointer-events-none select-none whitespace-nowrap",
         variants[variant],
         sizes[size],
         className,
@@ -47,7 +48,7 @@ export function IconButton({ className, title, size = "md", style, ...rest }: Om
     <Button
       variant="ghost"
       size="sm"
-      className={cn("fd-icon-button shrink-0 text-fg/75 hover:text-fg", className)}
+      className={cn("fd-icon-button shrink-0", className)}
       style={{ width: pixels, height: pixels, padding: 0, ...style }}
       title={title}
       aria-label={title}
@@ -87,15 +88,25 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
   },
 );
 
+/** A styled select picker is in the document's top layer, not an OS popup. */
+function selectPickerIsOpen(element: Element | null): boolean {
+  return !!element && typeof CSS !== "undefined" && CSS.supports("selector(select:open)") && !!element.closest("select")?.matches(":open");
+}
+
 export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(function Select(
-  { className, ...rest },
+  { className, onKeyDownCapture, ...rest },
   ref,
 ) {
   return (
     <select
       ref={ref}
+      onKeyDownCapture={event => {
+        onKeyDownCapture?.(event);
+        // Let the browser close its picker without dismissing a parent task.
+        if (event.key === "Escape" && selectPickerIsOpen(event.currentTarget)) event.stopPropagation();
+      }}
       className={cn(
-        "h-9 min-w-0 max-w-full rounded-md border border-border bg-bg/50 px-2.5 text-[13px] text-fg outline-none transition-colors focus:border-accent",
+        "fd-select h-9 min-w-0 max-w-full rounded-md border border-border bg-panel px-2.5 text-[13px] text-fg outline-none transition-colors focus:border-accent",
         className,
       )}
       {...rest}
@@ -149,7 +160,10 @@ export function Kbd({ children }: { children: ReactNode }) {
 export interface DialogProps {
   open: boolean;
   onClose: () => void;
+  /** Use when an in-flight action cannot be dismissed or cancelled by closing. */
+  closeDisabled?: boolean;
   title?: ReactNode;
+  headerActions?: ReactNode;
   ariaLabel?: string;
   children: ReactNode;
   className?: string;
@@ -159,7 +173,7 @@ export interface DialogProps {
   fallbackFocus?: () => HTMLElement | null | undefined;
 }
 
-export function Dialog({ open, onClose, title, ariaLabel, children, className, bare, fallbackFocus }: DialogProps) {
+export function Dialog({ open, onClose, closeDisabled = false, title, headerActions, ariaLabel, children, className, bare, fallbackFocus }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const fallbackFocusRef = useRef(fallbackFocus);
   fallbackFocusRef.current = fallbackFocus;
@@ -202,23 +216,25 @@ export function Dialog({ open, onClose, title, ariaLabel, children, className, b
       }
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        if (selectPickerIsOpen(document.activeElement)) return;
+        if (!closeDisabled) onClose();
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [open, onClose]);
+  }, [open, onClose, closeDisabled]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[3px]" onMouseDown={onClose} role="presentation">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[3px]" onMouseDown={() => { if (!closeDisabled) onClose(); }} role="presentation">
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
+        aria-busy={closeDisabled || undefined}
         aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}
         tabIndex={-1}
         className={cn(
-          "fd-elevated flex max-h-full flex-col overflow-hidden rounded-2xl border border-border bg-panel",
+          "fd-elevated flex max-h-full flex-col overflow-hidden rounded-2xl border border-border bg-panel text-left",
           bare ? "" : /(?:^|\s)!?w-/.test(className ?? "") ? "max-w-full" : "w-[640px] max-w-full",
           className,
         )}
@@ -227,9 +243,9 @@ export function Dialog({ open, onClose, title, ariaLabel, children, className, b
         {title !== undefined && (
           <div className="flex min-h-13 items-center justify-between border-b border-border px-5 py-3">
             <div className="min-w-0 break-words text-[15px] font-semibold tracking-[-0.01em]">{title}</div>
-            <IconButton title="Close" onClick={onClose}>
+            <div className="flex shrink-0 items-center gap-1">{headerActions}<IconButton title={closeDisabled ? "Wait for the current action to finish" : "Close"} disabled={closeDisabled} onClick={onClose}>
               <Icon name="close" />
-            </IconButton>
+            </IconButton></div>
           </div>
         )}
         <div className={cn("min-h-0 flex-1 overflow-auto", bare ? "" : "p-5")}>{children}</div>
@@ -244,21 +260,27 @@ export function Tabs<T extends string>({
   onChange,
   className,
   variant = "pills",
+  iconOnly = false,
 }: {
-  tabs: Array<{ id: T; label: string; hint?: string }>;
+  tabs: Array<{ id: T; label: string; hint?: string; icon?: IconName }>;
   value: T;
   onChange: (t: T) => void;
   className?: string;
   variant?: "pills" | "underline";
+  iconOnly?: boolean;
 }) {
+  // A secondary tool can own the current workspace while its primary view tabs remain visible.
+  // Keep one keyboard entry point without falsely marking that view as selected.
+  const focusableTab = tabs.some(tab => tab.id === value) ? value : tabs[0]?.id;
   return (
-      <div className={cn("flex items-center overflow-x-auto", variant === "underline" ? "fd-tabs-underline" : "gap-1", className)} role="tablist">
+      <div className={cn("flex items-center overflow-x-auto", variant === "underline" ? "fd-tabs-underline" : "gap-1", iconOnly && "fd-icon-tabs", className)} role="tablist">
       {tabs.map((t) => (
         <button
           key={t.id}
           role="tab"
           aria-selected={t.id === value}
-          tabIndex={t.id === value ? 0 : -1}
+          aria-label={iconOnly ? t.label : undefined}
+          tabIndex={t.id === focusableTab ? 0 : -1}
           onKeyDown={(e) => {
             const index = tabs.findIndex((tab) => tab.id === t.id);
             const next = tabDestination(e.key, index, tabs.length);
@@ -274,10 +296,10 @@ export function Tabs<T extends string>({
             "px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
             variant === "underline"
               ? "fd-underline-tab"
-              : cn("h-8 rounded-md", t.id === value ? "bg-panel-2 text-fg shadow-sm" : "text-muted hover:text-fg hover:bg-panel-2/60"),
+              : cn("h-8 rounded-md", t.id === value ? "bg-panel-2 text-fg shadow-sm" : "text-fg hover:bg-panel-2/60"),
           )}
         >
-          {t.label}
+          {t.icon ? <><Icon name={t.icon} width={18} height={18} aria-hidden="true" />{iconOnly ? <span className="fd-canvas-tool-label" aria-hidden="true">{t.label}</span> : <span>{t.label}</span>}</> : t.label}
         </button>
       ))}
     </div>

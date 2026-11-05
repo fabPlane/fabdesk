@@ -252,6 +252,7 @@ export type ProjectBomLine = {
   footprint?: string;
   mpn?: string;
   manufacturer?: string;
+  sku?: string;
   notes?: string;
   lineId?: string;
   catalogId?: string;
@@ -305,6 +306,7 @@ export function projectBomLines(
     const mpn = fieldValue(c.fields, ...MPN_KEYS);
     const manufacturer = fieldValue(c.fields, ...MANUFACTURER_KEYS);
     const notes = fieldValue(c.fields, "description");
+    const sku = fieldValue(c.fields, "lcsc", "lcsc part", "lcsc part #", "lcsc#");
     return {
       source: "pcb",
       kind: "pcb",
@@ -314,6 +316,7 @@ export function projectBomLines(
       ...(c.footprint.trim() ? { footprint: c.footprint.trim() } : {}),
       ...(mpn ? { mpn } : {}),
       ...(manufacturer ? { manufacturer } : {}),
+      ...(sku ? { sku } : {}),
       ...(notes ? { notes } : {}),
     };
   });

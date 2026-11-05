@@ -1,6 +1,9 @@
+import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
+import { CanvasToolButton } from "../components/CanvasToolButton";
+import { Icon } from "../components/Icon";
 import type { OrderVendorId } from "@fabdesk/protocol";
 import { useState } from "react";
-import { Button } from "../components/ui";
+import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useCore } from "@fabdesk/client-core";
 import { useProjectOrder, useStartOrder } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
@@ -16,35 +19,33 @@ const VENDOR_COPY: Record<OrderVendorId, { blurb: string }> = {
 export function OrderFlow() {
   const projectId = useUiStore((s) => s.activeProjectId);
   const setOrderFlowOpen = useUiStore((s) => s.setOrderFlowOpen);
-  const boardOpen = useUiStore((s) => s.boardOpen);
   const setBoardTab = useUiStore((s) => s.setBoardTab);
   const order = useProjectOrder(projectId);
   const start = useStartOrder();
   const { host } = useCore();
   const [vendor, setVendor] = useState<OrderVendorId | null>(null);
   const session = start.data;
-  const vendors = order.data?.vendors ?? [];
+  const vendors = (order.data?.vendors ?? []).filter(item => item.enabled);
   const ready = order.data?.ready === true;
+  const assistantSurface = projectId ? { projectId, scope: "order" as const, label: "Manufacturing / Order review", priority: 10, details: JSON.stringify({ loading: order.isPending, readinessCheckFailed: order.isError, ready, blockers: order.data?.reasons, warnings: order.data?.warnings, selectedVendor: vendor, preparingVendorInstructions: start.isPending, vendorInstructionsAvailable: !!session, instruction: "This screen prepares vendor instructions. It does not confirm an order, quote, upload or payment. Review the saved manufacturing outputs and readiness before ordering." }) } : null;
+  useAssistantSurface(assistantSurface);
+
+  if (!projectId) return <EmptyState title="Choose a project before ordering" action={<Button onClick={() => useUiStore.getState().setProjectPickerOpen(true)}>Choose project</Button>} />;
+  if (order.isPending || order.isError) return <div className="flex h-full min-h-0 flex-col"><div className="p-3"><Button size="sm" onClick={() => setOrderFlowOpen(false)}>Back to project</Button></div>{order.isPending ? <div className="flex flex-1 items-center justify-center gap-2" role="status"><Spinner />Checking ordering requirements…</div> : <LoadError title="Could not check ordering requirements" onRetry={() => void order.refetch()} />}</div>;
 
   return (
-    <div className="fd-content-pane flex h-full min-w-0 flex-col bg-bg" data-testid="order-flow">
-      <div className={cn("fd-screen-header flex items-center justify-between border-b border-border pl-4", boardOpen ? "pr-4" : "pr-[52px]")}>
-        <div className="text-sm font-medium">Order now</div>
-        <Button size="sm" onClick={() => setOrderFlowOpen(false)}>
-          Back
-        </Button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-6">
-        <h1 className="text-xl font-semibold">Where should we fabricate this?</h1>
-        <p className="mt-2 max-w-lg text-sm text-muted">
-          Pick a fab house. Laser and CNC are listed so the path is obvious; they are disabled for now.
-        </p>
+    <div className="fd-order-review flex h-full min-w-0 flex-col" data-testid="order-flow">
+      <div className="fd-order-toolbar"><Button size="sm" variant="ghost" onClick={() => setOrderFlowOpen(false)}><Icon name="chevronLeft" width={16} height={16} />Back to project</Button><span>Manufacturing</span></div>
+      <div className="fd-order-scroll min-h-0 flex-1 overflow-y-auto"><div className="fd-order-content">
+        <header><div><h1>Order review</h1><p>Prepare your files, review the design, then continue with a manufacturer.</p></div><CanvasToolButton icon="sparkles" label="Ask about preparing this order" onClick={() => { if (assistantSurface) askAboutSurface(assistantSurface, "Help me understand what remains before ordering this board. Review the saved check blockers and explain the manufacturing and assembly files, quantities and sourcing approvals I need. Do not upload files, place an order or make a payment."); }} /></header>
+        <section className="fd-order-preparation" aria-label="Manufacturing preparation"><div><Icon name="checklist" width={22} height={22} /><h2>Review the design</h2><p>Resolve check failures and review warnings after the final PCB and schematic changes.</p></div><div><Icon name="fileLayers" width={22} height={22} /><h2>Prepare manufacturing files</h2><p>Gerbers and drills describe the bare PCB. Assembly also needs a BOM and placement list in your manufacturer’s format.</p></div><div><Icon name="pcb" width={22} height={22} /><h2>Confirm assembly parts</h2><p>Check supplier IDs, immediate assembly stock for your board quantity, polarity and rotations. Review any required sourcing exceptions.</p></div></section>
+        <div className="fd-order-file-actions"><Button size="sm" onClick={() => { setOrderFlowOpen(false); useUiStore.getState().setWorkspaceArea("outputs"); useUiStore.getState().setWorkspaceTab("files"); }}>Open export files</Button><Button size="sm" variant="ghost" onClick={() => { setOrderFlowOpen(false); setBoardTab("bom"); }}>Review Parts & BOM</Button></div>
         {order.data && !ready && (
           <div
             className="mt-5 max-w-xl rounded-lg border border-danger/40 bg-danger/5 p-4"
             data-testid="order-blockers"
           >
-            <div className="text-sm font-semibold text-danger">Board checks must pass before ordering</div>
+            <div className="text-sm font-semibold text-danger">Resolve these requirements before continuing</div>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted">
               {order.data.reasons.map((reason) => (
                 <li key={reason}>{reason}</li>
@@ -58,7 +59,7 @@ export function OrderFlow() {
                 setOrderFlowOpen(false);
               }}
             >
-              Open DRC/ERC
+              Review board checks
             </Button>
           </div>
         )}
@@ -69,15 +70,16 @@ export function OrderFlow() {
             ))}
           </ul>
         )}
-        <div className="fd-order-vendors mt-5 grid max-w-xl grid-cols-2 gap-3">
+        <h2 className="fd-order-vendor-heading">Choose a manufacturer</h2><p className="fd-order-vendor-help">This prepares instructions for the manufacturer’s website. Nothing is uploaded or ordered here; no payment is made.</p>
+        <div className="fd-order-vendors mt-5 grid grid-cols-2 gap-3">
           {vendors.map((item) => (
             <button
               key={item.id}
               type="button"
-              disabled={!item.enabled || !ready}
+              disabled={!ready || start.isPending}
               onClick={() => {
                 setVendor(item.id);
-                if (projectId && item.enabled && ready) void start.mutateAsync({ projectId, vendor: item.id });
+                if (projectId && item.enabled && ready && !start.isPending) void start.mutateAsync({ projectId, vendor: item.id }).catch(() => {}); // Error is shown below.
               }}
               className={cn(
                 "rounded-lg border px-3 py-3 text-left",
@@ -112,7 +114,7 @@ export function OrderFlow() {
           </Button>
         )}
         {start.isError && <div className="mt-4 text-xs text-danger">{(start.error as Error).message}</div>}
-      </div>
+      </div></div>
     </div>
   );
 }

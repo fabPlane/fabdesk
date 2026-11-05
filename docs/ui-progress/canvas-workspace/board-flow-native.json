@@ -1,0 +1,39 @@
+{
+  "checks": [
+    {
+      "fixture": "root",
+      "files": 14,
+      "changed": []
+    },
+    {
+      "fixture": "assembly",
+      "files": 8,
+      "changed": []
+    },
+    {
+      "fixture": "vaio",
+      "files": 16,
+      "changed": []
+    }
+  ],
+  "viewport": {
+    "width": 961,
+    "height": 721,
+    "measured": "Actual native window resized with CUA; renderer dimensions read through existing local test bridge"
+  },
+  "walkthrough": [
+    "Single board quiet overview, selected Open board/Ask/More",
+    "More\u2192Checks opened existing root reports; no DRC/ERC run",
+    "Open board\u2192drawing location\u2192Parts\u2192R1 inspected actual coordinates105,100 and rotation0; Apply disabled without changes",
+    "Settled reopened native part panel leaves corner assistant visible after HMR geometry update"
+  ],
+  "validation": {
+    "uiTypes": "PASS /tmp/canvas-board-flow-final-types.log",
+    "uiTests": "225 PASS 0 FAIL /tmp/canvas-board-flow-final-tests.log"
+  },
+  "limits": [
+    "No position/outline edits were applied",
+    "Post-edit source-qualified Checks button typechecked; not triggered by another native mutation this pass",
+    "Other compact project surfaces still need acceptance"
+  ]
+}

@@ -20,7 +20,7 @@ export function DeleteChatDialog({ thread, onClose }: { thread: Thread; onClose:
       requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".fd-composer textarea")?.focus());
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not delete chat. Try again."); }
   };
-  return <Dialog open onClose={close} title="Delete chat?" className="!w-[420px]" fallbackFocus={() => document.querySelector<HTMLElement>(".fd-composer textarea")}>
+  return <Dialog open onClose={close} closeDisabled={remove.isPending} title="Delete chat?" className="!w-[420px]" fallbackFocus={() => document.querySelector<HTMLElement>(".fd-composer textarea")}>
     <form className="flex flex-col gap-4" onSubmit={e => { e.preventDefault(); void submit(); }}>
       <p className="break-words text-sm text-muted">Delete <strong className="text-fg">{thread.title}</strong>? This cannot be undone.</p>
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}

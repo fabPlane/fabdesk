@@ -1,0 +1,24 @@
+{
+  "target": "Structure-first delegation milestone",
+  "feature": "Requested assembly3Dview home beside Overview Connections",
+  "nativeVerified": [
+    "Connections remainsdefault with6actualdeclaredboards5links",
+    "3Dassembly opens explicitpending state withdisabledassembledscene",
+    "Reviewboardmodels opens actualOutputsModels&video source-qualified I/O No saved3Dmodel state; no generationstarted",
+    "ReturnOverview retains honest2sourcesreview",
+    "Compact960\u00d7720 quietnav/viewmenu/map/assistantfit",
+    "Resettestmaplayout andrendererreload leaves emptylocalmapoverrides",
+    "16protectedVAIO files plusactualDRCreportexact"
+  ],
+  "validation": "UItypesPASS;233tests912assertions/0fail",
+  "boundaries": [
+    "Assembled3Dscene/installedpositions/fitnotimplemented",
+    "Individualmodelviewer/exportexistingcapabilitiespreserved",
+    "NoMechanical/enclosurechanges,nocompatibilityclaim"
+  ],
+  "screenshots": [
+    "assembly-view-structure-pending.png",
+    "assembly-view-existing-model-route.png",
+    "overview-structure-compact.png"
+  ]
+}

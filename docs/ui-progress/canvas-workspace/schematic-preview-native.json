@@ -1,0 +1,117 @@
+{
+  "before": {
+    "projectId": "prj_mvqyacun3e60075ae8",
+    "created": [
+      "boards/io/board.kicad_sch",
+      "boards/io/child.kicad_sch"
+    ],
+    "createdHashes": {
+      "boards/io/board.kicad_sch": "af21529298be954e0d858e2958e89fe8cc120d9d4b3bfd19f3df9c86d2f20c5f",
+      "boards/io/child.kicad_sch": "90b576c908c158ab52558be97148b4528ad4bf4e4cedc721774139bdc07d64cc"
+    },
+    "pointerAbsent": true,
+    "versionDirectoryAbsent": true
+  },
+  "receipt": {
+    "contract": "fabplane.schematic-preview-revision.v1",
+    "boardSource": {
+      "sourceId": "io",
+      "manifestSha256": "ffe6b12399cec942549f829855f4d6e532a18db08d843a44f6c2624f7dd4885c",
+      "projectId": "prj_mvqyacun3e60075ae8"
+    },
+    "sourceRevision": "fab752e67d2eb96ce8e0f160a5f3b926d07da76ada563ffeabc353c535a621de",
+    "sourceFiles": [
+      {
+        "path": "board.kicad_sch",
+        "sha256": "af21529298be954e0d858e2958e89fe8cc120d9d4b3bfd19f3df9c86d2f20c5f"
+      },
+      {
+        "path": "child.kicad_sch",
+        "sha256": "90b576c908c158ab52558be97148b4528ad4bf4e4cedc721774139bdc07d64cc"
+      },
+      {
+        "path": "board.kicad_pro",
+        "sha256": "7949de5d52c20fd4c54f5ed08da205780f9fb8d66ab1b94a25e45a6c445ab3db"
+      }
+    ],
+    "sheets": [
+      {
+        "path": "renders/schematic/8ddae1d0-9a4c-496a-a6f5-0f1eb1a4744e/sheet-1.svg",
+        "name": "board.svg",
+        "sha256": "178f70e4bc9bd32f9326706bcdc47960d5d91ac2e5ad66c481fbf647e17bbb8e"
+      },
+      {
+        "path": "renders/schematic/8ddae1d0-9a4c-496a-a6f5-0f1eb1a4744e/sheet-2.svg",
+        "name": "board-Child.svg",
+        "sha256": "ff10a00c0b55eee0f53ae3971136494c08b0047f381be2e1d07280d7f8b10032"
+      }
+    ],
+    "generatedAt": "2026-10-28T03:37:17.615Z",
+    "dependencies": "unverified"
+  },
+  "initialPointerSha256": "e455eab1a6aa92f11f2a27f878533edfa1cc86d34345ab7bb99e85fba65b7e1f",
+  "generatedSourceFilesUnchanged": true,
+  "pageSwitch": {
+    "result": {
+      "text": "fabPlane\nAssembly source ownership — validation fixture\n/\nReview\nLocal workspace\nExport\nReview\nUpdates\nChanges\nComments\nChecks\nOrder checks\nBoard checks\n\nChoose a source design to review its PCB checks. Boards sharing that design use the same report.\n\nBoard source\nChoose a board source…\nCarrier source\nI/O source\nRecheck sources\nRun PCB-only DRC\nSchematic sources\nI/O source\nLeft I/O · Right I/O\nPCB-only · Schematic parity, ERC, inter-board connections and enclosure fit are not checked.\n\nNo saved PCB check for this source.\n\nAsk fabPlane",
+      "w": 1440,
+      "h": 870,
+      "dpr": 2
+    }
+  },
+  "olderSourceInspection": {
+    "result": {
+      "state": "source-changed",
+      "sheet": "board-Child.svg",
+      "hasChildNote": true,
+      "sheetCount": 2
+    }
+  },
+  "noHeavyAutoRender": true,
+  "modifiedArtifactInspection": {
+    "result": {
+      "state": "artifact-changed",
+      "sheet": "board-Child.svg",
+      "hasChildNote": true,
+      "sheetCount": 2
+    }
+  },
+  "restoredPreviewInspection": {
+    "result": {
+      "state": "source-unchanged",
+      "sheet": "board-Child.svg",
+      "hasChildNote": true,
+      "sheetCount": 2
+    }
+  },
+  "compactWalkthrough": "Not verified: native window navigation changed during the attempted resize; no further interactive actions taken.",
+  "otherSource": {
+    "result": {
+      "state": "missing-preview",
+      "pages": 0,
+      "svg": null
+    }
+  },
+  "temporarySourceAndPreviewPresenceRestored": true,
+  "recordedFixtureHashesUnchanged": {
+    "fabdesk.json": "a0527b15fead3e9b4b0c30e3cf741d3edfc6798e093091ebf288711054ddb9a4",
+    "fabplane.assembly.json": "ffe6b12399cec942549f829855f4d6e532a18db08d843a44f6c2624f7dd4885c",
+    "boards/io/board.kicad_pcb": "34f1e8d8592b9fce278642e7ab15b94cf53631740cccf25c439a1311e7bc77c6",
+    "boards/io/renders/pcb.svg": "c3daabe16c421794a8c86fffa74ed5d8308407aed8c439b65d166adc386d6dbb",
+    "boards/io/renders/pcb.svg.revision.json": "d013dcce6655c9a0e570fab0881b107e6dc529e724666d8c28331f7f9e6a771e",
+    "boards/carrier/board.kicad_pcb": "406b12f63e656f59751b39fe9e7f346cb2c9beb65eb16cdc4400ab20fe471d99",
+    "boards/carrier/renders/pcb.svg": "1dc8e9220bdcf210e6968f4332792ecc1f28955525de2123d27ac1191c5207ab",
+    "boards/carrier/renders/pcb.svg.revision.json": "a91c67ab69d30119e0e3952d344afdf9e5c9688872adcdaf23b6ae644322b51c"
+  },
+  "realVaioRecordedHashesUnchanged": true,
+  "finalWindow": {
+    "result": {
+      "project": "prj_mvqyacun3e60075ae8",
+      "tab": "drc",
+      "w": 1440,
+      "h": 920,
+      "dpr": 1
+    }
+  },
+  "uiLimitations": "Native generation and next-sheet navigation were observed. Older-source/artifact states were verified through the actual app client inspector after native navigation changed to Checks. Compact UI and native popup selection remain unverified; no further interactive navigation was performed."
+}

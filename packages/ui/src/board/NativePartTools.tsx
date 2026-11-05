@@ -1,0 +1,219 @@
+import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
+import { ErrorNotice } from "../components/ErrorNotice";
+import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
+import { DisclosureSummary } from "../components/DisclosureSummary";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
+import type { BoardSourceSelection, PcbPartPosition } from "@fabdesk/protocol";
+import { inspectPcbParts, parsePartPositionInput, pcbPlacementWarnings, pcbToolJsonForSource, useCoreClient, usePcbPartsNear, useRunTool } from "@fabdesk/client-core";
+import { Select, Button, IconButton, Input, Spinner } from "../components/ui";
+import { Icon } from "../components/Icon";
+import { NativePartTarget } from "./NativePartTarget";
+import { BoardChecksButton } from "./BoardChecksButton";
+import type { SvgBox } from "./svg-coords";
+import { openPlacementDraft } from "./placement/placement-entry";
+import { useUiStore } from "../stores/ui";
+
+type Selection = { part: PcbPartPosition; sourceSha256: string };
+type PositionRecovery = { part: PcbPartPosition; savedSha256: string };
+
+/** Real reference selection and guarded native edits; the surrounding marker is a drawing location. */
+export function NativePartTools({ projectId, board, point, openAbove, onMoved, canPosition, box, onMutationBusyChange, visible = true }: { board?: BoardSourceSelection; visible?: boolean; onMutationBusyChange: (busy: boolean) => void; box: SvgBox; canPosition: boolean; projectId: string; point: { x: number; y: number }; openAbove: boolean; onMoved: (point: { x: number; y: number }) => void }) {
+  const client = useCoreClient(), preview = useRunTool();
+  const popup = useRef<HTMLElement>(null);
+  const outlineTrigger = useRef<HTMLButtonElement>(null);
+  const [popupStyle, setPopupStyle] = useState<CSSProperties>({ visibility: "hidden" });
+  const root = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
+  const latestPoint = useRef(point); latestPoint.current = point;
+  const inFlight = useRef(false), mounted = useRef(true), appliedPoint = useRef<{ x: number; y: number } | null>(null);
+  const [mode, setMode] = useState<"parts" | "outline">("parts");
+  const [open, setOpen] = useState(false), [busy, setBusy] = useState(false);
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [recovery, setRecovery] = useState<PositionRecovery | null>(null);
+  const [fields, setFields] = useState({ x: "", y: "", rotation: "" });
+  const [error, setError] = useState<string | null>(null), [message, setMessage] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const parts = usePcbPartsNear(projectId, point, open && mode === "parts", board);
+  const current = parts.data;
+  const sourceChanged = !!selection && !!current && selection.sourceSha256 !== current.sourceSha256;
+  const values = parsePartPositionInput(fields);
+  const changed = !!selection && !!values && (values.x !== selection.part.x || values.y !== selection.part.y || values.rotation !== ((selection.part.rotation % 360) + 360) % 360);
+  const hasProposal = !!selection && (fields.x !== String(selection.part.x) || fields.y !== String(selection.part.y) || fields.rotation !== String(selection.part.rotation));
+  useProjectExitGuard(projectId, busy ? "A native part edit is being saved. Wait for it to finish." : hasProposal ? `Apply or discard the proposed position for ${selection?.part.ref ?? "this part"}.` : null);
+  const assistantSurface = { projectId, label: mode === "outline" && open ? "Board size · Placement draft" : selection ? `Board · ${selection.part.ref}` : "Board · Selected location", priority: 20, details: JSON.stringify({ board, pointMm: point, part: selection?.part, recordedSourceSha256: selection?.sourceSha256, editor: open ? mode : "location", ...(open && mode === "outline" ? { featureStatus: "Resizing opens a separate placement draft; saved-PCB positions here are a different editing operation" } : {}), proposedFields: open && hasProposal ? fields : null, unappliedProposal: hasProposal, sourceChanged, applying: busy, canPosition, error }) };
+  useAssistantSurface(visible ? assistantSurface : null);
+  const choose = (part: PcbPartPosition, sourceSha256: string, keepRecovery = false) => {
+    if (!keepRecovery) setRecovery(null);
+    setSelection({ part, sourceSha256 }); setFields({ x: String(part.x), y: String(part.y), rotation: String(part.rotation) }); setError(null); setMessage(null); setPreviewError(null);
+  };
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => {
+    const wasApplied = appliedPoint.current?.x === point.x && appliedPoint.current.y === point.y;
+    appliedPoint.current = null;
+    if (wasApplied) return;
+    setSelection(null); setRecovery(null); setError(null); setMessage(null); setPreviewError(null);
+  }, [projectId, point.x, point.y]);
+  useEffect(() => {
+    if (current?.parts.length === 1 && !selection && !inFlight.current) choose(current.parts[0]!, current.sourceSha256);
+  }, [current, selection]);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => { if (event.target instanceof Node && !root.current?.contains(event.target) && !popup.current?.contains(event.target) && !(event.target instanceof Element && event.target.closest("[data-native-part-target]")) && !inFlight.current) setOpen(false); };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [open]);
+  useEffect(() => {
+    if (!open || !visible) return;
+    const frame = requestAnimationFrame(() => popup.current?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(frame);
+  }, [open, mode, selection?.part.ref, visible]);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const position = () => {
+      const rect = root.current?.getBoundingClientRect();
+      if (!rect) return;
+      const safeBottom = window.innerHeight - (root.current?.closest(".fd-canvas-workspace") ? 88 : 12);
+      const drawing = root.current?.closest(".fd-svg-host")?.getBoundingClientRect();
+      const workspace = root.current?.closest(".fd-canvas-main")?.getBoundingClientRect();
+      if (mode === "outline" && workspace && window.innerWidth >= 780) {
+        const width = 320, top = workspace.top + 82;
+        setPopupStyle({ left: workspace.right - width - 24, width, top, maxHeight: Math.max(160, safeBottom - top) });
+        return;
+      }
+      const preferredWidth = mode === "parts" ? 330 : 390;
+      const gutter = drawing ? Math.max(drawing.left, window.innerWidth - drawing.right) : 0;
+      const width = Math.min(preferredWidth, window.innerWidth * .75, gutter >= 256 ? gutter - 36 : preferredWidth), below = safeBottom - rect.bottom - 12, above = rect.top - 24;
+      const anchor = root.current?.closest(".fd-location-anchor")?.getBoundingClientRect();
+      // Use spare canvas space when it can hold the requested tools without covering the drawing.
+      if (drawing && (mode === "outline" || drawing.left >= width + 36 || window.innerWidth - drawing.right >= width + 36)) {
+        const left = drawing.left >= width + 36 ? drawing.left - width - 24 : window.innerWidth - drawing.right >= width + 36 ? drawing.right + 24 : 12;
+        const height = Math.min(470, safeBottom - 12, (popup.current?.scrollHeight ?? 468) + 2);
+        setPopupStyle({ left, width, top: Math.max(12, Math.min(drawing.top + 30, safeBottom - height)), maxHeight: Math.min(470, safeBottom - 12) });
+        return;
+      }
+      if (anchor && (window.innerWidth - anchor.left >= width + 40 || anchor.left >= width + 40)) {
+        const left = window.innerWidth - anchor.left >= width + 40 ? anchor.left + 40 : anchor.left - width - 40;
+        const height = Math.min(470, safeBottom - 12, (popup.current?.scrollHeight ?? 468) + 2);
+        setPopupStyle({ left, width, top: Math.max(12, Math.min(anchor.top + 20, safeBottom - height)), maxHeight: Math.min(470, safeBottom - 12) });
+        return;
+      }
+      const useAbove = below < 470 && above > below || above >= 470 && openAbove;
+      setPopupStyle({ left: Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12)), width, top: useAbove ? undefined : rect.bottom + 12, bottom: useAbove ? window.innerHeight - rect.top + 12 : undefined, maxHeight: Math.max(100, Math.min(470, useAbove ? above : below)) });
+    };
+    position();
+    const observer = new ResizeObserver(position);
+    if (popup.current) observer.observe(popup.current);
+    // Fitting the SVG follows the window resize asynchronously; follow its final geometry too.
+    const drawing = root.current?.closest(".fd-svg-host");
+    if (drawing) observer.observe(drawing);
+    window.addEventListener("resize", position); window.addEventListener("scroll", position, true);
+    return () => { observer.disconnect(); window.removeEventListener("resize", position); window.removeEventListener("scroll", position, true); };
+  }, [open, openAbove, point.x, point.y, mode]);
+  const close = () => { if (inFlight.current) return; setOpen(false); requestAnimationFrame(() => (mode === "outline" ? outlineTrigger.current : trigger.current)?.focus()); };
+  const reload = async () => {
+    if (!selection || inFlight.current) return;
+    const origin = { ...point };
+    setBusy(true); setError(null);
+    try {
+      const result = await inspectPcbParts(client, projectId, { reference: selection.part.ref }, board);
+      const part = result.parts.find((p) => p.ref === selection.part.ref);
+      if (!part) throw new Error("This part is no longer in the saved PCB.");
+      if (mounted.current && latestPoint.current.x === origin.x && latestPoint.current.y === origin.y) {
+        choose(part, result.sourceSha256);
+        if (useUiStore.getState().activeProjectId === projectId) { appliedPoint.current = { x: part.x, y: part.y }; onMoved(appliedPoint.current); }
+      }
+    } catch (failure) { if (mounted.current) setError(failure instanceof Error ? failure.message : "Could not reload this part."); }
+    finally { if (mounted.current) setBusy(false); }
+  };
+  const apply = async (reverting = false) => {
+    if (!selection || selection.part.locked || sourceChanged || !canPosition || parts.isFetching || parts.isError || inFlight.current) return;
+    if (reverting && (!recovery || recovery.part.ref !== selection.part.ref || recovery.savedSha256 !== selection.sourceSha256 || current?.sourceSha256 !== recovery.savedSha256 || hasProposal)) return;
+    const target = reverting ? recovery!.part : values;
+    if (!target || !reverting && !changed) return;
+    const previousPart = { ...selection.part };
+    const origin = { ...point };
+    inFlight.current = true; onMutationBusyChange(true); setBusy(true); setError(null); setMessage(null); setPreviewError(null);
+    let saved = false;
+    try {
+      const result = await client.callTool("pcb_place", { projectId, ...(board ? { board: { ...board } } : {}), placements: [{ reference: selection.part.ref, position: { x: target.x, y: target.y }, rotation: target.rotation }], staleCopper: "keep", expectedSourceSha256: selection.sourceSha256 });
+      const data = pcbToolJsonForSource(result, projectId, board);
+      if (data.saved !== true) throw new Error("The backend did not confirm a saved placement. Reload the part before retrying.");
+      saved = true; setRecovery(null);
+      const warnings = pcbPlacementWarnings(result);
+      const rendered = await preview.run("render_pcb_svg", { projectId, ...(board ? { board: { ...board } } : {}) });
+      const inspected = await inspectPcbParts(client, projectId, { reference: selection.part.ref }, board);
+      const part = inspected.parts.find((p) => p.ref === selection.part.ref);
+      if (!part) throw new Error("The saved part could not be found in the refreshed inspection.");
+      const rotationDifference = Math.abs(((part.rotation - target.rotation + 180) % 360 + 360) % 360 - 180);
+      if (Math.abs(part.x - target.x) > .000001 || Math.abs(part.y - target.y) > .000001 || rotationDifference > .000001 || part.flipped !== previousPart.flipped || part.footprint !== previousPart.footprint || part.value !== previousPart.value) throw new Error("The inspected part does not match the requested saved position and identity. Review the latest PCB before making another change.");
+      if (mounted.current) {
+        const sameLocation = latestPoint.current.x === origin.x && latestPoint.current.y === origin.y;
+        if (sameLocation) {
+          choose(part, inspected.sourceSha256);
+          if (!reverting) setRecovery({ part: previousPart, savedSha256: inspected.sourceSha256 });
+        }
+        const savedNotice = reverting ? `${part.ref} previous position restored.` : `${part.ref} position saved.`;
+        const notice = warnings.affectedCopper || warnings.possibleShorts
+          ? `${savedNotice} Placement analysis flagged ${warnings.affectedCopper} affected copper item(s)${warnings.possibleShorts ? ` and ${warnings.possibleShorts} possible short(s)` : ""}. Review routing and checks.`
+          : `${savedNotice} Run checks after changing placement.`;
+        setMessage(rendered.status === "failed" ? `${notice} The preview could not update and remains out of date.` : notice);
+        setPreviewError(rendered.status === "failed" ? rendered.error ?? "The exporter returned no error detail." : null);
+        if (sameLocation && useUiStore.getState().activeProjectId === projectId) { appliedPoint.current = { x: part.x, y: part.y }; onMoved(appliedPoint.current); }
+      }
+    } catch (failure) {
+      if (mounted.current) setError(`${saved ? "The position was saved, but refresh could not finish." : "Could not apply this placement."} Reload the part before retrying. ${failure instanceof Error ? failure.message : ""}`);
+    } finally {
+      inFlight.current = false; onMutationBusyChange(false);
+      if (mounted.current) {
+        setBusy(false);
+        if (useUiStore.getState().activeProjectId === projectId) requestAnimationFrame(() => { if (useUiStore.getState().activeProjectId === projectId) popup.current?.focus({ preventScroll: true }); });
+      }
+    }
+  };
+  const drawingHost = root.current?.closest<HTMLElement>(".fd-svg-host");
+  const partPicker = current && <label>Component<Select aria-label="Select nearby PCB component" value={selection?.part.ref ?? ""} disabled={busy || hasProposal} onChange={(event) => { const part = current.parts.find((p) => p.ref === event.target.value); if (part) choose(part, current.sourceSha256); }}><option value="">Select a component</option>{[...current.parts].sort((a, b) => Math.hypot(a.x - point.x, a.y - point.y) - Math.hypot(b.x - point.x, b.y - point.y)).map((part) => <option key={part.ref} value={part.ref}>{part.ref}{part.value ? ` · ${part.value}` : ""}</option>)}</Select></label>;
+
+  return <div className="fd-native-part-control" data-mode={mode} data-open={open} data-visible={visible} ref={root} onKeyDown={(event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); event.stopPropagation(); }
+    if (event.key === "Escape" && open) { event.stopPropagation(); close(); }
+  }}>
+    <Button ref={trigger} size="sm" variant="ghost" aria-expanded={open && mode === "parts"} disabled={busy || !canPosition && !open} title={canPosition ? "Inspect and position native PCB parts" : "Update this preview to verify its native PCB coordinates before positioning parts"} onClick={() => { setMode("parts"); setOpen(mode !== "parts" || !open); }}><Icon name="pcb" width={15} height={15} />{selection?.part.ref ?? "Parts"}<Icon name="chevronDown" width={12} height={12} /></Button>
+    <Button ref={outlineTrigger} size="sm" variant="ghost" aria-expanded={open && mode === "outline"} disabled={busy} title="Preview a resize in a separate placement draft" onClick={() => { setMode("outline"); setOpen(mode !== "outline" || !open); }}>Board size</Button>
+    {visible && open && mode === "parts" && drawingHost && selection && values && canPosition && !sourceChanged && !busy && !parts.isError && !selection.part.locked && <NativePartTarget host={drawingHost} box={box} point={values} reference={selection.part.ref} changed={changed} onMove={target => { setFields(previous => ({ ...previous, x: String(target.x), y: String(target.y) })); setError(null); setMessage(null); setPreviewError(null); }} />}
+    {open && createPortal(<section ref={popup} style={{ ...popupStyle, ...(!visible ? { visibility: "hidden" as const } : {}) }} data-canvas-tools data-mode={mode} className="fd-native-part-popover" tabIndex={-1} role="dialog" aria-label={mode === "parts" ? "Component position" : "Board size"} aria-busy={busy}>
+      <header><strong>{mode === "outline" ? "Board size" : selection ? `${selection.part.ref}${selection.part.value ? ` · ${selection.part.value}` : ""}` : "Components near this point"}</strong><IconButton title="Close board tools" size="sm" disabled={busy} onClick={close}><Icon name="close" width={14} height={14} /></IconButton></header>
+      {mode === "outline" ? <div><p className="fd-native-part-note">Resize in a separate placement draft, review the new outline and export an unrouted copy. Your saved PCB stays unchanged.</p><Button size="sm" variant="primary" disabled={busy || hasProposal} onClick={() => openPlacementDraft({ projectId, tool: "resize", ...(board ? { sourceId: board.sourceId } : {}) })}>Open resize draft</Button>{hasProposal && <p className="fd-native-part-note">Apply or discard your saved-PCB position preview first.</p>}</div> : <>
+      {parts.isPending && !current ? <div className="flex items-center gap-2 text-muted"><Spinner />Inspecting saved PCB…</div> : parts.isError && !current ? <p role="alert">Could not inspect parts. <Button size="sm" onClick={() => void parts.refetch()}>Retry</Button></p> : current && <>
+        {current.parts.length > 1 ? selection ? <details key={selection.part.ref} className="fd-native-part-details"><DisclosureSummary icon="pcb" label="Select nearby component" /><p className="fd-native-part-note">Select a component already on this board.</p>{partPicker}{hasProposal && <p className="fd-native-part-note">Apply or discard your position preview before changing the selection.</p>}</details> : partPicker : current.parts.length === 0 ? <p>No components found here. Click closer to the component you want to inspect.</p> : null}
+        {current.truncated && <p>More parts are nearby. Select a more precise location.</p>}
+      </>}
+      {parts.isError && current && <p role="alert" className="fd-native-part-warning">The latest part inspection failed. <Button size="sm" disabled={busy} onClick={() => void parts.refetch()}>Retry inspection</Button></p>}
+      {!canPosition && !busy && <p className="fd-native-part-warning">Verify or update the PCB preview before applying part positions.</p>}
+      {selection && <>
+        {sourceChanged && <p role="status" className="fd-native-part-warning">The PCB changed. Reload this part before applying edits.</p>}
+        {selection.part.locked && <p className="fd-native-part-warning">This part or its group is locked. Unlock it in KiCad before positioning it here.</p>}
+        <form onSubmit={(event) => { event.preventDefault(); void apply(); }}>
+          <details className="fd-native-part-details" key={`${selection.part.ref}:position`}>
+          <DisclosureSummary icon="settings" label="Position & rotation" />
+          <p className="fd-native-part-footprint">{selection.part.footprint || "Embedded footprint"} · {selection.part.flipped ? "Bottom" : "Top"}</p>
+          <div className="fd-native-part-fields">{([['x', 'X (mm)'], ['y', 'Y (mm)'], ['rotation', 'Rotation (°)']] as const).map(([key, label]) => <label key={key}>{label}<Input type="number" step="any" aria-label={label} value={fields[key]} disabled={busy || selection.part.locked} onChange={(event) => { const value = event.currentTarget.value; setFields((previous) => ({ ...previous, [key]: value })); }} /></label>)}</div>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void reload()}>Reload part</Button>
+          <p className="fd-native-part-note">Coordinates use KiCad’s board origin.</p>
+          </details>
+          <p className="fd-native-part-note">Drag the marker to preview a move, or enter an exact position above. Applying keeps existing copper; review routing and run checks afterward.</p>
+          {!busy && values && !changed && <p className="fd-native-part-note">No changes yet.</p>}
+          {hasProposal && values && <p role="status" className="fd-native-part-note">Preview · Not saved · X {values.x} mm · Y {values.y} mm · {values.rotation}°</p>}
+          {hasProposal && !values && <p role="status" className="fd-native-part-warning">Enter valid X, Y and rotation values to apply, or discard this proposal.</p>}
+          <div className="fd-native-part-actions">{hasProposal && <Button size="sm" variant="ghost" disabled={busy} onClick={() => { choose(selection.part, selection.sourceSha256, true); requestAnimationFrame(() => popup.current?.focus({ preventScroll: true })); }}>Discard preview</Button>}<Button size="sm" disabled={busy || selection.part.locked} onClick={() => setFields((previous) => ({ ...previous, rotation: String((Number(previous.rotation) || 0) + 90) }))}>Rotate 90°</Button><Button size="sm" variant="primary" type="submit" disabled={busy || !canPosition || parts.isFetching || parts.isError || !values || !changed || sourceChanged || selection.part.locked}>{busy ? "Saving / refreshing…" : "Apply position"}</Button></div>
+        </form>
+        {recovery && <div className="fd-native-position-recovery"><Button size="sm" variant="ghost" disabled={busy || hasProposal || sourceChanged || !canPosition || parts.isFetching || parts.isError || selection.part.locked || recovery.savedSha256 !== selection.sourceSha256 || current?.sourceSha256 !== recovery.savedSha256} onClick={() => void apply(true)}>Revert last position</Button><p className="fd-native-part-note">Restore {recovery.part.ref} to {recovery.part.x}, {recovery.part.y} mm · {recovery.part.rotation}°. Available here until the PCB changes or another part is inspected; routing edits are not undone.</p></div>}
+        <Button size="sm" onClick={() => { askAboutSurface(assistantSurface, `Explain ${selection.part.ref}, its connections and its purpose in this board. Check the saved source before proposing changes.`); setOpen(false); }}><Icon name="sparkles" width={16} height={16} />Ask about {selection.part.ref}</Button>
+        {selection && <details className="fd-native-part-details"><DisclosureSummary icon="pcb" label="Compare footprint in a draft" /><p className="fd-native-part-note">Compare geometry and numbered pads for {selection.part.ref}. This does not verify component function or update the BOM.</p><Button size="sm" disabled={busy || hasProposal || sourceChanged} onClick={() => openPlacementDraft({ projectId, tool: "compare", ref: selection.part.ref, sourceSha256: selection.sourceSha256, ...(board ? { sourceId: board.sourceId } : {}) })}>Compare footprint…</Button></details>}
+      </>}
+      {message && <p role="status" className="fd-native-part-warning">{message}<BoardChecksButton projectId={projectId} {...(board ? { board } : {})} /></p>}
+      {previewError && <details className="fd-native-part-note"><DisclosureSummary icon="warning" label="Why couldn’t the preview update?" variant="compact" /><ErrorNotice error={previewError} /><p>Resolve the export error, then choose Update preview. The native placement is already saved.</p></details>}
+      {error && <ErrorNotice error={error} />}
+      </>}
+    </section>, root.current?.closest(".fd-canvas-workspace") ?? document.body)}
+  </div>;
+}

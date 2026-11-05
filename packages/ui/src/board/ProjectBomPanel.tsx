@@ -5,20 +5,20 @@ import {
   ProjectPartsFile as ProjectPartsFileSchema,
   findOffboardCatalogPart,
   nextOffboardRef,
-  projectBomLines,
   searchOffboardCatalog,
-  type NetlistFile,
   type OffboardKind,
   type ProjectBomLine,
   type ProjectPartsFile,
 } from "@fabdesk/protocol";
-import { useProjectJson, useRunTool, useWriteProjectFile } from "@fabdesk/client-core";
+import { useCoreClient, useProjectBom, useProjectJson, useRunTool, useWriteProjectFile } from "@fabdesk/client-core";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import { Badge, Button, EmptyState, IconButton, Input, Spinner } from "../components/ui";
+import { Badge, Button, Dialog, EmptyState, IconButton, Input, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
+import { DisclosureSummary } from "../components/DisclosureSummary";
+import { CanvasToolButton } from "../components/CanvasToolButton";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
+import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 
 function emptyParts(): ProjectPartsFile {
   return { schema: 1, parts: [] };
@@ -121,7 +121,7 @@ function PartFilters({ label, selected, onChange, includePcb = false }: {
             onClick={() => onChange(value === "all" ? [] : selected.includes(value) ? selected.filter((k) => k !== value) : [...selected, value])}
             className={cn(
               "inline-flex h-8 items-center gap-1 rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent",
-              active ? "border-accent bg-accent/15 text-accent" : "border-border bg-panel text-muted hover:bg-panel-2 hover:text-fg",
+              active ? "border-accent bg-accent/15 text-accent" : "border-border bg-panel text-fg hover:bg-panel-2",
             )}
           >
             {value === "all" ? "All parts" : value === "pcb" ? "On PCB" : value === "accessory" ? "Accessories" : `${OFFBOARD_KIND_LABELS[value]}s`}
@@ -142,22 +142,23 @@ function PartsToolbar({ label, query, onQueryChange, selected, onChange, include
 }) {
   const [open, setOpen] = useState(false);
   const filtersId = useId();
+  const searchInput = useRef<HTMLInputElement>(null);
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <div className="relative min-w-0 flex-1">
           <Icon name="search" width={15} height={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
-          <Input value={query} onChange={(e) => onQueryChange(e.target.value)}
+          <Input ref={searchInput} value={query} onChange={(e) => onQueryChange(e.target.value)}
             placeholder={includePcb ? "Search name, reference or part number…" : "Search motors, displays or hardware…"}
             aria-label={label} className="h-8 pl-8 pr-8 text-xs" />
           {query && <IconButton size="xs" title={`Clear ${includePcb ? "BOM" : "library"} search`}
-            className="absolute right-1 top-1" onClick={() => onQueryChange("")}><Icon name="close" width={14} height={14} /></IconButton>}
+            className="absolute right-1 top-1" onClick={() => { onQueryChange(""); searchInput.current?.focus(); }}><Icon name="close" width={14} height={14} /></IconButton>}
         </div>
         <Button size="sm" variant={open || selected.length ? "secondary" : "ghost"}
+          aria-label={`Filter parts${selected.length ? ` · ${selected.length} active` : ""}`} title="Filter parts"
           aria-expanded={open} aria-controls={filtersId} onClick={() => setOpen(!open)}
           className={cn("shrink-0", selected.length > 0 && "text-accent")}>
-          Filters{selected.length > 0 ? ` (${selected.length})` : ""}
-          <Icon name="chevronDown" width={14} height={14} className={open ? "rotate-180" : ""} />
+          <Icon name="filter" width={18} height={18} />{selected.length > 0 && <span>{selected.length}</span>}
         </Button>
       </div>
       {open && <div id={filtersId}>
@@ -169,13 +170,22 @@ function PartsToolbar({ label, query, onQueryChange, selected, onChange, include
 
 export function ProjectBomPanel() {
   const projectId = useUiStore((s) => s.activeProjectId);
-  const netlist = useProjectJson<NetlistFile>(projectId, "circuit.netlist.json");
+  const bom = useProjectBom(projectId), client = useCoreClient();
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const addTrigger = useRef<HTMLButtonElement>(null);
+  const libraryRoot = useRef<HTMLDivElement>(null);
   const partsFile = useProjectJson<ProjectPartsFile>(projectId, PROJECT_PARTS_FILE);
   const write = useWriteProjectFile();
   const exportBom = useRunTool();
+  const [exportOpen, setExportOpen] = useState(false), [allowPartial, setAllowPartial] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null), [downloading, setDownloading] = useState(false);
   const [filters, setFilters] = useState<PartKind[]>([]);
   const [query, setQuery] = useState("");
   const [bomQuery, setBomQuery] = useState("");
+  const [buildQuantity, setBuildQuantity] = useState("5");
+  useEffect(() => { setBuildQuantity("5"); }, [projectId]);
+  const batchCount = Number(buildQuantity);
+  const validBatch = Number.isInteger(batchCount) && batchCount > 0 && batchCount <= 10000;
   const [kinds, setKinds] = useState<PartKind[]>([]);
   const [pendingReveal, setPendingReveal] = useState<{ projectId: string; lineId: string } | null>(null);
   const [highlightedLine, setHighlightedLine] = useState<string | null>(null);
@@ -187,12 +197,14 @@ export function ProjectBomPanel() {
   const parts = partsState.parts;
   const editable = partsState.status === "ok";
   const addedCatalogIds = new Set(parts.parts.map((part) => part.catalogId));
-  const components = netlist.data?.netlist.components ?? [];
-  const lines = useMemo(() => projectBomLines(components, parts.parts), [components, parts.parts]);
+  const lines = bom.data?.lines ?? [];
+  const partsPerBuild = lines.reduce((sum, line) => sum + line.qty, 0);
+  useEffect(() => { setAllowPartial(false); }, [bom.data?.revision]);
+  useAssistantSurface(projectId ? { projectId, label: "Parts / Design BOM", priority: 10, details: JSON.stringify({ revision: bom.data?.revision, sourceCoverage: bom.data?.coverage, completeSourceCoverage: bom.data?.complete, lines: lines.length, buildQuantity: validBatch ? batchCount : null, partsPerBuild, electricalParity: "not established by BOM", error: bom.error instanceof Error ? bom.error.message : undefined }) } : null);
   const searchTerm = bomQuery.trim().toLowerCase();
   const shown = lines.filter((line) =>
     (filters.length === 0 || filters.includes(line.kind)) &&
-    (!searchTerm || [line.name, line.refs.join(" "), line.mpn, line.footprint].join(" ").toLowerCase().includes(searchTerm)),
+    (!searchTerm || [line.name, line.refs.join(" "), line.mpn, line.sku, line.footprint].join(" ").toLowerCase().includes(searchTerm)),
   );
   const hits = useMemo(
     () => searchOffboardCatalog(query, { limit: Number.MAX_SAFE_INTEGER }).filter((part) => kinds.length === 0 || kinds.includes(part.kind)),
@@ -200,7 +212,7 @@ export function ProjectBomPanel() {
   );
 
   useEffect(() => {
-    if (!pendingReveal || pendingReveal.projectId !== projectId || !addedRow.current || !bomScroll.current) return;
+    if (libraryOpen || !pendingReveal || pendingReveal.projectId !== projectId || !addedRow.current || !bomScroll.current) return;
     const container = bomScroll.current;
     const row = addedRow.current;
     const headerHeight = container.querySelector("thead")?.getBoundingClientRect().height ?? 0;
@@ -212,7 +224,10 @@ export function ProjectBomPanel() {
     });
     setHighlightedLine(pendingReveal.lineId);
     setPendingReveal(null);
-  }, [lines, pendingReveal, projectId]);
+    requestAnimationFrame(() => {
+      if (row.isConnected && useUiStore.getState().activeProjectId === projectId) row.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+    });
+  }, [lines, pendingReveal, projectId, libraryOpen]);
 
   useEffect(() => {
     if (!highlightedLine) return;
@@ -221,17 +236,23 @@ export function ProjectBomPanel() {
   }, [highlightedLine]);
 
   if (!projectId) return <EmptyState title="No project selected" />;
-  if (netlist.isLoading || partsFile.isLoading) {
+  if (bom.isLoading || partsFile.isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center" role="status">
         <Spinner />
+        <strong className="text-sm font-medium">Reading parts for this build…</strong>
+        <p className="max-w-sm text-xs leading-5 text-muted">Loading saved design sources and project hardware. You can keep working and follow design tasks in Project activity.</p>
       </div>
     );
   }
 
-  const persist = (next: ProjectPartsFile) => {
+  const persist = (next: ProjectPartsFile, focusAdd = false) => {
     if (!editable) return;
-    write.mutate({ projectId, path: PROJECT_PARTS_FILE, content: `${JSON.stringify(next, null, 2)}\n` });
+    write.mutate({ projectId, path: PROJECT_PARTS_FILE, content: `${JSON.stringify(next, null, 2)}\n` }, {
+      onSuccess: () => {
+        if (focusAdd && useUiStore.getState().activeProjectId === projectId) requestAnimationFrame(() => addTrigger.current?.focus());
+      },
+    });
   };
 
   const addCatalog = (catalogId: string) => {
@@ -244,6 +265,7 @@ export function ProjectBomPanel() {
         setFilters([]);
         setBomQuery("");
         setPendingReveal({ projectId, lineId });
+        requestAnimationFrame(() => libraryRoot.current?.querySelector<HTMLInputElement>("input")?.focus());
       },
     });
   };
@@ -253,6 +275,7 @@ export function ProjectBomPanel() {
     if (!part || !projectId) return;
     setFilters([]);
     setBomQuery("");
+    setLibraryOpen(false);
     setPendingReveal({ projectId, lineId: part.id });
   };
 
@@ -265,36 +288,67 @@ export function ProjectBomPanel() {
   };
 
   const removeLine = (lineId: string) =>
-    persist({ schema: 1, parts: parts.parts.filter((p) => p.id !== lineId) });
+    persist({ schema: 1, parts: parts.parts.filter((p) => p.id !== lineId) }, lines.length === 1);
+
+  const downloadBom = async () => {
+    if (!bom.data || bom.isFetching || downloading || !lines.length || (!bom.data.complete && !allowPartial)) return;
+    setDownloading(true); setDownloadError(null);
+    try {
+      const result = await exportBom.run("export_bom", { projectId, expectedRevision: bom.data.revision, allowPartial });
+      if (result.status !== "done") return;
+      const blob = await client.readFileBlob(projectId, "exports/bom.csv");
+      if (useUiStore.getState().activeProjectId !== projectId) return;
+      const url = URL.createObjectURL(blob), link = document.createElement("a"); link.href = url; link.download = "bom.csv"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setExportOpen(false);
+    } catch (error) { setDownloadError(error instanceof Error ? error.message : "Could not download BOM. Try again."); }
+    finally { setDownloading(false); }
+  };
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="project-bom">
+    <div className="fd-project-parts flex h-full min-h-0 flex-col" data-testid="project-bom">
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold">Project parts</h2>
-            <span className="text-xs text-muted">{lines.length} items</span>
+            <h2 className="text-sm font-semibold">Parts for this build</h2>
+            <span className="text-xs text-muted">{lines.length} BOM {lines.length === 1 ? "line" : "lines"} · {partsPerBuild} parts per build</span>
             <Badge tone="accent" title="Off-board parts are separate from components mounted on the PCB.">
               {parts.parts.length} off-board
             </Badge>
           </div>
-          <p className="mt-1 text-xs text-muted">PCB components and extra hardware in one bill of materials.</p>
+          <p className="mt-1 text-xs text-muted">Quantities cover one complete build, including all declared boards and project hardware.</p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          <Button ref={addTrigger} variant="primary" size="sm" onClick={() => setLibraryOpen(true)}><Icon name="plus" width={15} height={15} />Add hardware</Button>
+          <Button size="sm" disabled={bom.isFetching} onClick={() => void bom.refetch()}>{bom.isFetching ? "Reading sources…" : "Refresh parts"}</Button>
 
           <Button
             size="sm"
-            disabled={exportBom.state.status === "running"}
-            onClick={() => void exportBom.run("export_bom", { projectId })}
+            disabled={downloading || bom.isFetching || bom.isError || lines.length === 0}
+            onClick={() => setExportOpen(true)}
             data-testid="bom-export"
           >
-            {exportBom.state.status === "running" ? "Exporting..." : "Export CSV"}
+            {downloading ? "Exporting…" : "Export CSV"}
           </Button>
         </div>
       </div>
-      <div className="shrink-0 border-b border-border px-2 py-2" data-testid="bom-filter">
+      {bom.data && <div className="fd-bom-coverage shrink-0 pb-3">
+        <details><DisclosureSummary variant="compact" icon="pcb" label={bom.data.complete ? "Parts source details" : "Review missing parts sources"} warning={!bom.data.complete} badge={`${bom.data.coverage.filter(source => source.multiplier > 0 && source.status === "native-schematic").length} of ${bom.data.coverage.filter(source => source.multiplier > 0).length} native sources${bom.data.complete ? "" : " · incomplete"}`} />
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">{bom.data.coverage.map(source => <div key={source.sourceId ?? "main"} className="rounded-lg border border-border px-3 py-2 text-xs"><div className="flex items-start justify-between gap-2"><div className="font-medium">{source.name}<span className="ml-2 text-muted">{source.multiplier} {source.multiplier === 1 ? "board" : "boards"} · {source.status === "native-schematic" || source.status === "saved-netlist" ? `${source.componentCount * source.multiplier} listed parts` : source.status === "unused" ? "Not included" : "Parts not listed"}</span></div><CanvasToolButton icon="sparkles" label={`Ask about ${source.name} parts`} onClick={() => askAboutSurface({ projectId, label: `Parts / ${source.name}`, priority: 40, details: JSON.stringify({ revision: bom.data?.revision, manifestSha256: bom.data?.manifestSha256, source, instruction: "This is captured BOM coverage, not a PCB parity or electrical-check result. Inspect the declared source and preserve independent boards." }) }, (source.status === "native-schematic" || source.status === "saved-netlist") ? "Explain the listed parts and quantities for this board, including exclusions and shared instances. Flag missing purchasing information before suggesting changes." : "Help recover this board’s parts list. Find its saved schematic or design netlist in the project first, explain what is missing, and propose how to import or create it without guessing parts or changing unrelated boards.")} /></div><p className={cn("mt-1", source.status === "native-schematic" || source.status === "saved-netlist" || source.status === "unused" ? "text-muted" : "text-warning")}>{source.status === "native-schematic" ? "Saved native schematic · BOM exclusions respected" : source.status === "saved-netlist" ? "Saved design netlist · source freshness unverified" : source.reason ?? source.status}</p></div>)}</div>
+        <p className="mt-2 text-xs text-muted">Source coverage does not establish schematic/PCB parity or passed electrical checks. Hardware is counted once for the project.</p></details>
+      </div>}
+      {lines.length > 0 && <div className="fd-bom-batch shrink-0">
+        <label className="flex items-center gap-2 text-sm">Build quantity<Input type="number" min={1} max={10000} step={1} value={buildQuantity} onChange={event => setBuildQuantity(event.target.value)} aria-label="Build quantity" className="w-24" /></label>
+        <span className="text-sm" role="status">{validBatch ? `${(partsPerBuild * batchCount).toLocaleString()} parts for ${batchCount.toLocaleString()} ${batchCount === 1 ? "build" : "builds"}` : "Enter a whole quantity from 1 to 10,000."}</span>
+        <Button size="sm" disabled={!validBatch || bom.isFetching || bom.isError} onClick={() => {
+          if (!projectId || !validBatch) return;
+          askAboutSurface({ projectId, label: "Parts / Batch sourcing", priority: 40, details: JSON.stringify({ revision: bom.data?.revision, coverage: bom.data?.coverage, buildQuantity: batchCount, lines: lines.map(line => ({ refs: line.refs, name: line.name, mpn: line.mpn, sku: line.sku, qtyPerBuild: line.qty, required: line.qty * batchCount })) }) }, `Review sourcing for ${batchCount} complete builds. Verify current immediate assembly stock for every assembled component and its required quantity, exact part identifier and Basic/Extended status. Flag missing information and request approval for any exception before choosing a replacement. Do not change the design while sourcing is unresolved.`);
+        }}><Icon name="sparkles" width={15} height={15} />Ask about sourcing</Button>
+        <p className="w-full text-xs text-muted">Planning calculation only. The design CSV keeps per-build quantities; manufacturer assembly uploads use per-board quantities. Saved part numbers do not verify current stock.</p>
+      </div>}
+      {lines.length > 0 && <div className="shrink-0 border-b border-border px-2 py-2" data-testid="bom-filter">
         <PartsToolbar label="Search BOM" query={bomQuery} onQueryChange={setBomQuery} selected={filters} onChange={setFilters} includePcb />
-      </div>
+      </div>}
+      {bom.isError && <div role="alert" className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs text-warning"><span className="min-w-0 flex-1">{bom.error instanceof Error ? bom.error.message : "Could not read the project BOM."} Refresh parts to retry.</span><Button size="sm" variant="ghost" onClick={() => void bom.refetch()}>Retry</Button></div>}
       {exportBom.state.error && <div className="border-b border-border px-2 py-1 text-xs text-danger">{exportBom.state.error}</div>}
       {partsState.status === "error" && (
         <div
@@ -308,13 +362,12 @@ export function ProjectBomPanel() {
           </Button>
         </div>
       )}
-      <PanelGroup direction="vertical" autoSaveId="fabdesk-project-bom-library" className="min-h-0 flex-1">
-        <Panel id="bom-lines" order={1} defaultSize={60} minSize={15}>
+      <div className="min-h-0 flex-1">
           <div ref={bomScroll} id="project-bom-lines" className="h-full min-h-0 overflow-auto" aria-label="Project BOM lines">
             {shown.length === 0 ? (
               <div className="px-3 py-6 text-center text-xs text-muted">
                 {lines.length === 0
-                  ? "No parts yet. Electrical parts come from the board netlist; add motors, displays or hardware below."
+                  ? "No included parts are listed yet. Review source coverage or choose Add hardware for motors, displays and hardware."
                   : "No parts match your search or filters."}
               </div>
             ) : (
@@ -325,7 +378,8 @@ export function ProjectBomPanel() {
                     <th className="px-2 py-1.5">Ref</th>
                     <th className="px-2 py-1.5">Part</th>
                     <th className="px-2 py-1.5">Type</th>
-                    <th className="w-20 px-2 py-1.5">Qty</th>
+                    <th className="w-20 px-2 py-1.5">Per build</th>
+                    <th className="px-2 py-1.5">{validBatch ? `For ${batchCount.toLocaleString()} builds` : "Batch quantity"}</th>
                     <th className="px-2 py-1.5">Part number</th>
                     <th className="px-2 py-1.5" />
                   </tr>
@@ -363,7 +417,8 @@ export function ProjectBomPanel() {
                           line.qty
                         )}
                       </td>
-                      <td className="px-2 py-1.5 font-mono text-[11px] text-muted">{line.mpn ?? ""}</td>
+                      <td className="px-2 py-1.5 tabular-nums">{validBatch ? (line.qty * batchCount).toLocaleString() : "—"}</td>
+                      <td className="px-2 py-1.5 text-[11px] text-muted"><span className="font-mono">{line.mpn ?? "—"}</span>{line.sku && <div className="mt-1">Saved supplier ID: <span className="font-mono">{line.sku}</span></div>}</td>
                       <td className="px-2 py-1.5 text-right">
                         {line.source === "offboard" && line.lineId && editable && (
                           <IconButton size="sm" title={`Remove ${line.refs[0] ?? line.name}`} className="text-muted hover:text-danger" onClick={() => removeLine(line.lineId!)}>
@@ -377,22 +432,26 @@ export function ProjectBomPanel() {
               </table>
             )}
           </div>
-        </Panel>
-        <PanelResizeHandle
-          aria-label="Resize BOM and parts library"
-          className="group flex h-3 shrink-0 cursor-row-resize items-center justify-center border-y border-border bg-panel-2 hover:bg-accent/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent data-[resize-handle-active]:bg-accent/15"
-        >
-          <span aria-hidden="true" className="h-1 w-10 rounded-full bg-muted/50 group-hover:bg-accent group-data-[resize-handle-active]:bg-accent" />
-        </PanelResizeHandle>
-        <Panel id="offboard-library" order={2} defaultSize={40} minSize={15}>
-          <div className="flex h-full min-h-0 flex-col" data-testid="offboard-picker">
+      </div>
+      <Dialog open={exportOpen} closeDisabled={downloading} title="Export bill of materials" onClose={() => { if (!downloading) setExportOpen(false); }}>
+        <div className="space-y-4 text-sm">
+          <p>{lines.length} listed items. The CSV includes board-qualified references, quantities, footprints and saved part numbers.</p>
+          {!bom.data?.complete && <div className="rounded-lg border border-warning/30 bg-warning/5 p-3"><p className="font-medium text-warning">Some board sources need review</p><p className="mt-1 text-xs text-muted">Missing sources are omitted. Saved netlist parts have not been checked against native schematic exclusions.</p><label className="mt-3 flex items-start gap-2"><input type="checkbox" checked={allowPartial} onChange={event => setAllowPartial(event.target.checked)} disabled={downloading} /><span>Export only the listed parts</span></label></div>}
+          <p className="text-xs text-muted">This is a design CSV with per-build quantities, including project hardware. The batch planning quantity does not change this file. It is not a manufacturer-specific assembly upload.</p>
+          <p className="text-xs text-muted">Saved to Outputs as bom.csv with a source coverage receipt, then downloaded. This does not mark the design as electrically checked.</p>
+          {(downloadError || exportBom.state.error) && <p role="alert" className="text-danger">{downloadError || exportBom.state.error}</p>}
+          <div className="flex justify-end gap-2"><Button disabled={downloading} onClick={() => setExportOpen(false)}>Cancel</Button><Button variant="primary" disabled={downloading || bom.isFetching || bom.isError || !lines.length || (!bom.data?.complete && !allowPartial)} onClick={() => void downloadBom()}>{downloading ? "Exporting…" : "Export and download CSV"}</Button></div>
+        </div>
+      </Dialog>
+      <Dialog open={libraryOpen} title="Add project parts" className="!w-[780px]" onClose={() => { setLibraryOpen(false); requestAnimationFrame(() => addTrigger.current?.focus()); }}>
+          <div ref={libraryRoot} className="fd-parts-library flex min-h-0 flex-col" data-testid="offboard-picker">
             <div className="shrink-0 border-b border-border bg-panel px-3 py-3">
               <div className="mb-3">
                 <div className="flex items-center gap-2">
                   <h2 className="text-sm font-semibold">Add off-board parts</h2>
                   <span className="text-xs text-muted">{hits.length} available</span>
                 </div>
-                <p className="mt-1 text-xs text-muted">Choose motors, displays and hardware. Adjust quantities above.</p>
+                <p className="mt-1 text-xs text-muted">Choose motors, displays and hardware. Quantities are edited in the project parts list.</p>
               </div>
               <PartsToolbar label="Search off-board library" query={query} onQueryChange={setQuery} selected={kinds} onChange={setKinds} />
               <div className="mt-3 grid items-center gap-2 px-2 text-[10.5px] font-semibold uppercase tracking-wide text-muted" style={{ gridTemplateColumns: "80px minmax(0, 1fr) minmax(0, 160px) 48px 28px" }} aria-hidden="true">
@@ -417,7 +476,7 @@ export function ProjectBomPanel() {
                   </span>
                   <IconButton
                     size="sm"
-                    title={addedCatalogIds.has(hit.id) ? `${hit.name} is already in BOM — edit quantity above` : `Add ${hit.name}`}
+                    title={addedCatalogIds.has(hit.id) ? `${hit.name} is already in BOM — edit its quantity in project parts` : `Add ${hit.name}`}
                     disabled={!editable || write.isPending || addedCatalogIds.has(hit.id)}
                     className={addedCatalogIds.has(hit.id) ? "disabled:opacity-100 text-accent" : "fd-bom-add"}
                     aria-label={addedCatalogIds.has(hit.id) ? `${hit.name} — already in BOM` : `Add ${hit.name}`}
@@ -431,8 +490,8 @@ export function ProjectBomPanel() {
               {hits.length === 0 && <div className="px-2 py-2 text-[11px] text-muted">No library matches.</div>}
             </div>
           </div>
-        </Panel>
-      </PanelGroup>
+        <div className="flex justify-end border-t border-border pt-3"><Button onClick={() => { setLibraryOpen(false); requestAnimationFrame(() => addTrigger.current?.focus()); }}>Done</Button></div>
+      </Dialog>
     </div>
   );
 }

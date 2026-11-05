@@ -49,7 +49,7 @@ export { CoreProvider } from "./core/CoreProvider";
 export type { CoreProviderProps } from "./core/CoreProvider";
 export { browserHost } from "./core/host";
 
-export { useUiStore, BOARD_TABS, BOARD_TAB_LABELS, DRAFT_KEY_NEW, SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, normalizeSidebarListTab } from "./stores/ui";
+export { useUiStore, BOARD_TABS, BOARD_TAB_LABELS, DRAFT_KEY_NEW, newChatDraftKey, SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, normalizeSidebarListTab } from "./stores/ui";
 export type { BoardTab, SidebarListTab, UiState, PendingAttachment } from "./stores/ui";
 export { useCinemaStore } from "./stores/cinema";
 export type { CinemaState } from "./stores/cinema";

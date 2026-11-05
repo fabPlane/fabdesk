@@ -55,6 +55,8 @@ export type SceneTriangle = {
 };
 
 export type ScenePart = {
+  /** Hash of the exact mesh bytes decoded, when loaded from a saved project file. */
+  sourceSha256?: string;
   id: string;
   path: string;
   role: "board" | "mechanical";

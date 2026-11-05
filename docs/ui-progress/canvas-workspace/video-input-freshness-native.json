@@ -1,0 +1,66 @@
+{
+  "projectId": "prj_mvrlt1yx802c210b69",
+  "nativeFlow": [
+    "Older video displayed Saved video \u00b7 Source unverified",
+    "Actual Make video completed 144 frames,6s,720p and generated provenance",
+    "Recorded model inputs unchanged appeared",
+    "Guarded temporary GLB byte change automatically showed Video model inputs changed",
+    "Review Updates showed Product video warning",
+    "Review video opened Outputs Models & video without a render job",
+    "Exact guarded model restoration cleared warning without regeneration",
+    "Native Play/Pause worked afterward; time advanced to5.56163s"
+  ],
+  "provenance": {
+    "contract": "fabplane.video-input-revision.v1",
+    "inputs": [
+      {
+        "path": "renders/board.glb",
+        "sha256": "b0c4c16247fe8341f21794dc7770aebb6238da5c8bcce57fd4fe384133c09605"
+      }
+    ],
+    "outputs": [
+      {
+        "path": "exports/product-video.gif",
+        "sha256": "ebbba707ea69339800e143a86524e249d2bf47cc3378b0c67955bb215dfdffa2"
+      },
+      {
+        "path": "exports/product-video.mp4",
+        "sha256": "33ca707d940be6b61b4af28cb053b3e6fdcb79496974f904e5b7a69436506362"
+      },
+      {
+        "path": "exports/product-video.webm",
+        "sha256": "3fc97de293f18611fab7bfed2f9d5ea56c8021b771f438094307304e21047582"
+      }
+    ]
+  },
+  "inputAndOutputHashesVerified": true,
+  "preservation": {
+    "stablePreexistingFilesUnchanged": 19,
+    "runtimeLockReleased": "~board.kicad_pro.lck",
+    "temporaryGlbChange": "restored exactly",
+    "intentionalNewArtifact": "manifest input/output hashes; regenerated video outputs retained. MP4 and GIF deterministic, WebM changed bytes."
+  },
+  "checks": {
+    "rootTypecheck": "pass",
+    "clientCore": "285pass/1387assertions",
+    "ui": "228pass/870assertions",
+    "productVideo": "28pass/88assertions including changed-during-render and concurrent-writer protection",
+    "videoTool": "2pass/9assertions",
+    "standardSuite": "2136pass/36skip/1fail: packaged mechanical-truth 5000ms timeout. Final added writer test passed separately; no full-green claim."
+  },
+  "scopeLimits": [
+    "Recorded consumed model bytes only; does not certify currentPCB, caption freshness, external dependencies, newly added scene files, fit or compatibility",
+    "Older exports remain unverified",
+    "No automatic regeneration or synchronization",
+    "Only board fixture walked natively; no enclosure work"
+  ],
+  "runtime": {
+    "app": 24,
+    "electronPid": 4398,
+    "corePid": 4405,
+    "vitePid": 4210,
+    "bridgePort": 58657,
+    "log": "/tmp/canvas-dev-24.log",
+    "pendingReload": "Native source-status walkthrough used current receipt pipeline. Final renderer single-writer guard tested in process but requires next owned core restart before native runtime uses it."
+  }
+}

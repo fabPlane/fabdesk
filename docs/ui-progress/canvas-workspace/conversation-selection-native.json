@@ -1,0 +1,28 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "threadId": "th_mvs98ynlf9708589c1",
+  "before": "Native selection of current-project conversation opened assistant behind navigation modal",
+  "after": [
+    "Native project conversation row closed navigation and exposed existing assistant",
+    "Native same-project conversation search result also closed navigation and exposed assistant",
+    "Existing Notes task remained visible; no board or project switch requested"
+  ],
+  "screenshots": [
+    "413-conversation-selection-obscured-by-navigation-before.png",
+    "414-conversation-selection-reveals-corner-assistant.png"
+  ],
+  "preservation": {
+    "protectedFiles": 48,
+    "mismatches": []
+  },
+  "validation": {
+    "uiTypes": "PASS /tmp/canvas-conversation-reveal-ui-types.log",
+    "uiTests": "231pass/895assertions/0fail /tmp/canvas-conversation-reveal-ui-tests.log",
+    "regression": "Store case preserves project, comments task, unsent draft and reference attachment when reopening same-project conversation"
+  },
+  "limits": [
+    "Existing failed authentication response was only viewed, not retried; no Send or sign-in change",
+    "No successful agent reasoning claimed",
+    "No new full root-suite run"
+  ]
+}

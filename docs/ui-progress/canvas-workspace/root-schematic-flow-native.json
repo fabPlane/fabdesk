@@ -1,0 +1,31 @@
+{
+  "status": "LOCAL ONLY \u2014 remote publication revoked",
+  "viewportCss": {
+    "width": 961,
+    "height": 721
+  },
+  "nativeWalkthrough": [
+    "Saved Game Boy schematic explicitly freshness unverified; requested drawing tools opened",
+    "Show schematic source selected actual board.kicad_sch (538.5 KB); read-only excerpt confirmed native KiCad content",
+    "Explicit comparison displayed actual PCB/schematic; selecting PCB changed active tools; close returned one canvas",
+    "Missing root schematic prepared unsent project question; no agent request sent; assistant closed",
+    "Classic assembly schematic refused root fallback; Open assembly canvas returned declared Right I/O source",
+    "Verified root PCB selection opened native R1 controls at saved 105/100/0; no mutation; tools closed and selection dismissed"
+  ],
+  "sourcePreservation": {
+    "gameBoyFilesChecked": 9,
+    "mismatches": []
+  },
+  "validation": {
+    "uiTypecheck": "PASS",
+    "uiTests": 227,
+    "failed": 0,
+    "assertions": 866
+  },
+  "limitations": [
+    "Root schematic receipts are not verified; no currentness, parity or ERC pass claimed",
+    "No render job or native edit performed in this walkthrough",
+    "Source-check failure states gated in code, not newly injected through native app",
+    "Enclosure follow-up excluded as teammate-owned"
+  ]
+}

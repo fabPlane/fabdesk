@@ -1,3 +1,5 @@
+import { commentMillimetrePoint, type CommentAnchor } from "@fabdesk/protocol";
+
 /** SVG viewBox helpers for board pins. */
 
 export type SvgBox = { x: number; y: number; width: number; height: number };
@@ -60,4 +62,13 @@ export function svgPointToPercent(box: SvgBox, point: SvgPoint): { left: number;
     left: ((point.x - box.x) / box.width) * 100,
     top: ((point.y - box.y) / box.height) * 100,
   };
+}
+
+/** Never project an unknown legacy SVG origin onto a verified native PCB frame. */
+export function commentPointForDrawing(anchor: CommentAnchor, nativePcbCoordinates: boolean): SvgPoint | null {
+  if (anchor.view === "pcb") {
+    if (nativePcbCoordinates) return commentMillimetrePoint(anchor);
+    if (anchor.coordinateSystem === "kicad-pcb-mm" || (anchor.x === undefined && anchor.xMm !== undefined)) return null;
+  }
+  return anchor.x !== undefined && anchor.y !== undefined ? { x: anchor.x, y: anchor.y } : null;
 }

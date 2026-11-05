@@ -32,6 +32,7 @@ function commentRow(comment: BoardComment) {
 
 export const comment_list = defineTool({
   name: "comment_list",
+  boardScoped: true,
   toolset: "project",
   title: "List board comments",
   description:
@@ -70,6 +71,7 @@ export const comment_list = defineTool({
 
 export const comment_pin = defineTool({
   name: "comment_pin",
+  boardScoped: true,
   toolset: "project",
   title: "Pin a board comment",
   description:
@@ -116,7 +118,7 @@ export const comment_pin = defineTool({
         ...(author ? { author } : {}),
       });
       return { file, result: comment };
-    });
+    }, ctx.runInScope ? () => ctx.runInScope!(async () => {}) : undefined);
     return ok(`Pinned ${comment.id} on ${comment.anchor.view} · ${commentAnchorLabel(anchor)}.`, {
       comment,
       path: "comments.json",
@@ -126,6 +128,7 @@ export const comment_pin = defineTool({
 
 export const comment_answer = defineTool({
   name: "comment_answer",
+  boardScoped: true,
   toolset: "project",
   title: "Answer a board comment",
   description:
@@ -151,13 +154,14 @@ export const comment_answer = defineTool({
         answeredBy: answeredBy ?? "agent",
       });
       return { file, result: comment };
-    });
+    }, ctx.runInScope ? () => ctx.runInScope!(async () => {}) : undefined);
     return ok(`Answered ${comment.id} (${comment.status}).`, { comment, path: "comments.json" });
   },
 });
 
 export const comment_resolve = defineTool({
   name: "comment_resolve",
+  boardScoped: true,
   toolset: "project",
   title: "Resolve a board comment",
   description: "Mark a pinned comment resolved (or reopen it) in comments.json.",
@@ -176,7 +180,7 @@ export const comment_resolve = defineTool({
     const comment = await updateComments(project, (loaded) => {
       const { file, comment } = patchComment(loaded, id, { status });
       return { file, result: comment };
-    });
+    }, ctx.runInScope ? () => ctx.runInScope!(async () => {}) : undefined);
     return ok(`${status === "open" ? "Reopened" : "Resolved"} ${comment.id}.`, {
       comment,
       path: "comments.json",

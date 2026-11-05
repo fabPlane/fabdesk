@@ -121,7 +121,7 @@ export function loadPcbDisplay(
   const previousSize = sizes.get(key);
   sizes.delete(key);
   const request = (async () => {
-    const response = await client.callTool("render_glb", {
+    const response = await client.callTool("render_pcb_display", {
       projectId,
       boardPath: path,
       expectedPcbRevision: pcbRevision,

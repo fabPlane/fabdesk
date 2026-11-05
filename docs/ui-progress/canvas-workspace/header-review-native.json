@@ -1,0 +1,22 @@
+{
+  "feature": "Quiet global Review entry for populated projects",
+  "verified": [
+    "Root-board headerReview opens existing Updates with design-source/output/checkgroups",
+    "Compact960\u00d7720 header and project switcher fit",
+    "Fresh blank study has no headerReview and no duplicate cornerassistant",
+    "VAIO headerReview opens actual assemblysource table: I/O90savedfindings and unresolvedKeyboard first; source-qualified previews retained",
+    "Assistant staysclosed; no native jobs/sends",
+    "VAIO16protected+actualDRCreport exact"
+  ],
+  "validation": "UItypesPASS;233tests912assertions/0fail. Prior accumulated full root at e5d9c63:2277/36/0.",
+  "boundaries": [
+    "Plainnavigationentry; no invented warning count or pass indicator",
+    "Existing shared navigation clears secondary tool views and opens boardworkspace",
+    "No new freshness computation or backend behavior"
+  ],
+  "screenshots": [
+    "header-review-entry.png",
+    "header-review-compact.png",
+    "header-review-assembly-scope.png"
+  ]
+}

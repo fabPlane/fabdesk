@@ -3,7 +3,7 @@
  * for listing/lookup. Emits `project.changed` from a debounced recursive fs.watch.
  */
 import { watch, type FSWatcher } from "node:fs";
-import { mkdir, readdir, readFile, realpath, rename, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, rename, rm, rmdir, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
 import {
@@ -24,6 +24,7 @@ import {
 import type { ProjectRepo } from "./db";
 import { newId } from "./db";
 import { logger } from "./log";
+import { OutputGenerationTimes } from "./output-generation-times";
 
 /** A chosen parent directory that does not exist or is not a folder; HTTP answers 400 `invalid_parent_directory`. */
 export class InvalidParentDirectory extends ToolError {
@@ -47,7 +48,10 @@ export function slugify(name: string): string {
 export const FORGOTTEN_MANIFEST = "fabdesk.json.forgotten";
 
 export class ProjectStore implements ProjectResolver {
+  private readonly outputGenerationTimes = new OutputGenerationTimes();
   private readonly handles = new Map<string, ProjectHandle>();
+  private readonly draftIds = new Set<string>();
+  private readonly promoting = new Set<string>();
   private readonly watchers = new Map<string, FSWatcher>();
   private readonly pendingChanges = new Map<
     string,
@@ -85,6 +89,7 @@ export class ProjectStore implements ProjectResolver {
         this.repo.delete(p.id);
         continue;
       }
+      if ((await this.readManifest(p.path))?.ideaDraft) this.draftIds.add(p.id);
       if (this.opts.watch !== false) this.watchDir(p.id, p.path);
     }
   }
@@ -99,7 +104,7 @@ export class ProjectStore implements ProjectResolver {
   }
 
   summaries(): ProjectSummary[] {
-    return this.repo.list().map(({ slug: _slug, ...s }) => s);
+    return this.repo.list().map(({ slug: _slug, ...s }) => ({ ...s, ...(this.draftIds.has(s.id) ? { isDraft: true } : {}) }));
   }
 
   /**
@@ -211,10 +216,10 @@ export class ProjectStore implements ProjectResolver {
     return h;
   }
 
-  async create(name: string, parentDirectory?: string): Promise<ProjectDetail> {
+  async create(name: string, parentDirectory?: string, draft = false): Promise<ProjectDetail> {
     const root = await this.parentRoot(parentDirectory);
     await mkdir(root, { recursive: true });
-    const base = slugify(name);
+    const base = draft ? `idea-${newId("draft")}` : slugify(name);
     let slug = base;
     // Reserve a fresh directory atomically; never reuse or overwrite an existing folder.
     for (let i = 2; ; i++) {
@@ -231,6 +236,7 @@ export class ProjectStore implements ProjectResolver {
       schema: 1,
       id: newId("prj"),
       name,
+      ...(draft ? { ideaDraft: {} } : {}),
       createdAt: ts,
       updatedAt: ts,
       board: { layers: 2 },
@@ -248,6 +254,7 @@ export class ProjectStore implements ProjectResolver {
     // Concurrent creations in different parents may reserve the same basename.
     const registeredSlug = this.repo.list().some((project) => project.slug === slug) ? `${slug}-${manifest.id}` : slug;
     this.repo.upsert({ id: manifest.id, name, slug: registeredSlug, path: dir, createdAt: ts, updatedAt: ts });
+    if (draft) this.draftIds.add(manifest.id);
     if (this.opts.watch !== false) this.watchDir(manifest.id, dir);
     this.emit({
       ts: Date.now(),
@@ -257,6 +264,59 @@ export class ProjectStore implements ProjectResolver {
     });
     return (await this.detail(manifest.id))!;
   }
+
+  /** Promote the same owned workspace; relative attachments and thread ownership do not change. */
+  async promoteDraft(id: string, name: string, parentDirectory?: string): Promise<ProjectDetail> {
+    if (this.promoting.has(id)) throw new ToolError("Project setup is already in progress.", "precondition");
+    this.promoting.add(id);
+    let destination: string | null = null;
+    try {
+      const h = await this.handle(id), row = this.repo.get(id);
+      if (!h || !row) throw new ToolError("This idea draft is no longer available.", "not_found");
+      if (!h.manifest().ideaDraft) throw new ToolError("This draft already became a project. Reopen it rather than creating a duplicate.", "precondition");
+      const root = await this.parentRoot(parentDirectory);
+      await mkdir(root, { recursive: true });
+      const base = slugify(name);
+      let slug = base;
+      for (let i = 2; ; i++) {
+        if (this.repo.list().some(item => item.id !== id && item.slug === slug)) { slug = `${base}-${i}`; continue; }
+        try { await mkdir(join(root, slug)); break; }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; slug = `${base}-${i}`; }
+      }
+      destination = join(root, slug);
+      const old = h.manifest();
+      const { ideaDraft: _draft, ...rest } = old;
+      const manifest = ProjectManifest.parse({ ...rest, name, promotedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      this.unwatch(id);
+      try {
+        // Replacing our freshly reserved empty folder never merges into an existing project.
+        await rename(row.path, destination);
+        try {
+          await writeJson(join(destination, PROJECT_FILES.manifest), manifest);
+          this.repo.upsert({ ...row, slug, path: destination, name, updatedAt: manifest.updatedAt });
+        } catch (error) {
+          await writeJson(join(destination, PROJECT_FILES.manifest), old);
+          await rename(destination, row.path);
+          throw error;
+        }
+      } catch (error) {
+        if (this.opts.watch !== false) this.watchDir(id, row.path);
+        throw error;
+      }
+      this.handles.delete(id);
+      this.draftIds.delete(id);
+      if (this.opts.watch !== false) this.watchDir(id, destination);
+      destination = null;
+      this.emit({ ts: Date.now(), topic: "project.changed", projectId: id, paths: [PROJECT_FILES.manifest] });
+      return (await this.detail(id))!;
+    } finally {
+      // Only our empty reservation is removable; never recursively delete draft contents.
+      if (destination) await rmdir(destination).catch(() => {});
+      this.promoting.delete(id);
+    }
+  }
+
+  isPromoting(id: string): boolean { return this.promoting.has(id); }
 
   /** Clone an allowed git URL into the projects root and register it as a fabPlane project. */
   async importFromGit(opts: {
@@ -359,9 +419,9 @@ export class ProjectStore implements ProjectResolver {
     if (!row) return null;
     const h = await this.handle(id);
     if (!h) return null;
-    const files = await this.listFiles(row.path);
+    const files = await this.outputGenerationTimes.attach(row.path, id, await this.listFiles(row.path));
     const { slug: _slug, ...summary } = row;
-    return { ...summary, name: h.name, manifest: h.manifest(), files };
+    return { ...summary, ...(h.manifest().ideaDraft ? { isDraft: true } : {}), name: h.name, manifest: h.manifest(), files };
   }
 
   async delete(id: string, opts: { purge?: boolean } = {}): Promise<boolean> {

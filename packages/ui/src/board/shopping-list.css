@@ -19,7 +19,7 @@
 .shopping-search input { width: 100%; min-width: 0; height: 36px; background: transparent; outline: none; color: var(--fd-fg); font-size: 12px; }
 .shopping-search input::placeholder { color: var(--fd-muted); }
 .shopping-filters { display: flex; gap: 19px; overflow-x: auto; padding-top: 10px; }
-.shopping-filters button { display: inline-flex; align-items: center; gap: 7px; border-bottom: 2px solid transparent; padding: 11px 0 12px; color: var(--fd-muted); font-size: 12px; white-space: nowrap; }
+.shopping-filters button { display: inline-flex; align-items: center; gap: 7px; border-bottom: 2px solid transparent; padding: 11px 0 12px; color: var(--fd-fg); font-size: 12px; white-space: nowrap; }
 .shopping-filters button:hover, .shopping-filters button[aria-pressed=true] { color: var(--fd-fg); }
 .shopping-filters button[aria-pressed=true] { border-bottom-color: var(--fd-fg); }
 .shopping-filters button > span { font-size: 10px; min-width: 18px; padding: 1px 5px; border-radius: 5px; background: var(--fd-panel-2); text-align: center; font-variant-numeric: tabular-nums; }
@@ -29,7 +29,7 @@
 .shopping-group-heading h3 { font-size: 20px; font-weight: 600; line-height: 1.35; letter-spacing: -.3px; color: var(--fd-accent); overflow-wrap: anywhere; }
 .shopping-supplier-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .shopping-supplier-copy > span { font-size: 11px; color: var(--fd-muted); }
-.shopping-group-heading button { margin-left: auto; min-height: 28px; color: var(--fd-muted); font-size: 11px; }
+.shopping-group-heading button { margin-left: auto; min-height: 28px; color: var(--fd-fg); font-size: 11px; }
 .shopping-group-heading button:hover { color: var(--fd-fg); text-decoration: underline; }
 .shopping-column-headings, .shopping-item-summary { display: grid; grid-template-columns: minmax(0, 1fr) 60px 100px 16px; align-items: center; column-gap: 18px; }
 .shopping-column-headings { padding: 0 12px 8px; color: var(--fd-muted); font-size: 10px; }
@@ -153,4 +153,20 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .shopping-progress > span, .shopping-expand, .shopping-item-summary { transition: none; }
+}
+
+/* A single project list is the default; the existing parts catalog opens on request. */
+.fd-parts-library { height:min(470px,calc(100vh - 220px)); }
+.fd-canvas-workspace .fd-canvas-board-body > .fd-parts-workspace { padding:18px 24px 88px; }
+.fd-canvas-workspace .fd-parts-workspace > div:first-child { border:0; padding:0 0 14px; text-align:center; }
+.fd-canvas-workspace .fd-parts-workspace > div:first-child > div { border-radius:24px; padding:4px; background:var(--fd-panel); }
+.fd-canvas-workspace .fd-parts-workspace > div:first-child button { border-radius:18px; padding:7px 18px; }
+.fd-canvas-workspace .fd-project-parts { width:min(1120px,100%); margin:0 auto; background:var(--fd-panel); border:1px solid var(--fd-border); border-radius:18px; overflow:hidden; box-shadow:0 4px 22px #102a2008; }
+.fd-canvas-workspace .fd-project-parts > div:first-child { padding:18px 20px; }
+.fd-canvas-workspace .fd-project-parts [data-testid="bom-filter"] { padding:12px 20px; }
+.fd-canvas-workspace .fd-project-parts th { padding-top:12px; padding-bottom:12px; }
+.fd-canvas-workspace .fd-project-parts td { padding-top:11px; padding-bottom:11px; }
+@media (max-width:620px) {
+  .fd-canvas-workspace .fd-canvas-board-body > .fd-parts-workspace { padding:12px 14px 88px; }
+  .fd-canvas-workspace .fd-project-parts > div:first-child { padding:14px; }
 }

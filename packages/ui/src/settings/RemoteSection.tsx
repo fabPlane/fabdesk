@@ -490,7 +490,7 @@ function RelayRow({
           {!showOverride && p.state !== "unsupported" && (
             <button
               type="button"
-              className="text-[11px] text-muted hover:text-fg"
+              className="text-[11px] text-fg hover:bg-panel-2/70"
               onClick={() => setShowOverride(true)}
             >
               Use another relay
@@ -615,7 +615,7 @@ function EndpointList({
             {rest.map(row)}
             <button
               type="button"
-              className="py-0.5 text-[11px] text-muted hover:text-fg"
+              className="py-0.5 text-[11px] text-fg hover:bg-panel-2/70"
               onClick={() => setExpanded(false)}
             >
               Show fewer
@@ -624,7 +624,7 @@ function EndpointList({
         ) : (
           <button
             type="button"
-            className="py-0.5 text-[11px] text-muted hover:text-fg"
+            className="py-0.5 text-[11px] text-fg hover:bg-panel-2/70"
             onClick={() => setExpanded(true)}
           >
             +{rest.length} more

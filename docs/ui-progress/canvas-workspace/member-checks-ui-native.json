@@ -1,0 +1,30 @@
+{
+  "projectId": "prj_mvqyacun3e60075ae8",
+  "counts": {
+    "errors": 8,
+    "warnings": 4,
+    "unconnected": 2
+  },
+  "displayedFindings": 14,
+  "sharedBoards": [
+    "Left I/O",
+    "Right I/O"
+  ],
+  "nativeRunThroughUi": true,
+  "inlineNativeItemDetails": true,
+  "carrierDoesNotInheritIoFindings": true,
+  "sourceWhitespaceChangeAutomaticallyWarned": true,
+  "compactControls": {
+    "width": 960,
+    "height": 720,
+    "usable": true
+  },
+  "changedMembershipRequiresReselection": true,
+  "oldDeclarationReportSuppressedAfterReselect": true,
+  "allNineBaselineFilesRestored": true,
+  "temporaryReportRestoredToAbsent": true,
+  "noAgentMessageSent": true,
+  "vaioBoardLinkPreservesIoSource": true,
+  "unresolvedKeyboardOptionDisabled": true,
+  "vaioSourcesPreviewsManifestUnchanged": true
+}

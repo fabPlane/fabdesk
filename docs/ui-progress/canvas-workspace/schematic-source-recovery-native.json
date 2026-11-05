@@ -1,0 +1,48 @@
+{
+  "baseImplementation": "321dfee",
+  "projectId": "prj_mvr2ofe307592e4a2e",
+  "checks": {
+    "missingSchematicSourceFolder": "boards/io",
+    "browseSourceFilesSelectsAndFocuses": "boards/io/board.kicad_pcb",
+    "ancestorFoldersExpanded": true,
+    "returnBoardsRetainsSameSourceAndSchematicTask": true,
+    "compact960x720NoOverlap": true,
+    "restored1440x870": true,
+    "assistantRemainsClosed": true,
+    "agentMessagesSent": 0,
+    "noNativeFilesChanged": true
+  },
+  "protectedHashes": {
+    "fabplane.assembly.json": "1dac5bb4e85c2cad241039b813069ad97fefcf65602a03e664d4ca85c7599002",
+    "boards/carrier/board.kicad_pcb": "2b1eaa1217c7b4d407f98ccbe5950f1861bec380a3f890b99e803fe2703a00ba",
+    "boards/carrier/renders/pcb.svg": "3ddb718e7f2314a3c29b183a76e765f077c1d2aa7b74fdf32432b75af429cd02",
+    "boards/carrier/renders/pcb.svg.revision.json": "94bed1d29b353964e31c8578e9ddec50eec9dcec4c3d9ea6531dc157962861f4",
+    "boards/lcd/board.kicad_pcb": "2c4ad5850ad3c5aa3003b52681b9efa6fe05064146077ef75c2c82f58c709807",
+    "boards/lcd/renders/pcb.svg": "f441ad93fc79cf691d3f47dcc68c11e4339489514be1d931a8a72896aaf77180",
+    "boards/lcd/renders/pcb.svg.revision.json": "49f33e04197f28130d1bc9da6fc2893ae817782ed352031a14e158821d4c23ea",
+    "boards/io/board.kicad_pcb": "f4e8b6f53313955dcec724cf5cf8853d9b0f965af404e6a9c1b006033b2ab25d",
+    "boards/io/renders/pcb.svg": "c79ce84df77d7d9673eaa2b73c4b048b2be59c80514f13ddc52658b460a25c16",
+    "boards/io/renders/pcb.svg.revision.json": "dc1dc15328dd6bbe358d39916daa7402da0025b181f23d844fe17ed125c53541",
+    "boards/rh/board.kicad_pcb": "021719a3e0d64b7aaa3171b01981fcd935d8c932c0e8d399b70730f19f956aa8",
+    "boards/rh/renders/pcb.svg": "9126bbfc05c15c11975c9651fb210b4c490e6fa5e32e7c0bfaac7f78e69ae2c5",
+    "boards/rh/renders/pcb.svg.revision.json": "a4a2bc13ad0459f2bf78637ea4c8946c31a91ae161cead61523deede9373dd12",
+    "boards/battery/board.kicad_pcb": "32307f45f9775c132a68d3ebff51b7215f8d775b5890c66e79ba26756d7aafa7",
+    "boards/battery/renders/pcb.svg": "8b8cae23c2cf978c00afb45f9f840b896ef20e30d6bd13ce027aef29dc44a149",
+    "boards/battery/renders/pcb.svg.revision.json": "490ddead219727d44e1115929ddf30b11b5567a92149a13c5f5bbc090d3fb677"
+  },
+  "screenshots": {
+    "439-member-missing-schematic-before.png": "schematic-source-recovery-before.png",
+    "440-member-missing-schematic-source-action.png": "schematic-source-recovery-after.png",
+    "441-member-schematic-recovery-selects-source-file.png": "schematic-source-recovery-file.png",
+    "442-member-schematic-recovery-compact-return.png": "schematic-source-recovery-compact.png"
+  },
+  "validation": {
+    "uiTypecheck": "PASS /tmp/canvas-schematic-recovery-ui-types.log",
+    "uiTests": "231passed/901assertions/0failures /tmp/canvas-schematic-recovery-ui-tests.log",
+    "priorRootCheckpoint": "dd9fa35 full2262passed/36skipped/0failed,roottypesPASS"
+  },
+  "limits": [
+    "Browse opens the known saved PCB in its source folder; it does not import or create a missing schematic.",
+    "No schematic/PCB synchronization, parity or compatibility result is implied."
+  ]
+}

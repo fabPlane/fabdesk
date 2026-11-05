@@ -1,14 +1,18 @@
+import { outputRevision } from "../output-revision";
 import {
   compareTaskCheckpoint,
   compactTaskComparison,
   taskCheckpointText,
 } from "../task-checkpoints";
 /** Core toolset: always loaded. */
+import { expectedPcbSource } from "../pcb-output";
 import { createHash } from "node:crypto";
-import { readFile, readdir, unlink } from "node:fs/promises";
+import { readFile, readdir, lstat, mkdtemp, rm } from "node:fs/promises";
 import { z } from "zod/v4";
-import type { FpPcbBoardSpec, NetlistFile } from "@fabdesk/protocol";
-import { PROJECT_FILES, exists, mtimeMs, readJsonOrNull, writeJson } from "../fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { ASSEMBLY_MANIFEST_PATH, AssemblyPcbCheckReceipt, type ProjectBoardSources, type FpPcbBoardSpec, type NetlistFile } from "@fabdesk/protocol";
+import { PROJECT_FILES, exists, jailPath, mtimeMs, readJsonOrNull, writeAtomic, writeJson } from "../fs";
 import {
   ToolError,
   ToolsetIdOrAlias,
@@ -31,6 +35,7 @@ import {
 } from "./common";
 import { formatLastRelease, readProjectStatusEvidence } from "./project-status-evidence";
 import { ROUTE_RUN_DEFAULT_WAIT_MS, ROUTE_RUN_MAX_WAIT_MS, runRoute, RouteRunArgs } from "./route";
+import { inspectProjectBoardSources } from "../assembly";
 import { compilerSourceHelp, formatCompilerSourceHelp } from "./compiler-source-guide";
 
 export const load_toolset = defineTool({
@@ -60,6 +65,19 @@ export const load_toolset = defineTool({
       `Toolset "${toolset}" enabled. Enabled toolsets: ${enabled.join(", ")}. Tool list has been refreshed.`,
       { toolset, enabled },
     );
+  },
+});
+
+export const request_project_creation = defineTool({
+  name: "request_project_creation", toolset: "core", title: "Prepare an idea for project setup",
+  description: "When a user asks to generate or edit engineering files in an idea draft, record the requested next action and show project setup in fabPlane. This does not create a board or run engineering tools. After this call, stop and explain that the user can create the project or keep exploring.",
+  inputSchema: { instruction: z.string().trim().min(1).max(12000).describe("The user's concrete requested engineering action, with the agreed requirements. Do not add unrequested work.") },
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  handler: async ({ instruction }, ctx) => {
+    const project = ctx.requireProject();
+    if (!project.manifest().ideaDraft) throw new ToolError("This is already a project. Use its existing engineering tools.", "precondition");
+    await project.updateManifest({ ideaDraft: { requestedBuild: instruction } });
+    return ok("Project setup is ready. No engineering files have been created. The user can create the project to continue this request, or keep exploring.", { projectSetupRequired: true, projectId: project.id });
   },
 });
 
@@ -151,7 +169,7 @@ export const project_status = defineTool({
   toolset: "core",
   title: "Project status",
   description:
-    "Summarise the selected project: directory, board settings, native KiCad files, latest source/compiler build, persisted release evidence and staleness, route and verification state, sketches, and reports. Does not run ERC, DRC, or release.",
+    "Summarise the selected project: directory, board settings, native KiCad files, latest source/compiler build, persisted release evidence and staleness, route and verification state, sketches, reports, and explicitly declared assembly board sources/instances/connections. Assembly source availability is not compatibility evidence. Does not run ERC, DRC, or release.",
   inputSchema: {},
   annotations: {
     readOnlyHint: true,
@@ -162,6 +180,18 @@ export const project_status = defineTool({
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const manifest = project.manifest();
+    let assembly: { status: "inspected"; membership: ProjectBoardSources; editing: "explicit-source-tools" } | { status: "unavailable"; reason: string; editing: "unavailable" } | null = null;
+    let declaredAssembly = false;
+    try {
+      // lstat sees dangling declarations too; an unsafe manifest cannot silently become a root board.
+      await lstat(p(project, ASSEMBLY_MANIFEST_PATH));
+      declaredAssembly = true;
+      const membership = await inspectProjectBoardSources(project);
+      if (membership.mode !== "assembly") throw new Error("Assembly declaration changed during inspection");
+      assembly = { status: "inspected", membership, editing: "explicit-source-tools" };
+    } catch (error) {
+      if (declaredAssembly || (error as NodeJS.ErrnoException)?.code !== "ENOENT") assembly = { status: "unavailable", reason: "Assembly membership could not be verified. Inspect fabplane.assembly.json; project-root status does not describe its member boards.", editing: "unavailable" };
+    }
     const files: Record<string, { exists: boolean; mtime?: string }> = {};
     for (const rel of [PROJECT_FILES.boardPro, PROJECT_FILES.boardSch, PROJECT_FILES.boardPcb, PROJECT_FILES.projectParts]) {
       const m = await mtimeMs(p(project, rel));
@@ -190,6 +220,7 @@ export const project_status = defineTool({
       id: project.id,
       name: project.name,
       dir: project.dir,
+      ...(assembly ? { assembly, nativeStatusScope: "project-root" } : {}),
       board: manifest.board,
       router: manifest.router === "capacity" ? "fab_router" : (manifest.router ?? "auto"),
       files,
@@ -208,18 +239,21 @@ export const project_status = defineTool({
     };
     const lines = [
       `Project "${project.name}" (${project.id}) at ${project.dir}`,
-      `Board: ${manifest.board.layers} layers${manifest.board.widthMm ? `, ${manifest.board.widthMm}×${manifest.board.heightMm ?? "?"} mm` : ""}; router: ${manifest.router === "capacity" ? "fab_router" : (manifest.router ?? "freerouting (default; fab_router fallback)")}`,
-      `Files: ${Object.entries(files)
+      ...(assembly ? [assembly.status === "inspected"
+        ? `Assembly instances: ${assembly.membership.assembly!.instances.length}; source boards: ${assembly.membership.sources.length}; declared connections: ${assembly.membership.assembly!.connections.length}. Source files available: ${assembly.membership.sources.filter(source => source.status === "available").length}/${assembly.membership.sources.length}. Geometry, schematic parity and connection compatibility are unverified. Explicit source tools accept board {sourceId, manifestSha256}: native PCB inspection, saved schematic inspection/rendering, PCB previews, placement/resize, PCB-only DRC, GLB/images/video, manufacturing exports, board_revision_list/diff/checkpoint, and comment_list/pin/answer/resolve. Placement, resize, DRC, GLB/images/video and manufacturing exports require the selected PCB's inspected expectedSourceSha256. Member render_schematic_svg requires expectedHierarchyRevision from schematic_inspect and publishes immutable sheet previews with one source receipt. Member schematic_inspect supports saved-hierarchy summary only, using independently owned source snapshots; live authoring, ERC and parity remain unavailable. Member DRC is PCB-only: pass schematicParity=false explicitly; its report is not schematic parity, ERC or inter-board compatibility. Member GLB receipts track source and model bytes; external component models and fit remain unverified. Shared physical instances use the same source and source-local comments.json. Member route_run requires expectedSourceSha256 and applyPolicy=manual; route_status/cancel/apply require the same explicit source selector. Candidates use private source snapshots and need explicit revision-bound Apply. Live schematic authoring remains unavailable; do not substitute the root board. Canvas placement and rectangular resizing require verified preview coordinates and captured source ownership. Remaining native status below describes only the project root.`
+        : assembly.reason] : []),
+      `${assembly ? "Root project defaults" : "Board"}: ${manifest.board.layers} layers${manifest.board.widthMm ? `, ${manifest.board.widthMm}×${manifest.board.heightMm ?? "?"} mm` : ""}; router: ${manifest.router === "capacity" ? "fab_router" : (manifest.router ?? "freerouting (default; fab_router fallback)")}`,
+      `${assembly ? "Root files" : "Files"}: ${Object.entries(files)
         .map(([k, v]) => `${k}=${v.exists ? "yes" : "no"}`)
         .join(", ")}`,
       `Sketches: ${sketches.length ? sketches.join(", ") : "none"}`,
       `Last source/compiler build: ${lastSourceBuild ? `${lastSourceBuild.ok ? "ok" : "FAILED"} (${lastSourceBuild.errors} errors, ${lastSourceBuild.warnings} warnings, captured ${lastSourceBuild.at})` : "never"}`,
-      `Last release: ${formatLastRelease(lastRelease)}`,
+      `${assembly ? "Root last release" : "Last release"}: ${formatLastRelease(lastRelease)}`,
       taskComparisonError
         ? `Task baseline comparison unavailable: ${taskComparisonError}`
         : taskCheckpointText(taskComparison),
       `Last route: ${route ? `${route.status} (${route.result ? `${route.result.open.length} open` : "no result"})` : "never"}`,
-      `Last DRC: ${drc ? `${drc.counts.errors} errors, ${drc.counts.warnings} warnings, ${drc.counts.unconnected} unconnected` : "never"}`,
+      `${assembly ? "Root last DRC" : "Last DRC"}: ${drc ? `${drc.counts.errors} errors, ${drc.counts.warnings} warnings, ${drc.counts.unconnected} unconnected` : "never"}`,
     ];
     return ok(lines.join("\n"), json);
   },
@@ -515,6 +549,7 @@ export const circuit_read_errors = defineTool({
 function routeRunTool(inputSchema: typeof RouteRunArgs) {
   return defineTool({
     name: "route_run",
+    boardScoped: true,
     toolset: "core",
     title: "Autoroute the board",
     description: `Start a durable autoroute against a revision-bound board snapshot. Waits up to waitMs (default ${ROUTE_RUN_DEFAULT_WAIT_MS / 1000} s, max ${ROUTE_RUN_MAX_WAIT_MS / 1000} s); returns the final result when the run finishes within that time, otherwise its run ID and running state. The run continues after the request returns, and its progress, diagnostics and artifacts remain available through route_status. applyPolicy=auto (default) atomically applies only while the starting PCB revision is current; manual preserves a validated native candidate for route_apply. onlyConnections limits the run to named nets.`,
@@ -526,10 +561,13 @@ function routeRunTool(inputSchema: typeof RouteRunArgs) {
       idempotentHint: false,
     },
     longRunning: true,
+    // Requests wait at most one minute; the durable run outlives the request.
+    mcpHeartbeat: false,
     handler: (args, ctx) =>
       runRoute(
         {
           timeoutMs: args.timeoutMs,
+          expectedSourceSha256: args.expectedSourceSha256,
           ...(args.router ? { router: args.router } : {}),
           ...(args.onlyConnections ? { onlyConnections: args.onlyConnections } : {}),
           ...(args.targets ? { targets: args.targets } : {}),
@@ -560,11 +598,13 @@ const DRC_SAMPLE_BUDGET_BYTES = 8192;
 
 export const verify_drc = defineTool({
   name: "verify_drc",
+  boardScoped: true,
   toolset: "core",
   title: "Run KiCad DRC",
   description:
-    "Run KiCad design rule check on board.kicad_pcb. When parity is enabled, require a complete saved schematic hierarchy and bind parity evidence to its aggregate revision. Returns violation descriptions, rule types and native item IDs with actionable geometry; responseMode=full returns all rows. Writes reports/drc.json.",
+    "Run KiCad design rule check on board.kicad_pcb. When parity is enabled, require a complete saved schematic hierarchy and bind parity evidence to its aggregate revision. Explicit assembly members currently support PCB-only DRC: provide expectedSourceSha256 and schematicParity=false. Returns violation descriptions, rule types and native item IDs with actionable geometry; responseMode=full returns all rows. Writes reports/drc.json inside the selected source directory.",
   inputSchema: {
+    expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Required for an assembly member: SHA256 of its inspected saved PCB"),
     severity: z
       .enum(["all", "error"])
       .default("all")
@@ -593,12 +633,15 @@ export const verify_drc = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async ({ severity, schematicParity, limit, responseMode }, ctx) => {
+  handler: async ({ severity, schematicParity, limit, responseMode, expectedSourceSha256 }, ctx) => {
     const project = ctx.requireProject();
+    if (ctx.board && !expectedSourceSha256) throw new ToolError("Inspect the selected member PCB and provide expectedSourceSha256 before running its check.", "precondition");
+    if (ctx.board && schematicParity) throw new ToolError("Member checks currently support PCB-only DRC. Set schematicParity=false explicitly; member schematic parity is not yet available.", "precondition");
     const cli = await requireKicad(ctx);
     const board = p(project, PROJECT_FILES.boardPcb);
     if (!(await exists(board))) throw new ToolError("board.kicad_pcb not found", "precondition");
     const beforeRevision = await pcbFileRevision(board);
+    if (expectedSourceSha256 && beforeRevision.sha256 !== expectedSourceSha256) throw new ToolError("The saved PCB changed since inspection. Inspect the selected source again before checking it.", "precondition");
     const beforeHierarchy = schematicParity ? await inspectSavedHierarchy(ctx, project, cli) : null;
     if (beforeHierarchy && !beforeHierarchy.complete)
       throw new ToolError(
@@ -606,19 +649,26 @@ export const verify_drc = defineTool({
         "precondition",
       );
     ctx.progress(0.4, "running DRC");
-    const outFile = p(project, PROJECT_FILES.reports, "drc.json");
-    const report = await ctx.services.kicad.runDrc(cli, {
-      board,
-      outFile,
-      severity,
-      schematicParity,
-      signal: ctx.signal,
-    });
+    const reportPath = `${PROJECT_FILES.reports}/drc.json`;
+    const outFile = await jailPath(project.dir, reportPath);
+    const scratch = await mkdtemp(join(tmpdir(), "fabplane-drc-"));
+    let report: DrcReport;
+    try {
+      // The CLI may write a partial report before failing. Never expose it over a previous measurement.
+      report = await ctx.services.kicad.runDrc(cli, {
+        board,
+        outFile: join(scratch, "drc.json"),
+        severity,
+        schematicParity,
+        signal: ctx.signal,
+      });
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
     const geometry = await queryDrcGeometry(ctx, project.dir);
     const afterRevision = await pcbFileRevision(board);
     const afterHierarchy = schematicParity ? await inspectSavedHierarchy(ctx, project, cli) : null;
     if (beforeRevision.sha256 !== afterRevision.sha256) {
-      await unlink(outFile).catch(() => {});
       throw new ToolError("board.kicad_pcb changed while DRC was running", "precondition");
     }
     if (
@@ -626,7 +676,6 @@ export const verify_drc = defineTool({
       afterHierarchy &&
       beforeHierarchy.aggregateRevision !== afterHierarchy.aggregateRevision
     ) {
-      await unlink(outFile).catch(() => {});
       throw new ToolError(
         "a referenced schematic changed while parity DRC was running",
         "precondition",
@@ -636,6 +685,7 @@ export const verify_drc = defineTool({
     const checkedReport = {
       ...enriched,
       schematicParityChecked: schematicParity,
+      ...(ctx.board ? { boardSource: { projectId: project.id, ...ctx.board } } : {}),
       pcbRevision: afterRevision,
       ...(beforeHierarchy
         ? {
@@ -649,6 +699,11 @@ export const verify_drc = defineTool({
           }
         : {}),
     };
+    if (ctx.board) AssemblyPcbCheckReceipt.parse(checkedReport);
+    // Revalidate the output jail and captured native ownership immediately before publication.
+    await jailPath(project.dir, reportPath);
+    await ctx.runInScope?.(async () => {});
+    ctx.signal.throwIfAborted();
     await writeJson(outFile, checkedReport);
     ctx.progress(1, "done");
     const c = enriched.counts;
@@ -948,11 +1003,13 @@ export function describeViolation(v: unknown): string {
 
 export const render_board = defineTool({
   name: "render_board",
+  boardScoped: true,
   toolset: "core",
   title: "Render board image",
   description:
-    "Render a PNG of the KiCad board (top or bottom, raytraced optional) to renders/<view>.png and return it as an image so you can inspect placement and routing. Requires kicad-cli and circuit_build.",
+    "Render a PNG of the KiCad board (top or bottom, raytraced optional) to renders/<view>.png and return it as an image so you can inspect placement and routing. Requires kicad-cli and a saved native PCB.",
   inputSchema: {
+    expectedSourceSha256: expectedPcbSource,
     view: z.enum(["top", "bottom", "perspective", "side"]).default("top"),
     width: z.number().int().min(128).max(4096).default(1024),
     height: z.number().int().min(128).max(4096).default(768),
@@ -965,22 +1022,39 @@ export const render_board = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async ({ view, width, height, quality }, ctx) => {
+  handler: async ({ view, width, height, quality, expectedSourceSha256 }, ctx) => {
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const board = p(project, PROJECT_FILES.boardPcb);
     if (!(await exists(board))) throw new ToolError("board.kicad_pcb not found", "precondition");
-    const output = p(project, PROJECT_FILES.renders, `${view}.png`);
+    if (ctx.board && !expectedSourceSha256) throw new ToolError("Inspect the selected saved PCB before rendering.", "precondition");
+    const revision = createHash("sha256").update(await readFile(board)).digest("hex");
+    if (expectedSourceSha256 && revision !== expectedSourceSha256) throw new ToolError("PCB changed before rendering. Recheck the source and try again.", "precondition");
+    const output = await jailPath(project.dir, `${PROJECT_FILES.renders}/${view}.png`);
+    const scratch = await mkdtemp(join(tmpdir(), "fabplane-board-image-"));
+    try {
     ctx.progress(0.3, "rendering");
     await ctx.services.kicad.renderPng(cli, {
       board,
-      output,
+      output: join(scratch, `${view}.png`),
       view,
       width,
       height,
       quality,
       signal: ctx.signal,
     });
+      const bytes = await readFile(join(scratch, `${view}.png`));
+      const publish = async () => {
+        ctx.signal.throwIfAborted();
+        if (createHash("sha256").update(await readFile(board)).digest("hex") !== revision) throw new ToolError("PCB changed while rendering. The previous image was kept.", "precondition");
+        await jailPath(project.dir, `${PROJECT_FILES.renders}/${view}.png`);
+        const receipt = await jailPath(project.dir, `${PROJECT_FILES.renders}/${view}.png.revision.json`);
+        const metadata = outputRevision(ctx, `${PROJECT_FILES.renders}/${view}.png`, bytes, "pcb", [{ path: "board.kicad_pcb", sha256: revision }]);
+        await writeAtomic(output, bytes);
+        await writeAtomic(receipt, metadata);
+      };
+      if (ctx.runInScope) await ctx.runInScope(publish); else await publish();
+    } finally { await rm(scratch, { recursive: true, force: true }); }
     ctx.progress(1, "done");
     const url = fileUrl(output);
     return ok(
@@ -993,6 +1067,7 @@ export const render_board = defineTool({
 
 export const coreTools = [
   load_toolset,
+  request_project_creation,
   pcb_environment,
   project_status,
   circuit_build,

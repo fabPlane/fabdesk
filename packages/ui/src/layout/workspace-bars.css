@@ -1,0 +1,231 @@
+/* One control rhythm across workspace navigation, views and task actions.
+   Keep menus outside overflow containers so their popovers remain usable. */
+.fd-canvas-workspace {
+  --fd-bar-control-height: 36px;
+  --fd-bar-gap: 10px;
+}
+
+.fd-canvas-header > *,
+.fd-canvas-header-actions > * {
+  flex-shrink: 0;
+}
+.fd-canvas-header .fd-project-identity {
+  flex: 0 1 auto;
+  min-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:is(.fd-canvas-controls, .fd-assembly-detail-heading) {
+  height: auto;
+  min-height: 64px;
+  align-items: center;
+  align-content: center;
+  flex-wrap: wrap;
+  gap: var(--fd-bar-gap);
+  padding: 14px var(--fd-canvas-gutter) 14px 190px;
+  background: var(--fd-panel);
+  border-bottom: 1px solid var(--fd-border);
+}
+:is(.fd-canvas-controls, .fd-assembly-detail-heading, .fd-assembly-view-actions) > * {
+  flex-shrink: 0;
+  align-self: center;
+}
+:is(
+    .fd-canvas-destinations,
+    .fd-canvas-controls,
+    .fd-assembly-detail-heading,
+    .fd-assembly-view-actions
+  )
+  :is(.fd-button, .fd-workspace-menu > summary) {
+  height: var(--fd-bar-control-height);
+  min-height: var(--fd-bar-control-height);
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  margin-block: 0;
+  font-size: 13px;
+  white-space: nowrap;
+}
+:is(.fd-canvas-destinations, .fd-canvas-controls, .fd-assembly-detail-heading)
+  .fd-workspace-menu
+  > summary {
+  justify-content: flex-start;
+  border-radius: 8px;
+}
+:is(.fd-canvas-controls, .fd-assembly-detail-heading) .fd-canvas-tool {
+  display: inline-flex;
+  align-items: center;
+}
+:is(.fd-canvas-controls, .fd-assembly-detail-heading) .fd-canvas-tool-button {
+  width: var(--fd-bar-control-height);
+  padding: 0;
+}
+:is(.fd-canvas-controls, .fd-assembly-detail-heading) .fd-board-view-tabs [role="tablist"] {
+  height: var(--fd-bar-control-height);
+  box-sizing: border-box;
+  padding: 0;
+}
+:is(.fd-canvas-controls, .fd-assembly-detail-heading) .fd-board-view-tabs [role="tab"] {
+  height: 34px;
+  min-height: 34px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+.fd-canvas-controls [role="tablist"] {
+  flex-shrink: 0;
+}
+.fd-canvas-controls > .fd-placement-toolbar-slot {
+  display: flex;
+  margin-left: auto;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.fd-placement-mode-tools {
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-left: 14px;
+  border-left: 1px solid var(--fd-border);
+}
+.fd-placement-mode-tools > button:first-child {
+  margin-right: 6px;
+}
+.fd-board-task-actions {
+  gap: 8px;
+}
+
+/* Assembly board pages now reserve their real toolbar height, including wrapping. */
+.fd-canvas-workspace .fd-assembly-detail {
+  padding-top: 0;
+}
+.fd-assembly-detail-heading {
+  position: static;
+  flex: none;
+  margin: 0;
+}
+.fd-assembly-board-switch {
+  display: flex;
+  align-items: center;
+}
+.fd-assembly-board-picker > summary {
+  gap: 12px;
+}
+.fd-assembly-detail-status {
+  position: static;
+  min-height: 44px;
+  padding: 8px var(--fd-canvas-gutter);
+  flex: none;
+}
+.fd-routing-toolbar-slot,
+.fd-mechanical-canvas-tasks {
+  flex-wrap: wrap;
+  gap: var(--fd-bar-gap);
+}
+.fd-canvas-controls > .fd-mechanical-toolbar-slot,
+.fd-canvas-controls > .fd-routing-toolbar-slot {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Layout status and file actions form a second, quieter row inside edit mode. */
+.fd-canvas-workspace .fd-placement-canvas-workspace > .fd-placement-header {
+  position: static;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  flex: none;
+  gap: 10px 18px;
+  padding: 12px var(--fd-canvas-gutter);
+}
+.fd-canvas-workspace .fd-placement-canvas-workspace .fd-placement-source-chip {
+  position: static;
+  flex: 1 1 300px;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.fd-canvas-workspace .fd-placement-canvas-workspace .fd-placement-actions {
+  margin-left: auto;
+}
+.fd-canvas-workspace .fd-placement-canvas-workspace .fd-placement-body {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+.fd-canvas-workspace .fd-placement-canvas-workspace .fd-placement-stage {
+  padding-top: 72px;
+}
+.fd-canvas-workspace .fd-placement-canvas-workspace .fd-placement-view-controls {
+  top: 8px;
+  left: var(--fd-canvas-gutter);
+}
+.fd-canvas-workspace .fd-placement-canvas-workspace .fd-placement-view-controls > small {
+  flex-basis: 100%;
+}
+.fd-canvas-workspace .fd-placement-canvas-workspace .fd-placement-actions :is(button, summary) {
+  height: 36px;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+}
+
+@media (max-width: 1100px) {
+  :is(.fd-canvas-controls, .fd-assembly-detail-heading) {
+    padding-left: 180px;
+  }
+  .fd-canvas-controls > .fd-placement-toolbar-slot {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+  .fd-placement-mode-tools {
+    border-left: 0;
+    padding-left: 0;
+  }
+  .fd-canvas-header {
+    gap: 12px;
+  }
+  .fd-canvas-connection {
+    font-size: 0;
+    gap: 0;
+  }
+  .fd-canvas-header-actions {
+    gap: 8px;
+  }
+}
+@media (max-width: 900px) {
+  .fd-assembly-detail-heading .fd-board-task-actions {
+    flex-basis: auto;
+  }
+  .fd-mechanical-canvas-save {
+    display: none;
+  }
+}
+@media (max-width: 780px) {
+  :is(.fd-canvas-controls, .fd-assembly-detail-heading) {
+    min-height: 112px;
+    padding: 62px var(--fd-canvas-gutter) 12px;
+  }
+  .fd-placement-mode-tools {
+    border-left: 0;
+    padding-left: 0;
+  }
+  .fd-canvas-controls > .fd-placement-toolbar-slot {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+  .fd-canvas-header .fd-project-identity {
+    max-width: 180px;
+  }
+  .fd-canvas-header {
+    gap: 8px;
+  }
+}
+
+.fd-canvas-workspace .fd-placement-interaction-hint {
+  top: 48px;
+  left: var(--fd-canvas-gutter);
+  max-width: calc(100% - 48px);
+}

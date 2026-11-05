@@ -1,0 +1,55 @@
+{
+  "milestone": "Shared UI structure ready for feature delegation",
+  "sourceHead": "b38683d",
+  "structureReady": true,
+  "featureImplementationComplete": false,
+  "targetedFinal": {
+    "uiTypecheck": "PASS",
+    "uiTests": 233,
+    "uiAssertions": 912,
+    "failures": 0
+  },
+  "priorFullRoot": {
+    "sourceHead": "e5d9c63",
+    "typecheck": "PASS",
+    "pass": 2277,
+    "skip": 36,
+    "fail": 0,
+    "scope": "Earlier accumulated implementation; subsequent structural UI changes validated with targeted checks"
+  },
+  "coverage": {
+    "registeredViews": 14,
+    "nonMechanicalViewsReached": 13,
+    "mechanical": "Teammate-owned, retained and excluded",
+    "featureHandoffs": 23,
+    "outputsAdditionalPaths": [
+      "Models & video",
+      "Export files \u2192 Parts & BOM",
+      "Parts \u2192 Shopping"
+    ],
+    "nativeFixturesPreserved": [
+      "Donor34 files",
+      "GameBoy9 files",
+      "VAIO16files plus actual PCB-only DRC report"
+    ],
+    "finalApp": "VAIOOverview1440\u00d7870; assistant/tools closed;6boards5links2sourcesreview; mapoverridesreset"
+  },
+  "actualFailures": [
+    "Recorded fab_router run remains failed/router unavailable; not rerun",
+    "Codex provider model compatibility documented and user-deferred"
+  ],
+  "pendingActions": [
+    "Assembled3Dscene",
+    "Native part replacement",
+    "Directed source reconciliation",
+    "Hosted Share and KiCadpush/pull",
+    "General undo history",
+    "Member BOM/diff/pin/exports beyond existing qualified scopes"
+  ],
+  "boundaries": [
+    "LOCALONLY; no push,remotePR/ticket/docs publication,merge or deploy",
+    "Board Art Apply/polish deferred",
+    "Mechanical/enclosure teammate-owned",
+    "No new engineering success inferred from navigation or source freshness"
+  ]
+}

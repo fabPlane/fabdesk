@@ -66,7 +66,10 @@ for (const crossSheet of [false, true])
       revision: async () => 1n,
     };
     const sessions = {
-      ensureProject: async () => ({ schematic, session: {} }),
+      ensureProject: async (_dir: string, options?: { registerLibraries?: boolean }) => {
+        if (options?.registerLibraries !== false) throw new Error("library setup unavailable");
+        return { schematic, session: {} };
+      },
     } as unknown as FpPcbSessions;
     const design = createFpPcbDesign({ bridge: () => ({}) as never, sessions });
     expect(symbol.proto.unit).toBeUndefined();
@@ -84,6 +87,19 @@ for (const crossSheet of [false, true])
       expect(committed).toBe(true);
     }
   });
+
+test("new schematic symbols still fail closed when required library setup is unavailable", async () => {
+  const sessions = {
+    ensureProject: async (_dir: string, options?: { registerLibraries?: boolean }) => {
+      if (options?.registerLibraries) throw new Error("library setup unavailable");
+      throw new Error("library setup was incorrectly skipped");
+    },
+  } as unknown as FpPcbSessions;
+  const design = createFpPcbDesign({ bridge: () => ({}) as never, sessions });
+  await expect(design.schematicEdit("/new-symbol", {
+    symbols: [{ reference: "R1", libId: "Device:R", value: "1k", position: { x: 50.8, y: 50.8 } }],
+  })).rejects.toThrow("library setup unavailable");
+});
 
 test("recovery and an entire native operation cannot run over each other", async () => {
   let finish!: () => void, entered!: () => void;
@@ -273,6 +289,7 @@ describe("PCB geometry query boundaries", () => {
       layer: BoardLayer.BL_F_Silkscreen,
     });
     const board = {
+      getGroups: async () => [],
       getShapes: async () => [boardShape],
       getFootprints: async () => [{ reference: "R1", items: [courtyard, fabrication, silkscreen] }],
     };
@@ -868,6 +885,7 @@ describe("embedded footprint placement recovery", () => {
     let failSave = options.failSave ?? false;
     const board = {
       getFootprints: async () => [live],
+      getGroups: async () => [],
       getPads: async () => live.pads,
       getTracks: async () => routes,
       getZones: async () => [],

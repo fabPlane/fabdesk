@@ -1,0 +1,58 @@
+{
+  "checks": [
+    {
+      "fixture": "root",
+      "files": 14,
+      "changed": []
+    },
+    {
+      "fixture": "assembly",
+      "files": 8,
+      "changed": []
+    },
+    {
+      "fixture": "vaio",
+      "files": 16,
+      "changed": []
+    },
+    {
+      "fixture": "parts-study-originals",
+      "files": 2,
+      "changed": []
+    }
+  ],
+  "study": {
+    "projectId": "prj_mvrlt1yx802c210b69",
+    "newFile": "project.parts.json",
+    "sha256": "44f638fe9268e4b6b5982a8848ffcc6cd9a4fdb2273d9115f6214a6937c87bb7",
+    "lines": [
+      {
+        "ref": "M1",
+        "name": "SG90 micro servo",
+        "qty": 2
+      },
+      {
+        "ref": "ST1",
+        "name": "M3 hex standoff 12 mm",
+        "qty": 1
+      }
+    ],
+    "preserved": "New hardware file intentionally retained in isolated UI study; no native PCB/schematic exists there"
+  },
+  "nativeWalkthrough": [
+    "Actual961\u00d7721 single-list layout; catalog closed by default",
+    "Addparts\u2192SG90\u2192InBOM returns to row; qty2 persisted on disk",
+    "Addstandoff returns focus to catalog search; SG90search filters1 result; InBOM returns to list",
+    "Shopping shows signed-out state; no login/cart/supplier mutation",
+    "VAIO scope says member-board BOMs not included; no assembly total or freshness fabricated"
+  ],
+  "validation": {
+    "uiTypes": "PASS /tmp/canvas-parts-flow-final-types.log",
+    "uiTests": "225 PASS 0 FAIL /tmp/canvas-parts-flow-final-tests.log"
+  },
+  "limits": [
+    "No CSV export or shopping sync executed",
+    "Existing root netlist is a saved snapshot, not full assembly coverage",
+    "No native engineering implementation changed"
+  ]
+}

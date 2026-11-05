@@ -56,10 +56,11 @@ export const KEEPOUT_COLOR = "#7c3aed";
 export interface Theme {
   background: string;
   outline: string;
+  newCopper?: string;
 }
 
 export const DARK_THEME: Theme = { background: "#14161a", outline: "#3a3f47" };
-export const LIGHT_THEME: Theme = { background: "#f1f0e9", outline: "#c4c6bd" };
+export const LIGHT_THEME: Theme = { background: "#f1f0e9", outline: "#c4c6bd", newCopper: "#006b55" };
 
 export function emptyRun(runId: string): CinemaRun {
   return { runId, meta: null, statics: [], frames: [] };
@@ -415,15 +416,15 @@ export function drawAirline(ctx: Canvas2D, frame: RouteFrame, t: Transform): voi
   ctx.globalAlpha = 1;
 }
 
-/** Recently added copper: this frame's in white with a glow, the last few frames' in amber, fading. */
-export function drawRecent(ctx: Canvas2D, shapes: readonly CinemaShape[], ages: ReadonlyMap<number, number>, t: Transform, hidden: ReadonlySet<number>, window = RECENT_WINDOW): void {
+/** Recently added copper: this frame's in the theme highlight with a glow, the last few frames' in amber, fading. */
+export function drawRecent(ctx: Canvas2D, shapes: readonly CinemaShape[], ages: ReadonlyMap<number, number>, t: Transform, hidden: ReadonlySet<number>, window = RECENT_WINDOW, newCopper = NEW_COPPER_COLOR): void {
   for (const s of shapes) {
     if (!isRouterCopper(s)) continue;
     const age = ages.get(s.id);
     if (age === undefined) continue;
     if (age === 0) {
-      drawShape(ctx, s, t, hidden, NEW_COPPER_COLOR, 0.35, 7);
-      drawShape(ctx, s, t, hidden, NEW_COPPER_COLOR, 1, 2.5);
+      drawShape(ctx, s, t, hidden, newCopper, 0.35, 7);
+      drawShape(ctx, s, t, hidden, newCopper, 1, 2.5);
     } else {
       drawShape(ctx, s, t, hidden, RECENT_COPPER_COLOR, Math.max(0.45, 1 - age / (window + 1)), 2.5);
     }
@@ -539,7 +540,7 @@ export class CinemaPainter {
     this.#copperKey = copperKey;
     this.#copperFrameIndex = opts.cursor;
     ctx.drawImage(this.canvases.image("copper"), 0, 0);
-    drawRecent(ctx, frame.shapes, recentShapeAges(opts.run, opts.cursor), t, opts.hiddenLayers);
+    drawRecent(ctx, frame.shapes, recentShapeAges(opts.run, opts.cursor), t, opts.hiddenLayers, RECENT_WINDOW, theme.newCopper ?? NEW_COPPER_COLOR);
     drawAirline(ctx, frame, t);
     return { transform: t, shapes: opts.run.statics.length + frame.shapes.length, staticsRedrawn, copperRedrawn, copperExtended };
   }
@@ -560,7 +561,7 @@ export function drawScene(ctx: Canvas2D, opts: DrawOptions): Transform | null {
   drawStatics(ctx, opts.run, t, opts.hiddenLayers, view, opts.width, opts.height, theme, focus);
   if (!frame) return t;
   drawCopper(ctx, frame.shapes, t, opts.hiddenLayers);
-  drawRecent(ctx, frame.shapes, recentShapeAges(opts.run, opts.cursor), t, opts.hiddenLayers);
+  drawRecent(ctx, frame.shapes, recentShapeAges(opts.run, opts.cursor), t, opts.hiddenLayers, RECENT_WINDOW, theme.newCopper ?? NEW_COPPER_COLOR);
   drawAirline(ctx, frame, t);
   return t;
 }

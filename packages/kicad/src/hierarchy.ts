@@ -1,5 +1,7 @@
+import { exportSchematicSvg } from "./exports";
+import { constants } from "node:fs";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile, lstat, open, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { runKicadCli, type KicadCli } from "./cli";
@@ -181,6 +183,106 @@ function electricalCounts(xml: string) {
   };
 }
 
+/** Independently owned member bytes, including every parent directory. Legacy root projects retain their existing policy. */
+async function readOwnedFile(projectDir: string, path: string): Promise<Buffer> {
+  const rel = relative(projectDir, path);
+  if (rel === ".." || rel.startsWith(`..${sep}`) || await realpath(projectDir) !== projectDir || await realpath(path) !== path) throw new Error("Native hierarchy file is outside the source or aliased");
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const before = await file.stat();
+    if (!before.isFile() || before.nlink !== 1 || before.size > 16 * 1024 * 1024) throw new Error("Native hierarchy file is not independently owned or exceeds 16 MiB");
+    const bytes = await file.readFile(), after = await file.stat(), named = await lstat(path);
+    const same = (a: typeof before, b: typeof before) => a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs && b.nlink === 1;
+    if (!same(before, after) || !same(after, named) || await realpath(path) !== path) throw new Error("Native hierarchy file changed during inspection");
+    return bytes;
+  } finally { await file.close(); }
+}
+
+/** Export only the captured member hierarchy, never a second read of mutable live sheets. */
+async function withOwnedFilesSnapshot<T>(rootFile: string, projectFile: string | null, top: TopLevelSheet[], files: Map<string, Buffer>, operation: (source: string, scratch: string) => Promise<T>) {
+  const scratch = await mkdtemp(join(tmpdir(), "fabplane-owned-hierarchy-"));
+  try {
+    const put = async (path: string, bytes: Buffer) => {
+      const dest = resolve(scratch, path), rel = relative(scratch, dest);
+      if (rel === ".." || rel.startsWith(`..${sep}`)) throw new Error("Native project filename escapes its source snapshot");
+      await mkdir(dirname(dest), { recursive: true }); await writeFile(dest, bytes);
+    };
+    for (const [path, bytes] of files) await put(path, bytes);
+    const first = typeof top[0]?.filename === "string" ? top[0].filename : null;
+    // Imported KiCad projects may retain the original root filename in top_level_sheets.
+    // Resolve relative to the project directory, not the process working directory.
+    const chosen = projectFile && first && slash(first) !== rootFile ? slash(join(dirname(projectFile), first)) : rootFile;
+    await put(chosen, files.get(rootFile)!);
+    if (projectFile) await put(chosen.replace(/\.kicad_sch$/i, ".kicad_pro"), files.get(projectFile)!);
+    return await operation(join(scratch, chosen), scratch);
+  } finally { await rm(scratch, { recursive: true, force: true }); }
+}
+
+async function exportOwnedSnapshot(cli: KicadCli, rootFile: string, projectFile: string | null, top: TopLevelSheet[], files: Map<string, Buffer>, signal?: AbortSignal) {
+  return withOwnedFilesSnapshot(rootFile, projectFile, top, files, async (source, scratch) => {
+    const output = join(scratch, "hierarchy.xml");
+    await runKicadCli(cli, ["sch", "export", "netlist", "--format", "kicadxml", "-o", output, source], { ...(signal ? { signal } : {}), cwd: dirname(source) });
+    return readFile(output, "utf8");
+  });
+}
+
+export type OwnedSchematicSvg = {
+  sourceRevision: string;
+  sourceFiles: Array<{ path: string; sha256: string }>;
+  sheets: Array<{ name: string; svg: Uint8Array }>;
+};
+
+/** Export the exact inspected hierarchy; return bytes only after every captured file is rechecked. */
+async function withCapturedSchematic<T>(opts: { projectDir: string; hierarchy: SchematicHierarchy; signal?: AbortSignal }, operation: (source: string, scratch: string) => Promise<T>) {
+  const { hierarchy } = opts, dir = resolve(opts.projectDir);
+  if (!hierarchy.complete || !hierarchy.sheets.length || hierarchy.sheets.length > 256) throw new Error("A complete bounded native hierarchy is required before schematic rendering");
+  const files = new Map<string, Buffer>();
+  for (const path of [...new Set([...hierarchy.referencedFiles, ...(hierarchy.projectFile ? [hierarchy.projectFile] : [])])]) files.set(path, await readOwnedFile(dir, resolve(dir, path)));
+  if (!files.has(hierarchy.rootFile)) throw new Error("The inspected root schematic is not part of its hierarchy");
+  const projectPath = resolve(dir, hierarchy.rootFile.replace(/\.kicad_sch$/i, ".kicad_pro"));
+  const checkAbsentProject = async () => { if (!hierarchy.projectFile && await lstat(projectPath).then(() => true, (error: NodeJS.ErrnoException) => error.code !== "ENOENT")) throw new Error("Native project metadata changed since hierarchy inspection"); };
+  await checkAbsentProject();
+  const revision = hash([...hierarchy.sheets.map(sheet => {
+    const bytes = files.get(sheet.nativePath);
+    if (!bytes || hash(bytes) !== sheet.sha256) throw new Error("A referenced schematic changed since hierarchy inspection");
+    return `${sheet.hierarchyPath}\0${sheet.nativePath}\0${sheet.identity}\0${hash(bytes)}`;
+  }), ...(hierarchy.projectFile ? [`project\0${hierarchy.projectFile}\0${hash(files.get(hierarchy.projectFile)!)}`] : [])].sort().join("\n"));
+  if (revision !== hierarchy.aggregateRevision) throw new Error("The inspected hierarchy revision does not match the captured native files");
+  let top: TopLevelSheet[] = [];
+  if (hierarchy.projectFile) { const metadata = JSON.parse(files.get(hierarchy.projectFile)!.toString("utf8")); top = Array.isArray(metadata.schematic?.top_level_sheets) ? metadata.schematic.top_level_sheets : []; }
+  const result = await withOwnedFilesSnapshot(hierarchy.rootFile, hierarchy.projectFile, top, files, operation);
+  for (const [path, bytes] of files) if (hash(await readOwnedFile(dir, resolve(dir, path))) !== hash(bytes)) throw new Error("Native schematic files changed while exporting; the previous output was kept");
+  await checkAbsentProject(); opts.signal?.throwIfAborted();
+  return { sourceRevision: revision, sourceFiles: [...files].map(([path, bytes]) => ({ path, sha256: hash(bytes) })), result };
+}
+
+/** Render immutable native sheets without altering any project source. */
+export async function exportOwnedSchematicSvg(cli: KicadCli, opts: { projectDir: string; hierarchy: SchematicHierarchy; signal?: AbortSignal }): Promise<OwnedSchematicSvg> {
+  const captured = await withCapturedSchematic(opts, async (source, scratch) => {
+    const result = await exportSchematicSvg(cli, { schematic: source, outDir: join(scratch, "svg-output"), ...(opts.signal ? { signal: opts.signal } : {}) });
+    if (!result.paths.length || result.paths.length !== opts.hierarchy.sheets.length) throw new Error("Schematic export did not produce one preview per inspected sheet");
+    const rootSvg = basename(source).replace(/\.kicad_sch$/i, ".svg");
+    const paths = [...result.paths].sort((a, b) => Number(basename(b) === rootSvg) - Number(basename(a) === rootSvg) || a.localeCompare(b));
+    return Promise.all(paths.map(async path => ({ name: basename(path), svg: new Uint8Array(await readFile(path)) })));
+  });
+  return { sourceRevision: captured.sourceRevision, sourceFiles: captured.sourceFiles, sheets: captured.result };
+}
+
+export type OwnedSchematicBom = { sourceRevision: string; sourceFiles: Array<{ path: string; sha256: string }>; csv: string };
+
+/** Native default-variant BOM, with explicit fields and Do-Not-Populate exclusion. */
+export async function exportOwnedSchematicBom(cli: KicadCli, opts: { projectDir: string; hierarchy: SchematicHierarchy; signal?: AbortSignal }): Promise<OwnedSchematicBom> {
+  const captured = await withCapturedSchematic(opts, async (source, scratch) => {
+    const output = join(scratch, "bom.csv");
+    const fields = "Reference,Value,Footprint,MPN,Manufacturer,LCSC,QUANTITY,DNP,EXCLUDE_FROM_BOM,EXCLUDE_FROM_BOARD";
+    await runKicadCli(cli, ["sch", "export", "bom", "--fields", fields, "--labels", fields, "--group-by", "", "--exclude-dnp", "--ref-range-delimiter", "", "-o", output, source], { ...(opts.signal ? { signal: opts.signal } : {}), cwd: dirname(source) });
+    const info = await stat(output);
+    if (info.size > 10 * 1024 * 1024) throw new Error("The native BOM exceeds the supported 10 MB limit");
+    return readFile(output, "utf8");
+  });
+  return { sourceRevision: captured.sourceRevision, sourceFiles: captured.sourceFiles, csv: captured.result };
+}
+
 async function exportRoot(
   cli: KicadCli,
   projectDir: string,
@@ -234,7 +336,7 @@ async function exportRoot(
  */
 export async function inspectSchematicHierarchy(
   cli: KicadCli,
-  opts: { projectDir: string; rootSchematic: string; projectFile?: string; signal?: AbortSignal },
+  opts: { projectDir: string; rootSchematic: string; projectFile?: string; signal?: AbortSignal; ownedFilesOnly?: boolean },
 ): Promise<SchematicHierarchy> {
   const projectDir = resolve(opts.projectDir);
   const rootAbsolute = resolve(opts.rootSchematic);
@@ -247,10 +349,20 @@ export async function inspectSchematicHierarchy(
     ? slash(relative(projectDir, projectAbsolute))
     : null;
   const issues: SchematicHierarchyIssue[] = [];
+  const ownedFiles = new Map<string, Buffer>();
+  const readNative = async (path: string) => {
+    if (!opts.ownedFilesOnly) return readFile(path);
+    const key = slash(relative(projectDir, path)), captured = ownedFiles.get(key);
+    if (captured) return captured; // Repeated sheet instances must export the same captured file bytes.
+    const bytes = await readOwnedFile(projectDir, path); ownedFiles.set(key, bytes); return bytes;
+  };
   let top: TopLevelSheet[] = [];
   if (projectFile) {
     try {
-      top = await parseProject(projectAbsolute);
+      if (opts.ownedFilesOnly) {
+        const metadata = JSON.parse((await readNative(projectAbsolute)).toString("utf8")) as { schematic?: { top_level_sheets?: unknown } };
+        top = Array.isArray(metadata.schematic?.top_level_sheets) ? metadata.schematic.top_level_sheets as TopLevelSheet[] : [];
+      } else top = await parseProject(projectAbsolute);
     } catch (error) {
       issues.push({
         kind: "parse",
@@ -333,7 +445,7 @@ export async function inspectSchematicHierarchy(
     identities.set(item.identity, item.hierarchyPath);
     let data: Buffer;
     try {
-      data = await readFile(item.absolute);
+      data = await readNative(item.absolute);
     } catch (error) {
       issues.push({
         kind: (error as NodeJS.ErrnoException)?.code === "ENOENT" ? "missing" : "unreadable",
@@ -385,7 +497,7 @@ export async function inspectSchematicHierarchy(
   let netsBySheet = new Map<string, Set<number>>();
   if (!issues.some((issue) => issue.kind !== "duplicate")) {
     try {
-      const xml = await exportRoot(
+      const xml = opts.ownedFilesOnly ? await exportOwnedSnapshot(cli, rootFile, projectFile, top, ownedFiles, opts.signal) : await exportRoot(
         cli,
         projectDir,
         rootFile,
@@ -406,6 +518,13 @@ export async function inspectSchematicHierarchy(
       });
     }
   }
+  if (opts.ownedFilesOnly) {
+    for (const [path, bytes] of ownedFiles) {
+      try { if (hash(await readOwnedFile(projectDir, join(projectDir, path))) !== hash(bytes)) throw new Error("Saved bytes changed during inspection"); }
+      catch (error) { issues.push({ kind: "unreadable", path, detail: error instanceof Error ? error.message : String(error) }); }
+    }
+    if (!projectFile && await lstat(projectAbsolute).then(() => true, (error: NodeJS.ErrnoException) => error.code !== "ENOENT")) issues.push({ kind: "unreadable", path: slash(relative(projectDir, projectAbsolute)), detail: "Native project metadata appeared during inspection" });
+  }
   const keyFor = (path: string) => (path === "/" ? "/" : path);
   const sheets = partial.map((sheet) => ({
     ...sheet,
@@ -420,11 +539,10 @@ export async function inspectSchematicHierarchy(
       )?.size ?? 0,
   }));
   const aggregateRevision = hash(
-    sheets
-      .map(
+    [...sheets.map(
         (sheet) =>
           `${sheet.hierarchyPath}\0${sheet.nativePath}\0${sheet.identity}\0${sheet.sha256}`,
-      )
+      ), ...(opts.ownedFilesOnly && projectFile && ownedFiles.has(projectFile) ? [`project\0${projectFile}\0${hash(ownedFiles.get(projectFile)!)}`] : [])]
       .sort()
       .join("\n"),
   );

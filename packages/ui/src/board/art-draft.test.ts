@@ -11,6 +11,8 @@ import {
 
 const draft: ArtDraft = {
   version: 1,
+  view: { zoom: 2, placing: false },
+  lockProportions: false,
   source: bytesToBase64(new Uint8Array([0, 10, 255, 128])),
   sourceName: "source.png",
   options: {
@@ -66,4 +68,11 @@ test("a corrupt or newer draft fails visibly instead of being mistaken for an em
       JSON.stringify({ ...draft, options: { ...draft.options, printedBackground: "<script>" } }),
     ),
   ).toThrow("six-digit hex");
+});
+
+test("legacy artwork drafts load while invalid view settings fail visibly", () => {
+  const { view, lockProportions, ...legacy } = draft;
+  expect(parseArtDraft(JSON.stringify(legacy))).toEqual(legacy);
+  expect(() => parseArtDraft(JSON.stringify({ ...draft, view: { zoom: -1, placing: true } }))).toThrow();
+  expect(() => parseArtDraft(JSON.stringify({ ...draft, lockProportions: "false" }))).toThrow();
 });

@@ -1,15 +1,40 @@
-import { CART_ITEM_STATUSES, type CartItem, type CartItemPatch, type CartItemStatus, type Destination } from "@fabdesk/protocol";
+import { FeedbackNotice } from "../components/FeedbackNotice";
+import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
+import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
+import { CART_ITEM_STATUSES, type BomSyncOptions, type CartItem, type CartItemPatch, type CartItemStatus, type Destination } from "@fabdesk/protocol";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Button, EmptyState, IconButton, Input, Select, Spinner, Textarea } from "../components/ui";
+import { Button, Dialog, EmptyState, IconButton, Input, Select, Spinner, Textarea } from "../components/ui";
 import {
   cloudErrorMessage, destinationOptions, filterShoppingItems, groupByDestination, isCloudSignedOut,
   createShoppingDraft, shoppingDraftPatch, shoppingDraftConflicts, rebaseShoppingDraft, type ShoppingItemDraft,
   itemLabel, useCloudDestinations, useCloudStatus, useCore, useShoppingList, useShoppingListMutations,
+  useProjectBom,
 } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { Icon } from "../components/Icon";
 import { ProjectBomPanel } from "./ProjectBomPanel";
 import "./shopping-list.css";
+
+function ShoppingBomDialog({ projectId, open, busy, error, onClose, onSync }: { projectId: string; open: boolean; busy: boolean; error: unknown; onClose: () => void; onSync: (options: BomSyncOptions) => void }) {
+  const bom = useProjectBom(projectId, open), [allowPartial, setAllowPartial] = useState(false);
+  useEffect(() => { setAllowPartial(false); }, [open, bom.data?.revision]);
+  const surface = { projectId, label: "Shopping / Review BOM import", priority: 20, details: JSON.stringify({ snapshotRevision: bom.data?.revision, coverage: bom.data?.coverage, importParts: bom.data?.lines.length, partialCoverage: !bom.data?.complete, ordering: "not performed", error: error instanceof Error ? error.message : undefined }) };
+  useAssistantSurface(open ? surface : null);
+  return <Dialog open={open} closeDisabled={busy} title="Review parts before syncing" onClose={() => { if (!busy) onClose(); }}>
+    <div className="space-y-4 text-sm">
+      {bom.isLoading || bom.isFetching ? <p className="flex items-center gap-2"><Spinner />Reading saved design sources…</p> : bom.isError ? <div role="alert"><p className="text-danger">{bom.error instanceof Error ? bom.error.message : "Could not read the project BOM."}</p><Button size="sm" onClick={() => void bom.refetch()}>Retry source check</Button></div> : <>
+        <p>{bom.data?.lines.length ?? 0} listed items from your Design BOM. Matching suppliers, order status and notes stay saved; manual items are kept.</p>
+        <div className="max-h-52 space-y-2 overflow-auto">{bom.data?.coverage.map(source => <div className="rounded-lg border border-border p-3 text-xs" key={source.sourceId ?? "main"}><strong>{source.name}</strong><p className="mt-1 text-muted">{source.status === "native-schematic" ? `${source.multiplier} declared ${source.multiplier === 1 ? "board" : "boards"} · ${source.componentCount * source.multiplier} included parts` : source.reason ?? source.status}</p></div>)}</div>
+        {!bom.data?.complete && <label className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3"><input type="checkbox" checked={allowPartial} disabled={busy} onChange={event => setAllowPartial(event.target.checked)} /><span>Sync only the listed parts<span className="mt-1 block text-xs text-muted">Coverage is incomplete or netlist-only. Unmatched saved items will be kept so missing sources cannot remove them.</span></span></label>}
+        {bom.data?.manifestSha256 === null && <p className="text-xs text-muted">If the list has no PCB item, an editable fabrication line defaults to 5 boards. Review that quantity in Shopping.</p>}
+        {bom.data?.manifestSha256 && <p className="text-xs text-muted">Assembly PCB orders stay separate; this imports component quantities without adding a generic project PCB order.</p>}
+      </>}
+      {!!error && <p role="alert" className="text-danger">{cloudErrorMessage(error)}</p>}
+      <p className="text-xs text-muted">This updates your team’s shopping list. It does not place an order or establish electrical checks.</p>
+      <div className="flex flex-wrap items-center justify-end gap-2"><IconButton title="Ask about these BOM sources" onClick={() => askAboutSurface(surface, "Help me review this BOM’s source coverage and quantities before importing it into Shopping. Identify missing sources and preserve existing supplier and order details.")}><Icon name="sparkles" /></IconButton><Button disabled={busy} onClick={() => { onClose(); useUiStore.getState().setBoardTab("bom"); }}>Open Design BOM</Button><Button variant="primary" disabled={busy || bom.isFetching || bom.isError || !bom.data?.lines.length || (!bom.data.complete && !allowPartial)} onClick={() => { if (bom.data) onSync({ expectedRevision: bom.data.revision, allowPartial }); }}>{busy ? "Syncing…" : "Sync shopping list"}</Button></div>
+    </div>
+  </Dialog>;
+}
 
 const STATUS_LABEL: Record<CartItemStatus, string> = { needed: "To order", ordered: "Ordered", received: "Received" };
 
@@ -116,13 +141,13 @@ export function ShoppingItemRow({ item, options, onPatch, onRemove, draftState }
       <span aria-hidden="true" />
       <Icon name="chevronRight" className="shopping-expand" width={15} height={15} />
     </button>
-    <select className="shopping-status shopping-quick-status" data-status={item.status} aria-label={`Order status for ${label}`} title={dirty ? "Save or discard your draft before changing status here" : "Change order status"} value={item.status} disabled={busy || dirty} onChange={async e => {
+    <Select className="shopping-status shopping-quick-status" data-status={item.status} aria-label={`Order status for ${label}`} title={dirty ? "Save or discard your draft before changing status here" : "Change order status"} value={item.status} disabled={busy || dirty} onChange={async e => {
       const nextStatus = e.target.value as CartItemStatus;
       setBusy(true); setQuickError(null);
       try { await onPatch({ status: nextStatus }); if (draft) { setDraft(undefined); setExpanded(false); } }
       catch (error) { setQuickError(cloudErrorMessage(error)); }
       finally { setBusy(false); }
-    }}>{CART_ITEM_STATUSES.map(status => <option key={status} value={status}>{STATUS_LABEL[status]}</option>)}</select>
+    }}>{CART_ITEM_STATUSES.map(status => <option key={status} value={status}>{STATUS_LABEL[status]}</option>)}</Select>
     </div>
     {quickError && <p role="alert" className="shopping-error shopping-quick-error">{quickError} Choose the status again to retry.</p>}
     <div id={detailsId} className="shopping-disclosure" hidden={!expanded} inert={!expanded}>{draft && <ItemEditor item={item} draft={draft} onDraft={setDraft} onBusy={setBusy} options={options} onSave={onPatch} onRemove={onRemove} onClose={() => { setDraft(undefined); setExpanded(false); button.current?.focus(); }} />}</div>
@@ -164,21 +189,22 @@ const looksLikeMpn = (s: string) => !/\s/.test(s) && /\d/.test(s) && s.length <=
 export function ShoppingListTab() {
   const [view, setView] = useState<"bom" | "order">("bom");
   const projectId = useUiStore(s => s.activeProjectId);
+  useAssistantSurface(projectId ? { projectId, label: view === "bom" ? "Parts / Design BOM" : "Parts / Shopping", priority: 5, details: JSON.stringify({ view, projectId }) } : null);
   const navigation = (
     <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-panel-2/50 p-0.5" role="group" aria-label="Parts view">
       {(["bom", "order"] as const).map((value) => (
         <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)}
           data-testid={value === "bom" ? "bom-view-project" : "bom-view-shopping"}
-          className={`rounded-md px-2 py-1 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${view === value ? "bg-panel text-fg shadow-sm" : "text-muted hover:text-fg"}`}>
-          {value === "bom" ? "Parts" : "Shopping"}
+          className={`cursor-pointer rounded-md px-2 py-1 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${view === value ? "bg-panel text-fg shadow-sm" : "text-fg hover:bg-panel-2/70"}`}>
+          {value === "bom" ? "Design BOM" : "Shopping"}
         </button>
       ))}
     </div>
   );
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="bom-tab">
+    <div className="fd-parts-workspace flex h-full min-h-0 flex-col" data-testid="bom-tab">
       <div className="shrink-0 border-b border-border px-3 py-1.5">{navigation}</div>
-      <div className="min-h-0 flex-1">{view === "bom" ? <ProjectBomPanel /> : <ShoppingListContent key={projectId} />}</div>
+      <div className="min-h-0 flex-1">{view === "bom" ? <ProjectBomPanel key={projectId} /> : <ShoppingListContent key={projectId} />}</div>
     </div>
   );
 }
@@ -192,6 +218,7 @@ function ShoppingListContent() {
   const destinations = useCloudDestinations(ready);
   const m = useShoppingListMutations(projectId);
   const [notice, setNotice] = useState<string | null>(null);
+  const [bomReviewOpen, setBomReviewOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CartItemStatus | "all">("all");
   const [adding, setAdding] = useState(false);
@@ -206,23 +233,26 @@ function ShoppingListContent() {
   const closeAdd = () => { setAdding(false); setAddMounted(false); addButton.current?.focus(); };
   const unsaved = Object.entries(drafts).filter(([id, d]) => cart?.items.some(i => i.id === id) && (d.quantity.trim() === "" || Object.keys(shoppingDraftPatch(d)).length)).length;
 
+  const saving = m.update.isPending || m.remove.isPending || m.add.isPending;
+  const pending = m.create.isPending || m.syncBom.isPending || saving;
+  useProjectExitGuard(projectId, pending ? "Shopping changes are being saved. Wait for them to finish." : unsaved ? "Save or cancel the unfinished shopping item edits." : addMounted ? "Finish or cancel adding the shopping item." : null);
+
   if (!projectId) return <EmptyState title="No project selected" />;
   if (status.isLoading || (ready && list.isLoading)) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   if (status.data && !status.data.available) return <EmptyState title="Shopping lists unavailable">This build of fabPlane has no fabplane.com client.</EmptyState>;
   if (status.isError && !status.data) return <EmptyState title="Couldn’t connect to your shopping list" action={<Button onClick={() => void status.refetch()} disabled={status.isFetching}>Try again</Button>}>{cloudErrorMessage(status.error)}</EmptyState>;
   if (!ready || isCloudSignedOut(list.error)) return <SignedOut />;
   if (list.isError && !cart) return <EmptyState title="Couldn’t load your shopping list" action={<Button onClick={() => void list.refetch()} disabled={list.isFetching}>Try again</Button>}>{cloudErrorMessage(list.error)}</EmptyState>;
-  const saving = m.update.isPending || m.remove.isPending || m.add.isPending;
-  const pending = m.create.isPending || m.syncBom.isPending || saving;
   const error = list.error ?? (m.create.isError ? m.create.error : m.syncBom.isError ? m.syncBom.error : null);
-  const syncBom = () => m.syncBom.mutate(undefined, { onSuccess: ({ summary: s }) => setNotice(`Synced ${s.parts} part lines · ${s.added} added · ${s.removed} removed · ${s.matched} kept their edits${s.pcbAdded ? " · Board added" : ""}`) });
-  if (!cart) return <EmptyState title="Your next build starts here" action={<div className="flex flex-wrap justify-center gap-2"><Button size="sm" onClick={() => m.create.mutate()} disabled={pending}>Start an empty list</Button><Button variant="primary" size="sm" onClick={syncBom} disabled={pending} data-testid="shopping-sync-bom">{m.syncBom.isPending ? "Syncing…" : "Import board parts"}</Button></div>}>
+  const syncBom = () => { m.syncBom.reset(); setBomReviewOpen(true); };
+  const bomDialog = <ShoppingBomDialog projectId={projectId} open={bomReviewOpen} busy={m.syncBom.isPending} error={m.syncBom.error} onClose={() => setBomReviewOpen(false)} onSync={options => m.syncBom.mutate(options, { onSuccess: ({ summary: s }) => { setBomReviewOpen(false); setNotice(`Synced ${s.parts} part lines · ${s.added} added · ${s.removed} removed · ${s.matched} kept their edits${s.pcbAdded ? " · Board added" : ""}`); } })} />;
+  if (!cart) return <><EmptyState title="Your next build starts here" action={<div className="flex flex-wrap justify-center gap-2"><Button size="sm" onClick={() => m.create.mutate()} disabled={pending}>Start an empty list</Button><Button variant="primary" size="sm" onClick={syncBom} disabled={pending} data-testid="shopping-sync-bom">{m.syncBom.isPending ? "Syncing…" : "Import board parts"}</Button></div>}>
     Bring in your bill of materials or add parts yourself. Track everything by supplier, from ordering to delivery.
     {error && <p role="alert" className="shopping-error">{cloudErrorMessage(error)}</p>}
-  </EmptyState>;
+  </EmptyState>{bomDialog}</>;
   const received = cart.items.filter(i => i.status === "received").length;
   const totalQuantity = cart.items.reduce((total, i) => total + i.quantity, 0);
-  return <div className="shopping-list" data-testid="shopping-list">
+  return <><div className="shopping-list" data-testid="shopping-list">
     <header className="shopping-header">
       <div className="shopping-title-row"><div className="shopping-title"><span className="shopping-eyebrow">Shopping list</span><h2 title={cart.name}>{cart.name}</h2></div>
         <div className="shopping-header-actions">{list.isFetching && <Spinner />}<Button size="sm" onClick={syncBom} disabled={pending || unsaved > 0} data-testid="shopping-sync-bom" title={unsaved ? "Save or discard your edits before syncing board parts" : "Update parts from the board’s bill of materials"}><Icon name="refresh" width={15} height={15} />{m.syncBom.isPending ? "Syncing…" : "Sync from BOM"}</Button>
@@ -238,9 +268,9 @@ function ShoppingListContent() {
         {(["all", ...CART_ITEM_STATUSES] as const).map(s => <button key={s} type="button" disabled={saving} aria-pressed={filter === s} onClick={() => setFilter(s)}>{s === "all" ? "All items" : STATUS_LABEL[s]}<span>{s === "all" ? cart.items.length : cart.items.filter(i => i.status === s).length}</span></button>)}
       </div>
     </header>
-    {error && <div role="alert" className="shopping-banner shopping-error"><span>{cloudErrorMessage(error)}</span>{list.isError && <Button size="sm" onClick={() => void list.refetch()} disabled={list.isFetching}>Try again</Button>}</div>}
-    <div role="status" aria-atomic="true">{notice && !error && <div className="shopping-banner"><Icon name="check" width={15} height={15} /><span>{notice}</span><IconButton size="xs" title="Dismiss update" onClick={() => setNotice(null)}><Icon name="close" width={13} height={13} /></IconButton></div>}</div>
-    {destinations.isError && <div role="alert" className="shopping-banner"><span>Couldn’t refresh suppliers. Your current supplier and standard suppliers remain available.</span><Button size="sm" onClick={() => void destinations.refetch()} disabled={destinations.isFetching}>Try again</Button></div>}
+    {error && <FeedbackNotice className="fd-shopping-feedback" tone="error" title="Shopping list needs attention" actions={list.isError ? <Button size="sm" onClick={() => void list.refetch()} disabled={list.isFetching}>Try again</Button> : undefined}>{cloudErrorMessage(error)}</FeedbackNotice>}
+    {notice && !error && <FeedbackNotice className="fd-shopping-feedback" tone="success" title="Shopping list updated" onDismiss={() => setNotice(null)}>{notice}</FeedbackNotice>}
+    {destinations.isError && <FeedbackNotice className="fd-shopping-feedback" tone="warning" title="Couldn’t refresh suppliers" actions={<Button size="sm" onClick={() => void destinations.refetch()} disabled={destinations.isFetching}>Try again</Button>}>Your current supplier and standard suppliers remain available.</FeedbackNotice>}
     <div className="shopping-scroll">
       <div id="shopping-add-panel" className="shopping-disclosure" hidden={!adding} inert={!adding}>{addMounted && <ShoppingAddItem key={projectId} options={options} fab={cart.fabDestinationId} onClose={closeAdd} onAdd={async ({ label, quantity, destinationId }) => {
         await m.add.mutateAsync([{ kind: "part", quantity, destinationId, ...(looksLikeMpn(label) ? { mpn: label } : { description: label }) }]);
@@ -254,5 +284,5 @@ function ShoppingListContent() {
       </section>)}
     </div>
     <footer className="shopping-footer"><span role="status">{filtered.length === cart.items.length ? "Shared with your team" : `${filtered.length} of ${cart.items.length} items shown`}</span>{unsaved > 0 ? <button type="button" disabled={saving} onClick={() => { setQuery(""); setFilter("all"); }}>{unsaved} unsaved {unsaved === 1 ? "edit" : "edits"} · Show all items</button> : <span>Open an item to edit</span>}</footer>
-  </div>;
+  </div>{bomDialog}</>;
 }

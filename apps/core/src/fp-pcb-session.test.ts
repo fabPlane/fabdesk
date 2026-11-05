@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DocumentType } from "@fp-pcb/proto";
+import { inspectProjectBoardSources } from "@fabdesk/tools";
+import { resolveNativeBoardBinding, withNativeBoardBinding } from "./assembly-board-binding";
 import { FpPcbSessions, type ProjectSession } from "./fp-pcb-session";
 
 function sessionsWithSchematic(state: boolean | undefined | null) {
@@ -345,4 +347,59 @@ describe("concurrent saved document reconciliation", () => {
       expect(f.counts()).toEqual({ saves: 0, closes: 1, opens: 1 });
       expect(f.live()).toBe("unsaved live copper");
     }));
+});
+
+test("native save checks captured assembly ownership immediately before the save RPC", async () =>
+  fixture(async f => {
+    const declaration = join(f.dir, "fabplane.assembly.json");
+    await writeFile(declaration, JSON.stringify({ contract: "fabplane.assembly.v1", sources: [{ id: "main", name: "Main", location: "project", directory: "." }], instances: [{ id: "main-1", name: "Main", sourceId: "main" }], connections: [] }));
+    const project = { id: "project", dir: f.dir }, inspection = await inspectProjectBoardSources(project);
+    const binding = await resolveNativeBoardBinding(project, { sourceId: "main", manifestSha256: inspection.manifestSha256! });
+    const board = await f.sessions.board(binding.boardDir);
+    f.edit("unsaved:candidate");
+    await expect(withNativeBoardBinding(binding, async () => {
+      await writeFile(declaration, "{}");
+      await board.save();
+    })).rejects.toThrow("ownership changed");
+    expect(f.counts().saves).toBe(0);
+    expect(await readFile(f.path, "utf8")).toBe("checkpoint:pad-A");
+    expect(f.live()).toBe("unsaved:candidate");
+  }));
+
+test("bundled library setup is shared, reused only for unchanged tables, and retried after failure", async () => {
+  await fixture(async f => {
+    const session = await f.sessions.session(f.dir);
+    f.sessions.session = async () => session;
+    await writeFile(join(f.dir, "board.kicad_pro"), "project");
+    await writeFile(join(f.dir, "board.kicad_sch"), "schematic");
+    session.kicad.currentSchematic = async () => ({ modified: async () => false, close: async () => {}, save: async () => {} }) as never;
+    session.kicad.openSchematic = session.kicad.currentSchematic as never;
+    let registrations = 0, fail = false;
+    (f.sessions as any).bridge = () => ({ registerBundledLibraries: async () => {
+      registrations++;
+      await new Promise(resolve => setTimeout(resolve, 5));
+      if (fail) throw new Error("library setup timed out");
+      await writeFile(join(f.dir, "sym-lib-table"), `registered ${registrations}`);
+    } });
+    await Promise.all(Array.from({ length: 6 }, () => f.sessions.ensureProject(f.dir)));
+    expect(registrations).toBe(1);
+    await f.sessions.ensureProject(f.dir);
+    expect(registrations).toBe(1);
+    await writeFile(join(f.dir, "fp-lib-table"), "external library change");
+    await f.sessions.ensureProject(f.dir);
+    expect(registrations).toBe(2);
+    await writeFile(join(f.dir, "sym-lib-table"), "external symbols");
+    fail = true;
+    await expect(f.sessions.ensureProject(f.dir)).rejects.toThrow("library setup timed out");
+    fail = false;
+    await f.sessions.ensureProject(f.dir);
+    expect(registrations).toBe(4);
+    // A replacement native session must establish its own library state.
+    f.sessions.session = async () => ({ ...session, id: "replacement" });
+    await f.sessions.ensureProject(f.dir);
+    expect(registrations).toBe(5);
+    await rm(join(f.dir, "fp-lib-table"));
+    await f.sessions.ensureProject(f.dir, { registerLibraries: false });
+    expect(registrations).toBe(5);
+  });
 });

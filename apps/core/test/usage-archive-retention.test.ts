@@ -7,8 +7,9 @@ import { RUN_DUMP_RETENTION, RunRetention } from "../src/run-retention";
 import { ArchiveConsentRevokedError, UsageArchive } from "../src/usage-archive";
 import { fileDumpReference } from "../src/run-dump-file";
 
+// Canonical temp roots keep retention deletion tests inside a symlink-free owned tree.
 test.each([false, true])("source I/O failure after a cap drop continues survivors unless consent is revoked (%s)", async revoke => {
-  const root = await fs.mkdtemp(join(tmpdir(), "fabdesk-writer-drop-"));
+  const root = await fs.mkdtemp(join(await fs.realpath(tmpdir()), "fabdesk-writer-drop-"));
   const destination = join(root, "backup"), store = Store.open(join(root, "fabdesk.db"));
   const archive = new UsageArchive(destination);
   let entered!: () => void, release!: () => void;
@@ -51,7 +52,7 @@ test.each([false, true])("source I/O failure after a cap drop continues survivor
 });
 
 test("source I/O failure without a durable drop still rejects backfill", async () => {
-  const root = await fs.mkdtemp(join(tmpdir(), "fabdesk-writer-missing-"));
+  const root = await fs.mkdtemp(join(await fs.realpath(tmpdir()), "fabdesk-writer-missing-"));
   const store = Store.open(join(root, "fabdesk.db"));
   try {
     const source = join(root, "source.json");

@@ -1,7 +1,23 @@
 /** Builds ToolContexts for the MCP and HTTP adapters: resolves the project from args, token or default. */
-import { makeContext, type ContextFactory, type CoreServices, type ProjectHandle, type ToolTelemetry } from "@fabdesk/tools";
+import { lstat } from "node:fs/promises";
+import { join } from "node:path";
+import { ASSEMBLY_MANIFEST_PATH, BoardSourceSelection } from "@fabdesk/protocol";
+import { resolveNativeBoardBinding, withNativeBoardBinding, withNativeRoutingSnapshot } from "./assembly-board-binding";
+import { ToolError, makeContext, type ContextFactory, type CoreServices, type ProjectHandle, type ToolTelemetry, type ToolDef } from "@fabdesk/tools";
 import type { TokenSet } from "./auth";
 import type { ProjectStore } from "./projects";
+
+// These project-scoped toolsets operate on one concrete board today. An assembly
+// root is not an implicit member; unsupported member operations stay disabled.
+const BOARD_TOOLSETS = new Set(["circuit", "route", "kicad", "verify", "render", "export", "sim", "cad"]);
+const ROOT_BOARD_TOOLS = new Set(["circuit_build", "circuit_place", "route_run", "verify_drc", "render_board", "project_import_kicad"]);
+function needsConcreteBoard(def: ToolDef): boolean {
+  // Unqualified comments remain legacy project-root discussion. An explicit board selector
+  // binds the same tools to that source's comments.json; no native board is inferred.
+  if (["comment_list", "comment_pin", "comment_answer", "comment_resolve", "export_bom"].includes(def.name)) return false;
+  if (def.assemblyWide && !def.boardScoped) return false;
+  return def.boardScoped === true || ((def.scope ?? "project") === "project" && (BOARD_TOOLSETS.has(def.toolset) || ROOT_BOARD_TOOLS.has(def.name)));
+}
 
 export type ContextDeps = {
   services: CoreServices;
@@ -16,10 +32,40 @@ export function createContextFactory(deps: ContextDeps): ContextFactory {
   return async (req) => {
     let project: ProjectHandle | null = null;
     const info = deps.tokens?.lookup(req.token) ?? null;
+    const runProject = info?.kind === "run" && info.projectId ? await deps.projects.handle(info.projectId) : null;
+    if (runProject?.manifest().ideaDraft && (req.def.name !== "request_project_creation" || req.projectRef && req.projectRef !== runProject.id))
+      throw new ToolError("This is an idea draft. Use request_project_creation before generating or changing engineering files. Other project tools are unavailable during planning.", "precondition");
     if (req.projectRef) project = await deps.projects.resolve(req.projectRef);
     if (!project && !req.projectRef) {
       if (info?.projectId) project = await deps.projects.handle(info.projectId);
       if (!project && deps.defaultProject) project = await deps.defaultProject();
+    }
+    if (project && deps.projects.isPromoting(project.id)) throw new ToolError("Project setup is in progress. Try again once it finishes.", "precondition");
+    if (project?.manifest().ideaDraft && req.def.name !== "request_project_creation") throw new ToolError("Create a project from this idea before using engineering tools.", "precondition");
+    const board = req.board ? Object.freeze(BoardSourceSelection.parse(req.board)) : undefined;
+    let runInScope: (<T>(operation: () => Promise<T>) => Promise<T>) | undefined;
+    let boardRoot: Readonly<{ id: string; dir: string }> | undefined;
+    let runWithRoutingSnapshot: (<T>(directory: string, operation: () => Promise<T>) => Promise<T>) | undefined;
+    if (board) {
+      if (!project || !req.def.boardScoped) throw new ToolError("This operation does not support the requested assembly board source.", "precondition");
+      const rootProject = project, binding = await resolveNativeBoardBinding(rootProject, board);
+      boardRoot = Object.freeze({ id: rootProject.id, dir: binding.rootDir });
+      // IDs stay project-owned for leases, telemetry and jobs; native sessions use the captured leaf directory.
+      project = Object.freeze({
+        id: rootProject.id, name: `${rootProject.name} / ${board.sourceId}`, dir: binding.boardDir,
+        manifest: () => { throw new ToolError("Parent project defaults are not board-specific metadata.", "precondition"); },
+        updateManifest: async () => { throw new ToolError("This board-scoped operation cannot change parent project metadata.", "precondition"); },
+      });
+      runInScope = operation => withNativeBoardBinding(binding, operation);
+      if (req.def.name === "route_run") runWithRoutingSnapshot = (directory, operation) => withNativeRoutingSnapshot(binding, directory, operation);
+    } else if (project && needsConcreteBoard(req.def)) {
+      const declared = await lstat(join(project.dir, ASSEMBLY_MANIFEST_PATH)).then(() => true, (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return false;
+        throw new ToolError("Assembly ownership could not be checked. Inspect the project declaration before choosing a board.", "precondition");
+      });
+      if (declared) throw new ToolError(req.def.boardScoped
+        ? "Select an explicit assembly board source and captured manifest SHA for this operation; the project root is not an inferred member board."
+        : "This operation is not yet board-scoped for assembly projects. Project-root execution is disabled; use a supported member-source operation.", "precondition");
     }
     const telemetry = info?.runId ? deps.telemetry?.forToolCall(info.runId) : undefined;
     let lastRecordedProgress = -Infinity;
@@ -54,6 +100,10 @@ export function createContextFactory(deps: ContextDeps): ContextFactory {
       principal: deps.services.principal(),
       ...(req.session ? { session: req.session } : {}),
       ...(telemetry ? { telemetry } : {}),
+      ...(board ? { board } : {}),
+      ...(runInScope ? { runInScope } : {}),
+      ...(boardRoot ? { boardRoot } : {}),
+      ...(runWithRoutingSnapshot ? { runWithRoutingSnapshot } : {}),
     });
   };
 }

@@ -240,6 +240,7 @@ describe("registry", () => {
     const names = reg.list().map((t) => t.name);
     expect(names).toEqual([
       "load_toolset",
+      "request_project_creation",
       "pcb_environment",
       "project_status",
       "circuit_build",
@@ -258,6 +259,7 @@ describe("registry", () => {
       "parts_add",
       "parts_list",
       "parts_remove",
+      "bom_read",
       "comment_list",
       "comment_pin",
       "comment_answer",
@@ -274,11 +276,13 @@ describe("registry", () => {
       "native_edit_rollback",
       "pcb_edit_copper",
       "pcb_edit_graphics",
+      "schematic_focus",
       "schematic_inspect",
       "schematic_edit",
       "schematic_review",
       "pcb_update_from_schematic",
       "pcb_define_outline",
+      "pcb_resize_outline",
       "pcb_place",
       "route_status",
       "route_cancel",
@@ -287,12 +291,14 @@ describe("registry", () => {
       "route_scope",
       "kicad_stats",
       "board_revision_list",
+      "board_revision_checkpoint",
       "board_revision_diff",
       "verify_erc",
       "verify_gate",
       "verify_viagrid",
       "release_build",
       "render_pcb_readiness",
+      "render_pcb_display",
       "render_schematic_svg",
       "render_pcb_svg",
       "render_view",
@@ -350,7 +356,7 @@ describe("registry", () => {
       "cad_fit",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
-    expect(reg.byToolset("core").length).toBe(9);
+    expect(reg.byToolset("core").length).toBe(10);
     expect(() =>
       defineTool({
         name: "bad.name",
@@ -1995,11 +2001,16 @@ describe("registry", () => {
     const board = join(project.dir, "board.kicad_pcb");
     await writeFile(board, "before");
     await writeFile(join(project.dir, "board.kicad_sch"), "before-sch");
+    const oldReport = "previous measured report\n", output = join(project.dir, "reports/drc.json");
+    await Bun.write(output, oldReport);
+    let staged = "";
     const base = mockServices([project]);
     const services = mockServices([project], {
       kicad: {
         ...base.kicad,
-        runDrc: async () => {
+        runDrc: async (_cli, args) => {
+          staged = args.outFile;
+          await Bun.write(staged, "partial raw report");
           await Bun.write(board, "after");
           return {
             violations: [],
@@ -2021,7 +2032,36 @@ describe("registry", () => {
         }),
       ),
     ).rejects.toThrow(/changed while DRC was running/);
-    expect(await Bun.file(join(project.dir, "reports/drc.json")).exists()).toBe(false);
+    expect(await Bun.file(output).text()).toBe(oldReport);
+    expect(staged).not.toBe(output);
+    expect(await Bun.file(staged).exists()).toBe(false);
+  });
+
+  test("verify_drc preserves earlier reports after a partial CLI failure or rejected publication", async () => {
+    for (const failure of ["cli", "ownership", "abort"] as const) {
+      const reg = createRegistry(), project = await tempProject(`drc-preserve-${failure}`);
+      await writeFile(join(project.dir, "board.kicad_pcb"), "before");
+      const output = join(project.dir, "reports/drc.json"), previous = "previous report bytes";
+      await Bun.write(output, previous);
+      const base = mockServices([project]), abort = new AbortController();
+      let staged = "", scopes = 0;
+      const services = mockServices([project], { kicad: { ...base.kicad, runDrc: async (_cli, args) => {
+        staged = args.outFile; await Bun.write(staged, "partial raw report");
+        if (failure === "cli") throw new Error("CLI failed after writing");
+        if (failure === "abort") abort.abort();
+        return { violations: [], unconnected: [], schematicParity: [], counts: { errors: 0, warnings: 0, unconnected: 0 } };
+      } } });
+      const factory = contextFactory(services, project);
+      await expect(reg.invoke("verify_drc", { schematicParity: false }, async ref => {
+        const ctx = await factory({ def: reg.get("verify_drc")!, projectRef: ref, signal: abort.signal, progress: () => {} });
+        return { ...ctx, runInScope: async operation => {
+          if (++scopes > 1 && failure === "ownership") throw new ToolError("source ownership changed", "precondition");
+          return operation();
+        } };
+      })).rejects.toThrow();
+      expect(await Bun.file(output).text()).toBe(previous);
+      expect(staged).not.toBe(output); expect(await Bun.file(staged).exists()).toBe(false);
+    }
   });
 
   test("verify_drc reports an unfinished board as a successful measurement", async () => {
@@ -3915,6 +3955,7 @@ describe("registry", () => {
       "route.frame",
       "route.frame",
       "route.frame",
+      "project.changed",
       "route.done",
     ]);
     const status = await call("route_status");

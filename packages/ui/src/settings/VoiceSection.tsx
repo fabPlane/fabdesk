@@ -1,3 +1,4 @@
+import { FeedbackNotice } from "../components/FeedbackNotice";
 import { speechErrorMessage } from "../chat/voice/speech-error";
 import { useNativeSpeech } from "../chat/voice/useNativeSpeech";
 import { availableSpeechBackend } from "../chat/voice/availability";
@@ -34,7 +35,7 @@ export function VoiceSection({
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState(speech.data?.cloudBaseUrl ?? "");
   const [busy, setBusy] = useState<"cloud" | "clear" | "local" | "native" | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNote] = useState<{ tone: "info" | "success" | "error"; message: string } | null>(null);
   const nativeSetupId = useRef<string | null>(null);
   const status = speech.data;
   const native = useNativeSpeech(draft.voice.language);
@@ -53,9 +54,9 @@ export function VoiceSection({
     setBusy("native"); setNote(null);
     try {
       const result = await native.service.prepare(draft.voice.language, id);
-      setNote(result.message);
+      setNote({ tone: "info", message: result.message });
       await qc.invalidateQueries({ queryKey: ["native-speech"] });
-    } catch (error) { setNote(speechErrorMessage(error)); }
+    } catch (error) { setNote({ tone: "error", message: speechErrorMessage(error) }); }
     finally { nativeSetupId.current = null; setBusy(null); }
   };
 
@@ -73,10 +74,10 @@ export function VoiceSection({
         ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
       });
       setApiKey("");
-      setNote("Cloud key saved on this computer. It is never sent to the app window.");
+      setNote({ tone: "success", message: "Cloud key saved on this computer. It is never sent to the app window." });
       await refresh();
     } catch (e) {
-      setNote(e instanceof Error ? e.message : String(e));
+      setNote({ tone: "error", message: e instanceof Error ? e.message : String(e) });
     } finally {
       setBusy(null);
     }
@@ -87,10 +88,10 @@ export function VoiceSection({
     setNote(null);
     try {
       await client.clearSpeechCloud();
-      setNote("Cloud key removed.");
+      setNote({ tone: "success", message: "Cloud key removed." });
       await refresh();
     } catch (e) {
-      setNote(e instanceof Error ? e.message : String(e));
+      setNote({ tone: "error", message: e instanceof Error ? e.message : String(e) });
     } finally {
       setBusy(null);
     }
@@ -101,10 +102,10 @@ export function VoiceSection({
     setNote(null);
     try {
       await client.installLocalSpeech();
-      setNote("Local speech model is ready.");
+      setNote({ tone: "success", message: "Local speech model is ready." });
       await refresh();
     } catch (e) {
-      setNote(e instanceof Error ? e.message : String(e));
+      setNote({ tone: "error", message: e instanceof Error ? e.message : String(e) });
     } finally {
       setBusy(null);
     }
@@ -229,7 +230,7 @@ export function VoiceSection({
           {busy === "local" ? "Downloading…" : status?.localInstalled ? "Re-download model" : "Download model"}
         </Button>
       </div>
-      {note && <div className="text-xs text-muted">{note}</div>}
+      {note && <FeedbackNotice tone={note.tone} title={note.tone === "error" ? "Voice setup needs attention" : "Voice setup update"} {...(note.tone !== "error" ? { onDismiss: () => setNote(null) } : {})}>{note.message}</FeedbackNotice>}
     </div>
   );
 }

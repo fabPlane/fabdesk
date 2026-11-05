@@ -1,0 +1,29 @@
+{
+  "scope": "Native GitHub import destination recovery; no clone or project creation",
+  "runtime": "app26, Light, 1440x870",
+  "observations": [
+    "Selected an empty isolated parent with the native folder picker",
+    "Renamed only that empty parent outside the project and changed the project name",
+    "Actual destination API rejected missing parent; error and retry shown; Import disabled; URL/name/folder retained",
+    "Retry while parent missing retained error and details",
+    "Restored empty parent; Retry location check resolved exact new destination and enabled Import",
+    "Use default changed destination to default projects folder",
+    "Cancel and reopen cleared URL/name/custom folder; cancel returned to quiet VAIO overview"
+  ],
+  "screenshots": [
+    "406-import-location-failure-preserves-details.png",
+    "407-import-location-retry-restores-destination.png"
+  ],
+  "temporaryParent": "work/import-location-native-parent",
+  "temporaryParentRestored": true,
+  "temporaryParentEmpty": true,
+  "heldParentAbsent": true,
+  "validation": {
+    "uiTypecheck": "PASS /tmp/canvas-import-location-ui-types.log",
+    "fullSuite": "Not repeated for this UI recovery slice; latest broad checkpoint c8c2996"
+  },
+  "limits": [
+    "No actual clone/adoption or agent Send in this validation",
+    "Board source files were not targeted by this exercise"
+  ]
+}

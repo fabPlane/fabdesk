@@ -1,3 +1,4 @@
+import { WorkspaceContext } from "./workspace-context";
 /** Control API DTOs shared by core routes and the renderer client. */
 import { z } from "zod/v4";
 import { CoreEndpoint, EndpointKind, TailscaleState } from "./devices";
@@ -49,9 +50,18 @@ export const ProjectManifest = z.object({
   schema: z.literal(1),
   id: ProjectId,
   name: z.string().min(1),
+  /** Planning workspace: engineering tools stay locked until explicit promotion. */
+  ideaDraft: z.object({ requestedBuild: z.string().max(12000).optional() }).optional(),
+  promotedAt: z.string().datetime().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   board: BoardSettings,
+  /** Historical import selection, not a claim that the editable working board remains unchanged. */
+  importedBoard: z.object({
+    path: z.string().min(1),
+    adoptedAt: z.string(),
+    pcbSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  }).optional(),
   /** Omitted selects Freerouting with automatic fab_router fallback. `capacity` is a legacy fab_router alias. */
   router: z.enum(["fab_router", "capacity", "freerouting", "tracemaker"]).optional(),
   agent: z.object({ lastUsed: AgentId.optional() }).default({}),
@@ -65,6 +75,7 @@ export const ProjectSummary = z.object({
   path: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  isDraft: z.boolean().optional(),
 });
 export type ProjectSummary = z.infer<typeof ProjectSummary>;
 
@@ -72,6 +83,8 @@ export const FileEntry = z.object({
   path: z.string(),
   size: z.number().int(),
   mtime: z.string(),
+  /** Completed exporter receipt time, only when its artifact hash still matches. Not source freshness. */
+  generatedAt: z.string().datetime().optional(),
 });
 export type FileEntry = z.infer<typeof FileEntry>;
 
@@ -81,7 +94,7 @@ export const ProjectDetail = ProjectSummary.extend({
 });
 export type ProjectDetail = z.infer<typeof ProjectDetail>;
 
-export const CreateProject = z.object({ name: z.string().min(1).max(80), parentDirectory: z.string().min(1).optional() });
+export const CreateProject = z.object({ name: z.string().min(1).max(80), parentDirectory: z.string().min(1).optional(), draft: z.boolean().optional() });
 
 /**
  * `full`: the agent runs with the permission mode from Settings. `supervised`: the daemon pauses
@@ -155,6 +168,7 @@ export type Message = z.infer<typeof Message>;
 export const Attachment = z.object({ path: z.string(), mime: z.string() });
 
 export const SendMessage = z.object({
+  workspaceContext: WorkspaceContext.optional(),
   content: z.string().min(1),
   attachments: z.array(Attachment).default([]),
   agentId: AgentId.optional(),

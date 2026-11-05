@@ -1,0 +1,33 @@
+{
+  "change": "Read activeThreadId attachment key, or project new-chat key, matching composer and sketch export",
+  "checks": {
+    "uiTypecheck": "PASS",
+    "uiTests": 229
+  },
+  "nativeRegression": {
+    "projectId": "prj_mvr7n2n5db55576304",
+    "reference": "sketches/sketch-1793137521460.excalidraw.png",
+    "unsentAttachments": 3,
+    "sourceFiles": 6,
+    "allExact": true
+  },
+  "limitations": [
+    "Real configured-agent image interpretation/project reasoning remains blocked by expired Claude authentication; no resend or credential change performed",
+    "Fixture source absence/reappearance was controlled validation, not agent-created PCB generation"
+  ],
+  "noMessageSent": true,
+  "nativeActiveConversation": {
+    "projectId": "prj_mvs5abwp2ff3301fe3",
+    "threadId": "th_mvs98ynlf9708589c1",
+    "method": "Temporarily held the exact native PCB outside the isolated study using exclusive hard-link/move guard; selected an earlier saved reference through native UI, attached it to the existing failed conversation, typed an owned unsent draft, and reloaded the renderer",
+    "reference": "sketches/sketch-1793198980283.excalidraw.png",
+    "reload": "Same earlier reference, existing conversation, unsent attachment and draft restored; distinguishes active-thread attachments from default latest-reference fallback",
+    "cleanup": "Owned draft and attachment removed through native UI; exact before/after conversation state matched; PCB guard RESTORED, held file absent, all48 protected study files exact",
+    "noMessageSent": true,
+    "noGeneration": true,
+    "screenshots": [
+      "376-existing-conversation-reference-attachment.png",
+      "377-existing-conversation-reference-reloaded.png"
+    ]
+  }
+}

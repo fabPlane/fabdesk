@@ -1,0 +1,34 @@
+{
+  "temporaryFiles": {
+    "boards/io/renders/board.glb": "fa4fc598e26dbcc406cbe0765aab32ed92cc7224c6fd4b3309ca87bd7021b1c4",
+    "boards/io/renders/board.glb.revision.json": "6c9884acf890983be7b73bb354a501e4fc3235f5ecaa06a0af980cfba6aef501"
+  },
+  "source": "Actual earlier native export, unchanged PCB source and matching original receipt; no new rendering or synthetic model",
+  "temporarySvgChange": {
+    "path": "boards/io/renders/pcb.svg",
+    "originalSha256": "c3daabe16c421794a8c86fffa74ed5d8308407aed8c439b65d166adc386d6dbb",
+    "modifiedSha256": "03d8a44061ab0615933c94ec1fe98927163fecd0905cc42d78656da8641d78e9"
+  },
+  "restored": true,
+  "recordedHashesUnchanged": 24,
+  "nativeWalkthrough": [
+    "VAIO output selection \u2192 exact boards/io/renders/pcb.svg preview",
+    "More \u2192 Show file selected exact member path in Files",
+    "Actual earlier model receipt displayed PCB unchanged but model not inspected",
+    "Changed SVG bytes triggered Needs review and Review updates1; root nativePCB unchanged",
+    "Review updates1 routed to source review; shared IO source appears once for two instances; changed artifact distinct from unchanged model source",
+    "Restored original bytes \u2192 Outputs2 saved previews, both match saved PCB; no warning badge"
+  ],
+  "checks": {
+    "clientCoreTests": 267,
+    "uiTests": 225,
+    "failures": 0,
+    "clientUiTypecheck": "PASS"
+  },
+  "limits": [
+    "Initial sandboxed run blocked2transporttests on ephemeral-port bind; authorized rerun passed.",
+    "No new native generation/edit/video/export operation was run for this UI-only milestone.",
+    "181 is pre-reselection HMR positioning;182 is settled native action placement.",
+    "Compact acceptance remains pending."
+  ]
+}

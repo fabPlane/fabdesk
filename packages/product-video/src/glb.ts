@@ -1,4 +1,4 @@
-import { expandAabb, emptyAabb, mat4FromQuat, mat4Identity, mat4Multiply, mat4Scale, mat4Translate, transformDir, transformPoint, vec3, type Mat4, type Vec3 } from "./math";
+import { expandAabb, emptyAabb, mat4FromQuat, mat4Multiply, mat4Scale, mat4Translate, transformDir, transformPoint, vec3, type Mat4, type Vec3 } from "./math";
 import type { ScenePart, SceneTriangle } from "./types";
 
 type Gltf = {
@@ -148,7 +148,7 @@ function emitMesh(
   }
 }
 
-/** Load one GLB into triangles, applying node transforms. */
+/** Load one GLB into triangles, applying node transforms and converting glTF metres to scene millimetres. */
 export function loadGlb(bytes: Uint8Array, id: string, path: string, role: ScenePart["role"]): ScenePart {
   const { json, bin } = readHeader(bytes);
   const triangles: SceneTriangle[] = [];
@@ -161,7 +161,7 @@ export function loadGlb(bytes: Uint8Array, id: string, path: string, role: Scene
   };
   const scene = json.scenes?.[json.scene ?? 0];
   const roots = scene?.nodes ?? json.nodes?.map((_, i) => i) ?? [];
-  for (const root of roots) walk(root, mat4Identity());
+  for (const root of roots) walk(root, mat4Scale(vec3(1000, 1000, 1000)));
   const bounds = emptyAabb();
   for (const tri of triangles) {
     expandAabb(bounds, tri.a);

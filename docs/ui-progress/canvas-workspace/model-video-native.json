@@ -1,0 +1,50 @@
+{
+  "scope": "Native board-only model/video workflow. No enclosure work or full PR380 stack merge.",
+  "projectId": "prj_mvrlt1yx802c210b69",
+  "before": {
+    "mediaError": 4,
+    "message": "MEDIA_ELEMENT_ERROR: Media load rejected by URL safety check",
+    "readyState": 0,
+    "poster": "Board appeared as a tiny dot"
+  },
+  "after": {
+    "mediaError": null,
+    "readyState": 4,
+    "durationSeconds": 6,
+    "nativePlayPauseObserved": true,
+    "nativeTimelineSeekSeconds": 1.61037,
+    "formats": {
+      "mp4": 322230,
+      "webm": 301996,
+      "gif": 918976
+    }
+  },
+  "download": {
+    "nativeDownloadDialogObserved": true,
+    "defaultDownloadMatchedGeneratedBytes": true,
+    "savedByAgentDialogDestination": false,
+    "focusChangeNote": "Save dialog closed before Go to folder action; fresh state checked and specifically requested download verified byte-for-byte. No forced dialog reopen.",
+    "outputsCopy": "/Users/amliomnie/Documents/Codex/2026-10-27/https-github-com-tensorfleet-placement-lab/outputs/fabdesk-canvas-implementation/251-native-product-video.mp4",
+    "bytes": 322230,
+    "sha256": "33ca707d940be6b61b4af28cb053b3e6fdcb79496974f904e5b7a69436506362"
+  },
+  "preservation": {
+    "preexistingStableFilesUnchanged": 19,
+    "runtimeLocksReleasedOnOwnedRestart": [
+      "~board.kicad_pro.lck"
+    ],
+    "changedStableFiles": []
+  },
+  "checks": {
+    "rootTypecheck": "passed",
+    "ui": "228 pass / 870 assertions",
+    "productVideo": "26 pass / 81 assertions",
+    "videoTool": "2 pass / 9 assertions",
+    "standardFullSuite": "Latest full run earlier had an unchanged mechanical-truth timeout at 5 seconds; extended focused diagnostic passed. No claim of a newly green full suite."
+  },
+  "limits": [
+    "Simple native fixture; no external component-model completeness claim",
+    "Video output is a saved artifact, not electrical validation",
+    "Native Save dialog observed; focus changed before agent chose destination; resulting requested download verified byte-for-byte"
+  ]
+}

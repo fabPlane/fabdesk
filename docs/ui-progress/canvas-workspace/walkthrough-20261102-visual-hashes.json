@@ -1,0 +1,22 @@
+[
+  {
+    "original": "151-files-stencil-external-viewer-before.png",
+    "tracked": "walkthrough-20261102-files-model-before.png",
+    "sha256": "e9dbfd29ea28766b97410a62a5091ae62cde182f67cd7a8d2559802aa6ddffb9"
+  },
+  {
+    "original": "152-files-stencil-preview-after.png",
+    "tracked": "walkthrough-20261102-files-model-after.png",
+    "sha256": "7f3b78d9f85ec84327d3639d084ce022886f0ac78d60b11f40ecaef11f1408ad"
+  },
+  {
+    "original": "153-laser-stencil-export-notes.png",
+    "tracked": "walkthrough-20261102-export-scroll-before.png",
+    "sha256": "a11bde3d6afc91333bb35b35aa895e481446f3afcfabc40234f076a4819b0e14"
+  },
+  {
+    "original": "154-export-scroll-corner-assistant-after.png",
+    "tracked": "walkthrough-20261102-export-scroll-after.png",
+    "sha256": "c87be8ba22a6c1f835489b90bfa984fee70fe6a9f362c8cc53942382c71c2d76"
+  }
+]

@@ -1,0 +1,17 @@
+{
+  "feature": "CanonicalPartsBOM and Outputs manufacturing/media homes",
+  "nativeVerified": [
+    "OutputsExportfilesoffersGerbers/3Dstencil/laserstencilwithMoreformats; BOMprimarychoice removedonlyfromthisfocusview",
+    "OpenParts&BOMreachesactual2offboarditemsandExportCSV; noaggregatedPCBcoverageclaim",
+    "Shoppingtaskshowsactualsignedoutstate; nosigninattempt",
+    "OutputsModels&videoexposesexistingsavedGLB/threevideoformats/status/downloads",
+    "Makeproductvideoconfigurationclosedbydefault;requestedPreset/Duration/Outputsettings/Makevideo opens andcloses",
+    "34protectedDonorfiles exact"
+  ],
+  "validation": "UItypes/233tests912assertionsPASS; finalcopy-onlyBOMdescription will receive finaltargetedcheck",
+  "boundaries": [
+    "ClassicFilesexporterretainsBOMlegacyaccess; noexporttool removed",
+    "No export/generation/procurementedit/agentmessage duringstructurewalkthrough",
+    "Sourcecoverage/freshness remainsunverified whereactualreceiptsarenotavailable"
+  ]
+}

@@ -182,6 +182,7 @@ export function mockServices(
         revision: 2,
         saved: true,
       }),
+      resizeBoardOutline: async (_dir, request) => ({ saved: true, changed: true, edgeIds: request.edgeIds, revision: 3, bounds: { minX: 0, minY: 0, maxX: request.widthMm, maxY: request.heightMm } }),
       placeFootprints: async (_dir, placements) => ({
         moved: placements.map((placement) => placement.reference),
         missing: [],
@@ -407,6 +408,8 @@ export function mockServices(
       exportPos: async () => ({ paths: [] }),
       exportBom: async () => ({ paths: [] }),
       exportNetlist: async () => ({ paths: [] }),
+      exportOwnedSchematicSvg: async () => { throw new Error("Owned schematic export must be explicitly supplied by a test"); },
+      exportOwnedSchematicBom: async () => { throw new Error("Owned BOM export must be explicitly supplied by a test"); },
       exportSchematicSvg: async () => ({ paths: [] }),
       exportSchematicPdf: async () => ({ paths: [] }),
       exportPcbSvg: async (_cli, { output }) => {

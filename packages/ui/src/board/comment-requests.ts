@@ -14,3 +14,10 @@ export function buildCommentsAskPrompt(comments: readonly BoardComment[]): strin
     ...comments.map((comment, index) => `\n--- Pin ${index + 1} ---\n${buildCommentAskPrompt(comment)}`),
   ].join("\n");
 }
+
+/** Keep the editable question readable; exact pin IDs and native tool instructions travel as context. */
+export function buildCommentsUserPrompt(comments: readonly BoardComment[]): string {
+  if (!comments.length) return "";
+  if (comments.length === 1) return `Review this pinned comment: ${comments[0]!.question}\n\nInspect the saved location and save your answer to this pin. Explain anything that still needs checking.`;
+  return [`Review these ${comments.length} pinned comments and save each answer to its own pin. Explain anything that still needs checking.`, ...comments.map((comment, index) => `${index + 1}. ${comment.question}`)].join("\n\n");
+}

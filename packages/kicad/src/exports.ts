@@ -1,4 +1,6 @@
-import { mkdir, readdir, stat } from "node:fs/promises";
+import { extractBoardFeatures } from "./board-features";
+import { cropNativePageSvg } from "./pcb-svg-coordinates";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { runKicadCli, type KicadCli } from "./cli";
 
@@ -167,7 +169,7 @@ export async function exportPcbSvg(
   opts: { board: string; output: string; layers?: string[]; signal?: AbortSignal },
 ): Promise<Paths> {
   const layers = opts.layers ?? ["F.Cu", "B.Cu", "F.SilkS", "B.SilkS", "Edge.Cuts"];
-  // Board-area mode keeps the SVG viewBox in KiCad's millimetre coordinates.
+  // Current-page mode preserves native coordinates. Crop only the viewport afterward.
   await runKicadCli(
     cli,
     [
@@ -178,7 +180,7 @@ export async function exportPcbSvg(
       layers.join(","),
       "--exclude-drawing-sheet",
       "--page-size-mode",
-      "2",
+      "1",
       "--mode-single",
       "-o",
       opts.output,
@@ -186,6 +188,10 @@ export async function exportPcbSvg(
     ],
     sig(opts),
   );
+  let bounds: { minX: number; minY: number; maxX: number; maxY: number } | undefined;
+  try { bounds = extractBoardFeatures(await readFile(opts.board, "utf8")).outline; }
+  catch { /* Boards without a usable outline retain their native current-page viewport. */ }
+  await writeFile(opts.output, cropNativePageSvg(await readFile(opts.output, "utf8"), bounds));
   return { paths: [opts.output] };
 }
 

@@ -1,0 +1,33 @@
+{
+  "projectId": "prj_mvszo4wl7ba352a775",
+  "source": "sketches/vaio-io-reference.excalidraw.png",
+  "native": [
+    "Contextual Open drawing copy preselects exact saved PNG and opens requested Drawing options",
+    "Explicit Open a copy loads original editable drawing",
+    "Added a separate unsaved text note in editor, closed without Save",
+    "Reopening contextual copy preserved local original objects plus unsaved text and required explicit Replace draft with saved copy",
+    "Ordinary sketch shortcut preserved draft but showed collapsed options; manually opening options showed Choose a drawing, no inherited request",
+    "Project Overview Open drawing copy also preselected exact source and retained local draft"
+  ],
+  "screenshots": [
+    "419-selected-sketch-copy-preselected.png",
+    "420-selected-sketch-copy-loaded.png",
+    "421-selected-copy-keeps-unsaved-draft.png",
+    "422-overview-selected-drawing-copy.png"
+  ],
+  "preservation": {
+    "protectedFiles": 3,
+    "mismatches": [],
+    "projectSaveOrAttach": false,
+    "localDraft": "Intentionally retained in isolated study only; unsaved text includes Unsaved copy selection check"
+  },
+  "validation": {
+    "uiTypes": "PASS /tmp/canvas-selected-sketch-copy-final-types.log",
+    "uiTests": "231pass/901assertions/0fail /tmp/canvas-selected-sketch-copy-ui-tests.log; before final Overview entry wiring, which is typechecked and natively verified"
+  },
+  "limits": [
+    "Filename eligibility is not proof of an embedded editable scene; existing loader still validates bytes",
+    "No automatic draft replacement or native board generation",
+    "Codex model routing remains deferred; no more agent requests"
+  ]
+}

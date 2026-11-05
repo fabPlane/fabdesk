@@ -1,0 +1,22 @@
+{
+  "projectId": "prj_mvqyacun3e60075ae8",
+  "restoredActualPriorNativeDrcReport": true,
+  "sharedPhysicalBoards": 2,
+  "sourceAttentionCount": 1,
+  "previewRefreshReceiptVerified": true,
+  "drcWarningSurvivedPreviewRefresh": true,
+  "bothInstancesAnnotated": true,
+  "contextualChecksOpenedExactSource": true,
+  "reviewShowsPreviewAndDrcSeparately": true,
+  "compactControls": {
+    "width": 960,
+    "height": 720,
+    "usable": true
+  },
+  "otherSourceAndParentFilesUnchanged": true,
+  "allNineBaselineFilesRestored": true,
+  "currentReportFindingsAnnotated": true,
+  "temporaryReportRestoredToAbsent": true,
+  "vaioSourcesPreviewsManifestUnchanged": true,
+  "noAgentMessageSent": true
+}

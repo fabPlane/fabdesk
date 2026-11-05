@@ -4,6 +4,7 @@
  */
 import type {
   CoreEvent,
+  SchematicFocus,
   Message,
   MessagePart,
   RouteFrameLine,
@@ -39,6 +40,7 @@ export interface HandlerCtx {
   qc: QueryClient;
   client: CoreClient;
   route?: RouteSink;
+  onSchematicFocus?: (focus: SchematicFocus) => void;
 }
 
 export function messagesKey(threadId: string) {
@@ -190,6 +192,9 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
   const { qc } = ctx;
   const runs = useRunsStore.getState();
   switch (event.topic) {
+    case "project.schematic_focus":
+      ctx.onSchematicFocus?.(event.focus);
+      break;
     case "agent.started":
       runs.startRun({
         runId: event.runId,
@@ -297,8 +302,10 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       void qc.invalidateQueries({ queryKey: ["thread", event.threadId] });
       break;
     case "job.started":
+      void qc.invalidateQueries({ queryKey: ["jobs"] });
       runs.upsertJob({
         jobId: event.jobId,
+        endpoint: ctx.client.baseUrl,
         kind: event.kind,
         status: "running",
         startedAt: event.ts,
@@ -312,14 +319,17 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       });
       break;
     case "job.done":
+      void qc.invalidateQueries({ queryKey: ["jobs"] });
       runs.patchJob(event.jobId, { status: "done", result: event.result, progress: 1 });
       void qc.invalidateQueries({ queryKey: ["job", event.jobId] });
       break;
     case "job.failed":
+      void qc.invalidateQueries({ queryKey: ["jobs"] });
       runs.patchJob(event.jobId, { status: "failed", error: event.error });
       void qc.invalidateQueries({ queryKey: ["job", event.jobId] });
       break;
     case "job.cancelled":
+      void qc.invalidateQueries({ queryKey: ["jobs"] });
       runs.patchJob(event.jobId, { status: "cancelled" });
       void qc.invalidateQueries({ queryKey: ["job", event.jobId] });
       break;
@@ -336,6 +346,23 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       ctx.route?.setDone(event.result);
       break;
     case "project.changed":
+      if (event.paths.some(path => /(?:\.kicad_(?:sch|pro|pcb)$|(?:^|\/)(?:circuit\.netlist\.json|project\.parts\.json|fabplane\.assembly\.json)$)/.test(path))) void qc.invalidateQueries({ queryKey: ["project-bom", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["kept-output-identity", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["board-sources", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["assembly-board-inspection", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["assembly-pcb-check", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["assembly-check-summaries", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["assembly-model-summaries", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["pcb-check-revision", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["pcb-outline", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["pcb-parts", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["enclosure-source-revision", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["pcb-preview-revision", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["assembly-board-model", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["assembly-schematic-preview", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["board-model-revision", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["video-input-revision", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["output-revision", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["finish-it-needs-work", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["project", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["projects"] });

@@ -1,5 +1,5 @@
 /** User-facing recovery guidance. Keep original errors available for diagnostics. */
-export type ErrorAction = "projects" | "agents" | "auth" | "kicad";
+export type ErrorAction = "projects" | "agents" | "models" | "auth" | "kicad";
 export interface ErrorHelp {
   title: string;
   message: string;
@@ -39,6 +39,7 @@ export function errorPayload(input: unknown): { raw: string; message: string; co
 
 const agentNames: Record<string, string> = { claude: "Claude", codex: "Codex", cursor: "Cursor", grok: "Grok" };
 const loginCommands: Record<string, string> = { claude: "claude auth login", codex: "codex login", cursor: "agent login", grok: "grok login" };
+const modelChangeNotice = /^This session was recorded with model \S+ but is resuming with \S+\. Consider switching back to \S+ as it may affect Codex performance\.$/;
 
 export function errorHelp(input: unknown, context: ErrorContext = {}): ErrorHelp {
   const { message, code } = errorPayload(input);
@@ -46,6 +47,16 @@ export function errorHelp(input: unknown, context: ErrorContext = {}): ErrorHelp
   const status = context.status ?? (input instanceof Error && "status" in input && typeof input.status === "number" ? input.status : undefined);
   const agent = context.agentId ? agentNames[context.agentId] ?? "The selected agent" : "The selected agent";
   const command = context.agentId ? loginCommands[context.agentId] : undefined;
+  if (modelChangeNotice.test(text)) return {
+    title: "Model changed for this conversation",
+    message: "This reply uses your newly selected model. Earlier messages remain in the conversation. Review the reply as usual.",
+    severity: "warning",
+  };
+  if (/^(?:cancelled|canceled|AbortError: (?:the operation was aborted|aborted))\.?$/i.test(text)) return {
+    title: "Task cancelled",
+    message: "This task stopped. Files saved before cancellation may remain; review the outputs before starting it again.",
+    severity: "warning",
+  };
   if (code === "approval_not_supported" || text === "agent cannot run supervised") return {
     title: "Approval pauses are unavailable for this agent",
     message: "Keep the current permission setting to continue. Your selected agent and model have not changed.",
@@ -71,6 +82,13 @@ export function errorHelp(input: unknown, context: ErrorContext = {}): ErrorHelp
     title: "A linked item is no longer available",
     message: "The project, chat, or folder this action refers to could not be found. Reopen the project or start a new chat, then try again.", action: "projects",
   };
+  if (/^could not clone https:\/\/github\.com\//i.test(text)) return /could not read Username|authentication failed|repository.*not found/i.test(text) ? {
+    title: "GitHub could not open this repository",
+    message: "Check the repository URL and public visibility. This importer supports public repositories only. Your import details are kept so you can correct the URL and try again.",
+  } : {
+    title: "Could not import this repository",
+    message: "Check your connection and the GitHub repository URL, then try again. Your import details are kept.",
+  };
   if (code === "cloud_signed_out") return {
     title: "Sign in to fabPlane",
     message: "Your fabPlane session has ended. Open Settings → Account and sign in again, then retry.", action: "auth",
@@ -92,13 +110,21 @@ export function errorHelp(input: unknown, context: ErrorContext = {}): ErrorHelp
     title: "This conversation is too long for the selected model",
     message: "Start a new chat with a short summary, or shorten your message and remove large attachments, then send again.",
   };
-  if (/model_not_found|model.*(?:does not exist|not found|not available|not supported|do not have access)|unsupported model/i.test(text)) return {
+  if (/selected model is at capacity|model.*temporarily at capacity/i.test(text)) return {
+    title: "This model is busy right now",
+    message: "Try again later, or choose a different model for this chat and resend your message when you’re ready.", action: "models",
+  };
+  if (["model_not_found", "model_not_supported", "unsupported_model"].includes(code ?? "") || /model_not_found|model.*(?:does not exist|not found|not available|not supported|do not have access)|unsupported model/i.test(text)) return {
     title: "The selected model is unavailable",
-    message: "Choose a different model below the message box. If you expected access, check your agent account’s plan.", action: "agents",
+    message: "Choose a different model for this chat, then send your message again. A model appearing in the picker does not guarantee access with your agent account.", action: "models",
   };
   if (/core offline|core disconnected/i.test(text)) return {
     title: "Your computer is disconnected",
     message: "Open fabPlane on the computer you paired with and check that it is online, then reconnect.",
+  };
+  if (/KiCad was unable to open this file because it was created with a more recent version|file format dated .* or later/i.test(text)) return {
+    title: "KiCad cannot open this board format",
+    message: "Choose a KiCad build that supports this file format in Settings → KiCad. Nightly builds can report the same version number while supporting different file dates. Your native sources and previous outputs are preserved.", action: "kicad",
   };
   if (/MCP server.*(?:failed to connect|not connected)|PCB bridge.*(?:unavailable|not running|failed)|FabPCB.*unavailable/i.test(text)) return {
     title: "The design tools are not connected",
@@ -197,9 +223,12 @@ export function agentErrorText(text: string): string | null {
   const unique = [...new Set(chunks)];
   if (unique.length !== 1) return null;
   const raw = unique[0]!;
+  if (raw.startsWith("{") && ["model_not_found", "model_not_supported", "unsupported_model"].includes(errorPayload(raw).code ?? "")) return raw;
+  if (/^The (['"])[^'"\n]+\1 model is not supported when using Codex with a ChatGPT account\.?$/i.test(raw) || /^Selected model is at capacity\.(?: Please try a different model\.)?$/i.test(raw)) return raw;
   // A core-generated warning marker identifies a failure; plain assistant prose does not.
   if (clean.startsWith("⚠ ") && /^(?:Error:|MCP server|No answer was received for the question\.)/i.test(raw)) return raw;
   if (raw.startsWith("Windows denied a Codex overlay symlink (EPERM).")) return raw;
+  if (modelChangeNotice.test(raw)) return raw;
   const failure = /^(?:Failed to authenticate:|OAuth session expired|API Error:|Not logged in|authentication_error|rate_limit_error|insufficient_quota|quota exceeded|credit balance is too low|prompt is too long|model_not_found|context_length_exceeded|failed to start|(?:claude|codex|cursor|grok) (?:could not be started|exited with code)|Queued message could not be sent:|SQLITE_|FOREIGN KEY constraint failed|database is locked|ENOSPC|EACCES|EPERM|ENOENT|ECONNREFUSED|ECONNRESET|ETIMEDOUT|Failed to fetch|fetch failed)/i;
   return failure.test(raw) ? raw : null;
 }
@@ -210,7 +239,7 @@ export function splitAgentError(text: string): { before: string; error: string; 
   const firstParagraphEnd = text.indexOf("\n\n");
   if (firstParagraphEnd >= 0) {
     const first = text.slice(0, firstParagraphEnd).replace(/^\s*⚠\s*/, "").trim();
-    if (first.startsWith("Windows denied a Codex overlay symlink (EPERM)."))
+    if (first.startsWith("Windows denied a Codex overlay symlink (EPERM).") || modelChangeNotice.test(first))
       return { before: "", error: first, after: text.slice(firstParagraphEnd + 2) };
   }
   const whole = agentErrorText(text);

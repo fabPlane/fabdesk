@@ -1,3 +1,5 @@
+import { askAboutSurface } from "../chat/useAssistantSurface";
+import { Icon } from "../components/Icon";
 import type { AgentId, Settings } from "@fabdesk/protocol";
 import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Dialog, Input, Select, Spinner } from "../components/ui";
@@ -45,6 +47,23 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   );
 }
 
+function AgentModelSetting({ name, models, value, onChange }: { name: string; models: string[]; value: string | null; onChange: (value: string | null) => void }) {
+  const [custom, setCustom] = useState(false);
+  const usingCustom = custom || !!value && !models.includes(value);
+  return <div className="min-w-0 space-y-2">
+    <Select aria-label={`${name} model`} className="w-full" value={usingCustom ? "__custom_model__" : value ?? ""} onChange={event => {
+      const next = event.target.value;
+      setCustom(next === "__custom_model__");
+      if (next !== "__custom_model__") onChange(next || null);
+    }}>
+      <option value="">Agent default</option>
+      {models.map(model => <option key={model} value={model}>{model}</option>)}
+      <option value="__custom_model__">Custom model ID…</option>
+    </Select>
+    {usingCustom && <Input aria-label={`${name} custom model ID`} autoComplete="off" value={value ?? ""} placeholder="Enter a model ID" onChange={event => onChange(event.target.value || null)} />}
+  </div>;
+}
+
 export function SettingsDialog() {
   const { host } = useCore();
   const open = useUiStore((s) => s.settingsOpen);
@@ -55,10 +74,10 @@ export function SettingsDialog() {
   const storedTheme = useUiStore((s) => s.themeId);
   const originalTheme = useRef(storedTheme);
   const [confirmClose, setConfirmClose] = useState(false);
-  const [section, setSection] = useState<SettingsSection>("agents");
-  useEffect(() => {
-    if (open && requestedSection) setSection(requestedSection);
-  }, [open, requestedSection]);
+  const [modelReset, setModelReset] = useState(0);
+  // Keep the displayed section and the assistant’s current-window context in one store.
+  const section = requestedSection ?? "agents";
+  const projectId = useUiStore(s => s.activeProjectId);
   const settings = useSettings();
   const doctor = useDoctor();
   const patch = usePatchSettings();
@@ -82,23 +101,23 @@ export function SettingsDialog() {
   // The router default and TraceMaker manifest URL are saved by their own controls
   // (see withoutRouterDefault); they are not part of the draft.
   const dirty = (!!draft && !!settings.data && JSON.stringify(withoutRouterDefault(draft)) !== JSON.stringify(withoutRouterDefault(settings.data))) || storedTheme !== originalTheme.current;
-  const reset = () => { if (settings.data) setDraft(structuredClone(settings.data)); setThemeId(originalTheme.current); };
+  const reset = () => { setModelReset(value => value + 1); if (settings.data) setDraft(structuredClone(settings.data)); setThemeId(originalTheme.current); };
   const close = () => { if (patch.isPending) return; if (dirty) setConfirmClose(true); else setOpen(false); };
   const save = () => {
     if (draft) patch.mutate(withoutRouterDefault(draft), { onSuccess: () => { originalTheme.current = useUiStore.getState().themeId; } });
   };
 
   return (
-    <><Dialog open={open} onClose={close} title="Settings" className="fd-settings h-[80vh] w-[860px]">
+    <><Dialog open={open} onClose={close} closeDisabled={patch.isPending} title="Settings" className="fd-settings h-[80vh] w-[860px]">
       <div className="fd-settings-layout flex min-h-0 flex-1 gap-6">
         <nav className="w-40 shrink-0 overflow-y-auto border-r border-border pr-3" aria-label="Settings sections">
           {SETTINGS_SECTIONS.map((s) => (
             <button
               key={s}
-              onClick={() => setSection(s)}
+              onClick={() => setOpen(true, s)}
               className={cn(
                 "mb-0.5 block min-h-9 w-full rounded-lg px-3 py-2 text-left text-[13px] transition-colors",
-                s === section ? "bg-panel-2 font-semibold text-fg" : "text-muted hover:bg-panel-2/50 hover:text-fg",
+                s === section ? "bg-panel-2 font-semibold text-fg" : "text-fg hover:bg-panel-2/50",
               )}
             >
               {LABELS[s]}
@@ -138,12 +157,7 @@ export function SettingsDialog() {
                       <Input value={cfg.binaryPath ?? ""} onChange={(e) => updateAgent(a.id, { binaryPath: e.target.value || null })} placeholder={a.path ?? "auto-detect"} />
                     </Row>
                     <Row label="Model">
-                      <Input list={`settings-models-${a.id}`} value={cfg.model ?? ""} onChange={(e) => updateAgent(a.id, { model: e.target.value || null })} placeholder="agent default" />
-                      <datalist id={`settings-models-${a.id}`}>
-                        {a.models.map((m) => (
-                          <option key={m} value={m} />
-                        ))}
-                      </datalist>
+                      <AgentModelSetting key={`${a.id}:${modelReset}`} name={a.displayName} models={a.models} value={cfg.model} onChange={model => updateAgent(a.id, { model })} />
                     </Row>
                     <Row label="Models in picker" hint="Comma-separated; empty shows the first three known models">
                       <Input
@@ -170,7 +184,7 @@ export function SettingsDialog() {
                 hint={
                   doctor.data?.kicad.found
                     ? `using ${doctor.data.kicad.version ?? ""} at ${doctor.data.kicad.path ?? ""}`
-                    : "bundled FabPlane KiCad (leave blank), or set a path to override"
+                    : "bundled fabPlane KiCad (leave blank), or set a path to override"
                 }
               >
                 <Input
@@ -218,7 +232,7 @@ export function SettingsDialog() {
           ) : section === "appearance" ? (
             <fieldset>
               <legend className="text-[13px] font-medium">Theme</legend>
-              <p className="mb-5 mt-1 text-xs leading-5 text-muted">Choose FabPlane's signature palette or a neutral System theme. Your choice is stored on this device.</p>
+              <p className="mb-5 mt-1 text-xs leading-5 text-muted">Choose fabPlane's signature palette or a neutral System theme. Your choice is stored on this device.</p>
               <div className="fd-theme-options">
                 {THEME_IDS.map((id) => <label key={id} className="fd-theme-option">
                   <input type="radio" name="appearance-theme" value={id} checked={themeId === id} onChange={() => {
@@ -238,7 +252,7 @@ export function SettingsDialog() {
               <Row label="Error reporting" hint="Send crash and error reports to Sentry so bugs get fixed. Reports carry no prompts, board files, tokens or project paths. Turning this off applies immediately; turning it back on applies after a restart.">
                 <input type="checkbox" checked={draft.errorReporting} onChange={(e) => update((s) => ({ ...s, errorReporting: e.target.checked }))} />
               </Row>
-              <Row label="Share usage data" hint="Share your sessions with us so we can see where Fabdesk gets stuck and make it better. This includes your conversations and agent activity, past ones too, and can include your prompts and project files. We keep it private. Turning this off stops future sharing; it doesn't remove what was already shared.">
+              <Row label="Share usage data" hint="Share your sessions with us so we can see where fabPlane gets stuck and make it better. This includes your conversations and agent activity, past ones too, and can include your prompts and project files. We keep it private. Turning this off stops future sharing; it doesn't remove what was already shared.">
                 <input type="checkbox" checked={usageArchiveAllowed(draft, privacyScreen ?? true)} onChange={(e) => update((s) => ({ ...s, ...usageArchiveChoice(e.target.checked) }))} />
               </Row>
             </div>
@@ -268,6 +282,14 @@ export function SettingsDialog() {
           </Button>
         </div>
       )}
+      {projectId && <div className="mt-3 flex shrink-0 flex-wrap items-center gap-3 border-t border-border pt-3">
+        <Button size="sm" variant="ghost" disabled={dirty || patch.isPending} onClick={() => {
+          if (dirty || patch.isPending) return;
+          askAboutSurface({ projectId, label: `Settings · ${LABELS[section]}`, priority: 60, details: JSON.stringify({ window: "Settings", section, sectionLabel: LABELS[section], savedValuesIncluded: false, instruction: "Explain the current settings section. No credentials or configuration values are included in this UI context. Review options with the user before changing configuration." }) }, `Help me understand the ${LABELS[section]} settings and the next checks I should make.`);
+          setOpen(false);
+        }}><Icon name="sparkles" width={16} height={16} />Ask about these settings</Button>
+        {dirty && <span className="text-xs text-muted">Save or reset your changes before leaving Settings to ask.</span>}
+      </div>}
     </Dialog>
     <Dialog open={open && confirmClose} onClose={() => setConfirmClose(false)} title="Unsaved changes" className="w-[420px]">
       <p className="text-sm text-muted">Keep editing to save your changes, or discard them and close Settings.</p>

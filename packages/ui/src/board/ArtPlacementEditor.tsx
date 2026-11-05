@@ -1,4 +1,4 @@
-import { useEffect, useRef, type PointerEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import type { ArtPlacement, ImageCrop } from "@fabdesk/board-art";
 import { Button } from "../components/ui";
 import { resizeArtwork } from "./art-placement";
@@ -113,6 +113,18 @@ export function ArtPlacementOverlay({
   disabled: boolean;
 }) {
   const svg = useRef<SVGSVGElement>(null);
+  const [pixelUnit, setPixelUnit] = useState(.2);
+  useLayoutEffect(() => {
+    const element = svg.current;
+    if (!element) return;
+    const measure = () => {
+      const matrix = element.getScreenCTM();
+      const scale = matrix ? Math.hypot(matrix.a, matrix.b) : 0;
+      if (scale > 0 && Number.isFinite(scale)) setPixelUnit(1 / scale);
+    };
+    measure(); const observer = new ResizeObserver(measure); observer.observe(element);
+    return () => observer.disconnect();
+  }, [widthMm, heightMm]);
   const pending = useRef<ArtPlacement | null>(null);
   const frame = useRef<number | null>(null);
   const flush = () => {
@@ -156,6 +168,7 @@ export function ArtPlacementOverlay({
     if (!p) return;
     e.preventDefault();
     e.stopPropagation();
+    e.currentTarget.focus();
     e.currentTarget.setPointerCapture(e.pointerId);
     drag.current = { value, x: p.x, y: p.y, kind, cornerX, cornerY };
   };
@@ -248,13 +261,13 @@ export function ArtPlacementOverlay({
           x1={0}
           x2={0}
           y1={-value.heightMm / 2}
-          y2={-value.heightMm / 2 - 3}
+          y2={-value.heightMm / 2 - 18 * pixelUnit}
         />
         <circle
           className="fd-art-placement-rotate"
           cx={0}
-          cy={-value.heightMm / 2 - 3}
-          r={1}
+          cy={-value.heightMm / 2 - 18 * pixelUnit}
+          r={5 * pixelUnit}
           onPointerDown={(e) => start(e, "rotate")}
         >
           <title>Drag to rotate; Shift snaps to 15°</title>
@@ -264,10 +277,10 @@ export function ArtPlacementOverlay({
             <rect
               key={`${x}:${y}`}
               className="fd-art-placement-handle"
-              x={(x * value.widthMm) / 2 - 0.9}
-              y={(y * value.heightMm) / 2 - 0.9}
-              width={1.8}
-              height={1.8}
+              x={(x * value.widthMm) / 2 - 5 * pixelUnit}
+              y={(y * value.heightMm) / 2 - 5 * pixelUnit}
+              width={10 * pixelUnit}
+              height={10 * pixelUnit}
               onPointerDown={(e) => start(e, "resize", x, y)}
             >
               <title>Drag corner to resize artwork</title>

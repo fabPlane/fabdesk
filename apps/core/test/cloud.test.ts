@@ -123,7 +123,10 @@ describe("cloud routes", () => {
     expect(noNetlist.status).toBe(412);
 
     await writeFile(join(p.path, "circuit.netlist.json"), JSON.stringify(NETLIST));
-    const synced = (await (await api_(`/projects/${p.id}/shopping-list/sync-bom`, { method: "POST" })).json()) as {
+    expect((await api_(`/projects/${p.id}/shopping-list/sync-bom`, { method: "POST" })).status).toBe(412);
+    expect((await api_(`/projects/${p.id}/shopping-list/sync-bom`, { method: "POST", json: { allowPartial: true, expectedRevision: "0".repeat(64) } })).status).toBe(412);
+    expect((await api_(`/projects/${p.id}/shopping-list/sync-bom`, { method: "POST", body: "{" })).status).toBe(400);
+    const synced = (await (await api_(`/projects/${p.id}/shopping-list/sync-bom`, { method: "POST", json: { allowPartial: true } })).json()) as {
       cart: Cart;
       summary: { parts: number; pcbAdded: boolean };
     };
@@ -150,7 +153,7 @@ describe("cloud routes", () => {
       json: { items: [{ kind: "other", description: "Stencil", quantity: 1 }] },
     });
     expect(added.status).toBe(201);
-    const resync = (await (await api_(`/projects/${p.id}/shopping-list/sync-bom`, { method: "POST" })).json()) as { cart: Cart };
+    const resync = (await (await api_(`/projects/${p.id}/shopping-list/sync-bom`, { method: "POST", json: { allowPartial: true } })).json()) as { cart: Cart };
     expect(resync.cart.items.find((i) => i.value === "10k")).toMatchObject({ destinationId: "builtin:manual", status: "received" });
     expect(resync.cart.items.some((i) => i.description === "Stencil")).toBe(true);
 

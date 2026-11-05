@@ -1,0 +1,30 @@
+{
+  "projectId": "prj_mvr2ofe307592e4a2e",
+  "observedBefore": [
+    "Enter selected a map board but Tab moved to another map object instead of requested tools",
+    "Opening a board from map tools left focus on the document body"
+  ],
+  "validated": [
+    "Keyboard Enter on I/O focuses Open board; Escape returns to I/O node",
+    "Enter on I/O to RH link focuses its I/O endpoint; Tab reaches RH endpoint and Enter opens actual RH source",
+    "RH native inspection reports11parts; outline dimensions and compatibility remain unverified",
+    "All boards restores RH node focus",
+    "Sources to review selects unresolved Keyboard and focuses Resolve source without importing or sending",
+    "Compact Enter focuses Resolve source; nested Source details closes before selection",
+    "I/O Open board focuses semantic title; Tab reaches PCB; settled native inspection retains PCB focus and reports22parts36x27.455mm",
+    "All boards then Escape leaves map unselected and assistant closed",
+    "Existing shared-source saved finding still autofocuses Dismiss finding rather than board title; Back to checks still restores exact row focus"
+  ],
+  "focusGuards": "Next-frame focus requires same active project, same contextual selection key and unchanged initiating focus; board-title focus runs only on captured instance/source/manifest entry and only from body",
+  "preservation": {
+    "recordedVaioFiles": 16,
+    "allExact": true,
+    "memberOriginals": 12,
+    "savedMemberReportExact": true
+  },
+  "checks": {
+    "uiTypecheck": "PASS",
+    "uiTests": 229
+  },
+  "scope": "UI navigation only; no native editing, source import, routing, DRC/parity/compatibility claim or agent message"
+}

@@ -7,6 +7,16 @@ const MUTED: [number, number, number, number] = [70, 74, 80, 255];
 const DARK: [number, number, number, number] = [16, 18, 22, 230];
 const LIGHT_INK: [number, number, number, number] = [244, 241, 234, 255];
 
+/** Keep exported captions inside the frame, including long imported project names. */
+function fitCaption(value: string, maxWidth: number, preferredScale: number): { text: string; scale: number; width: number; height: number } {
+  let text = value.toUpperCase();
+  const unitWidth = measureText(text, 1).width;
+  const scale = Math.max(1, Math.min(preferredScale, Math.floor(maxWidth / Math.max(1, unitWidth))));
+  const capacity = Math.max(0, Math.floor(maxWidth / measureText("M", scale).width));
+  if (text.length > capacity) text = capacity > 3 ? `${text.slice(0, capacity - 3)}...` : ".".repeat(capacity);
+  return { text, scale, ...measureText(text, scale) };
+}
+
 export function paintCaptions(buf: PixelBuffer, pose: FramePose, specs: ProductSpecs): void {
   if (pose.cardKind === "none" || pose.card <= 0) {
     paintLowerThird(buf, specs.name);
@@ -15,45 +25,41 @@ export function paintCaptions(buf: PixelBuffer, pose: FramePose, specs: ProductS
   const alpha = Math.round(255 * pose.card);
   fillRect(buf.data, buf.width, buf.height, 0, 0, buf.width, buf.height, [16, 18, 22, alpha]);
   if (pose.cardKind === "title") {
-    const scale = buf.width >= 1000 ? 5 : 3;
-    const { width } = measureText(specs.name.toUpperCase(), scale);
+    const { text, scale, width } = fitCaption(specs.name, buf.width - 64, buf.width >= 1000 ? 5 : 3);
     drawText(
       buf.data,
       buf.width,
       buf.height,
-      specs.name.toUpperCase(),
+      text,
       (buf.width - width) / 2,
       buf.height * 0.42,
       scale,
       TITLE,
     );
-    const sub = "PRODUCT VIDEO";
-    const subScale = Math.max(2, scale - 2);
-    const sw = measureText(sub, subScale).width;
-    drawText(buf.data, buf.width, buf.height, sub, (buf.width - sw) / 2, buf.height * 0.42 + 7 * scale + 16, subScale, MUTED);
+    const sub = fitCaption("PRODUCT VIDEO", buf.width - 64, Math.max(2, scale - 2));
+    drawText(buf.data, buf.width, buf.height, sub.text, (buf.width - sub.width) / 2, buf.height * 0.42 + 7 * scale + 16, sub.scale, MUTED);
     return;
   }
-  const scale = buf.width >= 1000 ? 4 : 3;
-  const titleW = measureText(specs.name.toUpperCase(), scale).width;
-  drawText(buf.data, buf.width, buf.height, specs.name.toUpperCase(), (buf.width - titleW) / 2, buf.height * 0.28, scale, TITLE);
+  const preferredScale = buf.width >= 1000 ? 4 : 3;
+  const { text, scale, width: titleW } = fitCaption(specs.name, buf.width - 64, preferredScale);
+  drawText(buf.data, buf.width, buf.height, text, (buf.width - titleW) / 2, buf.height * 0.28, scale, TITLE);
   let y = buf.height * 0.28 + 7 * scale + 24;
-  const lineScale = Math.max(2, scale - 1);
+  const lineScale = Math.max(2, preferredScale - 1);
   for (const line of specs.lines.slice(0, 6)) {
-    const w = measureText(line.toUpperCase(), lineScale).width;
-    drawText(buf.data, buf.width, buf.height, line.toUpperCase(), (buf.width - w) / 2, y, lineScale, LIGHT_INK);
+    const fitted = fitCaption(line, buf.width - 64, lineScale);
+    drawText(buf.data, buf.width, buf.height, fitted.text, (buf.width - fitted.width) / 2, y, fitted.scale, LIGHT_INK);
     y += 7 * lineScale + 10;
   }
 }
 
 function paintLowerThird(buf: PixelBuffer, name: string): void {
   if (!name) return;
-  const scale = buf.width >= 1000 ? 3 : 2;
   const pad = 16;
-  const { width, height } = measureText(name.toUpperCase(), scale);
+  const { text, scale, width, height } = fitCaption(name, buf.width - pad * 2 - 10, buf.width >= 1000 ? 3 : 2);
   const x = pad;
   const y = buf.height - height - pad * 2;
   blendRect(buf.data, buf.width, buf.height, x - 10, y - 10, width + 20, height + 20, DARK);
-  drawText(buf.data, buf.width, buf.height, name.toUpperCase(), x, y, scale, TITLE);
+  drawText(buf.data, buf.width, buf.height, text, x, y, scale, TITLE);
 }
 
 export function paintSolidCard(buf: PixelBuffer, specs: ProductSpecs, kind: "title" | "specs"): void {

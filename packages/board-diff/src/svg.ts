@@ -78,7 +78,7 @@ function trackPoints(track: TrackSnapshot): Point[] {
 }
 
 function collectPoints(snapshot: BoardSnapshot, kind: VisualKind): Point[] {
-  const points = [...snapshot.outline];
+  const points = kind === "pcb" ? [...snapshot.outline] : [];
   for (const c of snapshot.components) {
     const p = componentPoint(c, kind);
     if (p) points.push(p);
@@ -167,7 +167,8 @@ function drawComponent(component: ComponentSnapshot, kind: VisualKind, color: st
   </g>`;
 }
 
-function drawOutline(outline: Point[], color: string): string {
+function drawOutline(outline: Point[], color: string, paths?: Point[][]): string {
+  if (paths) return paths.filter(path => path.length > 1).map(path => `<path data-board-outline="true" d="${path.map((p, i) => `${i === 0 ? "M" : "L"}${p.x} ${p.y}`).join(" ")}" fill="none" stroke="${color}" stroke-width="0.2"/>`).join("");
   if (outline.length < 2) return "";
   if (outline.length === 2) {
     const a = outline[0]!;
@@ -231,7 +232,7 @@ function snapshotSvgBody(snapshot: BoardSnapshot, diff: BoardDiff, kind: VisualK
   const unchangedTracks = snapshot.tracks.filter((t) => !dirty.tracks.has(t.id));
   const unchangedVias = kind === "pcb" ? (snapshot.vias ?? []).filter((v) => !dirty.vias.has(v.id)) : [];
   const unchangedZones = kind === "pcb" ? (snapshot.zones ?? []).filter((z) => !dirty.zones.has(z.id)) : [];
-  return `${drawOutline(snapshot.outline, COLORS.outline)}${drawZones(unchangedZones, COLORS.unchanged)}${drawTracks(unchangedTracks, kind, COLORS.unchanged)}${drawVias(unchangedVias, COLORS.unchanged)}${parts}`;
+  return `${kind === "pcb" ? drawOutline(snapshot.outline, COLORS.outline, snapshot.outlinePaths) : ""}${drawZones(unchangedZones, COLORS.unchanged)}${drawTracks(unchangedTracks, kind, COLORS.unchanged)}${drawVias(unchangedVias, COLORS.unchanged)}${parts}`;
 }
 
 /** Single-revision drawing used for overlay / side-by-side when KiCad SVGs are absent. */
@@ -245,7 +246,7 @@ export function snapshotSvg(snapshot: BoardSnapshot, kind: VisualKind = "pcb", c
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBoxAttr(box)}" data-board-diff="${kind}-revision">
   <rect data-board-diff-background="true" x="${box.minX}" y="${box.minY}" width="${box.maxX - box.minX}" height="${box.maxY - box.minY}" fill="#ffffff"/>
-  ${drawOutline(snapshot.outline, COLORS.outline)}
+  ${kind === "pcb" ? drawOutline(snapshot.outline, COLORS.outline, snapshot.outlinePaths) : ""}
   ${zones}
   ${tracks}
   ${vias}

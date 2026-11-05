@@ -1,0 +1,33 @@
+{
+  "projectId": "prj_mvqyacun3e60075ae8",
+  "boardSource": {
+    "projectId": "prj_mvqyacun3e60075ae8",
+    "sourceId": "io",
+    "manifestSha256": "ffe6b12399cec942549f829855f4d6e532a18db08d843a44f6c2624f7dd4885c"
+  },
+  "pcbRevision": {
+    "sha256": "34f1e8d8592b9fce278642e7ab15b94cf53631740cccf25c439a1311e7bc77c6",
+    "bytes": 5232
+  },
+  "schematicParityChecked": false,
+  "counts": {
+    "errors": 8,
+    "warnings": 4,
+    "unconnected": 2
+  },
+  "savedOnlySelectedSourceReport": true,
+  "allNineBaselineFilesUnchanged": true,
+  "geometryEnrichment": "actual native app source queries",
+  "httpResponseScopeMatchesSavedReport": true,
+  "studyReportRestoredAfterValidation": true,
+  "httpJob": {
+    "id": "job_mvrbzmsb84c80a38f6",
+    "status": "done",
+    "kind": "tool:verify_drc",
+    "board": {
+      "projectId": "prj_mvqyacun3e60075ae8",
+      "sourceId": "io",
+      "manifestSha256": "ffe6b12399cec942549f829855f4d6e532a18db08d843a44f6c2624f7dd4885c"
+    }
+  }
+}

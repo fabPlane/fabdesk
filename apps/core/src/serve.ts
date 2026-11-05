@@ -467,6 +467,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     annotationsFor: (tool, server) =>
       server === null || server === "fabdesk" ? registry.get(tool)?.annotations : undefined,
     resolveProject: (id) => projects.handle(id),
+    projectTransitioning: (id) => projects.isPromoting(id),
     ...(opts.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: opts.approvalTimeoutMs } : {}),
     ...(opts.abortSettleTimeoutMs !== undefined
       ? { abortSettleTimeoutMs: opts.abortSettleTimeoutMs }

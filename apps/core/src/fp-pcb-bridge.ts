@@ -28,6 +28,8 @@ export type FpPcbBridgeClientOptions = {
   fetch?: typeof fetch;
   /** Per-request timeout for the JSON calls; a job follow is bounded by its own cap. */
   timeoutMs?: number;
+  /** One-time bundled-library setup performs hundreds of native table-row RPCs. */
+  librarySetupTimeoutMs?: number;
 };
 
 export type JobFollow<J> = {
@@ -87,11 +89,13 @@ export class FpPcbBridgeClient {
   readonly url: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
+  private readonly librarySetupTimeoutMs: number;
 
   constructor(opts: FpPcbBridgeClientOptions) {
     this.url = opts.url.replace(/\/+$/, "");
     this.fetchImpl = opts.fetch ?? fetch;
     this.timeoutMs = opts.timeoutMs ?? 15_000;
+    this.librarySetupTimeoutMs = opts.librarySetupTimeoutMs ?? Math.max(this.timeoutMs, 90_000);
   }
 
   async health(): Promise<FpPcbHealth> {
@@ -119,6 +123,7 @@ export class FpPcbBridgeClient {
       "POST",
       `/sessions/${encodeURIComponent(id)}/libraries/register-bundled`,
       {},
+      this.librarySetupTimeoutMs,
     )) as { registered?: number };
     return result.registered ?? 0;
   }
@@ -253,6 +258,7 @@ export class FpPcbBridgeClient {
     method: "GET" | "POST" | "DELETE",
     path: string,
     body?: unknown,
+    timeoutMs = this.timeoutMs,
   ): Promise<unknown> {
     let res: Response;
     try {
@@ -260,7 +266,7 @@ export class FpPcbBridgeClient {
         method,
         headers: body !== undefined ? { "content-type": "application/json" } : {},
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (e) {
       throw this.unreachable(e);

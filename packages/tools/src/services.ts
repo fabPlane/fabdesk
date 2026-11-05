@@ -11,6 +11,7 @@ import type { CloudService } from "./cloud/service";
 import type { RouterRegistry } from "./routers/registry";
 import type {
   CoreEvent,
+  PcbOutlineResizeResult,
   FpPcbBoardSpec,
   NetlistFile,
   Principal,
@@ -540,12 +541,15 @@ export interface DesignService {
     projectDir: string,
     points: SchematicPoint[],
     replace: boolean,
+    options?: { expectedSourceSha256?: string },
   ): Promise<PcbOutlineResult>;
+  /** Resize explicitly selected native rectangle primitives without replacing IDs or metadata. */
+  resizeBoardOutline(projectDir: string, request: { edgeIds: string[]; widthMm: number; heightMm: number; expectedSourceSha256: string }): Promise<PcbOutlineResizeResult>;
   /** Place native board footprints by reference without touching schematic connectivity. */
   placeFootprints(
     projectDir: string,
     placements: PcbFootprintEdit[],
-    options?: { staleCopper?: "keep" | "remove" },
+    options?: { staleCopper?: "keep" | "remove"; expectedSourceSha256?: string },
   ): Promise<PcbPlacementResult>;
   /** Create and delete explicitly named native board geometry without replacing unrelated items. */
   editBoardGeometry(projectDir: string, edit: PcbGeometryEdit): Promise<PcbGeometryEditResult>;
@@ -685,7 +689,7 @@ export interface KicadService {
   /** Shared saved native hierarchy and packaged-KiCad complete-project electrical facts. */
   inspectSchematicHierarchy(
     cli: KicadCli,
-    opts: { projectDir: string; rootSchematic: string; projectFile?: string; signal?: AbortSignal },
+    opts: { projectDir: string; rootSchematic: string; projectFile?: string; signal?: AbortSignal; ownedFilesOnly?: boolean },
   ): Promise<SchematicHierarchy>;
   gate(drc: DrcReport, erc: ErcReport | undefined, allowedWarningSignatures: string[]): GateResult;
   renderPng(
@@ -706,7 +710,7 @@ export interface KicadService {
   ): Promise<{ png: Uint8Array; width: number; height: number }>;
   exportGlb(
     cli: KicadCli,
-    opts: { board: string; output: string; mechanical?: boolean; signal?: AbortSignal },
+    opts: { board: string; output: string; modelProjectDir?: string; mechanical?: boolean; signal?: AbortSignal },
   ): Promise<{ fused: boolean; warnings: string[] }>;
   /**
    * Per-footprint 3D model coverage and exact board-space bounds measured from the packaged
@@ -750,6 +754,14 @@ export interface KicadService {
       signal?: AbortSignal;
     },
   ): Promise<{ paths: string[] }>;
+  exportOwnedSchematicSvg(
+    cli: KicadCli,
+    opts: { projectDir: string; hierarchy: SchematicHierarchy; signal?: AbortSignal },
+  ): Promise<{ sourceRevision: string; sourceFiles: Array<{ path: string; sha256: string }>; sheets: Array<{ name: string; svg: Uint8Array }> }>;
+  exportOwnedSchematicBom(
+    cli: KicadCli,
+    opts: { projectDir: string; hierarchy: SchematicHierarchy; signal?: AbortSignal },
+  ): Promise<{ sourceRevision: string; sourceFiles: Array<{ path: string; sha256: string }>; csv: string }>;
   exportSchematicSvg(
     cli: KicadCli,
     opts: { schematic: string; outDir: string; signal?: AbortSignal },
@@ -934,6 +946,10 @@ export type RouteApplyState =
 export type RouteRunRecord = {
   id: string;
   projectId: string;
+  /** Absent on legacy single-board runs; identity never follows the UI's active board. */
+  board?: import("@fabdesk/protocol").BoardSourceSelection;
+  sourceDirectory?: string;
+  sourceInputs?: Array<{ path: string; sha256: string | null }>;
   router: string;
   /** Historical records may predate attempt tracking. router identifies the final producer. */
   attempts?: Array<{

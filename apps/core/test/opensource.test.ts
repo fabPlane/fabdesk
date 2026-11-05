@@ -392,6 +392,15 @@ describe("order readiness", () => {
     expect(blocked.reasons.join(" ")).toContain("Run DRC");
   });
 
+  test("assembly artifacts never establish root-only order readiness", () => {
+    const files = [{ path: "fabplane.assembly.json" }, { path: "boards/io.kicad_pcb" }, { path: "exports/fabrication.zip" }];
+    const assembly = assessOrderReadiness(files, { ...board, drc: cleanDrc });
+    expect(assembly.ready).toBe(false);
+    expect(assembly.reasons.join(" ")).toContain("multi-board");
+    // Direct disk evidence still blocks when the capped listing hides the manifest.
+    expect(assessOrderReadiness([], { ...board, drc: cleanDrc, assemblyDeclared: true }).ready).toBe(false);
+  });
+
   test("DRC must be fresh and pass the release gate", () => {
     expect(assessOrderReadiness([], { ...board, drc: cleanDrc }).ready).toBe(true);
     expect(assessOrderReadiness([], { ...board, drc: { ...cleanDrc, inputsChanged: true } }).checks.drc).toBe("stale");
@@ -446,6 +455,15 @@ describe("order readiness", () => {
       const readiness = assessOrderReadiness(listing, await loadOrderCheckEvidence(dir, []));
       expect(readiness.checks.drc).toBe("pass");
       expect(readiness.ready).toBe(true);
+    });
+
+    test("even a malformed assembly declaration blocks ordering without listing evidence", async () => {
+      const dir = await project({ "fabplane.assembly.json": "{broken", "board.kicad_pcb": pcb, "reports/drc.json": drcJson() });
+      const evidence = await loadOrderCheckEvidence(dir, []);
+      expect(evidence.assemblyDeclared).toBe(true);
+      const readiness = assessOrderReadiness([{ path: "exports/fabrication.zip" }], evidence);
+      expect(readiness.ready).toBe(false);
+      expect(readiness.reasons.join(" ")).toContain("multi-board");
     });
 
     test("editing the board makes DRC stale", async () => {

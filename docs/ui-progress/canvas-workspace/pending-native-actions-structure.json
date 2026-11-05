@@ -1,0 +1,26 @@
+{
+  "target": "Structure-first delegation milestone",
+  "features": [
+    "Requested source synchronization directions",
+    "Requested selected-part replacement home"
+  ],
+  "nativeVerified": [
+    "Syncoptions closed bydefault; requested disclosure identifies directed sync notconnected and bothdirectionbuttons disabled",
+    "RealnativeR1 selected from3actualrefs; Morepartactions reveals explicitpendingReplaceR1disabled",
+    "Position&properties andMoreactions remain requested; actualpositionfieldsunchanged, Applydisabledwithnoproposal",
+    "Compact960\u00d7720 requestedpartpanelfits",
+    "CloseboardtoolsreturnsR1trigger;Escapedeselectsandreachesdrawing",
+    "34protectedDonorfiles exact"
+  ],
+  "validation": "UItypesPASS;233tests912assertions/0fail",
+  "boundaries": [
+    "No native replacement or directional reconciliation implemented",
+    "No proposal/move/rotation/Apply/agentmessage duringwalkthrough",
+    "Existing native limitedrevert andposition controls unchanged"
+  ],
+  "screenshots": [
+    "source-direction-structure-pending.png",
+    "selected-part-replacement-pending.png",
+    "selected-part-structure-compact.png"
+  ]
+}

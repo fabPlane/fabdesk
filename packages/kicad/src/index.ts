@@ -51,6 +51,10 @@ export {
 } from "./drc";
 export {
   inspectSchematicHierarchy,
+  exportOwnedSchematicSvg,
+  exportOwnedSchematicBom,
+  type OwnedSchematicBom,
+  type OwnedSchematicSvg,
   type SchematicHierarchy,
   type SchematicHierarchyIssue,
   type SchematicHierarchySheet,
@@ -163,3 +167,5 @@ export {
   type VentPattern,
 } from "./enclosure";
 export { previewEnclosureSvg } from "./enclosure-preview";
+
+export { cropNativePageSvg } from "./pcb-svg-coordinates";

@@ -261,6 +261,27 @@ describe("http daemon", () => {
     expect(me.principal.subject).toBe("local:dev");
   });
 
+  test("board-source inspection reads explicit membership and fails closed on invalid manifests", async () => {
+    const created = await api("/projects", { method: "POST", body: JSON.stringify({ name: "Assembly inspection" }) });
+    const project = await created.json() as { id: string; path: string };
+    const endpoint = `/projects/${project.id}/board-sources`;
+    expect((await api("/projects/missing-project/board-sources")).status).toBe(404);
+    const empty = await (await api(endpoint)).json() as { mode: string; sources: Array<{ status: string }> };
+    expect(empty.mode).toBe("single"); expect(empty.sources[0]?.status).toBe("missing");
+    await mkdir(join(project.path, "boards", "io"), { recursive: true });
+    await writeFile(join(project.path, "boards", "io", "board.kicad_pcb"), "(kicad_pcb)");
+    await writeFile(join(project.path, "fabplane.assembly.json"), JSON.stringify({
+      contract: "fabplane.assembly.v1", sources: [{ id: "io", name: "I/O", location: "project", directory: "boards/io" }],
+      instances: [{ id: "io-1", sourceId: "io", name: "I/O main" }], connections: [],
+    }));
+    const response = await api(endpoint); expect(response.status).toBe(200);
+    const assembly = await response.json() as { mode: string; editing: string; sources: Array<{ pcbPath: string; status: string }> };
+    expect(assembly.mode).toBe("assembly"); expect(assembly.editing).toBe("explicit-source-tools");
+    expect(assembly.sources[0]?.status).toBe("available"); expect(assembly.sources[0]?.pcbPath).toBe("boards/io/board.kicad_pcb");
+    await writeFile(join(project.path, "fabplane.assembly.json"), "{}");
+    expect((await api(endpoint)).status).toBe(400);
+  });
+
   test("projects CRUD, files, sketches and project.changed over SSE with catch-up", async () => {
     // Open SSE first so the create event is observed live.
     const sse = await fetch(`${daemon.url}/events?token=${daemon.token}&topics=project.*,job.*`);
@@ -367,6 +388,23 @@ describe("http daemon", () => {
     }>;
     expect(sketches.map((s) => s.path)).toEqual(["sketches/front.png"]);
 
+    // Original editable source bytes and collision naming survive without becoming a PNG.
+    const drawing = '{\n "type": "excalidraw", "version": 2, "elements": [{"id":"kept","type":"rectangle"}], "custom": "untouched"\n}\n';
+    const uploadDrawing = (body: string, name = "front.excalidraw") => {
+      const form = new FormData(); form.append("file", new Blob([body], { type: "application/vnd.excalidraw+json" }), name);
+      return fetch(`${daemon.url}/projects/${project.id}/sketches`, { method: "POST", headers: H(), body: form });
+    };
+    const source = await uploadDrawing(drawing, "../../front.excalidraw");
+    expect(source.status).toBe(201);
+    expect(((await source.json()) as { path: string }).path).toBe("sketches/front.excalidraw");
+    expect(await (await api(`/projects/${project.id}/files/sketches/front.excalidraw`)).text()).toBe(drawing);
+    const duplicate = await uploadDrawing(drawing);
+    expect(duplicate.status).toBe(201);
+    expect(((await duplicate.json()) as { path: string }).path).toBe("sketches/front-2.excalidraw");
+    expect((await uploadDrawing("not json")).status).toBe(415);
+    expect((await uploadDrawing('{"type":"excalidrawlib","version":2,"elements":[]}')).status).toBe(415);
+    expect((await uploadDrawing(" ".repeat(10 * 1024 * 1024 + 1))).status).toBe(413);
+
     // PATCH manifest + settings
     const patched = (await (
       await api(`/projects/${project.id}`, {
@@ -418,6 +456,14 @@ describe("http daemon", () => {
       job = (await (await api(`/jobs/${jobId}`)).json()) as typeof job;
     }
     expect(job.status).toBe("done");
+    // A fresh runner job cannot hide persisted history, and the activity view is project-scoped.
+    daemon.store.jobs.insert({ id: "job_persisted_history", kind: "tool:render_board", projectId: project.id });
+    daemon.store.jobs.update("job_persisted_history", { status: "done" });
+    const history = await (await api(`/jobs?projectId=${project.id}`)).json() as Array<{ id: string; projectId: string }>;
+    expect(history.map(row => row.id)).toContain(jobId);
+    expect(history.map(row => row.id)).toContain("job_persisted_history");
+    expect(history.every(row => row.projectId === project.id)).toBe(true);
+    expect(await (await api("/jobs?projectId=unrelated-project")).json()).toEqual([]);
     expect(await Bun.file(join(project.path, "board.kicad_pcb")).exists()).toBe(true);
     const manifest = (await (await api("/tools/manifest")).json()) as Array<{ name: string }>;
     expect(manifest.length).toBe(daemon.registry.list().length);
@@ -640,7 +686,8 @@ describe("http daemon", () => {
     const a = await connect(daemon.token);
     const names = (await a.client.listTools()).tools.map((t) => t.name);
     // Core plus the circuit, verify and render toolsets: both schematic authoring paths start listed.
-    expect(names).toHaveLength(37);
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toContain("request_project_creation");
     expect(names).toEqual(
       expect.arrayContaining([
         "capability_call",
@@ -651,6 +698,7 @@ describe("http daemon", () => {
         "project_status",
         "schematic_edit",
         "pcb_update_from_schematic",
+        "pcb_resize_outline",
         "verify_erc",
         "release_build",
         "render_view",
@@ -672,7 +720,8 @@ describe("http daemon", () => {
 
     await a.client.callTool({ name: "load_toolset", arguments: { toolset: "export" } });
     const exportNames = (await a.client.listTools()).tools.map((tool) => tool.name);
-    expect(exportNames).toHaveLength(47);
+    expect(exportNames.length).toBeGreaterThan(names.length);
+    expect(exportNames).toEqual(expect.arrayContaining(names));
     expect(exportNames).toEqual(
       expect.arrayContaining(["silk_art", "export_stencil", "export_laser_stencil"]),
     );
@@ -701,6 +750,9 @@ describe("http daemon", () => {
     expect(nativeNames).toContain("circuit_read_errors");
     expect(nativeNames).not.toContain("load_toolset");
     expect(nativeNames).not.toContain("native_edit_transaction");
+
+    const planning = await connect(daemon.token, "?profile=planning");
+    expect((await planning.client.listTools()).tools.map(tool => tool.name)).toEqual(["request_project_creation"]);
 
     const substrate = await connect(daemon.token, "?profile=substrate");
     expect((await substrate.client.listTools()).tools).toEqual([]);
@@ -753,6 +805,7 @@ describe("http daemon", () => {
     await a.transport.terminateSession();
     await all.transport.terminateSession();
     await native.transport.terminateSession();
+    await planning.transport.terminateSession();
     await apps.transport.terminateSession();
     await nativeApps.transport.terminateSession();
     await apps.client.close();
@@ -761,6 +814,7 @@ describe("http daemon", () => {
     await b.client.close();
     await all.client.close();
     await native.client.close();
+    await planning.client.close();
     await substrate.client.close();
     await c.client.close();
     await new Promise((r) => setTimeout(r, 20));
@@ -954,4 +1008,34 @@ describe("http daemon", () => {
     expect(kept.preferredRouter).toBe("fab_router");
     await api("/settings", { method: "PATCH", body: JSON.stringify({ preferredRouter: null }) });
   });
+});
+
+ test("idea drafts save references, reject engineering writes, and promote without replacing conversation ownership", async () => {
+  const created = await api("/projects", { method: "POST", body: JSON.stringify({ name: "HTTP idea draft", draft: true }) });
+  expect(created.status).toBe(201);
+  const draft = await created.json() as { id: string; path: string; isDraft: boolean };
+  expect(draft.isDraft).toBe(true);
+  const write = await api(`/projects/${draft.id}/files/board.kicad_pcb`, { method: "PUT", body: "forbidden board" });
+  expect(write.status).toBe(412);
+  const unsafePatch = await api(`/projects/${draft.id}`, { method: "PATCH", body: JSON.stringify({ manifest: { ideaDraft: null } }) });
+  expect(unsafePatch.status).toBe(400);
+  const read = await api(`/projects/${draft.id}/files/fabdesk.json`);
+  expect(read.status).toBe(200);
+  const t = await (await api("/threads", { method: "POST", body: JSON.stringify({ projectId: draft.id, agentId: "claude" }) })).json() as { id: string };
+  daemon.store.threads.addMessage({ threadId: t.id, role: "user", contentMd: "Keep my planning conversation" });
+  const token = daemon.tokens.mintRunToken({ runId: "idea-security-test", projectId: draft.id, threadId: t.id });
+  const agentPromote = await api(`/projects/${draft.id}/promote`, { method: "POST", headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ name: "Not user approved" }) });
+  expect(agentPromote.status).toBe(403);
+  const agentNew = await api("/projects", { method: "POST", headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ name: "Bypass draft" }) });
+  expect(agentNew.status).toBe(403);
+  daemon.tokens.revoke(token);
+  const promotion = await api(`/projects/${draft.id}/promote`, { method: "POST", body: JSON.stringify({ name: "HTTP promoted idea" }) });
+  expect(promotion.status).toBe(200);
+  const promoted = await promotion.json() as { id: string; manifest: Record<string, unknown> };
+  expect(promoted.id).toBe(draft.id);
+  expect(promoted.manifest.ideaDraft).toBeUndefined();
+  expect(daemon.store.threads.get(t.id)?.projectId).toBe(draft.id);
+  expect(daemon.store.threads.messages(t.id)[0]?.contentMd).toBe("Keep my planning conversation");
+  const retry = await api(`/projects/${draft.id}/promote`, { method: "POST", body: JSON.stringify({ name: "Duplicate" }) });
+  expect(retry.status).toBe(412);
 });

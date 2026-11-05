@@ -1,0 +1,26 @@
+{
+  "projectId": "prj_mvs6704td18dae52b4",
+  "nativeFlow": "Left I/O 15x15\u2192Apply16x15\u2192Revert15x15",
+  "sameOrigin": "100,95 mm",
+  "originalEdgeIdsPreserved": true,
+  "pcbRestoredByteForByte": true,
+  "protectedBaselineFilesUnchanged": [
+    "boards/io/board.kicad_pcb",
+    "fabplane.assembly.json",
+    "fabdesk.json",
+    "boards/carrier/board.kicad_pcb",
+    "boards/carrier/renders/pcb.svg",
+    "boards/carrier/renders/pcb.svg.revision.json"
+  ],
+  "sourceFault": "RESTORED",
+  "proposalGuard": "17mm proposal disables Revert; Discard returns16mm and preserves recovery",
+  "sourceGuard": "Newline source change disables Revert even when the cheap preview refreshes; exact snapshot restoration re-enables",
+  "focusAfterApplyAndRevert": "Board size dialog",
+  "limits": [
+    "Recovery applies to existing editable rectangles only",
+    "No deletion/recovery action is offered after first creating an outline",
+    "One local previous size, lost after reload/closing the size tool",
+    "Not general undo or clearance/compatibility validation"
+  ],
+  "observedFollowup": "An older automatic preview job reports source changed while the new current preview receipt matches the restored PCB; improve historical activity wording next"
+}

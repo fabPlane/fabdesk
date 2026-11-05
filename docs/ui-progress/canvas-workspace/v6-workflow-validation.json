@@ -1,0 +1,29 @@
+{
+  "sourceHead": "e5d9c63",
+  "scope": "Accumulated targeted v6 workspace refinements through requested board tools",
+  "rootTypecheck": "PASS",
+  "standardSuite": {
+    "pass": 2277,
+    "skip": 36,
+    "fail": 0,
+    "batches": 17
+  },
+  "logs": [
+    "/tmp/canvas-v6-workflow-root-types.log",
+    "/tmp/canvas-v6-workflow-root-tests.log"
+  ],
+  "nativeEvidence": [
+    "board-map-layout-native.json",
+    "fresh-start-clarity-native.json",
+    "review-groups-native.json",
+    "output-discovery-native.json",
+    "board-switcher-native.json",
+    "board-tools-native.json"
+  ],
+  "boundaries": [
+    "Ordinary skipped tests are not native passes",
+    "No remote publication/CI/merge/deploy",
+    "Codex model routing remains deferred; no agent reasoning success claimed",
+    "Art Apply deferred; Mechanical teammate-owned"
+  ]
+}

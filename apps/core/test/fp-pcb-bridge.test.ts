@@ -201,3 +201,18 @@ describe("FpPcbBridgeClient", () => {
     expect((err as ToolError).message).toContain("127.0.0.1:1");
   });
 });
+
+test("library setup has its own bounded budget without extending ordinary bridge calls", async () => {
+  const fetchImpl = (async (_url: unknown, init: RequestInit | undefined) => new Promise<Response>((resolve, reject) => {
+    const timer = setTimeout(() => resolve(Response.json({ registered: 42 })), 30);
+    const signal = init?.signal;
+    const abort = () => { clearTimeout(timer); reject(signal?.reason); };
+    if (signal?.aborted) abort();
+    else signal?.addEventListener("abort", abort, { once: true });
+  })) as typeof fetch;
+  const client = new FpPcbBridgeClient({ url: "http://mock", fetch: fetchImpl, timeoutMs: 5, librarySetupTimeoutMs: 200 });
+  expect(await client.registerBundledLibraries("s")).toBe(42);
+  await expect(client.sessions()).rejects.toThrow("unreachable");
+  const bounded = new FpPcbBridgeClient({ url: "http://mock", fetch: fetchImpl, timeoutMs: 200, librarySetupTimeoutMs: 5 });
+  await expect(bounded.registerBundledLibraries("s")).rejects.toThrow("unreachable");
+});

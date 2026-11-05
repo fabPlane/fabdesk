@@ -1,0 +1,31 @@
+{
+  "feature": "Saved-output search and exact qualified-source filters",
+  "verified": [
+    "Search I/O main returns1of5 actual saved VAIO previews",
+    "I/O search + LCD scope returns0of5 and honest No outputs match message",
+    "Clear filters restores5of5 and search focus",
+    "Exact I/O source returns1of5; selected file retains requested Preview/Download/More",
+    "Changing to Videos returns0of5 and removes hidden selection actions",
+    "Compact960\u00d7720 search/scope/count/create controls fit; one visible focus ring",
+    "16 VAIO source/manifest/preview files plus actual PCB DRC report exact"
+  ],
+  "tests": {
+    "clientTypes": "PASS",
+    "uiTypes": "PASS",
+    "focusedOutputLibrary": "9pass/44assertions",
+    "allClient": "321pass/1563assertions",
+    "allUI": "233pass/912assertions"
+  },
+  "boundaries": [
+    "Filters operate only on previously qualified saved outputs; they never infer board membership from a filename",
+    "Source filter names come from current declared sources; Project outputs means no qualified sourceId",
+    "Search is case-insensitive and all words must match name/path/kind; source identity matching remains exact",
+    "No generation, download, native design mutation or assistant send in this walkthrough",
+    "Search/scope are task-local and reset on project remount"
+  ],
+  "screenshots": [
+    "outputs-intersected-no-match.png",
+    "outputs-source-filtered-actions.png",
+    "outputs-discovery-compact.png"
+  ]
+}

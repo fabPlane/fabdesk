@@ -28,6 +28,10 @@ export function shouldShowCadKernelTree(
 
 /** The CAD runtime is optional and installed only after native download consent. */
 export function CadTab() {
+  return <AdvancedCadTab />;
+}
+
+function AdvancedCadTab() {
   const client = useCoreClient();
   const projectId = useUiStore((s) => s.activeProjectId);
   const runtimeBridge = (window as unknown as { fabdesk?: CadRuntimeBridge }).fabdesk;

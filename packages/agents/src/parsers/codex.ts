@@ -38,7 +38,7 @@ export class CodexStreamParser {
       return [{ type: "error", message: errorMessage(line["error"]) ?? "turn failed" }];
     }
     if (type === "error") {
-      return [{ type: "error", message: errorMessage(line) ?? "codex error" }];
+      return this.errorOrNotice(errorMessage(line) ?? "codex error");
     }
     if (type.startsWith("item.")) {
       const item = line["item"];
@@ -60,12 +60,7 @@ export class CodexStreamParser {
       case "reasoning":
         return this.emitTextDelta(id, item["text"], "thinking");
       case "error":
-        return [
-          {
-            type: "error",
-            message: typeof item["message"] === "string" ? item["message"] : "codex error",
-          },
-        ];
+        return this.errorOrNotice(typeof item["message"] === "string" ? item["message"] : "codex error");
       case "command_execution":
         return this.emitTool(
           phase,
@@ -107,6 +102,13 @@ export class CodexStreamParser {
       default:
         return [];
     }
+  }
+
+  private errorOrNotice(message: string): AgentEvent[] {
+    // Codex emits this advisory as an error item even when the changed-model turn succeeds.
+    // Only this exact informational form is nonfatal; turn.failed and other errors stay failures.
+    const modelChanged = /^This session was recorded with model \S+ but is resuming with \S+\. Consider switching back to \S+ as it may affect Codex performance\.$/.test(message);
+    return modelChanged ? [{ type: "text", delta: `⚠ ${message}\n\n` }] : [{ type: "error", message }];
   }
 
   private emitTextDelta(id: string, text: unknown, type: "text" | "thinking"): AgentEvent[] {

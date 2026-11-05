@@ -1,0 +1,18 @@
+{
+  "button-light-beginner-order-test": {
+    "protected": 54,
+    "changed": []
+  },
+  "vaio-multi-board-acceptance-validation": {
+    "protected": 137,
+    "changed": []
+  },
+  "button-light-beginner-order-test-placement-copy": {
+    "receipt": "/Users/amliomnie/Documents/Codex/2026-10-27/https-github-com-tensorfleet-placement-lab/work/fresh-user-flow-20261030/projects/button-light-beginner-order-test-placement-copy/placement/working-copy.json",
+    "candidateSha256": "8c0ca0d2b0e41a610432957bb6105411a478bd1e586b47f8b4aca3ac9701dc40",
+    "canonicalSha256": "8c0ca0d2b0e41a610432957bb6105411a478bd1e586b47f8b4aca3ac9701dc40",
+    "matchesExport": true,
+    "sourceFiles": 11,
+    "status": "unrouted; source dependencies, electrical parity and manufacturing readiness require fresh checks"
+  }
+}

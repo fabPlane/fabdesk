@@ -19,6 +19,6 @@ describe("diffHeadline", () => {
   });
 
   test("explains an empty report", () => {
-    expect(diffHeadline(null)).toContain("Compare two git revisions");
+    expect(diffHeadline(null)).toContain("Compare a saved point or Git revision");
   });
 });

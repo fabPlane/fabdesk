@@ -1,3 +1,6 @@
+import { useShallow } from "zustand/react/shallow";
+import { captureAssistantContext, selectAssistantState } from "./assistant-context";
+import { DisclosureSummary } from "../components/DisclosureSummary";
 import { modelDisplayName } from "./model-display-name";
 import type { AgentId, ReasoningEffort, Thread } from "@fabdesk/protocol";
 import { useQueryClient } from "@tanstack/react-query";
@@ -7,9 +10,9 @@ import { Icon } from "../components/Icon";
 import { InstallHint } from "../components/InstallHint";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useCore, useSaveAgentPreference, useSaveAgentEffort } from "@fabdesk/client-core";
-import { CoreHttpError, formatVoiceShortcut, parseVoiceShortcut, useDoctor, useSettings, useSpeechStatus, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt } from "@fabdesk/client-core";
+import { activeQuestion, CoreHttpError, formatVoiceShortcut, parseVoiceShortcut, useDoctor, useSettings, useSpeechStatus, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt, useBoardSources, useProject } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
-import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
+import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
 import { AgentLogo } from "../components/AgentLogo";
 import { reasoningEffortLabel } from "./EffortSection";
@@ -19,6 +22,7 @@ import { expandSlashCommand, isFinishItCommand, slashSuggestions } from "@fabdes
 import { applyComposerTextareaHeight } from "./composer-autosize";
 import { useVoiceInput } from "./voice/useVoiceInput";
 import { MicButton, VoiceBar } from "./voice/VoiceBar";
+import { WorkspaceMenu } from "../layout/WorkspaceMenu";
 import { FinishItPanel } from "./FinishItPanel";
 import { finishItActive } from "./finish-it-view";
 
@@ -42,10 +46,12 @@ export const composerHandlers: {
 };
 
 export interface ComposerProps {
+  /** First-start actions already expose sketch creation; advanced automation stays requested. */
+  startMode?: boolean;
   thread: Thread | null;
   loadingThread?: boolean;
-  /** Creates a thread for a first message; returns the new thread id. */
-  onCreateThread: (input: { agentId: AgentId; model?: string }) => Promise<string>;
+  /** Creates ownership before sending; navigation waits for the accepted message. */
+  onCreateThread: (input: { agentId: AgentId; model?: string }) => Promise<Thread>;
 }
 
 const FALLBACK_AGENTS = [
@@ -54,13 +60,24 @@ const FALLBACK_AGENTS = [
 
 const EMPTY: never[] = [];
 
-export function Composer({ thread, loadingThread = false, onCreateThread }: ComposerProps) {
+export function Composer({ thread, loadingThread = false, onCreateThread, startMode = false }: ComposerProps) {
   const agentButtonRef = useRef<HTMLButtonElement>(null);
   const { client, host } = useCore();
   const qc = useQueryClient();
-  const draftKey = thread?.id ?? DRAFT_KEY_NEW;
+  const projectId = useUiStore((s) => s.activeProjectId);
+  const draftKey = thread?.id ?? newChatDraftKey(projectId);
   const draft = useUiStore((s) => s.drafts[draftKey] ?? "");
   const setDraft = useUiStore((s) => s.setDraft);
+  const savedContexts = useUiStore(s => s.draftBoardContexts?.[draftKey]);
+  const matchingContexts = savedContexts?.filter(context => context.projectId === projectId);
+  const boardContext = matchingContexts?.length ? { projectId: matchingContexts[0]!.projectId, label: matchingContexts.map(context => context.label).join(", "), instruction: matchingContexts.map(context => context.instruction).join("\n\n") } : undefined;
+  const setDraftBoardContext = useUiStore(s => s.setDraftBoardContext);
+  const boardSources = useBoardSources(projectId);
+  const assistantState = useUiStore(useShallow(selectAssistantState));
+  const workspaceContext = captureAssistantContext(assistantState, boardSources.data, boardSources.isFetching || boardSources.isError, matchingContexts);
+  const project = useProject(projectId);
+  const ideaDraft = !!project.data?.manifest.ideaDraft;
+  const rootAutomation = !ideaDraft && boardSources.data?.mode === "single";
   const pending = useUiStore((s) => s.attachments[draftKey] ?? EMPTY);
   const addAttachment = useUiStore((s) => s.addAttachment);
   const removeAttachment = useUiStore((s) => s.removeAttachment);
@@ -70,7 +87,6 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
   const focusNonce = useUiStore((s) => s.composerFocusNonce);
   const agentPickerOpen = useUiStore((s) => s.agentPickerOpen);
   const setAgentPickerOpen = useUiStore((s) => s.setAgentPickerOpen);
-  const projectId = useUiStore((s) => s.activeProjectId);
   const setProjectPickerOpen = useUiStore((s) => s.setProjectPickerOpen);
   const run = useRunsStore((s) => (thread ? s.runsByThread[thread.id] : undefined));
   const messages = useMessages(thread?.id ?? null);
@@ -101,8 +117,33 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [selectionNotice, setSelectionNotice] = useState<{ agentId: AgentId; model: string; error: unknown; savedForChat: boolean } | null>(null);
+  const explicitChoice = useRef(false);
+  const selectionOwner = thread?.id ?? projectId ?? "home";
+  const currentSelectionOwner = useRef(selectionOwner);
+  currentSelectionOwner.current = selectionOwner;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const preparedThread = useRef<Thread | null>(null);
+
+  const questionId = activeQuestion(messages.data ?? [], run?.runId)?.requestId;
+  const questionKey = questionId ? `${thread?.id}:${run?.runId}:${questionId}` : undefined;
+  const [expandedQuestion, setExpandedQuestion] = useState<{ id: string; focusNonce: number } | null>(null);
+  const compactQuestion = !!questionId && !draft.trim() && !pending.length && voice.state.phase === "idle" && !sending && !error
+    && !(expandedQuestion?.id === questionKey && expandedQuestion?.focusNonce === focusNonce);
+  const revealComposer = () => {
+    if (questionKey) setExpandedQuestion({ id: questionKey, focusNonce });
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  const previousFocusNonce = useRef(focusNonce);
+  useEffect(() => {
+    if (previousFocusNonce.current === focusNonce) return;
+    previousFocusNonce.current = focusNonce;
+    if (questionKey) setExpandedQuestion({ id: questionKey, focusNonce });
+  }, [focusNonce, questionKey]);
   const savingEffort = useRef(false);
+
+  useEffect(() => { explicitChoice.current = false; setSelectionNotice(null); }, [thread?.id, projectId]);
 
   useEffect(() => {
     if (thread) {
@@ -115,25 +156,31 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
   const defaultAgent = settings.data?.defaultAgent;
   const defaultModel = defaultAgent ? settings.data?.agents[defaultAgent]?.model ?? "" : "";
   useEffect(() => {
-    if (!thread && defaultAgent && !savePreference.isPending) {
+    if (!thread && defaultAgent && !savePreference.isPending && !explicitChoice.current) {
       setAgentId(defaultAgent);
       setModel(defaultModel);
     }
   }, [thread?.id, defaultAgent, defaultModel, savePreference.isPending]);
 
   const selectAgent = useCallback((id: AgentId, selectedModel: string) => {
-    if (!settings.data || loadingThread || savePreference.isPending || savingEffort.current) return;
-    setAgentId(id);
-    setModel(selectedModel);
+    if (!settings.data || loadingThread || savePreference.isPending || savingEffort.current || run || queued.length > 0) return;
     setError(null);
-    savePreference.mutate({ agentId: id, model: selectedModel || null }, {
-      onError: () => setError("Could not save your agent and model. Check the connection and select them again to retry."),
+    setSelectionNotice(null);
+    savePreference.mutate({ agentId: id, model: selectedModel || null, ...(thread ? { threadId: thread.id } : {}) }, {
+      onSuccess: result => {
+        if (currentSelectionOwner.current !== selectionOwner) return;
+        explicitChoice.current = true;
+        setAgentId(id);
+        setModel(selectedModel);
+        if (result.preferenceError) setSelectionNotice({ agentId: id, model: selectedModel, error: result.preferenceError, savedForChat: true });
+      },
+      onError: failure => { if (currentSelectionOwner.current === selectionOwner) setSelectionNotice({ agentId: id, model: selectedModel, error: failure, savedForChat: false }); },
     });
-  }, [settings.data, loadingThread, savePreference.isPending, savePreference.mutate]);
+  }, [settings.data, loadingThread, savePreference.isPending, savePreference.mutate, thread?.id, selectionOwner, run, queued.length]);
 
   useEffect(() => {
-    textareaRef.current?.focus();
-  }, [focusNonce, thread?.id]);
+    if (!compactQuestion) textareaRef.current?.focus();
+  }, [focusNonce, thread?.id, compactQuestion]);
 
   useLayoutEffect(() => {
     const el = textareaRef.current;
@@ -147,7 +194,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [draft]);
+  }, [draft, compactQuestion]);
 
   const agents = doctor.data?.agents ?? [];
   const pickerAgents = agents.length > 0 ? agents : FALLBACK_AGENTS;
@@ -178,6 +225,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
 
   const beginFinishIt = useCallback(async () => {
     if (!projectId || finishItBusy || alreadyFinished || loadingThread || !settings.data || savePreference.isPending || savingEffort.current) return;
+    if (!rootAutomation) { setError("Finish it currently supports single-board projects. Ask about the selected board instead."); return; }
     setError(null);
     try {
       const result = await startFinishIt.mutateAsync({
@@ -191,34 +239,38 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [projectId, finishItBusy, alreadyFinished, loadingThread, settings.data, savePreference.isPending, startFinishIt, thread?.id, agentId, model, setActiveThread, qc]);
+  }, [projectId, rootAutomation, finishItBusy, alreadyFinished, loadingThread, settings.data, savePreference.isPending, startFinishIt, thread?.id, agentId, model, setActiveThread, qc]);
 
   const send = useCallback(async () => {
     const typed = draft.trim();
     if (!typed || sending || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending || savingEffort.current) return;
-    if (!thread && !projectId) {
+    if (!thread && !projectId && !startMode) {
       setProjectPickerOpen(true);
       return;
     }
     if (isFinishItCommand(typed)) {
-      setDraft(draftKey, "");
+      if (rootAutomation) setDraft(draftKey, "");
       await beginFinishIt();
       return;
     }
     // `/shopping-list …` and friends expand into the instructions the agent needs.
-    const content = expandSlashCommand(typed) ?? typed;
+    const expanded = expandSlashCommand(typed) ?? typed;
+    const content = expanded;
+    const workspaceContext = captureAssistantContext(selectAssistantState(useUiStore.getState()), boardSources.data, boardSources.isFetching || boardSources.isError, matchingContexts);
     setSending(true);
     setError(null);
-    let createdThreadId: string | null = null;
     try {
       let threadId = thread?.id;
+      let created = preparedThread.current;
       if (!threadId) {
         // No title: the daemon names the thread after this first message (and tells every client).
-        threadId = await onCreateThread({ agentId, ...(model ? { model } : {}) });
-        createdThreadId = threadId;
+        created ??= await onCreateThread({ agentId, ...(model ? { model } : {}) });
+        preparedThread.current = created;
+        threadId = created.id;
       }
       const input = {
         content,
+        workspaceContext: created && !thread ? { ...workspaceContext, projectId: created.projectId } : workspaceContext,
         attachments: pending.map((a) => ({ path: a.path, mime: a.mime })),
         agentId,
         ...(model ? { model } : {}),
@@ -228,21 +280,22 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
       voice.reset();
       setDraft(draftKey, "");
       clearAttachments(draftKey);
-      if (draftKey === DRAFT_KEY_NEW) setDraft(threadId, "");
+      setDraftBoardContext(draftKey, null);
+      if (!thread) setDraft(threadId, "");
       void qc.invalidateQueries({ queryKey: ["messages", threadId] });
       void qc.invalidateQueries({ queryKey: ["threads"] });
-    } catch (e) {
-      if (createdThreadId) {
-        setDraft(createdThreadId, draft);
-        for (const attachment of pending) addAttachment(createdThreadId, attachment);
-        setDraft(DRAFT_KEY_NEW, "");
-        clearAttachments(DRAFT_KEY_NEW);
+      if (created && !thread) {
+        const ui = useUiStore.getState();
+        if (ui.activeProjectId === projectId && ui.activeThreadId === null && ui.setActiveProject(created.projectId)) ui.setActiveThread(created.id);
+        preparedThread.current = null;
       }
+    } catch (e) {
+      // Retain this prepared thread and the visible draft for a normal retry.
       setError(e);
     } finally {
       setSending(false);
     }
-  }, [draft, sending, saveEffort.isPending, loadingThread, settings.data, savePreference.isPending, thread, projectId, setProjectPickerOpen, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
+  }, [draft, rootAutomation, matchingContexts, boardSources.data, boardSources.isFetching, boardSources.isError, setDraftBoardContext, sending, saveEffort.isPending, loadingThread, settings.data, savePreference.isPending, startMode, projectId, setProjectPickerOpen, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
 
   const stop = useCallback(async () => {
     if (!run || stopping) return;
@@ -285,18 +338,33 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
     for (const p of paths) addAttachment(draftKey, { path: p, mime: mimeFromPath(p), label: basename(p) });
   };
 
-  const suggestions = slashSuggestions(draft);
+  const suggestions = slashSuggestions(draft).filter(command => rootAutomation || !isFinishItCommand(`/${command.name}`));
   const mod = modKey(host.platform);
-  const placeholder = thread
+  const placeholder = ideaDraft
+    ? "Ask or describe the next step…" : thread
     ? "Message the agent..."
-    : projectId
-      ? "Describe the board you want..."
-      : "Pick or create a project, then describe the board...";
+    : startMode ? "Describe your idea or ask a question…" : projectId
+      ? "Ask about this project or describe a change…"
+      : "Describe your idea or start with a sketch...";
+
+  const finishAction = <Button variant="secondary" size="sm" aria-label="Finish it"
+                title={alreadyFinished ? "Board already finished. Make changes to enable Finish it again." : "Finish schematic, place, route and verify without step-by-step prompts"}
+                onClick={() => void beginFinishIt()} disabled={finishItBusy || alreadyFinished || agentMissing || loadingThread || !settings.data || savePreference.isPending} data-testid="finish-it">
+                <Icon name="play" width={14} height={14} />
+                <span className="fd-action-label">Finish it</span>
+              </Button>;
+
+  if (compactQuestion) return <div className="fd-composer-dock bg-bg px-5 pb-3 pt-2">
+    <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-panel px-3 py-2 text-xs">
+      <span className="text-muted">Answer the question above{queued.length ? ` · ${queued.length} queued` : ""}</span>
+      <Button size="sm" variant="ghost" onClick={revealComposer}><Icon name="compose" width={14} height={14} />Write a message instead</Button>
+    </div>
+  </div>;
 
   return (
     <div className="fd-composer-dock bg-bg px-5 pb-4 pt-3">
       <div className="mx-auto max-w-3xl">
-        {!thread && !loadingThread && !projectId && (
+        {!thread && !loadingThread && !projectId && !startMode && (
           <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-border bg-panel px-3 py-2 text-xs">
             <span>Choose or create a project before sending. Your draft will be kept.</span>
             <Button size="sm" onClick={() => setProjectPickerOpen(true)}>Choose project</Button>
@@ -306,7 +374,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
           <div className="px-1 text-[11px] text-muted">Queued · sends in order after the current run</div>
           {queued.map((message, index) => <div key={message.id} className="flex items-center gap-2 rounded-lg bg-panel-2 px-2 py-1.5 text-xs">
             <span className="shrink-0 text-muted">{index + 1}.</span><span className="min-w-0 flex-1 truncate" title={message.contentMd}>{message.contentMd}</span>
-            <button type="button" className="shrink-0 text-muted hover:text-fg" disabled={unqueueMessage.isPending} aria-label={`Cancel queued message ${index + 1}`} onClick={() => void unqueueMessage.mutateAsync({ threadId: thread!.id, messageId: message.id }).catch((failure: unknown) => {
+            <button type="button" className="shrink-0 cursor-pointer text-fg hover:bg-panel-2" disabled={unqueueMessage.isPending} aria-label={`Cancel queued message ${index + 1}`} onClick={() => void unqueueMessage.mutateAsync({ threadId: thread!.id, messageId: message.id }).catch((failure: unknown) => {
               void messages.refetch();
               setError(failure instanceof CoreHttpError && failure.status === 409
                 ? "This message has already started and cannot be canceled."
@@ -324,7 +392,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
               >
                 <span className="text-muted">{a.mime.startsWith("image/") ? "img" : "file"}</span> {a.label}
                 <button
-                  className="text-muted hover:text-fg"
+                  className="text-fg hover:bg-panel-2/70"
                   onClick={() => removeAttachment(draftKey, a.path)}
                   aria-label="Remove attachment"
                 >
@@ -334,7 +402,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
             ))}
           </div>
         )}
-        {finishItSession && (
+        {finishItSession && (rootAutomation || finishItActive(finishItSession)) && (
           <FinishItPanel
             session={finishItSession}
             stopping={stopFinishIt.isPending || finishItSession.status === "stopping"}
@@ -365,6 +433,11 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
             ))}
           </div>
         )}
+        <div className="fd-composer-workspace-context" title="The agent receives the current page and selection with your message"><Icon name="sparkles" width={13} height={13} /><span>{workspaceContext.label}</span></div>
+        {boardContext && <div className="fd-composer-board-context">
+          <details><DisclosureSummary icon="pcb" label={`Attached context · ${boardContext.label}`} variant="compact" /><p>This source context accompanies your next message.</p><p className="break-words">{boardContext.instruction}</p></details>
+          <button type="button" aria-label="Remove attached context" onClick={() => setDraftBoardContext(draftKey, null)}>×</button>
+        </div>}
         <div className="fd-composer rounded-xl border border-border bg-panel transition-colors focus-within:border-accent">
           <VoiceBar
             state={voice.state}
@@ -397,17 +470,16 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
             <IconButton title="Attach file" onClick={() => void pickFiles()}>
               <Icon name="paperclip" />
             </IconButton>
-            <Button
+            {!startMode && <Button
               variant="ghost"
               size="sm"
               className="fd-sketch-button"
               aria-label="Sketch"
               title={`Sketch (${mod} + Shift + S)`}
               onClick={() => setSketchOpen(true)}
-              disabled={!projectId}
             >
               <Icon name="compose" width={16} height={16} /><span className="fd-action-label">Sketch</span>
-            </Button>
+            </Button>}
             <MicButton
               active={voice.state.phase === "recording"}
               disabled={sending}
@@ -417,15 +489,13 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
               onHoldEnd={voice.holdEnd}
               onToggle={voice.toggle}
             />
-            {thread && <PermissionsMenu key={thread.id} thread={thread} />}
-            {projectId && (
-              <Button variant="secondary" size="sm" aria-label="Finish it"
-                title={alreadyFinished ? "Board already finished. Make changes to enable Finish it again." : "Finish schematic, place, route and verify without step-by-step prompts"}
-                onClick={() => void beginFinishIt()} disabled={finishItBusy || alreadyFinished || agentMissing || loadingThread || !settings.data || savePreference.isPending} data-testid="finish-it">
-                <Icon name="play" width={14} height={14} />
-                <span className="fd-action-label">Finish it</span>
-              </Button>
-            )}
+            {thread && !ideaDraft && <PermissionsMenu key={thread.id} thread={thread} />}
+            {projectId && rootAutomation && (startMode ? <WorkspaceMenu className="fd-composer-more" label={<span aria-label="Assistant tools"><Icon name="more" width={18} height={18} /></span>}>
+              <div className="fd-menu-caption">Automation</div>
+              {finishAction}
+              <p className="fd-menu-caption">Finish schematic, placement, routing and checks with the agent.</p>
+            </WorkspaceMenu> : finishAction)}
+
             <div className="fd-composer-send-group ml-auto flex min-w-0 items-center gap-2">
               <div className="fd-agent-control relative min-w-0">
                 <Button
@@ -442,7 +512,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
                   data-testid="agent-model"
                 >
                   <AgentLogo agentId={agentId} />
-                  <span className="min-w-0 truncate">{modelEffortLabel}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
+                  <span className="min-w-0 truncate">{savePreference.isPending ? "Switching…" : modelEffortLabel}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
                 </Button>
                 <AgentModelMenu
                   anchorRef={agentButtonRef}
@@ -467,7 +537,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
                 aria-label={showStop ? "Stop current run; queued messages stay scheduled" : sending ? "Sending message" : run ? "Queue message" : "Send message"}
                 aria-busy={showStop ? stopping : sending}
                 onClick={() => void (showStop ? stop() : send())}
-                disabled={showStop ? stopping : !draft.trim() || sending || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending || (!thread && !projectId)}
+                disabled={showStop ? stopping : !draft.trim() || sending || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending || (!thread && !projectId && !startMode)}
                 title={showStop ? "Stop current run. Queued messages stay scheduled." : run ? "Queue message (Enter). Stop current run with " + mod + " + ." : "Send message (Enter)"}
               >
                 <Icon name={showStop ? "stop" : run ? "queue" : "arrowUp"} width={18} height={18} {...(showStop ? { fill: "currentColor" } : {})} />
@@ -486,7 +556,14 @@ export function Composer({ thread, loadingThread = false, onCreateThread }: Comp
             <div className="border-t border-warning/20 px-3 py-2"><InstallHint text={selectedAgent.installHint} /></div>
           </details>
         )}
-        {error != null && <ErrorNotice error={error} agentId={agentId} />}
+        {error != null && <ErrorNotice error={error} agentId={agentId} onDismiss={() => setError(null)} />}
+        {selectionNotice && <ErrorNotice error={selectionNotice.error} agentId={selectionNotice.agentId}
+          title={selectionNotice.savedForChat ? `Using ${pickerAgents.find(agent => agent.id === selectionNotice.agentId)?.displayName ?? selectionNotice.agentId} · default not saved` : "Could not switch agent"}
+          description={selectionNotice.savedForChat ? "You can continue in this chat. Retry saving your default, or restart fabPlane if it was recently updated." : "Your previous agent is still selected. Retry the switch when the connection is ready."}
+          tone={selectionNotice.savedForChat ? "warning" : "error"}
+          {...(!run && queued.length === 0 && !sending && !savePreference.isPending ? { onRetry: () => selectAgent(selectionNotice.agentId, selectionNotice.model) } : {})}
+          onDismiss={() => setSelectionNotice(null)}
+          {...(!run && queued.length === 0 && !sending && !savePreference.isPending && selectionNotice.savedForChat && selectionNotice.error instanceof CoreHttpError && selectionNotice.error.status === 404 && host.restartCore ? { onRestart: () => { setSelectionNotice(null); void host.restartCore!().catch(failure => setError(failure)); } } : {})} />}
       </div>
     </div>
   );

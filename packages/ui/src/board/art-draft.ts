@@ -1,4 +1,5 @@
 import { resolveArtOptions, type ArtOptions } from "@fabdesk/board-art";
+import { BoardArtworkView } from "@fabdesk/protocol";
 import { CoreHttpError, PersistentDraft, localDraft, type CoreClient } from "@fabdesk/client-core";
 
 export type ArtDraft = {
@@ -6,6 +7,8 @@ export type ArtDraft = {
   source: string | null;
   sourceName: string | null;
   options: ArtOptions;
+  view?: { zoom: number; placing: boolean };
+  lockProportions?: boolean;
 };
 export const ART_DRAFT_PATH = "board-art/draft.json";
 const stores = new WeakMap<CoreClient, Map<string, PersistentDraft<ArtDraft>>>();
@@ -19,6 +22,9 @@ export function parseArtDraft(text: string): ArtDraft {
   )
     throw new Error("Unsupported Board Art draft.");
   resolveArtOptions(draft.options);
+  if (draft.view !== undefined) BoardArtworkView.parse(draft.view);
+  if (draft.lockProportions !== undefined && typeof draft.lockProportions !== "boolean")
+    throw new Error("Invalid Board Art proportion lock.");
   return draft;
 }
 

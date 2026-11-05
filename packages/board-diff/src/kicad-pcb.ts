@@ -267,23 +267,26 @@ function parseZone(body: string, netsByCode: Map<number, string>): ZoneSnapshot 
   };
 }
 
-function outlineFromGraphics(text: string): Point[] {
+function outlineFromGraphics(text: string): { points: Point[]; paths: Point[][] } {
   const points: Point[] = [];
-  const push = (pt: Point | undefined) => {
-    if (pt) points.push(pt);
-  };
+  const paths: Point[][] = [];
   for (const block of [...topLevelBlocks(text, "gr_line"), ...topLevelBlocks(text, "gr_rect"), ...topLevelBlocks(text, "gr_poly")]) {
     if (!block.body.includes("Edge.Cuts")) continue;
     if (block.name === "gr_poly") {
+      const path: Point[] = [];
       for (const pt of block.body.matchAll(/\(xy\s+(-?[\d.]+)\s+(-?[\d.]+)\)/g)) {
-        if (pt[1] && pt[2]) points.push({ x: Number(pt[1]), y: Number(pt[2]) });
+        if (pt[1] && pt[2]) path.push({ x: Number(pt[1]), y: Number(pt[2]) });
       }
+      points.push(...path);
+      if (path.length > 1) paths.push([...path, path[0]!]);
       continue;
     }
-    push(parseXy(childNamed(block.body, "start")?.body ?? ""));
-    push(parseXy(childNamed(block.body, "end")?.body ?? ""));
+    const start = parseXy(childNamed(block.body, "start")?.body ?? ""), end = parseXy(childNamed(block.body, "end")?.body ?? "");
+    if (start) points.push(start);
+    if (end) points.push(end);
+    if (start && end) paths.push(block.name === "gr_rect" ? [start, { x: end.x, y: start.y }, end, { x: start.x, y: end.y }, start] : [start, end]);
   }
-  return points;
+  return { points, paths };
 }
 
 /**
@@ -347,6 +350,8 @@ export function snapshotFromKicadPcb(text: string): BoardSnapshot {
   }
 
   snapshot.nets = [...nets.values()].sort((a, b) => a.name.localeCompare(b.name));
-  snapshot.outline = outlineFromGraphics(text);
+  const outline = outlineFromGraphics(text);
+  snapshot.outline = outline.points;
+  snapshot.outlinePaths = outline.paths;
   return snapshot;
 }

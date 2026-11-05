@@ -1,0 +1,42 @@
+{
+  "scope": "Focused export UI; existing native exporters reused unchanged",
+  "checks": [
+    {
+      "fixture": "root",
+      "checkedFiles": 14,
+      "changed": []
+    },
+    {
+      "fixture": "assembly",
+      "checkedFiles": 8,
+      "changed": []
+    },
+    {
+      "fixture": "vaio",
+      "checkedFiles": 16,
+      "changed": []
+    }
+  ],
+  "nativeWalkthrough": [
+    "961x721 actual native window: saved PCB reference and four export choices; source warning and primary action visible",
+    "3D stencil thickness 0.15 to 0.20 and restored to 0.15; laser defaults and registration reachable with scroll",
+    "Private fresh-start study actual BOM export produced M1 SG90 quantity 2 and ST1 M3 standoff quantity 1; success Open output library found bom.csv",
+    "VAIO assembly Gerbers disabled with scope explanation; no member/root fallback job",
+    "No-PCB reference project manufacturing action disabled",
+    "Existing Files export dialog retained 3D stencil default and thickness; canceled"
+  ],
+  "studyOutput": {
+    "path": "exports/bom.csv",
+    "intentionallyRetained": true,
+    "bytes": 220
+  },
+  "validation": {
+    "uiTypecheck": "PASS /tmp/canvas-export-flow-verified-types.log",
+    "uiTests": "225 PASS 0 FAIL /tmp/canvas-export-flow-verified-tests.log"
+  },
+  "limitations": [
+    "No Gerber, stencil or laser export rerun in this UI pass",
+    "No fabrication, DRC or compatibility pass asserted",
+    "205 is the earlier vertical choice iteration; 206/207 use final compact grid"
+  ]
+}

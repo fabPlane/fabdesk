@@ -1,7 +1,7 @@
 /** Route toolset + the shared `route_run` implementation used by the core toolset. */
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { lstat, mkdir, readFile, realpath, rm, stat } from "node:fs/promises";
+import { join, relative, sep } from "node:path";
 import { z } from "zod/v4";
 import type { CinemaShape, RouteResult } from "@fabdesk/protocol";
 import { PROJECT_FILES, writeAtomic, writeJson } from "../fs";
@@ -29,9 +29,12 @@ import {
   projectPairs,
   referenceFacts,
   consumeReference,
+  routingCopperLayers,
   type PairDefinition,
 } from "../routing-quality";
 import { installHintFor, runTraceMaker } from "../routers";
+import { inspectOwnedProjectFile } from "../assembly";
+import { expectedPcbSource } from "../pcb-output";
 import { preferCandidate, type CandidateScore } from "../routing-choice";
 import { newRoutingDrcErrors } from "../routing-drc";
 
@@ -44,6 +47,7 @@ export const ROUTE_RUN_DEFAULT_TIMEOUT_MS = 600_000;
 export const ROUTE_RUN_DEFAULT_FREEROUTING_PASSES = 100;
 
 export const RouteRunArgs = {
+  expectedSourceSha256: expectedPcbSource,
   router: z
     .enum(["fab_router", "freerouting", "capacity", "tracemaker"])
     .optional()
@@ -263,6 +267,8 @@ export function cinemaLayer(layer: number, count: number): number {
 }
 
 type RouteArgs = {
+  expectedSourceSha256?: string | undefined;
+  sourceLayers?: string[];
   router?: "fab_router" | "capacity" | "freerouting" | "tracemaker";
   timeoutMs: number;
   onlyConnections?: string[];
@@ -300,6 +306,38 @@ type RouteArgs = {
 const iso = () => new Date().toISOString();
 const sha256 = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
 const terminalStates = new Set(["cancelled", "completed", "failed", "timed_out", "interrupted"]);
+
+const ROUTE_INPUTS = ["board.kicad_pcb", "board.kicad_pro", "board.kicad_dru"] as const;
+async function captureMemberRouteInputs(project: ProjectHandle) {
+  const root = await realpath(project.dir);
+  return Promise.all(ROUTE_INPUTS.map(async path => {
+    try { return { path, sha256: (await inspectOwnedProjectFile(root, path, 512 * 1024 * 1024)).sha256 }; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT" && path !== "board.kicad_pcb") return { path, sha256: null }; throw error; }
+  }));
+}
+async function assertMemberRoutingArtifacts(ctx: ToolContext, runDir: string) {
+  if (!ctx.board) return;
+  if (ctx.runInScope) await ctx.runInScope(async () => {});
+  const root = ctx.requireProject().dir, path = relative(root, runDir).split(sep).join("/");
+  if (!/^\.fabdesk\/runs\/run_[A-Za-z0-9_-]+$/.test(path)) throw new NativeRevisionConflict("Routing artifact directory does not belong to this source.");
+  for (const directory of [join(root, ".fabdesk"), join(root, ".fabdesk/runs"), runDir]) {
+    const entry = await lstat(directory).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return null; throw error; });
+    if (entry && (!entry.isDirectory() || await realpath(directory) !== directory)) throw new NativeRevisionConflict("Routing artifact directories must be independent source-owned folders.");
+  }
+}
+function assertRouteSource(ctx: ToolContext, record: RouteRunRecord) {
+  const board = ctx.board, owner = record.board;
+  if (!!board !== !!owner || board && (board.sourceId !== owner?.sourceId || board.manifestSha256 !== owner?.manifestSha256)) throw new ToolError("This routing run belongs to a different board source. Select its recorded source before reviewing or applying it.", "precondition");
+  if (board) {
+    const directory = ctx.boardRoot ? relative(ctx.boardRoot.dir, ctx.requireProject().dir).split(sep).join("/") || "." : null;
+    if (directory !== record.sourceDirectory || !/^run_[A-Za-z0-9_-]+$/.test(record.id) || record.artifacts.runDir.replaceAll("\\", "/") !== `.fabdesk/runs/${record.id}` || record.candidate.path.replaceAll("\\", "/") !== `.fabdesk/runs/${record.id}/candidate.kicad_pcb` || record.sourceInputs?.length !== ROUTE_INPUTS.length || ROUTE_INPUTS.some(path => !record.sourceInputs?.some(input => input.path === path))) throw new ToolError("Routing source or candidate ownership could not be verified.", "precondition");
+  }
+}
+async function memberRouteInputsMatch(project: ProjectHandle, record: RouteRunRecord) {
+  if (!record.board) return true;
+  const current = await captureMemberRouteInputs(project).catch(() => null);
+  return !!current && record.sourceInputs?.every(input => current.some(row => row.path === input.path && row.sha256 === input.sha256)) === true;
+}
 
 function compactRecord(rec: RouteRunRecord) {
   return rec;
@@ -398,7 +436,7 @@ async function persistProgress(ctx: ToolContext, rec: RouteRunRecord, runDir: st
   const path = join(runDir, "progress.json");
   const data = JSON.stringify(compactRecord(rec), null, 2) + "\n";
   const pending = (progressQueues.get(path) ?? Promise.resolve())
-    .then(() => writeAtomic(path, data))
+    .then(async () => { await assertMemberRoutingArtifacts(ctx, runDir); await writeAtomic(path, data); })
     .catch((error: unknown) => {
       console.error(`route ${rec.id}: progress write failed: ${String(error)}`);
     });
@@ -416,6 +454,7 @@ async function applyCandidate(
   const project = ctx.requireProject();
   if (rec.projectId !== project.id)
     throw new ToolError(`route ${rec.id} belongs to another project`, "precondition");
+  assertRouteSource(ctx, rec);
   if (!rec.candidate.available || !rec.candidate.reopenable)
     throw new ToolError(`route ${rec.id} has no validated candidate`, "precondition");
   if (rec.application.state === "rejected")
@@ -429,7 +468,7 @@ async function applyCandidate(
   const boardPath = p(project, PROJECT_FILES.boardPcb);
   const before = await readFile(boardPath);
   const current = sha256(before);
-  if (current !== expectedRevision || current !== rec.startingPcbRevision) {
+  if (current !== expectedRevision || current !== rec.startingPcbRevision || !await memberRouteInputsMatch(project, rec)) {
     const next = {
       ...rec,
       currentPcbRevision: current,
@@ -437,14 +476,15 @@ async function applyCandidate(
       application: {
         ...rec.application,
         state: "stale" as const,
-        reason: `stale PCB revision: expected ${expectedRevision}, start ${rec.startingPcbRevision}, actual ${current}`,
+        reason: `stale PCB revision or routing rules: expected ${expectedRevision}, start ${rec.startingPcbRevision}, actual ${current}`,
       },
     };
     await persistProgress(ctx, next, p(project, rec.artifacts.runDir));
     throw new ToolError(next.application.reason!, "precondition");
   }
   const candidatePath = p(project, rec.candidate.path);
-  const candidate = await readFile(candidatePath);
+  await assertMemberRoutingArtifacts(ctx, p(project, rec.artifacts.runDir));
+  const candidate = ctx.board ? Buffer.from((await inspectOwnedProjectFile(await realpath(project.dir), rec.candidate.path, 512 * 1024 * 1024, true)).text!) : await readFile(candidatePath);
   if (sha256(candidate) !== rec.candidate.sha256)
     throw new ToolError("candidate hash no longer matches its durable identity", "precondition");
   let next: RouteRunRecord = {
@@ -453,12 +493,14 @@ async function applyCandidate(
   };
   await persistProgress(ctx, next, p(project, rec.artifacts.runDir));
   try {
-    const replace = async () => {
+    const replaceBytes = async () => {
       const check = sha256(await readFile(boardPath));
       if (check !== current)
         throw new NativeRevisionConflict(`PCB changed before atomic replace: ${check}`);
+      if (!await memberRouteInputsMatch(project, rec)) throw new NativeRevisionConflict("Saved routing inputs changed before applying the candidate.");
       await writeAtomic(boardPath, candidate);
     };
+    const replace = () => ctx.runInScope ? ctx.runInScope(replaceBytes) : replaceBytes();
     if (ctx.services.design.withSavedFilesRecovery)
       await ctx.services.design.withSavedFilesRecovery(project.dir, replace);
     else {
@@ -514,7 +556,15 @@ async function applyCandidate(
       throw error;
     }
     await ctx.services.design.release(project.dir).catch(() => undefined);
-    await writeAtomic(boardPath, before);
+    const restore = async () => {
+      if (ctx.board && sha256(await readFile(boardPath)) !== rec.candidate.sha256) throw new NativeRevisionConflict("Automatic restore refused because the saved member changed after candidate application.");
+      await writeAtomic(boardPath, before);
+    };
+    try { if (ctx.runInScope) await ctx.runInScope(restore); else await restore(); }
+    catch (restoreError) {
+      ctx.services.routeRuns.update(rec.id, { ...next, application: { ...next.application, state: "failed", reason: `Candidate validation failed; source ownership or saved bytes changed before restore. Inspect the saved source. ${restoreError instanceof Error ? restoreError.message : String(restoreError)}` } });
+      throw restoreError;
+    }
     await ctx.services.design.release(project.dir).catch(() => undefined);
     const restored = sha256(await readFile(boardPath));
     const message = error instanceof Error ? error.message : String(error);
@@ -532,6 +582,7 @@ async function applyCandidate(
     throw error;
   }
   await persistProgress(ctx, next, p(project, rec.artifacts.runDir));
+  ctx.services.bus.emit({ topic: "project.changed", ts: Date.now(), projectId: project.id, paths: [`${rec.sourceDirectory && rec.sourceDirectory !== "." ? `${rec.sourceDirectory}/` : ""}board.kicad_pcb`] });
   return next;
 }
 
@@ -706,7 +757,7 @@ async function executeRoute(
         : {}),
       ...(args.rules?.viaDrillMm !== undefined ? { viaDrillMm: args.rules.viaDrillMm } : {}),
     };
-    const board = project.manifest().board;
+    const board: { layers: number; widthMm?: number | undefined; heightMm?: number | undefined; template?: string | undefined } = ctx.board ? { layers: args.sourceLayers!.length } : project.manifest().board;
     if (board.template !== undefined && ruleSettings["preset"] === undefined)
       ruleSettings["preset"] = "laser-prefab";
     const outlineRows = await ctx.services.design
@@ -725,7 +776,7 @@ async function executeRoute(
             y2: Math.max(...points.map((v) => v.y)),
           }
         : { x1: 0, y1: 0, x2: board.widthMm ?? 0, y2: board.heightMm ?? 0 },
-      layers: Array.from({ length: board.layers }, (_, i) =>
+      layers: args.sourceLayers ?? Array.from({ length: board.layers }, (_, i) =>
         i === 0 ? "F.Cu" : i === board.layers - 1 ? "B.Cu" : `In${i}.Cu`,
       ),
       unitsPerMm: 1,
@@ -911,8 +962,8 @@ async function executeRoute(
       // copper is present rather than discarding the user's protected geometry.
       if (scopeHasLockedCopper) return;
       await ctx.services.design.release(snapshotDir);
-      await copyFile(join(runDir, "starting.kicad_pcb"), join(snapshotDir, PROJECT_FILES.boardPcb));
-      await copyFile(join(runDir, "starting.kicad_pro"), join(snapshotDir, PROJECT_FILES.boardPro));
+      await writeAtomic(join(snapshotDir, PROJECT_FILES.boardPcb), await readFile(join(runDir, "starting.kicad_pcb")));
+      await writeAtomic(join(snapshotDir, PROJECT_FILES.boardPro), await readFile(join(runDir, "starting.kicad_pro")));
       const removed = await ctx.services.design.unroute(snapshotDir, requestedNets);
       rec.progress.diagnostics.push(
         `Clean retry: removed ${removed.tracks} tracks and ${removed.vias} vias on requested nets only.`,
@@ -1273,8 +1324,9 @@ async function executeRoute(
     );
     const candidatePath = join(runDir, "candidate.kicad_pcb");
     await ctx.services.design.release(snapshotDir).catch(() => undefined);
-    await copyFile(join(snapshotDir, PROJECT_FILES.boardPcb), candidatePath);
-    const candidateBytes = await readFile(candidatePath);
+    await assertMemberRoutingArtifacts(ctx, runDir);
+    const candidateBytes = await readFile(join(snapshotDir, PROJECT_FILES.boardPcb));
+    await writeAtomic(candidatePath, candidateBytes);
     await ctx.services.design.query(snapshotDir, "nets");
     const afterInventory = await boardInventory(ctx, snapshotDir);
     const diff = inventoryDiff(beforeInventory, afterInventory);
@@ -1505,13 +1557,14 @@ async function routeStatusOutput(
   project: ProjectHandle,
   rec: RouteRunRecord,
 ): Promise<ToolOutput> {
+  assertRouteSource(ctx, rec);
   const current = sha256(await readFile(p(project, PROJECT_FILES.boardPcb)));
   // The worker may finish while the disk read yields; never publish an older application state.
   rec = ctx.services.routeRuns.get(rec.id) ?? rec;
   const run = {
     ...rec,
     currentPcbRevision: current,
-    canonicalMatchesStart: current === rec.startingPcbRevision,
+    canonicalMatchesStart: current === rec.startingPcbRevision && await memberRouteInputsMatch(project, rec),
     heartbeatFreshnessMs: Date.now() - Date.parse(rec.progress.heartbeatAt),
   };
   ctx.services.routeRuns.update(rec.id, run);
@@ -1558,6 +1611,7 @@ async function waitForRun(
 
 export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolOutput> {
   const project = ctx.requireProject();
+  if (ctx.board && (!ctx.runWithRoutingSnapshot || !ctx.boardRoot || !args.expectedSourceSha256 || args.applyPolicy !== "manual")) throw new ToolError("Member routing requires a captured PCB revision, manual candidate review and host-approved private snapshot scope.", "precondition");
   // Keep legacy coordinate inputs recognizable so callers get an actionable error. The bridge
   // accepts net names only; dropping coordinates would silently broaden the requested mutation.
   if (args.targets?.some((target) => target.from !== undefined || target.to !== undefined))
@@ -1565,7 +1619,7 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
       "route_run supports whole-net scope only; targets.from/to cannot be honored. Use net-only targets or onlyConnections if routing the whole net is intended.",
       "precondition",
     );
-  const pinned = args.router ?? project.manifest().router ?? undefined;
+  const pinned = args.router ?? (ctx.board ? undefined : project.manifest().router) ?? undefined;
   const preferred = ctx.services.settings().preferredRouter ?? undefined;
   // A saved default that is no longer usable (its binary was removed, or TRACEMAKER_BIN went away) must not
   // make every unpinned route fail: fall back to the automatic path and say so. An explicit router still errors.
@@ -1609,9 +1663,11 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
   const boardBytes = await readFile(boardPath).catch(() => {
     throw new ToolError("board.kicad_pcb does not exist; build the board first", "precondition");
   });
-  const projectBytes = await readFile(p(project, PROJECT_FILES.boardPro)).catch(
-    () => new Uint8Array(),
-  );
+  const savedProjectBytes = await readFile(p(project, PROJECT_FILES.boardPro)).catch((error: NodeJS.ErrnoException) => {
+    if (ctx.board && error.code !== "ENOENT") throw error;
+    return null;
+  });
+  const projectBytes = savedProjectBytes ?? new Uint8Array();
   const customRules = await readFile(p(project, "board.kicad_dru")).catch(
     (error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return null;
@@ -1645,11 +1701,18 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
     }
   }
   const startingPcbRevision = sha256(boardBytes);
+  if (args.expectedSourceSha256 && args.expectedSourceSha256 !== startingPcbRevision) throw new NativeRevisionConflict("Saved PCB changed before routing; inspect the selected source again.");
+  const sourceInputs = ctx.board ? await captureMemberRouteInputs(project) : undefined;
+  const capturedHashes = { "board.kicad_pcb": startingPcbRevision, "board.kicad_pro": savedProjectBytes ? sha256(savedProjectBytes) : null, "board.kicad_dru": customRules ? sha256(customRules) : null };
+  if (sourceInputs?.some(input => input.sha256 !== capturedHashes[input.path])) throw new NativeRevisionConflict("Saved PCB or routing rules changed during snapshot capture.");
+  if (ctx.board) args = { ...args, sourceLayers: routingCopperLayers(boardBytes.toString()) };
   const runId = newRunId();
   const runRel = join(PROJECT_FILES.runs, runId);
   const runDir = p(project, runRel);
   const snapshotDir = join(runDir, "snapshot");
+  await assertMemberRoutingArtifacts(ctx, runDir);
   await mkdir(snapshotDir, { recursive: true });
+  await assertMemberRoutingArtifacts(ctx, runDir);
   await Promise.all([
     writeAtomic(join(snapshotDir, PROJECT_FILES.boardPcb), boardBytes),
     writeAtomic(join(snapshotDir, PROJECT_FILES.boardPro), projectBytes),
@@ -1676,6 +1739,7 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
   const record: RouteRunRecord = {
     id: runId,
     projectId: project.id,
+    ...(ctx.board ? { board: { ...ctx.board }, sourceDirectory: relative(ctx.boardRoot!.dir, project.dir).split(sep).join("/") || ".", sourceInputs: sourceInputs! } : {}),
     router,
     fallbackReason,
     attempts: fallbackReason
@@ -1761,7 +1825,17 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
   const settled = new Promise<void>((resolve) => (markSettled = resolve));
   const queuedState = ctx.services.routeTasks.enqueue(
     { id: runId, projectId: project.id },
-    (signal) => executeRoute(args, ctx, record, snapshotDir, signal).finally(markSettled),
+    async (signal) => {
+      try {
+        if (ctx.board) await ctx.runWithRoutingSnapshot!(snapshotDir, () => executeRoute(args, ctx, record, snapshotDir, signal));
+        else await executeRoute(args, ctx, record, snapshotDir, signal);
+      } catch (error) {
+        // A changed binding may prevent entering the worker at all. Record the failure in the
+        // daemon store without writing through an unverified source/artifact directory.
+        const current = ctx.services.routeRuns.get(runId) ?? record, at = iso();
+        if (!terminalStates.has(current.state)) ctx.services.routeRuns.update(runId, { ...current, state: signal.aborted ? "cancelled" : "failed", status: signal.aborted ? "cancelled" : "failed", endedAt: at, updatedAt: at, error: error instanceof Error ? error.message : String(error), terminalReason: "Captured routing source or snapshot could not be entered; no candidate was applied.", application: { ...current.application, state: "not_available", reason: error instanceof Error ? error.message : String(error) } });
+      } finally { markSettled(); }
+    },
   );
   const startedRecord = {
     ...record,
@@ -1809,6 +1883,7 @@ export async function runRoute(args: RouteArgs, ctx: ToolContext): Promise<ToolO
 
 export const route_status = defineTool({
   name: "route_status",
+  boardScoped: true,
   toolset: "route",
   title: "Routing status",
   description:
@@ -1822,6 +1897,7 @@ export const route_status = defineTool({
   },
   handler: async ({ runId }, ctx) => {
     const project = ctx.requireProject();
+    if (ctx.board && !runId) throw new ToolError("Select an exact routing run for this board source.", "precondition");
     const rec = runId
       ? ctx.services.routeRuns.get(runId)
       : ctx.services.routeRuns.latest(project.id);
@@ -1833,6 +1909,7 @@ export const route_status = defineTool({
 
 export const route_cancel = defineTool({
   name: "route_cancel",
+  boardScoped: true,
   toolset: "route",
   title: "Cancel routing",
   description:
@@ -1849,6 +1926,7 @@ export const route_cancel = defineTool({
     const rec = ctx.services.routeRuns.get(runId);
     if (!rec || rec.projectId !== project.id)
       throw new ToolError(`route run not found in this project: ${runId}`, "not_found");
+    assertRouteSource(ctx, rec);
     if (terminalStates.has(rec.state))
       return ok(`Route ${runId} is already terminal (${rec.state}); no action taken.`, {
         runId,
@@ -1875,6 +1953,7 @@ export const route_cancel = defineTool({
 
 export const route_apply = defineTool({
   name: "route_apply",
+  boardScoped: true,
   toolset: "route",
   title: "Apply route candidate",
   description:
@@ -1893,6 +1972,8 @@ export const route_apply = defineTool({
   handler: async ({ runId, expectedPcbRevision, allowQualityRegression }, ctx) => {
     const rec = ctx.services.routeRuns.get(runId);
     if (!rec) throw new ToolError(`route run not found: ${runId}`, "not_found");
+    if (rec.projectId !== ctx.requireProject().id) throw new ToolError(`route ${runId} belongs to another project`, "precondition");
+    assertRouteSource(ctx, rec);
     if (rec.application.state === "applied" && rec.application.resultingPcbRevision)
       return ok(`Route ${runId} candidate is already applied.`, {
         runId,

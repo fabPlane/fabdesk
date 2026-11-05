@@ -54,6 +54,8 @@ export function useShortcuts(actions: ShortcutActions, platform?: string): void 
       const mod = mac ? e.metaKey : e.ctrlKey;
       if (!mod) return;
       const ui = useUiStore.getState();
+      // A sketch modal owns its keyboard; never send the underlying draft while saving it.
+      if (ui.sketchOpen) return;
       const key = e.key.toLowerCase();
       const shift = e.shiftKey;
       const run = (fn?: () => void) => {

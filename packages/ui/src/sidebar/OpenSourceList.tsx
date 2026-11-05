@@ -1,6 +1,6 @@
 import type { OpenCatalogEntry } from "@fabdesk/protocol";
 import { useState } from "react";
-import { Input } from "../components/ui";
+import { Button, Input } from "../components/ui";
 import { useCoreClient } from "@fabdesk/client-core";
 import { useOpenCatalog } from "@fabdesk/client-core";
 import { CatalogThumb } from "../opensource/CatalogThumb";
@@ -28,7 +28,7 @@ export function OpenSourceList() {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-1">
         {catalog.isLoading && <div className="px-2 py-3 text-xs text-muted">Loading catalog...</div>}
-        {catalog.isError && <div className="px-2 py-3 text-xs text-danger">Could not load open source projects</div>}
+        {catalog.isError && <div role="alert" className="space-y-2 px-2 py-3 text-xs text-danger"><p>Could not load open source projects.</p><Button size="sm" variant="ghost" disabled={catalog.isFetching} onClick={() => void catalog.refetch()}>Retry catalog</Button></div>}
         {projects.map((project) => (
           <OpenSourceRow
             key={project.id}
@@ -38,7 +38,7 @@ export function OpenSourceList() {
             onOpen={() => setActiveOpenSourceId(project.id)}
           />
         ))}
-        {catalog.data && projects.length === 0 && (
+        {!catalog.isError && catalog.data && projects.length === 0 && (
           <div className="px-2 py-6 text-center text-xs text-muted">No matching projects.</div>
         )}
       </div>

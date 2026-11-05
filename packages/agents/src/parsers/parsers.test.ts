@@ -193,6 +193,18 @@ describe("MessagesStreamParser (grok, recorded)", () => {
 });
 
 describe("CodexStreamParser", () => {
+  test("model-switch advisories preserve the reply without failing a successful turn", () => {
+    const notice = "This session was recorded with model `gpt-6.1-sol` but is resuming with `gpt-6-astra`. Consider switching back to `gpt-6.1-sol` as it may affect Codex performance.";
+    for (const event of [{ type: "error", message: notice }, { type: "item.completed", item: { id: "notice", type: "error", message: notice } }]) {
+      const parser = new CodexStreamParser();
+      const events = feedAll(parser, [event, { type: "item.completed", item: { id: "reply", type: "agent_message", text: "Ready." } }, { type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1 } }]);
+      expect(events.filter(item => item.type === "error")).toHaveLength(0);
+      expect(joined(events, "text")).toBe(`⚠ ${notice}\n\nReady.`);
+      expect(parser.feed({ type: "turn.failed", error: { message: notice } })).toEqual([{ type: "error", message: notice }]);
+      expect(parser.feed({ type: "error", message: "The selected model is not supported" })).toEqual([{ type: "error", message: "The selected model is not supported" }]);
+    }
+  });
+
   test("recorded file-change run", async () => {
     const parser = new CodexStreamParser();
     const events = feedAll(parser, await fixtureLines("codex-file-change.jsonl"));

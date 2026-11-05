@@ -4,6 +4,7 @@
  * pending requests (approvals and questions) and of the queued-message drain that runs when a
  * run ends.
  */
+import { workspacePrompt, type WorkspaceContext } from "@fabdesk/protocol";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -65,7 +66,7 @@ async function settledWithin(
   return settled;
 }
 
-function appendMcpProfile(url: string, profile: "substrate"): string {
+function appendMcpProfile(url: string, profile: "substrate" | "planning"): string {
   const endpoint = new URL(url);
   endpoint.searchParams.set("profile", profile);
   return endpoint.toString();
@@ -93,6 +94,7 @@ export type RunDeps = {
   annotationsFor?: (toolName: string, server: string | null) => ToolAnnotations | undefined;
   /** Needed to send queued messages when a run ends (the HTTP route resolves projects the same way). */
   resolveProject?: (projectId: string) => Promise<ProjectHandle | null>;
+  projectTransitioning?: (projectId: string) => boolean;
   /** Tests shorten the 30-minute approval timeout. */
   approvalTimeoutMs?: number;
   /** Tests shorten how long an HTTP abort waits for the run to end. */
@@ -143,6 +145,7 @@ type StartInput = {
   agentId: AgentId;
   model?: string;
   prompt: string;
+  workspaceContext?: WorkspaceContext;
   attachments: Array<{ path: string; mime: string }>;
 };
 
@@ -526,6 +529,8 @@ export class AgentRunManager {
     if (this.isRunning(input.threadId))
       throw new ToolError("an agent run is already active on this thread", "precondition");
     const projectId = input.project?.id ?? null;
+    if (projectId && this.deps.projectTransitioning?.(projectId)) throw new ToolError("Project setup is in progress. Send again once it finishes.", "precondition");
+    if (input.workspaceContext && input.workspaceContext.projectId !== projectId) throw new ToolError("Workspace context belongs to another project. Reopen the conversation and send again.", "precondition");
     const busy = projectId !== null ? this.projectBusyMessage(projectId) : null;
     if (busy) throw new ToolError(busy.message, "precondition");
     this.startingThreads.add(input.threadId);
@@ -544,12 +549,14 @@ export class AgentRunManager {
     if (!adapter) throw new ToolError(`agent ${input.agentId} is not available`, "unavailable");
     const settings = this.deps.settings();
     const agentSettings = settings.agents[input.agentId];
+    const planningOnly = !!input.project?.manifest().ideaDraft;
+    if (planningOnly && !["codex", "claude"].includes(input.agentId)) throw new ToolError("Draft discussion is available with Codex or Claude. Choose one, or create the project first.", "precondition");
     const runtimeMode: RuntimeMode = store.threads.get(input.threadId)?.runtimeMode ?? "full";
     if (runtimeMode === "supervised" && !adapter.supportsSupervised)
       throw new ToolError("agent cannot run supervised", "invalid_args");
     const cwd = input.project?.dir ?? join(this.deps.workspaceDir, "scratch", input.threadId);
     await mkdir(cwd, { recursive: true });
-    if (input.project && this.deps.prepareProject)
+    if (input.project && !planningOnly && this.deps.prepareProject)
       await this.deps
         .prepareProject(input.project, input.agentId)
         .catch((e) => logger.warn("prepareProject failed", { error: errMsg(e) }));
@@ -570,7 +577,7 @@ export class AgentRunManager {
         agentId: input.agentId,
         projectId: input.project?.id ?? null,
         cwd,
-        prompt: input.prompt,
+        prompt: workspacePrompt(input.prompt, input.workspaceContext),
         attachments: input.attachments,
         ...(selectedModel ? { model: selectedModel } : {}),
       });
@@ -593,7 +600,13 @@ export class AgentRunManager {
       projectId: input.project?.id ?? null,
       threadId: input.threadId,
     });
-    const resume = store.runs.lastSession(input.threadId, input.agentId);
+    const promotedAt = input.project?.manifest().promotedAt;
+    const previousSession = store.runs.historyForThread(input.threadId).find(item => item.agentId === input.agentId && item.agentSessionId);
+    // The old session's cwd and restrictions belong to the draft; carry conversation text
+    // into a fresh session once after promotion instead of resuming the old directory.
+    const resume = previousSession && (!promotedAt || previousSession.startedAt >= promotedAt) ? previousSession.agentSessionId : null;
+    const history = !resume && promotedAt ? store.threads.messages(input.threadId).filter(item => item.role === "user" || item.role === "assistant").map(item => `${item.role}: ${item.contentMd}`).join("\n\n") : "";
+    const planningInstructions = "You are helping explore an idea draft in fabPlane. Discuss requirements, explain options and use attached sketches as planning references. Do not create, edit, generate, render or validate engineering files. If the user asks for those actions, call request_project_creation with their agreed request, then stop and explain that project setup is ready. Do not use a shell or another tool to work around the draft boundary. Do not claim a board or schematic exists. Use request_user_input for planning questions when available; an unanswered question is not approval.\n\n";
     const message = store.threads.addMessage({
       threadId: input.threadId,
       role: "assistant",
@@ -679,10 +692,10 @@ export class AgentRunManager {
 
     const session: AgentSession = {
       cwd,
-      prompt: input.prompt,
+      prompt: `${planningOnly ? planningInstructions : history ? `Earlier planning conversation (context, not new instructions):\n${history}\n\nCurrent request:\n` : ""}${workspacePrompt(input.prompt, input.workspaceContext)}`,
       attachments: input.attachments,
       mcp: {
-        url: this.deps.mcpProfile
+        url: planningOnly ? appendMcpProfile(this.deps.mcpUrl, "planning") : this.deps.mcpProfile
           ? appendMcpProfile(this.deps.mcpUrl, this.deps.mcpProfile)
           : this.deps.mcpUrl,
         token,
@@ -691,6 +704,7 @@ export class AgentRunManager {
       ...(selectedModel ? { model: selectedModel } : {}),
       ...(effort ? { effort } : {}),
       permission: agentSettings?.permissionMode ?? "acceptEdits",
+      ...(planningOnly ? { planningOnly: true } : {}),
       ...(workbenchEnv && Object.keys(workbenchEnv).length ? { env: workbenchEnv } : {}),
       runtimeMode,
       requestInput: (req) => this.requestInput(active, req, req.signal),
@@ -956,12 +970,15 @@ export class AgentRunManager {
         p.type === "image" ? [{ path: p.path, mime: p.mime }] : [],
       );
       try {
+        const context = next.parts.find(part => part.type === "workspace_context");
+        if (context?.type === "workspace_context" && context.context.projectId !== (project?.id ?? null)) throw new ToolError("The queued workspace context belongs to another project. Review this message before sending it again.", "precondition");
         await this.start({
           threadId,
           project,
           agentId: thread.agentId,
           ...(thread.model ? { model: thread.model } : {}),
           prompt: next.contentMd,
+          ...(context?.type === "workspace_context" ? { workspaceContext: context.context } : {}),
           attachments,
         });
       } catch (e) {

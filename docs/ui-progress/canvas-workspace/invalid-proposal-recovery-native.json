@@ -1,0 +1,24 @@
+{
+  "projectId": "prj_mvrlt1yx802c210b69",
+  "nativeOutline": {
+    "savedWidth": 15,
+    "invalidProposal": 1518,
+    "applyDisabled": true,
+    "validationVisible": true,
+    "discardAvailable": true,
+    "afterDiscard": 15
+  },
+  "nativePosition": {
+    "reference": "R1",
+    "savedX": 106,
+    "invalidProposal": "empty",
+    "applyDisabled": true,
+    "validationVisible": true,
+    "discardAvailable": true,
+    "afterDiscard": 106
+  },
+  "nativeApplyInvoked": false,
+  "stableOriginalFilesUnchanged": 19,
+  "finalState": "PCB quiet; tools closed; no source faults/jobs",
+  "checks": "UItypecheck and228tests passed"
+}

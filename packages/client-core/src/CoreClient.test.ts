@@ -48,6 +48,17 @@ describe("CoreClient open-source preview URL", () => {
 });
 
 describe("CoreClient board comments", () => {
+  test("source selectors accompany every comment operation and malformed selectors never become root requests", async () => {
+    const urls: string[] = [], client = new CoreClient({ baseUrl: "http://local", token: "test", fetch: async url => { urls.push(url); return Response.json({}); } });
+    const board = { sourceId: "io", manifestSha256: "a".repeat(64) };
+    await client.listComments("project", board);
+    await client.pinComment("project", { question: "Here?", anchor: { view: "pcb", ref: "R1" } }, board);
+    await client.patchComment("project", "cmt_test", { status: "resolved" }, board);
+    expect(urls.every(url => url.endsWith(`?sourceId=io&manifestSha256=${board.manifestSha256}`))).toBe(true);
+    expect(urls[2]).toContain("/comments/cmt_test?");
+    expect(() => client.listComments("project", { sourceId: "../wrong", manifestSha256: "bad" })).toThrow();
+    expect(urls).toHaveLength(3);
+  });
   test("pins and lists comments on encoded project ids", async () => {
     const calls: Array<{ url: string; method: string | undefined }> = [];
     const client = new CoreClient({
@@ -179,4 +190,12 @@ describe("CoreClient push registration (docs/mobile-notifications.md §4.1)", ()
       ["GET", "http://127.0.0.1:47831/v1/devices/me"],
     ]);
   });
+});
+
+test("assembly inspection encodes project identity and returns the read-only response", async () => {
+  let requested = "";
+  const result = { projectId: "project/one", mode: "single" as const, assembly: null, manifestSha256: null, sources: [], observedAt: new Date().toISOString(), editing: "single-board-only" as const };
+  const client = new CoreClient({ baseUrl: "http://127.0.0.1:47831", token: "tok", fetch: async (input) => { requested = input; return Response.json(result); } });
+  expect(await client.inspectBoardSources("project/one")).toEqual(result);
+  expect(requested).toBe("http://127.0.0.1:47831/projects/project%2Fone/board-sources");
 });

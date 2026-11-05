@@ -1,0 +1,58 @@
+{
+  "baseImplementation": "ef46f2e",
+  "projectId": "prj_mvszo4wl7ba352a775",
+  "nativeChecks": {
+    "actualTextSave": {
+      "bytes": 89,
+      "sha256": "a3d11f0972e65182ff830eb1f43e813a70f84f044acedf65430d06046e8f37f8",
+      "matchesSource": true,
+      "destination": "download-validation/preview-recovery-validation.txt"
+    },
+    "nativeSaveAsChosenOutputFolder": true,
+    "noExistingDownloadOverwritten": true,
+    "reservedDownloadsNameStillAbsent": true,
+    "unreadableImageDownload": "actual read failure shown, no Save dialog",
+    "errorBoundToOriginalFile": true,
+    "selectOtherTextHidesImageDownloadError": true,
+    "retryAfterRestore": "native Save dialog + exact12824byte PNG",
+    "actualPngSave": {
+      "path": "/Users/amliomnie/Documents/Codex/2026-10-27/https-github-com-tensorfleet-placement-lab/outputs/fabdesk-canvas-implementation/download-validation/ui-preview-recovery.png",
+      "bytes": 12824,
+      "sha256": "eb9241a1f64aa30f817cf51499615a929e5221b8bdbb4865894b8dec8e420dd4",
+      "sourceEqual": true
+    },
+    "compact960x720FilenameReadableAndActionsGrouped": true,
+    "restored1440x870": true,
+    "noAgentMessageOrNativeDesignEdit": true
+  },
+  "protectedOriginalAndContextHashes": {
+    ".gitignore": "b19e46b028283686f56a2fbc838cd00ea1d51c8d26ddbb8f0c5e6134a6a0cdb6",
+    "fabdesk.json": "a5725410062d17556c60b3d88b62379bee121d9bcd0f17153e5b31c4c761e324",
+    "sketches/vaio-io-reference.excalidraw.png": "eb9241a1f64aa30f817cf51499615a929e5221b8bdbb4865894b8dec8e420dd4",
+    "AGENTS.md": "dd0600edeb5c155ada231ab69d840cff0bdd0126c761f8c043d6eb66b86e1460",
+    "CLAUDE.md": "336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49"
+  },
+  "imageGuard": {
+    "status": "RESTORED",
+    "mode": "0o644",
+    "sha256": "eb9241a1f64aa30f817cf51499615a929e5221b8bdbb4865894b8dec8e420dd4"
+  },
+  "validation": {
+    "uiTypes": "PASS /tmp/canvas-file-download-ui-types.log",
+    "uiTests": "231passed/901assertions /tmp/canvas-file-download-ui-tests.log",
+    "priorRoot": "2304c65 roottypesPASS/full2270passed36skipped0failed; newselectedfileUI validated locally by final UIchecks + native bytepreservation"
+  },
+  "screenshots": {
+    "461-selected-file-download-action.png": "file-download-action.png",
+    "462-file-download-native-save-dialog.png": "file-download-save-dialog.png",
+    "463-selected-file-download-failure.png": "file-download-error.png",
+    "464-selected-file-download-retry-recovers.png": "file-download-recovery.png",
+    "465-drawing-file-actions-compact-before-wrap.png": "file-download-compact-before.png",
+    "466-drawing-file-actions-compact-readable.png": "file-download-compact-after.png"
+  },
+  "limits": [
+    "Download reads the selected saved file; it does not generate, modify or validate the design.",
+    "Browser/OS Save can be cancelled; UI does not claim a successful filesystem save.",
+    "Other file formats reuse the existing authenticated Blob download path; this native slice byte-verified TXT and PNG."
+  ]
+}

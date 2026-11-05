@@ -1,3 +1,23 @@
+import { inspectOutputRevision, type OutputRevisionTarget } from "./output-revision";
+import { saveAgentSelection } from "./agent-selection";
+import { projectAssistantRuns } from "./project-assistant-runs";
+import { inspectKeptOutputIdentity, type KeptOutputKind } from "./kept-output";
+import { pcbToolJson } from "./pcb-parts";
+import { inspectVideoInputRevision } from "./video-input-revision";
+import { inspectRouteReview } from "./route-review";
+import { inspectAssemblySchematicPreview } from "./assembly-schematic-preview";
+import { inspectAssemblyModelSummaries } from "./assembly-model-summary";
+import { inspectAssemblyBoardModel } from "./assembly-board-model";
+import { inspectAssemblyCheckSummaries } from "./assembly-check-summary";
+import { inspectAssemblyPcbCheck } from "./assembly-checks";
+import { inspectAssemblyBoard } from "./assembly-scene";
+import type { BoardSourceSelection, ProjectBoardSources, ProjectBomSnapshot, BomSyncOptions } from "@fabdesk/protocol";
+import { inspectBoardModelRevision } from "./board-model-revision";
+import { inspectPcbCheckRevision } from "./check-revision";
+import { inspectPcbOutline } from "./pcb-outline";
+import { inspectPcbParts } from "./pcb-parts";
+import { inspectEnclosureSourceRevision } from "./enclosure-revision";
+import { inspectPcbPreviewRevision } from "./pcb-preview-revision";
 import type {
   AgentId,
   ApprovalDecision,
@@ -11,8 +31,8 @@ import type {
   RouteResult,
   RouterCatalogId,
 } from "@fabdesk/protocol";
-import { useInfiniteQuery, useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useInfiniteQuery, useIsMutating, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { useCoreClient } from "./provider";
 import { messagesKey } from "./events";
 import {
@@ -23,6 +43,18 @@ import {
   type SendMessageInput,
 } from "./CoreClient";
 import { useAuthStore } from "./stores/auth";
+import { useRunsStore } from "./stores/runs";
+import { activeModelOutputJobs, projectJobs } from "./project-jobs";
+
+/** Stable daemon identity survives its temporary local listening port changing. */
+export function useCoreIdentity() {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["core-identity", client.baseUrl],
+    queryFn: async () => (await client.health()).coreId ?? null,
+    staleTime: Infinity,
+  });
+}
 
 export function useProjects() {
   const client = useCoreClient();
@@ -36,6 +68,39 @@ export function useProject(projectId: string | null) {
     queryFn: () => client.getProject(projectId!),
     enabled: !!projectId,
   });
+}
+
+export function useBoardSources(projectId: string | null) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["board-sources", projectId], queryFn: () => client.inspectBoardSources(projectId!), enabled: !!projectId });
+}
+
+export function useProjectBom(projectId: string | null, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["project-bom", projectId], enabled: enabled && !!projectId, retry: false, staleTime: 30_000,
+    queryFn: async (): Promise<ProjectBomSnapshot> => {
+      const call = await client.callTool("bom_read", { projectId });
+      const job = call.jobId ? await client.waitJob(call.jobId) : null;
+      if (job && job.status !== "done") throw new Error(job.error ?? "Could not read project BOM");
+      const snapshot = pcbToolJson(job ? job.result : call);
+      if (snapshot.contract !== "fabplane.project-bom.v1" || snapshot.projectId !== projectId || !Array.isArray(snapshot.lines) || !Array.isArray(snapshot.coverage)) throw new Error("The parts list did not return a captured project BOM.");
+      return snapshot as unknown as ProjectBomSnapshot;
+    },
+  });
+}
+
+export function useAssemblyPreviewRevisions(projectId: string, sources: ProjectBoardSources["sources"]) {
+  const client = useCoreClient();
+  const queries = useQueries({ queries: sources.map(source => {
+    const directory = source.source.location === "project" ? source.source.directory : null;
+    return { queryKey: directory === "." ? ["pcb-preview-revision", projectId, ".", source.pcbSha256] : directory ? ["pcb-preview-revision", projectId, directory, source.pcbSha256] : ["pcb-preview-revision", projectId, "unresolved", source.source.id], queryFn: () => inspectPcbPreviewRevision(client, projectId, directory!, source.pcbSha256), enabled: source.status === "available" && !!source.previewPath && directory !== null };
+  }) });
+  return sources.map((source, index) => ({ sourceId: source.source.id, trackable: source.status === "available" && !!source.previewPath && source.source.location === "project", ...queries[index]! }));
+}
+
+export function useAssemblyBoardInspection(projectId: string, board: BoardSourceSelection, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["assembly-board-inspection", projectId, board.sourceId, board.manifestSha256], queryFn: () => inspectAssemblyBoard(client, projectId, board), enabled });
 }
 
 export function useOpenCatalog(q = "") {
@@ -104,6 +169,13 @@ export function useThreads(params?: { q?: string; projectId?: string | null }) {
     // the screen from flashing "no chats match" between keystrokes.
     placeholderData: (previous) => previous,
   });
+}
+
+export function useProjectAssistantRuns(projectId: string) {
+  const threads = useThreads({ projectId });
+  const live = useRunsStore(state => state.runsByThread);
+  const runs = useMemo(() => projectAssistantRuns(projectId, threads.data ?? [], live), [projectId, threads.data, live]);
+  return { runs, isPending: threads.isPending, isError: threads.isError };
 }
 
 export function useChatSearch(query: string) {
@@ -226,17 +298,23 @@ export function usePatchSettings() {
   });
 }
 
-/** Persist only explicit selections, never the agent of a thread merely being viewed. */
+/** Save an explicit choice to this chat first, then to defaults for future chats. */
 export function useSaveAgentPreference() {
   const client = useCoreClient();
   const qc = useQueryClient();
   return useMutation({
     scope: { id: "agent-preference" },
-    mutationFn: (preference: Parameters<typeof client.saveAgentPreference>[0]) => client.saveAgentPreference(preference),
+    mutationFn: (preference: Parameters<typeof client.saveAgentPreference>[0] & { threadId?: string }) => saveAgentSelection(client, preference),
     onSuccess: async (data) => {
+      if (data.thread) {
+        await qc.cancelQueries({ queryKey: ["thread", data.thread.id] });
+        qc.setQueryData(["thread", data.thread.id], (previous: object | undefined) => ({ ...previous, ...data.thread }));
+        void qc.invalidateQueries({ queryKey: ["threads"] });
+      }
+      if (!data.settings) return;
       // An older settings fetch must not restore the previous default after this save.
       await qc.cancelQueries({ queryKey: ["settings"] });
-      qc.setQueryData(["settings"], data);
+      qc.setQueryData(["settings"], data.settings);
     },
   });
 }
@@ -411,6 +489,8 @@ export function useUploadSketch() {
 export interface RouteRunSummary {
   id: string;
   projectId: string;
+  board?: BoardSourceSelection;
+  sourceDirectory?: string;
   router: string;
   fallbackReason?: string | null;
   attempts?: Array<{ router: string; outcome: string; reason: string | null }>;
@@ -427,6 +507,7 @@ export interface RouteRunSummary {
   framesPath: string;
   startedAt: string;
   endedAt: string | null;
+  candidate?: { available: boolean };
   result: RouteResult | null;
   error: string | null;
 }
@@ -464,6 +545,11 @@ export function useRouteRun(runId: string | null) {
         ? 2000
         : false,
   });
+}
+
+export function useRouteReview(projectId: string, runId: string, enabled: boolean, board?: BoardSourceSelection) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["route-review", projectId, runId, board?.sourceId ?? ".", board?.manifestSha256 ?? "."], queryFn: () => inspectRouteReview(client, projectId, runId, board), enabled });
 }
 
 /**
@@ -574,15 +660,22 @@ export function useWriteProjectFile() {
 /* ---------- jobs ---------- */
 
 /** Every job the daemon knows about; polls while one is queued or running, events cover the rest. */
-export function useJobs(enabled = true) {
+export function useJobs(enabled = true, projectId?: string) {
   const client = useCoreClient();
   return useQuery({
-    queryKey: ["jobs"],
-    queryFn: () => client.request<Job[]>("/jobs"),
+    queryKey: ["jobs", client.baseUrl, projectId ?? null],
+    queryFn: () => client.request<Job[]>(`/jobs${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`),
     enabled,
     refetchInterval: (q) =>
       q.state.data?.some((j) => j.status === "queued" || j.status === "running") ? 2000 : false,
   });
+}
+
+/** Recover output work after changing pages or reopening a project. */
+export function useModelOutputActivity(projectId: string | null, board?: BoardSourceSelection) {
+  const client = useCoreClient(), history = useJobs(!!projectId, projectId ?? undefined), live = useRunsStore(state => state.jobs);
+  const active = activeModelOutputJobs(projectJobs(projectId ?? "", history.data ?? [], live, client.baseUrl), board);
+  return { ...active, ready: !history.isPending && !history.isError, isError: history.isError, refetch: history.refetch };
 }
 
 export function useCancelJob() {
@@ -807,7 +900,7 @@ export function useShoppingListMutations(projectId: string | null) {
   };
   return {
     create: useMutation({ mutationFn: () => client.createShoppingList(need()), onSuccess: refresh }),
-    syncBom: useMutation({ mutationFn: () => client.syncShoppingBom(need()), onSuccess: refresh }),
+    syncBom: useMutation({ mutationFn: (options: BomSyncOptions) => client.syncShoppingBom(need(), options), onSuccess: refresh }),
     add: useMutation({
       mutationFn: (items: Parameters<typeof client.addShoppingItems>[1]) =>
         client.addShoppingItems(need(), items),
@@ -852,12 +945,12 @@ export function useInventoryMutations() {
   };
 }
 
-export function useBoardComments(projectId: string | null) {
+export function useBoardComments(projectId: string | null, board?: BoardSourceSelection, enabled = true) {
   const client = useCoreClient();
   return useQuery({
-    queryKey: ["comments", projectId],
-    queryFn: () => client.listComments(projectId!),
-    enabled: !!projectId,
+    queryKey: ["comments", projectId, board ?? null],
+    queryFn: () => client.listComments(projectId!, board),
+    enabled: !!projectId && enabled,
   });
 }
 
@@ -879,7 +972,7 @@ export function useBoardNotes(projectId: string | null) {
   });
 }
 
-export function useBoardCommentMutations(projectId: string | null) {
+export function useBoardCommentMutations(projectId: string | null, board?: BoardSourceSelection) {
   const client = useCoreClient();
   const qc = useQueryClient();
   const refresh = () => {
@@ -890,12 +983,12 @@ export function useBoardCommentMutations(projectId: string | null) {
   };
   return {
     pin: useMutation({
-      mutationFn: (input: Parameters<typeof client.pinComment>[1]) => client.pinComment(projectId!, input),
+      mutationFn: (input: Parameters<typeof client.pinComment>[1]) => client.pinComment(projectId!, input, board),
       onSuccess: refresh,
     }),
     patch: useMutation({
       mutationFn: ({ commentId, patch }: { commentId: string; patch: Parameters<typeof client.patchComment>[2] }) =>
-        client.patchComment(projectId!, commentId, patch),
+        client.patchComment(projectId!, commentId, patch, board),
       onSuccess: refresh,
     }),
     writeNotes: useMutation({
@@ -948,4 +1041,109 @@ export function useStopFinishIt() {
       qc.setQueryData(["finish-it", projectId], data.session);
     },
   });
+}
+
+export function useKeptOutputIdentity(projectId: string, kind: KeptOutputKind, enabled: boolean) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["kept-output-identity", projectId, client.baseUrl, kind], queryFn: () => inspectKeptOutputIdentity(client, projectId, kind), enabled, retry: false });
+}
+
+export function usePcbPreviewRevision(projectId: string | null, enabled = true, directory = ".") {
+  const client = useCoreClient();
+  return useQuery({ queryKey: directory === "." ? ["pcb-preview-revision", projectId] : ["pcb-preview-revision", projectId, directory], queryFn: () => inspectPcbPreviewRevision(client, projectId!, directory), enabled: !!projectId && enabled });
+}
+
+export function useEnclosureSourceRevision(projectId: string | null, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["enclosure-source-revision", projectId], queryFn: () => inspectEnclosureSourceRevision(client, projectId!), enabled: !!projectId && enabled });
+}
+
+export function usePcbPartsNear(projectId: string, point: { x: number; y: number }, enabled: boolean, board?: BoardSourceSelection) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: board ? ["pcb-parts", projectId, "source", board.sourceId, board.manifestSha256, point.x, point.y] : ["pcb-parts", projectId, point.x, point.y], queryFn: () => inspectPcbParts(client, projectId, { near: { ...point, radius: 5 } }, board), enabled });
+}
+
+export function usePcbOutline(projectId: string, enabled: boolean, board?: BoardSourceSelection) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: board ? ["pcb-outline", projectId, "source", board.sourceId, board.manifestSha256] : ["pcb-outline", projectId], queryFn: () => inspectPcbOutline(client, projectId, board), enabled });
+}
+
+export function usePcbCheckRevision(projectId: string | null, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["pcb-check-revision", projectId], queryFn: () => inspectPcbCheckRevision(client, projectId!), enabled: !!projectId && enabled });
+}
+
+
+export function useBoardModelRevision(projectId: string | null, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["board-model-revision", projectId], queryFn: () => inspectBoardModelRevision(client, projectId!), enabled: !!projectId && enabled });
+}
+
+export function useAssemblyPcbCheck(projectId: string, board: BoardSourceSelection | null, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["assembly-pcb-check", projectId, board?.sourceId ?? null, board?.manifestSha256 ?? null], queryFn: () => inspectAssemblyPcbCheck(client, projectId, board!), enabled: !!board && enabled });
+}
+
+export function useAssemblyCheckSummaries(projectId: string, data: ProjectBoardSources) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["assembly-check-summaries", projectId, data.manifestSha256, data.sources.map(row => [row.source.id, row.status, row.pcbSha256 ?? null, row.source])], queryFn: () => inspectAssemblyCheckSummaries(client, projectId, data) });
+}
+
+export function useAssemblyModelSummaries(projectId: string, data: ProjectBoardSources | undefined, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["assembly-model-summaries", projectId, data?.manifestSha256 ?? null, data?.sources.map(row => [row.source.id, row.status, row.pcbSha256 ?? null, row.source]) ?? []], enabled: enabled && !!data, queryFn: () => {
+    if (!data) throw new Error("Choose an assembly before reviewing model sources.");
+    return inspectAssemblyModelSummaries(client, projectId, data);
+  } });
+}
+
+export function useAssemblyBoardModel(projectId: string, board: BoardSourceSelection, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["assembly-board-model", projectId, board.sourceId, board.manifestSha256], queryFn: () => inspectAssemblyBoardModel(client, projectId, board), enabled });
+}
+
+export function useAssemblySchematicPreview(projectId: string, board: BoardSourceSelection, selectedPath: string | null, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["assembly-schematic-preview", projectId, board.sourceId, board.manifestSha256, selectedPath], queryFn: () => inspectAssemblySchematicPreview(client, projectId, board, selectedPath), enabled });
+}
+
+export function useVideoInputRevision(projectId: string | null, path: string | undefined) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["video-input-revision", projectId, path], queryFn: () => inspectVideoInputRevision(client, projectId!, path!), enabled: !!projectId && !!path });
+}
+
+/** Library cards share the selected player's checks; callers restrict this to recorded product formats. */
+export function useVideoInputRevisions(projectId: string | null, paths: string[]) {
+  const client = useCoreClient();
+  const rows = useQueries({ queries: paths.map(path => ({
+    queryKey: ["video-input-revision", projectId, path],
+    queryFn: () => inspectVideoInputRevision(client, projectId!, path),
+    enabled: !!projectId,
+  })) });
+  return rows.map((row, index) => ({ ...row, path: paths[index]! }));
+}
+
+/** Optional exporter receipts; missing legacy metadata never certifies an output. */
+export function useOutputRevisions(projectId: string | null, targets: OutputRevisionTarget[], enabled = true) {
+  const client = useCoreClient();
+  const rows = useQueries({ queries: targets.map(target => ({
+    queryKey: ["output-revision", projectId, client.baseUrl, target],
+    queryFn: () => inspectOutputRevision(client, projectId!, target),
+    enabled: !!projectId && enabled,
+  })) });
+  return rows.map((row, index) => ({ ...row, path: targets[index]!.path }));
+}
+
+/** Review output eligibility without changing preview/download selection. The server rechecks at execution. */
+export function useOutputTrashReview(projectId: string | null, files: Array<{ path: string; size: number; mtime: string }>) {
+  const client = useCoreClient(), jobs = useJobs(!!projectId, projectId ?? undefined);
+  const live = useRunsStore(state => state.jobs);
+  const activity = projectJobs(projectId ?? "", jobs.data ?? [], live, client.baseUrl).filter(job => job.status === "running" || job.status === "queued").map(job => job.id).sort();
+  const query = useQuery({
+    queryKey: ["output-trash-review", client.baseUrl, projectId, files.map(file => [file.path, file.size, file.mtime]), activity],
+    queryFn: () => client.reviewOutputTrash(projectId!, files.map(file => file.path)),
+    enabled: !!projectId && files.length > 0 && files.length <= 2000,
+    staleTime: 5000,
+  });
+  return { ...query, projectActive: activity.length > 0 };
 }

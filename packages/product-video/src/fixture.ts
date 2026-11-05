@@ -66,7 +66,7 @@ export function fixtureScene(): { parts: ScenePart[]; bounds: ReturnType<typeof 
 
 /** Minimal GLB (one green box) written into a project for tool / scene tests. */
 export function buildBoxGlb(color: [number, number, number, number] = [0.2, 0.6, 0.35, 1]): Uint8Array {
-  const triangles = box(0, 0, 0, 20, 1.6, 12, color);
+  const triangles = box(0, 0, 0, 0.02, 0.0016, 0.012, color);
   const positions: number[] = [];
   const normals: number[] = [];
   const indices: number[] = [];

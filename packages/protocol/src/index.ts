@@ -17,6 +17,24 @@ export * from "./comments";
 export * from "./finish-it";
 export * from "./routers";
 export * from "./speech";
+
+export * from "./render-revision";
+
+export * from "./mechanical-model";
+
+export * from "./pcb-parts";
+export * from "./assembly";
+
+export * from "./sketch";
+export * from "./board-artwork";
+
+export * from "./workspace-context";
+export * from "./bom";
+export * from "./output-revision";
+
+export * from "./output-trash";
+
+export * from "./schematic-focus";
 export * from "./mechanical-design";
 export * from "./mechanical-access";
 export * from "./enclosure-footprint";

@@ -1,4 +1,4 @@
-import { BOARD_FINISH, type Primitive, type ResolvedArtOptions } from "./types";
+import { BOARD_FINISH, type Primitive, type ResolvedArtOptions, type BoardArt } from "./types";
 import { outlinePrimitives } from "./gerber";
 
 /**
@@ -52,6 +52,11 @@ export function previewSvg(
   ${printOnly ? "" : `<path d="${path}" fill="none" stroke="#0a0a0a" stroke-width="0.25"/>`}
 </svg>
 `;
+}
+
+/** Transparent proposal layer for an existing PCB; never paints a new board or copper fill. */
+export function artworkOverlaySvg(art: BoardArt): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${art.options.widthMm} ${art.options.heightMm}" width="${art.options.widthMm}" height="${art.options.heightMm}" data-unapplied-artwork="true">${art.clipped.map(primitive => primSvg(primitive, "#f4bd4f")).join("")}</svg>`;
 }
 
 function primSvg(p: Primitive, fill: string): string {

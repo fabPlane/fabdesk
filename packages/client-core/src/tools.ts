@@ -1,4 +1,4 @@
-import type { Job, ToolManifestEntry } from "@fabdesk/protocol";
+import { BoardSourceSelection, type Job, type ToolManifestEntry } from "@fabdesk/protocol";
 import { useCallback, useState } from "react";
 import { useCore } from "./provider";
 import { openStencilFolder } from "./stencil-folder";
@@ -39,6 +39,11 @@ export interface ToolRunState {
   note?: string;
 }
 
+/** Synchronous HTTP tools return {ok,text,json}; queued tools and some hosts wrap {result}. */
+export function immediateToolResult(response: unknown): unknown {
+  return response && typeof response === "object" && Object.hasOwn(response, "result") ? (response as { result: unknown }).result : response;
+}
+
 /** Calls a tool; if the daemon answers with a job, waits for it (progress arrives via the runs store). */
 export function useRunTool() {
   const { client, host } = useCore();
@@ -62,7 +67,9 @@ export function useRunTool() {
           setState({ status: "running", jobId: res.jobId });
           useRunsStore
             .getState()
-            .upsertJob({ jobId: res.jobId, kind: name, status: "running", startedAt: Date.now() });
+            .upsertJob({ jobId: res.jobId, kind: name, status: "running", startedAt: Date.now(), endpoint: client.baseUrl,
+              ...(typeof args.projectId === "string" ? { projectId: args.projectId } : {}),
+              ...(BoardSourceSelection.safeParse(args.board).success ? { board: BoardSourceSelection.parse(args.board) } : {}) });
           const job: Job = await client.waitJob(res.jobId);
           const next: ToolRunState =
             job.status === "done"
@@ -70,7 +77,7 @@ export function useRunTool() {
               : { status: "failed", jobId: res.jobId, error: job.error ?? job.status };
           return await finish(next);
         }
-        const next: ToolRunState = { status: "done", result: res.result };
+        const next: ToolRunState = { status: "done", result: immediateToolResult(res) };
         return await finish(next);
       } catch (e) {
         const next: ToolRunState = {

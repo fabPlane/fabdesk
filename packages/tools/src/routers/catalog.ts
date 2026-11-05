@@ -58,9 +58,9 @@ export const TRACEMAKER_HOMEPAGE = "https://github.com/DingoOz/TraceMaker";
 
 const STRENGTHS = {
   fab_router: [
-    "Always available built-in router (bridge `js` / capacity autorouter)",
+    "Bundled router when the active PCB backend exposes the engine",
     "Best default for automatic selective reroutes and fast iteration",
-    "No extra download; used as the Freerouting fallback",
+    "No separate download in a complete desktop bundle; Freerouting fallback when available",
   ],
   freerouting: [
     "Best simple-board routing quality in the team's comparison",
@@ -89,7 +89,7 @@ export function defaultRouterCatalog(env: NodeJS.ProcessEnv = process.env): Rout
       id: "fab_router",
       displayName: "fab_router",
       description:
-        "Built-in FabPlane router on the PCB bridge. Always present; no install step.",
+        "Bundled fabPlane router on the PCB backend. Runtime availability is checked separately from installation.",
       strengths: [...STRENGTHS.fab_router],
       license: "TensorFleet (bundled with fabdesk)",
       version: "bundled",

@@ -1,0 +1,27 @@
+{
+  "projectId": "prj_mvs5abwp2ff3301fe3",
+  "before": "Overview project files shortcut natively reopened Notes when Notes was remembered",
+  "after": [
+    "Overview project files count opens Files despite remembered Notes",
+    "Overview saved outputs count opens Library despite remembered Models & video",
+    "Changes no-history Open project files recovery opens Files despite remembered Notes",
+    "Generic Files area navigation still restores Notes after visiting Overview"
+  ],
+  "screenshots": [
+    "409-overview-project-files-explicit-destination.png",
+    "410-overview-saved-outputs-opens-library.png",
+    "411-changes-recovery-opens-files-not-notes.png"
+  ],
+  "preservation": {
+    "protectedFiles": 48,
+    "mismatches": []
+  },
+  "validation": {
+    "uiTypecheck": "PASS /tmp/canvas-resource-shortcut-ui-types.log",
+    "uiTests": "231 pass / 890 assertions / 0 fail /tmp/canvas-resource-shortcut-ui-tests.log"
+  },
+  "limits": [
+    "Navigation only; no new export/check/edit/agent invocation",
+    "No broad root suite rerun; latest broad checkpoint remains c8c2996"
+  ]
+}

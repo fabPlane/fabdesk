@@ -1,0 +1,392 @@
+{
+  "checkedAt": "2026-10-30T09:54:27.364266+00:00",
+  "runStart": "f5fd03b6d604e2028fd02a965517b0ea1adcc133",
+  "codeCommit": "72cd7f108dbbe6386988ef72b6180e7fa74d1778",
+  "branch": "feat/sketch-first-drafts",
+  "state": "Implementation and workflow acceptance recorded; publication outcome is in local handoff",
+  "scope": "Five human journeys and existing app action/flow integration, with latest user deferrals and external requirements disclosed",
+  "sourcePreservation": {
+    "count": 42,
+    "allUnchanged": true,
+    "checkedAt": "2026-10-30T09:52:06.600370+00:00",
+    "files": [
+      {
+        "path": "work/sketch-first-projects/vaio-p-multi-board-workspace-study/fabplane.assembly.json",
+        "sha256": "1dac5bb4e85c2cad241039b813069ad97fefcf65602a03e664d4ca85c7599002",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/vaio-p-multi-board-workspace-study/boards/io/board.kicad_sch",
+        "sha256": "be4b8f87ed4a4d49edcd083b37459f25db716358accb0bccc48b8966340c5bb9",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/vaio-p-multi-board-workspace-study/boards/io/board.kicad_pro",
+        "sha256": "2e8e66dff756d79cc647e5cca18f8193f1c8b5892ddad70a2c9611a267d38b2a",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/vaio-p-multi-board-workspace-study/boards/io/board.kicad_pcb",
+        "sha256": "35d06e7adaf93c861174d8cab0360d2b8b8fee2cf29354c6a97d02215215f443",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/vaio-p-multi-board-workspace-study/boards/rh/board.kicad_pcb",
+        "sha256": "021719a3e0d64b7aaa3171b01981fcd935d8c932c0e8d399b70730f19f956aa8",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/vaio-p-multi-board-workspace-study/boards/lcd/board.kicad_pcb",
+        "sha256": "2c4ad5850ad3c5aa3003b52681b9efa6fe05064146077ef75c2c82f58c709807",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/vaio-p-multi-board-workspace-study/boards/battery/board.kicad_pcb",
+        "sha256": "32307f45f9775c132a68d3ebff51b7215f8d775b5890c66e79ba26756d7aafa7",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/vaio-p-multi-board-workspace-study/boards/carrier/board.kicad_pcb",
+        "sha256": "2b1eaa1217c7b4d407f98ccbe5950f1861bec380a3f890b99e803fe2703a00ba",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/fabdesk.json",
+        "sha256": "e09a7ec0cadbe855b2002696db5d76f608fbd83db5d631ee9b87d5eaf805496d",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/comments.json",
+        "sha256": "2985ee5aae701a6247bf2e6f5769e2f91af54ef57bda949d0f4b1db5ac99edc7",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/board.kicad_pro",
+        "sha256": "0ef365722416a367bbc590a05896d06c587909aebb2b3030c0f558f675d2529c",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/project.parts.json",
+        "sha256": "44f638fe9268e4b6b5982a8848ffcc6cd9a4fdb2273d9115f6214a6937c87bb7",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/.gitignore",
+        "sha256": "b19e46b028283686f56a2fbc838cd00ea1d51c8d26ddbb8f0c5e6134a6a0cdb6",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/board.kicad_prl",
+        "sha256": "936695e1f47edc71a2116294f9748e7a654728e8ef7c07c7b25cfcafe804c786",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/NOTES.md",
+        "sha256": "dab6523b58c5a974151cd912d8bf8fbfe711559be284dc30368bd704a97ebb60",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/board.kicad_pcb",
+        "sha256": "623d182c8b5a79c654b5cf6a50534cb4d97863076ec717d36be2f96433563df8",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/renders/board.glb",
+        "sha256": "b0c4c16247fe8341f21794dc7770aebb6238da5c8bcce57fd4fe384133c09605",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/renders/pcb.svg.revision.json",
+        "sha256": "7f130e32f796174a7fa3f32b20a65090d19d2894a7a8ebf8778e4101c48dfab9",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/renders/board.glb.revision.json",
+        "sha256": "89f5502b2451c74da23e137b0541ce14928f0a7d2261a7d553b17be411c60131",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/renders/pcb.svg",
+        "sha256": "ce2bbbe45d2e05e53d29e3147f09a15ce5c3dfb6b0e02e07abd78e2c1656f103",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/exports/bom.csv",
+        "sha256": "1304e73bf436cb24e061b53391c197954815e4f984ef912203af0e25a16cd16a",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/exports/product-video.json",
+        "sha256": "d5d987a52d45862e166e7aa4f47a64f6da646b83f9cf4863836a6a2f73541070",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/exports/product-video.webm",
+        "sha256": "3fc97de293f18611fab7bfed2f9d5ea56c8021b771f438094307304e21047582",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/exports/product-video.gif",
+        "sha256": "ebbba707ea69339800e143a86524e249d2bf47cc3378b0c67955bb215dfdffa2",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/exports/product-video-poster.png",
+        "sha256": "3de80e0c00061e5c610ff862ad055b29757fb6a5744dab7d9dfe586d272ae9b8",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/exports/product-video.mp4",
+        "sha256": "33ca707d940be6b61b4af28cb053b3e6fdcb79496974f904e5b7a69436506362",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/reports/drc.json",
+        "sha256": "ea9ff04fb016639588111ef75b336283b416aacc3342938913f33444393df574",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/reports/board-diff.json",
+        "sha256": "bf66b11a589a95982624a8fc14c62b1ccc2a020a0b56896ccb66535b00b59d90",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/.fabdesk/runs/run_mvrqc7by6euqy6/request.json",
+        "sha256": "d30b217705a2232ee2daf1a37edc0372768b76559a4bf1fe49595403e3bfb680",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/.fabdesk/runs/run_mvrqc7by6euqy6/starting.kicad_pro",
+        "sha256": "0ef365722416a367bbc590a05896d06c587909aebb2b3030c0f558f675d2529c",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/.fabdesk/runs/run_mvrqc7by6euqy6/quality.json",
+        "sha256": "47d80b506c377397e96e8e3ca6b41c339d82c1b25e7dbc605c98ad5031eebe4c",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/.fabdesk/runs/run_mvrqc7by6euqy6/routing-drc-before.json",
+        "sha256": "1885a88a91399ff69221f5205ef6c1b2d91813c1dfb3c16f64e74d57903de386",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/.fabdesk/runs/run_mvrqc7by6euqy6/starting.kicad_pcb",
+        "sha256": "623d182c8b5a79c654b5cf6a50534cb4d97863076ec717d36be2f96433563df8",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/.fabdesk/runs/run_mvrqc7by6euqy6/frames.json",
+        "sha256": "d5c48e7e8bd81c5a979ac6140a6268e63ed610fe97ff313a69a6dbc7e5062f18",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/.fabdesk/runs/run_mvrqc7by6euqy6/frames.jsonl",
+        "sha256": "1d0cb9d031ce20269abf3fc369eb6df9b33fd030cec780f282e941cbd86f561c",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/.fabdesk/runs/run_mvrqc7by6euqy6/progress.json",
+        "sha256": "4245f183e14b01245fe6d47ed623e194b15467d779f78f98224a2c02883ad431",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/renders/diff/schematic-structured.svg",
+        "sha256": "94d0a78512f95684b1e09ab258ae315688a25410a63e053243d0ad3eabef9eb2",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/renders/diff/pcb-side-by-side.svg",
+        "sha256": "38bb3c9bd1d0332184ab730d8ebcb1b91cb3ff511f38d5a1899902d37fa4db87",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/renders/diff/pcb-overlay.svg",
+        "sha256": "5dc8ed5d897ee81105059b196ea3dde3e6b3fbeccaa61f96feef88ede241cb8a",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/renders/diff/pcb-structured.svg",
+        "sha256": "e237e47455aa565666a091842b8d02e1560ca1129a904e75bfbd670628644927",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/renders/diff/schematic-side-by-side.svg",
+        "sha256": "a76e47ac713c37c31916754d4c387aeb44e98c5ede49f5e45066ea7947cb52d8",
+        "unchanged": true
+      },
+      {
+        "path": "work/sketch-first-projects/canvas-fresh-start-ui-validation/renders/diff/schematic-overlay.svg",
+        "sha256": "0ab858ca7eab90c7bc499ff6fd811800436507ffda05c7aa97f000789f68bd8c",
+        "unchanged": true
+      }
+    ]
+  },
+  "checks": {
+    "rootTypecheck": {
+      "result": "PASS",
+      "code": "a26021d"
+    },
+    "finalUiTypes": {
+      "result": "PASS",
+      "code": "72cd7f108dbbe6386988ef72b6180e7fa74d1778"
+    },
+    "finalUiTests": {
+      "pass": 249,
+      "fail": 0,
+      "assertions": 993,
+      "code": "72cd7f108dbbe6386988ef72b6180e7fa74d1778"
+    },
+    "rootTestCommand": {
+      "result": "FAIL",
+      "failures": "2 KiCad mechanical tests exceeded default 5000ms under parallel workspace load; other workspaces passed. Initial sandbox invocation also failed localhost/socket fixtures."
+    },
+    "isolatedKicad": {
+      "pass": 146,
+      "skip": 1,
+      "fail": 0,
+      "note": "The two slow cases passed near the 5s threshold. Parallel timing risk remains."
+    },
+    "scripts": {
+      "pass": 94,
+      "assertions": 318,
+      "fail": 0
+    },
+    "productionBuild": {
+      "result": "PASS",
+      "code": "72cd7f108dbbe6386988ef72b6180e7fa74d1778",
+      "rendererSeconds": 38.2,
+      "sourceMaps": 0
+    }
+  },
+  "actionInventory": [
+    {
+      "surface": "Start/open",
+      "actions": "New project, sketch save/attach, Files, visit-ordered picker/reload, named GitHub import and catalog preview",
+      "evidence": "Native current: project-navigation and secondary-workflows proof; earlier genuine Codex\u2192PCB/schematic handoff retained",
+      "limits": "EAGLE stays source files; no live optional send retry"
+    },
+    {
+      "surface": "Overview/boards",
+      "actions": "Real source-owned preview candidates/default icon; declared nodes/links; PCB/Schematic/3D and contextual source tools",
+      "evidence": "Native current: board-tools, final captures32\u201334; earlier shared-instance/VAIO journeys",
+      "limits": "Declared links and map positions are not installed fit/compatibility"
+    },
+    {
+      "surface": "Routing/checks",
+      "actions": "Shared board toolbar; contextual Checks; source-qualified candidate review and guarded Apply; schematic availability/Open",
+      "evidence": "Native current: single/multi/shared toolbar/check return; earlier actual partial route Apply retained",
+      "limits": "Saved reports can have findings; completion is not electrical pass"
+    },
+    {
+      "surface": "Review",
+      "actions": "Scoped Updates, source-qualified saved/Git comparisons, change overlays, pins/comments, refresh/keep saved, explicit directional review",
+      "evidence": "Native current: source-qualified comparison and model return; earlier native comments/finding/update proof retained",
+      "limits": "No automatic directional reconciliation or silent push/pull"
+    },
+    {
+      "surface": "Outputs/media",
+      "actions": "Checkbox multiselect/Select all/Clear, source-qualified ZIP, image/video/GLB windows, format-specific tools, recovery/retry/download",
+      "evidence": "Native current: output receipts, invalid\u2192valid PNG/MP4, player controls; earlier ZIP/GIF/GLB/Gerber proof retained",
+      "limits": "Legacy files and unknown dependencies stay unverified"
+    },
+    {
+      "surface": "Background work",
+      "actions": "Project activity history, progress, cancel acknowledgement, reload and result destinations",
+      "evidence": "Native current: real render/background-video/cancel/reload proof; historical removed-member guard source reviewed",
+      "limits": "No invented source association for old jobs without metadata"
+    },
+    {
+      "surface": "Parts/shopping/order",
+      "actions": "Native schematic BOM coverage/DNP/quantities/hardware/reviewed CSV; supported vendor prerequisites; export/check recovery",
+      "evidence": "Earlier native BOM/hardware/CSV/shopping proof; current Inventory\u2192Account/return and blocked Order recovery",
+      "limits": "No purchases or account changes"
+    },
+    {
+      "surface": "Files/Notes/share",
+      "actions": "Readable source-only import Files/README, media previews, Markdown save/draft/discard, local review ZIP",
+      "evidence": "Native current: named public import and video; earlier Notes/native Save/archive-byte proof retained",
+      "limits": "Local ZIP is not hosted sharing or a complete external dependency archive"
+    },
+    {
+      "surface": "Settings/Ask/commands",
+      "actions": "Current-section Settings help; secondary scopes; per-message captured project/page/window/selection/output; searchable commands",
+      "evidence": "Native current: Settings Voice draft/PNG retained, catalog/inventory/order scopes; context tests and earlier native command/dialog proof",
+      "limits": "Questions remain unsent; account credentials omitted"
+    },
+    {
+      "surface": "Teammate features",
+      "actions": "Mechanical/assembly, part replacement, Board size show clear awaiting-integration notices and working return actions",
+      "evidence": "Native current: all three notices and return verified",
+      "limits": "PR398/393 integration and Board Art deferred"
+    }
+  ],
+  "limitations": [
+    "Enclosure/assembly PR398 and replacement/resize PR393 intentionally deferred with awaiting-integration notices. Underlying implementations and original concepts preserved.",
+    "Board Art Apply/polish remains user-deferred.",
+    "PCB-only checks are not ERC, electrical parity, inter-board compatibility or physical fit. Actual validation fixtures retain DRC findings and partial routing.",
+    "Model/export input receipts establish only recorded inputs; unrecorded dependencies and legacy output freshness remain unverified. ZIP receipts track packaged saved files.",
+    "Directional schematic/PCB and repository actions prepare explicit unsent reviews; no automatic reconciliation, remote sync or electrical success is claimed.",
+    "Shopping/order auth recovery exercised; no sign-in, purchase, upload or live cart mutation performed. Optional later live-agent transmission was approval-review rejected and not retried; earlier genuine successful Codex/native-board evidence retained.",
+    "Catalog Remix fallback source reviewed; fixed source-only Files landing natively exercised through GitHub import of the same public EAGLE source, not a third catalog clone. EAGLE conversion is not implemented or claimed.",
+    "Service failure recovery and busy modal guards source/type/test reviewed; no external outage or destructive operation was forced.",
+    "Recent projects use the exact connected core URL. Changing that URL starts a separate recent list.",
+    "Native screenshots reflect real saved board drawings and models, not illustrative green concept geometry."
+  ],
+  "screenshots": [
+    {
+      "path": "whole-app-20261030-06-routing-shared-toolbar.png",
+      "source": "06-routing-shared-toolbar.png",
+      "sha256": "b8f305f0d5f2b358a8fd617b0b174c1eca1147f0580a16bd7edcb600e7d3e406"
+    },
+    {
+      "path": "whole-app-20261030-13-enclosure-awaiting-integration.png",
+      "source": "13-enclosure-awaiting-integration.png",
+      "sha256": "80130229bc27eb5b0048cfaaf14b9a61d86f8d50a3856d424e70688cf0a1ec4c"
+    },
+    {
+      "path": "whole-app-20261030-18-settings-context-unsent-question.png",
+      "source": "18-settings-context-unsent-question.png",
+      "sha256": "43513a162f185df7ce3824f52d5f1401181ce594404ca1157648eef158133574"
+    },
+    {
+      "path": "whole-app-20261030-20-unreadable-image-recovery.png",
+      "source": "20-unreadable-image-recovery.png",
+      "sha256": "7922f2422db4fc2b4997856e0c9b5c9d3a0d71499d4a4d3b51c060495952de94"
+    },
+    {
+      "path": "whole-app-20261030-24-video-controls-clear-of-assistant.png",
+      "source": "24-video-controls-clear-of-assistant.png",
+      "sha256": "18c42fde94e744957ed05e9d39789e014cdae0a4e433630a1804678559f337ce"
+    },
+    {
+      "path": "whole-app-20261030-25-source-qualified-changes-overlay.png",
+      "source": "25-source-qualified-changes-overlay.png",
+      "sha256": "213b531f8f8c2c01153344713614c75fafe5f2f804ed01119069c4311f53693a"
+    },
+    {
+      "path": "whole-app-20261030-31-imported-source-files-and-readme.png",
+      "source": "31-imported-source-files-and-readme.png",
+      "sha256": "9cff5c6f8c54955cfdae6f66a311f389d1eed2b633197b2f610107d411b8a798"
+    },
+    {
+      "path": "whole-app-20261030-33-final-contextual-checks-schematic-handoff.png",
+      "source": "33-final-contextual-checks-schematic-handoff.png",
+      "sha256": "88496492e011339dcc4a0039ec5405cdae652a7bbb68b17024b62966520253cf"
+    }
+  ],
+  "nativeProofFiles": [
+    "output-receipt-native-proof.json",
+    "review-continuity-native-proof.json",
+    "secondary-workflows-native-proof.json",
+    "board-tools-native-proof.json",
+    "settings-context-native-proof.json",
+    "media-recovery-native-proof.json",
+    "integration-placeholders-native-proof.json",
+    "project-navigation-native-proof.json",
+    "activity-native-proof.json"
+  ],
+  "earlierNativeEvidence": "../overnight-journeys-2026-10-29/final-acceptance.json",
+  "galleryBrowserVerified": false,
+  "galleryReview": "All local resources resolve; browser file-URL policy rejected gallery opening, no workaround attempted. Actual native screenshot review performed separately."
+}

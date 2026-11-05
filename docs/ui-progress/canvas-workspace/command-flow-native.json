@@ -1,0 +1,23 @@
+{
+  "status": "LOCAL ONLY \u2014 publication revoked",
+  "viewportCss": "961x721",
+  "nativeChecks": [
+    "Stencil search selected Outputs > Export files; Export Gerbers still awaited explicit user action",
+    "Route board search opened Routing setup; no route run started",
+    "Video search selected Outputs > Models & video, not Board > 3D; existing saved GLB opened",
+    "Initial fuzzy Run DRC search incorrectly preferred Routing; tightened canvas token matching, retested Run DRC opened Review > Checks with no reports and Run DRC/Run ERC buttons still awaiting user",
+    "VAIO assembly omitted unsupported Routing/Artwork shortcuts; Route board search returned No results; Escape restored canvas"
+  ],
+  "scope": "Existing engineering components reused; no generation, export, routing, check or agent request invoked in this walkthrough",
+  "classic": "Existing classic direct commands and numeric shortcut order retained; classic callbacks not newly executed",
+  "validation": {
+    "uiTypecheck": "PASS",
+    "uiTests": 227,
+    "assertions": 866,
+    "failed": 0
+  },
+  "limitations": [
+    "No new broad suite or hosted CI run claimed",
+    "Enclosure follow-up remains teammate-owned and untouched"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "projectId": "prj_mvs5p9p9691f522186",
+  "nativeFlow": "15x15\u2192Apply16.5x15\u2192Revert15x15",
+  "byteIdenticalProtectedFiles": [
+    "board.kicad_pcb",
+    "board.kicad_pro",
+    "fabdesk.json"
+  ],
+  "previewReceiptMatchesSourceAndArtifact": true,
+  "focusAfterRevert": "Board size dialog",
+  "escapeFocus": "Board size trigger then drawing",
+  "otherToolWindowsClosed": true
+}

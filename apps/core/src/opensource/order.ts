@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { gate, type DrcReport, type ErcReport } from "@fabdesk/kicad";
+import { ASSEMBLY_MANIFEST_PATH } from "@fabdesk/protocol";
 import type {
   FileEntry,
   OrderCheckStatus,
@@ -34,6 +35,8 @@ type ErcEvidenceReport = ErcReport & {
  */
 export type OrderCheckEvidence = {
   allowedDrcWarnings: readonly string[];
+  /** A declared assembly cannot use the root-only fabrication/order flow. */
+  assemblyDeclared?: boolean;
   /** `board.kicad_pcb` exists, so verify_drc can run. */
   hasBoardPcb: boolean;
   /** `board.kicad_sch` exists, so verify_erc can run. */
@@ -87,6 +90,7 @@ export function assessOrderReadiness(
   files: readonly Pick<FileEntry, "path">[],
   evidence: OrderCheckEvidence,
 ): OrderReadiness {
+  const assemblyDeclared = evidence.assemblyDeclared ?? files.some(f => f.path === ASSEMBLY_MANIFEST_PATH);
   const hasGerbers = files.some((f) => f.path.startsWith("exports/gerbers/") || /gerber/i.test(f.path));
   const hasFabricationZip = files.some((f) => f.path === "exports/fabrication.zip" || (f.path.startsWith("exports/") && f.path.endsWith(".zip")));
   const hasRouted = files.some((f) => f.path === "circuit.routed.json");
@@ -95,6 +99,7 @@ export function assessOrderReadiness(
   const checks: OrderReadiness["checks"] = { drc: drcStatus(evidence), erc: ercStatus(evidence) };
   const reasons: string[] = [];
   const warnings: string[] = [];
+  if (assemblyDeclared) reasons.push("Ordering is not available for multi-board projects. Review each board’s checks; assembly fabrication exports are not yet supported.");
   if (!hasOrderArtifact) {
     reasons.push("Add a routed board or KiCad PCB, then export gerbers before ordering.");
   } else if (!hasGerbers && !hasFabricationZip) {
@@ -110,7 +115,7 @@ export function assessOrderReadiness(
     );
   const blocking = (s: OrderCheckStatus) => s === "missing" || s === "stale" || s === "fail";
   return {
-    ready: hasOrderArtifact && !blocking(checks.drc) && !blocking(checks.erc),
+    ready: !assemblyDeclared && hasOrderArtifact && !blocking(checks.drc) && !blocking(checks.erc),
     hasGerbers,
     hasFabricationZip,
     hasRouted,
@@ -165,12 +170,13 @@ export async function loadOrderCheckEvidence(
   projectDir: string,
   allowedDrcWarnings: readonly string[],
 ): Promise<OrderCheckEvidence> {
-  const [board, boardMtime, schMtime, drc, erc] = await Promise.all([
+  const [board, boardMtime, schMtime, drc, erc, assemblyMtime] = await Promise.all([
     readFile(join(projectDir, BOARD_PCB)).catch(() => null),
     mtimeMs(join(projectDir, BOARD_PCB)),
     mtimeMs(join(projectDir, BOARD_SCH)),
     readJson<DrcEvidenceReport>(join(projectDir, DRC_REPORT)),
     readJson<ErcEvidenceReport>(join(projectDir, ERC_REPORT)),
+    mtimeMs(join(projectDir, ASSEMBLY_MANIFEST_PATH)),
   ]);
   let drcEvidence: OrderCheckEvidence["drc"] = null;
   if (drc && board) {
@@ -183,6 +189,7 @@ export async function loadOrderCheckEvidence(
   }
   return {
     allowedDrcWarnings,
+    assemblyDeclared: assemblyMtime !== null,
     hasBoardPcb: board !== null,
     hasBoardSch: schMtime !== null,
     drc: drcEvidence,

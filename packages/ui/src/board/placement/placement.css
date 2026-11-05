@@ -888,3 +888,88 @@
     flex-wrap: wrap;
   }
 }
+
+/* Canvas workspace: a single stage with optional contextual details. */
+.fd-placement-canvas-workspace { position: relative; background: transparent; }
+.fd-placement-mode-tools { display: flex; gap: 6px; align-items: center; }
+.fd-placement-mode-tools button[aria-pressed="true"] { color: var(--fd-accent); background: color-mix(in srgb, var(--fd-accent) 8%, var(--fd-panel)); border-color: color-mix(in srgb, var(--fd-accent) 35%, var(--fd-border)); }
+.fd-placement-canvas-workspace > .fd-placement-header { position: absolute; z-index: 5; right: 18px; top: 16px; padding: 0; border: 0; background: transparent; }
+.fd-placement-canvas-workspace .fd-placement-title { display: none; }
+.fd-placement-canvas-workspace .fd-placement-actions { gap: 8px; }
+.fd-placement-canvas-workspace .fd-placement-save-state { display: none; }
+.fd-placement-canvas-workspace .fd-placement-overview,
+.fd-placement-canvas-workspace .fd-placement-footer,
+.fd-placement-canvas-workspace .fd-placement-canvas-hint { display: none; }
+.fd-placement-canvas-workspace .fd-placement-body { display: block; position: relative; width: 100%; height: 100%; }
+.fd-placement-canvas-workspace .fd-placement-stage { height: 100%; min-height: 0; background: transparent; }
+.fd-placement-canvas-workspace .fd-placement-view-controls { position: absolute; z-index: 3; top: 64px; left: 18px; padding: 0; background: transparent; }
+.fd-placement-canvas-workspace .fd-placement-view-controls > span { display: none; }
+.fd-placement-canvas-workspace .fd-placement-canvas { background: transparent; }
+.fd-placement-source-chip { position: absolute; z-index: 4; top: 20px; left: 18px; display: flex; gap: 8px; align-items: center; pointer-events: none; font-size: 12px; }
+.fd-placement-source-chip small { color: var(--fd-muted); font-size: 11px; }
+.fd-placement-toolbox { position: absolute; z-index: 7; left: 18px; bottom: 18px; }
+.fd-placement-toolbox .fd-placement-toolbar { width: 290px; border: 0; padding: 12px; display: flex; align-items: flex-start; flex-wrap: wrap; background: var(--fd-panel); }
+.fd-placement-toolbox .fd-placement-toolbar > label { width: 100%; }
+.fd-placement-canvas-workspace .fd-placement-zoom { left: 158px; right: auto; bottom: 18px; height: 36px; border-radius: 999px; box-shadow: 0 3px 12px #00000008; }
+.fd-placement-canvas-workspace .fd-placement-gap { bottom: 66px; }
+.fd-placement-canvas-workspace .fd-placement-inspector { position: absolute; z-index: 6; top: 112px; right: 18px; bottom: 80px; width: 320px; background: var(--fd-panel); border: 1px solid var(--fd-border); border-radius: 16px; box-shadow: 0 6px 24px #0000000b; overflow: hidden; }
+.fd-placement-inspector[hidden] { display: none; }
+.fd-placement-inspector-heading { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--fd-border); }
+.fd-placement-canvas-workspace .fd-placement-inspector-content { display: block; }
+.fd-placement-canvas-workspace > .fd-placement-preview { position: absolute; z-index: 8; bottom: 22px; left: 50%; transform: translateX(-50%); width: max-content; max-width: min(720px, calc(100% - 390px)); padding: 12px 16px; border: 1px solid var(--fd-border); border-radius: 16px; background: var(--fd-panel); box-shadow: 0 5px 24px #00000012; }
+.fd-placement-canvas-workspace > .fd-placement-preview p { max-width: 370px; }
+.fd-placement-canvas-workspace > .fd-placement-message { position: absolute; z-index: 9; top: 108px; left: 18px; max-width: 420px; background: var(--fd-panel); border: 1px solid var(--fd-border); border-radius: 10px; box-shadow: 0 3px 12px #00000009; }
+.fd-placement-canvas-workspace .fd-placement-section { min-width: 0; }
+@container (max-width: 950px) {
+  .fd-placement-source-chip small { display: none; }
+  .fd-placement-canvas-workspace > .fd-placement-preview { max-width: calc(100% - 36px); bottom: 66px; }
+  .fd-placement-canvas-workspace .fd-placement-inspector { width: min(320px, calc(100% - 36px)); }
+}
+.fd-placement .fd-workspace-menu { margin-top: 0; }
+.fd-placement .fd-workspace-menu > summary { padding: 7px 12px; color: var(--fd-fg); font-size: 12px; white-space: nowrap; }
+.fd-placement-header .fd-workspace-menu-content { right: 0; left: auto; }
+.fd-placement-toolbox .fd-workspace-menu-content { top: auto; bottom: calc(100% + 10px); width: 300px; }
+.fd-placement-canvas-workspace .fd-placement-stage { padding: 112px 0 86px; }
+.fd-placement-canvas-workspace.has-inspector .fd-placement-stage { width: calc(100% - 356px); }
+.fd-placement-fit { position: absolute; left: 286px; bottom: 18px; }
+.fd-placement-fit > button { border-radius: 999px; height: 36px; background: var(--fd-panel); }
+.fd-placement-canvas-workspace .fd-placement-view-controls { top: 58px; }
+.fd-placement-canvas-workspace .fd-placement-zoom { gap: 8px; }
+@container (max-width: 780px) {
+  .fd-placement-canvas-workspace.has-inspector .fd-placement-stage { width: 100%; }
+  .fd-placement-canvas-workspace .fd-placement-source-chip { top: 64px; }
+  .fd-placement-canvas-workspace .fd-placement-view-controls { top: 92px; }
+  .fd-placement-canvas-workspace .fd-placement-stage { padding-top: 140px; }
+}
+.fd-placement-canvas-workspace > .fd-placement-preview p { display: none; }
+.fd-placement-canvas-workspace > .fd-placement-preview small { display: block; margin-top: 4px; color: var(--fd-muted); font-size: 11px; }
+
+/* Familiar edit controls stay visible; advanced geometry settings remain secondary. */
+.fd-placement-edit-tools { display:flex; align-items:center; gap:3px; padding:5px; background:var(--fd-panel); border:1px solid color-mix(in srgb,var(--fd-fg) 18%,var(--fd-border)); border-radius:999px; box-shadow:0 3px 12px #102a2012; }
+.fd-placement-edit-tools > button { height:34px; border-radius:999px; }
+.fd-placement-edit-tools > button[aria-pressed=true] { background:color-mix(in srgb,var(--fd-accent) 12%,var(--fd-panel)); color:var(--fd-accent); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fd-accent) 30%,var(--fd-border)); }
+.fd-placement-edit-tools .fd-workspace-menu > summary { border:0; padding:7px; border-radius:999px; }
+.fd-placement-toolbox .fd-placement-toolbar p { font-size:11px; color:var(--fd-muted); line-height:1.5; }
+.fd-placement-canvas-workspace .fd-placement-zoom { left:326px; bottom:18px; height:46px; border-color:color-mix(in srgb,var(--fd-fg) 18%,var(--fd-border)); }
+.fd-placement-canvas-workspace .fd-placement-fit { left:454px; bottom:18px; }
+.fd-placement-canvas-workspace .fd-placement-fit > button { height:46px; border-color:color-mix(in srgb,var(--fd-fg) 18%,var(--fd-border)); }
+.fd-placement-interaction-hint { position:absolute; top:94px; left:18px; color:var(--fd-muted); font-size:11px; margin:0; pointer-events:none; }
+.fd-placement-connection-legend { position:absolute; z-index:3; left:18px; bottom:78px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; max-width:calc(100% - 36px); padding:7px 10px; border:1px solid var(--fd-border); background:var(--fd-panel); border-radius:8px; font-size:11px; pointer-events:none; }
+.fd-placement-connection-legend small { color:var(--fd-muted); }
+.fd-placement-airwire-sample { width:26px; border-top:2px dashed var(--fd-accent); }
+.fd-placement-canvas-workspace .fd-placement-stage { padding-top:130px; }
+.fd-placement-canvas-workspace .fd-placement-gap { bottom:116px; }
+.fd-placement-canvas-workspace .fd-placement-view-controls > [role=combobox]:last-of-type { min-width:210px; }
+.fd-placement-library-columns.has-no-choice { grid-template-columns:1fr; }
+.fd-placement-library-columns.has-no-choice .fd-placement-library-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.fd-placement-comparison[hidden] { display:none; }
+.fd-placement-library .fd-placement-file-button input[hidden] { display:none; }
+.fd-placement-library-purpose { padding:12px 14px; border:1px solid var(--fd-border); border-radius:10px; background:var(--fd-panel-2); color:var(--fd-fg); line-height:1.6; }
+@container(max-width:1000px) { .fd-placement-source-chip small { display:none; } }
+@container(max-width:800px) {
+  .fd-placement-canvas-workspace .fd-placement-zoom { left:auto; right:18px; bottom:72px; }
+  .fd-placement-canvas-workspace .fd-placement-fit { left:326px; }
+  .fd-placement-connection-legend { bottom:126px; }
+  .fd-placement-interaction-hint { top:130px; max-width:calc(100% - 36px); }
+  .fd-placement-library-columns.has-no-choice .fd-placement-library-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}

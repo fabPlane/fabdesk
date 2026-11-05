@@ -11,6 +11,7 @@ export function ProjectPickerDialog() {
   const setOpen = useUiStore((s) => s.setProjectPickerOpen);
   const startNewChatInProject = useUiStore((s) => s.startNewChatInProject);
   const projects = useProjects();
+  const activeProjectId = useUiStore(s => s.activeProjectId);
 
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -21,6 +22,8 @@ export function ProjectPickerDialog() {
     setImporting(false);
 
   };
+
+  if (open && activeProjectId) return <Dialog open onClose={() => setOpen(false)} title="New conversation"><p>Start in {projects.data?.find(project => project.id === activeProjectId)?.name ?? "this project"}, or return to Home to choose another. Cancel keeps your current conversation.</p><div className="mt-4 flex justify-end gap-2"><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" onClick={() => choose(activeProjectId)}>Start conversation here</Button><Button onClick={() => { setOpen(false); useUiStore.getState().requestProjectClose(true); }}>Close project · Home</Button></div></Dialog>;
 
   if (open && (creating || importing)) return <CreateProjectDialog initialMode={importing ? "github" : "create"} onClose={() => { setCreating(false); setImporting(false); }} onCreated={choose} />;
 

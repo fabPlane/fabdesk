@@ -1,0 +1,40 @@
+{
+  "preservation": [
+    {
+      "fixture": "root",
+      "files": 14,
+      "changed": []
+    },
+    {
+      "fixture": "assembly",
+      "files": 8,
+      "changed": []
+    },
+    {
+      "fixture": "vaio",
+      "files": 16,
+      "changed": []
+    }
+  ],
+  "nativeViewport": {
+    "width": 961,
+    "height": 721
+  },
+  "nativeWalkthrough": [
+    "Outputs\u2192Models&video shows actual existing savedGLB, sourceunverified/fitunverified; video tools defaultclosed",
+    "Makeproductvideo reveals preset/duration; outputsettings reveal resolution/aspect/background/captions",
+    "Duration6\u21928seconds survivesclose/reopen withoutmakingjob; outputsettings canclose; primaryMakevideo stickyaboveassistant",
+    "No-PCB isolatedreferenceproject explicitlyshowsprerequisite; Generate3Dmodel andMakevideobothdisabled"
+  ],
+  "validation": {
+    "uiTypes": "PASS /tmp/canvas-video-flow-final-types.log",
+    "uiTests": "225 PASS 0 FAIL /tmp/canvas-video-flow-final-tests.log",
+    "initialFailure": "One stale copy assertion expected exports/ after wording moved to project outputs; assertion updated, all existing preset/caption coverage retained"
+  },
+  "limits": [
+    "No new model/video generation or download job run this UI pass",
+    "Pending/error visibility is retained outside folded form; no failure/job injection in this walkthrough",
+    "Existing member model path unchanged; assembly alignment/fit/member video still unavailable",
+    "202quietcapture precedes finalmissingPCBguard;203requestedtools uses finalsharedlayout;204verifiesguard"
+  ]
+}

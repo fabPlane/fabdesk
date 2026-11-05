@@ -35,6 +35,30 @@ test("provider-specific login advice does not confuse Claude with fabPlane", () 
   expect(errorHelp("unauthorized", { status: 401 }).message).toContain("paired device");
 });
 
+test("GitHub clone access and network failures do not recommend changing an AI agent", () => {
+  const raw = JSON.stringify({ error: "could not clone https://github.com/owner/private.git: fatal: could not read Username for 'https://github.com': terminal prompts disabled", code: "unavailable" });
+  expect(errorHelp(raw, { status: 503 })).toMatchObject({ title: "GitHub could not open this repository" });
+  expect(errorHelp(raw).message).toContain("public repositories only");
+  expect(errorHelp(raw).action).toBeUndefined();
+  expect(errorHelp(raw).command).toBeUndefined();
+  expect(errorHelp("could not clone https://github.com/owner/repo.git: Could not resolve host: github.com", { status: 503 }).message).toContain("connection");
+});
+
+test("exact account-model rejection and capacity errors offer chat model recovery without claiming quota exhaustion", () => {
+  const unsupported = "The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account.";
+  const capacity = "Selected model is at capacity. Please try a different model.";
+  expect(splitAgentError(`I inspected the board.\n\n⚠ ${unsupported}`)).toEqual({ before: "I inspected the board.", error: unsupported });
+  expect(errorHelp(unsupported)).toMatchObject({ action: "models", title: "The selected model is unavailable" });
+  expect(errorHelp(capacity)).toMatchObject({ action: "models", title: "This model is busy right now" });
+  expect(agentErrorText(capacity)).toBe(capacity);
+  expect(agentErrorText(`This explains why ${unsupported}`)).toBeNull();
+  const wrapped = JSON.stringify({ type: "error", status: 400, error: { type: "invalid_request_error", message: unsupported, code: "model_not_found" } });
+  expect(splitAgentError(`⚠ Model metadata not found.\n\n⚠ ${wrapped}`)).toEqual({ before: "⚠ Model metadata not found.", error: wrapped });
+  expect(errorHelp(wrapped).action).toBe("models");
+  expect(errorHelp("insufficient_quota").action).toBe("agents");
+  expect(errorHelp("rate_limit_error").action).toBeUndefined();
+});
+
 test.each([
   ["rate_limit_error", "Wait a little"],
   ["insufficient_quota", "usage and billing"],
@@ -70,6 +94,9 @@ test("network errors gain guidance while intentional cancellations stay cancella
   const abort = new DOMException("Canceled", "AbortError");
   const canceled = new CoreClient({ baseUrl: "http://test", token: "t", fetch: async () => { throw abort; } });
   expect(await canceled.listProjects().catch(e => e)).toBe(abort);
+  expect(errorHelp("cancelled")).toMatchObject({ title: "Task cancelled", severity: "warning" });
+  expect(errorHelp("cancelled").message).not.toContain("restart");
+  expect(errorHelp("cancelled").message).toContain("may remain");
 });
 
 test("old duplicate authentication replies collapse, but user prose is not classified", () => {
@@ -87,4 +114,9 @@ test("Windows Codex isolation fallback is a warning, not a login or file permiss
   expect(errorHelp(raw).command).toBeUndefined();
   expect(errorHelp(raw).message).toContain("may update your shared settings");
   expect(splitAgentError(`⚠ ${raw}\n\nI will inspect the board.`)).toEqual({ before: "", error: raw, after: "I will inspect the board." });
+});
+
+test("KiCad nightly format failures explain file-date compatibility without claiming sources were changed", () => {
+  const help = errorHelp("Failed to load board: KiCad was unable to open this file because it was created with a more recent version than the one you are running. To open it you will need to upgrade KiCad to version 10.99 or later (file format dated 20260901 or later).");
+  expect(help.title).toBe("KiCad cannot open this board format"); expect(help.action).toBe("kicad"); expect(help.message).toContain("same version number");
 });

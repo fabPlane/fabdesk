@@ -1,0 +1,24 @@
+{
+  "vaioProject": "prj_mvr2ofe307592e4a2e",
+  "fixtureProject": "prj_mvqyacun3e60075ae8",
+  "vaioRows": 6,
+  "matchingVaioPreviewRows": 5,
+  "unresolvedKeyboardSource": true,
+  "inspectOpensExactIoSource": true,
+  "resolvePreparesSourceQualifiedUnsentDraft": true,
+  "noAgentMessageSent": true,
+  "fixtureSourceRows": 2,
+  "fixturePhysicalBoards": 3,
+  "sharedSourceBoards": 2,
+  "whitespaceOnlySourceChangeDetected": true,
+  "explicitRefreshMatchesChangedSourceReceipt": true,
+  "otherSourceAndParentHashesUnchanged": true,
+  "allNineFixtureFilesRestored": true,
+  "vaioSourcePreviewManifestHashesUnchanged": true,
+  "compactNativeWindow": {
+    "width": 960,
+    "height": 720,
+    "controlsUsable": true
+  },
+  "sourceQualifiedElectricalChecksStillUnsupported": true
+}

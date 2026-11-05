@@ -1,7 +1,7 @@
 import type { BoardComment } from "@fabdesk/protocol";
 import { commentAnchorLabel } from "@fabdesk/protocol";
 import { cn } from "../util";
-import { svgPointToPercent, type SvgBox, type SvgPoint } from "./svg-coords";
+import { commentPointForDrawing, svgPointToPercent, type SvgBox, type SvgPoint } from "./svg-coords";
 
 export function CommentPins({
   comments,
@@ -9,12 +9,14 @@ export function CommentPins({
   selectedId,
   onSelect,
   draftPoint = null,
+  nativePcbCoordinates = false,
 }: {
   comments: BoardComment[];
   box: SvgBox | null;
   selectedId: string | null;
   onSelect: (id: string) => void;
   draftPoint?: SvgPoint | null;
+  nativePcbCoordinates?: boolean;
 }) {
   if (!box) return null;
   const draftPosition = draftPoint ? svgPointToPercent(box, draftPoint) : null;
@@ -35,8 +37,9 @@ export function CommentPins({
         </div>
       )}
       {comments.map((comment, index) => {
-        if (comment.anchor.x === undefined || comment.anchor.y === undefined) return null;
-        const pos = svgPointToPercent(box, { x: comment.anchor.x, y: comment.anchor.y });
+        const point = commentPointForDrawing(comment.anchor, nativePcbCoordinates);
+        if (!point) return null;
+        const pos = svgPointToPercent(box, point);
         if (!pos) return null;
         const selected = comment.id === selectedId;
         return (

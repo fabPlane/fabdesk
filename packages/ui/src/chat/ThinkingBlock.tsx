@@ -7,7 +7,7 @@ export function ThinkingBlock({ text, streaming }: { text: string; streaming?: b
   return (
     <div className="my-1.5 rounded-lg border border-border/70 bg-panel-2/50 text-xs">
       <button
-        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-muted hover:text-fg"
+        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-fg hover:bg-panel-2/70"
         onClick={() => setOpen((o) => !o)}
       >
         <span className={cn("inline-block transition-transform", open && "rotate-90")}>&#9656;</span>
