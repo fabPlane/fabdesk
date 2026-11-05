@@ -148,6 +148,7 @@ describe("cad toolset", () => {
       "cad_build_part",
       "cad_combine_parts",
       "cad_enclosure",
+      "cad_fit",
     ]);
     expect(registry.get("cad_python")!.annotations.openWorldHint).toBe(true);
     expect(toolsMarkdown(registry)).toContain("### cad — mechanical model (OpenCascade");
@@ -247,6 +248,38 @@ const ENCLOSURE_BOARD = `(kicad_pcb
 `;
 
 describe("cad_enclosure", () => {
+  test("3D preview does not write files or touch FreeCAD; apply rejects a changed board", async () => {
+    const cad = fakeCad();
+    const { invoke, project } = await setup(cad);
+    await writeFile(join(project.dir, "board.kicad_pcb"), ENCLOSURE_BOARD);
+    await writeFile(join(project.dir, "enclosure.json"), "existing specification");
+    const preview = await invoke("cad_enclosure", { action: "preview", wallMm: 3, clearanceMm: 2 });
+    const json = preview.json as {
+      previewOnly: boolean;
+      pcbRevision: string;
+      meshes: { base: string; lid: string };
+      params: { wallMm: number };
+    };
+    expect(json.previewOnly).toBe(true);
+    expect(json.meshes.base).toStartWith("solid fabplane_enclosure_base");
+    expect(json.meshes.lid).toContain("facet normal");
+    expect(json.params.wallMm).toBe(3);
+    expect(await readFile(join(project.dir, "enclosure.json"), "utf8")).toBe(
+      "existing specification",
+    );
+    await expect(readFile(join(project.dir, "exports", "enclosure.stl"))).rejects.toThrow();
+    expect(cad.calls).toHaveLength(0);
+    await writeFile(
+      join(project.dir, "board.kicad_pcb"),
+      ENCLOSURE_BOARD.replace("(end 40 20)", "(end 45 20)"),
+    );
+    await expect(
+      invoke("cad_enclosure", { action: "generate", expectedBoardRevision: json.pcbRevision }),
+    ).rejects.toThrow(/board changed/);
+    expect(await readFile(join(project.dir, "enclosure.json"), "utf8")).toBe(
+      "existing specification",
+    );
+  });
   test("placement snapshot uses isolated files and never edits the source or CAD model", async () => {
     const cad = fakeCad(),
       { invoke, project } = await setup(cad);
@@ -280,6 +313,59 @@ describe("cad_enclosure", () => {
     await expect(invoke("cad_enclosure", { boardPath: "../outside.kicad_pcb" })).rejects.toThrow(
       /escapes/,
     );
+  });
+  test("placement previews preserve isolated paths and check the selected board revision on apply", async () => {
+    const cad = fakeCad(),
+      { invoke, project } = await setup(cad);
+    await writeFile(join(project.dir, "board.kicad_pcb"), ENCLOSURE_BOARD);
+    await writeFile(join(project.dir, "enclosure.json"), "original project specification");
+    await mkdir(join(project.dir, "placement"), { recursive: true });
+    const boardPath = "placement/draft.kicad_pcb";
+    const draft = ENCLOSURE_BOARD.replace("(at 20 0)", "(at 28 0)");
+    await writeFile(join(project.dir, boardPath), draft);
+    const preview = await invoke("cad_enclosure", {
+      action: "preview",
+      boardPath,
+      name: "draft-case",
+      applyToCad: true,
+    });
+    const json = preview.json as {
+      previewOnly: boolean;
+      pcbRevision: string;
+      spec: string;
+      stl: string;
+      meshes: { base: string };
+      cutouts: { center: { x: number } }[];
+    };
+    expect(json.previewOnly).toBe(true);
+    expect(json.spec).toBe("placement/enclosure.json");
+    expect(json.stl).toBe("placement/enclosure/draft-case.stl");
+    expect(json.meshes.base).toStartWith("solid fabplane_enclosure_base");
+    expect(json.cutouts[0]!.center.x).toBe(28);
+    await expect(readFile(join(project.dir, json.spec))).rejects.toThrow();
+    await expect(readFile(join(project.dir, json.stl))).rejects.toThrow();
+    expect(cad.calls).toHaveLength(0);
+    // Updating the unrelated canonical PCB must not invalidate this placement preview.
+    await writeFile(
+      join(project.dir, "board.kicad_pcb"),
+      ENCLOSURE_BOARD.replace("(end 40 20)", "(end 45 20)"),
+    );
+    const args = {
+      action: "generate",
+      boardPath,
+      name: "draft-case",
+      expectedBoardRevision: json.pcbRevision,
+      applyToCad: true,
+    };
+    await invoke("cad_enclosure", args);
+    const applied = await readFile(join(project.dir, json.stl), "utf8");
+    expect(cad.calls).toHaveLength(0);
+    expect(await readFile(join(project.dir, "enclosure.json"), "utf8")).toBe(
+      "original project specification",
+    );
+    await writeFile(join(project.dir, boardPath), draft.replace("(end 40 20)", "(end 45 20)"));
+    await expect(invoke("cad_enclosure", args)).rejects.toThrow(/board changed/);
+    expect(await readFile(join(project.dir, json.stl), "utf8")).toBe(applied);
   });
   test("generates STL/STEP without FreeCAD and checks alignment after a board move", async () => {
     const { invoke, project } = await setup();
@@ -322,6 +408,12 @@ describe("cad_enclosure", () => {
     expect((out.json as { appliedToCad: boolean }).appliedToCad).toBe(true);
     expect(cad.calls.some((c) => c.startsWith("add App::DocumentObjectGroup"))).toBe(true);
     expect(cad.calls.some((c) => c.startsWith("add Part::Box"))).toBe(true);
+    expect(
+      cad.calls.some(
+        (c) =>
+          c.startsWith("python ") && c.includes("face.extrude") && c.includes("profile['rings']"),
+      ),
+    ).toBe(true);
     const spec = JSON.parse(await readFile(join(project.dir, "enclosure.json"), "utf8")) as {
       standoffs: Array<{ innerDiameterMm: number; outerDiameterMm: number }>;
     };

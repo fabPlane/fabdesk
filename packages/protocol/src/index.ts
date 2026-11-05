@@ -17,3 +17,8 @@ export * from "./comments";
 export * from "./finish-it";
 export * from "./routers";
 export * from "./speech";
+export * from "./mechanical-design";
+export * from "./mechanical-access";
+export * from "./enclosure-footprint";
+export * from "./connector-opening";
+export * from "./opening-profile";

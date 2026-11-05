@@ -1,0 +1,816 @@
+{
+  "date": "2026-11-02",
+  "scope": "Digital verification only; no physical printing or assembly",
+  "design": {
+    "version": 1,
+    "mode": "generated",
+    "confirmed": true,
+    "source": null,
+    "space": {
+      "x": 0,
+      "y": 0,
+      "width": 105,
+      "depth": 100,
+      "height": 16,
+      "wall": 2,
+      "floor": 2,
+      "lid": 2,
+      "clearance": 1
+    },
+    "boards": [
+      {
+        "path": "USB-board.kicad_pcb",
+        "x": 145.93,
+        "y": -97.25,
+        "z": 6.651134647035739,
+        "rotation": 90
+      },
+      {
+        "path": "Small-SD-board.kicad_pcb",
+        "x": 143.25,
+        "y": 196.75,
+        "z": 5.2,
+        "rotation": 180
+      }
+    ],
+    "detailedFit": true,
+    "closure": {
+      "kind": "screws",
+      "screwDiameter": 3,
+      "screwLength": 10,
+      "pilotDiameter": 2.5,
+      "clearanceDiameter": 3.4,
+      "bossDiameter": 8
+    },
+    "obstacles": [],
+    "mounts": [],
+    "openings": [
+      {
+        "name": "USB-board \u00b7 J5",
+        "boardPath": "USB-board.kicad_pcb",
+        "ref": "J5",
+        "wall": "minX",
+        "offset": 65.75,
+        "z": 7.251134647035738,
+        "width": 10.139999999999999,
+        "height": 4.510000000000001,
+        "shape": "rounded"
+      },
+      {
+        "name": "USB-board \u00b7 J3",
+        "boardPath": "USB-board.kicad_pcb",
+        "ref": "J3",
+        "wall": "minX",
+        "offset": 13.750000000000014,
+        "z": 7.251134647035738,
+        "width": 10.139999999999999,
+        "height": 4.510000000000001,
+        "shape": "rounded"
+      },
+      {
+        "name": "Small-SD-board \u00b7 J2",
+        "boardPath": "Small-SD-board.kicad_pcb",
+        "ref": "J2",
+        "wall": "minX",
+        "offset": 89.50000000000001,
+        "z": 5.6,
+        "width": 13.950000000000001,
+        "height": 2.75,
+        "shape": "rectangle"
+      }
+    ],
+    "holders": [
+      {
+        "boardPath": "USB-board.kicad_pcb",
+        "kind": "edge-clamps"
+      },
+      {
+        "boardPath": "Small-SD-board.kicad_pcb",
+        "kind": "edge-clamps"
+      }
+    ],
+    "fitAllowance": 0.1
+  },
+  "tests": {
+    "passed": 80,
+    "failed": 0,
+    "assertions": 524,
+    "files": 8,
+    "rootTypecheck": "pass",
+    "windowsCoreBuild": "pass",
+    "desktopBuild": "pass"
+  },
+  "native": {
+    "seconds": 9.062999999965541,
+    "checkedBoards": 2,
+    "issues": [
+      {
+        "code": "fit-allowance",
+        "message": "Checks reserve 0.20 mm between opposing surfaces (\u00b10.10 mm each). Edge holders, lid rim and generated port openings include this allowance. This is a dimensional assumption, not verified printer accuracy, material strength or missing-model coverage.",
+        "severity": "review"
+      },
+      {
+        "code": "closure-material",
+        "message": "Lid screw pilots are for tapping or suitable plastic screws. Confirm your screw type and material on a printed sample before assembly.",
+        "severity": "review"
+      },
+      {
+        "code": "holder-review",
+        "message": "USB-board.kicad_pcb: four edge supports and lid captures avoid known keepouts. 0.45 mm play and 0.90 mm capture lips retain 0.25 mm calculated engagement at maximum play and selected surface error. Verify 2 \u00d7 4 mm underside contact strips, solder clearance and strength under plug insertion on a printed sample.",
+        "severity": "review"
+      },
+      {
+        "code": "holder-review",
+        "message": "Small-SD-board.kicad_pcb: four edge supports and lid captures avoid known keepouts. 0.45 mm play and 0.90 mm capture lips retain 0.25 mm calculated engagement at maximum play and selected surface error. Verify 2 \u00d7 3 mm underside contact strips, solder clearance and strength under plug insertion on a printed sample.",
+        "severity": "review"
+      },
+      {
+        "code": "port-measurements",
+        "message": "USB-board.kicad_pcb: J5 needs measured opening and plug dimensions. Footprint bounds do not establish mating access.",
+        "severity": "review"
+      },
+      {
+        "code": "port-measurements",
+        "message": "USB-board.kicad_pcb: J3 needs measured opening and plug dimensions. Footprint bounds do not establish mating access.",
+        "severity": "review"
+      },
+      {
+        "code": "port-measurements",
+        "message": "Small-SD-board.kicad_pcb: J2 needs measured opening and plug dimensions. Footprint bounds do not establish mating access.",
+        "severity": "review"
+      },
+      {
+        "code": "coverage",
+        "message": "Checks use PCB outlines, component bounding boxes and estimated heights. Review actual component heights, cables, fasteners and manufacturing tolerances.",
+        "severity": "review"
+      },
+      {
+        "code": "detailed-missing",
+        "message": "USB-board.kicad_pcb: missing 3D bodies for TP10, JP2, JP1, TP4, TP6, TP16, JP3, TP12, TP5, TP13, TP8, TP15, TP11, TP1, TP2, TP9, C17, TP3, TP7, TP17, TP18, C18, TP14. These parts were not checked as solids. PCB model quality lists each part and its repair action.",
+        "severity": "review"
+      },
+      {
+        "code": "detailed-layers",
+        "message": "USB-board.kicad_pcb: 4 unnamed planar surfaces near the PCB faces were excluded from solid intersections. These are consistent with board artwork layers; solder thickness and surface contact still require physical review.",
+        "severity": "review"
+      },
+      {
+        "code": "detailed-layers",
+        "message": "Small-SD-board.kicad_pcb: 4 unnamed planar surfaces near the PCB faces were excluded from solid intersections. These are consistent with board artwork layers; solder thickness and surface contact still require physical review.",
+        "severity": "review"
+      },
+      {
+        "code": "detailed-coverage",
+        "message": "Checked 141 closed native bodies against case, lid, other boards and reserved obstacles. Minimum gaps between independent boards and obstacles were checked. Missing/open models, support contacts, cable routing and physical fit still need review.",
+        "severity": "review"
+      }
+    ],
+    "modelGaps": [
+      {
+        "boardPath": "USB-board.kicad_pcb",
+        "parts": [
+          {
+            "ref": "TP10",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "JP2",
+            "footprint": "Jumper:SolderJumper-2_P1.3mm_Bridged_RoundedPad1.0x1.5mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "JP1",
+            "footprint": "Jumper:SolderJumper-2_P1.3mm_Bridged_RoundedPad1.0x1.5mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP4",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP6",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP16",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "JP3",
+            "footprint": "A72:SolderJumper_2_Open_3A_Pad2.0x3.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP12",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP5",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP13",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP8",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP15",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP11",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP1",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP2",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP9",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "C17",
+            "footprint": "A72:Murata_ECAS_D4_7343_1.9mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP3",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP7",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP17",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP18",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "C18",
+            "footprint": "A72:Murata_ECAS_D4_7343_1.9mm",
+            "reason": "unassigned",
+            "models": []
+          },
+          {
+            "ref": "TP14",
+            "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+            "reason": "unassigned",
+            "models": []
+          }
+        ]
+      },
+      {
+        "boardPath": "Small-SD-board.kicad_pcb",
+        "parts": []
+      }
+    ]
+  },
+  "slices": [
+    {
+      "part": "case.stl",
+      "grams": 43.54709243774414,
+      "warning": "",
+      "triangles": 2680
+    },
+    {
+      "part": "lid-print.stl",
+      "grams": 26.047725677490234,
+      "warning": "",
+      "triangles": 2108
+    },
+    {
+      "part": "fit-samples/edge-holder-01.stl",
+      "grams": 0.14369721710681915,
+      "warning": "",
+      "triangles": 36
+    },
+    {
+      "part": "fit-samples/edge-holder-02.stl",
+      "grams": 0.14068414270877838,
+      "warning": "",
+      "triangles": 36
+    }
+  ],
+  "step": {
+    "reader": "OpenCascade",
+    "success": true,
+    "meshes": 2
+  },
+  "connectorScenarios": {
+    "warning": "Reference envelopes only. Not a measurement of the user\u2019s cables/cards, and not saved as verified dimensions in the project.",
+    "results": [
+      {
+        "label": "Representative plug/card envelopes \u2014 assumed, not measured",
+        "assumedPlugs": [
+          {
+            "boardPath": "USB-board.kicad_pcb",
+            "ref": "J5",
+            "access": "external",
+            "aperture": {
+              "width": 8.939999999999998,
+              "height": 3.31,
+              "shape": "rounded"
+            },
+            "plug": {
+              "width": 12,
+              "height": 6,
+              "depth": 20,
+              "reach": 8,
+              "travel": 15
+            }
+          },
+          {
+            "boardPath": "USB-board.kicad_pcb",
+            "ref": "J3",
+            "access": "external",
+            "aperture": {
+              "width": 8.939999999999998,
+              "height": 3.31,
+              "shape": "rounded"
+            },
+            "plug": {
+              "width": 12,
+              "height": 6,
+              "depth": 20,
+              "reach": 8,
+              "travel": 15
+            }
+          },
+          {
+            "boardPath": "Small-SD-board.kicad_pcb",
+            "ref": "J2",
+            "access": "external",
+            "aperture": {
+              "width": 12.75,
+              "height": 1.55,
+              "shape": "rectangle"
+            },
+            "plug": {
+              "width": 11,
+              "height": 1,
+              "depth": 15,
+              "reach": 12,
+              "travel": 12
+            }
+          }
+        ],
+        "blockers": [],
+        "access": [
+          {
+            "boardPath": "USB-board.kicad_pcb",
+            "ref": "J5",
+            "face": "minX",
+            "gap": 3.2549999999999955,
+            "reach": 8,
+            "plug": {
+              "name": "J5 plug access",
+              "x": -37,
+              "y": 59.750000000000014,
+              "z": 6.506134647035738,
+              "width": 35,
+              "depth": 12,
+              "height": 6
+            }
+          },
+          {
+            "boardPath": "USB-board.kicad_pcb",
+            "ref": "J3",
+            "face": "minX",
+            "gap": 3.2549999999999955,
+            "reach": 8,
+            "plug": {
+              "name": "J3 plug access",
+              "x": -37,
+              "y": 7.750000000000007,
+              "z": 6.506134647035738,
+              "width": 35,
+              "depth": 12,
+              "height": 6
+            }
+          },
+          {
+            "boardPath": "Small-SD-board.kicad_pcb",
+            "ref": "J2",
+            "face": "minX",
+            "gap": 4.299999999999997,
+            "reach": 12,
+            "plug": {
+              "name": "J2 plug access",
+              "x": -29,
+              "y": 84.00000000000003,
+              "z": 6.475,
+              "width": 27,
+              "depth": 11,
+              "height": 1
+            }
+          }
+        ]
+      },
+      {
+        "label": "Negative control: 2 mm reach must fail",
+        "assumedPlugs": [
+          {
+            "boardPath": "USB-board.kicad_pcb",
+            "ref": "J5",
+            "access": "external",
+            "aperture": {
+              "width": 8.939999999999998,
+              "height": 3.31,
+              "shape": "rounded"
+            },
+            "plug": {
+              "width": 12,
+              "height": 6,
+              "depth": 20,
+              "reach": 2,
+              "travel": 15
+            }
+          },
+          {
+            "boardPath": "USB-board.kicad_pcb",
+            "ref": "J3",
+            "access": "external",
+            "aperture": {
+              "width": 8.939999999999998,
+              "height": 3.31,
+              "shape": "rounded"
+            },
+            "plug": {
+              "width": 12,
+              "height": 6,
+              "depth": 20,
+              "reach": 2,
+              "travel": 15
+            }
+          },
+          {
+            "boardPath": "Small-SD-board.kicad_pcb",
+            "ref": "J2",
+            "access": "external",
+            "aperture": {
+              "width": 12.75,
+              "height": 1.55,
+              "shape": "rectangle"
+            },
+            "plug": {
+              "width": 11,
+              "height": 1,
+              "depth": 15,
+              "reach": 2,
+              "travel": 12
+            }
+          }
+        ],
+        "blockers": [
+          {
+            "code": "plug-reach",
+            "message": "USB-board.kicad_pcb: J5 needs 5.45 mm mating reach through the wall including fit allowance; the specified plug allows 2 mm.",
+            "severity": "error",
+            "regions": [
+              {
+                "name": "J5 plug access",
+                "x": -37,
+                "y": 59.750000000000014,
+                "z": 6.506134647035738,
+                "width": 35,
+                "depth": 12,
+                "height": 6
+              }
+            ]
+          },
+          {
+            "code": "plug-reach",
+            "message": "USB-board.kicad_pcb: J3 needs 5.45 mm mating reach through the wall including fit allowance; the specified plug allows 2 mm.",
+            "severity": "error",
+            "regions": [
+              {
+                "name": "J3 plug access",
+                "x": -37,
+                "y": 7.750000000000007,
+                "z": 6.506134647035738,
+                "width": 35,
+                "depth": 12,
+                "height": 6
+              }
+            ]
+          },
+          {
+            "code": "plug-reach",
+            "message": "Small-SD-board.kicad_pcb: J2 needs 6.50 mm mating reach through the wall including fit allowance; the specified plug allows 2 mm.",
+            "severity": "error",
+            "regions": [
+              {
+                "name": "J2 plug access",
+                "x": -29,
+                "y": 84.00000000000003,
+                "z": 6.475,
+                "width": 27,
+                "depth": 11,
+                "height": 1
+              }
+            ]
+          }
+        ],
+        "access": [
+          {
+            "boardPath": "USB-board.kicad_pcb",
+            "ref": "J5",
+            "face": "minX",
+            "gap": 3.2549999999999955,
+            "reach": 2,
+            "plug": {
+              "name": "J5 plug access",
+              "x": -37,
+              "y": 59.750000000000014,
+              "z": 6.506134647035738,
+              "width": 35,
+              "depth": 12,
+              "height": 6
+            }
+          },
+          {
+            "boardPath": "USB-board.kicad_pcb",
+            "ref": "J3",
+            "face": "minX",
+            "gap": 3.2549999999999955,
+            "reach": 2,
+            "plug": {
+              "name": "J3 plug access",
+              "x": -37,
+              "y": 7.750000000000007,
+              "z": 6.506134647035738,
+              "width": 35,
+              "depth": 12,
+              "height": 6
+            }
+          },
+          {
+            "boardPath": "Small-SD-board.kicad_pcb",
+            "ref": "J2",
+            "face": "minX",
+            "gap": 4.299999999999997,
+            "reach": 2,
+            "plug": {
+              "name": "J2 plug access",
+              "x": -29,
+              "y": 84.00000000000003,
+              "z": 6.475,
+              "width": 27,
+              "depth": 11,
+              "height": 1
+            }
+          }
+        ]
+      },
+      {
+        "label": "Negative control: overlapping 80 mm plug bodies must fail",
+        "assumedPlugs": [
+          {
+            "boardPath": "USB-board.kicad_pcb",
+            "ref": "J5",
+            "access": "external",
+            "aperture": {
+              "width": 8.939999999999998,
+              "height": 3.31,
+              "shape": "rounded"
+            },
+            "plug": {
+              "width": 80,
+              "height": 6,
+              "depth": 20,
+              "reach": 8,
+              "travel": 15
+            }
+          },
+          {
+            "boardPath": "USB-board.kicad_pcb",
+            "ref": "J3",
+            "access": "external",
+            "aperture": {
+              "width": 8.939999999999998,
+              "height": 3.31,
+              "shape": "rounded"
+            },
+            "plug": {
+              "width": 80,
+              "height": 6,
+              "depth": 20,
+              "reach": 8,
+              "travel": 15
+            }
+          },
+          {
+            "boardPath": "Small-SD-board.kicad_pcb",
+            "ref": "J2",
+            "access": "external",
+            "aperture": {
+              "width": 12.75,
+              "height": 1.55,
+              "shape": "rectangle"
+            },
+            "plug": {
+              "width": 80,
+              "height": 1,
+              "depth": 15,
+              "reach": 12,
+              "travel": 12
+            }
+          }
+        ],
+        "blockers": [
+          {
+            "code": "plug-collision",
+            "message": "J5 and J3: plug bodies need more separation.",
+            "severity": "error",
+            "regions": [
+              {
+                "name": "J5 plug access",
+                "x": -37,
+                "y": 25.750000000000014,
+                "z": 6.506134647035738,
+                "width": 35,
+                "depth": 80,
+                "height": 6
+              },
+              {
+                "name": "J3 plug access",
+                "x": -37,
+                "y": -26.249999999999993,
+                "z": 6.506134647035738,
+                "width": 35,
+                "depth": 80,
+                "height": 6
+              }
+            ]
+          },
+          {
+            "code": "plug-collision",
+            "message": "J5 and J2: plug bodies need more separation.",
+            "severity": "error",
+            "regions": [
+              {
+                "name": "J5 plug access",
+                "x": -37,
+                "y": 25.750000000000014,
+                "z": 6.506134647035738,
+                "width": 35,
+                "depth": 80,
+                "height": 6
+              },
+              {
+                "name": "J2 plug access",
+                "x": -29,
+                "y": 49.50000000000003,
+                "z": 6.475,
+                "width": 27,
+                "depth": 80,
+                "height": 1
+              }
+            ]
+          },
+          {
+            "code": "plug-collision",
+            "message": "J3 and J2: plug bodies need more separation.",
+            "severity": "error",
+            "regions": [
+              {
+                "name": "J3 plug access",
+                "x": -37,
+                "y": -26.249999999999993,
+                "z": 6.506134647035738,
+                "width": 35,
+                "depth": 80,
+                "height": 6
+              },
+              {
+                "name": "J2 plug access",
+                "x": -29,
+                "y": 49.50000000000003,
+                "z": 6.475,
+                "width": 27,
+                "depth": 80,
+                "height": 1
+              }
+            ]
+          }
+        ],
+        "access": [
+          {
+            "boardPath": "USB-board.kicad_pcb",
+            "ref": "J5",
+            "face": "minX",
+            "gap": 3.2549999999999955,
+            "reach": 8,
+            "plug": {
+              "name": "J5 plug access",
+              "x": -37,
+              "y": 25.750000000000014,
+              "z": 6.506134647035738,
+              "width": 35,
+              "depth": 80,
+              "height": 6
+            }
+          },
+          {
+            "boardPath": "USB-board.kicad_pcb",
+            "ref": "J3",
+            "face": "minX",
+            "gap": 3.2549999999999955,
+            "reach": 8,
+            "plug": {
+              "name": "J3 plug access",
+              "x": -37,
+              "y": -26.249999999999993,
+              "z": 6.506134647035738,
+              "width": 35,
+              "depth": 80,
+              "height": 6
+            }
+          },
+          {
+            "boardPath": "Small-SD-board.kicad_pcb",
+            "ref": "J2",
+            "face": "minX",
+            "gap": 4.299999999999997,
+            "reach": 12,
+            "plug": {
+              "name": "J2 plug access",
+              "x": -29,
+              "y": 49.50000000000003,
+              "z": 6.475,
+              "width": 27,
+              "depth": 80,
+              "height": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "ui": {
+    "higherAllowanceBlocked": true,
+    "restoredSettingExports": true
+  },
+  "archive": "exports/mechanical-985cca61087e-ff476729.zip",
+  "manifestHashesVerified": true,
+  "qaSourceHashes": {
+    "USB-board.kicad_pcb": "5575e0efec9bc0392325a2c85afe293d93e3b25aa64bb458bd8a3d3c4d37535b",
+    "Small-SD-board.kicad_pcb": "2b3d16d9642d5dd919f457f19a2b7cbc9c4a38be32ec78da23dfbea201e5bb56"
+  },
+  "limits": [
+    "No physical print, screw torque, pullout or insertion-load test.",
+    "C17/C18 exact 3D models and solder standoff remain unverified; documented maximum body height is 2.0 mm.",
+    "Example plugs/cards are explicit assumptions, not measurements of the user hardware; they are not saved as verified project dimensions.",
+    "Dimensional allowance does not characterize printer shrinkage, warping, material strength or thermal performance."
+  ]
+}

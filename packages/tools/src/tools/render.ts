@@ -15,6 +15,23 @@ import { PROJECT_FILES, ensureDir, exists, mtimeMs } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import { fileUrl, loadNetlist, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
 import { rowPoints } from "./spatial";
+import { pcbModelReadiness, renderPcbDisplay } from "./pcb-display";
+
+export const render_pcb_readiness = defineTool({
+  name: "render_pcb_readiness",
+  toolset: "render",
+  title: "Check PCB model setup",
+  description:
+    "Check the selected boards' saving versions against the local KiCad exporter and suggest an installed compatible version. Does not edit files or settings; export remains the final compatibility check.",
+  inputSchema: { boardPaths: z.array(z.string()).min(1).max(64) },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
+  handler: ({ boardPaths }, ctx) => pcbModelReadiness(ctx, boardPaths),
+});
 
 async function fileRevision(
   path: string,
@@ -159,7 +176,10 @@ export const render_glb = defineTool({
   title: "Export 3D GLB",
   description:
     "Export a 3D model (GLB) of the KiCad board to renders/board.glb for the app's 3D tab. Requires kicad-cli and board.kicad_pcb.",
-  inputSchema: {},
+  inputSchema: {
+    boardPath: z.string().optional(),
+    expectedPcbRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
@@ -167,7 +187,12 @@ export const render_glb = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async (_args, ctx) => {
+  handler: async (args, ctx) => {
+    if (args.boardPath || args.expectedPcbRevision) {
+      if (!args.boardPath || !args.expectedPcbRevision)
+        throw new ToolError("Provide both boardPath and expectedPcbRevision.", "invalid_args");
+      return renderPcbDisplay(ctx, args.boardPath, args.expectedPcbRevision);
+    }
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const board = await requireBoard(project);
@@ -451,6 +476,7 @@ export const render_product_video = defineTool({
 });
 
 export const renderTools = [
+  render_pcb_readiness,
   render_schematic_svg,
   render_pcb_svg,
   render_view,

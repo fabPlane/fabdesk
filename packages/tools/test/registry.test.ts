@@ -292,6 +292,7 @@ describe("registry", () => {
       "verify_gate",
       "verify_viagrid",
       "release_build",
+      "render_pcb_readiness",
       "render_schematic_svg",
       "render_pcb_svg",
       "render_view",
@@ -346,6 +347,7 @@ describe("registry", () => {
       "cad_build_part",
       "cad_combine_parts",
       "cad_enclosure",
+      "cad_fit",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
     expect(reg.byToolset("core").length).toBe(9);

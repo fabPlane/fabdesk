@@ -706,7 +706,7 @@ export interface KicadService {
   ): Promise<{ png: Uint8Array; width: number; height: number }>;
   exportGlb(
     cli: KicadCli,
-    opts: { board: string; output: string; signal?: AbortSignal },
+    opts: { board: string; output: string; mechanical?: boolean; signal?: AbortSignal },
   ): Promise<{ fused: boolean; warnings: string[] }>;
   /**
    * Per-footprint 3D model coverage and exact board-space bounds measured from the packaged

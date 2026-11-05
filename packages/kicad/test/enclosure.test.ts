@@ -12,6 +12,7 @@ import {
   writeBoxesStep,
 } from "../src/enclosure";
 import { previewEnclosureSvg } from "../src/enclosure-preview";
+import { ShellSurface, readStlTriangles } from "../src/shell-fit";
 
 const fixture = readFileSync(join(import.meta.dir, "fixtures/enclosure/board.kicad_pcb"), "utf8");
 
@@ -29,8 +30,9 @@ describe("generateEnclosure", () => {
     expect(usb.edge).toBe("minY");
     expect(usb.center.x).toBe(25);
     expect(usb.widthMm).toBeGreaterThan(features.connectors[0]!.widthMm);
-    expect(spec.standoffs).toHaveLength(2);
-    expect(spec.standoffs.some((s) => s.x === 4 && s.y === 4)).toBe(true);
+    expect(spec.standoffs).toHaveLength(1); // Unclassified Edge.Cuts circles require explicit selection.
+    expect(spec.standoffs.some((s) => s.x === 46 && s.y === 26)).toBe(true);
+    expect(spec.standoffs.some((s) => s.x === 4 && s.y === 4)).toBe(false);
     expect(spec.solids.some((s) => s.role === "floor")).toBe(true);
     expect(spec.solids.some((s) => s.role === "lid")).toBe(true);
     expect(spec.solids.filter((s) => s.role === "wall").length).toBeGreaterThanOrEqual(4);
@@ -93,9 +95,19 @@ describe("generateEnclosure", () => {
     const usb = spec.cutouts.find((c) => c.ref === "J1")!;
     const zLo = usb.center.z - usb.heightMm / 2 + 0.05;
     const zHi = usb.center.z + usb.heightMm / 2 - 0.05;
-    const walls = spec.solids.filter((s) => s.role === "wall");
+    const surface = new ShellSurface(
+      readStlTriangles(new TextEncoder().encode(meshEnclosure(spec).baseStl)),
+    );
     const covers = (x: number, y: number, z: number) =>
-      walls.some((s) => x >= s.min.x && x <= s.max.x && y >= s.min.y && y <= s.max.y && z >= s.min.z && z <= s.max.z);
+      surface.intersects({
+        name: "probe",
+        x: x - 0.01,
+        y: y - spec.params.wallMm,
+        z: z - 0.01,
+        width: 0.02,
+        depth: 2 * spec.params.wallMm,
+        height: 0.02,
+      });
     const wallY = (spec.outer.minY + spec.inner.minY) / 2;
     expect(covers(usb.center.x, wallY, usb.center.z)).toBe(false);
     expect(covers(usb.center.x, wallY, zLo)).toBe(false);
@@ -124,7 +136,7 @@ describe("meshEnclosure", () => {
     const spec = generateEnclosure(extractBoardFeatures(fixture));
     const { step } = meshEnclosure(spec);
     const standoffs = spec.solids.filter((s) => s.role === "standoff");
-    expect(standoffs).toHaveLength(2);
+      expect(standoffs).toHaveLength(1);
     for (const s of standoffs) expect(step).toContain(`MANIFOLD_SOLID_BREP('${s.name}'`);
     expect(step.match(/MANIFOLD_SOLID_BREP/g)?.length).toBe(spec.solids.length);
     expect(step.match(/CYLINDRICAL_SURFACE/g)?.length).toBe(2 * standoffs.length);
@@ -133,7 +145,7 @@ describe("meshEnclosure", () => {
       expect(radii).toContain(st.outerDiameterMm / 2);
       expect(radii).toContain(st.innerDiameterMm / 2);
     }
-    expect(step).toContain(`CARTESIAN_POINT('',(4,4,`);
+      expect(step).toContain(`CARTESIAN_POINT('',(46,26,`);
   });
 
   test("writeBoxesStep emits an annular tube", () => {
@@ -207,7 +219,25 @@ describe("enclosure v2", () => {
     expect(honeycomb.vents.length).toBeGreaterThan(2);
     expect(slots.vents.some((v) => v.face === "lid")).toBe(true);
     expect(slots.vents.some((v) => v.face === "wall")).toBe(true);
-    expect(slots.solids.filter((s) => s.role === "wall").length).toBeGreaterThan(4);
+    const surface = new ShellSurface(
+      readStlTriangles(new TextEncoder().encode(meshEnclosure(slots).baseStl)),
+    );
+    for (const vent of slots.vents.filter((v) => v.face === "wall")) {
+      const center = {
+        x: (vent.min.x + vent.max.x) / 2,
+        y: (vent.min.y + vent.max.y) / 2,
+        z: (vent.min.z + vent.max.z) / 2,
+      };
+      expect(
+        surface.intersects({
+          name: "Vent center",
+          ...center,
+          width: 0.01,
+          depth: 0.01,
+          height: 0.01,
+        }),
+      ).toBe(false);
+    }
   });
 
   test("snap-fit clips add through-lid hooks and appear in the mesh", () => {
