@@ -135,6 +135,28 @@ test("a suggested pin map only joins named nets", () => {
   expect(suggestPinMap(source, null)).toEqual({});
 });
 
+test("a repeated net gets one target pin each, not all the first match", () => {
+  const gnd = (...pins: string[]) => ({ pads: pins.map((pin, index) => pad(pin, index, "GND")) });
+  // Same pin numbers line up one to one.
+  expect(suggestPinMap(gnd("1", "2", "3", "4"), gnd("1", "2", "3", "4"))).toEqual({ "1": "1", "2": "2", "3": "3", "4": "4" });
+  // Different numbers take the remaining pins in order.
+  expect(suggestPinMap(gnd("1", "2"), gnd("7", "9"))).toEqual({ "1": "7", "2": "9" });
+  // A same-numbered pin is not taken by an earlier pin on the way.
+  expect(suggestPinMap(gnd("1", "2"), gnd("2", "5"))).toEqual({ "2": "2", "1": "5" });
+  // More source pins than target pins leaves the extras unmapped.
+  expect(suggestPinMap(gnd("1", "2", "3"), gnd("4"))).toEqual({ "1": "4" });
+});
+
+test("a same-numbered pin on another net is not a match", () => {
+  const source = { pads: [pad("1", 0, "SDA"), pad("2", 1, "SCL")] };
+  const target = { pads: [pad("1", 0, "SCL"), pad("2", 1, "SDA")] };
+  expect(suggestPinMap(source, target)).toEqual({ "1": "2", "2": "1" });
+});
+
+test("suggestions match nets across hierarchical sheets, as the pin check does", () => {
+  expect(suggestPinMap({ pads: [pad("1", 0, "/power/SDA")] }, { pads: [pad("7", 0, "SDA")] })).toEqual({ "1": "7" });
+});
+
 test("a pin map reads and saves correctly from either end of a link", () => {
   const a = { boardPath: "a.kicad_pcb", ref: "J1" }, b = { boardPath: "b.kicad_pcb", ref: "J2" };
   const link = { a, pins: [{ a: "1", b: "7" }] };

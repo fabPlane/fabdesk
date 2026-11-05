@@ -244,14 +244,27 @@ export function partPins(part: Pick<BoardPartSummary, "pads"> | null | undefined
   return [...seen.values()].sort((a, b) => a.pin.localeCompare(b.pin, undefined, { numeric: true }));
 }
 
-/** A starting pin map from matching net names. It is a suggestion until someone saves it. */
+/**
+ * A starting pin map from matching net names. It is a suggestion until someone saves it. A repeated
+ * net such as GND gets one target pin each: the same pin number when that carries the net, then the
+ * remaining pins in order. Pins left over stay unmapped rather than doubling up on a guess.
+ */
 export function suggestPinMap(source: Pick<BoardPartSummary, "pads"> | null | undefined, target: Pick<BoardPartSummary, "pads"> | null | undefined): Record<string, string> {
-  const byNet = new Map<string, string>();
-  for (const pin of partPins(target)) if (pin.net && !GENERATED_NET.test(pin.net) && !byNet.has(pin.net)) byNet.set(pin.net, pin.pin);
-  const map: Record<string, string> = {};
-  for (const pin of partPins(source)) {
-    const match = pin.net ? byNet.get(pin.net) : undefined;
-    if (match !== undefined) map[pin.pin] = match;
+  const named = (net?: string) => (net && !GENERATED_NET.test(net) ? netLabel(net) : undefined);
+  const open = new Map<string, string[]>();
+  for (const pin of partPins(target)) {
+    const net = named(pin.net);
+    if (net) open.set(net, [...(open.get(net) ?? []), pin.pin]);
+  }
+  const pins = partPins(source), map: Record<string, string> = {};
+  for (const pin of pins) {
+    const free = open.get(named(pin.net) ?? "");
+    const same = free?.indexOf(pin.pin) ?? -1;
+    if (same >= 0) { map[pin.pin] = pin.pin; free!.splice(same, 1); }
+  }
+  for (const pin of pins) {
+    const next = map[pin.pin] === undefined ? open.get(named(pin.net) ?? "")?.shift() : undefined;
+    if (next !== undefined) map[pin.pin] = next;
   }
   return map;
 }
