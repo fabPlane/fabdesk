@@ -252,6 +252,13 @@ export class RouteProgressFrames {
   }
 }
 
+/** KiCad geometry is y down and cinema frames are y up. Boxes stay ordered low to high. */
+export function cinemaPoints(kind: CinemaShape["k"], pts: readonly number[]): number[] {
+  if (kind === "trace") return pts.map((value, index) => (index % 2 ? -value : value));
+  const [x1 = 0, y1 = 0, x2 = 0, y2 = 0] = pts;
+  return [x1, -y2, x2, -y1];
+}
+
 /** Stable numeric id for the cinema wire format (source geometry keeps its string KIID). */
 export function cinemaId(value: string): number {
   let hash = 2166136261;
@@ -771,11 +778,11 @@ async function executeRoute(
       bounds: points.length
         ? {
             x1: Math.min(...points.map((v) => v.x)),
-            y1: Math.min(...points.map((v) => v.y)),
+            y1: -Math.max(...points.map((v) => v.y)),
             x2: Math.max(...points.map((v) => v.x)),
-            y2: Math.max(...points.map((v) => v.y)),
+            y2: -Math.min(...points.map((v) => v.y)),
           }
-        : { x1: 0, y1: 0, x2: board.widthMm ?? 0, y2: board.heightMm ?? 0 },
+        : { x1: 0, y1: -(board.heightMm ?? 0), x2: board.widthMm ?? 0, y2: 0 },
       layers: args.sourceLayers ?? Array.from({ length: board.layers }, (_, i) =>
         i === 0 ? "F.Cu" : i === board.layers - 1 ? "B.Cu" : `In${i}.Cu`,
       ),
@@ -801,7 +808,7 @@ async function executeRoute(
           id: cinemaId(String(pad["id"] ?? `${pad["component"]}:${pad["number"]}:${x}:${y}`)),
           layer: cinemaLayer(Number(pad["layer"] ?? 3), board.layers),
           net: netCodes.get(String(pad["net"] ?? "")) ?? 0,
-          pts: [x - w / 2, y - h / 2, x + w / 2, y + h / 2],
+          pts: cinemaPoints("pad", [x - w / 2, y - h / 2, x + w / 2, y + h / 2]),
         });
       }
       for (const via of vias) {
@@ -813,7 +820,7 @@ async function executeRoute(
           id: cinemaId(String(via["id"] ?? `${x}:${y}`)),
           layer: -1,
           net: netCodes.get(String(via["net"] ?? "")) ?? 0,
-          pts: [x - d / 2, y - d / 2, x + d / 2, y + d / 2],
+          pts: cinemaPoints("via", [x - d / 2, y - d / 2, x + d / 2, y + d / 2]),
         });
       }
       sink.onMessage({ kind: "static", runId: rec.id, shapes: statics });
@@ -1291,7 +1298,7 @@ async function executeRoute(
       id: cinemaId(shape.id),
       layer: cinemaLayer(shape.layer, board.layers),
       net: shape.net,
-      pts: shape.points,
+      pts: cinemaPoints(shape.kind, shape.points),
       ...(shape.width !== undefined ? { w: shape.width } : {}),
     }));
     frames.complete(shapes, summary.total);

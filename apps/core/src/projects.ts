@@ -290,6 +290,8 @@ export class ProjectStore implements ProjectResolver {
       this.unwatch(id);
       try {
         // Replacing our freshly reserved empty folder never merges into an existing project.
+        // Windows refuses to rename onto an existing folder, even an empty one.
+        if (process.platform === "win32") await rmdir(destination);
         await rename(row.path, destination);
         try {
           await writeJson(join(destination, PROJECT_FILES.manifest), manifest);
@@ -575,7 +577,8 @@ export function gitMissingFromClone(error: unknown): string | null {
 
 async function defaultGitClone(url: string, dir: string, signal?: AbortSignal): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("git", ["-c", "credential.helper=", "clone", "--depth", "1", "--progress", url, dir], {
+    // Full history without every old file: Board History lists commits at once and fetches a revision when it is opened.
+    const child = spawn("git", ["-c", "credential.helper=", "clone", "--filter=blob:none", "--progress", url, dir], {
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "Never" },
       ...(signal ? { signal } : {}),

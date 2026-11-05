@@ -16,7 +16,7 @@ import { useBoardSources, useProject, useProjectText, useRouteRun, useRouteRuns,
 import { SvgViewer } from "../SvgViewer";
 import type { BoardSourceSelection, RouterCatalogId } from "@fabdesk/protocol";
 import { routerPickerOptions } from "../../settings/routers";
-import { runFailureText } from "./runError";
+import { runFailureNotice, runFailureText } from "./runError";
 import { RouteCandidateReview } from "./RouteCandidateReview";
 import { CinemaPainter, DARK_THEME, LIGHT_THEME, frameStatusText, layerColor, nextFrameSeq, perfStatusText, type OffscreenLike } from "./renderer";
 
@@ -259,9 +259,10 @@ function ProjectCinema({ projectId, scopeReady, board, prefix = "", sourceSha256
     await route.run("route", { projectId, applyPolicy: "manual", ...(board ? { board, expectedSourceSha256: sourceSha256 } : {}), ...(pickedRouter !== "default" ? { router: pickedRouter } : {}) });
     void history.refetch();
   }
+  const failure = runFailureNotice(runRecord.data, !!picker.find(option => option.id === runRecord.data?.router)?.disabled);
   const failureNotice = runError && (
         <div role="alert" className="border-b border-danger/40 bg-danger/10 px-3 py-1.5 text-xs text-danger" data-testid="route-run-error">
-          <p><span className="font-semibold">Routing {runRecord.data?.status === "timed_out" ? "timed out" : "stopped"}</span> using {runRecord.data?.router}. {picker.find(option => option.id === runRecord.data?.router)?.disabled ? "This router is currently unavailable." : "Review the saved result and board constraints before trying again."}</p>
+          <p><span className="font-semibold">{failure.title}</span> using {runRecord.data?.router}. {failure.hint}</p>
           <div className="mt-2 flex flex-wrap items-center gap-2"><Button size="sm" disabled={!scopeReady || busy} onClick={() => { if (onOpenPcb) onOpenPcb(); else useUiStore.getState().setBoardTab("pcb"); }}>Review PCB</Button><CanvasToolButton icon="sparkles" label="Ask about this routing result" onClick={() => askAboutSurface({ projectId, label: "Routing / Stopped run", priority: 40, details: JSON.stringify({ board, runId: ownedRunId, router: runRecord.data?.router, status: runRecord.data?.status, error: runError, diagnostics: runRecord.data?.result?.diagnostics, endpointCollisions: runRecord.data?.result?.endpointCollisions, instruction: "Recorded result only; inspect current saved inputs before proposing changes." }) }, "Explain why this routing run stopped and review its reported constraints or collisions. Propose the next step before changing the PCB or its design rules.")} />{picker.find(option => option.id === runRecord.data?.router)?.disabled && <Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setSettingsOpen(true, "router")}>Manage routers</Button>}</div>
           <details className="mt-1"><DisclosureSummary icon="warning" label="Failure details" variant="compact" /><p className="mt-2 break-words">{runError}</p></details>
         </div>

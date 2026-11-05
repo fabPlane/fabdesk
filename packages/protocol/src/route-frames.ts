@@ -3,7 +3,7 @@
  *
  * Routing runs on the FabPlane PCB bridge (`POST /sessions/:id/route`); the job streams progress,
  * not geometry, so frames carry events and an empty `shapes` list unless a router adds shapes.
- * Coordinates are in `meta.unitsPerMm` units.
+ * Coordinates are in `meta.unitsPerMm` units, with y pointing up.
  */
 import { EndpointCollisions, RoutingDiagnostics } from "./fp-pcb";
 import { z } from "zod/v4";
