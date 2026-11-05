@@ -64,6 +64,12 @@ export interface UiState {
   setCanvasMode: (enabled: boolean) => void;
   canvasNavigationOpen: boolean;
   setCanvasNavigationOpen: (open: boolean) => void;
+  /** Part link to open when Connections next mounts, such as from a History impact. */
+  partLinkFocus: { projectId: string; linkId: string } | null;
+  setPartLinkFocus: (focus: { projectId: string; linkId: string } | null) => void;
+  /** Last board viewed in History and Connections, per project. */
+  boardWorkspacePaths: Record<string, string>;
+  setBoardWorkspacePath: (projectId: string, path: string) => void;
   keptOutputChoices: Record<string, KeptOutputChoice>;
   setKeptOutputChoice: (key: string, choice: KeptOutputChoice | null) => void;
   assistantSurfaces: Record<string, AssistantSurface>;
@@ -251,6 +257,10 @@ export function createUiStore(storage?: StateStorage) {
   setCanvasMode: (canvasMode) => set({ canvasMode, canvasNavigationOpen: false }),
   canvasNavigationOpen: false,
   setCanvasNavigationOpen: (canvasNavigationOpen) => set({ canvasNavigationOpen }),
+  partLinkFocus: null,
+  setPartLinkFocus: (partLinkFocus) => set({ partLinkFocus }),
+  boardWorkspacePaths: {},
+  setBoardWorkspacePath: (projectId, path) => set(s => ({ boardWorkspacePaths: { ...s.boardWorkspacePaths, [projectId]: path } })),
   keptOutputChoices: {},
   setKeptOutputChoice: (key, choice) => set(s => {
     const keptOutputChoices = { ...s.keptOutputChoices };

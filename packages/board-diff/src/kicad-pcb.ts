@@ -115,6 +115,7 @@ function parsePad(body: string): PadSnapshot | undefined {
   const drillBlock = childNamed(body, "drill");
   const drill = firstNumber(drillBlock?.body);
   const net = quoted(childNamed(body, "net")?.body ?? "");
+  const at = /^\(at\s+(-?[\d.]+)\s+(-?[\d.]+)(?:\s+(-?[\d.]+))?/.exec(childNamed(body, "at")?.body ?? "");
   return {
     pin,
     ...(shape ? { shape } : {}),
@@ -122,6 +123,7 @@ function parsePad(body: string): PadSnapshot | undefined {
     ...(height !== undefined && Number.isFinite(height) ? { height } : {}),
     ...(drill !== undefined && drill > 0 ? { drill } : {}),
     ...(net ? { net } : {}),
+    ...(at?.[1] && at[2] ? { x: Number(at[1]), y: Number(at[2]), angle: Number(at[3] ?? 0) } : {}),
   };
 }
 
@@ -133,7 +135,16 @@ function asPadSnapshot(pad: PadSnapshot & { code?: number }): PadSnapshot {
     ...(pad.height !== undefined ? { height: pad.height } : {}),
     ...(pad.drill !== undefined ? { drill: pad.drill } : {}),
     ...(pad.net ? { net: pad.net } : {}),
+    ...(pad.x !== undefined ? { x: pad.x } : {}),
+    ...(pad.y !== undefined ? { y: pad.y } : {}),
+    ...(pad.angle !== undefined ? { angle: pad.angle } : {}),
   };
+}
+
+/** `uuid` and legacy `tstamp` may be quoted or bare depending on the KiCad version. */
+function footprintIdentity(body: string, name: string): string | undefined {
+  const value = childNamed(body, name)?.body;
+  return value ? /^\(\w+\s+"?([^"\s)]+)"?\s*\)/.exec(value)?.[1] : undefined;
 }
 
 function padNodes(body: string): Array<PadSnapshot & { code?: number }> {
@@ -270,8 +281,30 @@ function parseZone(body: string, netsByCode: Map<number, string>): ZoneSnapshot 
 function outlineFromGraphics(text: string): { points: Point[]; paths: Point[][] } {
   const points: Point[] = [];
   const paths: Point[][] = [];
-  for (const block of [...topLevelBlocks(text, "gr_line"), ...topLevelBlocks(text, "gr_rect"), ...topLevelBlocks(text, "gr_poly")]) {
+  for (const block of [...topLevelBlocks(text, "gr_line"), ...topLevelBlocks(text, "gr_rect"), ...topLevelBlocks(text, "gr_poly"), ...topLevelBlocks(text, "gr_arc"), ...topLevelBlocks(text, "gr_circle")]) {
     if (!block.body.includes("Edge.Cuts")) continue;
+    if (block.name === "gr_arc") {
+      const start = parseXy(childNamed(block.body, "start")?.body ?? ""), mid = parseXy(childNamed(block.body, "mid")?.body ?? ""), end = parseXy(childNamed(block.body, "end")?.body ?? "");
+      if (start && mid && end) {
+        const path = flattenArc(start, mid, end);
+        points.push(...path);
+        paths.push(path);
+      }
+      continue;
+    }
+    if (block.name === "gr_circle") {
+      const center = parseXy(childNamed(block.body, "center")?.body ?? ""), end = parseXy(childNamed(block.body, "end")?.body ?? "");
+      if (center && end) {
+        const radius = Math.hypot(end.x - center.x, end.y - center.y);
+        const path = Array.from({ length: ARC_SEGMENTS * 2 + 1 }, (_, i) => {
+          const angle = (i / (ARC_SEGMENTS * 2)) * 2 * Math.PI;
+          return { x: center.x + radius * Math.cos(angle), y: center.y + radius * Math.sin(angle) };
+        });
+        points.push(...path);
+        paths.push(path);
+      }
+      continue;
+    }
     if (block.name === "gr_poly") {
       const path: Point[] = [];
       for (const pt of block.body.matchAll(/\(xy\s+(-?[\d.]+)\s+(-?[\d.]+)\)/g)) {
@@ -315,8 +348,12 @@ export function snapshotFromKicadPcb(text: string): BoardSnapshot {
     const footprint = footprintLib(block.body);
     const layer = footprintLayer(block.body);
     const pads = padNodes(block.body);
+    const uuid = footprintIdentity(block.body, "uuid") ?? footprintIdentity(block.body, "tstamp");
+    const symbolPath = footprintIdentity(block.body, "path");
     const component: ComponentSnapshot = {
       ref,
+      ...(uuid ? { uuid } : {}),
+      ...(symbolPath ? { symbolPath } : {}),
       ...(value ? { value } : {}),
       ...(footprint ? { footprint } : {}),
       ...(place ? { x: place.x, y: place.y, rotation: place.rotation } : {}),

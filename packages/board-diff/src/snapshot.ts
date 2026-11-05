@@ -13,6 +13,8 @@ function pickDefined<T>(primary: T | undefined, fallback: T | undefined): T | un
 }
 
 function mergeComponent(base: ComponentSnapshot | undefined, next: ComponentSnapshot): ComponentSnapshot {
+  const uuid = pickDefined(next.uuid, base?.uuid);
+  const symbolPath = pickDefined(next.symbolPath, base?.symbolPath);
   const value = pickDefined(next.value, base?.value);
   const footprint = pickDefined(next.footprint, base?.footprint);
   const libId = pickDefined(next.libId, base?.libId);
@@ -26,6 +28,8 @@ function mergeComponent(base: ComponentSnapshot | undefined, next: ComponentSnap
   const pads = pickDefined(next.pads, base?.pads);
   return {
     ref: next.ref,
+    ...(uuid !== undefined ? { uuid } : {}),
+    ...(symbolPath !== undefined ? { symbolPath } : {}),
     ...(value !== undefined ? { value } : {}),
     ...(footprint !== undefined ? { footprint } : {}),
     ...(libId !== undefined ? { libId } : {}),

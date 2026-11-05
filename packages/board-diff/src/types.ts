@@ -14,10 +14,17 @@ export type PadSnapshot = {
   height?: number;
   drill?: number;
   net?: string;
+  /** Footprint-local pad centre and absolute angle; present for native PCB pads. */
+  x?: number;
+  y?: number;
+  angle?: number;
 };
 
 export type ComponentSnapshot = {
   ref: string;
+  /** Native footprint identities. A matching identity shows a reference rename rather than remove/add. */
+  uuid?: string;
+  symbolPath?: string;
   value?: string;
   footprint?: string;
   libId?: string;

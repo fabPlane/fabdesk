@@ -25,6 +25,19 @@ export { snapshotFromNetlist } from "./netlist";
 export { mergeSnapshots, snapshotFromSources } from "./snapshot";
 export { diffBoards, diffSummary, formatDiffText } from "./diff";
 export {
+  boardDrawingSvg,
+  boardPairDrawings,
+  boardPartBounds,
+  boardSize,
+  compareBoardPair,
+  normalizeBoardOrigin,
+  padWorldPoint,
+  type BoardBox,
+  type BoardPairComparison,
+  type BoardPartChange,
+  type BoardPartRole,
+} from "./board-pair";
+export {
   colorizeSvgMarkup,
   componentRole,
   extractSvgInner,
