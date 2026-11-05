@@ -1,0 +1,39 @@
+{
+  "changed": [],
+  "removed": [
+    "~board.kicad_pro.lck"
+  ],
+  "added": [
+    "exports/mechanical-23f9e655f145-8fb51883.zip",
+    "exports/mechanical-23f9e655f145-62396694.zip",
+    "cad/enclosure-design.json",
+    "exports/mechanical-23f9e655f145-62396694/case.step",
+    "exports/mechanical-23f9e655f145-62396694/model-dependencies.json",
+    "exports/mechanical-23f9e655f145-62396694/fit-review.json",
+    "exports/mechanical-23f9e655f145-62396694/case.stl",
+    "exports/mechanical-23f9e655f145-62396694/PRINT-AND-FIT.txt",
+    "exports/mechanical-23f9e655f145-62396694/geometry-validation.json",
+    "exports/mechanical-23f9e655f145-62396694/lid.stl",
+    "exports/mechanical-23f9e655f145-62396694/manifest.json",
+    "exports/mechanical-23f9e655f145-62396694/enclosure-design.json",
+    "exports/mechanical-23f9e655f145-62396694/lid-print.stl",
+    "exports/mechanical-23f9e655f145-8fb51883/case.step",
+    "exports/mechanical-23f9e655f145-8fb51883/model-dependencies.json",
+    "exports/mechanical-23f9e655f145-8fb51883/fit-review.json",
+    "exports/mechanical-23f9e655f145-8fb51883/case.stl",
+    "exports/mechanical-23f9e655f145-8fb51883/PRINT-AND-FIT.txt",
+    "exports/mechanical-23f9e655f145-8fb51883/geometry-validation.json",
+    "exports/mechanical-23f9e655f145-8fb51883/lid.stl",
+    "exports/mechanical-23f9e655f145-8fb51883/manifest.json",
+    "exports/mechanical-23f9e655f145-8fb51883/enclosure-design.json",
+    "exports/mechanical-23f9e655f145-8fb51883/lid-print.stl",
+    "exports/mechanical-23f9e655f145-8fb51883/fit-samples/port-01.stl",
+    "exports/mechanical-23f9e655f145-8fb51883/fit-samples/README.txt",
+    "exports/mechanical-23f9e655f145-8fb51883/boards/board.kicad_pcb",
+    "exports/mechanical-23f9e655f145-62396694/fit-samples/port-01.stl",
+    "exports/mechanical-23f9e655f145-62396694/fit-samples/README.txt",
+    "exports/mechanical-23f9e655f145-62396694/boards/board.kicad_pcb",
+    "renders/pcb-models/874326ad-c567-40b0-9a6e-87fc3a01800d.glb"
+  ],
+  "preservedNativeSources": true
+}

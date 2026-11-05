@@ -33,6 +33,7 @@ import { SketchStartReference } from "./SketchStartReference";
 import type { AppShellProps } from "./AppShell";
 import "./canvas-workspace.css";
 import "./canvas-v6.css";
+import "./workspace-bars.css";
 
 
 export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps) {

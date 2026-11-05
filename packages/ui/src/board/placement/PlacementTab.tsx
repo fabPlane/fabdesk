@@ -636,6 +636,7 @@ function PlacementWorkspace({ projectId, baseline, canvas }: { projectId: string
             <p>{session ? session.name : "Give every component its place"}</p>
           </div>
         </div>
+        {canvas && session && <div className="fd-placement-source-chip"><Icon name="pcb" width={14} height={14} /><span><strong>Editing placement</strong>{dirty ? " · Unsaved changes" : " · Layout saved"} · {fmt(session.board.w)} × {fmt(session.board.h)} mm · {session.parts.length} parts</span><small>Edits stay separate from the original PCB</small></div>}
         <div className="fd-placement-actions">
           {session && (
             <span className={`fd-placement-save-state ${dirty ? "is-dirty" : ""}`}>
@@ -867,7 +868,6 @@ function PlacementWorkspace({ projectId, baseline, canvas }: { projectId: string
             </div>
           )}
           <div className="fd-placement-body">
-            {canvas && <div className="fd-placement-source-chip"><Icon name="pcb" width={14} height={14} /><span><strong>Editing placement</strong>{dirty ? " · Unsaved changes" : " · Layout saved"} · {fmt(session.board.w)} × {fmt(session.board.h)} mm · {session.parts.length} parts</span><small>Edits stay separate from the original PCB</small></div>}
             <div className="fd-placement-stage">
               <div className="fd-placement-view-controls">
                 <Select

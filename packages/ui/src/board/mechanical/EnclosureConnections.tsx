@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { cableAssessments, type MechanicalDesign } from "@fabdesk/protocol";
 import { enclosureFileLabel, type EnclosureBoardSummary } from "@fabdesk/client-core";
 import { NumberField } from "./EnclosureNumberField";
@@ -18,7 +18,12 @@ export function enclosureConnectionError(
   length: number,
   slack: number,
 ): string | null {
-  if (!from.boardPath || !from.ref || !to.boardPath || !to.ref) return "Choose both ports.";
+  if (!from.boardPath && !to.boardPath) return "Choose a board and connector for each end.";
+  if (!from.boardPath) return "Choose the From board, then its connector.";
+  if (!to.boardPath) return "Choose the To board, then its connector.";
+  if (!from.ref && !to.ref) return "Choose a connector in both Port menus to add this cable guide.";
+  if (!from.ref) return "Choose the From port to finish this cable guide.";
+  if (!to.ref) return "Choose the To port to finish this cable guide.";
   const exists = (p: Endpoint) =>
     design.boards.some((b) => b.path === p.boardPath) &&
     boards.some(
@@ -57,6 +62,7 @@ export function EnclosureConnections({
   onClose: () => void;
   disabled?: boolean;
 }) {
+  const guidanceId = useId();
   const [from, setFrom] = useState<Endpoint>({ boardPath: "", ref: "" });
   const [to, setTo] = useState<Endpoint>({ boardPath: "", ref: "" });
   const [length, setLength] = useState(100);
@@ -82,7 +88,7 @@ export function EnclosureConnections({
       <div className="fd-enclosure-connection-endpoint">
         <span>{label}</span>
         <label>
-          <span className="fd-enclosure-connections-sr">{label} board</span>
+          <span className="fd-enclosure-endpoint-label">Board</span>
           <select
             aria-label={`${label} board`}
             value={value.boardPath}
@@ -97,14 +103,22 @@ export function EnclosureConnections({
           </select>
         </label>
         <label>
-          <span className="fd-enclosure-connections-sr">{label} port</span>
+          <span className="fd-enclosure-endpoint-label">Port</span>
           <select
             aria-label={`${label} port`}
             value={value.ref}
-            disabled={disabled || !value.boardPath}
+            disabled={disabled || !value.boardPath || !ports.length}
+            aria-describedby={error ? guidanceId : undefined}
+            data-needs-selection={!!value.boardPath && !value.ref}
             onChange={(e) => update({ ...value, ref: e.target.value })}
           >
-            <option value="">Choose port…</option>
+            <option value="">
+              {!value.boardPath
+                ? "Choose a board first"
+                : !ports.length
+                  ? "No ports found on this board"
+                  : "Choose connector…"}
+            </option>
             {ports.map((c) => (
               <option key={c.ref} value={c.ref}>
                 {c.ref}
@@ -121,7 +135,7 @@ export function EnclosureConnections({
       <header>
         <div>
           <h2>Connections</h2>
-          <p>Choose the ports your cable joins.</p>
+          <p>Choose a board and connector at each end to add a cable guide.</p>
         </div>
         <button type="button" aria-label="Close connections" onClick={onClose}>
           ×
@@ -228,8 +242,13 @@ export function EnclosureConnections({
             <p className="fd-enclosure-connections-note">
               {length} mm cable · {slack} mm extra room. Starting estimates; adjust for your cable.
             </p>
-            {complete && error && (
-              <p className="fd-enclosure-connection-error" role="alert">
+            {error && (
+              <p
+                id={guidanceId}
+                className="fd-enclosure-connection-guidance"
+                data-error={complete}
+                role={complete ? "alert" : "status"}
+              >
                 {error}
               </p>
             )}
@@ -245,6 +264,7 @@ export function EnclosureConnections({
               type="button"
               className="fd-mechanical-primary fd-enclosure-connection-add"
               disabled={!!error}
+              aria-describedby={error ? guidanceId : undefined}
               onClick={() => {
                 if (
                   disabled ||
@@ -268,7 +288,8 @@ export function EnclosureConnections({
         )}
       </fieldset>
       <footer>
-        Guides show port spacing. Check matching plugs and the cable path before making the case.
+        Cable guides estimate port spacing. Check matching plugs, electrical compatibility and the
+        actual cable path before making the case.
       </footer>
     </aside>
   );

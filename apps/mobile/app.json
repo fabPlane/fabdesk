@@ -3,7 +3,7 @@
     "name": "fabPlane",
     "slug": "fabplane-mobile",
     "scheme": "fabdesk",
-    "version": "0.1.0",
+    "version": "0.3.0",
     "owner": "voxly",
     "runtimeVersion": {
       "policy": "appVersion"
@@ -20,7 +20,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.fabplane.fabdesk",
-      "buildNumber": "1",
+      "buildNumber": "300000",
       "infoPlist": {
         "NSCameraUsageDescription": "Scanning the pairing code shown by fabPlane on your computer.",
         "NSAppTransportSecurity": {
@@ -33,8 +33,11 @@
     },
     "android": {
       "package": "com.fabplane.fabdesk",
-      "versionCode": 1,
-      "permissions": ["CAMERA", "RECORD_AUDIO"],
+      "versionCode": 300000,
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0c2726"

@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readFile, mkdir, rm, stat } from "node:fs/promises";
+import { lstat, readFile, mkdir, rm, stat } from "node:fs/promises";
 import { join, extname, isAbsolute } from "node:path";
 import { z } from "zod/v4";
 import { zipSync, strToU8 } from "fflate";
 import {
+  ASSEMBLY_MANIFEST_PATH,
   MechanicalDesignSchema,
   MECHANICAL_DESIGN_PATH,
   openingContour,
@@ -323,6 +324,7 @@ async function meshes(ctx: ToolContext, design: MechanicalDesign, boards: FitBoa
 
 export const cad_fit = defineTool({
   name: "cad_fit",
+  assemblyWide: true,
   toolset: "cad",
   title: "Design enclosure space and edit PCB fit",
   description:
@@ -356,11 +358,17 @@ export const cad_fit = defineTool({
     locked(ctx.requireProject().dir, async () => {
       const dir = ctx.requireProject().dir;
       if (args.action === "model_preview") return modelPreview(ctx, args.sourcePath);
+      const assembly = await lstat(join(dir, ASSEMBLY_MANIFEST_PATH)).then(() => true, (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return false;
+        throw new ToolError("Assembly ownership could not be checked. Review the project declaration before continuing.", "precondition");
+      });
+      if (assembly && args.action === "edit_board")
+        throw new ToolError("Mechanical PCB edits require a supported explicit assembly board source. Use that board’s scoped editing tools; the project root is not an inferred member.", "precondition");
       const designPath = await jailPath(dir, MECHANICAL_DESIGN_PATH);
       const saved = await readJsonIfPresent<unknown>(designPath);
       const designRevision = saved === null ? null : sha(JSON.stringify(saved));
       if (args.action === "status") {
-        const pcb = await readFile(await jailPath(dir, "board.kicad_pcb"), "utf8").catch(
+        const pcb = assembly ? null : await readFile(await jailPath(dir, "board.kicad_pcb"), "utf8").catch(
           () => null,
         );
         const pcbReady = await ctx.services.design
@@ -376,7 +384,7 @@ export const cad_fit = defineTool({
         return ok("Enclosure design", {
           design: saved,
           designRevision,
-          capabilities: { pcb: pcbReady, cad: cadReady },
+          capabilities: { pcb: !assembly && pcbReady, cad: cadReady },
           board: pcb ? extractBoardFeatures(pcb) : null,
         });
       }

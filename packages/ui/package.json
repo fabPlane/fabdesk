@@ -12,7 +12,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "three": "0.186.1",
     "@excalidraw/excalidraw": "^0.18.0",
     "@fabdesk/board-art": "workspace:*",
     "@fabdesk/client-core": "workspace:*",
@@ -29,13 +28,14 @@
     "react-resizable-panels": "^3.0.0",
     "remark-gfm": "^4.0.0",
     "shiki": "^3.0.0",
+    "three": "0.186.1",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@types/three": "0.186.0",
     "typescript": "5.9.2",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "@types/bun": "1.2.21"
+    "@types/bun": "1.2.21",
+    "@types/three": "0.186.0"
   }
 }

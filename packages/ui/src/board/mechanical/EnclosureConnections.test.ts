@@ -42,3 +42,22 @@ test("the same cable cannot be added twice with its endpoints reversed", () => {
   );
   expect(linked.connections).toHaveLength(1);
 });
+
+test("incomplete cable guides explain the exact missing endpoint instead of silently disabling Add", () => {
+  const empty = { boardPath: "", ref: "" };
+  expect(enclosureConnectionError(design, boards, empty, empty, 100, 10)).toContain(
+    "board and connector",
+  );
+  expect(enclosureConnectionError(design, boards, empty, to, 100, 10)).toContain("From board");
+  expect(enclosureConnectionError(design, boards, from, empty, 100, 10)).toContain("To board");
+  expect(
+    enclosureConnectionError(design, boards, { ...from, ref: "" }, { ...to, ref: "" }, 100, 10),
+  ).toContain("both Port menus");
+  expect(enclosureConnectionError(design, boards, { ...from, ref: "" }, to, 100, 10)).toContain(
+    "From port",
+  );
+  expect(enclosureConnectionError(design, boards, from, { ...to, ref: "" }, 100, 10)).toContain(
+    "To port",
+  );
+  expect(enclosureConnectionError(design, boards, from, to, 100, 10)).toBeNull();
+});
