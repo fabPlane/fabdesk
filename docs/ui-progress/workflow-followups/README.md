@@ -17,6 +17,14 @@ User-authorized work on issues #394, #395, #411, #412, #415, #416, #417 and #418
 
 No issue is closed yet. Existing partial implementations do not establish full acceptance.
 
+## Publication checkpoint · 5 November
+
+The user requested a remote push and a PR description with per-ticket screenshots. The [evidence index](EVIDENCE.md) distinguishes actual native captures from the current-build browser retest. #411 now has a visible RH Changes walkthrough in all three modes. #416 has a visible explicit circuit-conversion walkthrough; the broader working-circuit requirements remain incomplete. #412 has no completed focus UI screenshot and is explicitly pending rather than presented as fixed. #394, #395 and #415 have no new fixed-state screenshots because they remain planned.
+
+Fresh publication validation: desktop build passed after all current code changes; UI/tools/client-core/core typechecks passed; no `.map` files were found in `apps/desktop/out`. All 57 recorded original native files and all 57 corresponding copied native files retained their recorded SHA-256 hashes after the screenshot retest. Existing focused test results below remain applicable; no implementation code changed during publication.
+
+New usability finding: transparent native schematic colors have poor contrast on the dark canvas. The evidence capture uses the isolated test profile's Light theme; dark-theme readability remains open. The installed fabPlane app and its current project were not restarted or changed.
+
 ## Validation log
 
 - #411: new concave/unordered-outline + separate-cutout comparison regression failed on main because `outlinePaths` was undefined after source composition. After retaining PCB-owned paths: 23 board-diff tests passed, 150 assertions. Highlights, Overlay and Side by side must contain only native edge paths; schematic comparisons must not draw PCB outlines. Native sources are read only.

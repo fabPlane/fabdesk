@@ -35,3 +35,17 @@ The first native binding selected the existing VAIO app. Only read-only Activity
 Native inventory confirmed the isolated Followups app was stopped, but also showed an older Electron development app and installed fabPlane. The installed app showed `PlayBridge V3.0 PS1 serial harness` in Parts. The development window was blank; menu Quit and SIGTERM did not exit it. Its exact main PID was verified and force-closed. A subsequent native inventory showed installed fabPlane running and neither Electron nor Followups running. No saved profile/project files were removed. This is environment cleanup, not a passing schematic journey.
 
 The new native-page selectors, complete root preview receipts, child-sheet assistant context and stale-source recovery have code/native-export tests, but have **not** yet passed a visible UI journey on this branch. The installed app is an older build and was not modified to claim a test pass.
+
+## Publication retest · current branch renderer
+
+To honor the request to keep one native app, this retest used the current branch's browser renderer connected to the existing isolated developer core/profile on loopback. The test setup is not a fresh-user import test. No credentials/chats were copied. The installed app was untouched. Screenshots contain the app content only, without the temporary test connection URL.
+
+| Journey | Visible actions and result | Evidence / limit |
+| --- | --- | --- |
+| #416 root circuit canvas | Home → copied Button light project → Schematic → Open circuit view. Native render completed, status became “Saved native sheets match this drawing”, viewport fitted circuitry, and paper frame was absent. | `08-circuit-canvas-current-build.png`; passed this limited root conversion flow. No component/net editing or multi-sheet focus acceptance implied. |
+| #411 real member comparison | Home → copied VAIO project → RH port → Open board → Review → Changes → Compare → Highlights / Overlay / Side by side. Actual saved comparison and native RH outline displayed in every mode. | `09`–`11`; complements the full-pipeline native-path diagnostic and regression tests. No part/net edits were introduced for screenshots. |
+| #412 native focus | No assistant focus request was submitted during publication. | Still requires visible repeated-sheet choices, focus navigation, Return/viewport restoration and stale-child tests. No fixed-focus screenshot is claimed. |
+
+Usability/change-list finding: native transparent circuit colors are difficult to read on the dark canvas. Switched only the isolated profile through Settings → Appearance → Light → Save for readable evidence. Dark-theme schematic contrast needs a dedicated follow-up; this is not treated as resolved by changing the screenshot theme.
+
+After these actions, all 10 VAIO and 47 Button light original native files and their copied counterparts matched the setup hashes. Rendering/comparison produced artifacts only. The source-preservation receipt was refreshed. The final desktop build and fresh typechecks passed; no shipped source maps were found. This remains focused acceptance rather than a complete-app test.
