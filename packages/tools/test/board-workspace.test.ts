@@ -226,6 +226,36 @@ describe("board history and part links", () => {
     expect(listed.reasons).toContain("J1: mapped pin 2 no longer exists");
   });
 
+  test("a saved pin map is checked by net name, without changing its state", async () => {
+    await write(BOARD_A, pcb(footprint("J1", 10, ["GND", "SIG_A"]), footprint("R1", 20)));
+    await write(BOARD_B, pcb(footprint("J9", 10, ["+3V3", "SIG_A"]), footprint("C1", 20, ["OTHER", "GND"])));
+    await invoke("connection_add", { a: { boardPath: BOARD_A, ref: "J1" }, b: { boardPath: BOARD_B, ref: "J9" }, pins: [{ a: "2", b: "2" }] });
+    expect((await onlyLink()).check.status).toBe("review");
+    const created = await onlyLink();
+    await invoke("connection_set_pins", { id: created.id, pins: [{ a: "1", b: "1" }, { a: "2", b: "2" }] });
+    const checked = await onlyLink();
+    expect(checked.check.status).toBe("conflict");
+    expect(checked.check.rows.map((row) => row.kind)).toEqual(["conflict", "match"]);
+    expect(checked.state).toBe("current");
+  });
+
+  test("board_view says what each part is, for agents as well as screens", async () => {
+    const plain = await invoke<BoardView>("board_view", { pcbPath: BOARD_A });
+    expect(plain.baseline).toBeUndefined();
+    expect(plain.parts.find((part) => part.ref === "J1")).toMatchObject({ connector: true });
+    expect(plain.parts.find((part) => part.ref === "R1")?.connector).toBe(false);
+    expect(plain.parts[0]?.status).toBeUndefined();
+    await invoke("board_revision_save", { pcbPath: BOARD_A, label: "Base" });
+    await write(BOARD_A, pcb(footprint("J1", 14), footprint("R1", 20), footprint("NEW", 30)));
+    await link();
+    const view = await invoke<BoardView>("board_view", { pcbPath: BOARD_A, drawing: true });
+    expect(view.baseline?.label).toBe("Base");
+    const status = Object.fromEntries(view.parts.map((part) => [part.ref, part.status]));
+    expect(status).toEqual({ J1: "changed", R1: "existing", NEW: "new" });
+    expect(view.parts.find((part) => part.ref === "J1")?.linkedTo).toEqual([{ boardPath: BOARD_B, ref: "J9" }]);
+    expect(view.drawing).toContain('data-ref="NEW" data-role="added"');
+  });
+
   test("part summaries carry pads for picking a pin", async () => {
     const view = await invoke<BoardView>("board_view", { pcbPath: BOARD_A });
     expect(view.parts.find((part) => part.ref === "J1")?.pads.map((pad) => pad.pin)).toEqual(["1", "2"]);
@@ -304,6 +334,13 @@ describe("board history and part links", () => {
     expect((await invoke<{ suggestions: PartLinkSuggestion[] }>("connection_suggest", { boardA: BOARD_A, boardB: BOARD_B })).suggestions).toEqual([]);
     // A suggestion is never saved by itself.
     expect((await invoke<PartLinkList>("connection_list")).links).toEqual([]);
+  });
+
+  test("a corrupt links file does not stop a board from being viewed", async () => {
+    await write(PART_LINKS_FILE, "{ not json");
+    expect((await invoke<BoardView>("board_view", { pcbPath: BOARD_A })).parts).toHaveLength(2);
+    const { ref } = await invoke<{ ref: string }>("board_revision_save", { pcbPath: BOARD_A });
+    expect((await invoke<BoardRevisionComparison>("board_revision_compare", { pcbPath: BOARD_A, from: ref })).impacts).toEqual([]);
   });
 
   test("connections declared by an enclosure design appear read-only", async () => {

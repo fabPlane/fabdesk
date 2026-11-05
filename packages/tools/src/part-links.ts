@@ -8,8 +8,10 @@ import {
   PART_LINKS_FILE,
   PartLinksFile,
   ProjectAssembly,
+  checkPinMap,
   emptyPartLinksFile,
   type DeclaredConnection,
+  isConnectorPart,
   type PartBaseline,
   type PartEndpoint,
   type PartLink,
@@ -27,7 +29,6 @@ import { ToolError, type ProjectHandle } from "./registry";
 
 const POSITION_TOLERANCE_MM = 0.05;
 const ROTATION_TOLERANCE_DEG = 0.5;
-const CONNECTOR_REF = /^(?:J|P|CN|CON|X|FPC|USB|HDMI)\d/i;
 /** KiCad's generated names repeat one board's own reference, so they say nothing across boards. */
 const GENERATED_NET = /^(?:Net-\(|unconnected-|N\$|\/?$)/;
 const POWER_NET = /^\/?(?:GND\w*|AGND|DGND|VSS\w*|VDD\w*|VCC\w*|\+?\d+V\d*\w*|VBUS\w*)$/i;
@@ -157,7 +158,7 @@ export async function resolvePartLinks(project: ProjectHandle, links: PartLink[]
       if (partB && !partB.pads?.some((pad) => pad.pin === pair.b)) reasons.push(`${link.b.ref}: mapped pin ${pair.b} no longer exists`);
     }
     const state: PartLinkState = missing ? "missing" : reasons.length ? "needs-review" : "current";
-    return { ...link, state, reasons, sharedNets: partA && partB ? sharedNets(partA, partB) : [] };
+    return { ...link, state, reasons, sharedNets: partA && partB ? sharedNets(partA, partB) : [], check: checkPinMap(partA?.pads, partB?.pads, link.pins) };
   }));
 }
 
@@ -207,7 +208,7 @@ export function suggestPartLinks(boardAPath: string, boardA: BoardSnapshot, boar
     for (const b of boardB.components) {
       const nets = sharedNets(a, b);
       if (!nets.length) continue;
-      const connectors = CONNECTOR_REF.test(a.ref) && CONNECTOR_REF.test(b.ref);
+      const connectors = isConnectorPart(a.ref, a.footprint) && isConnectorPart(b.ref, b.footprint);
       const signal = nets.filter((net) => !POWER_NET.test(net.net)).length;
       // A rail like GND reaches most parts on both boards, so one alone suggests nothing. Two or
       // more rails between connectors can still be a real power cable.

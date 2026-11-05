@@ -6,7 +6,8 @@ import { DisclosureSummary } from "../components/DisclosureSummary";
 import { Icon } from "../components/Icon";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { useUiStore } from "../stores/ui";
-import { BoardPairView } from "./BoardPairView";
+import { BoardLegend, BoardPairView } from "./BoardPairView";
+import type { PartMarker } from "./PairOverlay";
 
 type ChangeKind = BoardPartChangeRow["kind"];
 const CHANGE_FILTERS: ReadonlyArray<{ kind: ChangeKind; label: string; mark: string }> = [
@@ -97,6 +98,11 @@ export function HistoryWorkspace({ projectId }: { projectId: string }) {
   const leftPart = data?.from.parts.find(part => part.ref === leftRef), rightPart = data?.to.parts.find(part => part.ref === rightRef);
   const impacts = data?.impacts ?? [];
   const boardName = pcbPath ? list.find(board => board.path === pcbPath)?.name ?? boardFileLabel(pcbPath) : "";
+  const connectorMarkers = (parts: readonly BoardPartSummary[]): PartMarker[] => parts.filter(part => part.connector).map(part => ({ ref: part.ref, tone: "connector" }));
+  const hintFor = (side: "left" | "right") => (part: BoardPartSummary) => {
+    const change = data?.changes.find(row => (side === "left" ? row.fromRef : row.toRef) === part.ref);
+    return `${[part.ref, part.value].filter(Boolean).join(" · ")}: ${change ? changeDescription(change) : "unchanged"}`;
+  };
   const revisionName = (ref: string | null | undefined, label?: string) => {
     const entry = entries.find(row => row.ref === ref);
     if (entry) return timelineEntryLabel(entry);
@@ -159,11 +165,12 @@ export function HistoryWorkspace({ projectId }: { projectId: string }) {
             {impacts.length > 0 && <span className="fd-history-impacts">{impacts.slice(0, 3).map(impact => <Button key={`${impact.linkId}:${impact.changedRef}`} size="sm" variant="secondary" onClick={() => openLink(impact.linkId)}>{impact.changedRef} affects {impact.peer.ref} on {boardFileLabel(impact.peer.boardPath)}</Button>)}</span>}
             {(data?.changes.length ?? 0) > 0 && <Button size="sm" className="fd-history-list-toggle" variant={listOpen ? "secondary" : "ghost"} aria-expanded={listOpen} onClick={() => setListOpen(!listOpen)}>Change list</Button>}
           </div>
+          <BoardLegend items={[{ tone: "new", label: "Added" }, { tone: "removed", label: "Removed" }, { tone: "changed", label: "Moved or changed" }, { tone: "existing", label: "Unchanged" }, { tone: "connector", label: "Connector" }]} />
           <div className="fd-history-stage">
             <BoardPairView
               leftLabel="Older revision" rightLabel="Newer revision"
-              left={{ header: <><strong>{revisionName(from, data?.from.label) ?? "Older"}</strong><small>{data ? sizeLabel(data.from.size) : ""}</small></>, svg: data?.from.drawing, viewKey: `older:${pcbPath}`, parts: data?.from.parts ?? [], selectedRef: leftRef, loading: comparison.isPending, notice: selected && !leftPart ? `${selected} is not on this revision` : null }}
-              right={{ header: <><strong>{revisionName(to, data?.to.label) ?? "Newer"}</strong><small>{data ? sizeLabel(data.to.size) : ""}</small></>, svg: data?.to.drawing, viewKey: `newer:${pcbPath}`, parts: data?.to.parts ?? [], selectedRef: rightRef, loading: comparison.isPending, notice: selected && !rightPart ? `${selected} is not on this revision` : null }}
+              left={{ header: <><strong>{revisionName(from, data?.from.label) ?? "Older"}</strong><small>{data ? sizeLabel(data.from.size) : ""}</small></>, svg: data?.from.drawing, viewKey: `older:${pcbPath}`, parts: data?.from.parts ?? [], markers: connectorMarkers(data?.from.parts ?? []), hint: hintFor("left"), selectedRef: leftRef, loading: comparison.isPending, notice: selected && !leftPart ? `${selected} is not on this revision` : null }}
+              right={{ header: <><strong>{revisionName(to, data?.to.label) ?? "Newer"}</strong><small>{data ? sizeLabel(data.to.size) : ""}</small></>, svg: data?.to.drawing, viewKey: `newer:${pcbPath}`, parts: data?.to.parts ?? [], markers: connectorMarkers(data?.to.parts ?? []), hint: hintFor("right"), selectedRef: rightRef, loading: comparison.isPending, notice: selected && !rightPart ? `${selected} is not on this revision` : null }}
               roles={filter ? drawingRoles(filter) : undefined}
               updating={comparison.isPlaceholderData}
               onPick={(side, ref) => {

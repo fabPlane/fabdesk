@@ -1,8 +1,9 @@
 /** Board history across revisions, and part links across boards. */
 import { z } from "zod/v4";
 import { boardDrawingSvg, boardPairDrawings, boardSize, compareBoardPair, normalizeBoardOrigin } from "@fabdesk/board-diff";
-import { PART_LINKS_FILE, PartEndpoint, PartPinPair, type BoardRevisionComparison, type BoardTimelineEntry, type PartLinkImpact } from "@fabdesk/protocol";
+import { PART_LINKS_FILE, PartEndpoint, PartPinPair, type BoardPartStatus, type BoardRevisionComparison, type BoardTimelineEntry, type PartLinkImpact } from "@fabdesk/protocol";
 import { BOARD_WORKTREE_REF, assertPcbPath, listBoardRevisions, listProjectBoards, parseBoard, partSummaries, readBoardRevision, saveBoardPoint } from "../board-history";
+import type { BoardPartRole, BoardPairComparison } from "@fabdesk/board-diff";
 import {
   assertPinPairs,
   currentBoard,
@@ -10,14 +11,36 @@ import {
   loadPartLinks,
   newPartLinkId,
   partBaseline,
+  resolvePartLinks,
   samePartLink,
   suggestPartLinks,
   updatePartLinks,
 } from "../part-links";
-import { ToolError, defineTool } from "../registry";
+import { ToolError, defineTool, type ProjectHandle } from "../registry";
 import { ok, table } from "./common";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true } as const;
+/** What each part is against the older revision, for screens and agents alike. */
+function partChanges(comparison: BoardPairComparison) {
+  const status = new Map<string, BoardPartStatus>(), roles = new Map<string, BoardPartRole>();
+  for (const change of comparison.changes) {
+    if (!change.toRef) continue;
+    status.set(change.toRef, change.kind === "added" ? "new" : "changed");
+    roles.set(change.toRef, change.kind === "added" ? "added" : change.kind === "moved" ? "moved" : "changed");
+  }
+  return { status, roles };
+}
+
+/** A damaged links file is reported by the connection tools; it must not hide the boards themselves. */
+async function linksOrNone(project: ProjectHandle) {
+  try {
+    return (await loadPartLinks(project)).links;
+  } catch (error) {
+    if (error instanceof ToolError && error.code === "precondition") return [];
+    throw error;
+  }
+}
+
 const PcbPath = z.string().min(1).max(500).describe("Project-relative .kicad_pcb path, as returned by board_list");
 
 export const board_list = defineTool({
@@ -37,7 +60,7 @@ export const board_view = defineTool({
   name: "board_view",
   toolset: "project",
   title: "View a board's parts",
-  description: "Read one board's placed parts, positions and nets, in millimetres from the board outline corner. Set drawing to include an SVG.",
+  description: "Read one board's placed parts, positions and nets, in millimetres from the board outline corner. Each part reports whether it is a connector, whether it is new, changed or existing against the previous revision, and which parts it is linked to. Set drawing to include an SVG.",
   inputSchema: {
     pcbPath: PcbPath,
     drawing: z.boolean().default(false).describe("Include an SVG drawing of the board"),
@@ -46,15 +69,28 @@ export const board_view = defineTool({
   handler: async ({ pcbPath, drawing }, ctx) => {
     const project = ctx.requireProject(), path = assertPcbPath(pcbPath);
     const revision = await readBoardRevision(project, path, BOARD_WORKTREE_REF, ctx.signal);
-    const snapshot = normalizeBoardOrigin(parseBoard(revision.text, revision.sha256));
-    const parts = partSummaries(snapshot);
-    return ok(`${path}: ${parts.length} placed part(s).`, {
+    const current = parseBoard(revision.text, revision.sha256);
+    const { revisions } = await listBoardRevisions(project, path, 2, ctx.signal);
+    const earlier = revisions.length > 1 ? revisions.at(-2)! : null;
+    const comparison = earlier ? compareBoardPair(parseBoard(earlier.text, earlier.sha256), current) : null;
+    const snapshot = comparison ? comparison.to : normalizeBoardOrigin(current);
+    const changes = comparison ? partChanges(comparison) : null;
+    const linkedTo = new Map<string, PartEndpoint[]>();
+    for (const link of await linksOrNone(project)) {
+      for (const [own, peer] of [[link.a, link.b], [link.b, link.a]] as const) {
+        if (own.boardPath === path) linkedTo.set(own.ref, [...(linkedTo.get(own.ref) ?? []), peer]);
+      }
+    }
+    const parts = partSummaries(snapshot, { linkedTo, ...(changes ? { status: changes.status, existing: true } : {}) });
+    const count = (test: (part: (typeof parts)[number]) => boolean) => parts.filter(test).length;
+    return ok(`${path}: ${parts.length} placed part(s), ${count((part) => part.connector)} connector(s), ${count((part) => !!part.linkedTo)} linked${earlier ? `; ${count((part) => part.status === "new")} new and ${count((part) => part.status === "changed")} changed since ${earlier.title}` : ""}.`, {
       pcbPath: path,
       label: revision.title,
       sha256: revision.sha256,
       size: boardSize(snapshot),
       parts,
-      ...(drawing ? { drawing: boardDrawingSvg(snapshot) } : {}),
+      ...(earlier ? { baseline: { ref: earlier.ref, label: earlier.title } } : {}),
+      ...(drawing ? { drawing: boardDrawingSvg(snapshot, changes ? { roles: changes.roles } : {}) } : {}),
     });
   },
 });
@@ -109,7 +145,7 @@ export const board_revision_compare = defineTool({
     const [older, newer] = await Promise.all([readBoardRevision(project, path, from, ctx.signal), readBoardRevision(project, path, to, ctx.signal)]);
     const comparison = compareBoardPair(parseBoard(older.text, older.sha256), parseBoard(newer.text, newer.sha256));
     const art = drawings ? boardPairDrawings(comparison) : null;
-    const links = (await loadPartLinks(project)).links;
+    const links = await linksOrNone(project);
     const impacts: PartLinkImpact[] = [];
     for (const change of comparison.changes) {
       for (const link of links) {
@@ -121,7 +157,7 @@ export const board_revision_compare = defineTool({
     const result: BoardRevisionComparison = {
       pcbPath: path,
       from: { ref: older.ref, label: older.title, sha256: older.sha256, size: boardSize(comparison.from), parts: partSummaries(comparison.from), ...(art ? { drawing: art.from } : {}) },
-      to: { ref: newer.ref, label: newer.title, sha256: newer.sha256, size: boardSize(comparison.to), parts: partSummaries(comparison.to), ...(art ? { drawing: art.to } : {}) },
+      to: { ref: newer.ref, label: newer.title, sha256: newer.sha256, size: boardSize(comparison.to), parts: partSummaries(comparison.to, { status: partChanges(comparison).status, existing: true }), ...(art ? { drawing: art.to } : {}) },
       summary: comparison.summary,
       changes: comparison.changes,
       nets: { added: comparison.diff.nets.added.length, removed: comparison.diff.nets.removed.length, changed: comparison.diff.nets.changed.length },
@@ -153,14 +189,14 @@ export const connection_list = defineTool({
   name: "connection_list",
   toolset: "project",
   title: "List part connections",
-  description: `List part links across boards from ${PART_LINKS_FILE}, each marked current, needs-review or missing against the boards as saved now, with nets that share a name. Also lists connections declared by the enclosure design or assembly manifest. A link records intent; it is not an electrical check.`,
+  description: `List part links across boards from ${PART_LINKS_FILE}, each marked current, needs-review or missing against the boards as saved now, with nets that share a name and a pin check that compares net names across each stated pin. Also lists connections declared by the enclosure design or assembly manifest. A link records intent; it is not an electrical check.`,
   inputSchema: {},
   annotations: readOnly,
   handler: async (_args, ctx) => {
     const list = await listPartLinks(ctx.requireProject(), ctx.signal);
     return ok(
       list.links.length
-        ? table(list.links.map((link) => ({ id: link.id, a: `${link.a.boardPath}#${link.a.ref}`, b: `${link.b.boardPath}#${link.b.ref}`, state: link.state, sharedNets: link.sharedNets.length })))
+        ? table(list.links.map((link) => ({ id: link.id, a: `${link.a.boardPath}#${link.a.ref}`, b: `${link.b.boardPath}#${link.b.ref}`, state: link.state, pins: link.pins?.length ?? 0, pinCheck: link.check.status, sharedNets: link.sharedNets.length })))
         : "No part links yet.",
       list,
     );
@@ -171,7 +207,7 @@ export const connection_add = defineTool({
   name: "connection_add",
   toolset: "project",
   title: "Link two parts",
-  description: `Record that a part on one board relates to a part on another, in ${PART_LINKS_FILE}. Both parts must exist in the saved boards. This does not change either board and does not verify electrical compatibility.`,
+  description: `Record that a part on one board connects to a part on another, in ${PART_LINKS_FILE}, optionally with which pin goes to which pin. Both parts must exist in the saved boards. This does not change either board and does not verify electrical compatibility.`,
   inputSchema: {
     a: PartEndpoint,
     b: PartEndpoint,
@@ -268,7 +304,9 @@ export const connection_set_pins = defineTool({
       const updated = { ...rest, ...(pins.length ? { pins } : {}) };
       return { file: { ...file, links: file.links.map((row) => (row.id === id ? updated : row)) }, result: updated };
     });
-    return ok(`${pins.length} pin pair(s) saved for ${link.a.ref} and ${link.b.ref}.`, { link });
+    const [resolved] = await resolvePartLinks(project, [link], ctx.signal);
+    const check = resolved?.check;
+    return ok(`${pins.length} pin pair(s) saved for ${link.a.ref} and ${link.b.ref}. Pin check by net name: ${check?.status ?? "none"}.`, { link, ...(check ? { check } : {}) });
   },
 });
 

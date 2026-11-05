@@ -44,9 +44,16 @@ other parts leave it alone. **Mark reviewed** accepts the parts as they are now.
 
 History reports when a change touches a linked part, with a button to open that link.
 
-Links are records of intent. **Unverified** is deliberate: nothing here checks electrical
-compatibility, pin mapping, cable fit or mating. Shared net names and **Suggest from net names** are
-hints from names alone.
+Parts are colour coded on both boards, and each screen has a legend. Fill shows new, changed or
+existing against the board's previous revision. A dashed outline marks a connector, a purple outline a
+likely match once a part is selected, and teal, amber or red outlines a part that is connected, needs
+review or has lost its partner. Lines join related parts across the two boards, and pins once a pair is
+open, with a chip naming a partner on a board not currently shown. Hovering says what a click would do.
+`board_view` and `connection_list` report the same status to agents.
+
+The pin check compares net names across each stated pin. It flags different power or ground nets as a
+conflict and different signal names for review. Names can agree on a wrong connection and differ on a
+right one, so links stay **Unverified**: nothing here checks the circuit, cable fit or mating.
 
 Connections from the enclosure design and the assembly manifest are listed read-only. Cable length
 and fit stay in Mechanical.
@@ -58,9 +65,15 @@ In the `project` toolset, so they work at an assembly root and take an explicit 
 `board_revision_save`, `connection_list`, `connection_add`, `connection_remove`,
 `connection_review`, `connection_set_pins`, `connection_suggest`.
 
+## Checking the screens
+
+With `bun run dev` running and its window visible, `bun run check:board-workspace` clicks through both
+screens on a throwaway project with real input, then removes it.
+
 ## Limits
 
 - No automatic history: a project with no git, saved points or export copies has only its current file.
 - Restoring an old revision is not offered here.
 - The two drawings zoom and pan separately.
+- Lines appear only between the two boards on screen.
 - These screens exist in the canvas workspace, not the classic layout.

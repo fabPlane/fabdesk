@@ -41,6 +41,7 @@ export const PartLinksFile = z.object({
 export type PartLinksFile = z.infer<typeof PartLinksFile>;
 export const emptyPartLinksFile = (): PartLinksFile => ({ contract: PART_LINKS_CONTRACT, links: [] });
 
+export type BoardPartStatus = "new" | "changed" | "existing";
 export type BoardFile = { path: string; name: string; bytes?: number };
 export type BoardPartSummary = {
   ref: string;
@@ -52,6 +53,12 @@ export type BoardPartSummary = {
   rotation?: number;
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
   nets: string[];
+  /** A connector by reference or footprint, so people and agents can find where boards join. */
+  connector: boolean;
+  /** Against the previous revision of this board, when there is one. */
+  status?: BoardPartStatus;
+  /** Parts this one is linked to, on any board. */
+  linkedTo?: PartEndpoint[];
   pads: Array<{ pin: string; net?: string; bounds: { minX: number; minY: number; maxX: number; maxY: number } }>;
 };
 export type BoardRevisionKind = "worktree" | "git" | "saved" | "export";
@@ -98,11 +105,77 @@ export type BoardRevisionComparison = {
   copper: { tracksAdded: number; tracksRemoved: number };
   impacts: PartLinkImpact[];
 };
-export type BoardView = { pcbPath: string; label: string; sha256: string; size: { width: number; height: number } | null; parts: BoardPartSummary[]; drawing?: string };
+export type BoardView = {
+  pcbPath: string;
+  label: string;
+  sha256: string;
+  size: { width: number; height: number } | null;
+  parts: BoardPartSummary[];
+  /** The revision that part status is measured against; absent with no earlier revision. */
+  baseline?: { ref: string; label: string };
+  drawing?: string;
+};
 export type PartLinkState = "current" | "needs-review" | "missing";
 export type SharedNet = { net: string; aPin: string; bPin: string };
-export type ResolvedPartLink = PartLink & { state: PartLinkState; reasons: string[]; sharedNets: SharedNet[] };
+export type ResolvedPartLink = PartLink & { state: PartLinkState; reasons: string[]; sharedNets: SharedNet[]; check: PinCheck };
 /** A connection declared elsewhere: read-only here, owned by its enclosure design or assembly manifest. */
 export type DeclaredConnection = { id: string; source: "mechanical" | "assembly"; name?: string; a: PartEndpoint; b: PartEndpoint };
 export type PartLinkList = { links: ResolvedPartLink[]; declared: DeclaredConnection[] };
 export type PartLinkSuggestion = { a: PartEndpoint; b: PartEndpoint; sharedNets: SharedNet[]; connectors: boolean };
+
+const CONNECTOR_REF = /^(?:J|P|CN|CON|X|FPC|USB|HDMI)\d/i;
+const CONNECTOR_FOOTPRINT = /(?:^|[:_/ ])(?:connector|conn|header|socket|fpc|ffc|usb|hdmi|jst)(?:[:_/ -]|$)/i;
+
+export function isConnectorPart(ref: string, footprint?: string): boolean {
+  return CONNECTOR_REF.test(ref) || (!!footprint && CONNECTOR_FOOTPRINT.test(footprint));
+}
+
+export type PinCheckKind = "match" | "differs" | "conflict" | "unnamed";
+export type PinCheckRow = { a: string; b: string; aNet?: string; bNet?: string; kind: PinCheckKind };
+export type PinCheck = {
+  /** No pins stated, all agree by name, something to look at, or a likely wiring error. */
+  status: "none" | "agree" | "review" | "conflict";
+  rows: PinCheckRow[];
+  /** Pins on end a with a named net that the map leaves out. */
+  unmapped: string[];
+};
+type PinPad = { pin: string; net?: string | undefined };
+
+const GENERATED_NET = /^(?:Net-\(|unconnected-|N\$)/;
+const GROUND_NET = /^(?:[ADPS]?GND\w*|VSS\w*|EARTH\w*)$/i;
+const POWER_NET = /^(?:\+?\d+V\d*\w*|V(?:CC|DD|BUS|BAT|IN|SYS|IO)\w*)$/i;
+/** Hierarchical sheets prefix net names; the same signal keeps its last segment. */
+const netName = (net: string) => net.split("/").at(-1) ?? net;
+const namedNet = (net?: string) => (net && !GENERATED_NET.test(net) && netName(net) ? netName(net) : undefined);
+
+/** Ground and power rails reach most parts on a board, so a shared rail says little by itself. */
+export function isRailNet(net: string): boolean {
+  const name = netName(net);
+  return GROUND_NET.test(name) || POWER_NET.test(name);
+}
+
+function pinKind(aNet?: string, bNet?: string): PinCheckKind {
+  const a = namedNet(aNet), b = namedNet(bNet);
+  if (!a || !b) return "unnamed";
+  if (a === b) return "match";
+  const ground = (net: string) => GROUND_NET.test(net), power = (net: string) => POWER_NET.test(net);
+  // Different rails joined by a cable are the mistake worth stopping for.
+  if ((ground(a) && power(b)) || (power(a) && ground(b)) || (power(a) && power(b))) return "conflict";
+  return "differs";
+}
+
+/**
+ * Compare a stated pin map against net names on both parts. This reads names only: agreement is a
+ * good sign, not proof, since boards can name one signal differently or reuse a name for another.
+ */
+export function checkPinMap(aPads: readonly PinPad[] | undefined, bPads: readonly PinPad[] | undefined, pins: readonly PartPinPair[] | undefined): PinCheck {
+  const netOf = (pads: readonly PinPad[] | undefined, pin: string) => pads?.find((pad) => pad.pin === pin)?.net;
+  const rows = (pins ?? []).map((pair): PinCheckRow => {
+    const aNet = netOf(aPads, pair.a), bNet = netOf(bPads, pair.b);
+    return { a: pair.a, b: pair.b, ...(aNet ? { aNet } : {}), ...(bNet ? { bNet } : {}), kind: pinKind(aNet, bNet) };
+  });
+  const mapped = new Set(rows.map((row) => row.a));
+  const unmapped = [...new Set((aPads ?? []).filter((pad) => !mapped.has(pad.pin) && namedNet(pad.net)).map((pad) => pad.pin))];
+  const status: PinCheck["status"] = !rows.length ? "none" : rows.some((row) => row.kind === "conflict") ? "conflict" : rows.some((row) => row.kind !== "match") || unmapped.length ? "review" : "agree";
+  return { status, rows, unmapped };
+}

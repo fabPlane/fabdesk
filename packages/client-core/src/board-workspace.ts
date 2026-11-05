@@ -11,9 +11,12 @@ import type {
   BoardView,
   PartEndpoint,
   PartLinkList,
+  PinCheck,
+  PinCheckRow,
   PartPinPair,
   PartLinkSuggestion,
 } from "@fabdesk/protocol";
+import { isRailNet } from "@fabdesk/protocol";
 import type { CoreClient } from "./CoreClient";
 import { BOARD_WORKSPACE_QUERY_KEY } from "./board-workspace-keys";
 import { pcbToolJson } from "./pcb-parts";
@@ -265,10 +268,73 @@ export function pinPairsForLink(map: Readonly<Record<string, string>>, sourceIsA
   return Object.entries(map).filter(([, target]) => target).map(([from, to]) => (sourceIsA ? { a: from, b: to } : { a: to, b: from }));
 }
 
-/** Parts most likely to connect first: those sharing named nets, then connectors, then by reference. */
+/** Parts most likely to connect first: those sharing named signal nets, then connectors, then by reference. */
 export function rankConnectionTargets<T extends { ref: string; nets: readonly string[] }>(source: { nets: readonly string[] } | null | undefined, parts: readonly T[]): T[] {
-  const named = new Set((source?.nets ?? []).filter((net) => !GENERATED_NET.test(net)));
+  const named = new Set((source?.nets ?? []).filter((net) => !GENERATED_NET.test(net) && !isRailNet(net)));
   const shared = (part: T) => part.nets.filter((net) => named.has(net)).length;
   const order = new Map(sortedBoardParts(parts).map((part, index) => [part.ref, index]));
   return [...parts].sort((a, b) => shared(b) - shared(a) || order.get(a.ref)! - order.get(b.ref)!);
+}
+
+export type PairLine = {
+  id: string;
+  tone: "linked" | "review" | "missing" | "draft" | PinCheckRow["kind"];
+  left: { x: number; y: number };
+  right: { x: number; y: number };
+  label?: string;
+  selected?: boolean;
+};
+type LineLink = { id: string; a: PartEndpoint; b: PartEndpoint; state: "current" | "needs-review" | "missing" };
+const center = (box: BoardPartSummary["bounds"]) => ({ x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 });
+
+/** Every saved link with one end on each board shown, read from either direction. */
+export function pairLinkLines(links: readonly LineLink[], leftBoard: string | null, rightBoard: string | null, leftParts: readonly BoardPartSummary[], rightParts: readonly BoardPartSummary[], selectedId?: string | null): PairLine[] {
+  return links.flatMap((link) => {
+    const forward = link.a.boardPath === leftBoard && link.b.boardPath === rightBoard;
+    const backward = link.b.boardPath === leftBoard && link.a.boardPath === rightBoard;
+    if (!forward && !backward) return [];
+    const leftEnd = forward ? link.a : link.b, rightEnd = forward ? link.b : link.a;
+    const left = leftParts.find((part) => part.ref === leftEnd.ref), right = rightParts.find((part) => part.ref === rightEnd.ref);
+    if (!left || !right) return [];
+    return [{
+      id: link.id,
+      tone: link.state === "current" ? "linked" as const : link.state === "needs-review" ? "review" as const : "missing" as const,
+      left: center(left.bounds),
+      right: center(right.bounds),
+      ...(link.id === selectedId ? { selected: true } : {}),
+    }];
+  });
+}
+
+/** One line per stated pin, coloured by what the net names say about it. */
+export function pairPinLines(check: Pick<PinCheck, "rows">, sourceIsLeft: boolean, source: BoardPartSummary | null, target: BoardPartSummary | null): PairLine[] {
+  if (!source || !target) return [];
+  return check.rows.flatMap((row) => {
+    const from = source.pads.find((pad) => pad.pin === row.a), to = target.pads.find((pad) => pad.pin === row.b);
+    if (!from || !to) return [];
+    const a = center(from.bounds), b = center(to.bounds);
+    return [{ id: `pin:${row.a}:${row.b}`, tone: row.kind, left: sourceIsLeft ? a : b, right: sourceIsLeft ? b : a, ...(row.aNet ? { label: netLabel(row.aNet) } : {}) }];
+  });
+}
+
+const netLabel = (net: string) => net.split("/").at(-1) ?? net;
+
+/** Parts on the other board worth clicking, by how many named signal nets they share with this one. */
+export function connectionCandidates(source: { nets: readonly string[] } | null | undefined, parts: readonly { ref: string; nets: readonly string[] }[], limit = 12): Map<string, number> {
+  const named = new Set((source?.nets ?? []).filter((net) => !GENERATED_NET.test(net) && !isRailNet(net)));
+  const scored = parts.map((part) => ({ ref: part.ref, shared: part.nets.filter((net) => named.has(net)).length })).filter((row) => row.shared > 0);
+  return new Map(scored.sort((a, b) => b.shared - a.shared).slice(0, limit).map((row) => [row.ref, row.shared]));
+}
+
+/** A one-line reading of a pin check. Names only, so it never says verified. */
+export function pinCheckLabel(check: Pick<PinCheck, "status" | "rows" | "unmapped">): string {
+  if (check.status === "none") return "No pins stated yet";
+  const count = (kind: PinCheckRow["kind"]) => check.rows.filter((row) => row.kind === kind).length;
+  const parts = [
+    count("conflict") ? `${count("conflict")} power conflict${count("conflict") === 1 ? "" : "s"}` : "",
+    count("differs") ? `${count("differs")} with different names` : "",
+    count("unnamed") ? `${count("unnamed")} without a net name` : "",
+    check.unmapped.length ? `${check.unmapped.length} named not mapped` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join(", ") : `All ${check.rows.length} pins agree by net name`;
 }

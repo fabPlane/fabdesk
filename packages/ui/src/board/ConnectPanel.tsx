@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import type { BoardFile, BoardPartSummary, ResolvedPartLink } from "@fabdesk/protocol";
-import { partPins, rankConnectionTargets, sharedNetLabel } from "@fabdesk/client-core";
+import { isRailNet, type BoardFile, type BoardPartSummary, type PinCheck, type ResolvedPartLink } from "@fabdesk/protocol";
+import { partPins, pinCheckLabel, rankConnectionTargets, sharedNetLabel } from "@fabdesk/client-core";
 import { Button, IconButton, Input, Select } from "../components/ui";
 import { Icon } from "../components/Icon";
 
@@ -9,7 +9,7 @@ const TARGET_LIMIT = 80;
 const partLabel = (part: BoardPartSummary) => [part.value, part.footprint?.split(":").at(-1)?.replaceAll("_", " ")].filter(Boolean).join(" · ");
 
 /** Says where a selected part connects: which board, which part, and which pin goes to which pin. */
-export function ConnectPanel({ source, sourceBoard, boards, targetBoard, targetParts, targetLoading, target, link, sourceLinks, pinMap, pinsEdited, activePin, busy, nameOf, onClose, onTargetBoard, onTarget, onOpenLink, onNewTarget, onActivePin, onPin, onSave, onReview, onRemove }: {
+export function ConnectPanel({ source, sourceBoard, boards, targetBoard, targetParts, targetLoading, target, link, sourceLinks, pinMap, pinCheck, pinsEdited, activePin, busy, nameOf, onClose, onTargetBoard, onTarget, onOpenLink, onNewTarget, onActivePin, onPin, onSave, onReview, onRemove }: {
   source: BoardPartSummary;
   sourceBoard: string;
   boards: readonly BoardFile[];
@@ -21,6 +21,7 @@ export function ConnectPanel({ source, sourceBoard, boards, targetBoard, targetP
   /** Every saved link touching this part, with the part at its other end. */
   sourceLinks: ReadonlyArray<{ link: ResolvedPartLink; peerRef: string; peerBoard: string }>;
   pinMap: Readonly<Record<string, string>>;
+  pinCheck: PinCheck;
   pinsEdited: boolean;
   activePin: string | null;
   busy: boolean;
@@ -45,10 +46,10 @@ export function ConnectPanel({ source, sourceBoard, boards, targetBoard, targetP
   }, [query, source, sourceBoard, targetBoard, targetParts]);
   const sourcePins = useMemo(() => partPins(source), [source]);
   const targetPins = useMemo(() => partPins(target), [target]);
-  const netOf = useMemo(() => new Map(targetPins.map(pin => [pin.pin, pin.net])), [targetPins]);
+  const kindOf = useMemo(() => new Map(pinCheck.rows.map(row => [row.a, row.kind])), [pinCheck]);
   const mapped = Object.values(pinMap).filter(Boolean).length;
   const suggested = !!target && !pinsEdited && !link?.pins?.length && mapped > 0;
-  const sharedWith = (part: BoardPartSummary) => part.nets.filter(net => source.nets.includes(net) && !/^(?:Net-\(|unconnected-)/.test(net)).length;
+  const sharedWith = (part: BoardPartSummary) => part.nets.filter(net => source.nets.includes(net) && !/^(?:Net-\(|unconnected-)/.test(net) && !isRailNet(net)).length;
 
   return <aside className="fd-connect-panel" aria-label={`Connect ${source.ref}`}>
     <header>
@@ -98,8 +99,8 @@ export function ConnectPanel({ source, sourceBoard, boards, targetBoard, targetP
           <div className="fd-connect-pin-table" role="table" aria-label={`Pins from ${source.ref} to ${target.ref}`}>
             {sourcePins.map(pin => {
               const to = pinMap[pin.pin] ?? "";
-              const toNet = to ? netOf.get(to) : undefined;
-              return <div key={pin.pin} role="row" className="fd-connect-pin" aria-current={activePin === pin.pin} data-mapped={!!to}>
+              const kind = to ? kindOf.get(pin.pin) : undefined;
+              return <div key={pin.pin} role="row" className="fd-connect-pin" aria-current={activePin === pin.pin} data-mapped={!!to} data-check={kind}>
                 <button type="button" role="cell" aria-pressed={activePin === pin.pin} title={pin.net} onClick={() => onActivePin(activePin === pin.pin ? null : pin.pin)}>
                   <strong>{pin.pin}</strong><small>{pin.net ?? "No net"}</small>
                 </button>
@@ -108,17 +109,19 @@ export function ConnectPanel({ source, sourceBoard, boards, targetBoard, targetP
                   <option value="">Not connected</option>
                   {targetPins.map(option => <option key={option.pin} value={option.pin}>{option.pin}{option.net ? ` · ${option.net}` : ""}</option>)}
                 </Select>
-                {to && pin.net && toNet && pin.net !== toNet && <small className="fd-connect-mismatch">Net names differ</small>}
+                {kind === "conflict" && <small className="fd-connect-mismatch" data-check="conflict">Different power or ground nets</small>}
+                {kind === "differs" && <small className="fd-connect-mismatch">Net names differ</small>}
               </div>;
             })}
           </div>
         </>}
+      {targetPins.length > 0 && sourcePins.length > 0 && <p className="fd-connect-check" data-check={pinCheck.status} role="status">{pinCheckLabel(pinCheck)}</p>}
       <div className="fd-connect-actions">
         {(!link || pinsEdited || suggested) && <Button size="sm" variant="primary" disabled={busy} onClick={onSave}>{!link ? "Save connection" : "Save pins"}</Button>}
         {link?.state === "needs-review" && <Button size="sm" variant="secondary" disabled={busy} onClick={onReview}>Mark reviewed</Button>}
         {link && <Button size="sm" variant="ghost" disabled={busy} onClick={onRemove}>Remove link</Button>}
       </div>
-      <p className="fd-connect-note">{mapped} of {sourcePins.length} pins mapped. This records your intent and does not check electrical compatibility.</p>
+      <p className="fd-connect-note">{mapped} of {sourcePins.length} pins mapped. The check compares net names only, not the actual circuit, so stays unverified.</p>
     </section>}
   </aside>;
 }

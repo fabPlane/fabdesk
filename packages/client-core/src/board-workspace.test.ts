@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import type { BoardPartSummary, BoardTimelineEntry } from "@fabdesk/protocol";
 import { BOARD_WORKSPACE_PATHS } from "./board-workspace-keys";
-import { changeDescription, defaultTimelineIndex, highlightBoardDrawing, hitTestBoardPad, hitTestBoardPart, linkPinMap, partLinkPeer, partPins, pinPairsForLink, rankConnectionTargets, sameEndpoint, sharedNetLabel, sortedBoardParts, suggestPinMap, timelineEntryLabel, timelineIndexForCard, timelinePair, timelineStep } from "./board-workspace";
+import { changeDescription, connectionCandidates, defaultTimelineIndex, highlightBoardDrawing, hitTestBoardPad, hitTestBoardPart, linkPinMap, pairLinkLines, pairPinLines, partLinkPeer, partPins, pinCheckLabel, pinPairsForLink, rankConnectionTargets, sameEndpoint, sharedNetLabel, sortedBoardParts, suggestPinMap, timelineEntryLabel, timelineIndexForCard, timelinePair, timelineStep } from "./board-workspace";
 
-const part = (ref: string, minX: number, minY: number, maxX: number, maxY: number): BoardPartSummary => ({ ref, x: (minX + maxX) / 2, y: (minY + maxY) / 2, bounds: { minX, minY, maxX, maxY }, nets: [], pads: [] });
+const part = (ref: string, minX: number, minY: number, maxX: number, maxY: number): BoardPartSummary => ({ ref, x: (minX + maxX) / 2, y: (minY + maxY) / 2, bounds: { minX, minY, maxX, maxY }, nets: [], connector: false, pads: [] });
 const entry = (ref: string, total: number | null): BoardTimelineEntry => ({ ref, kind: "git", title: ref, sha256: ref, parts: 1, size: null, ...(total === null ? {} : { changes: { added: total, removed: 0, moved: 0, changed: 0, renamed: 0, unchanged: 1 } }) });
 
 test("hit testing picks the part under the point, and the smallest when stacked", () => {
@@ -148,4 +148,39 @@ test("a pin map reads and saves correctly from either end of a link", () => {
 test("likely targets come first: shared named nets, then connectors", () => {
   const rows = [{ ref: "R1", nets: [] }, { ref: "J9", nets: [] }, { ref: "U1", nets: ["SDA"] }, { ref: "C1", nets: ["Net-(X)"] }];
   expect(rankConnectionTargets({ nets: ["SDA", "Net-(X)"] }, rows).map((row) => row.ref)).toEqual(["U1", "J9", "C1", "R1"]);
+});
+
+test("lines join a link's two parts whichever way round the boards are shown", () => {
+  const link = { id: "l1", a: { boardPath: "a", ref: "J1" }, b: { boardPath: "b", ref: "J2" }, state: "current" as const };
+  const a = [part("J1", 0, 0, 2, 2)], b = [part("J2", 10, 10, 12, 12)];
+  expect(pairLinkLines([link], "a", "b", a, b, "l1")[0]).toMatchObject({ tone: "linked", selected: true, left: { x: 1, y: 1 }, right: { x: 11, y: 11 } });
+  expect(pairLinkLines([link], "b", "a", b, a)[0]).toMatchObject({ left: { x: 11, y: 11 }, right: { x: 1, y: 1 } });
+  expect(pairLinkLines([{ ...link, state: "needs-review" }], "a", "b", a, b)[0]?.tone).toBe("review");
+  // Only links with an end on each board shown get a line.
+  expect(pairLinkLines([link], "a", "c", a, b)).toEqual([]);
+  expect(pairLinkLines([link], "a", "b", a, [])).toEqual([]);
+});
+
+test("pin lines take their colour from the pin check and follow the source side", () => {
+  const source = { ...part("J1", 0, 0, 4, 2), pads: [pad("1", 0)] }, target = { ...part("J2", 10, 10, 14, 12), pads: [pad("7", 10)] };
+  const check = { rows: [{ a: "1", b: "7", kind: "conflict" as const, aNet: "/sheet/GND" }, { a: "1", b: "missing", kind: "match" as const }] };
+  const lines = pairPinLines(check, true, source, target);
+  expect(lines).toHaveLength(1);
+  expect(lines[0]).toMatchObject({ tone: "conflict", label: "GND", left: { x: 0.5 }, right: { x: 10.5 } });
+  expect(pairPinLines(check, false, source, target)[0]).toMatchObject({ left: { x: 10.5 }, right: { x: 0.5 } });
+  expect(pairPinLines(check, true, source, null)).toEqual([]);
+});
+
+test("likely targets are parts sharing named nets, most first", () => {
+  const candidates = connectionCandidates({ nets: ["SDA", "SCL", "Net-(X)"] }, [{ ref: "A", nets: ["SDA"] }, { ref: "B", nets: ["SDA", "SCL"] }, { ref: "C", nets: ["Net-(X)"] }, { ref: "D", nets: [] }]);
+  expect([...candidates]).toEqual([["B", 2], ["A", 1]]);
+  expect(connectionCandidates(null, [{ ref: "A", nets: ["SDA"] }]).size).toBe(0);
+  // A shared ground alone would mark nearly every part on the board.
+  expect(connectionCandidates({ nets: ["GND", "+3V3"] }, [{ ref: "A", nets: ["GND", "+3V3"] }]).size).toBe(0);
+});
+
+test("the pin check reads as a plain sentence and never claims verification", () => {
+  expect(pinCheckLabel({ status: "none", rows: [], unmapped: [] })).toBe("No pins stated yet");
+  expect(pinCheckLabel({ status: "agree", rows: [{ a: "1", b: "2", kind: "match" }], unmapped: [] })).toBe("All 1 pins agree by net name");
+  expect(pinCheckLabel({ status: "conflict", rows: [{ a: "1", b: "2", kind: "conflict" }, { a: "2", b: "3", kind: "differs" }], unmapped: ["4"] })).toBe("1 power conflict, 1 with different names, 1 named not mapped");
 });

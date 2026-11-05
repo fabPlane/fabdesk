@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod/v4";
 import { boardPadBoxes, boardPartBounds, snapshotFromKicadPcb, type BoardSnapshot } from "@fabdesk/board-diff";
-import type { BoardFile, BoardPartSummary, BoardRevisionKind } from "@fabdesk/protocol";
+import { isConnectorPart, type BoardFile, type BoardPartStatus, type BoardPartSummary, type BoardRevisionKind, type PartEndpoint } from "@fabdesk/protocol";
 import { inspectProjectBoardSources } from "./assembly";
 import { exists, jailPath } from "./fs";
 import { ToolError, type ProjectHandle } from "./registry";
@@ -177,7 +177,7 @@ export async function listBoardRevisions(project: ProjectHandle, pcbPath: string
 }
 
 /** Compact part facts for hit testing and inspection, in the same frame as the drawing. */
-export function partSummaries(snapshot: BoardSnapshot): BoardPartSummary[] {
+export function partSummaries(snapshot: BoardSnapshot, opts: { status?: ReadonlyMap<string, BoardPartStatus>; existing?: boolean; linkedTo?: ReadonlyMap<string, PartEndpoint[]> } = {}): BoardPartSummary[] {
   return snapshot.components.flatMap((component) => {
     const bounds = boardPartBounds(component);
     if (!bounds || component.x === undefined || component.y === undefined) return [];
@@ -191,6 +191,9 @@ export function partSummaries(snapshot: BoardSnapshot): BoardPartSummary[] {
       ...(component.rotation !== undefined ? { rotation: component.rotation } : {}),
       bounds,
       nets: [...new Set((component.pads ?? []).flatMap((pad) => (pad.net ? [pad.net] : [])))],
+      connector: isConnectorPart(component.ref, component.footprint),
+      ...(opts.status?.get(component.ref) ? { status: opts.status.get(component.ref)! } : opts.existing ? { status: "existing" as const } : {}),
+      ...(opts.linkedTo?.get(component.ref)?.length ? { linkedTo: opts.linkedTo.get(component.ref)! } : {}),
       pads: boardPadBoxes(component),
     }];
   });

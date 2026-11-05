@@ -43,6 +43,10 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
     ? current && loaded?.url === current.url ? loaded : viewKey ? loaded : null
     : box;
   const failed = current && failedUrl === current.url;
+  // With a stable view, the last drawing stays up until the next can paint, so stepping does not flash.
+  const [painted, setPainted] = useState<{ svg: string; viewKey: string } | null>(null);
+  const showingCurrent = !!current && loaded?.url === current.url;
+  const canvasSvg = showingCurrent ? svg : viewKey && painted?.viewKey === viewKey ? painted.svg : null;
 
   useEffect(() => {
     if (!viewBox) return;
@@ -178,12 +182,13 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
               const image = e.currentTarget;
               if (image.naturalWidth && image.naturalHeight) {
                 setLoaded({ url: current.url, width: image.naturalWidth, height: image.naturalHeight });
+                if (viewKey) setPainted({ svg, viewKey });
               } else setFailedUrl(current.url);
             }}
             onError={() => setFailedUrl(current.url)}
           />}
-          {viewBox && current && loaded?.url === current.url && image.current && fitSize.width > 1 && (
-            <SvgCanvas svg={svg} image={image.current} width={fitSize.width * zoom} height={fitSize.height * zoom} />
+          {viewBox && canvasSvg && image.current && fitSize.width > 1 && (
+            <SvgCanvas svg={canvasSvg} image={image.current} width={fitSize.width * zoom} height={fitSize.height * zoom} />
           )}
           {!viewBox && <div className="fd-svg-document h-full w-full" dangerouslySetInnerHTML={{ __html: svg }} />}
           {typeof overlay === "function" ? overlay(box) : overlay}
