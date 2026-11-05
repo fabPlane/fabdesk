@@ -328,3 +328,28 @@ test("separate native Edge.Cuts edges do not become a diagonal polygon or schema
   expect(drawing).not.toContain('L20 10 L0 10 Z');
   expect(snapshotSvg(snap, "schematic")).not.toContain('data-board-outline');
 });
+
+test("revision comparison preserves unordered concave edges and separate cutouts through source composition", () => {
+  // A concave outline in native file order, deliberately not a polygon walk.
+  const paths = [
+    [[0, 0], [30, 0]], [[30, 20], [18, 20]], [[12, 8], [12, 20]],
+    [[30, 0], [30, 20]], [[18, 20], [18, 8]], [[12, 20], [0, 20]],
+    [[18, 8], [12, 8]], [[0, 20], [0, 0]],
+    [[3, 3], [6, 3], [6, 6], [3, 6], [3, 3]],
+  ];
+  const kicadPcb = `(kicad_pcb ${paths.slice(0, -1).map(path =>
+    `(gr_line (start ${path[0]!.join(" ")}) (end ${path[1]!.join(" ")}) (layer "Edge.Cuts"))`,
+  ).join(" ")} (gr_rect (start 3 3) (end 6 6) (layer "Edge.Cuts")))`;
+  const source = { kicadPcb, kicadSch: SCH_FROM, netlistJson: NETLIST_FROM };
+  const result = compareRevisions(source, source);
+  expect(result.from.outlinePaths).toHaveLength(paths.length);
+  expect(result.to.outlinePaths).toEqual(result.from.outlinePaths);
+  const expected = new Set(paths.map(path => path.map((point, i) => `${i ? "L" : "M"}${point.join(" ")}`).join(" ")));
+  for (const mode of ["structured", "overlay", "sideBySide"] as const) {
+    const drawn = [...result.pcb[mode].matchAll(/data-board-outline="true" d="([^"]+)"/g)].map(match => match[1]);
+    expect(drawn.length).toBe(paths.length * 2);
+    expect(new Set(drawn)).toEqual(expected);
+    expect(result.schematic[mode]).not.toContain("data-board-outline");
+  }
+  expect(result.diff.components.changed).toHaveLength(0);
+});
