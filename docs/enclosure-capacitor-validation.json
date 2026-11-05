@@ -1,0 +1,98 @@
+{
+  "source": {
+    "part": "ECASD41E336M040KA0",
+    "refs": [
+      "C17",
+      "C18"
+    ],
+    "nominalBodyHeightMm": 1.9,
+    "bodyHeightToleranceMm": 0.1,
+    "maximumBodyHeightMm": 2.0,
+    "source": "https://www.murata.com/~/media/webrenewal/support/library/catalog/products/capacitor/polymer/c90e.ashx",
+    "sourcePage": 2,
+    "sourceDate": "2024-05-15",
+    "solderHeightMeasured": false,
+    "exact3dModelAssigned": false,
+    "onlyHeightPropertiesChanged": true,
+    "priorPcbSha256": "aac178e56beb1213521c805aab89234ded72355809a9741db666bdd4a36bec3a",
+    "pcbSha256": "5575e0efec9bc0392325a2c85afe293d93e3b25aa64bb458bd8a3d3c4d37535b",
+    "sourceAccess": "Manufacturer PDF text retrieved through web tool; direct PDF download was unavailable",
+    "catalogContainsTypicalSpecifications": true
+  },
+  "clearanceTest": {
+    "scenario": "Isolated capacitor clearance test, 1.8 mm above PCB, other component bodies excluded intentionally",
+    "components": [
+      {
+        "ref": "C17",
+        "beforeHeightMm": 1.6,
+        "afterHeightMm": 2,
+        "bounds": {
+          "minX": 111.64999999999999,
+          "minY": 115.6,
+          "maxX": 120.95,
+          "maxY": 120.4
+        }
+      },
+      {
+        "ref": "C18",
+        "beforeHeightMm": 1.6,
+        "afterHeightMm": 2,
+        "bounds": {
+          "minX": 111.64999999999999,
+          "minY": 122.1,
+          "maxX": 120.95,
+          "maxY": 126.9
+        }
+      }
+    ],
+    "beforeBlockers": [],
+    "afterBlockers": [
+      {
+        "code": "outside-space",
+        "message": "USB-board.kicad_pcb: C17 exceeds the usable space or required clearance.",
+        "severity": "error",
+        "regions": [
+          {
+            "name": "C17",
+            "x": 25.53,
+            "y": 14.399999999999999,
+            "z": 7.651134647035739,
+            "width": 4.800000000000011,
+            "depth": 9.300000000000011,
+            "height": 2
+          }
+        ]
+      },
+      {
+        "code": "outside-space",
+        "message": "USB-board.kicad_pcb: C18 exceeds the usable space or required clearance.",
+        "severity": "error",
+        "regions": [
+          {
+            "name": "C18",
+            "x": 19.03,
+            "y": 14.399999999999999,
+            "z": 7.651134647035739,
+            "width": 4.800000000000011,
+            "depth": 9.300000000000011,
+            "height": 2
+          }
+        ]
+      }
+    ],
+    "physicalFitVerified": false
+  },
+  "fullAssembly": {
+    "closedBodies": 141,
+    "knownCollisionBlockers": 0,
+    "exactCapacitorModelsAssigned": false,
+    "physicalFitVerified": false
+  },
+  "unchangedSlicedParts": {
+    "case.stl": true,
+    "lid-print.stl": true,
+    "fit-samples/edge-holder-01.stl": true,
+    "fit-samples/edge-holder-02.stl": true
+  },
+  "exportHashesVerified": true
+}

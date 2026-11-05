@@ -240,3 +240,18 @@ export { schematicFocusFilesMatch, schematicFocusFromResult } from "./schematic-
 export { PersistentDraft, localDraft } from "./persistent-draft";
 export { sameWorkspaceLocation, recordWorkspaceHistory } from "./workspace-history";
 export type { WorkspaceHistoryEntry } from "./workspace-history";
+export * from "./mechanical";
+export * from "./enclosure-design";
+export * from "./enclosure-history";
+export * from "./enclosure-pcb-edit";
+export * from "./enclosure-recovery";
+export * from "./pcb-display";
+export * from "./enclosure-readiness";
+export * from "./enclosure-workflow";
+export * from "./enclosure-review";
+export * from "./enclosure-review-target";
+export * from "./enclosure-issue-navigation";
+export * from "./enclosure-mounts";
+export * from "./enclosure-layout";
+export * from "./enclosure-setup";
+export * from "./enclosure-openings";

@@ -1,0 +1,139 @@
+{
+  "fixture": "Separate VAIO QA copy; three model references changed, circuit geometry unchanged",
+  "nativeClosedBodies": 141,
+  "collisionBlockers": 0,
+  "physicalFitVerified": false,
+  "models": [
+    {
+      "package": "REF0038A",
+      "url": "https://webench.ti.com/cad/dlbxl.cgi/newstep/REF0038A.stp",
+      "sourcePage": "https://webench.ti.com/cad/cad.cgi?partno=TPS25730",
+      "bytes": 818476,
+      "sha256": "aecd28a91c910a325373f568dc111529cddfdc91922f25ddb51a6df0e14f5d26"
+    },
+    {
+      "package": "RQM0029A",
+      "url": "https://webench.ti.com/cad/dlbxl.cgi/newstep/RQM0029A.stp",
+      "sourcePage": "https://webench.ti.com/cad/cad.cgi?partno=BQ25798",
+      "bytes": 1419768,
+      "sha256": "2b506f614e8de3b8d4fd691a864bbf33dfe113a3ca635bd76cc83714a26860be"
+    },
+    {
+      "package": "RJE0020A",
+      "url": "https://webench.ti.com/cad/dlbxl.cgi/newstep/RJE0020A.stp",
+      "sourcePage": "https://webench.ti.com/cad/cad.cgi?partno=TPS568230",
+      "bytes": 373890,
+      "sha256": "38639c813a0c060aa03a598b2d02f9b01265f13c86237512d0c93ab1b7fc550f"
+    }
+  ],
+  "packageDimensionsMm": [
+    {
+      "package": "REF0038A",
+      "meshes": 38,
+      "min": [
+        -3,
+        -2,
+        0
+      ],
+      "max": [
+        3,
+        2,
+        0.8
+      ],
+      "size": [
+        6,
+        4,
+        0.8
+      ]
+    },
+    {
+      "package": "RQM0029A",
+      "meshes": 30,
+      "min": [
+        -2,
+        -2,
+        0
+      ],
+      "max": [
+        2,
+        2,
+        1
+      ],
+      "size": [
+        4,
+        4,
+        1
+      ]
+    },
+    {
+      "package": "RJE0020A",
+      "meshes": 22,
+      "min": [
+        -1.5,
+        -1.5,
+        0
+      ],
+      "max": [
+        1.5,
+        1.5,
+        1
+      ],
+      "size": [
+        3,
+        3,
+        1
+      ]
+    }
+  ],
+  "exportedModelsReopened": [
+    {
+      "ref": "U8",
+      "bounds": {
+        "minX": 107.99999997392297,
+        "minY": 106.4999999050051,
+        "minZ": 1.1949979999999996,
+        "maxX": 114.00000002607703,
+        "maxY": 110.5000000949949,
+        "maxZ": 1.99499802225861
+      },
+      "vertices": 5190
+    },
+    {
+      "ref": "U9",
+      "bounds": {
+        "minX": 131.9999999050051,
+        "minY": 108.9999999050051,
+        "minZ": 1.1949979999999996,
+        "maxX": 136.0000000949949,
+        "maxY": 113.0000000949949,
+        "maxZ": 2.1949979735504392
+      },
+      "vertices": 4164
+    },
+    {
+      "ref": "U10",
+      "bounds": {
+        "minX": 154.49999998696148,
+        "minY": 108.49999998696148,
+        "minZ": 1.1949979974737872,
+        "maxX": 157.50000001303852,
+        "maxY": 111.50000001303852,
+        "maxZ": 2.1949979735504392
+      },
+      "vertices": 2786
+    }
+  ],
+  "allHashesMatch": true,
+  "unchangedSlicedParts": {
+    "case.stl": true,
+    "lid-print.stl": true,
+    "fit-samples/edge-holder-01.stl": true,
+    "fit-samples/edge-holder-02.stl": true
+  },
+  "remaining": [
+    "C17/C18: Murata ECASD41E336M040KA0, no assigned 3D model",
+    "Unmodeled solder jumpers and test pads",
+    "Actual plug/card dimensions and cable bends",
+    "Printing, screw engagement, retention load and assembly testing"
+  ]
+}

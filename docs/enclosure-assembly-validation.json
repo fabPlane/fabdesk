@@ -1,0 +1,67 @@
+{
+  "date": "2026-11-02",
+  "tests": {
+    "passed": 103,
+    "failed": 0,
+    "assertions": 681,
+    "files": 10,
+    "rootTypecheck": "pass",
+    "windowsCoreBuild": "pass",
+    "desktopBuild": "pass"
+  },
+  "assembly": {
+    "method": "12 fixed samples of rigid +Z removal, reverse of -Z installation. Other boards remain installed. No continuous sweep, angled path, flexible cable, tool-access or strength proof.",
+    "results": [
+      {
+        "code": "assembly-sampled",
+        "message": "USB-board.kicad_pcb: no obstruction at 12 sampled positions over 14.15 mm of straight-up removal. This reverses downward installation; gaps between samples, missing models, cables, tools and strength are not verified.",
+        "severity": "review"
+      },
+      {
+        "code": "assembly-sampled",
+        "message": "Small-SD-board.kicad_pcb: no obstruction at 12 sampled positions over 13.80 mm of straight-up removal. This reverses downward installation; gaps between samples, missing models, cables, tools and strength are not verified.",
+        "severity": "review"
+      },
+      {
+        "code": "assembly-sampled",
+        "message": "lid: no obstruction at 12 sampled positions over 12.35 mm of straight-up removal. This reverses downward installation; gaps between samples, missing models, cables, tools and strength are not verified.",
+        "severity": "review"
+      }
+    ],
+    "nativePreviewSeconds": 11.984000000054948,
+    "knownFinalPositionBlockers": []
+  },
+  "dimensions": {
+    "legacyAndDefaultNumbers": "assumed until a nonblank drawing or measurement reference is recorded",
+    "editingNumberOrShape": "resets that group to assumed",
+    "explicitApertureWithoutFittingOpening": "blocks export",
+    "uiResetVerified": true,
+    "testEvidenceRemovedFromQA": true
+  },
+  "geometry": {
+    "matchesPreviouslySlicedBytes": true,
+    "sha256": {
+      "case.stl": "da4bdccae614baae6e6bf8632572aba48758cfff40ab3b9f006883ec1b7b7e8e",
+      "lid-print.stl": "977f842567127a9b42c2dfe4d57c339c4e5ddf735e5e4277649586f100acb9b6",
+      "fit-samples/edge-holder-01.stl": "09ca20fd663740a7dbdb46dbe4adf60f6bae53389771062618e793ec5bf2c569",
+      "fit-samples/edge-holder-02.stl": "7324d89a10edac9d34a4ebf06731d8bd08496e13ef473cfe662c75032845b32d"
+    }
+  },
+  "archive": "exports/mechanical-1edfb04fc754-3ad03fb9.zip",
+  "manifestHashesVerified": true,
+  "capacitors": {
+    "refs": [
+      "C17",
+      "C18"
+    ],
+    "part": "ECASD41E336M040KA0",
+    "exactModelObtained": false,
+    "physicalMeasurementPerformed": false,
+    "retainedMaximumBodyHeightMm": 2.0,
+    "manufacturerDrawing": "https://www.murata.com/~/media/webrenewal/support/library/catalog/products/capacitor/polymer/c90e.ashx?la=en-us",
+    "drawingPage": 2,
+    "cadLookup": "https://www.digikey.sg/en/models/10222761",
+    "note": "No verified downloadable exact geometry obtained. Manufacturer dimensions are not a measurement of the assembled solder standoff."
+  },
+  "strength": "Physical strength, pullout and insertion-load validation remain unperformed."
+}

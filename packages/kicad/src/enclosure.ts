@@ -4,11 +4,13 @@ export { previewEnclosureSvg } from "./enclosure-preview";
  * Parametric printable enclosure from {@link extractBoardFeatures}: a two-piece clamshell
  * (base + lid) that follows the board outline, mounting holes and edge-connector cutouts.
  *
- * The fused triangle mesh (STL) is the printable truth. STEP is an assembly of the same
- * axis-aligned boxes so a CAD tool can open the case without FreeCAD. When a FreeCAD session
+ * STL and STEP use the same wall profiles (curves tessellated within 0.01 mm).
+ * STEP is an assembly of boxes, tubes and planar profile faces. When a FreeCAD session
  * is available, the `cad` toolset also mirrors the primitives into `model.FCStd`.
  */
 import type { BoardEdge, BoardFeatures, Point, Rect } from "./board-features";
+import { connectorOpening, openingContains, type OpeningShape } from "@fabdesk/protocol";
+import { profileWall, profileTriangles, type Profile, type Triangle } from "./enclosure-profile";
 
 export const ENCLOSURE_CONTRACT = { name: "fabdesk.enclosure", version: "2.0.0" } as const;
 
@@ -28,6 +30,8 @@ export type EnclosureParams = {
   headroomMm: number;
   cutoutClearanceMm: number;
   lipMm: number;
+  /** Lateral gap between the locating rim and the case interior. */
+  lipClearanceMm: number;
   ventPattern: VentPattern;
   ventPitchMm: number;
   ventSizeMm: number;
@@ -52,6 +56,7 @@ export const DEFAULT_ENCLOSURE_PARAMS: EnclosureParams = {
   headroomMm: 1.5,
   cutoutClearanceMm: 0.4,
   lipMm: 1,
+  lipClearanceMm: 0,
   ventPattern: "none",
   ventPitchMm: 6,
   ventSizeMm: 2.5,
@@ -67,11 +72,13 @@ export const DEFAULT_ENCLOSURE_PARAMS: EnclosureParams = {
 
 export type EnclosureSolid = {
   name: string;
-  kind: "box" | "cylinder";
+  kind: "box" | "cylinder" | "profile";
+  profile?: Profile;
   role: "floor" | "wall" | "lid" | "lip" | "standoff" | "clip";
   min: { x: number; y: number; z: number };
   max: { x: number; y: number; z: number };
   radiusMm?: number;
+  innerRadiusMm?: number;
 };
 
 export type EnclosureVent = {
@@ -91,6 +98,7 @@ export type EnclosureClip = {
 };
 
 export type EnclosureCutout = {
+  shape?: OpeningShape;
   ref: string;
   edge: BoardEdge;
   /** Opening on the wall, board XY plus Z-up from the case floor. */
@@ -163,6 +171,7 @@ export function mergeEnclosureParams(input: Partial<EnclosureParams> = {}): Encl
     headroomMm: input.headroomMm ?? DEFAULT_ENCLOSURE_PARAMS.headroomMm,
     cutoutClearanceMm: input.cutoutClearanceMm ?? DEFAULT_ENCLOSURE_PARAMS.cutoutClearanceMm,
     lipMm: input.lipMm ?? DEFAULT_ENCLOSURE_PARAMS.lipMm,
+    lipClearanceMm: input.lipClearanceMm ?? DEFAULT_ENCLOSURE_PARAMS.lipClearanceMm,
     ventPattern: input.ventPattern ?? DEFAULT_ENCLOSURE_PARAMS.ventPattern,
     ventPitchMm: input.ventPitchMm ?? DEFAULT_ENCLOSURE_PARAMS.ventPitchMm,
     ventSizeMm: input.ventSizeMm ?? DEFAULT_ENCLOSURE_PARAMS.ventSizeMm,
@@ -328,68 +337,23 @@ function splitWall(
   );
 }
 
-function subtractAabb(solid: Box3, hole: Box3): Box3[] {
-  const ix0 = Math.max(solid.min.x, hole.min.x);
-  const iy0 = Math.max(solid.min.y, hole.min.y);
-  const iz0 = Math.max(solid.min.z, hole.min.z);
-  const ix1 = Math.min(solid.max.x, hole.max.x);
-  const iy1 = Math.min(solid.max.y, hole.max.y);
-  const iz1 = Math.min(solid.max.z, hole.max.z);
-  if (ix1 - ix0 <= 0.05 || iy1 - iy0 <= 0.05 || iz1 - iz0 <= 0.05) return [solid];
-  const out: Box3[] = [];
-  if (ix0 - solid.min.x > 0.05)
-    out.push({ min: { ...solid.min }, max: { x: ix0, y: solid.max.y, z: solid.max.z } });
-  if (solid.max.x - ix1 > 0.05)
-    out.push({ min: { x: ix1, y: solid.min.y, z: solid.min.z }, max: { ...solid.max } });
-  if (iy0 - solid.min.y > 0.05)
-    out.push({
-      min: { x: ix0, y: solid.min.y, z: solid.min.z },
-      max: { x: ix1, y: iy0, z: solid.max.z },
-    });
-  if (solid.max.y - iy1 > 0.05)
-    out.push({
-      min: { x: ix0, y: iy1, z: solid.min.z },
-      max: { x: ix1, y: solid.max.y, z: solid.max.z },
-    });
-  if (iz0 - solid.min.z > 0.05)
-    out.push({
-      min: { x: ix0, y: iy0, z: solid.min.z },
-      max: { x: ix1, y: iy1, z: iz0 },
-    });
-  if (solid.max.z - iz1 > 0.05)
-    out.push({
-      min: { x: ix0, y: iy0, z: iz1 },
-      max: { x: ix1, y: iy1, z: solid.max.z },
-    });
-  return out;
-}
-
-function punchWall(name: string, wall: Box3, holes: Box3[]): EnclosureSolid[] {
-  let remain: Box3[] = [wall];
-  for (const hole of holes) remain = remain.flatMap((b) => subtractAabb(b, hole));
-  if (!remain.length) return [];
-  return remain.map((b, i) => box(remain.length === 1 ? name : `${name}_${i + 1}`, "wall", b.min, b.max));
-}
-
-function connectorAlong(c: { edge: BoardEdge; x: number; y: number; bounds: Rect }): number {
-  const cx = (c.bounds.minX + c.bounds.maxX) / 2;
-  const cy = (c.bounds.minY + c.bounds.maxY) / 2;
-  const along = c.edge === "minX" || c.edge === "maxX" ? cy : cx;
-  return Number.isFinite(along) ? along : c.edge === "minX" || c.edge === "maxX" ? c.y : c.x;
-}
-
 /** Build a two-piece case whose cutouts and standoffs track the current board features. */
 export function generateEnclosure(
   features: BoardFeatures,
   paramsInput: Partial<EnclosureParams> = {},
   now = new Date(),
+  constraints?: {
+    inner: EnclosureSpec["inner"];
+    cutouts?: EnclosureCutout[];
+    standoffs?: EnclosureStandoff[];
+  },
 ): EnclosureSpec {
   const params = mergeEnclosureParams(paramsInput);
   const { outline } = features;
   const tallest = features.tallParts[0]?.heightMm ?? features.connectors.reduce((m, c) => Math.max(m, c.heightMm), 0);
   const cavityHeight = params.standoffMm + features.thicknessMm + Math.max(tallest, 2) + params.headroomMm;
   const pad = params.clearanceMm + params.outlineOffsetMm;
-  const inner: EnclosureSpec["inner"] = {
+  const inner: EnclosureSpec["inner"] = constraints?.inner ?? {
     minX: mm(outline.minX - pad),
     minY: mm(outline.minY - pad),
     maxX: mm(outline.maxX + pad),
@@ -411,11 +375,13 @@ export function generateEnclosure(
   if (params.outlineOffsetMm > 0)
     warnings.push(`outline offset ${params.outlineOffsetMm} mm is applied outside the ${params.clearanceMm} mm board clearance`);
 
-  const cutouts: EnclosureCutout[] = features.connectors.map((c) => {
-    const widthMm = mm(c.widthMm + 2 * params.cutoutClearanceMm);
-    const heightMm = mm(c.heightMm + 2 * params.cutoutClearanceMm);
-    const z = mm(params.floorMm + params.standoffMm + features.thicknessMm + c.heightMm / 2);
-    const along = connectorAlong(c);
+  const cutouts: EnclosureCutout[] = constraints?.cutouts ?? features.connectors.map((c) => {
+    const face = connectorOpening(c);
+    const widthMm = mm(face.width + 2 * params.cutoutClearanceMm);
+    const heightMm = mm(face.height + 2 * params.cutoutClearanceMm);
+    const bottom = features.components?.some((part) => part.ref === c.ref && part.bottom);
+    const z = mm(params.floorMm + params.standoffMm + (bottom ? -face.centerZ : features.thicknessMm + face.centerZ));
+    const along = c.edge === "minX" || c.edge === "maxX" ? face.y : face.x;
     const wall =
       c.edge === "minX" ? inner.minX : c.edge === "maxX" ? inner.maxX : c.edge === "minY" ? inner.minY : inner.maxY;
     return {
@@ -428,15 +394,18 @@ export function generateEnclosure(
       },
       widthMm,
       heightMm,
+      shape: face.shape,
       connector: { x: c.x, y: c.y, widthMm: c.widthMm, heightMm: c.heightMm },
     };
   });
 
-  const standoffs: EnclosureStandoff[] = features.holes.map((h) => ({
+  const standoffs: EnclosureStandoff[] = constraints?.standoffs ?? features.holes.filter((h) =>
+    h.shape !== "slot" && (h.purpose ? h.purpose === "mounting" : !h.ref || !features.components?.some((p) => p.ref === h.ref))
+  ).map((h) => ({
     id: h.id,
     x: h.x,
     y: h.y,
-    innerDiameterMm: mm(h.diameterMm + 0.2),
+    innerDiameterMm: mm(h.diameterMm),
     outerDiameterMm: mm(h.diameterMm + 2.4),
     heightMm: params.standoffMm,
   }));
@@ -522,7 +491,7 @@ export function generateEnclosure(
   ): Box3 => ({ min, max });
   const holesFor = (edge: BoardEdge, wall: Box3): Box3[] => [
     ...cutouts
-      .filter((c) => c.edge === edge)
+      .filter((c) => c.edge === edge && c.shape !== "rounded")
       .map((c) => {
         const halfW = c.widthMm / 2;
         const halfH = c.heightMm / 2;
@@ -576,12 +545,17 @@ export function generateEnclosure(
     { x: inner.maxX, y: inner.minY, z: inner.z0 },
     { x: outer.maxX, y: inner.maxY, z: inner.z1 },
   );
-  solids.push(
-    ...punchWall("EnclosureWallMinY", minY, holesFor("minY", minY)),
-    ...punchWall("EnclosureWallMaxY", maxY, holesFor("maxY", maxY)),
-    ...punchWall("EnclosureWallMinX", minX, holesFor("minX", minX)),
-    ...punchWall("EnclosureWallMaxX", maxX, holesFor("maxX", maxX)),
-  );
+  for (const [edge, wall] of Object.entries({ minX, maxX, minY, maxY }) as [BoardEdge, Box3][]) {
+    const name = `EnclosureWall${edge[0]!.toUpperCase()}${edge.slice(1)}`;
+    const rounded = cutouts.filter((c) => c.edge === edge && c.shape === "rounded");
+    const holes = holesFor(edge, wall);
+    // Preserve narrow strips and avoid seams between independently rounded boxes.
+    solids.push(
+      ...(rounded.length || holes.length
+        ? profileWall(name, edge, wall, holes, rounded)
+        : [box(name, "wall", wall.min, wall.max)]),
+    );
+  }
 
   for (const s of standoffs) {
     const r = s.outerDiameterMm / 2;
@@ -720,43 +694,80 @@ export function generateEnclosure(
   }
 
   const lipOpeningsFor = (edge: BoardEdge) => lipOpenings[edge];
+  const lip = {
+    minX: inner.minX + params.lipClearanceMm,
+    maxX: inner.maxX - params.lipClearanceMm,
+    minY: inner.minY + params.lipClearanceMm,
+    maxY: inner.maxY - params.lipClearanceMm,
+  };
+  if (
+    !Number.isFinite(params.lipClearanceMm) ||
+    params.lipClearanceMm < 0 ||
+    lip.maxX - lip.minX <= 2 * Math.min(params.lipMm, 1.2) ||
+    lip.maxY - lip.minY <= 2 * Math.min(params.lipMm, 1.2)
+  )
+    throw new Error("The lid rim and its clearance do not fit inside this case.");
   solids.push(
     ...splitWall(
       "EnclosureLidLipMinY",
       {
-        min: { x: inner.minX, y: inner.minY, z: mm(inner.z1 - params.lipMm) },
-        max: { x: inner.maxX, y: inner.minY + Math.min(params.lipMm, 1.2), z: inner.z1 },
+        min: { x: lip.minX, y: lip.minY, z: mm(inner.z1 - params.lipMm) },
+        max: { x: lip.maxX, y: lip.minY + Math.min(params.lipMm, 1.2), z: inner.z1 },
       },
       "x",
       lipOpeningsFor("minY"),
-    ).map((s) => ({ ...s, role: "lip" as const, name: s.name.replace("EnclosureWall", "EnclosureLidLip") })),
+    ).map((s) => ({
+      ...s,
+      role: "lip" as const,
+      name: s.name.replace("EnclosureWall", "EnclosureLidLip"),
+    })),
     ...splitWall(
       "EnclosureLidLipMaxY",
       {
-        min: { x: inner.minX, y: inner.maxY - Math.min(params.lipMm, 1.2), z: mm(inner.z1 - params.lipMm) },
-        max: { x: inner.maxX, y: inner.maxY, z: inner.z1 },
+        min: {
+          x: lip.minX,
+          y: lip.maxY - Math.min(params.lipMm, 1.2),
+          z: mm(inner.z1 - params.lipMm),
+        },
+        max: { x: lip.maxX, y: lip.maxY, z: inner.z1 },
       },
       "x",
       lipOpeningsFor("maxY"),
-    ).map((s) => ({ ...s, role: "lip" as const, name: s.name.replace("EnclosureWall", "EnclosureLidLip") })),
+    ).map((s) => ({
+      ...s,
+      role: "lip" as const,
+      name: s.name.replace("EnclosureWall", "EnclosureLidLip"),
+    })),
     ...splitWall(
       "EnclosureLidLipMinX",
       {
-        min: { x: inner.minX, y: inner.minY, z: mm(inner.z1 - params.lipMm) },
-        max: { x: inner.minX + Math.min(params.lipMm, 1.2), y: inner.maxY, z: inner.z1 },
+        min: { x: lip.minX, y: lip.minY, z: mm(inner.z1 - params.lipMm) },
+        max: { x: lip.minX + Math.min(params.lipMm, 1.2), y: lip.maxY, z: inner.z1 },
       },
       "y",
       lipOpeningsFor("minX"),
-    ).map((s) => ({ ...s, role: "lip" as const, name: s.name.replace("EnclosureWall", "EnclosureLidLip") })),
+    ).map((s) => ({
+      ...s,
+      role: "lip" as const,
+      name: s.name.replace("EnclosureWall", "EnclosureLidLip"),
+    })),
     ...splitWall(
       "EnclosureLidLipMaxX",
       {
-        min: { x: inner.maxX - Math.min(params.lipMm, 1.2), y: inner.minY, z: mm(inner.z1 - params.lipMm) },
-        max: { x: inner.maxX, y: inner.maxY, z: inner.z1 },
+        min: {
+          x: lip.maxX - Math.min(params.lipMm, 1.2),
+          y: lip.minY,
+          z: mm(inner.z1 - params.lipMm),
+        },
+        max: { x: lip.maxX, y: lip.maxY, z: inner.z1 },
       },
       "y",
       lipOpeningsFor("maxX"),
-    ).map((s) => ({ ...s, role: "lip" as const, name: s.name.replace("EnclosureWall", "EnclosureLidLip") })),
+    ).map((s) => ({
+      ...s,
+      role: "lip" as const,
+      name: s.name.replace("EnclosureWall", "EnclosureLidLip"),
+    })),
   );
 
   return {
@@ -818,7 +829,8 @@ export function checkEnclosureAlignment(
       });
       continue;
     }
-    const along = connectorAlong(live);
+    const face = connectorOpening(live);
+    const along = live.edge === "minX" || live.edge === "maxX" ? face.y : face.x;
     const specAlong = cut.edge === "minX" || cut.edge === "maxX" ? cut.center.y : cut.center.x;
     if (Math.abs(along - specAlong) > CUTOUT_POS_TOL_MM)
       issues.push({
@@ -827,9 +839,20 @@ export function checkEnclosureAlignment(
         ref: cut.ref,
         message: `cutout ${cut.ref} is ${mm(Math.abs(along - specAlong))} mm off the connector (tolerance ${CUTOUT_POS_TOL_MM} mm)`,
       });
-    const needW = live.widthMm + 2 * spec.params.cutoutClearanceMm;
-    const needH = live.heightMm + 2 * spec.params.cutoutClearanceMm;
-    if (cut.widthMm + CUTOUT_SIZE_TOL_MM < needW || cut.heightMm + CUTOUT_SIZE_TOL_MM < needH)
+    const needW = face.width + 2 * spec.params.cutoutClearanceMm;
+    const needH = face.height + 2 * spec.params.cutoutClearanceMm;
+    if (
+      cut.widthMm + CUTOUT_SIZE_TOL_MM < needW ||
+      cut.heightMm + CUTOUT_SIZE_TOL_MM < needH ||
+      !openingContains(
+        {
+          width: cut.widthMm + CUTOUT_SIZE_TOL_MM,
+          height: cut.heightMm + CUTOUT_SIZE_TOL_MM,
+          ...(cut.shape ? { shape: cut.shape } : {}),
+        },
+        { width: needW, height: needH, shape: face.shape },
+      )
+    )
       issues.push({
         code: "small-cutout",
         severity: "error",
@@ -838,7 +861,7 @@ export function checkEnclosureAlignment(
       });
   }
 
-  for (const hole of features.holes) {
+  for (const hole of features.holes.filter((h) => h.shape !== "slot" && (h.purpose ? h.purpose === "mounting" : !h.ref || !features.components?.some((p) => p.ref === h.ref)))) {
     const stand = spec.standoffs.find((s) => dist({ x: s.x, y: s.y }, { x: hole.x, y: hole.y }) <= HOLE_POS_TOL_MM);
     if (!stand)
       issues.push({
@@ -968,7 +991,7 @@ function normal(t: Tri): { x: number; y: number; z: number } {
   return { x: x / len, y: y / len, z: z / len };
 }
 
-function asciiStl(name: string, tris: Tri[]): string {
+export function asciiStl(name: string, tris: Tri[]): string {
   const lines = [`solid ${name}`];
   for (const t of tris) {
     const n = normal(t);
@@ -984,37 +1007,44 @@ function asciiStl(name: string, tris: Tri[]): string {
 
 export type EnclosureMeshes = { baseStl: string; lidStl: string; step: string };
 
-/** Fused ASCII STL for the base (walls, floor, standoffs) and lid, plus a box-assembly STEP. */
+/** ASCII STL base/lid and STEP assembly with matching wall profiles. */
 export function meshEnclosure(spec: EnclosureSpec): EnclosureMeshes {
   const base: Tri[] = [];
   const lid: Tri[] = [];
   for (const s of spec.solids) {
-    if (s.role === "lid" || s.role === "lip") addBoxMesh(lid, s.min, s.max);
+    const target = s.role === "lid" || s.role === "lip" ? lid : base;
+    if (s.kind === "profile") target.push(...profileTriangles(s));
     else if (s.kind === "cylinder" && s.radiusMm) {
       const stand = spec.standoffs.find(
-        (h) => Math.abs(h.x - (s.min.x + s.max.x) / 2) < 1e-6 && Math.abs(h.y - (s.min.y + s.max.y) / 2) < 1e-6,
+        (h) =>
+          Math.abs(h.x - (s.min.x + s.max.x) / 2) < 1e-6 &&
+          Math.abs(h.y - (s.min.y + s.max.y) / 2) < 1e-6,
       );
       addHollowCylinder(
-        base,
+        target,
         (s.min.x + s.max.x) / 2,
         (s.min.y + s.max.y) / 2,
         s.min.z,
         s.max.z,
-        (stand?.innerDiameterMm ?? s.radiusMm * 0.5) / 2,
+        s.innerRadiusMm ?? (stand?.innerDiameterMm ?? s.radiusMm * 0.5) / 2,
         s.radiusMm,
       );
-    } else addBoxMesh(base, s.min, s.max);
+    } else addBoxMesh(target, s.min, s.max);
   }
   return {
     baseStl: asciiStl("fabplane_enclosure_base", base),
     lidStl: asciiStl("fabplane_enclosure_lid", lid),
     step: writeBoxesStep(
-      spec.solids.filter((s) => s.kind === "box").map((s) => ({ name: s.name, min: s.min, max: s.max })),
+      spec.solids
+        .filter((s) => s.kind === "box")
+        .map((s) => ({ name: s.name, min: s.min, max: s.max })),
       spec.solids.flatMap((s): StepTube[] => {
         if (s.kind !== "cylinder" || !s.radiusMm) return [];
         const cx = (s.min.x + s.max.x) / 2;
         const cy = (s.min.y + s.max.y) / 2;
-        const stand = spec.standoffs.find((h) => Math.abs(h.x - cx) < 1e-6 && Math.abs(h.y - cy) < 1e-6);
+        const stand = spec.standoffs.find(
+          (h) => Math.abs(h.x - cx) < 1e-6 && Math.abs(h.y - cy) < 1e-6,
+        );
         return [
           {
             name: s.name,
@@ -1022,11 +1052,14 @@ export function meshEnclosure(spec: EnclosureSpec): EnclosureMeshes {
             cy,
             z0: s.min.z,
             z1: s.max.z,
-            innerRadiusMm: (stand?.innerDiameterMm ?? s.radiusMm * 0.5) / 2,
+            innerRadiusMm: s.innerRadiusMm ?? (stand?.innerDiameterMm ?? s.radiusMm * 0.5) / 2,
             outerRadiusMm: s.radiusMm,
           },
         ];
       }),
+      spec.solids
+        .filter((s) => s.kind === "profile")
+        .map((s) => ({ name: s.name, triangles: profileTriangles(s) })),
     ),
   };
 }
@@ -1046,6 +1079,7 @@ export type StepTube = {
 export function writeBoxesStep(
   boxes: Array<{ name: string; min: EnclosureSolid["min"]; max: EnclosureSolid["max"] }>,
   tubes: StepTube[] = [],
+  profiles: Array<{ name: string; triangles: Triangle[] }> = [],
 ): string {
   const ents: string[] = [];
   const next = (): number => {
@@ -1254,6 +1288,68 @@ export function writeBoxesStep(
     set(shell, `CLOSED_SHELL('',(${faces.map((f) => `#${f}`).join(",")}))`);
     const solid = next();
     set(solid, `MANIFOLD_SOLID_BREP('${t.name}',#${shell})`);
+    shapeIds.push(solid);
+  }
+  // Planar BREP facets use the very same closed triangulation as the STL and preview.
+  for (const profile of profiles) {
+    const vertices = new Map<string, { point: number; vertex: number }>();
+    const edges = new Map<string, number>();
+    const vertex = (p: EnclosureSolid["min"]) => {
+      const key = `${p.x},${p.y},${p.z}`;
+      let v = vertices.get(key);
+      if (!v) {
+        const pt = point(p.x, p.y, p.z),
+          id = next();
+        set(id, `VERTEX_POINT('',#${pt})`);
+        v = { point: pt, vertex: id };
+        vertices.set(key, v);
+      }
+      return v;
+    };
+    const faces = profile.triangles.map((tri) => {
+      const vs = tri.map(vertex);
+      const loop = tri.map((p, i) => {
+        const a = vs[i]!,
+          b = vs[(i + 1) % 3]!,
+          q = tri[(i + 1) % 3]!;
+        const forward = a.vertex < b.vertex,
+          key = forward ? `${a.vertex}:${b.vertex}` : `${b.vertex}:${a.vertex}`;
+        let e = edges.get(key);
+        if (!e) {
+          const start = forward ? a : b,
+            end = forward ? b : a,
+            sign = forward ? 1 : -1;
+          const length = Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z);
+          const vec = next();
+          set(
+            vec,
+            `VECTOR('',#${axis((sign * (q.x - p.x)) / length, (sign * (q.y - p.y)) / length, (sign * (q.z - p.z)) / length)},1.)`,
+          );
+          const line = next();
+          set(line, `LINE('',#${start.point},#${vec})`);
+          e = next();
+          set(e, `EDGE_CURVE('',#${start.vertex},#${end.vertex},#${line},.T.)`);
+          edges.set(key, e);
+        }
+        return oriented(e, forward);
+      });
+      const n = normal(tri),
+        a = tri[0],
+        b = tri[1],
+        length = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+      const loc = next();
+      set(
+        loc,
+        `AXIS2_PLACEMENT_3D('',#${vs[0]!.point},#${axis(n.x, n.y, n.z)},#${axis((b.x - a.x) / length, (b.y - a.y) / length, (b.z - a.z) / length)})`,
+      );
+      const plane = next();
+      set(plane, `PLANE('',#${loc})`);
+      return advancedFace([bound(loop, true)], plane, true);
+    });
+    const shell = next();
+    set(shell, `CLOSED_SHELL('',(${faces.map((f) => `#${f}`).join(",")}))`);
+    const solid = next();
+    set(solid, `MANIFOLD_SOLID_BREP('${profile.name}',#${shell})`);
     shapeIds.push(solid);
   }
   const nRep = next();

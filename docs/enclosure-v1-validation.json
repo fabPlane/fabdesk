@@ -1,0 +1,112 @@
+{
+  "date": "2026-10-30",
+  "focusedTests": {
+    "passed": 125,
+    "failed": 0,
+    "assertions": 801
+  },
+  "baseline": {
+    "currentFailures": 35,
+    "baselineFailures": 35,
+    "onlyCurrent": [],
+    "onlyBaseline": [],
+    "baselineSha": "265bcaf7"
+  },
+  "slicer": "Installed Bambu Studio, official full-config CLI examples, 0.20 mm layers; no printer job sent",
+  "slices": [
+    {
+      "fixture": "print-validation",
+      "part": "case",
+      "grams": 18.26,
+      "warning": "",
+      "triangles": 2126
+    },
+    {
+      "fixture": "print-validation",
+      "part": "lid",
+      "grams": 7.0,
+      "warning": "",
+      "triangles": 2026
+    },
+    {
+      "fixture": "large-controller",
+      "part": "case",
+      "grams": 71.85,
+      "warning": "",
+      "triangles": 1396
+    },
+    {
+      "fixture": "large-controller",
+      "part": "lid-print",
+      "grams": 49.57,
+      "warning": "",
+      "triangles": 58
+    },
+    {
+      "fixture": "long-hub",
+      "part": "case",
+      "grams": 18.72,
+      "warning": "",
+      "triangles": 500
+    },
+    {
+      "fixture": "long-hub",
+      "part": "lid-print",
+      "grams": 7.74,
+      "warning": "",
+      "triangles": 58
+    },
+    {
+      "fixture": "tiny-dongle",
+      "part": "case",
+      "grams": 3.54,
+      "warning": "",
+      "triangles": 258
+    },
+    {
+      "fixture": "tiny-dongle",
+      "part": "lid-print",
+      "grams": 0.89,
+      "warning": "",
+      "triangles": 58
+    },
+    {
+      "fixture": "vaio-export",
+      "part": "case",
+      "grams": 41.62,
+      "warning": "",
+      "triangles": 2408
+    },
+    {
+      "fixture": "vaio-export",
+      "part": "lid-print",
+      "grams": 23.12,
+      "warning": "",
+      "triangles": 1982
+    },
+    {
+      "fixture": "vaio-export",
+      "part": "port-01",
+      "grams": 0.28,
+      "warning": "",
+      "triangles": 216
+    },
+    {
+      "fixture": "vaio-export",
+      "part": "screw-pilots",
+      "grams": 1.81,
+      "warning": "",
+      "triangles": 792
+    }
+  ],
+  "realBoards": {
+    "closedBodiesChecked": 138,
+    "openSurfacesExcluded": 8,
+    "seconds": 8.422,
+    "blockers": 0,
+    "physicalFitVerified": false
+  },
+  "zipManifestHashes": true,
+  "step": "OpenCascade independently imported four fixture STEP files, two meshes each",
+  "physicalValidation": "Not performed; actual printer, boards, hardware and cables required"
+}

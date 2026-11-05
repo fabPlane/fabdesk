@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./enclosure-layout": "./src/enclosure-layout.ts",
     "./placement": "./src/placement/index.ts"
   },
   "scripts": {

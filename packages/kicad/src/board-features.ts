@@ -6,6 +6,7 @@
  * footprint name when no 3D measurement is available.
  */
 import { createHash } from "node:crypto";
+import type { ConnectorFace } from "@fabdesk/protocol";
 
 type Sexpr = string | Sexpr[];
 
@@ -84,11 +85,16 @@ export type MountingHole = {
   x: number;
   y: number;
   diameterMm: number;
-  source: "npth-pad" | "edge-cuts-circle" | "footprint";
+  source: "npth-pad" | "pth-pad" | "edge-cuts-circle" | "footprint";
+  purpose?: "mounting" | "component" | "unclassified";
+  shape?: "round" | "slot";
+  drillWidthMm?: number;
+  drillHeightMm?: number;
   ref?: string;
 };
 
 export type EdgeConnector = {
+  face?: ConnectorFace;
   ref: string;
   footprint: string;
   x: number;
@@ -117,12 +123,19 @@ export type BoardFeatures = {
   holes: MountingHole[];
   connectors: EdgeConnector[];
   tallParts: TallPart[];
+  /** All populated footprints, including short parts, for conservative fit checks. */
+  components?: Array<TallPart & { bottom: boolean }>;
   footprints: number;
   warnings: string[];
 };
 
 const mm = (n: number) => Math.round(n * 1e4) / 1e4;
-const emptyRect = (): Rect => ({ minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+const emptyRect = (): Rect => ({
+  minX: Infinity,
+  minY: Infinity,
+  maxX: -Infinity,
+  maxY: -Infinity,
+});
 const expand = (r: Rect, x: number, y: number): void => {
   if (x < r.minX) r.minX = x;
   if (y < r.minY) r.minY = y;
@@ -130,7 +143,10 @@ const expand = (r: Rect, x: number, y: number): void => {
   if (y > r.maxY) r.maxY = y;
 };
 const validRect = (r: Rect): boolean =>
-  Number.isFinite(r.minX) && Number.isFinite(r.minY) && r.maxX > r.minX && r.maxY > r.minY;
+  Number.isFinite(r.minX) &&
+  Number.isFinite(r.minY) &&
+  r.maxX - r.minX > 1e-7 &&
+  r.maxY - r.minY > 1e-7;
 const widthOf = (r: Rect) => r.maxX - r.minX;
 const heightOf = (r: Rect) => r.maxY - r.minY;
 /** KiCad RotatePoint: clockwise about the footprint origin (Y down). */
@@ -143,11 +159,31 @@ const rotateLocal = (x: number, y: number, deg: number): Point => {
 
 const CONNECTOR_RE =
   /usb|hdmi|displayport|dp_?conn|rj45|ethernet|sma|u\.?fl|jack|barrel|jst|type-?c|usb_c|conn_|connector|header|pinheader|pin_header|audio|trrs|trs|sd.?card|micro.?sd|dc.?in|molex|picoblade|pico.?lock|swd|tag-?connect|qwiic|stemma/i;
-const MOUNT_RE = /mounting.?hole|^mh[_:]|hole_pad|npt?h/i;
+const MOUNT_RE = /mounting.?hole|^mh[_:]|hole_pad/i;
 const FIDUCIAL_RE = /fiducial/i;
 const EDGE_TOLERANCE_MM = 2.5;
 
+/** Heights above the mounting face for exact part numbers, never connector-wide guesses. */
+function connectorBodyProfile(footprint: string) {
+  // Molex 9876505191, p16: 105017-0001 height 2.45 nominal / 2.94 maximum.
+  // https://cevikltd.com.tr/filestore/pdfs/MolexTabletPCConnectorSystems9876505191.pdf
+  // Use the documented maximum envelope, not a generic USB-A height or a claim of measured fit.
+  if (/(?:^|:)USB_Micro-B_Molex-105017-0001$/.test(footprint))
+    return { heightMm: 2.94, source: "Molex 105017-0001 catalog maximum" as const };
+  // GCT USB4105, sheet 1, B4: https://gct.co/files/drawings/usb4105.pdf
+  if (/(?:^|:)USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal$/.test(footprint))
+    return { heightMm: 3.31, source: "GCT USB4105 drawing" as const };
+  // Hirose EDC3-156814, sheet 1: 1.55 +/- 0.13 mm above PCB.
+  // https://static.chipdip.ru/lib/930/DOC036930988.pdf (manufacturer drawing)
+  // Retain the saved footprint's XY outline; do not confuse the inserted card with body height.
+  if (/(?:^|:)microSD_HC_Hirose_DM3D-SF$/.test(footprint))
+    return { heightMm: 1.55, source: "Hirose DM3D-SF drawing" as const };
+  return undefined;
+}
+
 export function estimatePartHeightMm(footprint: string, value = ""): number {
+  const known = connectorBodyProfile(footprint);
+  if (known) return known.heightMm;
   const text = `${footprint} ${value}`;
   if (/usb.?c|type-?c|usb_c/i.test(text)) return 3.6;
   if (/hdmi/i.test(text)) return 6.5;
@@ -219,10 +255,24 @@ function expandArc(box: Rect, start: Point, mid: Point, end: Point): void {
   if (!circ) return;
   const sweep = directedSweep(start, mid, end, circ.cx, circ.cy);
   const a0 = Math.atan2(start.y - circ.cy, start.x - circ.cx);
-  const steps = Math.max(8, Math.ceil((Math.abs(sweep) / TAU) * 32));
-  for (let i = 1; i < steps; i++) {
-    const a = a0 + (sweep * i) / steps;
-    expand(box, circ.cx + circ.r * Math.cos(a), circ.cy + circ.r * Math.sin(a));
+  expandCircularSweep(box, circ.cx, circ.cy, circ.r, a0, sweep);
+}
+
+/** Include exact cardinal extrema; sampling an arc can underestimate its physical envelope. */
+function expandCircularSweep(
+  box: Rect,
+  cx: number,
+  cy: number,
+  radius: number,
+  start: number,
+  sweep: number,
+) {
+  const include = (a: number) => expand(box, cx + radius * Math.cos(a), cy + radius * Math.sin(a));
+  include(start);
+  include(start + sweep);
+  for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+    const distance = normAngle(sweep >= 0 ? angle - start : start - angle);
+    if (distance <= Math.abs(sweep) + 1e-9) include(angle);
   }
 }
 
@@ -235,11 +285,7 @@ function expandLegacyArc(box: Rect, center: Point, end: Point, angleDeg: number)
   const a0 = Math.atan2(end.y - center.y, end.x - center.x);
   // KiCad 5 `angle` is a clockwise sweep from `end` about `start` (the center).
   const sweep = (-angleDeg * Math.PI) / 180;
-  const steps = Math.max(8, Math.ceil((Math.abs(sweep) / TAU) * 32));
-  for (let i = 0; i <= steps; i++) {
-    const a = a0 + (sweep * i) / steps;
-    expand(box, center.x + r * Math.cos(a), center.y + r * Math.sin(a));
-  }
+  expandCircularSweep(box, center.x, center.y, r, a0, sweep);
 }
 
 function footprintPlacement(fp: Sexpr[]): { x: number; y: number; rotationDeg: number } | null {
@@ -274,15 +320,25 @@ function footprintValue(fp: Sexpr[]): string {
   return typeof value === "string" ? value : "";
 }
 
-function courtyardBounds(fp: Sexpr[], origin: Point, rotationDeg: number): Rect {
+function courtyardBounds(
+  fp: Sexpr[],
+  origin: Point,
+  rotationDeg: number,
+  fabrication = false,
+): Rect {
   const r = emptyRect();
-  const addLocal = (x: number, y: number) => {
-    const p = rotateLocal(x, y, rotationDeg);
-    expand(r, origin.x + p.x, origin.y + p.y);
+  const toBoard = (point: Point) => {
+    const p = rotateLocal(point.x, point.y, rotationDeg);
+    return { x: origin.x + p.x, y: origin.y + p.y };
   };
-  for (const name of ["fp_line", "fp_rect", "fp_poly", "fp_circle"] as const) {
+  const addLocal = (x: number, y: number) => {
+    const p = toBoard({ x, y });
+    expand(r, p.x, p.y);
+  };
+  for (const name of ["fp_line", "fp_rect", "fp_poly", "fp_circle", "fp_arc"] as const) {
     for (const g of children(fp, name)) {
-      if (!isCourtyard(layerOf(g))) continue;
+      if (fabrication ? !["F.Fab", "B.Fab"].includes(layerOf(g) ?? "") : !isCourtyard(layerOf(g)))
+        continue;
       if (name === "fp_line") {
         const a = xy(child(g, "start"));
         const b = xy(child(g, "end"));
@@ -293,17 +349,31 @@ function courtyardBounds(fp: Sexpr[], origin: Point, rotationDeg: number): Rect 
         const b = xy(child(g, "end"));
         if (a && b) {
           addLocal(a.x, a.y);
+          addLocal(a.x, b.y);
+          addLocal(b.x, a.y);
           addLocal(b.x, b.y);
         }
       } else if (name === "fp_poly") {
         for (const p of collectPts(g)) addLocal(p.x, p.y);
+      } else if (name === "fp_arc") {
+        const start = xy(child(g, "start"));
+        const mid = xy(child(g, "mid"));
+        const end = xy(child(g, "end"));
+        if (start && end) {
+          if (mid) expandArc(r, toBoard(start), toBoard(mid), toBoard(end));
+          else {
+            const angle = numberAt(child(g, "angle"), 1);
+            if (angle !== null) expandLegacyArc(r, toBoard(start), toBoard(end), angle);
+          }
+        }
       } else {
         const c = xy(child(g, "center"));
         const e = xy(child(g, "end"));
         if (c && e) {
           const rad = Math.hypot(e.x - c.x, e.y - c.y);
-          addLocal(c.x - rad, c.y - rad);
-          addLocal(c.x + rad, c.y + rad);
+          const center = rotateLocal(c.x, c.y, rotationDeg);
+          expand(r, origin.x + center.x - rad, origin.y + center.y - rad);
+          expand(r, origin.x + center.x + rad, origin.y + center.y + rad);
         }
       }
     }
@@ -320,8 +390,29 @@ function padBounds(fp: Sexpr[], origin: Point, rotationDeg: number): Rect {
     const sy = numberAt(size, 2) ?? sx;
     if (!at) continue;
     const p = rotateLocal(at.x, at.y, rotationDeg);
-    expand(r, origin.x + p.x - sx / 2, origin.y + p.y - sy / 2);
-    expand(r, origin.x + p.x + sx / 2, origin.y + p.y + sy / 2);
+    // Pad positions are footprint-local, but saved pad angles are board-absolute.
+    // Do not add the parent rotation a second time (KiCad sexpr parser, T_at).
+    const angle = numberAt(child(pad, "at"), 3) ?? 0;
+    const a = (angle * Math.PI) / 180;
+    const cos = Math.abs(Math.cos(a)),
+      sin = Math.abs(Math.sin(a));
+    const shape = pad[3];
+    const radius =
+      shape === "oval"
+        ? Math.min(sx, sy) / 2
+        : shape === "roundrect"
+          ? Math.min(sx, sy) *
+            Math.min(0.5, Math.max(0, numberAt(child(pad, "roundrect_rratio"), 1) ?? 0))
+          : 0;
+    const halfX =
+      shape === "circle" ? sx / 2 : (sx / 2 - radius) * cos + (sy / 2 - radius) * sin + radius;
+    const halfY =
+      shape === "circle" ? sy / 2 : (sx / 2 - radius) * sin + (sy / 2 - radius) * cos + radius;
+    // KiCad stores copper's offset from the drill anchor inside the drill token.
+    const offset = xy(child(child(pad, "drill") ?? [], "offset")) ?? { x: 0, y: 0 };
+    const shifted = rotateLocal(offset.x, offset.y, angle);
+    expand(r, origin.x + p.x + shifted.x - halfX, origin.y + p.y + shifted.y - halfY);
+    expand(r, origin.x + p.x + shifted.x + halfX, origin.y + p.y + shifted.y + halfY);
   }
   return r;
 }
@@ -336,11 +427,22 @@ function nearestEdge(outline: Rect, point: Point, bounds: Rect): { edge: BoardEd
   return gaps.reduce((best, cur) => (cur.gap < best.gap ? cur : best));
 }
 
-function outlineFromGraphics(root: Sexpr[]): { outline: BoardOutline | null; circles: MountingHole[] } {
+function outlineFromGraphics(root: Sexpr[]): {
+  outline: BoardOutline | null;
+  circles: MountingHole[];
+  rectangular: boolean;
+} {
   const box = emptyRect();
   const circles: MountingHole[] = [];
   let source: BoardOutline["source"] = "segments";
-  let closed = false;
+  const edges: Array<[Point, Point]> = [];
+  let invalid = false,
+    curved = false,
+    closedCurves = 0;
+  const addEdge = (a: Point | null, b: Point | null) => {
+    if (!a || !b || Math.hypot(a.x - b.x, a.y - b.y) < 1e-7) invalid = true;
+    else edges.push([a, b]);
+  };
   let shapes = 0;
   const consider = (layer: string | null, kind: BoardOutline["source"], add: () => void) => {
     if (!isEdgeCuts(layer)) return;
@@ -355,6 +457,7 @@ function outlineFromGraphics(root: Sexpr[]): { outline: BoardOutline | null; cir
       const b = xy(child(g, "end"));
       if (a) expand(box, a.x, a.y);
       if (b) expand(box, b.x, b.y);
+      addEdge(a, b);
     });
   for (const g of children(root, "gr_rect"))
     consider(layerOf(g), "gr_rect", () => {
@@ -363,13 +466,26 @@ function outlineFromGraphics(root: Sexpr[]): { outline: BoardOutline | null; cir
       if (a && b) {
         expand(box, a.x, a.y);
         expand(box, b.x, b.y);
-        closed = true;
-      }
+        const c = { x: b.x, y: a.y },
+          d = { x: a.x, y: b.y };
+        addEdge(a, c);
+        addEdge(c, b);
+        addEdge(b, d);
+        addEdge(d, a);
+      } else invalid = true;
     });
   for (const g of children(root, "gr_poly"))
     consider(layerOf(g), "gr_poly", () => {
-      for (const p of collectPts(g)) expand(box, p.x, p.y);
-      if (collectPts(g).length >= 3) closed = true;
+      const points = collectPts(g);
+      if (
+        points.length > 1 &&
+        points[0]!.x === points.at(-1)!.x &&
+        points[0]!.y === points.at(-1)!.y
+      )
+        points.pop();
+      for (const p of points) expand(box, p.x, p.y);
+      if (points.length < 3) invalid = true;
+      else points.forEach((p, i) => addEdge(p, points[(i + 1) % points.length]!));
     });
   for (const g of children(root, "gr_arc"))
     consider(layerOf(g), "gr_arc", () => {
@@ -377,13 +493,23 @@ function outlineFromGraphics(root: Sexpr[]): { outline: BoardOutline | null; cir
       const mid = xy(child(g, "mid"));
       const end = xy(child(g, "end"));
       const angle = numberAt(child(g, "angle"), 1);
+      curved = true;
       if (start && mid && end) {
         expandArc(box, start, mid, end);
-        closed = true;
+        addEdge(start, end);
       } else if (start && end && angle !== null) {
         expandLegacyArc(box, start, end, angle);
-        closed = Math.abs(angle) >= 359.9;
-      }
+        if (Math.abs(angle) >= 359.999 && Math.abs(angle) <= 360.001) closedCurves++;
+        else {
+          const a = (-angle * Math.PI) / 180,
+            x = end.x - start.x,
+            y = end.y - start.y;
+          addEdge(end, {
+            x: start.x + x * Math.cos(a) - y * Math.sin(a),
+            y: start.y + x * Math.sin(a) + y * Math.cos(a),
+          });
+        }
+      } else invalid = true;
     });
   for (const g of children(root, "gr_circle")) {
     if (!isEdgeCuts(layerOf(g))) continue;
@@ -398,13 +524,38 @@ function outlineFromGraphics(root: Sexpr[]): { outline: BoardOutline | null; cir
         y: mm(c.y),
         diameterMm: mm(diameter),
         source: "edge-cuts-circle",
+        purpose: "unclassified",
+        shape: "round",
       });
     } else {
       expand(box, c.x - diameter / 2, c.y - diameter / 2);
       expand(box, c.x + diameter / 2, c.y + diameter / 2);
+      curved = true;
+      closedCurves++;
     }
   }
-  if (!validRect(box)) return { outline: null, circles };
+  if (!validRect(box)) return { outline: null, circles, rectangular: false };
+  // Endpoint degree detects open chains independently of file order or segment direction.
+  // This is a closure check, not polygon validity or a fabrication certification.
+  const degree = new Map<string, number>();
+  for (const edge of edges)
+    for (const p of edge) {
+      const key = `${Math.round(p.x * 100000)},${Math.round(p.y * 100000)}`;
+      degree.set(key, (degree.get(key) ?? 0) + 1);
+    }
+  const closed =
+    !invalid &&
+    (edges.length > 0 || closedCurves > 0) &&
+    [...degree.values()].every((n) => n === 2);
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-5;
+  const rectangular =
+    closed &&
+    !curved &&
+    edges.every(
+      ([a, b]) =>
+        (near(a.x, b.x) && (near(a.x, box.minX) || near(a.x, box.maxX))) ||
+        (near(a.y, b.y) && (near(a.y, box.minY) || near(a.y, box.maxY))),
+    );
   return {
     outline: {
       minX: mm(box.minX),
@@ -417,6 +568,7 @@ function outlineFromGraphics(root: Sexpr[]): { outline: BoardOutline | null; cir
       source,
     },
     circles,
+    rectangular,
   };
 }
 
@@ -426,17 +578,27 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
   const root = parseSexpr(boardText).find((n): n is Sexpr[] => head(n) === "kicad_pcb");
   if (!root) throw new Error("not a kicad_pcb file");
   const warnings: string[] = [];
-  const thickness = numberAt(child(root, "general") && child(child(root, "general")!, "thickness"), 1);
+  const thickness = numberAt(
+    child(root, "general") && child(child(root, "general")!, "thickness"),
+    1,
+  );
   const thicknessMm = thickness ?? 1.6;
   if (thickness === null) warnings.push("board thickness missing; assuming 1.6 mm");
-  const { outline, circles } = outlineFromGraphics(root);
+  const { outline, circles, rectangular } = outlineFromGraphics(root);
   if (!outline) throw new Error("board has no Edge.Cuts outline");
   if (!outline.closed)
-    warnings.push("Edge.Cuts segments may not form a closed contour; the enclosure uses the bounding box");
+    warnings.push(
+      "Edge.Cuts segments may not form a closed contour; the enclosure uses the bounding box",
+    );
+  else if (!rectangular)
+    warnings.push(
+      "Non-rectangular Edge.Cuts contour; enclosure fit uses a rectangular bounding estimate.",
+    );
 
   const holes: MountingHole[] = [...circles];
   const connectors: EdgeConnector[] = [];
   const tallParts: TallPart[] = [];
+  const components: NonNullable<BoardFeatures["components"]> = [];
   const footprints = children(root, "footprint");
   for (const fp of footprints) {
     const placement = footprintPlacement(fp);
@@ -450,47 +612,86 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
     const origin = { x: placement.x, y: placement.y };
     const attr = child(fp, "attr");
     const dnp = (attr?.includes("dnp") ?? false) || child(fp, "dnp")?.[1] === "yes";
-    if (dnp) continue;
-
+    const mounting = MOUNT_RE.test(`${libId} ${ref}`) && !FIDUCIAL_RE.test(`${libId} ${ref}`);
     for (const [index, pad] of children(fp, "pad").entries()) {
       const tokens = pad.filter((n): n is string => typeof n === "string");
-      if (!tokens.includes("npth")) continue;
+      const npth = tokens.includes("npth") || tokens.includes("np_thru_hole");
+      if (!npth && !tokens.includes("thru_hole")) continue;
       const at = xy(child(pad, "at")) ?? { x: 0, y: 0 };
       const drill = child(pad, "drill");
-      const diameter = numberAt(drill, 1) ?? numberAt(child(pad, "size"), 1) ?? 0;
-      if (diameter <= 0) continue;
+      const slot = drill?.[1] === "oval";
+      const dx = numberAt(drill, slot ? 2 : 1) ?? 0;
+      const dy = slot ? (numberAt(drill, 3) ?? 0) : dx;
+      if (dx <= 0 || dy <= 0) {
+        warnings.push(`${ref || libId}: drill dimensions are missing; no screw mount inferred.`);
+        continue;
+      }
+      // KiCad's drill export uses the pad anchor. Its "offset shape from hole"
+      // setting moves copper, not the drill centre (verified against native Excellon).
       const p = rotateLocal(at.x, at.y, placement.rotationDeg);
       holes.push({
-        id: `${ref || libId}-npth-${index}`,
+        id: `${ref || libId}-${npth ? "npth" : "pth"}-${index}`,
         x: mm(origin.x + p.x),
         y: mm(origin.y + p.y),
-        diameterMm: mm(diameter),
-        source: "npth-pad",
+        diameterMm: mm(Math.min(dx, dy)),
+        source: npth ? "npth-pad" : "pth-pad",
+        purpose: mounting ? "mounting" : "component",
+        shape: slot ? "slot" : "round",
+        drillWidthMm: mm(dx),
+        drillHeightMm: mm(dy),
         ...(ref ? { ref } : {}),
       });
     }
+    // DNP omits the component body, not the physical holes in the manufactured PCB.
+    if (dnp) continue;
 
     const court = courtyardBounds(fp, origin, placement.rotationDeg);
+    const fab = courtyardBounds(fp, origin, placement.rotationDeg, true);
     const pads = padBounds(fp, origin, placement.rotationDeg);
-    const bounds = validRect(court) ? court : pads;
+    const fallback = emptyRect();
+    for (const r of [fab, pads])
+      if (validRect(r)) {
+        expand(fallback, r.minX, r.minY);
+        expand(fallback, r.maxX, r.maxY);
+      }
+    const bounds = validRect(court) ? court : fallback;
     const body = validRect(bounds)
       ? bounds
       : { minX: origin.x - 1, minY: origin.y - 1, maxX: origin.x + 1, maxY: origin.y + 1 };
-    const heightMm = estimatePartHeightMm(libId, value);
+    const property = children(fp, "property").find(
+      (p) => p[1] === "Height" || p[1] === "Height (mm)",
+    );
+    const heightText = typeof property?.[2] === "string" ? property[2].trim() : "";
+    const heightMatch = heightText.match(/^(\d+(?:\.\d+)?)\s*(mm)?$/i);
+    const suppliedHeight = heightMatch ? Number(heightMatch[1]) : null;
+    const validHeight = suppliedHeight !== null && suppliedHeight > 0 && suppliedHeight <= 200;
+    if (heightText && !validHeight)
+      warnings.push(
+        `${ref || libId}: Height property must be a positive number in mm; using an estimated height.`,
+      );
+    const measured = validHeight
+      ? { heightMm: suppliedHeight, source: "PCB Height property" as const }
+      : connectorBodyProfile(libId);
+    const heightMm = measured?.heightMm ?? estimatePartHeightMm(libId, value);
     const mountLabel = `${libId} ${ref}`;
+    if (!MOUNT_RE.test(mountLabel) && !FIDUCIAL_RE.test(mountLabel))
+      components.push({
+        ref: ref || libId,
+        footprint: libId,
+        x: origin.x,
+        y: origin.y,
+        heightMm,
+        bounds: body,
+        bottom: layerOf(fp) === "B.Cu",
+      });
     if (
       !FIDUCIAL_RE.test(mountLabel) &&
       MOUNT_RE.test(mountLabel) &&
       !holes.some((h) => h.ref === ref)
     ) {
-      holes.push({
-        id: ref || `mount-${holes.length + 1}`,
-        x: mm(origin.x),
-        y: mm(origin.y),
-        diameterMm: 2.2,
-        source: "footprint",
-        ...(ref ? { ref } : {}),
-      });
+      warnings.push(
+        `${ref || libId}: mounting footprint has no readable drill; no screw mount inferred.`,
+      );
     }
     const near = nearestEdge(outline, origin, body);
     const looksLikeConnector = CONNECTOR_RE.test(`${libId} ${value} ${ref}`);
@@ -507,6 +708,16 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
         widthMm: mm(Math.max(along, 4)),
         depthMm: mm(Math.max(into, 2)),
         heightMm,
+        ...(validRect(fab)
+          ? {
+              face: {
+                bounds: fab,
+                heightMm,
+                centerZ: heightMm / 2,
+                source: measured?.source ?? ("fabrication-outline" as const),
+              },
+            }
+          : {}),
         bounds: {
           minX: mm(body.minX),
           minY: mm(body.minY),
@@ -538,6 +749,7 @@ export function extractBoardFeatures(boardText: string): BoardFeatures {
     holes,
     connectors,
     tallParts,
+    components,
     footprints: footprints.length,
     warnings,
   };

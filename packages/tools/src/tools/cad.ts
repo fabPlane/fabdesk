@@ -5,6 +5,7 @@
  */
 import { writeFile } from "node:fs/promises";
 import { z } from "zod/v4";
+import { cad_fit } from "./cad-fit";
 import {
   CadFeature,
   CadKernelChoice,
@@ -511,6 +512,7 @@ export const cadTools = [
   cad_build_part,
   cad_combine_parts,
   cad_enclosure,
+  cad_fit,
 ];
 
 export { cad_enclosure } from "./cad-enclosure";
