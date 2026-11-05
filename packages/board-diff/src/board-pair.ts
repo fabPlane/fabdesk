@@ -77,6 +77,23 @@ export function boardPartBounds(component: ComponentSnapshot): BoardBox | null {
   return boxOf(corners) ?? { minX: component.x - half, minY: component.y - half, maxX: component.x + half, maxY: component.y + half };
 }
 
+export type BoardPadBox = { pin: string; net?: string; bounds: BoardBox };
+
+/** Each numbered pad's placed bounds, for picking a pin instead of a whole part. */
+export function boardPadBoxes(component: ComponentSnapshot): BoardPadBox[] {
+  return (component.pads ?? []).flatMap((pad) => {
+    if (pad.x === undefined || pad.y === undefined) return [];
+    const center = padWorldPoint(component, pad.x, pad.y);
+    const halfW = (pad.width ?? 0.5) / 2, halfH = (pad.height ?? 0.5) / 2;
+    const angle = ((pad.angle ?? 0) * Math.PI) / 180;
+    const bounds = boxOf([[-halfW, -halfH], [halfW, -halfH], [halfW, halfH], [-halfW, halfH]].map(([x, y]) => ({
+      x: center.x + x! * Math.cos(angle) + y! * Math.sin(angle),
+      y: center.y - x! * Math.sin(angle) + y! * Math.cos(angle),
+    })));
+    return bounds ? [{ pin: pad.pin, ...(pad.net ? { net: pad.net } : {}), bounds }] : [];
+  });
+}
+
 /** Physical board size from Edge.Cuts; null when the board declares no outline. */
 export function boardSize(snapshot: BoardSnapshot): { width: number; height: number } | null {
   const box = boxOf(snapshot.outline);
@@ -169,7 +186,7 @@ function drawPart(component: ComponentSnapshot, role: BoardPartRole): string {
     const w = pad.width ?? 0.5, h = pad.height ?? 0.5;
     const radius = pad.shape === "circle" || pad.shape === "oval" ? Math.min(w, h) / 2 : pad.shape === "roundrect" ? Math.min(w, h) / 4 : 0;
     const rotate = pad.angle ? ` transform="rotate(${-pad.angle} ${center.x} ${center.y})"` : "";
-    return `<rect class="bp-pad" x="${round(center.x - w / 2)}" y="${round(center.y - h / 2)}" width="${w}" height="${h}" rx="${round(radius)}" fill="${color}"${rotate}/>`;
+    return `<rect class="bp-pad" data-pin="${escapeXml(pad.pin)}" x="${round(center.x - w / 2)}" y="${round(center.y - h / 2)}" width="${w}" height="${h}" rx="${round(radius)}" fill="${color}"${rotate}/><text class="bp-pin" display="none" x="${center.x}" y="${round(center.y + Math.min(w, h) * 0.2)}" text-anchor="middle" font-size="${round(Math.max(0.25, Math.min(w, h) * 0.55))}" font-family="ui-sans-serif,system-ui,sans-serif" font-weight="700" fill="#ffffff">${escapeXml(pad.pin)}</text>`;
   }).join("");
   const font = Math.max(0.35, Math.min(1.1, Math.min(width, height) * 0.45));
   return `<g data-ref="${escapeXml(component.ref)}" data-role="${role}" class="bp-part"><rect class="bp-body" x="${round(bounds.minX - padding)}" y="${round(bounds.minY - padding)}" width="${round(width)}" height="${round(height)}" rx="0.15" fill="${color}" fill-opacity="${role === "unchanged" ? 0.06 : 0.22}" stroke="${color}" stroke-width="${role === "unchanged" ? 0.06 : 0.14}"/>${pads}<text class="bp-label" x="${round(bounds.minX + (bounds.maxX - bounds.minX) / 2)}" y="${round(bounds.minY + (bounds.maxY - bounds.minY) / 2 + font * 0.35)}" text-anchor="middle" font-size="${round(font)}" font-family="ui-sans-serif,system-ui,sans-serif" font-weight="600" fill="${role === "unchanged" ? "#334155" : color}">${escapeXml(component.ref)}</text></g>`;

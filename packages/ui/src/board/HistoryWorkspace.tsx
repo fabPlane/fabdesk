@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { BoardPartChangeRow, BoardPartSummary, BoardTimelineEntry } from "@fabdesk/protocol";
-import { boardFileLabel, changeDescription, defaultTimelineIndex, timelineEntryLabel, timelinePair, useBoardComparison, useBoardTimeline, useBoardWorkspaceAction, usePartLinks, useProjectBoards } from "@fabdesk/client-core";
+import { boardFileLabel, changeDescription, defaultTimelineIndex, timelineEntryLabel, timelineIndexForCard, timelinePair, timelineStep, useBoardComparison, useBoardTimeline, useBoardWorkspaceAction, usePartLinks, usePrefetchBoardComparisons, useProjectBoards } from "@fabdesk/client-core";
 import { Button, EmptyState, LoadError, Select, Spinner } from "../components/ui";
 import { DisclosureSummary } from "../components/DisclosureSummary";
+import { Icon } from "../components/Icon";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { useUiStore } from "../stores/ui";
 import { BoardPairView } from "./BoardPairView";
@@ -25,11 +26,12 @@ function PartFacts({ part }: { part: BoardPartSummary | null | undefined }) {
   return <span className="fd-history-part-facts">{[part.value, part.footprint?.split(":").at(-1), part.layer].filter(Boolean).join(" · ")}{part.nets.length ? ` · ${part.nets.length} nets` : ""}</span>;
 }
 
-function TimelineCard({ entry, selected, onSelect }: { entry: BoardTimelineEntry; selected: boolean; onSelect?: () => void }) {
+function TimelineCard({ entry, side, onSelect }: { entry: BoardTimelineEntry; side: "older" | "newer" | null; onSelect: () => void }) {
   const counts = entry.changes;
   return <li>
-    <button type="button" className="fd-history-card" aria-pressed={selected} disabled={!onSelect} onClick={onSelect} title={entry.ref}>
+    <button type="button" className="fd-history-card" aria-current={side ? "true" : undefined} data-side={side ?? undefined} onClick={onSelect} title={entry.ref}>
       <strong>{timelineEntryLabel(entry)}</strong>
+      {side && <b className="fd-history-card-side">{side === "older" ? "Older" : "Newer"}</b>}
       <small>{entry.kind === "worktree" ? "Now" : dateLabel(entry.date) || entry.kind}</small>
       {counts ? <span className="fd-history-counts">
         {counts.added > 0 && <i data-kind="added">+{counts.added}</i>}
@@ -63,7 +65,29 @@ export function HistoryWorkspace({ projectId }: { projectId: string }) {
   const from = custom?.from ?? pair?.from.ref ?? null, to = custom?.to ?? pair?.to.ref ?? null;
   const comparison = useBoardComparison(projectId, pcbPath, from, to);
   const data = comparison.data;
-  useEffect(() => { setSelected(null); setFilter(null); }, [from, to]);
+  // A selected part stays selected while stepping, so one part can be followed through its history.
+  useEffect(() => { if (filter && data && data.summary[filter] === 0) setFilter(null); }, [data, filter]);
+  const stepTo = (next: number | null) => { if (next !== null) { setCustom(null); setPicked(next); } };
+  useEffect(() => {
+    if (custom) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.defaultPrevented) return;
+      // Arrow keys already belong to form fields, and pan a focused drawing.
+      if (event.target instanceof Element && event.target.closest("input, select, textarea, [contenteditable], [role=dialog], .fd-svg-viewport, .fd-svg-host, .fd-assistant-dock")) return;
+      const next = timelineStep(entries, index, event.key === "ArrowLeft" ? -1 : 1);
+      if (next === null) return;
+      event.preventDefault();
+      stepTo(next);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [custom, entries, index]);
+  const neighbours = custom ? [] : [-1, 1].flatMap(direction => {
+    const next = timelineStep(entries, index, direction as -1 | 1), step = next === null ? null : timelinePair(entries, next);
+    return step ? [{ from: step.from.ref, to: step.to.ref }] : [];
+  });
+  usePrefetchBoardComparisons(projectId, pcbPath, neighbours);
   const links = usePartLinks(projectId);
   const visibleChanges = useMemo(() => (data?.changes ?? []).filter(change => !filter || change.kind === filter), [data, filter]);
   const selectedChange = data?.changes.find(change => selected !== null && (change.toRef === selected || change.fromRef === selected));
@@ -118,12 +142,17 @@ export function HistoryWorkspace({ projectId }: { projectId: string }) {
     </div>
     {timeline.isError ? <LoadError title="Could not read this board's revisions" onRetry={() => void timeline.refetch()} /> : timeline.isPending ? <div className="fd-pair-state"><Spinner /></div> : <>
       <ol className="fd-history-timeline" aria-label="Board revisions, oldest first">
-        {entries.map((entry, position) => <TimelineCard key={entry.ref} entry={entry} selected={!custom && position === index} {...(position > 0 ? { onSelect: () => { setCustom(null); setPicked(position); } } : {})} />)}
+        {entries.map((entry, position) => <TimelineCard key={entry.ref} entry={entry} side={custom ? null : position === index ? "newer" : position === index - 1 ? "older" : null} onSelect={() => stepTo(timelineIndexForCard(entries, position))} />)}
       </ol>
       {entries.length < 2 && !custom
         ? <EmptyState title="Only one revision so far">Save this revision now. After the board changes, its differences appear here. Git commits and export bundles of this board also count.</EmptyState>
         : comparison.isError ? <LoadError title="Could not compare these revisions" onRetry={() => void comparison.refetch()} /> : <>
           <div className="fd-history-filters" role="group" aria-label="Filter changes">
+            {!custom && <span className="fd-history-step" role="group" aria-label="Move through revisions">
+              <Button size="sm" aria-label="Step to older revision" title="Older revision (Left arrow)" disabled={timelineStep(entries, index, -1) === null} onClick={() => stepTo(timelineStep(entries, index, -1))}><Icon name="chevronLeft" width={16} height={16} /></Button>
+              <span aria-live="polite">Step {index} of {entries.length - 1}</span>
+              <Button size="sm" aria-label="Step to newer revision" title="Newer revision (Right arrow)" disabled={timelineStep(entries, index, 1) === null} onClick={() => stepTo(timelineStep(entries, index, 1))}><Icon name="chevronRight" width={16} height={16} /></Button>
+            </span>}
             {CHANGE_FILTERS.filter(item => (data?.summary[item.kind] ?? 0) > 0).map(item => <Button key={item.kind} size="sm" variant={filter === item.kind ? "secondary" : "ghost"} aria-pressed={filter === item.kind} data-kind={item.kind} onClick={() => setFilter(filter === item.kind ? null : item.kind)}>{item.mark}{data?.summary[item.kind]} {item.label}</Button>)}
             {data && data.changes.length === 0 && <span className="fd-history-note">No part changes{data.copper.tracksAdded + data.copper.tracksRemoved > 0 ? ` · copper changed (+${data.copper.tracksAdded} −${data.copper.tracksRemoved} tracks)` : ""}</span>}
             {data && data.changes.length > 0 && data.copper.tracksAdded + data.copper.tracksRemoved > 0 && <span className="fd-history-note">+{data.copper.tracksAdded} −{data.copper.tracksRemoved} tracks</span>}
@@ -133,9 +162,10 @@ export function HistoryWorkspace({ projectId }: { projectId: string }) {
           <div className="fd-history-stage">
             <BoardPairView
               leftLabel="Older revision" rightLabel="Newer revision"
-              left={{ header: <><strong>{revisionName(data?.from.ref ?? from, data?.from.label) ?? "Older"}</strong><small>{data ? sizeLabel(data.from.size) : ""}</small></>, svg: data?.from.drawing, viewKey: `from:${data?.from.sha256 ?? ""}:${data?.to.sha256 ?? ""}`, parts: data?.from.parts ?? [], selectedRef: leftRef, loading: comparison.isPending, notice: selected && !leftPart ? `${selected} is not on this revision` : null }}
-              right={{ header: <><strong>{revisionName(data?.to.ref ?? to, data?.to.label) ?? "Newer"}</strong><small>{data ? sizeLabel(data.to.size) : ""}</small></>, svg: data?.to.drawing, viewKey: `to:${data?.from.sha256 ?? ""}:${data?.to.sha256 ?? ""}`, parts: data?.to.parts ?? [], selectedRef: rightRef, loading: comparison.isPending, notice: selected && !rightPart ? `${selected} is not on this revision` : null }}
+              left={{ header: <><strong>{revisionName(from, data?.from.label) ?? "Older"}</strong><small>{data ? sizeLabel(data.from.size) : ""}</small></>, svg: data?.from.drawing, viewKey: `older:${pcbPath}`, parts: data?.from.parts ?? [], selectedRef: leftRef, loading: comparison.isPending, notice: selected && !leftPart ? `${selected} is not on this revision` : null }}
+              right={{ header: <><strong>{revisionName(to, data?.to.label) ?? "Newer"}</strong><small>{data ? sizeLabel(data.to.size) : ""}</small></>, svg: data?.to.drawing, viewKey: `newer:${pcbPath}`, parts: data?.to.parts ?? [], selectedRef: rightRef, loading: comparison.isPending, notice: selected && !rightPart ? `${selected} is not on this revision` : null }}
               roles={filter ? drawingRoles(filter) : undefined}
+              updating={comparison.isPlaceholderData}
               onPick={(side, ref) => {
                 if (!ref) { setSelected(null); return; }
                 const change = data?.changes.find(row => (side === "left" ? row.fromRef : row.toRef) === ref);
@@ -147,12 +177,15 @@ export function HistoryWorkspace({ projectId }: { projectId: string }) {
               {visibleChanges.map(change => <button key={`${change.kind}:${changeRef(change)}`} type="button" aria-pressed={selected === changeRef(change)} data-kind={change.kind} onClick={() => setSelected(selected === changeRef(change) ? null : changeRef(change))}><strong>{changeRef(change)}</strong><small>{changeDescription(change)}</small></button>)}
             </aside>}
           </div>
-          {selected && <div className="fd-history-selection" role="status">
-            <strong>{selected}</strong>
-            <span>{selectedChange ? changeDescription(selectedChange) : "Unchanged between these revisions"}</span>
-            <PartFacts part={rightPart ?? leftPart} />
-            <Button size="sm" variant="ghost" onClick={() => setSelected(null)}>Clear</Button>
-          </div>}
+          {/* Always present, so selecting a part never resizes the boards under the pointer. */}
+          <div className="fd-history-selection" role="status">
+            {selected ? <>
+              <strong>{selected}</strong>
+              <span>{selectedChange ? changeDescription(selectedChange) : "Unchanged between these revisions"}</span>
+              <PartFacts part={rightPart ?? leftPart} />
+              <Button size="sm" variant="ghost" onClick={() => setSelected(null)}>Clear</Button>
+            </> : <span className="fd-history-note">Click a part to see what changed.</span>}
+          </div>
         </>}
     </>}
     {links.isError && <span className="fd-board-workspace-error" role="alert">Linked parts could not be checked.</span>}

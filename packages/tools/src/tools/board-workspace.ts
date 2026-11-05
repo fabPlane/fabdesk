@@ -1,9 +1,10 @@
 /** Board history across revisions, and part links across boards. */
 import { z } from "zod/v4";
 import { boardDrawingSvg, boardPairDrawings, boardSize, compareBoardPair, normalizeBoardOrigin } from "@fabdesk/board-diff";
-import { PART_LINKS_FILE, PartEndpoint, type BoardRevisionComparison, type BoardTimelineEntry, type PartLinkImpact } from "@fabdesk/protocol";
+import { PART_LINKS_FILE, PartEndpoint, PartPinPair, type BoardRevisionComparison, type BoardTimelineEntry, type PartLinkImpact } from "@fabdesk/protocol";
 import { BOARD_WORKTREE_REF, assertPcbPath, listBoardRevisions, listProjectBoards, parseBoard, partSummaries, readBoardRevision, saveBoardPoint } from "../board-history";
 import {
+  assertPinPairs,
   currentBoard,
   listPartLinks,
   loadPartLinks,
@@ -176,9 +177,10 @@ export const connection_add = defineTool({
     b: PartEndpoint,
     name: z.string().trim().max(160).optional(),
     note: z.string().trim().max(2000).optional(),
+    pins: z.array(PartPinPair).max(2000).optional().describe("Which pin on a goes to which pin on b"),
   },
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
-  handler: async ({ a, b, name, note }, ctx) => {
+  handler: async ({ a, b, name, note, pins }, ctx) => {
     const project = ctx.requireProject();
     if (a.boardPath === b.boardPath && a.ref === b.ref) throw new ToolError("Choose two different parts.", "invalid_args");
     const part = async (endpoint: PartEndpoint) => {
@@ -189,6 +191,7 @@ export const connection_add = defineTool({
       return found;
     };
     const [partA, partB] = await Promise.all([part(a), part(b)]);
+    assertPinPairs(partA, partB, pins ?? []);
     const link = await updatePartLinks(project, async (file) => {
       if (file.links.some((existing) => samePartLink(existing, a, b))) throw new ToolError("These parts are already linked.", "precondition");
       const now = new Date().toISOString();
@@ -196,6 +199,7 @@ export const connection_add = defineTool({
         id: newPartLinkId(), a, b,
         ...(name ? { name } : {}),
         ...(note ? { note } : {}),
+        ...(pins?.length ? { pins } : {}),
         createdAt: now,
         reviewedAt: now,
         baseline: { a: partBaseline(partA), b: partBaseline(partB) },
@@ -241,6 +245,33 @@ export const connection_review = defineTool({
   },
 });
 
+export const connection_set_pins = defineTool({
+  name: "connection_set_pins",
+  toolset: "project",
+  title: "Set a part link's pin map",
+  description: "Replace which pin on end a of a link goes to which pin on end b. Each pin must exist on its part as saved now. An empty list clears the map. This records intent and does not verify electrical compatibility.",
+  inputSchema: {
+    id: z.string().min(1).max(40),
+    pins: z.array(PartPinPair).max(2000),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  handler: async ({ id, pins }, ctx) => {
+    const project = ctx.requireProject();
+    const link = await updatePartLinks(project, async (file) => {
+      const existing = file.links.find((row) => row.id === id);
+      if (!existing) throw new ToolError(`No link ${id}`, "not_found");
+      const [boardA, boardB] = await Promise.all([currentBoard(project, existing.a.boardPath, ctx.signal), currentBoard(project, existing.b.boardPath, ctx.signal)]);
+      const partA = boardA?.components.find((component) => component.ref === existing.a.ref), partB = boardB?.components.find((component) => component.ref === existing.b.ref);
+      if (!partA || !partB) throw new ToolError("A linked part is missing. Remove this link or restore the part.", "precondition");
+      assertPinPairs(partA, partB, pins);
+      const { pins: _previous, ...rest } = existing;
+      const updated = { ...rest, ...(pins.length ? { pins } : {}) };
+      return { file: { ...file, links: file.links.map((row) => (row.id === id ? updated : row)) }, result: updated };
+    });
+    return ok(`${pins.length} pin pair(s) saved for ${link.a.ref} and ${link.b.ref}.`, { link });
+  },
+});
+
 export const connection_suggest = defineTool({
   name: "connection_suggest",
   toolset: "project",
@@ -261,4 +292,4 @@ export const connection_suggest = defineTool({
   },
 });
 
-export const boardWorkspaceTools = [board_list, board_view, board_revision_timeline, board_revision_compare, board_revision_save, connection_list, connection_add, connection_remove, connection_review, connection_suggest];
+export const boardWorkspaceTools = [board_list, board_view, board_revision_timeline, board_revision_compare, board_revision_save, connection_list, connection_add, connection_remove, connection_review, connection_set_pins, connection_suggest];

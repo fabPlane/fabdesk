@@ -26,6 +26,7 @@ export { mergeSnapshots, snapshotFromSources } from "./snapshot";
 export { diffBoards, diffSummary, formatDiffText } from "./diff";
 export {
   boardDrawingSvg,
+  boardPadBoxes,
   boardPairDrawings,
   boardPartBounds,
   boardSize,
@@ -33,6 +34,7 @@ export {
   normalizeBoardOrigin,
   padWorldPoint,
   type BoardBox,
+  type BoardPadBox,
   type BoardPairComparison,
   type BoardPartChange,
   type BoardPartRole,

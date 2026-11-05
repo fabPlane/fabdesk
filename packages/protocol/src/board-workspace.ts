@@ -19,12 +19,16 @@ export const PartBaseline = z.object({
   pads: z.array(z.string().max(300)).max(2000),
 }).strict();
 export type PartBaseline = z.infer<typeof PartBaseline>;
+/** Which pin on end a goes to which pin on end b, as a person or agent stated it. */
+export const PartPinPair = z.object({ a: z.string().min(1).max(120), b: z.string().min(1).max(120) }).strict();
+export type PartPinPair = z.infer<typeof PartPinPair>;
 export const PartLink = z.object({
   id: z.string().regex(/^lnk_[a-f0-9]{12}$/),
   a: PartEndpoint,
   b: PartEndpoint,
   name: z.string().max(160).optional(),
   note: z.string().max(2000).optional(),
+  pins: z.array(PartPinPair).max(2000).optional(),
   createdAt: z.string().datetime(),
   reviewedAt: z.string().datetime(),
   baseline: z.object({ a: PartBaseline, b: PartBaseline }).strict(),
@@ -48,6 +52,7 @@ export type BoardPartSummary = {
   rotation?: number;
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
   nets: string[];
+  pads: Array<{ pin: string; net?: string; bounds: { minX: number; minY: number; maxX: number; maxY: number } }>;
 };
 export type BoardRevisionKind = "worktree" | "git" | "saved" | "export";
 export type BoardChangeCounts = { added: number; removed: number; moved: number; changed: number; renamed: number; unchanged: number };

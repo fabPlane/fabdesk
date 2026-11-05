@@ -16,6 +16,7 @@ import {
   type PartLinkList,
   type PartLinkState,
   type PartLinkSuggestion,
+  type PartPinPair,
   type ResolvedPartLink,
   type SharedNet,
 } from "@fabdesk/protocol";
@@ -112,6 +113,18 @@ export function sharedNets(a: ComponentSnapshot, b: ComponentSnapshot): SharedNe
   return out;
 }
 
+/** A stated pin map may only name pins that exist on the two parts as saved now. */
+export function assertPinPairs(partA: ComponentSnapshot, partB: ComponentSnapshot, pins: readonly PartPinPair[]): void {
+  const seen = new Set<string>();
+  for (const pair of pins) {
+    if (!partA.pads?.some((pad) => pad.pin === pair.a)) throw new ToolError(`${partA.ref} has no pin ${pair.a}`, "invalid_args");
+    if (!partB.pads?.some((pad) => pad.pin === pair.b)) throw new ToolError(`${partB.ref} has no pin ${pair.b}`, "invalid_args");
+    const key = `${pair.a}\0${pair.b}`;
+    if (seen.has(key)) throw new ToolError(`Pin ${pair.a} is mapped to pin ${pair.b} twice`, "invalid_args");
+    seen.add(key);
+  }
+}
+
 export async function currentBoard(project: ProjectHandle, boardPath: string, signal?: AbortSignal): Promise<BoardSnapshot | null> {
   try {
     const revision = await readBoardRevision(project, boardPath, BOARD_WORKTREE_REF, signal);
@@ -139,6 +152,10 @@ export async function resolvePartLinks(project: ProjectHandle, links: PartLink[]
     const missing = reasons.length > 0;
     if (partA) reasons.push(...baselineChanges(link.baseline.a, partA).map((reason) => `${link.a.ref}: ${reason}`));
     if (partB) reasons.push(...baselineChanges(link.baseline.b, partB).map((reason) => `${link.b.ref}: ${reason}`));
+    for (const pair of link.pins ?? []) {
+      if (partA && !partA.pads?.some((pad) => pad.pin === pair.a)) reasons.push(`${link.a.ref}: mapped pin ${pair.a} no longer exists`);
+      if (partB && !partB.pads?.some((pad) => pad.pin === pair.b)) reasons.push(`${link.b.ref}: mapped pin ${pair.b} no longer exists`);
+    }
     const state: PartLinkState = missing ? "missing" : reasons.length ? "needs-review" : "current";
     return { ...link, state, reasons, sharedNets: partA && partB ? sharedNets(partA, partB) : [] };
   }));

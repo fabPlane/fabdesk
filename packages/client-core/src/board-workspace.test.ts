@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import type { BoardPartSummary, BoardTimelineEntry } from "@fabdesk/protocol";
 import { BOARD_WORKSPACE_PATHS } from "./board-workspace-keys";
-import { changeDescription, defaultTimelineIndex, highlightBoardDrawing, hitTestBoardPart, partLinkPeer, sameEndpoint, sharedNetLabel, sortedBoardParts, timelineEntryLabel, timelinePair } from "./board-workspace";
+import { changeDescription, defaultTimelineIndex, highlightBoardDrawing, hitTestBoardPad, hitTestBoardPart, linkPinMap, partLinkPeer, partPins, pinPairsForLink, rankConnectionTargets, sameEndpoint, sharedNetLabel, sortedBoardParts, suggestPinMap, timelineEntryLabel, timelineIndexForCard, timelinePair, timelineStep } from "./board-workspace";
 
-const part = (ref: string, minX: number, minY: number, maxX: number, maxY: number): BoardPartSummary => ({ ref, x: (minX + maxX) / 2, y: (minY + maxY) / 2, bounds: { minX, minY, maxX, maxY }, nets: [] });
+const part = (ref: string, minX: number, minY: number, maxX: number, maxY: number): BoardPartSummary => ({ ref, x: (minX + maxX) / 2, y: (minY + maxY) / 2, bounds: { minX, minY, maxX, maxY }, nets: [], pads: [] });
 const entry = (ref: string, total: number | null): BoardTimelineEntry => ({ ref, kind: "git", title: ref, sha256: ref, parts: 1, size: null, ...(total === null ? {} : { changes: { added: total, removed: 0, moved: 0, changed: 0, renamed: 0, unchanged: 1 } }) });
 
 test("hit testing picks the part under the point, and the smallest when stacked", () => {
@@ -84,4 +84,68 @@ test("copy for shared nets and changes", () => {
 test("board files and link files refresh these views; unrelated files do not", () => {
   for (const path of ["hardware/io/io.kicad_pcb", "fabplane.connections.json", "fabplane.assembly.json", "cad/enclosure-design.json"]) expect(BOARD_WORKSPACE_PATHS.test(path)).toBe(true);
   for (const path of ["NOTES.md", "renders/pcb.svg", "my-fabplane.connections.json"]) expect(BOARD_WORKSPACE_PATHS.test(path)).toBe(false);
+});
+
+const pad = (pin: string, x: number, net?: string) => ({ pin, ...(net ? { net } : {}), bounds: { minX: x, minY: 0, maxX: x + 1, maxY: 1 } });
+
+test("stepping moves through the timeline and stops at both ends", () => {
+  const entries = [entry("a", null), entry("b", 1), entry("c", 1), entry("d", 1)];
+  expect(timelineStep(entries, 2, -1)).toBe(1);
+  expect(timelineStep(entries, 2, 1)).toBe(3);
+  expect(timelineStep(entries, 1, -1)).toBeNull();
+  expect(timelineStep(entries, 3, 1)).toBeNull();
+});
+
+test("every card can be selected, and the oldest opens the first step", () => {
+  const entries = [entry("a", null), entry("b", 1), entry("c", 1)];
+  expect(timelineIndexForCard(entries, 0)).toBe(1);
+  expect(timelineIndexForCard(entries, 1)).toBe(1);
+  expect(timelineIndexForCard(entries, 2)).toBe(2);
+  expect(timelineIndexForCard([entry("a", null)], 0)).toBe(0);
+});
+
+test("selecting a part highlights it without moving the camera", () => {
+  const svg = '<svg viewBox="0 0 100 80"><g data-ref="J1"></g></svg>';
+  const out = highlightBoardDrawing(svg, { refs: ["J1"], mappedPins: ["1"], activePin: "2" });
+  expect(out).toContain('viewBox="0 0 100 80"');
+  expect(out).toContain('.bp-part[data-ref="J1"] .bp-pad[data-pin="1"]{fill:#16a34a}');
+  expect(out).toContain('.bp-part[data-ref="J1"] .bp-pad[data-pin="2"]{fill:#ea580c');
+  expect(out).toContain('.bp-part[data-ref="J1"] .bp-pin{display:inline}');
+});
+
+test("pad hit testing finds the exact pin, then the nearest within reach", () => {
+  const part = { ...hitPart(), pads: [pad("1", 0), pad("2", 3)] };
+  expect(hitTestBoardPad(part, { x: 0.5, y: 0.5 })).toBe("1");
+  expect(hitTestBoardPad(part, { x: 3.5, y: 0.5 })).toBe("2");
+  expect(hitTestBoardPad(part, { x: 4.2, y: 0.5 })).toBe("2");
+  expect(hitTestBoardPad(part, { x: 2, y: 0.5 })).toBeNull();
+});
+
+function hitPart() { return part("J1", 0, 0, 5, 1); }
+
+test("a repeated pin number is one row, in natural order", () => {
+  expect(partPins({ pads: [pad("10", 0), pad("2", 1, "A"), pad("2", 2, "A"), pad("1", 3)] }).map((row) => row.pin)).toEqual(["1", "2", "10"]);
+  expect(partPins(null)).toEqual([]);
+});
+
+test("a suggested pin map only joins named nets", () => {
+  const source = { pads: [pad("1", 0, "SDA"), pad("2", 1, "Net-(J1-Pad2)"), pad("3", 2)] };
+  const target = { pads: [pad("7", 0, "SDA"), pad("8", 1, "Net-(J1-Pad2)")] };
+  expect(suggestPinMap(source, target)).toEqual({ "1": "7" });
+  expect(suggestPinMap(source, null)).toEqual({});
+});
+
+test("a pin map reads and saves correctly from either end of a link", () => {
+  const a = { boardPath: "a.kicad_pcb", ref: "J1" }, b = { boardPath: "b.kicad_pcb", ref: "J2" };
+  const link = { a, pins: [{ a: "1", b: "7" }] };
+  expect(linkPinMap(link, a)).toEqual({ "1": "7" });
+  expect(linkPinMap(link, b)).toEqual({ "7": "1" });
+  expect(linkPinMap({ a, pins: undefined }, a)).toEqual({});
+  expect(pinPairsForLink({ "1": "7", "2": "" }, true)).toEqual([{ a: "1", b: "7" }]);
+  expect(pinPairsForLink({ "7": "1" }, false)).toEqual([{ a: "1", b: "7" }]);
+});
+
+test("likely targets come first: shared named nets, then connectors", () => {
+  const rows = [{ ref: "R1", nets: [] }, { ref: "J9", nets: [] }, { ref: "U1", nets: ["SDA"] }, { ref: "C1", nets: ["Net-(X)"] }];
+  expect(rankConnectionTargets({ nets: ["SDA", "Net-(X)"] }, rows).map((row) => row.ref)).toEqual(["U1", "J9", "C1", "R1"]);
 });

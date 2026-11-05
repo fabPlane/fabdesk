@@ -198,6 +198,39 @@ describe("board history and part links", () => {
     expect((await invoke<PartLinkList>("connection_list")).links).toHaveLength(1);
   });
 
+  test("a connection can state which pin goes to which pin", async () => {
+    const created = (await invoke<{ link: PartLink }>("connection_add", { a: { boardPath: BOARD_A, ref: "J1" }, b: { boardPath: BOARD_B, ref: "J9" }, pins: [{ a: "1", b: "2" }] })).link;
+    expect(created.pins).toEqual([{ a: "1", b: "2" }]);
+    const updated = (await invoke<{ link: PartLink }>("connection_set_pins", { id: created.id, pins: [{ a: "2", b: "1" }, { a: "1", b: "1" }] })).link;
+    expect(updated.pins).toEqual([{ a: "2", b: "1" }, { a: "1", b: "1" }]);
+    expect((await onlyLink()).pins).toEqual([{ a: "2", b: "1" }, { a: "1", b: "1" }]);
+    // Changing the map is not a review, and an empty map clears it.
+    expect((await invoke<{ link: PartLink }>("connection_set_pins", { id: created.id, pins: [] })).link.pins).toBeUndefined();
+  });
+
+  test("a pin map may only name pins that exist", async () => {
+    expect((await raw("connection_add", { a: { boardPath: BOARD_A, ref: "J1" }, b: { boardPath: BOARD_B, ref: "J9" }, pins: [{ a: "99", b: "1" }] })).isError).toBe(true);
+    expect((await invoke<PartLinkList>("connection_list")).links).toEqual([]);
+    const created = await link();
+    expect((await raw("connection_set_pins", { id: created.id, pins: [{ a: "1", b: "99" }] })).isError).toBe(true);
+    expect((await raw("connection_set_pins", { id: created.id, pins: [{ a: "1", b: "1" }, { a: "1", b: "1" }] })).isError).toBe(true);
+    expect((await raw("connection_set_pins", { id: "lnk_000000000000", pins: [] })).isError).toBe(true);
+    expect((await onlyLink()).pins).toBeUndefined();
+  });
+
+  test("a mapped pin that disappears asks for review", async () => {
+    await invoke("connection_add", { a: { boardPath: BOARD_A, ref: "J1" }, b: { boardPath: BOARD_B, ref: "J9" }, pins: [{ a: "2", b: "2" }] });
+    await write(BOARD_A, `(kicad_pcb (footprint "Lib:Part" (layer "F.Cu") (at 10 10 0) (property "Reference" "J1" (at 0 0 0)) (pad "1" smd rect (at -1 0) (size 1 1) (layers "F.Cu") (net 1 "SIG_A"))) (gr_rect (start 0 0) (end 50 40) (layer "Edge.Cuts")))`);
+    const listed = await onlyLink();
+    expect(listed.state).toBe("needs-review");
+    expect(listed.reasons).toContain("J1: mapped pin 2 no longer exists");
+  });
+
+  test("part summaries carry pads for picking a pin", async () => {
+    const view = await invoke<BoardView>("board_view", { pcbPath: BOARD_A });
+    expect(view.parts.find((part) => part.ref === "J1")?.pads.map((pad) => pad.pin)).toEqual(["1", "2"]);
+  });
+
   test("two parts on one board can be linked", async () => {
     const created = (await invoke<{ link: PartLink }>("connection_add", { a: { boardPath: BOARD_A, ref: "J1" }, b: { boardPath: BOARD_A, ref: "R1" } })).link;
     expect(created.a.boardPath).toBe(created.b.boardPath);

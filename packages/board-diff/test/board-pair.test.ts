@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { boardDrawingSvg, boardPairDrawings, boardPartBounds, boardSize, compareBoardPair, normalizeBoardOrigin, snapshotFromKicadPcb } from "../src";
+import { boardDrawingSvg, boardPadBoxes, boardPairDrawings, boardPartBounds, boardSize, compareBoardPair, normalizeBoardOrigin, snapshotFromKicadPcb } from "../src";
 import { PCB_FROM, PCB_TO } from "./fixtures";
 
 const part = (ref: string, x: number, y: number, extra = "") => `(footprint "Lib:Part"
@@ -117,6 +117,21 @@ describe("drawings", () => {
     expect(to).toContain('data-ref="R1" data-role="moved"');
     const viewBox = (svg: string) => /viewBox="([^"]+)"/.exec(svg)?.[1];
     expect(viewBox(from)).toBe(viewBox(to));
+  });
+
+  test("each pad has placed bounds and a tagged drawing for picking pins", () => {
+    const rotated = snapshotFromKicadPcb(`(kicad_pcb (footprint "L:P" (layer "F.Cu") (at 10 10 90)
+      (property "Reference" "R1" (at 0 0 0))
+      (pad "1" smd rect (at -2 0 90) (size 1 1) (layers "F.Cu") (net 1 "SIG"))
+      (pad "2" smd rect (at 2 0 90) (size 1 1) (layers "F.Cu"))))`);
+    const pads = boardPadBoxes(rotated.components[0]!);
+    expect(pads.map((row) => row.pin)).toEqual(["1", "2"]);
+    expect(pads[0]?.net).toBe("SIG");
+    expect((pads[0]!.bounds.minY + pads[0]!.bounds.maxY) / 2).toBeCloseTo(12, 5);
+    expect((pads[1]!.bounds.minY + pads[1]!.bounds.maxY) / 2).toBeCloseTo(8, 5);
+    const svg = boardDrawingSvg(rotated);
+    expect(svg).toContain('data-pin="1"');
+    expect(svg).toContain('class="bp-pin" display="none"');
   });
 
   test("references are escaped in the drawing", () => {

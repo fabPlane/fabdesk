@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod/v4";
-import { boardPartBounds, snapshotFromKicadPcb, type BoardSnapshot } from "@fabdesk/board-diff";
+import { boardPadBoxes, boardPartBounds, snapshotFromKicadPcb, type BoardSnapshot } from "@fabdesk/board-diff";
 import type { BoardFile, BoardPartSummary, BoardRevisionKind } from "@fabdesk/protocol";
 import { inspectProjectBoardSources } from "./assembly";
 import { exists, jailPath } from "./fs";
@@ -191,6 +191,7 @@ export function partSummaries(snapshot: BoardSnapshot): BoardPartSummary[] {
       ...(component.rotation !== undefined ? { rotation: component.rotation } : {}),
       bounds,
       nets: [...new Set((component.pads ?? []).flatMap((pad) => (pad.net ? [pad.net] : [])))],
+      pads: boardPadBoxes(component),
     }];
   });
 }
