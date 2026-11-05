@@ -28,3 +28,10 @@ The first native binding selected the existing VAIO app. Only read-only Activity
 - The separate **FabPlane Followups** test process was stopped at the user's request to keep one app. Its profile, copied projects, terminal task history and evidence remain on disk. The existing main Electron app was left running with its open work preserved; app inventory verified the test app was no longer running.
 - Main app's long-lived hot-reload session still has the earlier hardware-file 404 notice and a source action focused without navigating. A clean built copy previously completed that action. These attempts are not counted as successful navigation and are not proof of a production failure. Do not reload/discard the main session's unsaved work to conceal the observation.
 - #412 implementation has automated source-scope/choice/return checks and actual packaged-KiCad page-export checks, **not yet a completed human focus walkthrough**. Member/repeated-sheet focus, choice buttons, prior-sheet/viewport restoration and changing a child sheet while focus is open must still be exercised visibly in a clean app session. The current main process has not been restarted onto the updated core.
+
+
+### User-requested single-app cleanup
+
+Native inventory confirmed the isolated Followups app was stopped, but also showed an older Electron development app and installed fabPlane. The installed app showed `PlayBridge V3.0 PS1 serial harness` in Parts. The development window was blank; menu Quit and SIGTERM did not exit it. Its exact main PID was verified and force-closed. A subsequent native inventory showed installed fabPlane running and neither Electron nor Followups running. No saved profile/project files were removed. This is environment cleanup, not a passing schematic journey.
+
+The new native-page selectors, complete root preview receipts, child-sheet assistant context and stale-source recovery have code/native-export tests, but have **not** yet passed a visible UI journey on this branch. The installed app is an older build and was not modified to claim a test pass.

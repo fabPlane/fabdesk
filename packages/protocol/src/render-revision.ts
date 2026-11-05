@@ -54,15 +54,15 @@ export type AssemblyBoardModelRevision = z.infer<typeof AssemblyBoardModelRevisi
 /** Member schematic preview pointer. Versioned SVGs are immutable; publication replaces only this receipt. */
 export const SCHEMATIC_PREVIEW_REVISION_PATH = "renders/schematic.revision.json";
 const SchematicSourceFile = z.object({ path: z.string().min(1), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
-export const AssemblySchematicPreviewRevision = z.object({
+const SchematicPreviewContent = z.object({
   contract: z.literal("fabplane.schematic-preview-revision.v1"),
-  boardSource: BoardSourceSelection.extend({ projectId: z.string().min(1) }).strict(),
   sourceRevision: z.string().regex(/^[a-f0-9]{64}$/),
   sourceFiles: z.array(SchematicSourceFile).min(1).max(257),
-  sheets: z.array(z.object({ path: z.string().min(1), name: z.string().min(1).max(512), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict()).min(1).max(256),
+  sheets: z.array(z.object({ path: z.string().min(1), name: z.string().min(1).max(512), sha256: z.string().regex(/^[a-f0-9]{64}$/), nativeSheet: z.object({ identity: z.string().min(1).max(1024), hierarchyPath: z.string().min(1).max(1024), nativePath: AssemblyRelativePath.refine(path => path.endsWith(".kicad_sch")), pageNumber: z.number().int().positive() }).strict().optional() }).strict()).min(1).max(256),
   generatedAt: z.string().datetime(),
   dependencies: z.literal("unverified"),
-}).strict().superRefine((value, ctx) => {
+}).strict();
+const checkSchematicPreview = (value: z.infer<typeof SchematicPreviewContent>, ctx: z.RefinementCtx) => {
   const portable = (path: string) => !path.startsWith("/") && !path.includes("\\") && !path.includes(":") && !path.includes("\0") && path.split("/").every(part => part && part !== "." && part !== "..");
   const seen = new Set<string>();
   for (const [index, file] of value.sourceFiles.entries()) {
@@ -70,12 +70,20 @@ export const AssemblySchematicPreviewRevision = z.object({
     seen.add(file.path);
   }
   if (!seen.has("board.kicad_sch")) ctx.addIssue({ code: "custom", path: ["sourceFiles"], message: "The native root schematic is required" });
+  const sources = new Set(seen), identities = new Set<string>(), pages = new Set<number>();
   seen.clear();
   for (const [index, sheet] of value.sheets.entries()) {
     if (!portable(sheet.path) || !sheet.path.startsWith("renders/schematic/") || !sheet.path.endsWith(".svg") || seen.has(sheet.path)) ctx.addIssue({ code: "custom", path: ["sheets", index, "path"], message: "Use distinct versioned schematic SVG paths" });
     seen.add(sheet.path);
+    if (sheet.nativeSheet) {
+      if (!sources.has(sheet.nativeSheet.nativePath) || identities.has(sheet.nativeSheet.identity) || pages.has(sheet.nativeSheet.pageNumber)) ctx.addIssue({ code: "custom", path: ["sheets", index, "nativeSheet"], message: "Every circuit page needs one distinct native sheet instance from the captured sources" });
+      identities.add(sheet.nativeSheet.identity); pages.add(sheet.nativeSheet.pageNumber);
+    }
   }
-});
+};
+export const AssemblySchematicPreviewRevision = SchematicPreviewContent.extend({ boardSource: BoardSourceSelection.extend({ projectId: z.string().min(1) }).strict() }).superRefine(checkSchematicPreview);
+export const RootSchematicPreviewRevision = SchematicPreviewContent.extend({ projectId: z.string().min(1) }).superRefine(checkSchematicPreview).refine(value => value.sheets.every(sheet => !!sheet.nativeSheet), "Working circuit sheets require captured native identities");
+export type RootSchematicPreviewRevision = z.infer<typeof RootSchematicPreviewRevision>;
 export type AssemblySchematicPreviewRevision = z.infer<typeof AssemblySchematicPreviewRevision>;
 
 /** Recorded mesh bytes consumed by the video renderer. Does not establish PCB/model parity or caption freshness. */

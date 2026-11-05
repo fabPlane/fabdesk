@@ -16,7 +16,7 @@ export async function ownedPreviewFixture(native = false) {
     if (command.includes("netlist")) await writeFile(output, '<export><design><sheet number="1" name="/" tstamps="/"/><sheet number="2" name="/Child/" tstamps="/00000000-0000-0000-0000-000000000002/"/></design><components></components><nets></nets></export>');
     else {
       svgCalls++; expect(await readFile(join(dirname(source), "child.kicad_sch"), "utf8")).toContain("000000000003");
-      await mkdir(output, { recursive: true }); for (const name of (command.includes("--pages") ? [command[command.indexOf("--pages") + 1] === "2" ? "child.svg" : "root.svg"] : ["root.svg", "child.svg"])) await writeFile(join(output, name), '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="2" y="10">Native test sheet</text></svg>');
+      await mkdir(output, { recursive: true }); for (const name of (command.includes("--pages") ? [command[command.indexOf("--pages") + 1] === "2" ? "child.svg" : "root.svg"] : ["root.svg", "child.svg"])) await writeFile(join(output, name), '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100"><text x="2" y="10">Native test sheet</text></svg>');
       await mutate?.();
     }
     return { exitCode: 0, stdout: "", stderr: "" };

@@ -760,11 +760,11 @@ export interface KicadService {
   exportOwnedSchematicSvg(
     cli: KicadCli,
     opts: { projectDir: string; hierarchy: SchematicHierarchy; circuit?: boolean; signal?: AbortSignal },
-  ): Promise<{ sourceRevision: string; sourceFiles: Array<{ path: string; sha256: string }>; sheets: Array<{ name: string; svg: Uint8Array }> }>;
+  ): Promise<{ sourceRevision: string; sourceFiles: Array<{ path: string; sha256: string }>; sheets: Array<{ name: string; svg: Uint8Array; nativeSheet?: { identity: string; hierarchyPath: string; nativePath: string; pageNumber: number } }> }>;
   exportOwnedSchematicPage(
     cli: KicadCli,
     opts: { projectDir: string; hierarchy: SchematicHierarchy; sheetIdentity: string; signal?: AbortSignal },
-  ): Promise<{ sourceRevision: string; sourceFiles: Array<{ path: string; sha256: string }>; sheets: Array<{ name: string; svg: Uint8Array }> }>;
+  ): Promise<{ sourceRevision: string; sourceFiles: Array<{ path: string; sha256: string }>; sheets: Array<{ name: string; svg: Uint8Array; nativeSheet?: { identity: string; hierarchyPath: string; nativePath: string; pageNumber: number } }> }>;
   exportOwnedSchematicBom(
     cli: KicadCli,
     opts: { projectDir: string; hierarchy: SchematicHierarchy; signal?: AbortSignal },

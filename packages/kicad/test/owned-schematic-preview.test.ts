@@ -27,6 +27,17 @@ test("selected native page follows inspected UUID instance identity rather than 
     await expect(exportOwnedSchematicPage(f.cli, { projectDir: f.dir, hierarchy, sheetIdentity: child.identity })).rejects.toThrow("changed");
   } finally { await rm(f.dir, { recursive: true, force: true }); }
 });
+test("circuit sheets bind native page identities even when hierarchy order differs from filenames", async () => {
+  const f = await ownedPreviewFixture(); try {
+    const hierarchy = await f.inspect(); hierarchy.sheets.reverse();
+    const result = await exportOwnedSchematicSvg(f.cli, { projectDir: f.dir, hierarchy, circuit: true });
+    expect(result.sheets.map(sheet => sheet.nativeSheet?.hierarchyPath)).toEqual(["/Child/", "/"]);
+    expect(result.sheets.map(sheet => sheet.name)).toEqual(["child.svg", "root.svg"]);
+    expect(result.sheets.every(sheet => new TextDecoder().decode(sheet.svg).includes('data-fabplane-schematic-view="circuit'))).toBe(true);
+    const invalid = { ...hierarchy, sheets: hierarchy.sheets.map(sheet => ({ ...sheet, pageNumber: 1 })) };
+    await expect(exportOwnedSchematicSvg(f.cli, { projectDir: f.dir, hierarchy: invalid, circuit: true })).rejects.toThrow("unique inspected");
+  } finally { await rm(f.dir, { recursive: true, force: true }); }
+});
 for (const when of ["before", "during"] as const) for (const file of ["child.kicad_sch", "board.kicad_pro"] as const) test(`rejects changed ${file} ${when} SVG export`, async () => {
   const f = await ownedPreviewFixture(); try {
     const hierarchy = await f.inspect(), change = async () => { const path = join(f.dir, file); await writeFile(path, (await readFile(path, "utf8")) + "\n"); };

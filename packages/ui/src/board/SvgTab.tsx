@@ -1,10 +1,11 @@
+import { SchematicSheetNav } from "./SchematicSheetNav";
 import { SchematicFocusView } from "./SchematicFocusView";
 import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BoardComment, CommentView } from "@fabdesk/protocol";
-import { commentAnchorLabel, commentMillimetrePoint } from "@fabdesk/protocol";
+import { RootSchematicPreviewRevision, commentAnchorLabel, commentMillimetrePoint } from "@fabdesk/protocol";
 import { Button, EmptyState, IconButton, Input, LoadError, Spinner, Textarea } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { ErrorNotice } from "../components/ErrorNotice";
@@ -17,6 +18,8 @@ import {
   useThreads,
   useRunsStore,
   usePcbPreviewRevision,
+  useRootSchematicPreview,
+  pcbToolJson,
   pcbSvgHasNativeCoordinates,
   useProjectText,
   useRunTool,
@@ -94,6 +97,14 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
   const sources = useBoardSources(projectId);
   const scopeReady = sources.data?.mode === "single" && !sources.isFetching && !sources.isError;
   const rendered = useProjectText(projectId, `renders/${kind}.svg`);
+  const pageKey = JSON.stringify([client.baseUrl, projectId, "root-schematic"]);
+  const schematicPage = useUiStore(state => state.schematicPageBySource[pageKey] ?? null);
+  const selectSheet = (path: string | null) => { setCanvasPoint(null); setCommentMode(false); setSelectedId(null); setDraftPoint(null); useUiStore.getState().setSchematicPage(pageKey, path); };
+  const schematicPreview = useRootSchematicPreview(projectId, schematicPage, kind === "schematic" && scopeReady);
+  const drawing = kind === "schematic" ? schematicPreview.data?.svg ?? rendered.data : rendered.data;
+  const nativeSheet = kind === "schematic" ? schematicPreview.data?.sheet?.nativeSheet : undefined;
+  const legacyPinsVisible = !nativeSheet || nativeSheet.nativePath === "board.kicad_sch" && nativeSheet.hierarchyPath === "/";
+  useAssistantSurface(projectId && kind === "schematic" && nativeSheet ? { projectId, label: `Schematic · ${nativeSheet.hierarchyPath === "/" ? "Root circuit" : nativeSheet.hierarchyPath}`, priority: 8, details: JSON.stringify({ source: nativeSheet.nativePath, sheet: nativeSheet, sourceRevision: schematicPreview.data?.sourceRevision, previewState: schematicPreview.data?.state, instruction: "Use this captured sheet instance, not a matching reference in another sheet. Inspect current native sources before editing or making electrical claims." }) } : null);
   const nativeCoordinates = kind === "pcb" && pcbSvgHasNativeCoordinates(rendered.data ?? "");
   const previousFrame = useRef(nativeCoordinates);
   const revision = usePcbPreviewRevision(projectId, (canvasMode || findingRequested) && kind === "pcb" && !!rendered.data);
@@ -117,8 +128,8 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
   useEffect(() => { setCanvasPoint(null); setNativeEditBusy(false); }, [projectId, kind]);
   const view = kind as CommentView;
   const pins = useMemo(
-    () => (comments.data?.comments ?? []).filter((comment) => comment.anchor.view === view),
-    [comments.data, view],
+    () => (comments.data?.comments ?? []).filter((comment) => comment.anchor.view === view && legacyPinsVisible),
+    [comments.data, view, legacyPinsVisible],
   );
   useEffect(() => {
     if (!commentToReveal || commentToReveal.projectId !== projectId || commentToReveal.view !== kind || !comments.data) return;
@@ -175,7 +186,16 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
   };
   const refreshPreview = () => {
     if (!projectId || !scopeReady || useUiStore.getState().activeProjectId !== projectId) return;
-    void render.run(RENDER_TOOL[kind], { projectId, ...(kind === "schematic" ? { circuit: true } : {}) }).then(result => { if (result.status === "done") { void rendered.refetch(); if (kind === "pcb") void revision.refetch(); } });
+    void render.run(RENDER_TOOL[kind], { projectId, ...(kind === "schematic" ? { circuit: true } : {}) }).then(result => { if (result.status === "done") {
+      void rendered.refetch();
+      if (kind === "pcb") void revision.refetch();
+      else {
+        const parsed = RootSchematicPreviewRevision.safeParse(pcbToolJson(result.result).preview);
+        if (useUiStore.getState().activeProjectId !== projectId) return;
+        const next = parsed.success && parsed.data.projectId === projectId ? parsed.data.sheets.find(sheet => sheet.nativeSheet?.identity === nativeSheet?.identity)?.path ?? null : null;
+        useUiStore.getState().setSchematicPage(pageKey, next); if (next === schematicPage) void schematicPreview.refetch();
+      }
+    } });
   };
   useEffect(() => {
     // Read the saved source once a build/agent has settled. Alternate image exports are not
@@ -184,7 +204,16 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
     const key = `${projectId}/${kind}`;
     if (autoPreview.current === key) return;
     autoPreview.current = key;
-    void render.run(RENDER_TOOL[kind], { projectId, ...(kind === "schematic" ? { circuit: true } : {}) }).then(result => { if (result.status === "done") { void rendered.refetch(); if (kind === "pcb") void revision.refetch(); } });
+    void render.run(RENDER_TOOL[kind], { projectId, ...(kind === "schematic" ? { circuit: true } : {}) }).then(result => { if (result.status === "done") {
+      void rendered.refetch();
+      if (kind === "pcb") void revision.refetch();
+      else {
+        const parsed = RootSchematicPreviewRevision.safeParse(pcbToolJson(result.result).preview);
+        if (useUiStore.getState().activeProjectId !== projectId) return;
+        const next = parsed.success && parsed.data.projectId === projectId ? parsed.data.sheets.find(sheet => sheet.nativeSheet?.identity === nativeSheet?.identity)?.path ?? null : null;
+        useUiStore.getState().setSchematicPage(pageKey, next); if (next === schematicPage) void schematicPreview.refetch();
+      }
+    } });
   }, [projectId, active, scopeReady, projectWorking, threads.isPending, threads.isError, project.data, project.isPending, project.isFetching, project.isError, rendered.data, rendered.isPending, rendered.isError, render.state.status, kind, render.run]);
 
   if (!projectId)
@@ -206,17 +235,20 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
       </div>
     );
   }
-  if (rendered.data) {
+  if (kind === "schematic" && schematicPreview.isError) return <LoadError title="Could not verify the selected schematic sheet" onRetry={() => { if (schematicPage) selectSheet(null); else void schematicPreview.refetch(); }} />;
+  if (kind === "schematic" && schematicPreview.isPending && scopeReady) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
+  if (drawing) {
     return (
       <div className="relative flex h-full min-h-0" data-testid={`board-${kind}-svg`} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); if (canvasPoint) { const drawing = event.currentTarget.querySelector<HTMLElement>(".fd-svg-host"); setCanvasPoint(null); requestAnimationFrame(() => drawing?.focus({ preventScroll: true })); } else if (selected || draftPoint || commentMode) closeComments(); else if (findingRequested) { const drawing = event.currentTarget.querySelector<HTMLElement>(".fd-svg-host"); useUiStore.getState().dismissRootFinding(); requestAnimationFrame(() => drawing?.focus({ preventScroll: true })); } } }}>
         {canvasMode && kind === "pcb" && <PcbPreviewStatus projectId={projectId} coordinatesVerified={nativeCoordinates} scopeReady={scopeReady} {...(sources.isError ? { onRetryScope: () => void sources.refetch() } : {})} busy={render.state.status === "running" || nativeEditBusy} error={render.state.error ?? null} onUpdate={refreshPreview} />}
-        {canvasMode && kind === "schematic" && <SchematicPreviewStatus circuit={rendered.data.includes('data-fabplane-schematic-view="circuit')} scopeReady={scopeReady} hasSource={project.data?.files.some(file => file.path === "board.kicad_sch") ?? false} updated={render.state.status === "done"} busy={render.state.status === "running"} error={render.state.error ?? null} onUpdate={refreshPreview} onOpenSource={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().openProjectFile("board.kicad_sch"); }} {...(sources.isError ? { onRetryScope: () => void sources.refetch() } : {})} />}
-        <div className="min-w-0 flex-1">
-          <SvgViewer
-            svg={rendered.data}
-            initialFit={kind === "schematic" && !rendered.data.includes('data-fabplane-schematic-view="circuit') ? "width" : "sheet"}
-            viewKey={`${projectId}:${kind}`}
-            {...(kind === "schematic" ? { viewportKey: JSON.stringify([client.baseUrl, projectId, kind]) } : {})}
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          {kind === "schematic" && (canvasMode || (schematicPreview.data?.sheets.length ?? 0) > 1) && <div className="fd-schematic-canvas-header"><SchematicSheetNav sheets={schematicPreview.data?.sheets ?? []} selected={schematicPreview.data?.sheet?.path} busy={render.state.status === "running" || !!draftPoint || pin.isPending || patch.isPending} onSelect={selectSheet} />{canvasMode && kind === "schematic" && <SchematicPreviewStatus sourceState={schematicPreview.data?.state} circuit={drawing.includes('data-fabplane-schematic-view="circuit')} scopeReady={scopeReady} hasSource={project.data?.files.some(file => file.path === "board.kicad_sch") ?? false} updated={render.state.status === "done"} busy={render.state.status === "running"} error={render.state.error ?? null} onUpdate={refreshPreview} onOpenSource={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().openProjectFile(nativeSheet?.nativePath ?? "board.kicad_sch"); }} {...(sources.isError ? { onRetryScope: () => void sources.refetch() } : {})} />}</div>}
+          <div className="min-h-0 flex-1"><SvgViewer
+            svg={drawing}
+            initialFit={kind === "schematic" && !drawing.includes('data-fabplane-schematic-view="circuit') ? "width" : "sheet"}
+            viewKey={`${projectId}:${kind}:${kind === "schematic" ? schematicPreview.data?.sheet?.path ?? "legacy" : ""}`}
+            {...(kind === "schematic" ? { viewportKey: JSON.stringify([client.baseUrl, projectId, kind, nativeSheet?.identity ?? schematicPreview.data?.sheet?.path]) } : {})}
             commentMode={commentMode}
             {...((commentMode || canvasMode) ? { onDrawingClick: (point: SvgPoint) => {
               if (commentMode) { setDraftPoint(point); setSelectedId(null); }
@@ -233,10 +265,10 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
                   <Button variant="ghost" size="sm" onClick={() => {
                     const ui = useUiStore.getState();
                     if (ui.activeProjectId !== projectId) return;
-                    askAboutSurface({ projectId, label: `${kind === "pcb" ? "PCB" : "Schematic"} / Selected location`, priority: 20, details: JSON.stringify({ view: kind, source: kind === "pcb" ? "board.kicad_pcb" : "board.kicad_sch", point: canvasPoint, coordinateSystem: nativeCoordinates ? "kicad-pcb-mm" : "svg-units-unverified-native-origin", previewRevision: kind === "pcb" ? revision.data : "unverified", instruction: "Inspect the saved native design. Do not interpret unverified drawing coordinates as native millimetres or claim checks passed." }) }, `Explain the selected ${kind === "pcb" ? "PCB" : "schematic"} location and what I should check there.`);
+                    askAboutSurface({ projectId, label: `${kind === "pcb" ? "PCB" : "Schematic"} / Selected location`, priority: 20, details: JSON.stringify({ view: kind, source: kind === "pcb" ? "board.kicad_pcb" : nativeSheet?.nativePath ?? "board.kicad_sch", sheet: nativeSheet, point: canvasPoint, coordinateSystem: nativeCoordinates ? "kicad-pcb-mm" : "svg-units-unverified-native-origin", previewRevision: kind === "pcb" ? revision.data : schematicPreview.data?.state ?? "unverified", instruction: "Inspect the saved native design. Do not interpret unverified drawing coordinates as native millimetres or claim checks passed." }) }, `Explain the selected ${kind === "pcb" ? "PCB" : "schematic"} location and what I should check there.`);
                     setCanvasPoint(null);
                   }}><Icon name="sparkles" width={15} height={15} />Ask about this</Button>
-                  <Button variant="ghost" size="sm" onClick={() => { setDraftPoint(canvasPoint); setCanvasPoint(null); setSelectedId(null); setCommentMode(true); }}><Icon name="pin" width={15} height={15} />Pin comment</Button>
+                  {legacyPinsVisible && <Button variant="ghost" size="sm" title="Save a drawing comment" onClick={() => { setDraftPoint(canvasPoint); setCanvasPoint(null); setSelectedId(null); setCommentMode(true); }}><Icon name="pin" width={15} height={15} />Pin comment</Button>}
                   {kind === "pcb" && <NativePartTools visible={active} onMutationBusyChange={busy => { if (useUiStore.getState().activeProjectId === projectId) setNativeEditBusy(busy); }} box={box} projectId={projectId} point={canvasPoint} canPosition={scopeReady && nativeCoordinates && revision.data === "matches-source" && !revision.isError && !revision.isFetching} openAbove={(canvasPoint.y - box.y) / box.height > .5} onMoved={setCanvasPoint} />}
                   <IconButton size="sm" title="Deselect location" onClick={event => { const drawing = event.currentTarget.closest<HTMLElement>(".fd-svg-host"); setCanvasPoint(null); requestAnimationFrame(() => drawing?.focus({ preventScroll: true })); }}><Icon name="close" width={15} height={15} /></IconButton>
                 </div>
@@ -247,7 +279,7 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
                 {kind === "pcb" && !canvasMode && <Button size="sm" variant="secondary" onClick={() => useUiStore.getState().setBoardTab("placement")} title="Arrange components in a placement draft">
                   <Icon name="pcb" width={14} height={14} /> Edit placement
                 </Button>}
-                <Button
+                {legacyPinsVisible ? <Button
                   size="sm"
                   variant={commentMode ? "primary" : "secondary"}
                   onClick={() => {
@@ -257,17 +289,20 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
                   ref={commentTrigger}
                   data-testid="comment-mode"
                   aria-pressed={commentMode || !!selected || !!draftPoint}
-                  title="Pin a question to this drawing"
+                  title={legacyPinsVisible ? "Pin a question to this drawing" : "Pins are currently available on the root sheet; use Ask fabPlane for this native sheet instance."}
                 >
                   <Icon name="pin" width={14} height={14} />
                   Comment
-                </Button>
+                </Button> : <Button size="sm" onClick={() => {
+                  if (!nativeSheet || useUiStore.getState().activeProjectId !== projectId) return;
+                  askAboutSurface({ projectId, label: `Schematic · ${nativeSheet.hierarchyPath}`, priority: 20, details: JSON.stringify({ sheet: nativeSheet, sourceRevision: schematicPreview.data?.sourceRevision, previewState: schematicPreview.data?.state, instruction: "Inspect this exact saved native sheet instance. Explain the circuit without assuming electrical checks passed." }) }, "Explain what this circuit sheet does and which parts I should understand first.");
+                }}><Icon name="sparkles" width={14} height={14} />Ask about this sheet</Button>}
                 <span className="text-[11px] text-muted">
-                  {commentMode ? "Click the board to drop a pin" : `${pins.length} pin${pins.length === 1 ? "" : "s"} · renders/${kind}.svg`}
+                  {commentMode ? "Click the board to drop a pin" : legacyPinsVisible ? `${pins.length} pin${pins.length === 1 ? "" : "s"} · ${nativeSheet?.hierarchyPath ?? `renders/${kind}.svg`}` : "Native sheet instance"}
                 </span>
               </>
             }
-          />
+          /></div>
         </div>
         {active && (selected || draftPoint || commentMode) && (
           <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-auto border-l border-border p-3" data-testid="comment-detail">

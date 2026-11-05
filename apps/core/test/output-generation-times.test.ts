@@ -63,3 +63,13 @@ test("malformed receipts and symlink targets outside the project fall back witho
   await rm(join(dir, "renders/top.png")); await symlink(join(dir, ".."), join(dir, "renders/top.png"));
   expect((await inspect())[0]?.generatedAt).toBeUndefined();
 }));
+
+test("root circuit page dates require this project's root receipt and exact immutable SVG bytes", async () => fixture(async ({ put, inspect }) => {
+  const path = "renders/schematic/rev/root.svg";
+  const root = { contract: "fabplane.schematic-preview-revision.v1", projectId: "p", sourceRevision: hash("sch"), sourceFiles: [{ path: "board.kicad_sch", sha256: hash("sch") }], sheets: [{ path, name: "Root", sha256: hash("svg"), nativeSheet: { identity: "root", hierarchyPath: "/", nativePath: "board.kicad_sch", pageNumber: 1 } }], generatedAt: date, dependencies: "unverified" };
+  await put(path, "svg"); await put("renders/schematic.revision.json", JSON.stringify(root));
+  expect((await inspect()).find(file => file.path === path)?.generatedAt).toBe(date);
+  await put(path, "edited"); expect((await inspect()).find(file => file.path === path)?.generatedAt).toBeUndefined();
+  await put(path, "svg"); await put("renders/schematic.revision.json", JSON.stringify({ ...root, projectId: "other" }));
+  expect((await inspect()).find(file => file.path === path)?.generatedAt).toBeUndefined();
+}));

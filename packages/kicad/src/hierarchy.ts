@@ -242,7 +242,7 @@ async function exportOwnedSnapshot(cli: KicadCli, rootFile: string, projectFile:
 export type OwnedSchematicSvg = {
   sourceRevision: string;
   sourceFiles: Array<{ path: string; sha256: string }>;
-  sheets: Array<{ name: string; svg: Uint8Array }>;
+  sheets: Array<{ name: string; svg: Uint8Array; nativeSheet?: { identity: string; hierarchyPath: string; nativePath: string; pageNumber: number } }>;
 };
 
 /** Export the exact inspected hierarchy; return bytes only after every captured file is rechecked. */
@@ -272,6 +272,18 @@ async function withCapturedSchematic<T>(opts: { projectDir: string; hierarchy: S
 /** Render immutable native sheets without altering any project source. */
 export async function exportOwnedSchematicSvg(cli: KicadCli, opts: { projectDir: string; hierarchy: SchematicHierarchy; circuit?: boolean; signal?: AbortSignal }): Promise<OwnedSchematicSvg> {
   const captured = await withCapturedSchematic(opts, async (source, scratch) => {
+    if (opts.circuit) {
+      // Bind each drawing through KiCad's page/instance table, never sorted SVG filenames.
+      const pages = await capturedPageTable(cli, source, scratch, opts.signal);
+      const sheets: OwnedSchematicSvg["sheets"] = [];
+      for (const [index, sheet] of opts.hierarchy.sheets.entries()) {
+        verifyCapturedPage(opts.hierarchy, sheet, pages);
+        const result = await exportSchematicSvg(cli, { schematic: source, outDir: join(scratch, `circuit-${index}`), pages: [sheet.pageNumber!], circuit: true, ...(opts.signal ? { signal: opts.signal } : {}) });
+        if (result.paths.length !== 1) throw new Error("KiCad did not produce exactly the selected circuit page");
+        sheets.push({ name: basename(result.paths[0]!), svg: new Uint8Array(await readFile(result.paths[0]!)), nativeSheet: { identity: sheet.identity, hierarchyPath: sheet.hierarchyPath, nativePath: sheet.nativePath, pageNumber: sheet.pageNumber! } });
+      }
+      return sheets;
+    }
     const result = await exportSchematicSvg(cli, { schematic: source, outDir: join(scratch, "svg-output"), ...(opts.circuit ? { circuit: true } : {}), ...(opts.signal ? { signal: opts.signal } : {}) });
     if (!result.paths.length || result.paths.length !== opts.hierarchy.sheets.length) throw new Error("Schematic export did not produce one preview per inspected sheet");
     const rootSvg = basename(source).replace(/\.kicad_sch$/i, ".svg");
@@ -281,16 +293,24 @@ export async function exportOwnedSchematicSvg(cli: KicadCli, opts: { projectDir:
   return { sourceRevision: captured.sourceRevision, sourceFiles: captured.sourceFiles, sheets: captured.result };
 }
 
+async function capturedPageTable(cli: KicadCli, source: string, scratch: string, signal?: AbortSignal) {
+  const netlist = join(scratch, "selected-page.xml");
+  await runKicadCli(cli, ["sch", "export", "netlist", "--format", "kicadxml", "-o", netlist, source], { ...(signal ? { signal } : {}), cwd: dirname(source) });
+  return electricalCounts(await readFile(netlist, "utf8")).pages;
+}
+
+function verifyCapturedPage(hierarchy: SchematicHierarchy, sheet: SchematicHierarchy["sheets"][number], pages: ReturnType<typeof electricalCounts>["pages"]) {
+  if (!sheet.pageNumber || hierarchy.sheets.filter(other => other.identity === sheet.identity).length !== 1 || hierarchy.sheets.some(other => other.identity !== sheet.identity && other.pageNumber === sheet.pageNumber)) throw new Error("The native sheet instance does not have a unique inspected KiCad page");
+  if (pages.filter(page => page.number === sheet.pageNumber).length !== 1 || !pages.some(page => page.number === sheet.pageNumber && page.path === sheet.instancePath && page.name === sheet.hierarchyPath)) throw new Error("The captured KiCad page does not match the inspected native sheet instance");
+}
+
 /** Render one explicitly identified native page; repeated files remain distinct instances. */
 export async function exportOwnedSchematicPage(cli: KicadCli, opts: { projectDir: string; hierarchy: SchematicHierarchy; sheetIdentity: string; signal?: AbortSignal }): Promise<OwnedSchematicSvg> {
   const matches = opts.hierarchy.sheets.filter(sheet => sheet.identity === opts.sheetIdentity);
   const sheet = matches[0];
   if (matches.length !== 1 || !sheet?.pageNumber || opts.hierarchy.sheets.some(other => other.identity !== sheet.identity && other.pageNumber === sheet.pageNumber)) throw new Error("The native sheet instance does not have a unique inspected KiCad page");
   const captured = await withCapturedSchematic(opts, async (source, scratch) => {
-    const netlist = join(scratch, "selected-page.xml");
-    await runKicadCli(cli, ["sch", "export", "netlist", "--format", "kicadxml", "-o", netlist, source], { ...(opts.signal ? { signal: opts.signal } : {}), cwd: dirname(source) });
-    const pages = electricalCounts(await readFile(netlist, "utf8")).pages;
-    if (pages.filter(page => page.number === sheet.pageNumber).length !== 1 || !pages.some(page => page.number === sheet.pageNumber && page.path === sheet.instancePath && page.name === sheet.hierarchyPath)) throw new Error("The captured KiCad page does not match the inspected native sheet instance");
+    verifyCapturedPage(opts.hierarchy, sheet, await capturedPageTable(cli, source, scratch, opts.signal));
     const result = await exportSchematicSvg(cli, { schematic: source, outDir: join(scratch, "svg-output"), pages: [sheet.pageNumber!], ...(opts.signal ? { signal: opts.signal } : {}) });
     if (result.paths.length !== 1) throw new Error("KiCad did not produce exactly the selected schematic page");
     return [{ name: basename(result.paths[0]!), svg: new Uint8Array(await readFile(result.paths[0]!)) }];
