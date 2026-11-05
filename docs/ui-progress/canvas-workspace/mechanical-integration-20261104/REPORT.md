@@ -75,3 +75,5 @@ The demonstrated integration is ready for review with these limits. This does no
 - [ ] Connected FreeCAD STEP end-to-end, narrow viewport and Windows acceptance.
 
 The unchecked items are disclosed validation gaps; the enclosing app roadmap remains separate.
+
+November5 follow-up: connection creation is now separately exercised through Add/remove in the native UI. The missing-port guidance defect is fixed. See ../connection-guidance-20261105/REPORT.md; this does not close save/reopen or electrical/cable-path validation gaps.
