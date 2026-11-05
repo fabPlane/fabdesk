@@ -1,0 +1,42 @@
+/* The page is the only vertical scroller. Tables scroll horizontally, never in a small vertical box. */
+.fd-project-parts.fd-bom-page { position:relative; height:100%; min-height:0; overflow:auto; overflow-anchor:none; scrollbar-gutter:stable; padding:0 16px 120px; scroll-padding-top:130px; }
+.fd-bom-page > [role=alert] { margin:0 0 12px; border:1px solid var(--fd-border); border-radius:8px; overflow-wrap:anywhere; }
+.fd-bom-page .fd-bom-batch { gap:10px; margin-bottom:16px; padding:10px 12px; }
+.fd-bom-planning-note { color:var(--fd-muted); font-size:11px; margin-left:auto; }
+.fd-bom-sticky { position:sticky; top:0; z-index:20; background:var(--fd-bg); padding-top:8px; }
+.fd-bom-search-row { display:flex; align-items:flex-start; flex-wrap:wrap; gap:8px 12px; padding-bottom:10px; }
+.fd-bom-search-row > :first-child { min-width:min(280px,100%); flex:1; }
+.fd-bom-results { display:flex; align-items:center; gap:8px; min-height:38px; font-size:12px; color:var(--fd-muted); }
+.fd-bom-columns-scroll, .fd-bom-table-scroll { overflow-x:auto; overflow-y:hidden; background:var(--fd-panel); border:1px solid var(--fd-border); }
+.fd-bom-columns-scroll { border-radius:10px 10px 0 0; scrollbar-width:none; }
+.fd-bom-columns-scroll::-webkit-scrollbar { display:none; }
+.fd-bom-table-scroll { border-top:0; border-radius:0 0 10px 10px; min-height:80px; }
+.fd-bom-table-scroll:focus-visible { outline:2px solid var(--fd-accent); outline-offset:2px; }
+.fd-bom-table { width:100%; min-width:1040px; table-layout:fixed; border-collapse:collapse; text-align:left; font-size:12px; }
+.fd-bom-table th { padding:12px; background:var(--fd-panel-2); color:var(--fd-muted); font-size:11px; font-weight:600; }
+.fd-bom-table td { padding:12px; overflow-wrap:anywhere; }
+.fd-bom-table td:first-child, .fd-bom-table th:first-child { text-align:right; }
+.fd-bom-table tr { scroll-margin-top:160px; }
+.fd-canvas-workspace .fd-canvas-board-body > .fd-parts-workspace:has(.fd-bom-page) { padding:0; }
+.fd-canvas-workspace .fd-project-parts.fd-bom-page { width:100%; max-width:none; margin:0; border:0; border-radius:0; overflow:auto; padding:0 max(var(--fd-canvas-gutter),calc((100% - var(--fd-content-width))/2)) 120px; }
+.fd-canvas-workspace .fd-bom-page > [data-testid=bom-filter] { padding:8px 0 0; }
+.fd-canvas-workspace .fd-bom-page #project-bom-lines { height:auto; max-height:none; overflow-x:auto; overflow-y:hidden; border-radius:0 0 10px 10px; border-top:0; }
+.fd-canvas-workspace .fd-bom-page .fd-bom-table th { padding:12px 16px; }
+.fd-canvas-workspace .fd-bom-page #project-bom-lines td { padding:12px 16px; }
+.fd-canvas-workspace .fd-bom-page > div:first-child { margin-bottom:18px; }
+@media(max-width:760px) { .fd-canvas-workspace .fd-project-parts.fd-bom-page { padding:0 16px 120px; } .fd-bom-planning-note { flex-basis:100%; margin:0; } }
+.fd-bom-read-error { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; padding:10px 12px; color:var(--fd-warning); font-size:12px; }
+.fd-bom-read-error > div:first-child { display:flex; flex:1; min-width:200px; flex-direction:column; gap:4px; }
+.fd-bom-read-error > div:first-child > span { color:var(--fd-muted); }
+.fd-bom-read-error > details { flex-basis:100%; }
+.fd-bom-read-error > details p { padding:8px; overflow-wrap:anywhere; }
+.fd-bom-table input, .fd-bom-table button { scroll-margin-block:150px 50px; }
+/* Override the older BOM toolbar's bottom padding: headings touch the first data row. */
+.fd-canvas-workspace .fd-project-parts.fd-bom-page > .fd-bom-sticky[data-testid=bom-filter] { padding:8px 0 0; }
+
+.fd-bom-page > div:first-child { padding-top:16px; }
+.fd-canvas-workspace .fd-project-parts.fd-bom-page > div:first-child { padding-top:30px; }
+.fd-bom-table td:first-child, .fd-bom-table th:first-child { white-space:nowrap; }
+.fd-project-parts.fd-bom-page,
+.fd-canvas-workspace .fd-project-parts.fd-bom-page { overflow-x:hidden; }
+.fd-bom-columns-scroll, .fd-bom-table-scroll { min-width:0; max-width:100%; }

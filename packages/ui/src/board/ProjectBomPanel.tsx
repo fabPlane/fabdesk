@@ -11,11 +11,13 @@ import {
   type ProjectPartsFile,
 } from "@fabdesk/protocol";
 import { useCoreClient, useProjectBom, useProjectJson, useRunTool, useWriteProjectFile } from "@fabdesk/client-core";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Dialog, EmptyState, IconButton, Input, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
+import { DisclosureSummary } from "../components/DisclosureSummary";
 import { BomOrigins } from "./BomOrigins";
-import { useUiStore } from "../stores/ui";
+import { DEFAULT_PARTS_VIEW, useUiStore } from "../stores/ui";
+import "./project-bom.css";
 import { cn } from "../util";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 
@@ -131,7 +133,9 @@ function PartFilters({ label, selected, onChange, includePcb = false }: {
   );
 }
 
-function PartsToolbar({ label, query, onQueryChange, selected, onChange, includePcb = false }: {
+function PartsToolbar({ label, query, onQueryChange, selected, onChange, includePcb = false, expanded, onExpandedChange }: {
+  expanded?: boolean;
+  onExpandedChange?: (open: boolean) => void;
   label: string;
   query: string;
   onQueryChange: (query: string) => void;
@@ -139,7 +143,9 @@ function PartsToolbar({ label, query, onQueryChange, selected, onChange, include
   onChange: (next: PartKind[]) => void;
   includePcb?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [localOpen, setLocalOpen] = useState(false);
+  const open = expanded ?? localOpen;
+  const setOpen = onExpandedChange ?? setLocalOpen;
   const filtersId = useId();
   const searchInput = useRef<HTMLInputElement>(null);
   return (
@@ -167,6 +173,15 @@ function PartsToolbar({ label, query, onQueryChange, selected, onChange, include
   );
 }
 
+function BomColumns() {
+  return <colgroup><col style={{ width: 64 }} /><col style={{ width: 130 }} /><col /><col style={{ width: 100 }} /><col style={{ width: 90 }} /><col style={{ width: 120 }} /><col style={{ width: 190 }} /><col style={{ width: 48 }} /></colgroup>;
+}
+function BomHead({ batchCount, screenReaderOnly = false }: { batchCount: number | null; screenReaderOnly?: boolean }) {
+  return <thead className={screenReaderOnly ? "sr-only" : undefined}><tr>
+    <th scope="col" aria-label="Row number">#</th><th scope="col">Ref</th><th scope="col">Part</th><th scope="col">Type</th><th scope="col">Per build</th><th scope="col">{batchCount !== null ? `For ${batchCount.toLocaleString()} builds` : "Batch quantity"}</th><th scope="col">Part number</th><th scope="col"><span className="sr-only">Actions</span></th>
+  </tr></thead>;
+}
+
 export function ProjectBomPanel() {
   const projectId = useUiStore((s) => s.activeProjectId);
   const bom = useProjectBom(projectId), client = useCoreClient();
@@ -178,11 +193,13 @@ export function ProjectBomPanel() {
   const exportBom = useRunTool();
   const [exportOpen, setExportOpen] = useState(false), [allowPartial, setAllowPartial] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null), [downloading, setDownloading] = useState(false);
-  const [filters, setFilters] = useState<PartKind[]>([]);
+  const viewKey = `${client.baseUrl}:${projectId}`;
+  const view = useUiStore(s => s.partsViewByProject[viewKey] ?? DEFAULT_PARTS_VIEW);
+  const rememberView = (patch: Parameters<ReturnType<typeof useUiStore.getState>["rememberPartsView"]>[1]) => useUiStore.getState().rememberPartsView(viewKey, patch);
+  const filters = view.kinds, setFilters = (kinds: PartKind[]) => rememberView({ kinds });
   const [query, setQuery] = useState("");
-  const [bomQuery, setBomQuery] = useState("");
-  const [buildQuantity, setBuildQuantity] = useState("5");
-  useEffect(() => { setBuildQuantity("5"); }, [projectId]);
+  const bomQuery = view.query, setBomQuery = (query: string) => rememberView({ query });
+  const buildQuantity = view.buildQuantity, setBuildQuantity = (buildQuantity: string) => rememberView({ buildQuantity });
   const batchCount = Number(buildQuantity);
   const validBatch = Number.isInteger(batchCount) && batchCount > 0 && batchCount <= 10000;
   const [kinds, setKinds] = useState<PartKind[]>([]);
@@ -190,6 +207,24 @@ export function ProjectBomPanel() {
   const [highlightedLine, setHighlightedLine] = useState<string | null>(null);
   const addedRow = useRef<HTMLTableRowElement>(null);
   const bomScroll = useRef<HTMLDivElement>(null);
+  const tableScroll = useRef<HTMLDivElement>(null), headerScroll = useRef<HTMLDivElement>(null), resultsAnchor = useRef<HTMLDivElement>(null);
+  const savedScroll = useRef({ scrollTop: view.scrollTop, scrollLeft: view.scrollLeft });
+  const restored = useRef(false);
+  useLayoutEffect(() => {
+    if (restored.current || !bomScroll.current || !bom.data) return;
+    restored.current = true;
+    bomScroll.current.scrollTop = savedScroll.current.scrollTop;
+    if (tableScroll.current) tableScroll.current.scrollLeft = savedScroll.current.scrollLeft;
+    if (headerScroll.current) headerScroll.current.scrollLeft = savedScroll.current.scrollLeft;
+  }, [bom.data, partsFile.isLoading]);
+  useEffect(() => () => { useUiStore.getState().rememberPartsView(viewKey, savedScroll.current); }, [viewKey]);
+  const resetResultsPosition = () => {
+    if (bomScroll.current && resultsAnchor.current) bomScroll.current.scrollTop = Math.min(bomScroll.current.scrollTop, resultsAnchor.current.offsetTop);
+  };
+  const syncHorizontal = (from: HTMLDivElement, to: HTMLDivElement | null) => {
+    if (to && to.scrollLeft !== from.scrollLeft) to.scrollLeft = from.scrollLeft;
+    savedScroll.current.scrollLeft = from.scrollLeft;
+  };
 
 
   const partsState = bomPartsState(partsFile);
@@ -214,7 +249,7 @@ export function ProjectBomPanel() {
     if (libraryOpen || !pendingReveal || pendingReveal.projectId !== projectId || !addedRow.current || !bomScroll.current) return;
     const container = bomScroll.current;
     const row = addedRow.current;
-    const headerHeight = container.querySelector("thead")?.getBoundingClientRect().height ?? 0;
+    const headerHeight = container.querySelector("[data-testid=bom-filter]")?.getBoundingClientRect().height ?? 0;
     const rowTop = row.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
     const visibleHeight = Math.max(0, container.clientHeight - headerHeight);
     container.scrollTo({
@@ -304,17 +339,17 @@ export function ProjectBomPanel() {
   };
 
   return (
-    <div className="fd-project-parts flex h-full min-h-0 flex-col" data-testid="project-bom">
+    <div ref={bomScroll} className="fd-project-parts fd-bom-page" data-testid="project-bom" onScroll={event => { savedScroll.current.scrollTop = event.currentTarget.scrollTop; }}>
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold">Parts for this build</h2>
-            <span className="text-xs text-muted">{lines.length} BOM {lines.length === 1 ? "line" : "lines"} · {partsPerBuild} parts per build</span>
-            <Badge tone="accent" title="Off-board parts are separate from components mounted on the PCB.">
-              {parts.parts.length} off-board
-            </Badge>
+            <span className="text-xs text-muted">{bom.isError && !bom.data ? "Parts unavailable" : <>{bom.isError ? "Last read: " : ""}{lines.length} BOM {lines.length === 1 ? "line" : "lines"} · {partsPerBuild} parts per build</>}</span>
+            {lines.some(line => line.source === "offboard") && <Badge tone="accent" title="Extra hardware counted once per build, separate from components mounted on the PCB.">
+              {lines.filter(line => line.source === "offboard").reduce((sum, line) => sum + line.qty, 0)} extra hardware
+            </Badge>}
           </div>
-          <p className="mt-1 text-xs text-muted">{bom.data?.complete ? "Quantities cover one complete build, including all declared boards and project hardware." : "Showing available quantities for one build. Review missing or unverified board designs below."}</p>
+          <p className="mt-1 text-xs text-muted">{bom.data?.complete && editable && !bom.isError ? "Quantities cover one complete build, including all declared boards and project hardware." : "Showing available quantities for one build. Review missing or unverified board designs below."}</p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           <Button ref={addTrigger} variant="primary" size="sm" onClick={() => setLibraryOpen(true)}><Icon name="plus" width={15} height={15} />Add hardware</Button>
@@ -330,7 +365,7 @@ export function ProjectBomPanel() {
           </Button>
         </div>
       </div>
-      {bom.data && <BomOrigins snapshot={bom.data} />}
+      {bom.data && <BomOrigins snapshot={bom.data} hardwareError={!editable} open={view.sourcesOpen} onOpenChange={sourcesOpen => rememberView({ sourcesOpen })} />}
       {lines.length > 0 && <div className="fd-bom-batch shrink-0">
         <label className="flex items-center gap-2 text-sm">Build quantity<Input type="number" min={1} max={10000} step={1} value={buildQuantity} onChange={event => setBuildQuantity(event.target.value)} aria-label="Build quantity" className="w-24" /></label>
         <span className="text-sm" role="status">{validBatch ? `${(partsPerBuild * batchCount).toLocaleString()} parts for ${batchCount.toLocaleString()} ${batchCount === 1 ? "build" : "builds"}` : "Enter a whole quantity from 1 to 10,000."}</span>
@@ -338,47 +373,44 @@ export function ProjectBomPanel() {
           if (!projectId || !validBatch) return;
           askAboutSurface({ projectId, label: "Parts / Batch sourcing", priority: 40, details: JSON.stringify({ revision: bom.data?.revision, coverage: bom.data?.coverage, buildQuantity: batchCount, lines: lines.map(line => ({ refs: line.refs, name: line.name, mpn: line.mpn, sku: line.sku, qtyPerBuild: line.qty, required: line.qty * batchCount })) }) }, `Review sourcing for ${batchCount} complete builds. Verify current immediate assembly stock for every assembled component and its required quantity, exact part identifier and Basic/Extended status. Flag missing information and request approval for any exception before choosing a replacement. Do not change the design while sourcing is unresolved.`);
         }}><Icon name="sparkles" width={15} height={15} />Ask about sourcing</Button>
-        <p className="w-full text-xs text-muted">Planning calculation only. The design CSV keeps per-build quantities; manufacturer assembly uploads use per-board quantities. Saved part numbers do not verify current stock.</p>
+        <span className="fd-bom-planning-note">Planning only · CSV quantities stay per build</span>
       </div>}
-      {lines.length > 0 && <div className="shrink-0 border-b border-border px-2 py-2" data-testid="bom-filter">
-        <PartsToolbar label="Search BOM" query={bomQuery} onQueryChange={setBomQuery} selected={filters} onChange={setFilters} includePcb />
-      </div>}
-      {bom.isError && <div role="alert" className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs text-warning"><span className="min-w-0 flex-1">{bom.error instanceof Error ? bom.error.message : "Could not read the project BOM."} Refresh parts to retry.</span><Button size="sm" variant="ghost" onClick={() => void bom.refetch()}>Retry</Button></div>}
+      {bom.isError && partsState.status !== "error" && <div role="alert" className="fd-bom-read-error"><div><strong>Could not refresh parts</strong><span>Listed quantities may be from an earlier read.</span></div><Button size="sm" onClick={() => void bom.refetch()}>Retry</Button><details><DisclosureSummary icon="warning" label="Read error details" variant="compact" /><p>{bom.error instanceof Error ? bom.error.message : "Could not read the project BOM."}</p></details></div>}
       {exportBom.state.error && <div className="border-b border-border px-2 py-1 text-xs text-danger">{exportBom.state.error}</div>}
-      {partsState.status === "error" && (
-        <div
-          className="flex items-center gap-2 border-b border-border px-2 py-1.5 text-xs text-danger"
-          role="alert"
-          data-testid="bom-parts-error"
-        >
-          <span className="min-w-0 flex-1">{partsState.message} Off-board editing is off so the file is not overwritten.</span>
-          <Button size="sm" onClick={() => void partsFile.refetch()}>
-            Retry
-          </Button>
+      {partsState.status === "error" && <div role="alert" data-testid="bom-parts-error" className="fd-bom-read-error">
+        <div><strong>Extra hardware could not be read</strong><span>Editing is paused to protect project.parts.json.{bom.isError ? bom.data ? " Listed quantities are from an earlier read." : " No complete parts list is available." : ""}</span></div>
+        <Button size="sm" onClick={() => { void partsFile.refetch(); void bom.refetch(); }}>Retry</Button>
+        <details><DisclosureSummary icon="warning" label="Read error details" variant="compact" /><p>{partsState.message}</p></details>
+      </div>}
+      <div ref={resultsAnchor} />
+      {lines.length > 0 && <div className="fd-bom-sticky" data-testid="bom-filter">
+        <div className="fd-bom-search-row">
+          <PartsToolbar label="Search BOM" query={bomQuery} onQueryChange={query => { setBomQuery(query); resetResultsPosition(); }} selected={filters} onChange={kinds => { setFilters(kinds); resetResultsPosition(); }} includePcb expanded={view.filtersOpen} onExpandedChange={filtersOpen => rememberView({ filtersOpen })} />
+          <div className="fd-bom-results" role="status">{shown.length} of {lines.length} lines{(bomQuery || filters.length > 0) && <Button size="sm" onClick={() => { setBomQuery(""); setFilters([]); resetResultsPosition(); }}>Clear filters</Button>}</div>
         </div>
-      )}
-      <div className="min-h-0 flex-1">
-          <div ref={bomScroll} id="project-bom-lines" className="h-full min-h-0 overflow-auto" aria-label="Project BOM lines">
+        {shown.length > 0 && <div className="fd-bom-columns-scroll" ref={headerScroll} onScroll={event => syncHorizontal(event.currentTarget, tableScroll.current)}>
+          <table className="fd-bom-table" aria-hidden="true"><BomColumns /><BomHead batchCount={validBatch ? batchCount : null} /></table>
+        </div>}
+      </div>}
+      <div ref={tableScroll} id="project-bom-lines" className="fd-bom-table-scroll" aria-label="Project BOM lines" tabIndex={0} onScroll={event => syncHorizontal(event.currentTarget, headerScroll.current)} onKeyDown={event => {
+        if (event.target !== event.currentTarget || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+        event.preventDefault();
+        event.currentTarget.scrollLeft += event.key === "ArrowRight" ? 80 : -80;
+      }}>
             {shown.length === 0 ? (
               <div className="px-3 py-6 text-center text-xs text-muted">
-                {lines.length === 0
-                  ? "No included parts are listed yet. Review source coverage or choose Add hardware for motors, displays and hardware."
+                {bom.isError
+                  ? "Parts could not be loaded. Use Retry above to read the design and hardware files again."
+                  : lines.length === 0
+                  ? "No included parts are listed yet. Review Parts sources or choose Add hardware."
                   : "No parts match your search or filters."}
+                {(bomQuery || filters.length > 0) && <Button className="mt-3" size="sm" onClick={() => { setBomQuery(""); setFilters([]); resetResultsPosition(); }}>Show all parts</Button>}
               </div>
             ) : (
-              <table className="w-full text-left text-[12px]">
-                <thead className="sticky top-0 bg-panel text-[10.5px] font-semibold uppercase tracking-wide text-muted">
-                  <tr>
-                    <th scope="col" className="w-10 px-2 py-1.5 text-right" aria-label="Row number">#</th>
-                    <th className="px-2 py-1.5">Ref</th>
-                    <th className="px-2 py-1.5">Part</th>
-                    <th className="px-2 py-1.5">Type</th>
-                    <th className="w-20 px-2 py-1.5">Per build</th>
-                    <th className="px-2 py-1.5">{validBatch ? `For ${batchCount.toLocaleString()} builds` : "Batch quantity"}</th>
-                    <th className="px-2 py-1.5">Part number</th>
-                    <th className="px-2 py-1.5" />
-                  </tr>
-                </thead>
+              <table className="fd-bom-table">
+                <caption className="sr-only">Parts per build and required quantities for this project</caption>
+                <BomColumns />
+                <BomHead batchCount={validBatch ? batchCount : null} screenReaderOnly />
                 <tbody>
                   {shown.map((line) => (
                     <tr
@@ -426,7 +458,6 @@ export function ProjectBomPanel() {
                 </tbody>
               </table>
             )}
-          </div>
       </div>
       <Dialog open={exportOpen} closeDisabled={downloading} title="Export bill of materials" onClose={() => { if (!downloading) setExportOpen(false); }}>
         <div className="space-y-4 text-sm">

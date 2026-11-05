@@ -44,3 +44,15 @@ Use visible native clicks and normal typing for representative root/member/multi
 - #416 page identity checkpoint: circuit exports select each actual KiCad page from its captured instance table, rather than guessing from sorted filenames. Root and member previews retain native sheet identity/path/page, root receipts compare all recorded native sources before/after page downloads, repeated instances stay distinct, and page refresh preserves the selected native instance. Root/member navigation shares one selector; the assistant receives the visible sheet context. Existing root-only comment pins are not shown on unrelated child pages. Native document export remains unchanged.
 - Validation: 22 focused root/member preview/publication/output-date tests passed (78 assertions); 11 owned-render tests passed including all three installed-KiCad tests (66 assertions). UI/tools/client/kicad/core typechecks passed. Desktop bundle passed before the final small header/viewport-key layout adjustments; final native UI acceptance is still pending. No issue is closed.
 - App cleanup requested by the user: the isolated Followups app is closed. A second, older Electron development instance was found blank/unresponsive, ignored Quit and SIGTERM, and was force-closed by its verified PID. Installed `/Applications/fabPlane.app` remains open with the user's PlayBridge project. Test profiles, project/native files and evidence remain on disk. Do not relaunch extra native instances.
+
+
+## Parts browsing follow-up · #425
+
+Parts now uses one vertical page scroll. Search, category controls and aligned column headings remain sticky; only the table scrolls horizontally. Per-project/core browsing state retains query, category, build quantity, expansion and page/table position while navigating away and back. The state is session-local, not promised across application restarts.
+
+The former Included boards & hardware expansion is now **Parts sources**: compact board rows, actual quantities, source status, correct-source actions and optional Source files. Extra hardware is one row, counted once per build. Removed the standalone section divider and repetitive explanatory paragraphs. Missing sources remain marked for review; unreadable hardware does not claim None added or complete quantities.
+
+Native long-table/filters/end-of-table checks and observed fixes are recorded in HUMAN-TEST.md. A labeled synthetic 245-line fixture was created solely for layout testing; it is not an accepted engineering design. Existing test project native sources were preserved. Other unfinished tickets above remain unfinished.
+
+
+Validation: desktop production build passed; UI typecheck passed; all 369 UI tests passed (0 failures), plus the focused BOM-origin checks (10 combined BOM/state checks passed). No packaged source maps; git diff --check clean. Native evidence includes narrow/110% layout, filters, empty recovery, final-row clearance, navigation/Back, source actions and malformed-hardware recovery.

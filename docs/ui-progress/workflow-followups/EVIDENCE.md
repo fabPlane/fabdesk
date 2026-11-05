@@ -40,3 +40,17 @@ Actual native captures show incomplete multi-board coverage and exact source fil
 No new fixed screenshots are available: these issues remain planned. Existing artwork modes/persistence and multiple chats are pre-existing partial functionality, not completed acceptance of these tickets. See [README.md](README.md) for scope and dependencies.
 
 Before-state capture 01 and launch-limitation capture 05 are intentionally excluded from the fixed-state gallery; preserved originals remain available for audit.
+
+
+## #425 · Parts sources and full-page table browsing
+
+Native desktop captures on the current implementation. The 245-line project is explicitly synthetic layout-only data. `12` preserves the verbose before state; it is not a fixed-state capture.
+
+![Compact source expansion with the real single-board test copy](screenshots/13-parts-sources-compact.png)
+![Long table with sticky search and headings](screenshots/14-parts-long-sticky.png)
+![Final row above the assistant](screenshots/15-parts-final-row.png)
+![Active category while scrolling](screenshots/16-parts-filtered-sticky.png)
+![Narrow enlarged layout, rightmost columns](screenshots/17-parts-narrow-horizontal.png)
+![Same row and horizontal position after Files and Back](screenshots/18-parts-return-position.png)
+![One actionable hardware read error with qualified cached counts](screenshots/19-parts-read-error.png)
+![Multi-board missing-source reasons remain visible](screenshots/20-parts-multiboard-compact.png)

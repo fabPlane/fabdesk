@@ -8,7 +8,8 @@ This follow-up branch starts from main after #389. It fixes disconnected PCB out
 | #412 | Board-owned hierarchy capture, exact UUID/page identity, repeated-sheet/multi-unit choices, stale choice rejection and previous-view restoration. | Full visible member/repeated-sheet focus and Return/viewport walkthrough; no fixed-focus screenshot claimed. |
 | #416 | Explicit frame-free circuit preview, content fit without translating geometry, root/member native page navigation, complete source receipts and visible-sheet assistant context. | Component/net selection, native edit integration, linked PCB/3D views, multi-sheet UI acceptance and dark-theme contrast. |
 | #417 | Labeled modeless Activity, compact read groups, individual timestamps/details, older history and exact validated result actions. | Running/failed/waiting/cancel/keyboard acceptance and coordinated project updates. |
-| #418 | Included boards/hardware, exact BOM source files, partial coverage and clear BOM-line/physical-part/build quantities. | Repeated-source/hardware and Ask UI acceptance. |
+| #418 | Compact Parts sources, exact source files, partial coverage, per-build quantities and contextual source actions. Single/multi-board and unsent Ask retested natively. | Repeated-source physical-instance native walkthrough remains. |
+| #425 | One page scroll, sticky search/filter and column headers, table-only horizontal overflow, per-project browsing restoration and compact read recovery. | Focused native long-table/narrow/zoom/filter/Back/error tests recorded; no full-app acceptance implied. |
 | #394 / #395 / #415 | Audited and recorded dependencies only. | Artwork workflows/modes validation and shared chat coordination remain unfinished. |
 
 No ticket is closed by this draft. Existing partial functionality and passing tests are not full-app acceptance.
@@ -74,3 +75,21 @@ No fixed-state images are claimed for unfinished tickets. Their accepted require
 - Human acceptance is deliberately scoped. No manufacturing readiness, electrical parity, external-library completeness, complete-app acceptance, merge or deployment is claimed.
 
 [Per-ticket evidence index](https://github.com/TensorFleet/fabdesk/blob/feat/canvas-workflow-followups/docs/ui-progress/workflow-followups/EVIDENCE.md) · [Human walkthrough and outstanding cases](https://github.com/TensorFleet/fabdesk/blob/feat/canvas-workflow-followups/docs/ui-progress/workflow-followups/HUMAN-TEST.md) · [Implementation/resume checklist](https://github.com/TensorFleet/fabdesk/blob/feat/canvas-workflow-followups/docs/ui-progress/workflow-followups/README.md) · [Source-preservation receipt](https://github.com/TensorFleet/fabdesk/blob/feat/canvas-workflow-followups/docs/ui-progress/workflow-followups/source-preservation.json)
+
+
+## Parts browsing follow-up (#425)
+
+Replaces the large Included boards & hardware expansion with compact **Parts sources** rows and optional file details. Removes the stray outer divider and repetitive copy. Long BOMs use one vertical page scroll; search/filter and aligned headings remain visible. Horizontal movement stays inside the table. Query, categories, build quantity and browsing position survive navigation and Back within the session.
+
+Unreadable hardware shows one actionable warning with Retry and optional details; cached quantities are marked Last read and editing/export remain guarded. Native tests used unchanged single/multi-board project copies plus a labeled synthetic 245-line layout fixture. The deliberately broken fixture hardware was restored after recovery testing.
+
+![Compact Parts sources](https://github.com/TensorFleet/fabdesk/blob/feat/canvas-workflow-followups/docs/ui-progress/workflow-followups/screenshots/13-parts-sources-compact.png?raw=true)
+![Sticky long-table browsing](https://github.com/TensorFleet/fabdesk/blob/feat/canvas-workflow-followups/docs/ui-progress/workflow-followups/screenshots/14-parts-long-sticky.png?raw=true)
+![Narrow horizontal browsing](https://github.com/TensorFleet/fabdesk/blob/feat/canvas-workflow-followups/docs/ui-progress/workflow-followups/screenshots/17-parts-narrow-horizontal.png?raw=true)
+
+Actual screenshots, before state, filter/final-row/Back/error evidence and test limits are in [EVIDENCE.md](https://github.com/TensorFleet/fabdesk/blob/feat/canvas-workflow-followups/docs/ui-progress/workflow-followups/EVIDENCE.md) and [HUMAN-TEST.md](https://github.com/TensorFleet/fabdesk/blob/feat/canvas-workflow-followups/docs/ui-progress/workflow-followups/HUMAN-TEST.md). Original native design hashes remain unchanged. No new backend/native capability or design-file write was introduced.
+
+
+Validation: desktop production build passed; UI typecheck passed; all 369 UI tests passed (0 failures), plus the focused BOM-origin checks (10 combined BOM/state checks passed). No packaged source maps; git diff --check clean. Native evidence includes narrow/110% layout, filters, empty recovery, final-row clearance, navigation/Back, source actions and malformed-hardware recovery.
+
+Fixes #425. Other unfinished tickets remain as listed above.

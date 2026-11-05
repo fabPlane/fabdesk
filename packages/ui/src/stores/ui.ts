@@ -1,6 +1,7 @@
 import { schematicFocusScope, recordWorkspaceHistory, sameWorkspaceLocation, type WorkspaceHistoryEntry } from "@fabdesk/client-core";
 import type { AssistantSurface } from "../chat/assistant-context";
 import type { BoardSourceSelection, SchematicFocus, ProjectBoardSources } from "@fabdesk/protocol";
+import type { ProjectBomLine } from "@fabdesk/protocol";
 import { create } from "zustand";
 import { DRAFT_KEY_NEW, newChatDraftKey, parseAssemblyMapPosition, type AssemblyMapPosition, type AssemblyMapLayout, workspaceAreaForView, workspaceViews, workspaceTabForArea, type WorkspaceArea, type AssemblySceneSelection, type AssemblyCheckFinding, type RootCheckFinding, type KeptOutputChoice } from "@fabdesk/client-core";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
@@ -50,7 +51,20 @@ export interface PendingAttachment {
   label: string;
 }
 
+export interface PartsViewState {
+  query: string;
+  kinds: ProjectBomLine["kind"][];
+  buildQuantity: string;
+  sourcesOpen: boolean;
+  filtersOpen: boolean;
+  scrollTop: number;
+  scrollLeft: number;
+}
+export const DEFAULT_PARTS_VIEW: PartsViewState = { query: "", kinds: [], buildQuantity: "5", sourcesOpen: false, filtersOpen: false, scrollTop: 0, scrollLeft: 0 };
+
 export interface UiState {
+  partsViewByProject: Record<string, PartsViewState>;
+  rememberPartsView: (key: string, patch: Partial<PartsViewState>) => void;
   navigationHistory: WorkspaceHistoryEntry[];
   navigationEndpoint: string | null;
   setNavigationEndpoint: (endpoint: string) => void;
@@ -231,6 +245,8 @@ export function createUiStore(storage?: StateStorage) {
         return history === state.navigationHistory ? patch : { ...patch, navigationHistory: history };
       });
       return ({
+  partsViewByProject: {},
+  rememberPartsView: (key, patch) => set(s => ({ partsViewByProject: Object.fromEntries(Object.entries({ ...s.partsViewByProject, [key]: { ...DEFAULT_PARTS_VIEW, ...s.partsViewByProject[key], ...patch } }).slice(-64)) })),
   navigationHistory: [],
   navigationEndpoint: null,
   setNavigationEndpoint: (navigationEndpoint) => set(s => navigationEndpoint === s.navigationEndpoint ? {} : { navigationEndpoint, navigationHistory: [], selectedFileByProject: {}, schematicFocus: null }),

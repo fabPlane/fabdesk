@@ -49,3 +49,34 @@ To honor the request to keep one native app, this retest used the current branch
 Usability/change-list finding: native transparent circuit colors are difficult to read on the dark canvas. Switched only the isolated profile through Settings → Appearance → Light → Save for readable evidence. Dark-theme schematic contrast needs a dedicated follow-up; this is not treated as resolved by changing the screenshot theme.
 
 After these actions, all 10 VAIO and 47 Button light original native files and their copied counterparts matched the setup hashes. Rendering/comparison produced artifacts only. The source-preservation receipt was refreshed. The final desktop build and fresh typechecks passed; no shipped source maps were found. This remains focused acceptance rather than a complete-app test.
+
+
+## Parts sources and long-table follow-up · #425
+
+Setup (not a human import test): created a disposable project through the local project service, copied three unchanged Button light KiCad files and added 240 clearly labeled synthetic hardware rows. The resulting 245 BOM lines / 726 parts per build are layout data, not supplier or engineering acceptance. Only that fixture's hardware file was temporarily made malformed for recovery testing. Existing project/native files were not edited.
+
+The current branch was built and run as the single native Followups desktop app. All test navigation used visible native clicks, ordinary typing, scrolling and the visible View menu. No hidden route or API counted as a user journey.
+
+| Journey | Actual result |
+| --- | --- |
+| Long list | Scroll from header through 245 rows; intro/build/source sections scroll away, search/filters and column headings stay visible. Final H240 is reachable with clearance above the assistant. Passed. |
+| Category | Fasteners shows 80 of 245 lines. Category chips stay available while scrolling. Passed. |
+| Empty result | A nonmatching query produced a clear empty state. Show all parts cleared both query and category and returned the complete 245-line table. Passed. |
+| Keyboard | Tab from Search BOM focused Filter parts. Native AX exposed one actual data table with column headers; visual sticky copy is hidden from accessibility. Screen-reader speech was not tested. |
+| Leave/return | In the initial native retest, query TEST-0240 and build quantity 12 survived Files → Back. Page/horizontal restoration receives an additional final-build retest below. |
+
+Observed friction corrected during testing: multi-digit row numbers wrapped; old toolbar padding left an empty gap beneath sticky headings; native right-arrow scrolling could also shift the outer page; two failures for the same unreadable hardware source produced redundant banners. The implementation now prevents wrapping/gaps, confines keyboard horizontal movement to the table and combines hardware recovery feedback. Some CUA actions were interrupted by detected manual input and retried only after refreshing current state; interrupted attempts are not passes.
+
+Limits: this is focused Parts acceptance, not full app/order readiness. Repeated physical board instances have calculation tests but no new native fixture walkthrough. No real supplier sourcing, manufacturing export, native design edit, payment or order was performed. Session state retention does not imply retention after a full app restart.
+
+
+Final retest:
+- Native window narrowed to approximately 990 × 735 at 110% interface scale. Right-arrow navigation in the focused table reached part-number/remove columns while the search/filter toolbar stayed fixed. Headings remained aligned. Files → Back restored the same H17 vicinity and horizontal offset (`17`, `18`). Desktop chrome did not scroll horizontally. Standard-scale 1440 × 920 browsing and final row were captured separately (`14`, `15`).
+- Hardware failure: temporarily malformed only the disposable fixture file. One compact warning showed the affected file, paused editing, Retry and collapsed technical details; cached counts were explicitly marked Last read (`19`). Clicking Retry visibly started Reading sources and did not suppress the failure. Restoring the original fixture file let the watcher re-read it: warning cleared, 245 lines/726 parts and export availability returned. This is watcher recovery, not a claim that Retry repaired a file.
+- Single board: 5 BOM lines / 6 parts, 5 builds → 30 parts. Expanded Parts sources has one Main board row, Schematic read, Source files, Open schematic and contextual Ask; hardware reads None added (`13`). Source files exposed the actual board.kicad_sch and board.kicad_pro. Ask opened an unsent question with Parts / Main board attached context. No agent message sent. Open schematic reached the native root drawing; Back returned to expanded Parts sources. Quantity remained 5.
+- Multi-board: 6 boards / 5 need review; affected boards appear first, with specific missing schematic/netlist or unresolved-source explanations and Get help (`20`). Complete-build coverage was not claimed. These boards were not invented or repaired for testing.
+
+All original 10 VAIO and 47 Button light native files and their copied counterparts remained byte-identical. The synthetic fixture's three native files remained unchanged, and its hardware file was restored byte-for-byte from backup. Desktop build, UI typecheck and 10 focused BOM/state checks passed. No packaged source maps were found. See the later full UI test result in the publication checkpoint.
+
+
+Validation: desktop production build passed; UI typecheck passed; all 369 UI tests passed (0 failures), plus the focused BOM-origin checks (10 combined BOM/state checks passed). No packaged source maps; git diff --check clean. Native evidence includes narrow/110% layout, filters, empty recovery, final-row clearance, navigation/Back, source actions and malformed-hardware recovery.
