@@ -14,8 +14,7 @@ import { useCoreClient, useProjectBom, useProjectJson, useRunTool, useWriteProje
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Badge, Button, Dialog, EmptyState, IconButton, Input, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { DisclosureSummary } from "../components/DisclosureSummary";
-import { CanvasToolButton } from "../components/CanvasToolButton";
+import { BomOrigins } from "./BomOrigins";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
@@ -315,7 +314,7 @@ export function ProjectBomPanel() {
               {parts.parts.length} off-board
             </Badge>
           </div>
-          <p className="mt-1 text-xs text-muted">Quantities cover one complete build, including all declared boards and project hardware.</p>
+          <p className="mt-1 text-xs text-muted">{bom.data?.complete ? "Quantities cover one complete build, including all declared boards and project hardware." : "Showing available quantities for one build. Review missing or unverified board designs below."}</p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           <Button ref={addTrigger} variant="primary" size="sm" onClick={() => setLibraryOpen(true)}><Icon name="plus" width={15} height={15} />Add hardware</Button>
@@ -331,11 +330,7 @@ export function ProjectBomPanel() {
           </Button>
         </div>
       </div>
-      {bom.data && <div className="fd-bom-coverage shrink-0 pb-3">
-        <details><DisclosureSummary variant="compact" icon="pcb" label={bom.data.complete ? "Parts source details" : "Review missing parts sources"} warning={!bom.data.complete} badge={`${bom.data.coverage.filter(source => source.multiplier > 0 && source.status === "native-schematic").length} of ${bom.data.coverage.filter(source => source.multiplier > 0).length} native sources${bom.data.complete ? "" : " · incomplete"}`} />
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">{bom.data.coverage.map(source => <div key={source.sourceId ?? "main"} className="rounded-lg border border-border px-3 py-2 text-xs"><div className="flex items-start justify-between gap-2"><div className="font-medium">{source.name}<span className="ml-2 text-muted">{source.multiplier} {source.multiplier === 1 ? "board" : "boards"} · {source.status === "native-schematic" || source.status === "saved-netlist" ? `${source.componentCount * source.multiplier} listed parts` : source.status === "unused" ? "Not included" : "Parts not listed"}</span></div><CanvasToolButton icon="sparkles" label={`Ask about ${source.name} parts`} onClick={() => askAboutSurface({ projectId, label: `Parts / ${source.name}`, priority: 40, details: JSON.stringify({ revision: bom.data?.revision, manifestSha256: bom.data?.manifestSha256, source, instruction: "This is captured BOM coverage, not a PCB parity or electrical-check result. Inspect the declared source and preserve independent boards." }) }, (source.status === "native-schematic" || source.status === "saved-netlist") ? "Explain the listed parts and quantities for this board, including exclusions and shared instances. Flag missing purchasing information before suggesting changes." : "Help recover this board’s parts list. Find its saved schematic or design netlist in the project first, explain what is missing, and propose how to import or create it without guessing parts or changing unrelated boards.")} /></div><p className={cn("mt-1", source.status === "native-schematic" || source.status === "saved-netlist" || source.status === "unused" ? "text-muted" : "text-warning")}>{source.status === "native-schematic" ? "Saved native schematic · BOM exclusions respected" : source.status === "saved-netlist" ? "Saved design netlist · source freshness unverified" : source.reason ?? source.status}</p></div>)}</div>
-        <p className="mt-2 text-xs text-muted">Source coverage does not establish schematic/PCB parity or passed electrical checks. Hardware is counted once for the project.</p></details>
-      </div>}
+      {bom.data && <BomOrigins snapshot={bom.data} />}
       {lines.length > 0 && <div className="fd-bom-batch shrink-0">
         <label className="flex items-center gap-2 text-sm">Build quantity<Input type="number" min={1} max={10000} step={1} value={buildQuantity} onChange={event => setBuildQuantity(event.target.value)} aria-label="Build quantity" className="w-24" /></label>
         <span className="text-sm" role="status">{validBatch ? `${(partsPerBuild * batchCount).toLocaleString()} parts for ${batchCount.toLocaleString()} ${batchCount === 1 ? "build" : "builds"}` : "Enter a whole quantity from 1 to 10,000."}</span>

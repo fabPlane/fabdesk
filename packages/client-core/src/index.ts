@@ -229,6 +229,8 @@ export * from "./stable-project-blob";
 export { refreshProjectPreviews } from "./refresh-project-previews";
 export * from "./overview-images";
 export * from "./diff-preview";
+export * from "./bom-origins";
+export * from "./project-activity";
 export * from "./board-file-destination";
 
 export { readOutputSelection, OUTPUT_DOWNLOAD_LIMIT } from "./output-download";

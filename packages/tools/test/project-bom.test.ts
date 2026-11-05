@@ -31,6 +31,8 @@ test("assembly quantities use explicit instances, ignore undeclared root netlist
   expect(result.lines).toEqual([expect.objectContaining({ refs: ["left:R1", "right:R1"], qty: 2 })]);
   expect(result.coverage.map(source => [source.status, source.multiplier, source.componentCount])).toEqual([["native-schematic", 2, 1], ["unused", 0, 0], ["unavailable", 1, 0]]);
   expect(result.complete).toBe(false);
+  expect(result.coverage[0]?.sourceFiles).toEqual([{ path: "boards/io/board.kicad_sch", sha256: digest(before) }]);
+  expect(result.coverage[1]?.sourceFiles).toBeUndefined();
   expect(result.inputs.some(input => input.path === "circuit.netlist.json")).toBe(false);
   expect(await readFile(join(project.dir, "boards/io/board.kicad_sch"), "utf8")).toBe(before);
 });
