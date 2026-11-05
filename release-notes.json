@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "id": "2026-11-05-canvas-workspace-0-3",
+    "new": [
+      "A canvas workspace with Home idea drafts, sketches, artwork and GitHub import, plus contextual board tools and an assistant.",
+      "Placement and Mechanical workflows are available within the canvas, with separate layout copies and enclosure review controls."
+    ],
+    "improved": [
+      "Consistent workspace navigation, grouped editing tools and clearer source and output review.",
+      "Organized saved outputs with image, video and 3D previews, bulk selection and recoverable Trash."
+    ],
+    "fixed": [
+      "Switching agents and models in a conversation no longer depends on saving future defaults; failure messages are more compact.",
+      "Missing connection endpoints explain what to select before adding a cable guide."
+    ]
+  }
+]

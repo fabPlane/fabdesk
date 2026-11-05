@@ -1,5 +1,13 @@
 # Releases and updates
 
+## Release line 0.3
+
+The canvas workspace change starts the **0.3** minor line. The checked-in root,
+desktop and core manifests use `0.3.0`; the mobile app config is stamped by the
+same version helper. Public releases continue to use `0.3.<workflow run number>`.
+The next release includes the canvas workspace notes in `release-notes.json`.
+Changing this baseline or merging the PR does not itself publish a release.
+
 ## Pipeline
 
 1. **Nightly (20:00 UTC / 03:00 Asia/Bangkok) or manual public run** → `.github/workflows/release.yml` runs.
