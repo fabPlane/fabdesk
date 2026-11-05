@@ -6,14 +6,14 @@ import { ToolError, type ToolContext } from "./registry";
 import { inspectSavedHierarchy, ok, requireKicad } from "./tools/common";
 
 /** Immutable member SVG versions plus one atomic receipt pointer; never replace earlier preview files. */
-export async function renderMemberSchematicPreview(ctx: ToolContext, expectedHierarchyRevision?: string) {
+export async function renderMemberSchematicPreview(ctx: ToolContext, expectedHierarchyRevision?: string, circuit = false) {
   const project = ctx.requireProject();
   if (!ctx.board || !expectedHierarchyRevision) throw new ToolError("Inspect the member schematic and provide its expectedHierarchyRevision before rendering.", "precondition");
   const cli = await requireKicad(ctx), hierarchy = await inspectSavedHierarchy(ctx, project, cli);
   if (!hierarchy.complete || hierarchy.aggregateRevision !== expectedHierarchyRevision) throw new ToolError("The complete saved schematic changed or is unavailable. Inspect its referenced sheets before rendering.", "precondition");
   await jailPath(project.dir, SCHEMATIC_PREVIEW_REVISION_PATH);
   ctx.progress(.2, "rendering captured native sheets");
-  const result = await ctx.services.kicad.exportOwnedSchematicSvg(cli, { projectDir: project.dir, hierarchy, signal: ctx.signal });
+  const result = await ctx.services.kicad.exportOwnedSchematicSvg(cli, { projectDir: project.dir, hierarchy, ...(circuit ? { circuit: true } : {}), signal: ctx.signal });
   if (result.sourceRevision !== expectedHierarchyRevision || result.sheets.length !== hierarchy.sheets.length) throw new ToolError("Schematic export did not match the inspected hierarchy.", "precondition");
   const version = `renders/schematic/${randomUUID()}`, artifacts: Array<{ path: string; name: string; sha256: string }> = [];
   let committed = false;

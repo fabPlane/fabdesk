@@ -58,3 +58,18 @@ test.skipIf(!process.env["FABPLANE_KICAD_CLI"])("installed KiCad selects the act
     expect(await Promise.all(["board.kicad_sch", "child.kicad_sch"].map(path => readFile(join(f.dir, path), "utf8")))).toEqual(before);
   } finally { await rm(f.dir, { recursive: true, force: true }); }
 }, 30_000);
+test.skipIf(!process.env["FABPLANE_KICAD_CLI"])("installed KiCad circuit framing omits paper furniture while document export and source metadata stay intact", async () => {
+  const f = await ownedPreviewFixture(true); try {
+    const before = await Promise.all(["board.kicad_sch", "child.kicad_sch", "board.kicad_pro"].map(path => readFile(join(f.dir, path), "utf8")));
+    const hierarchy = await f.inspect();
+    const document = await exportOwnedSchematicSvg(f.cli, { projectDir: f.dir, hierarchy });
+    const circuit = await exportOwnedSchematicSvg(f.cli, { projectDir: f.dir, hierarchy, circuit: true });
+    const rootDocument = new TextDecoder().decode(document.sheets[0]!.svg), rootCircuit = new TextDecoder().decode(circuit.sheets[0]!.svg);
+    expect(/viewBox="([^"]+)"/.exec(rootDocument)![1]!.split(/\s+/).map(Number).slice(0, 2)).toEqual([0, 0]); expect(rootDocument).not.toContain('data-fabplane-schematic-view');
+    expect(rootCircuit).toContain('data-fabplane-schematic-view="circuit"');
+    const box = /viewBox="([^"]+)"/.exec(rootCircuit)![1]!.split(/\s+/).map(Number);
+    expect(box[2]).toBeLessThan(100); expect(box[3]).toBeLessThan(100);
+    expect(circuit.sourceRevision).toBe(document.sourceRevision);
+    expect(await Promise.all(["board.kicad_sch", "child.kicad_sch", "board.kicad_pro"].map(path => readFile(join(f.dir, path), "utf8")))).toEqual(before);
+  } finally { await rm(f.dir, { recursive: true, force: true }); }
+}, 30_000);

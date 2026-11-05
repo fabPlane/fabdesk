@@ -1,3 +1,4 @@
+import { renderRootCircuitPreview } from "../schematic-circuit-preview";
 import { expectedPcbSource } from "../pcb-output";
 import { renderMemberSchematicPreview } from "../member-schematic-preview";
 /** Render toolset: schematic/PCB images, GLB, and product videos. */
@@ -81,6 +82,7 @@ export const render_schematic_svg = defineTool({
     "Export schematic SVG previews. Single-board projects also receive PNG pixels. Assembly members require expectedHierarchyRevision from schematic_inspect and publish all captured sheets with a source-qualified receipt; maxWidth only affects single-board PNGs.",
   inputSchema: {
     expectedHierarchyRevision: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Required for an assembly member: aggregate revision from its saved schematic inspection"),
+    circuit: z.boolean().default(false).describe("Working circuit view: omit paper framing and fit actual circuit geometry, preserving native sources and document exports."),
     maxWidth: z.number().int().min(320).max(4096).default(1600),
   },
   annotations: {
@@ -90,8 +92,9 @@ export const render_schematic_svg = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async ({ maxWidth, expectedHierarchyRevision }, ctx) => {
-    if (ctx.board) return renderMemberSchematicPreview(ctx, expectedHierarchyRevision);
+  handler: async ({ maxWidth, expectedHierarchyRevision, circuit }, ctx) => {
+    if (ctx.board) return renderMemberSchematicPreview(ctx, expectedHierarchyRevision, circuit);
+    if (circuit) return renderRootCircuitPreview(ctx, maxWidth, expectedHierarchyRevision);
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const schematic = await requireSchematic(project);
@@ -332,7 +335,7 @@ export const render_view = defineTool({
           "schematic crop/layers/highlight is not available yet; render the complete schematic",
           "invalid_args",
         );
-      return render_schematic_svg.handler({ maxWidth }, ctx);
+      return render_schematic_svg.handler({ maxWidth, circuit: false }, ctx);
     }
     if (region && (region.maxX <= region.minX || region.maxY <= region.minY))
       throw new ToolError(

@@ -28,6 +28,7 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
   /** Return true when a source-local selection was dismissed. */
   onDrawingEscape?: () => boolean;
 }) {
+  const circuitView = svg.includes('data-fabplane-schematic-view="circuit');
   const drawing = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -157,12 +158,12 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
         <Button size="sm" onClick={() => zoomAt(zoom / 1.25)} title="Zoom out">
           <Icon name="minus" width={16} height={16} />
         </Button>
-        <span title="Magnification relative to Fit sheet" className="text-center font-mono text-[11px] text-muted">{zoom.toFixed(1)}× fit</span>
+        <span title={`Magnification relative to Fit ${circuitView ? "circuit" : "sheet"}`} className="text-center font-mono text-[11px] text-muted">{zoom.toFixed(1)}× fit</span>
         <Button size="sm" onClick={() => zoomAt(zoom * 1.25)} title="Zoom in">
           <Icon name="plus" width={16} height={16} />
         </Button>
         <Button size="sm" variant="ghost" onClick={() => { setZoom(1); viewport.current?.scrollTo(0, 0); }}>
-          Fit sheet
+          {circuitView ? "Fit circuit" : "Fit sheet"}
         </Button>
         <Button size="sm" variant="ghost" onClick={() => { if (viewport.current) { zoomAt((viewport.current.clientWidth - 24) / fitSize.width); requestAnimationFrame(() => viewport.current?.scrollTo(0, 0)); } }}>Fit width</Button>
         <div className="fd-svg-context ml-auto flex items-center gap-1">{toolbar}</div>

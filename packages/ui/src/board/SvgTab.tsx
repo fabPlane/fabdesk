@@ -175,7 +175,7 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
   };
   const refreshPreview = () => {
     if (!projectId || !scopeReady || useUiStore.getState().activeProjectId !== projectId) return;
-    void render.run(RENDER_TOOL[kind], { projectId }).then(result => { if (result.status === "done") { void rendered.refetch(); if (kind === "pcb") void revision.refetch(); } });
+    void render.run(RENDER_TOOL[kind], { projectId, ...(kind === "schematic" ? { circuit: true } : {}) }).then(result => { if (result.status === "done") { void rendered.refetch(); if (kind === "pcb") void revision.refetch(); } });
   };
   useEffect(() => {
     // Read the saved source once a build/agent has settled. Alternate image exports are not
@@ -184,7 +184,7 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
     const key = `${projectId}/${kind}`;
     if (autoPreview.current === key) return;
     autoPreview.current = key;
-    void render.run(RENDER_TOOL[kind], { projectId }).then(result => { if (result.status === "done") { void rendered.refetch(); if (kind === "pcb") void revision.refetch(); } });
+    void render.run(RENDER_TOOL[kind], { projectId, ...(kind === "schematic" ? { circuit: true } : {}) }).then(result => { if (result.status === "done") { void rendered.refetch(); if (kind === "pcb") void revision.refetch(); } });
   }, [projectId, active, scopeReady, projectWorking, threads.isPending, threads.isError, project.data, project.isPending, project.isFetching, project.isError, rendered.data, rendered.isPending, rendered.isError, render.state.status, kind, render.run]);
 
   if (!projectId)
@@ -210,11 +210,11 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
     return (
       <div className="relative flex h-full min-h-0" data-testid={`board-${kind}-svg`} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); if (canvasPoint) { const drawing = event.currentTarget.querySelector<HTMLElement>(".fd-svg-host"); setCanvasPoint(null); requestAnimationFrame(() => drawing?.focus({ preventScroll: true })); } else if (selected || draftPoint || commentMode) closeComments(); else if (findingRequested) { const drawing = event.currentTarget.querySelector<HTMLElement>(".fd-svg-host"); useUiStore.getState().dismissRootFinding(); requestAnimationFrame(() => drawing?.focus({ preventScroll: true })); } } }}>
         {canvasMode && kind === "pcb" && <PcbPreviewStatus projectId={projectId} coordinatesVerified={nativeCoordinates} scopeReady={scopeReady} {...(sources.isError ? { onRetryScope: () => void sources.refetch() } : {})} busy={render.state.status === "running" || nativeEditBusy} error={render.state.error ?? null} onUpdate={refreshPreview} />}
-        {canvasMode && kind === "schematic" && <SchematicPreviewStatus scopeReady={scopeReady} hasSource={project.data?.files.some(file => file.path === "board.kicad_sch") ?? false} updated={render.state.status === "done"} busy={render.state.status === "running"} error={render.state.error ?? null} onUpdate={refreshPreview} onOpenSource={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().openProjectFile("board.kicad_sch"); }} {...(sources.isError ? { onRetryScope: () => void sources.refetch() } : {})} />}
+        {canvasMode && kind === "schematic" && <SchematicPreviewStatus circuit={rendered.data.includes('data-fabplane-schematic-view="circuit')} scopeReady={scopeReady} hasSource={project.data?.files.some(file => file.path === "board.kicad_sch") ?? false} updated={render.state.status === "done"} busy={render.state.status === "running"} error={render.state.error ?? null} onUpdate={refreshPreview} onOpenSource={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().openProjectFile("board.kicad_sch"); }} {...(sources.isError ? { onRetryScope: () => void sources.refetch() } : {})} />}
         <div className="min-w-0 flex-1">
           <SvgViewer
             svg={rendered.data}
-            initialFit={kind === "schematic" ? "width" : "sheet"}
+            initialFit={kind === "schematic" && !rendered.data.includes('data-fabplane-schematic-view="circuit') ? "width" : "sheet"}
             viewKey={`${projectId}:${kind}`}
             {...(kind === "schematic" ? { viewportKey: JSON.stringify([client.baseUrl, projectId, kind]) } : {})}
             commentMode={commentMode}

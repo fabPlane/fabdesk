@@ -270,9 +270,9 @@ async function withCapturedSchematic<T>(opts: { projectDir: string; hierarchy: S
 }
 
 /** Render immutable native sheets without altering any project source. */
-export async function exportOwnedSchematicSvg(cli: KicadCli, opts: { projectDir: string; hierarchy: SchematicHierarchy; signal?: AbortSignal }): Promise<OwnedSchematicSvg> {
+export async function exportOwnedSchematicSvg(cli: KicadCli, opts: { projectDir: string; hierarchy: SchematicHierarchy; circuit?: boolean; signal?: AbortSignal }): Promise<OwnedSchematicSvg> {
   const captured = await withCapturedSchematic(opts, async (source, scratch) => {
-    const result = await exportSchematicSvg(cli, { schematic: source, outDir: join(scratch, "svg-output"), ...(opts.signal ? { signal: opts.signal } : {}) });
+    const result = await exportSchematicSvg(cli, { schematic: source, outDir: join(scratch, "svg-output"), ...(opts.circuit ? { circuit: true } : {}), ...(opts.signal ? { signal: opts.signal } : {}) });
     if (!result.paths.length || result.paths.length !== opts.hierarchy.sheets.length) throw new Error("Schematic export did not produce one preview per inspected sheet");
     const rootSvg = basename(source).replace(/\.kicad_sch$/i, ".svg");
     const paths = [...result.paths].sort((a, b) => Number(basename(b) === rootSvg) - Number(basename(a) === rootSvg) || a.localeCompare(b));
