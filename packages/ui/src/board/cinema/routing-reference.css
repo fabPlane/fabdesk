@@ -1,0 +1,6 @@
+.fd-routing-reference { position:relative; }
+.fd-routing-reference-status { position:absolute; top:10px; left:12px; z-index:12; max-width:min(360px,calc(100% - 24px)); border:1px solid var(--fd-border); border-radius:10px; background:var(--fd-panel); box-shadow:0 3px 12px #102a2010; }
+.fd-routing-reference-status > summary.fd-disclosure-summary[data-variant=compact] { display:flex; width:100%; min-height:38px; border:0; background:transparent; margin:0; padding:8px 10px; color:var(--fd-fg); }
+.fd-routing-reference-status > summary.fd-disclosure-summary > .fd-disclosure-chevron { margin-left:auto; }
+.fd-routing-reference-status > div { padding:0 12px 12px; }
+.fd-routing-reference-status p { margin:0 0 9px; color:var(--fd-muted); font-size:12px; line-height:1.5; }

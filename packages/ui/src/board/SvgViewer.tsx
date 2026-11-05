@@ -7,11 +7,12 @@ import { clientPointToSvg, parseSvgViewBox, resolveSvgBox, type SvgBox, type Svg
 import { svgImageCache } from "./svg-image-cache";
 import { SvgCanvas } from "./SvgCanvas";
 import { useSvgNavigation } from "./useSvgNavigation";
+import "./svg-viewer-tools.css";
 
 const schematicViews = new DrawingViewportMemory();
 
 /** Zoomable vector image, isolated from the app's DOM and CSS layout. */
-export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, commentMode = false, initialFit = "sheet", focusRegion, onRegionFocused, onDrawingClick, onDrawingEscape }: {
+export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, commentMode = false, initialFit = "sheet", fitLabel = "Fit sheet", focusRegion, onRegionFocused, onDrawingClick, onDrawingEscape }: {
   svg: string;
   /** Preserve zoom and scroll when only presentation (such as blend) changes. */
   viewKey?: string;
@@ -21,6 +22,7 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
   overlay?: ReactNode | ((box: SvgBox | null) => ReactNode);
   commentMode?: boolean;
   initialFit?: "sheet" | "width";
+  fitLabel?: string;
   /** Verified SVG coordinates, never raw native coordinates without a frame check. */
   focusRegion?: SvgBox & { key: string };
   onRegionFocused?: () => void;
@@ -155,18 +157,20 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
   return (
     <div className="fd-svg-viewer relative flex h-full flex-col" onKeyDown={event => { if (event.key === "Escape" && onDrawingEscape?.()) { event.preventDefault(); event.stopPropagation(); requestAnimationFrame(() => drawing.current?.focus({ preventScroll: true })); } }}>
       <div className="fd-svg-tools flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-3 py-2">
-        <Button size="sm" onClick={() => zoomAt(zoom / 1.25)} title="Zoom out">
+        <div className="fd-svg-zoom-group" role="group" aria-label="Drawing zoom">
+        <Button size="sm" onClick={() => zoomAt(zoom / 1.25)} title="Zoom out" aria-label="Zoom out">
           <Icon name="minus" width={16} height={16} />
         </Button>
-        <span title={`Magnification relative to Fit ${circuitView ? "circuit" : "sheet"}`} className="text-center font-mono text-[11px] text-muted">{zoom.toFixed(1)}× fit</span>
-        <Button size="sm" onClick={() => zoomAt(zoom * 1.25)} title="Zoom in">
+        <span className="fd-svg-zoom-value" title={`Zoom relative to the fitted drawing. ${circuitView ? "Fit circuit" : fitLabel} resets to 100%.`}>{Math.round(zoom * 100)}%</span>
+        <Button size="sm" onClick={() => zoomAt(zoom * 1.25)} title="Zoom in" aria-label="Zoom in">
           <Icon name="plus" width={16} height={16} />
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => { setZoom(1); viewport.current?.scrollTo(0, 0); }}>
-          {circuitView ? "Fit circuit" : "Fit sheet"}
+        </div>
+        <Button size="sm" className="fd-svg-fit-button" title="Show the whole drawing" onClick={() => { setZoom(1); viewport.current?.scrollTo(0, 0); }}>
+          {circuitView ? "Fit circuit" : fitLabel}
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => { if (viewport.current) { zoomAt((viewport.current.clientWidth - 24) / fitSize.width); requestAnimationFrame(() => viewport.current?.scrollTo(0, 0)); } }}>Fit width</Button>
-        <div className="fd-svg-context ml-auto flex items-center gap-1">{toolbar}</div>
+        <Button size="sm" className="fd-svg-fit-button" title="Fill the available width; scroll to see the rest" onClick={() => { if (viewport.current) { zoomAt((viewport.current.clientWidth - 24) / fitSize.width); requestAnimationFrame(() => viewport.current?.scrollTo(0, 0)); } }}>Fit width</Button>
+        {toolbar && <div className="fd-svg-context ml-auto flex items-center gap-1">{toolbar}</div>}
       </div>
       <div ref={viewport} tabIndex={0} aria-label="Drawing viewport. Drag to pan; scroll to zoom. Plus and minus zoom; arrow keys pan." className={cn("fd-svg-viewport min-h-0 flex-1 select-none overflow-auto overscroll-contain bg-panel-2/40 p-3", dragging ? "cursor-grabbing" : commentMode ? "cursor-crosshair" : "cursor-grab")}
         onKeyDown={event => { if (event.target !== event.currentTarget) return; if (event.key === "+" || event.key === "=") { event.preventDefault(); zoomAt(zoom * 1.25); } else if (event.key === "-") { event.preventDefault(); zoomAt(zoom / 1.25); } }}

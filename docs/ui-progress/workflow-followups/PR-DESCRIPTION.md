@@ -93,3 +93,10 @@ Actual screenshots, before state, filter/final-row/Back/error evidence and test 
 Validation: desktop production build passed; UI typecheck passed; all 369 UI tests passed (0 failures), plus the focused BOM-origin checks (10 combined BOM/state checks passed). No packaged source maps; git diff --check clean. Native evidence includes narrow/110% layout, filters, empty recovery, final-row clearance, navigation/Back, source actions and malformed-hardware recovery.
 
 Fixes #425. Other unfinished tickets remain as listed above.
+
+
+## Drawing-control polish
+
+Grouped zoom controls now show a fitted-view percentage with distinct Fit actions and meaningful labels; empty context no longer leaves a trailing divider. Routing uses Fit board. The faint source-freshness footer is replaced by a compact Saved PCB preview / Unverified disclosure with explanation and Open PCB recovery. Native zoom/fit/disclosure/navigation and narrow linked-pane checks are documented, including the final CSS-only expanded-capture limitation. Desktop build, UI typecheck and 10 focused drawing/routing checks pass.
+
+![Updated routing preview controls](https://github.com/TensorFleet/fabdesk/blob/feat/canvas-workflow-followups/docs/ui-progress/workflow-followups/screenshots/21-routing-controls-compact.png?raw=true)

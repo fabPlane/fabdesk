@@ -54,3 +54,12 @@ Native desktop captures on the current implementation. The 245-line project is e
 ![Same row and horizontal position after Files and Back](screenshots/18-parts-return-position.png)
 ![One actionable hardware read error with qualified cached counts](screenshots/19-parts-read-error.png)
 ![Multi-board missing-source reasons remain visible](screenshots/20-parts-multiboard-compact.png)
+
+
+## Drawing controls and routing reference
+
+Clear grouped zoom controls, fitted-view percentage, distinct Fit board / Fit width actions and a compact explanatory status instead of the faint footer. Expanded capture predates the final summary-width spacing adjustment; functionality was visibly tested, but the final expanded spacing capture was interrupted by manual input.
+
+![Final routing controls and compact preview status](screenshots/21-routing-controls-compact.png)
+![Expanded preview explanation and Open PCB action](screenshots/22-routing-preview-explained.png)
+![Shared controls in narrow linked panes](screenshots/23-viewer-controls-linked-narrow.png)

@@ -19,6 +19,7 @@ import { routerPickerOptions } from "../../settings/routers";
 import { runFailureText } from "./runError";
 import { RouteCandidateReview } from "./RouteCandidateReview";
 import { CinemaPainter, DARK_THEME, LIGHT_THEME, frameStatusText, layerColor, nextFrameSeq, perfStatusText, type OffscreenLike } from "./renderer";
+import "./routing-reference.css";
 
 /** Offscreen layers for the painter: statics and settled copper, sized like the visible canvas. */
 function makePainter(width: number, height: number): CinemaPainter {
@@ -45,8 +46,15 @@ function isEditable(target: EventTarget | null): boolean {
 function RoutingReference({ projectId, prefix = "" }: { projectId: string; prefix?: string }) {
   const drawing = useProjectText(projectId, `${prefix}renders/pcb.svg`);
   return <section className="fd-routing-reference" aria-label="Saved PCB routing reference">
-    {drawing.isError ? <LoadError title="Could not load the saved PCB preview" onRetry={() => void drawing.refetch()} /> : drawing.isPending ? <Spinner /> : drawing.data ? <SvgViewer svg={drawing.data} viewKey={`${projectId}/routing-reference`} /> : <EmptyState title="No saved PCB preview" />}
-    <p>Saved preview · Routing and source freshness unverified</p>
+    {drawing.isError ? <LoadError title="Could not load the saved PCB preview" onRetry={() => void drawing.refetch()} /> : drawing.isPending ? <Spinner /> : drawing.data ? <>
+      <SvgViewer svg={drawing.data} viewKey={`${projectId}/routing-reference`} fitLabel="Fit board" />
+      <details className="fd-routing-reference-status">
+        <DisclosureSummary icon="info" label="Saved PCB preview" badge="Unverified" warning variant="compact" />
+        <div><p>This is a reference drawing, not live routing progress. It may differ from the current PCB.</p><p>Open PCB to check or update the preview. Review design checks separately before manufacturing.</p>
+          <Button size="sm" onClick={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().setBoardTab("pcb"); }}><Icon name="pcb" width={15} height={15} />Open PCB</Button>
+        </div>
+      </details>
+    </> : <EmptyState title="No saved PCB preview" />}
   </section>;
 }
 

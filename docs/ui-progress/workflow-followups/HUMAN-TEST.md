@@ -80,3 +80,12 @@ All original 10 VAIO and 47 Button light native files and their copied counterpa
 
 
 Validation: desktop production build passed; UI typecheck passed; all 369 UI tests passed (0 failures), plus the focused BOM-origin checks (10 combined BOM/state checks passed). No packaged source maps; git diff --check clean. Native evidence includes narrow/110% layout, filters, empty recovery, final-row clearance, navigation/Back, source actions and malformed-hardware recovery.
+
+
+## Drawing controls and routing-reference status
+
+Native copied Button light project: Parts → Board → Routing. Zoom in changed 100% to 125%; Fit board returned 100%; Fit width filled the width (196% in the tested viewport), and Zoom out reduced it to 157%. The percentage is relative to the fitted drawing, explained by its tooltip; it is not a physical scale. The compact Saved PCB preview / Unverified disclosure explained the reference limitation and Open PCB reached the correct PCB canvas. No router run, source edit or model change was performed.
+
+Shared drawing controls were also inspected in linked PCB/Schematic panes at approximately 990 × 735: both toolbars fit and remained separate from the assistant. Empty context no longer reserves a trailing separator. The final desktop build and UI typecheck passed; 10 focused drawing/cache/routing-error tests passed. Existing 57 native files and their copies remain unchanged.
+
+Captures 21 (final compact state), 22 (expanded behavior before the final summary-width CSS adjustment), and 23 (narrow linked panes) preserve actual native views. Two final expanded-card click attempts were paused by manual-input detection; those attempts are not passes. Final compact state was captured read-only without taking control away from the user. The expanded disclosure and Open PCB behavior had already passed before that CSS-only spacing adjustment.

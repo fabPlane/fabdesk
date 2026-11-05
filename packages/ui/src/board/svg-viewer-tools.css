@@ -1,0 +1,8 @@
+.fd-svg-zoom-group { display:flex; align-items:center; gap:2px; padding-right:8px; margin-right:3px; border-right:1px solid var(--fd-border); }
+.fd-svg-zoom-group > .fd-button { width:32px; height:32px; padding:0; }
+.fd-svg-zoom-value { min-width:48px; text-align:center; color:var(--fd-fg); font-size:12px; font-variant-numeric:tabular-nums; font-weight:550; }
+.fd-svg-tools .fd-svg-fit-button { height:32px; padding:0 10px; font-size:12px; white-space:nowrap; }
+.fd-canvas-workspace .fd-svg-tools { gap:4px; height:46px; padding:6px; }
+.fd-canvas-workspace .fd-svg-tools .fd-svg-fit-button { background:var(--fd-panel-2); border:1px solid var(--fd-border); border-radius:7px; }
+.fd-svg-zoom-group > .fd-button:not(:disabled):hover { background:var(--fd-panel-2); }
+@media(max-width:780px) { .fd-svg-tools .fd-svg-fit-button { padding:0 7px; } .fd-svg-zoom-group { padding-right:5px; } }
