@@ -24,7 +24,10 @@ test("millimetre page frame rejects cropped, scaled and unrelated previews", () 
 async function fixture(editDuringExport = false, sheets = 1) {
   const project = await tempProject("component-focus"); await writeFile(`${project.dir}/board.kicad_sch`, native);
   const base = mockServices([project]), hierarchy = await base.kicad.inspectSchematicHierarchy({ path: "mock", version: "mock" }, { projectDir: project.dir, rootSchematic: `${project.dir}/board.kicad_sch` });
-  hierarchy.sheets[0]!.sha256 = hash(native); if (sheets > 1) hierarchy.sheets.push({ ...hierarchy.sheets[0]!, nativePath: "child.kicad_sch" });
+  hierarchy.projectFile = null; hierarchy.sheets[0]!.sha256 = hash(native); if (sheets > 1) {
+    await writeFile(`${project.dir}/child.kicad_sch`, native);
+    hierarchy.sheets.push({ ...hierarchy.sheets[0]!, identity: "child", hierarchyPath: "/Child/", nativePath: "child.kicad_sch" });
+  }
   const events: CoreEvent[] = [];
   const services = mockServices([project], { bus: { emit: e => events.push(e) }, kicad: { ...base.kicad, inspectSchematicHierarchy: async (_cli, options) => { expect(options.ownedFilesOnly).toBe(true); return hierarchy; }, exportOwnedSchematicSvg: async () => {
     if (editDuringExport) await writeFile(`${project.dir}/board.kicad_sch`, native + "\n");
@@ -45,7 +48,18 @@ test("tool binds source/preview bytes and emits a request without pretending the
 test("source changes during export and ambiguous sheet ownership never emit focus", async () => {
   for (const [changed, count] of [[true, 1], [false, 2]] as const) {
     const { call, events } = await fixture(changed, count);
-    await expect(call()).rejects.toThrow(changed ? "changed" : "one complete root sheet");
+    if (changed) await expect(call()).rejects.toThrow("changed");
+    else expect((await call()).json).toMatchObject({ focusChoices: { reference: "U1", sheets: [{ identity: "mock-root", hierarchyPath: "/" }, { identity: "child", hierarchyPath: "/Child/" }] } });
     expect(events.some(e => e.topic === "project.schematic_focus")).toBe(false);
   }
+});
+
+test("repeated native sheets resolve instance annotation and all units without borrowing another instance", () => {
+  const symbol = (unit: number, y: number) => `(symbol (at 40 ${y}) (unit ${unit}) (property "Reference" "U1") (property "Value" "LM358") (instances (project "board" (path "/root/left" (reference "U2") (unit ${unit})) (path "/root/right" (reference "U3") (unit ${unit})))))`;
+  const text = `(kicad_sch (paper "A4") ${symbol(1, 50)} ${symbol(2, 80)})`;
+  expect(schematicFocusAnchors(text, "U2", "/root/left").points).toEqual([{ x: 40, y: 50, unit: 1 }, { x: 40, y: 80, unit: 2 }]);
+  expect(schematicFocusAnchors(text, "U3", "/root/right").points).toHaveLength(2);
+  expect(() => schematicFocusAnchors(text, "U2", "/root/right")).toThrow("not found");
+  expect(() => schematicFocusAnchors(text, "U1")).toThrow("Instance-specific");
+  expect(() => schematicFocusAnchors(text.replace('(unit 2)', '(unit 1)'), "U2", "/root/left")).toThrow("Duplicate symbol units");
 });

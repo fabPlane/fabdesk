@@ -52,6 +52,7 @@ export {
 export {
   inspectSchematicHierarchy,
   exportOwnedSchematicSvg,
+  exportOwnedSchematicPage,
   exportOwnedSchematicBom,
   type OwnedSchematicBom,
   type OwnedSchematicSvg,

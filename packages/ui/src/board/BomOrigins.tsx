@@ -15,7 +15,7 @@ export function BomOrigins({ snapshot }: { snapshot: ProjectBomSnapshot }) {
     <details>
       <DisclosureSummary variant="compact" icon="pcb" label="Included boards & hardware" warning={summary.attention > 0} badge={`${summary.boards} ${summary.boards === 1 ? "board" : "boards"} · ${summary.hardwareParts} hardware parts`} />
       <p>This parts list comes from your saved design files and project hardware. Supplier part numbers and purchasing availability are separate.</p>
-      <p className="fd-bom-origin-quantities"><strong>{summary.lines} BOM {summary.lines === 1 ? "line" : "lines"}</strong> contain <strong>{summary.mountedParts} on-board parts</strong> and <strong>{summary.hardwareParts} hardware parts</strong> per complete build. Build quantity multiplies these per-build quantities.</p>
+      <p className="fd-bom-origin-quantities"><strong>{summary.lines} BOM {summary.lines === 1 ? "line" : "lines"}</strong> contain <strong>{summary.mountedParts} on-board parts</strong> and <strong>{summary.hardwareParts} hardware parts</strong> {snapshot.complete ? "per complete build" : "in the available per-build quantities"}. Build quantity multiplies these per-build quantities.</p>
       <div className="fd-bom-origin-grid">{snapshot.coverage.map(source => {
         const native = source.status === "native-schematic", netlist = source.status === "saved-netlist", unused = source.multiplier === 0;
         const data = sources.data, declared = data?.sources.find(row => row.source.id === source.sourceId);

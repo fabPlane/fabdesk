@@ -142,13 +142,14 @@ export async function exportNetlist(
 /** One SVG per schematic sheet into `outDir`. */
 export async function exportSchematicSvg(
   cli: KicadCli,
-  opts: { schematic: string; outDir: string; signal?: AbortSignal },
+  opts: { schematic: string; outDir: string; pages?: number[]; signal?: AbortSignal },
 ): Promise<Paths> {
+  if (opts.pages && (!opts.pages.length || opts.pages.some(page => !Number.isSafeInteger(page) || page < 1))) throw new Error("Schematic pages must be positive integers");
   await ensureDir(opts.outDir);
   const started = Date.now();
   await runKicadCli(
     cli,
-    ["sch", "export", "svg", "-o", withTrailingSep(opts.outDir), opts.schematic],
+    ["sch", "export", "svg", ...(opts.pages ? ["--pages", opts.pages.join(",")] : []), "-o", withTrailingSep(opts.outDir), opts.schematic],
     sig(opts),
   );
   return { paths: await filesWrittenSince(opts.outDir, started, /\.svg$/i) };

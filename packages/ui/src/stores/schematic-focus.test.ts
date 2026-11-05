@@ -17,3 +17,20 @@ test("focus does not interrupt unsaved work or modal settings", () => {
   s.getState().requestSchematicFocus(focus(), "local"); expect(s.getState().schematicFocus).toBeNull();
   s.setState({ projectExitBlocks: {}, settingsOpen: true }); s.getState().requestSchematicFocus(focus(), "local"); expect(s.getState().schematicFocus).toBeNull();
 });
+test("Return restores the prior page and repeated focus does not replace the original return destination", () => {
+  const s = store(); s.getState().setActiveProject("project-a"); s.getState().setWorkspaceArea("outputs");
+  const before = { area: s.getState().workspaceArea, tab: s.getState().boardTab };
+  s.getState().requestSchematicFocus(focus(), "local"); s.getState().requestSchematicFocus(focus(), "local");
+  s.getState().clearSchematicFocus();
+  expect(s.getState().workspaceArea).toBe(before.area); expect(s.getState().boardTab).toBe(before.tab);
+  s.getState().setSchematicPage("local/project-a/io/revision", "sheet-2.svg");
+  expect(s.getState().schematicPageBySource["local/project-a/io/revision"]).toBe("sheet-2.svg");
+  expect(s.getState().schematicPageBySource["local/project-a/other/revision"]).toBeUndefined();
+});
+test("manual navigation dismisses focus and late requests from another core cannot take over", () => {
+  const s = store(); s.getState().setActiveProject("project-a"); s.getState().setNavigationEndpoint("local");
+  s.getState().requestSchematicFocus(focus(), "other core"); expect(s.getState().schematicFocus).toBeNull();
+  s.getState().requestSchematicFocus(focus(), "local"); expect(s.getState().schematicFocus).not.toBeNull();
+  s.getState().setWorkspaceArea("outputs"); expect(s.getState().schematicFocus).toBeNull();
+  s.getState().clearSchematicFocus(); expect(s.getState().workspaceArea).toBe("outputs");
+});

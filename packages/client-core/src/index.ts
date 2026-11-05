@@ -238,7 +238,7 @@ export { reviewPackageFiles, type ReviewPackageOptions } from "./review-package"
 export { projectJobs, projectJobBoard, jobIsActive, activeModelOutputJobs, type ProjectJob } from "./project-jobs";
 export * from "./output-revision";
 
-export { schematicFocusFilesMatch, schematicFocusFromResult } from "./schematic-focus";
+export { schematicFocusFilesMatch, schematicFocusFromResult, schematicFocusChoicesFromResult, schematicFocusScope, schematicFocusHierarchyMatches } from "./schematic-focus";
 export { PersistentDraft, localDraft } from "./persistent-draft";
 export { sameWorkspaceLocation, recordWorkspaceHistory } from "./workspace-history";
 export type { WorkspaceHistoryEntry } from "./workspace-history";
@@ -257,3 +257,5 @@ export * from "./enclosure-mounts";
 export * from "./enclosure-layout";
 export * from "./enclosure-setup";
 export * from "./enclosure-openings";
+
+export { DrawingViewportMemory, type DrawingViewport } from "./drawing-viewport";

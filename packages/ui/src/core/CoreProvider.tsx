@@ -19,6 +19,8 @@ export function CoreProvider({ host = browserHost, ...rest }: CoreProviderProps)
     }),
     [],
   );
-  const onSchematicFocus = useCallback<NonNullable<CoreProviderProps["onSchematicFocus"]>>(focus => useUiStore.getState().requestSchematicFocus(focus, rest.client.baseUrl), [rest.client.baseUrl]);
+  const onSchematicFocus = useCallback<NonNullable<CoreProviderProps["onSchematicFocus"]>>(focus => {
+    void rest.client.inspectBoardSources(focus.projectId).then(sources => useUiStore.getState().requestSchematicFocus(focus, rest.client.baseUrl, sources)).catch(() => {});
+  }, [rest.client]);
   return <BaseCoreProvider host={host} route={route} onSchematicFocus={onSchematicFocus} {...rest} />;
 }

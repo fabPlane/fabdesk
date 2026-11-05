@@ -631,12 +631,12 @@ export const pcb_update_from_schematic = defineTool({
 });
 
 export const schematic_focus = defineTool({
-  name: "schematic_focus", toolset: "circuit", title: "Show schematic component",
-  description: "After identifying a component from native schematic evidence, request readable canvas focus and a temporary marker for its exact reference. Pass a real reference, never guessed coordinates. Currently supports one saved root sheet only; ambiguous annotations, members and multi-sheet designs fail explicitly. Does not edit native sources. The result requests navigation; it does not confirm display or engineering checks.",
-  inputSchema: { reference: z.string().min(1).max(128) },
+  name: "schematic_focus", boardScoped: true, toolset: "circuit", title: "Show schematic component",
+  description: "After identifying a component from native schematic evidence, request readable canvas focus and a temporary marker for its exact reference. Pass a real reference, never guessed coordinates. Supports explicitly scoped member boards, hierarchical and repeated native sheets. If a reference is ambiguous, inspect the hierarchy and provide its sheetIdentity; never guess a board or instance. Does not edit native sources. The result requests navigation; it does not confirm display or engineering checks.",
+  inputSchema: { reference: z.string().min(1).max(128), sheetIdentity: z.string().min(1).max(1024).optional(), expectedHierarchyRevision: z.string().regex(/^[a-f0-9]{64}$/).optional() },
   annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: false },
   longRunning: true,
-  handler: async ({ reference }, ctx) => focusSavedSchematic(reference, ctx),
+  handler: async ({ reference, sheetIdentity, expectedHierarchyRevision }, ctx) => focusSavedSchematic(reference, ctx, sheetIdentity, expectedHierarchyRevision),
 });
 
 export const schematicTools = [

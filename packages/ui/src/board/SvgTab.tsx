@@ -9,6 +9,7 @@ import { Button, EmptyState, IconButton, Input, LoadError, Spinner, Textarea } f
 import { Icon } from "../components/Icon";
 import { ErrorNotice } from "../components/ErrorNotice";
 import {
+  useCoreClient,
   useBoardCommentMutations,
   useBoardSources,
   useBoardComments,
@@ -33,7 +34,7 @@ import { MissingNativeSource } from "./MissingNativeSource";
 
 export function SvgTab(props: { kind: "schematic" | "pcb"; active?: boolean; onOpenChecks?: () => void }) {
   const focus = useUiStore(s => s.schematicFocus), projectId = useUiStore(s => s.activeProjectId);
-  const showing = props.kind === "schematic" && props.active !== false && focus?.focus.projectId === projectId;
+  const showing = props.kind === "schematic" && props.active !== false && focus?.focus.projectId === projectId && !focus.focus.board;
   return <div className="relative h-full min-h-0"><div className="h-full" style={showing ? { visibility: "hidden" } : undefined} inert={showing || undefined}><SvgTabContent {...props} /></div>{showing && <SchematicFocusView key={focus.focus.id} focus={focus.focus} endpoint={focus.endpoint} />}</div>;
 }
 
@@ -78,6 +79,7 @@ export function commentPinAnchor(
 
 /** Schematic / PCB tab: shows the daemon's rendered SVG (`renders/<kind>.svg`, drawn by kicad-cli) and offers to render it. */
 function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic" | "pcb"; active?: boolean; onOpenChecks?: () => void }) {
+  const client = useCoreClient();
   const commentTrigger = useRef<HTMLButtonElement>(null);
   const commentToReveal = useUiStore((s) => s.commentToReveal);
   const canvasMode = useUiStore((s) => s.canvasMode);
@@ -214,6 +216,7 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
             svg={rendered.data}
             initialFit={kind === "schematic" ? "width" : "sheet"}
             viewKey={`${projectId}:${kind}`}
+            {...(kind === "schematic" ? { viewportKey: JSON.stringify([client.baseUrl, projectId, kind]) } : {})}
             commentMode={commentMode}
             {...((commentMode || canvasMode) ? { onDrawingClick: (point: SvgPoint) => {
               if (commentMode) { setDraftPoint(point); setSelectedId(null); }

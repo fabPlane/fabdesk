@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { DrawingViewportMemory, type DrawingViewport } from "@fabdesk/client-core";
 import { Button, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { cn } from "../util";
@@ -7,11 +8,15 @@ import { svgImageCache } from "./svg-image-cache";
 import { SvgCanvas } from "./SvgCanvas";
 import { useSvgNavigation } from "./useSvgNavigation";
 
+const schematicViews = new DrawingViewportMemory();
+
 /** Zoomable vector image, isolated from the app's DOM and CSS layout. */
-export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false, initialFit = "sheet", focusRegion, onRegionFocused, onDrawingClick, onDrawingEscape }: {
+export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, commentMode = false, initialFit = "sheet", focusRegion, onRegionFocused, onDrawingClick, onDrawingEscape }: {
   svg: string;
   /** Preserve zoom and scroll when only presentation (such as blend) changes. */
   viewKey?: string;
+  /** Endpoint/source-qualified session memory; exact SVG bytes must still match. */
+  viewportKey?: string;
   toolbar?: ReactNode;
   overlay?: ReactNode | ((box: SvgBox | null) => ReactNode);
   commentMode?: boolean;
@@ -33,6 +38,24 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const [fitSize, setFitSize] = useState({ width: 1, height: 1 });
   const initialPosition = useRef(false);
+  const savedView = useRef<DrawingViewport | null>(null);
+  const restoredView = useRef(false);
+  const currentView = useRef({ zoom, ready: false });
+  useLayoutEffect(() => { currentView.current = { zoom, ready: fitSize.width > 1 && !!loaded }; }, [zoom, fitSize.width, loaded]);
+  useLayoutEffect(() => {
+    savedView.current = viewportKey ? schematicViews.read(viewportKey, svg) : null;
+    restoredView.current = false;
+    const frame = viewport.current;
+    return () => {
+      if (viewportKey && frame && currentView.current.ready) schematicViews.save(viewportKey, svg, { zoom: currentView.current.zoom, left: frame.scrollLeft, top: frame.scrollTop });
+    };
+  }, [viewportKey, svg]);
+  useLayoutEffect(() => {
+    const saved = savedView.current, frame = viewport.current;
+    if (!saved || restoredView.current || !frame || fitSize.width <= 1 || !loaded) return;
+    if (zoom !== saved.zoom) { setZoom(saved.zoom); return; }
+    frame.scrollTo(saved.left, saved.top); restoredView.current = true;
+  }, [zoom, fitSize.width, fitSize.height, loaded]);
   const viewBox = useMemo(() => parseSvgViewBox(svg), [svg]);
   const [fallback, setFallback] = useState<{ svg: string; box: SvgBox } | null>(null);
   const box = viewBox ?? (fallback?.svg === svg ? fallback.box : null);
@@ -84,7 +107,7 @@ export function SvgViewer({ svg, viewKey, toolbar, overlay, commentMode = false,
       setFitSize((prev) => prev.width === next.width && prev.height === next.height ? prev : next);
       if (!initialPosition.current) {
         initialPosition.current = true;
-        setZoom(initialFit === "width" ? Math.max(.2, (frame.clientWidth - inset) / next.width) : 1);
+        setZoom(savedView.current?.zoom ?? (initialFit === "width" ? Math.max(.2, (frame.clientWidth - inset) / next.width) : 1));
       }
     };
     measure();

@@ -1,7 +1,8 @@
+import { SchematicFocusView } from "./SchematicFocusView";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useEffect, useRef, useState } from "react";
 import type { ProjectBoardSources } from "@fabdesk/protocol";
-import { assemblySelectionState, captureAssemblySchematicInspection, pcbToolJson, useAssemblySchematicPreview, useRunTool, type AssemblySceneSelection } from "@fabdesk/client-core";
+import { useCoreClient, assemblySelectionState, captureAssemblySchematicInspection, pcbToolJson, useAssemblySchematicPreview, useRunTool, type AssemblySceneSelection } from "@fabdesk/client-core";
 import { Select, Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import { SvgViewer } from "./SvgViewer";
@@ -9,10 +10,19 @@ import { parseSvgViewBox } from "./svg-coords";
 import { MissingNativeSource } from "./MissingNativeSource";
 
 /** Source-bound native sheet. Open missing previews automatically; source edits remain agent requests. */
-export function AssemblySchematicPreview({ projectId, data, selection, enabled, onBusyChange }: { projectId: string; data: ProjectBoardSources; selection: AssemblySceneSelection; enabled: boolean; onBusyChange: (busy: boolean) => void }) {
+export function AssemblySchematicPreview(props: Parameters<typeof AssemblySchematicContent>[0]) {
+  const focus = useUiStore(s => s.schematicFocus);
+  const showing = focus?.focus.projectId === props.projectId && focus.focus.board?.sourceId === props.selection.sourceId;
+  return <div className="relative h-full min-h-0"><div className="h-full" style={showing ? { visibility: "hidden" } : undefined} inert={showing || undefined}><AssemblySchematicContent {...props} enabled={props.enabled && !showing} /></div>{showing && <SchematicFocusView key={focus.focus.id} focus={focus.focus} endpoint={focus.endpoint} />}</div>;
+}
+function AssemblySchematicContent({ projectId, data, selection, enabled, onBusyChange }: { projectId: string; data: ProjectBoardSources; selection: AssemblySceneSelection; enabled: boolean; onBusyChange: (busy: boolean) => void }) {
+  const client = useCoreClient();
   const autoAttempted = useRef(false);
   const board = { sourceId: selection.sourceId, manifestSha256: selection.manifestSha256 }, owned = assemblySelectionState(data, selection) === "owned";
-  const [page, setPage] = useState<string | null>(null), [error, setError] = useState<string | null>(null), [busy, setBusy] = useState(false), running = useRef(false);
+  const pageKey = JSON.stringify([client.baseUrl, projectId, board.sourceId, board.manifestSha256]);
+  const page = useUiStore(s => s.schematicPageBySource[pageKey] ?? null);
+  const setPage = (path: string | null) => useUiStore.getState().setSchematicPage(pageKey, path);
+  const [error, setError] = useState<string | null>(null), [busy, setBusy] = useState(false), running = useRef(false);
   const preview = useAssemblySchematicPreview(projectId, board, page, enabled && owned), tool = useRunTool();
   const source = data.sources.find(row => row.source.id === board.sourceId), state = preview.data?.state;
   const generate = async () => {
@@ -58,7 +68,7 @@ export function AssemblySchematicPreview({ projectId, data, selection, enabled, 
       {(preview.data?.sheets.length ?? 0) > 1 && <label>Sheet <Button size="sm" variant="ghost" aria-label="Previous schematic sheet" disabled={busy || pageIndex <= 0} onClick={() => setPage(pages[pageIndex - 1]!.path)}>←</Button><Select aria-label="Schematic preview sheet" disabled={busy} value={preview.data?.sheet?.path ?? ""} onChange={event => setPage(event.target.value)}>{preview.data?.sheets.map((sheet, index) => <option key={sheet.path} value={sheet.path}>{index + 1} · {sheet.name.replace(/\.svg$/i, "")}</option>)}</Select><Button size="sm" variant="ghost" aria-label="Next schematic sheet" disabled={busy || pageIndex < 0 || pageIndex >= pages.length - 1} onClick={() => setPage(pages[pageIndex + 1]!.path)}>→</Button></label>}
       {showPrimaryRender && renderAction}
     </div>}
-    {drawing ? <SvgViewer svg={drawing} initialFit="width" viewKey={`${projectId}/${board.sourceId}/${board.manifestSha256}/${preview.data?.sheet?.path}`} /> : <EmptyState title="See this board’s schematic">Create a preview of its saved native sheets to inspect them here.</EmptyState>}
+    {drawing ? <SvgViewer viewportKey={JSON.stringify([client.baseUrl, projectId, board.sourceId, board.manifestSha256, preview.data?.sheet?.path])} svg={drawing} initialFit="width" viewKey={`${projectId}/${board.sourceId}/${board.manifestSha256}/${preview.data?.sheet?.path}`} /> : <EmptyState title="See this board’s schematic">Create a preview of its saved native sheets to inspect them here.</EmptyState>}
     {(error || tool.state.error) && <p role="alert" className="fd-assembly-detail-error">{error ?? tool.state.error}</p>}
   </div>;
 }

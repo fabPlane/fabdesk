@@ -408,6 +408,7 @@ export function mockServices(
       exportPos: async () => ({ paths: [] }),
       exportBom: async () => ({ paths: [] }),
       exportNetlist: async () => ({ paths: [] }),
+      exportOwnedSchematicPage: async () => { throw new Error("Owned schematic page export must be explicitly supplied by a test"); },
       exportOwnedSchematicSvg: async () => { throw new Error("Owned schematic export must be explicitly supplied by a test"); },
       exportOwnedSchematicBom: async () => { throw new Error("Owned BOM export must be explicitly supplied by a test"); },
       exportSchematicSvg: async () => ({ paths: [] }),
