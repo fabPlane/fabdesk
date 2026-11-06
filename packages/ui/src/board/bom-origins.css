@@ -1,0 +1,27 @@
+.fd-bom-origins { margin:0 0 16px; font-size:12px; }
+.fd-bom-origins > details { border:1px solid var(--fd-border); border-radius:10px; background:var(--fd-panel); }
+.fd-bom-origins > details > summary.fd-disclosure-summary { border:0; background:transparent; min-height:44px; padding:10px 14px; }
+.fd-bom-origins > details[open] > summary.fd-disclosure-summary { margin:0; }
+.fd-bom-origin-content { padding:0 14px 10px; }
+.fd-bom-origins p { margin:6px 0; color:var(--fd-muted); line-height:1.5; }
+.fd-bom-origins .fd-bom-origin-attention { display:flex; align-items:center; gap:8px; color:var(--fd-warning); padding:8px 0; }
+.fd-bom-origin-attention svg { flex:none; }
+.fd-bom-origin-grid { display:flex; flex-direction:column; }
+.fd-bom-origin-grid > article { min-width:0; padding:12px 0; border-top:1px solid var(--fd-border); }
+.fd-bom-origin-row { display:flex; align-items:center; gap:12px; }
+.fd-bom-origin-row > svg { flex:none; color:var(--fd-accent); }
+.fd-bom-origin-name { min-width:0; flex:1; display:flex; flex-direction:column; gap:4px; }
+.fd-bom-origin-name strong { overflow-wrap:anywhere; font-weight:600; }
+.fd-bom-origin-name > span { color:var(--fd-muted); }
+.fd-bom-origin-status { color:var(--fd-muted); font-size:11px; }
+.fd-bom-origin-status[data-warning=true], .fd-bom-origins .fd-bom-origin-reason { color:var(--fd-warning); }
+.fd-bom-origin-actions { display:flex; flex-wrap:wrap; gap:6px; }
+.fd-bom-origin-grid article > details { margin:5px 0 0 30px; }
+.fd-bom-origin-grid article > details > summary.fd-disclosure-summary { min-height:28px; padding:3px 6px; }
+.fd-bom-origin-grid ul { margin:8px 0; padding:0; list-style:none; }
+.fd-bom-origin-grid li > button { color:var(--fd-accent); text-align:left; overflow-wrap:anywhere; text-decoration:underline; text-underline-offset:3px; cursor:pointer; padding:4px 0; }
+.fd-bom-origin-revision { overflow-wrap:anywhere; font-family:monospace; font-size:11px; }
+.fd-bom-origin-hardware { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding-top:10px; border-top:1px solid var(--fd-border); }
+.fd-bom-origin-hardware > span { color:var(--fd-muted); }
+.fd-bom-origins .fd-bom-origin-note { margin-top:12px; font-size:11px; }
+@media(max-width:760px) { .fd-bom-origin-row { flex-wrap:wrap; gap:8px; } .fd-bom-origin-actions { margin-left:26px; } .fd-bom-origin-status { margin-left:26px; } }

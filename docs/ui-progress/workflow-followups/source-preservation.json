@@ -1,0 +1,27 @@
+[
+  {
+    "fixture": "vaio-multi-board-acceptance-validation",
+    "originalNativeFilesChecked": 10,
+    "originalsUnchanged": true,
+    "changedOriginals": [],
+    "copiedNativeFilesChecked": 10,
+    "copiesUnchanged": true,
+    "changedCopies": []
+  },
+  {
+    "fixture": "button-light-beginner-order-test",
+    "originalNativeFilesChecked": 47,
+    "originalsUnchanged": true,
+    "changedOriginals": [],
+    "copiedNativeFilesChecked": 47,
+    "copiesUnchanged": true,
+    "changedCopies": []
+  },
+  {
+    "fixture": "synthetic-parts-layout-245-lines",
+    "copiedNativeFilesChecked": 3,
+    "copiesUnchanged": true,
+    "changedCopies": [],
+    "note": "Synthetic project.parts.json restored byte-for-byte from preserved backup after error recovery testing."
+  }
+]

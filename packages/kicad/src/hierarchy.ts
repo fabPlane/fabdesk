@@ -22,6 +22,12 @@ export type SchematicHierarchySheet = {
   bytes: number;
   components: number;
   nets: number;
+  /** Native sheet-instance UUID path (excluding the root document UUID). */
+  instancePath?: string;
+  /** Native symbol annotation path, including the root document UUID. */
+  symbolInstancePath?: string;
+  /** Page reported by KiCad for this exact native instance, never filename order. */
+  pageNumber?: number;
 };
 
 export type SchematicHierarchy = {
@@ -49,6 +55,8 @@ type PendingSheet = {
   name: string;
   depth: number;
   ancestry: string[];
+  instancePath?: string;
+  rootIdentity?: string;
 };
 
 const slash = (path: string) => path.split(sep).join("/");
@@ -151,6 +159,10 @@ async function parseProject(projectFile: string): Promise<TopLevelSheet[]> {
 }
 
 function electricalCounts(xml: string) {
+  const pages = [...xml.matchAll(/<sheet\b([^>]*)>/g)].map(match => {
+    const attr = (key: string) => xmlDecode(new RegExp(`\\b${key}="([^"]*)"`).exec(match[1]!)?.[1] ?? "");
+    return { number: Number(attr("number")), path: attr("tstamps"), name: attr("name") };
+  }).filter(page => Number.isSafeInteger(page.number) && page.number > 0 && page.path.startsWith("/"));
   const componentBlocks = xml.match(/<comp\b[\s\S]*?<\/comp>/g) ?? [];
   const componentSheet = new Map<string, string>();
   const componentsBySheet = new Map<string, number>();
@@ -180,6 +192,7 @@ function electricalCounts(xml: string) {
     sheets: (xml.match(/<sheet number=/g) ?? []).length,
     componentsBySheet,
     netsBySheet,
+    pages,
   };
 }
 
@@ -229,7 +242,7 @@ async function exportOwnedSnapshot(cli: KicadCli, rootFile: string, projectFile:
 export type OwnedSchematicSvg = {
   sourceRevision: string;
   sourceFiles: Array<{ path: string; sha256: string }>;
-  sheets: Array<{ name: string; svg: Uint8Array }>;
+  sheets: Array<{ name: string; svg: Uint8Array; nativeSheet?: { identity: string; hierarchyPath: string; nativePath: string; pageNumber: number } }>;
 };
 
 /** Export the exact inspected hierarchy; return bytes only after every captured file is rechecked. */
@@ -257,13 +270,50 @@ async function withCapturedSchematic<T>(opts: { projectDir: string; hierarchy: S
 }
 
 /** Render immutable native sheets without altering any project source. */
-export async function exportOwnedSchematicSvg(cli: KicadCli, opts: { projectDir: string; hierarchy: SchematicHierarchy; signal?: AbortSignal }): Promise<OwnedSchematicSvg> {
+export async function exportOwnedSchematicSvg(cli: KicadCli, opts: { projectDir: string; hierarchy: SchematicHierarchy; circuit?: boolean; signal?: AbortSignal }): Promise<OwnedSchematicSvg> {
   const captured = await withCapturedSchematic(opts, async (source, scratch) => {
-    const result = await exportSchematicSvg(cli, { schematic: source, outDir: join(scratch, "svg-output"), ...(opts.signal ? { signal: opts.signal } : {}) });
+    if (opts.circuit) {
+      // Bind each drawing through KiCad's page/instance table, never sorted SVG filenames.
+      const pages = await capturedPageTable(cli, source, scratch, opts.signal);
+      const sheets: OwnedSchematicSvg["sheets"] = [];
+      for (const [index, sheet] of opts.hierarchy.sheets.entries()) {
+        verifyCapturedPage(opts.hierarchy, sheet, pages);
+        const result = await exportSchematicSvg(cli, { schematic: source, outDir: join(scratch, `circuit-${index}`), pages: [sheet.pageNumber!], circuit: true, ...(opts.signal ? { signal: opts.signal } : {}) });
+        if (result.paths.length !== 1) throw new Error("KiCad did not produce exactly the selected circuit page");
+        sheets.push({ name: basename(result.paths[0]!), svg: new Uint8Array(await readFile(result.paths[0]!)), nativeSheet: { identity: sheet.identity, hierarchyPath: sheet.hierarchyPath, nativePath: sheet.nativePath, pageNumber: sheet.pageNumber! } });
+      }
+      return sheets;
+    }
+    const result = await exportSchematicSvg(cli, { schematic: source, outDir: join(scratch, "svg-output"), ...(opts.circuit ? { circuit: true } : {}), ...(opts.signal ? { signal: opts.signal } : {}) });
     if (!result.paths.length || result.paths.length !== opts.hierarchy.sheets.length) throw new Error("Schematic export did not produce one preview per inspected sheet");
     const rootSvg = basename(source).replace(/\.kicad_sch$/i, ".svg");
     const paths = [...result.paths].sort((a, b) => Number(basename(b) === rootSvg) - Number(basename(a) === rootSvg) || a.localeCompare(b));
     return Promise.all(paths.map(async path => ({ name: basename(path), svg: new Uint8Array(await readFile(path)) })));
+  });
+  return { sourceRevision: captured.sourceRevision, sourceFiles: captured.sourceFiles, sheets: captured.result };
+}
+
+async function capturedPageTable(cli: KicadCli, source: string, scratch: string, signal?: AbortSignal) {
+  const netlist = join(scratch, "selected-page.xml");
+  await runKicadCli(cli, ["sch", "export", "netlist", "--format", "kicadxml", "-o", netlist, source], { ...(signal ? { signal } : {}), cwd: dirname(source) });
+  return electricalCounts(await readFile(netlist, "utf8")).pages;
+}
+
+function verifyCapturedPage(hierarchy: SchematicHierarchy, sheet: SchematicHierarchy["sheets"][number], pages: ReturnType<typeof electricalCounts>["pages"]) {
+  if (!sheet.pageNumber || hierarchy.sheets.filter(other => other.identity === sheet.identity).length !== 1 || hierarchy.sheets.some(other => other.identity !== sheet.identity && other.pageNumber === sheet.pageNumber)) throw new Error("The native sheet instance does not have a unique inspected KiCad page");
+  if (pages.filter(page => page.number === sheet.pageNumber).length !== 1 || !pages.some(page => page.number === sheet.pageNumber && page.path === sheet.instancePath && page.name === sheet.hierarchyPath)) throw new Error("The captured KiCad page does not match the inspected native sheet instance");
+}
+
+/** Render one explicitly identified native page; repeated files remain distinct instances. */
+export async function exportOwnedSchematicPage(cli: KicadCli, opts: { projectDir: string; hierarchy: SchematicHierarchy; sheetIdentity: string; signal?: AbortSignal }): Promise<OwnedSchematicSvg> {
+  const matches = opts.hierarchy.sheets.filter(sheet => sheet.identity === opts.sheetIdentity);
+  const sheet = matches[0];
+  if (matches.length !== 1 || !sheet?.pageNumber || opts.hierarchy.sheets.some(other => other.identity !== sheet.identity && other.pageNumber === sheet.pageNumber)) throw new Error("The native sheet instance does not have a unique inspected KiCad page");
+  const captured = await withCapturedSchematic(opts, async (source, scratch) => {
+    verifyCapturedPage(opts.hierarchy, sheet, await capturedPageTable(cli, source, scratch, opts.signal));
+    const result = await exportSchematicSvg(cli, { schematic: source, outDir: join(scratch, "svg-output"), pages: [sheet.pageNumber!], ...(opts.signal ? { signal: opts.signal } : {}) });
+    if (result.paths.length !== 1) throw new Error("KiCad did not produce exactly the selected schematic page");
+    return [{ name: basename(result.paths[0]!), svg: new Uint8Array(await readFile(result.paths[0]!)) }];
   });
   return { sourceRevision: captured.sourceRevision, sourceFiles: captured.sourceFiles, sheets: captured.result };
 }
@@ -398,6 +448,7 @@ export async function inspectSchematicHierarchy(
         name,
         depth: 0,
         ancestry: [],
+        instancePath: "/",
       });
     }
   } else {
@@ -408,6 +459,7 @@ export async function inspectSchematicHierarchy(
       name: basename(rootFile, extname(rootFile)),
       depth: 0,
       ancestry: [],
+      instancePath: "/",
     });
   }
 
@@ -467,6 +519,7 @@ export async function inspectSchematicHierarchy(
     }
     referencedFiles.add(nativePath);
     const identity = item.identity === "root" ? schematic.identity : item.identity;
+    const rootIdentity = item.rootIdentity ?? schematic.identity;
     partial.push({
       hierarchyPath: item.hierarchyPath,
       nativePath,
@@ -475,6 +528,8 @@ export async function inspectSchematicHierarchy(
       depth: item.depth,
       sha256: hash(data),
       bytes: data.byteLength,
+      instancePath: item.instancePath ?? "/",
+      ...(rootIdentity !== "unknown" ? { symbolInstancePath: `/${rootIdentity}${item.instancePath ?? "/"}`.replace(/\/$/, "") } : {}),
     });
     for (const sheet of schematic.sheets) {
       const { filename, name, identity: sheetIdentity } = sheet;
@@ -486,6 +541,8 @@ export async function inspectSchematicHierarchy(
         name,
         depth: item.depth + 1,
         ancestry: [...item.ancestry, item.absolute],
+        instancePath: `${item.instancePath ?? "/"}${sheetIdentity}/`,
+        rootIdentity,
       });
     }
   }
@@ -495,6 +552,7 @@ export async function inspectSchematicHierarchy(
   let counts = { components: 0, nets: 0, sheets: partial.length };
   let componentsBySheet = new Map<string, number>();
   let netsBySheet = new Map<string, Set<number>>();
+  let nativePages: ReturnType<typeof electricalCounts>["pages"] = [];
   if (!issues.some((issue) => issue.kind !== "duplicate")) {
     try {
       const xml = opts.ownedFilesOnly ? await exportOwnedSnapshot(cli, rootFile, projectFile, top, ownedFiles, opts.signal) : await exportRoot(
@@ -510,6 +568,7 @@ export async function inspectSchematicHierarchy(
       counts = { components: measured.components, nets: measured.nets, sheets: measured.sheets };
       componentsBySheet = measured.componentsBySheet;
       netsBySheet = measured.netsBySheet;
+      nativePages = measured.pages;
     } catch (error) {
       issues.push({
         kind: "export",
@@ -528,6 +587,11 @@ export async function inspectSchematicHierarchy(
   const keyFor = (path: string) => (path === "/" ? "/" : path);
   const sheets = partial.map((sheet) => ({
     ...sheet,
+    ...(() => {
+      const pages = nativePages.filter(page => page.path === sheet.instancePath && page.name === sheet.hierarchyPath);
+      const page = pages[0];
+      return pages.length === 1 && page && nativePages.filter(other => other.number === page.number).length === 1 ? { pageNumber: page.number } : {};
+    })(),
     components:
       componentsBySheet.get(keyFor(sheet.hierarchyPath)) ??
       (partial.length === 1 ? componentsBySheet.get("/") : undefined) ??

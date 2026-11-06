@@ -1,0 +1,20 @@
+{
+  "source": "VAIO RH port A13 (isolated copy)",
+  "sha256": "17d830be6452968f9d2391e9ce79d8ccf44d6a6fa623f659a2b2f94efa3c0dd4",
+  "modes": {
+    "structured": {
+      "nativePaths": 12,
+      "drawnPaths": 24
+    },
+    "overlay": {
+      "nativePaths": 12,
+      "drawnPaths": 24
+    },
+    "sideBySide": {
+      "nativePaths": 12,
+      "drawnPaths": 24
+    }
+  },
+  "sourceUnchanged": true,
+  "validation": "Diagnostic full compareRevisions run, not a human UI test"
+}

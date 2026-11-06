@@ -11,6 +11,26 @@ async function ready(): Promise<void> {
   await initialization;
 }
 
+/** Presentation-only crop of a frame-free native schematic. Geometry stays in native SVG units. */
+export async function frameSchematicCircuit(svg: string): Promise<string> {
+  const root = /<svg\b[^>]*>/i.exec(svg)?.[0];
+  if (!root || svg.length > 24_000_000) throw new Error("The schematic preview is missing or exceeds the framing limit");
+  const box = /\bviewBox="([^"]+)"/.exec(root)?.[1]?.trim().split(/\s+/).map(Number);
+  const width = Number(/\bwidth="([\d.]+)mm"/.exec(root)?.[1]), height = Number(/\bheight="([\d.]+)mm"/.exec(root)?.[1]);
+  if (!box || box.length !== 4 || box[0] !== 0 || box[1] !== 0 || ![width, height, ...box].every(Number.isFinite) || Math.abs(width - box[2]!) > .05 || Math.abs(height - box[3]!) > .05) throw new Error("Schematic framing requires the native millimetre page coordinate system");
+  await ready();
+  const renderer = new Resvg(svg);
+  try {
+    const bounds = renderer.innerBBox();
+    try {
+      if (!bounds || ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite) || bounds.width <= 0 || bounds.height <= 0) return svg.replace(root, root.replace(/>$/, ' data-fabplane-schematic-view="circuit-empty">'));
+      const margin = 4, x = bounds.x - margin, y = bounds.y - margin, w = bounds.width + margin * 2, h = bounds.height + margin * 2;
+      const framed = root.replace(/\bwidth="[^"]+"/, `width="${w}mm"`).replace(/\bheight="[^"]+"/, `height="${h}mm"`).replace(/\bviewBox="[^"]+"/, `viewBox="${x} ${y} ${w} ${h}"`).replace(/>$/, ' data-fabplane-schematic-view="circuit">');
+      return svg.replace(root, framed);
+    } finally { bounds?.free(); }
+  } finally { renderer.free(); }
+}
+
 export type RasterizedSvg = {
   png: Uint8Array;
   width: number;

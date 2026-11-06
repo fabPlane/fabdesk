@@ -1,5 +1,6 @@
 import { extractBoardFeatures } from "./board-features";
 import { cropNativePageSvg } from "./pcb-svg-coordinates";
+import { frameSchematicCircuit } from "./raster";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { runKicadCli, type KicadCli } from "./cli";
@@ -142,16 +143,19 @@ export async function exportNetlist(
 /** One SVG per schematic sheet into `outDir`. */
 export async function exportSchematicSvg(
   cli: KicadCli,
-  opts: { schematic: string; outDir: string; signal?: AbortSignal },
+  opts: { schematic: string; outDir: string; pages?: number[]; circuit?: boolean; signal?: AbortSignal },
 ): Promise<Paths> {
+  if (opts.pages && (!opts.pages.length || opts.pages.some(page => !Number.isSafeInteger(page) || page < 1))) throw new Error("Schematic pages must be positive integers");
   await ensureDir(opts.outDir);
   const started = Date.now();
   await runKicadCli(
     cli,
-    ["sch", "export", "svg", "-o", withTrailingSep(opts.outDir), opts.schematic],
+    ["sch", "export", "svg", ...(opts.pages ? ["--pages", opts.pages.join(",")] : []), ...(opts.circuit ? ["--exclude-drawing-sheet", "--no-background-color"] : []), "-o", withTrailingSep(opts.outDir), opts.schematic],
     sig(opts),
   );
-  return { paths: await filesWrittenSince(opts.outDir, started, /\.svg$/i) };
+  const paths = await filesWrittenSince(opts.outDir, started, /\.svg$/i);
+  if (opts.circuit) for (const path of paths) await writeFile(path, await frameSchematicCircuit(await readFile(path, "utf8")));
+  return { paths };
 }
 
 /** Multi-sheet schematic PDF suitable for the release handoff. */

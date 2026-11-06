@@ -5,7 +5,7 @@ import { inspectKeptOutputIdentity, type KeptOutputKind } from "./kept-output";
 import { pcbToolJson } from "./pcb-parts";
 import { inspectVideoInputRevision } from "./video-input-revision";
 import { inspectRouteReview } from "./route-review";
-import { inspectAssemblySchematicPreview } from "./assembly-schematic-preview";
+import { inspectRootSchematicPreview, inspectAssemblySchematicPreview } from "./assembly-schematic-preview";
 import { inspectAssemblyModelSummaries } from "./assembly-model-summary";
 import { inspectAssemblyBoardModel } from "./assembly-board-model";
 import { inspectAssemblyCheckSummaries } from "./assembly-check-summary";
@@ -1105,6 +1105,11 @@ export function useAssemblyBoardModel(projectId: string, board: BoardSourceSelec
 export function useAssemblySchematicPreview(projectId: string, board: BoardSourceSelection, selectedPath: string | null, enabled = true) {
   const client = useCoreClient();
   return useQuery({ queryKey: ["assembly-schematic-preview", projectId, board.sourceId, board.manifestSha256, selectedPath], queryFn: () => inspectAssemblySchematicPreview(client, projectId, board, selectedPath), enabled });
+}
+
+export function useRootSchematicPreview(projectId: string | null, selectedPath: string | null, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["root-schematic-preview", projectId, selectedPath], queryFn: () => inspectRootSchematicPreview(client, projectId!, selectedPath), enabled: !!projectId && enabled });
 }
 
 export function useVideoInputRevision(projectId: string | null, path: string | undefined) {

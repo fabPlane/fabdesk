@@ -1,6 +1,7 @@
-import { recordWorkspaceHistory, sameWorkspaceLocation, type WorkspaceHistoryEntry } from "@fabdesk/client-core";
+import { schematicFocusScope, recordWorkspaceHistory, sameWorkspaceLocation, type WorkspaceHistoryEntry } from "@fabdesk/client-core";
 import type { AssistantSurface } from "../chat/assistant-context";
-import type { BoardSourceSelection, SchematicFocus } from "@fabdesk/protocol";
+import type { BoardSourceSelection, SchematicFocus, ProjectBoardSources } from "@fabdesk/protocol";
+import type { ProjectBomLine } from "@fabdesk/protocol";
 import { create } from "zustand";
 import { DRAFT_KEY_NEW, newChatDraftKey, parseAssemblyMapPosition, type AssemblyMapPosition, type AssemblyMapLayout, workspaceAreaForView, workspaceViews, workspaceTabForArea, type WorkspaceArea, type AssemblySceneSelection, type AssemblyCheckFinding, type RootCheckFinding, type KeptOutputChoice } from "@fabdesk/client-core";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
@@ -50,7 +51,20 @@ export interface PendingAttachment {
   label: string;
 }
 
+export interface PartsViewState {
+  query: string;
+  kinds: ProjectBomLine["kind"][];
+  buildQuantity: string;
+  sourcesOpen: boolean;
+  filtersOpen: boolean;
+  scrollTop: number;
+  scrollLeft: number;
+}
+export const DEFAULT_PARTS_VIEW: PartsViewState = { query: "", kinds: [], buildQuantity: "5", sourcesOpen: false, filtersOpen: false, scrollTop: 0, scrollLeft: 0 };
+
 export interface UiState {
+  partsViewByProject: Record<string, PartsViewState>;
+  rememberPartsView: (key: string, patch: Partial<PartsViewState>) => void;
   navigationHistory: WorkspaceHistoryEntry[];
   navigationEndpoint: string | null;
   setNavigationEndpoint: (endpoint: string) => void;
@@ -78,9 +92,11 @@ export interface UiState {
   setAssemblyMapPosition: (key: string, projectId: string, instanceId: string, position: AssemblyMapPosition) => void;
   resetAssemblyMapLayout: (key: string, projectId: string) => void;
   setAssemblyBoard: (selection: AssemblySceneSelection | null) => void;
+  schematicPageBySource: Record<string, string>;
+  setSchematicPage: (key: string, path: string | null) => void;
   schematicFocusSeen: Record<string, number>;
-  schematicFocus: { focus: SchematicFocus; endpoint: string } | null;
-  requestSchematicFocus: (focus: SchematicFocus, endpoint: string) => void;
+  schematicFocus: { focus: SchematicFocus; endpoint: string; returnTo: WorkspaceHistoryEntry | null } | null;
+  requestSchematicFocus: (focus: SchematicFocus, endpoint: string, sources?: ProjectBoardSources) => void;
   clearSchematicFocus: () => void;
   rootFinding: RootCheckFinding | null;
   openRootFinding: (finding: RootCheckFinding) => void;
@@ -221,6 +237,7 @@ export function createUiStore(storage?: StateStorage) {
         const patch = typeof update === "function" ? update(state) : update;
         if ("navigationHistory" in patch) return patch;
         const before = historyLocation(state), after = historyLocation({ ...state, ...patch });
+        if (state.schematicFocus && !("schematicFocus" in patch) && before && after && !sameWorkspaceLocation(before, after)) patch.schematicFocus = null;
         const history = recordWorkspaceHistory(state.navigationHistory, before, after, navigationBatch);
         if (before && after && !sameWorkspaceLocation(before, after)) {
           navigationBatch = true; queueMicrotask(() => { navigationBatch = false; });
@@ -228,9 +245,11 @@ export function createUiStore(storage?: StateStorage) {
         return history === state.navigationHistory ? patch : { ...patch, navigationHistory: history };
       });
       return ({
+  partsViewByProject: {},
+  rememberPartsView: (key, patch) => set(s => ({ partsViewByProject: Object.fromEntries(Object.entries({ ...s.partsViewByProject, [key]: { ...DEFAULT_PARTS_VIEW, ...s.partsViewByProject[key], ...patch } }).slice(-64)) })),
   navigationHistory: [],
   navigationEndpoint: null,
-  setNavigationEndpoint: (navigationEndpoint) => set(s => navigationEndpoint === s.navigationEndpoint ? {} : { navigationEndpoint, navigationHistory: [], selectedFileByProject: {} }),
+  setNavigationEndpoint: (navigationEndpoint) => set(s => navigationEndpoint === s.navigationEndpoint ? {} : { navigationEndpoint, navigationHistory: [], selectedFileByProject: {}, schematicFocus: null }),
   selectedFileByProject: {},
   rememberProjectFile: (projectId, path) => set(s => s.activeProjectId !== projectId || s.selectedFileByProject[projectId] === path ? {} : { selectedFileByProject: { ...s.selectedFileByProject, [projectId]: path } }),
   navigateBack: () => set(s => {
@@ -284,19 +303,35 @@ export function createUiStore(storage?: StateStorage) {
     else delete assemblyBoardByProject[s.activeProjectId];
     return { assemblyBoardByProject, assemblyFinding: null };
   }),
+  schematicPageBySource: {},
+  setSchematicPage: (key, path) => set(s => {
+    const next = { ...s.schematicPageBySource }; delete next[key];
+    if (path) next[key] = path;
+    return { schematicPageBySource: Object.fromEntries(Object.entries(next).slice(-64)) };
+  }),
   schematicFocusSeen: {},
   schematicFocus: null,
-  requestSchematicFocus: (focus, endpoint) => set(s => {
+  requestSchematicFocus: (focus, endpoint, sources) => set(s => {
     // Consume even ignored requests, so a reconnect cannot replay them after opening another view.
     const key = `${endpoint}/${focus.id}`;
     if (s.schematicFocusSeen[key]) return {};
     const schematicFocusSeen = Object.fromEntries(Object.entries(s.schematicFocusSeen).filter(([, ts]) => Date.now() - ts < 60_000));
     schematicFocusSeen[key] = focus.requestedAt;
-    if (focus.projectId !== s.activeProjectId || Date.now() - focus.requestedAt > 30_000 || focus.requestedAt > Date.now() + 5_000 || s.settingsOpen || s.sketchOpen || s.inventoryOpen || s.orderFlowOpen || s.activeOpenSourceId || Object.values(s.projectExitBlocks).some(block => block.projectId === focus.projectId)) return { schematicFocusSeen };
-    return { schematicFocusSeen, schematicFocus: { focus: { ...focus, page: { ...focus.page }, points: focus.points.map(point => ({ ...point })) }, endpoint }, workspaceArea: "boards", boardTab: "schematic", boardOpen: true, rootFinding: null, assemblyFinding: null,
+    if (s.navigationEndpoint !== null && s.navigationEndpoint !== endpoint || focus.projectId !== s.activeProjectId || Date.now() - focus.requestedAt > 30_000 || focus.requestedAt > Date.now() + 5_000 || s.settingsOpen || s.sketchOpen || s.inventoryOpen || s.orderFlowOpen || s.activeOpenSourceId || Object.values(s.projectExitBlocks).some(block => block.projectId === focus.projectId)) return { schematicFocusSeen };
+    const scope = sources ? schematicFocusScope(focus, sources, s.assemblyBoardByProject[focus.projectId]) : focus.board ? null : { board: null };
+    if (!scope) return { schematicFocusSeen };
+    const assemblyBoardByProject = { ...s.assemblyBoardByProject };
+    if (scope.board) assemblyBoardByProject[focus.projectId] = scope.board;
+    return { schematicFocusSeen, assemblyBoardByProject, schematicFocus: { returnTo: s.schematicFocus?.returnTo ?? historyLocation(s), focus: { ...focus, page: { ...focus.page }, points: focus.points.map(point => ({ ...point })) }, endpoint }, workspaceArea: "boards", boardTab: "schematic", boardOpen: true, rootFinding: null, assemblyFinding: null,
       workspaceByProject: { ...s.workspaceByProject, [focus.projectId]: { area: "boards", tab: "schematic" } } };
   }),
-  clearSchematicFocus: () => set({ schematicFocus: null }),
+  clearSchematicFocus: () => set(s => {
+    const previous = s.schematicFocus?.returnTo;
+    if (!previous || previous.projectId !== s.activeProjectId || s.workspaceArea !== "boards" || s.boardTab !== "schematic") return { schematicFocus: null };
+    const assemblyBoardByProject = { ...s.assemblyBoardByProject };
+    if (previous.board) assemblyBoardByProject[previous.projectId] = previous.board; else delete assemblyBoardByProject[previous.projectId];
+    return { ...workspaceNavigationState(s, previous.area, previous.tab as BoardTab), boardOpen: previous.boardOpen, assemblyBoardByProject, schematicFocus: null };
+  }),
   rootFinding: null,
   openRootFinding: (finding) => set(s => finding.projectId === s.activeProjectId ? {
     rootFinding: { ...finding, point: { ...finding.point } }, assemblyFinding: null,

@@ -11,6 +11,8 @@ export interface BomSourceCoverage {
   componentCount: number;
   reason?: string;
   sourceRevision?: string;
+  /** Exact files used for this board's component list, not supplier/catalog sources. */
+  sourceFiles?: Array<{ path: string; sha256: string }>;
 }
 
 export interface ProjectBomSnapshot {

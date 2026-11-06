@@ -54,12 +54,14 @@ export async function readProjectBom(ctx: ToolContext): Promise<ProjectBomSnapsh
           inputs.set(path, file.sha256);
         }
         entry.status = "native-schematic"; entry.sourceRevision = bom.sourceRevision;
+        entry.sourceFiles = bom.sourceFiles.map(file => ({ path: `${prefix}${file.path}`, sha256: file.sha256 }));
         sourceComponents = nativeBomComponents(bom.csv);
       } else {
         const netlist = await read(`${prefix}circuit.netlist.json`);
         if (!netlist) { entry.status = "missing-schematic"; entry.reason = "Add a native schematic or saved design netlist to list this board’s parts."; continue; }
         sourceComponents = NetlistFile.parse(JSON.parse(netlist.text!)).netlist.components;
         entry.status = "saved-netlist"; entry.sourceRevision = netlist.sha256;
+        entry.sourceFiles = [{ path: `${prefix}circuit.netlist.json`, sha256: netlist.sha256 }];
         entry.reason = "Saved design netlist only; native schematic exclusions and PCB parity have not been checked.";
       }
       const includedRefs = new Set(projectBomLines(sourceComponents, []).flatMap(line => line.refs));

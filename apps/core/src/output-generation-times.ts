@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
-import { AssemblyBoardModelRevision, AssemblySchematicPreviewRevision, BoardModelRevision, OutputRevision, PcbPreviewRevision, ProductVideoInputRevision, type FileEntry } from "@fabdesk/protocol";
+import { AssemblyBoardModelRevision, AssemblySchematicPreviewRevision, RootSchematicPreviewRevision, BoardModelRevision, OutputRevision, PcbPreviewRevision, ProductVideoInputRevision, type FileEntry } from "@fabdesk/protocol";
 import { jailPath } from "@fabdesk/tools";
 
 /** Reuse exporter receipts; never turn an imported file's mtime into a generation date. */
@@ -52,9 +52,10 @@ export class OutputGenerationTimes {
           const member = AssemblyBoardModelRevision.safeParse(raw), model = BoardModelRevision.safeParse(raw), pcb = PcbPreviewRevision.safeParse(raw);
           const receipt = member.success ? member.data.boardSource.projectId === projectId ? member.data : null : model.success && prefixFor(model.data.artifact + ".revision.json") === "" ? model.data : pcb.success ? pcb.data : null;
           if (receipt && prefixFor(receipt.artifact + ".revision.json") !== null) await record(prefixFor(receipt.artifact + ".revision.json")!, receipt.artifact, receipt.artifactSha256, receipt.generatedAt);
-          const schematic = AssemblySchematicPreviewRevision.safeParse(raw);
-          if (schematic.success && schematic.data.boardSource.projectId === projectId && prefixFor("renders/schematic.revision.json") !== null) {
-            for (const sheet of schematic.data.sheets) await record(prefixFor("renders/schematic.revision.json")!, sheet.path, sheet.sha256, schematic.data.generatedAt);
+          const schematic = AssemblySchematicPreviewRevision.safeParse(raw), rootSchematic = RootSchematicPreviewRevision.safeParse(raw);
+          const drawing = schematic.success && schematic.data.boardSource.projectId === projectId ? schematic.data : rootSchematic.success && rootSchematic.data.projectId === projectId && prefixFor("renders/schematic.revision.json") === "" ? rootSchematic.data : null;
+          if (drawing && prefixFor("renders/schematic.revision.json") !== null) {
+            for (const sheet of drawing.sheets) await record(prefixFor("renders/schematic.revision.json")!, sheet.path, sheet.sha256, drawing.generatedAt);
           }
         } else if (prefixFor("exports/product-video.json") !== null && raw && typeof raw === "object" && "revision" in raw && "generatedAt" in raw && typeof raw.generatedAt === "string") {
           const video = ProductVideoInputRevision.safeParse(raw.revision);

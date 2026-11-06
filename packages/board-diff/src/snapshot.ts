@@ -114,6 +114,7 @@ function overlayOntoPcb(pcb: BoardSnapshot, extras: BoardSnapshot[]): BoardSnaps
     vias: pcb.vias ?? [],
     zones: pcb.zones ?? [],
     outline: pcb.outline,
+    ...(pcb.outlinePaths ? { outlinePaths: pcb.outlinePaths } : {}),
   };
 }
 

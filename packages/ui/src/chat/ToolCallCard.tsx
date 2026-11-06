@@ -1,5 +1,5 @@
-import { schematicFocusFromResult, useCoreClient } from "@fabdesk/client-core";
-import type { SchematicFocus } from "@fabdesk/protocol";
+import { schematicFocusChoicesFromResult, schematicFocusFromResult, useRunTool, useCoreClient } from "@fabdesk/client-core";
+import type { SchematicFocus, SchematicFocusChoices } from "@fabdesk/protocol";
 import { Button } from "../components/ui";
 import type { MessagePart } from "@fabdesk/protocol";
 import { useId, useState } from "react";
@@ -95,9 +95,31 @@ function ShowSchematicComponent({ focus }: { focus: SchematicFocus }) {
   const client = useCoreClient(), [notice, setNotice] = useState<string | null>(null);
   return <div className="px-2.5 pb-2"><Button size="sm" onClick={() => {
     const request = { ...focus, id: crypto.randomUUID(), requestedAt: Date.now() }, ui = useUiStore.getState();
-    ui.requestSchematicFocus(request, client.baseUrl);
-    setNotice(useUiStore.getState().schematicFocus?.focus.id === request.id ? null : "Finish the current edit and return to this project's workspace before showing the component.");
+    void client.inspectBoardSources(request.projectId).then(sources => {
+      ui.requestSchematicFocus(request, client.baseUrl, sources);
+      setNotice(useUiStore.getState().schematicFocus?.focus.id === request.id ? null : "The source changed or this workspace has an unfinished edit. Recheck the board before showing this component.");
+    }).catch(() => setNotice("Could not verify this board’s current source. Try again when connected."));
   }}><Icon name="search" width={15} height={15} />Show {focus.reference} on schematic</Button>{notice && <p role="status" className="text-xs text-muted">{notice}</p>}</div>;
+}
+
+function ChooseSchematicSheet({ choices }: { choices: SchematicFocusChoices }) {
+  const tool = useRunTool(), client = useCoreClient();
+  const [notice, setNotice] = useState<string | null>(null);
+  return <section className="px-2.5 pb-2" aria-label="Choose schematic sheet">
+    <p className="mb-2 text-xs text-muted">{choices.reference} appears in more than one sheet. Which instance do you mean?</p>
+    <div className="flex max-h-48 flex-col gap-2 overflow-auto">{choices.sheets.map(sheet => <Button key={sheet.identity} size="sm" disabled={tool.state.status === "running"} title={sheet.sourcePath} onClick={() => {
+      if (useUiStore.getState().activeProjectId !== choices.projectId) return;
+      setNotice(null);
+      void tool.run("schematic_focus", { projectId: choices.projectId, reference: choices.reference, sheetIdentity: sheet.identity, expectedHierarchyRevision: choices.expectedHierarchyRevision, ...(choices.board ? { board: choices.board } : {}) }).then(async result => {
+        if (result.status !== "done") return;
+        const focus = schematicFocusFromResult(result.result);
+        if (!focus) { setNotice("This sheet could not be focused. Locate the component again after checking its source."); return; }
+        const sources = await client.inspectBoardSources(choices.projectId);
+        useUiStore.getState().requestSchematicFocus(focus, client.baseUrl, sources);
+      }).catch(() => setNotice("Could not recheck the current board source. Try again when connected."));
+    }}><Icon name="schematic" width={15} height={15} />{sheet.hierarchyPath} · {sheet.sourcePath}</Button>)}</div>
+    {(notice || tool.state.error) && <p role="status" className="mt-2 text-xs text-muted">{notice ?? tool.state.error}</p>}
+  </section>;
 }
 
 export function ToolCallCard({ use, result, streaming = false }: { use: ToolUse; result?: ToolResult | undefined; streaming?: boolean }) {
@@ -115,6 +137,7 @@ export function ToolCallCard({ use, result, streaming = false }: { use: ToolUse;
   const detail = command ? commandText(use.input) || name : [name, summarizeArgs(use.input)].filter(Boolean).join(" · ");
   const imageName = imagePath(use.input);
   const focusTool = name === "schematic_focus" || name === "capability_call" && !!use.input && typeof use.input === "object" && (use.input as Record<string, unknown>).name === "schematic_focus";
+  const choices = result && !error && focusTool ? schematicFocusChoicesFromResult(result.output) : null;
   const focus = result && !error && focusTool ? schematicFocusFromResult(result.output) : null;
   const label = viewingImage
     ? (error ? "Could not view image" : pending ? (streaming ? "Viewing image" : "Image viewing pending") : "Viewed image") + (imageName ? " · " + imageName : "")
@@ -128,6 +151,7 @@ export function ToolCallCard({ use, result, streaming = false }: { use: ToolUse;
         {error && <span className="shrink-0 text-xs text-danger">Error</span>}
         <Icon name={open ? "chevronDown" : "chevronRight"} width={12} height={12} className="shrink-0" />
       </button>
+      {choices?.projectId === projectId && <ChooseSchematicSheet choices={choices} />}
       {focus?.projectId === projectId && <ShowSchematicComponent focus={focus} />}
       {error && result && <ErrorNotice error={resultText(result.output)} />}
       {images.length > 0 && (

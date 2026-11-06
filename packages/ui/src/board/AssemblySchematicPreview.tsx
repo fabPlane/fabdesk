@@ -1,7 +1,10 @@
+import { useAssistantSurface } from "../chat/useAssistantSurface";
+import { SchematicSheetNav } from "./SchematicSheetNav";
+import { SchematicFocusView } from "./SchematicFocusView";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useEffect, useRef, useState } from "react";
-import type { ProjectBoardSources } from "@fabdesk/protocol";
-import { assemblySelectionState, captureAssemblySchematicInspection, pcbToolJson, useAssemblySchematicPreview, useRunTool, type AssemblySceneSelection } from "@fabdesk/client-core";
+import { AssemblySchematicPreviewRevision, type ProjectBoardSources } from "@fabdesk/protocol";
+import { useCoreClient, assemblySelectionState, captureAssemblySchematicInspection, pcbToolJson, useAssemblySchematicPreview, useRunTool, type AssemblySceneSelection } from "@fabdesk/client-core";
 import { Select, Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import { SvgViewer } from "./SvgViewer";
@@ -9,10 +12,19 @@ import { parseSvgViewBox } from "./svg-coords";
 import { MissingNativeSource } from "./MissingNativeSource";
 
 /** Source-bound native sheet. Open missing previews automatically; source edits remain agent requests. */
-export function AssemblySchematicPreview({ projectId, data, selection, enabled, onBusyChange }: { projectId: string; data: ProjectBoardSources; selection: AssemblySceneSelection; enabled: boolean; onBusyChange: (busy: boolean) => void }) {
+export function AssemblySchematicPreview(props: Parameters<typeof AssemblySchematicContent>[0]) {
+  const focus = useUiStore(s => s.schematicFocus);
+  const showing = focus?.focus.projectId === props.projectId && focus.focus.board?.sourceId === props.selection.sourceId;
+  return <div className="relative h-full min-h-0"><div className="h-full" style={showing ? { visibility: "hidden" } : undefined} inert={showing || undefined}><AssemblySchematicContent {...props} enabled={props.enabled && !showing} /></div>{showing && <SchematicFocusView key={focus.focus.id} focus={focus.focus} endpoint={focus.endpoint} />}</div>;
+}
+function AssemblySchematicContent({ projectId, data, selection, enabled, onBusyChange }: { projectId: string; data: ProjectBoardSources; selection: AssemblySceneSelection; enabled: boolean; onBusyChange: (busy: boolean) => void }) {
+  const client = useCoreClient();
   const autoAttempted = useRef(false);
   const board = { sourceId: selection.sourceId, manifestSha256: selection.manifestSha256 }, owned = assemblySelectionState(data, selection) === "owned";
-  const [page, setPage] = useState<string | null>(null), [error, setError] = useState<string | null>(null), [busy, setBusy] = useState(false), running = useRef(false);
+  const pageKey = JSON.stringify([client.baseUrl, projectId, board.sourceId, board.manifestSha256]);
+  const page = useUiStore(s => s.schematicPageBySource[pageKey] ?? null);
+  const setPage = (path: string | null) => useUiStore.getState().setSchematicPage(pageKey, path);
+  const [error, setError] = useState<string | null>(null), [busy, setBusy] = useState(false), running = useRef(false);
   const preview = useAssemblySchematicPreview(projectId, board, page, enabled && owned), tool = useRunTool();
   const source = data.sources.find(row => row.source.id === board.sourceId), state = preview.data?.state;
   const generate = async () => {
@@ -24,14 +36,18 @@ export function AssemblySchematicPreview({ projectId, data, selection, enabled, 
       const snapshot = captureAssemblySchematicInspection(inspected.result, projectId, board);
       if (!snapshot.hierarchy.complete) throw new Error("The saved hierarchy is incomplete. Review its referenced sheets in Checks before rendering.");
       if (useUiStore.getState().activeProjectId !== projectId) return;
-      const result = await tool.run("render_schematic_svg", { projectId, board: { ...board }, expectedHierarchyRevision: snapshot.hierarchy.aggregateRevision });
+      const result = await tool.run("render_schematic_svg", { projectId, board: { ...board }, expectedHierarchyRevision: snapshot.hierarchy.aggregateRevision, circuit: true });
       if (result.status !== "done") return;
       const identity = pcbToolJson(result.result)._board as Record<string, unknown> | undefined;
       if (identity?.projectId !== projectId || identity.sourceId !== board.sourceId || identity.manifestSha256 !== board.manifestSha256) throw new Error("The preview result did not match the selected source. Recheck this board.");
-      setPage(null); if (!page) await preview.refetch();
+      const captured = AssemblySchematicPreviewRevision.safeParse(pcbToolJson(result.result).preview);
+      const next = captured.success && captured.data.boardSource.projectId === projectId && captured.data.boardSource.sourceId === board.sourceId && captured.data.boardSource.manifestSha256 === board.manifestSha256 ? captured.data.sheets.find(sheet => sheet.nativeSheet?.identity === preview.data?.sheet?.nativeSheet?.identity)?.path ?? null : null;
+      setPage(next); if (next === page) await preview.refetch();
     } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
     finally { running.current = false; setBusy(false); onBusyChange(false); }
   };
+  const nativeSheet = preview.data?.sheet?.nativeSheet;
+  useAssistantSurface(enabled && nativeSheet ? { projectId, label: `Schematic · ${source?.source.name ?? "Board"} · ${nativeSheet.hierarchyPath === "/" ? "Root circuit" : nativeSheet.hierarchyPath}`, priority: 8, details: JSON.stringify({ board, sheet: nativeSheet, sourceRevision: preview.data?.sourceRevision, previewState: preview.data?.state, instruction: "Use this exact member source and native sheet instance. Inspect the current files before editing or making electrical claims." }) } : null);
   const drawing = preview.data?.svg && parseSvgViewBox(preview.data.svg) ? preview.data.svg : null;
   useEffect(() => {
     // A missing drawing is a display concern: render the verified native source once on entry.
@@ -47,18 +63,19 @@ export function AssemblySchematicPreview({ projectId, data, selection, enabled, 
   if (preview.isError) return <LoadError title="Could not verify this source’s saved schematic preview" onRetry={() => { if (page) setPage(null); else void preview.refetch(); }} />;
   if (preview.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   if (!source?.schematicPath && !drawing) return <MissingNativeSource key={`${projectId}/${board.sourceId}/${board.manifestSha256}`} projectId={projectId} kind="schematic" enabled={enabled && !busy} selection={selection} membership={data} directory={source?.source.location === "project" ? source.source.directory : "."} name={source?.source.name ?? "Selected board"} />;
-  const pages = preview.data?.sheets ?? [], pageIndex = pages.findIndex(sheet => sheet.path === preview.data?.sheet?.path);
-  const showPrimaryRender = state !== "source-unchanged" || busy;
-  const renderAction = <Button size="sm" disabled={!enabled || busy || preview.isFetching || !source?.schematicPath} onClick={() => void generate()}>{busy ? "Rendering sheets…" : preview.data?.sheets.length ? "Update schematic preview" : "Create schematic preview"}</Button>;
+  const pages = preview.data?.sheets ?? [];
+  const circuitView = !!drawing?.includes('data-fabplane-schematic-view="circuit');
+  const showPrimaryRender = !circuitView || state !== "source-unchanged" || busy;
+  const renderAction = <Button size="sm" disabled={!enabled || busy || preview.isFetching || !source?.schematicPath} onClick={() => void generate()}>{busy ? "Rendering sheets…" : preview.data?.sheets.length && !circuitView ? "Open circuit view" : preview.data?.sheets.length ? "Update schematic preview" : "Create schematic preview"}</Button>;
   const label = !enabled ? "Checking source ownership…" : busy ? "Rendering the inspected hierarchy…" : preview.isFetching ? "Checking saved sheets and preview…" : state === "source-unchanged" ? "Saved source files match this preview" : state === "source-changed" ? "Schematic changed since preview · showing an earlier drawing" : state === "artifact-changed" ? "Preview file changed or is missing · source unverified" : state === "scope-unverified" ? "Preview ownership is unverified · render this source again" : "No saved schematic preview for this source";
   if (!drawing) return <div className="fd-assembly-schematic fd-assembly-schematic-empty"><EmptyState title={busy ? "Opening schematic…" : "Open this board’s schematic"} action={!busy ? renderAction : undefined}>The native KiCad files were found. fabPlane creates the drawing here without changing your circuit.</EmptyState>{(error || tool.state.error) && <p role="alert" className="fd-assembly-detail-error">{error ?? tool.state.error}</p>}</div>;
   return <div className="fd-assembly-schematic" data-testid="assembly-schematic-preview">
     <div className="fd-assembly-model-status" role="status" data-warning={["source-changed", "artifact-changed", "scope-unverified"].includes(state ?? "")}><strong>{label}</strong><details className="fd-schematic-preview-details"><DisclosureSummary icon="image" label="Preview details" variant="compact" /><span>Read-only native sheet · ERC, PCB parity, external symbol libraries and assembly compatibility are unverified.</span>{!showPrimaryRender && renderAction}</details></div>
     {(pages.length > 1 || showPrimaryRender) && <div className="fd-assembly-schematic-toolbar">
-      {(preview.data?.sheets.length ?? 0) > 1 && <label>Sheet <Button size="sm" variant="ghost" aria-label="Previous schematic sheet" disabled={busy || pageIndex <= 0} onClick={() => setPage(pages[pageIndex - 1]!.path)}>←</Button><Select aria-label="Schematic preview sheet" disabled={busy} value={preview.data?.sheet?.path ?? ""} onChange={event => setPage(event.target.value)}>{preview.data?.sheets.map((sheet, index) => <option key={sheet.path} value={sheet.path}>{index + 1} · {sheet.name.replace(/\.svg$/i, "")}</option>)}</Select><Button size="sm" variant="ghost" aria-label="Next schematic sheet" disabled={busy || pageIndex < 0 || pageIndex >= pages.length - 1} onClick={() => setPage(pages[pageIndex + 1]!.path)}>→</Button></label>}
+      <SchematicSheetNav sheets={pages} selected={preview.data?.sheet?.path} busy={busy} onSelect={setPage} />
       {showPrimaryRender && renderAction}
     </div>}
-    {drawing ? <SvgViewer svg={drawing} initialFit="width" viewKey={`${projectId}/${board.sourceId}/${board.manifestSha256}/${preview.data?.sheet?.path}`} /> : <EmptyState title="See this board’s schematic">Create a preview of its saved native sheets to inspect them here.</EmptyState>}
+    {drawing ? <SvgViewer viewportKey={JSON.stringify([client.baseUrl, projectId, board.sourceId, board.manifestSha256, nativeSheet?.identity ?? preview.data?.sheet?.path])} svg={drawing} initialFit={circuitView ? "sheet" : "width"} viewKey={`${projectId}/${board.sourceId}/${board.manifestSha256}/${preview.data?.sheet?.path}`} /> : <EmptyState title="See this board’s schematic">Create a preview of its saved native sheets to inspect them here.</EmptyState>}
     {(error || tool.state.error) && <p role="alert" className="fd-assembly-detail-error">{error ?? tool.state.error}</p>}
   </div>;
 }
