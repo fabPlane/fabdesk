@@ -34,6 +34,14 @@ Local daemon routes are `/projects/:id/share` (GET/PUT/DELETE), `/projects/:id/s
 
 The hosted viewer should offer `fabplane://share/<shareId>`. Electron validates the scheme, host and ID, queues cold-start links, and passes the ID to a dedicated read-only dialog. HTTPS links on the exact `https://app.fabplane.com/share/<shareId>` origin/path are also recognized when delivered to the app. Incoming links cannot select an arbitrary API origin or supply file paths.
 
-The dialog fetches the public snapshot using the daemon's configured cloud origin, shows the published revision, and supports board details / All boards and PCB/3D views. It does not import a project, touch local boards, or allow editing. It does not persist snapshots. While open it rechecks active revision metadata every five seconds; failure clears loaded content. Previously downloaded copies cannot be recalled.
+The dialog fetches the public snapshot using the daemon's configured cloud origin, shows the published revision, and supports board details / All boards and PCB/3D views. It does not import a project, touch local boards, or allow editing. It does not persist snapshots. While open it rechecks active revision metadata every five seconds, including in background windows; failure clears loaded content. Previously downloaded copies cannot be recalled.
 
 Generated browser URLs use the app origin from the existing auth state's dashboard URL (production defaults to `https://app.fabplane.com`). `FABPLANE_APP_ORIGIN` overrides this for local/staging integration. The companion browser PR adds this route, saved board 3D, existing app navigation/auth and an owner-only Projects page with Make private. Desktop settings refresh after browser revocation.
+
+## Integration evidence
+
+A normally packaged Electron app with a unique test identifier and ad-hoc signature was exercised through visible UI with the real compiled core. Chrome's Open in fabPlane launched the closed app into the matching read-only snapshot; its saved board model rendered. Browser Make private then removed the model from the open native viewer. The earlier manually assembled Electron bundle failure did not reproduce with the repository packager. Test-only origin/profile setup remains outside tracked source. Notarized installers and deployed staging remain release checks.
+
+The companion API's full suite passed on a fresh PostgreSQL 17.6 server with pgcrypto (380 passed, 4 skipped), including sharing revocation and concurrent database tests. Deployed staging validation was blocked by missing/offline GitHub runners; the task-owned queued deployment was cancelled without changing staging.
+
+Publication/copy confirmations are scoped to the server sharing revision. External revocation or a newer publication hides an obsolete confirmation. Both visitor access checks and owner settings refresh in the background, so returning to an occluded window does not rely only on a focus event.

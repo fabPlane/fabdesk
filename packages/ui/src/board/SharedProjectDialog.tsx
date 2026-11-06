@@ -34,6 +34,7 @@ export function SharedProjectDialog({
     gcTime: 0,
     staleTime: 0,
     refetchInterval: 5_000,
+    refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
   });
   return (

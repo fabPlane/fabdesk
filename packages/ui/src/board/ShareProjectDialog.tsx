@@ -34,12 +34,13 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
     retry: false,
     staleTime: 0,
     refetchInterval: 5_000,
+    refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
   });
   const [choice, setChoice] = useState<"private" | "unlisted" | null>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<unknown>(null),
-    [notice, setNotice] = useState("");
+    [notice, setNotice] = useState<{ message: string; state: string } | null>(null);
   const [preview, setPreview] = useState<ProjectShareSnapshot | null>(null);
   const saved = settings.data,
     selected = choice ?? saved?.visibility ?? "private";
@@ -49,6 +50,8 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
       ? sharedProjectUrl(saved.shareId, appOrigin)
       : null;
   const changed = confirmed && selected !== saved.visibility;
+  const stateKey = (state: ProjectShareState) =>
+    state.visibility === "private" ? "private" : `${state.shareId}:${state.revision}`;
   const close = () => {
     if (!busy) onClose();
   };
@@ -56,7 +59,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
     if (!confirmed || busy) return;
     setBusy(true);
     setError(null);
-    setNotice("");
+    setNotice(null);
     try {
       const result: ProjectShareState =
         selected === "private"
@@ -64,11 +67,13 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
           : await client.publishProjectShare(projectId);
       cache.setQueryData(queryKey, result);
       setChoice(null);
-      setNotice(
-        result.visibility === "private"
-          ? "Link sharing is disabled."
-          : "Shared page published. You can copy the link now.",
-      );
+      setNotice({
+        state: stateKey(result),
+        message:
+          result.visibility === "private"
+            ? "Link sharing is disabled."
+            : "Shared page published. You can copy the link now.",
+      });
     } catch (failure) {
       setError(failure);
       // A timed-out request might have succeeded. Reconcile before allowing another mutation.
@@ -89,13 +94,13 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
     }
   };
   const copy = async () => {
-    if (!link) return;
+    if (!link || !saved) return;
     setError(null);
-    setNotice("");
+    setNotice(null);
     try {
       if (host.copyText) await host.copyText(link);
       else await navigator.clipboard.writeText(link);
-      setNotice("Link copied.");
+      setNotice({ message: "Link copied.", state: stateKey(saved) });
     } catch {
       setError(new Error("Could not copy the link. Select the address and copy it manually."));
     }
@@ -133,7 +138,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
                 checked={selected === option.value}
                 onChange={() => {
                   setChoice(option.value);
-                  setNotice("");
+                  setNotice(null);
                 }}
               />
               <span>
@@ -261,9 +266,9 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
             </div>
           </div>
         )}
-        {notice && (
+        {notice && confirmed && notice.state === stateKey(saved) && (
           <p role="status" className="fd-share-notice">
-            {notice}
+            {notice.message}
           </p>
         )}
         <footer className="fd-share-footer">
