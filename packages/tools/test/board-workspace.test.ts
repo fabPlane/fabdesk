@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { BoardFile, BoardRevisionComparison, BoardTimeline, BoardView, PartLink, PartLinkList, PartLinkSuggestion } from "@fabdesk/protocol";
 import { PART_LINKS_FILE } from "@fabdesk/protocol";
 import { ToolError, createRegistry, type ProjectHandle } from "../src";
+import { baselineChanges, partBaseline } from "../src/part-links";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
 async function git(dir: string, args: string[]) {
@@ -359,6 +360,32 @@ describe("board history and part links", () => {
     expect(timeline.entries.map((entry) => [entry.kind, entry.title])).toEqual([["git", "one"], ["worktree", "nudge J1"]]);
     expect(timeline.entries[1]?.ref).toBe("worktree");
     expect(timeline.entries[1]?.date).toBeDefined();
+  });
+
+  test("a reverted board is titled by the revert, not the first commit with that content", async () => {
+    await git(project.dir, ["init", "-q"]);
+    await git(project.dir, ["config", "user.email", "t@test"]);
+    await git(project.dir, ["config", "user.name", "T"]);
+    await git(project.dir, ["config", "commit.gpgsign", "false"]);
+    const original = await readFile(join(project.dir, BOARD_A), "utf8");
+    await git(project.dir, ["add", "-A"]);
+    await git(project.dir, ["commit", "-qm", "first"]);
+    await write(BOARD_A, pcb(footprint("J1", 12)));
+    await git(project.dir, ["add", "-A"]);
+    await git(project.dir, ["commit", "-qm", "change"]);
+    await write(BOARD_A, original);
+    await git(project.dir, ["add", "-A"]);
+    await git(project.dir, ["commit", "-qm", "revert"]);
+    expect((await invoke<BoardTimeline>("board_revision_timeline", { pcbPath: BOARD_A })).entries.map((entry) => entry.title)).toEqual(["change", "revert"]);
+    // A saved point of the same content does not hide the commit's message.
+    await invoke("board_revision_save", { pcbPath: BOARD_A, label: "Saved point" });
+    expect((await invoke<BoardTimeline>("board_revision_timeline", { pcbPath: BOARD_A })).entries.at(-1)?.title).toBe("revert");
+  });
+
+  test("the same orientation written another way does not ask for review", () => {
+    const part = (rotation: number) => ({ ref: "J1", x: 1, y: 1, rotation, pads: [] });
+    for (const [a, b] of [[0, 360], [-90, 270], [180, -180], [359.9, 0]] as const) expect(baselineChanges(partBaseline(part(a)), part(b))).toEqual([]);
+    expect(baselineChanges(partBaseline(part(0)), part(90))).toEqual(["rotated"]);
   });
 
   test("a corrupt links file does not stop a board from being viewed", async () => {

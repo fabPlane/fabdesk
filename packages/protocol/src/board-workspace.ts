@@ -142,8 +142,9 @@ export type PinCheck = {
 type PinPad = { pin: string; net?: string | undefined };
 
 const GENERATED_NET = /^(?:Net-\(|unconnected-|N\$)/;
-const GROUND_NET = /^(?:[ADPS]?GND\w*|VSS\w*|EARTH\w*)$/i;
-const POWER_NET = /^(?:\+?\d+V\d*\w*|V(?:CC|DD|BUS|BAT|IN|SYS|IO)\w*)$/i;
+const GROUND_NET = /^(?:[ADPS]?GND\w*|VSS\w*|EARTH\w*|0V)$/i;
+/** Voltages are written +3V3, +3.3V, 3.3V, -12V or +1V8; 0V is a ground. */
+const POWER_NET = /^(?:(?!0V$)[+-]?\d+(?:\.\d+)?V\d*\w*|[+-]?V(?:CC|DD|BUS|BAT|IN|SYS|IO)\w*)$/i;
 /** Hierarchical sheets prefix net names; the same signal keeps its last segment. */
 export const netName = (net: string) => net.split("/").at(-1) ?? net;
 /** KiCad's generated names repeat one board's own reference, so they say nothing across boards. */
@@ -160,7 +161,8 @@ export function isRailNet(net: string): boolean {
 function pinKind(aNet?: string, bNet?: string): PinCheckKind {
   const a = namedNet(aNet), b = namedNet(bNet);
   if (!a || !b) return "unnamed";
-  if (a === b) return "match";
+  // Boards differ in capitalisation more often than they mean two different nets.
+  if (a.toLowerCase() === b.toLowerCase()) return "match";
   const ground = (net: string) => GROUND_NET.test(net), power = (net: string) => POWER_NET.test(net);
   // Different rails joined by a cable are the mistake worth stopping for.
   if ((ground(a) && power(b)) || (power(a) && ground(b)) || (power(a) && power(b))) return "conflict";

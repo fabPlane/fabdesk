@@ -350,7 +350,7 @@ export function pinCheckLabel(check: Pick<PinCheck, "status" | "rows" | "unmappe
     count("conflict") ? `${count("conflict")} power conflict${count("conflict") === 1 ? "" : "s"}` : "",
     count("differs") ? `${count("differs")} with different names` : "",
     count("unnamed") ? `${count("unnamed")} without a net name` : "",
-    check.unmapped.length ? `${check.unmapped.length} named not mapped` : "",
+    check.unmapped.length ? `${check.unmapped.length} named ${check.unmapped.length === 1 ? "pin" : "pins"} not mapped` : "",
   ].filter(Boolean);
   return parts.length ? parts.join(", ") : `All ${check.rows.length} pins agree by net name`;
 }

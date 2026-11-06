@@ -211,5 +211,5 @@ test("likely targets match nets across hierarchical sheets, counting each shared
 test("the pin check reads as a plain sentence and never claims verification", () => {
   expect(pinCheckLabel({ status: "none", rows: [], unmapped: [] })).toBe("No pins stated yet");
   expect(pinCheckLabel({ status: "agree", rows: [{ a: "1", b: "2", kind: "match" }], unmapped: [] })).toBe("All 1 pins agree by net name");
-  expect(pinCheckLabel({ status: "conflict", rows: [{ a: "1", b: "2", kind: "conflict" }, { a: "2", b: "3", kind: "differs" }], unmapped: ["4"] })).toBe("1 power conflict, 1 with different names, 1 named not mapped");
+  expect(pinCheckLabel({ status: "conflict", rows: [{ a: "1", b: "2", kind: "conflict" }, { a: "2", b: "3", kind: "differs" }], unmapped: ["4"] })).toBe("1 power conflict, 1 with different names, 1 named pin not mapped");
 });

@@ -199,6 +199,58 @@ try {
   await clickButton("Remove link", ".fd-connect-panel");
   await until(`document.querySelectorAll('.fd-connection-list > button').length===0`, 10000);
   check("Remove link deletes it", file().length === 0, file());
+
+  // A first link started from the right board must leave both boards where they are.
+  await openArea("History");
+  await until(`!!document.querySelector('.fd-history-step')`);
+  await openArea("Connections");
+  await until(`document.querySelectorAll('[data-testid="connections-workspace"] canvas').length===2`);
+  await sleep(500);
+  const boardsShown = () => page(`[...document.querySelectorAll('.fd-connection-side select')].filter((_,i)=>i%2===0).map(s=>s.value).join()`);
+  const opening = await boardsShown();
+  await clickPart("pair-right-board", viewB.drawing, j9.bounds);
+  await until(`document.querySelector('.fd-connect-panel h2')?.innerText==='J9'`, 5000);
+  await sleep(300);
+  await clickPart("pair-left-board", viewA.drawing, j1.bounds);
+  await until(`!!document.querySelector('.fd-connect-pin-table')`, 5000);
+  await sleep(300);
+  const saveVisible = await page(`(()=>{const p=document.querySelector('.fd-connect-panel').getBoundingClientRect(),b=document.querySelector('.fd-connect-actions button').getBoundingClientRect();return b.bottom<=p.bottom+1})()`);
+  check("Save stays in view", saveVisible === true);
+  await clickButton("Save connection", ".fd-connect-panel");
+  await until(`document.querySelectorAll('.fd-connection-list > button').length===1`, 15000);
+  await sleep(1000);
+  check("Saving keeps both boards and the selection", (await boardsShown()) === opening && (await page(`document.querySelectorAll('.fd-pair-notice').length`)) === 0, [opening, await boardsShown()]);
+  await clickButton("Remove link", ".fd-connect-panel");
+  await until(`document.querySelectorAll('.fd-connection-list > button').length===0`, 10000);
+  await sleep(500);
+  check("Removing the last link keeps both boards", (await boardsShown()) === opening, [opening, await boardsShown()]);
+
+  // Arrow keys still step after clicking a part, which is how one part is followed through history.
+  await openArea("History");
+  await until(`document.querySelectorAll('[data-testid="pair-newer-revision"] canvas').length===1`);
+  await until(`!!document.querySelector('.fd-history-step [aria-live]') && !document.querySelector('.fd-pair-view[data-updating=true]')`, 5000);
+  const stepNumber = async () => Number(/Step (\d+)/.exec(await step())?.[1]);
+  const startStep = await stepNumber();
+  const r1 = viewA.parts.find((p: any) => p.ref === "R1");
+  await clickPart("pair-newer-revision", (await tool("board_revision_compare", { pcbPath: BOARD_A, from: (await tool("board_revision_timeline", { pcbPath: BOARD_A })).entries.at(-2).ref, drawings: true })).to.drawing, r1.bounds);
+  await until(`document.querySelector('.fd-history-selection')?.innerText.startsWith('R1')`, 5000);
+  await bridge("POST", "/key", { key: "Left" });
+  await sleep(400);
+  check("Left arrow steps back after clicking a part", (await stepNumber()) === startStep - 1, await step());
+  check("The part stays selected while stepping", (await text(".fd-history-selection")).startsWith("R1"), await text(".fd-history-selection"));
+  // Zoomed in, the drawing can pan, so the same key pans it instead of stepping.
+  const zoomIn = '[data-testid="pair-newer-revision"] [title="Zoom in"]';
+  for (let times = 0; times < 5; times += 1) await clickSelector(zoomIn);
+  await sleep(300);
+  const hostCenter = await page(`(()=>{const r=document.querySelector('[data-testid="pair-newer-revision"] .fd-svg-viewport').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+  await bridge("POST", "/click", hostCenter);
+  const steppedTo = await stepNumber();
+  await bridge("POST", "/key", { key: "Right" });
+  await sleep(400);
+  check("Arrow keys pan a zoomed drawing instead of stepping", (await stepNumber()) === steppedTo, await step());
+  await clickButton("Save this revision", ".fd-board-workspace-bar");
+  await until(`[...document.querySelectorAll('.fd-board-workspace-bar [role=status]')].some(e=>e.innerText.startsWith('Saved'))`, 10000);
+  check("Saving a revision says so", true);
   check("No errors on screen", (await page(`document.querySelectorAll('[role=alert]').length`)) === 0, await page(`[...document.querySelectorAll('[role=alert]')].map(e=>e.textContent)`));
 } catch (error) {
   failures += 1;

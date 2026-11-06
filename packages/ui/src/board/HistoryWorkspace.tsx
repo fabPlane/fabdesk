@@ -58,9 +58,10 @@ export function HistoryWorkspace({ projectId }: { projectId: string }) {
   const [listOpen, setListOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveNote, setSaveNote] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const act = useBoardWorkspaceAction(projectId);
-  useEffect(() => { setPicked(null); setCustom(null); setFilter(null); setSelected(null); setSaveError(null); }, [pcbPath]);
+  useEffect(() => { setPicked(null); setCustom(null); setFilter(null); setSelected(null); setSaveError(null); setSaveNote(null); }, [pcbPath]);
   const index = picked !== null && picked < entries.length ? picked : defaultTimelineIndex(entries);
   const pair = timelinePair(entries, index);
   const from = custom?.from ?? pair?.from.ref ?? null, to = custom?.to ?? pair?.to.ref ?? null;
@@ -74,8 +75,10 @@ export function HistoryWorkspace({ projectId }: { projectId: string }) {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.defaultPrevented) return;
-      // Arrow keys already belong to form fields, and pan a focused drawing.
-      if (event.target instanceof Element && event.target.closest("input, select, textarea, [contenteditable], [role=dialog], .fd-svg-viewport, .fd-svg-host, .fd-assistant-dock")) return;
+      // Arrow keys already belong to form fields, and pan a drawing only once it is zoomed in enough to pan.
+      if (event.target instanceof Element && event.target.closest("input, select, textarea, [contenteditable], [role=dialog], .fd-assistant-dock")) return;
+      const drawing = event.target instanceof Element ? event.target.closest(".fd-svg-viewport") : null;
+      if (drawing && (drawing.scrollWidth > drawing.clientWidth + 1 || drawing.scrollHeight > drawing.clientHeight + 1)) return;
       const next = timelineStep(entries, index, event.key === "ArrowLeft" ? -1 : 1);
       if (next === null) return;
       event.preventDefault();
@@ -114,8 +117,8 @@ export function HistoryWorkspace({ projectId }: { projectId: string }) {
 
   const save = async () => {
     if (!pcbPath || saving) return;
-    setSaving(true); setSaveError(null);
-    try { await act("board_revision_save", { pcbPath, label: `Saved ${new Date().toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` }); }
+    setSaving(true); setSaveError(null); setSaveNote(null);
+    try { const point = await act<{ created: boolean }>("board_revision_save", { pcbPath, label: `Saved ${new Date().toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` }); setSaveNote(point.created ? "Saved this revision." : "This exact revision was already saved."); }
     catch (error) { setSaveError(error instanceof Error ? error.message : "Could not save this revision."); }
     finally { setSaving(false); }
   };
@@ -144,6 +147,7 @@ export function HistoryWorkspace({ projectId }: { projectId: string }) {
           {custom && <Button size="sm" variant="ghost" onClick={() => setCustom(null)}>Back to timeline</Button>}
         </div>
       </details>
+      {saveNote && <span className="fd-history-note" role="status">{saveNote}</span>}
       {saveError && <span className="fd-board-workspace-error" role="alert">{saveError}</span>}
     </div>
     {timeline.isError ? <LoadError title="Could not read this board's revisions" onRetry={() => void timeline.refetch()} /> : timeline.isPending ? <div className="fd-pair-state"><Spinner /></div> : <>

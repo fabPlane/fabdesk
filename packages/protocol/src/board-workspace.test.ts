@@ -47,6 +47,17 @@ test("rails are told apart from signals, including across sheets", () => {
   for (const net of ["SDA", "USB_D+", "KB_LED_SCRL", "CLK"]) expect(isRailNet(net)).toBe(false);
 });
 
+test("voltage rails are recognised however they are written", () => {
+  for (const net of ["+3V3", "3V3", "+3.3V", "3.3V", "+1.8V", "-12V", "+12V", "VCC", "+VBAT", "/Power/+3.3V"]) expect(isRailNet(net)).toBe(true);
+  for (const net of ["SDA", "V_OUT", "3D_SENSE", "PV1"]) expect(isRailNet(net)).toBe(false);
+  const kind = (x: string, y: string) => checkPinMap([{ pin: "1", net: x }], [{ pin: "1", net: y }], [{ a: "1", b: "1" }]).rows[0]?.kind;
+  expect(kind("+3.3V", "GND")).toBe("conflict");
+  expect(kind("-12V", "+12V")).toBe("conflict");
+  expect(kind("vcc", "VCC")).toBe("match");
+  expect(kind("0V", "GND")).toBe("differs");
+  expect(kind("0V", "+5V")).toBe("conflict");
+});
+
 test("no pins stated is not a result", () => {
   expect(checkPinMap(a, b, undefined).status).toBe("none");
   expect(checkPinMap(a, b, []).rows).toEqual([]);

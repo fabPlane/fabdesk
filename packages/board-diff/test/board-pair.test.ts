@@ -31,6 +31,12 @@ describe("compareBoardPair", () => {
     expect(changes.find((c) => c.kind === "removed")?.toRef).toBeUndefined();
   });
 
+  test("the same orientation written another way is not a rotation", () => {
+    const board = (rotation: number) => ({ ...snapshotFromKicadPcb("(kicad_pcb (version 20241201))"), components: [{ ref: "R1", x: 1, y: 1, rotation }] });
+    expect(compareBoardPair(board(-90), board(270)).changes).toEqual([]);
+    expect(compareBoardPair(board(0), board(90)).changes[0]?.reasons).toEqual(["rotated"]);
+  });
+
   test("identical boards report nothing", () => {
     const { changes, summary } = compareBoardPair(snapshotFromKicadPcb(PCB_FROM), snapshotFromKicadPcb(PCB_FROM));
     expect(changes).toEqual([]);

@@ -95,7 +95,9 @@ export function baselineChanges(baseline: PartBaseline, current: ComponentSnapsh
   if (baseline.layer !== now.layer) reasons.push("moved to another side");
   if (JSON.stringify(baseline.pads) !== JSON.stringify(now.pads)) reasons.push("pins or nets changed");
   if (baseline.x !== undefined && now.x !== undefined && baseline.y !== undefined && now.y !== undefined && Math.hypot(now.x - baseline.x, now.y - baseline.y) > POSITION_TOLERANCE_MM) reasons.push("moved on the board");
-  if (Math.abs((baseline.rotation ?? 0) - (now.rotation ?? 0)) > ROTATION_TOLERANCE_DEG) reasons.push("rotated");
+  // 270 and -90 are one orientation, so compare the shorter way round.
+  const turn = Math.abs((baseline.rotation ?? 0) - (now.rotation ?? 0)) % 360;
+  if (Math.min(turn, 360 - turn) > ROTATION_TOLERANCE_DEG) reasons.push("rotated");
   return reasons;
 }
 

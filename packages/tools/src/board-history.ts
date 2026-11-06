@@ -171,9 +171,10 @@ export async function listBoardRevisions(project: ProjectHandle, pcbPath: string
   const seen = new Set<string>();
   const unique = found.filter((revision) => !seen.has(revision.sha256) && !!seen.add(revision.sha256));
   const worktree = await readBoardRevision(project, path, BOARD_WORKTREE_REF, signal).catch(() => null);
-  // The live file is always the newest entry. When it matches a commit or saved point, that entry
-  // gives up its place but lends its title and date, so the card still says what the revision was.
-  const same = worktree ? unique.find((revision) => revision.sha256 === worktree.sha256) : undefined;
+  // The live file is always the newest entry. When it matches earlier revisions it takes the title
+  // and date of the latest, preferring a commit, so a revert reads as the revert and not the original.
+  const matching = worktree ? found.filter((revision) => revision.sha256 === worktree.sha256) : [];
+  const same = matching.filter((revision) => revision.kind === "git").at(-1) ?? matching.at(-1);
   const current = worktree && same ? { ...worktree, title: same.title, ...(same.date ? { date: same.date } : {}) } : worktree;
   const revisions = current ? [...unique.filter((revision) => revision.sha256 !== current.sha256), current] : unique;
   return { revisions: revisions.slice(-limit), git: isGit, truncated: revisions.length > limit };

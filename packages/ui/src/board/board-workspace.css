@@ -103,6 +103,7 @@
 .fd-connect-pin select { min-width:0; width:100%; }
 .fd-connect-mismatch { grid-column:1 / -1; padding-left:4px; font-size:10px; color:#d97706; }
 .fd-connect-actions { display:flex; flex-wrap:wrap; gap:6px; }
+.fd-connect-footer { position:sticky; z-index:1; bottom:-12px; display:flex; flex-direction:column; gap:6px; margin-bottom:-6px; padding:6px 0 12px; background:var(--fd-panel); }
 
 .fd-connect-steps { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 0 auto; padding:0; list-style:none; font-size:11px; counter-reset:step; }
 .fd-connect-steps li { padding:3px 8px; color:var(--fd-muted); border-radius:999px; counter-increment:step; }

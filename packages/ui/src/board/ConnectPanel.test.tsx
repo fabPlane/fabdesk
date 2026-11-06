@@ -31,7 +31,7 @@ test("with a target, every source pin gets a row and an unsaved map offers Save 
   expect(html).toContain('aria-label="Pin on J9 for pin 1"');
   expect(html).toContain('aria-label="Pin on J9 for pin 2"');
   expect(html).toContain("Save connection");
-  expect(html).toContain("1 named not mapped");
+  expect(html).toContain("1 named pin not mapped");
 });
 
 test("joining ground to a power rail is shown as a conflict", () => {

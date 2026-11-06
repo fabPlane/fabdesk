@@ -55,10 +55,16 @@ export function ConnectionsWorkspace({ projectId }: { projectId: string }) {
   const act = useBoardWorkspaceAction(projectId);
 
   // Open on boards that already have a link when there are any, so saved work is what you see first.
-  const firstLink = links.data?.links[0];
+  const firstLink = links.data?.links.find(link => list.some(board => board.path === link.a.boardPath) && list.some(board => board.path === link.b.boardPath));
   const defaultLeft = firstLink?.a.boardPath ?? list.find(board => board.path === remembered)?.path ?? list[0]?.path ?? null;
   const defaultRight = firstLink?.b.boardPath ?? list.find(board => board.path !== defaultLeft)?.path ?? defaultLeft;
   const boardLeft = leftPath ?? defaultLeft, boardRight = rightPath ?? defaultRight;
+  // The opening boards are chosen once. Saving or removing a link must not swap them under the selection.
+  useEffect(() => {
+    if (!boards.data || !links.data) return;
+    if (!leftPath && defaultLeft) setLeftPath(defaultLeft);
+    if (!rightPath && defaultRight) setRightPath(defaultRight);
+  }, [boards.data, links.data, leftPath, rightPath, defaultLeft, defaultRight]);
   const viewLeft = useBoardView(projectId, boardLeft), viewRight = useBoardView(projectId, boardRight);
   const suggestions = usePartLinkSuggestions(projectId, boardLeft, boardRight, suggesting);
   const saved = links.data?.links ?? [], declared = links.data?.declared ?? [];

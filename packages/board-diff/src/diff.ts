@@ -155,6 +155,13 @@ function matchZones(older: ZoneSnapshot[], newer: ZoneSnapshot[]): {
  * Structured revision diff: added/removed/moved/changed parts, net membership,
  * copper segments/arcs, vias, and zones.
  */
+/** 270 and -90 are one orientation, so angles compare the shorter way round. */
+function sameAngle(a: number | undefined, b: number | undefined, tolerance: number): boolean {
+  if (a === undefined || b === undefined) return nearlyEqual(a, b, tolerance);
+  const turn = Math.abs(a - b) % 360;
+  return Math.min(turn, 360 - turn) <= tolerance;
+}
+
 export function diffBoards(from: BoardSnapshot, to: BoardSnapshot, opts: DiffOptions = {}): BoardDiff {
   const moveTol = opts.moveToleranceMm ?? 0.05;
   const schMoveTol = opts.schematicMoveToleranceMm ?? 0.05;
@@ -184,7 +191,7 @@ export function diffBoards(from: BoardSnapshot, to: BoardSnapshot, opts: DiffOpt
     const hadPcb = hasPcbPlacement(before);
     const hasPcb = hasPcbPlacement(after);
     if (hadPcb && hasPcb && (Math.abs(dx) > moveTol || Math.abs(dy) > moveTol)) reasons.push("moved");
-    if (!nearlyEqual(before.rotation, after.rotation, rotTol) && (before.rotation !== undefined || after.rotation !== undefined)) {
+    if (!sameAngle(before.rotation, after.rotation, rotTol) && (before.rotation !== undefined || after.rotation !== undefined)) {
       reasons.push("rotated");
     }
     const schDx = (after.schX ?? 0) - (before.schX ?? 0);

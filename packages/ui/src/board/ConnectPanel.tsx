@@ -115,11 +115,14 @@ export function ConnectPanel({ source, sourceBoard, boards, targetBoard, targetP
             })}
           </div>
         </>}
-      {targetPins.length > 0 && sourcePins.length > 0 && <p className="fd-connect-check" data-check={pinCheck.status} role="status">{pinCheckLabel(pinCheck)}</p>}
-      <div className="fd-connect-actions">
-        {(!link || pinsEdited || suggested) && <Button size="sm" variant="primary" disabled={busy} onClick={onSave}>{!link ? "Save connection" : "Save pins"}</Button>}
-        {link?.state === "needs-review" && <Button size="sm" variant="secondary" disabled={busy} onClick={onReview}>Mark reviewed</Button>}
-        {link && <Button size="sm" variant="ghost" disabled={busy} onClick={onRemove}>Remove link</Button>}
+      {/* Stays in view below a long pin list, so the result and Save are never a scroll away. */}
+      <div className="fd-connect-footer">
+        {targetPins.length > 0 && sourcePins.length > 0 && <p className="fd-connect-check" data-check={pinCheck.status} role="status">{pinCheckLabel(pinCheck)}</p>}
+        <div className="fd-connect-actions">
+          {(!link || pinsEdited || suggested) && <Button size="sm" variant="primary" disabled={busy} onClick={onSave}>{!link ? "Save connection" : "Save pins"}</Button>}
+          {link?.state === "needs-review" && <Button size="sm" variant="secondary" disabled={busy} onClick={onReview}>Mark reviewed</Button>}
+          {link && <Button size="sm" variant="ghost" disabled={busy} onClick={onRemove}>Remove link</Button>}
+        </div>
       </div>
       <p className="fd-connect-note">{mapped} of {sourcePins.length} pins mapped. The check compares net names only, not the actual circuit, so stays unverified.</p>
     </section>}
