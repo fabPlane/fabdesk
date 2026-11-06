@@ -44,7 +44,6 @@
 .fd-canvas-workspace .fd-pair-drawing .fd-svg-context { display:none; }
 
 .fd-history-list, .fd-connection-list { display:flex; flex-direction:column; flex-shrink:0; gap:4px; width:232px; padding:8px; overflow:auto; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); }
-.fd-history-list { position:absolute; z-index:20; top:0; right:0; bottom:0; box-shadow:0 8px 24px #102a2022; }
 .fd-history-list button, .fd-connection-list button { display:grid; gap:1px; padding:6px 8px; text-align:left; font-size:12px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--fd-fg); cursor:pointer; }
 .fd-history-list button:hover, .fd-connection-list button:hover { background:var(--fd-panel-2); }
 .fd-history-list button[aria-pressed=true], .fd-connection-list button[aria-pressed=true] { border-color:var(--fd-accent, #2563eb); background:var(--fd-panel-2); }

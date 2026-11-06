@@ -51,7 +51,7 @@ review or has lost its partner. Lines join related parts across the two boards, 
 open, with a chip naming a partner on a board not currently shown. Hovering says what a click would do.
 `board_view` and `connection_list` report the same status to agents.
 
-The pin check compares net names across each stated pin. It flags different power or ground nets as a
+Net names are compared without their sheet prefix, so `/Sensors/SDA` on one board meets `SDA` on another, in suggestions, likely matches and the pin check alike. The pin check compares net names across each stated pin. It flags different power or ground nets as a
 conflict and different signal names for review. Names can agree on a wrong connection and differ on a
 right one, so links stay **Unverified**: nothing here checks the circuit, cable fit or mating.
 

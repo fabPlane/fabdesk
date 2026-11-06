@@ -145,8 +145,11 @@ const GENERATED_NET = /^(?:Net-\(|unconnected-|N\$)/;
 const GROUND_NET = /^(?:[ADPS]?GND\w*|VSS\w*|EARTH\w*)$/i;
 const POWER_NET = /^(?:\+?\d+V\d*\w*|V(?:CC|DD|BUS|BAT|IN|SYS|IO)\w*)$/i;
 /** Hierarchical sheets prefix net names; the same signal keeps its last segment. */
-const netName = (net: string) => net.split("/").at(-1) ?? net;
-const namedNet = (net?: string) => (net && !GENERATED_NET.test(net) && netName(net) ? netName(net) : undefined);
+export const netName = (net: string) => net.split("/").at(-1) ?? net;
+/** KiCad's generated names repeat one board's own reference, so they say nothing across boards. */
+export const isGeneratedNet = (net?: string): boolean => !net || GENERATED_NET.test(net) || !netName(net);
+/** The comparable name of a net, or undefined when it has none. Boards name one signal with or without a sheet prefix. */
+export const namedNet = (net?: string): string | undefined => (net && !isGeneratedNet(net) ? netName(net) : undefined);
 
 /** Ground and power rails reach most parts on a board, so a shared rail says little by itself. */
 export function isRailNet(net: string): boolean {

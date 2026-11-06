@@ -16,7 +16,7 @@ import type {
   PartPinPair,
   PartLinkSuggestion,
 } from "@fabdesk/protocol";
-import { isRailNet } from "@fabdesk/protocol";
+import { isGeneratedNet, isRailNet, namedNet, netName } from "@fabdesk/protocol";
 import type { CoreClient } from "./CoreClient";
 import { BOARD_WORKSPACE_QUERY_KEY } from "./board-workspace-keys";
 import { pcbToolJson } from "./pcb-parts";
@@ -235,8 +235,6 @@ export function changeDescription(change: BoardPartChangeRow): string {
   return [moved, others].filter(Boolean).join(" · ") || "Changed";
 }
 
-const GENERATED_NET = /^(?:Net-\(|unconnected-|N\$)/;
-
 /** One row per pin, in natural order. A pin number can repeat across several pads. */
 export function partPins(part: Pick<BoardPartSummary, "pads"> | null | undefined): Array<{ pin: string; net?: string }> {
   const seen = new Map<string, { pin: string; net?: string }>();
@@ -250,20 +248,19 @@ export function partPins(part: Pick<BoardPartSummary, "pads"> | null | undefined
  * remaining pins in order. Pins left over stay unmapped rather than doubling up on a guess.
  */
 export function suggestPinMap(source: Pick<BoardPartSummary, "pads"> | null | undefined, target: Pick<BoardPartSummary, "pads"> | null | undefined): Record<string, string> {
-  const named = (net?: string) => (net && !GENERATED_NET.test(net) ? netLabel(net) : undefined);
   const open = new Map<string, string[]>();
   for (const pin of partPins(target)) {
-    const net = named(pin.net);
+    const net = namedNet(pin.net);
     if (net) open.set(net, [...(open.get(net) ?? []), pin.pin]);
   }
   const pins = partPins(source), map: Record<string, string> = {};
   for (const pin of pins) {
-    const free = open.get(named(pin.net) ?? "");
+    const free = open.get(namedNet(pin.net) ?? "");
     const same = free?.indexOf(pin.pin) ?? -1;
     if (same >= 0) { map[pin.pin] = pin.pin; free!.splice(same, 1); }
   }
   for (const pin of pins) {
-    const next = map[pin.pin] === undefined ? open.get(named(pin.net) ?? "")?.shift() : undefined;
+    const next = map[pin.pin] === undefined ? open.get(namedNet(pin.net) ?? "")?.shift() : undefined;
     if (next !== undefined) map[pin.pin] = next;
   }
   return map;
@@ -281,10 +278,19 @@ export function pinPairsForLink(map: Readonly<Record<string, string>>, sourceIsA
   return Object.entries(map).filter(([, target]) => target).map(([from, to]) => (sourceIsA ? { a: from, b: to } : { a: to, b: from }));
 }
 
+/** Named signal nets of a part by their comparable name, so a sheet prefix on one board does not hide a match. */
+export function signalNetNames(nets: readonly string[] | null | undefined): Set<string> {
+  return new Set((nets ?? []).filter((net) => !isGeneratedNet(net) && !isRailNet(net)).map(netName));
+}
+/** How many named signal nets two parts share by name. */
+export function sharedSignalNetCount(source: { nets: readonly string[] } | null | undefined, part: { nets: readonly string[] }): number {
+  const named = signalNetNames(source?.nets);
+  return signalNetNames(part.nets.filter((net) => named.has(netName(net)))).size;
+}
+
 /** Parts most likely to connect first: those sharing named signal nets, then connectors, then by reference. */
 export function rankConnectionTargets<T extends { ref: string; nets: readonly string[] }>(source: { nets: readonly string[] } | null | undefined, parts: readonly T[]): T[] {
-  const named = new Set((source?.nets ?? []).filter((net) => !GENERATED_NET.test(net) && !isRailNet(net)));
-  const shared = (part: T) => part.nets.filter((net) => named.has(net)).length;
+  const shared = (part: T) => sharedSignalNetCount(source, part);
   const order = new Map(sortedBoardParts(parts).map((part, index) => [part.ref, index]));
   return [...parts].sort((a, b) => shared(b) - shared(a) || order.get(a.ref)! - order.get(b.ref)!);
 }
@@ -326,16 +332,13 @@ export function pairPinLines(check: Pick<PinCheck, "rows">, sourceIsLeft: boolea
     const from = source.pads.find((pad) => pad.pin === row.a), to = target.pads.find((pad) => pad.pin === row.b);
     if (!from || !to) return [];
     const a = center(from.bounds), b = center(to.bounds);
-    return [{ id: `pin:${row.a}:${row.b}`, tone: row.kind, left: sourceIsLeft ? a : b, right: sourceIsLeft ? b : a, ...(row.aNet ? { label: netLabel(row.aNet) } : {}) }];
+    return [{ id: `pin:${row.a}:${row.b}`, tone: row.kind, left: sourceIsLeft ? a : b, right: sourceIsLeft ? b : a, ...(row.aNet ? { label: netName(row.aNet) } : {}) }];
   });
 }
 
-const netLabel = (net: string) => net.split("/").at(-1) ?? net;
-
 /** Parts on the other board worth clicking, by how many named signal nets they share with this one. */
 export function connectionCandidates(source: { nets: readonly string[] } | null | undefined, parts: readonly { ref: string; nets: readonly string[] }[], limit = 12): Map<string, number> {
-  const named = new Set((source?.nets ?? []).filter((net) => !GENERATED_NET.test(net) && !isRailNet(net)));
-  const scored = parts.map((part) => ({ ref: part.ref, shared: part.nets.filter((net) => named.has(net)).length })).filter((row) => row.shared > 0);
+  const scored = parts.map((part) => ({ ref: part.ref, shared: sharedSignalNetCount(source, part) })).filter((row) => row.shared > 0);
   return new Map(scored.sort((a, b) => b.shared - a.shared).slice(0, limit).map((row) => [row.ref, row.shared]));
 }
 

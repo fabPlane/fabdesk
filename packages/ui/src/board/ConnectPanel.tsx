@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { isRailNet, type BoardFile, type BoardPartSummary, type PinCheck, type ResolvedPartLink } from "@fabdesk/protocol";
-import { partPins, pinCheckLabel, rankConnectionTargets, sharedNetLabel } from "@fabdesk/client-core";
+import type { BoardFile, BoardPartSummary, PinCheck, ResolvedPartLink } from "@fabdesk/protocol";
+import { partPins, pinCheckLabel, rankConnectionTargets, sharedNetLabel, sharedSignalNetCount } from "@fabdesk/client-core";
 import { Button, IconButton, Input, Select } from "../components/ui";
 import { Icon } from "../components/Icon";
 
@@ -49,7 +49,7 @@ export function ConnectPanel({ source, sourceBoard, boards, targetBoard, targetP
   const kindOf = useMemo(() => new Map(pinCheck.rows.map(row => [row.a, row.kind])), [pinCheck]);
   const mapped = Object.values(pinMap).filter(Boolean).length;
   const suggested = !!target && !pinsEdited && !link?.pins?.length && mapped > 0;
-  const sharedWith = (part: BoardPartSummary) => part.nets.filter(net => source.nets.includes(net) && !/^(?:Net-\(|unconnected-)/.test(net) && !isRailNet(net)).length;
+  const sharedWith = (part: BoardPartSummary) => sharedSignalNetCount(source, part);
 
   return <aside className="fd-connect-panel" aria-label={`Connect ${source.ref}`}>
     <header>

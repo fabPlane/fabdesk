@@ -201,6 +201,13 @@ test("likely targets are parts sharing named nets, most first", () => {
   expect(connectionCandidates({ nets: ["GND", "+3V3"] }, [{ ref: "A", nets: ["GND", "+3V3"] }]).size).toBe(0);
 });
 
+test("likely targets match nets across hierarchical sheets, counting each shared name once", () => {
+  const source = { nets: ["/Sensors/SDA", "/Sensors/SCL", "GND"] };
+  const parts = [{ ref: "J9", nets: ["SDA", "SCL", "GND"] }, { ref: "U1", nets: ["/Other/SDA", "/Another/SDA"] }, { ref: "C1", nets: ["GND"] }];
+  expect([...connectionCandidates(source, parts)]).toEqual([["J9", 2], ["U1", 1]]);
+  expect(rankConnectionTargets(source, parts).map((row) => row.ref)).toEqual(["J9", "U1", "C1"]);
+});
+
 test("the pin check reads as a plain sentence and never claims verification", () => {
   expect(pinCheckLabel({ status: "none", rows: [], unmapped: [] })).toBe("No pins stated yet");
   expect(pinCheckLabel({ status: "agree", rows: [{ a: "1", b: "2", kind: "match" }], unmapped: [] })).toBe("All 1 pins agree by net name");

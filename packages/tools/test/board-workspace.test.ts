@@ -336,6 +336,31 @@ describe("board history and part links", () => {
     expect((await invoke<PartLinkList>("connection_list")).links).toEqual([]);
   });
 
+  test("suggestions and shared nets match across hierarchical sheets, as the pin check does", async () => {
+    await write(BOARD_A, pcb(footprint("J1", 10, ["/Sensors/SIG_A", "/Power/GND"]), footprint("R1", 20, ["/Sensors/SIG_A", "OTHER"])));
+    await write(BOARD_B, pcb(footprint("J9", 10, ["SIG_A", "GND"]), footprint("C1", 20, ["OTHER", "GND"])));
+    const { suggestions } = await invoke<{ suggestions: PartLinkSuggestion[] }>("connection_suggest", { boardA: BOARD_A, boardB: BOARD_B });
+    expect(suggestions[0]).toMatchObject({ a: { ref: "J1" }, b: { ref: "J9" }, connectors: true, sharedNets: [{ net: "SIG_A", aPin: "1", bPin: "1" }, { net: "GND", aPin: "2", bPin: "2" }] });
+    await invoke("connection_add", { a: { boardPath: BOARD_A, ref: "J1" }, b: { boardPath: BOARD_B, ref: "J9" } });
+    expect((await invoke<PartLinkList>("connection_list")).links[0]?.sharedNets.map((net) => net.net)).toEqual(["SIG_A", "GND"]);
+  });
+
+  test("a current file equal to a commit keeps that commit's title on the timeline", async () => {
+    await git(project.dir, ["init", "-q"]);
+    await git(project.dir, ["config", "user.email", "t@test"]);
+    await git(project.dir, ["config", "user.name", "T"]);
+    await git(project.dir, ["config", "commit.gpgsign", "false"]);
+    await git(project.dir, ["add", "-A"]);
+    await git(project.dir, ["commit", "-qm", "one"]);
+    await write(BOARD_A, pcb(footprint("J1", 12)));
+    await git(project.dir, ["add", "-A"]);
+    await git(project.dir, ["commit", "-qm", "nudge J1"]);
+    const timeline = await invoke<BoardTimeline>("board_revision_timeline", { pcbPath: BOARD_A });
+    expect(timeline.entries.map((entry) => [entry.kind, entry.title])).toEqual([["git", "one"], ["worktree", "nudge J1"]]);
+    expect(timeline.entries[1]?.ref).toBe("worktree");
+    expect(timeline.entries[1]?.date).toBeDefined();
+  });
+
   test("a corrupt links file does not stop a board from being viewed", async () => {
     await write(PART_LINKS_FILE, "{ not json");
     expect((await invoke<BoardView>("board_view", { pcbPath: BOARD_A })).parts).toHaveLength(2);

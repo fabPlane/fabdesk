@@ -175,8 +175,8 @@ export function HistoryWorkspace({ projectId }: { projectId: string }) {
               updating={comparison.isPlaceholderData}
               onPick={(side, ref) => {
                 if (!ref) { setSelected(null); return; }
-                const change = data?.changes.find(row => (side === "left" ? row.fromRef : row.toRef) === ref);
-                setSelected(selected === ref ? null : change ? changeRef(change) : ref);
+                const next = (() => { const change = data?.changes.find(row => (side === "left" ? row.fromRef : row.toRef) === ref); return change ? changeRef(change) : ref; })();
+                setSelected(selected === next ? null : next);
               }}
               onClear={() => { if (!selected) return false; setSelected(null); return true; }}
             />

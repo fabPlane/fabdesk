@@ -12,6 +12,8 @@ import {
   emptyPartLinksFile,
   type DeclaredConnection,
   isConnectorPart,
+  isRailNet,
+  namedNet,
   type PartBaseline,
   type PartEndpoint,
   type PartLink,
@@ -29,9 +31,6 @@ import { ToolError, type ProjectHandle } from "./registry";
 
 const POSITION_TOLERANCE_MM = 0.05;
 const ROTATION_TOLERANCE_DEG = 0.5;
-/** KiCad's generated names repeat one board's own reference, so they say nothing across boards. */
-const GENERATED_NET = /^(?:Net-\(|unconnected-|N\$|\/?$)/;
-const POWER_NET = /^\/?(?:GND\w*|AGND|DGND|VSS\w*|VDD\w*|VCC\w*|\+?\d+V\d*\w*|VBUS\w*)$/i;
 
 export async function partLinksPath(project: ProjectHandle): Promise<string> {
   return jailPath(project.dir, PART_LINKS_FILE);
@@ -100,16 +99,22 @@ export function baselineChanges(baseline: PartBaseline, current: ComponentSnapsh
   return reasons;
 }
 
-/** Shared by name only. A match suggests a relationship; it does not verify a pin mapping. */
+/**
+ * Shared by name only, with sheet prefixes dropped so `/Sensors/SDA` on one board meets `SDA` on
+ * another, as the pin check reads them. A match suggests a relationship; it does not verify a pin mapping.
+ */
 export function sharedNets(a: ComponentSnapshot, b: ComponentSnapshot): SharedNet[] {
   const byNet = new Map<string, string>();
-  for (const pad of b.pads ?? []) if (pad.net && !GENERATED_NET.test(pad.net) && !byNet.has(pad.net)) byNet.set(pad.net, pad.pin);
+  for (const pad of b.pads ?? []) {
+    const net = namedNet(pad.net);
+    if (net && !byNet.has(net)) byNet.set(net, pad.pin);
+  }
   const seen = new Set<string>(), out: SharedNet[] = [];
   for (const pad of a.pads ?? []) {
-    const bPin = pad.net ? byNet.get(pad.net) : undefined;
-    if (!pad.net || bPin === undefined || seen.has(pad.net)) continue;
-    seen.add(pad.net);
-    out.push({ net: pad.net, aPin: pad.pin, bPin });
+    const net = namedNet(pad.net), bPin = net ? byNet.get(net) : undefined;
+    if (!net || bPin === undefined || seen.has(net)) continue;
+    seen.add(net);
+    out.push({ net, aPin: pad.pin, bPin });
   }
   return out;
 }
@@ -209,7 +214,7 @@ export function suggestPartLinks(boardAPath: string, boardA: BoardSnapshot, boar
       const nets = sharedNets(a, b);
       if (!nets.length) continue;
       const connectors = isConnectorPart(a.ref, a.footprint) && isConnectorPart(b.ref, b.footprint);
-      const signal = nets.filter((net) => !POWER_NET.test(net.net)).length;
+      const signal = nets.filter((net) => !isRailNet(net.net)).length;
       // A rail like GND reaches most parts on both boards, so one alone suggests nothing. Two or
       // more rails between connectors can still be a real power cable.
       if (!signal && !(connectors && nets.length > 1)) continue;
