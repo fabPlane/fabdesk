@@ -70,27 +70,25 @@
   border-color: var(--fd-accent);
   background: color-mix(in srgb, var(--fd-accent) 7%, var(--fd-panel));
 }
-.fd-project-sharing-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.fd-project-share-button {
+  gap: 7px;
 }
 .fd-project-visibility {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  padding: 3px 7px;
+  margin-left: 2px;
+  border-radius: 4px;
+  background: var(--fd-panel-2);
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1.2;
   color: var(--fd-muted);
-}
-.fd-project-visibility i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
 }
 .fd-project-visibility[data-visibility="unlisted"] {
   color: var(--fd-accent);
+  background: color-mix(in srgb, var(--fd-accent) 10%, var(--fd-panel));
 }
 .fd-share-link-row input {
   min-width: 0;

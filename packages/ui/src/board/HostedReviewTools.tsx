@@ -19,6 +19,8 @@ export function HostedReviewTools({ projectId, shareButton = false }: { projectI
   const [sharing, setSharing] = useState(false);
   const shareSettings = useProjectShareSettings(projectId, shareButton);
   const visibility = shareSettings.isError ? "unavailable" : shareSettings.data?.visibility ?? "loading";
+  const visibilityLabel = visibility === "private" ? "Private" : visibility === "unlisted" ? "Shared" : visibility === "loading" ? "Checking…" : "Unavailable";
+  const visibilityDetail = visibility === "private" ? "Private project. Only you can access it." : visibility === "unlisted" ? "Anyone with the link can view the published snapshot." : visibility === "loading" ? "Checking project visibility…" : "Visibility could not be checked. Open sharing settings to retry.";
   const [view, setView] = useState<View | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null);
   const [options, setOptions] = useState<ReviewPackageOptions>({ outputs: true, sources: false, notes: true, checks: true });
   const client = useCoreClient(), project = useProject(projectId), sources = useBoardSources(projectId);
@@ -48,12 +50,17 @@ export function HostedReviewTools({ projectId, shareButton = false }: { projectI
     } catch (failure) { setError(failure); } finally { setBusy(false); }
   };
   return <>
-    {shareButton ? <div className="fd-project-sharing-actions">
-      <span className="fd-project-visibility" data-visibility={visibility} role="status" title={visibility === "private" ? "Only you. Link sharing is disabled." : visibility === "unlisted" ? "Anyone with the link can view the published snapshot." : "Open Share to check project visibility."}>
-        <i aria-hidden="true" />{visibility === "private" ? "Private" : visibility === "unlisted" ? "Link sharing on" : visibility === "loading" ? "Checking visibility…" : "Visibility unavailable"}
-      </span>
-      <Button size="sm" variant="secondary" onClick={() => setSharing(true)}><Icon name="share" width={17} height={17} />Share</Button>
-    </div> : <WorkspaceMenu className="fd-review-publishing" label={<><span>Review tools</span><Icon name="chevronDown" width={14} height={14} /></>}>
+    {shareButton ? <Button
+      size="sm"
+      variant="secondary"
+      className="fd-project-share-button"
+      title={visibilityDetail}
+      aria-label={`Share project · ${visibilityLabel}`}
+      onClick={() => setSharing(true)}
+    >
+      <Icon name="share" width={17} height={17} />Share
+      <span className="fd-project-visibility" data-visibility={visibility} role="status">{visibilityLabel}</span>
+    </Button> : <WorkspaceMenu className="fd-review-publishing" label={<><span>Review tools</span><Icon name="chevronDown" width={14} height={14} /></>}>
       <button onClick={() => setView("share")}>Download review package…</button><button onClick={() => setView("sync")}>Review repository changes…</button><button onClick={() => setView("history")}>Saved versions…</button>
     </WorkspaceMenu>}
     {sharing && <ShareProjectDialog projectId={projectId} onClose={() => setSharing(false)} onDownload={() => { setSharing(false); setView("share"); }} />}
