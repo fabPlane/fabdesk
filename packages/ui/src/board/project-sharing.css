@@ -62,6 +62,36 @@
   gap: 10px;
   margin-bottom: 6px;
 }
+.fd-share-copy-button {
+  min-width: 112px;
+}
+.fd-share-copy-button[data-copied="true"] {
+  color: var(--fd-accent);
+  border-color: var(--fd-accent);
+  background: color-mix(in srgb, var(--fd-accent) 7%, var(--fd-panel));
+}
+.fd-project-sharing-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fd-project-visibility {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--fd-muted);
+}
+.fd-project-visibility i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.fd-project-visibility[data-visibility="unlisted"] {
+  color: var(--fd-accent);
+}
 .fd-share-link-row input {
   min-width: 0;
   flex: 1;

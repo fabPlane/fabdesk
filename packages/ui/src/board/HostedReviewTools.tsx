@@ -1,7 +1,7 @@
 import { ShareProjectDialog } from "./ShareProjectDialog";
 import { useState } from "react";
 import { buildZip } from "@fabdesk/board-art";
-import { readOutputSelection, reviewPackageFiles, useBoardSources, useCoreClient, useProject, type ReviewPackageOptions } from "@fabdesk/client-core";
+import { readOutputSelection, reviewPackageFiles, useBoardSources, useCoreClient, useProject, useProjectShareSettings, type ReviewPackageOptions } from "@fabdesk/client-core";
 import { Button, Dialog, Spinner } from "../components/ui";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { DisclosureSummary } from "../components/DisclosureSummary";
@@ -17,6 +17,8 @@ const TITLES: Record<View, string> = { share: "Share for review", sync: "Reposit
 /** Local sharing is a real file download; repository requests stay unsent until the user reviews them. */
 export function HostedReviewTools({ projectId, shareButton = false }: { projectId: string; shareButton?: boolean }) {
   const [sharing, setSharing] = useState(false);
+  const shareSettings = useProjectShareSettings(projectId, shareButton);
+  const visibility = shareSettings.isError ? "unavailable" : shareSettings.data?.visibility ?? "loading";
   const [view, setView] = useState<View | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null);
   const [options, setOptions] = useState<ReviewPackageOptions>({ outputs: true, sources: false, notes: true, checks: true });
   const client = useCoreClient(), project = useProject(projectId), sources = useBoardSources(projectId);
@@ -46,7 +48,12 @@ export function HostedReviewTools({ projectId, shareButton = false }: { projectI
     } catch (failure) { setError(failure); } finally { setBusy(false); }
   };
   return <>
-    {shareButton ? <Button size="sm" variant="secondary" onClick={() => setSharing(true)}><Icon name="share" width={17} height={17} />Share</Button> : <WorkspaceMenu className="fd-review-publishing" label={<><span>Review tools</span><Icon name="chevronDown" width={14} height={14} /></>}>
+    {shareButton ? <div className="fd-project-sharing-actions">
+      <span className="fd-project-visibility" data-visibility={visibility} role="status" title={visibility === "private" ? "Only you. Link sharing is disabled." : visibility === "unlisted" ? "Anyone with the link can view the published snapshot." : "Open Share to check project visibility."}>
+        <i aria-hidden="true" />{visibility === "private" ? "Private" : visibility === "unlisted" ? "Link sharing on" : visibility === "loading" ? "Checking visibility…" : "Visibility unavailable"}
+      </span>
+      <Button size="sm" variant="secondary" onClick={() => setSharing(true)}><Icon name="share" width={17} height={17} />Share</Button>
+    </div> : <WorkspaceMenu className="fd-review-publishing" label={<><span>Review tools</span><Icon name="chevronDown" width={14} height={14} /></>}>
       <button onClick={() => setView("share")}>Download review package…</button><button onClick={() => setView("sync")}>Review repository changes…</button><button onClick={() => setView("history")}>Saved versions…</button>
     </WorkspaceMenu>}
     {sharing && <ShareProjectDialog projectId={projectId} onClose={() => setSharing(false)} onDownload={() => { setSharing(false); setView("share"); }} />}

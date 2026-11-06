@@ -2,6 +2,8 @@
 
 The project header's **Share** action opens the Private / Anyone with the link dialog. The existing review ZIP is a separate secondary action. **Preview shared page** builds a local snapshot without publishing or requiring a cloud account.
 
+Beside **Share**, the header shows the saved visibility: **Private** or **Link sharing on**. It updates after a successful save and on the existing background access check; unsaved dialog choices do not change it. Failed checks show **Visibility unavailable**, never a presumed private state. A successful copy changes the button to a green checkmark and **Copied!** for three seconds, with an accessible announcement.
+
 Publishing and reading hosted links require the companion backend in [fabplane.com#185](https://github.com/TensorFleet/fabplane.com/issues/185). This desktop change does not deploy or implement that server. Missing endpoints fail visibly; a 404 must never be interpreted as confirmation that an existing share is private. No placeholder URLs or local-only sharing preferences are persisted.
 
 ## Contents

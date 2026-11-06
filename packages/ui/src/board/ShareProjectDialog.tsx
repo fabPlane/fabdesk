@@ -1,11 +1,12 @@
-import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   errorPayload,
   useAuthStore,
   useBoardSources,
   useCore,
   useProject,
+  useProjectShareSettings,
 } from "@fabdesk/client-core";
 import {
   sharedProjectUrl,
@@ -26,17 +27,14 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
   const project = useProject(projectId),
     sources = useBoardSources(projectId);
   const appOrigin = useAuthStore((s) => s.state?.dashboardUrl);
-  const account = useAuthStore((s) => s.state?.principal?.subject ?? s.state?.status ?? "unknown");
-  const queryKey = ["project-share", client.baseUrl, projectId, account];
-  const settings = useQuery({
-    queryKey,
-    queryFn: () => client.getProjectShare(projectId),
-    retry: false,
-    staleTime: 0,
-    refetchInterval: 5_000,
-    refetchIntervalInBackground: true,
-    refetchOnWindowFocus: true,
-  });
+  const settings = useProjectShareSettings(projectId);
+  const { queryKey } = settings;
+  const [copyFeedback, setCopyFeedback] = useState<{ link: string; state: string } | null>(null);
+  useEffect(() => {
+    if (!copyFeedback) return;
+    const timer = setTimeout(() => setCopyFeedback(null), 3_000);
+    return () => clearTimeout(timer);
+  }, [copyFeedback]);
   const [choice, setChoice] = useState<"private" | "unlisted" | null>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<unknown>(null),
@@ -52,6 +50,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
   const changed = confirmed && selected !== saved.visibility;
   const stateKey = (state: ProjectShareState) =>
     state.visibility === "private" ? "private" : `${state.shareId}:${state.revision}`;
+  const copied = !!copyFeedback && confirmed && copyFeedback.link === link && copyFeedback.state === stateKey(saved);
   const close = () => {
     if (!busy) onClose();
   };
@@ -60,6 +59,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
     setBusy(true);
     setError(null);
     setNotice(null);
+    setCopyFeedback(null);
     try {
       const result: ProjectShareState =
         selected === "private"
@@ -97,10 +97,11 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
     if (!link || !saved) return;
     setError(null);
     setNotice(null);
+    setCopyFeedback(null);
     try {
       if (host.copyText) await host.copyText(link);
       else await navigator.clipboard.writeText(link);
-      setNotice({ message: "Link copied.", state: stateKey(saved) });
+      setCopyFeedback({ link, state: stateKey(saved) });
     } catch {
       setError(new Error("Could not copy the link. Select the address and copy it manually."));
     }
@@ -139,6 +140,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
                 onChange={() => {
                   setChoice(option.value);
                   setNotice(null);
+                  setCopyFeedback(null);
                 }}
               />
               <span>
@@ -165,9 +167,9 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
                   value={link}
                   onFocus={(event) => event.currentTarget.select()}
                 />
-                <Button disabled={busy} onClick={() => void copy()}>
-                  <Icon name="copy" width={16} height={16} />
-                  Copy link
+                <Button disabled={busy} className="fd-share-copy-button" data-copied={copied} onClick={() => void copy()}>
+                  <Icon name={copied ? "check" : "copy"} width={16} height={16} />
+                  <span aria-live="polite" aria-atomic="true">{copied ? "Copied!" : "Copy link"}</span>
                 </Button>
               </div>
               <Button
