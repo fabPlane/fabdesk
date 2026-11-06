@@ -33,6 +33,8 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
     queryFn: () => client.getProjectShare(projectId),
     retry: false,
     staleTime: 0,
+    refetchInterval: 5_000,
+    refetchOnWindowFocus: true,
   });
   const [choice, setChoice] = useState<"private" | "unlisted" | null>(null);
   const [busy, setBusy] = useState(false),
@@ -41,7 +43,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
   const [preview, setPreview] = useState<ProjectShareSnapshot | null>(null);
   const saved = settings.data,
     selected = choice ?? saved?.visibility ?? "private";
-  const confirmed = !!saved && !settings.isError && !settings.isFetching;
+  const confirmed = !!saved && !settings.isError;
   const link =
     confirmed && saved.visibility === "unlisted" && selected === "unlisted"
       ? sharedProjectUrl(saved.shareId, appOrigin)
@@ -141,7 +143,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
             </label>
           ))}
         </fieldset>
-        {settings.isFetching && (
+        {settings.isPending && (
           <p role="status" className="fd-share-muted">
             <Spinner />
             Checking sharing settings…
@@ -190,9 +192,12 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
           <h3>What visitors see</h3>
           <p>
             {count !== undefined ? `${count} ${count === 1 ? "board" : "boards"}. ` : ""}Saved
-            previews and PCB check results, where available.
+            previews, saved 3D models and PCB check results, where available.
           </p>
-          <small>Chats, local folders and native design files stay private.</small>
+          <small>
+            Chats, local folders and native design files stay private. Up to 10 MiB per model and 20
+            MiB total.
+          </small>
           <Button
             size="sm"
             variant="ghost"

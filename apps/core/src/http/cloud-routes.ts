@@ -14,7 +14,7 @@ import {
   InventoryAdjust,
   InventoryItemInput,
   BomSyncOptions,
-  ProjectShareState, SharedProject, ShareId,
+  ProjectShareState, SharedProject, SharedProjectStatus, ShareId,
   type ProjectBomSnapshot,
 } from "@fabdesk/protocol";
 import {
@@ -139,6 +139,31 @@ export function cloudRoutes<E extends object>(deps: Deps): Hono<{ Variables: E }
       return c.json(result);
     });
   }));
+  app.get(
+    "/shared-projects/:shareId/status",
+    run(async (c) => {
+      const id = ShareId.parse(param(c, "shareId")),
+        api = cloud().publicClient();
+      const raw = api.getSharedProjectStatus
+        ? await api.getSharedProjectStatus(id)
+        : api.getSharedProject
+          ? await api.getSharedProject(id)
+          : null;
+      const parsed = SharedProjectStatus.safeParse(
+        raw && typeof raw === "object"
+          ? {
+              shareId: (raw as any).shareId,
+              publishedAt: (raw as any).publishedAt,
+              revision: (raw as any).revision,
+            }
+          : raw,
+      );
+      if (!parsed.success || parsed.data.shareId !== id)
+        throw new RouteError(502, "invalid_share_response", "Shared access could not be checked.");
+      c.header("Cache-Control", "no-store");
+      return c.json(parsed.data);
+    }),
+  );
   app.get("/shared-projects/:shareId", run(async c => {
     const id = ShareId.parse(param(c, "shareId")), api = cloud().publicClient();
     if (!api.getSharedProject) throw unsupported();

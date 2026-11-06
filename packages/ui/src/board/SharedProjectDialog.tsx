@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useCore } from "@fabdesk/client-core";
 import { sharedProjectUrl } from "@fabdesk/protocol";
 import { Button, Dialog, Spinner } from "../components/ui";
@@ -14,14 +14,27 @@ export function SharedProjectDialog({
   onClose: () => void;
 }) {
   const { client, host } = useCore();
+  const cache = useQueryClient();
   const appOrigin = useAuthStore((s) => s.state?.dashboardUrl);
   const result = useQuery({
     queryKey: ["shared-project", client.baseUrl, shareId],
-    queryFn: () => client.getSharedProject(shareId),
+    queryFn: async () => {
+      const previous = cache.getQueryData<import("@fabdesk/protocol").SharedProject>([
+        "shared-project",
+        client.baseUrl,
+        shareId,
+      ]);
+      if (previous) {
+        const status = await client.getSharedProjectStatus(shareId);
+        if (status.revision === previous.revision) return previous;
+      }
+      return client.getSharedProject(shareId);
+    },
     retry: false,
     gcTime: 0,
     staleTime: 0,
-    refetchInterval: 60_000,
+    refetchInterval: 5_000,
+    refetchOnWindowFocus: true,
   });
   return (
     <Dialog open onClose={onClose} title="Shared project" className="fd-shared-project-dialog">

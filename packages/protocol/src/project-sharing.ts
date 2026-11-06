@@ -31,6 +31,17 @@ export const SharedBoard = z
         findingCount: z.number().int().nonnegative().nullable(),
       })
       .strict(),
+    model: z
+      .object({
+        contentType: z.literal("model/gltf-binary"),
+        dataBase64: z
+          .string()
+          .max(14 * 1024 * 1024)
+          .refine((value) => value.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(value)),
+      })
+      .strict()
+      .nullable()
+      .optional(),
     preview: z
       .object({
         contentType: z.literal("image/png"),
@@ -40,7 +51,8 @@ export const SharedBoard = z
           .refine(
             (value) =>
               value.startsWith("iVBORw0KGgo") &&
-              value.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(value),
+              value.length % 4 === 0 &&
+              /^[A-Za-z0-9+/]*={0,2}$/.test(value),
             "Expected a base64 PNG preview",
           ),
       })
@@ -63,10 +75,17 @@ export const ProjectShareSnapshot = z
     if (new Set(value.boards.map((board) => board.id)).size !== value.boards.length)
       ctx.addIssue({ code: "custom", message: "Shared board IDs must be unique" });
     if (
-      value.boards.reduce((sum, board) => sum + (board.preview?.dataBase64.length ?? 0), 0) >
+      value.boards.reduce(
+        (sum, board) =>
+          sum + (board.preview?.dataBase64.length ?? 0) + (board.model?.dataBase64.length ?? 0),
+        0,
+      ) >
       28 * 1024 * 1024
     )
-      ctx.addIssue({ code: "custom", message: "Shared project previews exceed the size limit" });
+      ctx.addIssue({
+        code: "custom",
+        message: "Shared project previews and models exceed the size limit",
+      });
   });
 export type ProjectShareSnapshot = z.infer<typeof ProjectShareSnapshot>;
 export const SharedProject = z
@@ -113,3 +132,10 @@ export function sharedCheckLabel(checks: SharedBoard["checks"]): string {
     ? `${checks.findingCount} PCB ${checks.findingCount === 1 ? "finding" : "findings"}`
     : "PCB-only report · no listed findings";
 }
+
+export const SharedProjectStatus = SharedProject.pick({
+  shareId: true,
+  publishedAt: true,
+  revision: true,
+});
+export type SharedProjectStatus = z.infer<typeof SharedProjectStatus>;

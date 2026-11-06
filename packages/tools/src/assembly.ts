@@ -12,7 +12,7 @@ const isMissing = (error: unknown) => (error as NodeJS.ErrnoException)?.code ===
 const unchanged = (a: { dev: number; ino: number; size: number; mtimeMs: number; ctimeMs: number }, b: typeof a) => a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs;
 
 /** Reject aliases even within the jail: one inode must never become two editable sources. */
-export async function inspectOwnedProjectFile(root: string, relative: string, limit: number, content = false) {
+export async function inspectOwnedProjectFile(root: string, relative: string, limit: number, content = false, binary = false) {
   const path = resolve(root, relative);
   const entry = await lstat(path);
   if (!entry.isFile() || entry.isSymbolicLink()) throw new Error("Sources must be regular files");
@@ -30,11 +30,11 @@ export async function inspectOwnedProjectFile(root: string, relative: string, li
       bytes += buffer.length;
       if (bytes > limit) throw new Error("Source exceeds the inspection size limit");
       hash.update(buffer);
-      if (content) chunks.push(buffer);
+      if (content || binary) chunks.push(buffer);
     }
     const after = await file.stat(), current = await lstat(path);
     if (!unchanged(before, after) || !unchanged(after, current) || await realpath(path) !== path) throw new Error("Source changed during inspection; inspect again");
-    return { identity: `${before.dev}:${before.ino}`, sha256: hash.digest("hex"), bytes, text: content ? Buffer.concat(chunks).toString("utf8") : null };
+    return { identity: `${before.dev}:${before.ino}`, sha256: hash.digest("hex"), bytes, text: content ? Buffer.concat(chunks).toString("utf8") : null, ...(binary ? { data: Buffer.concat(chunks) } : {}) };
   } finally { await file.close(); }
 }
 

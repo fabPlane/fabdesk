@@ -1,5 +1,5 @@
 /** Typed fetch wrapper over the fabdesk-core control API plus SSE subscription. */
-import { ProjectShareState, ProjectShareSnapshot, SharedProject, BoardSourceSelection } from "@fabdesk/protocol";
+import { ProjectShareState, ProjectShareSnapshot, SharedProject, SharedProjectStatus, BoardSourceSelection } from "@fabdesk/protocol";
 import type {
   OutputTrashReview,
   OutputTrashEntry,
@@ -251,6 +251,11 @@ export class CoreClient {
   }
   async previewProjectShare(id: string): Promise<ProjectShareSnapshot> {
     return ProjectShareSnapshot.parse(await this.request(`/projects/${encodeURIComponent(id)}/share/preview`, { method: "POST" }));
+  }
+  async getSharedProjectStatus(shareId: string) {
+    return SharedProjectStatus.parse(
+      await this.request(`/shared-projects/${encodeURIComponent(shareId)}/status`),
+    );
   }
   async getSharedProject(shareId: string): Promise<SharedProject> {
     return SharedProject.parse(await this.request(`/shared-projects/${encodeURIComponent(shareId)}`));

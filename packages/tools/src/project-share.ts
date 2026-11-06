@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import {
   AssemblyPcbCheckReceipt,
+  sanitizeSharedGlb,
   PcbCheckSourceReceipt,
   ProjectShareSnapshot,
   type ProjectBoardSources,
@@ -95,6 +96,25 @@ export async function prepareProjectShare(
           findingCount: owned ? count : null,
         };
       }
+      const modelPath = prefix + "renders/board.glb";
+      try {
+        const file = await inspectOwnedProjectFile(root, modelPath, 10 * 1024 * 1024, false, true);
+        captured.push({ path: modelPath, hash: file.sha256 });
+        const model = sanitizeSharedGlb(file.data!);
+        total += model.byteLength;
+        if (total > TOTAL_LIMIT)
+          throw new Error("Previews and 3D models exceed the 20 MiB sharing limit.");
+        board.model = {
+          contentType: "model/gltf-binary",
+          dataBase64: Buffer.from(model).toString("base64"),
+        };
+      } catch (error) {
+        if (!isMissing(error))
+          throw new Error(
+            `The saved 3D model for ${board.name} cannot be shared. Export a self-contained model under 10 MiB and try again.`,
+          );
+        captured.push({ path: modelPath, hash: "missing" });
+      }
       const svg = await read(prefix + "renders/pcb.svg", SVG_LIMIT);
       if (svg !== null) {
         const rootTag = /<svg\b[^>]*>/i.exec(svg)?.[0] ?? "";
@@ -121,7 +141,7 @@ export async function prepareProjectShare(
           throw new Error("A board preview is too large to share.");
         total += png.byteLength;
         if (total > TOTAL_LIMIT)
-          throw new Error("Project previews exceed the 20 MiB sharing limit.");
+          throw new Error("Previews and 3D models exceed the 20 MiB sharing limit.");
         board.preview = {
           contentType: "image/png",
           dataBase64: Buffer.from(png).toString("base64"),

@@ -38,12 +38,6 @@ const openSharedProject = new OpenSharedProjectQueue();
 openSharedProject.offer(process.argv);
 const openCatalog = new OpenCatalogQueue();
 openCatalog.offer(process.argv);
-if (process.defaultApp) {
-  const appPath = process.argv[1];
-  if (appPath) app.setAsDefaultProtocolClient("fabplane", process.execPath, [resolve(appPath)]);
-} else {
-  app.setAsDefaultProtocolClient("fabplane");
-}
 
 function sendOpenCatalog(intent: OpenCatalogIntent): void {
   const win = BrowserWindow.getAllWindows()[0];
@@ -65,7 +59,10 @@ function sendOpenSharedProject(intent: { shareId: string }): void {
 app.on("open-url", (event, url) => {
   event.preventDefault();
   const shared = openSharedProject.offer(url);
-  if (shared) { sendOpenSharedProject(shared); return; }
+  if (shared) {
+    sendOpenSharedProject(shared);
+    return;
+  }
   const intent = openCatalog.offer(url);
   if (intent) sendOpenCatalog(intent);
 });
@@ -77,6 +74,17 @@ const identity = applyDesktopIdentity(app, {
   env: process.env,
   platform: process.platform,
 });
+if (process.defaultApp) {
+  const appPath = process.argv[1];
+  if (appPath)
+    app.setAsDefaultProtocolClient("fabplane", process.execPath, [
+      resolve(appPath),
+      `--user-data-dir=${app.getPath("userData")}`,
+    ]);
+} else {
+  app.setAsDefaultProtocolClient("fabplane");
+}
+
 const runtimeId = process.env["FABDESK_RUNTIME_ID"]?.trim() || randomUUID();
 process.env["FABDESK_RUNTIME_ID"] = runtimeId;
 process.env["FABDESK_DESKTOP_PID"] = String(process.pid);

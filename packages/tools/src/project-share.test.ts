@@ -97,3 +97,24 @@ test("only declared assembly sources appear, with unavailable members kept expli
   expect(snapshot.boards[0]?.preview).toBeNull();
   expect(snapshot.boards[0]?.sourceAvailable).toBe(false);
 });
+
+test("publishes only sanitized saved GLB geometry and detects a model changing during capture", async () => {
+  const { modelFixture } = await import("../test/shared-glb-fixture");
+  const project = await fixture();
+  await writeFile(join(project.dir, "renders/board.glb"), modelFixture());
+  const snapshot = await prepareProjectShare(project, rasterize);
+  expect(snapshot.boards[0]?.model?.contentType).toBe("model/gltf-binary");
+  const model = Buffer.from(snapshot.boards[0]!.model!.dataBase64, "base64");
+  expect(model.toString()).not.toContain("private");
+  await expect(
+    prepareProjectShare(project, async () => {
+      await writeFile(join(project.dir, "renders/board.glb"), "changed");
+      return rasterize();
+    }),
+  ).rejects.toThrow("Saved previews or checks changed");
+});
+test("a malformed model cannot publish an otherwise valid snapshot", async () => {
+  const project = await fixture();
+  await writeFile(join(project.dir, "renders/board.glb"), "not a model");
+  await expect(prepareProjectShare(project, rasterize)).rejects.toThrow("saved 3D model");
+});

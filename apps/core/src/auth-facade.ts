@@ -27,8 +27,13 @@ export interface AuthFacade {
 export class LocalAuth implements AuthFacade {
   readonly mode = "local" as const;
   private readonly st: AuthState;
-  constructor(principal: Principal = LOCAL_PRINCIPAL) {
-    this.st = { mode: "local", status: "signed_in", principal };
+  constructor(principal: Principal = LOCAL_PRINCIPAL, dashboardUrl?: string) {
+    this.st = {
+      mode: "local",
+      status: "signed_in",
+      principal,
+      ...(dashboardUrl ? { dashboardUrl } : {}),
+    };
   }
   async load(): Promise<void> {}
   state(): AuthState {
@@ -53,7 +58,15 @@ export class FabplaneAuth implements AuthFacade {
   private client: AuthClient | null = null;
   private st: AuthState = { mode: "fabplane", status: "signed_out" };
 
-  constructor(private readonly opts: { home: string; apiOrigin: string; emit: (e: CoreEvent) => void; openUrl?: (url: string) => void }) {}
+  constructor(
+    private readonly opts: {
+      home: string;
+      apiOrigin: string;
+      appOrigin?: string;
+      emit: (e: CoreEvent) => void;
+      openUrl?: (url: string) => void;
+    },
+  ) {}
 
   async load(): Promise<void> {
     try {
@@ -72,7 +85,7 @@ export class FabplaneAuth implements AuthFacade {
     }
   }
   private withDashboard(s: AuthState): AuthState {
-    return { ...s, dashboardUrl: dashboardUrlFor(this.opts.apiOrigin) };
+    return { ...s, dashboardUrl: dashboardUrlFor(this.opts.apiOrigin, this.opts.appOrigin) };
   }
   private setState(s: AuthState): void {
     this.st = s;
@@ -99,7 +112,8 @@ export class FabplaneAuth implements AuthFacade {
     return this.state();
   }
   async logout(): Promise<AuthState> {
-    if (this.client) await this.client.logout().catch((e) => logger.warn("logout failed", { error: errMsg(e) }));
+    if (this.client)
+      await this.client.logout().catch((e) => logger.warn("logout failed", { error: errMsg(e) }));
     this.setState(this.client?.state() ?? { mode: "fabplane", status: "signed_out" });
     return this.state();
   }
@@ -108,17 +122,31 @@ export class FabplaneAuth implements AuthFacade {
   }
 }
 
-export async function createAuth(o: { mode: AuthMode; channel: Channel; home: string; apiOrigin: string; emit: (e: CoreEvent) => void }): Promise<AuthFacade> {
+export async function createAuth(o: {
+  mode: AuthMode;
+  channel: Channel;
+  home: string;
+  apiOrigin: string;
+  appOrigin?: string;
+  emit: (e: CoreEvent) => void;
+}): Promise<AuthFacade> {
   if (o.mode === "local") {
     if (!localModeAllowed({ channel: o.channel, home: o.home })) {
-      logger.error("FABDESK_AUTH_MODE=local refused: public build without a .fabdesk-dev marker in FABDESK_HOME; falling back to fabplane login");
+      logger.error(
+        "FABDESK_AUTH_MODE=local refused: public build without a .fabdesk-dev marker in FABDESK_HOME; falling back to fabplane login",
+      );
     } else {
-      const a = new LocalAuth();
+      const a = new LocalAuth(LOCAL_PRINCIPAL, dashboardUrlFor(o.apiOrigin, o.appOrigin));
       await a.load();
       return a;
     }
   }
-  const a = new FabplaneAuth({ home: o.home, apiOrigin: o.apiOrigin, emit: o.emit });
+  const a = new FabplaneAuth({
+    home: o.home,
+    apiOrigin: o.apiOrigin,
+    ...(o.appOrigin ? { appOrigin: o.appOrigin } : {}),
+    emit: o.emit,
+  });
   await a.load();
   return a;
 }

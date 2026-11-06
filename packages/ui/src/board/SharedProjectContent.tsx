@@ -1,12 +1,24 @@
-import { useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { sharedCheckLabel, type ProjectShareSnapshot, type SharedBoard } from "@fabdesk/protocol";
 import { Button } from "../components/ui";
 import { Icon } from "../components/Icon";
 import "./project-sharing.css";
 
+const ModelCanvas = lazy(() => import("./ModelCanvas"));
+
 export function SharedProjectContent({ snapshot }: { snapshot: ProjectShareSnapshot }) {
   const [selected, setSelected] = useState<string | null>(null);
   const board = snapshot.boards.find((item) => item.id === selected);
+  const [view, setView] = useState<"pcb" | "3d">("pcb");
+  const model = useMemo(
+    () =>
+      board?.model
+        ? new Blob([Uint8Array.from(atob(board.model.dataBase64), (char) => char.charCodeAt(0))], {
+            type: "model/gltf-binary",
+          })
+        : undefined,
+    [board?.model?.dataBase64],
+  );
   return (
     <section className="fd-shared-content">
       <header>
@@ -34,7 +46,28 @@ export function SharedProjectContent({ snapshot }: { snapshot: ProjectShareSnaps
             </label>
           </div>
           <h3>{board.name}</h3>
-          <BoardPreview board={board} />
+          <div role="tablist" aria-label="Shared board views" className="fd-shared-view-tabs">
+            <Button aria-selected={view === "pcb"} role="tab" onClick={() => setView("pcb")}>
+              PCB
+            </Button>
+            <Button aria-selected={view === "3d"} role="tab" onClick={() => setView("3d")}>
+              3D
+            </Button>
+          </div>
+          {view === "pcb" ? (
+            <BoardPreview board={board} />
+          ) : model ? (
+            <div className="fd-shared-model">
+              <Suspense fallback={<p>Opening 3D model…</p>}>
+                <ModelCanvas projectId="" path="published-board.glb" blob={model} />
+              </Suspense>
+            </div>
+          ) : (
+            <div className="fd-shared-no-preview">
+              <span>No published 3D model</span>
+              <span>Export a model in desktop and update the shared page.</span>
+            </div>
+          )}
           <p>{sharedCheckLabel(board.checks)}</p>
           <p className="fd-share-muted">
             {board.preview ? "Saved preview · image freshness is unverified. " : ""}PCB checks do
@@ -51,6 +84,7 @@ export function SharedProjectContent({ snapshot }: { snapshot: ProjectShareSnaps
               <span>
                 <strong>{item.name}</strong>
                 <small>{sharedCheckLabel(item.checks)}</small>
+                <small>{item.model ? "3D model available" : "No published 3D model"}</small>
                 {!item.sourceAvailable && <small>Board source unavailable</small>}
               </span>
               <Icon name="chevronRight" width={18} height={18} />

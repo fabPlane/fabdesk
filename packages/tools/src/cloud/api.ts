@@ -29,6 +29,7 @@ export interface CloudApi {
   publishProjectShare?(projectId: string, snapshot: unknown): Promise<unknown>;
   disableProjectShare?(projectId: string): Promise<unknown>;
   getSharedProject?(shareId: string): Promise<unknown>;
+  getSharedProjectStatus?(shareId:string):Promise<unknown>;
   listOrgs(): Promise<{ orgs: Org[] }>;
   listDestinations(orgId: string): Promise<{ destinations: Destination[] }>;
   createDestination(

@@ -261,3 +261,5 @@
     height: 64px;
   }
 }
+
+.fd-shared-model{height:420px;min-height:260px}.fd-shared-model .fd-model-canvas{height:100%}.fd-shared-view-tabs{display:flex;gap:6px;margin:12px 0}.fd-shared-view-tabs [aria-selected=true]{background:var(--fd-accent-soft,#dceee8);color:var(--fd-accent,#00624c)}

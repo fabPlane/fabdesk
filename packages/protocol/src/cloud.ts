@@ -5,7 +5,15 @@
  */
 import { z } from "zod/v4";
 
-export const BomSyncOptions = z.object({ expectedRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(), allowPartial: z.boolean().default(false) }).strict();
+export const BomSyncOptions = z
+  .object({
+    expectedRevision: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+    allowPartial: z.boolean().default(false),
+  })
+  .strict();
 export type BomSyncOptions = z.infer<typeof BomSyncOptions>;
 
 export type OrgRole = "owner" | "admin" | "member";
@@ -244,7 +252,13 @@ export function matchDestination(
  * `app.fabplane.com/dashboard`; `:4000` → `:5173/dashboard`; localhost → `localhost:5173`;
  * otherwise a leading `api.` becomes `app.`.
  */
-export function dashboardUrlFor(apiOrigin: string): string {
+export function dashboardUrlFor(apiOrigin: string, appOrigin?: string): string {
+  if (appOrigin) {
+    const app = new URL(appOrigin);
+    if (!["http:", "https:"].includes(app.protocol) || app.username || app.password)
+      throw new Error("Invalid fabPlane app origin");
+    return `${app.origin}/dashboard`;
+  }
   let u: URL;
   try {
     u = new URL(apiOrigin);

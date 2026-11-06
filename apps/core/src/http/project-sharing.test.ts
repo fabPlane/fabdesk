@@ -115,6 +115,31 @@ test("older clients show sharing unavailable without claiming the project is pri
   expect(response.status).toBe(503);
   expect(((await response.json()) as { error: string }).error).toBe("sharing_unavailable");
 });
+test("access polling is anonymous, uncached and refuses a status from a different link", async () => {
+  let wrong = false;
+  const { app, tokens } = await fixture(
+    {
+      getSharedProjectStatus: async () => ({
+        shareId: wrong ? "different_0123456789abcdef" : published.shareId,
+        publishedAt: published.publishedAt,
+        revision: published.revision,
+      }),
+    },
+    null,
+  );
+  const path = `/shared-projects/${published.shareId}/status`;
+  const response = await app.request(path);
+  expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(await response.json()).toEqual({
+    shareId: published.shareId,
+    publishedAt: published.publishedAt,
+    revision: published.revision,
+  });
+  expect(tokens).toEqual([""]);
+  wrong = true;
+  expect((await app.request(path)).status).toBe(502);
+});
 test("concurrent changes cannot race publish against disabling sharing", async () => {
   let finish!: () => void;
   let started!: () => void;
@@ -140,8 +165,23 @@ test("concurrent changes cannot race publish against disabling sharing", async (
 });
 
 test("delegated callers cannot change public visibility", async () => {
-  const cloud = new CloudService({apiOrigin:"https://api.fabplane.com",token:()=>"owner",orgSetting:()=>null,api:()=>{throw new Error("Cloud must not be called");}});
-  const app = cloudRoutes({cloud:()=>cloud,projects:{handle:async()=>null},readBom:async()=>{throw new Error("unused");},rasterizeSharePreview:async()=>({png:new Uint8Array()}),canManageSharing:()=>false});
-  expect((await app.request("/projects/local/share", {method:"PUT"})).status).toBe(403);
-  expect((await app.request("/projects/local/share", {method:"DELETE"})).status).toBe(403);
+  const cloud = new CloudService({
+    apiOrigin: "https://api.fabplane.com",
+    token: () => "owner",
+    orgSetting: () => null,
+    api: () => {
+      throw new Error("Cloud must not be called");
+    },
+  });
+  const app = cloudRoutes({
+    cloud: () => cloud,
+    projects: { handle: async () => null },
+    readBom: async () => {
+      throw new Error("unused");
+    },
+    rasterizeSharePreview: async () => ({ png: new Uint8Array() }),
+    canManageSharing: () => false,
+  });
+  expect((await app.request("/projects/local/share", { method: "PUT" })).status).toBe(403);
+  expect((await app.request("/projects/local/share", { method: "DELETE" })).status).toBe(403);
 });
