@@ -88,8 +88,11 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
   };
   const copy = async () => {
     if (!link) return;
+    setError(null);
+    setNotice("");
     try {
-      await navigator.clipboard.writeText(link);
+      if (host.copyText) await host.copyText(link);
+      else await navigator.clipboard.writeText(link);
       setNotice("Link copied.");
     } catch {
       setError(new Error("Could not copy the link. Select the address and copy it manually."));
@@ -176,7 +179,9 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
               {!confirmed
                 ? "A link is available after sharing settings can be checked."
                 : selected === "private"
-                  ? "No link is available while the project is private."
+                  ? changed
+                    ? "Save changes to disable the current shared link."
+                    : "No link is available while the project is private."
                   : "Publish the shared page to create a link."}
             </div>
           )}
@@ -184,10 +189,8 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
         <section className="fd-share-explainer">
           <h3>What visitors see</h3>
           <p>
-            {count !== undefined
-              ? `${count} board ${count === 1 ? "preview" : "previews"}`
-              : "Board previews"}{" "}
-            and saved PCB check results, where available.
+            {count !== undefined ? `${count} ${count === 1 ? "board" : "boards"}. ` : ""}Saved
+            previews and PCB check results, where available.
           </p>
           <small>Chats, local folders and native design files stay private.</small>
           <Button
@@ -219,7 +222,9 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
             <strong>
               {payload.code === "cloud_signed_out"
                 ? "Sign in to share this project"
-                : "Sharing settings could not be saved or checked"}
+                : settings.isError && !error
+                  ? "Sharing settings could not be checked"
+                  : "Could not complete this action"}
             </strong>
             <p>
               {payload.code === "cloud_signed_out"

@@ -37,8 +37,8 @@ export function SharedProjectContent({ snapshot }: { snapshot: ProjectShareSnaps
           <BoardPreview board={board} />
           <p>{sharedCheckLabel(board.checks)}</p>
           <p className="fd-share-muted">
-            Saved preview · image freshness is unverified. PCB checks do not establish manufacturing
-            approval.
+            {board.preview ? "Saved preview · image freshness is unverified. " : ""}PCB checks do
+            not establish manufacturing approval.
           </p>
         </>
       ) : (

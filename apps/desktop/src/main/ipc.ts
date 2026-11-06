@@ -1,5 +1,5 @@
 import { registerNativeSpeech } from "./native-speech";
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, shell } from "electron";
 import { isAbsolute } from "node:path";
 import { isThemeId, themeBackground, themeIsDark } from "../../../../packages/ui/src/theme/resolve";
 import { resolveWindowTheme, titleBarOverlayFor, writeCachedThemeId } from "./window-theme";
@@ -65,6 +65,10 @@ export function registerIpc(supervisor: CoreSupervisor): void {
     const u = raw as { id?: unknown; username?: unknown } | null;
     if (!u || typeof u.id !== "string") return setSentryUser(null);
     setSentryUser({ id: u.id, ...(typeof u.username === "string" ? { username: u.username } : {}) });
+  });
+  ipcMain.handle("fabdesk:copy-text", (_e, text: unknown) => {
+    if (typeof text !== "string" || text.length > 16_384 || text.includes("\0")) throw new Error("Clipboard text must be a string under 16 KiB.");
+    clipboard.writeText(text);
   });
   ipcMain.handle("fabdesk:open-external", async (_e, url: unknown) => {
     if (typeof url !== "string" || !/^https?:\/\//i.test(url)) throw new Error("only http(s) URLs may be opened");

@@ -35,6 +35,7 @@ export interface FabdeskBridge extends CadRuntimeBridge {
   onMenu(cb: (command: string) => void): () => void;
   restartCore(): Promise<void>;
   onCoreStatus(cb: (info: CoreInfo) => void): () => void;
+  copyText(text: string): Promise<void>;
   openExternal(url: string): Promise<void>;
   openPath(path: string): Promise<void>;
   openLogs(): Promise<void>;
