@@ -31,8 +31,11 @@ import { systemLocaleEnv } from "./system-locales";
 import { resolveWindowTheme, titleBarOverlayFor } from "./window-theme";
 import { decideMediaPermission } from "./media-permission";
 import type { OpenCatalogIntent } from "@fabdesk/protocol";
+import { OpenSharedProjectQueue } from "./open-shared-project";
 import { OpenCatalogQueue } from "./open-catalog";
 
+const openSharedProject = new OpenSharedProjectQueue();
+openSharedProject.offer(process.argv);
 const openCatalog = new OpenCatalogQueue();
 openCatalog.offer(process.argv);
 if (process.defaultApp) {
@@ -52,8 +55,17 @@ function sendOpenCatalog(intent: OpenCatalogIntent): void {
   openCatalog.take();
 }
 
+function sendOpenSharedProject(intent: { shareId: string }): void {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win || win.isDestroyed() || win.webContents.isLoadingMainFrame()) return;
+  win.webContents.send("fabdesk:open-shared-project", intent);
+  openSharedProject.take();
+}
+
 app.on("open-url", (event, url) => {
   event.preventDefault();
+  const shared = openSharedProject.offer(url);
+  if (shared) { sendOpenSharedProject(shared); return; }
   const intent = openCatalog.offer(url);
   if (intent) sendOpenCatalog(intent);
 });
@@ -170,6 +182,8 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", (_event, argv) => {
+    const shared = openSharedProject.offer(argv);
+    if (shared) sendOpenSharedProject(shared);
     const intent = openCatalog.offer(argv);
     const win = BrowserWindow.getAllWindows()[0];
     if (win) {
@@ -263,6 +277,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     installAppMenu();
     registerIpc(supervisor);
+    ipcMain.handle("fabdesk:pending-open-shared-project", () => openSharedProject.take());
     ipcMain.handle("fabdesk:pending-open-catalog", () => openCatalog.take());
     const developmentCadReady = !app.isPackaged && Boolean(cadEnv["FABDESK_FAB_CAD_BRIDGE_URL"]);
     ipcMain.handle("fabdesk:cad-runtime-state", () =>

@@ -75,6 +75,14 @@ const api = {
     ipcRenderer.on("fabdesk:update-download", listener);
     return () => ipcRenderer.removeListener("fabdesk:update-download", listener);
   },
+  pendingOpenSharedProject: () => ipcRenderer.invoke("fabdesk:pending-open-shared-project") as Promise<{ shareId: string } | null>,
+  onOpenSharedProject: (cb: (intent: { shareId: string }) => void) => {
+    const listener = (_e: unknown, intent: unknown) => {
+      if (intent && typeof intent === "object" && "shareId" in intent && typeof intent.shareId === "string") cb({ shareId: intent.shareId });
+    };
+    ipcRenderer.on("fabdesk:open-shared-project", listener);
+    return () => ipcRenderer.removeListener("fabdesk:open-shared-project", listener);
+  },
   pendingOpenCatalog: () =>
     ipcRenderer.invoke("fabdesk:pending-open-catalog") as Promise<{ catalogId: string; remix: boolean } | null>,
   onOpenCatalog: (cb: (intent: { catalogId: string; remix: boolean }) => void) => {

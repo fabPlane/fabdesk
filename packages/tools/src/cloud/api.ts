@@ -24,6 +24,11 @@ import { ToolError } from "../registry";
 export type CloudImageUpload = { data: Uint8Array | Blob; contentType: string; filename: string };
 
 export interface CloudApi {
+  // Optional for older clients: unsupported builds fail closed rather than pretending to publish.
+  getProjectShare?(projectId: string): Promise<unknown>;
+  publishProjectShare?(projectId: string, snapshot: unknown): Promise<unknown>;
+  disableProjectShare?(projectId: string): Promise<unknown>;
+  getSharedProject?(shareId: string): Promise<unknown>;
   listOrgs(): Promise<{ orgs: Org[] }>;
   listDestinations(orgId: string): Promise<{ destinations: Destination[] }>;
   createDestination(
