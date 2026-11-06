@@ -2,7 +2,9 @@
 
 The project header's **Share** action opens the Private / Anyone with the link dialog. The existing review ZIP is a separate secondary action. **Preview shared page** builds a local snapshot without publishing or requiring a cloud account.
 
-The header's **Share** button includes a compact saved-visibility badge: **Private** or **Shared**. Its tooltip explains who can access the published snapshot. The badge updates after a successful save and on the existing background access check; unsaved dialog choices do not change it. Failed checks show **Unavailable**, never a presumed private state. A successful copy changes the button to a green checkmark and **Copied!** for three seconds, with an accessible announcement.
+The header uses one compact control: **Share** for a private project, or **Shared** with a subtle green treatment when a link is active. Both open the same sharing settings. The tooltip and accessible name describe actual saved visibility; pending checks show a spinner and failed checks show a warning icon. The control updates after a successful save and on the existing background access check; unsaved dialog choices do not change it. A successful copy changes the dialog's copy button to a green checkmark and **Copied!** for three seconds, with an accessible announcement.
+
+The compact dialog uses a **Who can view** dropdown and makes **Copy link** the primary action for an existing link. **More options** contains the local preview, review ZIP and publication details. Creating a link, updating its saved snapshot or disabling access remains explicit; choosing Private does not revoke until **Save changes** succeeds.
 
 Publishing and reading hosted links require the companion backend in [fabplane.com#185](https://github.com/TensorFleet/fabplane.com/issues/185). This desktop change does not deploy or implement that server. Missing endpoints fail visibly; a 404 must never be interpreted as confirmation that an existing share is private. No placeholder URLs or local-only sharing preferences are persisted.
 

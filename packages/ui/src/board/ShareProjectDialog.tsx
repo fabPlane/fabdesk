@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   errorPayload,
@@ -13,8 +13,9 @@ import {
   type ProjectShareSnapshot,
   type ProjectShareState,
 } from "@fabdesk/protocol";
-import { Button, Dialog, Spinner } from "../components/ui";
+import { Button, Dialog, Select, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
+import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useUiStore } from "../stores/ui";
 import { SharedProjectContent } from "./SharedProjectContent";
 import "./project-sharing.css";
@@ -28,6 +29,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
     sources = useBoardSources(projectId);
   const appOrigin = useAuthStore((s) => s.state?.dashboardUrl);
   const settings = useProjectShareSettings(projectId);
+  const accessId = useId();
   const { queryKey } = settings;
   const [copyFeedback, setCopyFeedback] = useState<{ link: string; state: string } | null>(null);
   useEffect(() => {
@@ -50,7 +52,11 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
   const changed = confirmed && selected !== saved.visibility;
   const stateKey = (state: ProjectShareState) =>
     state.visibility === "private" ? "private" : `${state.shareId}:${state.revision}`;
-  const copied = !!copyFeedback && confirmed && copyFeedback.link === link && copyFeedback.state === stateKey(saved);
+  const copied =
+    !!copyFeedback &&
+    confirmed &&
+    copyFeedback.link === link &&
+    copyFeedback.state === stateKey(saved);
   const close = () => {
     if (!busy) onClose();
   };
@@ -119,116 +125,108 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
         className="fd-share-dialog"
       >
         <p className="fd-share-project-name">{project.data?.name ?? "Project"}</p>
-        <fieldset className="fd-share-visibility" disabled={busy || !confirmed}>
-          <legend>Project visibility{settings.isError ? " · not checked" : ""}</legend>
-          {(
-            [
-              { value: "private", title: "Private", detail: "Only you. Link sharing is disabled." },
-              {
-                value: "unlisted",
-                title: "Anyone with the link",
-                detail: "Anyone with the link can view the shared page.",
-              },
-            ] as const
-          ).map((option) => (
-            <label key={option.value} data-selected={selected === option.value}>
-              <input
-                type="radio"
-                name="project-visibility"
-                value={option.value}
-                checked={selected === option.value}
-                onChange={() => {
-                  setChoice(option.value);
-                  setNotice(null);
-                  setCopyFeedback(null);
-                }}
-              />
-              <span>
-                <strong>{option.title}</strong>
-                <small>{option.detail}</small>
-              </span>
-            </label>
-          ))}
-        </fieldset>
-        {settings.isPending && (
-          <p role="status" className="fd-share-muted">
-            <Spinner />
-            Checking sharing settings…
-          </p>
-        )}
-        <section className="fd-share-link-section">
-          <h3>Shared link</h3>
-          {link ? (
-            <>
-              <div className="fd-share-link-row">
-                <input
-                  aria-label="Shared project link"
-                  readOnly
-                  value={link}
-                  onFocus={(event) => event.currentTarget.select()}
-                />
-                <Button disabled={busy} className="fd-share-copy-button" data-copied={copied} onClick={() => void copy()}>
-                  <Icon name={copied ? "check" : "copy"} width={16} height={16} />
-                  <span aria-live="polite" aria-atomic="true">{copied ? "Copied!" : "Copy link"}</span>
-                </Button>
-              </div>
-              <Button
-                variant="ghost"
-                disabled={busy}
-                onClick={() => {
-                  void host.openExternal(link);
-                }}
-              >
-                <Icon name="externalLink" width={16} height={16} />
-                Open shared page
-              </Button>
-            </>
-          ) : (
-            <div className="fd-share-link-empty">
-              {!confirmed
-                ? "A link is available after sharing settings can be checked."
-                : selected === "private"
-                  ? changed
-                    ? "Save changes to disable the current shared link."
-                    : "No link is available while the project is private."
-                  : "Publish the shared page to create a link."}
-            </div>
-          )}
-        </section>
-        <section className="fd-share-explainer">
-          <h3>What visitors see</h3>
-          <p>
-            {count !== undefined ? `${count} ${count === 1 ? "board" : "boards"}. ` : ""}Saved
-            previews, saved 3D models and PCB check results, where available.
-          </p>
-          <small>
-            Chats, local folders and native design files stay private. Up to 10 MiB per model and 20
-            MiB total.
-          </small>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={busy || !project.data || sources.isError}
-            onClick={() => void showPreview()}
+        <div className="fd-share-access-row">
+          <label htmlFor={accessId}>Who can view</label>
+          <Select
+            id={accessId}
+            aria-describedby={`${accessId}-hint`}
+            disabled={busy || !confirmed}
+            value={confirmed ? selected : "unknown"}
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              if (value !== "private" && value !== "unlisted") return;
+              setChoice(value);
+              setNotice(null);
+              setCopyFeedback(null);
+            }}
           >
-            Preview shared page
-          </Button>
-        </section>
-        {selected === "unlisted" && (
+            {!confirmed && (
+              <option value="unknown">
+                {settings.isPending ? "Checking access…" : "Access unavailable"}
+              </option>
+            )}
+            <option value="private">Private</option>
+            <option value="unlisted">Anyone with the link</option>
+          </Select>
+        </div>
+        <p id={`${accessId}-hint`} className="fd-share-access-hint" role="status">
+          {!confirmed
+            ? settings.isPending
+              ? "Checking sharing settings…"
+              : "Retry below to check link access."
+            : selected === "private"
+              ? changed
+                ? "Save to disable the current link. Downloaded copies cannot be recalled."
+                : "Only you. Link sharing is off."
+              : link
+                ? "Anyone with the link can view. No sign-in needed."
+                : "Create a link to let others view this project."}
+        </p>
+        {link && (
+          <section className="fd-share-link-section" aria-label="Shared link">
+            <div className="fd-share-link-row">
+              <input
+                aria-label="Shared project link"
+                readOnly
+                value={link}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <Button
+                variant={copied ? "secondary" : "primary"}
+                disabled={busy}
+                className="fd-share-copy-button"
+                data-copied={copied}
+                onClick={() => void copy()}
+              >
+                <Icon name={copied ? "check" : "copy"} width={16} height={16} />
+                <span aria-live="polite" aria-atomic="true">
+                  {copied ? "Copied!" : "Copy link"}
+                </span>
+              </Button>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => {
+                void host.openExternal(link);
+              }}
+            >
+              <Icon name="externalLink" width={16} height={16} />
+              Open shared page
+            </Button>
+          </section>
+        )}
+        <p className="fd-share-scope">
+          Shared pages show saved previews, 3D models and checks. Design files and chats stay private.
+          {selected === "unlisted" && (
+            <span>Local edits appear after you update the shared page.</span>
+          )}
+        </p>
+        <details className="fd-share-more">
+          <DisclosureSummary label="More options" icon="more" variant="compact" />
+          <div className="fd-share-more-actions">
+            <Button
+              size="sm"
+              disabled={busy || !project.data || sources.isError}
+              onClick={() => void showPreview()}
+            >
+              Preview shared page
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={onDownload}>
+              <Icon name="download" width={15} height={15} />
+              Download review ZIP
+            </Button>
+          </div>
           <p className="fd-share-muted">
-            {saved?.visibility === "unlisted" && confirmed
-              ? `Published ${new Date(saved.publishedAt).toLocaleString()}. `
-              : ""}
-            Local changes appear only after you update the shared page. This link won’t appear in
+            {count !== undefined ? `${count} ${count === 1 ? "board" : "boards"}. ` : ""}
+            Previews, models and checks are included where available. This link won’t appear in
             Explore.
+            {confirmed && saved.visibility === "unlisted" && (
+              <span>Published {new Date(saved.publishedAt).toLocaleString()}.</span>
+            )}
           </p>
-        )}
-        {changed && selected === "private" && (
-          <p className="fd-share-muted">
-            Save to disable the current shared link. Copies already downloaded by visitors cannot be
-            recalled.
-          </p>
-        )}
+        </details>
         {payload && (
           <div className="fd-share-error" role="alert">
             <strong>
@@ -274,32 +272,28 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
           </p>
         )}
         <footer className="fd-share-footer">
-          <Button variant="ghost" disabled={busy} onClick={onDownload}>
-            <Icon name="download" width={16} height={16} />
-            Download review ZIP
-          </Button>
           <div>
             {confirmed && (changed || selected === "unlisted") && (
-              <Button variant="primary" disabled={busy} onClick={() => void save()}>
+              <Button
+                variant={link ? "secondary" : "primary"}
+                disabled={busy}
+                onClick={() => void save()}
+              >
                 {busy ? (
                   <>
                     <Spinner />
-                    Saving…
+                    Working…
                   </>
                 ) : selected === "private" ? (
                   "Save changes"
                 ) : saved.visibility === "unlisted" ? (
                   "Update shared page"
                 ) : (
-                  "Publish shared page"
+                  "Create link"
                 )}
               </Button>
             )}
-            <Button
-              variant={!confirmed || (!changed && selected === "private") ? "primary" : "secondary"}
-              disabled={busy}
-              onClick={close}
-            >
+            <Button variant="ghost" disabled={busy} onClick={close}>
               Done
             </Button>
           </div>

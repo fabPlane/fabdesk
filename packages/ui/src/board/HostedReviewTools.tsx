@@ -20,7 +20,7 @@ export function HostedReviewTools({ projectId, shareButton = false }: { projectI
   const shareSettings = useProjectShareSettings(projectId, shareButton);
   const visibility = shareSettings.isError ? "unavailable" : shareSettings.data?.visibility ?? "loading";
   const visibilityLabel = visibility === "private" ? "Private" : visibility === "unlisted" ? "Shared" : visibility === "loading" ? "Checking…" : "Unavailable";
-  const visibilityDetail = visibility === "private" ? "Private project. Only you can access it." : visibility === "unlisted" ? "Anyone with the link can view the published snapshot." : visibility === "loading" ? "Checking project visibility…" : "Visibility could not be checked. Open sharing settings to retry.";
+  const visibilityDetail = visibility === "private" ? "Private project. Only you can access it. Click to share." : visibility === "unlisted" ? "Anyone with the link can view the published snapshot. Click to manage access." : visibility === "loading" ? "Checking project visibility…" : "Visibility could not be checked. Open sharing settings to retry.";
   const [view, setView] = useState<View | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null);
   const [options, setOptions] = useState<ReviewPackageOptions>({ outputs: true, sources: false, notes: true, checks: true });
   const client = useCoreClient(), project = useProject(projectId), sources = useBoardSources(projectId);
@@ -55,11 +55,12 @@ export function HostedReviewTools({ projectId, shareButton = false }: { projectI
       variant="secondary"
       className="fd-project-share-button"
       title={visibilityDetail}
-      aria-label={`Share project · ${visibilityLabel}`}
+      data-visibility={visibility}
+      aria-label={`Sharing settings · ${visibilityLabel}`}
       onClick={() => setSharing(true)}
     >
-      <Icon name="share" width={17} height={17} />Share
-      <span className="fd-project-visibility" data-visibility={visibility} role="status">{visibilityLabel}</span>
+      {visibility === "loading" ? <Spinner /> : <Icon name={visibility === "unavailable" ? "warning" : "share"} width={17} height={17} />}
+      {visibility === "unlisted" ? "Shared" : "Share"}
     </Button> : <WorkspaceMenu className="fd-review-publishing" label={<><span>Review tools</span><Icon name="chevronDown" width={14} height={14} /></>}>
       <button onClick={() => setView("share")}>Download review package…</button><button onClick={() => setView("sync")}>Review repository changes…</button><button onClick={() => setView("history")}>Saved versions…</button>
     </WorkspaceMenu>}
