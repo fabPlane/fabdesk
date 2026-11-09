@@ -3,6 +3,7 @@ import { z } from "zod/v4";
 export const ShareId = z.string().regex(/^[A-Za-z0-9_-]{16,80}$/);
 export const ProjectShareState = z.discriminatedUnion("visibility", [
   z.object({ visibility: z.literal("private") }).strict(),
+  z.object({ visibility: z.literal("restricted"), projectId: z.string().uuid(), publishedAt: z.string().datetime(), revision: z.string().min(1).max(128) }).strict(),
   z
     .object({
       visibility: z.literal("unlisted"),
