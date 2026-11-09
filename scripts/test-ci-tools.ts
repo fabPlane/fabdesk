@@ -69,6 +69,11 @@ try {
   const ci = workflow("ci");
   const bunSetup = ci.jobs.verify!.steps!.find((step) => step.name === "Recover Bun installation through the release API")?.run;
   assert(bunSetup, "Bun recovery setup is missing");
+  assert.equal(
+    workflow("mobile").jobs.verify!.steps!.find((step) => step.name === "Recover Bun installation through the release API")?.run,
+    bunSetup,
+    "Mobile verification must use the same verified Bun recovery",
+  );
   const recoveredBun = run(bunSetup, "bun-recovery");
   assert.equal(recoveredBun.result.exitCode, 0, recoveredBun.result.stderr.toString());
   const bunExecutable = join(recoveredBun.installed, "bun");

@@ -99,7 +99,7 @@ dependencies with actionlint.
 
 ## Tools on ephemeral Linux workers
 
-The main CI job normally installs Bun 1.4.0 with `oven-sh/setup-bun`. If that
+The main CI and mobile verification jobs install Bun 1.4.0 with `oven-sh/setup-bun`. If that
 step fails, it downloads the same Linux X64 release archive through GitHub's
 release asset API, checks its pinned SHA256, and adds the extracted binary to
 the job's PATH. A failed download or checksum still fails CI. This handles the
