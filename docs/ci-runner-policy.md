@@ -102,7 +102,7 @@ dependencies with actionlint.
 The main CI and mobile verification jobs install Bun 1.4.0 with `oven-sh/setup-bun`. If that
 step fails, it downloads the same Linux X64 release archive through GitHub's
 release asset API, checks its pinned SHA256, and adds the extracted binary to
-the job's PATH. A failed download or checksum still fails CI. This handles the
+the job's PATH, including the `bunx` alias used by Expo. A failed download or checksum still fails CI. This handles the
 release download edge returning HTTP 504 without changing the Bun version or
 disabling tests. The tool setup regression check exercises the actual fallback
 and rejects corrupted archives and unsupported architectures.

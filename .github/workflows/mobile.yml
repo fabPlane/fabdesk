@@ -63,6 +63,7 @@ jobs:
           echo "2d03fb5fb83ac8b567aca0a281b2ce1a1a19d488f56c2968d88c3f25e92fe452  $install_dir/bun.zip" | sha256sum -c -
           unzip -q "$install_dir/bun.zip" -d "$install_dir"
           test -x "$install_dir/bun-linux-x64/bun"
+          ln -s bun "$install_dir/bun-linux-x64/bunx"
           echo "$install_dir/bun-linux-x64" >> "$GITHUB_PATH"
 
       # Metro and the Expo CLI are Node programs; Bun is only the package manager here.

@@ -1,6 +1,6 @@
 // Exercise the workflow shell on a runner without preinstalled node or gh.
 import { strict as assert } from "node:assert";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -20,7 +20,7 @@ const bin = join(root, "bin");
 mkdirSync(bin);
 symlinkSync(process.execPath, join(bin, "bun"));
 // Allow only bootstrap tools; Node and gh are absent even on hosted images.
-for (const command of ["curl", "sha256sum", "tar", "mktemp", "gzip", "unzip"]) {
+for (const command of ["curl", "sha256sum", "tar", "mktemp", "gzip", "unzip", "ln"]) {
   const path = Bun.which(command);
   assert(path, `${command} is required to test the Linux bootstrap`);
   symlinkSync(path, join(bin, command));
@@ -78,10 +78,16 @@ try {
   assert.equal(recoveredBun.result.exitCode, 0, recoveredBun.result.stderr.toString());
   const bunExecutable = join(recoveredBun.installed, "bun");
   assert.equal(readFileSync(bunExecutable).subarray(0, 4).toString("hex"), "7f454c46");
+  const bunxExecutable = join(recoveredBun.installed, "bunx");
+  assert.equal(readlinkSync(bunxExecutable), "bun");
+  assert(readFileSync(bunxExecutable).equals(readFileSync(bunExecutable)));
   if (process.platform === "linux") {
     const version = Bun.spawnSync([bunExecutable, "--version"], { stdout: "pipe", stderr: "pipe" });
     assert.equal(version.exitCode, 0, version.stderr.toString());
     assert.equal(version.stdout.toString().trim(), "1.4.0");
+    const bunxVersion = Bun.spawnSync([bunxExecutable, "--version"], { stdout: "pipe", stderr: "pipe" });
+    assert.equal(bunxVersion.exitCode, 0, bunxVersion.stderr.toString());
+    assert.equal(bunxVersion.stdout.toString().trim(), "1.4.0");
   }
   console.log("PASS verified job-local Bun recovery archive and binary");
 
