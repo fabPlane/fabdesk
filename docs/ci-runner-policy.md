@@ -99,9 +99,18 @@ dependencies with actionlint.
 
 ## Tools on ephemeral Linux workers
 
+The main CI job normally installs Bun 1.4.0 with `oven-sh/setup-bun`. If that
+step fails, it downloads the same Linux X64 release archive through GitHub's
+release asset API, checks its pinned SHA256, and adds the extracted binary to
+the job's PATH. A failed download or checksum still fails CI. This handles the
+release download edge returning HTTP 504 without changing the Bun version or
+disabling tests. The tool setup regression check exercises the actual fallback
+and rejects corrupted archives and unsupported architectures.
+
 NAS jobs must configure the tools they use instead of assuming the hosted image
 contains them. Release version metadata uses the configured Bun runtime. Release
-and security jobs install GitHub CLI 2.102.0 from its official Linux X64 archive,
+and security jobs install GitHub CLI 2.102.0 from its official Linux X64 archive
+through the GitHub release asset API,
 verify the pinned SHA256, and add only the job's temporary directory to PATH.
 This requires no sudo, runner image change, or new credential. The release step
 is shared with YAML aliases so the website handoff can keep its empty token

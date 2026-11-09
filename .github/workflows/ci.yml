@@ -84,9 +84,32 @@ jobs:
           persist-credentials: false
 
       - uses: oven-sh/setup-bun@v2
+        id: setup-bun
+        continue-on-error: true
         with:
           bun-version: 1.4.0
           no-cache: ${{ startsWith(runner.name, 'tf-nas-') }}
+
+      # GitHub's release download edge can return 504 while the asset API works.
+      # Keep the same official archive and verify it before adding it to PATH.
+      - name: Recover Bun installation through the release API
+        if: steps.setup-bun.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_ARCH" != X64 ]; then
+            echo 'This pinned Bun fallback supports Linux X64 only' >&2
+            exit 1
+          fi
+          install_dir=$(mktemp -d "$RUNNER_TEMP/bun-1.4.0.XXXXXX")
+          curl --fail --show-error --location --retry 3 --connect-timeout 15 --max-time 120 \
+            -H 'Accept: application/octet-stream' \
+            https://api.github.com/repos/oven-sh/bun/releases/assets/521567984 \
+            -o "$install_dir/bun.zip"
+          echo "2d03fb5fb83ac8b567aca0a281b2ce1a1a19d488f56c2968d88c3f25e92fe452  $install_dir/bun.zip" | sha256sum -c -
+          unzip -q "$install_dir/bun.zip" -d "$install_dir"
+          test -x "$install_dir/bun-linux-x64/bun"
+          echo "$install_dir/bun-linux-x64" >> "$GITHUB_PATH"
 
       - name: Validate workflow tool setup without preinstalled Node or gh
         run: bun run scripts/test-ci-tools.ts

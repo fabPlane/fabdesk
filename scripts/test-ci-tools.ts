@@ -20,7 +20,7 @@ const bin = join(root, "bin");
 mkdirSync(bin);
 symlinkSync(process.execPath, join(bin, "bun"));
 // Allow only bootstrap tools; Node and gh are absent even on hosted images.
-for (const command of ["curl", "sha256sum", "tar", "mktemp", "gzip"]) {
+for (const command of ["curl", "sha256sum", "tar", "mktemp", "gzip", "unzip"]) {
   const path = Bun.which(command);
   assert(path, `${command} is required to test the Linux bootstrap`);
   symlinkSync(path, join(bin, command));
@@ -66,6 +66,20 @@ try {
   }
   console.log("PASS verified job-local GitHub CLI archive and binary");
 
+  const ci = workflow("ci");
+  const bunSetup = ci.jobs.verify!.steps!.find((step) => step.name === "Recover Bun installation through the release API")?.run;
+  assert(bunSetup, "Bun recovery setup is missing");
+  const recoveredBun = run(bunSetup, "bun-recovery");
+  assert.equal(recoveredBun.result.exitCode, 0, recoveredBun.result.stderr.toString());
+  const bunExecutable = join(recoveredBun.installed, "bun");
+  assert.equal(readFileSync(bunExecutable).subarray(0, 4).toString("hex"), "7f454c46");
+  if (process.platform === "linux") {
+    const version = Bun.spawnSync([bunExecutable, "--version"], { stdout: "pipe", stderr: "pipe" });
+    assert.equal(version.exitCode, 0, version.stderr.toString());
+    assert.equal(version.stdout.toString().trim(), "1.4.0");
+  }
+  console.log("PASS verified job-local Bun recovery archive and binary");
+
   // Replay the same trusted archive offline for every release job using the alias.
   rmSync(join(bin, "curl"));
   writeFileSync(join(bin, "curl"), '#!/bin/bash\nwhile [ "$#" -gt 0 ]; do\n  if [ "$1" = -o ]; then /bin/cp "$CI_TEST_ARCHIVE" "$2"; exit; fi\n  shift\ndone\nexit 1\n', { mode: 0o755 });
@@ -83,6 +97,16 @@ try {
   assert.notEqual(tampered.result.exitCode, 0);
   assert.equal(tampered.installed, "", "Unverified binary must not enter PATH");
   console.log("PASS checksum mismatch blocks installation");
+
+  const tamperedBun = run(bunSetup, "bun-tampered", { CI_TEST_ARCHIVE: badArchive });
+  assert.notEqual(tamperedBun.result.exitCode, 0);
+  assert.equal(tamperedBun.installed, "", "Unverified Bun must not enter PATH");
+  console.log("PASS Bun checksum mismatch blocks installation");
+
+  const unsupportedBun = run(bunSetup, "bun-unsupported", { RUNNER_ARCH: "ARM64", CI_TEST_ARCHIVE: resolve("missing") });
+  assert.notEqual(unsupportedBun.result.exitCode, 0);
+  assert.equal(unsupportedBun.installed, "");
+  console.log("PASS unsupported Bun architecture fails before installation");
 
   const unsupported = run(setup(release.jobs.version!), "unsupported", { RUNNER_ARCH: "ARM64", CI_TEST_ARCHIVE: resolve("missing") });
   assert.notEqual(unsupported.result.exitCode, 0);
