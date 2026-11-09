@@ -6,6 +6,8 @@ The header uses one compact control: **Share** for a private project, or **Share
 
 The compact dialog uses a **Who can view** dropdown and makes **Copy link** the primary action for an existing link. **More options** contains the local preview, review ZIP and publication details. Creating a link, updating its saved snapshot or disabling access remains explicit; choosing Private does not revoke until **Save changes** succeeds.
 
+Being signed out is an expected state: the header keeps its normal **Share** icon, label and tooltip. The sign-in warning icon and account action appear inside the sharing dialog. Other failures to verify sharing status retain the header warning; no failed check is treated as proof that a project is private.
+
 Publishing and reading hosted links require the companion backend in [fabplane.com#185](https://github.com/TensorFleet/fabplane.com/issues/185). This desktop change does not deploy or implement that server. Missing endpoints fail visibly; a 404 must never be interpreted as confirmation that an existing share is private. No placeholder URLs or local-only sharing preferences are persisted.
 
 ## Contents

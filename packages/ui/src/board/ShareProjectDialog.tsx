@@ -229,7 +229,8 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
         </details>
         {payload && (
           <div className="fd-share-error" role="alert">
-            <strong>
+            <strong className="fd-share-error-title">
+              <Icon name="warning" width={17} height={17} />
               {payload.code === "cloud_signed_out"
                 ? "Sign in to share this project"
                 : settings.isError && !error

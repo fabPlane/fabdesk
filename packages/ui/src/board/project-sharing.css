@@ -101,6 +101,14 @@
   margin: 4px 0 10px;
   overflow-wrap: anywhere;
 }
+.fd-share-error-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fd-share-error-title svg {
+  flex-shrink: 0;
+}
 .fd-share-error > div {
   display: flex;
   gap: 8px;
