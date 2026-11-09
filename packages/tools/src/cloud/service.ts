@@ -89,6 +89,12 @@ export class CloudService {
     return fn(this.client());
   }
 
+  /** Visitor reads are anonymous, including when the desktop is signed out. */
+  publicClient(): CloudApi {
+    if (!this.opts.api) throw new CloudUnavailableError();
+    return this.opts.api({ origin: this.opts.apiOrigin, token: "" });
+  }
+
   async orgs(fresh = false): Promise<Org[]> {
     const token = this.opts.token();
     const ttl = this.opts.orgTtlMs ?? 60_000;

@@ -903,7 +903,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
 
   /* ---------- fabplane.com shopping lists & inventory ---------- */
-  app.route("/", cloudRoutes<Env["Variables"]>({ cloud: () => deps.services.cloud, projects: deps.projects, readBom: project => readProjectBom(makeContext({ project, services: deps.services })) }));
+  app.route("/", cloudRoutes<Env["Variables"]>({ cloud: () => deps.services.cloud, projects: deps.projects, readBom: project => readProjectBom(makeContext({ project, services: deps.services })), canManageSharing: token => deps.tokens.lookup(token)?.kind === "daemon", rasterizeSharePreview: (svg, options) => deps.services.kicad.rasterizeSvg(svg, options) }));
 
   /* ---------- folders ---------- */
   app.get("/folders", (c) => c.json(deps.store.folders.list()));

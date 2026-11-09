@@ -1,5 +1,5 @@
 /** Typed fetch wrapper over the fabdesk-core control API plus SSE subscription. */
-import { BoardSourceSelection } from "@fabdesk/protocol";
+import { ProjectShareState, ProjectShareSnapshot, SharedProject, SharedProjectStatus, BoardSourceSelection } from "@fabdesk/protocol";
 import type {
   OutputTrashReview,
   OutputTrashEntry,
@@ -239,6 +239,26 @@ export class CoreClient {
   }
   getProject(id: string): Promise<ProjectDetail> {
     return this.request(`/projects/${encodeURIComponent(id)}`);
+  }
+  async getProjectShare(id: string): Promise<ProjectShareState> {
+    return ProjectShareState.parse(await this.request(`/projects/${encodeURIComponent(id)}/share`));
+  }
+  async publishProjectShare(id: string): Promise<ProjectShareState> {
+    return ProjectShareState.parse(await this.request(`/projects/${encodeURIComponent(id)}/share`, { method: "PUT" }));
+  }
+  async disableProjectShare(id: string): Promise<ProjectShareState> {
+    return ProjectShareState.parse(await this.request(`/projects/${encodeURIComponent(id)}/share`, { method: "DELETE" }));
+  }
+  async previewProjectShare(id: string): Promise<ProjectShareSnapshot> {
+    return ProjectShareSnapshot.parse(await this.request(`/projects/${encodeURIComponent(id)}/share/preview`, { method: "POST" }));
+  }
+  async getSharedProjectStatus(shareId: string) {
+    return SharedProjectStatus.parse(
+      await this.request(`/shared-projects/${encodeURIComponent(shareId)}/status`),
+    );
+  }
+  async getSharedProject(shareId: string): Promise<SharedProject> {
+    return SharedProject.parse(await this.request(`/shared-projects/${encodeURIComponent(shareId)}`));
   }
   inspectBoardSources(id: string): Promise<ProjectBoardSources> {
     return this.request(`/projects/${encodeURIComponent(id)}/board-sources`);

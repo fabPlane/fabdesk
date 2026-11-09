@@ -40,3 +40,6 @@ export * from "./mechanical-access";
 export * from "./enclosure-footprint";
 export * from "./connector-opening";
 export * from "./opening-profile";
+export * from "./project-sharing";
+
+export { sanitizeSharedGlb } from "./shared-glb";

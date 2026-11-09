@@ -14,9 +14,11 @@ import {
   InventoryAdjust,
   InventoryItemInput,
   BomSyncOptions,
+  ProjectShareState, SharedProject, SharedProjectStatus, ShareId,
   type ProjectBomSnapshot,
 } from "@fabdesk/protocol";
 import {
+  prepareProjectShare,
   CloudSignedOutError,
   CloudUnavailableError,
   isCloudApiError,
@@ -24,6 +26,7 @@ import {
   type CloudService,
   type ProjectHandle,
 } from "@fabdesk/tools";
+import { extractToken } from "../auth";
 import type { ProjectStore } from "../projects";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -33,6 +36,8 @@ type Deps = {
   cloud: () => CloudService | undefined;
   projects: Pick<ProjectStore, "handle">;
   readBom: (project: ProjectHandle) => Promise<ProjectBomSnapshot>;
+  canManageSharing?: (token: string | undefined) => boolean;
+  rasterizeSharePreview: (svg: string, options: { maxWidth: number }) => Promise<{ png: Uint8Array }>;
 };
 
 const param = (c: Context, name: string): string => c.req.param(name) ?? "";
@@ -86,6 +91,89 @@ export function cloudRoutes<E extends object>(deps: Deps): Hono<{ Variables: E }
         throw e;
       }
     };
+
+  const sharingBusy = new Set<string>();
+  const withSharingLock = async <T>(id: string, action: () => Promise<T>): Promise<T> => {
+    if (sharingBusy.has(id)) throw new RouteError(409, "share_busy", "A sharing change is already in progress. Wait for it to finish.");
+    sharingBusy.add(id); try { return await action(); } finally { sharingBusy.delete(id); }
+  };
+  const unsupported = () => new RouteError(503, "sharing_unavailable", "Project link sharing is not available on this server yet. You can still download a review ZIP.");
+  const sharingCall = async <T>(action: () => Promise<T>): Promise<T> => {
+    try { return await action(); }
+    catch (error) {
+      if (isCloudApiError(error) && [404, 405, 501].includes(error.status)) throw unsupported();
+      throw error;
+    }
+  };
+  const shareState = (raw: unknown) => {
+    const parsed = ProjectShareState.safeParse(raw);
+    if (!parsed.success) throw new RouteError(502, "invalid_share_response", "The sharing server returned incomplete settings. Try again later.");
+    return parsed.data;
+  };
+  app.get("/projects/:id/share", run(async c => {
+    const handle = await project(param(c, "id")), api = cloud().client();
+    if (!api.getProjectShare) throw unsupported();
+    return c.json(shareState(await sharingCall(() => api.getProjectShare!(handle.id))));
+  }));
+  app.post("/projects/:id/share/preview", run(async c => {
+    return c.json(await prepareProjectShare(await project(param(c, "id")), deps.rasterizeSharePreview));
+  }));
+  app.put("/projects/:id/share", run(async c => {
+    if (deps.canManageSharing && !deps.canManageSharing(extractToken(c.req.raw) ?? undefined)) throw new RouteError(403, "sharing_requires_desktop", "Publish shared pages from the desktop Share dialog.");
+    const handle = await project(param(c, "id")), api = cloud().client();
+    if (!api.publishProjectShare) throw unsupported();
+    return withSharingLock(handle.id, async () => {
+      const snapshot = await prepareProjectShare(handle, deps.rasterizeSharePreview);
+      const result = shareState(await sharingCall(() => api.publishProjectShare!(handle.id, snapshot)));
+      if (result.visibility !== "unlisted") throw new RouteError(502, "invalid_share_response", "The server did not confirm publication. Reload sharing settings before trying again.");
+      return c.json(result);
+    });
+  }));
+  app.delete("/projects/:id/share", run(async c => {
+    if (deps.canManageSharing && !deps.canManageSharing(extractToken(c.req.raw) ?? undefined)) throw new RouteError(403, "sharing_requires_desktop", "Change sharing from the desktop Share dialog.");
+    const handle = await project(param(c, "id")), api = cloud().client();
+    if (!api.disableProjectShare) throw unsupported();
+    return withSharingLock(handle.id, async () => {
+      const result = shareState(await sharingCall(() => api.disableProjectShare!(handle.id)));
+      if (result.visibility !== "private") throw new RouteError(502, "invalid_share_response", "The server did not confirm that sharing was disabled. Reload sharing settings.");
+      return c.json(result);
+    });
+  }));
+  app.get(
+    "/shared-projects/:shareId/status",
+    run(async (c) => {
+      const id = ShareId.parse(param(c, "shareId")),
+        api = cloud().publicClient();
+      const raw = api.getSharedProjectStatus
+        ? await api.getSharedProjectStatus(id)
+        : api.getSharedProject
+          ? await api.getSharedProject(id)
+          : null;
+      const parsed = SharedProjectStatus.safeParse(
+        raw && typeof raw === "object"
+          ? {
+              shareId: (raw as any).shareId,
+              publishedAt: (raw as any).publishedAt,
+              revision: (raw as any).revision,
+            }
+          : raw,
+      );
+      if (!parsed.success || parsed.data.shareId !== id)
+        throw new RouteError(502, "invalid_share_response", "Shared access could not be checked.");
+      c.header("Cache-Control", "no-store");
+      return c.json(parsed.data);
+    }),
+  );
+  app.get("/shared-projects/:shareId", run(async c => {
+    const id = ShareId.parse(param(c, "shareId")), api = cloud().publicClient();
+    if (!api.getSharedProject) throw unsupported();
+    const parsed = SharedProject.safeParse(await api.getSharedProject(id));
+    if (!parsed.success) throw new RouteError(502, "invalid_share_response", "The shared project could not be read.");
+    const result = parsed.data;
+    if (result.shareId !== id) throw new RouteError(502, "invalid_share_response", "The shared project does not match this link.");
+    c.header("Cache-Control", "no-store");
+    return c.json(result);
+  }));
 
   app.get(
     "/cloud/status",

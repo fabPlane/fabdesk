@@ -35,6 +35,7 @@ export interface FabdeskBridge extends CadRuntimeBridge {
   onMenu(cb: (command: string) => void): () => void;
   restartCore(): Promise<void>;
   onCoreStatus(cb: (info: CoreInfo) => void): () => void;
+  copyText(text: string): Promise<void>;
   openExternal(url: string): Promise<void>;
   openPath(path: string): Promise<void>;
   openLogs(): Promise<void>;
@@ -52,6 +53,8 @@ export interface FabdeskBridge extends CadRuntimeBridge {
   onUpdateDownload(cb: (state: UpdateDownloadState) => void): () => void;
   /** Deep link queued from `fabplane://open` before the renderer subscribed. */
   pendingOpenCatalog(): Promise<{ catalogId: string; remix: boolean } | null>;
+  pendingOpenSharedProject(): Promise<{ shareId: string } | null>;
+  onOpenSharedProject(cb: (intent: { shareId: string }) => void): () => void;
   onOpenCatalog(cb: (intent: { catalogId: string; remix: boolean }) => void): () => void;
 }
 

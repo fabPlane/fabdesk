@@ -70,6 +70,24 @@ export function useProject(projectId: string | null) {
   });
 }
 
+/** Saved sharing state is shared by the project header and its settings dialog. */
+export function useProjectShareSettings(projectId: string, enabled = true) {
+  const client = useCoreClient();
+  const account = useAuthStore((s) => s.state?.principal?.subject ?? s.state?.status ?? "unknown");
+  const queryKey = ["project-share", client.baseUrl, projectId, account];
+  const query = useQuery({
+    queryKey,
+    queryFn: () => client.getProjectShare(projectId),
+    enabled,
+    retry: false,
+    staleTime: 0,
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
+  });
+  return { ...query, queryKey };
+}
+
 export function useBoardSources(projectId: string | null) {
   const client = useCoreClient();
   return useQuery({ queryKey: ["board-sources", projectId], queryFn: () => client.inspectBoardSources(projectId!), enabled: !!projectId });

@@ -9,6 +9,7 @@ export interface PickFileOptions {
 
 const api = {
   platform: process.platform,
+  copyText: (text: string): Promise<void> => ipcRenderer.invoke("fabdesk:copy-text", text),
   nativeSpeech: {
     status: (language: string) => ipcRenderer.invoke("fabdesk:speech-status", language),
     prepare: (language: string, id: string) => ipcRenderer.invoke("fabdesk:speech-prepare", language, id),
@@ -74,6 +75,14 @@ const api = {
     const listener = (_e: unknown, state: unknown) => cb(state);
     ipcRenderer.on("fabdesk:update-download", listener);
     return () => ipcRenderer.removeListener("fabdesk:update-download", listener);
+  },
+  pendingOpenSharedProject: () => ipcRenderer.invoke("fabdesk:pending-open-shared-project") as Promise<{ shareId: string } | null>,
+  onOpenSharedProject: (cb: (intent: { shareId: string }) => void) => {
+    const listener = (_e: unknown, intent: unknown) => {
+      if (intent && typeof intent === "object" && "shareId" in intent && typeof intent.shareId === "string") cb({ shareId: intent.shareId });
+    };
+    ipcRenderer.on("fabdesk:open-shared-project", listener);
+    return () => ipcRenderer.removeListener("fabdesk:open-shared-project", listener);
   },
   pendingOpenCatalog: () =>
     ipcRenderer.invoke("fabdesk:pending-open-catalog") as Promise<{ catalogId: string; remix: boolean } | null>,

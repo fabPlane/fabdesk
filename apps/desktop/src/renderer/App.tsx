@@ -4,6 +4,7 @@ import {
   CoreClient,
   CoreStatusScreen,
   FabdeskApp,
+  SharedProjectDialog,
   themeFromPreference,
   useAuthStore,
   useCoreClient,
@@ -12,7 +13,7 @@ import {
   type CoreInfo,
   type HostAdapter,
 } from "@fabdesk/ui";
-import { ReleaseNotes } from "@fabdesk/protocol";
+import { ReleaseNotes, ShareId } from "@fabdesk/protocol";
 import { useEffect, useMemo, useState } from "react";
 import { sentryUserFromAuth } from "../shared/sentry-user";
 import { disableRendererSentry, setRendererSentryUser } from "./sentry";
@@ -54,6 +55,7 @@ const host: HostAdapter = withReleaseNotes(
         platform: bridge.platform,
         ...(bridge.platform === "darwin" ? { nativeSpeech: bridge.nativeSpeech } : {}),
         devBuild: bridge.devBuild,
+        ...(typeof bridge.copyText === "function" ? { copyText: (text: string) => bridge.copyText(text) } : {}),
         openExternal: (url) => bridge.openExternal(url),
         openPath: (path) => bridge.openPath(path),
         ...(typeof bridge.pickDirectory === "function" ? { pickDirectory: () => bridge.pickDirectory() } : {}),
@@ -166,6 +168,21 @@ function OpenCatalogBridge() {
   return null;
 }
 
+function OpenSharedProjectBridge() {
+  const [shareId, setShareId] = useState<string | null>(null);
+  useEffect(() => {
+    let mounted = true;
+    const open = (intent: { shareId: string }) => {
+      const parsed = ShareId.safeParse(intent.shareId);
+      if (mounted && parsed.success) setShareId(parsed.data);
+    };
+    const unsubscribe = bridge?.onOpenSharedProject?.(open);
+    void bridge?.pendingOpenSharedProject?.().then(intent => { if (intent) open(intent); });
+    return () => { mounted = false; unsubscribe?.(); };
+  }, []);
+  return shareId ? <SharedProjectDialog key={shareId} shareId={shareId} onClose={() => setShareId(null)} /> : null;
+}
+
 export function App() {
   const [info, setInfo] = useState<CoreInfo | null>(null);
   useEffect(() => {
@@ -216,6 +233,7 @@ export function App() {
       <WebMcpBridge />
       <ErrorReportingBridge />
       <OpenCatalogBridge />
+      <OpenSharedProjectBridge />
     </FabdeskApp>
   );
 }

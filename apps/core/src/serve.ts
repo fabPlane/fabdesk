@@ -341,6 +341,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     channel: config.channel,
     home: config.home,
     apiOrigin: config.apiOrigin,
+    ...(process.env["FABPLANE_APP_ORIGIN"]?{appOrigin:process.env["FABPLANE_APP_ORIGIN"]}:{}),
     emit: (e) => bus.emit(e),
   });
   archiveBearer = () => auth.token();

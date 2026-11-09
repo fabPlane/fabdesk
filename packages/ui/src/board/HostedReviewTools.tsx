@@ -1,6 +1,7 @@
+import { ShareProjectDialog } from "./ShareProjectDialog";
 import { useState } from "react";
 import { buildZip } from "@fabdesk/board-art";
-import { readOutputSelection, reviewPackageFiles, useBoardSources, useCoreClient, useProject, type ReviewPackageOptions } from "@fabdesk/client-core";
+import { errorPayload, readOutputSelection, reviewPackageFiles, useBoardSources, useCoreClient, useProject, useProjectShareSettings, type ReviewPackageOptions } from "@fabdesk/client-core";
 import { Button, Dialog, Spinner } from "../components/ui";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { DisclosureSummary } from "../components/DisclosureSummary";
@@ -15,6 +16,12 @@ const TITLES: Record<View, string> = { share: "Share for review", sync: "Reposit
 
 /** Local sharing is a real file download; repository requests stay unsent until the user reviews them. */
 export function HostedReviewTools({ projectId, shareButton = false }: { projectId: string; shareButton?: boolean }) {
+  const [sharing, setSharing] = useState(false);
+  const shareSettings = useProjectShareSettings(projectId, shareButton);
+  const signInRequired = shareSettings.isError && errorPayload(shareSettings.error).code === "cloud_signed_out";
+  const visibility = shareSettings.isError ? "unavailable" : shareSettings.data?.visibility ?? "loading";
+  const visibilityLabel = visibility === "private" ? "Private" : visibility === "unlisted" ? "Shared" : visibility === "loading" ? "Checking…" : "Unavailable";
+  const visibilityDetail = visibility === "private" ? "Private project. Only you can access it. Click to share." : visibility === "unlisted" ? "Anyone with the link can view the published snapshot. Click to manage access." : visibility === "loading" ? "Checking project visibility…" : "Visibility could not be checked. Open sharing settings to retry.";
   const [view, setView] = useState<View | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null);
   const [options, setOptions] = useState<ReviewPackageOptions>({ outputs: true, sources: false, notes: true, checks: true });
   const client = useCoreClient(), project = useProject(projectId), sources = useBoardSources(projectId);
@@ -44,9 +51,21 @@ export function HostedReviewTools({ projectId, shareButton = false }: { projectI
     } catch (failure) { setError(failure); } finally { setBusy(false); }
   };
   return <>
-    {shareButton ? <Button size="sm" variant="secondary" onClick={() => setView("share")}><Icon name="share" width={17} height={17} />Share</Button> : <WorkspaceMenu className="fd-review-publishing" label={<><span>Review tools</span><Icon name="chevronDown" width={14} height={14} /></>}>
+    {shareButton ? <Button
+      size="sm"
+      variant="secondary"
+      className="fd-project-share-button"
+      title={signInRequired ? "Share this project" : visibilityDetail}
+      data-visibility={visibility}
+      aria-label={signInRequired ? "Share project" : `Sharing settings · ${visibilityLabel}`}
+      onClick={() => setSharing(true)}
+    >
+      {visibility === "loading" ? <Spinner /> : <Icon name={visibility === "unavailable" && !signInRequired ? "warning" : "share"} width={17} height={17} />}
+      {visibility === "unlisted" ? "Shared" : "Share"}
+    </Button> : <WorkspaceMenu className="fd-review-publishing" label={<><span>Review tools</span><Icon name="chevronDown" width={14} height={14} /></>}>
       <button onClick={() => setView("share")}>Download review package…</button><button onClick={() => setView("sync")}>Review repository changes…</button><button onClick={() => setView("history")}>Saved versions…</button>
     </WorkspaceMenu>}
+    {sharing && <ShareProjectDialog projectId={projectId} onClose={() => setSharing(false)} onDownload={() => { setSharing(false); setView("share"); }} />}
     <Dialog open={view !== null} onClose={close} closeDisabled={busy} title={view ? TITLES[view] : "Review tools"} className="fd-review-integration-dialog" headerActions={<CanvasToolButton icon="sparkles" label="Ask about this review" disabled={busy} onClick={() => ask("Help me review this project and prepare a clear handoff. Check the saved sources and outputs before recommending what to share.")} />}>
 
       {view === "share" ? <section className="fd-review-package"><h3>Download a review package</h3><p>Choose the saved files to include in one ZIP. Share the downloaded file using your usual channel.</p>
