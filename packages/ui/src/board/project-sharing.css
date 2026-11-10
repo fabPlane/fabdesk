@@ -33,6 +33,12 @@
   gap: 10px;
   margin-bottom: 6px;
 }
+.fd-share-link-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .fd-share-copy-button {
   min-width: 112px;
 }
