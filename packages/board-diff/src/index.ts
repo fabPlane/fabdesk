@@ -19,7 +19,7 @@ export type {
   ZoneSnapshot,
 } from "./types";
 export { emptySnapshot, nodeKey } from "./types";
-export { flattenArc, snapshotFromKicadPcb } from "./kicad-pcb";
+export { assertKicadPcbText, flattenArc, snapshotFromKicadPcb } from "./kicad-pcb";
 export { snapshotFromKicadSch } from "./kicad-sch";
 export { snapshotFromNetlist } from "./netlist";
 export { mergeSnapshots, snapshotFromSources } from "./snapshot";

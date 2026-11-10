@@ -1,4 +1,5 @@
 import {
+  closeOf,
   childBlocks,
   childNamed,
   parseAt,
@@ -320,6 +321,12 @@ function outlineFromGraphics(text: string): { points: Point[]; paths: Point[][] 
     if (start && end) paths.push(block.name === "gr_rect" ? [start, { x: end.x, y: start.y }, end, { x: start.x, y: end.y }, start] : [start, end]);
   }
   return { points, paths };
+}
+
+/** Refuse a wrong document or a partial write before interpreting it as a board with no parts. */
+export function assertKicadPcbText(text: string): void {
+  const source = text.trim();
+  if (!/^\(kicad_pcb(?:\s|\))/.test(source) || closeOf(source, 0) !== source.length) throw new Error("Expected one complete KiCad PCB document");
 }
 
 /**

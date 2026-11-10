@@ -1,17 +1,18 @@
 /** Read any project PCB at a revision, with parsed boards cached by exact content. */
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod/v4";
-import { boardPadBoxes, boardPartBounds, snapshotFromKicadPcb, type BoardSnapshot } from "@fabdesk/board-diff";
+import { assertKicadPcbText, boardPadBoxes, boardPartBounds, snapshotFromKicadPcb, type BoardSnapshot } from "@fabdesk/board-diff";
 import { isConnectorPart, type BoardFile, type BoardPartStatus, type BoardPartSummary, type BoardRevisionKind, type PartEndpoint } from "@fabdesk/protocol";
 import { inspectProjectBoardSources } from "./assembly";
-import { exists, jailPath } from "./fs";
+import { exists, jailPath, writeJson } from "./fs";
 import { ToolError, type ProjectHandle } from "./registry";
 import { assertGitRef, git, gitShow, isGitRepo, projectGitPrefix } from "./tools/board-diff";
 
 export const BOARD_WORKTREE_REF = "worktree";
 const SAVED_REF = /^saved:[a-f0-9]{64}$/;
+const pointId = (path: string, hash: string) => createHash("sha256").update(`${path}\0${hash}`).digest("hex");
 const SAVED_DIRECTORY = ".fabdesk/board-history";
 const IGNORED_DIRECTORIES = new Set([".git", ".fabdesk", ".history", "node_modules", "vendor", "exports", "renders", "reports", "placement", "mechanical", "sketches"]);
 const MAX_PCB_BYTES = 64 * 1024 * 1024;
@@ -34,6 +35,11 @@ export const boardContentHash = (text: string) => createHash("sha256").update(te
 const snapshotCache = new Map<string, BoardSnapshot>();
 const MAX_CACHED_SNAPSHOTS = 48;
 
+function assertBoardText(text: string): void {
+  try { assertKicadPcbText(text); }
+  catch { throw new ToolError("This PCB is incomplete or invalid. Wait for the file to finish saving, or restore a valid KiCad PCB.", "precondition"); }
+}
+
 /** KiCad text is parsed once per content hash, since a timeline revisits the same files. */
 export function parseBoard(text: string, hash = boardContentHash(text)): BoardSnapshot {
   const cached = snapshotCache.get(hash);
@@ -42,6 +48,7 @@ export function parseBoard(text: string, hash = boardContentHash(text)): BoardSn
     snapshotCache.set(hash, cached);
     return cached;
   }
+  assertBoardText(text);
   const parsed = snapshotFromKicadPcb(text);
   snapshotCache.set(hash, parsed);
   if (snapshotCache.size > MAX_CACHED_SNAPSHOTS) snapshotCache.delete(snapshotCache.keys().next().value!);
@@ -114,21 +121,36 @@ export async function readBoardRevision(project: ProjectHandle, pcbPath: string,
 async function readSavedPoint(project: ProjectHandle, hash: string) {
   const file = await jailPath(project.dir, `${SAVED_DIRECTORY}/${hash}.json`);
   if (!(await exists(file))) return null;
-  const parsed = SavedPoint.safeParse(JSON.parse(await readFile(file, "utf8")));
+  let raw: unknown;
+  try { raw = JSON.parse(await readFile(file, "utf8")); }
+  catch (error) { if (error instanceof SyntaxError) return null; throw error; }
+  const parsed = SavedPoint.safeParse(raw);
   // Saved bytes are re-verified, so an edited point cannot pose as its original revision.
-  return parsed.success && parsed.data.sha256 === hash && boardContentHash(parsed.data.kicadPcb) === hash ? parsed.data : null;
+  return parsed.success && (parsed.data.sha256 === hash || pointId(parsed.data.path, parsed.data.sha256) === hash) && boardContentHash(parsed.data.kicadPcb) === parsed.data.sha256 ? parsed.data : null;
 }
+
+// HTTP and MCP saves share one daemon. Serialize the read/check/write so a
+// simultaneous retry cannot replace the first saved label for the same bytes.
+const saveLocks = new Map<string, Promise<unknown>>();
 
 export async function saveBoardPoint(project: ProjectHandle, pcbPath: string, label: string): Promise<{ ref: string; sha256: string; title: string; date: string; created: boolean }> {
   const path = assertPcbPath(pcbPath);
-  const text = await readPcbFile(project, path), hash = boardContentHash(text);
-  const existing = await readSavedPoint(project, hash);
-  if (existing) return { ref: `saved:${hash}`, sha256: hash, title: existing.title, date: existing.date, created: false };
-  const date = new Date().toISOString();
-  const file = await jailPath(project.dir, `${SAVED_DIRECTORY}/${hash}.json`);
-  await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, JSON.stringify({ contract: "fabplane.board-history-point.v1", path, title: label, date, sha256: hash, kicadPcb: text }));
-  return { ref: `saved:${hash}`, sha256: hash, title: label, date, created: true };
+  const key = await jailPath(project.dir, path);
+  const run = (saveLocks.get(key) ?? Promise.resolve()).catch(() => {}).then(async () => {
+    const text = await readPcbFile(project, path), hash = boardContentHash(text);
+    assertBoardText(text);
+    const id = pointId(path, hash);
+    const existing = await readSavedPoint(project, id);
+    if (existing) return { ref: `saved:${id}`, sha256: hash, title: existing.title, date: existing.date, created: false };
+    const date = new Date().toISOString();
+    const file = await jailPath(project.dir, `${SAVED_DIRECTORY}/${id}.json`);
+    await mkdir(dirname(file), { recursive: true });
+    await writeJson(file, { contract: "fabplane.board-history-point.v1", path, title: label, date, sha256: hash, kicadPcb: text });
+    return { ref: `saved:${id}`, sha256: hash, title: label, date, created: true };
+  });
+  saveLocks.set(key, run);
+  try { return await run; }
+  finally { if (saveLocks.get(key) === run) saveLocks.delete(key); }
 }
 
 /** Oldest first, one entry per distinct board content. */
@@ -139,7 +161,7 @@ export async function listBoardRevisions(project: ProjectHandle, pcbPath: string
   for (const name of await readdir(savedDirectory).catch(() => [] as string[])) {
     const match = /^([a-f0-9]{64})\.json$/.exec(name);
     const point = match ? await readSavedPoint(project, match[1]!) : null;
-    if (point?.path === path) found.push({ ref: `saved:${point.sha256}`, kind: "saved", title: point.title, date: point.date, text: point.kicadPcb, sha256: point.sha256 });
+    if (point?.path === path) found.push({ ref: `saved:${match![1]}`, kind: "saved", title: point.title, date: point.date, text: point.kicadPcb, sha256: point.sha256 });
   }
   // Mechanical export bundles carry the exact board copies that were used for that export.
   const exportsDirectory = await jailPath(project.dir, "exports");
@@ -147,16 +169,19 @@ export async function listBoardRevisions(project: ProjectHandle, pcbPath: string
     if (!entry.isDirectory()) continue;
     for (const folder of ["boards", "source-boards"]) {
       const copy = `exports/${entry.name}/${folder}/${path}`;
-      const info = await stat(join(project.dir, copy)).catch(() => null);
+      const copyPath = await jailPath(project.dir, copy);
+      const info = await stat(copyPath).catch(() => null);
       if (!info?.isFile() || info.size > MAX_PCB_BYTES) continue;
-      const text = await readFile(join(project.dir, copy), "utf8");
+      const text = await readFile(copyPath, "utf8");
       found.push({ ref: exportRef(copy), kind: "export", title: entry.name, date: info.mtime.toISOString(), text, sha256: boardContentHash(text) });
     }
   }
   const isGit = await isGitRepo(project.dir, signal);
+  let gitTruncated = false;
   if (isGit) {
     const prefix = await projectGitPrefix(project.dir, signal);
-    const log = await git(project.dir, ["log", `-n${limit}`, "--format=%H\t%s\t%cI", "--", path], signal);
+    const log = await git(project.dir, ["log", `-n${limit + 1}`, "--format=%H\t%s\t%cI", "--", path], signal);
+    gitTruncated = log.ok && log.stdout.trim().split("\n").length > limit;
     // git lists newest first; keep commits with equal timestamps in their real order.
     for (const line of log.ok ? log.stdout.split("\n").reverse() : []) {
       const [commit, title, date] = line.split("\t");
@@ -177,7 +202,7 @@ export async function listBoardRevisions(project: ProjectHandle, pcbPath: string
   const same = matching.filter((revision) => revision.kind === "git").at(-1) ?? matching.at(-1);
   const current = worktree && same ? { ...worktree, title: same.title, ...(same.date ? { date: same.date } : {}) } : worktree;
   const revisions = current ? [...unique.filter((revision) => revision.sha256 !== current.sha256), current] : unique;
-  return { revisions: revisions.slice(-limit), git: isGit, truncated: revisions.length > limit };
+  return { revisions: revisions.slice(-limit), git: isGit, truncated: gitTruncated || revisions.length > limit };
 }
 
 /** Compact part facts for hit testing and inspection, in the same frame as the drawing. */

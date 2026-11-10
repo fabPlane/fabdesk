@@ -11,6 +11,7 @@ export const PartEndpoint = z.object({ boardPath: PcbPath, ref: z.string().min(1
 export type PartEndpoint = z.infer<typeof PartEndpoint>;
 /** What an endpoint looked like when it was linked or last reviewed, in outline coordinates. */
 export const PartBaseline = z.object({
+  geometry: z.string().optional(),
   footprint: z.string().max(500).optional(),
   layer: z.string().max(40).optional(),
   x: z.number().finite().optional(),

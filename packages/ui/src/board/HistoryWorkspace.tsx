@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { BoardPartChangeRow, BoardPartSummary, BoardTimelineEntry } from "@fabdesk/protocol";
-import { boardFileLabel, changeDescription, defaultTimelineIndex, timelineEntryLabel, timelineIndexForCard, timelinePair, timelineStep, useBoardComparison, useBoardTimeline, useBoardWorkspaceAction, usePartLinks, usePrefetchBoardComparisons, useProjectBoards } from "@fabdesk/client-core";
+import { boardPickerLabel, boardFileLabel, changeDescription, defaultTimelineIndex, timelineEntryLabel, timelineIndexForCard, timelinePair, timelineStep, useBoardComparison, useBoardTimeline, useBoardWorkspaceAction, usePartLinks, usePrefetchBoardComparisons, useProjectBoards } from "@fabdesk/client-core";
 import { Button, EmptyState, LoadError, Select, Spinner } from "../components/ui";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { Icon } from "../components/Icon";
@@ -111,7 +111,7 @@ export function HistoryWorkspace({ projectId }: { projectId: string }) {
     if (entry) return timelineEntryLabel(entry);
     return label ? timelineEntryLabel({ kind: ref?.startsWith("file:") || ref?.startsWith("export:") ? "export" : "git", title: label }) : null;
   };
-  const moreRefs = [...entries.map(entry => ({ value: entry.ref, label: timelineEntryLabel(entry) })), ...list.filter(board => board.path !== pcbPath).map(board => ({ value: `file:${board.path}`, label: `Other board: ${board.name}` }))];
+  const moreRefs = [...entries.map(entry => ({ value: entry.ref, label: timelineEntryLabel(entry) })), ...list.filter(board => board.path !== pcbPath).map(board => ({ value: `file:${board.path}`, label: `Other board: ${boardPickerLabel(board, list)}` }))];
 
   useAssistantSurface(pcbPath ? { projectId, label: `History · ${boardName}`, priority: 10, details: JSON.stringify({ board: pcbPath, from, to, summary: data?.summary ?? null, selected, changes: data?.changes.slice(0, 40) ?? null, limits: "Part comparison from saved KiCad files. Not a DRC or electrical check." }) } : null);
 
@@ -132,15 +132,16 @@ export function HistoryWorkspace({ projectId }: { projectId: string }) {
   if (boards.isPending) return <div className="fd-board-workspace fd-pair-state"><Spinner /></div>;
   if (!pcbPath) return <div className="fd-board-workspace"><EmptyState title="No boards to compare yet">Add a KiCad board to this project to see its history.</EmptyState></div>;
   return <div className="fd-board-workspace" data-testid="history-workspace">
+    <div className="fd-workspace-intro"><h2>Board history</h2><p>Choose a board, then step through its saved revisions. Older is on the left; newer is on the right.</p></div>
     <div className="fd-board-workspace-bar">
       <label className="fd-board-picker"><span>Board</span>
-        <Select aria-label="Board" value={pcbPath} onChange={event => useUiStore.getState().setBoardWorkspacePath(projectId, event.target.value)}>
-          {list.map(board => <option key={board.path} value={board.path} title={board.path}>{board.name}</option>)}
+        <Select disabled={saving} aria-label="Board" value={pcbPath} onChange={event => useUiStore.getState().setBoardWorkspacePath(projectId, event.target.value)}>
+          {list.map(board => <option key={board.path} value={board.path} title={board.path}>{boardPickerLabel(board, list)}</option>)}
         </Select>
       </label>
-      <Button size="sm" disabled={saving} onClick={() => void save()}>{saving ? "Saving…" : "Save this revision"}</Button>
+      <Button size="sm" variant="primary" disabled={saving} onClick={() => void save()}>{saving ? "Saving…" : "Save this revision"}</Button>
       <details className="fd-history-compare">
-        <DisclosureSummary icon="more" label="Compare any two" variant="compact" />
+        <DisclosureSummary icon="more" label="Choose revisions" variant="compact" />
         <div className="fd-history-compare-body">
           <label><span>Older</span><Select aria-label="Older revision" value={from ?? ""} onChange={event => setCustom({ from: event.target.value, to: to ?? "worktree" })}>{moreRefs.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</Select></label>
           <label><span>Newer</span><Select aria-label="Newer revision" value={to ?? ""} onChange={event => setCustom({ from: from ?? "worktree", to: event.target.value })}>{moreRefs.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</Select></label>
@@ -151,6 +152,7 @@ export function HistoryWorkspace({ projectId }: { projectId: string }) {
       {saveError && <span className="fd-board-workspace-error" role="alert">{saveError}</span>}
     </div>
     {timeline.isError ? <LoadError title="Could not read this board's revisions" onRetry={() => void timeline.refetch()} /> : timeline.isPending ? <div className="fd-pair-state"><Spinner /></div> : <>
+      {timeline.data?.truncated && <p className="fd-history-note" role="status">Showing the latest {entries.length} revisions. Older history is not included.</p>}
       <ol className="fd-history-timeline" aria-label="Board revisions, oldest first">
         {entries.map((entry, position) => <TimelineCard key={entry.ref} entry={entry} side={custom ? null : position === index ? "newer" : position === index - 1 ? "older" : null} onSelect={() => stepTo(timelineIndexForCard(entries, position))} />)}
       </ol>

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { BoardPartSummary, BoardTimelineEntry } from "@fabdesk/protocol";
 import { BOARD_WORKSPACE_PATHS } from "./board-workspace-keys";
-import { changeDescription, connectionCandidates, defaultTimelineIndex, highlightBoardDrawing, hitTestBoardPad, hitTestBoardPart, linkPinMap, pairLinkLines, pairPinLines, partLinkPeer, partPins, pinCheckLabel, pinPairsForLink, rankConnectionTargets, sameEndpoint, sharedNetLabel, sortedBoardParts, suggestPinMap, timelineEntryLabel, timelineIndexForCard, timelinePair, timelineStep } from "./board-workspace";
+import { boardPickerLabel, canEditLinkPins, changeDescription, connectionCandidates, defaultTimelineIndex, highlightBoardDrawing, hitTestBoardPad, hitTestBoardPart, linkPinMap, pairLinkLines, pairPinLines, partLinkPeer, partPins, pinCheckLabel, pinPairsForLink, rankConnectionTargets, sameEndpoint, sharedNetLabel, sortedBoardParts, suggestPinMap, timelineEntryLabel, timelineIndexForCard, timelinePair, timelineStep } from "./board-workspace";
 
 const part = (ref: string, minX: number, minY: number, maxX: number, maxY: number): BoardPartSummary => ({ ref, x: (minX + maxX) / 2, y: (minY + maxY) / 2, bounds: { minX, minY, maxX, maxY }, nets: [], connector: false, pads: [] });
 const entry = (ref: string, total: number | null): BoardTimelineEntry => ({ ref, kind: "git", title: ref, sha256: ref, parts: 1, size: null, ...(total === null ? {} : { changes: { added: total, removed: 0, moved: 0, changed: 0, renamed: 0, unchanged: 1 } }) });
@@ -212,4 +212,20 @@ test("the pin check reads as a plain sentence and never claims verification", ()
   expect(pinCheckLabel({ status: "none", rows: [], unmapped: [] })).toBe("No pins stated yet");
   expect(pinCheckLabel({ status: "agree", rows: [{ a: "1", b: "2", kind: "match" }], unmapped: [] })).toBe("All 1 pins agree by net name");
   expect(pinCheckLabel({ status: "conflict", rows: [{ a: "1", b: "2", kind: "conflict" }, { a: "2", b: "3", kind: "differs" }], unmapped: ["4"] })).toBe("1 power conflict, 1 with different names, 1 named pin not mapped");
+});
+
+test("many-to-one maps cannot be silently edited from their lossy direction", () => {
+  const a = { boardPath: "a.kicad_pcb", ref: "J1" }, b = { boardPath: "b.kicad_pcb", ref: "J2" };
+  const link = { a, b, pins: [{ a: "1", b: "1" }, { a: "2", b: "1" }] };
+  expect(canEditLinkPins(link, a)).toBe(true);
+  expect(canEditLinkPins(link, b)).toBe(false);
+  expect(canEditLinkPins({ a, pins: [] }, b)).toBe(true);
+});
+
+
+test("duplicate board names are distinguished by their paths", () => {
+  const boards = [{ name: "board", path: "controller/board.kicad_pcb" }, { name: "board", path: "sensor/board.kicad_pcb" }, { name: "power", path: "power.kicad_pcb" }];
+  expect(boardPickerLabel(boards[0]!, boards)).toBe("board · controller/board.kicad_pcb");
+  expect(boardPickerLabel(boards[1]!, boards)).toBe("board · sensor/board.kicad_pcb");
+  expect(boardPickerLabel(boards[2]!, boards)).toBe("power");
 });

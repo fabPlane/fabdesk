@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BoardFile, BoardRevisionComparison, BoardTimeline, BoardView, PartLink, PartLinkList, PartLinkSuggestion } from "@fabdesk/protocol";
 import { PART_LINKS_FILE } from "@fabdesk/protocol";
@@ -104,6 +104,38 @@ describe("board history and part links", () => {
     expect((await invoke<BoardTimeline>("board_revision_timeline", { pcbPath: BOARD_A })).entries).toHaveLength(1);
   });
 
+  test("a limited git timeline reports that older revisions were omitted", async () => {
+    await git(project.dir, ["init", "-q"]);
+    await git(project.dir, ["config", "user.email", "t@test"]);
+    await git(project.dir, ["config", "user.name", "T"]);
+    await git(project.dir, ["config", "commit.gpgsign", "false"]);
+    for (let n = 1; n <= 4; n++) {
+      await write(BOARD_A, pcb(footprint("J1", n)));
+      await git(project.dir, ["add", "-A"]);
+      await git(project.dir, ["commit", "-qm", `Revision ${n}`]);
+    }
+    const limited = await invoke<BoardTimeline>("board_revision_timeline", { pcbPath: BOARD_A, limit: 2 });
+    expect(limited.truncated).toBe(true);
+    expect(limited.entries.map(row => row.title)).toEqual(["Revision 3", "Revision 4"]);
+    expect((await invoke<BoardTimeline>("board_revision_timeline", { pcbPath: BOARD_A, limit: 10 })).truncated).toBe(false);
+  });
+
+  test("same-board suggestions never suggest connecting a part to itself", async () => {
+    const { suggestions } = await invoke<{ suggestions: PartLinkSuggestion[] }>("connection_suggest", { boardA: BOARD_A, boardB: BOARD_A });
+    expect(suggestions.length).toBeGreaterThan(0);
+    expect(suggestions.every(row => row.a.ref !== row.b.ref)).toBe(true);
+  });
+
+  test("invalid PCB documents cannot masquerade as empty boards or be saved as revisions", async () => {
+    for (const text of ["BROKEN", '(kicad_pcb (footprint "truncated"', "(kicad_sch (version 1))", "(kicad_pcb) trailing", '(kicad_pcb (property "unterminated))']) {
+      await write(BOARD_A, text);
+      expect(await raw("board_view", { pcbPath: BOARD_A })).toMatchObject({ isError: true, text: expect.stringContaining("incomplete or invalid") });
+      expect((await raw("board_revision_save", { pcbPath: BOARD_A })).isError).toBe(true);
+    }
+    await write(BOARD_A, pcb());
+    expect((await invoke<BoardView>("board_view", { pcbPath: BOARD_A })).parts).toEqual([]);
+  });
+
   test("line endings alone are not a new revision", async () => {
     const text = await readFile(join(project.dir, BOARD_A), "utf8");
     await invoke("board_revision_save", { pcbPath: BOARD_A });
@@ -125,9 +157,56 @@ describe("board history and part links", () => {
     expect((await invoke<BoardTimeline>("board_revision_timeline", { pcbPath: BOARD_B })).entries).toHaveLength(1);
   });
 
+  test("concurrent saves of one revision retain the first committed label", async () => {
+    const points = await Promise.all(["first", "second", "third"].map(label => invoke<{ ref: string; title: string; created: boolean }>("board_revision_save", { pcbPath: BOARD_A, label })));
+    expect(points.filter(point => point.created)).toHaveLength(1);
+    expect(new Set(points.map(point => point.ref)).size).toBe(1);
+    expect(new Set(points.map(point => point.title)).size).toBe(1);
+    await write(BOARD_A, pcb(footprint("J1", 30)));
+    expect((await invoke<BoardTimeline>("board_revision_timeline", { pcbPath: BOARD_A })).entries[0]?.title).toBe(points[0]!.title);
+  });
+
+  test("identical boards keep independent saved points", async () => {
+    const text = await readFile(join(project.dir, BOARD_A), "utf8");
+    await write(BOARD_B, text);
+    const a = await invoke<{ ref: string }>("board_revision_save", { pcbPath: BOARD_A, label: "A before" });
+    const b = await invoke<{ ref: string; created: boolean }>("board_revision_save", { pcbPath: BOARD_B, label: "B before" });
+    expect(b.created).toBe(true);
+    expect(b.ref).not.toBe(a.ref);
+    await write(BOARD_B, pcb(footprint("J1", 30)));
+    const timeline = await invoke<BoardTimeline>("board_revision_timeline", { pcbPath: BOARD_B });
+    expect(timeline.entries.map(entry => entry.title)).toEqual(["B before", "Current file"]);
+  });
+
+  test("malformed history does not hide other boards or intact history", async () => {
+    const saved = await invoke<{ ref: string }>("board_revision_save", { pcbPath: BOARD_A });
+    await write(`.fabdesk/board-history/${saved.ref.slice(6)}.json`, "{broken");
+    expect((await invoke<BoardTimeline>("board_revision_timeline", { pcbPath: BOARD_B })).entries).toHaveLength(1);
+    expect((await invoke<BoardTimeline>("board_revision_timeline", { pcbPath: BOARD_A })).entries).toHaveLength(1);
+  });
+
+  test("legacy content-addressed saved points still resolve", async () => {
+    const saved = await invoke<{ ref: string; sha256: string }>("board_revision_save", { pcbPath: BOARD_A });
+    const text = await readFile(join(project.dir, `.fabdesk/board-history/${saved.ref.slice(6)}.json`), "utf8");
+    await write(`.fabdesk/board-history/${saved.sha256}.json`, text);
+    await write(BOARD_A, pcb(footprint("J1", 30)));
+    const result = await invoke<BoardRevisionComparison>("board_revision_compare", { pcbPath: BOARD_A, from: `saved:${saved.sha256}` });
+    expect(result.from.sha256).toBe(saved.sha256);
+    expect(result.summary.moved).toBeGreaterThan(0);
+  });
+
+  test("pad geometry changes require review even when pins and nets stay the same", () => {
+    const part = { ref: "J1", pads: [{ pin: "1", net: "GND", width: 1, height: 1 }] };
+    const baseline = partBaseline(part);
+    expect(baselineChanges(baseline, { ...part, pads: [{ ...part.pads[0]!, width: 4 }] })).toContain("pad geometry changed");
+    expect(baselineChanges(baseline, part)).toEqual([]);
+    const { geometry: _, ...legacy } = baseline;
+    expect(baselineChanges(legacy, part)).toContain("review required to capture pad geometry");
+  });
+
   test("a tampered saved point is not offered as history", async () => {
     const saved = await invoke<{ ref: string; sha256: string }>("board_revision_save", { pcbPath: BOARD_A });
-    const file = join(project.dir, ".fabdesk/board-history", `${saved.sha256}.json`);
+    const file = join(project.dir, ".fabdesk/board-history", `${saved.ref.slice(6)}.json`);
     const point = JSON.parse(await readFile(file, "utf8"));
     await writeFile(file, JSON.stringify({ ...point, kicadPcb: pcb(footprint("FAKE", 1)) }));
     await write(BOARD_A, pcb(footprint("J1", 10)));
@@ -158,6 +237,15 @@ describe("board history and part links", () => {
   test("another PCB file can be the older side", async () => {
     const result = await invoke<BoardRevisionComparison>("board_revision_compare", { pcbPath: BOARD_A, from: `file:${BOARD_B}` });
     expect(result.summary).toMatchObject({ added: 2, removed: 2 });
+  });
+
+  test("export timeline refuses nested aliases outside the project", async () => {
+    const outside = await tempProject();
+    await mkdir(join(outside.dir, "a"), { recursive: true });
+    await writeFile(join(outside.dir, "a/a.kicad_pcb"), pcb(footprint("OUTSIDE", 1)));
+    await mkdir(join(project.dir, "exports/release/boards"), { recursive: true });
+    await symlink(outside.dir, join(project.dir, "exports/release/boards/boards"), "junction");
+    expect((await raw("board_revision_timeline", { pcbPath: BOARD_A })).isError).toBe(true);
   });
 
   test("paths outside the project and non-PCB files are refused", async () => {
@@ -400,6 +488,7 @@ describe("board history and part links", () => {
     await write("cad/enclosure-design.json", JSON.stringify(design));
     const list = await invoke<PartLinkList>("connection_list");
     expect(list.links).toEqual([]);
-    if (list.declared.length) expect(list.declared[0]).toMatchObject({ source: "mechanical", a: { ref: "J1" }, b: { ref: "J9" } });
+    expect(list.declared).toHaveLength(1);
+    expect(list.declared[0]).toMatchObject({ source: "mechanical", a: { ref: "J1" }, b: { ref: "J9" } });
   });
 });

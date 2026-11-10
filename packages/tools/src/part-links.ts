@@ -84,6 +84,7 @@ export function partBaseline(component: ComponentSnapshot): PartBaseline {
     ...(component.x !== undefined ? { x: component.x } : {}),
     ...(component.y !== undefined ? { y: component.y } : {}),
     ...(component.rotation !== undefined ? { rotation: component.rotation } : {}),
+    geometry: JSON.stringify((component.pads ?? []).map(({ pin, x, y, width, height, angle, shape, drill }) => ({ pin, x, y, width, height, angle, shape, drill })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))),
     pads: (component.pads ?? []).map((pad) => `${pad.pin}:${pad.net ?? ""}`).sort(),
   };
 }
@@ -91,6 +92,8 @@ export function partBaseline(component: ComponentSnapshot): PartBaseline {
 /** Only changes to the linked part need review; unrelated edits on the same board do not. */
 export function baselineChanges(baseline: PartBaseline, current: ComponentSnapshot): string[] {
   const now = partBaseline(current), reasons: string[] = [];
+  if (baseline.geometry === undefined) reasons.push("review required to capture pad geometry");
+  else if (baseline.geometry !== now.geometry) reasons.push("pad geometry changed");
   if (baseline.footprint !== now.footprint) reasons.push("footprint changed");
   if (baseline.layer !== now.layer) reasons.push("moved to another side");
   if (JSON.stringify(baseline.pads) !== JSON.stringify(now.pads)) reasons.push("pins or nets changed");
@@ -144,9 +147,9 @@ export async function currentBoard(project: ProjectHandle, boardPath: string, si
 }
 
 export async function resolvePartLinks(project: ProjectHandle, links: PartLink[], signal?: AbortSignal): Promise<ResolvedPartLink[]> {
-  const boards = new Map<string, BoardSnapshot | null>();
+  const boards = new Map<string, Promise<BoardSnapshot | null>>();
   const board = async (path: string) => {
-    if (!boards.has(path)) boards.set(path, await currentBoard(project, path, signal));
+    if (!boards.has(path)) boards.set(path, currentBoard(project, path, signal));
     return boards.get(path)!;
   };
   return Promise.all(links.map(async (link) => {
@@ -213,6 +216,7 @@ export function suggestPartLinks(boardAPath: string, boardA: BoardSnapshot, boar
   const rows: Array<PartLinkSuggestion & { score: number }> = [];
   for (const a of boardA.components) {
     for (const b of boardB.components) {
+      if (boardAPath === boardBPath && a.ref === b.ref) continue;
       const nets = sharedNets(a, b);
       if (!nets.length) continue;
       const connectors = isConnectorPart(a.ref, a.footprint) && isConnectorPart(b.ref, b.footprint);

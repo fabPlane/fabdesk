@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { checkPinMap, type BoardFile, type BoardPartSummary, type BoardView, type PartEndpoint, type ResolvedPartLink } from "@fabdesk/protocol";
-import { boardFileLabel, connectionCandidates, hitTestBoardPad, linkPinMap, pairLinkLines, pairPinLines, partLinkPeer, partPins, pinCheckLabel, pinPairsForLink, sameEndpoint, sortedBoardParts, suggestPinMap, timelineEntryLabel, useBoardView, useBoardWorkspaceAction, usePartLinkSuggestions, usePartLinks, useProjectBoards } from "@fabdesk/client-core";
+import { boardPickerLabel, canEditLinkPins, boardFileLabel, connectionCandidates, hitTestBoardPad, linkPinMap, pairLinkLines, pairPinLines, partLinkPeer, partPins, pinCheckLabel, pinPairsForLink, sameEndpoint, sortedBoardParts, suggestPinMap, timelineEntryLabel, useBoardView, useBoardWorkspaceAction, usePartLinkSuggestions, usePartLinks, useProjectBoards } from "@fabdesk/client-core";
 import { Button, EmptyState, LoadError, Select, Spinner } from "../components/ui";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { useUiStore } from "../stores/ui";
@@ -11,8 +11,9 @@ import { ConnectPanel, LINK_STATE_LABEL } from "./ConnectPanel";
 type Side = "left" | "right";
 const partCenter = (part: BoardPartSummary) => ({ x: (part.bounds.minX + part.bounds.maxX) / 2, y: (part.bounds.minY + part.bounds.maxY) / 2 });
 
-function SidePicker({ label, boards, board, view, part, onBoard, onPart }: {
+function SidePicker({ label, boards, board, view, part, busy, onBoard, onPart }: {
   label: string;
+  busy: boolean;
   boards: readonly BoardFile[];
   board: string | null;
   view: BoardView | undefined;
@@ -22,10 +23,10 @@ function SidePicker({ label, boards, board, view, part, onBoard, onPart }: {
 }) {
   const parts = useMemo(() => sortedBoardParts(view?.parts ?? []), [view]);
   return <div className="fd-connection-side">
-    <Select aria-label={`${label} board`} value={board ?? ""} onChange={event => onBoard(event.target.value)}>
-      {boards.map(item => <option key={item.path} value={item.path} title={item.path}>{item.name}</option>)}
+    <Select disabled={busy} aria-label={`${label} board`} value={board ?? ""} onChange={event => onBoard(event.target.value)}>
+      {boards.map(item => <option key={item.path} value={item.path} title={item.path}>{boardPickerLabel(item, boards)}</option>)}
     </Select>
-    <Select aria-label={`${label} part`} value={part ?? ""} disabled={!view} onChange={event => onPart(event.target.value || null)}>
+    <Select aria-label={`${label} part`} value={part ?? ""} disabled={!view || busy} onChange={event => onPart(event.target.value || null)}>
       <option value="">Choose part…</option>
       {parts.map(item => <option key={item.ref} value={item.ref}>{item.ref}{item.value ? ` · ${item.value}` : ""}</option>)}
     </Select>
@@ -33,6 +34,7 @@ function SidePicker({ label, boards, board, view, part, onBoard, onPart }: {
 }
 
 export function ConnectionsWorkspace({ projectId }: { projectId: string }) {
+  const workspace = useRef<HTMLDivElement>(null);
   const boards = useProjectBoards(projectId);
   const links = usePartLinks(projectId);
   const list = boards.data ?? [];
@@ -46,8 +48,8 @@ export function ConnectionsWorkspace({ projectId }: { projectId: string }) {
   const [linkId, setLinkId] = useState<string | null>(null);
   const [pinDraft, setPinDraft] = useState<Record<string, string> | null>(null);
   const [activePin, setActivePin] = useState<string | null>(null);
-  // Small windows keep the room for the two boards until the list is asked for.
-  const [listOpen, setListOpen] = useState(() => window.innerWidth >= 1200);
+  // Keep the room for the two boards until the saved list is requested.
+  const [listOpen, setListOpen] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [showLines, setShowLines] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -81,10 +83,11 @@ export function ConnectionsWorkspace({ projectId }: { projectId: string }) {
   const shownLink = saved.find(link => link.id === linkId) ?? between;
   const sourceLinks = useMemo(() => sourceEnd ? saved.flatMap((link): Array<{ link: ResolvedPartLink; peerRef: string; peerBoard: string }> => sameEndpoint(link.a, sourceEnd) ? [{ link, peerRef: link.b.ref, peerBoard: link.b.boardPath }] : sameEndpoint(link.b, sourceEnd) ? [{ link, peerRef: link.a.ref, peerBoard: link.a.boardPath }] : []) : [], [saved, sourceEnd?.boardPath, sourceEnd?.ref]);
   const savedPins = shownLink && sourceEnd ? linkPinMap(shownLink, sourceEnd) : null;
-  const pinMap = useMemo(() => pinDraft ?? (savedPins && Object.keys(savedPins).length ? savedPins : suggestPinMap(sourcePart, targetPart)), [pinDraft, savedPins, sourcePart, targetPart]);
+  const pinMap = useMemo(() => pinDraft ?? (savedPins !== null ? savedPins : suggestPinMap(sourcePart, targetPart)), [pinDraft, savedPins, sourcePart, targetPart]);
 
+  const pinsEditable = !shownLink || !sourceEnd || canEditLinkPins(shownLink, sourceEnd);
   const pinPairs = useMemo(() => pinPairsForLink(pinMap, true), [pinMap]);
-  const pinCheck = useMemo(() => checkPinMap(sourcePart?.pads, targetPart?.pads, pinPairs), [sourcePart, targetPart, pinPairs]);
+  const pinCheck = useMemo(() => checkPinMap(sourcePart?.pads, targetPart?.pads, !pinsEditable && shownLink ? (sameEndpoint(shownLink.a, sourceEnd) ? shownLink.pins : shownLink.pins?.map(pair => ({ a: pair.b, b: pair.a }))) : pinPairs), [sourcePart, targetPart, pinPairs, pinsEditable, shownLink, sourceEnd]);
   const lines = useMemo(() => {
     if (!showLines) return [];
     const partLines = pairLinkLines(saved, boardLeft, boardRight, viewLeft.data?.parts ?? [], viewRight.data?.parts ?? [], shownLink?.id);
@@ -99,6 +102,7 @@ export function ConnectionsWorkspace({ projectId }: { projectId: string }) {
   const resetPins = () => { setPinDraft(null); setActivePin(null); };
   const setTargetRef = (ref: string | null) => { if (sourceIsLeft) setRight(ref); else setLeft(ref); };
   const showLink = (link: { a: PartEndpoint; b: PartEndpoint; id?: string }) => {
+    if (busy) return;
     setLeftPath(link.a.boardPath); setRightPath(link.b.boardPath);
     setLeft(link.a.ref); setRight(link.b.ref);
     setSourceSide("left");
@@ -115,6 +119,7 @@ export function ConnectionsWorkspace({ projectId }: { projectId: string }) {
 
   /** Starts from this part, and brings up what it already connects to on the other side. */
   const chooseSource = (side: Side, ref: string) => {
+    if (busy) return;
     const path = side === "left" ? boardLeft : boardRight;
     setSourceSide(side);
     if (side === "left") setLeft(ref); else setRight(ref);
@@ -125,17 +130,20 @@ export function ConnectionsWorkspace({ projectId }: { projectId: string }) {
     else { if (found) setLeftPath(found.peer.boardPath); setLeft(found?.peer.ref ?? null); }
   };
   const chooseTarget = (ref: string | null) => {
+    if (busy) return;
     setTargetRef(ref);
     resetPins();
     const match = ref && sourceEnd && targetBoard ? saved.find(link => (sameEndpoint(link.a, sourceEnd) && sameEndpoint(link.b, { boardPath: targetBoard, ref })) || (sameEndpoint(link.b, sourceEnd) && sameEndpoint(link.a, { boardPath: targetBoard, ref }))) : null;
     setLinkId(match?.id ?? null);
   };
   const editPin = (pin: string, to: string) => {
+    if (busy || !pinsEditable) return;
     const next = { ...pinMap };
     if (to) next[pin] = to; else delete next[pin];
     setPinDraft(next);
   };
   const pick = (side: Side, ref: string | null, point: BoardPoint, reach: number) => {
+    if (busy) return;
     setError(null);
     // Clicking empty board keeps your selection, so a slightly missed click loses nothing.
     if (!ref) return;
@@ -158,8 +166,10 @@ export function ConnectionsWorkspace({ projectId }: { projectId: string }) {
     chooseSource(side, ref);
   };
   const clear = () => {
+    if (busy) return false;
     if (!left && !right && !linkId) return false;
     setLeft(null); setRight(null); setLinkId(null); resetPins();
+    requestAnimationFrame(() => workspace.current?.querySelector<HTMLElement>(`[data-testid="pair-${sourceSide}-board"] .fd-svg-viewport`)?.focus({ preventScroll: true }));
     return true;
   };
   const run = async (tool: string, args: Record<string, unknown>, after?: (result: Record<string, unknown>) => void) => {
@@ -174,7 +184,7 @@ export function ConnectionsWorkspace({ projectId }: { projectId: string }) {
     finally { setBusy(false); }
   };
   const save = () => {
-    if (!sourceEnd || !targetEnd) return;
+    if (!sourceEnd || !targetEnd || !pinsEditable) return;
     if (shownLink) void run("connection_set_pins", { id: shownLink.id, pins: pinPairsForLink(pinMap, sameEndpoint(shownLink.a, sourceEnd)) }, () => resetPins());
     else void run("connection_add", { a: sourceEnd, b: targetEnd, pins: pinPairsForLink(pinMap, true) }, result => { const created = result.link as { id?: string } | undefined; if (created?.id) setLinkId(created.id); resetPins(); });
   };
@@ -185,7 +195,7 @@ export function ConnectionsWorkspace({ projectId }: { projectId: string }) {
   if (boards.isError) return <div className="fd-board-workspace"><LoadError title="Could not list this project's boards" onRetry={() => void boards.refetch()} /></div>;
   if (boards.isPending || links.isPending) return <div className="fd-board-workspace fd-pair-state"><Spinner /></div>;
   if (links.isError) return <div className="fd-board-workspace"><LoadError title="Could not read part links" onRetry={() => void links.refetch()} /></div>;
-  if (list.length < 2) return <div className="fd-board-workspace"><EmptyState title="Connections need at least two boards">{list.length ? "This project has one board. Add another KiCad board to link parts across them." : "Add KiCad boards to this project to link parts across them."}</EmptyState></div>;
+  if (list.length < 2 && saved.length === 0 && declared.length === 0) return <div className="fd-board-workspace"><EmptyState title="Connections need at least two boards">{list.length ? "This project has one board. Add another KiCad board to link parts across them." : "Add KiCad boards to this project to link parts across them."}</EmptyState></div>;
   const markersFor = (view: typeof viewLeft, board: string | null, side: Side): PartMarker[] => (view.data?.parts ?? []).flatMap((part): PartMarker[] => {
     const onThisBoard = (end: PartEndpoint) => end.boardPath === board && end.ref === part.ref;
     const touching = saved.filter(link => onThisBoard(link.a) || onThisBoard(link.b));
@@ -220,7 +230,7 @@ export function ConnectionsWorkspace({ projectId }: { projectId: string }) {
   const panel = (view: typeof viewLeft, label: string, board: string | null, part: string | null, onBoard: (path: string) => void, side: Side) => {
     const isSource = side === sourceSide;
     return {
-      header: <SidePicker label={label} boards={list} board={board} view={view.data} part={part} onBoard={onBoard} onPart={ref => { if (!ref) { if (isSource) clear(); else chooseTarget(null); } else if (isSource || !sourceRef) chooseSource(side, ref); else chooseTarget(ref); }} />,
+      header: <SidePicker busy={busy} label={label} boards={list} board={board} view={view.data} part={part} onBoard={onBoard} onPart={ref => { if (!ref) { if (isSource) clear(); else chooseTarget(null); } else if (isSource || !sourceRef) chooseSource(side, ref); else chooseTarget(ref); }} />,
       svg: view.data?.drawing,
       viewKey: `${side}:${board ?? ""}`,
       parts: view.data?.parts ?? [],
@@ -233,23 +243,27 @@ export function ConnectionsWorkspace({ projectId }: { projectId: string }) {
     };
   };
   const changeBoard = (side: Side, path: string) => {
+    if (busy) return;
     if (side === "left") { setLeftPath(path); setLeft(null); } else { setRightPath(path); setRight(null); }
     setLinkId(null); resetPins();
     if (side === sourceSide) setSourceSide(side === "left" ? "right" : "left");
   };
   const baselineEntry = viewLeft.data?.baseline ?? viewRight.data?.baseline;
   const baseline = baselineEntry ? timelineEntryLabel({ kind: baselineEntry.ref.startsWith("export:") ? "export" : "git", title: baselineEntry.label }) : null;
-  return <div className="fd-board-workspace" data-testid="connections-workspace">
+  return <div ref={workspace} className="fd-board-workspace" data-testid="connections-workspace" onKeyDown={event => {
+    if (event.key === "Escape" && event.target instanceof Element && event.target.closest(".fd-connect-panel") && clear()) { event.preventDefault(); event.stopPropagation(); }
+  }}>
+    <div className="fd-workspace-intro"><h2>Connections</h2><p>Choose two boards. Select a part, choose its partner, then save the pin connections.</p></div>
     <div className="fd-board-workspace-bar">
-      <Button size="sm" variant={listOpen ? "secondary" : "ghost"} aria-expanded={listOpen} onClick={() => setListOpen(!listOpen)}>Links {saved.length + declared.length}</Button>
-      <Button size="sm" variant={suggesting ? "secondary" : "ghost"} aria-pressed={suggesting} onClick={() => { if (!suggesting) setListOpen(true); setSuggesting(!suggesting); }}>Suggest from net names</Button>
-      <Button size="sm" variant={showLines ? "secondary" : "ghost"} aria-pressed={showLines} onClick={() => setShowLines(!showLines)}>Lines</Button>
+      <Button size="sm" variant={listOpen ? "secondary" : "ghost"} aria-expanded={listOpen} onClick={() => setListOpen(!listOpen)}>Saved connections ({saved.length + declared.length})</Button>
+      <Button size="sm" variant={suggesting ? "secondary" : "ghost"} aria-pressed={suggesting} onClick={() => { if (!suggesting) setListOpen(true); setSuggesting(!suggesting); }}>Find possible connections</Button>
+      <Button size="sm" variant={showLines ? "secondary" : "ghost"} aria-pressed={showLines} onClick={() => setShowLines(!showLines)}>Show connection lines</Button>
       <ol className="fd-connect-steps" aria-label="How to connect parts">
         {["Click a part", "Click where it connects", "Set the pins", "Saved"].map((label, index) => <li key={label} aria-current={step === index + 1 ? "step" : undefined}>{label}</li>)}
       </ol>
       {error && <span className="fd-board-workspace-error" role="alert">{error}</span>}
     </div>
-    <BoardLegend items={[
+    <details className="fd-workspace-help"><summary>Colour guide</summary><BoardLegend items={[
       ...(baseline ? [{ tone: "new", label: "New", title: `Not on ${baseline}` }, { tone: "changed", label: "Changed", title: `Different from ${baseline}` }] : []),
       { tone: "existing", label: baseline ? "Existing" : "Part" },
       { tone: "connector", label: "Connector" },
@@ -257,7 +271,7 @@ export function ConnectionsWorkspace({ projectId }: { projectId: string }) {
       { tone: "linked", label: "Connected" },
       { tone: "review", label: "Needs review" },
       { tone: "missing", label: "Part missing" },
-    ]} />
+    ]} /></details>
     <div className="fd-history-stage">
       {listOpen && <aside className="fd-connection-list" aria-label="Part links">
         {saved.map(link => <button key={link.id} type="button" aria-pressed={shownLink?.id === link.id} data-state={link.state} onClick={() => showLink(link)}>
@@ -290,13 +304,14 @@ export function ConnectionsWorkspace({ projectId }: { projectId: string }) {
       />
       {/* The panel keeps its place when empty, so choosing a part never resizes the boards under the pointer. */}
       {!(sourcePart && sourceBoard && targetBoard) && <aside className="fd-connect-panel" data-empty aria-label="Connect a part">
+        {shownLink && <><strong>{shownLink.a.ref} ↔ {shownLink.b.ref}</strong><p className="fd-connect-state" data-state={shownLink.state}>{shownLink.reasons.join("; ") || "A linked board or part is unavailable."}</p><Button size="sm" variant="ghost" disabled={busy} onClick={() => void run("connection_remove", { id: shownLink.id }, () => { setLinkId(null); setTargetRef(null); resetPins(); })}>Remove link</Button></>}
         <p className="fd-connect-hint">{sourceRef ? `${sourceRef} is not on this board.` : "Click a part on either board, then say where it connects."}</p>
       </aside>}
       {sourcePart && sourceBoard && targetBoard && <ConnectPanel
         key={`${sourceBoard}:${sourcePart.ref}`}
         source={sourcePart} sourceBoard={sourceBoard} boards={list}
         targetBoard={targetBoard} targetParts={targetView.data?.parts ?? []} targetLoading={targetView.isPending} target={targetPart}
-        link={shownLink} sourceLinks={sourceLinks} pinMap={targetPart ? pinMap : {}} pinCheck={pinCheck} pinsEdited={pinDraft !== null} activePin={activePin} busy={busy} nameOf={nameOf}
+        pinsEditable={pinsEditable} link={shownLink} sourceLinks={sourceLinks} pinMap={targetPart ? pinMap : {}} pinCheck={pinCheck} pinsEdited={pinDraft !== null} activePin={activePin} busy={busy} nameOf={nameOf}
         onClose={clear}
         onTargetBoard={path => { if (sourceIsLeft) setRightPath(path); else setLeftPath(path); setTargetRef(null); setLinkId(null); resetPins(); }}
         onTarget={chooseTarget}

@@ -59,8 +59,8 @@ export function PairOverlay({ box, parts, markers, pins, selectedRef, hover, hos
       const part = byRef.get(marker.ref);
       return part ? <span key={`chip:${marker.ref}`} className="fd-part-chip" data-tone={marker.tone} style={place((part.bounds.minX + part.bounds.maxX) / 2, part.bounds.minY)}>{marker.chip}</span> : null;
     })}
-    {pinLabels.map(row => <span key={`pin:${row.pin}`} className="fd-pin-label" style={place((row.bounds.minX + row.bounds.maxX) / 2, (row.bounds.minY + row.bounds.maxY) / 2)}>{row.pin}</span>)}
-    {hovered && hover && <span className="fd-part-hint" style={place((hovered.bounds.minX + hovered.bounds.maxX) / 2, hovered.bounds.maxY)}>{hover.hint}</span>}
+    {pinLabels.map((row, index) => <span key={`pin:${row.pin}:${index}`} className="fd-pin-label" style={place((row.bounds.minX + row.bounds.maxX) / 2, (row.bounds.minY + row.bounds.maxY) / 2)}>{row.pin}</span>)}
+    {hovered && hover && <span className="fd-part-hint">{hover.hint}</span>}
   </div>;
 }
 

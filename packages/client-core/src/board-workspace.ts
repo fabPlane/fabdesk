@@ -218,6 +218,11 @@ export function boardFileLabel(path: string): string {
   return path.split("/").at(-1)!.replace(/\.kicad_pcb$/i, "");
 }
 
+/** Include the project-relative path when board names would otherwise be indistinguishable. */
+export function boardPickerLabel(board: BoardFile, boards: readonly BoardFile[]): string {
+  return boards.some(other => other.path !== board.path && other.name === board.name) ? `${board.name} · ${board.path}` : board.name;
+}
+
 export const sharedNetLabel = (count: number) => count === 0 ? "No shared net names" : `${count} shared net name${count === 1 ? "" : "s"}`;
 
 /** Connectors first, then natural reference order, since most links join connectors. */
@@ -264,6 +269,12 @@ export function suggestPinMap(source: Pick<BoardPartSummary, "pads"> | null | un
     if (next !== undefined) map[pin.pin] = next;
   }
   return map;
+}
+
+/** Whether this direction fits the single-target-per-pin editor without losing pairs. */
+export function canEditLinkPins(link: { a: PartEndpoint; pins?: readonly PartPinPair[] | undefined }, source: PartEndpoint): boolean {
+  const keys = (link.pins ?? []).map(pair => sameEndpoint(link.a, source) ? pair.a : pair.b);
+  return new Set(keys).size === keys.length;
 }
 
 /** A saved link's pin map, read from whichever end is selected. */

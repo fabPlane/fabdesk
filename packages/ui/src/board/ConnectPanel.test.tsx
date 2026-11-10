@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { checkPinMap, type BoardPartSummary } from "@fabdesk/protocol";
+import { checkPinMap, type ResolvedPartLink, type BoardPartSummary } from "@fabdesk/protocol";
 import { BoardLegend } from "./BoardPairView";
 import { ConnectPanel } from "./ConnectPanel";
 
@@ -45,4 +45,27 @@ test("the legend names every colour it shows", () => {
   const html = renderToStaticMarkup(<BoardLegend items={[{ tone: "new", label: "New" }, { tone: "connector", label: "Connector" }]} />);
   expect(html).toContain('data-tone="new"');
   expect(html).toContain("Connector");
+});
+
+test("fanout maps show every saved pair and disable lossy saves", () => {
+  const html = panel({ target: J9, pinsEditable: false, pinsEdited: true, pinCheck: checkPinMap(J1.pads, J9.pads, [{ a: "1", b: "7" }, { a: "1", b: "8" }]) });
+  expect(html).toContain("Pin 1 → pin 7");
+  expect(html).toContain("Pin 1 → pin 8");
+  expect(html).toMatch(/<button[^>]*disabled[^>]*>Save connection<\/button>/);
+});
+
+test("connection controls are locked while a write is completing", () => {
+  const html = panel({ target: J9, busy: true });
+  expect(html).toMatch(/<select[^>]*disabled[^>]*aria-label="Pin on J9 for pin 1"/);
+  expect(html).toMatch(/<button[^>]*disabled[^>]*>Save connection<\/button>/);
+  expect(html).toMatch(/<button[^>]*disabled[^>]*title="Close"/);
+});
+
+
+test("a missing target can still be removed without editing a new connection", () => {
+  const link: ResolvedPartLink = { id: "lnk_123456789abc", a: { boardPath: "a.kicad_pcb", ref: "J1" }, b: { boardPath: "b.kicad_pcb", ref: "J9" }, createdAt: "2026-11-10T00:00:00Z", reviewedAt: "2026-11-10T00:00:00Z", baseline: { a: { pads: [] }, b: { pads: [] } }, state: "missing", reasons: ["J9 is no longer on its board"], sharedNets: [], check: checkPinMap(J1.pads, [], []) };
+  const html = panel({ link, target: null });
+  expect(html).toContain("J9 is no longer on its board");
+  expect(html).toContain(">Remove link</button>");
+  expect(html).not.toContain(">Save connection</button>");
 });
