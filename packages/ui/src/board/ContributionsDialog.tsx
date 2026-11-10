@@ -98,13 +98,11 @@ export function ContributionsDialog({
                   )}
                 </div>
                 {b.canPublish ? (
-                  <Button size="sm" disabled={!!busy} onClick={() => setConfirm(b.sourceId)}>
-                    {busy === b.sourceId
-                      ? "Publishing…"
-                      : b.revision
-                        ? "Publish update"
-                        : "Share editable board"}
-                  </Button>
+                  confirm !== b.sourceId && (
+                    <Button size="sm" disabled={!!busy} onClick={() => setConfirm(b.sourceId)}>
+                      {b.revision ? "Publish update" : "Share editable board"}
+                    </Button>
+                  )
                 ) : !b.available ? (
                   <small>Board source unavailable</small>
                 ) : b.revision && state.data?.role !== "viewer" ? (
@@ -149,7 +147,11 @@ export function ContributionsDialog({
               missing outputs won’t be carried over. Downloaded copies cannot be recalled.
             </p>
             <Button variant="primary" disabled={!!busy} onClick={() => void publish(confirm)}>
-              Confirm publication
+              {busy === confirm
+                ? "Publishing…"
+                : state.data?.boards.find((b) => b.sourceId === confirm)?.revision
+                  ? "Publish update"
+                  : "Share editable board"}
             </Button>
             <Button variant="ghost" disabled={!!busy} onClick={() => setConfirm(null)}>
               Cancel
