@@ -62,6 +62,8 @@ export class CloudService {
 
   constructor(private readonly opts: CloudServiceOptions) {}
 
+  get apiOrigin(): string { return new URL(this.opts.apiOrigin).origin; }
+
   get dashboardUrl(): string {
     return dashboardUrlFor(this.opts.apiOrigin);
   }

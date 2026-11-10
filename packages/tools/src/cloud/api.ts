@@ -24,6 +24,10 @@ import { ToolError } from "../registry";
 export type CloudImageUpload = { data: Uint8Array | Blob; contentType: string; filename: string };
 
 export interface CloudApi {
+  listSharedProjects?(): Promise<unknown>;
+  listContributionBoards?(projectId:string):Promise<unknown>;
+  downloadBoardSource?(projectId:string,boardId:string):Promise<unknown>;
+  publishBoardRevision?(projectId:string,boardId:string,input:unknown):Promise<unknown>;
   // Optional for older clients: unsupported builds fail closed rather than pretending to publish.
   getProjectShare?(projectId: string): Promise<unknown>;
   publishProjectShare?(projectId: string, snapshot: unknown, visibility?: "restricted" | "unlisted", options?: { updateOnly?: boolean }): Promise<unknown>;

@@ -139,3 +139,5 @@ export { parsePairLink, buildPairLink, isPairPath, normalizeHost, browserLabel }
 export type { PairLink, PairLinkFailure, PairLocation } from "./pair/parse";
 export type { SavedHost, SavedHosts } from "./pair/hosts";
 export { SharedProjectDialog } from "./board/SharedProjectDialog";
+
+export { TeamProjectsDialog } from "./board/TeamProjectsDialog";

@@ -1,3 +1,5 @@
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 /**
  * fabplane.com shopping lists and inventory, proxied through the daemon so the UI never holds the
  * fabplane token: `/cloud/*` and `/projects/:id/shopping-list*`.
@@ -8,6 +10,7 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod/v4";
 import {
+  TeamProjects, ContributionBoards, BoardSourceDownload,
   CartItemInput,
   CartItemPatch,
   CreateDestinationInput,
@@ -18,7 +21,7 @@ import {
   type ProjectBomSnapshot,
 } from "@fabdesk/protocol";
 import {
-  prepareProjectShare,
+  prepareProjectShare, prepareEditableBoard, inspectProjectBoardSources,
   CloudSignedOutError,
   CloudUnavailableError,
   isCloudApiError,
@@ -34,7 +37,7 @@ const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif
 
 type Deps = {
   cloud: () => CloudService | undefined;
-  projects: Pick<ProjectStore, "handle">;
+  projects: Pick<ProjectStore, "handle"> & Partial<Pick<ProjectStore, "create" | "delete" | "detail">>;
   readBom: (project: ProjectHandle) => Promise<ProjectBomSnapshot>;
   canManageSharing?: (token: string | undefined) => boolean;
   rasterizeSharePreview: (svg: string, options: { maxWidth: number }) => Promise<{ png: Uint8Array }>;
@@ -176,6 +179,85 @@ export function cloudRoutes<E extends object>(deps: Deps): Hono<{ Variables: E }
     if (result.shareId !== id) throw new RouteError(502, "invalid_share_response", "The shared project does not match this link.");
     c.header("Cache-Control", "no-store");
     return c.json(result);
+  }));
+
+  const requireDesktop = (c: Context) => {
+    if (deps.canManageSharing && !deps.canManageSharing(extractToken(c.req.raw) ?? undefined))
+      throw new RouteError(403,"contributions_require_desktop","Edit shared boards from the local desktop connection.");
+  };
+  const contributionApi = () => {
+    const service=cloud(), api=service.client();
+    if(!api.listSharedProjects || !api.listContributionBoards || !api.downloadBoardSource || !api.publishBoardRevision)
+      throw new RouteError(503,"contributions_unavailable","Board contribution is not available in this build yet.");
+    return {service,api};
+  };
+  const localContribution = async (id:string) => {
+    const handle=await project(id), {service,api}=contributionApi();
+    const receipts=handle.manifest().contributions ?? {};
+    const imported=handle.manifest().contributionSource;
+    const projects=TeamProjects.parse(await api.listSharedProjects!()).projects;
+    const remote= imported ? projects.find(p=>p.id===imported.projectId) : projects.find(p=>p.role==="owner"&&p.localProjectId===id);
+    if(!remote || !remote.publishedAt)throw new RouteError(409,"contribution_unavailable",imported ? "This shared project is unavailable to your desktop account. Check your invited account or ask the owner for access." : "Publish this project from Share first, or check your account.");
+    if(imported && imported.apiOrigin!==service.apiOrigin)throw new RouteError(409,"contribution_origin_changed","This copy belongs to a different fabPlane server. Switch back before publishing.");
+    const heads=ContributionBoards.parse(await api.listContributionBoards!(remote.id));
+    const scope=await inspectProjectBoardSources(handle);
+    const boards=heads.boards.flatMap(b=>{
+      const sourceId=imported ? (b.id===imported.boardId ? "main" : null) : b.id;
+      const source=scope.sources.find(s=>s.source.id===sourceId);
+      if(!sourceId||!source)return [];
+      const receipt=receipts[sourceId];
+      if(receipt && (receipt.apiOrigin!==service.apiOrigin || receipt.projectId!==remote.id || receipt.boardId!==b.id))throw new RouteError(409,"contribution_identity_changed","This copy belongs to a different shared board or server. Download a fresh copy.");
+      return [{...b,sourceId,available:source.status==="available",baseRevision:receipt?.revision??null,
+        canPublish:heads.role!=="viewer" && source.status==="available" && (b.revision===null ? heads.role==="owner" : receipt?.revision===b.revision)}];
+    });
+    return {handle,service,api,projectId:remote.id,role:heads.role,boards};
+  };
+  app.get("/cloud/team-projects",run(async c=>{
+    requireDesktop(c);const {api}=contributionApi();c.header("Cache-Control","no-store");
+    return c.json(TeamProjects.parse(await api.listSharedProjects!()));
+  }));
+  app.get("/cloud/team-projects/:projectId/boards",run(async c=>{
+    requireDesktop(c);const {api}=contributionApi();
+    const id=z.string().uuid().parse(param(c,"projectId"));c.header("Cache-Control","no-store");
+    return c.json(ContributionBoards.parse(await api.listContributionBoards!(id)));
+  }));
+  app.post("/cloud/team-projects/:projectId/boards/:boardId/import",run(async c=>{
+    requireDesktop(c);const {api,service}=contributionApi();
+    if(!deps.projects.create || !deps.projects.delete || !deps.projects.detail)throw new RouteError(503,"import_unavailable","This build cannot create an editable copy.");
+    const projectId=z.string().uuid().parse(param(c,"projectId")), boardId=z.string().min(1).max(80).parse(param(c,"boardId"));
+    const data=BoardSourceDownload.parse(await api.downloadBoardSource!(projectId,boardId));
+    if(data.projectId!==projectId||data.boardId!==boardId)throw new RouteError(502,"invalid_contribution_response","The downloaded board does not match this project.");
+    // Fresh atomic project directory: never replace the current user's board or execute downloaded code.
+    const detail=await deps.projects.create(data.name.slice(0,80));
+    try {
+      const handle=await project(detail.id);
+      await writeFile(join(handle.dir,"board.kicad_pcb"),data.files.pcb,{flag:"wx"});
+      if(data.files.schematic)await writeFile(join(handle.dir,"board.kicad_sch"),data.files.schematic,{flag:"wx"});
+      await writeFile(join(handle.dir,"board.kicad_pro"),JSON.stringify({meta:{filename:"board.kicad_pro",version:1}}),{flag:"wx"});
+      await handle.updateManifest({contributionSource:{apiOrigin:service.apiOrigin,projectId,boardId,revision:data.revision},contributions:{main:{apiOrigin:service.apiOrigin,projectId,boardId,revision:data.revision}}});
+      return c.json((await deps.projects.detail(detail.id))!,201);
+    } catch(error) {await deps.projects.delete(detail.id,{purge:true});throw error;}
+  }));
+  app.get("/projects/:id/contributions",run(async c=>{
+    requireDesktop(c);const {projectId,role,boards}=await localContribution(param(c,"id"));
+    c.header("Cache-Control","no-store");return c.json({projectId,role,boards});
+  }));
+  app.put("/projects/:id/contributions/:sourceId",run(async c=>{
+    requireDesktop(c);const id=param(c,"id"), sourceId=param(c,"sourceId");
+    return withSharingLock(id,async()=>{
+      const current=await localContribution(id), row=current.boards.find(b=>b.sourceId===sourceId);
+      if(!row||current.role==="viewer")throw new RouteError(403,"contribution_forbidden","Contributor access is required.");
+      if(!row.available)throw new RouteError(409,"source_unavailable","This board’s native source is unavailable. Restore its project-owned KiCad PCB before publishing.");
+      if(!row.canPublish)throw new RouteError(409,"contribution_conflict","A newer revision is available. Download it into a separate copy; your local edits will stay here.");
+      const files=await prepareEditableBoard(current.handle,sourceId);
+      const snapshot=await prepareProjectShare(current.handle,deps.rasterizeSharePreview);
+      const board=snapshot.boards.find(b=>b.id===sourceId);
+      if(!board)throw new RouteError(409,"source_changed","This board source is no longer available.");
+      await files.verify();
+      const result=z.object({revision:z.string().uuid()}).parse(await current.api.publishBoardRevision!(current.projectId,row.id,{expectedRevision:row.baseRevision,files:files.files,board:{...board,id:row.id,name:row.name}}));
+      await current.handle.updateManifest({contributions:{...current.handle.manifest().contributions,[sourceId]:{apiOrigin:current.service.apiOrigin,projectId:current.projectId,boardId:row.id,revision:result.revision}}});
+      return c.json(result);
+    });
   }));
 
   app.get(

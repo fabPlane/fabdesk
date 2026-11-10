@@ -1,11 +1,11 @@
-import { parseSharedProjectHref } from "@fabdesk/protocol";
+import { parseSharedProjectHref, parseContributionProjectHref, type OpenSharedProjectIntent } from "@fabdesk/protocol";
 
 /** Retain a validated link through cold startup until the renderer is ready. */
 export class OpenSharedProjectQueue {
-  private pending: { shareId: string } | null = null;
-  offer(raw: string | readonly string[]): { shareId: string } | null {
+  private pending: OpenSharedProjectIntent | null = null;
+  offer(raw: string | readonly string[]): OpenSharedProjectIntent | null {
     for (const arg of typeof raw === "string" ? [raw] : raw) {
-      const intent = parseSharedProjectHref(arg);
+      const intent = parseSharedProjectHref(arg) ?? parseContributionProjectHref(arg);
       if (intent) {
         this.pending = intent;
         return intent;
@@ -13,7 +13,7 @@ export class OpenSharedProjectQueue {
     }
     return null;
   }
-  take(): { shareId: string } | null {
+  take(): OpenSharedProjectIntent | null {
     const intent = this.pending;
     this.pending = null;
     return intent;

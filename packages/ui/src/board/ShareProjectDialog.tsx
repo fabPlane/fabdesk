@@ -17,6 +17,7 @@ import { Button, Dialog, Select, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useUiStore } from "../stores/ui";
+import { ContributionsDialog } from "./ContributionsDialog";
 import { SharedProjectContent } from "./SharedProjectContent";
 import "./project-sharing.css";
 
@@ -41,6 +42,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<unknown>(null),
     [notice, setNotice] = useState<{ message: string; state: string } | null>(null);
+  const [editingBoards, setEditingBoards] = useState(false);
   const [preview, setPreview] = useState<ProjectShareSnapshot | null>(null);
   const saved = settings.data,
     selected = choice ?? saved?.visibility ?? "private";
@@ -80,7 +82,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
         message:
           result.visibility === "private"
             ? "The published snapshot is disabled."
-            : result.visibility === "restricted" ? "Restricted snapshot published. Invite viewers online." : "Shared page published. You can copy the link now.",
+            : result.visibility === "restricted" ? "Restricted snapshot published. Manage invited people online." : "Shared page published. You can copy the link now.",
       });
     } catch (failure) {
       setError(failure);
@@ -117,6 +119,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
   const failure = error ?? settings.error;
   const payload = failure ? errorPayload(failure) : null;
   const count = sources.data?.sources.length;
+  if (project.data?.manifest.contributionSource) return <ContributionsDialog projectId={projectId} onClose={onClose} />;
   return (
     <>
       <Dialog
@@ -161,7 +164,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
               ? changed
                 ? "Save to remove the published snapshot for all visitors and invited viewers. Downloaded copies remain."
                 : "No published snapshot. Viewing is off."
-              : selected === "restricted" ? "Only you and invited viewers. Sign-in is required."
+              : selected === "restricted" ? "Only you and invited people. Sign-in is required."
               : link
                 ? "Anyone with the link can view. No sign-in needed."
                 : "Create a link to let others view this project."}
@@ -203,7 +206,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
           </section>
         )}
         <p className="fd-share-scope">
-          Shared pages show saved previews, 3D models and checks. Design files and chats stay private.
+          Shared pages show saved previews, 3D models and checks. Editable board files are shared separately with Contributors. Chats stay private.
           {selected !== "private" && (
             <span>Local edits appear after you update the shared page.</span>
           )}
@@ -211,6 +214,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
         <details className="fd-share-more">
           <DisclosureSummary label="More options" icon="more" variant="compact" />
           <div className="fd-share-more-actions">
+            <Button size="sm" disabled={busy || !confirmed || saved.visibility === "private"} onClick={()=>setEditingBoards(true)}>Editable boards</Button>
             <Button
               size="sm"
               disabled={busy || !project.data || sources.isError}
@@ -305,6 +309,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
           </div>
         </footer>
       </Dialog>
+      {editingBoards && <ContributionsDialog projectId={projectId} onClose={()=>setEditingBoards(false)} />}
       {preview && (
         <Dialog
           open

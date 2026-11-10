@@ -17,14 +17,16 @@ const TITLES: Record<View, string> = { share: "Share for review", sync: "Reposit
 /** Local sharing is a real file download; repository requests stay unsent until the user reviews them. */
 export function HostedReviewTools({ projectId, shareButton = false }: { projectId: string; shareButton?: boolean }) {
   const [sharing, setSharing] = useState(false);
+  const detail = useProject(projectId);
+  const isContribution = !!detail.data?.manifest.contributionSource;
   const shareSettings = useProjectShareSettings(projectId, shareButton);
   const signInRequired = shareSettings.isError && errorPayload(shareSettings.error).code === "cloud_signed_out";
-  const visibility = shareSettings.isError ? "unavailable" : shareSettings.data?.visibility ?? "loading";
-  const visibilityLabel = visibility === "private" ? "Private" : (visibility === "unlisted" || visibility === "restricted") ? "Shared" : visibility === "loading" ? "Checking…" : "Unavailable";
-  const visibilityDetail = visibility === "private" ? "Private project. Only you can access it. Click to share." : visibility === "unlisted" ? "Anyone with the link can view the published snapshot. Click to manage access." : visibility === "restricted" ? "Only invited viewers can access the published snapshot. Click to manage access." : visibility === "loading" ? "Checking project visibility…" : "Visibility could not be checked. Open sharing settings to retry.";
+  const visibility = isContribution ? "contribution" : shareSettings.isError ? "unavailable" : shareSettings.data?.visibility ?? "loading";
+  const visibilityLabel = isContribution ? "Shared board copy" : visibility === "private" ? "Private" : (visibility === "unlisted" || visibility === "restricted") ? "Shared" : visibility === "loading" ? "Checking…" : "Unavailable";
+  const visibilityDetail = isContribution ? "Publish this board back to its shared project. Access is checked before publication." : visibility === "private" ? "Private project. Only you can access it. Click to share." : visibility === "unlisted" ? "Anyone with the link can view the published snapshot. Click to manage access." : visibility === "restricted" ? "Only invited people can access the published snapshot. Click to manage access." : visibility === "loading" ? "Checking project visibility…" : "Visibility could not be checked. Open sharing settings to retry.";
   const [view, setView] = useState<View | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null);
   const [options, setOptions] = useState<ReviewPackageOptions>({ outputs: true, sources: false, notes: true, checks: true });
-  const client = useCoreClient(), project = useProject(projectId), sources = useBoardSources(projectId);
+  const client = useCoreClient(), project = detail, sources = useBoardSources(projectId);
   const ready = !!sources.data && !sources.isFetching && !sources.isError && !!project.data && !project.isFetching && !project.isError;
   const files = sources.data ? reviewPackageFiles(project.data?.files ?? [], sources.data, options) : [];
   const surface = { projectId, label: view ? TITLES[view] : "Review", priority: 50, details: JSON.stringify({ view, selectedFileCount: files.length, options, projectSourceMode: sources.data?.mode, sourceCheckPending: !ready }) };
@@ -61,7 +63,7 @@ export function HostedReviewTools({ projectId, shareButton = false }: { projectI
       onClick={() => setSharing(true)}
     >
       {visibility === "loading" ? <Spinner /> : <Icon name={visibility === "unavailable" && !signInRequired ? "warning" : "share"} width={17} height={17} />}
-      {(visibility === "unlisted" || visibility === "restricted") ? "Shared" : "Share"}
+      {isContribution ? "Publish" : (visibility === "unlisted" || visibility === "restricted") ? "Shared" : "Share"}
     </Button> : <WorkspaceMenu className="fd-review-publishing" label={<><span>Review tools</span><Icon name="chevronDown" width={14} height={14} /></>}>
       <button onClick={() => setView("share")}>Download review package…</button><button onClick={() => setView("sync")}>Review repository changes…</button><button onClick={() => setView("history")}>Saved versions…</button>
     </WorkspaceMenu>}

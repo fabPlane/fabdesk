@@ -53,8 +53,8 @@ export interface FabdeskBridge extends CadRuntimeBridge {
   onUpdateDownload(cb: (state: UpdateDownloadState) => void): () => void;
   /** Deep link queued from `fabplane://open` before the renderer subscribed. */
   pendingOpenCatalog(): Promise<{ catalogId: string; remix: boolean } | null>;
-  pendingOpenSharedProject(): Promise<{ shareId: string } | null>;
-  onOpenSharedProject(cb: (intent: { shareId: string }) => void): () => void;
+  pendingOpenSharedProject(): Promise<import("@fabdesk/protocol").OpenSharedProjectIntent | null>;
+  onOpenSharedProject(cb: (intent: import("@fabdesk/protocol").OpenSharedProjectIntent) => void): () => void;
   onOpenCatalog(cb: (intent: { catalogId: string; remix: boolean }) => void): () => void;
 }
 
