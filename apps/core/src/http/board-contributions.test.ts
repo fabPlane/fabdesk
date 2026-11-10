@@ -178,7 +178,7 @@ test("sources stay bound to the original project and API, and remote callers can
     ["/cloud/team-projects", "GET"],
     [`/cloud/team-projects/${f.remoteId}/boards/main/import`, "POST"],
     [`/projects/${f.local.id}/contributions/main`, "PUT"],
-  ])
+  ] as const)
     expect((await f.app.request(url!, { method })).status).toBe(403);
   expect(f.publications).toHaveLength(0);
 });
