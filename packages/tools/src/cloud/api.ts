@@ -26,7 +26,7 @@ export type CloudImageUpload = { data: Uint8Array | Blob; contentType: string; f
 export interface CloudApi {
   // Optional for older clients: unsupported builds fail closed rather than pretending to publish.
   getProjectShare?(projectId: string): Promise<unknown>;
-  publishProjectShare?(projectId: string, snapshot: unknown): Promise<unknown>;
+  publishProjectShare?(projectId: string, snapshot: unknown, visibility?: "restricted" | "unlisted", options?: { updateOnly?: boolean }): Promise<unknown>;
   disableProjectShare?(projectId: string): Promise<unknown>;
   getSharedProject?(shareId: string): Promise<unknown>;
   getSharedProjectStatus?(shareId:string):Promise<unknown>;

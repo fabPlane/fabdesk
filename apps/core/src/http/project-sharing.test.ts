@@ -55,6 +55,21 @@ const published = {
   publishedAt: new Date().toISOString(),
   revision: "rev-1",
 };
+test("restricted publication forwards its explicit access choice and rejects an unconfirmed response", async () => {
+  const restricted = { visibility: "restricted", projectId: "2e62e35d-a179-4ef9-a0db-214cd358b2df", publishedAt: published.publishedAt, revision: "r-private" };
+  let choice: unknown;
+  const { app } = await fixture({
+    getProjectShare: async () => restricted,
+    publishProjectShare: async (_id, _snapshot, visibility) => { choice = visibility; return visibility === "restricted" ? restricted : published; },
+  });
+  expect(await (await app.request("/projects/local/share")).json()).toEqual(restricted);
+  const response = await app.request("/projects/local/share?visibility=restricted", { method: "PUT" });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual(restricted);
+  expect(choice).toBe("restricted");
+  const wrong = await fixture({ publishProjectShare: async () => published });
+  expect((await wrong.app.request("/projects/local/share?visibility=restricted", { method: "PUT" })).status).toBe(502);
+});
 test("publishes only the server-prepared project snapshot and confirms revocation", async () => {
   let payload: unknown;
   const { app } = await fixture({
@@ -76,6 +91,15 @@ test("publishes only the server-prepared project snapshot and confirms revocatio
   expect(await (await app.request("/projects/local/share", { method: "DELETE" })).json()).toEqual({
     visibility: "private",
   });
+});
+test("snapshot updates forward update-only mode without a stale visibility choice", async () => {
+  const calls: unknown[] = [];
+  const { app } = await fixture({ publishProjectShare: async (_id, _snapshot, visibility, options) => { calls.push({ visibility, options }); return published; } });
+  expect((await app.request("/projects/local/share?updateOnly=true", { method: "PUT" })).status).toBe(200);
+  expect(calls).toEqual([{ visibility: undefined, options: { updateOnly: true } }]);
+  expect((await app.request("/projects/local/share?updateOnly=true&visibility=unlisted", { method: "PUT" })).status).toBe(400);
+  expect((await app.request("/projects/local/share?updateOnly=false", { method: "PUT" })).status).toBe(400);
+  expect(calls).toHaveLength(1);
 });
 test("owner operations require cloud sign-in but visitors do not", async () => {
   const { app, tokens } = await fixture(

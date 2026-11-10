@@ -243,8 +243,9 @@ export class CoreClient {
   async getProjectShare(id: string): Promise<ProjectShareState> {
     return ProjectShareState.parse(await this.request(`/projects/${encodeURIComponent(id)}/share`));
   }
-  async publishProjectShare(id: string): Promise<ProjectShareState> {
-    return ProjectShareState.parse(await this.request(`/projects/${encodeURIComponent(id)}/share`, { method: "PUT" }));
+  async publishProjectShare(id: string, visibility?: "restricted" | "unlisted", options?: { updateOnly?: boolean }): Promise<ProjectShareState> {
+    if (options?.updateOnly && visibility !== undefined) throw new TypeError("Snapshot updates cannot change project visibility");
+    return ProjectShareState.parse(await this.request(`/projects/${encodeURIComponent(id)}/share${options?.updateOnly ? "?updateOnly=true" : visibility ? `?visibility=${visibility}` : ""}`, { method: "PUT" }));
   }
   async disableProjectShare(id: string): Promise<ProjectShareState> {
     return ProjectShareState.parse(await this.request(`/projects/${encodeURIComponent(id)}/share`, { method: "DELETE" }));

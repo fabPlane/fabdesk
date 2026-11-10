@@ -44,7 +44,7 @@
 .fd-project-share-button {
   gap: 7px;
 }
-.fd-project-share-button[data-visibility="unlisted"] {
+.fd-project-share-button[data-visibility="unlisted"], .fd-project-share-button[data-visibility="restricted"] {
   color: var(--fd-accent);
   border-color: color-mix(in srgb, var(--fd-accent) 30%, var(--fd-border));
   background: color-mix(in srgb, var(--fd-accent) 7%, var(--fd-panel));

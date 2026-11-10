@@ -37,7 +37,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
     const timer = setTimeout(() => setCopyFeedback(null), 3_000);
     return () => clearTimeout(timer);
   }, [copyFeedback]);
-  const [choice, setChoice] = useState<"private" | "unlisted" | null>(null);
+  const [choice, setChoice] = useState<"private" | "restricted" | "unlisted" | null>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<unknown>(null),
     [notice, setNotice] = useState<{ message: string; state: string } | null>(null);
@@ -46,12 +46,12 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
     selected = choice ?? saved?.visibility ?? "private";
   const confirmed = !!saved && !settings.isError;
   const link =
-    confirmed && saved.visibility === "unlisted" && selected === "unlisted"
-      ? sharedProjectUrl(saved.shareId, appOrigin)
+    confirmed && saved.visibility !== "private" && selected === saved.visibility
+      ? saved.visibility === "unlisted" ? sharedProjectUrl(saved.shareId, appOrigin) : `${new URL(appOrigin ?? "https://app.fabplane.com").origin}/projects/${saved.projectId}`
       : null;
   const changed = confirmed && selected !== saved.visibility;
   const stateKey = (state: ProjectShareState) =>
-    state.visibility === "private" ? "private" : `${state.shareId}:${state.revision}`;
+    state.visibility === "private" ? "private" : `${state.visibility}:${state.visibility === "restricted" ? state.projectId : state.shareId}:${state.revision}`;
   const copied =
     !!copyFeedback &&
     confirmed &&
@@ -70,15 +70,17 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
       const result: ProjectShareState =
         selected === "private"
           ? await client.disableProjectShare(projectId)
-          : await client.publishProjectShare(projectId);
+          : await client.publishProjectShare(projectId,
+              changed || saved?.visibility === "private" ? selected : undefined,
+              { updateOnly: !changed && saved?.visibility !== "private" });
       cache.setQueryData(queryKey, result);
       setChoice(null);
       setNotice({
         state: stateKey(result),
         message:
           result.visibility === "private"
-            ? "Link sharing is disabled."
-            : "Shared page published. You can copy the link now.",
+            ? "The published snapshot is disabled."
+            : result.visibility === "restricted" ? "Restricted snapshot published. Invite viewers online." : "Shared page published. You can copy the link now.",
       });
     } catch (failure) {
       setError(failure);
@@ -134,7 +136,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
             value={confirmed ? selected : "unknown"}
             onChange={(event) => {
               const value = event.currentTarget.value;
-              if (value !== "private" && value !== "unlisted") return;
+              if (value !== "private" && value !== "restricted" && value !== "unlisted") return;
               setChoice(value);
               setNotice(null);
               setCopyFeedback(null);
@@ -145,7 +147,8 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
                 {settings.isPending ? "Checking access…" : "Access unavailable"}
               </option>
             )}
-            <option value="private">Private</option>
+            <option value="private">Not shared</option>
+            <option value="restricted">Invited people</option>
             <option value="unlisted">Anyone with the link</option>
           </Select>
         </div>
@@ -156,8 +159,9 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
               : "Retry below to check link access."
             : selected === "private"
               ? changed
-                ? "Save to disable the current link. Downloaded copies cannot be recalled."
-                : "Only you. Link sharing is off."
+                ? "Save to remove the published snapshot for all visitors and invited viewers. Downloaded copies remain."
+                : "No published snapshot. Viewing is off."
+              : selected === "restricted" ? "Only you and invited viewers. Sign-in is required."
               : link
                 ? "Anyone with the link can view. No sign-in needed."
                 : "Create a link to let others view this project."}
@@ -195,11 +199,12 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
               <Icon name="externalLink" width={16} height={16} />
               Open shared page
             </Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => { void host.openExternal(`${new URL(appOrigin ?? "https://app.fabplane.com").origin}/projects${saved?.visibility === "restricted" ? `?share=${saved.projectId}` : ""}`); }}>Manage people online</Button>
           </section>
         )}
         <p className="fd-share-scope">
           Shared pages show saved previews, 3D models and checks. Design files and chats stay private.
-          {selected === "unlisted" && (
+          {selected !== "private" && (
             <span>Local edits appear after you update the shared page.</span>
           )}
         </p>
@@ -222,7 +227,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
             {count !== undefined ? `${count} ${count === 1 ? "board" : "boards"}. ` : ""}
             Previews, models and checks are included where available. This link won’t appear in
             Explore.
-            {confirmed && saved.visibility === "unlisted" && (
+            {confirmed && saved.visibility !== "private" && (
               <span>Published {new Date(saved.publishedAt).toLocaleString()}.</span>
             )}
           </p>
@@ -274,7 +279,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
         )}
         <footer className="fd-share-footer">
           <div>
-            {confirmed && (changed || selected === "unlisted") && (
+            {confirmed && (changed || selected !== "private") && (
               <Button
                 variant={link ? "secondary" : "primary"}
                 disabled={busy}
@@ -287,10 +292,10 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
                   </>
                 ) : selected === "private" ? (
                   "Save changes"
-                ) : saved.visibility === "unlisted" ? (
+                ) : saved.visibility !== "private" ? (
                   "Update shared page"
                 ) : (
-                  "Create link"
+                  selected === "restricted" ? "Publish for invited viewers" : "Create link"
                 )}
               </Button>
             )}

@@ -122,10 +122,13 @@ export function cloudRoutes<E extends object>(deps: Deps): Hono<{ Variables: E }
     if (deps.canManageSharing && !deps.canManageSharing(extractToken(c.req.raw) ?? undefined)) throw new RouteError(403, "sharing_requires_desktop", "Publish shared pages from the desktop Share dialog.");
     const handle = await project(param(c, "id")), api = cloud().client();
     if (!api.publishProjectShare) throw unsupported();
+    const visibility = z.enum(["restricted", "unlisted"]).optional().parse(c.req.query("visibility"));
+    const updateOnly = z.literal("true").optional().parse(c.req.query("updateOnly")) === "true";
+    if (updateOnly && visibility) throw new RouteError(400, "invalid_request", "Snapshot updates cannot change project visibility.");
     return withSharingLock(handle.id, async () => {
       const snapshot = await prepareProjectShare(handle, deps.rasterizeSharePreview);
-      const result = shareState(await sharingCall(() => api.publishProjectShare!(handle.id, snapshot)));
-      if (result.visibility !== "unlisted") throw new RouteError(502, "invalid_share_response", "The server did not confirm publication. Reload sharing settings before trying again.");
+      const result = shareState(await sharingCall(() => api.publishProjectShare!(handle.id, snapshot, visibility, { updateOnly })));
+      if (result.visibility === "private" || (visibility && result.visibility !== visibility)) throw new RouteError(502, "invalid_share_response", "The server did not confirm the requested publication access. Reload sharing settings before trying again.");
       return c.json(result);
     });
   }));

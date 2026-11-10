@@ -1,6 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import { CoreClient } from "./CoreClient";
 
+test("snapshot updates preserve server access instead of resending cached visibility", async () => {
+  const urls: string[] = [];
+  const client = new CoreClient({ baseUrl: "http://local", token: "test", fetch: async url => {
+    urls.push(url);
+    return Response.json({visibility: "restricted", projectId: "2e62e35d-a179-4ef9-a0db-214cd358b2df", publishedAt: new Date().toISOString(), revision: "r"});
+  } });
+  await client.publishProjectShare("project/one", undefined, {updateOnly: true});
+  expect(urls).toEqual(["http://local/projects/project%2Fone/share?updateOnly=true"]);
+  await expect(client.publishProjectShare("p", "unlisted", {updateOnly: true})).rejects.toThrow("cannot change");
+  expect(urls).toHaveLength(1);
+});
+
 test("saving a composer preference sends only the explicit choice", async () => {
   const calls: Array<{ url: string; method?: string; body: unknown }> = [];
   const client = new CoreClient({

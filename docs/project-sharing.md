@@ -1,6 +1,6 @@
 # Project link sharing (desktop first)
 
-The project header's **Share** action opens the Private / Anyone with the link dialog. The existing review ZIP is a separate secondary action. **Preview shared page** builds a local snapshot without publishing or requiring a cloud account.
+The project header's **Share** action offers Not shared / Invited people / Anyone with the link. Invited people publishes an authenticated read-only snapshot and offers **Manage people online** for project invitations. The existing review ZIP is a separate secondary action. **Preview shared page** builds a local snapshot without publishing or requiring a cloud account.
 
 The header uses one compact control: **Share** for a private project, or **Shared** with a subtle green treatment when a link is active. Both open the same sharing settings. The tooltip and accessible name describe actual saved visibility; pending checks show a spinner and failed checks show a warning icon. The control updates after a successful save and on the existing background access check; unsaved dialog choices do not change it. A successful copy changes the dialog's copy button to a green checkmark and **Copied!** for three seconds, with an accessible announcement.
 
@@ -44,7 +44,43 @@ The dialog fetches the public snapshot using the daemon's configured cloud origi
 
 Generated browser URLs use the app origin from the existing auth state's dashboard URL (production defaults to `https://app.fabplane.com`). `FABPLANE_APP_ORIGIN` overrides this for local/staging integration. The companion browser PR adds this route, saved board 3D, existing app navigation/auth and an owner-only Projects page with Make private. Desktop settings refresh after browser revocation.
 
-## Integration evidence
+## Private team viewing
+
+This phase adds invited Viewers at the project level, with no shared workspace or
+editable-file exchange. In Share, choose Invited people and publish. The dialog
+shows the member-only browser URL and opens the existing Projects page for online
+access management. The owner invites a verified email, copies an invitation to
+send manually, and manages accepted viewers or pending invitations there. Viewers
+find accepted projects under Shared with me and browse published boards/3D in the
+browser. Contributor permissions, board uploads and native member-viewer handoff
+are outside this phase; anonymous native viewer behavior stays unchanged.
+
+The protocol adds `{visibility:"restricted",projectId,publishedAt,revision}`. Core
+accepts an explicit restricted/unlisted choice and requires the server to confirm
+that choice. The SDK publishes restricted snapshots to the distinct
+`PUT /v1/private/project-shares/:localProjectId/restricted` route, so old servers
+cannot ignore a private option and accidentally create an anonymous link.
+Update shared page uses the distinct `/snapshot` endpoint with `updateOnly`,
+preserving the server's current access and link ID instead of resubmitting cached
+visibility. After unpublishing it returns409 until the owner deliberately publishes
+again. There is no legacy fallback on old servers. Legacy/default updates preserve
+restricted policy. The companion backend and
+migration0015 must be deployed before releasing this desktop client.
+
+Not shared removes the published snapshot for all readers. Online Link access →
+Restricted instead turns off the anonymous link while preserving invited viewers
+and the snapshot. Re-enabling anonymous access generates a new link. New boards,
+checks and models appear only after the owner explicitly updates the snapshot.
+
+Validated locally with a normally packaged Electron app and actual compiled core,
+SDK, API and PostgreSQL17: initial restricted publication, browser invitation and
+recipient sign-in/acceptance, Shared with me, private saved3D, removal from an open
+viewer, leaving, wrong-account denial, public-link disable with retained member
+access, restricted desktop update, actual clipboard paste, and sign-out/Back
+navigation. Screenshots and browser-side report are in the companion PR.
+Deployed staging/production validation is still a release gate.
+
+## Earlier link integration evidence
 
 A normally packaged Electron app with a unique test identifier and ad-hoc signature was exercised through visible UI with the real compiled core. Chrome's Open in fabPlane launched the closed app into the matching read-only snapshot; its saved board model rendered. Browser Make private then removed the model from the open native viewer. The earlier manually assembled Electron bundle failure did not reproduce with the repository packager. Test-only origin/profile setup remains outside tracked source. Notarized installers and deployed staging remain release checks.
 
