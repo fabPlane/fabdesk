@@ -27,6 +27,7 @@ export function ContributionsDialog({
     [notice, setNotice] = useState("");
   const [downloaded, setDownloaded] = useState<ProjectDetail | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
+  const confirmedBoard = state.data?.boards.find((b) => b.sourceId === confirm);
   const publish = async (sourceId: string) => {
     setBusy(sourceId);
     setError(null);
@@ -34,7 +35,7 @@ export function ContributionsDialog({
     try {
       await client.publishContribution(projectId, sourceId);
       await cache.invalidateQueries({ queryKey: ["project", projectId] });
-      setNotice("Board revision published. Other boards and project access are unchanged.");
+      setNotice("Board update published.");
       setConfirm(null);
     } catch (e) {
       setError(e);
@@ -47,23 +48,31 @@ export function ContributionsDialog({
     <>
       <Dialog
         open
-        title="Editable boards"
+        title="Board design files"
         onClose={onClose}
         closeDisabled={!!busy}
-        className="fd-share-dialog"
+        className="fd-share-dialog fd-board-files-dialog"
       >
         <p className="fd-share-muted">
-          Share a KiCad PCB and its saved schematic with Contributors. Edit local copies, then
-          publish one board at a time.
+          Contributors can download these files, edit a separate copy, then publish a board update.
         </p>
-        <p className="fd-share-muted">
-          Chats, scripts and other project files stay private. Custom libraries and external 3D
-          assets aren’t included.
-        </p>
+        <details className="fd-board-files-details">
+          <summary>What files are shared?</summary>
+          <p className="fd-share-muted">
+            The KiCad PCB and saved schematic only. Chats, scripts, custom libraries and external 3D
+            assets aren’t included. Viewers and public-link visitors cannot download these files.
+          </p>
+        </details>
         {(error || state.error) && (
           <p role="alert" className="fd-share-error">
             {errorPayload(error ?? state.error).message}{" "}
-            <Button size="sm" onClick={() => void state.refetch()}>
+            <Button
+              size="sm"
+              onClick={() => {
+                setError(null);
+                void state.refetch();
+              }}
+            >
               Retry
             </Button>
           </p>
@@ -71,7 +80,7 @@ export function ContributionsDialog({
         {state.isPending && (
           <p role="status">
             <Spinner />
-            Checking board revisions…
+            Checking shared files…
           </p>
         )}
         {state.data?.role === "viewer" && (
@@ -80,31 +89,41 @@ export function ContributionsDialog({
             and publishing require Contributor access.
           </p>
         )}
+        {!state.isError && state.data?.boards.length === 0 && (
+          <p className="fd-share-muted">
+            No boards are available here. Add or import a board to this project first.
+          </p>
+        )}
         <ul className="fd-contribution-list">
           {!state.isError &&
             state.data?.boards.map((b) => (
               <li key={b.sourceId}>
                 <div>
                   <strong>{b.name}</strong>
-                  <small>
-                    {!b.revision
-                      ? "Editable files not shared"
-                      : b.publishedBy
-                        ? `Published by ${b.publishedBy} · ${new Date(b.publishedAt!).toLocaleString()}`
-                        : "Published revision"}
-                  </small>
+                  <span className="fd-board-file-status" data-shared={!!b.revision}>
+                    {b.revision ? "Shared with Contributors" : "Not shared"}
+                  </span>
+                  {b.revision && b.publishedBy && (
+                    <small>
+                      Updated by {b.publishedBy} · {new Date(b.publishedAt!).toLocaleString()}
+                    </small>
+                  )}
                   {b.revision && b.revision !== b.baseRevision && (
-                    <small>A newer copy is available. Your local edits are kept.</small>
+                    <small className="fd-board-copy-hint">
+                      {b.baseRevision
+                        ? "A newer version is available. Your local edits are kept."
+                        : "Get the shared copy before publishing changes."}
+                    </small>
                   )}
                 </div>
                 {b.canPublish ? (
                   confirm !== b.sourceId && (
                     <Button size="sm" disabled={!!busy} onClick={() => setConfirm(b.sourceId)}>
-                      {b.revision ? "Publish update" : "Share editable board"}
+                      {b.revision ? "Publish update" : "Share files"}
                     </Button>
                   )
                 ) : !b.available ? (
-                  <small>Board source unavailable</small>
+                  <small>No local design files</small>
                 ) : b.revision && state.data?.role !== "viewer" ? (
                   <Button
                     size="sm"
@@ -137,25 +156,34 @@ export function ContributionsDialog({
         {confirm && (
           <section className="fd-contribution-confirm">
             <strong>
-              {state.data?.boards.find((b) => b.sourceId === confirm)?.revision
-                ? "Publish this board update?"
-                : "Share this board’s editable files?"}
+              {confirmedBoard?.revision
+                ? `Publish update for ${confirmedBoard.name}?`
+                : `Share design files for ${confirmedBoard?.name ?? "this board"}?`}
             </strong>
             <p>
-              The PCB and saved schematic will be available to this project’s Contributors. Saved
-              previews, 3D models and checks from this copy will update for project visitors;
-              missing outputs won’t be carried over. Downloaded copies cannot be recalled.
+              Contributors will receive this board’s PCB and saved schematic. Its saved previews, 3D
+              model and checks will also update on the shared page.
             </p>
-            <Button variant="primary" disabled={!!busy} onClick={() => void publish(confirm)}>
-              {busy === confirm
-                ? "Publishing…"
-                : state.data?.boards.find((b) => b.sourceId === confirm)?.revision
-                  ? "Publish update"
-                  : "Share editable board"}
-            </Button>
-            <Button variant="ghost" disabled={!!busy} onClick={() => setConfirm(null)}>
-              Cancel
-            </Button>
+            <p>
+              Missing saved outputs will be removed from the shared page. Downloaded files cannot be
+              recalled.
+            </p>
+            <div className="fd-share-link-actions">
+              <Button
+                variant="primary"
+                disabled={!!busy || !confirmedBoard?.canPublish || state.isError}
+                onClick={() => void publish(confirm)}
+              >
+                {busy === confirm
+                  ? "Publishing…"
+                  : confirmedBoard?.revision
+                    ? "Publish update"
+                    : "Share files"}
+              </Button>
+              <Button variant="ghost" disabled={!!busy} onClick={() => setConfirm(null)}>
+                Cancel
+              </Button>
+            </div>
           </section>
         )}
         {notice && (
@@ -163,10 +191,6 @@ export function ContributionsDialog({
             {notice}
           </p>
         )}
-        <p className="fd-share-muted">
-          A newer revision blocks stale updates. “Get latest copy” opens a separate project and
-          keeps this copy’s edits.
-        </p>
         <footer className="fd-share-footer">
           <Button variant="ghost" disabled={!!busy} onClick={onClose}>
             Done

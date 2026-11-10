@@ -39,6 +39,53 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+.fd-share-files-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  margin: 16px 0 4px;
+  border-top: 1px solid var(--fd-border);
+}
+.fd-share-files-section h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.fd-share-files-section p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-muted);
+}
+.fd-share-files-section > button {
+  flex-shrink: 0;
+}
+.fd-board-files-details {
+  font-size: 12px;
+  color: var(--fd-muted);
+  margin: 12px 0 18px;
+}
+.fd-board-files-details summary {
+  cursor: pointer;
+}
+.fd-board-files-dialog .fd-board-file-status {
+  display: inline-block;
+  margin-top: 7px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--fd-muted);
+  background: var(--fd-panel-2);
+}
+.fd-board-files-dialog .fd-board-file-status[data-shared="true"] {
+  color: var(--fd-accent);
+  background: color-mix(in srgb, var(--fd-accent) 8%, var(--fd-panel));
+}
+.fd-board-files-dialog .fd-board-copy-hint {
+  margin-top: 8px;
+}
 .fd-share-copy-button {
   min-width: 112px;
 }
@@ -258,6 +305,11 @@
   }
 }
 @media (max-width: 420px) {
+  .fd-share-files-section {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
   .fd-share-access-row {
     align-items: stretch;
     flex-direction: column;

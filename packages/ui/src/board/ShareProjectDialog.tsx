@@ -81,8 +81,8 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
         state: stateKey(result),
         message:
           result.visibility === "private"
-            ? "The published snapshot is disabled."
-            : result.visibility === "restricted" ? "Restricted snapshot published. Manage invited people online." : "Shared page published. You can copy the link now.",
+            ? "Project sharing is off."
+            : result.visibility === "restricted" ? "Shared page updated. Only invited people can open it." : "Shared page updated. Anyone with the link can view it.",
       });
     } catch (failure) {
       setError(failure);
@@ -120,6 +120,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
   const payload = failure ? errorPayload(failure) : null;
   const count = sources.data?.sources.length;
   if (project.data?.manifest.contributionSource) return <ContributionsDialog projectId={projectId} onClose={onClose} />;
+  if (editingBoards) return <ContributionsDialog projectId={projectId} onClose={()=>setEditingBoards(false)} />;
   return (
     <>
       <Dialog
@@ -162,8 +163,8 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
               : "Retry below to check link access."
             : selected === "private"
               ? changed
-                ? "Save to remove the published snapshot for all visitors and invited viewers. Downloaded copies remain."
-                : "No published snapshot. Viewing is off."
+                ? "Save to turn off online viewing and design-file access. Downloaded copies remain."
+                : "Online viewing and design-file sharing are off."
               : selected === "restricted" ? "Only you and invited people. Sign-in is required."
               : link
                 ? "Anyone with the link can view. No sign-in needed."
@@ -208,15 +209,32 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
           </section>
         )}
         <p className="fd-share-scope">
-          Shared pages show saved previews, 3D models and checks. Editable board files are shared separately with Contributors. Chats stay private.
+          The shared page shows saved previews, 3D models and PCB checks.
           {selected !== "private" && (
-            <span>Local edits appear after you update the shared page.</span>
+            <span>Local edits aren’t shared automatically.</span>
+          )}
+          {confirmed && saved.visibility !== "private" && (
+            <span>Page updated {new Date(saved.publishedAt).toLocaleString()}.</span>
           )}
         </p>
+        <section className="fd-share-files-section" aria-labelledby={`${accessId}-files`}>
+          <div>
+            <h3 id={`${accessId}-files`}>Board design files</h3>
+            <p>
+              {!confirmed
+                ? "Check project sharing before managing design files."
+                : saved.visibility !== "private"
+                  ? "Choose which boards Contributors can download and update."
+                  : "Share the project first to enable design-file sharing."}
+            </p>
+          </div>
+          <Button size="sm" disabled={busy || !confirmed || saved.visibility === "private"} onClick={()=>setEditingBoards(true)}>
+            Manage files
+          </Button>
+        </section>
         <details className="fd-share-more">
           <DisclosureSummary label="More options" icon="more" variant="compact" />
           <div className="fd-share-more-actions">
-            <Button size="sm" disabled={busy || !confirmed || saved.visibility === "private"} onClick={()=>setEditingBoards(true)}>Editable boards</Button>
             <Button
               size="sm"
               disabled={busy || !project.data || sources.isError}
@@ -231,11 +249,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
           </div>
           <p className="fd-share-muted">
             {count !== undefined ? `${count} ${count === 1 ? "board" : "boards"}. ` : ""}
-            Previews, models and checks are included where available. This link won’t appear in
-            Explore.
-            {confirmed && saved.visibility !== "private" && (
-              <span>Published {new Date(saved.publishedAt).toLocaleString()}.</span>
-            )}
+            Chats stay private. Shared pages aren’t listed in Explore.
           </p>
         </details>
         {payload && (
@@ -311,7 +325,6 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
           </div>
         </footer>
       </Dialog>
-      {editingBoards && <ContributionsDialog projectId={projectId} onClose={()=>setEditingBoards(false)} />}
       {preview && (
         <Dialog
           open
