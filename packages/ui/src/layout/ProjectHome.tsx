@@ -1,3 +1,4 @@
+import { TeamProjectsDialog } from "../board/TeamProjectsDialog";
 import { useState } from "react";
 import { draftConversation, draftWorkspaceTitle, projectSketchImagePaths, useCoreIdentity, useProject, jobIsActive, projectJobs, useCoreClient, useJobs, useProjects, useRunsStore, useThreads } from "@fabdesk/client-core";
 import { Button, EmptyState, Input, LoadError, Spinner } from "../components/ui";
@@ -14,6 +15,7 @@ export function ProjectHome({ onCreate, onImport, onBrowse, listing = false, onV
   const coreIdentity = useCoreIdentity();
   const recent = useUiStore(s => s.recentProjectsByEndpoint[coreIdentity.data ? `core:${coreIdentity.data}` : client.baseUrl]);
   const live = useRunsStore(s => s.jobs), runs = useRunsStore(s => s.runsByThread);
+  const [teamProjects, setTeamProjects] = useState(false);
   const [query, setQuery] = useState("");
   const [action, setAction] = useState<ProjectAction | null>(null);
   const all = [...(projects.data ?? [])].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
@@ -22,7 +24,7 @@ export function ProjectHome({ onCreate, onImport, onBrowse, listing = false, onV
   const matches = ordered.filter(project => `${draftWorkspaceTitle(project, threads.data ?? [])} ${project.name} ${project.path}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   const shown = listing ? matches : ordered.slice(0, 3);
   return <div className={`fd-project-home ${listing ? "" : "fd-idea-home"}`}>
-    {listing ? <><header><div><h1>Your projects & ideas</h1><p>Resume a project or keep exploring a saved draft.</p></div><div className="fd-home-actions"><Button onClick={onImport}><Icon name="folderOpen" />Import from GitHub</Button><Button variant="primary" onClick={onCreate}><Icon name="plus" />New project</Button></div></header>
+    {listing ? <><header><div><h1>Your projects & ideas</h1><p>Resume a project or keep exploring a saved draft.</p></div><div className="fd-home-actions"><Button onClick={()=>setTeamProjects(true)}>Shared projects</Button><Button onClick={onImport}><Icon name="folderOpen" />Import from GitHub</Button><Button variant="primary" onClick={onCreate}><Icon name="plus" />New project</Button></div></header>
     <label className="fd-home-search"><Icon name="search" width={18} height={18} /><Input aria-label="Find a project or idea" placeholder="Find a project or idea…" value={query} onChange={event => setQuery(event.target.value)} /></label></> : <section className="fd-home-idea" aria-label="Start with an idea"><ThreadView presentation="start" /><p className="fd-home-draft-note">Your ideas are saved as drafts. Create a project when you’re ready to build.</p></section>}
     <section className={listing ? undefined : "fd-home-resume"} aria-label="Saved projects and ideas">
     <div className="fd-home-list-heading"><div><h2>{query && listing ? "Matching projects & ideas" : listing ? "Recent projects & ideas" : "Open a project or draft"}</h2>{!listing && <p className="fd-home-resume-description">Pick up where you left off.</p>}</div>{listing ? <span>{matches.length} saved workspaces · Opened recently first</span> : <Button variant="ghost" size="sm" onClick={onViewProjects}>View all projects<Icon name="chevronRight" width={16} height={16} /></Button>}</div>
@@ -33,6 +35,7 @@ export function ProjectHome({ onCreate, onImport, onBrowse, listing = false, onV
     })}</ul>}
     {jobs.isError && <p className="text-xs text-muted">Task status unavailable. Open a project to retry its activity.</p>}
     </section>
+    {teamProjects && <TeamProjectsDialog onClose={()=>setTeamProjects(false)} />}
     {action && <ProjectActionDialog key={action.id} project={action} onClose={() => setAction(null)} />}
     {listing && <footer><Button variant="ghost" onClick={onBrowse}><Icon name="library" />Browse open-source designs & conversations</Button><p>Closing a project keeps its saved files and conversations. Running tasks continue on the connected core.</p></footer>}
   </div>;

@@ -1,3 +1,4 @@
+import { ContributionReceipt } from "./board-contributions";
 import { WorkspaceContext } from "./workspace-context";
 /** Control API DTOs shared by core routes and the renderer client. */
 import { z } from "zod/v4";
@@ -56,6 +57,10 @@ export const ProjectManifest = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   board: BoardSettings,
+  /** Local base revisions for explicit per-board cloud publication. */
+  contributions: z.record(z.string(), ContributionReceipt).optional(),
+  /** Present only for a separate copy downloaded from a shared board. */
+  contributionSource: ContributionReceipt.optional(),
   /** Historical import selection, not a claim that the editable working board remains unchanged. */
   importedBoard: z.object({
     path: z.string().min(1),

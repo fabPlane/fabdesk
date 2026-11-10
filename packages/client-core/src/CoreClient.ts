@@ -1,5 +1,5 @@
 /** Typed fetch wrapper over the fabdesk-core control API plus SSE subscription. */
-import { ProjectShareState, ProjectShareSnapshot, SharedProject, SharedProjectStatus, BoardSourceSelection } from "@fabdesk/protocol";
+import { TeamProjects, ContributionBoards, ProjectShareState, ProjectShareSnapshot, SharedProject, SharedProjectStatus, BoardSourceSelection } from "@fabdesk/protocol";
 import type {
   OutputTrashReview,
   OutputTrashEntry,
@@ -240,6 +240,11 @@ export class CoreClient {
   getProject(id: string): Promise<ProjectDetail> {
     return this.request(`/projects/${encodeURIComponent(id)}`);
   }
+  async listTeamProjects() { return TeamProjects.parse(await this.request("/cloud/team-projects")); }
+  async listTeamBoards(projectId:string) { return ContributionBoards.parse(await this.request(`/cloud/team-projects/${encodeURIComponent(projectId)}/boards`)); }
+  importTeamBoard(projectId:string,boardId:string):Promise<ProjectDetail> { return this.request(`/cloud/team-projects/${encodeURIComponent(projectId)}/boards/${encodeURIComponent(boardId)}/import`,{method:"POST"}); }
+  localContributions(id:string):Promise<{projectId:string;role:"owner"|"viewer"|"contributor";boards:Array<ContributionBoards["boards"][number]&{sourceId:string;available:boolean;baseRevision:string|null;canPublish:boolean}>}> { return this.request(`/projects/${encodeURIComponent(id)}/contributions`); }
+  publishContribution(id:string,sourceId:string):Promise<{revision:string}> { return this.request(`/projects/${encodeURIComponent(id)}/contributions/${encodeURIComponent(sourceId)}`,{method:"PUT"}); }
   async getProjectShare(id: string): Promise<ProjectShareState> {
     return ProjectShareState.parse(await this.request(`/projects/${encodeURIComponent(id)}/share`));
   }

@@ -87,3 +87,13 @@ A normally packaged Electron app with a unique test identifier and ad-hoc signat
 The companion API's full suite passed on a fresh PostgreSQL 17.6 server with pgcrypto (380 passed, 4 skipped), including sharing revocation and concurrent database tests. Deployed staging validation was blocked by missing/offline GitHub runners; the task-owned queued deployment was cancelled without changing staging.
 
 Publication/copy confirmations are scoped to the server sharing revision. External revocation or a newer publication hides an obsolete confirmation. Both visitor access checks and owner settings refresh in the background, so returning to an occluded window does not rely only on a focus event.
+
+## Editing shared boards
+
+The owner publishes a restricted or unlisted preview, manages Viewer/Contributor invitations online, then explicitly chooses **Share → More options → Editable boards** for each board whose native files should be available. Preview sharing alone never uploads editable sources.
+
+After accepting a Contributor invitation, use **Projects → Shared projects → Open editable copy** (or the authenticated web **Open in fabPlane desktop** link). A fresh local project receives the KiCad PCB, optional saved schematic and its base revision. A downloaded copy's compact **Publish** action opens per-board publication directly; it does not create a new public link. Your project chats, scripts, local folders, custom libraries and external 3D assets are not uploaded.
+
+Publication keeps the base recorded at download/last successful publish. The API checks live access and that exact board revision before saving. A stale copy offers **Get latest copy**, which creates another local project and leaves your edits intact. No automatic merge, force overwrite, team-owned workspace or realtime editing is included. Owner whole-project preview refreshes preserve boards managed by individual contribution revisions.
+
+The server companion is TensorFleet/fabplane.com (migrations0016/0017, staging first); authenticated methods come from fabPlane/fabplane-cli. Existing public link viewing stays separate. Removing/downgrading a Contributor or unpublishing blocks future downloads/writes but cannot recall downloaded files. Revision history is private and retained server-side for conflict protection; a history browsing UI is outside this MVP.

@@ -49,7 +49,7 @@ function sendOpenCatalog(intent: OpenCatalogIntent): void {
   openCatalog.take();
 }
 
-function sendOpenSharedProject(intent: { shareId: string }): void {
+function sendOpenSharedProject(intent: import("@fabdesk/protocol").OpenSharedProjectIntent): void {
   const win = BrowserWindow.getAllWindows()[0];
   if (!win || win.isDestroyed() || win.webContents.isLoadingMainFrame()) return;
   win.webContents.send("fabdesk:open-shared-project", intent);

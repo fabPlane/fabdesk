@@ -5,6 +5,7 @@ import {
   CoreStatusScreen,
   FabdeskApp,
   SharedProjectDialog,
+  TeamProjectsDialog,
   themeFromPreference,
   useAuthStore,
   useCoreClient,
@@ -13,7 +14,7 @@ import {
   type CoreInfo,
   type HostAdapter,
 } from "@fabdesk/ui";
-import { ReleaseNotes, ShareId } from "@fabdesk/protocol";
+import { ReleaseNotes, ShareId, OpenSharedProjectIntent } from "@fabdesk/protocol";
 import { useEffect, useMemo, useState } from "react";
 import { sentryUserFromAuth } from "../shared/sentry-user";
 import { disableRendererSentry, setRendererSentryUser } from "./sentry";
@@ -169,18 +170,18 @@ function OpenCatalogBridge() {
 }
 
 function OpenSharedProjectBridge() {
-  const [shareId, setShareId] = useState<string | null>(null);
+  const [intent, setIntent] = useState<OpenSharedProjectIntent | null>(null);
   useEffect(() => {
     let mounted = true;
-    const open = (intent: { shareId: string }) => {
-      const parsed = ShareId.safeParse(intent.shareId);
-      if (mounted && parsed.success) setShareId(parsed.data);
+    const open = (intent: OpenSharedProjectIntent) => {
+      const parsed = OpenSharedProjectIntent.safeParse(intent);
+      if (mounted && parsed.success) setIntent(parsed.data);
     };
     const unsubscribe = bridge?.onOpenSharedProject?.(open);
     void bridge?.pendingOpenSharedProject?.().then(intent => { if (intent) open(intent); });
     return () => { mounted = false; unsubscribe?.(); };
   }, []);
-  return shareId ? <SharedProjectDialog key={shareId} shareId={shareId} onClose={() => setShareId(null)} /> : null;
+  return intent ? "projectId" in intent ? <TeamProjectsDialog key={intent.projectId} initialProjectId={intent.projectId} onClose={()=>setIntent(null)} /> : <SharedProjectDialog key={intent.shareId} shareId={intent.shareId} onClose={() => setIntent(null)} /> : null;
 }
 
 export function App() {

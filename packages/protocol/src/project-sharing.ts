@@ -140,3 +140,14 @@ export const SharedProjectStatus = SharedProject.pick({
   revision: true,
 });
 export type SharedProjectStatus = z.infer<typeof SharedProjectStatus>;
+
+/** Authenticated project intents contain only an ID, never tokens or a remote API origin. */
+export const OpenSharedProjectIntent = z.union([z.object({shareId:ShareId}).strict(),z.object({projectId:z.string().uuid()}).strict()]);
+export type OpenSharedProjectIntent = z.infer<typeof OpenSharedProjectIntent>;
+export function parseContributionProjectHref(raw:string):{projectId:string}|null {
+  try {const u=new URL(raw);
+    if(u.username||u.password||u.port||u.search||u.hash)return null;
+    const path=u.protocol==='fabplane:'&&u.hostname==='project'?u.pathname:u.protocol==='https:'&&u.hostname==='app.fabplane.com'&&u.pathname.startsWith('/projects/')?u.pathname.slice('/projects'.length):'';
+    const m=/^\/([^/]+)\/?$/.exec(path);const id=z.string().uuid().safeParse(m?.[1]);return id.success?{projectId:id.data}:null;
+  }catch{return null;}
+}

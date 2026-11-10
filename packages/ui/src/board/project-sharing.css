@@ -33,6 +33,59 @@
   gap: 10px;
   margin-bottom: 6px;
 }
+.fd-share-link-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fd-share-files-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  margin: 16px 0 4px;
+  border-top: 1px solid var(--fd-border);
+}
+.fd-share-files-section h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.fd-share-files-section p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-muted);
+}
+.fd-share-files-section > button {
+  flex-shrink: 0;
+}
+.fd-board-files-details {
+  font-size: 12px;
+  color: var(--fd-muted);
+  margin: 12px 0 18px;
+}
+.fd-board-files-details summary {
+  cursor: pointer;
+}
+.fd-board-files-dialog .fd-board-file-status {
+  display: inline-block;
+  margin-top: 7px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--fd-muted);
+  background: var(--fd-panel-2);
+}
+.fd-board-files-dialog .fd-board-file-status[data-shared="true"] {
+  color: var(--fd-accent);
+  background: color-mix(in srgb, var(--fd-accent) 8%, var(--fd-panel));
+}
+.fd-board-files-dialog .fd-board-copy-hint {
+  margin-top: 8px;
+}
 .fd-share-copy-button {
   min-width: 112px;
 }
@@ -252,6 +305,11 @@
   }
 }
 @media (max-width: 420px) {
+  .fd-share-files-section {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
   .fd-share-access-row {
     align-items: stretch;
     flex-direction: column;
@@ -277,4 +335,85 @@
 .fd-shared-view-tabs [aria-selected="true"] {
   background: var(--fd-accent-soft, #dceee8);
   color: var(--fd-accent, #00624c);
+}
+
+.fd-contribution-list { list-style:none; padding:0; margin:16px 0; }
+.fd-contribution-list li { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 0; border-bottom:1px solid var(--fd-border); }
+.fd-contribution-list li>div { min-width:0; }
+.fd-contribution-list strong { display:block; font-size:13px; overflow-wrap:anywhere; }
+.fd-contribution-list small { display:block; font-size:12px; color:var(--fd-muted); line-height:1.6; margin-top:4px; }
+.fd-contribution-list button { flex-shrink:0; }
+.fd-contribution-project { display:grid; gap:6px; font-size:13px; }
+.fd-contribution-confirm { padding:14px; border:1px solid var(--fd-border); border-radius:10px; margin:16px 0; }
+.fd-contribution-confirm p { font-size:12px; line-height:1.6; color:var(--fd-muted); }
+@media(max-width:550px) { .fd-contribution-list li{align-items:flex-start;flex-direction:column;gap:8px;} }
+
+.fd-board-files-dialog .fd-share-muted:first-child {
+  margin-top: 0;
+}
+.fd-board-files-dialog .fd-board-files-details {
+  margin: 10px 0 16px;
+}
+.fd-board-file-inclusions {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--fd-border);
+  line-height: 1.6;
+}
+.fd-board-file-inclusions > div {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 12px;
+}
+.fd-board-file-inclusions dt {
+  color: var(--fd-fg);
+  font-weight: 500;
+}
+.fd-board-file-inclusions dd {
+  margin: 0;
+}
+.fd-board-files-dialog .fd-contribution-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+}
+.fd-board-files-dialog .fd-contribution-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--fd-border);
+  border-radius: 8px;
+}
+.fd-board-file-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  min-height: 32px;
+}
+.fd-board-file-heading .fd-board-file-status {
+  margin-top: 0;
+}
+.fd-board-file-updated span,
+.fd-board-file-updated time {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.fd-board-files-dialog .fd-share-footer {
+  border-top: 0;
+  margin-top: 12px;
+  padding-top: 0;
+}
+@media (max-width: 420px) {
+  .fd-board-files-dialog .fd-contribution-list li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .fd-board-files-dialog .fd-contribution-list li > button {
+    justify-self: start;
+  }
 }
