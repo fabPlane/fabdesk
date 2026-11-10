@@ -58,10 +58,20 @@ export function ContributionsDialog({
         </p>
         <details className="fd-board-files-details">
           <summary>What files are shared?</summary>
-          <p className="fd-share-muted">
-            The KiCad PCB and saved schematic only. Chats, scripts, custom libraries and external 3D
-            assets aren’t included. Viewers and public-link visitors cannot download these files.
-          </p>
+          <dl className="fd-board-file-inclusions">
+            <div>
+              <dt>Included</dt>
+              <dd>KiCad PCB and saved schematic, when available</dd>
+            </div>
+            <div>
+              <dt>Not included</dt>
+              <dd>Chats, scripts, other project files, custom libraries and external 3D assets</dd>
+            </div>
+            <div>
+              <dt>Access</dt>
+              <dd>Owner and Contributors only</dd>
+            </div>
+          </dl>
         </details>
         {(error || state.error) && (
           <p role="alert" className="fd-share-error">
@@ -99,13 +109,23 @@ export function ContributionsDialog({
             state.data?.boards.map((b) => (
               <li key={b.sourceId}>
                 <div>
-                  <strong>{b.name}</strong>
-                  <span className="fd-board-file-status" data-shared={!!b.revision}>
-                    {b.revision ? "Shared with Contributors" : "Not shared"}
-                  </span>
-                  {b.revision && b.publishedBy && (
-                    <small>
-                      Updated by {b.publishedBy} · {new Date(b.publishedAt!).toLocaleString()}
+                  <div className="fd-board-file-heading">
+                    <strong>{b.name}</strong>
+                    <span className="fd-board-file-status" data-shared={!!b.revision}>
+                      {b.revision ? "Shared with Contributors" : "Not shared"}
+                    </span>
+                  </div>
+                  {b.revision && (b.publishedBy || b.publishedAt) && (
+                    <small className="fd-board-file-updated">
+                      {b.publishedBy && <span>Updated by {b.publishedBy}</span>}
+                      {b.publishedAt && (
+                        <time dateTime={b.publishedAt}>
+                          {new Date(b.publishedAt).toLocaleString(undefined, {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          })}
+                        </time>
+                      )}
                     </small>
                   )}
                   {b.revision && b.revision !== b.baseRevision && (
