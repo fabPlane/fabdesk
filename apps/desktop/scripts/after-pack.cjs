@@ -108,6 +108,19 @@ function jreSigningBinaries(appPath) {
   return binaries;
 }
 
+/** --deep can preserve an existing Bun signature without applying our JIT entitlements. */
+function signAdHocSidecars(appPath, binaries, entitlements, run = execFileSync) {
+  for (const binary of binaries) {
+    const path = join(appPath, binary);
+    if (!existsSync(path) || !statSync(path).isFile()) continue;
+    run(
+      "codesign",
+      ["--force", "--sign", "-", "--entitlements", entitlements, "--options", "runtime", path],
+      { stdio: "inherit" },
+    );
+  }
+}
+
 module.exports = async function afterPack(context) {
   copyBundledKicad(context);
 
@@ -127,8 +140,7 @@ module.exports = async function afterPack(context) {
   const bundleId = context.packager.appInfo.id ?? "com.tensorfleet.fabdesk";
   const entitlements = join(__dirname, "..", "build", "entitlements.mac.plist");
   console.log(`after-pack: ad-hoc signing ${appName} as ${bundleId}`);
-  for (const binary of jreBinaries) execFileSync("codesign", ["--force", "--sign", "-", "--entitlements", entitlements,
-    "--options", "runtime", join(appPath, binary)], { stdio: "inherit" });
+  signAdHocSidecars(appPath, options.binaries, entitlements);
   execFileSync(
     "codesign",
     [
@@ -152,3 +164,4 @@ module.exports = async function afterPack(context) {
 module.exports.platformArch = platformArch;
 module.exports.copyBundledKicad = copyBundledKicad;
 module.exports.jreSigningBinaries = jreSigningBinaries;
+module.exports.signAdHocSidecars = signAdHocSidecars;

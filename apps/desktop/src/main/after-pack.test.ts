@@ -18,6 +18,12 @@ const { Arch } = require("builder-util");
 const afterPack = require("../../scripts/after-pack.cjs") as {
   copyBundledKicad: (context: unknown, src: string) => string;
   jreSigningBinaries: (appPath: string) => string[];
+  signAdHocSidecars: (
+    appPath: string,
+    binaries: string[],
+    entitlements: string,
+    run: (command: string, args: string[], options: unknown) => void,
+  ) => void;
   platformArch: (context: {
     electronPlatformName: string;
     arch: number | string;
@@ -58,6 +64,28 @@ function macEngineFixture() {
 }
 
 describe("after-pack platform mapping", () => {
+  test("explicitly applies JIT entitlements to core sidecars and skips absent optional tools", async () => {
+    const app = await mkdtemp(join(tmpdir(), "fabdesk-core-sign-"));
+    try {
+      const core = "Contents/Resources/core/fabdesk-core";
+      await mkdir(join(app, core, ".."), { recursive: true });
+      await writeFile(join(app, core), "compiled-core fixture");
+      const calls: Array<{ command: string; args: string[] }> = [];
+      afterPack.signAdHocSidecars(
+        app,
+        [core, "Contents/Resources/speech/fabdesk-speech"],
+        "app-jit-entitlements.plist",
+        (command, args) => { calls.push({ command, args }); },
+      );
+      expect(calls).toEqual([{
+        command: "codesign",
+        args: ["--force", "--sign", "-", "--entitlements", "app-jit-entitlements.plist",
+          "--options", "runtime", join(app, core)],
+      }]);
+    } finally {
+      await rm(app, { recursive: true, force: true });
+    }
+  });
   test.skipIf(process.platform === "win32")(
     "refreshes the actual PCB engine at a matching source pin and preserves aliases",
     () => {
