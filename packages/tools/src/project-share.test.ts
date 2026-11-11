@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, realpath, rm, symlink } from "node:fs/promis
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { prepareProjectShare } from "./project-share";
+import { inspectProjectStatus, prepareProjectShare } from "./project-share";
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -117,4 +117,48 @@ test("a malformed model cannot publish an otherwise valid snapshot", async () =>
   const project = await fixture();
   await writeFile(join(project.dir, "renders/board.glb"), "not a model");
   await expect(prepareProjectShare(project, rasterize)).rejects.toThrow("saved 3D model");
+});
+
+test("Status inspects saved inputs without rendering or returning design/model bytes", async () => {
+  const { modelFixture } = await import("../test/shared-glb-fixture");
+  const project = await fixture(), model = modelFixture();
+  await writeFile(join(project.dir, "renders/board.glb"), model);
+  const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
+  const receipt = { contract: "fabplane.board-model-revision.v1", source: "board.kicad_pcb", artifact: "renders/board.glb", sourceSha256: hash("native secret"), artifactSha256: hash(model), generatedAt: "2026-11-11T00:00:00Z", dependencies: "unverified" };
+  await writeFile(join(project.dir, "renders/board.glb.revision.json"), JSON.stringify(receipt));
+  // An unusable preview must not prevent the metadata-only status page opening.
+  await writeFile(join(project.dir, "renders/pcb.svg"), "not a preview");
+  const status = await inspectProjectStatus(project);
+  expect(status.boards[0]?.modelState).toBe("source-unchanged");
+  expect(status.boards[0]?.model).toBeUndefined();
+  expect(status.boards[0]?.preview).toBeNull();
+  expect(status.boards[0]?.checks.state).toBe("no-report");
+  for (const secret of [project.dir, "native secret", "dataBase64", "artifactSha256", "private notes"]) expect(JSON.stringify(status)).not.toContain(secret);
+  await writeFile(join(project.dir, "board.kicad_pcb"), "newer PCB");
+  expect((await inspectProjectStatus(project)).boards[0]?.modelState).toBe("source-changed");
+  await writeFile(join(project.dir, "renders/board.glb"), "changed model");
+  expect((await inspectProjectStatus(project)).boards[0]?.modelState).toBe("artifact-changed");
+});
+
+test("Status distinguishes schematic-only sources and unknown model inputs", async () => {
+  const project = await fixture();
+  await writeFile(join(project.dir, "renders/board.glb"), "saved model without receipt");
+  expect((await inspectProjectStatus(project)).boards[0]?.modelState).toBe("unverified");
+  await rm(join(project.dir, "board.kicad_pcb"));
+  await writeFile(join(project.dir, "board.kicad_sch"), "private schematic");
+  const schematic = await inspectProjectStatus(project);
+  expect(schematic.boards[0]?.sourceState).toBe("schematic-only");
+  expect(schematic.boards[0]?.checks.state).toBe("unavailable");
+  expect(schematic.boards[0]?.modelState).toBe("unavailable");
+  expect(JSON.stringify(schematic)).not.toContain("private schematic");
+  await rm(join(project.dir, "board.kicad_sch"));
+  expect((await inspectProjectStatus(project)).boards[0]?.sourceState).toBe("missing");
+});
+
+test("a model receipt from another assembly source cannot establish freshness", async () => {
+  const project = await fixture();
+  await writeFile(join(project.dir, "fabplane.assembly.json"), JSON.stringify({ contract: "fabplane.assembly.v1", sources: [{ id: "controller", name: "Controller", location: "project", directory: "." }], instances: [{ id: "main", name: "Main", sourceId: "controller" }] }));
+  await writeFile(join(project.dir, "renders/board.glb"), "saved model");
+  await writeFile(join(project.dir, "renders/board.glb.revision.json"), JSON.stringify({ contract: "fabplane.board-model-revision.v1", source: "board.kicad_pcb", artifact: "renders/board.glb", sourceSha256: createHash("sha256").update("native secret").digest("hex"), artifactSha256: createHash("sha256").update("saved model").digest("hex"), generatedAt: "2026-11-11T00:00:00Z", dependencies: "unverified", boardSource: { projectId: project.id, sourceId: "another", manifestSha256: "a".repeat(64) } }));
+  expect((await inspectProjectStatus(project)).boards[0]?.modelState).toBe("unverified");
 });

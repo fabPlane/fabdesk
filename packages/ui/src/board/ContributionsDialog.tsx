@@ -1,6 +1,6 @@
 import type { ProjectDetail } from "@fabdesk/protocol";
 import { DownloadedCopyDialog } from "./DownloadedCopyDialog";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { errorPayload, useCoreClient } from "@fabdesk/client-core";
 import { Button, Dialog, Spinner } from "../components/ui";
@@ -28,6 +28,9 @@ export function ContributionsDialog({
   const [downloaded, setDownloaded] = useState<ProjectDetail | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
   const confirmedBoard = state.data?.boards.find((b) => b.sourceId === confirm);
+  useEffect(() => {
+    if (confirm && (!confirmedBoard?.canPublish || state.isError)) setConfirm(null);
+  }, [confirm, confirmedBoard?.canPublish, state.isError]);
   const publish = async (sourceId: string) => {
     setBusy(sourceId);
     setError(null);
@@ -138,7 +141,7 @@ export function ContributionsDialog({
                 </div>
                 {b.canPublish ? (
                   confirm !== b.sourceId && (
-                    <Button size="sm" disabled={!!busy} onClick={() => setConfirm(b.sourceId)}>
+                    <Button size="sm" disabled={!!busy} onClick={() => { setNotice(""); setError(null); setConfirm(b.sourceId); }}>
                       {b.revision ? "Publish update" : "Share files"}
                     </Button>
                   )
@@ -177,12 +180,14 @@ export function ContributionsDialog({
           <section className="fd-contribution-confirm">
             <strong>
               {confirmedBoard?.revision
-                ? `Publish update for ${confirmedBoard.name}?`
+                ? `Replace the shared version of ${confirmedBoard.name}?`
                 : `Share design files for ${confirmedBoard?.name ?? "this board"}?`}
             </strong>
             <p>
-              Contributors will receive this board’s PCB and saved schematic. Its saved previews, 3D
-              model and checks will also update on the shared page.
+              {confirmedBoard?.revision
+                ? "Your local PCB and saved schematic will replace the shared board files."
+                : "Contributors will be able to download this board’s PCB and saved schematic."}{" "}
+              Its saved previews, 3D model and checks will also update on the shared page.
             </p>
             <p>
               Missing saved outputs will be removed from the shared page. Downloaded files cannot be

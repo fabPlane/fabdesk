@@ -49,6 +49,19 @@ async function fixture(overrides: Partial<CloudApi> = {}, token: string | null =
   });
   return { app, tokens };
 }
+
+test("saved Status is local and remains available without cloud sign-in", async () => {
+  const { app, tokens } = await fixture({}, null);
+  const response = await app.request("/projects/local/status");
+  expect(response.status).toBe(200);
+  const status = await response.json();
+  expect(status.boards[0].sourceState).toBe("pcb");
+  expect(status.boards[0].modelState).toBe("no-model");
+  expect(status.boards[0].checks.state).toBe("no-report");
+  expect(status.boards[0].preview).toBeNull();
+  expect(tokens).toEqual([]);
+  expect((await app.request("/projects/not-owned/status")).status).toBe(404);
+});
 const published = {
   visibility: "unlisted",
   shareId: "share_0123456789abcdef",

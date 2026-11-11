@@ -1,6 +1,8 @@
 import { realpath } from "node:fs/promises";
 import {
   AssemblyPcbCheckReceipt,
+  AssemblyBoardModelRevision,
+  BoardModelRevision,
   sanitizeSharedGlb,
   PcbCheckSourceReceipt,
   ProjectShareSnapshot,
@@ -38,7 +40,9 @@ function findingCount(raw: unknown): number | null {
 export async function prepareProjectShare(
   project: { id: string; name: string; dir: string },
   rasterize: (svg: string, options: { maxWidth: number }) => Promise<{ png: Uint8Array }>,
+  options: { includeAssets?: boolean } = {},
 ) {
+  const includeAssets = options.includeAssets !== false;
   const scope = await inspectProjectBoardSources(project),
     root = await realpath(project.dir);
   const boards: SharedBoard[] = [];
@@ -49,9 +53,22 @@ export async function prepareProjectShare(
       id: row.source.id,
       name: scope.mode === "single" ? project.name : row.source.name,
       sourceAvailable: row.status === "available",
+      sourceState: row.status === "available" ? "pcb" : row.status === "missing" ? "missing" : "unavailable",
+      modelState: "unavailable",
       checks: { state: "unavailable", findingCount: null },
       preview: null,
     };
+    if (row.source.location === "project" && row.status === "missing") {
+      const path = `${row.source.directory === "." ? "" : `${row.source.directory}/`}board.kicad_sch`;
+      try {
+        const schematic = await inspectOwnedProjectFile(root, path, 128 * 1024 * 1024);
+        captured.push({ path, hash: schematic.sha256 });
+        board.sourceState = "schematic-only";
+      } catch (error) {
+        if (isMissing(error)) captured.push({ path, hash: "missing" });
+        else board.sourceState = "unavailable";
+      }
+    }
     if (row.source.location === "project" && row.status === "available" && row.pcbSha256) {
       const prefix = row.source.directory === "." ? "" : `${row.source.directory}/`;
       const read = async (path: string, limit: number) => {
@@ -98,24 +115,31 @@ export async function prepareProjectShare(
       }
       const modelPath = prefix + "renders/board.glb";
       try {
-        const file = await inspectOwnedProjectFile(root, modelPath, 10 * 1024 * 1024, false, true);
+        const file = await inspectOwnedProjectFile(root, modelPath, 10 * 1024 * 1024, false, includeAssets);
         captured.push({ path: modelPath, hash: file.sha256 });
-        const model = sanitizeSharedGlb(file.data!);
-        total += model.byteLength;
-        if (total > TOTAL_LIMIT)
-          throw new Error("Previews and 3D models exceed the 20 MiB sharing limit.");
-        board.model = {
-          contentType: "model/gltf-binary",
-          dataBase64: Buffer.from(model).toString("base64"),
-        };
+        const receiptText = await read(prefix + "renders/board.glb.revision.json", 64 * 1024);
+        let raw: unknown = null;
+        try { raw = receiptText ? JSON.parse(receiptText) : null; } catch { /* An unreadable receipt cannot establish freshness. */ }
+        const receipt = BoardModelRevision.safeParse(raw), member = AssemblyBoardModelRevision.safeParse(raw);
+        const owned = receipt.success && (scope.mode === "single" || (member.success && member.data.boardSource.projectId === project.id && member.data.boardSource.sourceId === row.source.id && member.data.boardSource.manifestSha256 === scope.manifestSha256));
+        board.modelState = !owned || !receipt.success ? "unverified"
+          : receipt.data.artifactSha256 !== file.sha256 ? "artifact-changed"
+          : receipt.data.sourceSha256 !== row.pcbSha256 ? "source-changed" : "source-unchanged";
+        if (includeAssets) {
+          const model = sanitizeSharedGlb(file.data!);
+          total += model.byteLength;
+          if (total > TOTAL_LIMIT) throw new Error("Previews and 3D models exceed the 20 MiB sharing limit.");
+          board.model = { contentType: "model/gltf-binary", dataBase64: Buffer.from(model).toString("base64") };
+        }
       } catch (error) {
-        if (!isMissing(error))
+        if (!isMissing(error) && includeAssets)
           throw new Error(
             `The saved 3D model for ${board.name} cannot be shared. Export a self-contained model under 10 MiB and try again.`,
           );
-        captured.push({ path: modelPath, hash: "missing" });
+        board.modelState = isMissing(error) ? "no-model" : "unavailable";
+        if (isMissing(error)) captured.push({ path: modelPath, hash: "missing" });
       }
-      const svg = await read(prefix + "renders/pcb.svg", SVG_LIMIT);
+      const svg = includeAssets ? await read(prefix + "renders/pcb.svg", SVG_LIMIT) : null;
       if (svg !== null) {
         const rootTag = /<svg\b[^>]*>/i.exec(svg)?.[0] ?? "";
         const box = /\bviewBox\s*=\s*["']([^"']+)["']/i
@@ -158,7 +182,7 @@ export async function prepareProjectShare(
       const current = await inspectOwnedProjectFile(
         root,
         file.path,
-        Math.max(REPORT_LIMIT, SVG_LIMIT),
+        Math.max(REPORT_LIMIT, SVG_LIMIT, 128 * 1024 * 1024),
       );
       if (current.sha256 !== file.hash) throw new Error("changed");
     } catch (error) {
@@ -174,4 +198,9 @@ export async function prepareProjectShare(
     capturedAt: new Date().toISOString(),
     boards,
   });
+}
+
+/** Saved metadata only: never rasterizes previews, exports a model or contacts a sharing service. */
+export function inspectProjectStatus(project: { id: string; name: string; dir: string }) {
+  return prepareProjectShare(project, async () => { throw new Error("Status inspection cannot render a preview."); }, { includeAssets: false });
 }

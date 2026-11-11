@@ -19,6 +19,6 @@ export * from "./apps/dxf";
 
 export * from "./assembly";
 export * from "./project-bom";
-export { prepareProjectShare } from "./project-share";
+export { prepareProjectShare, inspectProjectStatus } from "./project-share";
 
 export { prepareEditableBoard } from "./board-contributions";

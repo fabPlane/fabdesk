@@ -211,7 +211,7 @@ export function AssemblyOverview({ projectId, name, data, checking, failed, onRe
     if (event.key === "Escape" && mapDrag.current) { event.preventDefault(); event.stopPropagation(); cancelMapDrag(); return; }
     if (event.key === "Escape" && (selectedNode || selectedLink)) { event.preventDefault(); dismissSelection(); event.stopPropagation(); }
   }}>
-    {!boardPicker && !embedded && <nav className="fd-assembly-view-menu fd-assembly-view-actions" aria-label="Project views"><Button size="sm" aria-current="page" onClick={fit}>Connections</Button><Button size="sm" variant="ghost" disabled={unavailable} title="Open the Mechanical workspace for assembly and enclosure" aria-label="Open 3D assembly in Mechanical" onClick={() => {
+    {!boardPicker && !embedded && <nav className="fd-assembly-view-menu fd-assembly-view-actions" aria-label="Project views"><Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setWorkspaceArea("status")}>Status</Button><Button size="sm" aria-current="page" onClick={fit}>Connections</Button><Button size="sm" variant="ghost" disabled={unavailable} title="Open the Mechanical workspace for assembly and enclosure" aria-label="Open 3D assembly in Mechanical" onClick={() => {
       const ui = useUiStore.getState();
       if (unavailable || ui.activeProjectId !== projectId) return;
       if (selected && assemblySelectionState(data, selected) === "owned") ui.setAssemblyBoard(selected);
