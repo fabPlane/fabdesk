@@ -22,6 +22,7 @@ import { SharedProjectContent } from "./SharedProjectContent";
 import "./project-sharing.css";
 
 type Props = { projectId: string; onClose: () => void; onDownload: () => void };
+class ClipboardCopyError extends Error {}
 /** Mounted per opening: drafts never masquerade as remotely saved visibility. */
 export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
   const { client, host } = useCore(),
@@ -113,7 +114,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
       else await navigator.clipboard.writeText(link);
       setCopyFeedback({ link, state: stateKey(saved) });
     } catch {
-      setError(new Error("Could not copy the link. Select the address and copy it manually."));
+      setError(new ClipboardCopyError("Could not copy the link. Select the address and copy it manually."));
     }
   };
   const failure = error ?? settings.error;
@@ -289,11 +290,15 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
                 size="sm"
                 disabled={busy || settings.isFetching}
                 onClick={() => {
+                  if (error instanceof ClipboardCopyError && link) {
+                    void copy();
+                    return;
+                  }
                   setError(null);
                   void settings.refetch();
                 }}
               >
-                Retry
+                {error instanceof ClipboardCopyError && link ? "Try copying again" : "Retry"}
               </Button>
             </div>
           </div>

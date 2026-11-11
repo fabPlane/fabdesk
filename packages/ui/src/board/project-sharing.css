@@ -1,10 +1,12 @@
 .fd-share-dialog {
   width: 520px;
+  overflow-wrap: anywhere;
 }
 .fd-share-project-name {
   color: var(--fd-muted);
   margin: 0 0 16px;
   font-size: 14px;
+  overflow-wrap: anywhere;
 }
 .fd-share-access-row {
   display: flex;
