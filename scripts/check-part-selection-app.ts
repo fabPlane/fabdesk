@@ -24,17 +24,17 @@ await bridge("/ui", { action: "selectProject", args: [projectId] });
 await page(`window.__selectionErrors=[];window.addEventListener('error',e=>window.__selectionErrors.push(e.message));window.addEventListener('unhandledrejection',e=>window.__selectionErrors.push(String(e.reason)));`);
 const open = async (tab: string) => { await bridge("/ui", { action: "openTab", args: [tab] }); await until(tab === "3d" ? `!!document.querySelector('.fd-model-viewport canvas') && !document.querySelector('.fd-model-message')` : `!!document.querySelector('.fd-svg-host canvas')`); if (!baseline) await until(`!!document.querySelector('.fd-part-selection-bar select option[value=${JSON.stringify(reference)}]')`); await sleep(350); if (tab !== "3d") { await bridge("/click", { selector: '.fd-svg-fit-button[title="Show the whole drawing"]' }); await until(`document.querySelector('.fd-svg-zoom-value')?.textContent==='100%'`); } };
 // Comparisons persist in the isolated profile; begin the walkthrough in one view.
-if (await page(`!!document.querySelector('button[aria-label="Close comparison"]')`)) await bridge("/click", { selector: 'button[aria-label="Close comparison"]' });
+if (await page(`!!document.querySelector('button[aria-label="Close all views"]')`)) await bridge("/click", { selector: 'button[aria-label="Close all views"]' });
 const selected = () => page(`document.querySelector('.fd-part-selection-bar select')?.value`);
-const pick = async (view: "pcb" | "schematic", ref: string) => {
+const pick = async (view: "pcb" | "schematic", ref: string, scope = "") => {
   // Schematic viewports persist zoom/pan between mounts. Reset before mapping
   // native drawing coordinates so this check is repeatable after manual focus.
-  await bridge("/click", { selector: '.fd-svg-fit-button[title="Show the whole drawing"]' });
-  await until(`document.querySelector('.fd-svg-zoom-value')?.textContent==='100%'`);
+  await bridge("/click", { selector: scope + '.fd-svg-fit-button[title="Show the whole drawing"]' });
+  await until(`document.querySelector(${JSON.stringify(scope + '.fd-svg-zoom-value')})?.textContent==='100%'`);
   const part = (view === "pcb" ? index.pcb!.parts : index.sheets[0]!.parts).find(p => p.ref === ref); if (!part) throw new Error(`Fixture part ${ref} missing`);
   const svgPath = view === "pcb" ? "renders/pcb.svg" : index.sheets[0]!.path, svg = await client.readFile(projectId, svgPath);
   const box = /viewBox="([^"]+)"/.exec(svg)![1]!.split(/\s+/).map(Number), bounds = part.box;
-  const rect = await page(`document.querySelector('.fd-svg-host').getBoundingClientRect().toJSON()`);
+  const rect = await page(`document.querySelector(${JSON.stringify(scope + '.fd-svg-host')}).getBoundingClientRect().toJSON()`);
   await bridge("/click", { x: rect.x + (bounds.x + bounds.width / 2 - box[0]!) / box[2]! * rect.width, y: rect.y + (bounds.y + bounds.height / 2 - box[1]!) / box[3]! * rect.height });
 };
 await open("pcb");
@@ -69,29 +69,75 @@ if (!baseline) {
   const controls = await page(`Array.from(document.querySelectorAll('.fd-part-selection-bar select,.fd-part-selection-bar button')).every(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight})`);
   check("Selection controls stay reachable", controls);
   await bridge("/click", { selector: '.fd-part-selection-bar select option[value="U1"]' });
-  await bridge("/click", { selector: 'button[aria-label="Show PCB alongside"]' });
-  await until(`document.querySelectorAll('.fd-comparison-pane [data-component-ref="U1"]').length===2`);
-  check("Both comparison panes highlight the selected component", true);
-  await bridge("/click", { selector: '.fd-comparison-pane[data-view="pcb"] > header button' });
-  check("Changing pane focus preserves both highlights", await page(`document.querySelectorAll('.fd-comparison-pane [data-component-ref="U1"]').length===2`));
-  const controlsInside = `Array.from(document.querySelectorAll('.fd-comparison-pane')).every(p=>{const pane=p.getBoundingClientRect();return [...p.querySelectorAll('.fd-part-selection-bar select,.fd-part-selection-bar button,.fd-svg-tools button')].every(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.left>=pane.left&&r.right<=pane.right&&r.top>=pane.top&&r.bottom<=pane.bottom})})`;
-  await page(`document.querySelector('[aria-label="Resize PCB and schematic views"]').focus()`);
-  for (const key of ["Home", "End"]) {
-    await bridge("/key", { key }); await until(`document.querySelector('[aria-label="Resize PCB and schematic views"]')?.getAttribute('aria-valuenow')==='${key === "Home" ? "25" : "75"}'`); await sleep(400);
-    check(`Comparison controls fit at divider ${key}`, await page(controlsInside));
-    check(`Assistant does not cover comparison controls at divider ${key}`, await page(`(()=>{const a=document.querySelector('[data-assistant-launcher]')?.getBoundingClientRect();return !a||[...document.querySelectorAll('.fd-comparison-pane .fd-svg-tools')].every(e=>{const r=e.getBoundingClientRect();return r.right<=a.left||r.left>=a.right||r.bottom<=a.top||r.top>=a.bottom})})()`));
+  await bridge("/click", { selector: 'button[aria-label="Show all three views"]' });
+  const allHighlighted = (ref: string) => `document.querySelectorAll('.fd-comparison-pane [data-component-ref="${ref}"]').length===2 && document.querySelector('.fd-comparison-pane[data-view="3d"] canvas')?.dataset.selectedComponent==='${ref}'`;
+  await until(allHighlighted("U1"));
+  check("All three views highlight U1 simultaneously", true);
+  check("Only one shared component selector is shown", await page(`document.querySelectorAll('select[aria-label="Selected component across views"]').length===1`));
+  await page(`window.__comparisonModel = document.querySelector('.fd-model-viewport canvas')`);
+  for (const view of ["pcb", "schematic", "3d"]) {
+    await bridge("/click", { selector: `.fd-comparison-pane[data-view="${view}"] > header button` });
+    check(`Focusing ${view} preserves all three highlights`, await page(allHighlighted("U1")));
   }
-  await bridge("/click", { selector: '.fd-comparison-pane[data-view="schematic"] .fd-part-selection-bar button' });
-  check("Narrow component actions stay inside their pane", await page(`(()=>{const p=document.querySelector('.fd-comparison-pane[data-view="schematic"]').getBoundingClientRect(), t=document.querySelector('.fd-comparison-pane[data-view="schematic"] .fd-location-toolbar')?.getBoundingClientRect();return !!t&&t.left>=p.left&&t.right<=p.right&&t.top>=p.top&&t.bottom<=p.bottom})()`));
+  check("Changing focus keeps the same live 3D canvas", await page(`window.__comparisonModel===document.querySelector('.fd-model-viewport canvas')`));
+  await bridge("/click", { selector: '.fd-shared-part-selection option[value="R2"]' });
+  await until(allHighlighted("R2")); check("Shared selector updates all three views", true);
+  await pick("schematic", "R1", '.fd-comparison-pane[data-view="schematic"] ');
+  await until(allHighlighted("R1")); check("Schematic click updates PCB and 3D immediately", true);
+  await pick("pcb", "U1", '.fd-comparison-pane[data-view="pcb"] ');
+  await until(allHighlighted("U1")); check("PCB click updates schematic and 3D immediately", true);
+  const controlsInside = `Array.from(document.querySelectorAll('.fd-comparison-pane')).every(p=>{const pane=p.getBoundingClientRect();return [...p.querySelectorAll('header button,.fd-svg-tools button,.fd-model-view-tools button')].every(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.left>=pane.left&&r.right<=pane.right&&r.top>=pane.top&&r.bottom<=pane.bottom})})`;
+  const columns = await page(`document.querySelector('.fd-three-view')?.dataset.layout==='columns'`);
+  for (const [label, limits] of [["Resize PCB and other views", columns ? [28,36] : [32,60]], ["Resize schematic and 3D views", columns ? [45,55] : [40,60]]] as const) {
+    await page(`document.querySelector('[aria-label="${label}"]').focus()`);
+    for (const [key, value] of [["Home", limits[0]], ["End", limits[1]]] as const) {
+      await bridge("/key", { key }); await until(`document.querySelector('[aria-label="${label}"]')?.getAttribute('aria-valuenow')==='${value}'`); await sleep(200);
+      check(`${label}: controls fit at ${key}`, await page(controlsInside));
+      check(`${label}: drawings retain visible space at ${key}`, await page(`[...document.querySelectorAll('.fd-comparison-pane .fd-svg-viewport,.fd-comparison-pane .fd-model-viewport')].every(e=>{const r=e.getBoundingClientRect();return r.width>=200&&r.height>=50})`));
+      check(`${label}: assistant does not cover controls at ${key}`, await page(`(()=>{const a=document.querySelector('[data-assistant-launcher]')?.getBoundingClientRect();return !a||[...document.querySelectorAll('.fd-comparison-pane .fd-svg-tools,.fd-comparison-pane .fd-model-view-tools')].every(e=>{const r=e.getBoundingClientRect();return r.right<=a.left||r.left>=a.right||r.bottom<=a.top||r.top>=a.bottom})})()`));
+    }
+    await bridge("/key", { key: "Home" });
+    await bridge("/key", { key: label.includes("PCB") || columns ? "ArrowRight" : "ArrowDown" });
+  }
+  await bridge("/click", { selector: 'button[aria-label="Actions for selected part in Schematic"]' });
+  await until(`!!document.querySelector('.fd-location-toolbar')`);
+  check("Component actions stay inside their pane", await page(`(()=>{const p=document.querySelector('.fd-comparison-pane[data-view="schematic"]').getBoundingClientRect(), t=document.querySelector('.fd-location-toolbar').getBoundingClientRect();return t.left>=p.left&&t.right<=p.right&&t.top>=p.top&&t.bottom<=p.bottom})()`));
   await bridge("/key", { key: "Escape" });
   await until(`!document.querySelector('.fd-location-toolbar')`);
-  check("Escape closes actions before clearing component selection", await page(`document.querySelectorAll('.fd-comparison-pane [data-component-ref="U1"]').length===2`));
+  check("Escape closes actions before clearing shared selection", await page(allHighlighted("U1")));
   await bridge("/click", { selector: '.fd-comparison-pane[data-view="schematic"] .fd-schematic-status summary' });
-  check("Narrow source-status menu stays inside its pane", await page(`(()=>{const p=document.querySelector('.fd-comparison-pane[data-view="schematic"]').getBoundingClientRect(), t=document.querySelector('.fd-comparison-pane[data-view="schematic"] .fd-workspace-menu[open] .fd-workspace-menu-content')?.getBoundingClientRect();return !!t&&t.left>=p.left&&t.right<=p.right&&t.top>=p.top&&t.bottom<=p.bottom})()`));
+  check("Source-status menu stays inside its pane", await page(`(()=>{const p=document.querySelector('.fd-comparison-pane[data-view="schematic"]').getBoundingClientRect(), t=document.querySelector('.fd-comparison-pane[data-view="schematic"] .fd-workspace-menu[open] .fd-workspace-menu-content')?.getBoundingClientRect();return !!t&&t.left>=p.left&&t.right<=p.right&&t.top>=p.top&&t.bottom<=p.bottom})()`));
   await bridge("/key", { key: "Escape" });
   await until(`!document.querySelector('.fd-schematic-status .fd-workspace-menu[open]')`);
-  await capture("04-comparison");
-  await bridge("/click", { selector: 'button[aria-label="Close comparison"]' });
+  await capture("04-all-three-views");
+  await bridge("/click", { selector: 'button[aria-label="Focus selected in Schematic"]' });
+  await until(`parseInt(document.querySelector('.fd-comparison-pane[data-view="schematic"] .fd-svg-zoom-value')?.textContent)>100`);
+  check("Focus zooms the selected schematic part in a compact pane", await page(`parseInt(document.querySelector('.fd-comparison-pane[data-view="schematic"] .fd-svg-zoom-value')?.textContent)>100`));
+  await bridge("/click", { selector: 'button[aria-label="Focus selected in PCB"]' });
+  await bridge("/click", { selector: 'button[aria-label="Focus selected in 3D"]' });
+  await sleep(200);
+  const focusedInside = `['pcb','schematic'].every(view=>{const pane=document.querySelector('.fd-comparison-pane[data-view="'+view+'"]'), frame=pane.querySelector('.fd-svg-viewport').getBoundingClientRect(), mark=pane.querySelector('[data-component-ref="U1"]').getBoundingClientRect();return mark.left>=frame.left&&mark.right<=frame.right&&mark.top>=frame.top&&mark.bottom<=frame.bottom})`;
+  await until(focusedInside); check("Focus keeps the selected part inside both drawing viewports", true);
+  await capture("05-focused-in-all-views");
+  for (const view of ["pcb", "schematic"]) {
+    await bridge("/click", { selector: `.fd-comparison-pane[data-view="${view}"] .fd-svg-fit-button[title="Show the whole drawing"]` });
+    await until(`!document.querySelector('.fd-comparison-pane[data-view="${view}"] .fd-svg-focus-stage') && document.querySelector('.fd-comparison-pane[data-view="${view}"] .fd-svg-zoom-value')?.textContent==='100%'`);
+    check(`Fit ${view} returns from focused selection to the whole drawing`, true);
+  }
+  const modelRect = await page(`document.querySelector('.fd-model-viewport canvas').getBoundingClientRect().toJSON()`);
+  await bridge("/click", { selector: '.fd-shared-part-selection button' });
+  await until(`document.querySelector('.fd-model-viewport canvas')?.dataset.selectedComponent===''`);
+  await bridge("/click", { x: modelRect.x + modelRect.width / 2, y: modelRect.y + modelRect.height / 2 });
+  await until(allHighlighted("U1")); check("3D model click updates both visible drawings", true);
+  await bridge("/click", { selector: 'button[aria-label="Expand 3D"]' });
+  await until(`!document.querySelector('.fd-board-comparison') && !!document.querySelector('.fd-model-viewport canvas')`);
+  check("Expand 3D preserves selection", await selected() === "U1");
+  await bridge("/click", { selector: 'button[aria-label="Show all three views"]' });
+  await until(allHighlighted("U1")); check("All views can be reopened from 3D with the shared selection", true);
+  await page(`document.querySelector('.fd-comparison-pane[data-view="pcb"] .fd-svg-host').focus()`); await bridge("/key", { key: "Escape" });
+  await until(`!document.querySelector('[data-component-ref]') && document.querySelector('.fd-model-viewport canvas')?.dataset.selectedComponent===''`);
+  check("Escape clears all three visible highlights", true);
+  await bridge("/click", { selector: 'button[aria-label="Close all views"]' });
 
 }
 check("No uncaught renderer errors", (await page("window.__selectionErrors")).length === 0);

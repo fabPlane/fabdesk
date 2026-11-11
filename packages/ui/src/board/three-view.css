@@ -1,0 +1,44 @@
+/* One selector, a tall PCB, and wide schematic/model panes. Controls reserve space
+   in each viewport instead of covering the circuit or another pane. */
+.fd-three-view { display:flex; flex-direction:column; min-width:0; gap:6px; }
+.fd-three-view .fd-shared-part-selection { height:38px; min-height:38px; }
+.fd-three-view-panes { flex:1; min-height:0; }
+.fd-three-view .fd-comparison-pane > header { flex-wrap:nowrap; gap:4px; padding:3px 6px; min-height:32px; }
+.fd-three-view .fd-comparison-pane > header .fd-button { height:26px; padding:2px 7px; font-size:11px; }
+.fd-comparison-part-actions { display:flex; flex:1; min-width:0; justify-content:flex-end; align-items:center; gap:4px; }
+.fd-comparison-selection-notice { min-width:0; max-width:180px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:10px; }
+.fd-comparison-divider-horizontal { width:100%; height:8px; cursor:row-resize; }
+.fd-comparison-divider-horizontal::after { height:3px; width:38px; }
+.fd-three-view .fd-comparison-drawing { overflow:hidden; }
+.fd-canvas-workspace .fd-three-view .fd-svg-viewer { --fd-viewer-inset:24; }
+.fd-canvas-workspace .fd-three-view .fd-svg-viewport { padding:6px 8px; }
+.fd-canvas-workspace .fd-three-view .fd-svg-tools { position:static; order:2; align-self:center; flex-wrap:nowrap; justify-content:center; flex-shrink:0; height:32px; width:auto; max-width:calc(100% - 8px); margin:2px 4px; padding:2px 4px; gap:2px; border-radius:8px; }
+.fd-three-view .fd-svg-tools .fd-button { height:26px; padding:2px 5px; font-size:10px; }
+.fd-three-view .fd-svg-zoom-group { flex-basis:auto; justify-content:center; gap:0; padding-right:3px; margin-right:0; }
+.fd-three-view .fd-svg-zoom-value { min-width:30px; font-size:10px; }
+.fd-three-view .fd-svg-context { margin-left:2px; padding-left:2px; }
+.fd-three-view .fd-svg-context > button { font-size:0; gap:0; min-width:24px; padding:2px; }
+.fd-three-view .fd-schematic-canvas-header { padding:3px 6px; gap:3px; }
+.fd-three-view .fd-preview-status { font-size:10px; }
+.fd-three-view .fd-preview-status > div { border:0; border-radius:0; padding:1px 3px; box-shadow:none; }
+.fd-three-view .fd-schematic-status .fd-workspace-menu-content { position:fixed; top:34px; left:6px; right:6px; width:auto; max-height:calc(100% - 40px); overflow:auto; }
+.fd-three-view .fd-location-toolbar { position:fixed; top:36px; bottom:auto; left:6px; right:6px; transform:none !important; width:auto; max-width:calc(100% - 12px); flex-wrap:wrap; white-space:normal; max-height:calc(100% - 42px); overflow:auto; }
+.fd-three-view .fd-location-toolbar > span { flex-basis:100%; border-right:0; }
+.fd-three-view .fd-board-model-view { display:flex; flex-direction:column; }
+.fd-three-view .fd-board-model-view > .fd-model-canvas { flex:1; order:2; height:auto; min-height:0; }
+.fd-three-view .fd-model-viewport { inset:0 0 34px; }
+.fd-three-view .fd-model-view-tools { left:6px; bottom:3px; gap:3px; padding:2px 4px; border-radius:8px; height:30px; max-width:calc(100% - 58px); }
+.fd-three-view .fd-model-view-tools .fd-button { height:24px; padding:2px 6px; font-size:10px; }
+.fd-three-view .fd-model-view-tools > span { display:none; }
+.fd-three-view .fd-board-model-status { order:1; padding:4px 7px; border:0; border-radius:0; font-size:10px; max-width:calc(100% - 40px); }
+.fd-three-view .fd-board-model-status[open] { position:absolute; z-index:25; top:0; left:0; right:0; max-width:100%; max-height:100%; overflow:auto; border:1px solid var(--fd-border); }
+.fd-three-view .fd-board-model-status .fd-disclosure-summary { font-size:10px; }
+.fd-three-view .fd-comparison-model-menu { position:absolute; top:2px; right:6px; z-index:15; }
+.fd-three-view .fd-comparison-model-menu > summary { padding:0 6px; min-height:22px; height:22px; }
+.fd-three-view .fd-comparison-model-menu .fd-workspace-menu-content { position:fixed; top:34px; left:6px; right:6px; width:auto; max-height:calc(100% - 40px); overflow:auto; }
+.fd-canvas-workspace:has(.fd-three-view) .fd-ask-fabdesk { width:36px; min-width:36px; height:36px; padding:8px; right:10px; bottom:10px; }
+.fd-canvas-workspace:has(.fd-three-view) .fd-ask-fabdesk > span,
+.fd-canvas-workspace:has(.fd-three-view) .fd-ask-fabdesk > svg:last-child { display:none; }
+
+.fd-three-view .fd-board-model-status > summary.fd-disclosure-summary { min-height:20px; height:20px; }
+.fd-three-view .fd-svg-tools .fd-svg-context > .fd-button { font-size:0; gap:0; min-width:24px; padding:2px; }

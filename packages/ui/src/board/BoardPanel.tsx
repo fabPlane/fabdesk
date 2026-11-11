@@ -82,7 +82,7 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
   const setBoardTab = useUiStore((s) => s.setBoardTab);
   const projectId = useUiStore((s) => s.activeProjectId);
   const compare = useUiStore(s => !!s.activeProjectId && s.boardComparisonByProject[s.activeProjectId] === true);
-  const compareAvailable = area === "boards" && (tab === "pcb" || tab === "schematic");
+  const compareAvailable = area === "boards" && (tab === "pcb" || tab === "schematic" || tab === "3d");
   const setOrderFlowOpen = useUiStore((s) => s.setOrderFlowOpen);
   const order = useProjectOrder(projectId);
   const sources = useBoardSources(projectId);
@@ -115,11 +115,11 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
       {area === "mechanical" && <div className="fd-mechanical-toolbar-slot" data-mechanical-toolbar-slot />}
       {area === "review" && tab === "diff" && projectId && <HostedReviewTools key={projectId} projectId={projectId} />}
       {area === "review" && (tab === "updates" || tab === "diff" || tab === "comments") && <div className="fd-review-scope-slot" data-review-scope-slot />}
-      {compareAvailable && <CanvasToolButton label={compare ? "Close comparison" : `Show ${tab === "pcb" ? "schematic" : "PCB"} alongside`} icon="panel" active={compare} onClick={() => useUiStore.getState().setBoardComparison(!compare)} />}
+      {compareAvailable && <CanvasToolButton label={compare ? "Close all views" : "Show all three views"} icon="panel" active={compare} onClick={() => useUiStore.getState().setBoardComparison(!compare)} />}
       {area === "boards" && tab !== "cinema" && tab !== "placement" && <div className="fd-board-task-actions">{tab === "pcb" && <Button size="sm" variant="secondary" onClick={() => setWorkspaceTab("placement")}><Icon name="pcb" width={18} height={18} />Edit placement</Button>}<Button size="sm" className="fd-routing-task" variant="secondary" onClick={() => setWorkspaceTab("cinema")}><Icon name="route" width={18} height={18} />Routing</Button><Button size="sm" onClick={openChecks}><Icon name="checkCircle" width={18} height={18} />Checks</Button></div>}
     </div>
     {projectId && <BoardChecksDialog key={projectId} projectId={projectId} open={checksOpen} onClose={() => setChecksOpen(false)} />}
-    <div className="fd-canvas-board-body">{compareAvailable && compare && projectId ? <BoardComparison key={projectId} projectId={projectId} active={tab as "pcb" | "schematic"} onOpenChecks={openChecks} /> : area === "outputs" && tab === "renders" ? <OutputsLibrary key={projectId} projectId={projectId} /> : area === "outputs" && tab === "files" ? <FilesTab key={projectId} exportFocus /> : <TabBody key={`${projectId}:${tab}`} tab={tab} canvas onOpenChecks={openChecks} />}</div>
+    <div className="fd-canvas-board-body">{compareAvailable && compare && projectId ? <BoardComparison key={projectId} projectId={projectId} active={tab as "pcb" | "schematic" | "3d"} onOpenChecks={openChecks} /> : area === "outputs" && tab === "renders" ? <OutputsLibrary key={projectId} projectId={projectId} /> : area === "outputs" && tab === "files" ? <FilesTab key={projectId} exportFocus /> : <TabBody key={`${projectId}:${tab}`} tab={tab} canvas onOpenChecks={openChecks} />}</div>
   </div>;
   return (
     <div className="fd-board-panel flex h-full min-w-0 flex-col bg-panel" data-testid="board-panel">

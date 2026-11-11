@@ -104,7 +104,7 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
   const drawing = kind === "schematic" ? schematicPreview.data?.svg ?? rendered.data : rendered.data;
   const nativeSheet = kind === "schematic" ? schematicPreview.data?.sheet?.nativeSheet : undefined;
   const legacyPinsVisible = !nativeSheet || nativeSheet.nativePath === "board.kicad_sch" && nativeSheet.hierarchyPath === "/";
-  useAssistantSurface(projectId && kind === "schematic" && nativeSheet ? { projectId, label: `Schematic · ${nativeSheet.hierarchyPath === "/" ? "Root circuit" : nativeSheet.hierarchyPath}`, priority: 8, details: JSON.stringify({ source: nativeSheet.nativePath, sheet: nativeSheet, sourceRevision: schematicPreview.data?.sourceRevision, previewState: schematicPreview.data?.state, instruction: "Use this captured sheet instance, not a matching reference in another sheet. Inspect current native sources before editing or making electrical claims." }) } : null);
+  useAssistantSurface(projectId && active && kind === "schematic" && nativeSheet ? { projectId, label: `Schematic · ${nativeSheet.hierarchyPath === "/" ? "Root circuit" : nativeSheet.hierarchyPath}`, priority: 8, details: JSON.stringify({ source: nativeSheet.nativePath, sheet: nativeSheet, sourceRevision: schematicPreview.data?.sourceRevision, previewState: schematicPreview.data?.state, instruction: "Use this captured sheet instance, not a matching reference in another sheet. Inspect current native sources before editing or making electrical claims." }) } : null);
   const nativeCoordinates = kind === "pcb" && pcbSvgHasNativeCoordinates(rendered.data ?? "");
   const previousFrame = useRef(nativeCoordinates);
   const revision = usePcbPreviewRevision(projectId, (canvasMode || findingRequested) && kind === "pcb" && !!rendered.data);
@@ -141,7 +141,7 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
     useUiStore.setState({ commentToReveal: null });
   }, [commentToReveal, projectId, kind, comments.data, pins]);
   const selected = pins.find((comment) => comment.id === selectedId) ?? null;
-  useAssistantSurface(projectId && selected ? { projectId, label: `${kind === "pcb" ? "Board" : "Schematic"} · Comment`, priority: 15, details: JSON.stringify({ view: kind, comment: { id: selected.id, question: selected.question, anchor: selected.anchor } }) } : null);
+  useAssistantSurface(projectId && active && selected ? { projectId, label: `${kind === "pcb" ? "Board" : "Schematic"} · Comment`, priority: 15, details: JSON.stringify({ view: kind, comment: { id: selected.id, question: selected.question, anchor: selected.anchor } }) } : null);
   const pendingPins = pendingBoardComments(pins, view);
   const beginPin = () => {
     resetCompose();

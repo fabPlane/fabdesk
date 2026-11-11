@@ -34,6 +34,8 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
   const drawing = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
   const [zoom, setZoom] = useState(1);
+  const [dismissedFocus, setDismissedFocus] = useState<string | null>(null);
+  const focusActive = !!focusRegion && dismissedFocus !== focusRegion.key;
   const viewport = useRef<HTMLDivElement>(null);
   const dragging = useSvgNavigation(viewport, drawing, zoom, setZoom, viewKey ?? svg, commentMode);
   const [source, setSource] = useState<{ svg: string; url: string } | null>(null);
@@ -136,21 +138,19 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
     });
   };
   const focusedRegion = useRef<string | null>(null);
-  useEffect(() => {
-    const frame = viewport.current;
-    if (!focusRegion || focusedRegion.current === focusRegion.key || !frame || !box || !size || !current || loaded?.url !== current.url || fitSize.width <= 1 || fitSize.height <= 1) return;
-    focusedRegion.current = focusRegion.key;
-    const next = Math.max(.2, Math.min(64, Math.min((frame.clientWidth - 72) / (focusRegion.width / box.width * fitSize.width), (frame.clientHeight - 120) / (focusRegion.height / box.height * fitSize.height))));
+  // Center only after React has committed the requested zoom. A frame callback can
+  // run against the old drawing dimensions, especially in a resized comparison pane.
+  useLayoutEffect(() => {
+    const frame = viewport.current, host = drawing.current;
+    if (!focusActive || !focusRegion || focusedRegion.current === focusRegion.key || !frame || !host || !box || !size || !current || loaded?.url !== current.url || fitSize.width <= 1 || fitSize.height <= 1) return;
+    const next = Math.max(.2, Math.min(64, Math.min((frame.clientWidth - Math.min(72, frame.clientWidth * .2)) / (focusRegion.width / box.width * fitSize.width), (frame.clientHeight - Math.min(120, frame.clientHeight * .2)) / (focusRegion.height / box.height * fitSize.height))));
+    if (Math.abs(zoom - next) > .0001) { setZoom(next); return; }
     const center = { x: (focusRegion.x + focusRegion.width / 2 - box.x) / box.width, y: (focusRegion.y + focusRegion.height / 2 - box.y) / box.height };
-    setZoom(next);
-    const animation = requestAnimationFrame(() => {
-      const host = drawing.current?.getBoundingClientRect(), rect = frame.getBoundingClientRect();
-      if (!host) return;
-      frame.scrollBy(host.left + center.x * host.width - rect.left - frame.clientWidth / 2, host.top + center.y * host.height - rect.top - frame.clientHeight / 2);
-      onRegionFocused?.();
-    });
-    return () => { cancelAnimationFrame(animation); focusedRegion.current = null; };
-  }, [focusRegion?.key, box?.width, box?.height, current?.url, loaded?.url, size, fitSize.width, fitSize.height]);
+    const drawingRect = host.getBoundingClientRect(), rect = frame.getBoundingClientRect();
+    frame.scrollBy(drawingRect.left + center.x * drawingRect.width - rect.left - frame.clientWidth / 2, drawingRect.top + center.y * drawingRect.height - rect.top - frame.clientHeight / 2);
+    focusedRegion.current = focusRegion.key;
+    onRegionFocused?.();
+  }, [focusRegion?.key, box?.width, box?.height, current?.url, loaded?.url, size, fitSize.width, fitSize.height, zoom, focusActive]);
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
     if (!onDrawingClick || (event.target as HTMLElement | null)?.closest("[data-comment-pin], [data-canvas-tools]")) return;
     const host = drawing.current;
@@ -170,10 +170,10 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
           <Icon name="plus" width={16} height={16} />
         </Button>
         </div>
-        <Button size="sm" className="fd-svg-fit-button" title="Show the whole drawing" onClick={() => { setZoom(1); viewport.current?.scrollTo(0, 0); }}>
+        <Button size="sm" className="fd-svg-fit-button" title="Show the whole drawing" onClick={() => { setDismissedFocus(focusRegion?.key ?? null); setZoom(1); viewport.current?.scrollTo(0, 0); }}>
           {circuitView ? "Fit circuit" : fitLabel}
         </Button>
-        <Button size="sm" className="fd-svg-fit-button" title="Fill the available width; scroll to see the rest" onClick={() => { if (viewport.current) { zoomAt((viewport.current.clientWidth - 24) / fitSize.width); requestAnimationFrame(() => viewport.current?.scrollTo(0, 0)); } }}>Fit width</Button>
+        <Button size="sm" className="fd-svg-fit-button" title="Fill the available width; scroll to see the rest" onClick={() => { setDismissedFocus(focusRegion?.key ?? null); if (viewport.current) { zoomAt((viewport.current.clientWidth - 24) / fitSize.width); requestAnimationFrame(() => viewport.current?.scrollTo(0, 0)); } }}>Fit width</Button>
         {toolbar && <div className="fd-svg-context ml-auto flex items-center gap-1">{toolbar}</div>}
       </div>
       <div ref={viewport} tabIndex={0} aria-label="Drawing viewport. Drag to pan; scroll to zoom. Plus and minus zoom; arrow keys pan." className={cn("fd-svg-viewport min-h-0 flex-1 select-none overflow-auto overscroll-contain bg-panel-2/40 p-3", dragging ? "cursor-grabbing" : commentMode ? "cursor-crosshair" : "cursor-grab")}
@@ -181,7 +181,7 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
         >
         {!size && !failed && <div className="flex h-full items-center justify-center" role="status" aria-label="Loading board preview"><Spinner /></div>}
         {failed && <div className="p-4 text-sm text-muted" role="alert">Could not display this SVG preview. Try rendering it again.</div>}
-        <div className={focusRegion ? "fd-svg-focus-stage" : "contents"}>
+        <div className={focusActive ? "fd-svg-focus-stage" : "contents"}>
         <div
           ref={drawing}
           onClick={handleClick}

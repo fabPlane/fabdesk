@@ -165,7 +165,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
           </div></div>}
           <ThreadView presentation={fresh ? "start" : "chat"} referenceStart={referenceStart} />
         </section>
-        {showAssistant && !assistantOpen && <button className="fd-ask-fabdesk" data-assistant-launcher onClick={() => { setAssistantOpen(true); ui().focusComposer(); }}><Icon name="sparkles" width={19} height={19} /><span>Ask fabPlane</span><Icon name="mic" width={19} height={19} /></button>}
+        {showAssistant && !assistantOpen && <button className="fd-ask-fabdesk" aria-label="Ask fabPlane" data-assistant-launcher onClick={() => { setAssistantOpen(true); ui().focusComposer(); }}><Icon name="sparkles" width={19} height={19} /><span>Ask fabPlane</span><Icon name="mic" width={19} height={19} /></button>}
       {isDraft ? <div className="fd-draft-build-strip"><span><Icon name="compose" width={16} height={16} />Idea draft · No engineering files yet</span><Button variant="primary" disabled={draftRunning} onClick={() => { if (project.data) setSetupDraft(project.data); }}>{draftRunning ? "Reply in progress…" : "Create a project"}</Button></div> : fresh && <div className="fd-canvas-start-note">Your ideas and files stay with your project</div>}
     </main>}
     <Dialog open={navigationOpen} onClose={() => setNavigationOpen(false)} bare ariaLabel={projectId ? "Project conversations" : "Projects and conversations"} className="fd-canvas-drawer">

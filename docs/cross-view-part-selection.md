@@ -3,6 +3,13 @@
 Click a component in PCB, Schematic, or 3D to highlight the same reference in the
 other views. Selection belongs to the endpoint, project, and board source; two
 boards with an R1 do not share a selection. Switching views keeps the selection.
+**Show all three views** opens PCB on the left and schematic above 3D on the
+right in taller windows. Short windows use three columns to give each drawing
+more vertical space. All three stay mounted and highlight together. One shared selector
+and Clear control sit above the panes. Drag either divider (or use its arrow keys,
+Home and End) to resize; each pane has Focus and an expand button. Expanding a pane
+preserves selection; Show all three views returns to the saved arrangement.
+
 Clicking a component does not change the camera. **Focus selected** zooms to it;
 **Clear** or Escape clears it. The component dropdown supports keyboard selection.
 **Actions** opens the existing drawing tools when needed.
@@ -29,7 +36,8 @@ fixture component models are missing and are reported by the app.
 1. Click U1 in PCB. Main selects a drawing location; the branch highlights U1.
 2. Open Schematic. Main has no shared component selection; the branch highlights U1.
 3. Open 3D. Main has no component highlight; the branch outlines U1's model.
-4. Optional: use Focus selected to inspect the part, then Escape to clear it.
+4. Open Show all three views. The branch keeps PCB, schematic and 3D visible together; main only offers PCB/schematic comparison.
+5. Use each pane’s Focus to inspect the same part, then Escape to clear all highlights.
 
 ## Reproduce native checks
 
@@ -62,13 +70,14 @@ models without KiCad component identities are outside this feature.
 
 The component toolbar stays directly below the view tabs. Preview status and
 sheet navigation follow it, so source messages cannot push the toolbar down.
-Both visible comparison panes retain the shared highlight even when only one
+All three comparison panes retain the shared highlight even when only one
 pane has keyboard focus. At narrow widths, selection and zoom controls wrap;
 action and source-status menus stay within their pane. Escape dismisses component
 actions before clearing the selection.
 
-The native smoke check includes divider keyboard Home/End (25% / 75%), control
-bounds, simultaneous highlights, menu bounds and Escape dismissal. Captures cover
+The native smoke check includes both divider keyboard limits, drawing/control
+bounds, simultaneous highlights, native clicks in all three views, centered Focus,
+menu bounds, Escape dismissal and expansion/reopening without selection loss. Captures cover
 1440×920 and 960×600. The audit covers this board workspace and its component
 selection controls; it is not a claim that every application screen, theme, or
 platform has been exhaustively audited.
