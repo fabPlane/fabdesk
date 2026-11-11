@@ -42,6 +42,7 @@
     "dev:pcb": "bun run scripts/dev-pcb.ts",
     "dev:cad": "bun run scripts/dev-cad.ts",
     "dev:core": "bun run --cwd apps/core dev",
+    "check:board-workspace": "bun run scripts/check-board-workspace-app.ts",
     "relay": "bun run --cwd apps/relay start",
     "typecheck": "bun run fp-pcb:types && bun run fab-cad:types && bun run --filter './apps/core' --filter './apps/desktop' --filter './apps/relay' --filter './packages/*' typecheck",
     "test": "bun run --filter './apps/core' --filter './apps/desktop' --filter './apps/relay' --filter './packages/*' test && bun test ./scripts/test",

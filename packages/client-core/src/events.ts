@@ -15,6 +15,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { CoreClient } from "./CoreClient";
 import { useAuthStore } from "./stores/auth";
 import { useRunsStore, type RunsState } from "./stores/runs";
+import { BOARD_WORKSPACE_PATHS, BOARD_WORKSPACE_QUERY_KEY } from "./board-workspace-keys";
 
 export const EVENT_TOPICS = [
   "agent.*",
@@ -346,6 +347,7 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       ctx.route?.setDone(event.result);
       break;
     case "project.changed":
+      if (event.paths.some(path => BOARD_WORKSPACE_PATHS.test(path))) void qc.invalidateQueries({ queryKey: [BOARD_WORKSPACE_QUERY_KEY, event.projectId] });
       if (event.paths.some(path => /(?:\.kicad_(?:sch|pro|pcb)$|(?:^|\/)(?:circuit\.netlist\.json|project\.parts\.json|fabplane\.assembly\.json)$)/.test(path))) void qc.invalidateQueries({ queryKey: ["project-bom", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["kept-output-identity", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["board-sources", event.projectId] });

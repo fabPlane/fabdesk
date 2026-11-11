@@ -12,7 +12,7 @@
     },
     "apps/core": {
       "name": "@fabdesk/core",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "bin": {
         "fabdesk-core": "./src/main.ts",
       },
@@ -46,7 +46,7 @@
     },
     "apps/desktop": {
       "name": "@fabdesk/desktop",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "devDependencies": {
         "@fabdesk/protocol": "workspace:*",
         "@fabdesk/ui": "workspace:*",

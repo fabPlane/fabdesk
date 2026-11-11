@@ -266,6 +266,17 @@ describe("registry", () => {
       "comment_resolve",
       "notes_read",
       "notes_write",
+      "board_list",
+      "board_view",
+      "board_revision_timeline",
+      "board_revision_compare",
+      "board_revision_save",
+      "connection_list",
+      "connection_add",
+      "connection_remove",
+      "connection_review",
+      "connection_set_pins",
+      "connection_suggest",
       "circuit_query",
       "circuit_search_parts",
       "circuit_describe_part",
@@ -3945,7 +3956,7 @@ describe("registry", () => {
           (JSON.parse(l) as { kind: string }).kind,
       ),
     ).toEqual(["meta", "static", "pass-start", "connection", "connection", "done"]);
-    expect((JSON.parse(frames[0]!) as any).bounds).toEqual({ x1: 2, y1: 3, x2: 18, y2: 13 });
+    expect((JSON.parse(frames[0]!) as any).bounds).toEqual({ x1: 2, y1: -13, x2: 18, y2: -3 });
     expect((JSON.parse(frames.at(-1)!) as { shapes: unknown[] }).shapes).toHaveLength(1);
     await waitForRouteDone(services, json.runId);
     expect(services.events.map((e) => e.topic)).toEqual([

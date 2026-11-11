@@ -37,7 +37,7 @@ export function assertGitRef(ref: string): string {
   return trimmed;
 }
 
-async function git(
+export async function git(
   dir: string,
   args: string[],
   signal?: AbortSignal,
@@ -73,14 +73,15 @@ function toGitPath(projectRel: string, prefix: string): string {
   return prefix ? `${prefix}/${projectRel}` : projectRel;
 }
 
-async function gitShow(
+export async function gitShow(
   dir: string,
   ref: string,
   path: string,
   signal?: AbortSignal,
   prefix = "",
 ): Promise<string | undefined> {
-  const result = await git(dir, ["show", `${ref}:${toGitPath(path, prefix)}`], signal);
+  // The trailing separator stops git from also statting this as a path, which fails on long paths.
+  const result = await git(dir, ["show", `${ref}:${toGitPath(path, prefix)}`, "--"], signal);
   return result.ok ? result.stdout : undefined;
 }
 
