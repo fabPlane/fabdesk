@@ -151,6 +151,28 @@ if (!baseline) {
   check("3D click animates both drawings and zooms into the selected model", await page(`['pcb','schematic','3d'].every(view=>window.__animatedViews.includes(view))`));
   await until(`!document.querySelector('[data-focus-motion="running"]')`);
   const originalSize = await page(`({width:innerWidth,height:innerHeight})`);
+  // Interrupt inside the renderer so bridge latency cannot miss a short animation.
+  const keyInterruption = await page(`new Promise((resolve,reject)=>{const select=document.querySelector('.fd-shared-part-selection select');select.value='R2';select.dispatchEvent(new Event('change',{bubbles:true}));const started=performance.now();const interrupt=()=>{const c=document.querySelector('.fd-model-viewport canvas');if(c.dataset.focusMotion!=='running'){if(performance.now()-started>5000)return reject(new Error('3D focus did not start'));return requestAnimationFrame(interrupt)}c.focus();c.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',code:'ArrowUp',bubbles:true,cancelable:true}));const motion=c.dataset.focusMotion,bounds=c.dataset.componentBounds;setTimeout(()=>resolve({stopped:motion==='idle',stable:bounds===c.dataset.componentBounds}),400)};requestAnimationFrame(interrupt)})`);
+  check("Keyboard panning cancels automatic 3D focus immediately", keyInterruption.stopped && keyInterruption.stable);
+  await bridge("/click", { selector: 'button[aria-label="Focus selected in 3D"]' });
+  await until(`!document.querySelector('[data-focus-motion="running"]')`);
+  check("A small-part keyboard pan repaints immediately", await page(`(()=>{const c=document.querySelector('.fd-model-viewport canvas'),before=c.dataset.componentBounds;c.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',code:'ArrowUp',bubbles:true,cancelable:true}));return before!==c.dataset.componentBounds})()`));
+  for (const view of ["pcb", "schematic"]) {
+    await bridge("/click", { selector: `.fd-comparison-pane[data-view="${view}"] button[aria-label="Zoom out"]` });
+  }
+  const manualZoom = await page(`[...document.querySelectorAll('.fd-comparison-pane .fd-svg-zoom-value')].map(e=>e.textContent)`);
+  const manualModelBounds = await page(`JSON.parse(document.querySelector('.fd-model-viewport canvas').dataset.componentBounds)`);
+  await page(originalSize.width === 960 ? `window.resizeTo(1440,920)` : `window.resizeTo(960,600)`); await sleep(250);
+  await page(`window.resizeTo(${originalSize.width},${originalSize.height})`); await sleep(350);
+  check("Resizing preserves manual zoom in both drawings", JSON.stringify(manualZoom) === JSON.stringify(await page(`[...document.querySelectorAll('.fd-comparison-pane .fd-svg-zoom-value')].map(e=>e.textContent)`)));
+  const resizedModelBounds = await page(`JSON.parse(document.querySelector('.fd-model-viewport canvas').dataset.componentBounds)`);
+  // Horizontal projection changes with aspect ratio; vertical projection does not.
+  check("Resizing does not undo a keyboard-controlled 3D camera", Math.abs(manualModelBounds.top - resizedModelBounds.top) < 1e-6 && Math.abs(manualModelBounds.bottom - resizedModelBounds.bottom) < 1e-6);
+  await bridge("/click", { selector: '.fd-shared-part-selection option[value="U1"]' });
+  await until(focusedInside); await until(modelInside);
+  check("A new selection restores linked focus after manual camera control", true);
+  const clearedInMotion = await page(`new Promise((resolve,reject)=>{const select=document.querySelector('.fd-shared-part-selection select');select.value='R2';select.dispatchEvent(new Event('change',{bubbles:true}));const started=performance.now();const clear=()=>{if(!document.querySelector('[data-focus-motion="running"]')){if(performance.now()-started>5000)return reject(new Error('Linked focus did not start'));return requestAnimationFrame(clear)}document.querySelector('.fd-shared-part-selection button').click();setTimeout(()=>resolve(!document.querySelector('[data-focus-motion="running"],[data-component-ref]')&&document.querySelector('.fd-model-viewport canvas').dataset.tintedMeshes==='0'),400)};requestAnimationFrame(clear)})`);
+  check("Clear during linked animation removes every highlight and stops motion", clearedInMotion);
   for (let i = 0; i < 24; i++) {
     await bridge("/click", { selector: `.fd-shared-part-selection option[value="${["R2", "R1", "U1"][i%3]}"]` });
     if (i%6===5) await page(i%12===5 ? `window.resizeTo(960,600)` : `window.resizeTo(1440,920)`);

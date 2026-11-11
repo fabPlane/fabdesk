@@ -21,6 +21,8 @@ at the current camera angle, including small parts on large boards. The shared d
 all three. Transitions take 320 ms, respect reduced motion, and are interrupted by
 manual camera input or a newer selection. **Focus** also zooms explicitly; **Fit**
 restores the overview. In single-view mode, selection leaves the camera unchanged.
+After manual zoom or pan, resizing preserves camera control rather than refocusing
+the old selection. Selecting another part or pressing **Focus** restores automatic framing.
 **Clear** or Escape clears the highlight. The component dropdown supports keyboard selection.
 **Actions** opens the existing drawing tools when needed.
 
@@ -45,7 +47,7 @@ fixture component models are missing and are reported by the app.
 
 1. Click U1 in PCB. Main selects a drawing location; the branch highlights U1.
 2. Open Schematic. Main has no shared component selection; the branch highlights U1.
-3. Open 3D. Main has no component highlight; the branch outlines U1's model.
+3. Open 3D. Main has no component highlight; the branch colors U1's model cyan.
 4. Open Show all three views. The branch keeps PCB, schematic and 3D visible together; main only offers PCB/schematic comparison.
 5. Click a part: the other two panes animate to it. Use Focus for the clicked pane,
    Fit to restore an overview, and Escape to clear all highlights.
@@ -90,6 +92,8 @@ The native smoke check includes both divider keyboard limits, drawing/control
 bounds, simultaneous highlights, native clicks in all three views, animated linked
 focus, rapid reselection, reduced-motion emulation, centered Focus,
 3D framing at divider limits, 24 rapid selections while alternating window sizes,
+keyboard interruption and immediate small-part panning, manual zoom preservation
+through resizing, renewed focus on selection, clearing during animation,
 material restoration, menu bounds, Escape dismissal and expansion/reopening without selection loss. Captures cover
 1440×920 and 960×600. The audit covers this board workspace and its component
 selection controls; it is not a claim that every application screen, theme, or

@@ -213,8 +213,16 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
             if (ref) currentSelection.current.select(ref);
           };
           const cancel = () => { down = null; };
+          // OrbitControls emits `start` for pointer/wheel gestures, but not keys.
+          // A keyboard pan/rotation must take control away from linked focus too.
+          // Run after its key handler and repaint even below its `change` threshold:
+          // millimeter-scale close-ups can pan visibly without emitting `change`.
+          const keyDown = (event: KeyboardEvent) => {
+            if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code)) { keepSelectionFramed = false; stopMotion(); render(); }
+          };
+          canvas.addEventListener("keydown", keyDown);
           canvas.addEventListener("pointerdown", pointerDown); canvas.addEventListener("pointerup", pointerUp); canvas.addEventListener("pointercancel", cancel);
-          cleanupSelection = () => { canvas.removeEventListener("pointerdown", pointerDown); canvas.removeEventListener("pointerup", pointerUp); canvas.removeEventListener("pointercancel", cancel); tint.clear(); };
+          cleanupSelection = () => { canvas.removeEventListener("keydown", keyDown); canvas.removeEventListener("pointerdown", pointerDown); canvas.removeEventListener("pointerup", pointerUp); canvas.removeEventListener("pointercancel", cancel); tint.clear(); };
           sync();
         }
         controls.addEventListener("start", () => { keepSelectionFramed = false; stopMotion(); });

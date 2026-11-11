@@ -143,7 +143,11 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
   const motionFrame = useRef(0);
   const lastDrawingRect = useRef<DOMRect | null>(null);
   const focusStart = useRef<{ key: string; rect: DOMRect | null } | null>(null);
+  const manualFocusKey = useRef<string | null>(null);
   const stopFocusMotion = () => { cancelAnimationFrame(motionFrame.current); focusMotion.current?.cancel(); focusMotion.current = null; if (drawing.current) drawing.current.dataset["focusMotion"] = "idle"; };
+  // Keep the padded drawing area, but stop re-framing this selection after the
+  // user takes control. A new selection or explicit Focus has a fresh key.
+  const takeCameraControl = () => { manualFocusKey.current = focusRegion?.key ?? null; stopFocusMotion(); };
   // Remember the visible drawing before focus changes its zoom and scroll area.
   useLayoutEffect(() => {
     const frame = viewport.current;
@@ -158,7 +162,7 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
   useLayoutEffect(() => {
     const frame = viewport.current, host = drawing.current;
     const geometryKey = `${focusRegion?.key}/${fitSize.width}/${fitSize.height}`;
-    if (!focusMotionEnabled || !focusActive || !focusRegion || focusedRegion.current === geometryKey || !frame || !host || !box || !size || !current || loaded?.url !== current.url || fitSize.width <= 1 || fitSize.height <= 1) return;
+    if (!focusMotionEnabled || !focusActive || !focusRegion || manualFocusKey.current === focusRegion.key || focusedRegion.current === geometryKey || !frame || !host || !box || !size || !current || loaded?.url !== current.url || fitSize.width <= 1 || fitSize.height <= 1) return;
     if (focusStart.current?.key !== geometryKey) {
       focusStart.current = { key: geometryKey, rect: lastDrawingRect.current };
       stopFocusMotion();
@@ -192,7 +196,7 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
     if (point) onDrawingClick(point, event);
   };
   return (
-    <div className="fd-svg-viewer relative flex h-full flex-col" onPointerDownCapture={stopFocusMotion} onWheelCapture={stopFocusMotion} onKeyDownCapture={stopFocusMotion} onKeyDown={event => { if (event.key === "Escape" && onDrawingEscape?.()) { event.preventDefault(); event.stopPropagation(); requestAnimationFrame(() => drawing.current?.focus({ preventScroll: true })); } }}>
+    <div className="fd-svg-viewer relative flex h-full flex-col" onPointerDownCapture={takeCameraControl} onWheelCapture={takeCameraControl} onKeyDownCapture={event => { if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "+", "=", "-", "Enter", " "].includes(event.key)) takeCameraControl(); }} onKeyDown={event => { if (event.key === "Escape" && onDrawingEscape?.()) { event.preventDefault(); event.stopPropagation(); requestAnimationFrame(() => drawing.current?.focus({ preventScroll: true })); } }}>
       <div className="fd-svg-tools flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-3 py-2">
         <div className="fd-svg-zoom-group" role="group" aria-label="Drawing zoom">
         <Button size="sm" onClick={() => zoomAt(zoom / 1.25)} title="Zoom out" aria-label="Zoom out">
