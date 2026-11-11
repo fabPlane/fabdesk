@@ -57,3 +57,18 @@ sources during reads, stale receipts, and 3D raycasting/occlusion.
 
 Physical native validation is macOS only. Nets, arbitrary mechanical models and
 models without KiCad component identities are outside this feature.
+
+## Board workspace layout audit
+
+The component toolbar stays directly below the view tabs. Preview status and
+sheet navigation follow it, so source messages cannot push the toolbar down.
+Both visible comparison panes retain the shared highlight even when only one
+pane has keyboard focus. At narrow widths, selection and zoom controls wrap;
+action and source-status menus stay within their pane. Escape dismisses component
+actions before clearing the selection.
+
+The native smoke check includes divider keyboard Home/End (25% / 75%), control
+bounds, simultaneous highlights, menu bounds and Escape dismissal. Captures cover
+1440×920 and 960×600. The audit covers this board workspace and its component
+selection controls; it is not a claim that every application screen, theme, or
+platform has been exhaustively audited.

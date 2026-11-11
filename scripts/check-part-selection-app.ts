@@ -23,6 +23,8 @@ if (!index.pcb?.parts.some(p => p.ref === reference) || !index.sheets.some(s => 
 await bridge("/ui", { action: "selectProject", args: [projectId] });
 await page(`window.__selectionErrors=[];window.addEventListener('error',e=>window.__selectionErrors.push(e.message));window.addEventListener('unhandledrejection',e=>window.__selectionErrors.push(String(e.reason)));`);
 const open = async (tab: string) => { await bridge("/ui", { action: "openTab", args: [tab] }); await until(tab === "3d" ? `!!document.querySelector('.fd-model-viewport canvas') && !document.querySelector('.fd-model-message')` : `!!document.querySelector('.fd-svg-host canvas')`); if (!baseline) await until(`!!document.querySelector('.fd-part-selection-bar select option[value=${JSON.stringify(reference)}]')`); await sleep(350); if (tab !== "3d") { await bridge("/click", { selector: '.fd-svg-fit-button[title="Show the whole drawing"]' }); await until(`document.querySelector('.fd-svg-zoom-value')?.textContent==='100%'`); } };
+// Comparisons persist in the isolated profile; begin the walkthrough in one view.
+if (await page(`!!document.querySelector('button[aria-label="Close comparison"]')`)) await bridge("/click", { selector: 'button[aria-label="Close comparison"]' });
 const selected = () => page(`document.querySelector('.fd-part-selection-bar select')?.value`);
 const pick = async (view: "pcb" | "schematic", ref: string) => {
   // Schematic viewports persist zoom/pan between mounts. Reset before mapping
@@ -66,6 +68,30 @@ if (!baseline) {
   await open("schematic"); check("Escape also clears schematic selection", await selected() === "");
   const controls = await page(`Array.from(document.querySelectorAll('.fd-part-selection-bar select,.fd-part-selection-bar button')).every(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight})`);
   check("Selection controls stay reachable", controls);
+  await bridge("/click", { selector: '.fd-part-selection-bar select option[value="U1"]' });
+  await bridge("/click", { selector: 'button[aria-label="Show PCB alongside"]' });
+  await until(`document.querySelectorAll('.fd-comparison-pane [data-component-ref="U1"]').length===2`);
+  check("Both comparison panes highlight the selected component", true);
+  await bridge("/click", { selector: '.fd-comparison-pane[data-view="pcb"] > header button' });
+  check("Changing pane focus preserves both highlights", await page(`document.querySelectorAll('.fd-comparison-pane [data-component-ref="U1"]').length===2`));
+  const controlsInside = `Array.from(document.querySelectorAll('.fd-comparison-pane')).every(p=>{const pane=p.getBoundingClientRect();return [...p.querySelectorAll('.fd-part-selection-bar select,.fd-part-selection-bar button,.fd-svg-tools button')].every(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.left>=pane.left&&r.right<=pane.right&&r.top>=pane.top&&r.bottom<=pane.bottom})})`;
+  await page(`document.querySelector('[aria-label="Resize PCB and schematic views"]').focus()`);
+  for (const key of ["Home", "End"]) {
+    await bridge("/key", { key }); await until(`document.querySelector('[aria-label="Resize PCB and schematic views"]')?.getAttribute('aria-valuenow')==='${key === "Home" ? "25" : "75"}'`); await sleep(400);
+    check(`Comparison controls fit at divider ${key}`, await page(controlsInside));
+  }
+  await bridge("/click", { selector: '.fd-comparison-pane[data-view="schematic"] .fd-part-selection-bar button' });
+  check("Narrow component actions stay inside their pane", await page(`(()=>{const p=document.querySelector('.fd-comparison-pane[data-view="schematic"]').getBoundingClientRect(), t=document.querySelector('.fd-comparison-pane[data-view="schematic"] .fd-location-toolbar')?.getBoundingClientRect();return !!t&&t.left>=p.left&&t.right<=p.right&&t.top>=p.top&&t.bottom<=p.bottom})()`));
+  await bridge("/key", { key: "Escape" });
+  await until(`!document.querySelector('.fd-location-toolbar')`);
+  check("Escape closes actions before clearing component selection", await page(`document.querySelectorAll('.fd-comparison-pane [data-component-ref="U1"]').length===2`));
+  await bridge("/click", { selector: '.fd-comparison-pane[data-view="schematic"] .fd-schematic-status summary' });
+  check("Narrow source-status menu stays inside its pane", await page(`(()=>{const p=document.querySelector('.fd-comparison-pane[data-view="schematic"]').getBoundingClientRect(), t=document.querySelector('.fd-comparison-pane[data-view="schematic"] .fd-workspace-menu[open] .fd-workspace-menu-content')?.getBoundingClientRect();return !!t&&t.left>=p.left&&t.right<=p.right&&t.top>=p.top&&t.bottom<=p.bottom})()`));
+  await bridge("/key", { key: "Escape" });
+  await until(`!document.querySelector('.fd-schematic-status .fd-workspace-menu[open]')`);
+  await capture("04-comparison");
+  await bridge("/click", { selector: 'button[aria-label="Close comparison"]' });
+
 }
 check("No uncaught renderer errors", (await page("window.__selectionErrors")).length === 0);
 console.log(`All ${passed} passed · ${baseline ? "main baseline" : "feature"} · ${JSON.stringify((await bridge('/state')).ui.page)}`);

@@ -15,4 +15,20 @@
 .fd-board-model-view:has(.fd-part-selection-bar) > .fd-board-model-actions { top:56px; }
 .fd-board-model-view > .fd-model-canvas:has(> .fd-part-selection-bar) > .fd-model-viewport { top:112px; }
 
-[data-testid=board-pcb-svg]:has(.fd-part-selection-bar) > .fd-preview-status { top:54px; }
+/* Both visible comparison panes keep their selection and controls usable. */
+.fd-board-comparison .fd-comparison-pane { contain:layout; }
+@container (max-width:440px) {
+  .fd-comparison-pane .fd-part-selection-bar { flex-wrap:wrap; height:auto; gap:4px; padding:4px 6px; }
+  .fd-comparison-pane .fd-part-selection-bar select { flex:0 0 100%; max-width:100%; }
+  .fd-comparison-pane .fd-part-selection-bar [role=status] { flex-basis:100%; }
+  .fd-comparison-pane .fd-part-selection-bar .fd-button { padding-inline:6px; font-size:11px; }
+  .fd-board-comparison .fd-comparison-pane .fd-svg-tools { flex-wrap:wrap; height:auto; justify-content:center; width:calc(100% - 20px); border-radius:14px; }
+  .fd-board-comparison .fd-svg-zoom-group { flex-basis:100%; justify-content:center; border:0; padding:0; margin:0; }
+  .fd-board-comparison .fd-svg-context { margin-left:0; padding-left:4px; }
+  .fd-board-comparison .fd-svg-context > button { font-size:0; gap:0; min-width:28px; }
+  .fd-board-comparison .fd-schematic-canvas-header { padding-inline:8px; }
+  .fd-board-comparison .fd-schematic-status .fd-workspace-menu-content { position:fixed; top:60px; left:8px; right:8px; width:auto; max-height:calc(100% - 72px); overflow:auto; }
+  .fd-board-comparison .fd-location-toolbar { position:fixed; top:45%; bottom:auto; left:8px; right:8px; transform:none !important; width:auto; max-width:calc(100% - 16px); flex-wrap:wrap; white-space:normal; }
+  .fd-board-comparison .fd-location-toolbar > span { flex-basis:100%; border-right:0; }
+
+}
