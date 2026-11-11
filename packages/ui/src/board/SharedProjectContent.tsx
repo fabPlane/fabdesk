@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useState } from "react";
-import { sharedCheckLabel, type ProjectShareSnapshot, type SharedBoard } from "@fabdesk/protocol";
+import { sharedCheckLabel, sharedModelLabel, sharedSourceLabel, type ProjectShareSnapshot, type SharedBoard } from "@fabdesk/protocol";
 import { Button } from "../components/ui";
 import { Icon } from "../components/Icon";
 import "./project-sharing.css";
@@ -68,7 +68,7 @@ export function SharedProjectContent({ snapshot }: { snapshot: ProjectShareSnaps
               <span>Export a model in desktop and update the shared page.</span>
             </div>
           )}
-          <p>{sharedCheckLabel(board.checks)}</p>
+          <p>{sharedCheckLabel(board.checks)} · {sharedModelLabel(board)}</p>
           <p className="fd-share-muted">
             {board.preview ? "Saved preview · image freshness is unverified. " : ""}PCB checks do
             not establish manufacturing approval.
@@ -83,9 +83,9 @@ export function SharedProjectContent({ snapshot }: { snapshot: ProjectShareSnaps
               </div>
               <span>
                 <strong>{item.name}</strong>
-                <small>{sharedCheckLabel(item.checks)}</small>
-                <small>{item.model ? "3D model available" : "No published 3D model"}</small>
-                {!item.sourceAvailable && <small>Board source unavailable</small>}
+                <small>{sharedSourceLabel(item)}</small>
+                <small>Saved PCB checks · {sharedCheckLabel(item.checks)}</small>
+                <small>Saved 3D · {sharedModelLabel(item)}</small>
               </span>
               <Icon name="chevronRight" width={18} height={18} />
             </button>

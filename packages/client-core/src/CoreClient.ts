@@ -266,6 +266,9 @@ export class CoreClient {
   async getSharedProject(shareId: string): Promise<SharedProject> {
     return SharedProject.parse(await this.request(`/shared-projects/${encodeURIComponent(shareId)}`));
   }
+  async getProjectStatus(id: string): Promise<ProjectShareSnapshot> {
+    return ProjectShareSnapshot.parse(await this.request(`/projects/${encodeURIComponent(id)}/status`));
+  }
   inspectBoardSources(id: string): Promise<ProjectBoardSources> {
     return this.request(`/projects/${encodeURIComponent(id)}/board-sources`);
   }

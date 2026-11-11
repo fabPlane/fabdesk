@@ -5,6 +5,7 @@
  * view packages.
  */
 export { CoreClient, CoreHttpError, parseJsonl } from "./CoreClient";
+export { useProjectStatus } from "./queries";
 export { nativeSourceCandidates } from "./native-source-candidates";
 export { activeQuestion, draftConversation, draftWorkspaceTitle } from "./draft-navigation";
 export { deduplicateChatNotices } from "./chat-notices";

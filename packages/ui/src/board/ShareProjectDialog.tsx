@@ -204,7 +204,13 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
                 <Icon name="externalLink" width={16} height={16} />
                 Open shared page
               </Button>
-              <Button size="sm" variant="ghost" disabled={busy} onClick={() => { void host.openExternal(`${new URL(appOrigin ?? "https://app.fabplane.com").origin}/projects${saved?.visibility === "restricted" ? `?share=${saved.projectId}` : ""}`); }}>Manage people online</Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => {
+                if (!saved || saved.visibility === "private") return;
+                const query = saved.visibility === "restricted"
+                  ? `share=${encodeURIComponent(saved.projectId)}`
+                  : `shareLink=${encodeURIComponent(saved.shareId)}`;
+                void host.openExternal(`${new URL(appOrigin ?? "https://app.fabplane.com").origin}/projects?${query}`);
+              }}>Manage people online</Button>
             </div>
           </section>
         )}

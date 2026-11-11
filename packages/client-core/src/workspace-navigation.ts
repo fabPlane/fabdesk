@@ -1,6 +1,7 @@
 /** Existing destinations, grouped without removing their tools or changing keyboard tab order. */
 export const WORKSPACE_AREAS = {
   overview: { label: "Overview", views: [] },
+  status: { label: "Status", views: [] },
   boards: { label: "Board", views: [{ tab: "pcb", label: "PCB" }, { tab: "schematic", label: "Schematic" }, { tab: "3d", label: "3D" }, { tab: "cinema", label: "Routing" }, { tab: "art", label: "Artwork" }, { tab: "placement", label: "Placement" }] },
   mechanical: { label: "Mechanical", views: [{ tab: "cad", label: "Enclosure & CAD" }] },
   parts: { label: "Parts", views: [{ tab: "bom", label: "Parts & shopping" }] },

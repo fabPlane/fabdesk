@@ -77,6 +77,7 @@ function SingleBoardOverview() {
   return <div className="fd-project-overview" onKeyDown={(event) => { if (event.key === "Escape" && selected && !event.defaultPrevented) {
     event.preventDefault(); event.stopPropagation(); setSelectedKey(null); requestAnimationFrame(() => selectionTrigger.current?.focus({ preventScroll: true }));
   } }}>
+    <nav className="fd-project-status-nav" aria-label="Project views"><Button size="sm" aria-current="page">Overview</Button><Button size="sm" variant="ghost" onClick={() => ui().setWorkspaceArea("status")}>Status</Button></nav>
     <div className="fd-overview-heading"><h1 title={project.data.name}>Project overview</h1><p>{referenceOnly ? "Select a saved reference to continue your design." : designTab === "schematic" ? "Select your schematic to open its tools." : "Select your board to open its tools."}</p>
       {updates.length > 0 && <Button className="fd-overview-updates" size="sm" variant="ghost" title={`${updates.join(", ")} ${updates.length === 1 ? "has" : "have"} source or artifact changes. This covers tracked artifacts only; review before sharing or fabrication.`} onClick={() => ui().setBoardTab("updates")}><Icon name="warning" width={16} height={16} />Review updates · {updates.length}</Button>}
     </div>

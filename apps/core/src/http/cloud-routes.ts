@@ -21,7 +21,7 @@ import {
   type ProjectBomSnapshot,
 } from "@fabdesk/protocol";
 import {
-  prepareProjectShare, prepareEditableBoard, inspectProjectBoardSources,
+  prepareProjectShare, inspectProjectStatus, prepareEditableBoard, inspectProjectBoardSources,
   CloudSignedOutError,
   CloudUnavailableError,
   isCloudApiError,
@@ -113,6 +113,9 @@ export function cloudRoutes<E extends object>(deps: Deps): Hono<{ Variables: E }
     if (!parsed.success) throw new RouteError(502, "invalid_share_response", "The sharing server returned incomplete settings. Try again later.");
     return parsed.data;
   };
+  app.get("/projects/:id/status", run(async c => {
+    return c.json(await inspectProjectStatus(await project(param(c, "id"))));
+  }));
   app.get("/projects/:id/share", run(async c => {
     const handle = await project(param(c, "id")), api = cloud().client();
     if (!api.getProjectShare) throw unsupported();

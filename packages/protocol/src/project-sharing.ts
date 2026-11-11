@@ -20,6 +20,8 @@ export const SharedBoard = z
     id: z.string().min(1).max(80),
     name: z.string().min(1).max(120),
     sourceAvailable: z.boolean(),
+    sourceState: z.enum(["pcb", "schematic-only", "missing", "unavailable"]).optional(),
+    modelState: z.enum(["no-model", "unverified", "source-changed", "source-unchanged", "artifact-changed", "unavailable"]).optional(),
     checks: z
       .object({
         state: z.enum([
@@ -132,6 +134,22 @@ export function sharedCheckLabel(checks: SharedBoard["checks"]): string {
   return checks.findingCount
     ? `${checks.findingCount} PCB ${checks.findingCount === 1 ? "finding" : "findings"}`
     : "PCB-only report · no listed findings";
+}
+
+export function sharedSourceLabel(board: Pick<SharedBoard, "sourceAvailable" | "sourceState">): string {
+  return board.sourceState === "schematic-only" ? "Schematic only"
+    : board.sourceState === "unavailable" ? "Source unavailable"
+    : board.sourceState === "pcb" || (!board.sourceState && board.sourceAvailable) ? "PCB available"
+    : "PCB source missing";
+}
+
+export function sharedModelLabel(board: Pick<SharedBoard, "model" | "modelState">): string {
+  if (board.modelState === "unavailable") return "Model status unavailable";
+  if (board.modelState === "source-changed") return "PCB changed since export";
+  if (board.modelState === "artifact-changed") return "Model changed · unverified";
+  if (board.modelState === "source-unchanged") return "Saved · PCB unchanged";
+  if (board.modelState === "unverified" || board.model) return "Saved · unverified";
+  return "No saved model";
 }
 
 export const SharedProjectStatus = SharedProject.pick({

@@ -61,6 +61,17 @@ export function useProjects() {
   return useQuery({ queryKey: ["projects"], queryFn: () => client.listProjects() });
 }
 
+export function useProjectStatus(projectId: string | null) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["project-status", projectId, client.baseUrl],
+    queryFn: () => client.getProjectStatus(projectId!),
+    enabled: !!projectId,
+    retry: false,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useProject(projectId: string | null) {
   const client = useCoreClient();
   return useQuery({
