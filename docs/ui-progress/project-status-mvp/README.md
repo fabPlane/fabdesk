@@ -16,13 +16,13 @@ Disposable PlayBridge fixtures, isolated desktop profile, local API and fresh mi
 
 1. Desktop project navigation overlapped the workspace dropdown. Reserve toolbar space and stack navigation at narrow widths. The final native capture confirms the wide-layout fix.
 2. Website model detail said unverified despite the confirmed saved receipt. It now uses the same qualified label as the summary; the public model walkthrough showed the corrected caption.
-3. An added outer files disclosure was empty for Viewers and nested the existing Owner/Contributor disclosure. Removed the outer wrapper. The final Contributor disclosure was checked; the final Viewer-hide retest was interrupted.
+3. An added outer files disclosure was empty for Viewers and nested the existing Owner/Contributor disclosure. Removed the outer wrapper. The final Contributor disclosure was checked. After the temporary browser interruption cleared, the owner downgraded the member to Viewer through normal UI; re-entering as that account retained the Status page and removed file controls entirely.
 4. A previous publication-success notice remained under a newly opened confirmation. Clear old notice/error on opening the next confirmation; actual successful publication followed by reopening confirmed this fix.
 5. Removed a Team boards account-menu link brought by the sharing dependency port: its unrelated workflow is absent from main.
 
 ## Limits and remaining acceptance
 
-- Browser automation timed out during the last role-downgrade step, then its inventory also timed out. That final downgrade/Viewer-hide check and additional UI tests remain incomplete. No failure was converted into a pass.
+- Browser automation initially timed out during the role-downgrade step, then inventory timed out. After the full typecheck completed, UI control recovered. A separate final pass changed the member to Viewer and re-entered that account: Status remained available and design-file controls were absent. This does not claim a concurrent open-page downgrade test.
 - Concurrent stale-copy protection has automated regression coverage; the new obsolete-confirmation dismissal was code-reviewed, but a fresh two-copy UI race was not repeated here.
 - Fresh copied-engine startup hit its 60-second deadline and left an orphan helper, which was stopped. The refreshed app ran with the supported installed-engine override; it is not a clean installer pass. Core first launch was also slow. Signing checks passed; notarized/release installer and installed-app deep-link acceptance remain open.
 - The merged staging worker build succeeded. Backend deployment failed twice on DockerHub TLS handshake timeouts (nginx, then Bun). No production deployment, live OAuth/verified-email delivery, or deployed integration is claimed.
@@ -42,3 +42,5 @@ Final native Status:
 Final replacement confirmation:
 
 ![Replacement warning](replace-board-warning.png)
+
+Final verification addendum: full desktop monorepo typecheck passed. Browser production React-runtime/account/viewer/ZIP checks passed (9 tests, 49 assertions). The earlier browser-control interruption was preserved above and subsequently resolved for the final Viewer check.
