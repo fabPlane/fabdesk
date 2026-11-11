@@ -82,7 +82,10 @@ test("identical references in separate assembly sources use their own bytes and 
   const a = await inspectSelectionIndex(f.client, "p", { sourceId: "a", manifestSha256: manifest }); expect(a.model?.references).toEqual(["R[1]"]);
   f.files.set("boards/b/board.kicad_pcb", new Blob([pcb.replace("20 30", "50 60")]));
   const b = await inspectSelectionIndex(f.client, "p", { sourceId: "b", manifestSha256: manifest }); expect(b.model).toBeNull(); expect(b.pcb).toBeNull();
-  expect((await inspectSelectionIndex(f.client, "p", { sourceId: "a", manifestSha256: manifest })).pcb?.parts).toEqual(a.pcb?.parts);
+  const again = await inspectSelectionIndex(f.client, "p", { sourceId: "a", manifestSha256: manifest });
+  expect(a.pcb).not.toBeNull(); expect(again.pcb).not.toBeNull();
+  if (!a.pcb || !again.pcb) throw new Error("Expected source A to stay selectable");
+  expect(again.pcb.parts).toEqual(a.pcb.parts);
 });
 test("multiple units of a schematic part are all selectable", () => {
   const other = '(symbol (lib_id "Device:R") (at 50 60) (unit 2) (uuid "other-unit") (property "Reference" "R1"))';

@@ -22,9 +22,13 @@ const index = await inspectSelectionIndex(client, projectId);
 if (!index.pcb?.parts.some(p => p.ref === reference) || !index.sheets.some(s => s.parts.some(p => p.ref === reference))) throw new Error("Fixture must contain the selected part in its source-verified PCB and schematic previews.");
 await bridge("/ui", { action: "selectProject", args: [projectId] });
 await page(`window.__selectionErrors=[];window.addEventListener('error',e=>window.__selectionErrors.push(e.message));window.addEventListener('unhandledrejection',e=>window.__selectionErrors.push(String(e.reason)));`);
-const open = async (tab: string) => { await bridge("/ui", { action: "openTab", args: [tab] }); await until(tab === "3d" ? `!!document.querySelector('.fd-model-viewport canvas') && !document.querySelector('.fd-model-message')` : `!!document.querySelector('.fd-svg-host canvas')`); if (!baseline) await until(`!!document.querySelector('.fd-part-selection-bar select option[value=${JSON.stringify(reference)}]')`); await sleep(350); };
+const open = async (tab: string) => { await bridge("/ui", { action: "openTab", args: [tab] }); await until(tab === "3d" ? `!!document.querySelector('.fd-model-viewport canvas') && !document.querySelector('.fd-model-message')` : `!!document.querySelector('.fd-svg-host canvas')`); if (!baseline) await until(`!!document.querySelector('.fd-part-selection-bar select option[value=${JSON.stringify(reference)}]')`); await sleep(350); if (tab !== "3d") { await bridge("/click", { selector: '.fd-svg-fit-button[title="Show the whole drawing"]' }); await until(`document.querySelector('.fd-svg-zoom-value')?.textContent==='100%'`); } };
 const selected = () => page(`document.querySelector('.fd-part-selection-bar select')?.value`);
 const pick = async (view: "pcb" | "schematic", ref: string) => {
+  // Schematic viewports persist zoom/pan between mounts. Reset before mapping
+  // native drawing coordinates so this check is repeatable after manual focus.
+  await bridge("/click", { selector: '.fd-svg-fit-button[title="Show the whole drawing"]' });
+  await until(`document.querySelector('.fd-svg-zoom-value')?.textContent==='100%'`);
   const part = (view === "pcb" ? index.pcb!.parts : index.sheets[0]!.parts).find(p => p.ref === ref); if (!part) throw new Error(`Fixture part ${ref} missing`);
   const svgPath = view === "pcb" ? "renders/pcb.svg" : index.sheets[0]!.path, svg = await client.readFile(projectId, svgPath);
   const box = /viewBox="([^"]+)"/.exec(svg)![1]!.split(/\s+/).map(Number), bounds = part.box;
