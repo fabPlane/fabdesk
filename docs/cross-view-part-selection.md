@@ -13,6 +13,8 @@ more vertical space. All three stay mounted and highlight together. One shared s
 and Clear control sit above the panes. Drag either divider (or use its arrow keys,
 Home and End) to resize; each pane has Focus and an expand button. Expanding a pane
 preserves selection; Show all three views returns to the saved arrangement.
+Schematic view memory stores the visible drawing center so expanding a focused
+pane does not restore comparison-padding offsets and scroll the part off-screen.
 
 In the three-view workspace, clicking a component smoothly focuses its counterparts
 in the other views. PCB and schematic keep the clicked view steady; 3D also
@@ -23,6 +25,9 @@ manual camera input or a newer selection. **Focus** also zooms explicitly; **Fit
 restores the overview. In single-view mode, selection leaves the camera unchanged.
 After manual zoom or pan, resizing preserves camera control rather than refocusing
 the old selection. Selecting another part or pressing **Focus** restores automatic framing.
+Interrupting a drawing animation keeps the visible position and scale, so clicking
+a moving part selects that part. Verified source/model refreshes retain 3D focus;
+stale or missing counterparts still lose their highlight immediately.
 **Clear** or Escape clears the highlight. The component dropdown supports keyboard selection.
 **Actions** opens the existing drawing tools when needed.
 
@@ -70,6 +75,20 @@ bun scripts/check-part-selection-app.ts
 Run the same script with `FABDESK_BASELINE=1` against an exact main build to capture
 the same three steps. The script does not edit project files or run agents.
 
+For disposable-source and model-replacement checks, also run:
+
+```sh
+FABDESK_USER_DATA=/path/to/isolated/profile \
+FABDESK_TEST_PROJECT_ID=disposable-project-id \
+FABDESK_TEST_PROJECT_DIR=/path/to/disposable-project \
+bun scripts/check-part-selection-recovery-app.ts
+```
+
+This recovery script temporarily edits the fixture's PCB, model metadata, and model
+receipt, restoring their exact bytes in `finally`. It checks stale-source handling,
+focus and manual-camera preservation, and a missing 3D counterpart. Never point it
+at a real design.
+
 Validation covers native clicks in both 2D views, shared selection in all directions,
 3D highlighting, no implicit zoom, Escape, control reachability and renderer errors.
 Unit tests additionally cover exact references (including brackets), rotation,
@@ -94,6 +113,7 @@ focus, rapid reselection, reduced-motion emulation, centered Focus,
 3D framing at divider limits, 24 rapid selections while alternating window sizes,
 keyboard interruption and immediate small-part panning, manual zoom preservation
 through resizing, renewed focus on selection, clearing during animation,
+native clicks during interrupted PCB/schematic animations,
 material restoration, menu bounds, Escape dismissal and expansion/reopening without selection loss. Captures cover
 1440×920 and 960×600. The audit covers this board workspace and its component
 selection controls; it is not a claim that every application screen, theme, or

@@ -11,7 +11,7 @@ import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { useProjectBlobUrl } from "../hooks/queries";
 import { Button, Spinner } from "../components/ui";
 
-type CameraState = { position: THREE.Vector3; target: THREE.Vector3; up: THREE.Vector3 };
+type CameraState = { position: THREE.Vector3; target: THREE.Vector3; up: THREE.Vector3; minDistance: number };
 
 function disposeModel(root: THREE.Object3D) {
   const textures = new Set<THREE.Texture>();
@@ -61,6 +61,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
   useEffect(() => { updateSelection.current?.(); }, [selection.ref, selection.ready, selection.index.data]);
   const host = useRef<HTMLDivElement>(null);
   const savedCamera = useRef<CameraState | null>(null);
+  const framedSelection = useRef<{ scope: string; ref: string | null } | null>(null);
   const zoom = useRef<((factor: number) => void) | null>(null);
   const fit = useRef<(() => void) | null>(null);
   const query = useProjectBlobUrl(projectId, blob ? null : path);
@@ -116,14 +117,14 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
         controls.listenToKeyEvents(renderer.domElement);
         controls.enableDamping = false; controls.minDistance = span * .08; controls.maxDistance = span * 60;
         let measureSelection = () => {};
-        let keepSelectionFramed = false;
+        const selectionIsFramed = () => framedSelection.current !== null && framedSelection.current.scope === currentSelection.current.scope && framedSelection.current.ref === currentSelection.current.ref;
         const render = () => { if (!disposed && renderer && camera) { renderer.render(scene, camera); measureSelection(); } };
         let motionFrame = 0;
         stopMotion = () => { cancelAnimationFrame(motionFrame); motionFrame = 0; if (renderer) renderer.domElement.dataset["focusMotion"] = "idle"; };
         const reset = () => {
           stopMotion();
           if (!camera || !controls) return;
-          keepSelectionFramed = false;
+          framedSelection.current = null;
           controls.minDistance = span * .08;
           controls.target.set(0, 0, 0);
           camera.up.set(0, 1, 0);
@@ -133,7 +134,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
         };
         fit.current = reset;
         zoom.current = (factor) => {
-          keepSelectionFramed = false; stopMotion();
+          framedSelection.current = null; stopMotion();
           if (!camera || !controls) return;
           camera.position.sub(controls.target).multiplyScalar(factor).add(controls.target);
           controls.update(); render();
@@ -143,11 +144,12 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
           const w = target.clientWidth, h = target.clientHeight;
           if (w < 1 || h < 1) return;
           renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
-          if (keepSelectionFramed) focusSelection.current?.(false);
+          if (selectionIsFramed()) focusSelection.current?.(false);
           render();
         };
         resize();
         if (savedCamera.current) {
+          controls.minDistance = savedCamera.current.minDistance;
           camera.position.copy(savedCamera.current.position); camera.up.copy(savedCamera.current.up);
           controls.target.copy(savedCamera.current.target); controls.update(); render();
         } else reset();
@@ -165,7 +167,11 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
           const sync = () => {
             if (disposed || !model) return;
             const current = currentSelection.current, receipt = current.index.data?.model;
-            keepSelectionFramed = false; stopMotion();
+            // Revalidating unchanged source bytes must not forget a focused part.
+            // Keep intent across loading/model replacement, but never across scope
+            // or reference changes, and never render an unverified highlight.
+            if (!selectionIsFramed()) framedSelection.current = null;
+            stopMotion();
             selectable.clear(); model.updateWorldMatrix(true, true);
             if (current.ready && receipt?.sha256 === digest) {
               selectable = nativeModelParts(model, receipt.references);
@@ -177,12 +183,13 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
             canvas.dataset["tintedMeshes"] = String(tint.apply(selectable.get(current.ref ?? "") ?? []));
             canvas.dataset["selectedComponent"] = visible ? current.ref! : "";
             setSelectionNotice(!current.ready || receipt?.sha256 !== digest ? "Update the 3D preview to select components" : current.ref && !visible ? `${current.ref} has no selectable model in this preview` : undefined);
+            if (visible && selectionIsFramed()) focusSelection.current?.(false);
             render();
           };
           updateSelection.current = sync;
           focusSelection.current = (animate = true) => {
             if (highlightBox.isEmpty() || !camera || !controls) return;
-            keepSelectionFramed = true;
+            framedSelection.current = { scope: currentSelection.current.scope, ref: currentSelection.current.ref };
             const center = highlightBox.getCenter(new THREE.Vector3()), size = highlightBox.getSize(new THREE.Vector3());
             const direction = camera.position.clone().sub(controls.target).normalize();
             // Fit the selected component in the current camera orientation, not the
@@ -203,7 +210,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
             step(started);
           };
           let down: { x: number; y: number } | null = null;
-          const pointerDown = (event: PointerEvent) => { keepSelectionFramed = false; stopMotion(); down = event.button === 0 && event.isPrimary ? { x: event.clientX, y: event.clientY } : null; };
+          const pointerDown = (event: PointerEvent) => { framedSelection.current = null; stopMotion(); down = event.button === 0 && event.isPrimary ? { x: event.clientX, y: event.clientY } : null; };
           const pointerUp = (event: PointerEvent) => {
             const start = down; down = null;
             if (!start || event.button !== 0 || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4 || !camera || !model) return;
@@ -218,14 +225,14 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
           // Run after its key handler and repaint even below its `change` threshold:
           // millimeter-scale close-ups can pan visibly without emitting `change`.
           const keyDown = (event: KeyboardEvent) => {
-            if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code)) { keepSelectionFramed = false; stopMotion(); render(); }
+            if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code)) { framedSelection.current = null; stopMotion(); render(); }
           };
           canvas.addEventListener("keydown", keyDown);
           canvas.addEventListener("pointerdown", pointerDown); canvas.addEventListener("pointerup", pointerUp); canvas.addEventListener("pointercancel", cancel);
           cleanupSelection = () => { canvas.removeEventListener("keydown", keyDown); canvas.removeEventListener("pointerdown", pointerDown); canvas.removeEventListener("pointerup", pointerUp); canvas.removeEventListener("pointercancel", cancel); tint.clear(); };
           sync();
         }
-        controls.addEventListener("start", () => { keepSelectionFramed = false; stopMotion(); });
+        controls.addEventListener("start", () => { framedSelection.current = null; stopMotion(); });
         controls.addEventListener("change", render);
         observer = new ResizeObserver(resize); observer.observe(target);
         const lost = (event: Event) => { event.preventDefault(); setError("The 3D graphics connection was interrupted. Retry to reopen the preview."); };
@@ -238,7 +245,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
     })();
     return () => {
       disposed = true; stopMotion(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
-      if (camera && controls) savedCamera.current = { position: camera.position.clone(), target: controls.target.clone(), up: camera.up.clone() };
+      if (camera && controls) savedCamera.current = { position: camera.position.clone(), target: controls.target.clone(), up: camera.up.clone(), minDistance: controls.minDistance };
       observer?.disconnect(); cleanupContext?.(); controls?.dispose();
       if (model) disposeModel(model);
       renderer?.dispose(); renderer?.domElement.remove();

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { DrawingViewportMemory, type DrawingViewport } from "@fabdesk/client-core";
 import { Button, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -51,16 +52,31 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
   useLayoutEffect(() => {
     savedView.current = viewportKey ? schematicViews.read(viewportKey, svg) : null;
     restoredView.current = false;
-    const frame = viewport.current;
+    const frame = viewport.current, host = drawing.current;
     return () => {
-      if (viewportKey && frame && currentView.current.ready) schematicViews.save(viewportKey, svg, { zoom: currentView.current.zoom, left: frame.scrollLeft, top: frame.scrollTop });
+      if (viewportKey && frame && currentView.current.ready) {
+        const visible = frame.getBoundingClientRect(), rect = host?.getBoundingClientRect();
+        const layoutWidth = host ? Number.parseFloat(host.style.width) : 0;
+        const visibleZoom = rect?.width && layoutWidth > 0 && host?.getAnimations().length
+          ? currentView.current.zoom * rect.width / layoutWidth : currentView.current.zoom;
+        schematicViews.save(viewportKey, svg, {
+          zoom: Math.max(.2, Math.min(64, visibleZoom)), left: frame.scrollLeft, top: frame.scrollTop,
+          ...(rect?.width && rect.height ? { centerX: (visible.left + frame.clientWidth / 2 - rect.left) / rect.width, centerY: (visible.top + frame.clientHeight / 2 - rect.top) / rect.height } : {}),
+        });
+      }
     };
   }, [viewportKey, svg]);
   useLayoutEffect(() => {
-    const saved = savedView.current, frame = viewport.current;
+    const saved = savedView.current, frame = viewport.current, host = drawing.current;
     if (!saved || restoredView.current || !frame || fitSize.width <= 1 || !loaded) return;
     if (zoom !== saved.zoom) { setZoom(saved.zoom); return; }
-    frame.scrollTo(saved.left, saved.top); restoredView.current = true;
+    if (saved.centerX !== undefined && saved.centerY !== undefined && host) {
+      // Raw scroll offsets include layout-specific focus padding. Restore the
+      // same drawing point when expanding/reopening or changing viewport size.
+      const rect = host.getBoundingClientRect(), visible = frame.getBoundingClientRect();
+      frame.scrollBy(rect.left + saved.centerX * rect.width - visible.left - frame.clientWidth / 2, rect.top + saved.centerY * rect.height - visible.top - frame.clientHeight / 2);
+    } else frame.scrollTo(saved.left, saved.top);
+    restoredView.current = true;
   }, [zoom, fitSize.width, fitSize.height, loaded]);
   const viewBox = useMemo(() => parseSvgViewBox(svg), [svg]);
   const [fallback, setFallback] = useState<{ svg: string; box: SvgBox } | null>(null);
@@ -147,7 +163,22 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
   const stopFocusMotion = () => { cancelAnimationFrame(motionFrame.current); focusMotion.current?.cancel(); focusMotion.current = null; if (drawing.current) drawing.current.dataset["focusMotion"] = "idle"; };
   // Keep the padded drawing area, but stop re-framing this selection after the
   // user takes control. A new selection or explicit Focus has a fresh key.
-  const takeCameraControl = () => { manualFocusKey.current = focusRegion?.key ?? null; stopFocusMotion(); };
+  const takeCameraControl = () => {
+    manualFocusKey.current = focusRegion?.key ?? null;
+    const host = drawing.current, frame = viewport.current;
+    const visible = focusMotion.current && host?.getBoundingClientRect();
+    stopFocusMotion();
+    if (!visible?.width || !host || !frame) return;
+    const destination = host.getBoundingClientRect();
+    if (!destination.width) return;
+    // Convert the visible animation frame into real zoom/scroll before the
+    // native pan/wheel and click handlers run. Cancel alone snaps to the final
+    // layout, so a click can otherwise identify a different part under the cursor.
+    flushSync(() => setZoom(Math.max(.2, Math.min(64, zoom * visible.width / destination.width))));
+    const committed = host.getBoundingClientRect();
+    frame.scrollBy(committed.left - visible.left, committed.top - visible.top);
+    lastDrawingRect.current = host.getBoundingClientRect();
+  };
   // Remember the visible drawing before focus changes its zoom and scroll area.
   useLayoutEffect(() => {
     const frame = viewport.current;

@@ -1,4 +1,4 @@
-export type DrawingViewport = { zoom: number; left: number; top: number };
+export type DrawingViewport = { zoom: number; left: number; top: number; centerX?: number; centerY?: number };
 /** Bounded, session-only view memory. A changed drawing never inherits old coordinates. */
 export class DrawingViewportMemory {
   private entries = new Map<string, { drawing: string; viewport: DrawingViewport }>();
@@ -10,7 +10,7 @@ export class DrawingViewportMemory {
     return { ...saved.viewport };
   }
   save(key: string, drawing: string, viewport: DrawingViewport): void {
-    if (drawing.length > 4_000_000 || !Object.values(viewport).every(Number.isFinite) || viewport.zoom < .2 || viewport.zoom > 64 || viewport.left < 0 || viewport.top < 0) return;
+    if (drawing.length > 4_000_000 || !Object.values(viewport).every(Number.isFinite) || (viewport.centerX === undefined) !== (viewport.centerY === undefined) || viewport.zoom < .2 || viewport.zoom > 64 || viewport.left < 0 || viewport.top < 0) return;
     this.entries.delete(key); this.entries.set(key, { drawing, viewport: { ...viewport } });
     while (this.entries.size > this.limit) this.entries.delete(this.entries.keys().next().value!);
   }
