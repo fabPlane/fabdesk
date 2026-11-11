@@ -13,7 +13,8 @@ export function SvgCanvas({ svg, image, width, height }: {
     setFailed(false);
     const paint = () => {
       const target = canvas.current;
-      if (!target) return;
+      // The image may be loading the next drawing; the current pixels stay until it is ready.
+      if (!target || !image.complete || !image.naturalWidth) return;
       try {
         // The source cache reuses URLs only for identical SVG text. Key by URL so
         // the pixel cache does not retain additional multi-megabyte SVG strings.

@@ -8,6 +8,13 @@ Saved models have independent input/artifact receipts. “Saved · PCB unchanged
 
 Select a board or status item to open its existing board/check/model view. Parts & BOM and the connection map remain supporting destinations; no persistent inspector, approval workflow or completion percentage is added.
 
+Status, Connections and History remain separate destinations in the project
+workspace menu. The Status page's Overview button opens the project overview;
+its Connection map link opens that overview's assembly map. The Connections
+workspace handles the separately declared links between board parts, and History
+retains its existing comparisons. Back navigation preserves the selected project
+and conversation draft when moving between these destinations.
+
 ## Published Status
 
 The website uses the same three columns and labels for invited viewers, Contributors and public-link visitors. It describes saved information **at publication time**, not live local work. Owners update the shared page explicitly; Contributors publish individual board revisions. Access and anonymous-link revocation remain enforced by the existing authenticated/public snapshot routes.

@@ -557,6 +557,27 @@ test("Back restores the previous task and selected file without touching unsaved
   expect(store.getState().selectedFileByProject).toEqual({});
 });
 
+test("Back returns through History, Connections and Status without losing a draft", async () => {
+  const store = createUiStore();
+  const projectId = "status-navigation";
+  store.getState().setActiveProject(projectId);
+  store.getState().setNavigationEndpoint("http://local");
+  store.getState().setDraft(newChatDraftKey(projectId), "Keep my board question");
+  await Promise.resolve();
+  store.getState().setWorkspaceArea("status");
+  await Promise.resolve();
+  store.getState().setWorkspaceArea("connections");
+  await Promise.resolve();
+  store.getState().setWorkspaceArea("history");
+  expect(store.getState().workspaceArea).toBe("history");
+  store.getState().navigateBack();
+  expect(store.getState().workspaceArea).toBe("connections");
+  store.getState().navigateBack();
+  expect(store.getState().workspaceArea).toBe("status");
+  expect(store.getState().activeProjectId).toBe(projectId);
+  expect(store.getState().drafts[newChatDraftKey(projectId)]).toBe("Keep my board question");
+});
+
 test("closing a project clears Back history, while a blocked close retains it", async () => {
   const store = createUiStore();
   store.getState().setActiveProject("history");

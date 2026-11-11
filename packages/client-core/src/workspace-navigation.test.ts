@@ -23,3 +23,12 @@ test("area preferences accept only offered tabs, including shared 3D tasks", () 
   for (const invalid of ["notes", "removed", null, { tab: "drc" }, ["drc"]]) expect(workspaceTabForArea("review", invalid)).toBe("updates");
   expect(workspaceTabForArea("overview", "pcb")).toBeNull();
 });
+
+test("connections and history are their own destinations, listed after the board", () => {
+  const areas = Object.keys(WORKSPACE_AREAS);
+  expect(areas.indexOf("connections")).toBe(areas.indexOf("boards") + 1);
+  expect(areas.indexOf("history")).toBe(areas.indexOf("boards") + 2);
+  expect(workspaceViews("connections")).toEqual([]);
+  expect(workspaceViews("history")).toEqual([]);
+  expect(workspaceTabForArea("history", "pcb")).toBeNull();
+});

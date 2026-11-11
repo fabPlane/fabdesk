@@ -27,7 +27,7 @@ export function ProjectStatus() {
   return <div className="fd-project-status">
     <nav className="fd-project-status-nav" aria-label="Project views">
       <Button size="sm" aria-current="page">Status</Button>
-      <Button size="sm" variant="ghost" onClick={() => ui().setWorkspaceArea("overview")}>{sources.data?.mode === "assembly" ? "Connections" : "Overview"}</Button>
+      <Button size="sm" variant="ghost" onClick={() => ui().setWorkspaceArea("overview")}>Overview</Button>
       <Button size="sm" variant="ghost" onClick={() => sources.data?.mode === "assembly" ? ui().setWorkspaceArea("mechanical") : ui().setBoardTab("3d")}><Icon name="cube" width={15} height={15} />{sources.data?.mode === "assembly" ? "3D assembly" : "3D"}</Button>
     </nav>
     <header className="fd-project-status-heading"><div><h1>Project Status</h1><p>{status.data?.name ?? "Saved board information"}{status.data && <> · {status.data.boards.length} {status.data.boards.length === 1 ? "board" : "boards"}</>}</p></div>

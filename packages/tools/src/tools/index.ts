@@ -7,6 +7,7 @@ import { commentTools } from "./comments";
 import { coreTools } from "./core";
 import { exportTools } from "./export";
 import { boardDiffTools } from "./board-diff";
+import { boardWorkspaceTools } from "./board-workspace";
 import { kicadTools } from "./kicad";
 import { inspectionTools } from "./inspection";
 import { nativeEditTools } from "./native-edit";
@@ -26,6 +27,7 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...projectTools,
   bom_read,
   ...commentTools,
+  ...boardWorkspaceTools,
   ...circuitTools,
   ...inspectionTools,
   ...spatialTools,
@@ -62,6 +64,7 @@ export * from "./route";
 export { savedHierarchyRevision, type SavedSheetRef } from "./project-status-evidence";
 export * from "./kicad";
 export * from "./board-diff";
+export * from "./board-workspace";
 export * from "./inspection";
 export * from "./native-edit";
 export * from "./release";

@@ -1,5 +1,41 @@
 # Project Status MVP — local walkthrough, November 11, 2026
 
+## Main refresh after board history and connections
+
+PR441 is refreshed against main336dffd4, including PR423's dedicated Connections
+and History workspaces and the grouped board fit controls. The canvas keeps all
+three destinations: Status, Connections and History. The Status shortcut for
+the project overview is now labelled Overview; Connection map still opens the
+overview's assembly map. A navigation regression verifies that Back returns
+through History, Connections and Status without losing the project or draft.
+
+No vendor source or submodule pin was changed; all four checked-out vendor HEADs
+match their existing pins. The screenshots and human walkthrough below describe
+the earlier native run, before this source merge and the Overview label change.
+They are not fresh post-merge native captures or installer acceptance evidence.
+
+The earlier backend DockerHub blocker has been cleared. Companion browser/API
+PR191 is merged, and its backend production workflow42975742942 passed, including
+API/worker publication and deployment. No production deployment was performed
+from this desktop task. Fresh installer and installed-app handoff checks remain
+separate release acceptance.
+
+Current refresh checks:
+
+- Root frozen-lockfile installation and full monorepo typecheck passed.
+- All root-workspace suites passed sequentially:2966 tests passed,38
+  optional/platform cases skipped,0 failures,25592 assertions. Root script
+  tests separately passed95/95 with323 assertions. The new Back-navigation
+  regression is included; its focused store suite passed37 tests/252 assertions.
+- The first parallel workspace run hit the existing agent-discovery test's5s
+  timeout. That test and the entire agents workspace passed in isolation, then
+  all workspace suites passed serially without changing timeouts or agent code.
+  The first script run lacked the installed Node path; correcting the test
+  command environment made the actual worker-thread packaging check pass.
+- Core and desktop production builds passed, with no source-map files or
+  sourceMappingURL references in desktop output. Main's history/connection
+  implementations and all vendor source/pins remain unchanged.
+
 Disposable PlayBridge fixtures, isolated desktop profile, local API and fresh migrated database. Native files and saved outputs were prepared before the test; publication and invitations used visible app controls. Four protected KiCad files were hash-checked unchanged afterward. These are actual captures, not generated designs.
 
 ## Demonstrated through the UI

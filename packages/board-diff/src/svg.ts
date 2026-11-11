@@ -124,7 +124,7 @@ function viewBoxAttr(box: { minX: number; minY: number; maxX: number; maxY: numb
   return `${minX} ${minY} ${w} ${h}`;
 }
 
-function drawTracks(tracks: TrackSnapshot[], kind: VisualKind, color: string, widthScale = 1): string {
+export function drawTracks(tracks: TrackSnapshot[], kind: VisualKind, color: string, widthScale = 1): string {
   return tracks
     .filter((t) => (kind === "schematic" ? t.layer === "schematic" : t.layer !== "schematic"))
     .map((t) => {
@@ -138,7 +138,7 @@ function drawTracks(tracks: TrackSnapshot[], kind: VisualKind, color: string, wi
     .join("");
 }
 
-function drawVias(vias: ViaSnapshot[], color: string): string {
+export function drawVias(vias: ViaSnapshot[], color: string): string {
   return vias
     .map((v) => {
       const r = Math.max(0.15, v.diameter / 2);
@@ -147,7 +147,7 @@ function drawVias(vias: ViaSnapshot[], color: string): string {
     .join("");
 }
 
-function drawZones(zones: ZoneSnapshot[], color: string): string {
+export function drawZones(zones: ZoneSnapshot[], color: string): string {
   return zones
     .map((z) => {
       if (z.points.length < 3) return "";
@@ -167,7 +167,7 @@ function drawComponent(component: ComponentSnapshot, kind: VisualKind, color: st
   </g>`;
 }
 
-function drawOutline(outline: Point[], color: string, paths?: Point[][]): string {
+export function drawOutline(outline: Point[], color: string, paths?: Point[][]): string {
   if (paths) return paths.filter(path => path.length > 1).map(path => `<path data-board-outline="true" d="${path.map((p, i) => `${i === 0 ? "M" : "L"}${p.x} ${p.y}`).join(" ")}" fill="none" stroke="${color}" stroke-width="0.2"/>`).join("");
   if (outline.length < 2) return "";
   if (outline.length === 2) {

@@ -3,6 +3,8 @@ export * from "./cad-kernel";
 export * from "./services";
 export * from "./fs";
 export * from "./comments";
+export * from "./board-history";
+export * from "./part-links";
 export * from "./tools/index";
 export * from "./templates/viagrid-9055";
 export * from "./adapters/mcp";
