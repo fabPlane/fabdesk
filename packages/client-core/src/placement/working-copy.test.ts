@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { CoreClient } from "../CoreClient";
+import type { ProjectManifest } from "@fabdesk/protocol";
 import { sha256Blob } from "../pcb-preview-revision";
 import { createPlacementWorkingCopy, PlacementCopyError, placementWorkingFiles } from "./working-copy";
 
@@ -11,17 +12,19 @@ async function fixture() {
     ["fabdesk.json", new Blob(["old identity"])],
   ]);
   const copies = new Map<string, Blob>(), writes: string[] = [], patches: string[] = [];
+  const manifest = { board: { layers: 4 } } as ProjectManifest;
+  const updates: unknown[] = [];
   let created = 0;
   const client = {
-    async getProject() { return { manifest: { board: { layers: 4 } }, files: [...files].map(([path, blob]) => ({ path, size: blob.size })) }; },
+    async getProject() { return { manifest, files: [...files].map(([path, blob]) => ({ path, size: blob.size })) }; },
     async createProject() { created++; return { id: "copy", name: "Working copy" }; },
     async readFileBlob(projectId: string, path: string) { const value = (projectId === "original" ? files : copies).get(path); if (!value) throw Error("missing file"); return value; },
     async writeFile(projectId: string, path: string, body: string | Blob) { writes.push(projectId + "/" + path); if (projectId !== "copy") throw Error("original write forbidden"); copies.set(path, typeof body === "string" ? new Blob([body]) : body); },
-    async request(path: string) { patches.push(path); return {}; },
+    async request(path: string, options: unknown) { patches.push(path); updates.push(options); return {}; },
   } as unknown as Pick<CoreClient, "getProject" | "createProject" | "readFileBlob" | "writeFile" | "request">;
   const source = { projectId: "original", path: "board.kicad_pcb", sha256: await sha256Blob(files.get("board.kicad_pcb")!) };
   const candidate = { path: "placement/candidate.kicad_pcb", sha256: await sha256Blob(files.get("placement/candidate.kicad_pcb")!), revision: 1, widthMm: 32, heightMm: 20 };
-  return { client, files, copies, writes, patches, source, candidate, created: () => created };
+  return { client, files, copies, writes, patches, manifest, updates, source, candidate, created: () => created };
 }
 test("working copy preserves binary source assets, replaces only its own PCB, and excludes old evidence", async () => {
   const f = await fixture(), before = [...f.files];
@@ -34,6 +37,35 @@ test("working copy preserves binary source assets, replaces only its own PCB, an
   expect(f.patches).toEqual(["/projects/copy"]);
   expect([...f.files]).toEqual(before);
   expect(JSON.parse(await f.copies.get("placement/working-copy.json")!.text()).candidate.sha256).toBe(f.candidate.sha256);
+});
+
+test("an edited downloaded board keeps its publication identity and original base without old outputs", async () => {
+  const f = await fixture();
+  const imported = { apiOrigin: "https://api.fabplane.com", projectId: "shared-project", boardId: "controller", revision: "downloaded-revision" };
+  const base = { ...imported, revision: "last-published-revision" };
+  f.manifest.contributionSource = imported;
+  f.manifest.contributions = { main: base };
+  await createPlacementWorkingCopy(f.client, { source: f.source, candidate: f.candidate, name: "Contributor copy" });
+  const patch = f.updates[0] as { json: { manifest: Partial<ProjectManifest> } };
+  expect(patch.json.manifest.contributionSource).toEqual(imported);
+  expect(patch.json.manifest.contributions).toEqual({ main: base });
+  expect(await f.copies.get("board.kicad_pcb")!.text()).toBe("unrouted PCB");
+  expect(f.copies.has("reports/drc.json")).toBe(false);
+  expect(f.copies.has("renders/top.png")).toBe(false);
+  expect(f.files.get("board.kicad_pcb") && await f.files.get("board.kicad_pcb")!.text()).toBe("original PCB");
+});
+
+test("unrelated assembly members and mismatched receipts never inherit a shared-board connection", async () => {
+  for (const mode of ["assembly", "mismatch", "owner"] as const) {
+    const f = await fixture();
+    const receipt = { apiOrigin: "https://api.fabplane.com", projectId: "shared-project", boardId: "controller", revision: "original-base" };
+    if (mode !== "owner") f.manifest.contributionSource = receipt;
+    f.manifest.contributions = { main: mode === "mismatch" ? { ...receipt, boardId: "other-board" } : receipt };
+    await createPlacementWorkingCopy(f.client, { source: { ...f.source, ...(mode === "assembly" ? { sourceId: "another-member" } : {}) }, candidate: f.candidate, name: "Separate copy" });
+    const patch = f.updates[0] as { json: { manifest: Partial<ProjectManifest> } };
+    expect(patch.json.manifest.contributionSource).toBeUndefined();
+    expect(patch.json.manifest.contributions).toBeUndefined();
+  }
 });
 test("a stale PCB or altered exported file cannot create a new working project", async () => {
   for (const target of ["board.kicad_pcb", "placement/candidate.kicad_pcb"]) {

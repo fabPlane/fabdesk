@@ -32,13 +32,14 @@ export function ContributionsDialog({
     if (confirm && (!confirmedBoard?.canPublish || state.isError)) setConfirm(null);
   }, [confirm, confirmedBoard?.canPublish, state.isError]);
   const publish = async (sourceId: string) => {
+    const replacing = !!state.data?.boards.find((board) => board.sourceId === sourceId)?.revision;
     setBusy(sourceId);
     setError(null);
     setNotice("");
     try {
       await client.publishContribution(projectId, sourceId);
       await cache.invalidateQueries({ queryKey: ["project", projectId] });
-      setNotice("Board update published.");
+      setNotice(replacing ? "Board update published." : "Design files shared with Contributors.");
       setConfirm(null);
     } catch (e) {
       setError(e);
@@ -57,7 +58,8 @@ export function ContributionsDialog({
         className="fd-share-dialog fd-board-files-dialog"
       >
         <p className="fd-share-muted">
-          Contributors can download these files, edit a separate copy, then publish a board update.
+          Shared previews are view-only. For each board below, you can also share design files with
+          all project Contributors. They edit a separate copy, then publish an update.
         </p>
         <details className="fd-board-files-details">
           <summary>What files are shared?</summary>
@@ -115,7 +117,7 @@ export function ContributionsDialog({
                   <div className="fd-board-file-heading">
                     <strong>{b.name}</strong>
                     <span className="fd-board-file-status" data-shared={!!b.revision}>
-                      {b.revision ? "Shared with Contributors" : "Not shared"}
+                      {b.revision ? "Contributors can edit a copy" : "View only"}
                     </span>
                   </div>
                   {b.revision && (b.publishedBy || b.publishedAt) && (

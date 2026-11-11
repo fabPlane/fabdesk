@@ -44,9 +44,19 @@ export async function createPlacementWorkingCopy(client: Pick<CoreClient, "getPr
     if (await sha256Blob(await client.readFileBlob(source.projectId, candidate.path)) !== candidate.sha256) throw Error("The exported PCB changed during copying. The partial copy was not activated.");
     const currentFiles = placementWorkingFiles((await client.getProject(source.projectId)).files).map(file => file.path).sort();
     if (JSON.stringify(currentFiles) !== JSON.stringify(files.map(file => file.path).sort())) throw Error("The source file set changed while copying. The partial copy was not activated.");
-    await client.request(`/projects/${encodeURIComponent(next.id)}`, { method: "PATCH", json: { manifest: { board: { ...project.manifest.board, widthMm: candidate.widthMm, heightMm: candidate.heightMm } } } });
     await client.writeFile(next.id, source.path, pcb);
     if (await sha256Blob(await client.readFileBlob(next.id, source.path)) !== candidate.sha256) throw Error("Could not verify the working PCB after writing it.");
+    // A single downloaded board remains a contribution when its placement is
+    // exported into a working copy. Keep the original base; never adopt a newer
+    // remote revision or inherit another assembly member's publication identity.
+    const imported = project.manifest.contributionSource;
+    const base = project.manifest.contributions?.main;
+    const keepContribution = !source.sourceId && source.path === "board.kicad_pcb" && imported && base &&
+      imported.apiOrigin === base.apiOrigin && imported.projectId === base.projectId && imported.boardId === base.boardId;
+    await client.request(`/projects/${encodeURIComponent(next.id)}`, { method: "PATCH", json: { manifest: {
+      board: { ...project.manifest.board, widthMm: candidate.widthMm, heightMm: candidate.heightMm },
+      ...(keepContribution ? { contributionSource: imported, contributions: { main: base } } : {}),
+    } } });
     await client.writeFile(next.id, "placement/working-copy.json", JSON.stringify({
       contract: "fabplane.placement-working-copy.v1", original: source, candidate,
       sourceFiles: copied, createdAt: new Date().toISOString(),

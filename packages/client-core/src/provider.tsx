@@ -5,6 +5,8 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import type { CoreClient } from "./CoreClient";
 import { EVENT_TOPICS, handleCoreEvent, messagesKey, syncLiveRuns, type RouteSink } from "./events";
 import type { SseStatus } from "./sse";
+import { useAuthStore } from "./stores/auth";
+import { resetCloudAccountCache } from "./auth-cache";
 
 export interface FilePickOptions {
   multiple?: boolean;
@@ -67,6 +69,7 @@ export interface CoreContextValue {
 }
 
 const CoreContext = createContext<CoreContextValue | null>(null);
+let nextConnectionScope = 0;
 
 export function useCore(): CoreContextValue {
   const v = useContext(CoreContext);
@@ -107,11 +110,13 @@ export function CoreProvider({
 }: CoreProviderProps) {
   // A restarted daemon can rotate its token while keeping the same URL. Do not let queries
   // made with the old client (including a 401) populate the new connection's cache.
-  const qc = useMemo(
+  const connection = useMemo(
     () =>
-      queryClient ??
-      new QueryClient({
-        defaultOptions: { queries: { retry: 1, staleTime: 5_000, refetchOnWindowFocus: false } },
+      ({
+        key: ++nextConnectionScope,
+        cache: queryClient ?? new QueryClient({
+          defaultOptions: { queries: { retry: 1, staleTime: 5_000, refetchOnWindowFocus: false } },
+        }),
       }),
     [client, queryClient],
   );
@@ -121,7 +126,9 @@ export function CoreProvider({
     [client, host, sseStatus],
   );
   return (
-    <QueryClientProvider client={qc}>
+    // Query observers capture their QueryClient on mount. Remount them when the core changes,
+    // so a mutation on the new connection cannot leave screens observing the old cache.
+    <QueryClientProvider key={connection.key} client={connection.cache}>
       <CoreContext.Provider value={value}>
         <CoreEventBridge
           client={client}
@@ -143,6 +150,10 @@ function CoreEventBridge(props: {
   onSchematicFocus?: (focus: SchematicFocus) => void;
   subscribe?: CoreEventSubscribe;
 }) {
+  const qc = useQueryClient();
+  useEffect(() => useAuthStore.subscribe((next, previous) => {
+    resetCloudAccountCache(qc, previous.state, next.state);
+  }), [qc]);
   useCoreEvents(props.client, props.onStatus, {
     ...(props.route ? { route: props.route } : {}),
     ...(props.onSchematicFocus ? { onSchematicFocus: props.onSchematicFocus } : {}),
