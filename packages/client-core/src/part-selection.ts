@@ -41,29 +41,61 @@ function bounds(points: { x: number; y: number }[]): PartBox | null {
   if (![x, y, right, bottom].every(Number.isFinite)) return null;
   return { x: x - .4, y: y - .4, width: right - x + .8, height: bottom - y + .8 };
 }
-function geometry(node: Node[]): { x: number; y: number }[] {
+type Point = { x: number; y: number };
+function geometry(node: Node[], transform: (p: Point) => Point = p => p): Point[] {
   const out: { x: number; y: number }[] = [];
   for (const key of ["start", "end", "mid", "center"]) { const p = point(child(node, key)); if (p) out.push(p); }
   for (const pts of children(node, "pts")) for (const xy of children(pts, "xy")) { const p = point(xy); if (p) out.push(p); }
-  const at = point(child(node, "at")), size = point(child(node, "size"));
-  if (at && node[0] === "pad") {
-    const angle = Number(child(node, "at")?.[3] ?? 0) * Math.PI / 180, c = Math.abs(Math.cos(angle)), s = Math.abs(Math.sin(angle));
-    const w = size ? (size.x * c + size.y * s) / 2 : .5, h = size ? (size.x * s + size.y * c) / 2 : .5;
-    out.push({ x: at.x - w, y: at.y - h }, { x: at.x + w, y: at.y + h });
-  } else if (at && node[0] === "pin") out.push(at);
-  const center = point(child(node, "center")), end = point(child(node, "end"));
+  const start = point(child(node, "start")), end = point(child(node, "end"));
+  if (start && end && ["fp_rect", "rectangle"].includes(String(node[0]))) out.push({ x: start.x, y: end.y }, { x: end.x, y: start.y });
+  const at = point(child(node, "at"));
+  if (at && node[0] === "pin") out.push(at);
+  const center = point(child(node, "center"));
   const radius = Number(child(node, "radius")?.[1] ?? (center && end ? Math.hypot(end.x - center.x, end.y - center.y) : NaN));
-  if (center && Number.isFinite(radius)) out.push({ x: center.x - radius, y: center.y - radius }, { x: center.x + radius, y: center.y + radius });
-  return out;
+  if (center && Number.isFinite(radius) && ["fp_circle", "circle"].includes(String(node[0]))) {
+    const c = transform(center);
+    return [{ x: c.x - radius, y: c.y - radius }, { x: c.x + radius, y: c.y + radius }];
+  }
+  const transformed = out.map(transform);
+  const mid = point(child(node, "mid"));
+  if (start && mid && end && ["fp_arc", "arc"].includes(String(node[0]))) {
+    const a = transform(start), b = transform(mid), c = transform(end);
+    const d = 2 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
+    if (Math.abs(d) > 1e-12) {
+      const a2 = a.x ** 2 + a.y ** 2, b2 = b.x ** 2 + b.y ** 2, c2 = c.x ** 2 + c.y ** 2;
+      const x = (a2 * (b.y - c.y) + b2 * (c.y - a.y) + c2 * (a.y - b.y)) / d;
+      const y = (a2 * (c.x - b.x) + b2 * (a.x - c.x) + c2 * (b.x - a.x)) / d;
+      const tau = Math.PI * 2, norm = (n: number) => (n % tau + tau) % tau;
+      const from = Math.atan2(a.y - y, a.x - x), to = Math.atan2(c.y - y, c.x - x);
+      const ccw = norm(to - from), forward = norm(Math.atan2(b.y - y, b.x - x) - from) <= ccw + 1e-9;
+      const sweep = forward ? ccw : norm(from - to), r = Math.hypot(a.x - x, a.y - y);
+      for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) if (norm(forward ? angle - from : from - angle) <= sweep + 1e-9) transformed.push({ x: x + r * Math.cos(angle), y: y + r * Math.sin(angle) });
+    }
+  }
+  return transformed;
 }
 export function pcbSelectionParts(text: string): SelectablePart[] {
   const root = parse(text, "kicad_pcb"), parts: SelectablePart[] = [];
   for (const fp of [...children(root, "footprint"), ...children(root, "module")]) {
     const ref = property(fp, "Reference") || String(children(fp, "fp_text").find(n => n[1] === "reference")?.[2] ?? "");
-    const at = point(child(fp, "at")); if (!ref || !at || ref.startsWith("#")) continue;
-    const angle = -Number(child(fp, "at")?.[3] ?? 0) * Math.PI / 180;
-    const pts = fp.filter((n): n is Node[] => Array.isArray(n) && ["pad", "fp_line", "fp_rect", "fp_circle", "fp_arc", "fp_poly"].includes(String(n[0]))).flatMap(geometry);
-    const box = bounds(pts.map(p => ({ x: at.x + p.x * Math.cos(angle) - p.y * Math.sin(angle), y: at.y + p.x * Math.sin(angle) + p.y * Math.cos(angle) })));
+    const transform = child(fp, "transform"), at = point(transform ? child(transform, "translate") : child(fp, "at"));
+    if (!ref || !at || ref.startsWith("#")) continue;
+    const angle = -Number(transform ? child(transform, "rotate")?.[1] ?? 0 : child(fp, "at")?.[3] ?? 0) * Math.PI / 180;
+    const toBoard = (p: Point) => ({ x: at.x + p.x * Math.cos(angle) - p.y * Math.sin(angle), y: at.y + p.x * Math.sin(angle) + p.y * Math.cos(angle) });
+    const pts = fp.filter((n): n is Node[] => Array.isArray(n) && ["fp_line", "fp_rect", "fp_circle", "fp_arc", "fp_poly"].includes(String(n[0]))).flatMap(n => geometry(n, toBoard));
+    for (const pad of children(fp, "pad")) {
+      const local = point(child(pad, "at")), size = point(child(pad, "size"));
+      if (!local || !size) continue;
+      // Saved pad positions are footprint-local; pad orientations are board-absolute.
+      const a = -Number(child(pad, "at")?.[3] ?? 0) * Math.PI / 180, c = Math.abs(Math.cos(a)), sn = Math.abs(Math.sin(a));
+      const center = toBoard(local), offset = point(child(child(pad, "drill") ?? [], "offset"));
+      if (offset) { center.x += offset.x * Math.cos(a) - offset.y * Math.sin(a); center.y += offset.x * Math.sin(a) + offset.y * Math.cos(a); }
+      const radius = pad[3] === "oval" ? Math.min(size.x, size.y) / 2 : pad[3] === "roundrect" ? Math.min(size.x, size.y) * Math.max(0, Math.min(.5, Number(child(pad, "roundrect_rratio")?.[1] ?? 0))) : 0;
+      const w = pad[3] === "circle" ? size.x / 2 : (size.x / 2 - radius) * c + (size.y / 2 - radius) * sn + radius;
+      const h = pad[3] === "circle" ? size.y / 2 : (size.x / 2 - radius) * sn + (size.y / 2 - radius) * c + radius;
+      pts.push({ x: center.x - w, y: center.y - h }, { x: center.x + w, y: center.y + h });
+    }
+    const box = bounds(pts);
     if (box) parts.push({ ref, uuid: value(fp, "uuid") || value(fp, "tstamp"), box });
   }
   // Duplicate references have no safe counterpart in another view.
@@ -85,9 +117,10 @@ export function schematicSelectionParts(text: string, sheetIdentity: string, roo
     if (!ref || ref.startsWith("#") || !at || !lib) continue;
     const unit = Number(value(sym, "unit") || 1), angle = Number(child(sym, "at")?.[3] ?? 0) * Math.PI / 180;
     const units = children(lib, "symbol").filter(n => { const m = /_(\d+)_\d+$/.exec(String(n[1])); return m && (Number(m[1]) === 0 || Number(m[1]) === unit); });
-    const points = units.flatMap(n => n.filter((v): v is Node[] => Array.isArray(v) && ["rectangle", "polyline", "circle", "arc", "pin"].includes(String(v[0]))).flatMap(geometry));
     const mirror = value(sym, "mirror");
-    const box = bounds(points.map(p => { const x = p.x * (mirror === "y" ? -1 : 1), y = p.y * (mirror === "x" ? -1 : 1); return { x: at.x + x * Math.cos(angle) - y * Math.sin(angle), y: at.y - x * Math.sin(angle) - y * Math.cos(angle) }; }));
+    const toSheet = (p: Point) => { const x = p.x * (mirror === "y" ? -1 : 1), y = p.y * (mirror === "x" ? -1 : 1); return { x: at.x + x * Math.cos(angle) - y * Math.sin(angle), y: at.y - x * Math.sin(angle) - y * Math.cos(angle) }; };
+    const points = units.flatMap(n => n.filter((v): v is Node[] => Array.isArray(v) && ["rectangle", "polyline", "circle", "arc", "pin"].includes(String(v[0]))).flatMap(n => geometry(n, toSheet)));
+    const box = bounds(points);
     if (box) parts.push({ ref, uuid: value(sym, "uuid"), unit, box });
   }
   const seen = new Set<string>(), ambiguous = new Set<string>();

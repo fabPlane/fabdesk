@@ -5,7 +5,7 @@ import { CoreHttpError } from "./CoreClient";
 import { sha256Blob } from "./pcb-preview-revision";
 import type { ProjectBoardSources } from "@fabdesk/protocol";
 
-const pcb = `(kicad_pcb (footprint "R" (at 20 30 90) (uuid "r") (property "Reference" "R[1]") (pad "1" smd rect (at 2 0) (size 2 1))))`;
+const pcb = `(kicad_pcb (footprint "R" (at 20 30 90) (uuid "r") (property "Reference" "R[1]") (pad "1" smd rect (at 2 0 90) (size 2 1))))`;
 const schematic = (annotations = "", extra = "", at = "20 30 0", mirror = "") => `(kicad_sch (uuid "root") (lib_symbols (symbol "Device:R" (symbol "R_0_1" (rectangle (start -1 2) (end 1 -2))))) (symbol (lib_id "Device:R") (at ${at}) (unit 1) (uuid "r") (property "Reference" "R1") ${mirror} ${annotations}) ${extra})`;
 afterEach(() => usePartSelection.setState({ selection: null }));
 test("selection follows a board across views and cannot leak across projects, endpoints or sources", () => {
@@ -93,4 +93,37 @@ test("multiple units of a schematic part are all selectable", () => {
   expect(parts).toHaveLength(2);
   if (!parts) throw new Error("Expected multi-unit schematic parts");
   expect(hitSelectionPart(parts, { x: 50, y: 60 })?.ref).toBe("R1");
+});
+
+test("PCB pad bounds match KiCad board-absolute pad rotations", () => {
+  // KiCad 10.0.4 pcbnew PAD.GetBoundingBox: 6x2 pad at 90 => 2x6,
+  // at 45/135 => 5.656854x5.656854, before our 0.4 mm selection inset.
+  for (const angle of [0, 45, 90, 135]) {
+    const text = `(kicad_pcb (footprint "Test" (at 20 30 ${angle}) (property "Reference" "R1") (pad "1" smd rect (at 0 0 ${angle}) (size 6 2))))`;
+    const box = pcbSelectionParts(text)[0]!.box;
+    const width = angle === 0 ? 6 : angle === 90 ? 2 : Math.SQRT2 * 4;
+    const height = angle === 0 ? 2 : angle === 90 ? 6 : Math.SQRT2 * 4;
+    expect(box.x).toBeCloseTo(20 - width / 2 - .4, 5);
+    expect(box.y).toBeCloseTo(30 - height / 2 - .4, 5);
+    expect(box.width).toBeCloseTo(width + .8, 5);
+    expect(box.height).toBeCloseTo(height + .8, 5);
+  }
+});
+test("diagonal footprint rectangles keep all four corners selectable", () => {
+  const text = '(kicad_pcb (footprint "Test" (at 20 30 45) (property "Reference" "U1") (fp_rect (start -2 -2) (end 2 2))))';
+  const parts = pcbSelectionParts(text);
+  expect(parts[0]!.box.width).toBeCloseTo(4 * Math.SQRT2 + .8);
+  expect(parts[0]!.box.height).toBeCloseTo(4 * Math.SQRT2 + .8);
+  expect(hitSelectionPart(parts, { x: 20, y: 32.5 })?.ref).toBe("U1");
+});
+test("transform-format footprint placement keeps the exact reference", () => {
+  const text = '(kicad_pcb (footprint "Test" (transform (translate 20 30) (rotate 90)) (property "Reference" "U1") (pad "1" smd rect (at 2 0 90) (size 2 1))))';
+  expect(hitSelectionPart(pcbSelectionParts(text), { x: 20, y: 28 })?.ref).toBe("U1");
+});
+test("round and curved footprint graphics retain their rotated extents", () => {
+  const circle = '(kicad_pcb (footprint "Test" (at 20 30 45) (property "Reference" "U1") (fp_circle (center 0 0) (end 2 0))))';
+  expect(pcbSelectionParts(circle)[0]!.box.width).toBeCloseTo(4.8);
+  expect(pcbSelectionParts(circle)[0]!.box.height).toBeCloseTo(4.8);
+  const arc = '(kicad_pcb (footprint "Test" (at 20 30) (property "Reference" "U1") (fp_arc (start 1.732050808 1) (mid 0 2) (end -1.732050808 -1))))';
+  expect(pcbSelectionParts(arc)[0]!.box.x).toBeCloseTo(17.6);
 });
