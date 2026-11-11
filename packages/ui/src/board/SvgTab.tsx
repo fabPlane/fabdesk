@@ -29,7 +29,7 @@ import { RootFindingOverlay } from "./RootFindingOverlay";
 import { NativePartTools } from "./NativePartTools";
 import { PcbPreviewStatus } from "./PcbPreviewStatus";
 import { CommentPins } from "./CommentPins";
-import { SvgViewer } from "./SvgViewer";
+import { SelectableSvgViewer } from "./SelectableSvgViewer";
 import { type SvgPoint } from "./svg-coords";
 import { buildCommentsAskPrompt, buildCommentsUserPrompt, pendingBoardComments } from "./comment-requests";
 import { SchematicPreviewStatus } from "./SchematicPreviewStatus";
@@ -244,7 +244,8 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
 
         <div className="flex min-w-0 flex-1 flex-col">
           {kind === "schematic" && (canvasMode || (schematicPreview.data?.sheets.length ?? 0) > 1) && <div className="fd-schematic-canvas-header"><SchematicSheetNav sheets={schematicPreview.data?.sheets ?? []} selected={schematicPreview.data?.sheet?.path} busy={render.state.status === "running" || !!draftPoint || pin.isPending || patch.isPending} onSelect={selectSheet} />{canvasMode && kind === "schematic" && <SchematicPreviewStatus sourceState={schematicPreview.data?.state} circuit={drawing.includes('data-fabplane-schematic-view="circuit')} scopeReady={scopeReady} hasSource={project.data?.files.some(file => file.path === "board.kicad_sch") ?? false} updated={render.state.status === "done"} busy={render.state.status === "running"} error={render.state.error ?? null} onUpdate={refreshPreview} onOpenSource={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().openProjectFile(nativeSheet?.nativePath ?? "board.kicad_sch"); }} {...(sources.isError ? { onRetryScope: () => void sources.refetch() } : {})} />}</div>}
-          <div className="min-h-0 flex-1"><SvgViewer
+          <div className="min-h-0 flex-1"><SelectableSvgViewer
+            selectionSource={{ projectId, enabled: active && scopeReady && !nativeEditBusy && !commentMode }} selectionView={kind} sheetPath={schematicPreview.data?.sheet?.path} onSelectionSheet={selectSheet} onPartSelected={() => setCanvasPoint(null)}
             svg={drawing}
             initialFit={kind === "schematic" && !drawing.includes('data-fabplane-schematic-view="circuit') ? "width" : "sheet"}
             viewKey={`${projectId}:${kind}:${kind === "schematic" ? schematicPreview.data?.sheet?.path ?? "legacy" : ""}`}

@@ -89,7 +89,7 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources }: { scopeReady: boo
   }
 
   if (canvas) return <div className="fd-board-model-view">
-    {glb ? <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} /></Suspense> : <EmptyState title="See your board in 3D" action={<Button disabled={!canGenerate || !activity.ready || exporting || making} onClick={() => void glbRun.run("glb", { projectId })}>{exporting ? "Generating model…" : "Generate 3D preview"}</Button>}>Generate a model from your saved KiCad PCB. Components with available 3D models appear in the preview.</EmptyState>}
+    {glb ? <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} selectionSource={{ projectId, enabled: scopeReady }} /></Suspense> : <EmptyState title="See your board in 3D" action={<Button disabled={!canGenerate || !activity.ready || exporting || making} onClick={() => void glbRun.run("glb", { projectId })}>{exporting ? "Generating model…" : "Generate 3D preview"}</Button>}>Generate a model from your saved KiCad PCB. Components with available 3D models appear in the preview.</EmptyState>}
     <BoardModelStatus projectId={projectId} present={!!glb} updating={exporting} floating />
     <div className="fd-board-model-actions">
       {glb && <Button size="sm" disabled={!canGenerate || !activity.ready || exporting || making} onClick={() => void glbRun.run("glb", { projectId })}>{exporting ? "Updating…" : "Update model"}</Button>}
@@ -105,7 +105,7 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources }: { scopeReady: boo
       canGenerate={canGenerate}
       checkingSources={checkingSources || project.isFetching}
       modelStatus={<BoardModelStatus projectId={projectId} present={!!glb} updating={exporting} />}
-      {...(canvasMode && glb ? { modelPreview: <Suspense fallback={<Spinner />}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} /></Suspense> } : {})}
+      {...(canvasMode && glb ? { modelPreview: <Suspense fallback={<Spinner />}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} selectionSource={{ projectId, enabled: scopeReady }} /></Suspense> } : {})}
       glb={glb}
       videos={videos}
       poster={poster}

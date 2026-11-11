@@ -1,0 +1,18 @@
+.fd-selectable-drawing { display:flex; flex-direction:column; height:100%; min-height:0; }
+.fd-part-selection-bar { display:flex; align-items:center; gap:8px; min-height:38px; flex-shrink:0; padding:4px 10px; border-bottom:1px solid var(--fd-border); background:var(--fd-panel); font-size:12px; }
+.fd-part-selection-bar select { max-width:150px; min-width:90px; border:1px solid var(--fd-border); border-radius:6px; background:var(--fd-panel-2); color:var(--fd-fg); padding:4px 6px; }
+.fd-part-selection-bar [role=status] { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--fd-muted); }
+.fd-part-selection-bar .fd-button { flex-shrink:0; white-space:nowrap; }
+.fd-part-selection-outline { position:absolute; pointer-events:none; border:2px solid #1976ef; background:rgb(25 118 239 / 12%); box-shadow:0 0 0 1px rgb(255 255 255 / 85%); border-radius:3px; z-index:2; }
+.fd-part-selection-outline > span { position:absolute; bottom:100%; left:-2px; background:#1260ce; color:white; padding:1px 5px; border-radius:3px 3px 0 0; font:600 11px/17px system-ui; }
+@media(max-width:700px) { .fd-part-selection-bar { gap:4px; padding-inline:5px; } .fd-part-selection-bar [role=status] { font-size:11px; } }
+
+.fd-model-canvas:has(> .fd-part-selection-bar) > .fd-model-viewport { top:38px; }
+.fd-assembly-pcb-surface > .fd-selectable-drawing { flex:1; height:auto; min-height:0; }
+.fd-part-selection-bar { height:44px; min-height:44px; box-sizing:border-box; }
+.fd-model-canvas:has(> .fd-part-selection-bar) > .fd-model-viewport { top:44px; }
+.fd-board-model-view:has(.fd-part-selection-bar) > .fd-board-model-status-floating,
+.fd-board-model-view:has(.fd-part-selection-bar) > .fd-board-model-actions { top:56px; }
+.fd-board-model-view > .fd-model-canvas:has(> .fd-part-selection-bar) > .fd-model-viewport { top:112px; }
+
+[data-testid=board-pcb-svg]:has(.fd-part-selection-bar) > .fd-preview-status { top:54px; }
