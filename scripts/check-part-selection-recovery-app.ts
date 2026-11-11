@@ -26,16 +26,35 @@ const inside = (b: any) => b.left >= -1 && b.right <= 1 && b.top <= 1 && b.botto
 const near = (a: any, b: any) => ["left", "right", "top", "bottom"].every(key => Math.abs(a[key] - b[key]) < 1e-6);
 const sourcePath = join(root, "board.kicad_pcb"), modelPath = join(root, "renders/board.glb"), receiptPath = modelPath + ".revision.json";
 const source = readFileSync(sourcePath), model = readFileSync(modelPath), receipt = readFileSync(receiptPath);
+const pcbPath = join(root, "renders/pcb.svg"), pcbReceiptPath = pcbPath + ".revision.json";
+const pcb = readFileSync(pcbPath), pcbReceipt = readFileSync(pcbReceiptPath);
 const originalSize = await page(`({width:innerWidth,height:innerHeight})`);
 if ((await bridge("/ui", { action:"selectProject", args:[projectId] })).result.activeProjectId !== projectId) throw new Error("Open the disposable project before running these checks.");
 await bridge("/ui", { action:"openTab", args:["pcb"] });
 if (!await page(`!!document.querySelector('.fd-shared-part-selection')`)) await bridge("/click", { selector:'button[aria-label="Show all three views"]' });
-await until(`!!document.querySelector('.fd-shared-part-selection option[value="U1"]') && !!document.querySelector('.fd-model-viewport canvas')`);
+await until(`!!document.querySelector('.fd-shared-part-selection option[value="U1"]') && !document.querySelector('.fd-shared-part-selection select').disabled && !!document.querySelector('.fd-model-viewport canvas')`);
 await page(`(()=>{window.__recoveryErrors=[];window.addEventListener('error',e=>window.__recoveryErrors.push(e.message));window.addEventListener('unhandledrejection',e=>window.__recoveryErrors.push(String(e.reason)));})()`);
 try {
   await page(`window.resizeTo(1440,920)`); await Bun.sleep(300);
   await bridge("/click", { selector:'.fd-shared-part-selection option[value="U1"]' });
   await until(selected("U1")); await until(`!document.querySelector('[data-focus-motion="running"]')`);
+  await bridge("/click", { selector:'.fd-comparison-pane[data-view="pcb"] .fd-svg-fit-button[title="Show the whole drawing"]' });
+  const point = await page(`(()=>{const r=document.querySelector('.fd-comparison-pane[data-view="pcb"] [data-component-ref="U1"]').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`);
+  // Hold only the replacement image's load event. The old bitmap stays visible,
+  // exercising the gap between verified source metadata and actual painting.
+  await page(`(()=>{window.__holdPreview=e=>{if(e.target.matches?.('.fd-comparison-pane[data-view="pcb"] .fd-svg-host > img')){e.stopImmediatePropagation();window.__heldPreview=e.target}};document.addEventListener('load',window.__holdPreview,true)})()`);
+  const refreshedPcb = Buffer.from(pcb.toString().replace('</svg>', '<!-- refreshed preview audit -->\n</svg>'));
+  const refreshedReceipt = JSON.parse(pcbReceipt.toString()); refreshedReceipt.artifactSha256 = createHash("sha256").update(refreshedPcb).digest("hex");
+  writeFileSync(pcbPath, refreshedPcb); writeFileSync(pcbReceiptPath, JSON.stringify(refreshedReceipt));
+  await until(`!!window.__heldPreview && !document.querySelector('.fd-shared-part-selection select').disabled`);
+  check("An unpainted replacement preview hides source-bound overlays", await page(`!!document.querySelector('.fd-comparison-pane[data-view="pcb"] .fd-svg-host[aria-busy="true"]') && !document.querySelector('.fd-comparison-pane[data-view="pcb"] [data-component-ref]')`));
+  await bridge("/click", { selector:'.fd-shared-part-selection button' }); await bridge("/click", point);
+  await page(`document.querySelector('.fd-comparison-pane[data-view="pcb"] .fd-svg-host').focus()`); await bridge("/key", { key:"Enter" });
+  check("Unpainted previews reject mouse and keyboard selection", await page(`document.querySelector('.fd-shared-part-selection select').value==='' && !document.querySelector('.fd-location-toolbar')`));
+  await page(`(()=>{document.removeEventListener('load',window.__holdPreview,true);window.__heldPreview.dispatchEvent(new Event('load'));delete window.__holdPreview;delete window.__heldPreview})()`);
+  await until(`!!document.querySelector('.fd-comparison-pane[data-view="pcb"] .fd-svg-host[aria-busy="false"]')`);
+  await bridge("/click", point); await until(selected("U1"));
+  check("Selection resumes only after the verified replacement is painted", await page(`!!document.querySelector('.fd-comparison-pane[data-view="pcb"] [data-component-ref="U1"]')`));
   writeFileSync(sourcePath, Buffer.concat([source, Buffer.from("\n")]));
   await until(selected(""));
   check("Stale PCB source removes PCB and 3D highlights", await page(`!document.querySelector('.fd-comparison-pane[data-view="pcb"] [data-component-ref]') && document.querySelector('.fd-model-viewport canvas').dataset.tintedMeshes==='0'`));
@@ -81,10 +100,12 @@ try {
   check("Missing counterpart disables Focus and removes the previous model tint", await page(`document.querySelector('button[aria-label="Focus selected in 3D"]').disabled && document.querySelector('.fd-model-viewport canvas').dataset.tintedMeshes==='0'`));
   await bridge("/click", { selector:'.fd-shared-part-selection option[value="R2"]' }); await until(selected("R2"));
 } finally {
+  await page(`(()=>{if(window.__holdPreview)document.removeEventListener('load',window.__holdPreview,true);window.__heldPreview?.dispatchEvent(new Event('load'));delete window.__holdPreview;delete window.__heldPreview})()`);
   writeFileSync(sourcePath, source); writeFileSync(modelPath, model); writeFileSync(receiptPath, receipt);
+  writeFileSync(pcbPath, pcb); writeFileSync(pcbReceiptPath, pcbReceipt);
   await page(`window.resizeTo(${originalSize.width},${originalSize.height})`);
 }
 await until(selected("R2")); await until(`!document.querySelector('.fd-model-message')`);
-check("All disposable source/model/receipt bytes are restored", readFileSync(sourcePath).equals(source) && readFileSync(modelPath).equals(model) && readFileSync(receiptPath).equals(receipt));
+check("All disposable source/model/receipt bytes are restored", readFileSync(sourcePath).equals(source) && readFileSync(modelPath).equals(model) && readFileSync(receiptPath).equals(receipt) && readFileSync(pcbPath).equals(pcb) && readFileSync(pcbReceiptPath).equals(pcbReceipt));
 check("Recovery produces no uncaught renderer errors", (await page(`window.__recoveryErrors`)).length === 0);
 console.log(`All ${passed} recovery checks passed.`);

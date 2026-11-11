@@ -220,7 +220,7 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
     onRegionFocused?.();
   }, [focusRegion?.key, box?.width, box?.height, current?.url, loaded?.url, size, fitSize.width, fitSize.height, zoom, focusActive, focusMotionEnabled]);
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
-    if (!onDrawingClick || (event.target as HTMLElement | null)?.closest("[data-comment-pin], [data-canvas-tools]")) return;
+    if (!onDrawingClick || (viewBox && !showingCurrent) || (event.target as HTMLElement | null)?.closest("[data-comment-pin], [data-canvas-tools]")) return;
     const host = drawing.current;
     if (!host || !box) return;
     const point = clientPointToSvg(box, host.getBoundingClientRect(), event.clientX, event.clientY);
@@ -254,10 +254,11 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
           ref={drawing}
           onClick={handleClick}
           role={onDrawingClick ? "group" : undefined}
+          aria-busy={!!viewBox && !showingCurrent}
           tabIndex={onDrawingClick ? 0 : undefined}
           aria-label={onDrawingClick ? "Drawing canvas. Click a location, or press Enter to select the center." : undefined}
           onKeyDown={(event) => {
-            if (event.target !== event.currentTarget || !box || !onDrawingClick) return;
+            if (event.target !== event.currentTarget || !box || !onDrawingClick || (viewBox && !showingCurrent)) return;
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
               onDrawingClick({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
@@ -287,7 +288,9 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
             <SvgCanvas svg={canvasSvg} image={image.current} width={fitSize.width * zoom} height={fitSize.height * zoom} />
           )}
           {!viewBox && <div className="fd-svg-document h-full w-full" dangerouslySetInnerHTML={{ __html: svg }} />}
-          {typeof overlay === "function" ? overlay(box) : overlay}
+          {/* A retained bitmap belongs to the previous SVG until the new image
+              loads. Never put new-source markers or hit targets on that bitmap. */}
+          {(!viewBox || showingCurrent) && (typeof overlay === "function" ? overlay(box) : overlay)}
         </div>
         </div>
       </div>

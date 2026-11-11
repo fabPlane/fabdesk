@@ -28,6 +28,8 @@ the old selection. Selecting another part or pressing **Focus** restores automat
 Interrupting a drawing animation keeps the visible position and scale, so clicking
 a moving part selects that part. Verified source/model refreshes retain 3D focus;
 stale or missing counterparts still lose their highlight immediately.
+When a replacement SVG is loading, the retained old picture is read-only: new
+overlays and spatial mouse/keyboard selection wait until the new image is painted.
 **Clear** or Escape clears the highlight. The component dropdown supports keyboard selection.
 **Actions** opens the existing drawing tools when needed.
 
@@ -84,8 +86,9 @@ FABDESK_TEST_PROJECT_DIR=/path/to/disposable-project \
 bun scripts/check-part-selection-recovery-app.ts
 ```
 
-This recovery script temporarily edits the fixture's PCB, model metadata, and model
-receipt, restoring their exact bytes in `finally`. It checks stale-source handling,
+This recovery script temporarily edits the fixture's PCB, SVG preview, model metadata,
+and preview/model receipts, restoring their exact bytes in `finally`. It checks delayed
+preview painting, stale-source handling,
 focus and manual-camera preservation, and a missing 3D counterpart. Never point it
 at a real design.
 
