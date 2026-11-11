@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { hitSelectionPart, type PartBox } from "@fabdesk/client-core";
 import { SvgViewer } from "./SvgViewer";
 import { useBoardPartSelection, type PartSelectionSource } from "./usePartSelection";
 import { PartSelectionBar } from "./PartSelectionBar";
 import { pcbSvgHasNativeCoordinates } from "@fabdesk/client-core";
 
-export function SelectableSvgViewer({ selectionSource, selectionView, sheetPath, onSelectionSheet, onPartSelected, ...props }: ComponentProps<typeof SvgViewer> & { selectionSource: PartSelectionSource; selectionView: "pcb" | "schematic"; sheetPath?: string | undefined; onSelectionSheet?: ((path: string) => void) | undefined; onPartSelected?: (() => void) | undefined }) {
+export function SelectableSvgViewer({ selectionSource, selectionView, sheetPath, onSelectionSheet, onPartSelected, drawingHeader, ...props }: ComponentProps<typeof SvgViewer> & { drawingHeader?: ReactNode; selectionSource: PartSelectionSource; selectionView: "pcb" | "schematic"; sheetPath?: string | undefined; onSelectionSheet?: ((path: string) => void) | undefined; onPartSelected?: (() => void) | undefined }) {
   const selected = useBoardPartSelection(selectionSource), [hash, setHash] = useState<{ svg: string; hash: string } | null>(null);
   const [focus, setFocus] = useState<(PartBox & { key: string }) | undefined>();
   useEffect(() => { let current = true; void crypto.subtle.digest("SHA-256", new TextEncoder().encode(props.svg)).then(bytes => { if (current) setHash({ svg: props.svg, hash: Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, "0")).join("") }); }); return () => { current = false; }; }, [props.svg]);
@@ -31,6 +31,7 @@ export function SelectableSvgViewer({ selectionSource, selectionView, sheetPath,
   const focusSelected = () => { if (!targets.length) return; const x = Math.min(...targets.map(p => p.box.x)), y = Math.min(...targets.map(p => p.box.y)); setFocus({ x: x - 3, y: y - 3, width: Math.max(...targets.map(p => p.box.x + p.box.width)) - x + 6, height: Math.max(...targets.map(p => p.box.y + p.box.height)) - y + 6, key: `${selected.scope}/${selected.ref}/${performance.now()}` }); };
   return <div className="fd-selectable-drawing" data-selected-component={selected.ref ?? ""} onKeyDown={event => { if (!event.defaultPrevented && event.key === "Escape" && selected.ref && !props.commentMode && !(event.target instanceof Element && event.target.closest("input, textarea, select, [role=dialog]"))) { selected.clear(); event.preventDefault(); event.stopPropagation(); } }}>
     <PartSelectionBar reference={selected.ref} references={references} onSelect={selectPart} onClear={selected.clear} onFocus={targets.length ? focusSelected : undefined} notice={notice} onActions={targets.length && props.onDrawingClick ? () => { const b = targets[0]!.box; props.onDrawingClick?.({ x: b.x + b.width / 2, y: b.y + b.height / 2 }); } : undefined} />
+    {drawingHeader}
     <div className="min-h-0 flex-1"><SvgViewer {...props} {...(focus && valid ? { focusRegion: focus } : {})}
       onDrawingClick={(point, event) => { if (!props.commentMode && valid) { const hit = hitSelectionPart(parts, point); if (hit) { selectPart(hit.ref); return; } } props.onDrawingClick?.(point, event); }}
       onDrawingEscape={() => { if (selected.ref && !props.commentMode) { selected.clear(); return true; } return props.onDrawingEscape?.() ?? false; }}
