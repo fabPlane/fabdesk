@@ -79,6 +79,7 @@ if (!baseline) {
   for (const key of ["Home", "End"]) {
     await bridge("/key", { key }); await until(`document.querySelector('[aria-label="Resize PCB and schematic views"]')?.getAttribute('aria-valuenow')==='${key === "Home" ? "25" : "75"}'`); await sleep(400);
     check(`Comparison controls fit at divider ${key}`, await page(controlsInside));
+    check(`Assistant does not cover comparison controls at divider ${key}`, await page(`(()=>{const a=document.querySelector('[data-assistant-launcher]')?.getBoundingClientRect();return !a||[...document.querySelectorAll('.fd-comparison-pane .fd-svg-tools')].every(e=>{const r=e.getBoundingClientRect();return r.right<=a.left||r.left>=a.right||r.bottom<=a.top||r.top>=a.bottom})})()`));
   }
   await bridge("/click", { selector: '.fd-comparison-pane[data-view="schematic"] .fd-part-selection-bar button' });
   check("Narrow component actions stay inside their pane", await page(`(()=>{const p=document.querySelector('.fd-comparison-pane[data-view="schematic"]').getBoundingClientRect(), t=document.querySelector('.fd-comparison-pane[data-view="schematic"] .fd-location-toolbar')?.getBoundingClientRect();return !!t&&t.left>=p.left&&t.right<=p.right&&t.top>=p.top&&t.bottom<=p.bottom})()`));
