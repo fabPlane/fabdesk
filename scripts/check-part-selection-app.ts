@@ -27,6 +27,7 @@ const open = async (tab: string) => { await bridge("/ui", { action: "openTab", a
 if (await page(`!!document.querySelector('button[aria-label="Close all views"]')`)) await bridge("/click", { selector: 'button[aria-label="Close all views"]' });
 const selected = () => page(`document.querySelector('.fd-part-selection-bar select')?.value`);
 const pick = async (view: "pcb" | "schematic", ref: string, scope = "") => {
+  await until(`!document.querySelector('[data-focus-motion="running"]')`);
   // Schematic viewports persist zoom/pan between mounts. Reset before mapping
   // native drawing coordinates so this check is repeatable after manual focus.
   await bridge("/click", { selector: scope + '.fd-svg-fit-button[title="Show the whole drawing"]' });
@@ -84,8 +85,14 @@ if (!baseline) {
   await until(allHighlighted("R2")); check("Shared selector updates all three views", true);
   await pick("schematic", "R1", '.fd-comparison-pane[data-view="schematic"] ');
   await until(allHighlighted("R1")); check("Schematic click updates PCB and 3D immediately", true);
+  check("Schematic click animates the other views", await page(`document.querySelector('.fd-comparison-pane[data-view="pcb"] [data-focus-motion="running"]')!==null && document.querySelector('.fd-comparison-pane[data-view="3d"] [data-focus-motion="running"]')!==null`));
+  await until(`!document.querySelector('[data-focus-motion="running"]')`);
+  check("Schematic click keeps its own zoom steady", await page(`document.querySelector('.fd-comparison-pane[data-view="schematic"] .fd-svg-zoom-value')?.textContent==='100%'`));
   await pick("pcb", "U1", '.fd-comparison-pane[data-view="pcb"] ');
   await until(allHighlighted("U1")); check("PCB click updates schematic and 3D immediately", true);
+  check("PCB click animates the other views", await page(`document.querySelector('.fd-comparison-pane[data-view="schematic"] [data-focus-motion="running"]')!==null && document.querySelector('.fd-comparison-pane[data-view="3d"] [data-focus-motion="running"]')!==null`));
+  await until(`!document.querySelector('[data-focus-motion="running"]')`);
+  check("PCB click keeps its own zoom steady", await page(`document.querySelector('.fd-comparison-pane[data-view="pcb"] .fd-svg-zoom-value')?.textContent==='100%'`));
   const controlsInside = `Array.from(document.querySelectorAll('.fd-comparison-pane')).every(p=>{const pane=p.getBoundingClientRect();return [...p.querySelectorAll('header button,.fd-svg-tools button,.fd-model-view-tools button')].every(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.left>=pane.left&&r.right<=pane.right&&r.top>=pane.top&&r.bottom<=pane.bottom})})`;
   const columns = await page(`document.querySelector('.fd-three-view')?.dataset.layout==='columns'`);
   for (const [label, limits] of [["Resize PCB and other views", columns ? [28,36] : [32,60]], ["Resize schematic and 3D views", columns ? [45,55] : [40,60]]] as const) {
@@ -109,13 +116,15 @@ if (!baseline) {
   check("Source-status menu stays inside its pane", await page(`(()=>{const p=document.querySelector('.fd-comparison-pane[data-view="schematic"]').getBoundingClientRect(), t=document.querySelector('.fd-comparison-pane[data-view="schematic"] .fd-workspace-menu[open] .fd-workspace-menu-content')?.getBoundingClientRect();return !!t&&t.left>=p.left&&t.right<=p.right&&t.top>=p.top&&t.bottom<=p.bottom})()`));
   await bridge("/key", { key: "Escape" });
   await until(`!document.querySelector('.fd-schematic-status .fd-workspace-menu[open]')`);
+  await until(`(()=>{const pane=document.querySelector('.fd-comparison-pane[data-view="schematic"]'), frame=pane.querySelector('.fd-svg-viewport').getBoundingClientRect(), mark=pane.querySelector('[data-component-ref="U1"]').getBoundingClientRect();return mark.left>=frame.left&&mark.right<=frame.right&&mark.top>=frame.top&&mark.bottom<=frame.bottom})()`);
+  check("Linked focus remains visible after resizing panes", true);
   await capture("04-all-three-views");
   await bridge("/click", { selector: 'button[aria-label="Focus selected in Schematic"]' });
   await until(`parseInt(document.querySelector('.fd-comparison-pane[data-view="schematic"] .fd-svg-zoom-value')?.textContent)>100`);
   check("Focus zooms the selected schematic part in a compact pane", await page(`parseInt(document.querySelector('.fd-comparison-pane[data-view="schematic"] .fd-svg-zoom-value')?.textContent)>100`));
   await bridge("/click", { selector: 'button[aria-label="Focus selected in PCB"]' });
   await bridge("/click", { selector: 'button[aria-label="Focus selected in 3D"]' });
-  await sleep(200);
+  await until(`!document.querySelector('[data-focus-motion="running"]')`);
   const focusedInside = `['pcb','schematic'].every(view=>{const pane=document.querySelector('.fd-comparison-pane[data-view="'+view+'"]'), frame=pane.querySelector('.fd-svg-viewport').getBoundingClientRect(), mark=pane.querySelector('[data-component-ref="U1"]').getBoundingClientRect();return mark.left>=frame.left&&mark.right<=frame.right&&mark.top>=frame.top&&mark.bottom<=frame.bottom})`;
   await until(focusedInside); check("Focus keeps the selected part inside both drawing viewports", true);
   await capture("05-focused-in-all-views");
@@ -129,8 +138,22 @@ if (!baseline) {
   await until(`document.querySelector('.fd-model-viewport canvas')?.dataset.selectedComponent===''`);
   await bridge("/click", { x: modelRect.x + modelRect.width / 2, y: modelRect.y + modelRect.height / 2 });
   await until(allHighlighted("U1")); check("3D model click updates both visible drawings", true);
+  check("3D click animates both drawings and keeps its camera steady", await page(`document.querySelectorAll('.fd-comparison-pane .fd-svg-host[data-focus-motion="running"]').length===2 && document.querySelector('.fd-model-viewport canvas')?.dataset.focusMotion!=='running'`));
+  await until(`!document.querySelector('[data-focus-motion="running"]')`);
+  for (const ref of ["R2", "R1", "U1"]) await bridge("/click", { selector: `.fd-shared-part-selection option[value="${ref}"]` });
+  await until(allHighlighted("U1"));
+  await until(`!document.querySelector('[data-focus-motion="running"]')`);
+  check("Rapid reselection settles on the latest part in every view", await page(focusedInside));
+  await page(`(()=>{window.__originalMatchMedia=window.matchMedia;window.matchMedia=query=>{const media=window.__originalMatchMedia.call(window,query);return query==='(prefers-reduced-motion: reduce)'?new Proxy(media,{get:(target,key)=>key==='matches'?true:typeof target[key]==='function'?target[key].bind(target):target[key]}):media};})()`);
+  try {
+    await bridge("/click", { selector: '.fd-shared-part-selection option[value="R2"]' });
+    await until(allHighlighted("R2"));
+    check("Reduced motion focuses without animation", await page(`!document.querySelector('[data-focus-motion="running"]') && [...document.querySelectorAll('.fd-comparison-pane .fd-svg-zoom-value')].every(e=>parseInt(e.textContent)>100)`));
+  } finally { await page(`(()=>{window.matchMedia=window.__originalMatchMedia;delete window.__originalMatchMedia;})()`); }
+  await bridge("/click", { selector: '.fd-shared-part-selection option[value="U1"]' });
+  await until(allHighlighted("U1")); await until(`!document.querySelector('[data-focus-motion="running"]')`);
   await bridge("/click", { selector: 'button[aria-label="Expand 3D"]' });
-  await until(`!document.querySelector('.fd-board-comparison') && !!document.querySelector('.fd-model-viewport canvas')`);
+  await until(`!document.querySelector('.fd-board-comparison') && !!document.querySelector('.fd-model-viewport canvas') && !!document.querySelector('.fd-part-selection-bar option[value="U1"]')`);
   check("Expand 3D preserves selection", await selected() === "U1");
   await bridge("/click", { selector: 'button[aria-label="Show all three views"]' });
   await until(allHighlighted("U1")); check("All views can be reopened from 3D with the shared selection", true);

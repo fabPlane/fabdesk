@@ -10,8 +10,12 @@ and Clear control sit above the panes. Drag either divider (or use its arrow key
 Home and End) to resize; each pane has Focus and an expand button. Expanding a pane
 preserves selection; Show all three views returns to the saved arrangement.
 
-Clicking a component does not change the camera. **Focus selected** zooms to it;
-**Clear** or Escape clears it. The component dropdown supports keyboard selection.
+In the three-view workspace, clicking a component smoothly focuses its counterparts
+in the other two views, leaving the clicked view steady. The shared dropdown focuses
+all three. Transitions take 320 ms, respect reduced motion, and are interrupted by
+manual camera input or a newer selection. **Focus** also zooms explicitly; **Fit**
+restores the overview. In single-view mode, selection leaves the camera unchanged.
+**Clear** or Escape clears the highlight. The component dropdown supports keyboard selection.
 **Actions** opens the existing drawing tools when needed.
 
 A selected component on one uniquely identified schematic sheet opens that sheet.
@@ -37,7 +41,8 @@ fixture component models are missing and are reported by the app.
 2. Open Schematic. Main has no shared component selection; the branch highlights U1.
 3. Open 3D. Main has no component highlight; the branch outlines U1's model.
 4. Open Show all three views. The branch keeps PCB, schematic and 3D visible together; main only offers PCB/schematic comparison.
-5. Use each pane’s Focus to inspect the same part, then Escape to clear all highlights.
+5. Click a part: the other two panes animate to it. Use Focus for the clicked pane,
+   Fit to restore an overview, and Escape to clear all highlights.
 
 ## Reproduce native checks
 
@@ -76,7 +81,8 @@ action and source-status menus stay within their pane. Escape dismisses componen
 actions before clearing the selection.
 
 The native smoke check includes both divider keyboard limits, drawing/control
-bounds, simultaneous highlights, native clicks in all three views, centered Focus,
+bounds, simultaneous highlights, native clicks in all three views, animated linked
+focus, rapid reselection, reduced-motion emulation, centered Focus,
 menu bounds, Escape dismissal and expansion/reopening without selection loss. Captures cover
 1440×920 and 960×600. The audit covers this board workspace and its component
 selection controls; it is not a claim that every application screen, theme, or

@@ -67,6 +67,12 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
   const data = blob ?? query.data, isPending = !blob && query.isPending, isError = !blob && query.isError, refetch = query.refetch;
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const linkedFocus = useRef<number | null>(null);
+  useEffect(() => {
+    if (selection.linkedFocus === null || linkedFocus.current === selection.linkedFocus || loading || !selectableRefs.includes(selection.ref ?? "")) return;
+    linkedFocus.current = selection.linkedFocus;
+    focusSelection.current?.();
+  }, [selection.linkedFocus, selection.ref, loading, selectableRefs]);
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
@@ -79,6 +85,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
     let observer: ResizeObserver | null = null;
     let camera: THREE.PerspectiveCamera | null = null;
     let cleanupContext: (() => void) | null = null;
+    let stopMotion = () => {};
     let cleanupSelection: (() => void) | null = null;
     setError(null); setLoading(true);
     void (async () => {
@@ -109,7 +116,10 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
         controls.listenToKeyEvents(renderer.domElement);
         controls.enableDamping = false; controls.minDistance = span * .08; controls.maxDistance = span * 60;
         const render = () => { if (!disposed && renderer && camera) renderer.render(scene, camera); };
+        let motionFrame = 0;
+        stopMotion = () => { cancelAnimationFrame(motionFrame); motionFrame = 0; if (renderer) renderer.domElement.dataset["focusMotion"] = "idle"; };
         const reset = () => {
+          stopMotion();
           if (!camera || !controls) return;
           controls.target.set(0, 0, 0);
           camera.up.set(0, 1, 0);
@@ -119,6 +129,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
         };
         fit.current = reset;
         zoom.current = (factor) => {
+          stopMotion();
           if (!camera || !controls) return;
           camera.position.sub(controls.target).multiplyScalar(factor).add(controls.target);
           controls.update(); render();
@@ -145,6 +156,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
           const sync = () => {
             if (disposed || !model) return;
             const current = currentSelection.current, receipt = current.index.data?.model;
+            stopMotion();
             selectable.clear(); model.updateWorldMatrix(true, true);
             if (current.ready && receipt?.sha256 === digest) {
               selectable = nativeModelParts(model, receipt.references);
@@ -163,10 +175,21 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
             const center = highlightBox.getCenter(new THREE.Vector3()), size = highlightBox.getSize(new THREE.Vector3());
             const direction = camera.position.clone().sub(controls.target).normalize();
             const distance = fitModelCamera(size, camera.fov, camera.aspect).distance * 1.35;
-            controls.target.copy(center); camera.position.copy(center).addScaledVector(direction, Math.max(distance, controls.minDistance)); controls.update(); render();
+            stopMotion();
+            const startTarget = controls.target.clone(), startPosition = camera.position.clone();
+            const endPosition = center.clone().addScaledVector(direction, Math.max(distance, controls.minDistance));
+            const started = performance.now(), reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+            const step = (now: number) => {
+              if (disposed || !camera || !controls) return;
+              const t = reduced ? 1 : Math.min(1, (now - started) / 320), eased = 1 - (1 - t) ** 3;
+              controls.target.lerpVectors(startTarget, center, eased); camera.position.lerpVectors(startPosition, endPosition, eased); controls.update(); render();
+              canvas.dataset["focusMotion"] = t < 1 ? "running" : "idle";
+              if (t < 1) motionFrame = requestAnimationFrame(step); else motionFrame = 0;
+            };
+            step(started);
           };
           let down: { x: number; y: number } | null = null;
-          const pointerDown = (event: PointerEvent) => { down = event.button === 0 && event.isPrimary ? { x: event.clientX, y: event.clientY } : null; };
+          const pointerDown = (event: PointerEvent) => { stopMotion(); down = event.button === 0 && event.isPrimary ? { x: event.clientX, y: event.clientY } : null; };
           const pointerUp = (event: PointerEvent) => {
             const start = down; down = null;
             if (!start || event.button !== 0 || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4 || !camera || !model) return;
@@ -180,6 +203,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
           cleanupSelection = () => { canvas.removeEventListener("pointerdown", pointerDown); canvas.removeEventListener("pointerup", pointerUp); canvas.removeEventListener("pointercancel", cancel); highlight.geometry.dispose(); highlightMaterials.forEach(material => material.dispose()); };
           sync();
         }
+        controls.addEventListener("start", stopMotion);
         controls.addEventListener("change", render);
         observer = new ResizeObserver(resize); observer.observe(target);
         const lost = (event: Event) => { event.preventDefault(); setError("The 3D graphics connection was interrupted. Retry to reopen the preview."); };
@@ -191,7 +215,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
       }
     })();
     return () => {
-      disposed = true; fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
+      disposed = true; stopMotion(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
       if (camera && controls) savedCamera.current = { position: camera.position.clone(), target: controls.target.clone(), up: camera.up.clone() };
       observer?.disconnect(); cleanupContext?.(); controls?.dispose();
       if (model) disposeModel(model);

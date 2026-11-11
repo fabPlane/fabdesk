@@ -12,7 +12,7 @@ import "./svg-viewer-tools.css";
 const schematicViews = new DrawingViewportMemory();
 
 /** Zoomable vector image, isolated from the app's DOM and CSS layout. */
-export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, commentMode = false, initialFit = "sheet", fitLabel = "Fit sheet", focusRegion, onRegionFocused, onDrawingClick, onDrawingEscape }: {
+export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, commentMode = false, initialFit = "sheet", fitLabel = "Fit sheet", focusRegion, focusMotionEnabled = true, onRegionFocused, onDrawingClick, onDrawingEscape }: {
   svg: string;
   /** Preserve zoom and scroll when only presentation (such as blend) changes. */
   viewKey?: string;
@@ -24,7 +24,8 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
   initialFit?: "sheet" | "width";
   fitLabel?: string;
   /** Verified SVG coordinates, never raw native coordinates without a frame check. */
-  focusRegion?: SvgBox & { key: string };
+  focusRegion?: SvgBox & { key: string; animate?: boolean };
+  focusMotionEnabled?: boolean;
   onRegionFocused?: () => void;
   onDrawingClick?: (point: SvgPoint, event?: MouseEvent<HTMLDivElement>) => void;
   /** Return true when a source-local selection was dismissed. */
@@ -138,19 +139,51 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
     });
   };
   const focusedRegion = useRef<string | null>(null);
+  const focusMotion = useRef<Animation | null>(null);
+  const motionFrame = useRef(0);
+  const lastDrawingRect = useRef<DOMRect | null>(null);
+  const focusStart = useRef<{ key: string; rect: DOMRect | null } | null>(null);
+  const stopFocusMotion = () => { cancelAnimationFrame(motionFrame.current); focusMotion.current?.cancel(); focusMotion.current = null; if (drawing.current) drawing.current.dataset["focusMotion"] = "idle"; };
+  // Remember the visible drawing before focus changes its zoom and scroll area.
+  useLayoutEffect(() => {
+    const frame = viewport.current;
+    const remember = () => { lastDrawingRect.current = drawing.current?.getBoundingClientRect() ?? null; };
+    remember(); frame?.addEventListener("scroll", remember);
+    return () => frame?.removeEventListener("scroll", remember);
+  }, [zoom, fitSize.width, fitSize.height]);
+  useEffect(() => () => stopFocusMotion(), []);
+  useEffect(() => { if (!focusMotionEnabled) stopFocusMotion(); }, [focusMotionEnabled]);
   // Center only after React has committed the requested zoom. A frame callback can
   // run against the old drawing dimensions, especially in a resized comparison pane.
   useLayoutEffect(() => {
     const frame = viewport.current, host = drawing.current;
-    if (!focusActive || !focusRegion || focusedRegion.current === focusRegion.key || !frame || !host || !box || !size || !current || loaded?.url !== current.url || fitSize.width <= 1 || fitSize.height <= 1) return;
+    const geometryKey = `${focusRegion?.key}/${fitSize.width}/${fitSize.height}`;
+    if (!focusMotionEnabled || !focusActive || !focusRegion || focusedRegion.current === geometryKey || !frame || !host || !box || !size || !current || loaded?.url !== current.url || fitSize.width <= 1 || fitSize.height <= 1) return;
+    if (focusStart.current?.key !== geometryKey) {
+      focusStart.current = { key: geometryKey, rect: lastDrawingRect.current };
+      stopFocusMotion();
+    }
     const next = Math.max(.2, Math.min(64, Math.min((frame.clientWidth - Math.min(72, frame.clientWidth * .2)) / (focusRegion.width / box.width * fitSize.width), (frame.clientHeight - Math.min(120, frame.clientHeight * .2)) / (focusRegion.height / box.height * fitSize.height))));
     if (Math.abs(zoom - next) > .0001) { setZoom(next); return; }
     const center = { x: (focusRegion.x + focusRegion.width / 2 - box.x) / box.width, y: (focusRegion.y + focusRegion.height / 2 - box.y) / box.height };
     const drawingRect = host.getBoundingClientRect(), rect = frame.getBoundingClientRect();
     frame.scrollBy(drawingRect.left + center.x * drawingRect.width - rect.left - frame.clientWidth / 2, drawingRect.top + center.y * drawingRect.height - rect.top - frame.clientHeight / 2);
-    focusedRegion.current = focusRegion.key;
+    const changedSelection = !focusedRegion.current?.startsWith(`${focusRegion.key}/`);
+    focusedRegion.current = geometryKey;
+    const before = focusStart.current?.rect, after = host.getBoundingClientRect();
+    if (changedSelection && focusRegion.animate && before && after.width && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const motion = host.animate([
+        { transform: `translate(${before.left - after.left}px, ${before.top - after.top}px) scale(${before.width / after.width})` },
+        { transform: "none" },
+      ], { duration: 320, easing: "cubic-bezier(.22,.61,.36,1)" });
+      focusMotion.current = motion; host.dataset["focusMotion"] = "running";
+      const rememberAnimation = () => { if (focusMotion.current !== motion) return; lastDrawingRect.current = host.getBoundingClientRect(); motionFrame.current = requestAnimationFrame(rememberAnimation); };
+      motionFrame.current = requestAnimationFrame(rememberAnimation);
+      motion.onfinish = () => { if (focusMotion.current === motion) { focusMotion.current = null; host.dataset["focusMotion"] = "idle"; lastDrawingRect.current = host.getBoundingClientRect(); } };
+    }
+    lastDrawingRect.current = host.getBoundingClientRect();
     onRegionFocused?.();
-  }, [focusRegion?.key, box?.width, box?.height, current?.url, loaded?.url, size, fitSize.width, fitSize.height, zoom, focusActive]);
+  }, [focusRegion?.key, box?.width, box?.height, current?.url, loaded?.url, size, fitSize.width, fitSize.height, zoom, focusActive, focusMotionEnabled]);
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
     if (!onDrawingClick || (event.target as HTMLElement | null)?.closest("[data-comment-pin], [data-canvas-tools]")) return;
     const host = drawing.current;
@@ -159,7 +192,7 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
     if (point) onDrawingClick(point, event);
   };
   return (
-    <div className="fd-svg-viewer relative flex h-full flex-col" onKeyDown={event => { if (event.key === "Escape" && onDrawingEscape?.()) { event.preventDefault(); event.stopPropagation(); requestAnimationFrame(() => drawing.current?.focus({ preventScroll: true })); } }}>
+    <div className="fd-svg-viewer relative flex h-full flex-col" onPointerDownCapture={stopFocusMotion} onWheelCapture={stopFocusMotion} onKeyDownCapture={stopFocusMotion} onKeyDown={event => { if (event.key === "Escape" && onDrawingEscape?.()) { event.preventDefault(); event.stopPropagation(); requestAnimationFrame(() => drawing.current?.focus({ preventScroll: true })); } }}>
       <div className="fd-svg-tools flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-3 py-2">
         <div className="fd-svg-zoom-group" role="group" aria-label="Drawing zoom">
         <Button size="sm" onClick={() => zoomAt(zoom / 1.25)} title="Zoom out" aria-label="Zoom out">
