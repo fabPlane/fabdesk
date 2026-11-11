@@ -15,5 +15,5 @@ export function useBoardPartSelection(source?: PartSelectionSource) {
   const index = useQuery({ queryKey: ["part-selection-index", source?.projectId, scope], queryFn: () => inspectSelectionIndex(client, source!.projectId, source!.board), enabled, staleTime: 30_000, retry: false });
   const ref = usePartSelection(s => s.selection?.scope === scope ? s.selection.ref : null);
   const ready = enabled && !index.isFetching && !index.isError && !!index.data;
-  return { scope, ref, index, ready, linkedFocus: ready && comparison?.focus?.ref === ref && comparison.focus.origin !== comparison.view ? comparison.focus.id : null, select: (ref: string) => { if (ready && useUiStore.getState().activeProjectId === source?.projectId) { usePartSelection.getState().select(scope, ref); comparison?.onSelect(ref, comparison.view); } }, clear: () => usePartSelection.getState().clear(scope) };
+  return { scope, ref, index, ready, linkedFocus: ready && comparison?.focus?.ref === ref && (comparison.view === "3d" || comparison.focus.origin !== comparison.view) ? comparison.focus.id : null, select: (ref: string) => { if (ready && useUiStore.getState().activeProjectId === source?.projectId) { usePartSelection.getState().select(scope, ref); comparison?.onSelect(ref, comparison.view); } }, clear: () => usePartSelection.getState().clear(scope) };
 }

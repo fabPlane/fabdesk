@@ -11,7 +11,9 @@ Home and End) to resize; each pane has Focus and an expand button. Expanding a p
 preserves selection; Show all three views returns to the saved arrangement.
 
 In the three-view workspace, clicking a component smoothly focuses its counterparts
-in the other two views, leaving the clicked view steady. The shared dropdown focuses
+in the other views. PCB and schematic keep the clicked view steady; 3D also
+zooms into a component clicked directly in the model. Its close-up fits the part
+at the current camera angle, including small parts on large boards. The shared dropdown focuses
 all three. Transitions take 320 ms, respect reduced motion, and are interrupted by
 manual camera input or a newer selection. **Focus** also zooms explicitly; **Fit**
 restores the overview. In single-view mode, selection leaves the camera unchanged.

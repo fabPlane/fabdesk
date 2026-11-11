@@ -138,7 +138,7 @@ if (!baseline) {
   await until(`document.querySelector('.fd-model-viewport canvas')?.dataset.selectedComponent===''`);
   await bridge("/click", { x: modelRect.x + modelRect.width / 2, y: modelRect.y + modelRect.height / 2 });
   await until(allHighlighted("U1")); check("3D model click updates both visible drawings", true);
-  check("3D click animates both drawings and keeps its camera steady", await page(`document.querySelectorAll('.fd-comparison-pane .fd-svg-host[data-focus-motion="running"]').length===2 && document.querySelector('.fd-model-viewport canvas')?.dataset.focusMotion!=='running'`));
+  check("3D click animates both drawings and zooms into the selected model", await page(`document.querySelectorAll('.fd-comparison-pane .fd-svg-host[data-focus-motion="running"]').length===2 && document.querySelector('.fd-model-viewport canvas')?.dataset.focusMotion==='running'`));
   await until(`!document.querySelector('[data-focus-motion="running"]')`);
   for (const ref of ["R2", "R1", "U1"]) await bridge("/click", { selector: `.fd-shared-part-selection option[value="${ref}"]` });
   await until(allHighlighted("U1"));

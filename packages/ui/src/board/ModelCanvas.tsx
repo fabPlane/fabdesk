@@ -121,6 +121,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
         const reset = () => {
           stopMotion();
           if (!camera || !controls) return;
+          controls.minDistance = span * .08;
           controls.target.set(0, 0, 0);
           camera.up.set(0, 1, 0);
           const { distance, direction } = fitModelCamera(size, camera.fov, camera.aspect);
@@ -174,7 +175,10 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
             if (highlightBox.isEmpty() || !camera || !controls) return;
             const center = highlightBox.getCenter(new THREE.Vector3()), size = highlightBox.getSize(new THREE.Vector3());
             const direction = camera.position.clone().sub(controls.target).normalize();
-            const distance = fitModelCamera(size, camera.fov, camera.aspect).distance * 1.35;
+            // Fit the selected component in the current camera orientation, not the
+            // board's default angle. Tiny parts must not inherit a board-sized zoom floor.
+            const distance = fitModelCamera(size, camera.fov, camera.aspect, .8, direction).distance;
+            controls.minDistance = Math.max(camera.near * 4, Math.min(span * .08, distance * .1));
             stopMotion();
             const startTarget = controls.target.clone(), startPosition = camera.position.clone();
             const endPosition = center.clone().addScaledVector(direction, Math.max(distance, controls.minDistance));
