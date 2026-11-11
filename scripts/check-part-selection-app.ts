@@ -13,6 +13,10 @@ const config = (name: string) => JSON.parse(readFileSync(join(profile, name), "u
 async function bridge(path: string, body?: unknown): Promise<any> { const { token } = config("daemon.json"), { url } = config("app-bridge.json"); const response = await fetch(url + path, { method: body ? "POST" : "GET", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) }); const data = await response.json(); if (!response.ok) throw new Error(JSON.stringify(data)); return data; }
 const page = async (code: string) => (await bridge("/eval", { code })).result;
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// Observe motion during the gesture, rather than racing a 320 ms animation with
+// a later bridge round trip on a busy physical machine.
+const watchMotion = () => page(`(()=>{window.__motionObserver?.disconnect();window.__animatedViews=[];window.__motionObserver=new MutationObserver(records=>{for(const record of records){const e=record.target;if(record.oldValue==='running'||e.dataset.focusMotion==='running'){const view=e.closest('[data-view]')?.dataset.view;if(view&&!window.__animatedViews.includes(view))window.__animatedViews.push(view)}}});window.__motionObserver.observe(document.body,{subtree:true,attributes:true,attributeFilter:['data-focus-motion'],attributeOldValue:true});})()`);
+
 async function until(code: string) { for (let n = 0; n < 120; n++) { if (await page(code)) return; await sleep(250); } throw new Error(`Timed out: ${code}`); }
 let passed = 0;
 const check = (name: string, condition: boolean) => { if (!condition) throw new Error(`FAIL ${name}`); passed++; console.log(`PASS ${name}`); };
@@ -74,6 +78,8 @@ if (!baseline) {
   const allHighlighted = (ref: string) => `document.querySelectorAll('.fd-comparison-pane [data-component-ref="${ref}"]').length===2 && document.querySelector('.fd-comparison-pane[data-view="3d"] canvas')?.dataset.selectedComponent==='${ref}'`;
   await until(allHighlighted("U1"));
   check("All three views highlight U1 simultaneously", true);
+  check("Color fill replaces box outlines in both drawings and the 3D mesh", await page(`document.querySelectorAll('.fd-part-selection-highlight polygon').length===2 && [...document.querySelectorAll('.fd-part-selection-highlight')].every(e=>getComputedStyle(e).borderTopWidth==='0px') && Number(document.querySelector('.fd-model-viewport canvas')?.dataset.tintedMeshes)>0`));
+  const modelInside = `(()=>{const raw=document.querySelector('.fd-model-viewport canvas')?.dataset.componentBounds;if(!raw)return false;const b=JSON.parse(raw);return b.left>=-1&&b.right<=1&&b.top<=1&&b.bottom>=-1})()`;
   check("Only one shared component selector is shown", await page(`document.querySelectorAll('select[aria-label="Selected component across views"]').length===1`));
   await page(`window.__comparisonModel = document.querySelector('.fd-model-viewport canvas')`);
   for (const view of ["pcb", "schematic", "3d"]) {
@@ -83,14 +89,16 @@ if (!baseline) {
   check("Changing focus keeps the same live 3D canvas", await page(`window.__comparisonModel===document.querySelector('.fd-model-viewport canvas')`));
   await bridge("/click", { selector: '.fd-shared-part-selection option[value="R2"]' });
   await until(allHighlighted("R2")); check("Shared selector updates all three views", true);
+  await watchMotion();
   await pick("schematic", "R1", '.fd-comparison-pane[data-view="schematic"] ');
   await until(allHighlighted("R1")); check("Schematic click updates PCB and 3D immediately", true);
-  check("Schematic click animates the other views", await page(`document.querySelector('.fd-comparison-pane[data-view="pcb"] [data-focus-motion="running"]')!==null && document.querySelector('.fd-comparison-pane[data-view="3d"] [data-focus-motion="running"]')!==null`));
+  check("Schematic click animates the other views", await page(`['pcb','3d'].every(view=>window.__animatedViews.includes(view))`));
   await until(`!document.querySelector('[data-focus-motion="running"]')`);
   check("Schematic click keeps its own zoom steady", await page(`document.querySelector('.fd-comparison-pane[data-view="schematic"] .fd-svg-zoom-value')?.textContent==='100%'`));
+  await watchMotion();
   await pick("pcb", "U1", '.fd-comparison-pane[data-view="pcb"] ');
   await until(allHighlighted("U1")); check("PCB click updates schematic and 3D immediately", true);
-  check("PCB click animates the other views", await page(`document.querySelector('.fd-comparison-pane[data-view="schematic"] [data-focus-motion="running"]')!==null && document.querySelector('.fd-comparison-pane[data-view="3d"] [data-focus-motion="running"]')!==null`));
+  check("PCB click animates the other views", await page(`['schematic','3d'].every(view=>window.__animatedViews.includes(view))`));
   await until(`!document.querySelector('[data-focus-motion="running"]')`);
   check("PCB click keeps its own zoom steady", await page(`document.querySelector('.fd-comparison-pane[data-view="pcb"] .fd-svg-zoom-value')?.textContent==='100%'`));
   const controlsInside = `Array.from(document.querySelectorAll('.fd-comparison-pane')).every(p=>{const pane=p.getBoundingClientRect();return [...p.querySelectorAll('header button,.fd-svg-tools button,.fd-model-view-tools button')].every(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.left>=pane.left&&r.right<=pane.right&&r.top>=pane.top&&r.bottom<=pane.bottom})})`;
@@ -99,6 +107,7 @@ if (!baseline) {
     await page(`document.querySelector('[aria-label="${label}"]').focus()`);
     for (const [key, value] of [["Home", limits[0]], ["End", limits[1]]] as const) {
       await bridge("/key", { key }); await until(`document.querySelector('[aria-label="${label}"]')?.getAttribute('aria-valuenow')==='${value}'`); await sleep(200);
+      await until(modelInside); check(`${label}: selected 3D component stays framed at ${key}`, true);
       check(`${label}: controls fit at ${key}`, await page(controlsInside));
       check(`${label}: drawings retain visible space at ${key}`, await page(`[...document.querySelectorAll('.fd-comparison-pane .fd-svg-viewport,.fd-comparison-pane .fd-model-viewport')].every(e=>{const r=e.getBoundingClientRect();return r.width>=200&&r.height>=50})`));
       check(`${label}: assistant does not cover controls at ${key}`, await page(`(()=>{const a=document.querySelector('[data-assistant-launcher]')?.getBoundingClientRect();return !a||[...document.querySelectorAll('.fd-comparison-pane .fd-svg-tools,.fd-comparison-pane .fd-model-view-tools')].every(e=>{const r=e.getBoundingClientRect();return r.right<=a.left||r.left>=a.right||r.bottom<=a.top||r.top>=a.bottom})})()`));
@@ -136,14 +145,23 @@ if (!baseline) {
   const modelRect = await page(`document.querySelector('.fd-model-viewport canvas').getBoundingClientRect().toJSON()`);
   await bridge("/click", { selector: '.fd-shared-part-selection button' });
   await until(`document.querySelector('.fd-model-viewport canvas')?.dataset.selectedComponent===''`);
+  await watchMotion();
   await bridge("/click", { x: modelRect.x + modelRect.width / 2, y: modelRect.y + modelRect.height / 2 });
   await until(allHighlighted("U1")); check("3D model click updates both visible drawings", true);
-  check("3D click animates both drawings and zooms into the selected model", await page(`document.querySelectorAll('.fd-comparison-pane .fd-svg-host[data-focus-motion="running"]').length===2 && document.querySelector('.fd-model-viewport canvas')?.dataset.focusMotion==='running'`));
+  check("3D click animates both drawings and zooms into the selected model", await page(`['pcb','schematic','3d'].every(view=>window.__animatedViews.includes(view))`));
   await until(`!document.querySelector('[data-focus-motion="running"]')`);
-  for (const ref of ["R2", "R1", "U1"]) await bridge("/click", { selector: `.fd-shared-part-selection option[value="${ref}"]` });
+  const originalSize = await page(`({width:innerWidth,height:innerHeight})`);
+  for (let i = 0; i < 24; i++) {
+    await bridge("/click", { selector: `.fd-shared-part-selection option[value="${["R2", "R1", "U1"][i%3]}"]` });
+    if (i%6===5) await page(i%12===5 ? `window.resizeTo(960,600)` : `window.resizeTo(1440,920)`);
+  }
+  await page(`window.resizeTo(${originalSize.width},${originalSize.height})`);
+  await until(`innerWidth===${originalSize.width} && innerHeight===${originalSize.height}`);
   await until(allHighlighted("U1"));
   await until(`!document.querySelector('[data-focus-motion="running"]')`);
-  check("Rapid reselection settles on the latest part in every view", await page(focusedInside));
+  await until(focusedInside); await until(modelInside);
+  check("24 rapid part switches with window resizing settle on the latest part in every view", await page(focusedInside));
+  check("Rapid switches retain exactly two colored drawing markers and a tinted 3D model", await page(`document.querySelectorAll('[data-component-ref="U1"]').length===2 && document.querySelectorAll('[data-component-ref]:not([data-component-ref="U1"])').length===0 && Number(document.querySelector('.fd-model-viewport canvas')?.dataset.tintedMeshes)>0`));
   await page(`(()=>{window.__originalMatchMedia=window.matchMedia;window.matchMedia=query=>{const media=window.__originalMatchMedia.call(window,query);return query==='(prefers-reduced-motion: reduce)'?new Proxy(media,{get:(target,key)=>key==='matches'?true:typeof target[key]==='function'?target[key].bind(target):target[key]}):media};})()`);
   try {
     await bridge("/click", { selector: '.fd-shared-part-selection option[value="R2"]' });
@@ -159,9 +177,10 @@ if (!baseline) {
   await until(allHighlighted("U1")); check("All views can be reopened from 3D with the shared selection", true);
   await page(`document.querySelector('.fd-comparison-pane[data-view="pcb"] .fd-svg-host').focus()`); await bridge("/key", { key: "Escape" });
   await until(`!document.querySelector('[data-component-ref]') && document.querySelector('.fd-model-viewport canvas')?.dataset.selectedComponent===''`);
-  check("Escape clears all three visible highlights", true);
+  check("Escape clears all three visible highlights and removes model tint", await page(`document.querySelector('.fd-model-viewport canvas')?.dataset.tintedMeshes==='0'`));
   await bridge("/click", { selector: 'button[aria-label="Close all views"]' });
 
 }
+await page(`window.__motionObserver?.disconnect()`);
 check("No uncaught renderer errors", (await page("window.__selectionErrors")).length === 0);
 console.log(`All ${passed} passed · ${baseline ? "main baseline" : "feature"} · ${JSON.stringify((await bridge('/state')).ui.page)}`);

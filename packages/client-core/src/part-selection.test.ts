@@ -127,3 +127,20 @@ test("round and curved footprint graphics retain their rotated extents", () => {
   const arc = '(kicad_pcb (footprint "Test" (at 20 30) (property "Reference" "U1") (fp_arc (start 1.732050808 1) (mid 0 2) (end -1.732050808 -1))))';
   expect(pcbSelectionParts(arc)[0]!.box.x).toBeCloseTo(17.6);
 });
+
+
+test("colored footprint envelope follows rotated native geometry instead of its padded hit box", () => {
+  const [part] = pcbSelectionParts('(kicad_pcb (footprint "R" (at 10 20 45) (property "Reference" "R1") (fp_rect (start -3 -1) (end 3 1))))');
+  expect(part!.hull).toHaveLength(4);
+  const area = Math.abs(part!.hull!.reduce((sum,p,i,points)=>{const next=points[(i+1)%points.length]!;return sum+p.x*next.y-next.x*p.y;},0))/2;
+  expect(area).toBeCloseTo(12, 8);
+  expect(area).toBeLessThan(part!.box.width*part!.box.height);
+});
+
+test("schematic color fill follows the symbol body without enclosing its distant pin anchors", () => {
+  const text = schematic().replace('(rectangle (start -1 2) (end 1 -2))', '(rectangle (start -1 2) (end 1 -2)) (pin input line (at 6 0) (length 5))');
+  const [part] = schematicSelectionParts(text, "root", text);
+  expect(part!.hull).toHaveLength(4);
+  expect(Math.max(...part!.hull!.map(p=>p.x))).toBe(21);
+  expect(part!.box.x + part!.box.width).toBeCloseTo(26.4);
+});

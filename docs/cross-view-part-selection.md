@@ -1,7 +1,11 @@
 # Component selection across views
 
 Click a component in PCB, Schematic, or 3D to highlight the same reference in the
-other views. Selection belongs to the endpoint, project, and board source; two
+other views. Selected 3D meshes turn cyan; PCB footprints and schematic symbol
+bodies receive a translucent cyan fill and reference label instead of a box outline.
+The 2D fill uses a source-derived component envelope, not editable model geometry.
+Clearing or switching parts restores the original 3D materials, including shared
+materials and textures. Selection belongs to the endpoint, project, and board source; two
 boards with an R1 do not share a selection. Switching views keeps the selection.
 **Show all three views** opens PCB on the left and schematic above 3D on the
 right in taller windows. Short windows use three columns to give each drawing
@@ -85,7 +89,8 @@ actions before clearing the selection.
 The native smoke check includes both divider keyboard limits, drawing/control
 bounds, simultaneous highlights, native clicks in all three views, animated linked
 focus, rapid reselection, reduced-motion emulation, centered Focus,
-menu bounds, Escape dismissal and expansion/reopening without selection loss. Captures cover
+3D framing at divider limits, 24 rapid selections while alternating window sizes,
+material restoration, menu bounds, Escape dismissal and expansion/reopening without selection loss. Captures cover
 1440×920 and 960×600. The audit covers this board workspace and its component
 selection controls; it is not a claim that every application screen, theme, or
 platform has been exhaustively audited.

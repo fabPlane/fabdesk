@@ -1,7 +1,7 @@
 import { fitModelCamera } from "@fabdesk/client-core";
 import { useBoardPartSelection, type PartSelectionSource } from "./usePartSelection";
 import { PartSelectionBar } from "./PartSelectionBar";
-import { nativeModelParts, modelPartReference } from "./model-part-selection";
+import { nativeModelParts, modelPartReference, ModelPartTint } from "./model-part-selection";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -55,7 +55,7 @@ async function loadModel(bytes: ArrayBuffer, path: string): Promise<THREE.Object
 export default function ModelCanvas({ projectId, path, blob, selectionSource }: { projectId: string; path: string; blob?: Blob; selectionSource?: PartSelectionSource }) {
   const selection = useBoardPartSelection(selectionSource);
   const currentSelection = useRef(selection); currentSelection.current = selection;
-  const updateSelection = useRef<(() => void) | null>(null), focusSelection = useRef<(() => void) | null>(null);
+  const updateSelection = useRef<(() => void) | null>(null), focusSelection = useRef<((animate?: boolean) => void) | null>(null);
   const [selectableRefs, setSelectableRefs] = useState<string[]>([]);
   const [selectionNotice, setSelectionNotice] = useState<string | undefined>();
   useEffect(() => { updateSelection.current?.(); }, [selection.ref, selection.ready, selection.index.data]);
@@ -115,12 +115,15 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
         controls = new OrbitControls(camera, renderer.domElement);
         controls.listenToKeyEvents(renderer.domElement);
         controls.enableDamping = false; controls.minDistance = span * .08; controls.maxDistance = span * 60;
-        const render = () => { if (!disposed && renderer && camera) renderer.render(scene, camera); };
+        let measureSelection = () => {};
+        let keepSelectionFramed = false;
+        const render = () => { if (!disposed && renderer && camera) { renderer.render(scene, camera); measureSelection(); } };
         let motionFrame = 0;
         stopMotion = () => { cancelAnimationFrame(motionFrame); motionFrame = 0; if (renderer) renderer.domElement.dataset["focusMotion"] = "idle"; };
         const reset = () => {
           stopMotion();
           if (!camera || !controls) return;
+          keepSelectionFramed = false;
           controls.minDistance = span * .08;
           controls.target.set(0, 0, 0);
           camera.up.set(0, 1, 0);
@@ -130,7 +133,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
         };
         fit.current = reset;
         zoom.current = (factor) => {
-          stopMotion();
+          keepSelectionFramed = false; stopMotion();
           if (!camera || !controls) return;
           camera.position.sub(controls.target).multiplyScalar(factor).add(controls.target);
           controls.update(); render();
@@ -139,7 +142,9 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
           if (!renderer || !camera) return;
           const w = target.clientWidth, h = target.clientHeight;
           if (w < 1 || h < 1) return;
-          renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); render();
+          renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+          if (keepSelectionFramed) focusSelection.current?.(false);
+          render();
         };
         resize();
         if (savedCamera.current) {
@@ -150,14 +155,17 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
           const canvas = renderer.domElement;
           let selectable = new Map<string, THREE.Object3D[]>();
           const highlightBox = new THREE.Box3();
-          const highlight = new THREE.Box3Helper(highlightBox, 0x1976ef);
-          const highlightMaterials = Array.isArray(highlight.material) ? highlight.material : [highlight.material];
-          for (const material of highlightMaterials) { material.depthTest = false; material.transparent = true; }
-          highlight.renderOrder = 1000; highlight.visible = false; scene.add(highlight);
+          const tint = new ModelPartTint();
+          measureSelection = () => {
+            if (!camera || highlightBox.isEmpty()) { delete canvas.dataset["componentBounds"]; return; }
+            const points = [];
+            for (const x of [highlightBox.min.x, highlightBox.max.x]) for (const y of [highlightBox.min.y, highlightBox.max.y]) for (const z of [highlightBox.min.z, highlightBox.max.z]) points.push(new THREE.Vector3(x, y, z).project(camera));
+            canvas.dataset["componentBounds"] = JSON.stringify({ left:Math.min(...points.map(p=>p.x)), right:Math.max(...points.map(p=>p.x)), top:Math.max(...points.map(p=>p.y)), bottom:Math.min(...points.map(p=>p.y)) });
+          };
           const sync = () => {
             if (disposed || !model) return;
             const current = currentSelection.current, receipt = current.index.data?.model;
-            stopMotion();
+            keepSelectionFramed = false; stopMotion();
             selectable.clear(); model.updateWorldMatrix(true, true);
             if (current.ready && receipt?.sha256 === digest) {
               selectable = nativeModelParts(model, receipt.references);
@@ -165,14 +173,16 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
             setSelectableRefs([...selectable.keys()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
             highlightBox.makeEmpty();
             for (const object of selectable.get(current.ref ?? "") ?? []) highlightBox.union(new THREE.Box3().setFromObject(object));
-            highlight.visible = !highlightBox.isEmpty();
-            canvas.dataset["selectedComponent"] = highlight.visible ? current.ref! : "";
-            setSelectionNotice(!current.ready || receipt?.sha256 !== digest ? "Update the 3D preview to select components" : current.ref && !highlight.visible ? `${current.ref} has no selectable model in this preview` : undefined);
+            const visible = !highlightBox.isEmpty();
+            canvas.dataset["tintedMeshes"] = String(tint.apply(selectable.get(current.ref ?? "") ?? []));
+            canvas.dataset["selectedComponent"] = visible ? current.ref! : "";
+            setSelectionNotice(!current.ready || receipt?.sha256 !== digest ? "Update the 3D preview to select components" : current.ref && !visible ? `${current.ref} has no selectable model in this preview` : undefined);
             render();
           };
           updateSelection.current = sync;
-          focusSelection.current = () => {
+          focusSelection.current = (animate = true) => {
             if (highlightBox.isEmpty() || !camera || !controls) return;
+            keepSelectionFramed = true;
             const center = highlightBox.getCenter(new THREE.Vector3()), size = highlightBox.getSize(new THREE.Vector3());
             const direction = camera.position.clone().sub(controls.target).normalize();
             // Fit the selected component in the current camera orientation, not the
@@ -182,7 +192,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
             stopMotion();
             const startTarget = controls.target.clone(), startPosition = camera.position.clone();
             const endPosition = center.clone().addScaledVector(direction, Math.max(distance, controls.minDistance));
-            const started = performance.now(), reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+            const started = performance.now(), reduced = !animate || matchMedia("(prefers-reduced-motion: reduce)").matches;
             const step = (now: number) => {
               if (disposed || !camera || !controls) return;
               const t = reduced ? 1 : Math.min(1, (now - started) / 320), eased = 1 - (1 - t) ** 3;
@@ -193,7 +203,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
             step(started);
           };
           let down: { x: number; y: number } | null = null;
-          const pointerDown = (event: PointerEvent) => { stopMotion(); down = event.button === 0 && event.isPrimary ? { x: event.clientX, y: event.clientY } : null; };
+          const pointerDown = (event: PointerEvent) => { keepSelectionFramed = false; stopMotion(); down = event.button === 0 && event.isPrimary ? { x: event.clientX, y: event.clientY } : null; };
           const pointerUp = (event: PointerEvent) => {
             const start = down; down = null;
             if (!start || event.button !== 0 || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4 || !camera || !model) return;
@@ -204,10 +214,10 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
           };
           const cancel = () => { down = null; };
           canvas.addEventListener("pointerdown", pointerDown); canvas.addEventListener("pointerup", pointerUp); canvas.addEventListener("pointercancel", cancel);
-          cleanupSelection = () => { canvas.removeEventListener("pointerdown", pointerDown); canvas.removeEventListener("pointerup", pointerUp); canvas.removeEventListener("pointercancel", cancel); highlight.geometry.dispose(); highlightMaterials.forEach(material => material.dispose()); };
+          cleanupSelection = () => { canvas.removeEventListener("pointerdown", pointerDown); canvas.removeEventListener("pointerup", pointerUp); canvas.removeEventListener("pointercancel", cancel); tint.clear(); };
           sync();
         }
-        controls.addEventListener("start", stopMotion);
+        controls.addEventListener("start", () => { keepSelectionFramed = false; stopMotion(); });
         controls.addEventListener("change", render);
         observer = new ResizeObserver(resize); observer.observe(target);
         const lost = (event: Event) => { event.preventDefault(); setError("The 3D graphics connection was interrupted. Retry to reopen the preview."); };

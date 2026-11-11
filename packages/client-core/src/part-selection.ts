@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type PartBox = { x: number; y: number; width: number; height: number };
-export type SelectablePart = { ref: string; uuid: string; unit?: number; box: PartBox };
+export type SelectablePart = { ref: string; uuid: string; unit?: number; box: PartBox; hull?: { x: number; y: number }[] };
 export type PartScope = { endpoint: string; projectId: string; sourceId?: string; manifestSha256?: string };
 export const partScopeKey = (scope: PartScope) => JSON.stringify([scope.endpoint, scope.projectId, scope.sourceId ?? null, scope.manifestSha256 ?? null]);
 export const usePartSelection = create<{ selection: { scope: string; ref: string } | null; select: (scope: string, ref: string) => void; clear: (scope: string) => void }>(set => ({
@@ -42,6 +42,14 @@ function bounds(points: { x: number; y: number }[]): PartBox | null {
   return { x: x - .4, y: y - .4, width: right - x + .8, height: bottom - y + .8 };
 }
 type Point = { x: number; y: number };
+/** Native component envelope, without the rectangular hit-test padding. */
+export function componentHull(points: readonly Point[]): Point[] {
+  const sorted = [...new Map(points.filter(p => Number.isFinite(p.x) && Number.isFinite(p.y)).map(p => [`${p.x}/${p.y}`, p])).values()].sort((a,b) => a.x - b.x || a.y - b.y);
+  if (sorted.length < 3) return sorted;
+  const cross = (a: Point, b: Point, c: Point) => (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
+  const half = (points: Point[]) => { const result: Point[] = []; for (const p of points) { while (result.length > 1 && cross(result[result.length-2]!, result[result.length-1]!, p) <= 0) result.pop(); result.push(p); } return result; };
+  return [...half(sorted).slice(0,-1), ...half([...sorted].reverse()).slice(0,-1)];
+}
 function geometry(node: Node[], transform: (p: Point) => Point = p => p): Point[] {
   const out: { x: number; y: number }[] = [];
   for (const key of ["start", "end", "mid", "center"]) { const p = point(child(node, key)); if (p) out.push(p); }
@@ -96,7 +104,7 @@ export function pcbSelectionParts(text: string): SelectablePart[] {
       pts.push({ x: center.x - w, y: center.y - h }, { x: center.x + w, y: center.y + h });
     }
     const box = bounds(pts);
-    if (box) parts.push({ ref, uuid: value(fp, "uuid") || value(fp, "tstamp"), box });
+    if (box) parts.push({ ref, uuid: value(fp, "uuid") || value(fp, "tstamp"), box, hull: componentHull(pts) });
   }
   // Duplicate references have no safe counterpart in another view.
   const counts = new Map<string, number>();
@@ -121,7 +129,8 @@ export function schematicSelectionParts(text: string, sheetIdentity: string, roo
     const toSheet = (p: Point) => { const x = p.x * (mirror === "y" ? -1 : 1), y = p.y * (mirror === "x" ? -1 : 1); return { x: at.x + x * Math.cos(angle) - y * Math.sin(angle), y: at.y - x * Math.sin(angle) - y * Math.cos(angle) }; };
     const points = units.flatMap(n => n.filter((v): v is Node[] => Array.isArray(v) && ["rectangle", "polyline", "circle", "arc", "pin"].includes(String(v[0]))).flatMap(n => geometry(n, toSheet)));
     const box = bounds(points);
-    if (box) parts.push({ ref, uuid: value(sym, "uuid"), unit, box });
+    const body = units.flatMap(n => n.filter((v): v is Node[] => Array.isArray(v) && ["rectangle", "polyline", "circle", "arc"].includes(String(v[0]))).flatMap(n => geometry(n, toSheet)));
+    if (box) parts.push({ ref, uuid: value(sym, "uuid"), unit, box, hull: componentHull(body.length >= 3 ? body : points) });
   }
   const seen = new Set<string>(), ambiguous = new Set<string>();
   for (const part of parts) { const key = JSON.stringify([part.ref, part.unit]); if (seen.has(key)) ambiguous.add(part.ref); seen.add(key); }
