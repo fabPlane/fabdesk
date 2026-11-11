@@ -87,5 +87,7 @@ test("identical references in separate assembly sources use their own bytes and 
 test("multiple units of a schematic part are all selectable", () => {
   const other = '(symbol (lib_id "Device:R") (at 50 60) (unit 2) (uuid "other-unit") (property "Reference" "R1"))';
   const text = schematic("", other), parts = schematicSelectionParts(text, "root", text);
-  expect(parts).toHaveLength(2); expect(hitSelectionPart(parts, { x: 50, y: 60 })?.ref).toBe("R1");
+  expect(parts).toHaveLength(2);
+  if (!parts) throw new Error("Expected multi-unit schematic parts");
+  expect(hitSelectionPart(parts, { x: 50, y: 60 })?.ref).toBe("R1");
 });
