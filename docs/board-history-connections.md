@@ -121,6 +121,27 @@ PR head. The evidence manifest records source hashes for the tested files.
   app flows are outside this pass. Remote CI at the unchanged head is green but
   does not validate these uncommitted fixes.
 
+## Merge-readiness check — November 11, 2026
+
+An isolated combined-source checkout tested PR head
+`1c680dd6875c40ba180dbaea84a1bfb9d46fe8bf` against current `main`
+`2a6d32b19dde758b16eb5a7e54d45802c6d1ffec`, without merging either branch.
+The merge was conflict-free, but the compact-toolbar selector hid **Fit sheet**
+after main grouped the zoom controls. Native checks reproduced this on both
+History and Connections at 960×600. The selector now hides only the final direct
+button (Fit width), and the native script checks Fit sheet visibility on both
+boards and its ability to reset a zoomed drawing.
+
+With that fix, root typecheck and desktop build passed. Root tests passed with
+3,056 passes, zero failures and 38 skips. No assertions were weakened and no skips
+were added by this fix.
+The initial archive-only test attempt failed its Git checkout identity check;
+creating Git metadata in the isolated verification copy resolved that setup issue.
+All 45 native checks passed at 960×600 (fabPlane dark) and 1440×920 (fabPlane light),
+including long labels, failed writes, restart persistence and recovery cases.
+This supplements the earlier four-theme matrix. Fresh before/after captures and
+logs are outside the repository in `astra-handoff/pr423-merge-review-2026-11-11/`.
+
 ## Limits
 
 - The pin editor supports one target per source pin. A saved map with multiple targets for a source is shown in full but cannot be overwritten from that direction; select the other end when that direction has a single target per pin. Many-to-many maps remain read-only in this editor.

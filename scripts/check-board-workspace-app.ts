@@ -61,6 +61,11 @@ const setSelect = async (label: string, value: string) => {
   return page(`(()=>{const s=document.querySelector('select[aria-label=${JSON.stringify(label)}]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(s,${JSON.stringify(value)});s.dispatchEvent(new Event('change',{bubbles:true}));return s.value})()`);
 };
 const text = (selector: string) => page(`document.querySelector(${JSON.stringify(selector)})?.innerText ?? null`);
+async function checkFitControls(area: string) {
+  const buttons = await page(`[...document.querySelectorAll('.fd-pair-drawing .fd-svg-tools button')].filter(b=>b.textContent.trim()==='Fit sheet').map(b=>({visible:b.getClientRects().length>0 && getComputedStyle(b).visibility!=='hidden',disabled:b.disabled}))`);
+  check(`${area}: Fit sheet remains visible on both boards`, buttons.length === 2 && buttons.every((b: { visible: boolean; disabled: boolean }) => b.visible && !b.disabled), buttons);
+}
+
 async function openArea(label: string) {
   await page(`(()=>{const d=document.querySelector(".fd-canvas-destinations details");if(d&&!d.open)d.querySelector("summary").click()})()`);
   await sleep(150);
@@ -153,6 +158,7 @@ try {
   await until(`document.querySelectorAll('.fd-history-card').length===3`);
   await until(`!!document.querySelector('.fd-history-step')`);
   await until(`document.querySelectorAll('[data-testid="pair-newer-revision"] canvas').length===1`);
+  await checkFitControls("History");
   const step = () => text(".fd-history-step [aria-live]");
   check("History opens on the newest step", (await step()) === "Step 2 of 2", await step());
   await clickSelector('[aria-label="Step to older revision"]');
@@ -185,6 +191,7 @@ try {
   await until(`document.querySelectorAll('[data-testid="connections-workspace"] canvas').length===2`);
   await sleep(500);
   const tool = async (name: string, args: Record<string, unknown>) => ((await (await core(`/tools/${name}`, { method: "POST", body: JSON.stringify({ project: projectId, args }) })).json()) as any).json;
+  await checkFitControls("Connections");
   const viewA = await tool("board_view", { pcbPath: BOARD_A, drawing: true }), viewB = await tool("board_view", { pcbPath: BOARD_B, drawing: true });
   check("board_view reports status and connectors to agents", viewA.parts.find((p: any) => p.ref === "J1").connector === true && viewA.parts.find((p: any) => p.ref === "R1").status === "changed" && viewA.parts.find((p: any) => p.ref === "R3").status === "existing", viewA.parts.map((p: any) => [p.ref, p.status, p.connector]));
   const clickPart = async (panel: string, svg: string, bounds: any) => {
@@ -333,6 +340,10 @@ try {
   await bridge("POST", "/key", { key: "Right" });
   await sleep(400);
   check("Arrow keys pan a zoomed drawing instead of stepping", (await stepNumber()) === steppedTo, await step());
+  await clickButton("Fit sheet", '[data-testid="pair-newer-revision"]');
+  await until(`(()=>{const v=document.querySelector('[data-testid="pair-newer-revision"] .fd-svg-viewport');return v && v.scrollWidth<=v.clientWidth+1 && v.scrollHeight<=v.clientHeight+1})()`, 5000);
+  check("Fit sheet resets a zoomed drawing", true);
+
   await clickButton("Save this revision", ".fd-board-workspace-bar");
   await until(`[...document.querySelectorAll('.fd-board-workspace-bar [role=status]')].some(e=>e.innerText.startsWith('Saved'))`, 10000);
   check("Saving a revision says so", true);

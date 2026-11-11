@@ -182,7 +182,8 @@
   /* Fit subtracts 44px; padding must leave that same drawable height. */
   .fd-canvas-workspace .fd-pair-drawing .fd-svg-viewport { padding:12px 16px 32px; }
   .fd-canvas-workspace .fd-pair-drawing .fd-svg-tools { padding-block:0; }
-  .fd-canvas-workspace .fd-pair-drawing .fd-svg-tools > :nth-last-child(2) { display:none; }
+  /* Fit width is the final direct button, even when zoom controls are grouped. */
+  .fd-canvas-workspace .fd-pair-drawing .fd-svg-tools > button:last-of-type { display:none; }
 }
 
 @media (max-width:900px) {
