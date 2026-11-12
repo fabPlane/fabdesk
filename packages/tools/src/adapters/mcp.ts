@@ -89,8 +89,11 @@ export function attachToRegistry(
   ctxFactory: ContextFactory,
   opts: AttachOptions = {},
 ): McpAttachment {
-  const enabled = new Set<ToolsetId>(["core", ...(opts.initialToolsets ?? [])]);
   const initialTools = opts.initialTools ? new Set(opts.initialTools) : null;
+  // With an exact start list, a toolset counts as enabled only when that list exposes all of it; otherwise
+  // `load_toolset` on a half-listed toolset (circuit, verify in a `start=board` session) would look done and add nothing.
+  const covered = (id: ToolsetId) => !initialTools || registry.byToolset(id).every((def) => initialTools.has(def.name));
+  const enabled = new Set<ToolsetId>(["core", ...(opts.initialToolsets ?? []).filter(covered)]);
   const registered = new Map<string, RegisteredTool>();
   const sessionId = opts.sessionId ?? crypto.randomUUID();
   let announced: McpClientHint | undefined;
@@ -103,9 +106,13 @@ export function attachToRegistry(
     id: sessionId,
     enabledToolsets: () => TOOLSETS.filter((t) => enabled.has(t)),
     enableToolset(id) {
-      if (enabled.has(id)) return;
       enabled.add(id);
-      for (const def of registry.byToolset(id)) registered.get(def.name)?.enable();
+      // Every tool of the toolset, even when it is already counted enabled: `core` is, while a start list may hide some
+      // of it. `enable()` on a hidden tool emits tools/list_changed; listed tools are left alone.
+      for (const def of registry.byToolset(id)) {
+        const tool = registered.get(def.name);
+        if (tool && !tool.enabled) tool.enable();
+      }
     },
     ...(waitFor
       ? { durableWaitMs: () => waitFor(announced ?? (server.server.getClientVersion() as McpClientHint | undefined)) }
