@@ -47,6 +47,8 @@ export function lowPriority(cmd: string[], o: { platform?: NodeJS.Platform; nice
 /** Run a command at low priority (`nice -n 5` as the toolkit did, or the OS priority API), logging to a file. 124 on timeout. */
 export const nodeRun: Spawn = (cmd, o) =>
   new Promise((resolve, reject) => {
+    // an already-aborted signal never fires "abort" again: started now, the child could not be stopped
+    if (o.signal?.aborted) return reject(new Error(`${cmd[0] ?? "process"}: not started, the run was aborted`));
     const t0 = Date.now();
     const log = createWriteStream(o.log);
     const out = o.stdout ? createWriteStream(o.stdout) : null;

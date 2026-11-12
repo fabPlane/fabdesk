@@ -125,6 +125,21 @@ const memAvailableGiB = async (): Promise<number> => (await hostMemory()).availa
 
 const slug = (s: string) => s.replace(/[^\w.+-]+/g, "_");
 
+/**
+ * One folder name per candidate of a try: actions that slug alike (`finish` twice, two regexes) or differ only in case
+ * (one folder on a case-insensitive file system) get `-2`, `-3` ... so no two candidates write one folder.
+ */
+export function candidateSlugs(actions: readonly string[]): string[] {
+  const used = new Set<string>();
+  return actions.map((a) => {
+    const base = slug(a);
+    let s = base;
+    for (let k = 2; used.has(s.toLowerCase()); k++) s = `${base}-${k}`;
+    used.add(s.toLowerCase());
+    return s;
+  });
+}
+
 async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Promise<R[]> {
   const out = new Array<R>(items.length);
   let next = 0;
@@ -141,6 +156,10 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Prom
 
 const sha = async (p: string) => createHash("sha256").update(await readFile(p)).digest("hex");
 
+/** A folder's cached score: the scored board's sha256 with it, so a cache never answers for another board. */
+type ScoreCache = Scored & { board_sha256: string };
+const SCORE_CACHE = "lastmile.score.json";
+
 export class Bench {
   private constructor(
     readonly ws: string,
@@ -155,7 +174,7 @@ export class Bench {
     const s0 = join(ws, "s0");
     await copyBoardFolder(srcDir, s0);
     const sc = await deps.scorer.score(s0, pcb, { parity: false, ...(deps.signal ? { signal: deps.signal } : {}) });
-    await writeJson(join(s0, "lastmile.score.json"), sc);
+    await writeJson(join(s0, SCORE_CACHE), { ...sc, board_sha256: await sha(join(s0, pcb)) } satisfies ScoreCache);
     const st: BenchState = {
       src: resolve(srcDir),
       pcb,
@@ -199,15 +218,22 @@ export class Bench {
     await writeJson(join(this.ws, "state.json"), this.st);
   }
 
-  /** Score a folder, caching the result beside it (the toolkit recomputed figures on every call; the figures are a pure function of the board). */
+  /**
+   * Score a folder, caching the result beside it (the toolkit recomputed figures on every call; the figures are a pure
+   * function of the board). The cache holds the board's sha256 and is used only while the board is that board.
+   */
   async scoreDir(dir: string, parity = false): Promise<Scored> {
-    const f = join(dir, "lastmile.score.json");
+    const f = join(dir, SCORE_CACHE);
+    const boardSha = await sha(join(dir, this.st.pcb));
     if (!parity) {
-      const cached = await readFile(f, "utf8").then((t) => JSON.parse(t) as Scored, () => null);
-      if (cached) return cached;
+      const cached = await readFile(f, "utf8").then((t) => JSON.parse(t) as Partial<ScoreCache>, () => null);
+      if (cached?.board_sha256 === boardSha) {
+        const { board_sha256: _h, ...sc } = cached as ScoreCache;
+        return sc;
+      }
     }
     const sc = await this.deps.scorer.score(dir, this.st.pcb, { parity, ...(this.deps.signal ? { signal: this.deps.signal } : {}) });
-    if (!parity) await writeJson(f, sc);
+    if (!parity) await writeJson(f, { ...sc, board_sha256: boardSha } satisfies ScoreCache);
     return sc;
   }
 
@@ -226,6 +252,7 @@ export class Bench {
       const stepOut = c.steps.length > 1 ? join(out, `s${i}`) : out;
       let r;
       try {
+        signal.throwIfAborted(); // no next step once the budget is spent or the job is cancelled
         r = await this.deps.engine.run(st, { cur: dir, out: stepOut, start: cur, pcb: this.st.pcb, signal });
       } catch (e) {
         r = { error: signal.aborted && !this.deps.signal?.aborted ? "over the time budget" : e instanceof Error ? e.message : String(e) };
@@ -260,8 +287,11 @@ export class Bench {
     const start = this.dir;
     const f0 = this.figures;
     this.st.tries++;
+    // a try folder left by a run that never saved its state is not reused (its candidates belong to other boards)
+    while (await stat(join(this.ws, `t${this.st.tries}`)).catch(() => null)) this.st.tries++;
     const tdir = join(this.ws, `t${this.st.tries}`);
-    const cands = actions.map((name) => ({ name, steps: stepsFor(name), slug: slug(name) }));
+    const slugs = candidateSlugs(actions);
+    const cands = actions.map((name, k) => ({ name, steps: stepsFor(name), slug: slugs[k]! }));
     const t0 = Date.now();
     const pcbBytes = (await stat(join(start, this.st.pcb)).catch(() => null))?.size ?? 0;
     const lim = sizeLimits({ pcbBytes, availableGiB: await (this.deps.availableGiB ?? memAvailableGiB)(), jobs: o.jobs ?? 6, budget: o.budget, opens: f0.open });

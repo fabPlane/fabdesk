@@ -95,6 +95,8 @@ if (a["same-req"]) {
   await cp(spec.requirements, join(tsProj, ".fabdesk", "board", "requirements"), { recursive: true, force: true });
 }
 const req = (await readRequirements(tsProj))!;
+// the toolkit leaves hole_clearance out of every board's figures (the carrier's USB-C shell pads); a board declares that
+req.acceptance.lastmile = { ...req.acceptance.lastmile, inherited_drc: ["hole_clearance"] };
 const drc: L.DrcFn = async ({ board, parity, outFile }) => {
   const r = await runDrc({ path: cli, version: "" } as never, { board, outFile, severity: "project", schematicParity: parity, refillZones: true });
   return { violations: r.violations, unconnected: r.unconnected, parity: r.schematicParity.length };

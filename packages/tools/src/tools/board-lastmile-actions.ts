@@ -66,7 +66,8 @@ export async function openBench(ctx: ToolContext, ws: string, req: Requirements)
       const scorer = L.createScorer(req, drc);
       return {
         scorer,
-        engine: L.createStepEngine({ req, drc, scorer, layout: host, fill: hostFill(ctx, host), fallbackRouter: router }),
+        // plan:FILE is project-relative, like every board_route path
+        engine: L.createStepEngine({ req, drc, scorer, layout: host, fill: hostFill(ctx, host), fallbackRouter: router, planRoot: ctx.requireProject().dir }),
         signal: ctx.signal,
         ...(onLine ? { onLine } : {}),
       };

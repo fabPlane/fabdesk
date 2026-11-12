@@ -3,34 +3,43 @@
  * the edit stays as KiCad wrote it (the toolkit's `block_pass.py` / `board_new_copper.py` / `score_route.py` did the same).
  */
 import { randomUUID } from "node:crypto";
+import { topLevelSpans } from "../sexpr";
 
 export type Span = [number, number];
 
-/** Spans of depth-1 s-expressions starting with `key` (string-aware; works on tab- or space-indented and single-line files). */
+/**
+ * Spans of depth-1 s-expressions starting with `key` (string-aware; works on tab- or space-indented, CRLF and
+ * single-line files). The root's direct children only: a `(arc ...)` inside a `gr_poly`/`fp_poly` outline is not one.
+ */
 export function topLevel(text: string, key: string): Span[] {
-  const spans: Span[] = [];
-  let depth = 0;
-  let start: number | null = null;
-  let inStr = false;
-  const n = text.length;
-  for (let i = 0; i < n; i++) {
-    const ch = text[i]!;
-    if (inStr) {
-      if (ch === "\\") i++;
-      else if (ch === '"') inStr = false;
-    } else if (ch === '"') inStr = true;
-    else if (ch === "(") {
-      depth++;
-      if (depth === 2 && text.startsWith(key, i + 1) && /[ \n\t\r]/.test(text[i + 1 + key.length] ?? "")) start = i;
-    } else if (ch === ")") {
-      if (depth === 2 && start !== null) {
-        spans.push([start, i + 1]);
-        start = null;
-      }
-      depth--;
-    }
+  return topLevelSpans(text, key).map((s): Span => [s.start, s.end]);
+}
+
+/** Routed copper kinds a router writes: board-level tracks, vias and track arcs. */
+export const COPPER_KINDS = ["segment", "via", "arc"] as const;
+export type CopperKind = (typeof COPPER_KINDS)[number];
+
+/** Top-level copper items of a board in file order (never an arc nested in a polygon outline). */
+export function copperItems(text: string, kinds: readonly CopperKind[] = COPPER_KINDS): Array<{ kind: CopperKind; span: Span }> {
+  return kinds.flatMap((kind) => topLevel(text, kind).map((span) => ({ kind, span }))).sort((x, y) => x.span[0] - y.span[0]);
+}
+
+/** Top-level copper items that name their net by number (`(net 178)`): the merge must leave none. */
+export function numericNetCopper(text: string): number {
+  return copperItems(text).filter(({ span: [a, b] }) => /\(net \d+\)/.test(text.slice(a, b))).length;
+}
+
+/** `text` without its top-level copper items; each takes the whitespace before it along (the toolkit's `\s+\((segment|via|arc)...`). */
+function withoutCopper(text: string): { text: string; removed: Record<string, number> } {
+  const removed: Record<string, number> = {};
+  let out = text;
+  for (const { kind, span } of copperItems(text).reverse()) {
+    let a = span[0];
+    while (a > 0 && /\s/.test(out[a - 1]!)) a--;
+    out = out.slice(0, a) + out.slice(span[1]);
+    removed[kind] = (removed[kind] ?? 0) + 1;
   }
-  return spans;
+  return { text: out, removed };
 }
 
 const REF = /\(property\s+"Reference"\s+"([^"]+)"/;
@@ -115,14 +124,9 @@ export function transferPoses(native: string, placed: string, refs: string[]): {
   return { text, transferred: refs.length, changed };
 }
 
-const ITEM_BODY = String.raw`(?:[^()]|\((?:[^()]|\([^()]*\))*\))*`;
-const ROUTED = new RegExp(String.raw`\s+\((segment|via|arc)\b` + ITEM_BODY + String.raw`\)`, "g");
-
-/** Remove every track, via and arc (zones and footprints stay). */
+/** Remove every board-level track, via and arc (zones, footprints and arcs inside polygon outlines stay). */
 export function stripCopper(text: string): { text: string; removed: Record<string, number> } {
-  const removed: Record<string, number> = {};
-  const out = text.replace(ROUTED, (_m, k: string) => ((removed[k] = (removed[k] ?? 0) + 1), ""));
-  return { text: out, removed };
+  return withoutCopper(text);
 }
 
 /** Insert `(locked yes)` after the head line of each named footprint unless one is there already. */
@@ -131,8 +135,10 @@ export function lockFootprints(text: string, refs: Iterable<string>): string {
   const ordered = [...refs].filter((r) => spans.has(r)).sort((a, b) => spans.get(b)![0] - spans.get(a)![0]);
   for (const ref of ordered) {
     const s0 = spans.get(ref)![0];
-    const headEnd = text.indexOf("\n", s0 + 1);
-    if (!text.slice(s0, headEnd + 40).includes("(locked")) text = text.slice(0, headEnd) + "\n    (locked yes)" + text.slice(headEnd);
+    let headEnd = text.indexOf("\n", s0 + 1);
+    const eol = text[headEnd - 1] === "\r" ? "\r\n" : "\n"; // a CRLF board stays CRLF
+    if (eol === "\r\n") headEnd--;
+    if (!text.slice(s0, headEnd + 40).includes("(locked")) text = text.slice(0, headEnd) + eol + "    (locked yes)" + text.slice(headEnd);
   }
   return text;
 }
@@ -171,16 +177,15 @@ export function keepoutZone(layer: string, x0: number, y0: number, x1: number, y
 
 // ---------------------------------------------------------------- merging router results
 
-const COPPER_ITEM = new RegExp(String.raw`\((segment|via|arc)\b` + ITEM_BODY + String.raw`\)`, "g");
-const NEW_ITEM = new RegExp(String.raw`\((segment|via)\b` + ITEM_BODY + String.raw`\)`, "g");
 const UUID_NODE = /\(uuid "?[^")\s]+"?\)/g;
 
 /** Items keyed by whitespace-normalised content without uuid (a router run with one seed reuses uuids). */
 function itemsByContent(text: string): Map<string, string> {
   const out = new Map<string, string>();
-  for (const m of text.matchAll(NEW_ITEM)) {
-    const key = m[0].replace(UUID_NODE, "").split(/\s+/).filter(Boolean).join(" ");
-    if (!out.has(key)) out.set(key, m[0]);
+  for (const { span } of copperItems(text, ["segment", "via"])) {
+    const item = text.slice(...span);
+    const key = item.replace(UUID_NODE, "").split(/\s+/).filter(Boolean).join(" ");
+    if (!out.has(key)) out.set(key, item);
   }
   return out;
 }
@@ -209,13 +214,17 @@ export function addNewCopper(native: string, source: string, routed: string): { 
 
 /** The routed board's copper is the whole result: every native segment/via/arc is removed and all routed copper appended. */
 export function replaceCopper(native: string, routed: string): { text: string; stats: MergeStats } {
-  const count = (t: string) => ({ segment: (t.match(/\(segment\b/g) ?? []).length, via: (t.match(/\(via\b/g) ?? []).length, arc: (t.match(/\(arc\b/g) ?? []).length });
+  const count = (t: string) => {
+    const c: Record<CopperKind, number> = { segment: 0, via: 0, arc: 0 };
+    for (const { kind } of copperItems(t)) c[kind]++;
+    return c;
+  };
   const before = count(native);
-  const bare = native.replace(ROUTED, "");
-  const cu = [...routed.matchAll(COPPER_ITEM)].map((m) => m[0]);
-  const kinds = cu.map((c) => /^\((\w+)/.exec(c)![1]!);
+  const bare = withoutCopper(native).text;
+  const items = copperItems(routed);
+  const cu = items.map(({ span }) => routed.slice(...span));
   const text = bare.slice(0, bare.trimEnd().lastIndexOf(")")).trimEnd() + "\n" + cu.join("\n") + "\n)\n";
-  const routedItems = { segment: kinds.filter((k) => k === "segment").length, via: kinds.filter((k) => k === "via").length, arc: kinds.filter((k) => k === "arc").length };
+  const routedItems = count(routed);
   return { text, stats: { mode: "replace", native_removed: before, routed_items: routedItems } };
 }
 
@@ -229,13 +238,15 @@ export function nameCopperNets(text: string): { text: string; renamed: number } 
   for (const m of text.matchAll(/^\t\(net (\d+) "((?:[^"\\]|\\.)*)"\)/gm)) table.set(m[1]!, m[2]!);
   if (!table.size) return { text, renamed: 0 };
   let renamed = 0;
-  const out = text.replace(COPPER_ITEM, (item) =>
-    item.replace(/\(net (\d+)\)/, (m, n: string) => {
+  let out = text;
+  for (const { span } of copperItems(text).reverse()) {
+    const item = out.slice(...span).replace(/\(net (\d+)\)/, (m, n: string) => {
       const name = table.get(n);
       if (name === undefined) return m;
       renamed++;
       return `(net "${name}")`;
-    }),
-  );
+    });
+    out = out.slice(0, span[0]) + item + out.slice(span[1]);
+  }
   return { text: out, renamed };
 }

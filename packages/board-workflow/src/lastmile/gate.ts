@@ -8,8 +8,6 @@ import { pyRound, type AcceptanceResult } from "../accept";
 import type { Requirements } from "../requirements";
 import { pyDict } from "./geometry";
 
-/** DRC classes present on every candidate of the carrier board (USB-C shell pads); never count against a step. */
-export const INHERITED = new Set(["hole_clearance"]);
 
 export interface OpenItem {
   net: string;
@@ -33,14 +31,29 @@ export interface Figures {
 export interface BoardNets {
   pairs: Array<[string, string]>;
   power: Set<string>;
+  /**
+   * DRC classes the board carries whatever is routed (`acceptance.lastmile.inherited_drc`); left out of the figures,
+   * so they never count against a step. Empty unless the board's requirements name some (the toolkit hard-coded the
+   * carrier board's `hole_clearance` for every board).
+   */
+  inheritedDrc: Set<string>;
 }
 
-/** Pair list and power nets from the board's own requirements (every class that lists pairs; classes named PWR*). */
+/** DRC classes a board's requirements declare inherited (`acceptance.lastmile.inherited_drc`); refuses a malformed entry by name. */
+export function inheritedDrc(req: Requirements): Set<string> {
+  const v = req.acceptance.lastmile?.inherited_drc;
+  if (v === undefined) return new Set();
+  if (!Array.isArray(v) || v.some((x) => typeof x !== "string" || !x)) throw new Error("acceptance.lastmile.inherited_drc must be a list of DRC class names (e.g. [\"hole_clearance\"])");
+  return new Set(v);
+}
+
+/** Pair list and power nets from the board's own requirements (every class that lists pairs; classes named PWR*), and its inherited DRC classes. */
 export function boardNets(req: Requirements): BoardNets {
   const classes = req.acceptance.net_classes.classes;
   return {
     pairs: Object.values(classes).flatMap((c) => (c.pairs ?? []).map((p): [string, string] => [p[0], p[1]])),
     power: new Set(Object.entries(classes).filter(([k]) => k.startsWith("PWR")).flatMap(([, c]) => c.nets ?? [])),
+    inheritedDrc: inheritedDrc(req),
   };
 }
 
@@ -73,7 +86,7 @@ export function figuresOf(acc: AcceptanceResult, opens: readonly OpenItem[], net
   const errors = (r.A2_drc["errors"] ?? {}) as Record<string, number>;
   return {
     open: Number(r.A1_connectivity["unconnected"] ?? 0),
-    drc: Object.fromEntries(Object.entries(errors).filter(([k]) => !INHERITED.has(k))),
+    drc: Object.fromEntries(Object.entries(errors).filter(([k]) => !nets.inheritedDrc.has(k))),
     a7: a7.size,
     a7_mm: pyRound(sum(Object.values(under)), 2),
     a8: a8.size,

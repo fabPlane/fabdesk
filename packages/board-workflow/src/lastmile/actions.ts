@@ -43,6 +43,9 @@ const plan = (n: string): Record<string, unknown> => {
 const K = (n: string): Step => ({ type: "krt", plan: plan(n), planName: n });
 const REP = (rip: string[], p = "rip-sig"): Step => ({ type: "repair", rip, plan: plan(p), planName: p });
 
+/** The host routers a `fill` step can name (the tools package's hostFill runs exactly these). */
+export const FILL_ROUTERS = ["tracemaker", "freerouting", "fab_router"] as const;
+
 type Builder = (arg: string) => Step[];
 export const ACTIONS: Record<string, { help: string; steps: Builder | null }> = {
   finish: { help: "route the opens; nothing is ripped", steps: () => [K("finish")] },
@@ -52,7 +55,7 @@ export const ACTIONS: Record<string, { help: string; steps: Builder | null }> = 
     steps: () => [K("rip-sig-leg-nt"), REP(["--drc", SHORTS, "--spare-open-nets", "{start}"])],
   },
   blockers: { help: "blockers:R  cut all copper within R mm of each open end, route the opens first, then the cut", steps: (a) => [REP(["--around-opens", a || "1.0", "--spare-pairs"], "opens-first")] },
-  window: { help: "window:X0,Y0,X1,Y1  cut the copper in a box (pairs spared), route opens first, then the cut", steps: (a) => [REP(["--window", ...a.split(","), "--spare-pairs"], "opens-first")] },
+  window: { help: "window:X0,Y0,X1,Y1  cut the copper in a box (pairs spared), route opens first, then the cut", steps: (a) => [REP(["--window", ...boxArgs(`window:${a}`, a), "--spare-pairs"], "opens-first")] },
   taps: { help: "tap pass: remaining connections of power nets with tap pads at tap width (acceptance tap_rule)", steps: () => [K("taps")] },
   a7: { help: "cut power copper that fails A7 and route it again", steps: () => [REP(["--a7"])] },
   shorts: { help: "cut copper named in shorts/crossings/clearance errors (pairs kept) and route it again", steps: () => [REP(["--drc", SHORTS, "--spare-pairs"])] },
@@ -85,13 +88,28 @@ export const ACTIONS: Record<string, { help: string; steps: Builder | null }> = 
   "pairs-m": { help: "as pairs, with P/N length matching, then repair what the meanders collide with", steps: () => [K("pairs-todo-m"), REP(["--drc", SHORTS, "--spare-pairs"])] },
   "pairs-all": { help: "rip and route every pair again as a pair (first pair pass on a board routed single-ended)", steps: () => [K("pairs-g2")] },
   legs: { help: "legs:R  short pair legs failing A8: cut them and the copper within R mm of their pads, route them first", steps: (a) => [REP(["--a8", "short", "--around-ripped", a || "1.0", "--spare-pairs"], "opens-first")] },
-  fill: { help: "fill:tracemaker|fastroute  another router fills the opens, everything else fixed", steps: (a) => [{ type: "fill", router: a }] },
+  fill: { help: `fill:${FILL_ROUTERS.join("|")}  another router fills the opens, everything else fixed`, steps: (a) => [{ type: "fill", router: a }] },
   nudge: { help: "nudge:REF@X,Y[@ROT[/ROT..]][~RADIUS][&REF2@..]  re-seat parts near points (pose computed, courtyard-gated), cut pairs re-routed as pairs", steps: null },
   turn: { help: "turn:REF@ROT[/ROT..][~RADIUS]  re-seat a part where it is at another rotation (see `crossings`)", steps: null },
   plan: { help: "plan:FILE  any router plan", steps: (a) => [{ type: "krt", planFile: a }] },
 };
 
 export class ActionError extends Error {}
+
+const NUMBER = /^-?(?:\d+(?:\.\d*)?|\.\d+)$/;
+/** A number written in an action, strictly (`1.2.3`, `1e`, `` are refused by name, never passed on as NaN). */
+function num(action: string, x: string | undefined): number {
+  if (x === undefined || !NUMBER.test(x)) throw new ActionError(`${action}: '${x ?? ""}' is not a number`);
+  return Number(x);
+}
+/** A comma-separated box X0,Y0,X1,Y1 of strict numbers. */
+function box(action: string, s: string): number[] {
+  const v = s.split(",");
+  if (v.length !== 4) throw new ActionError(`${action}: a box is X0,Y0,X1,Y1 (got '${s}')`);
+  return v.map((x) => num(action, x));
+}
+/** The box's numbers as written, once each is checked. */
+const boxArgs = (action: string, s: string): string[] => (box(action, s), s.split(","));
 
 const NUDGE = /^([^@]+)@([-\d.]+),([-\d.]+)(?:@([\d./]+))?(?:~([\d.]+))?$/;
 const TURN = /^([^@]+)()()@([\d./]+)(?:~([\d.]+))?$/;
@@ -112,8 +130,8 @@ export function stepsFor(action: string): Step[] {
     const def = ACTIONS[name];
     if (!def) throw new ActionError(`unknown action '${name}'; the actions are:\n${actionHelp().join("\n")}`);
     if (name === "fence") {
-      const [box, , rx] = [arg.slice(0, arg.indexOf("=")), "=", arg.slice(arg.indexOf("=") + 1)];
-      fences.push({ name: `fence${fences.length}`, box: box.split(",").map(Number), nets: rx });
+      const [bx, , rx] = [arg.slice(0, arg.indexOf("=")), "=", arg.slice(arg.indexOf("=") + 1)];
+      fences.push({ name: `fence${fences.length}`, box: box(part, bx), nets: rx });
       continue;
     }
     const first = steps.length;
@@ -121,11 +139,12 @@ export function stepsFor(action: string): Step[] {
       const moves: NudgeMove[] = arg.split("&").map((one) => {
         const m = (name === "nudge" ? NUDGE : TURN).exec(one);
         if (!m) throw new ActionError("nudge:REF@X,Y[@ROT[/ROT]][~RADIUS][&REF2@...]   turn:REF@ROT[/ROT][~RADIUS]");
+        const what = `${name}:${one}`;
         return {
           ref: m[1]!,
-          radius: Number(m[5] || 2.5),
-          ...(name === "nudge" ? { near: [Number(m[2]), Number(m[3])] as [number, number] } : {}),
-          ...(m[4] ? { rotations: m[4].split("/").map(Number) } : {}),
+          radius: m[5] ? num(what, m[5]) : 2.5,
+          ...(name === "nudge" ? { near: [num(what, m[2]), num(what, m[3])] as [number, number] } : {}),
+          ...(m[4] ? { rotations: m[4].split("/").map((r) => num(what, r)) } : {}),
         };
       });
       steps.push({ type: "nudge", moves: { clearance: 0.2, edge: 0.4, moves }, plan: plan("after-cut"), planName: "after-cut" });
@@ -137,7 +156,7 @@ export function stepsFor(action: string): Step[] {
       p["bundle"] = rx;
       p["note"] = `bundle ${rx}: ` + String(p["note"] ?? "");
       for (const st of p["stages"] as Array<{ args: string[] }>) st.args = st.args.map((x) => x.replace("@pairs-todo=", "@bundle="));
-      steps.push(win ? { type: "repair", rip: ["--window", ...win.split(","), "--spare-pairs"], plan: p, planName: `bundle ${rx}` } : { type: "krt", plan: p, planName: `bundle ${rx}` });
+      steps.push(win ? { type: "repair", rip: ["--window", ...boxArgs(part, win), "--spare-pairs"], plan: p, planName: `bundle ${rx}` } : { type: "krt", plan: p, planName: `bundle ${rx}` });
     } else {
       if (!def.steps) throw new ActionError(`action '${name}' has no steps`);
       steps.push(...def.steps(arg));
