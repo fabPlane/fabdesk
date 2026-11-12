@@ -243,6 +243,7 @@ if (!app.requestSingleInstanceLock()) {
       ...systemLocaleEnv(app),
       ...(home ? { FABDESK_HOME: home } : {}),
     };
+    let coreStartup: Promise<void> = Promise.resolve();
     const cadRuntime = new CadRuntimeManager({
       cache: join(app.getPath("userData"), "cad-runtimes"),
       target: `${process.platform}-${process.arch}`,
@@ -251,9 +252,13 @@ if (!app.requestSingleInstanceLock()) {
       verify: verifyCadMacApp,
       unpack: unpackCadMacApp,
       activate: async (manifest) => {
+        // First-use IPC can arrive while the initial core handshake is pending.
+        await coreStartup;
+        if (quitting) return;
         const preferences = join(app.getPath("userData"), "cad-preferences");
         await mkdir(preferences, { recursive: true });
         await cadSupervisor?.stop();
+        if (quitting) return;
         cadSupervisor = new CadSupervisor(
           resolveCadBackend({
             packaged: true,
@@ -266,16 +271,13 @@ if (!app.requestSingleInstanceLock()) {
           }),
         );
         Object.assign(coreExtraEnv, await cadSupervisor.start());
+        if (quitting) {
+          await cadSupervisor.stop();
+          return;
+        }
         if (supervisor) await supervisor.restart();
       },
     });
-    if (app.isPackaged) {
-      try {
-        await cadRuntime.initialize();
-      } catch (e) {
-        console.error(`[cad] optional runtime unavailable: ${String(e)}`);
-      }
-    }
     supervisor = new CoreSupervisor({
       localAuth: localAuthEnabled(identity.devProfile),
       runtimeId,
@@ -334,13 +336,23 @@ if (!app.requestSingleInstanceLock()) {
     registerUpdateIpc(updates);
     registerUpdateDownloadIpc(new UpdateDownloader(updates));
     updates.start();
+    coreStartup = supervisor.start();
     createWindow();
     // Startup deep links stay queued for take() after the renderer mounts.
     // Sending here is always lost because webContents has not loaded yet.
     // CI / smoke runs: quit on their own after N ms (FABDESK_SMOKE_MS).
     const smokeMs = Number(process.env["FABDESK_SMOKE_MS"] ?? 0);
     if (smokeMs > 0) setTimeout(() => app.quit(), smokeMs);
-    await supervisor.start();
+    await coreStartup;
+    // Optional discovery can include filesystem scans and macOS signature checks.
+    // Open the window and start PCB/core first; activating verified CAD afterwards
+    // restarts the ready core with its bridge environment. First CAD use shares
+    // this initialization, so it cannot start a second verification/activation.
+    if (app.isPackaged) {
+      void cadRuntime.initialize().catch((e: unknown) => {
+        console.error(`[cad] optional runtime unavailable: ${String(e)}`);
+      });
+    }
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
