@@ -128,3 +128,22 @@ export function dsnRules(dsn: string, outerOnly: string[], planeLayers: string[]
   if (done.length !== outerOnly.length) throw new Error("missing class in DSN");
   return { text, done };
 }
+
+export interface DsnExportHost {
+  spawn: (cmd: string[], o: { log: string }) => Promise<{ code: number; wallS: number }>;
+}
+
+/**
+ * Export a Specctra DSN with `kicad-cli pcb export specctra` (the toolkit used pcbnew's ExportSpecctraDSN; the CLI writes the
+ * same file without a Python/pcbnew runtime), then apply the acceptance's layer policy (`dsnRules`): F/B-only power classes
+ * get `(use_layer F.Cu B.Cu)`. Returns the policy DSN's text path and the classes edited.
+ */
+export async function exportDsn(host: DsnExportHost, kicadCli: string, board: string, outDsn: string, acc: { outerOnly: string[]; planeLayers: string[] }): Promise<{ dsn: string; done: string[] }> {
+  const { readFile, writeFile } = await import("node:fs/promises");
+  const r = await host.spawn([kicadCli, "pcb", "export", "specctra", "-o", outDsn, board], { log: outDsn + ".log" });
+  if (r.code) throw new Error(`kicad-cli pcb export specctra exited ${r.code} (see ${outDsn}.log)`);
+  const policy = outDsn.replace(/\.dsn$/, "") + "-policy.dsn";
+  const { text, done } = dsnRules(await readFile(outDsn, "utf8"), acc.outerOnly, acc.planeLayers);
+  await writeFile(policy, text);
+  return { dsn: policy, done };
+}

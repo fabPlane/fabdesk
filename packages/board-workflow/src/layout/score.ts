@@ -10,7 +10,7 @@ import { parseBoard } from "../board";
 import { readJsonOrNull } from "../files";
 import type { Acceptance, Requirements } from "../requirements";
 import { REQUIREMENT_FILES } from "../requirements";
-import { addNewCopper, replaceCopper, type MergeStats } from "./text";
+import { addNewCopper, nameCopperNets, replaceCopper, type MergeStats } from "./text";
 import { sesImport } from "./ses";
 
 export async function readRequirementsDir(dir: string): Promise<Requirements> {
@@ -121,11 +121,14 @@ export async function scoreRoute(host: ScoreHost, req: Requirements, stem: strin
     stats = { mode: "ses", ...r.stats };
   } else {
     const native = await readFile(board, "utf8");
-    const routed = await readFile(mode.routed, "utf8");
-    const r = mode.replace ? replaceCopper(native, routed) : addNewCopper(native, await readFile(mode.source, "utf8"), routed);
+    const routed = nameCopperNets(await readFile(mode.routed, "utf8")).text;
+    const r = mode.replace ? replaceCopper(native, routed) : addNewCopper(native, nameCopperNets(await readFile(mode.source, "utf8")).text, routed);
     await writeFile(board, r.text);
     stats = r.stats;
   }
+  const merged = await readFile(board, "utf8");
+  const numeric = (merged.match(/\((?:segment|via|arc)\b[^()]*(?:\([^()]*\)[^()]*)*?\(net \d+\)/g) ?? []).length;
+  if (numeric) throw new Error(`${numeric} copper items name their net by number after the merge; scoring would match none of them`);
   await writeFile(join(out, "import.json"), JSON.stringify(stats));
   await applyNetclasses(join(out, `${stem}.kicad_pro`), req.acceptance);
   const drcFile = join(out, "acceptance.drc.json");

@@ -15,6 +15,7 @@ import {
   footprintSpans,
   initFlow,
   lockFootprints,
+  nameCopperNets,
   loadFlow,
   nextStep,
   onboard,
@@ -106,6 +107,7 @@ describe("board text edits", () => {
     expect(locked.match(/\(locked yes\)/g)).toHaveLength(1);
     expect(lockFootprints(locked, ["J1"])).toBe(locked); // idempotent
     expect(convertTransforms('(footprint "x" (transform (translate 1 2) (rotate 90)))').text).toContain("(at 1 2 90)");
+    expect(convertTransforms('(footprint "x"\n\t(transform\n\t\t(translate 1.5 2)\n\t\t(rotate -90)\n\t\t(scale 1 1)\n\t))').text).toContain("(at 1.5 2 -90)");
     expect(convertTransforms(BOARD).converted).toBe(0);
   });
   test("new copper is keyed by content and appended; replace swaps all copper", () => {
@@ -115,6 +117,14 @@ describe("board text edits", () => {
     expect(r.text.match(/\(segment/g)).toHaveLength(3);
     const rep = replaceCopper(BOARD, routed);
     expect(rep.stats["routed_items"]).toEqual({ segment: 3, via: 1, arc: 0 });
+  });
+  test("numeric net references on copper become names", () => {
+    const t = '(kicad_pcb\n\t(net 0 "")\n\t(net 7 "A B")\n\t(segment (start 0 0) (end 1 1) (width 0.1) (layer "F.Cu") (net 7) (uuid "x"))\n\t(zone (net 7))\n)';
+    const r = nameCopperNets(t);
+    expect(r.renamed).toBe(1);
+    expect(r.text).toContain('(layer "F.Cu") (net "A B")');
+    expect(r.text).toContain("(zone (net 7))");
+    expect(nameCopperNets(BOARD).renamed).toBe(0);
   });
   test("SES import appends only new copper; DSN policy edit", () => {
     const board = '(kicad_pcb\n\t(segment (start 0 0) (end 5 0) (width 0.15) (layer "F.Cu") (net "A") (uuid "x"))\n)\n';
@@ -361,5 +371,25 @@ describe("layout flow", () => {
     const names = await readdir(join(st.ws, "check"));
     expect(names).toContain("result.json");
     expect((await readRequirements(st.spec.requirements.replace(/\/\.fabdesk.*/, "")))?.acceptance.schema).toBeTruthy();
+  });
+});
+
+describe("DSN export", () => {
+  test("runs kicad-cli specctra and applies the layer policy", async () => {
+    const { exportDsn } = await import("../src/index");
+    const dir = await tmp();
+    const calls: string[][] = [];
+    const host = {
+      spawn: async (cmd: string[], o: { log: string }) => {
+        calls.push(cmd);
+        await writeFile(cmd[cmd.indexOf("-o") + 1]!, "(class PWR_1 A B\n (circuit\n  (use_via x))\n)\n(layer In1.Cu (type power))");
+        await writeFile(o.log, "");
+        return { code: 0, wallS: 0 };
+      },
+    };
+    const r = await exportDsn(host, "/k/kicad-cli", join(dir, "b.kicad_pcb"), join(dir, "b.dsn"), { outerOnly: ["PWR_1"], planeLayers: ["In1.Cu"] });
+    expect(calls[0]!.slice(1, 4)).toEqual(["pcb", "export", "specctra"]);
+    expect(r.done).toEqual(["PWR_1"]);
+    expect(await readFile(r.dsn, "utf8")).toContain("(use_layer F.Cu B.Cu)");
   });
 });

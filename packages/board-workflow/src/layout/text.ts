@@ -144,7 +144,7 @@ export function lockedRefs(text: string): Set<string> {
   return out;
 }
 
-const ATOM_TRANSFORM = /\(transform\s+\(translate ([-\d.]+) ([-\d.]+)\)(?:\s+\(rotate ([-\d.]+)\))?\s*\)/g;
+const ATOM_TRANSFORM = /\(transform\s+\(translate ([-\d.]+) ([-\d.]+)\)(?:\s*\(rotate ([-\d.]+)\))?(?:\s*\(scale 1(?:\.0*)? 1(?:\.0*)?\))?\s*\)/g;
 
 /** Native transform nodes to `(at x y r)` poses, which is what KiCadRoutingTools reads. Boards without transforms are returned unchanged. */
 export function convertTransforms(text: string): { text: string; converted: number } {
@@ -217,4 +217,25 @@ export function replaceCopper(native: string, routed: string): { text: string; s
   const text = bare.slice(0, bare.trimEnd().lastIndexOf(")")).trimEnd() + "\n" + cu.join("\n") + "\n)\n";
   const routedItems = { segment: kinds.filter((k) => k === "segment").length, via: kinds.filter((k) => k === "via").length, arc: kinds.filter((k) => k === "arc").length };
   return { text, stats: { mode: "replace", native_removed: before, routed_items: routedItems } };
+}
+
+/**
+ * KiCad 9-style router output names a track's net by number (`(net 178)`, with `(net 178 "NAME")` in the net table);
+ * the workflow's checks and the merge work by name. Rewrite the net reference of every segment, via and arc to `(net "NAME")`.
+ * A board that already names its nets is returned unchanged. (The toolkit refused such boards as "pre-10 format".)
+ */
+export function nameCopperNets(text: string): { text: string; renamed: number } {
+  const table = new Map<string, string>();
+  for (const m of text.matchAll(/^\t\(net (\d+) "((?:[^"\\]|\\.)*)"\)/gm)) table.set(m[1]!, m[2]!);
+  if (!table.size) return { text, renamed: 0 };
+  let renamed = 0;
+  const out = text.replace(COPPER_ITEM, (item) =>
+    item.replace(/\(net (\d+)\)/, (m, n: string) => {
+      const name = table.get(n);
+      if (name === undefined) return m;
+      renamed++;
+      return `(net "${name}")`;
+    }),
+  );
+  return { text: out, renamed };
 }
