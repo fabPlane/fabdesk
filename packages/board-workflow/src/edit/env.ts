@@ -1,13 +1,13 @@
 /** What an edit needs to know about a project: its board, its requirements, which parts are fixed. */
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { exists, locateProject } from "../files";
 import { readOnboardRecord, readRequirements } from "../onboard";
 import type { Requirements } from "../requirements";
 
 export interface EditEnv {
   projectDir: string;
-  /** Board file name in the project folder. */
+  /** Board file, relative to the project folder. */
   pcbName: string;
   stem: string;
   pcbText: string;
@@ -33,7 +33,7 @@ export async function loadEditEnv(projectDir: string, pcb?: string): Promise<Edi
   }
   return {
     projectDir,
-    pcbName: files.pcb.slice(files.pcb.lastIndexOf("/") + 1),
+    pcbName: relative(projectDir, files.pcb),
     stem: files.stem,
     pcbText: await readFile(files.pcb, "utf8"),
     req,

@@ -308,6 +308,7 @@ describe("registry", () => {
       "verify_gate",
       "verify_viagrid",
       "board_check",
+      "board_edit",
       "release_build",
       "render_pcb_readiness",
       "render_pcb_display",

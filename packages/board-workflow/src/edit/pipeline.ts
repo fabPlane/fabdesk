@@ -6,8 +6,8 @@
  * `adoptCandidate` reads to write it into the project.
  */
 import { createHash } from "node:crypto";
-import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type { AcceptRun } from "../history";
 import { acceptDir, type AcceptIndexEntry } from "../history";
 import { BOARD_DIR, designHash, exists, readJson, writeJsonFile } from "../files";
@@ -33,7 +33,7 @@ export interface RepairInput {
 
 export interface EditRunners {
   /** A1-A9 on a project folder, recorded in that folder's history (`runAcceptance` with a DRC provider). */
-  accept(dir: string): Promise<AcceptRun>;
+  accept(dir: string, pcb: string): Promise<AcceptRun>;
   /**
    * The hook where the route stage plugs in: re-route what the edit opened, in the candidate, before the proof.
    * Absent, the candidate keeps its measured opens and the proof reports them.
@@ -127,7 +127,7 @@ async function beforeScore(env: EditEnv, copy: string, runners: EditRunners): Pr
     await seed(hit.entry, hit.result);
     return { scored: hit.result, cached: hit.entry.id };
   }
-  const run = await runners.accept(copy);
+  const run = await runners.accept(copy, env.pcbName);
   await writeJsonFile(join(cache, "before.json"), { entry: run.entry, result: run.result });
   return { scored: run.result };
 }
@@ -164,7 +164,7 @@ export async function runEdit(input: EditRunInput): Promise<EditRunResult> {
   let applied: Awaited<ReturnType<typeof applyEdit>>;
   const projectHashes = await designFileHashes(env.projectDir);
   try {
-    applied = await applyEdit(plan, env, out, { score: async (d) => (await input.runners.accept(d)).result, beforeScored: (d) => beforeScore(env, d, input.runners) });
+    applied = await applyEdit(plan, env, out, { score: async (d) => (await input.runners.accept(d, env.pcbName)).result, beforeScored: (d) => beforeScore(env, d, input.runners) });
   } catch (e) {
     if (!(e instanceof EditStop)) throw e;
     return { ...common, stage: "apply", verdict: e.message, stop: /^STOP/.test(e.message) };
@@ -172,7 +172,7 @@ export async function runEdit(input: EditRunInput): Promise<EditRunResult> {
   lap("apply", t);
   const pcb = join(out, env.pcbName);
   await writeJsonFile(join(out, "origin.json"), { project: env.projectDir, files: projectHashes });
-  await mkdir(join(out, "before"), { recursive: true });
+  await mkdir(dirname(join(out, "before", env.pcbName)), { recursive: true });
   await writeFile(join(out, "before", env.pcbName), env.pcbText);
   const ledger = { plan, impact: rep, applied: applied.log };
   const routeAgain = [...new Set([...(applied.log.moves?.cut_nets ?? []), ...(applied.log.landing?.cut_nets ?? []), ...(applied.log.pad_cut?.cut_nets ?? [])])].sort();
@@ -212,7 +212,7 @@ async function finish(
   say(0.7, "A1-A9 proof");
   t = Date.now();
   const beforeRec = await readJson<Scored>(join(dir, "before-acceptance.json"));
-  const run = await input.runners.accept(dir);
+  const run = await input.runners.accept(dir, env.pcbName);
   base.phases["proof"] = Math.round((Date.now() - t) / 100) / 10;
   const j = judge(beforeRec, run.result);
   const after = await readFile(base.candidate.pcb, "utf8");
