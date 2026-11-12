@@ -21,7 +21,7 @@ export const export_gerbers = defineTool({
   toolset: "export",
   title: "Export Gerbers",
   description:
-    "Export Gerber files for all copper, mask, paste, silkscreen and edge layers to exports/gerbers/. Requires kicad-cli and board.kicad_pcb.",
+    "Export Gerber files for all copper, mask, paste, silkscreen and edge layers to exports/gerbers/. Requires kicad-cli and board.kicad_pcb. For a package you will order, board_release (gerb, fab) supersedes this: it exports CAM twice, compares the Gerbers with an independent render and refuses unless the gates pass.",
   inputSchema: { expectedSourceSha256: expectedPcbSource },
   annotations: {
     readOnlyHint: false,
@@ -110,7 +110,7 @@ export const export_drill = defineTool({
   toolset: "export",
   title: "Export drill files",
   description:
-    "Export Excellon drill files (plated/non-plated, with map) to exports/gerbers/. Requires kicad-cli and board.kicad_pcb.",
+    "Export Excellon drill files (plated/non-plated, with map) to exports/gerbers/. Requires kicad-cli and board.kicad_pcb. For a package you will order, board_release fab supersedes this (drill files are part of its gated package).",
   inputSchema: { expectedSourceSha256: expectedPcbSource },
   annotations: {
     readOnlyHint: false,
@@ -144,7 +144,7 @@ export const export_pos = defineTool({
   toolset: "export",
   title: "Export pick-and-place",
   description:
-    "Export the component placement (pick-and-place) CSV to exports/positions.csv. For a placed board also writes exports/positions-jlc.csv and exports/bom-jlc.csv: pad-centre positions from the board's own copper and the rotation JLC's own footprint needs per part (from board_release bom, else from its evidence cache), every row simulated on the copper. Requires kicad-cli and board.kicad_pcb.",
+    "Export the component placement (pick-and-place) CSV to exports/positions.csv. For a placed board also writes exports/positions-jlc.csv and exports/bom-jlc.csv: pad-centre positions from the board's own copper and the rotation JLC's own footprint needs per part (from board_release bom, else from its evidence cache), every row simulated on the copper. Requires kicad-cli and board.kicad_pcb. For the JLC placement file, board_release bom supersedes this: it resolves rotations and checks every row against the BOM.",
   inputSchema: { expectedSourceSha256: expectedPcbSource },
   annotations: {
     readOnlyHint: false,
@@ -245,7 +245,7 @@ export const export_zip = defineTool({
   toolset: "export",
   title: "Zip fabrication outputs",
   description:
-    "Bundle the files currently present in exports/gerbers plus positions.csv and bom.csv into exports/fabrication.zip or a named filename under exports/. Missing optional entries are reported.",
+    "Bundle the files currently present in exports/gerbers plus positions.csv and bom.csv into exports/fabrication.zip or a named filename under exports/. Missing optional entries are reported. For a package you will order, board_release fab supersedes this: its archive is gated on the interconnect, review, A1-A9 and via checks.",
   inputSchema: {
     expectedSourceSha256: expectedPcbSource,
     gerberFiles: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/).max(240)).min(1).max(512).optional()

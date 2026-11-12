@@ -24,8 +24,15 @@ describe("boardStartTools", () => {
   const registry = { byToolset: (id: string) => ({ core: [{ name: "load_toolset" }], verify: [{ name: "verify_drc" }], render: [{ name: "render_view" }], board: [{ name: "board_job" }] } as Record<string, Array<{ name: string }>>)[id] ?? [] } as never;
   test("board-reading tools plus core, verify, render and board; no authoring tools", () => {
     const names = boardStartTools(registry);
-    for (const n of [...BOARD_START_TOOLS, "load_toolset", "verify_drc", "render_view", "board_job"]) expect(names).toContain(n);
+    for (const n of [...BOARD_START_TOOLS, "load_toolset", "render_view", "board_job"]) expect(names).toContain(n);
+    // board_check supersedes verify_drc: one way to do the job in the start set
+    expect(names).not.toContain("verify_drc");
     for (const n of ["schematic_edit", "native_edit_transaction", "pcb_edit_graphics", "circuit_build"]) expect(names).not.toContain(n);
+  });
+  test("with the real registry: board tools replace verify_drc; uncovered tools stay", () => {
+    const names = boardStartTools(createRegistry());
+    for (const n of ["board_check", "board_route", "board_edit", "board_review", "board_release", "pcb_inspect", "schematic_inspect", "render_view", "route_run", "verify_erc"]) expect(names).toContain(n);
+    for (const n of ["verify_drc", "verify_gate", "release_build"]) expect(names).not.toContain(n);
   });
   test("the placeholder list names only tools that exist", () => {
     const reg = createRegistry();

@@ -552,7 +552,7 @@ function routeRunTool(inputSchema: typeof RouteRunArgs) {
     boardScoped: true,
     toolset: "core",
     title: "Autoroute the board",
-    description: `Start a durable autoroute against a revision-bound board snapshot. Waits up to waitMs (default ${ROUTE_RUN_DEFAULT_WAIT_MS / 1000} s, max ${ROUTE_RUN_MAX_WAIT_MS / 1000} s); returns the final result when the run finishes within that time, otherwise its run ID and running state. The run continues after the request returns, and its progress, diagnostics and artifacts remain available through route_status. applyPolicy=auto (default) atomically applies only while the starting PCB revision is current; manual preserves a validated native candidate for route_apply. onlyConnections limits the run to named nets.`,
+    description: `Start a durable autoroute against a revision-bound board snapshot. Waits up to waitMs (default ${ROUTE_RUN_DEFAULT_WAIT_MS / 1000} s, max ${ROUTE_RUN_MAX_WAIT_MS / 1000} s); returns the final result when the run finishes within that time, otherwise its run ID and running state. The run continues after the request returns, and its progress, diagnostics and artifacts remain available through route_status. applyPolicy=auto (default) atomically applies only while the starting PCB revision is current; manual preserves a validated native candidate for route_apply. onlyConnections limits the run to named nets. For the staged flow (preflight, seeded placements, ranking, hedged route, last mile) board_route supersedes this; route_run remains the single autoroute of the live board.`,
     inputSchema: inputSchema as typeof RouteRunArgs,
     annotations: {
       readOnlyHint: false,
@@ -602,7 +602,7 @@ export const verify_drc = defineTool({
   toolset: "core",
   title: "Run KiCad DRC",
   description:
-    "Run KiCad design rule check on board.kicad_pcb. When parity is enabled, require a complete saved schematic hierarchy and bind parity evidence to its aggregate revision. Explicit assembly members currently support PCB-only DRC: provide expectedSourceSha256 and schematicParity=false. Returns violation descriptions, rule types and native item IDs with actionable geometry; responseMode=full returns all rows. Writes reports/drc.json inside the selected source directory.",
+    "Run KiCad design rule check on board.kicad_pcb. When parity is enabled, require a complete saved schematic hierarchy and bind parity evidence to its aggregate revision. Explicit assembly members currently support PCB-only DRC: provide expectedSourceSha256 and schematicParity=false. Returns violation descriptions, rule types and native item IDs with actionable geometry; responseMode=full returns all rows. Writes reports/drc.json inside the selected source directory. For a board in the board workflow, board_check supersedes this: the same DRC with refilled zones and schematic parity, plus A1-A9 recorded against the board as onboarded.",
   inputSchema: {
     expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Required for an assembly member: SHA256 of its inspected saved PCB"),
     severity: z

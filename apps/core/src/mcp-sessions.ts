@@ -86,15 +86,23 @@ export function nativeToolsFor(toolsetsParam: string | null, registry: Pick<Tool
  * schemas) in front of it: it starts with the board-reading tools, verification, rendering and the `board` toolset. The
  * rest stays one `load_toolset` / `capability_search` away.
  *
- * PLACEHOLDER: BOARD_START_TOOLS names only tools that exist today. Later board-workflow stages (check, edit, route,
- * release) register their tools in the `board` toolset, which is already part of BOARD_START_TOOLSETS, so they join the
- * start set without touching this list; add a tool to BOARD_START_TOOLS only for one that lives in another toolset.
+ * The board-workflow stage tools (check, edit, route, review, release, silk) are in the `board` toolset, part of
+ * BOARD_START_TOOLSETS; add a tool to BOARD_START_TOOLS only for one that lives in another toolset.
  */
-export const BOARD_START_TOOLS = ["pcb_environment", "project_status", "pcb_inspect", "schematic_inspect", "schematic_review", "route_status"] as const;
-export const BOARD_START_TOOLSETS = ["core", "verify", "render", "board"] as const;
+export const BOARD_START_TOOLS = ["pcb_environment", "project_status", "pcb_inspect", "schematic_inspect", "schematic_review", "route_status", "verify_erc", "verify_viagrid"] as const;
+export const BOARD_START_TOOLSETS = ["core", "render", "board"] as const;
+/**
+ * Tools of the start toolsets that a board tool replaces for the same job, so the run does not see two ways to do it:
+ * `verify_drc` (board_check measures the same DRC with parity and A1-A9). Still loadable (`load_toolset`, `capability_search`).
+ * Not listed here because the board tools do not cover the whole job: `route_run` (the single autoroute of the live board),
+ * `verify_erc`, `render_*`, `pcb_inspect`, `schematic_inspect`. The `verify` toolset is not a start toolset: `verify_gate` and
+ * `release_build` are covered by `board_release`; `verify_erc` and `verify_viagrid` are named in BOARD_START_TOOLS.
+ */
+export const BOARD_START_SUPERSEDED = ["verify_drc"] as const;
 
 export function boardStartTools(registry: Pick<ToolRegistry, "byToolset">): string[] {
-  return [...new Set([...BOARD_START_TOOLS, ...BOARD_START_TOOLSETS.flatMap((id) => registry.byToolset(id).map((t) => t.name))])];
+  const superseded = new Set<string>(BOARD_START_SUPERSEDED);
+  return [...new Set([...BOARD_START_TOOLS, ...BOARD_START_TOOLSETS.flatMap((id) => registry.byToolset(id).map((t) => t.name))])].filter((n) => !superseded.has(n));
 }
 
 export type McpSessionOptions = {
