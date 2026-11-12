@@ -265,6 +265,27 @@ describe("collateral, drc input and the helpers", () => {
     expect(led.displaced).toEqual([]);
     expect(led.inherited_overlaps).toBeUndefined();
   });
+  test("planMoves near: the tool picks the pose next to the target; make_room displaces what is there; carry_auto takes net-local satellites", () => {
+    const near = planMoves(BOARD, (r) => r === "J1", [{ ref: "C3", near: "U1", radius: 6 }], { radius: 6 }, []);
+    expect(near.led.near).toHaveLength(1);
+    expect(near.led.near[0]).toMatchObject({ ref: "C3" });
+    const [x, y] = near.led.near[0]!.to;
+    expect(Math.hypot(x - 30, y - 20)).toBeLessThan(6);
+    // a part that sits where the block wants to go is displaced when the block says make_room
+    const room = planMoves(BOARD, (r) => r === "J1", [{ ref: "C3", near: [40, 14], radius: 2, make_room: true }], { radius: 6 }, []);
+    expect(room.led.displaced.map((d) => d.ref)).toEqual(["C2"]);
+    // R1 and R2 share SIG2 (and nothing else but GND): R2 is a satellite of R1
+    const auto = planMoves(BOARD, (r) => r === "J1", [{ ref: "R1", to: [20, 30, 0], carry_auto: ["R1"] }], { radius: 4 }, []);
+    expect(auto.led.carry_auto).toEqual({ R1: ["R2"] });
+    expect(auto.led.carried.map((c) => c.ref)).toEqual(["R2"]);
+  });
+  test("a fit/do-not-fit swap sets the footprint attribute and the symbol flags together", async () => {
+    const dir = await project();
+    const r = await runEdit({ projectDir: dir, plan: { id: "dnp", swap: [{ ref: "C3", dnp: true }] }, mode: "apply", runners: runners() });
+    expect(await readFile(r.candidate!.pcb, "utf8")).toContain("(attr exclude_from_bom dnp)");
+    const sheet = await readFile(join(r.candidate!.dir, "board.kicad_sch"), "utf8");
+    expect(sheet).toMatch(/\(symbol \(lib_id "Device:C"\) \(at 90 50 0\) \(unit 1\) \(exclude_from_sim no\) \(in_bom no\) \(on_board yes\) \(dnp yes\)/);
+  });
   test("sheet sets only write what changed", async () => {
     const dir = await project();
     const s = new SheetSet(dir);

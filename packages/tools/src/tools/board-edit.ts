@@ -189,7 +189,6 @@ export const board_edit = defineTool({
     pcb: z.string().optional().describe("Board file, relative to the project; default board.kicad_pcb or the only .kicad_pcb."),
   },
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
-  scope: "project",
   longRunning: true,
   handler: (input, ctx) =>
     runDurable(ctx, "board_edit", async (c) => {
