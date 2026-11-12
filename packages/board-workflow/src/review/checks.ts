@@ -863,6 +863,12 @@ export async function checkBom(ctx: ReviewCtx): Promise<CheckResult> {
     r.detail = "no BOM decisions (the release stage's bomcheck writes them)";
     return r;
   }
+  if (d.stale) {
+    // decisions of another board are not evidence for this one: one must-fix, none of its lines trusted
+    r.findings.push(FIND({ layer: "L6", rule: "BOM", severity: "must-fix", claim: `BOM decisions are stale: ${d.stale}; their lines were not checked`, key: "stale", suggest: "run board_release bom again on this board" }));
+    r.detail = `BOM decisions stale: ${d.stale}`;
+    return r;
+  }
   ctx.bom = d;
   for (const rec of d.records) {
     const st = rec.status;
@@ -986,6 +992,44 @@ export function customCheckArgv(cmd: string, shell: string | undefined, platform
 }
 
 /**
+ * One substituted value quoted for the shell that runs the command, so a space, `$()`, `;` or a quote in a path is
+ * data, never shell syntax: POSIX single quotes for sh/bash, PowerShell single quotes (quote characters doubled),
+ * double quotes for cmd.exe, which cannot quote `"`, `%` or `!` safely (null: refuse).
+ */
+export function quoteForShell(v: string, sh: CustomShell): string | null {
+  switch (sh) {
+    case "sh":
+    case "bash":
+      return `'${v.replace(/'/g, `'\\''`)}'`;
+    case "powershell":
+    case "pwsh":
+      return `'${v.replace(/['\u2018\u2019\u201a\u201b]/g, "$&$&")}'`;
+    case "cmd":
+      return /["%!\r\n]/.test(v) ? null : `"${v}"`;
+  }
+}
+
+/**
+ * The command line of a custom check with `{pcb}`, `{project}` ... replaced by quoted values. A placeholder the owner
+ * already wrapped in quotes (`"{pcb}"`, `'{pcb}'`) loses those quotes for ours. An error string when a value cannot be
+ * quoted for the shell.
+ */
+export function customCommand(template: string, subs: Record<string, string>, shell: string | undefined, platform: NodeJS.Platform = process.platform): string | { error: string } {
+  const sh = (shell?.trim().toLowerCase() || (platform === "win32" ? "cmd" : "sh")) as CustomShell;
+  if (!(CUSTOM_SHELLS as readonly string[]).includes(sh)) return template; // customCheckArgv reports the unknown shell
+  let bad: string | null = null;
+  const cmd = template.replace(/(["']?)\{(pcb|sch|project|netlist|spec|out)\}\1/g, (_m, _q: string, k: string) => {
+    const q = quoteForShell(subs[k] ?? "", sh);
+    if (q === null) {
+      bad ??= `{${k}} (${subs[k]}) has characters ${sh} cannot quote safely`;
+      return "";
+    }
+    return q;
+  });
+  return bad ? { error: bad } : cmd;
+}
+
+/**
  * Checks added as data: `.fabdesk/board/review/checks.d/*.json` (all boards, optional "boards" filter) and `review.custom`
  * in the project's review config. Each: {"name", "layer", "run": "cmd with {pcb} {sch} {project} {netlist} {spec} {out}",
  * "timeout", "shell"?}. `run` goes to the platform shell (`/bin/sh` on Linux and macOS, `cmd.exe` on Windows) unless
@@ -1009,14 +1053,19 @@ export async function checkCustom(ctx: ReviewCtx): Promise<CheckResult> {
   }
   if (!ctx.env.trustCustom) {
     r.status = "skipped";
-    r.detail = `${specs.length} custom check(s) not run: they execute shell commands from the project's data files; pass trustCustom to run them`;
+    r.detail = `${specs.length} owner check(s) not run (trustCustom off): they execute shell commands from the project's data files; pass trustCustom to run them`;
+    r.artifacts = { not_run: specs.length };
     return r;
   }
   const subs: Record<string, string> = { pcb: ctx.project.pcb, sch: ctx.project.sch, project: ctx.project.dir, netlist: join(ctx.out, "netlist.xml"), spec: "", out: ctx.out };
   const errs: string[] = [];
   let n = 0;
   for (const sp of specs) {
-    const cmd = sp.run.replace(/\{(pcb|sch|project|netlist|spec|out)\}/g, (_m, k: string) => subs[k]!);
+    const cmd = customCommand(sp.run, subs, sp.shell);
+    if (typeof cmd !== "string") {
+      errs.push(`${sp.name}: ${cmd.error}`);
+      continue;
+    }
     const how = customCheckArgv(cmd, sp.shell);
     if (typeof how === "string") {
       errs.push(`${sp.name}: ${how}`);

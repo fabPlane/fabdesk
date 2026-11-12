@@ -110,6 +110,18 @@ describe("board_release", () => {
     await expect(call("board_release", { action: "fab", out: "../elsewhere" })).rejects.toThrow(/escapes the project/);
   });
 
+  test("fab: a bad exception is NOT RELEASED, not a tool error; a refused release saves no proxies; a review of another board does not pass", async () => {
+    const { project, call } = await setup();
+    let r = await call("board_release", { action: "fab", accept: ["A8_pairs=../decisions.json#x"], proxies: { C1: { proxy: "C2" } } });
+    expect(r.isError).toBeFalsy();
+    expect(r.json).toMatchObject({ released: false, gate: "acceptance" });
+    expect(await stat(join(project.dir, ".fabdesk", "board", "release", "jlc-footprint-proxies.json")).catch(() => null)).toBeNull();
+    // a saved pass is not what fab trusts: it computes the review gate from the review records
+    await recordReviewGate(project.dir, { current: true, open: 0, mustFix: 0 });
+    r = await call("board_release", { action: "fab" });
+    expect(r.json).toMatchObject({ released: false, gate: "review" });
+  });
+
   test("proxies are saved with the project and used by the package check", async () => {
     const { project, call } = await setup();
     await call("board_release", { action: "check", proxies: { C1: { proxy: "C2", why: "same 0402 package" } } });

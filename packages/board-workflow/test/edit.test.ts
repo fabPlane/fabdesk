@@ -297,11 +297,11 @@ describe("collateral, drc input and the helpers", () => {
 describe("review -> edit bridge (EditCandidateBuilder)", () => {
   const plan = { id: "fix-DECAP", move: [{ ref: "C3", to: [50, 30, 90] }], displace: { radius: 3 } } as never;
   const finding = { id: "L3:DECAP:U1:-", severity: "must-fix" } as never;
-  const fakeReview = (findings: Array<{ id: string; severity: string }>) =>
-    (async () => ({ review: { findings }, evaluation: {}, dir: "/nowhere" })) as never;
-  const build = async (findings: Array<{ id: string; severity: string }>, over: Partial<EditRunners> = {}) => {
+  const fakeReview = (findings: Array<{ id: string; severity: string }>, checks: Array<{ name: string; status: string }> = []) =>
+    (async () => ({ review: { findings, checks }, evaluation: {}, dir: "/nowhere" })) as never;
+  const build = async (findings: Array<{ id: string; severity: string }>, over: Partial<EditRunners> = {}, checks: Array<{ name: string; status: string }> = []) => {
     const dir = await project();
-    const b = createEditCandidateBuilder({ project: await openReviewProject(dir), runners: runners(over), reviewEnv: {} as ReviewEnv, reviewCandidate: fakeReview(findings) });
+    const b = createEditCandidateBuilder({ project: await openReviewProject(dir), runners: runners(over), reviewEnv: {} as ReviewEnv, reviewCandidate: fakeReview(findings, checks) });
     return { dir, res: await b.build(plan, finding) };
   };
   test("READY: proof passes, the finding is gone, nothing new, no collateral", async () => {
@@ -318,6 +318,11 @@ describe("review -> edit bridge (EditCandidateBuilder)", () => {
     expect(added.res.notes.join(" ")).toContain("new findings: L3:OTHER:R9:-");
     // notes are not findings that block
     expect((await build([{ id: "L3:NOTE:R9:-", severity: "note" }])).res.ready).toBe(true);
+  });
+  test("not ready when the candidate's review had check errors (a finding whose check errored is not gone)", async () => {
+    const { res } = await build([], {}, [{ name: "decoupling", status: "error" }]);
+    expect(res.ready).toBe(false);
+    expect(res.notes.join(" ")).toContain("check errors (decoupling)");
   });
   test("not ready when the proof fails (opens left by the edit)", async () => {
     const { res } = await build([], { accept: (dir, pcb) => runAcceptance(dir, { pcb, drc: async () => ({ violations: [], unconnected: 2, parity: 0 }) }) });

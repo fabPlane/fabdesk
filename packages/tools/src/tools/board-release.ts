@@ -12,7 +12,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { z } from "zod/v4";
-import { CHECK_KEYS, locateProject, readRequirements, release, runAcceptance, type AcceptRun } from "@fabdesk/board-workflow";
+import { CHECK_KEYS, locateProject, openReviewProject, readRequirements, release, reviewGate, runAcceptance, type AcceptRun } from "@fabdesk/board-workflow";
 import { runDurable } from "../durable";
 import { jailPath } from "../fs";
 import { boardMemGiB, governor } from "../resources";
@@ -142,8 +142,8 @@ async function checkAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
     return ok(text, { summary: sim.summary, parts: sim.parts.filter((p) => p.verdict !== "PASS" || p.note) });
   }
   const [acc, gate, bom, vias, last] = await Promise.all([
-    readAcceptanceState(project.dir),
-    readReviewGate(project.dir),
+    readAcceptanceState(project.dir, files.pcb),
+    readReviewGate(project.dir, files.pcb),
     readBomState(project.dir, files.pcb),
     readFile(files.pcb, "utf8").then((t) => release.viaBindings(files.pcb, release.classifyVias(t))),
     readLastFab(project.dir),
@@ -171,12 +171,12 @@ async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
   const cli = await requireKicad(ctx);
   const out = a.out ? await jailPath(project.dir, a.out) : join(project.dir, "exports", `release-${stamp()}`);
   const proxies = { ...(await readProxies(project.dir)), ...(a.proxies ?? {}) };
-  if (a.proxies) await writeProxies(project.dir, proxies);
   const bom = await readBomState(project.dir, files.pcb);
-  const accept = await Promise.all(a.accept.map((s) => release.resolveException(s, project.dir)));
   const cpl = a.cpl ? await jailPath(project.dir, a.cpl) : undefined;
   const job = await admit(ctx, "board_release fab", [files.pcb]);
   try {
+    // a bad exception (malformed, no owner decision, a file outside the project) is a refusal, not a tool error
+    const accept = await Promise.all(a.accept.map((s) => release.resolveException(s, project.dir)));
     const r = await release.releaseFab({
       project: project.dir,
       stem: files.stem,
@@ -186,7 +186,11 @@ async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
       cli,
       gates: {
         ...(interconnectGate ? { interconnect: () => interconnectGate!({ projectDir: project.dir }) } : {}),
-        review: () => readReviewGate(project.dir),
+        // computed live from the review records of this board (never the saved status reading)
+        review: async () => {
+          const g = await reviewGate(await openReviewProject(project.dir, files.pcb));
+          return { state: g.state, open: g.open, mustFix: g.mustFix };
+        },
         acceptance: async () => {
           if (!(await readRequirements(project.dir))) throw new release.ReleaseStop("acceptance", "STOP acceptance: no requirements for this board: run board_check first");
           const run: AcceptRun = await runAcceptance(project.dir, {
@@ -210,6 +214,8 @@ async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
       signal: ctx.signal,
       progress: (n) => ctx.progress(0.5, n),
     });
+    // saved with the project only once the release went through (a refused release writes nothing)
+    if (a.proxies) await writeProxies(project.dir, proxies);
     const man = r.manifest as { jlc?: { bom_lines?: number; placements?: number; placement_check?: { pass: number; fail: number; placements: number; no_jlc_footprint: string[] }; no_lcsc_code?: string[]; rotation_differs_from_kicad?: unknown[]; skipped?: string }; reproducible: { files: number }; gerbcheck: { pass: boolean }; files: Record<string, string> };
     await writeLastFab(project.dir, { at: new Date().toISOString(), out, boardSha256: (await sha256Of(files.pcb)) ?? "", manifestSha256: (await sha256Of(join(out, "manifest.json"))) ?? "" });
     const j = man.jlc;
@@ -234,7 +240,7 @@ export const board_release = defineTool({
   toolset: "board",
   title: "Release: BOM and JLC rotations, Gerber check, readiness, fabrication package",
   description:
-    "The release stage. bom: every BOM line to a manufacturable part with evidence (LCSC detail, JLC stock and library type, lifecycle, JLC's own footprint against ours, 3D model, height), RESOLVED / RISK / OWNER / PROPOSED / UNRESOLVED, and the CPL rotation JLC needs per part. gerb: Gerbers read by an independent reader and compared pixel for pixel with KiCad's plot, drill counts. check: where the release stands (interconnect, review, acceptance, via bindings, BOM), or with package: JLC's footprint simulated on that package's copper (proxies = same-package stand-ins). fab: the fabrication package, written only when the gates pass in order: interconnect (none for a standalone project), review settled for this exact board, A1-A9 with parity (an exception only with an owner decision), via-in-pad and microvias filled and capped; then CAM exported twice with identical hashes, Gerber render check, JLC BOM/CPL with every row simulated on our copper. A refused release is a result: it names the gate and writes nothing.",
+    "The release stage. bom: every BOM line to a manufacturable part with evidence (LCSC detail, JLC stock and library type, lifecycle, JLC's own footprint against ours, 3D model, height), RESOLVED / RISK / OWNER / PROPOSED / UNRESOLVED, and the CPL rotation JLC needs per part. gerb: Gerbers read by an independent reader and compared pixel for pixel with KiCad's plot, drill counts. check: where the release stands (interconnect, review, acceptance, via bindings, BOM), or with package: JLC's footprint simulated on that package's copper (proxies = same-package stand-ins). fab: the fabrication package, written only when the gates pass in order: interconnect (none for a standalone project), review settled for this exact board, A1-A9 with parity (an exception only with an owner decision), via-in-pad and microvias filled and capped; then CAM exported twice with identical hashes, Gerber render check, JLC BOM/CPL with every row simulated on our copper. A refused release is a result: it names the gate and writes nothing (the package is built in a temporary folder and moved into place only when every check passed; proxies are saved only with a release).",
   inputSchema: Input,
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: false },
   longRunning: true,

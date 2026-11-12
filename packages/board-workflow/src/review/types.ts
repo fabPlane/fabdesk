@@ -116,6 +116,8 @@ export interface CheckRecord {
 export interface ReviewRecord {
   schema: "REVIEW_V1";
   board: string;
+  /** The board file reviewed, project-relative with "/" (a review of one board never passes another). */
+  pcb?: string;
   config: string;
   hash: string;
   files: Record<string, string>;

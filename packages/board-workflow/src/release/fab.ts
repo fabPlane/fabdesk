@@ -1,6 +1,7 @@
 /**
- * Fabrication package for a released board. Refuses, writing nothing into the package folder, unless every gate passes
- * in order:
+ * Fabrication package for a released board. Refuses, writing nothing (no package folder, no zip), unless every gate
+ * passes in order (the package is built in a temporary folder beside the destination and renamed into place only when
+ * every check passed):
  *   1. the interconnect gate (a hook; none for a standalone project);
  *   2. the review gate: a current review of this exact board, every finding settled;
  *   3. the board's acceptance checks A1-A9 with schematic parity (an exception only with an owner decision, recorded);
@@ -10,10 +11,11 @@
  * predictions, with every CPL row simulated against JLC's own footprint on our copper (jlcsim).
  */
 import { readFileSync } from "node:fs";
-import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { isAbsolute, join, relative } from "node:path";
+import { copyFile, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, join, relative } from "node:path";
 import { runKicadCli, type KicadCli } from "@fabdesk/kicad";
 import { CHECK_KEYS } from "../accept";
+import { confineToProject } from "../files";
 import { boardPinNames, readCplJlc, type BomResult } from "./bomcheck";
 import { exportCam, requiredLayers, reproducible, sha256, type Reproducibility } from "./cam";
 import { parseCsv, toCsv } from "./csv";
@@ -104,7 +106,11 @@ export async function resolveException(spec: string, baseDir: string): Promise<A
   const [check, ref] = [spec.slice(0, spec.indexOf("=")), spec.slice(spec.indexOf("=") + 1)];
   if (!check || !ref.includes("#")) throw new ReleaseStop("acceptance", `--accept ${spec}: expected CHECK=FILE#ID`);
   const [file, id] = [ref.slice(0, ref.indexOf("#")), ref.slice(ref.indexOf("#") + 1)];
-  const doc = JSON.parse(await readFile(isAbsolute(file) ? file : join(baseDir, file), "utf8").catch(() => "null"));
+  // the decision file is the project's own record: never a file outside the project
+  const path = await confineToProject(baseDir, file, "decision file").catch((e: unknown) => {
+    throw new ReleaseStop("acceptance", `STOP --accept ${spec}: ${e instanceof Error ? e.message : String(e)}`);
+  });
+  const doc = JSON.parse(await readFile(path, "utf8").catch(() => "null"));
   const lists = Array.isArray(doc) ? [doc] : doc && typeof doc === "object" ? Object.values(doc) : [];
   const recs = lists.filter(Array.isArray).flat().filter((r) => r && typeof r === "object") as Array<Record<string, unknown>>;
   const rec = recs.find((r) => r["id"] === id);
@@ -260,51 +266,57 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
   const { record: viaRec, missing } = viaBindings(inp.pcb, classifyVias(pcbText));
   if (missing.length)
     throw new ReleaseStop("vias", `STOP via bindings: ${missing.length} via(s) in pads or microvias lack (filling yes) (capping yes): ${missing.slice(0, 6).map((v) => `${v.net}@${v.xy.join(",")}`).join("; ")}`, viaRec.counts);
-  // CAM
-  await mkdir(inp.out, { recursive: true });
+  // a BOM check of another board is refused before anything is exported
+  const hasCplJlc = !!inp.bomDir && (await stat(join(inp.bomDir, "cpl-jlc.csv")).then(() => true, () => false));
+  if (hasCplJlc && inp.bomBoardSha !== undefined && inp.bomBoardSha !== sha256(await readFile(inp.pcb)))
+    throw new ReleaseStop("bom", "STOP BOM check is of an earlier board (the board changed since): run board_release bom again");
+  // CAM: built in a temporary folder beside the destination, renamed into place only when every check passed
+  const final = inp.out;
+  const parent = dirname(final);
+  const parentExisted = await stat(parent).then(() => true, () => false);
+  const work = join(parent, `.${basename(final)}.partial-${process.pid}-${Date.now()}`);
+  await mkdir(work, { recursive: true });
   try {
-    await writeFile(join(inp.out, "acceptance-gate.json"), JSON.stringify({ summary: acc.summary, ...(acc.designHash ? { designHash: acc.designHash } : {}), ...(acc.record ? { record: acc.record } : {}) }, null, 1) + "\n");
-    await writeFile(join(inp.out, "via-process-bindings.json"), JSON.stringify(viaRec, null, 1) + "\n");
+    await writeFile(join(work, "acceptance-gate.json"), JSON.stringify({ summary: acc.summary, ...(acc.designHash ? { designHash: acc.designHash } : {}), ...(acc.record ? { record: acc.record } : {}) }, null, 1) + "\n");
+    await writeFile(join(work, "via-process-bindings.json"), JSON.stringify(viaRec, null, 1) + "\n");
     const layers = requiredLayers(pcbText);
     note("CAM export, twice");
-    const rep: Reproducibility = await reproducible(inp.cli, inp.pcb, join(inp.out, "repro"), layers, inp.signal);
+    const rep: Reproducibility = await reproducible(inp.cli, inp.pcb, join(work, "repro"), layers, inp.signal);
     if (!rep.pass) throw new ReleaseStop("cam", `STOP CAM export is not reproducible: ${rep.differ.join(", ")}`, rep);
-    const g = join(inp.out, "gerbers");
+    const g = join(work, "gerbers");
     await mkdir(g, { recursive: true });
-    for (const n of await readdir(join(inp.out, "repro", "repro-a"))) await copyFile(join(inp.out, "repro", "repro-a", n), join(g, n));
+    for (const n of await readdir(join(work, "repro", "repro-a"))) await copyFile(join(work, "repro", "repro-a", n), join(g, n));
     const o = { ...(inp.signal ? { signal: inp.signal } : {}) };
     note("positions, BOM, STEP");
-    await runKicadCli(inp.cli, ["pcb", "export", "pos", "--output", join(inp.out, `${inp.stem}-pos.csv`), "--format", "csv", "--units", "mm", "--side", "both", inp.pcb], o);
-    if (inp.schematic) await runKicadCli(inp.cli, ["sch", "export", "bom", "--output", join(inp.out, `${inp.stem}-bom.csv`), inp.schematic], o);
-    if (inp.step !== false) await runKicadCli(inp.cli, ["pcb", "export", "step", "--output", join(inp.out, `${inp.stem}.step`), "--subst-models", inp.pcb], o);
-    await rm(join(inp.out, "repro"), { recursive: true, force: true });
+    await runKicadCli(inp.cli, ["pcb", "export", "pos", "--output", join(work, `${inp.stem}-pos.csv`), "--format", "csv", "--units", "mm", "--side", "both", inp.pcb], o);
+    if (inp.schematic) await runKicadCli(inp.cli, ["sch", "export", "bom", "--output", join(work, `${inp.stem}-bom.csv`), inp.schematic], o);
+    if (inp.step !== false) await runKicadCli(inp.cli, ["pcb", "export", "step", "--output", join(work, `${inp.stem}.step`), "--subst-models", inp.pcb], o);
+    await rm(join(work, "repro"), { recursive: true, force: true });
     note("Gerber render check");
-    const gc: GerbCheckResult = await gerbCheck({ gerbers: g, pcb: inp.pcb, out: join(inp.out, "gerbcheck"), cli: inp.cli, dpi: inp.gerbDpi ?? 400, ...(inp.signal ? { signal: inp.signal } : {}) });
+    const gc: GerbCheckResult = await gerbCheck({ gerbers: g, pcb: inp.pcb, out: join(work, "gerbcheck"), cli: inp.cli, dpi: inp.gerbDpi ?? 400, ...(inp.signal ? { signal: inp.signal } : {}) });
     if (!gc.pass) throw new ReleaseStop("gerbcheck", `STOP Gerber render check: ${Object.entries(gc.layers).filter(([, v]) => !v.pass).map(([k, v]) => `${k} ${v.error ?? `${((v.diff_share ?? 0) * 100).toFixed(3)} % beyond 1 px`}`).join("; ")}`, gc);
     const names = (await readdir(g)).sort();
-    await writeFile(join(inp.out, `${inp.stem}-gerbers.zip`), zipFiles(await Promise.all(names.map(async (n) => ({ name: n, data: new Uint8Array(await readFile(join(g, n))) })))));
+    await writeFile(join(work, `${inp.stem}-gerbers.zip`), zipFiles(await Promise.all(names.map(async (n) => ({ name: n, data: new Uint8Array(await readFile(join(g, n))) })))));
     // JLC files
     let jlc: JlcFiles | { skipped: string } = { skipped: "no BOM check for this board (board_release bom): no JLC BOM/CPL" };
     const sheets: string[] = [];
     for (const n of (await readdir(inp.project)).filter((x) => x.endsWith(".kicad_sch")).sort()) sheets.push(await readFile(join(inp.project, n), "utf8"));
-    if (inp.bomDir && (await stat(join(inp.bomDir, "cpl-jlc.csv")).then(() => true, () => false))) {
-      const sha = sha256(await readFile(inp.pcb));
-      if (inp.bomBoardSha !== undefined && inp.bomBoardSha !== sha) throw new ReleaseStop("bom", "STOP BOM check is of an earlier board (the board changed since): run board_release bom again");
+    if (inp.bomDir && hasCplJlc) {
       note("JLC BOM and CPL");
-      const j = await jlcFiles(inp.out, inp.bomDir, inp.stem, g);
+      const j = await jlcFiles(work, inp.bomDir, inp.stem, g);
       if (inp.cpl) {
         const rows = parseCsv(await readFile(inp.cpl, "utf8"));
         const bomRefs = new Set<string>();
-        for (const r of parseCsv(await readFile(join(inp.out, `${inp.stem}-jlc-bom.csv`), "utf8"))) for (const d of (r["Designator"] ?? "").split(",")) bomRefs.add(d);
+        for (const r of parseCsv(await readFile(join(work, `${inp.stem}-jlc-bom.csv`), "utf8"))) for (const d of (r["Designator"] ?? "").split(",")) bomRefs.add(d);
         const refs = new Set(rows.map((r) => r["Ref"]!));
         const sym = [...refs].filter((r) => !bomRefs.has(r)).concat([...bomRefs].filter((r) => !refs.has(r)));
         if (sym.length) throw new ReleaseStop("bom", `STOP --cpl ${inp.cpl}: refs differ from the JLC BOM: ${sym.sort().slice(0, 10).join(", ")}`);
-        await writeFile(join(inp.out, `${inp.stem}-jlc-cpl.csv`), toCsv(["Designator", "Mid X", "Mid Y", "Layer", "Rotation"], [...rows].sort((a, b) => (a["Ref"]! < b["Ref"]! ? -1 : 1)).map((r) => [r["Ref"]!, r["PosX"]!, r["PosY"]!, (r["Side"] ?? "").toLowerCase() === "bottom" ? "Bottom" : "Top", String(mod360(Number(r["Rot"])))])));
+        await writeFile(join(work, `${inp.stem}-jlc-cpl.csv`), toCsv(["Designator", "Mid X", "Mid Y", "Layer", "Rotation"], [...rows].sort((a, b) => (a["Ref"]! < b["Ref"]! ? -1 : 1)).map((r) => [r["Ref"]!, r["PosX"]!, r["PosY"]!, (r["Side"] ?? "").toLowerCase() === "bottom" ? "Bottom" : "Top", String(mod360(Number(r["Rot"])))])));
         j.cpl_source = { reviewed: inp.cpl, sha256: sha256(await readFile(inp.cpl)), note: "reviewed placement used as-is; bomcheck rotation predictions kept in rotation_differs_from_kicad for the preview check" };
       }
       note("placement check (JLC footprint on our copper)");
-      const sim = await placementCheck(inp.out, inp.bomDir, inp.stem, sheets, inp.proxies);
-      await writeFile(join(inp.out, "placement-check.json"), JSON.stringify({ summary: sim.summary, convention: sim.convention, cpl: join(inp.out, `${inp.stem}-jlc-cpl.csv`), parts: sim.parts }, null, 1) + "\n");
+      const sim = await placementCheck(work, inp.bomDir, inp.stem, sheets, inp.proxies);
+      await writeFile(join(work, "placement-check.json"), JSON.stringify({ summary: sim.summary, convention: sim.convention, cpl: join(final, `${inp.stem}-jlc-cpl.csv`), parts: sim.parts }, null, 1) + "\n");
       j.placement_check = sim.summary;
       const bad = sim.parts.filter((p) => p.verdict === "FAIL");
       if (bad.length)
@@ -318,17 +330,21 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
       layers: layers,
       accepted_exceptions: Object.fromEntries(failing.map((k) => [k, exceptions.get(k) ?? exceptions.get(k.slice(0, 2))])),
       reproducible: rep,
-      gerbcheck: { gerbers: gc.gerbers, pcb: gc.pcb, dpi: gc.dpi, drill: gc.drill, pass: gc.pass },
+      gerbcheck: { gerbers: join(final, "gerbers"), pcb: gc.pcb, dpi: gc.dpi, drill: gc.drill, pass: gc.pass },
       sources: { pcb: sha256(await readFile(inp.pcb)), ...(inp.schematic ? { schematic_root: sha256(await readFile(inp.schematic)) } : {}) },
       review: { gate: rg.state, open: rg.open ?? 0, mustFix: rg.mustFix ?? 0, ...(rg.at ? { at: rg.at } : {}) },
       files: {} as Record<string, string>,
     };
-    for (const f of (await walk(inp.out)).sort()) man.files[relative(inp.out, f)] = sha256(await readFile(f));
-    await writeFile(join(inp.out, "manifest.json"), JSON.stringify(man, null, 1) + "\n");
-    return { out: inp.out, manifest: man, gates: [ic.text, "review gate passes", `acceptance ${failing.length ? `with ${failing.length} accepted exception(s)` : "A1-A9 pass"}`, `vias: ${viaRec.counts.require_fill_cap} bound`] };
+    for (const f of (await walk(work)).sort()) man.files[relative(work, f)] = sha256(await readFile(f));
+    await writeFile(join(work, "manifest.json"), JSON.stringify(man, null, 1) + "\n");
+    await rename(work, final).catch((e: unknown) => {
+      throw new ReleaseStop("output", `${final} could not be written (${e instanceof Error ? e.message : String(e)})`);
+    });
+    return { out: final, manifest: man, gates: [ic.text, "review gate passes", `acceptance ${failing.length ? `with ${failing.length} accepted exception(s)` : "A1-A9 pass"}`, `vias: ${viaRec.counts.require_fill_cap} bound`] };
   } catch (e) {
-    // a refusal after the package folder was opened leaves a note of why, not a half-package that looks released
-    await writeFile(join(inp.out, "REFUSED.json"), JSON.stringify({ at: new Date().toISOString(), gate: e instanceof ReleaseStop ? e.gate : "error", reason: e instanceof Error ? e.message : String(e) }, null, 1) + "\n").catch(() => {});
+    // a refusal leaves nothing behind: no half-package, no uploadable zip
+    await rm(work, { recursive: true, force: true }).catch(() => {});
+    if (!parentExisted) await rmdir(parent).catch(() => {});
     throw e;
   }
 }

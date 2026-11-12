@@ -35,6 +35,8 @@ export interface BomDecisions {
   lines?: number;
   placements?: number;
   summary?: unknown;
+  /** Set when the decisions are not of the board under review (why): the review does not trust their lines. */
+  stale?: string;
 }
 
 export interface InterconnectVerdict {

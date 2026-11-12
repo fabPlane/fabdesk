@@ -18,7 +18,7 @@ import { basename, join, resolve } from "node:path";
 import { REGISTRY } from "./checks";
 import { ReviewCtx, reviewHash, reviewHome, type ReviewEnv, type ReviewProject } from "./context";
 import { propose, coveringDecision } from "./proposals";
-import { loadCurrent, readDispositions, readIntent, runsDir, setLatest, writeDispositions } from "./store";
+import { loadCurrent, readDispositions, readIntent, reviewedPcb, runsDir, setLatest, writeDispositions } from "./store";
 import {
   STATES,
   findingId,
@@ -245,6 +245,7 @@ export async function runReview(project: ReviewProject, env: ReviewEnv, opts: Ru
   const review: ReviewRecord = {
     schema: "REVIEW_V1",
     board: project.name,
+    pcb: reviewedPcb(project),
     config: join(reviewHome(project.dir), "config.json"),
     hash: ctx.hash,
     files: ctx.files,
@@ -296,7 +297,16 @@ export interface GateResult {
   /** The lines the CLI printed: open items lead with their proposal. */
   lines: string[];
   classified?: { auto: string[]; candidate: string[]; task: string[]; owner: string[] };
+  /** The project's own (custom) checks the review did not run because they were not trusted. */
+  notRun?: number;
 }
+
+/** Owner checks a review skipped for want of `trustCustom`: said in the gate output, never silent. */
+function notRunOf(review: ReviewRecord): number {
+  const n = Number(review.checks.find((c) => c.name === "custom")?.artifacts?.["not_run"] ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+const notRunLine = (n: number) => `NOTE: ${n} owner check(s) not run (trustCustom off): board_review {"action": "run", "trustCustom": true} runs them`;
 
 const ownerLine = (r: Row) => `- NEEDS OWNER [${r.severity}] ${r.id}: ${r.proposal?.action ?? r.claim.slice(0, 160)}${r.proposal?.effect ? ` — ${r.proposal.effect}` : ""}`;
 
@@ -305,8 +315,11 @@ export async function reviewGate(project: ReviewProject): Promise<GateResult> {
   if (cur.state !== "current" || !cur.review)
     return { exit: GATE_STALE, state: cur.state === "no review" ? "none" : "stale", current: false, open: 0, mustFix: 0, errors: false, lines: [`REVIEW GATE: BLOCKED (${cur.state}). Run: board_review {"action": "run"}`] };
   const ev = evaluate(cur.review, await readDispositions(project.dir), await readIntent(project.dir));
+  const notRun = notRunOf(cur.review);
+  const nr = notRun ? { notRun } : {};
+  const nrLines = notRun ? [notRunLine(notRun)] : [];
   if (ev.errors.length)
-    return { exit: GATE_ERROR, state: "errors", current: true, open: ev.open.length, mustFix: ev.open.filter((r) => r.severity === "must-fix").length, errors: true, lines: ["REVIEW GATE: BLOCKED (check errors)", ...ev.errors.map((c) => `- ${c.name}: ${c.detail}`)] };
+    return { ...nr, exit: GATE_ERROR, state: "errors", current: true, open: ev.open.length, mustFix: ev.open.filter((r) => r.severity === "must-fix").length, errors: true, lines: ["REVIEW GATE: BLOCKED (check errors)", ...ev.errors.map((c) => `- ${c.name}: ${c.detail}`), ...nrLines] };
   if (ev.open.length) {
     // solution first: what the workflow does, then what needs the owner
     const k = await classify(project, ev.open);
@@ -314,10 +327,11 @@ export async function reviewGate(project: ReviewProject): Promise<GateResult> {
     for (const r of k.owner) lines.push(ownerLine(r));
     for (const [tag, rows] of [["candidate", k.candidate], ["auto", k.auto], ["task", k.task]] as const)
       for (const r of rows) lines.push(`- ${tag} [${r.severity}] ${r.id}: ${(r.proposal?.action ?? "").slice(0, 160)}`);
+    lines.push(...nrLines);
     const ids = (rs: Row[]) => rs.map((r) => r.id);
-    return { exit: GATE_OPEN, state: "open", current: true, open: ev.open.length, mustFix: ev.open.filter((r) => r.severity === "must-fix").length, errors: false, lines, classified: { auto: ids(k.auto), candidate: ids(k.candidate), task: ids(k.task), owner: ids(k.owner) } };
+    return { ...nr, exit: GATE_OPEN, state: "open", current: true, open: ev.open.length, mustFix: ev.open.filter((r) => r.severity === "must-fix").length, errors: false, lines, classified: { auto: ids(k.auto), candidate: ids(k.candidate), task: ids(k.task), owner: ids(k.owner) } };
   }
-  return { exit: GATE_PASS, state: "pass", current: true, open: 0, mustFix: 0, errors: false, lines: [`REVIEW GATE: PASS (${project.name}, hash ${cur.review.hash.slice(0, 12)}, ${cur.review.findings.length} findings dispositioned)`] };
+  return { ...nr, exit: GATE_PASS, state: "pass", current: true, open: 0, mustFix: 0, errors: false, lines: [`REVIEW GATE: PASS (${project.name}, hash ${cur.review.hash.slice(0, 12)}, ${cur.review.findings.length} findings dispositioned)`, ...nrLines] };
 }
 
 export interface DisposeInput {

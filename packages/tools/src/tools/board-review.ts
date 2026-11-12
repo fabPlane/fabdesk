@@ -13,7 +13,7 @@
  * single-run readings). Starting a fresh-context reviewer (L8) is the owner's call and is not done here.
  */
 import { readFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
 import { z } from "zod/v4";
 import {
   dispose,
@@ -29,27 +29,35 @@ import {
   type GateResult,
   type ReviewEnv,
   type ReviewProject,
+  confineToProject,
 } from "@fabdesk/board-workflow";
 import { runKicadCli } from "@fabdesk/kicad";
-import { recordReviewGate } from "../board-state";
+import { clearReviewGate, recordReviewGate } from "../board-state";
+import { bomDirOf, readBomState } from "../release-state";
 import { runDurable } from "../durable";
 import { boardMemGiB, governor } from "../resources";
 import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
 import { ok, requireKicad } from "./common";
 import { editRunners } from "./board-edit";
 
-const BOM_PLACES = [".fabdesk/board/release/bom-decisions.json", ".fabdesk/board/bom/bom-decisions.json"];
-
-async function bomDecisions(dir: string): Promise<BomDecisions | null> {
-  for (const rel of BOM_PLACES) {
-    const text = await readFile(join(dir, rel), "utf8").catch(() => "");
-    if (text) return JSON.parse(text) as BomDecisions;
-  }
-  return null;
+/**
+ * The release stage's BOM decisions (`board_release bom`, under `bomDirOf`), for the review of `pcb`. A BOM check made
+ * on another board (or one without its board record) is not trusted: it comes back marked stale, and the review's BOM
+ * check turns that into a must-fix instead of reading its lines. Without `pcb` (an edit candidate's review, whose board
+ * differs from the source by the planned edit only) the source's decisions are read as they are.
+ */
+export async function bomDecisions(dir: string, pcb?: string): Promise<BomDecisions | null> {
+  const st = await readBomState(dir, pcb ?? "");
+  const text = await readFile(join(bomDirOf(dir), "bom-decisions.json"), "utf8").catch(() => "");
+  if (!text) return null;
+  const d = JSON.parse(text) as BomDecisions;
+  if (pcb && st.state !== "current") return { ...d, stale: st.state === "stale" ? "the BOM check was made on an earlier board (it changed since)" : "the BOM check has no record of the board it was made on" };
+  return d;
 }
 
 async function recordGate(project: ReviewProject, g: GateResult): Promise<void> {
-  if (g.state === "none") return; // never reviewed: the status already says "not run"
+  // never reviewed, or its runs removed: forget any saved gate rather than keep an old pass
+  if (g.state === "none") return clearReviewGate(project.dir);
   await recordReviewGate(project.dir, { current: g.current, open: g.open, mustFix: g.mustFix, errors: g.errors });
 }
 
@@ -136,7 +144,12 @@ export const board_review = defineTool({
       }
       case "import_expert": {
         needs(input.file, "file");
-        const path = isAbsolute(input.file!) ? input.file! : join(dir, input.file!);
+        let path: string;
+        try {
+          path = await confineToProject(dir, input.file!, "expert file");
+        } catch (e) {
+          throw new ToolError(e instanceof Error ? e.message : String(e), "invalid_args");
+        }
         const ex = JSON.parse(await readFile(path, "utf8").catch(() => "null")) as ExpertFile | null;
         if (!ex) throw new ToolError(`cannot read ${path} as JSON`, "invalid_args");
         try {
@@ -159,7 +172,7 @@ async function run(ctx: ToolContext, project: ReviewProject, input: { checks?: s
     const env: ReviewEnv = {
       kicad: (args) => runKicadCli(cli, args, { tolerateExit: true, signal: ctx.signal }),
       kicadVersion: cli.version,
-      bom: () => bomDecisions(project.dir),
+      bom: () => bomDecisions(project.dir, project.pcb),
       trustCustom: input.trustCustom,
       signal: ctx.signal,
     };

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inflateRawSync } from "node:zlib";
@@ -448,5 +448,32 @@ describe("release gates", () => {
     const e = await stopped(inp);
     expect(e.gate).toBe("vias");
     expect(e.message).toContain("1 via(s)");
+  });
+  test("a BOM check of another board refuses before any export; an exception file outside the project refuses", async () => {
+    const { s, inp } = await input();
+    const bom = join(s.dir, "bom");
+    await mkdir(bom, { recursive: true });
+    await writeFile(join(bom, "cpl-jlc.csv"), "ref\n");
+    const e = await stopped({ ...inp, bomDir: bom, bomBoardSha: "0".repeat(64) });
+    expect(e.gate).toBe("bom");
+    expect(await stat(s.out).catch(() => null)).toBeNull();
+    const outside = await mkdtemp(join(tmpdir(), "dec-"));
+    await writeFile(join(outside, "d.json"), JSON.stringify([{ id: "x", by: "owner", decision: "ok" }]));
+    const ex = await release.resolveException(`A8_pairs=${join(outside, "d.json")}#x`, s.dir).catch((x) => x as release.ReleaseStop);
+    expect(ex).toBeInstanceOf(release.ReleaseStop);
+    expect((ex as release.ReleaseStop).message).toContain("outside the project");
+  });
+  test.skipIf(process.platform === "win32")("a refusal after CAM started leaves no package, zip or temporary folder", async () => {
+    const { s, inp } = await input();
+    // a kicad-cli whose exports differ every time: the reproducibility check refuses after files were written
+    const fake = join(await mkdtemp(join(tmpdir(), "fakecli-")), "kicad-cli");
+    await writeFile(fake, `#!/bin/sh\nout=""; prev=""\nfor a in "$@"; do if [ "$prev" = "--output" ]; then out="$a"; fi; prev="$a"; done\ncase "$out" in */) mkdir -p "$out"; echo "$$ $(date +%N)" > "$out/b-F_Cu.gbr" ;; *) echo x > "$out" ;; esac\nexit 0\n`);
+    await chmod(fake, 0o755);
+    const out = join(s.dir, "exports", "pkg");
+    const e = await stopped({ ...inp, out, cli: { path: fake, version: "fake" } });
+    expect(e.gate).toBe("cam");
+    expect(await stat(out).catch(() => null)).toBeNull();
+    expect(await stat(join(s.dir, "exports")).catch(() => null)).toBeNull();
+    expect((await readdir(s.dir)).sort()).toEqual(["b.kicad_pcb"]);
   });
 });

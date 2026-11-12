@@ -1,6 +1,7 @@
 /** Where the review keeps its records: `<project>/.fabdesk/board/review/`. */
-import { basename, join } from "node:path";
-import { readdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { basename, join, relative, sep } from "node:path";
+import { readdir, readFile } from "node:fs/promises";
 import { locateProject, readJsonOrNull, writeJsonFile } from "../files";
 import { reviewHome, reviewHash, type ReviewProject } from "./context";
 import type { Dispositions, Intent, ReviewConfig, ReviewRecord } from "./types";
@@ -50,7 +51,49 @@ export async function loadCurrent(project: ReviewProject): Promise<Current> {
   if (!run || !review) return { review: null, run: null, state: "no review" };
   const { hash } = await reviewHash(project);
   if (hash !== review.hash) return { review, run, state: `stale: design ${hash.slice(0, 8)} != reviewed ${review.hash.slice(0, 8)}` };
+  const pcb = reviewedPcb(project);
+  if (review.pcb !== pcb) return { review, run, state: review.pcb ? `stale: reviewed board ${review.pcb}, not ${pcb}` : `stale: the review does not name its board (run it again for ${pcb})` };
   return { review, run, state: "current" };
+}
+
+/** The board a review project covers, project-relative with "/" (what a review record's `pcb` names). */
+export const reviewedPcb = (project: Pick<ReviewProject, "dir" | "pcb">): string => relative(project.dir, project.pcb).split(sep).join("/");
+
+/** The latest full review's run folder name, when its record is still there. */
+export async function latestRunName(dir: string): Promise<string | null> {
+  const l = await readJsonOrNull<{ run?: string }>(latestPath(dir));
+  if (!l?.run) return null;
+  return (await readJsonOrNull<ReviewRecord>(join(runsDir(dir), l.run, "review.json"))) ? l.run : null;
+}
+
+/**
+ * Everything a review gate result was computed from: the design hash, the dispositions, the owner's intent, the latest
+ * run (its record's hash, so an imported expert or a rewritten record counts) and the board it covered. A saved gate
+ * is only as good as this: any difference means it must be computed again.
+ */
+export interface ReviewBasis {
+  design: string | null;
+  dispositions: string | null;
+  intent: string | null;
+  run: string | null;
+  pcb: string | null;
+}
+
+const fileSha = async (path: string): Promise<string | null> => {
+  const b = await readFile(path).catch(() => null);
+  return b ? createHash("sha256").update(b).digest("hex") : null;
+};
+
+export async function reviewBasis(dir: string): Promise<ReviewBasis> {
+  const run = await latestRunName(dir);
+  const rec = run ? await readJsonOrNull<ReviewRecord>(join(runsDir(dir), run, "review.json")) : null;
+  const [design, dispositions, intent, runSha] = await Promise.all([
+    currentReviewHash(dir).catch(() => null),
+    fileSha(dispositionsPath(dir)),
+    fileSha(intentPath(dir)),
+    run ? fileSha(join(runsDir(dir), run, "review.json")) : Promise.resolve(null),
+  ]);
+  return { design, dispositions, intent, run: run ? `${run}#${runSha}` : null, pcb: rec?.pcb ?? null };
 }
 
 export async function listRuns(dir: string): Promise<string[]> {

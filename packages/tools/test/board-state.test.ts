@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { onboard } from "@fabdesk/board-workflow";
+import { designHash, onboard } from "@fabdesk/board-workflow";
 import { createRegistry } from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 import { acceptanceSatisfied, projectHasPlacedBoard, readAcceptanceState, initDoneMode, readDoneMode, readOnboardingCheck, readBoardOverview, releaseAdvisories, confirmOnboarding, readReviewGate, recordAcceptance, recordReviewGate, writeDoneMode } from "../src/board-state";
@@ -41,6 +41,27 @@ describe("readAcceptanceState", () => {
   test("stale when the board changed since, never a pass", async () => {
     const dir = await project("new", [{ at: "t", sha256: sha("old"), summary: { A1: true } }]);
     expect(await readAcceptanceState(dir)).toMatchObject({ state: "stale", pass: false });
+  });
+});
+
+describe("readAcceptanceState: the board measured, the full design, parity", () => {
+  test("a run that skipped parity does not pass A3; a requirements change makes a result stale; any board name works", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "acc2-"));
+    await writeFile(join(dir, "main.kicad_pcb"), "m");
+    const design = (await designHash(dir)).design;
+    const all = { A1: true, A2: true, A3: true, A4: true, A5: true, A6: true, A7: true, A8: true, A9: true };
+    await mkdir(join(dir, ".fabdesk/board/accept"), { recursive: true });
+    const write = (e: object[]) => writeFile(join(dir, ".fabdesk/board/accept/index.json"), JSON.stringify(e));
+    await write([{ at: "t", sha256: sha("m"), designHash: design, pcb: "main.kicad_pcb", parityChecked: true, summary: all }]);
+    expect(await readAcceptanceState(dir)).toMatchObject({ state: "current", pass: true });
+    await write([{ at: "t", sha256: sha("m"), designHash: design, pcb: "main.kicad_pcb", parityChecked: false, summary: all }]);
+    const skipped = await readAcceptanceState(dir);
+    expect(skipped).toMatchObject({ state: "current", pass: false, failing: ["A3"], parityChecked: false });
+    expect(acceptanceSatisfied(skipped, "no-regression")).toBe(false);
+    await write([{ at: "t", sha256: sha("m"), designHash: design, pcb: "main.kicad_pcb", parityChecked: true, summary: all }]);
+    await mkdir(join(dir, ".fabdesk/board/requirements"), { recursive: true });
+    await writeFile(join(dir, ".fabdesk/board/requirements/requirements.json"), "{}");
+    expect((await readAcceptanceState(dir)).state).toBe("stale");
   });
 });
 
