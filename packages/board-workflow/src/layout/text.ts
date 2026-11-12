@@ -31,15 +31,19 @@ export function numericNetCopper(text: string): number {
 
 /** `text` without its top-level copper items; each takes the whitespace before it along (the toolkit's `\s+\((segment|via|arc)...`). */
 function withoutCopper(text: string): { text: string; removed: Record<string, number> } {
+  // one pass joining the kept pieces (removing items one at a time rebuilt the whole text per item: 512 s on jetson)
   const removed: Record<string, number> = {};
-  let out = text;
-  for (const { kind, span } of copperItems(text).reverse()) {
+  const parts: string[] = [];
+  let at = 0;
+  for (const { kind, span } of copperItems(text)) {
     let a = span[0];
-    while (a > 0 && /\s/.test(out[a - 1]!)) a--;
-    out = out.slice(0, a) + out.slice(span[1]);
+    while (a > at && /\s/.test(text[a - 1]!)) a--;
+    parts.push(text.slice(at, a));
+    at = span[1];
     removed[kind] = (removed[kind] ?? 0) + 1;
   }
-  return { text: out, removed };
+  parts.push(text.slice(at));
+  return { text: parts.join(""), removed };
 }
 
 const REF = /\(property\s+"Reference"\s+"([^"]+)"/;
@@ -248,8 +252,11 @@ export interface MergeStats {
 /** Copper in `routed` that `source` lacks (segments and vias, keyed by content), appended to `native`. */
 export function addNewCopper(native: string, source: string, routed: string): { text: string; stats: MergeStats } {
   const old = itemsByContent(source);
-  const added = [...itemsByContent(routed)].filter(([k]) => !old.has(k)).map(([, s]) => s.replace(UUID_NODE, () => `(uuid "${randomUUID()}")`));
-  const removed = [...old.keys()].filter((k) => !itemsByContent(routed).has(k)).length;
+  // the routed board's items once: rebuilding them inside the filter re-parsed the whole board per source item
+  // (quadratic: 25k items x an 86 MB board held the daemon at 100% CPU for over 10 min in the eval)
+  const now = itemsByContent(routed);
+  const added = [...now].filter(([k]) => !old.has(k)).map(([, s]) => s.replace(UUID_NODE, () => `(uuid "${randomUUID()}")`));
+  const removed = [...old.keys()].filter((k) => !now.has(k)).length;
   const vias: Record<string, number> = {};
   for (const s of added) {
     if (!s.startsWith("(via")) continue;
@@ -288,15 +295,18 @@ export function nameCopperNets(text: string): { text: string; renamed: number } 
   for (const m of text.matchAll(/^\t\(net (\d+) "((?:[^"\\]|\\.)*)"\)/gm)) table.set(m[1]!, m[2]!);
   if (!table.size) return { text, renamed: 0 };
   let renamed = 0;
-  let out = text;
-  for (const { span } of copperItems(text).reverse()) {
-    const item = out.slice(...span).replace(/\(net (\d+)\)/, (m, n: string) => {
+  const parts: string[] = [];
+  let at = 0;
+  for (const { span } of copperItems(text)) {
+    const item = text.slice(...span).replace(/\(net (\d+)\)/, (m, n: string) => {
       const name = table.get(n);
       if (name === undefined) return m;
       renamed++;
       return `(net "${name}")`;
     });
-    out = out.slice(0, span[0]) + item + out.slice(span[1]);
+    parts.push(text.slice(at, span[0]), item);
+    at = span[1];
   }
-  return { text: out, renamed };
+  parts.push(text.slice(at));
+  return { text: parts.join(""), renamed };
 }

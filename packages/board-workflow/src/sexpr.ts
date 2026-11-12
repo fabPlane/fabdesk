@@ -188,24 +188,37 @@ export interface TextEdit extends Span {
   text: string;
 }
 
-/** Apply non-overlapping splices (any order) to `text`. */
+/** Apply non-overlapping splices (any order) to `text`, in one pass (per-edit rebuilding is quadratic on large boards). */
 export function splice(text: string, edits: readonly TextEdit[]): string {
-  const sorted = [...edits].sort((a, b) => b.start - a.start);
-  let out = text;
-  let floor = Infinity;
+  const sorted = [...edits].sort((a, b) => a.start - b.start);
+  const parts: string[] = [];
+  let at = 0;
   for (const e of sorted) {
-    if (e.end > floor) throw new Error("overlapping text edits");
-    out = out.slice(0, e.start) + e.text + out.slice(e.end);
-    floor = e.start;
+    if (e.start < at) throw new Error("overlapping text edits");
+    parts.push(text.slice(at, e.start), e.text);
+    at = e.end;
   }
-  return out;
+  parts.push(text.slice(at));
+  return parts.join("");
 }
 
-/** Delete spans the way the toolkit does: trailing blanks before the span go with it, the line break stays. */
+/**
+ * Delete spans the way the toolkit does: trailing blanks before the span go with it, the line break stays. One pass
+ * joining the kept pieces: removing spans one at a time rebuilt the whole text per span (minutes on an 86 MB board).
+ * Overlapping spans are merged.
+ */
 export function removeSpans(text: string, spans: readonly Span[]): string {
-  let out = text;
-  for (const s of [...spans].sort((a, b) => b.start - a.start)) out = out.slice(0, s.start).replace(/[ \t]+$/, "") + out.slice(s.end);
-  return out;
+  const sorted = [...spans].sort((a, b) => a.start - b.start);
+  const parts: string[] = [];
+  let at = 0;
+  for (const s of sorted) {
+    if (s.end <= at) continue; // inside a span already removed
+    const start = Math.max(s.start, at);
+    parts.push(text.slice(at, start).replace(/[ \t]+$/, ""));
+    at = s.end;
+  }
+  parts.push(text.slice(at));
+  return parts.join("");
 }
 
 /** Quote an atom as a KiCad string. */
