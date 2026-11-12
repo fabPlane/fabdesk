@@ -115,8 +115,9 @@ async function fillRoute(h: StepEngineHost, router: string, src: string, out: st
     for (const ext of ["kicad_pro", "kicad_dru"]) if (await exists(join(src, `${stem}.${ext}`))) await copyFile(join(src, `${stem}.${ext}`), join(scratch, `board.${ext}`));
   }
   const cls = router === "tracemaker" ? "tracemaker" : "router";
-  const engine = router === "tracemaker" ? "tracemaker" : router === "freerouting" ? "freerouting" : "fab_router";
-  const admission = h.layout.admit ? await h.layout.admit(cls, `lastmile fill ${router}`, [src], { engine }) : { release() {} };
+  // a router not named here is admitted on the grid estimate (the conservative default)
+  const engine = router === "tracemaker" || router === "freerouting" || router === "fab_router" ? router : undefined;
+  const admission = h.layout.admit ? await h.layout.admit(cls, `lastmile fill ${router}`, [src], engine ? { engine } : {}) : { release() {} };
   let s;
   try {
     s = await h.fill(router, scratch, { signal, timeoutMs: h.routerTimeoutMs ?? 600_000 });
