@@ -157,6 +157,10 @@ These are the port's own decisions, each recorded in the evidence file of its st
 - Release: strict A1–A9 (no no-regression mode); exceptions only as `CHECK=FILE#ID` with an owner decision; nothing is written into the package folder until the gates pass; drill maps are Gerber X2, not PDF; the pixel-shift search replaces the FFT in `gerbcheck`.
 - Silk without pcbnew: shapes come from KiCad's own Gerber plots plus the board file, with a text-extent table measured against pcbnew (within 0.02 mm on all but one measured label).
 - Last mile: a `fit` picture is the SVG board view (rasterised by the host), not matplotlib; the nudge's fixed parts are the mechanical anchors plus locked footprints, not a spec regex.
+  DRC classes the gate does not count are the board's own (`acceptance.lastmile.inherited_drc` in the requirements, default
+  none), not the oracle's carrier-board `hole_clearance`; candidates of one try get unique folders (the oracle refused a
+  duplicate output folder); copper merges touch only board-level tracks, vias and arcs (the oracle's regex also cut arcs out of
+  pad and polygon outlines).
 
 ## Known gaps
 

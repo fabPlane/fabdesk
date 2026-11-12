@@ -96,7 +96,8 @@ wait is chosen per session from its client (`durableWaitForClient`):
 
 | Client | Wait before the job id |
 | --- | --- |
-| fabPlane's own runs (it sets each agent's timeout, e.g. Codex `tool_timeout_sec=1830`) | 25 min |
+| fabPlane's own Codex and Claude runs (it raises their tool timeout: Codex `tool_timeout_sec=1830`, Claude `timeout`) | 25 min |
+| fabPlane's own Cursor and Grok runs (no known tool-timeout key, so it is not raised) | 50 s |
 | Claude Code (`clientInfo.name` `claude-code`; its deadline resets on the progress heartbeat) | 25 min |
 | a declared timeout: `fabdesk mcp --tool-timeout <sec>` or `/mcp?toolTimeoutSec=<sec>` | just under it (max 25 min) |
 | anything else, external Codex included (60 s default as far as fabdesk can tell) | 50 s |
