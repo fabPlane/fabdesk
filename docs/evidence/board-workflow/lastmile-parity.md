@@ -1,3 +1,5 @@
+> **Note:** this stage first shipped as a separate `board_lastmile` tool. It is now the last-mile `action`s of `board_route` (see [integration.md](integration.md) §3); the library, the harness and the figures below are unchanged.
+
 # Board workflow, last-mile stage: parity with the Python toolkit
 
 Date 2026-11-12. Oracle: toolkit branch `cmp/held-out-fixes` (`tools/lastmile.py`, `tools/bench.py`, `tools/pairfix.py`,

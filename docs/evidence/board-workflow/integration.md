@@ -94,5 +94,14 @@ The orchestrator should ask the owner before any deletion. In short: no row is a
 
 ## 8. Final audit
 
-See the end of the integration report (commands and output are in the hand-off message). Summary: typecheck passes; `bun run test` fails only the three
-`packages/kicad` `mechanical.test.ts` tests, which fail identically on a throwaway checkout of origin/main with the baseline vendor copied in and `bun install`.
+Run by the orchestrator on `feat/board-workflow` (50 commits after `origin/main`) after the integration agent finished:
+
+- `git status` clean; `git diff origin/main --stat -- vendor` empty; `git status --ignored` hides nothing but `node_modules`
+  (an earlier audit found `packages/board-workflow/src/release/` hidden by the `release/` rule in `.gitignore`; it is now excepted and committed).
+- `grep -rIn "FABDESK_PCB_BIN\|~/pcb\|/pcb/bin\|toolkit_\|PCB_BOARDS\|PCB_RUNS"` (excluding `node_modules`, `vendor`, `.git`) matches only: two guard tests that
+  assert the strings are absent (`agents-md.test.ts`, `apps/core/test/http.test.ts`), the oracle path in the parity harness `parity-review.ts`, and the
+  unrelated packaging path `Resources/pcb/bin/fp-pcb-bridge` (`electron-builder.yml`, `pcb-packaging.test.ts`).
+- `bun run typecheck` passes.
+- `bun run test` fails three tests, all `packages/kicad/test/mechanical.test.ts` ("packaged kicad-cli mechanical truth"). On a throwaway
+  checkout of `origin/main` (vendor copied from the baseline worktree, `bun install`) that file gives 15 pass and the same 3 fail
+  (run by the integration agent; not re-run by the orchestrator). The failures look like KiCad 3D models missing on this host.
