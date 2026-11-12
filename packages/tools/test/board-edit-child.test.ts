@@ -42,5 +42,16 @@ describe("board_edit out of the core", () => {
       throw new ChildTaskError("FAIL proof: no candidate for plan x", "EditStop");
     };
     await expect(runEditOutOfCore(ctx(stop), { projectDir: "/p", plan: { id: "x" }, mode: "proof" }, null)).rejects.toBeInstanceOf(ToolError);
+    const missing = async () => {
+      throw new ChildTaskError("no such file", "Error", "ENOENT");
+    };
+    const err = await runEditOutOfCore(ctx(missing), { projectDir: "/p", plan: { id: "x" }, mode: "impact" }, null).catch((e) => e);
+    expect(err).not.toBeInstanceOf(ToolError); // a system error code is not a ToolError code
+    const notFound = async () => {
+      throw new ChildTaskError("no board", "ToolError", "not_found");
+    };
+    const nf = await runEditOutOfCore(ctx(notFound), { projectDir: "/p", plan: { id: "x" }, mode: "impact" }, null).catch((e) => e);
+    expect(nf).toBeInstanceOf(ToolError);
+    expect((nf as ToolError).code).toBe("not_found");
   });
 });

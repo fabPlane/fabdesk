@@ -206,6 +206,8 @@ export function editRunners(c: ToolContext, cli: KicadCli): EditRunners {
  * (the last-mile bench, itself running router processes) stays here, between the child's apply and proof. Without
  * `runChild` (tests, embedded hosts) the pipeline runs in-process as before.
  */
+const TOOL_ERROR_CODES: ReadonlySet<string> = new Set(["invalid_args", "not_found", "precondition", "cancelled", "unavailable", "internal"]);
+
 export async function runEditOutOfCore(
   c: ToolContext,
   o: { projectDir: string; plan: unknown; mode: EditMode; pcb?: string; candidate?: string },
@@ -219,7 +221,8 @@ export async function runEditOutOfCore(
       return (await run("edit", input, { signal: c.signal, onProgress: (p, n) => c.progress(p, n) })) as EditRunResult;
     } catch (e) {
       if (e instanceof ChildTaskError && e.errorName === "EditStop") throw new ToolError(e.message, "precondition");
-      if (e instanceof ChildTaskError && e.code) throw new ToolError(e.message, e.code as ToolError["code"]);
+      // only a ToolError's own codes come back as a ToolError; a system error code (ENOENT, EACCES ...) stays internal
+      if (e instanceof ChildTaskError && e.code && TOOL_ERROR_CODES.has(e.code)) throw new ToolError(e.message, e.code as ToolError["code"]);
       throw e;
     }
   };
