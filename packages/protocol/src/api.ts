@@ -39,7 +39,7 @@ export const BoardTemplate = z.enum(["viagrid-9055"]);
 export type BoardTemplate = z.infer<typeof BoardTemplate>;
 
 export const BoardSettings = z.object({
-  layers: z.number().int().min(1).max(8).default(2),
+  layers: z.number().int().min(1).max(32).default(2),
   widthMm: z.number().positive().optional(),
   heightMm: z.number().positive().optional(),
   rules: BoardRules.optional(),
