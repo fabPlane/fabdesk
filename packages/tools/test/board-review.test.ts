@@ -1,9 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRegistry, type CoreServices } from "../src";
+import { openReviewProject, reviewGate } from "@fabdesk/board-workflow";
 import { readReviewGate } from "../src/board-state";
+import { bomDirOf, writeBomMeta } from "../src/release-state";
 import { ResourceGovernor, setGovernor } from "../src/resources";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
@@ -109,5 +112,56 @@ describe("board_review", () => {
     const { project, call } = await setup();
     await call({ action: "run", offline: true, checks: ["identity", "netlist"] });
     expect((await readReviewGate(project.dir)).state).toBe("none");
+  });
+
+  test("the BOM check reads board_release bom's decisions; a BOM of an earlier board is a must-fix, not trusted", async () => {
+    const { project, call } = await setup();
+    await mkdir(bomDirOf(project.dir), { recursive: true });
+    await writeFile(join(bomDirOf(project.dir), "bom-decisions.json"), JSON.stringify({ lines: 1, placements: 1, summary: { UNRESOLVED: 1 }, records: [{ line: "L1", refs: ["U1"], value: "MCU", status: "UNRESOLVED", reason: "no LCSC" }] }));
+    const sha = createHash("sha256").update(await readFile(join(project.dir, "board.kicad_pcb"))).digest("hex");
+    await writeBomMeta(project.dir, { at: "t", boardSha256: sha, stem: "board", boards: 5, offline: true, summary: { UNRESOLVED: 1 }, lines: 1, placements: 1 });
+    let run = await call({ action: "run", offline: true });
+    let open = run.json?.["open"] as Array<{ id: string; severity: string; claim: string }>;
+    expect(open.find((o) => o.claim.startsWith("UNRESOLVED L1"))?.severity).toBe("must-fix");
+    await writeBomMeta(project.dir, { at: "t", boardSha256: "0".repeat(64), stem: "board", boards: 5, offline: true, summary: { UNRESOLVED: 1 }, lines: 1, placements: 1 });
+    run = await call({ action: "run", offline: true });
+    open = run.json?.["open"] as Array<{ id: string; severity: string; claim: string }>;
+    expect(open.some((o) => o.claim.startsWith("UNRESOLVED L1"))).toBe(false);
+    expect(open.find((o) => o.id === "L6:BOM:-:-:stale")?.severity).toBe("must-fix");
+  });
+
+  test("the saved gate covers dispositions, the run and the board; removing the runs clears it", async () => {
+    const { project, call } = await setup();
+    await writeFile(join(project.dir, "b.kicad_pcb"), PCB);
+    await call({ action: "run", offline: true });
+    await call({ action: "dispose", id: "*", state: "accept", by: "owner", reason: "bench", thirdSource: "bench log" });
+    expect((await readReviewGate(project.dir)).state).toBe("pass");
+    // a review of board.kicad_pcb never passes b.kicad_pcb, saved or live
+    expect((await readReviewGate(project.dir, "b.kicad_pcb")).state).toBe("stale");
+    expect((await reviewGate(await openReviewProject(project.dir, "b.kicad_pcb"))).state).toBe("stale");
+    expect((await reviewGate(await openReviewProject(project.dir))).state).toBe("pass");
+    // dispositions removed behind the gate's back: the saved pass is stale
+    const disp = join(project.dir, ".fabdesk", "board", "review", "dispositions.json");
+    const kept = await readFile(disp, "utf8");
+    await rm(disp);
+    expect((await readReviewGate(project.dir)).state).toBe("stale");
+    await writeFile(disp, kept);
+    expect((await readReviewGate(project.dir)).state).toBe("pass");
+    // runs deleted: stale at once, and the next gate clears the record instead of keeping the old pass
+    await rm(join(project.dir, ".fabdesk", "board", "review", "runs"), { recursive: true });
+    expect((await readReviewGate(project.dir)).state).toBe("stale");
+    expect((await call({ action: "gate" })).json?.["state"]).toBe("none");
+    expect((await readReviewGate(project.dir)).state).toBe("none");
+  });
+
+  test("import_expert and pcb stay inside the project", async () => {
+    const { project, call } = await setup();
+    await call({ action: "run", offline: true });
+    const outside = join(await mkdtemp(join(tmpdir(), "outside-")), "expert.json");
+    await writeFile(outside, JSON.stringify({ reviewer: "x", findings: [] }));
+    await expect(call({ action: "import_expert", file: outside })).rejects.toThrow(/outside the project/);
+    await expect(call({ action: "import_expert", file: "../" + outside.split("/").slice(-2).join("/") })).rejects.toThrow(/outside the project|not found/);
+    await writeFile(join(project.dir, "..", "elsewhere.kicad_pcb"), PCB);
+    await expect(call({ action: "status", pcb: "../elsewhere.kicad_pcb" })).rejects.toThrow(/outside the project/);
   });
 });

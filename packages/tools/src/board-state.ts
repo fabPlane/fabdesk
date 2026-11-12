@@ -4,9 +4,9 @@
  * Pure file reads, so the project status, Finish it and the agent docs can all ask the same question.
  */
 import { createHash } from "node:crypto";
-import { mkdir, open, readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { currentReviewHash } from "@fabdesk/board-workflow";
+import { mkdir, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { isAbsolute, join, relative, sep } from "node:path";
+import { countedSummary, locateProject, matchesSavedBoard, reviewBasis, savedBoard, type ReviewBasis } from "@fabdesk/board-workflow";
 import { acceptSummary, type AcceptRecord } from "@fabdesk/protocol";
 
 export type AcceptanceState = {
@@ -21,21 +21,27 @@ export type AcceptanceState = {
   /** Failing now but not in the first result: what the work broke. */
   regressions: string[];
   at?: string;
+  /** Present (false) when the result used skipped schematic parity: its A3 is not counted as passed. */
+  parityChecked?: false;
 };
 
-type Entry = { at?: string; sha256?: string | null; summary?: Record<string, boolean> };
+type Entry = { at?: string; sha256?: string | null; designHash?: string; pcb?: string; parityChecked?: boolean; summary?: Record<string, boolean> };
 
-export async function readAcceptanceState(projectDir: string): Promise<AcceptanceState> {
+/**
+ * The newest A1-A9 result of the board as saved now: the board file (`pcb`, default the project's board) with the same
+ * content, and the same full design hash (board, schematics, project and rule files, requirements) when the result
+ * recorded one. A run that skipped schematic parity never passes A3.
+ */
+export async function readAcceptanceState(projectDir: string, pcb?: string): Promise<AcceptanceState> {
   const index = JSON.parse((await readFile(join(projectDir, ".fabdesk", "board", "accept", "index.json"), "utf8").catch(() => "")) || "[]") as Entry[];
   if (!Array.isArray(index) || index.length === 0) return { state: "none", failing: [], pass: false, baselineFailing: [], regressions: [] };
-  const board = await readFile(join(projectDir, "board.kicad_pcb")).catch(() => null);
-  const sha = board ? createHash("sha256").update(board).digest("hex") : null;
-  const hit = [...index].reverse().find((e) => e.sha256 && e.sha256 === sha);
+  const now = await savedBoard(projectDir, pcb);
+  const hit = [...index].reverse().find((e) => matchesSavedBoard(e, now));
   const entry = hit ?? index[index.length - 1]!;
-  const failing = Object.entries(entry.summary ?? {}).filter(([, ok]) => !ok).map(([k]) => k);
+  const failing = Object.entries(countedSummary(entry)).filter(([, ok]) => !ok).map(([k]) => k);
   const baselineFailing = Object.entries(index[0]!.summary ?? {}).filter(([, ok]) => !ok).map(([k]) => k);
   const regressions = failing.filter((k) => !baselineFailing.includes(k));
-  return { state: hit ? "current" : "stale", failing, pass: !!hit && failing.length === 0, baselineFailing, regressions, ...(entry.at ? { at: entry.at } : {}) };
+  return { state: hit ? "current" : "stale", failing, pass: !!hit && failing.length === 0, baselineFailing, regressions, ...(entry.at ? { at: entry.at } : {}), ...(entry.parityChecked === false ? { parityChecked: false as const } : {}) };
 }
 
 /** The saved board already has placed parts (it is an existing board, not a blank): looks only at its first 4 MB. */
@@ -90,31 +96,45 @@ export async function initDoneMode(projectDir: string, boardAlreadyPlaced: boole
 
 /**
  * The project's review gate as the board tools last reported it. `board_review` records it (run, gate, dispose, fix,
- * import_expert) together with the review's one design hash (board, schematics, project and rule files, requirements,
- * `review.hash_extra`; `currentReviewHash`), so any change to what the review covered makes it stale here too: the
- * Status page, Finish it and `board_release fab` all read this. pass = the review is current and every finding is settled.
+ * import_expert) together with everything it was computed from (`reviewBasis`: the review's design hash, the
+ * dispositions, the owner's intent, the latest run and the board it covered), so any change to those makes it stale
+ * here; a gate of "none" (no review, or its runs removed) clears it. This is the status reading (Status page, Finish
+ * it, `board_release check`); `board_release fab` computes the gate live from the review records instead.
+ * pass = the review is current and every finding is settled.
  */
-export type ReviewGate = { state: "none" | "stale" | "open" | "errors" | "pass"; open?: number; mustFix?: number; at?: string };
+export type ReviewGate = { state: "none" | "stale" | "open" | "errors" | "pass"; open?: number; mustFix?: number; at?: string; pcb?: string };
 const gateFile = (dir: string) => join(dir, ".fabdesk", "board", "review-gate.json");
 
 const boardSha = async (dir: string) => {
   const b = await readFile(join(dir, "board.kicad_pcb")).catch(() => null);
   return b ? createHash("sha256").update(b).digest("hex") : null;
 };
-const reviewDesignHash = (dir: string) => currentReviewHash(dir).catch(() => null);
 
 export async function recordReviewGate(projectDir: string, r: { current: boolean; open: number; mustFix: number; errors?: boolean }): Promise<void> {
   const state: ReviewGate["state"] = r.errors ? "errors" : !r.current ? "stale" : r.open > 0 ? "open" : "pass";
+  const basis = await reviewBasis(projectDir);
   await mkdir(join(projectDir, ".fabdesk", "board"), { recursive: true });
-  await writeFile(gateFile(projectDir), JSON.stringify({ state, open: r.open, mustFix: r.mustFix, designHash: await reviewDesignHash(projectDir), at: new Date().toISOString() }) + "\n");
+  await writeFile(gateFile(projectDir), JSON.stringify({ state, open: r.open, mustFix: r.mustFix, designHash: basis.design, basis, at: new Date().toISOString() }) + "\n");
 }
 
-export async function readReviewGate(projectDir: string): Promise<ReviewGate> {
-  const d = JSON.parse((await readFile(gateFile(projectDir), "utf8").catch(() => "")) || "null") as (ReviewGate & { designHash?: string | null }) | null;
+/** Forget the saved gate (the review has no current record: never run, or its runs were removed). */
+export async function clearReviewGate(projectDir: string): Promise<void> {
+  await rm(gateFile(projectDir), { force: true });
+}
+
+const BASIS_KEYS = ["design", "dispositions", "intent", "run", "pcb"] as const satisfies ReadonlyArray<keyof ReviewBasis>;
+
+/** The saved gate, stale when anything it was computed from changed; with `pcb`, stale unless the review covered that board. */
+export async function readReviewGate(projectDir: string, pcb?: string): Promise<ReviewGate> {
+  const d = JSON.parse((await readFile(gateFile(projectDir), "utf8").catch(() => "")) || "null") as (ReviewGate & { designHash?: string | null; basis?: ReviewBasis }) | null;
   if (!d?.state) return { state: "none" };
-  // a record without a design hash (older, board-only records) cannot prove the design is unchanged: stale
-  const stale = !d.designHash || d.designHash !== (await reviewDesignHash(projectDir));
-  return { state: stale ? "stale" : d.state, ...(d.open !== undefined ? { open: d.open } : {}), ...(d.mustFix !== undefined ? { mustFix: d.mustFix } : {}), ...(d.at ? { at: d.at } : {}) };
+  const now = await reviewBasis(projectDir);
+  // a record without its basis (older records) cannot prove the design, dispositions and run are unchanged: stale
+  let stale = !d.basis || !d.basis.design || BASIS_KEYS.some((k) => (d.basis![k] ?? null) !== (now[k] ?? null));
+  const want = pcb ? (isAbsolute(pcb) ? relative(projectDir, pcb) : pcb).split(sep).join("/").replace(/^\.\//, "") : await locateProject(projectDir).then((f) => relative(projectDir, f.pcb).split(sep).join("/"), () => null);
+  const covered = d.basis?.pcb ?? null;
+  if (covered && want && covered !== want) stale = true;
+  return { state: stale ? "stale" : d.state, ...(d.open !== undefined ? { open: d.open } : {}), ...(d.mustFix !== undefined ? { mustFix: d.mustFix } : {}), ...(d.at ? { at: d.at } : {}), ...(covered ? { pcb: covered } : {}) };
 }
 
 /**
@@ -201,7 +221,10 @@ export async function recordAcceptance(projectDir: string, record: AcceptRecord)
   const file = join(projectDir, ".fabdesk", "board", "accept", "index.json");
   const prior = JSON.parse((await readFile(file, "utf8").catch(() => "")) || "[]") as unknown[];
   const index = Array.isArray(prior) ? prior : [];
-  index.push({ at: record.at, sha256: record.sha256, summary: acceptSummary(record.results), results: record.results });
+  // bound to the design as saved now when the record is of the saved board (requirements and schematics included)
+  const now = await savedBoard(projectDir);
+  const design = now.sha256 === record.sha256 && now.design ? { designHash: now.design, ...(now.pcb ? { pcb: now.pcb } : {}) } : {};
+  index.push({ at: record.at, sha256: record.sha256, ...design, summary: acceptSummary(record.results), results: record.results });
   await mkdir(join(projectDir, ".fabdesk", "board", "accept"), { recursive: true });
   await writeFile(file, JSON.stringify(index) + "\n");
 }

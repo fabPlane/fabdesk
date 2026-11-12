@@ -12,7 +12,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { z } from "zod/v4";
-import { CHECK_KEYS, locateProject, readRequirements, release, runAcceptance, type AcceptRun } from "@fabdesk/board-workflow";
+import { CHECK_KEYS, locateProject, openReviewProject, readRequirements, release, reviewGate, runAcceptance, type AcceptRun } from "@fabdesk/board-workflow";
 import { runDurable } from "../durable";
 import { jailPath } from "../fs";
 import { boardMemGiB, governor } from "../resources";
@@ -142,8 +142,8 @@ async function checkAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
     return ok(text, { summary: sim.summary, parts: sim.parts.filter((p) => p.verdict !== "PASS" || p.note) });
   }
   const [acc, gate, bom, vias, last] = await Promise.all([
-    readAcceptanceState(project.dir),
-    readReviewGate(project.dir),
+    readAcceptanceState(project.dir, files.pcb),
+    readReviewGate(project.dir, files.pcb),
     readBomState(project.dir, files.pcb),
     readFile(files.pcb, "utf8").then((t) => release.viaBindings(files.pcb, release.classifyVias(t))),
     readLastFab(project.dir),
@@ -186,7 +186,11 @@ async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
       cli,
       gates: {
         ...(interconnectGate ? { interconnect: () => interconnectGate!({ projectDir: project.dir }) } : {}),
-        review: () => readReviewGate(project.dir),
+        // computed live from the review records of this board (never the saved status reading)
+        review: async () => {
+          const g = await reviewGate(await openReviewProject(project.dir, files.pcb));
+          return { state: g.state, open: g.open, mustFix: g.mustFix };
+        },
         acceptance: async () => {
           if (!(await readRequirements(project.dir))) throw new release.ReleaseStop("acceptance", "STOP acceptance: no requirements for this board: run board_check first");
           const run: AcceptRun = await runAcceptance(project.dir, {
