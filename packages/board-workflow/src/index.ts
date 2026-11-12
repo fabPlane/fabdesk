@@ -12,3 +12,4 @@ export * as edit from "./edit/index";
 export * from "./drc";
 export * as release from "./release";
 export * as silk from "./silk";
+export * as layout from "./layout/index";
