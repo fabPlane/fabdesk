@@ -85,7 +85,7 @@ export function useProject(projectId: string | null) {
 /** Saved sharing state is shared by the project header and its settings dialog. */
 export function useProjectShareSettings(projectId: string, enabled = true) {
   const client = useCoreClient();
-  const account = useAuthStore((s) => s.state?.principal?.subject ?? s.state?.status ?? "unknown");
+  const account = useAuthStore((s) => cloudAccountId(s.state));
   const queryKey = ["project-share", client.baseUrl, projectId, account];
   const query = useQuery({
     queryKey,

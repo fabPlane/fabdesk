@@ -29,6 +29,8 @@ agent/provider connections; sharing access still belongs to each project's Share
   on switching away. Closing recovery returns to the same invitation with keyboard focus.
 - Tab and Shift-Tab remain in the top dialog; Escape returns focus to the avatar or
   underlying invitation. Refreshing an underlying dialog cannot steal recovery focus.
+  Focus is restored inside the top window after temporarily disabling sign-in actions;
+  recovery was repeated with real Electron clicks at both window sizes.
 - 1440×920 and 960×600; all four themes checked at the smaller size. The compact
   dialog scrolls vertically; its close button remains reachable and no horizontal overflow occurs.
 - Regression tests cover account email across online/offline credential reload, stale
