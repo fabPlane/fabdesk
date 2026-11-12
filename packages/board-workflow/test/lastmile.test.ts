@@ -283,6 +283,28 @@ describe("bench", () => {
     expect(r.candidates[0]!.rejected).toEqual(["over the time budget"]);
   });
 
+  test("a step that returns a board after the budget ran out is over budget, and is not scored", async () => {
+    const src = await project(2);
+    const ws = join(await mk(), "ws");
+    let scored = 0;
+    const counting: L.Scorer = { score: async (d, p, o) => (scored++, scorer.score(d, p, o)) };
+    // like a KRT run stopped at the budget that still left a partial board behind
+    const late: L.StepEngine = {
+      run: async (_s, i) => {
+        await new Promise((r) => i.signal.addEventListener("abort", r, { once: true }));
+        await mkdir(i.out, { recursive: true });
+        await writeFile(join(i.out, i.pcb), "(kicad_pcb) ;; opens=0");
+        return { dir: i.out };
+      },
+    };
+    const { bench } = await L.Bench.create(ws, src, "board.kicad_pcb", { scorer: counting, engine: late, availableGiB: async () => 30 });
+    const before = scored;
+    const r = await bench.try(["finish"], { budget: 0.05 });
+    expect(r.candidates[0]!.rejected).toEqual(["over the time budget"]);
+    expect(r.accepted).toBeNull();
+    expect(scored).toBe(before);
+  });
+
   test("loop: one candidate per failing pair from the template", async () => {
     const src = await project(0);
     const ws = join(await mk(), "ws");

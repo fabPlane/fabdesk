@@ -282,6 +282,9 @@ export class Bench {
       dir = r.dir;
     }
     rec.wall_s = Math.round((Date.now() - t0) / 100) / 10;
+    // a step that ran past the budget may still have left a (partial) board: it is over budget, not a candidate; scoring
+    // it would spend a whole-board DRC on a result the gate must not take (vme-wren: ~9 min after a stopped KRT run)
+    if (!rec.error && signal.aborted && !this.deps.signal?.aborted) rec.error = "over the time budget";
     if (!rec.error) {
       try {
         const sc = await this.scoreDir(dir);
