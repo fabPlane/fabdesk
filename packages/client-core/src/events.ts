@@ -352,6 +352,7 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       void qc.invalidateQueries({ queryKey: ["kept-output-identity", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["board-sources", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["project-status", event.projectId] });
+      void qc.invalidateQueries({ queryKey: ["part-selection-index", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["assembly-board-inspection", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["assembly-pcb-check", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["assembly-check-summaries", event.projectId] });

@@ -12,7 +12,7 @@ import { ASSEMBLY_MANIFEST_PATH, PCB_PREVIEW_REVISION_PATH, type BoardSourceSele
 import { assemblyMapLayoutKey, restoreAssemblyMapLayout, useCoreClient, type AssemblyMapLayout, nextAssemblyReviewSelection, assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, assemblyCheckFindingOwned, assemblyFindingPreviewMatches, assemblyCheckNeedsReview, assemblyCheckSummaryLabel, useAssemblyCheckSummaries, pcbSvgHasNativeCoordinates, restoreAssemblySelection, assemblyLinkShape, assemblyScene, assemblySourcesToReview, assemblySelectionState, captureAssemblySelection, useAssemblyBoardInspection, useAssemblyPreviewRevisions, usePcbPreviewRevision, useProjectText, useRunTool, type AssemblySceneNode, type AssemblySceneSelection } from "@fabdesk/client-core";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { SvgViewer } from "../board/SvgViewer";
+import { SelectableSvgViewer } from "../board/SelectableSvgViewer";
 import { useSourceCommentTools } from "../board/SourceCommentTools";
 import { AssemblyBoardModel } from "../board/AssemblyBoardModel";
 import { NativePartTools } from "../board/NativePartTools";
@@ -354,7 +354,7 @@ function AssemblyPcbDrawing({ projectId, board, directory, svg, canPosition, can
   const busyRef = useRef(false), nativeCoordinates = pcbSvgHasNativeCoordinates(svg);
   const comments = useSourceCommentTools({ projectId, board, directory, enabled: canSelect, canPin: canPosition && nativeCoordinates && !busy, visible });
   const mutationBusy = (value: boolean) => { busyRef.current = value; setBusy(value); onBusyChange(value); };
-  return <>{comments.dialog}<SvgViewer svg={svg} viewKey={`${projectId}/${board.sourceId}/${directory}`} toolbar={comments.toolbar}
+  return <>{comments.dialog}<SelectableSvgViewer selectionSource={{ projectId, board, enabled: visible && canPosition }} selectionView="pcb" onPartSelected={() => setPoint(null)} svg={svg} viewKey={`${projectId}/${board.sourceId}/${directory}`} toolbar={comments.toolbar}
     onDrawingEscape={() => { if (!point || busyRef.current) return false; setPoint(null); return true; }}
     {...(canSelect && nativeCoordinates ? { onDrawingClick: (next: { x: number; y: number }) => { if (!busyRef.current) { onDismissFinding(); setPoint(next); } } } : {})}
     overlay={box => <>{nativeCoordinates && comments.overlay(box)}{findingOverlay}{!findingOverlay && point && box && <div data-canvas-tools className="fd-location-anchor" style={{ left: `${(point.x - box.x) / box.width * 100}%`, top: `${(point.y - box.y) / box.height * 100}%` }}>

@@ -325,13 +325,12 @@
 .fd-comparison-divider:hover::after,.fd-comparison-divider:focus-visible::after { background:var(--fd-accent); }
 .fd-board-comparison .fd-svg-viewer { --fd-viewer-inset:100; }
 .fd-board-comparison .fd-svg-context > span { display:none; }
-.fd-board-comparison .fd-svg-tools { left:10px; max-width:calc(100% - 20px); bottom:12px; }
+.fd-board-comparison .fd-svg-tools { left:10px; max-width:calc(100% - 20px); bottom:80px; }
 .fd-board-comparison .fd-preview-status { left:12px; right:auto; max-width:calc(100% - 24px); }
 .fd-board-comparison [data-testid=comment-detail] { position:absolute; z-index:20; top:42px; right:12px; bottom:70px; width:min(288px,calc(100% - 24px)); border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); box-shadow:0 4px 20px #102a2020; }
 .fd-board-comparison [data-testid=board-pcb-svg]:has(> [data-testid=comment-detail]) .fd-preview-status { display:none; }
 
 .fd-comparison-pane { container-type:inline-size; }
-@media (max-width:1150px) { .fd-board-comparison .fd-svg-tools { bottom:80px; } }
 @container (max-width:360px) {
   .fd-board-comparison .fd-svg-tools > span[title="Zoom relative to fitted view"] { display:none; }
   .fd-board-comparison .fd-svg-context > button { font-size:0; gap:0; min-width:28px; }
