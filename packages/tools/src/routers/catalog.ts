@@ -149,7 +149,7 @@ export function defaultRouterCatalog(env: NodeJS.ProcessEnv = process.env): Rout
       id: "krt",
       displayName: "KiCadRoutingTools",
       description:
-        "Python + Rust placer and router (MIT) the board workflow runs. Install downloads the pinned release and sets up a private Python venv (numpy, scipy, shapely) with uv or the system Python.",
+        "Python + Rust placer and router (MIT) the board workflow runs. Install downloads the pinned release and sets up a private, hash-locked Python venv (numpy, scipy, shapely); uv and CPython are fetched when the machine has neither. Board tools install it on first use.",
       strengths: [...STRENGTHS.krt],
       license: "MIT",
       version: KRT_VERSION,

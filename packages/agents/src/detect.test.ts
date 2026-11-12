@@ -88,6 +88,7 @@ describe("detectAgents", () => {
       router: "fab_router",
       tracemakerManifestUrl: null,
       krtDir: null,
+      autoInstallEngines: true,
       defaultAgent: "claude",
       defaultRuntimeMode: "full",
       agents: {

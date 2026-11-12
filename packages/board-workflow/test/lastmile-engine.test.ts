@@ -157,6 +157,36 @@ describe("step engine", () => {
     expect((await readdir(out)).filter((f) => f === "tracemaker" || f === "fill")).toEqual([]);
   });
 
+  test("a missing KRT installs on first use through the host; a failed install's reason ends the step error", async () => {
+    const { dir, req } = await c6();
+    const krt = join(dir, "krt");
+    await mkdir(join(krt, "src/plugins"), { recursive: true });
+    const spawns: string[][] = [];
+    const asked: string[] = [];
+    const host = { ...fakeLayout(null, spawns), ensure: async (e: layout.EngineId) => (asked.push(e), { path: krt }) };
+    const mk = (h: layout.LayoutHost, fills: Array<{ router: string }> = []) =>
+      L.createStepEngine({ req, drc: async () => ({ violations: [], unconnected: [], parity: 0 }), scorer, layout: h, fallbackRouter: "fab_router", fill: async (router, d) => (fills.push({ router }), { message: d }) });
+    const r = await mk(host).run(L.stepsFor("rip")[0]!, input(dir, join(await tmp(), "rip")));
+    expect("error" in r ? r.error : null).toBeNull();
+    expect(asked).toEqual(["krt"]);
+    expect(host.tools.krt).toBe(krt); // kept: the next step does not ask again
+    await mk(host).run(L.stepsFor("rip")[0]!, input(dir, join(await tmp(), "rip2")));
+    expect(asked).toEqual(["krt"]);
+
+    const why = "KiCadRoutingTools did not install: KiCadRoutingTools 0.23.8 ships no grid_router for linux-arm64; building it needs Rust (cargo, https://rustup.rs). Install them and Retry, or set FABDESK_KRT_DIR to a build.";
+    const failing = { ...fakeLayout(null, []), ensure: async () => ({ path: null, why }) };
+    const bad = await mk(failing).run(L.stepsFor("a7")[0]!, input(dir, join(await tmp(), "a7")));
+    const err = "error" in bad ? bad.error : "";
+    expect(err).toContain("KRT did not install");
+    expect(err.endsWith("set FABDESK_KRT_DIR to a build.)")).toBe(true);
+    expect(err.length).toBeLessThanOrEqual(160);
+    const fills: Array<{ router: string }> = [];
+    const fin = await mk(failing, fills).run(L.stepsFor("finish")[0]!, input(dir, join(await tmp(), "fin")));
+    expect("error" in fin).toBe(false);
+    if (!("error" in fin)) expect(String(fin.info?.["fallback"])).toMatch(/did not install.*finish ran on fab_router/);
+    expect(fills.map((f) => f.router)).toEqual(["fab_router"]);
+  });
+
   test("fill:ROUTER works on a stem-named board through a board.kicad_pcb scratch copy", async () => {
     const { dir, req } = await c6();
     const fills: Array<{ router: string; dir: string; files: string[] }> = [];

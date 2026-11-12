@@ -222,6 +222,9 @@ export function SettingsDialog() {
               <Row label="WebMCP write tools" hint="Expose tools that modify the project to browser agents (read-only by default)">
                 <input type="checkbox" checked={draft.webmcpWriteTools} onChange={(e) => update((s) => ({ ...s, webmcpWriteTools: e.target.checked }))} />
               </Row>
+              <Row label="Board checks in Finish it" hint="For a project with a placed board, Finish it is done when A1-A9 pass and the review gate passes (board tools), not only DRC/ERC">
+                <input type="checkbox" checked={draft.boardChecksInFinishIt !== false} onChange={(e) => update((s) => ({ ...s, boardChecksInFinishIt: e.target.checked }))} />
+              </Row>
             </div>
           ) : section === "auth" ? (
             <AuthSection />

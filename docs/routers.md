@@ -38,31 +38,87 @@ as `installed (Settings krtDir)` / `(FABDESK_KRT_DIR)`, or says why a set path i
    (`FABDESK_KRT_URL` / `FABDESK_KRT_SHA256` override both, for a mirror.)
 2. Copy the bundled Rust core for this OS/arch (`grid_router-{linux-x86_64,macos-arm64,macos-x86_64}.so`,
    `grid_router-windows-x86_64.pyd`) to `grid_router.so` / `.pyd`, the name KRT's CLIs import (KRT's own
-   `_resolve_rust_binary` does this inside KiCad). Other platforms (Linux arm64, Windows arm64) fail with that reason.
-3. Make `routers/krt/venv` with the first Python that works, then install the routing packages:
-   - `FABDESK_KRT_PYTHON` when set (used alone, so a wrong value fails loudly);
-   - **uv** (`FABDESK_KRT_UV`, PATH, `~/.local/bin`, `~/.cargo/bin`, Homebrew): a uv-managed CPython 3.12 kept inside
-     the install (`routers/krt/python`), so it matches the parity runs, goes with Uninstall and survives OS Python
-     upgrades;
-   - otherwise a system Python ≥ 3.9 (KRT's core is `abi3-py39`): Linux `python3`, `python3.13` … `python3.9`;
-     macOS python.org, Homebrew, KiCad.app's bundled Python, and `/usr/bin/python3` only when the Command Line Tools
-     are installed (else it is a stub that opens an install dialog); Windows the `py -3` launcher, `python` on PATH
-     (not the Store alias), then KiCad's `bin\python.exe`. The venv is made by uv when uv exists (no `ensurepip`
-     needed), else `python -m venv` + pip.
-   - Packages: `numpy==2.5.4 scipy==1.18.1 shapely==2.2.0` (what every parity run used), wheels only; if that Python
-     has no wheels for them, KRT's own floors (`numpy>=1.22 scipy>=1.7 shapely>=2.0`) with a card notice.
-     **Pillow** (raster previews) and **ortools** (the bus step, ~100 MB) are optional in KRT's `requirements.txt`
+   `_resolve_rust_binary` does this inside KiCad). Linux arm64 and Windows arm64 have no prebuilt core: see *ARM* below.
+3. Make `routers/krt/venv` and install the routing packages from the **hash lock** `packages/tools/src/routers/krt-lock.json`
+   (`numpy==2.5.4 scipy==1.18.1 shapely==2.2.0`, what every parity run used, each with the sha256 of every wheel and
+   the sdist PyPI lists; written to `routers/krt/krt-requirements.txt` and installed with `--require-hashes
+   --only-binary :all: --no-deps` on both the uv and the pip path). The lock's numpy needs **CPython ≥ 3.12**. The first
+   of these that takes the lock wins:
+   - `FABDESK_KRT_PYTHON` when set (used alone, so a wrong or too-old value fails loudly);
+   - **uv** found on the machine (`FABDESK_KRT_UV`, PATH, `~/.local/bin`, `~/.cargo/bin`, Homebrew): a uv-managed
+     CPython 3.12 kept inside the install (`routers/krt/python`), so it matches the parity runs, goes with Uninstall and
+     survives OS Python upgrades;
+   - a system Python ≥ 3.12: Linux `python3`, `python3.13`, `python3.12`; macOS python.org, Homebrew, KiCad.app's bundled
+     Python, and `/usr/bin/python3` only when the Command Line Tools are installed (else it is a stub that opens an
+     install dialog); Windows the `py -3` launcher, `python` on PATH (not the Store alias), then KiCad's `bin\python.exe`.
+     The venv is made by uv when uv exists (no `ensurepip` needed), else `python -m venv` + pip. Older Pythons (KiCad's
+     bundled 3.9-3.11 among them) are skipped with the reason;
+   - otherwise a **pinned uv** is downloaded into the fabdesk data dir (`routers/uv/0.13.6/`, `packages/tools/src/routers/uv.ts`)
+     and provisions the managed CPython 3.12, so a machine with no Python, uv or compiler installs KRT unaided.
+   - **Pillow** (raster previews) and **ortools** (the bus step, ~100 MB) are optional in KRT's `requirements.txt`
      and are not installed: none of the scripts the workflow runs (route, route_diff, route_planes, place_simple,
      check_floorplan, check_groups, net_forensics, make_unplaced) imports them on the paths it uses.
 4. Import check: the venv imports numpy, scipy, shapely and `grid_router` together.
 
-The venv is made in place after the extracted tree is swapped in (venv paths are absolute); any failure restores the
-previous install. When no Python works the card says what was tried and what to install (uv, or Python 3.9+ —
-`python3-venv` on Debian/Ubuntu). fabdesk itself ships no Python.
+uv runs with `UV_NO_CONFIG=1 UV_NO_CACHE=1 UV_LINK_MODE=copy`: nothing goes to the user's uv cache or config, everything
+lands in the install. The venv is made in place after the extracted tree is swapped in (venv paths are absolute); any
+failure restores the previous install. When nothing works the card says what was tried and what to do. fabdesk itself
+ships no Python. The old fallback to KRT's floors (`numpy>=1.22 ...`, unhashed) for a Python without wheels for the
+pins is gone: with the uv bootstrap every supported platform reaches a Python that takes the lock, and a floor install
+would be neither hashed nor the versions the reference runs used.
 
-Measured 2026-11-12 on Linux x86_64 (warm uv / pip caches, so mostly local work): about **8 s** to install;
-on disk about **320 MB** with uv (36 MB scripts, 178 MB venv, 104 MB managed CPython) or about **270 MB** with the
-system Python (233 MB venv). A cold install also downloads ~60 MB of wheels and, with uv, ~30 MB of CPython.
+**The pinned uv.** uv 0.13.6 (released 2026-10-27). One archive per platform, checked against the sha256 astral-sh/uv
+publishes for the release (`sha256.sum`, which matches GitHub's asset digests); Linux uses the static musl builds:
+
+| Platform | Asset | SHA-256 |
+| --- | --- | --- |
+| linux x64 | `uv-x86_64-unknown-linux-musl.tar.gz` | `5d61f26b6c7213779eda90edc6971ea6b0b796bfb8d49a574c8ad69b59838548` |
+| linux arm64 | `uv-aarch64-unknown-linux-musl.tar.gz` | `819692e404d23e5aae6bc44c0e260f1f5492fd1910ab4693b2c650f926dbe800` |
+| macOS arm64 | `uv-aarch64-apple-darwin.tar.gz` | `60fbd5c8a1ed681845eea28d9d622fcde03c51e91a43465b64a1e17db1ed3472` |
+| macOS x64 | `uv-x86_64-apple-darwin.tar.gz` | `63ba17fdda55ad1a230d4b37fc6017ffa10c23688c83818bd3bfdf914c652a02` |
+| windows x64 | `uv-x86_64-pc-windows-msvc.zip` | `a2a8820d5eea32f08ef467ef3b7f66883a9b076d5737a2fc2fbb5f458d1bb50f` |
+| windows arm64 | `uv-aarch64-pc-windows-msvc.zip` | `c2426c0c8e28b53d8c440e47a18d96ad4db51e159866c0e81435b196d7f0081c` |
+
+uv verifies the CPython it downloads (python-build-standalone) against its own built-in sha256 table. To bump: change
+`UV_VERSION` and the table in `uv.ts` from the new release's `sha256.sum`. To regenerate the lock: see its `about` field.
+
+**ARM.** KRT 0.23.8 ships `grid_router` for linux-x86_64, macos-arm64/x86_64 and windows-x86_64 only, and has no
+pure-Python fallback (`py_router/*` import `grid_router` unconditionally). On linux-arm64 and windows-arm64 the
+install builds it from the zip's `rust_router/` (`cargo build --release`, `PYO3_PYTHON` = the venv's Python,
+`CARGO_TARGET_DIR` inside the install, the result copied to `grid_router.so` / `.pyd`) when cargo is found
+(`FABDESK_KRT_CARGO`, PATH, `~/.cargo/bin`); without it the install stops before any Python download with "building it
+needs Rust (cargo, https://rustup.rs) and a C compiler". **rustup is not bootstrapped**: a minimal toolchain is a
+~250-300 MB download, and it still would not be enough, since the crate also needs a system linker and C compiler
+(mimalloc's build script; the MSVC Build Tools on Windows, several GB), so it cannot make those machines zero-prerequisite.
+The release ships no `Cargo.lock`, so a source build resolves the `pyo3 0.23` / `numpy 0.23` / `mimalloc 0.1` ranges at
+build time (not reproducible; not verified on real ARM hardware).
+
+**Install on first use.** The board tools call the registry's `ensure` (`packages/tools/src/routers/registry.ts`) through
+the layout host (`engineEnsurer` in `board-host.ts`, `engineReady` in `@fabdesk/board-workflow`'s `layout/ctx.ts`) at the
+point a step needs an engine: the layout `check` (KRT and TraceMaker), `place` / `rank` / `route` (KRT; TraceMaker for
+the route stage's TraceMaker branch), the last-mile router, rip and nudge steps and `why` (KRT), and `fill:tracemaker`.
+The missing engine is installed inline with progress lines and the step continues. Rules:
+
+- concurrent requests share one install (one download), whether they come from parallel candidates, two tools or
+  Settings;
+- an override that is set (Settings `krtDir`, `FABDESK_KRT_DIR`, `TRACEMAKER_BIN`) is used as given; when it is broken
+  that is reported and nothing is installed over it;
+- Settings `autoInstallEngines` (default on; Settings → Routers → *Install engines on first use*) turns it off: the
+  steps then report the missing engine;
+- an automatic install that failed is not retried automatically in the same core process; `board_engines install`
+  (or Settings → Install) retries;
+- `route_run router=tracemaker`, `why`'s cause classes and `validate`'s pair audit install TraceMaker on first use as well.
+
+The agent can also see and install engines itself with the `board_engines` tool (`board` toolset, global): `status`
+lists each engine's state, path, override and last error plus kicad-cli and the auto-install setting; `install`
+(`engine`: krt, tracemaker, freerouting, or all = krt + tracemaker) runs as a durable board job. Programmatic callers
+(CI) keep using `registry.install("krt")`.
+
+Measured 2026-11-12 on Linux x86_64, **cold** on a bare-machine simulation (empty HOME, PATH without uv or Python, a
+fresh data dir): about **39 s** in all (uv download 3 s, managed CPython 1 s, hash-locked wheels 33 s); a second run on a
+slow link spent 14 min on the wheels alone (uv prints nothing meanwhile, so the install logs a heartbeat every minute); about **320 MB**
+on disk for KRT (scripts, venv, managed CPython) plus 42 MB for the pinned uv. A cold install downloads ~16 MB of
+KRT, ~18 MB of uv, ~30 MB of CPython and ~60 MB of wheels.
 
 ## TraceMaker size and license
 

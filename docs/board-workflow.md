@@ -18,7 +18,7 @@ onboard ─► layout (place · rank · route) ─► last mile ─► review �
 
 | Stage | Tool | What it does in one line | Gate before the next stage |
 | --- | --- | --- | --- |
-| 1 onboard + check | `board_check` | derives the board's requirements on first use, then measures A1-A9 on the saved board and compares with the board as onboarded | your review of the onboarding proposals |
+| 1 onboard + check | `board_check` | derives the board's requirements on first use, then measures A1-A9 on the saved board and compares with the board as onboarded | your review of the onboarding proposals, recorded with `board_check {"confirm": true}` |
 | 2 layout | `board_route` check · place · rank · route · auto · status | fail-fast preflight, seeded placements gated on courtyard DRC, ranked by routed opens, then the best seed routed (30-60 min in all) | `route` PASS (few enough opens) |
 | 3 last mile | `board_route` new · try · loop · sweep · pairs · why · crossings · fit · validate · accept | tries rip, route, pair and placement steps in parallel on the whole board, keeps the best one that improves the gate, undoes the rest | A1-A9 pass |
 | 4 edit | `board_edit` | an ECO as a plan across board, schematic and requirements: impact, candidate, repair of cut nets, A1-A9 proof, planned-versus-collateral diff, adopt | 0 collateral |
@@ -27,6 +27,8 @@ onboard ─► layout (place · rank · route) ─► last mile ─► review �
 | 6 release | `board_release` | BOM and JLC rotations, Gerber render check, release readiness, the fabrication package behind its gates | the gates below |
 
 Long jobs return a job id: `board_job` waits for, reports or cancels them. One heavy job runs at a time; the resource governor queues the rest.
+Engines (KiCadRoutingTools, TraceMaker) install themselves the first time a step needs them (minutes, with progress lines; nothing to
+preinstall); `board_engines` shows their state or installs ahead. A set override (`FABDESK_KRT_DIR`, `TRACEMAKER_BIN`) is used as given.
 
 **The board's acceptance checks (A1-A9).** Each board carries its own definition of done, written at onboarding into
 `.fabdesk/board/requirements/` (you own the numbers). The same nine questions apply to any board, each judged against that board's data:
@@ -45,8 +47,8 @@ pre-existing failure.
   undone. Do not rip whole wide power nets. `why` names what walls each open end. A pair counts only when coupled; `pairs` splits each uncoupled mm
   by cause (`loose` is fixable in place; `on_pad`, `between`, `escape` come from pads, pinout and vias; `apart` needs a re-route). Pairs on a routed
   board: `tighten` first (vias, mirror, retune, width, tighten, skew, no router), then `loop` with `reroute:{pair}+shorts+blockers:1.0+tighten`.
-  Rip, route and nudge steps run KiCadRoutingTools plans; without KRT a step that needs it fails naming it, and `finish`, `fill:ROUTER` and
-  `tighten` still run.
+  Rip, route and nudge steps run KiCadRoutingTools plans; when KRT cannot be had (install error, broken override, auto-install off) a step
+  that needs it fails naming why, and `finish`, `fill:ROUTER` and `tighten` still run.
 - **Edit.** Write the change as a plan (remove, move with `to` or `near`, displace, swap, add, net). `impact` first: a STOP is your decision.
   When an edit displaces a dense region, stop editing and re-place with the moved parts as anchors.
 - **Review.** One design hash covers board, schematics, project files and requirements; any change makes the review stale. Settle each finding with

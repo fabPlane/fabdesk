@@ -43,7 +43,8 @@ export const BoardChecks = z.object({
   history: z.array(z.object({ at: z.string(), failing: z.array(z.string()), pass: z.boolean(), current: z.boolean() })).optional(),
   candidates: z.array(z.object({ id: z.string(), verdict: z.string(), startedAt: z.string(), seconds: z.number(), collateralNets: z.number() })).optional(),
   review: z.object({ state: z.enum(["none", "stale", "open", "errors", "pass"]), open: z.number().optional(), mustFix: z.number().optional(), at: z.string().optional() }).optional(),
-  onboarding: z.object({ toConfirm: z.number(), confirmed: z.boolean() }).nullable().optional(),
+  /** Onboarding's derived requirements; `by`/`at` say who confirmed them against the circuit (`board_check` confirm). */
+  onboarding: z.object({ toConfirm: z.number(), confirmed: z.boolean(), by: z.enum(["agent", "owner"]).optional(), at: z.string().optional() }).nullable().optional(),
 });
 export type BoardChecks = z.infer<typeof BoardChecks>;
 
@@ -61,7 +62,7 @@ export function boardChecksLabel(c: BoardChecks): string {
 export function boardReviewLabel(r: NonNullable<BoardChecks["review"]>): string {
   if (r.state === "none") return "Review not run";
   if (r.state === "pass") return "Review: every finding settled";
-  if (r.state === "stale") return "Review: stale, the board changed since";
+  if (r.state === "stale") return "Review: stale, the design changed since";
   if (r.state === "errors") return "Review: check errors";
   return `Review: ${r.open ?? "?"} finding${r.open === 1 ? "" : "s"} open${r.mustFix ? ` (${r.mustFix} must-fix)` : ""}`;
 }

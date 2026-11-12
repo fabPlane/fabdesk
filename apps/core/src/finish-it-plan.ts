@@ -301,7 +301,7 @@ export function snapshotNote(id: FinishItMilestoneId, snap: FinishItSnapshot): s
       const r = snap.review;
       if (!r || r.state === "none") return "Review not run";
       if (r.state === "pass") return "Review gate passes: every finding settled";
-      if (r.state === "stale") return "Review is stale (the board changed since)";
+      if (r.state === "stale") return "Review is stale (the design changed since)";
       if (r.state === "errors") return "Review has check errors";
       return `${r.open ?? "?"} finding${r.open === 1 ? "" : "s"} open (${r.mustFix ?? 0} must-fix)`;
     }
@@ -343,12 +343,11 @@ export function snapshotNote(id: FinishItMilestoneId, snap: FinishItSnapshot): s
 }
 
 /**
- * Stage tools are named for what later board-workflow stages register in the `board` toolset (board_check, board_edit,
- * board_route, board_review, board_release); milestoneForTool already maps them, and a name that is not registered is
- * simply never called.
+ * The board plan applies only to a project with a placed board, and the daemon preloads the `board` toolset for such a
+ * project's runs, so the text says the tools are there rather than asking for load_toolset (kept as the fallback).
  */
-const BOARD_METHOD = `Board workflow (load_toolset {"toolset":"board"}): board_check measures A1-A9 on the saved board and says where it stands.
-An edit makes the review stale; long jobs return a job id (board_job waits for, reports or cancels them).
+const BOARD_METHOD = `Board workflow: this project has a placed board, so the board tools (board_check, board_route, board_edit, board_review, board_release, board_job) are already loaded; only if one is missing, load_toolset {"toolset":"board"}.
+board_check measures A1-A9 on the saved board and says where it stands. Any change to the board, schematics, project files or requirements makes the review stale; long jobs return a job id (board_job waits for, reports or cancels them).
 Many opens after routing usually mean a placement problem: restructure the block or re-seed before tuning the router. Look at the board (render_view) before deciding.`;
 
 /** Prompt the existing agent to finish remaining work without asking the user. */
@@ -384,9 +383,9 @@ ${remaining || "- none — confirm verify reports are clean and stop"}
 How to finish each milestone:
 1. schematic — write or complete circuit.netlist.json (real parts and nets). Use library search tools when you need footprints.
 2. build — run circuit_build so board.kicad_pcb exists with placed footprints.
-3. route — run route_run and keep going until open connections are 0. Unroute and retry a net if needed.
+${opts.boardChecks ? "3. route — run board_route: the layout stages (check, place, rank, route) when the board is not routed yet, then the last mile (new, try, validate, accept) until A1 (connectivity) passes; board_route status says the next step. Use board_edit for a targeted change." : "3. route — run route_run and keep going until open connections are 0. Unroute and retry a net if needed."}
 4. verify — ${opts.boardChecks ? "run board_check: done means A1-A9 pass on the saved board with schematic parity (DRC is part of it; a board that came in already failing checks is judged by no new failure against its first result; name each pre-existing failure). Also run " : "run "}verify_erc (if a schematic exists), ${opts.boardChecks ? "" : "verify_drc, "}and sim_run when the design can be simulated. Fix violations and re-run until DRC errors and unconnected items are 0 (and ERC errors are 0 when a schematic exists). SPICE is best-effort: run it, but a missing simulator is not a reason to stop.
-${opts.boardChecks ? "5. review — run the review checks (board_check), then settle what they leave: dispose each finding with evidence or fix it. Done when the review gate passes. A finding only the owner can decide (spending money, changing a hard constraint) is reported, not decided: stop and list it.\n" : ""}
+${opts.boardChecks ? "5. review — run board_review (action run), then settle what it leaves: board_review fix lists each finding's proposal (apply settles what intent or evidence decides), dispose each remaining finding with evidence or fix the design, and re-run after a fix. Done when board_review gate passes. A finding only the owner can decide (spending money, changing a hard constraint) is reported, not decided: stop and list it.\n" : ""}
 ${opts.boardChecks ? BOARD_METHOD + "\n\n" : ""}Rules:
 - Use the fabPlane MCP tools. Do not invent a parallel workflow.
 - Do not wait for another user message. Keep going until the remaining milestones are done or you are blocked by a missing tool/runtime.

@@ -11,7 +11,7 @@
  */
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { lastmile as L, locateProject, onboard, parseBoard, profile, readRequirements, type Requirements } from "@fabdesk/board-workflow";
+import { lastmile as L, layout, locateProject, onboard, parseBoard, profile, readRequirements, type Requirements } from "@fabdesk/board-workflow";
 import { adoptCandidate, designFileHashes } from "../board-adopt";
 import { PROJECT_FILES } from "../fs";
 import { runTraceMaker } from "../routers";
@@ -35,11 +35,13 @@ async function requirementsFor(ctx: ToolContext, pcb?: string): Promise<Requirem
 }
 
 /** The host's routers for `fill` steps (and `finish` when KiCadRoutingTools is missing), on `dir/board.kicad_pcb` in place. */
-function hostFill(ctx: ToolContext): L.FillFn {
+function hostFill(ctx: ToolContext, host: layout.LayoutHost): L.FillFn {
   return async (router, dir, { signal, timeoutMs }) => {
     if (router === "tracemaker") {
-      const binary = ctx.services.routers?.executable("tracemaker");
-      if (!binary) throw new Error("TraceMaker is not installed (Settings → Routers)");
+      // installed on first use when it is missing (one TraceMaker install even when parallel candidates ask)
+      const tm = await layout.engineReady(host, "tracemaker");
+      const binary = tm.path;
+      if (!binary) throw new Error(tm.why ?? "TraceMaker is not installed (board_engines install tracemaker, or TRACEMAKER_BIN)");
       const s = await runTraceMaker({ binary, snapshotDir: dir, timeoutMs, signal });
       await copyFile(join(dir, "tracemaker", "routed.kicad_pcb"), join(dir, PROJECT_FILES.boardPcb));
       return { message: s.message };
@@ -64,7 +66,7 @@ export async function openBench(ctx: ToolContext, ws: string, req: Requirements)
       const scorer = L.createScorer(req, drc);
       return {
         scorer,
-        engine: L.createStepEngine({ req, drc, scorer, layout: host, fill: hostFill(ctx), fallbackRouter: router }),
+        engine: L.createStepEngine({ req, drc, scorer, layout: host, fill: hostFill(ctx, host), fallbackRouter: router }),
         signal: ctx.signal,
         ...(onLine ? { onLine } : {}),
       };
@@ -115,8 +117,9 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
           const out = krt ?? L.whyLines(L.whyOpen(parseBoard(await readFile(bench.board, "utf8")), sc.opens, nets)).slice(0, -1);
           if (!krt) out.unshift("(KiCadRoutingTools not configured: walls from the board model, not KRT's net_forensics)");
           if (!a.nets?.length) {
+            await layout.engineReady(host, "tracemaker"); // installs it on first use unless automatic installs are off
             const causes = await L.tmCauses(host, rb);
-            out.push(...(causes ? ["TraceMaker causes:", ...causes.map((l) => "  " + l)] : ["(TraceMaker not installed: no cause classes)"]));
+            out.push(...(causes ? ["TraceMaker causes:", ...causes.map((l) => "  " + l)] : ["(TraceMaker not available: no cause classes)"]));
           }
           out.push("hint: walls within about 1 mm of a stuck end -> blockers:1.0 or leg; a pad caged by parts or a keepout -> nudge:REF@X,Y");
           return ok(out.join("\n"));
@@ -165,6 +168,7 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
         case "validate": {
           const rec = await bench.validate();
           const v = join(bench.ws, "validate");
+          await layout.engineReady(host, "tracemaker");
           const audit = await L.tmPairAudit(host, await L.routerBoard(join(v, bench.state.pcb), join(v, "tm"), bench.state.pcb.replace(/\.kicad_pcb$/, "")), v);
           const full = { ...rec, ...(audit ? { return_path_warnings: audit.returnPathWarnings, tm_pairs: join(v, "tm-pairs.json") } : { tracemaker: "not installed: no pair or return-path audit" }) };
           await writeFile(join(v, "validate.json"), JSON.stringify(full, null, 1) + "\n");

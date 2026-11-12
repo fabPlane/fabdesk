@@ -3,6 +3,9 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { onboard } from "@fabdesk/board-workflow";
+import { createRegistry } from "../src";
+import { contextFactory, mockServices, tempProject } from "./mock-services";
 import { acceptanceSatisfied, projectHasPlacedBoard, readAcceptanceState, initDoneMode, readDoneMode, readOnboardingCheck, readBoardOverview, releaseAdvisories, confirmOnboarding, readReviewGate, recordAcceptance, recordReviewGate, writeDoneMode } from "../src/board-state";
 
 async function project(board: string, index?: unknown) {
@@ -14,6 +17,13 @@ async function project(board: string, index?: unknown) {
   }
   return dir;
 }
+const BOARD = `(kicad_pcb (version 20241229) (generator "pcbnew")
+  (layers (0 "F.Cu" signal) (2 "B.Cu" signal))
+  (footprint "R_0402" (layer "F.Cu") (at 10 10 90)
+    (property "Reference" "R1" (at 0 0 0) (layer "F.SilkS"))
+    (pad "1" smd roundrect (at -0.5 0) (size 0.5 0.6) (layers "F.Cu") (net 1 "A"))
+    (pad "2" smd roundrect (at 0.5 0) (size 0.5 0.6) (layers "F.Cu") (net 2 "B")))
+  (gr_rect (start 0 0) (end 30 20) (stroke (width 0.05)) (layer "Edge.Cuts")))`;
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 
 describe("readAcceptanceState", () => {
@@ -101,13 +111,45 @@ describe("review gate record", () => {
     await writeFile(join(dir, "board.kicad_pcb"), "board-2");
     expect((await readReviewGate(dir)).state).toBe("stale");
   });
+  test("the gate follows the review's one design hash: a schematic or requirements change makes a pass stale, an unrelated file does not", async () => {
+    const pass = async () => {
+      const dir = await project("board-1");
+      await writeFile(join(dir, "board.kicad_sch"), "(kicad_sch a)");
+      await mkdir(join(dir, ".fabdesk/board/requirements"), { recursive: true });
+      await writeFile(join(dir, ".fabdesk/board/requirements/requirements.json"), "{\"a\":1}");
+      await recordReviewGate(dir, { current: true, open: 0, mustFix: 0 });
+      expect((await readReviewGate(dir)).state).toBe("pass");
+      return dir;
+    };
+    const sch = await pass();
+    await writeFile(join(sch, "board.kicad_sch"), "(kicad_sch b)");
+    expect((await readReviewGate(sch)).state).toBe("stale");
+    const sheet = await pass();
+    await mkdir(join(sheet, "sheets"), { recursive: true });
+    await writeFile(join(sheet, "sheets", "power.kicad_sch"), "(kicad_sch power)");
+    expect((await readReviewGate(sheet)).state).toBe("stale");
+    const req = await pass();
+    await writeFile(join(req, ".fabdesk/board/requirements/requirements.json"), "{\"a\":2}");
+    expect((await readReviewGate(req)).state).toBe("stale");
+    const other = await pass();
+    await writeFile(join(other, "notes.txt"), "bench notes");
+    await mkdir(join(other, ".fabdesk/board/accept"), { recursive: true });
+    await writeFile(join(other, ".fabdesk/board/accept/index.json"), "[]");
+    expect((await readReviewGate(other)).state).toBe("pass");
+  });
+  test("a record without a design hash (board-only, older) reads as stale", async () => {
+    const dir = await project("board-1");
+    await mkdir(join(dir, ".fabdesk/board"), { recursive: true });
+    await writeFile(join(dir, ".fabdesk/board/review-gate.json"), JSON.stringify({ state: "pass", open: 0, mustFix: 0, boardSha256: sha("board-1") }));
+    expect((await readReviewGate(dir)).state).toBe("stale");
+  });
 });
 
 describe("onboarding check", () => {
   const withOnboard = async (review: string[]) => {
     const dir = await project("b");
-    await mkdir(join(dir, ".fabdesk/board/onboard"), { recursive: true });
-    await writeFile(join(dir, ".fabdesk/board/onboard/onboard.json"), JSON.stringify({ review, decided: ["46 fixed parts"], counts: { nets: 220 } }));
+    await mkdir(join(dir, ".fabdesk/board"), { recursive: true });
+    await writeFile(join(dir, ".fabdesk/board/onboard.json"), JSON.stringify({ review, decided: ["46 fixed parts"], counts: { nets: 220 } }));
     return dir;
   };
   test("none before onboarding; unconfirmed guesses; confirmed; stale when onboarding is derived again", async () => {
@@ -116,11 +158,36 @@ describe("onboarding check", () => {
     expect(await readOnboardingCheck(dir)).toMatchObject({ confirmed: false, toConfirm: ["planes: confirm the plane layers", "fixed: confirm every connector"], decided: ["46 fixed parts"] });
     expect(await confirmOnboarding(dir, "checked planes and pairs")).toBe(true);
     expect((await readOnboardingCheck(dir))?.confirmed).toBe(true);
-    await writeFile(join(dir, ".fabdesk/board/onboard/onboard.json"), JSON.stringify({ review: ["new guess"], decided: [], counts: {} }));
+    await writeFile(join(dir, ".fabdesk/board/onboard.json"), JSON.stringify({ review: ["new guess"], decided: [], counts: {} }));
     expect((await readOnboardingCheck(dir))?.confirmed).toBe(false);
   });
   test("nothing to confirm without onboarding", async () => {
     expect(await confirmOnboarding(await project("b"))).toBe(false);
+  });
+  test("reads the record where onboarding writes it, and board_check confirm clears the warning with who and when", async () => {
+    const p = await tempProject("onboard-confirm");
+    await writeFile(join(p.dir, "board.kicad_pcb"), BOARD);
+    await onboard(p.dir, { refresh: true, name: "t" });
+    const ob = await readOnboardingCheck(p.dir);
+    expect(ob?.confirmed).toBe(false);
+    expect(ob!.toConfirm.length).toBeGreaterThan(0);
+    expect((await releaseAdvisories(p.dir)).some((l) => l.startsWith("Onboarding:") && l.includes("board_check"))).toBe(true);
+    const registry = createRegistry();
+    const factory = contextFactory(mockServices([p]), p);
+    const call = (args: Record<string, unknown>) => registry.invoke("board_check", args, (ref) => factory({ def: registry.get("board_check")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} } as never));
+    const r = (await call({ confirm: true, by: "owner", note: "checked against the schematic" })) as { text: string; json: { confirmed: boolean; by: string } };
+    expect(r.text).toContain("Onboarding confirmed by owner");
+    expect(r.json).toMatchObject({ confirmed: true, by: "owner" });
+    expect(await readOnboardingCheck(p.dir)).toMatchObject({ confirmed: true, by: "owner" });
+    expect((await readBoardOverview(p.dir)).onboarding).toMatchObject({ confirmed: true, by: "owner" });
+    expect((await releaseAdvisories(p.dir)).some((l) => l.startsWith("Onboarding:"))).toBe(false);
+    // onboarding again needs a new confirmation
+    await onboard(p.dir, { refresh: true, name: "t", fixed: ["R1"], now: () => new Date(0) });
+    expect((await readOnboardingCheck(p.dir))?.confirmed).toBe(false);
+    const fresh = await tempProject("onboard-none");
+    await writeFile(join(fresh.dir, "board.kicad_pcb"), BOARD);
+    const freshFactory = contextFactory(mockServices([fresh]), fresh);
+    await expect(registry.invoke("board_check", { confirm: true }, (ref) => freshFactory({ def: registry.get("board_check")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} } as never))).rejects.toThrow(/nothing to confirm/);
   });
 });
 
@@ -159,7 +226,7 @@ describe("releaseAdvisories", () => {
   test("a board folder without results says nothing was measured", async () => {
     const dir = await project("b");
     await mkdir(join(dir, ".fabdesk/board"), { recursive: true });
-    expect(await releaseAdvisories(dir)).toEqual(["A1-A9 not measured on this board: board_check", "Review not run: board_check"]);
+    expect(await releaseAdvisories(dir)).toEqual(["A1-A9 not measured on this board: board_check", "Review not run: board_review run"]);
   });
 });
 

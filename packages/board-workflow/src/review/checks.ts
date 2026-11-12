@@ -105,9 +105,9 @@ async function readJson<T>(path: string): Promise<T | null> {
   }
 }
 
-async function spawn(cmd: string[], cwd?: string, timeoutMs = 60_000): Promise<{ code: number; out: string; err: string }> {
+async function spawn(cmd: string[], cwd?: string, timeoutMs = 60_000, verbatim = false): Promise<{ code: number; out: string; err: string }> {
   try {
-    const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", ...(cwd ? { cwd } : {}), timeout: timeoutMs });
+    const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", ...(cwd ? { cwd } : {}), timeout: timeoutMs, ...(verbatim ? { windowsVerbatimArguments: true } : {}) });
     const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
     return { code, out, err };
   } catch (e) {
@@ -958,19 +958,47 @@ export async function checkCoverage(ctx: ReviewCtx): Promise<CheckResult> {
 
 // ---------------------------------------------------------------- custom checks (data)
 
+/** Shells a custom check can ask for; without one it runs in the platform shell. */
+export const CUSTOM_SHELLS = ["sh", "bash", "cmd", "powershell", "pwsh"] as const;
+export type CustomShell = (typeof CUSTOM_SHELLS)[number];
+
+/**
+ * How a custom check's command line is started: the declared `shell`, else the platform shell (`/bin/sh -c` on Linux
+ * and macOS, `cmd.exe /d /s /c` on Windows). `verbatim` is for cmd.exe: the command goes in one quoted argument that
+ * Windows must not re-escape (what Node does for `shell: true`). An unknown shell name is an error string.
+ */
+export function customCheckArgv(cmd: string, shell: string | undefined, platform: NodeJS.Platform = process.platform): { argv: string[]; verbatim: boolean } | string {
+  const win = platform === "win32";
+  const sh = shell?.trim().toLowerCase() || (win ? "cmd" : "sh");
+  switch (sh) {
+    case "sh":
+      return { argv: [win ? "sh" : "/bin/sh", "-c", cmd], verbatim: false };
+    case "bash":
+      return { argv: ["bash", "-c", cmd], verbatim: false };
+    case "cmd":
+      return win ? { argv: [process.env["ComSpec"] || "cmd.exe", "/d", "/s", "/c", `"${cmd}"`], verbatim: true } : `shell "cmd" runs only on Windows`;
+    case "powershell":
+    case "pwsh":
+      return { argv: [sh === "powershell" && win ? "powershell.exe" : "pwsh", "-NoProfile", "-NonInteractive", "-Command", cmd], verbatim: false };
+    default:
+      return `unknown shell "${shell}" (one of ${CUSTOM_SHELLS.join(", ")})`;
+  }
+}
+
 /**
  * Checks added as data: `.fabdesk/board/review/checks.d/*.json` (all boards, optional "boards" filter) and `review.custom`
  * in the project's review config. Each: {"name", "layer", "run": "cmd with {pcb} {sch} {project} {netlist} {spec} {out}",
- * "timeout"}. The command prints a JSON list of findings: {"rule", "severity", "claim", "ref"?, "pad"?, "net"?, "key"?,
- * "suggest"?}. A command that fails or prints something else is an error, never a pass. The commands are the project
+ * "timeout", "shell"?}. `run` goes to the platform shell (`/bin/sh` on Linux and macOS, `cmd.exe` on Windows) unless
+ * "shell" names one ("sh", "bash", "cmd", "powershell", "pwsh"). The command prints a JSON list of findings: {"rule",
+ * "severity", "claim", "ref"?, "pad"?, "net"?, "key"?, "suggest"?}. A command that fails or prints something else is an error, never a pass. The commands are the project
  * owner's own and run only when the caller trusts them (`trustCustom`).
  */
 export async function checkCustom(ctx: ReviewCtx): Promise<CheckResult> {
   const r = newResult("custom", "L*");
   const dir = join(reviewHome(ctx.project.dir), "checks.d");
-  const specs: Array<{ name: string; layer?: string; run: string; timeout?: number; _src: string }> = [];
+  const specs: Array<{ name: string; layer?: string; run: string; timeout?: number; shell?: string; _src: string }> = [];
   for (const n of (await readdir(dir).catch(() => [] as string[])).filter((x) => x.endsWith(".json")).sort()) {
-    const d = await readJson<{ name: string; layer?: string; boards?: string[]; run: string; timeout?: number }>(join(dir, n));
+    const d = await readJson<{ name: string; layer?: string; boards?: string[]; run: string; timeout?: number; shell?: string }>(join(dir, n));
     if (d && (!d.boards?.length || d.boards.includes(ctx.project.name))) specs.push({ ...d, _src: n });
   }
   for (const d of ctx.project.cfg.custom ?? []) specs.push({ ...d, _src: "board entry" });
@@ -989,7 +1017,12 @@ export async function checkCustom(ctx: ReviewCtx): Promise<CheckResult> {
   let n = 0;
   for (const sp of specs) {
     const cmd = sp.run.replace(/\{(pcb|sch|project|netlist|spec|out)\}/g, (_m, k: string) => subs[k]!);
-    const p = await spawn(["bash", "-c", cmd], ctx.project.dir, Number(sp.timeout ?? 600) * 1000);
+    const how = customCheckArgv(cmd, sp.shell);
+    if (typeof how === "string") {
+      errs.push(`${sp.name}: ${how}`);
+      continue;
+    }
+    const p = await spawn(how.argv, ctx.project.dir, Number(sp.timeout ?? 600) * 1000, how.verbatim);
     let list: Array<Record<string, unknown>>;
     try {
       list = JSON.parse(p.out || "null");

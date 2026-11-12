@@ -13,7 +13,7 @@ const TOOLSET_BLURB: Record<string, string> = {
   sim: "SPICE",
   app: "screenshot and drive the desktop app (dev / FABDESK_AUTOMATION=1)",
   shopping: "fabplane.com shopping list (BOM cart) and team inventory",
-  board: "placed board to release: board_check (A1-A9), board_route (layout and last mile), board_edit (ECO), board_review, board_silk, board_release, board_job (long jobs)",
+  board: "placed board to release: board_check (A1-A9), board_route (layout and last mile), board_edit (ECO), board_review, board_silk, board_release, board_job (long jobs), board_engines (engines; they install on first use)",
   cad: "mechanical model (OpenCascade / FreeCAD, experimental SMLib): objects, per-part kernels, board-synced enclosure, STEP assembly",
 };
 

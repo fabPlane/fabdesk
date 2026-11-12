@@ -52,7 +52,7 @@ export const RouteRunArgs = {
     .enum(["fab_router", "freerouting", "capacity", "tracemaker"])
     .optional()
     .describe(
-      "Router; capacity is a legacy fab_router alias. An unpinned project defaults to Freerouting, falling back to fab_router when unavailable or failed. Automatic selective reroutes use fab_router. Explicit Freerouting falls back only when unavailable. tracemaker is install-on-demand (Settings → Routers) and errors with an install hint if it is not installed.",
+      "Router; capacity is a legacy fab_router alias. An unpinned project defaults to Freerouting, falling back to fab_router when unavailable or failed. Automatic selective reroutes use fab_router. Explicit Freerouting falls back only when unavailable. tracemaker installs itself on first use (unless Settings autoInstallEngines is off; then it errors with an install hint).",
     ),
   timeoutMs: z
     .number()
@@ -843,7 +843,13 @@ async function executeRoute(
       await persistProgress(ctx, rec, runDir);
       try {
         if (rec.router === "tracemaker") {
-          const binary = ctx.services.routers?.executable("tracemaker");
+          let binary = ctx.services.routers?.executable("tracemaker");
+          if (!binary && ctx.services.routers) {
+            // install on first use, as the board tools do (off with Settings autoInstallEngines)
+            const got = await ctx.services.routers.ensure("tracemaker", { onLine: (line) => ctx.progress(0, line) });
+            binary = got.path ?? undefined;
+            if (!binary && got.why) throw new ToolError(got.why, "unavailable");
+          }
           if (!binary) {
             throw new ToolError(
               installHintFor("tracemaker", ctx.services.routers?.get("tracemaker")),

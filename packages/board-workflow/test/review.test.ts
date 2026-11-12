@@ -32,6 +32,7 @@ import {
   type ReviewRecord,
 } from "../src/index";
 import { applyCards } from "../src/review/rulecards";
+import { customCheckArgv } from "../src/review/checks";
 import { writeJsonFile } from "../src/files";
 
 const dirs: string[] = [];
@@ -315,6 +316,39 @@ describe("a review run, the gate and dispositions", () => {
     await writeFile(join(cd, "mine.json"), JSON.stringify({ name: "mine", run: "echo not-json" }));
     const bad = await runReview(p, { ...fakeEnv(), trustCustom: true }, { checks: ["custom"], offline: true });
     expect(bad.review.checks[0]!.status).toBe("error");
+  });
+
+  test("custom checks run in the platform shell unless they name one", () => {
+    expect(customCheckArgv("echo hi", undefined, "linux")).toEqual({ argv: ["/bin/sh", "-c", "echo hi"], verbatim: false });
+    expect(customCheckArgv("echo hi", undefined, "darwin")).toEqual({ argv: ["/bin/sh", "-c", "echo hi"], verbatim: false });
+    const win = customCheckArgv("python checks\\x.py C:\\b\\a.kicad_pcb", undefined, "win32");
+    expect(typeof win).toBe("object");
+    if (typeof win === "string") return;
+    expect(win.verbatim).toBe(true);
+    expect(win.argv.slice(1)).toEqual(["/d", "/s", "/c", '"python checks\\x.py C:\\b\\a.kicad_pcb"']);
+    expect(win.argv[0]).toMatch(/cmd\.exe$/i);
+    expect(customCheckArgv("x", "bash", "linux")).toEqual({ argv: ["bash", "-c", "x"], verbatim: false });
+    expect(customCheckArgv("x", "bash", "win32")).toEqual({ argv: ["bash", "-c", "x"], verbatim: false });
+    expect(customCheckArgv("x", "powershell", "win32")).toEqual({ argv: ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "x"], verbatim: false });
+    expect(customCheckArgv("x", "pwsh", "darwin")).toEqual({ argv: ["pwsh", "-NoProfile", "-NonInteractive", "-Command", "x"], verbatim: false });
+    expect(customCheckArgv("x", "cmd", "linux")).toContain("only on Windows");
+    expect(customCheckArgv("x", "zsh", "linux")).toContain("unknown shell");
+  });
+
+  test.skipIf(process.platform === "win32")("a custom check that declares bash gets bash; an unknown shell is an error", async () => {
+    const dir = await project();
+    const cd = join(dir, ".fabdesk", "board", "review", "checks.d");
+    await mkdir(cd, { recursive: true });
+    // [[ ]] and $BASH_VERSION are bash-only: under dash (Debian /bin/sh) this would print nothing
+    await writeFile(join(cd, "b.json"), JSON.stringify({ name: "b", shell: "bash", run: `[[ -n "$BASH_VERSION" ]] && echo '[{"rule":"B","severity":"note","claim":"bash"}]'` }));
+    const p = await openReviewProject(dir);
+    const on = await runReview(p, { ...fakeEnv(), trustCustom: true }, { checks: ["custom"], offline: true });
+    expect(on.review.checks[0]!.status).not.toBe("error");
+    expect(on.review.findings.map((f) => f.claim)).toEqual(["bash"]);
+    await writeFile(join(cd, "b.json"), JSON.stringify({ name: "b", shell: "fish", run: "echo '[]'" }));
+    const bad = await runReview(p, { ...fakeEnv(), trustCustom: true }, { checks: ["custom"], offline: true });
+    expect(bad.review.checks[0]!.status).toBe("error");
+    expect(bad.review.checks[0]!.detail).toContain('unknown shell "fish"');
   });
 
   test("import_expert replaces the pending marker; a PROBLEM without evidence is a question", async () => {

@@ -283,6 +283,21 @@ describe("layout flow", () => {
     expect(noCrt.verdict).toContain("parts without courtyard: ['J1'");
   });
 
+  test("check installs a missing engine through the host first; a failed install is named in the verdict", async () => {
+    const { krt, st } = await project();
+    const asked: string[] = [];
+    const tm = join(krt, "..", "tracemaker");
+    const host = { ...fakeHost(krt, { tm: true }), tools: { krt: null, tracemaker: null, kicadCli: "x" }, ensure: async (e: "krt" | "tracemaker") => (asked.push(e), { path: e === "krt" ? krt : tm }) };
+    expect((await stageCheck(host, st)).verdict).toBe("PASS check");
+    expect(asked).toEqual(["krt", "tracemaker"]);
+    expect(host.tools).toMatchObject({ krt, tracemaker: tm });
+    // a set path (an override) is checked as given: no install
+    const set = { ...fakeHost(krt), tools: { krt: "/nonexistent", tracemaker: tm, kicadCli: "x" }, ensure: async () => ({ path: "/should-not-be-used" }) };
+    expect((await stageCheck(set, st)).verdict).toStartWith("FAIL krt missing at /nonexistent ->");
+    const failed = { ...fakeHost(krt), tools: { krt: null, tracemaker: tm, kicadCli: "x" }, ensure: async () => ({ path: null, why: "offline: cannot download https://x" }) };
+    expect((await stageCheck(failed, st)).verdict).toContain("krt missing at (not installed) (offline: cannot download https://x)");
+  });
+
   test("place gates every seed on native courtyard DRC and fixed parts unmoved", async () => {
     const { krt, st } = await project();
     const host = fakeHost(krt, { tm: true, courtyard: (b) => (b.includes("/s1/") ? { courtyards_overlap: 2 } : {}) });

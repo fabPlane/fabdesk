@@ -18,6 +18,15 @@ export async function openReviewProject(dir: string, pcb?: string): Promise<Revi
   return { dir, stem: files.stem, name: cfg.name ?? basename(dir), pcb: files.pcb, sch: join(files.dir, `${files.stem}.kicad_sch`), cfg, files };
 }
 
+/**
+ * The design hash a review of `dir` is bound to now: `reviewHash` with the project's review settings (board,
+ * schematics, project and rule files, requirements, `hash_extra`). Needs no board file, so a status reader can ask.
+ */
+export async function currentReviewHash(dir: string): Promise<string> {
+  const cfg = (await readJsonOrNull<ReviewConfig>(configPath(dir))) ?? {};
+  return (await reviewHash({ dir, cfg })).hash;
+}
+
 export const readDispositions = async (dir: string): Promise<Dispositions> => (await readJsonOrNull<Dispositions>(dispositionsPath(dir))) ?? {};
 export const writeDispositions = (dir: string, d: Dispositions) => writeJsonFile(dispositionsPath(dir), Object.fromEntries(Object.entries(d).sort(([a], [b]) => (a < b ? -1 : 1))));
 export const readIntent = async (dir: string): Promise<Intent> => (await readJsonOrNull<Intent>(intentPath(dir))) ?? {};

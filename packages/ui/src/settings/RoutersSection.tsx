@@ -201,6 +201,23 @@ export function RoutersSection() {
           }}
         />
       </label>
+      <label className="flex items-start gap-2 pt-2">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          data-testid="auto-install-engines"
+          checked={settings.data?.autoInstallEngines !== false}
+          disabled={busyBase}
+          onChange={(event) => void patch.mutateAsync({ autoInstallEngines: event.target.checked })}
+        />
+        <span className="space-y-0.5">
+          <span className="block text-xs font-medium">Install engines on first use</span>
+          <span className="block text-[11px] leading-4 text-muted">
+            Board tools install KiCadRoutingTools or TraceMaker the first time a step needs it (KiCadRoutingTools gets its own
+            Python; nothing has to be installed first). Off: they report the missing engine instead.
+          </span>
+        </span>
+      </label>
     </div>
   );
 }

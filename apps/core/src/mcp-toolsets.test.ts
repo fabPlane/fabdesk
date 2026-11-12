@@ -1,5 +1,22 @@
 import { describe, expect, test } from "bun:test";
-import { BOARD_START_TOOLS, boardStartTools, initialToolsetsFor, nativeToolsFor, NATIVE_AGENT_TOOLS } from "./mcp-sessions";
+import {
+  applyStartToolsets,
+  BOARD_START_TOOLS,
+  BOARD_WORKFLOW_PROMPT,
+  BOARD_WORKFLOW_RESOURCE_URI,
+  boardStartTools,
+  boardWorkflowInstructions,
+  boardWorkflowPromptText,
+  boardWorkflowStages,
+  DURABLE_WAIT_SHORT_MS,
+  durableWaitForClient,
+  initialToolsetsFor,
+  nativeToolsFor,
+  NATIVE_AGENT_TOOLS,
+  projectStartToolsets,
+  startOptionsFor,
+} from "./mcp-sessions";
+import { BOARD_WORKFLOW_MD } from "@fabdesk/agents";
 import { createRegistry } from "@fabdesk/tools";
 
 describe("initialToolsetsFor", () => {
@@ -38,4 +55,86 @@ describe("boardStartTools", () => {
     const reg = createRegistry();
     for (const n of BOARD_START_TOOLS) expect(reg.get(n)).toBeDefined();
   });
+});
+
+describe("external sessions: the desktop's start-set decision", () => {
+  const withBoard = { get: (n: string) => (n === "board_check" ? ({} as never) : undefined) };
+  const withoutBoardWorkflow = { get: () => undefined };
+  const dirWith = async (pcb: string | null) => {
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = await mkdtemp(join(tmpdir(), "start-set-"));
+    if (pcb !== null) await writeFile(join(dir, "board.kicad_pcb"), pcb);
+    return { dir };
+  };
+  test("a placed board starts with `board`; no board, an empty board, no project or no board_check do not", async () => {
+    const placed = await dirWith('(kicad_pcb\n  (footprint "R:0603"\n))');
+    expect(await projectStartToolsets(withBoard, placed)).toEqual(["board"]);
+    expect(await projectStartToolsets(withoutBoardWorkflow, placed)).toEqual([]);
+    expect(await projectStartToolsets(withBoard, await dirWith("(kicad_pcb (version 1))"))).toEqual([]);
+    expect(await projectStartToolsets(withBoard, await dirWith(null))).toEqual([]);
+    expect(await projectStartToolsets(withBoard, null)).toEqual([]);
+  });
+  test("the query and start options equal a desktop run's endpoint on that project", () => {
+    const registry = createRegistry();
+    const q = new URLSearchParams();
+    applyStartToolsets(q, ["board"]);
+    expect(q.get("toolsets")).toBe("board");
+    expect(q.get("start")).toBe("board");
+    const opts = startOptionsFor(q, registry);
+    expect(opts.initialToolsets).toEqual(initialToolsetsFor("board"));
+    expect(opts.initialTools).toEqual(boardStartTools(registry));
+    const none = new URLSearchParams();
+    applyStartToolsets(none, []);
+    expect([...none.keys()]).toEqual([]);
+    expect(startOptionsFor(none, registry)).toEqual({ initialToolsets: initialToolsetsFor(null) });
+  });
+});
+
+describe("durableWaitForClient", () => {
+  test("fabdesk's own runs and Claude Code keep the default; external Codex and unknown clients return a job id in 50 s", () => {
+    expect(durableWaitForClient({ name: "codex-mcp-client" }, { ownRun: true })).toBeUndefined();
+    expect(durableWaitForClient({ name: "claude-code", version: "2.1.0" })).toBeUndefined();
+    expect(durableWaitForClient({ name: "codex-mcp-client" })).toBe(DURABLE_WAIT_SHORT_MS);
+    expect(durableWaitForClient({ name: "some-host" })).toBe(DURABLE_WAIT_SHORT_MS);
+    expect(durableWaitForClient(undefined)).toBe(DURABLE_WAIT_SHORT_MS);
+    expect(DURABLE_WAIT_SHORT_MS).toBeLessThan(60_000);
+  });
+  test("a declared tool timeout waits just under it, capped at 25 min, and wins over the client name", () => {
+    expect(durableWaitForClient({ name: "codex-mcp-client", toolTimeoutSec: 1830 })).toBe(25 * 60_000);
+    expect(durableWaitForClient({ name: "codex-mcp-client" }, { toolTimeoutSec: 120 })).toBe(110_000);
+    expect(durableWaitForClient({ name: "claude-code", toolTimeoutSec: 60 })).toBe(50_000);
+    expect(durableWaitForClient({ toolTimeoutSec: 8 })).toBe(6_000);
+  });
+});
+
+describe("board workflow instructions, resource and prompt come from BOARD_WORKFLOW_MD", () => {
+  test("the stage table is read from the workflow text", () => {
+    const stages = boardWorkflowStages();
+    expect(stages.length).toBeGreaterThanOrEqual(6);
+    for (const r of stages) expect(BOARD_WORKFLOW_MD).toContain(`| ${r.stage} | \`${r.tool}\``);
+    for (const tool of ["board_check", "board_route", "board_edit", "board_review", "board_silk", "board_release"])
+      expect(stages.map((r) => r.tool)).toContain(tool);
+  });
+  test("the instructions name every stage tool, A1-A9, board_job and where the full text is", () => {
+    const text = boardWorkflowInstructions();
+    for (const r of boardWorkflowStages()) expect(text).toContain(`${r.stage} \`${r.tool}\``);
+    for (const s of ["A1-A9", "board_job", "install on demand", BOARD_WORKFLOW_RESOURCE_URI, BOARD_WORKFLOW_PROMPT, "load_toolset"]) expect(text).toContain(s);
+    expect(boardWorkflowInstructions({ listed: true })).toContain("listed from the start");
+    expect(text.length).toBeLessThan(1500);
+  });
+  test("the prompt carries the full workflow text", () => {
+    const text = boardWorkflowPromptText("Blinky", "release it");
+    expect(text).toContain('project="Blinky"');
+    expect(text).toContain("Request: release it");
+    expect(text.endsWith(BOARD_WORKFLOW_MD)).toBe(true);
+  });
+});
+
+test("the plugin skill's board section names every stage tool, board_job and the workflow resource and prompt", async () => {
+  const { readFileSync } = await import("node:fs");
+  const skill = readFileSync(new URL("../../../plugins/fabplane/skills/fabplane/SKILL.md", import.meta.url), "utf8");
+  for (const r of boardWorkflowStages()) expect(skill).toContain(`| ${r.stage} | \`${r.tool}\``);
+  for (const s of ["board_job", "A1-A9", BOARD_WORKFLOW_RESOURCE_URI, BOARD_WORKFLOW_PROMPT]) expect(skill).toContain(s);
 });

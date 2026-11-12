@@ -2,7 +2,9 @@
   "mcpServers": {
     "fabdesk": {
       "command": "fabdesk",
-      "args": ["mcp", "--apps"]
+      "args": ["mcp", "--apps"],
+      "startup_timeout_sec": 30,
+      "tool_timeout_sec": 1830
     }
   }
 }

@@ -103,14 +103,14 @@ export function installProgressView(router: RouterSnapshot): InstallProgressView
 }
 
 /**
- * The Settings dialog saves its draft with one PATCH. The router default is written the moment "Set
- * default" is clicked, so it is left out of the draft: a stale copy in the draft must never revert it
+ * The Settings dialog saves its draft with one PATCH. The router default (and the other Routers fields:
+ * manifest URL, KRT folder, install on first use) is written the moment it changes, so it is left out of the draft: a stale copy in the draft must never revert it
  * on Save, nor make the dialog look dirty.
  */
-export function withoutRouterDefault<T extends { preferredRouter?: unknown; tracemakerManifestUrl?: unknown; krtDir?: unknown }>(
+export function withoutRouterDefault<T extends { preferredRouter?: unknown; tracemakerManifestUrl?: unknown; krtDir?: unknown; autoInstallEngines?: unknown }>(
   settings: T,
-): Omit<T, "preferredRouter" | "tracemakerManifestUrl" | "krtDir"> {
-  const { preferredRouter: _preferred, tracemakerManifestUrl: _manifest, krtDir: _krt, ...rest } = settings;
+): Omit<T, "preferredRouter" | "tracemakerManifestUrl" | "krtDir" | "autoInstallEngines"> {
+  const { preferredRouter: _preferred, tracemakerManifestUrl: _manifest, krtDir: _krt, autoInstallEngines: _auto, ...rest } = settings;
   return rest;
 }
 

@@ -15,7 +15,7 @@ import { copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises
 import { basename, join } from "node:path";
 import { parseBoard } from "../board";
 import type { Requirements } from "../requirements";
-import type { LayoutHost } from "../layout/ctx";
+import { engineReady, type LayoutHost } from "../layout/ctx";
 import type { KrtPlan } from "../layout/plan";
 import { routeKrt } from "../layout/route";
 import { addNewCopper, convertTransforms, nameCopperNets, replaceCopper } from "../layout/text";
@@ -128,11 +128,18 @@ async function stepPlan(step: Step): Promise<KrtPlan> {
   return step.plan as unknown as KrtPlan;
 }
 
-/** Kept short: the bench shows the last 160 characters of a step error. */
-const needsKrt = (what: string) => `${what} needs KiCadRoutingTools (Settings → Routers, or FABDESK_KRT_DIR); without it: finish, fill:ROUTER, tighten`;
+/**
+ * Kept short: the bench shows the last 160 characters of a step error. With `why` (the host tried to install KRT and
+ * could not) its tail is kept, where the install's own advice is.
+ */
+export const needsKrt = (what: string, why?: string) =>
+  why
+    ? `${what}: KRT did not install (${why.length > 100 ? `…${why.slice(-100)}` : why})`
+    : `${what} needs KiCadRoutingTools (board_engines install krt, or FABDESK_KRT_DIR); without it: finish, fill:ROUTER, tighten`;
 
 export function createStepEngine(h: StepEngineHost): StepEngine {
-  const krt = () => h.layout.tools.krt;
+  /** KRT's root, installed on first use when the host can; `why` says what stopped that. */
+  const krt = () => engineReady(h.layout, "krt");
   return {
     async run(step: Step, input: StepInput): Promise<StepOutcome> {
       const { cur, out, pcb, signal } = input;
@@ -144,16 +151,18 @@ export function createStepEngine(h: StepEngineHost): StepEngine {
           return { dir: out, info: await fillRoute(h, step.router, cur, out, pcb, signal) };
         }
         case "krt": {
-          if (!krt()) {
-            if (isFinish(step)) return { dir: out, info: { ...(await fillRoute(h, h.fallbackRouter, cur, out, pcb, signal)), fallback: "KiCadRoutingTools not configured: finish ran on " + h.fallbackRouter } };
-            return { error: needsKrt(planName(step)) };
+          const k = await krt();
+          if (!k.path) {
+            if (isFinish(step)) return { dir: out, info: { ...(await fillRoute(h, h.fallbackRouter, cur, out, pcb, signal)), fallback: `KiCadRoutingTools ${k.why ? `did not install (${k.why})` : "not configured"}: finish ran on ${h.fallbackRouter}` } };
+            return { error: needsKrt(planName(step), k.why) };
           }
           // @pairs-todo reads what the start board fails
           await ensureScored(h, cur, pcb, signal);
           return { dir: out, info: await krtRoute(h, cur, out, pcb, await stepPlan(step), signal) };
         }
         case "repair": {
-          if (!krt()) return { error: needsKrt(`${planName(step)} after its rip`) };
+          const k = await krt();
+          if (!k.path) return { error: needsKrt(`${planName(step)} after its rip`, k.why) };
           await ensureScored(h, cur, pcb, signal);
           const args = (step.rip ?? []).map((x) => x.replace("{start}", input.start));
           if (args.includes("--spare-open-nets")) await ensureScored(h, input.start, pcb, signal);
@@ -164,7 +173,8 @@ export function createStepEngine(h: StepEngineHost): StepEngine {
           return { dir: routed, info: { rip, ...(await krtRoute(h, ripped, routed, pcb, await stepPlan(step), signal)) } };
         }
         case "nudge": {
-          if (!krt()) return { error: needsKrt("nudge (re-routing what it cuts)") };
+          const k = await krt();
+          if (!k.path) return { error: needsKrt("nudge (re-routing what it cuts)", k.why) };
           if (!step.moves) return { error: "nudge step has no moves" };
           const nudged = join(out, "nudged");
           const fixed = await fixedParts(h.req, join(cur, pcb));

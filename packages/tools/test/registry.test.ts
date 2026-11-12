@@ -313,6 +313,7 @@ describe("registry", () => {
       "board_release",
       "board_silk",
       "board_route",
+      "board_engines",
       "release_build",
       "render_pcb_readiness",
       "render_pcb_display",

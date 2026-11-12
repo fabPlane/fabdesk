@@ -112,7 +112,7 @@ export class ReviewCtx {
 }
 
 /** The one design hash: board, schematics, project files, rule files and requirements, plus `review.hash_extra` files. */
-export async function reviewHash(project: ReviewProject): Promise<{ hash: string; files: Record<string, string> }> {
+export async function reviewHash(project: Pick<ReviewProject, "dir" | "cfg">): Promise<{ hash: string; files: Record<string, string> }> {
   const d = await designHash(project.dir);
   const extra = project.cfg.hash_extra ?? [];
   const files = { ...d.files };

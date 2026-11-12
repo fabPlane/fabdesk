@@ -5,20 +5,26 @@
  * The release zip is a KiCad PCM package (`plugins/`, `resources/`, `metadata.json`); the registry
  * extracts it into `<root>/src`. `plugins/rust_router` bundles one prebuilt `grid_router` per platform
  * under a suffixed name and KRT's CLIs `import grid_router` from that folder, so the matching binary is
- * copied to the canonical name (what KRT's own `__init__._resolve_rust_binary` does inside KiCad).
+ * copied to the canonical name (what KRT's own `__init__._resolve_rust_binary` does inside KiCad). Where the
+ * release has no binary (linux-arm64, windows-arm64) it is built from the zip's `rust_router` with the
+ * machine's cargo; rustup is not bootstrapped (see docs/routers.md).
  *
- * Python: KRT's Rust core is built `abi3-py39`, so any CPython ≥ 3.9 runs it. Only the routing packages
- * (numpy, scipy, shapely) are installed: the scripts the board workflow runs (route, route_diff,
+ * Python: only the routing packages (numpy, scipy, shapely) are installed, hash-locked from `krt-lock.json`
+ * (`--require-hashes` on the uv and the pip path): the scripts the board workflow runs (route, route_diff,
  * route_planes, place_simple, check_floorplan, check_groups, net_forensics, make_unplaced) import nothing
  * else at the code paths it uses. Pillow (raster previews) and ortools (the bus step, ~100 MB) are optional
- * in KRT's own requirements and are left out.
+ * in KRT's own requirements and are left out. The lock's numpy needs CPython ≥ 3.12; a uv-managed 3.12 is
+ * the first choice, a system Python ≥ 3.12 the second, and when neither uv nor such a Python exists a pinned
+ * uv is downloaded into the fabdesk data dir (`uv.ts`) to provision one, so the machine needs nothing first.
  */
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
 import { layout } from "@fabdesk/board-workflow";
+import lock from "./krt-lock.json";
+import { bootstrapUv, UV_VERSION, type UvBootstrapDeps } from "./uv";
 
 export const KRT_VERSION = "0.23.8";
 export const KRT_SHA256 = "0179da836e6d41484701a9b840e2e30e94465cd7dc1c226e0c7bf850fe78453f";
@@ -26,19 +32,34 @@ export const KRT_SHA256 = "0179da836e6d41484701a9b840e2e30e94465cd7dc1c226e0c7bf
 export const KRT_BYTES = 16_067_806;
 export const KRT_URL = `https://github.com/drandyhaas/KiCadRoutingTools/releases/download/v${KRT_VERSION}/KiCadRoutingTools-${KRT_VERSION}.zip`;
 export const KRT_HOMEPAGE = "https://github.com/drandyhaas/KiCadRoutingTools";
-/** `rust_router/Cargo.toml` pins pyo3 `abi3-py39`. */
-export const KRT_MIN_PYTHON: readonly [number, number] = [3, 9];
-/** What uv provisions when it is available (a uv-managed CPython kept inside the install). */
+/**
+ * The oldest CPython the hash lock installs on (numpy 2.5.4 and scipy 1.18.1 need 3.12). The Rust core itself is
+ * built `abi3-py39`.
+ */
+export const KRT_MIN_PYTHON: readonly [number, number] = [3, 12];
+/** What uv provisions (a uv-managed CPython kept inside the install). */
 export const KRT_UV_PYTHON = "3.12";
-/** The versions every parity run of the board workflow used (KRT 0.23.8 build, Python 3.12). */
-export const KRT_PINNED_DEPS = ["numpy==2.5.4", "scipy==1.18.1", "shapely==2.2.0"] as const;
-/** KRT's own floors (`requirements.txt`), used when this Python has no wheels for the pins. */
-export const KRT_FLOOR_DEPS = ["numpy>=1.22.0", "scipy>=1.7.0", "shapely>=2.0"] as const;
+/** The versions every parity run of the board workflow used (KRT 0.23.8 build, Python 3.12); hashes in krt-lock.json. */
+export const KRT_PINNED_DEPS: readonly string[] = lock.packages.map((p) => `${p.name}==${p.version}`);
+/** The file the lock is written to inside the install, for `-r`. */
+export const KRT_LOCK_FILE = "krt-requirements.txt";
+
+/** `krt-lock.json` as a pip / uv requirements file: each pin with every hash. */
+export function krtLockText(): string {
+  return (
+    lock.packages
+      .map((p) => {
+        const marker = "marker" in p && typeof p.marker === "string" ? ` ; ${p.marker}` : "";
+        return [`${p.name}==${p.version}${marker} \\`, ...p.sha256.map((h, i) => `    --hash=sha256:${h}${i < p.sha256.length - 1 ? " \\" : ""}`)].join("\n");
+      })
+      .join("\n") + "\n"
+  );
+}
 
 export type KrtRun = (
   cmd: string,
   args: string[],
-  opts?: { env?: Record<string, string | undefined>; timeoutMs?: number; signal?: AbortSignal },
+  opts?: { env?: Record<string, string | undefined>; timeoutMs?: number; signal?: AbortSignal; cwd?: string },
 ) => Promise<{ code: number; out: string }>;
 
 export type KrtSetupDeps = {
@@ -53,14 +74,25 @@ export type KrtSetupDeps = {
   run?: KrtRun;
   signal?: AbortSignal;
   log?: (line: string) => void;
+  /**
+   * The fabdesk routers dir: where a pinned uv is downloaded when neither uv nor a Python ≥ 3.12 works. Without
+   * it (and without `bootstrapUv`) there is no bootstrap.
+   */
+  routersRoot?: string;
+  /** Download the pinned uv and return its path; injectable for tests. Default: `bootstrapUv(routersRoot)`. */
+  bootstrapUv?: () => Promise<string>;
+  fetch?: typeof fetch;
 };
 
 export type KrtSetupResult = {
   python: string;
   /** How the venv was made: `uv (managed 3.12)`, `uv + /usr/bin/python3`, `/usr/bin/python3 -m venv`, ... */
   via: string;
-  deps: "pinned" | "floors";
+  /** The packages always come from the hash lock. */
+  deps: "locked";
   gridRouter: string;
+  /** How grid_router got there: the release's prebuilt binary, or built here with cargo. */
+  rust: "prebuilt" | "built";
   /** Non-fatal context for the Settings card. */
   notice?: string;
 };
@@ -184,15 +216,15 @@ export function pythonCandidates(deps: KrtSetupDeps = {}): Interpreter[] {
   return out;
 }
 
-/** What to install when no Python works, per platform. */
+/** What to do when no Python could be set up, per platform (only reached when the uv bootstrap failed too). */
 export function krtPythonHint(platform: NodeJS.Platform = process.platform): string {
   const python =
     platform === "win32"
-      ? "Python 3.9+ from python.org (with the py launcher)"
+      ? "Python 3.12+ from python.org (with the py launcher)"
       : platform === "darwin"
-        ? "Python 3.9+ (python.org or Homebrew)"
-        : "Python 3.9+ with venv (python3-venv on Debian/Ubuntu)";
-  return `Install uv (https://docs.astral.sh/uv/) or ${python}, or set FABDESK_KRT_PYTHON to an interpreter, then Retry.`;
+        ? "Python 3.12+ (python.org or Homebrew)"
+        : "Python 3.12+ with venv (python3-venv on Debian/Ubuntu)";
+  return `Check the network (fabdesk downloads uv ${UV_VERSION} and CPython ${KRT_UV_PYTHON} from GitHub), or install uv (https://docs.astral.sh/uv/) or ${python}, or set FABDESK_KRT_PYTHON, then Retry.`;
 }
 
 const tail = (s: string, n = 300) => {
@@ -200,10 +232,36 @@ const tail = (s: string, n = 300) => {
   return t.length > n ? `…${t.slice(-n)}` : t;
 };
 
+/** Where cargo lives: FABDESK_KRT_CARGO, PATH, then rustup's default `~/.cargo/bin`. */
+export function findCargo(deps: KrtSetupDeps = {}): string | null {
+  const platform = deps.platform ?? process.platform;
+  const env = deps.env ?? process.env;
+  const exists = deps.exists ?? existsSync;
+  const which = deps.which ?? defaultWhich(env);
+  const fromEnv = env["FABDESK_KRT_CARGO"]?.trim();
+  if (fromEnv) return exists(fromEnv) ? fromEnv : null;
+  const onPath = which("cargo");
+  if (onPath) return onPath;
+  const home = deps.home ?? homedir();
+  const candidate = pathFor(platform).join(home, ".cargo", "bin", platform === "win32" ? "cargo.exe" : "cargo");
+  return exists(candidate) ? candidate : null;
+}
+
+/** What `cargo build --release` names the cdylib, per OS. */
+export function cargoArtifactName(platform: NodeJS.Platform): string {
+  return platform === "win32" ? "grid_router.dll" : platform === "darwin" ? "libgrid_router.dylib" : "libgrid_router.so";
+}
+
+/** Why grid_router cannot be had on this machine without a Rust toolchain. Kept to one actionable sentence. */
+export function krtNoRustMessage(platform: NodeJS.Platform, arch: string): string {
+  const linker = platform === "win32" ? "the Visual Studio C++ Build Tools" : "a C compiler (cc)";
+  return `KiCadRoutingTools ${KRT_VERSION} ships no grid_router for ${platform}-${arch}; building it needs Rust (cargo, https://rustup.rs) and ${linker}. Install them and Retry, or set FABDESK_KRT_DIR to a build.`;
+}
+
 /**
- * Make `<root>` runnable after the zip is extracted into `<root>/src`: canonical `grid_router`, a venv at
- * `<root>/venv` with numpy, scipy and shapely, and an import check. Throws with the reason (and what to
- * install) when it cannot.
+ * Make `<root>` runnable after the zip is extracted into `<root>/src`: canonical `grid_router` (copied, or built with
+ * cargo where the release has none), a venv at `<root>/venv` with the hash-locked numpy, scipy and shapely, and an
+ * import check. Throws with the reason (and what to do) when it cannot.
  */
 export async function setupKrt(root: string, deps: KrtSetupDeps = {}): Promise<KrtSetupResult> {
   const platform = deps.platform ?? process.platform;
@@ -217,40 +275,70 @@ export async function setupKrt(root: string, deps: KrtSetupDeps = {}): Promise<K
   if (!exists(p.join(k.plugins, "py_router", "route.py")))
     throw new Error(`KiCadRoutingTools archive has no plugins/py_router/route.py (unexpected layout)`);
 
-  // 1. The Rust core under the name KRT imports.
+  // 1. The Rust core under the name KRT imports, or the toolchain to build it (checked before any Python download).
   const rust = krtRustBinary(platform, arch);
-  if (!rust) throw new Error(`KiCadRoutingTools ${KRT_VERSION} ships no router binary for ${platform}-${arch}`);
   const rustDir = p.join(k.plugins, "rust_router");
-  const gridRouter = p.join(rustDir, rust.canonical);
-  if (!exists(gridRouter)) {
-    const source = p.join(rustDir, rust.source);
-    if (!exists(source)) throw new Error(`KiCadRoutingTools archive is missing rust_router/${rust.source}`);
-    copyFileSync(source, gridRouter);
+  const canonical = platform === "win32" ? "grid_router.pyd" : "grid_router.so";
+  const gridRouter = p.join(rustDir, rust?.canonical ?? canonical);
+  let cargo: string | null = null;
+  if (rust) {
+    if (!exists(gridRouter)) {
+      const source = p.join(rustDir, rust.source);
+      if (!exists(source)) throw new Error(`KiCadRoutingTools archive is missing rust_router/${rust.source}`);
+      copyFileSync(source, gridRouter);
+    }
+  } else if (!exists(gridRouter)) {
+    if (!exists(p.join(rustDir, "Cargo.toml"))) throw new Error(`KiCadRoutingTools archive has no rust_router/Cargo.toml to build grid_router from`);
+    cargo = findCargo(deps);
+    if (!cargo) throw new Error(krtNoRustMessage(platform, arch));
   }
 
-  // 2. A venv. Child processes get no PYTHONHOME/PYTHONPATH from the daemon's environment.
+  // 2. A venv with the hash-locked packages. Child processes get no PYTHONHOME/PYTHONPATH from the daemon's environment.
   const childEnv: Record<string, string | undefined> = { PYTHONHOME: undefined, PYTHONPATH: undefined, PIP_NO_INPUT: "1", PIP_DISABLE_PIP_VERSION_CHECK: "1" };
   const venv = p.join(root, "venv");
   const python = k.python[0]!;
+  const lockFile = p.join(root, KRT_LOCK_FILE);
+  writeFileSync(lockFile, krtLockText());
   const sig = deps.signal ? { signal: deps.signal } : {};
   const tried: string[] = [];
   const freshVenv = () => rm(venv, { recursive: true, force: true });
-  const uv = findUv(deps);
-  const uvEnv = { ...childEnv, UV_PYTHON_INSTALL_DIR: p.join(root, "python"), UV_NO_CONFIG: "1" };
-  type Made = { via: string; install: (pkgs: readonly string[]) => Promise<{ code: number; out: string }> };
+  // uv's own cache is not used: everything it fetches lands in the install (the managed Python in <root>/python).
+  const uvEnv = { ...childEnv, UV_PYTHON_INSTALL_DIR: p.join(root, "python"), UV_NO_CONFIG: "1", UV_NO_CACHE: "1", UV_LINK_MODE: "copy" };
+  const installTimeout = { timeoutMs: 20 * 60_000, ...sig };
+  const pipInstall = () =>
+    run(python, ["-E", "-s", "-m", "pip", "install", "--require-hashes", "--only-binary=:all:", "--no-deps", "-r", lockFile], { env: childEnv, ...installTimeout });
+  const uvInstall = (uv: string) =>
+    run(uv, ["pip", "install", "--python", python, "--require-hashes", "--only-binary", ":all:", "--no-deps", "-r", lockFile], { env: uvEnv, ...installTimeout });
 
-  const explicit = env["FABDESK_KRT_PYTHON"]?.trim();
-  const viaPip = (label: string): Made => ({
-    via: `${label} -m venv`,
-    install: (pkgs) =>
-      run(python, ["-E", "-s", "-m", "pip", "install", "--only-binary=:all:", ...pkgs], { env: childEnv, timeoutMs: 15 * 60_000, ...sig }),
-  });
-  const viaUv = (uvPath: string, label: string): Made => ({
-    via: label,
-    install: (pkgs) =>
-      run(uvPath, ["pip", "install", "--python", python, "--only-binary", ":all:", ...pkgs], { env: uvEnv, timeoutMs: 15 * 60_000, ...sig }),
-  });
-  const tryInterpreter = async (it: Interpreter): Promise<Made | null> => {
+  /** Install the lock into the venv just made; true when it took. */
+  const installLock = async (label: string, install: () => Promise<{ code: number; out: string }>): Promise<boolean> => {
+    log(`KRT: installing ${KRT_PINNED_DEPS.join(" ")} (hash-locked) via ${label}`);
+    // uv and pip print nothing useful until they finish; a heartbeat keeps a slow download from looking hung
+    const t0 = Date.now();
+    const beat = setInterval(() => log(`KRT: still installing the Python packages (${Math.round((Date.now() - t0) / 1000)} s; ~60 MB of wheels)`), 60_000);
+    const r = await install().finally(() => clearInterval(beat));
+    if (r.code === 0) return true;
+    tried.push(`${label}: the hash lock did not install (${tail(r.out, 160) || `exit ${r.code}`})`);
+    await freshVenv();
+    return false;
+  };
+
+  const uvManaged = async (uv: string, label: string): Promise<string | null> => {
+    deps.signal?.throwIfAborted();
+    await freshVenv();
+    log(`KRT: ${label}: venv on a managed CPython ${KRT_UV_PYTHON} (downloads it once)`);
+    const r = await run(uv, ["venv", "--python", KRT_UV_PYTHON, "--python-preference", "only-managed", venv], { env: uvEnv, timeoutMs: 10 * 60_000, ...sig });
+    if (r.code !== 0 || !exists(python)) {
+      tried.push(`${label} managed ${KRT_UV_PYTHON}: ${tail(r.out, 120) || `exit ${r.code}`}`);
+      await freshVenv();
+      return null;
+    }
+    const via = `${label} (managed Python ${KRT_UV_PYTHON})`;
+    return (await installLock(via, () => uvInstall(uv))) ? via : null;
+  };
+
+  const tryInterpreter = async (it: Interpreter, uv: string | null): Promise<string | null> => {
+    deps.signal?.throwIfAborted();
     const probeCode = "import sys; print('%d.%d' % sys.version_info[:2]); print(sys.executable)";
     const probe = await run(it.cmd, [...it.args, "-E", "-s", "-c", probeCode], { env: childEnv, timeoutMs: 20_000, ...sig }).catch(
       (e: Error) => ({ code: -1, out: e.message }),
@@ -262,80 +350,100 @@ export async function setupKrt(root: string, deps: KrtSetupDeps = {}): Promise<K
     }
     const ver: [number, number] = [Number(m[1]), Number(m[2])];
     if (ver[0] < KRT_MIN_PYTHON[0] || (ver[0] === KRT_MIN_PYTHON[0] && ver[1] < KRT_MIN_PYTHON[1])) {
-      tried.push(`${it.label}: Python ${ver.join(".")} < ${KRT_MIN_PYTHON.join(".")}`);
+      tried.push(`${it.label}: Python ${ver.join(".")} < ${KRT_MIN_PYTHON.join(".")} (the lock's numpy needs it)`);
       return null;
     }
+    log(`KRT: trying ${it.label} (Python ${ver.join(".")})`);
     const executable = probe.out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).at(-1) ?? it.cmd;
     await freshVenv();
     if (uv) {
       // uv makes the venv without ensurepip (absent on Debian without python3-venv) and installs faster.
       const r = await run(uv, ["venv", "--python", executable, "--python-preference", "only-system", venv], { env: uvEnv, timeoutMs: 120_000, ...sig });
-      if (r.code === 0 && exists(python)) return viaUv(uv, `uv + ${it.label}`);
+      if (r.code === 0 && exists(python)) return (await installLock(`uv + ${it.label}`, () => uvInstall(uv))) ? `uv + ${it.label}` : null;
       tried.push(`uv + ${it.label}: ${tail(r.out, 120) || `exit ${r.code}`}`);
       await freshVenv();
     }
     const r = await run(it.cmd, [...it.args, "-E", "-s", "-m", "venv", venv], { env: childEnv, timeoutMs: 120_000, ...sig });
-    if (r.code === 0 && exists(python)) return viaPip(it.label);
+    if (r.code === 0 && exists(python)) return (await installLock(`${it.label} -m venv`, pipInstall)) ? `${it.label} -m venv` : null;
     tried.push(`${it.label} -m venv: ${tail(r.out, 120) || `exit ${r.code}`}`);
+    await freshVenv();
     return null;
   };
 
-  let chosen: Made | null = null;
+  let via: string | null = null;
+  const explicit = env["FABDESK_KRT_PYTHON"]?.trim();
   if (explicit) {
-    chosen = await tryInterpreter({ label: explicit, cmd: explicit, args: [] });
-    if (!chosen) throw new Error(`FABDESK_KRT_PYTHON could not make the KiCadRoutingTools venv (${tried.join("; ")})`);
+    via = await tryInterpreter({ label: explicit, cmd: explicit, args: [] }, findUv(deps));
+    if (!via) throw new Error(`FABDESK_KRT_PYTHON could not make the KiCadRoutingTools venv (${tried.join("; ")})`);
   } else {
-    if (uv) {
-      // A uv-managed CPython inside the install: same Python as the parity runs, removed by Uninstall,
-      // untouched by OS Python upgrades.
-      await freshVenv();
-      log(`KRT: uv venv (managed Python ${KRT_UV_PYTHON})`);
-      const r = await run(uv, ["venv", "--python", KRT_UV_PYTHON, "--python-preference", "only-managed", venv], { env: uvEnv, timeoutMs: 10 * 60_000, ...sig });
-      if (r.code === 0 && exists(python)) chosen = viaUv(uv, `uv (managed Python ${KRT_UV_PYTHON})`);
-      else tried.push(`uv managed ${KRT_UV_PYTHON}: ${tail(r.out, 120) || `exit ${r.code}`}`);
+    // uv found on this machine (managed 3.12, the parity runs' Python), then a system Python ≥ 3.12, then a pinned uv
+    // downloaded into the fabdesk data dir: the last step needs nothing installed first.
+    const uv = findUv(deps);
+    if (uv) via = await uvManaged(uv, "uv");
+    for (const it of via ? [] : pythonCandidates(deps)) {
+      via = await tryInterpreter(it, uv);
+      if (via) break;
     }
-    for (const it of chosen ? [] : pythonCandidates(deps)) {
+    const bootstrap = deps.bootstrapUv ?? (deps.routersRoot ? () => bootstrapUv(deps.routersRoot!, uvBootstrapDeps(deps)) : null);
+    if (!via && bootstrap) {
       deps.signal?.throwIfAborted();
-      log(`KRT: trying ${it.label}`);
-      chosen = await tryInterpreter(it);
-      if (chosen) break;
+      log(`KRT: no uv and no Python ≥ ${KRT_MIN_PYTHON.join(".")} here; fetching uv ${UV_VERSION}`);
+      const fetched = await bootstrap().catch((e: Error) => {
+        tried.push(`uv ${UV_VERSION} download: ${tail(e.message, 160)}`);
+        return null;
+      });
+      if (fetched) via = await uvManaged(fetched, `uv ${UV_VERSION} (fetched)`);
     }
   }
-  if (!chosen) {
+  if (!via) {
     await freshVenv();
     throw new Error(
-      `No Python ≥ ${KRT_MIN_PYTHON.join(".")} could make the KiCadRoutingTools venv${tried.length ? ` (tried: ${tried.join("; ")})` : " (none found)"}. ${krtPythonHint(platform)}`,
+      `No Python ≥ ${KRT_MIN_PYTHON.join(".")} could take the KiCadRoutingTools lock${tried.length ? ` (tried: ${tried.join("; ")})` : " (none found)"}. ${krtPythonHint(platform)}`,
     );
   }
 
-  // 3. The routing packages: the pinned set first, KRT's floors when this Python has no wheels for the pins.
-  log(`KRT: installing ${KRT_PINNED_DEPS.join(" ")} via ${chosen.via}`);
-  let depsKind: KrtSetupResult["deps"] = "pinned";
-  let r = await chosen.install(KRT_PINNED_DEPS);
-  if (r.code !== 0) {
+  // 3. grid_router from source where the release has no binary (pyo3 abi3: the venv's Python only steers the build).
+  if (cargo) {
     deps.signal?.throwIfAborted();
-    log(`KRT: pinned set failed (${tail(r.out, 200)}); trying ${KRT_FLOOR_DEPS.join(" ")}`);
-    depsKind = "floors";
-    r = await chosen.install(KRT_FLOOR_DEPS);
+    const target = p.join(root, "build", "cargo-target");
+    log(`KRT: building grid_router for ${platform}-${arch} with ${cargo} (a few minutes)`);
+    const b = await run(cargo, ["build", "--release", "--manifest-path", p.join(rustDir, "Cargo.toml")], {
+      env: { ...childEnv, CARGO_TARGET_DIR: target, PYO3_PYTHON: python, CARGO_TERM_COLOR: "never" },
+      timeoutMs: 45 * 60_000,
+      cwd: rustDir,
+      ...sig,
+    });
+    const built = p.join(target, "release", cargoArtifactName(platform));
+    if (b.code !== 0 || !exists(built)) throw new Error(`building grid_router with cargo failed: ${tail(b.out)}`);
+    copyFileSync(built, gridRouter);
+    await rm(target, { recursive: true, force: true });
   }
-  if (r.code !== 0) throw new Error(`installing numpy, scipy, shapely failed (${chosen.via}): ${tail(r.out)}`);
 
   // 4. Import check: the interpreter, the packages and the Rust core load together.
   const check = await run(
     python,
-    ["-E", "-s", "-c", "import sys; sys.path.insert(0, sys.argv[1]); import numpy, scipy, shapely, grid_router; print('ok', getattr(grid_router, '__version__', '?'))", rustDir],
+    ["-E", "-s", "-c", "import sys; sys.path.insert(0, sys.argv[1]); import numpy, scipy, shapely, grid_router; print('ok', getattr(grid_router, '__version__', '?'), numpy.__version__)", rustDir],
     { env: childEnv, timeoutMs: 60_000, ...sig },
   );
   if (check.code !== 0 || !/\bok\b/.test(check.out)) throw new Error(`KiCadRoutingTools import check failed: ${tail(check.out)}`);
-  log(`KRT: ready (${chosen.via}; ${tail(check.out, 60)})`);
+  log(`KRT: ready (${via}; ${tail(check.out, 60)})`);
   return {
     python,
-    via: chosen.via,
-    deps: depsKind,
+    via,
+    deps: "locked",
     gridRouter,
-    ...(depsKind === "floors"
-      ? { notice: `This Python has no wheels for ${KRT_PINNED_DEPS.join(", ")}; installed KRT's floors (${KRT_FLOOR_DEPS.join(", ")}) instead, so results may differ slightly from the reference runs.` }
-      : {}),
+    rust: cargo ? "built" : "prebuilt",
+    ...(cargo ? { notice: `grid_router was built here from the ${KRT_VERSION} source with ${cargo} (the release has no ${platform}-${arch} binary).` } : {}),
+  };
+}
+
+function uvBootstrapDeps(deps: KrtSetupDeps): UvBootstrapDeps {
+  return {
+    ...(deps.platform ? { platform: deps.platform } : {}),
+    ...(deps.arch ? { arch: deps.arch } : {}),
+    ...(deps.fetch ? { fetch: deps.fetch } : {}),
+    ...(deps.signal ? { signal: deps.signal } : {}),
+    ...(deps.log ? { log: deps.log } : {}),
   };
 }
 
@@ -360,7 +468,7 @@ const defaultRun: KrtRun = (cmd, args, opts = {}) =>
   new Promise((resolve, reject) => {
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries({ ...process.env, ...opts.env })) if (value !== undefined) env[key] = value;
-    const child = spawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    const child = spawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, ...(opts.cwd ? { cwd: opts.cwd } : {}) });
     let out = "";
     const keep = (chunk: Buffer) => {
       out = (out + chunk.toString()).slice(-64_000);

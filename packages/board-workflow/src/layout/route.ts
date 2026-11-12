@@ -8,7 +8,7 @@ import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Acceptance, Requirements } from "../requirements";
 import { readJsonOrNull } from "../files";
-import { FlowError, type LayoutHost } from "./ctx";
+import { FlowError, requireEngine, type LayoutHost } from "./ctx";
 import { krtPaths, krtRouterScript, routeSummaries } from "./engines";
 import { pathExists } from "./fsx";
 import { applyAliases, boardPlan, expandArgs, pairClasses, signalLayers, BUILTIN_PLANS, type ExpandedPlan, type KrtPlan, type Selectors } from "./plan";
@@ -46,13 +46,13 @@ export interface RouteKrtRecord {
 
 /** Run a KRT plan on `placed`; `<out>/score` holds the scored board when `score` is set and every stage wrote a board. */
 export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<RouteKrtRecord> {
-  if (!host.tools.krt) throw new FlowError("KiCadRoutingTools is not installed (Settings → Routers, or FABDESK_KRT_DIR)");
+  const krtRoot = await requireEngine(host, "krt");
   const acc = o.req.acceptance;
   const plan = boardPlan(typeof o.plan === "string" ? await loadPlan(o.plan) : structuredClone(o.plan), acc);
   if (await pathExists(o.out)) throw new FlowError(`${o.out} exists`);
   await mkdir(o.out, { recursive: true });
   await writeFile(join(o.out, "plan.json"), JSON.stringify(plan, null, 1) + "\n");
-  const k = krtPaths(plan.krt?.root ?? host.tools.krt);
+  const k = krtPaths(plan.krt?.root ?? krtRoot);
   const native = join(o.placed, `${o.stem}.kicad_pcb`);
 
   // KRT input: (at ...) poses, aliased net names, project files beside every stage board.
@@ -173,8 +173,7 @@ export interface RoutePipelineOptions {
 
 /** TraceMaker: session stages for the plan's nets, then the CLI for everything left; scored into `<out>/score`. */
 export async function routePipeline(host: LayoutHost, o: RoutePipelineOptions): Promise<Record<string, unknown>> {
-  const tmBin = host.tools.tracemaker;
-  if (!tmBin) throw new FlowError("TraceMaker is not installed (Settings → Routers, or TRACEMAKER_BIN)");
+  const tmBin = await requireEngine(host, "tracemaker");
   const acc = o.req.acceptance;
   const plan = (await loadPlan(o.plan)) as unknown as TmPlan;
   if (await pathExists(o.out)) throw new FlowError(`${o.out} exists`);

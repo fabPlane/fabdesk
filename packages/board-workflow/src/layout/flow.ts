@@ -16,7 +16,7 @@ import { basename, isAbsolute, join, resolve } from "node:path";
 import { checkAcceptance } from "../accept";
 import { parseBoard } from "../board";
 import { readJsonOrNull } from "../files";
-import { admitted, FlowError, type LayoutHost } from "./ctx";
+import { admitted, engineReady, FlowError, type LayoutHost } from "./ctx";
 import { facing } from "./facing";
 import { pathExists } from "./fsx";
 import { placeKrt, type PlaceRecord } from "./place";
@@ -140,8 +140,11 @@ export async function stageCheck(host: LayoutHost, st: FlowState, opts: LayoutCh
   const lines: string[] = [];
   const need = (ok: unknown, msg: string, fix: string) => void (ok || fails.push(`${msg} -> ${fix}`));
 
-  need(host.tools.krt && (await pathExists(join(host.tools.krt, "src/plugins"))), `krt missing at ${host.tools.krt ?? "(not installed)"}`, "install KiCadRoutingTools in Settings → Routers, or set FABDESK_KRT_DIR");
-  need(host.tools.tracemaker && (await pathExists(host.tools.tracemaker)), `tracemaker missing at ${host.tools.tracemaker ?? "(not installed)"}`, "install it in Settings → Routers, or set TRACEMAKER_BIN");
+  // a missing engine installs here when the host can (first use); an override that is set is checked as given
+  const krt = await engineReady(host, "krt");
+  const tm = await engineReady(host, "tracemaker");
+  need(krt.path && (await pathExists(join(krt.path, "src/plugins"))), `krt missing at ${krt.path ?? "(not installed)"}${krt.why ? ` (${krt.why})` : ""}`, "board_engines install krt, Settings → Routers, or set FABDESK_KRT_DIR");
+  need(tm.path && (await pathExists(tm.path)), `tracemaker missing at ${tm.path ?? "(not installed)"}${tm.why ? ` (${tm.why})` : ""}`, "board_engines install tracemaker, Settings → Routers, or set TRACEMAKER_BIN");
   need(host.tools.kicadCli, "no KiCad CLI", "install KiCad or set KICAD_CLI");
   info["disk_gib"] = round1(await host.diskFreeGiB(st.ws));
   info["mem_avail_gib"] = round1(await host.memAvailableGiB());
@@ -421,9 +424,10 @@ export async function stageRoute(host: LayoutHost, st: FlowState): Promise<Stage
   };
 
   const tmBranch = async (): Promise<ScoreFigures | null> => {
-    if (!host.tools.tracemaker) {
+    const tmReady = await engineReady(host, "tracemaker");
+    if (!tmReady.path) {
       results["tm"] = null;
-      results["tm_skipped"] = "TraceMaker is not installed";
+      results["tm_skipped"] = tmReady.why ?? "TraceMaker is not installed";
       return null;
     }
     const t0 = Date.now();

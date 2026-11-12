@@ -18,6 +18,8 @@ import {
   clientSupportsApps,
   createRegistry,
   FABDESK_SERVER_ICONS,
+  MCP_CLIENT_META,
+  type McpClientHint,
   type ProjectHandle,
 } from "@fabdesk/tools";
 import { locateAppBridgeFile } from "./app-bridge";
@@ -29,7 +31,15 @@ import { resolveConfig } from "./config";
 import { createContextFactory } from "./context";
 import { Store } from "./db";
 import { logger, errMsg } from "./log";
-import { DEFAULT_AGENT_TOOLSETS, INSTRUCTIONS } from "./mcp-sessions";
+import {
+  applyStartToolsets,
+  boardWorkflowInstructions,
+  durableWaitForClient,
+  INSTRUCTIONS,
+  projectStartToolsets,
+  registerBoardWorkflowDocs,
+  startOptionsFor,
+} from "./mcp-sessions";
 import { ProjectStore } from "./projects";
 import { pidAlive } from "./serve";
 
@@ -39,6 +49,11 @@ export type McpStdioOptions = {
   dataDir?: string;
   /** Always list the MCP Apps views (Codex / ChatGPT plugin). Default: only for clients that advertise MCP Apps. */
   apps?: boolean;
+  /**
+   * The host's per-call tool timeout in seconds, when it was raised (Codex `tool_timeout_sec`). Board jobs then wait just
+   * under it before returning a job id; unknown, they wait 50 s for hosts other than Claude Code (`durableWaitForClient`).
+   */
+  toolTimeoutSec?: number;
 };
 
 export async function readHandshake(path: string): Promise<DaemonHandshake | null> {
@@ -84,7 +99,7 @@ export async function runMcpStdio(opts: McpStdioOptions = {}): Promise<void> {
     const hs = await findLiveDaemon(config.handshakePath);
     if (hs) {
       logger.info("proxying stdio MCP to the running daemon", { port: hs.port, pid: hs.pid });
-      await proxyToDaemon(hs, projectDir, opts.apps === true);
+      await proxyToDaemon(hs, projectDir, opts.apps === true, opts.toolTimeoutSec);
       return;
     }
     logger.info("no live daemon; running standalone MCP server");
@@ -97,6 +112,7 @@ async function proxyToDaemon(
   hs: DaemonHandshake,
   projectDir: string | null,
   apps: boolean,
+  toolTimeoutSec?: number,
 ): Promise<void> {
   type Upstream = { client: Client; transport: StreamableHTTPClientTransport };
   let server: Server | null = null;
@@ -108,6 +124,8 @@ async function proxyToDaemon(
     // The daemon sees this proxy's capabilities, not the host's, so MCP Apps are requested explicitly.
     const url = new URL(`http://${hs.host}:${hs.port}/mcp`);
     if (withApps) url.searchParams.set("apps", "on");
+    // The daemon starts the session as a desktop run on this project would (the board toolset for a placed board).
+    if (projectDir) url.searchParams.set("project", projectDir);
     const transport = new StreamableHTTPClientTransport(url, {
       requestInit: { headers: { authorization: `Bearer ${hs.token}` } },
     });
@@ -150,6 +168,16 @@ async function proxyToDaemon(
     if (request.method === "tools/call" && projectDir) {
       const args = (params["arguments"] as Record<string, unknown> | undefined) ?? {};
       if (args["project"] === undefined) params["arguments"] = { ...args, project: projectDir };
+    }
+    // The daemon sees this proxy, not the host: name the host so board jobs wait within its tool timeout.
+    if (request.method === "tools/call") {
+      const host = downstream.getClientVersion();
+      const client: McpClientHint = {
+        ...(host?.name ? { name: host.name } : {}),
+        ...(host?.version ? { version: host.version } : {}),
+        ...(toolTimeoutSec ? { toolTimeoutSec } : {}),
+      };
+      params["_meta"] = { ...((params["_meta"] as Record<string, unknown> | undefined) ?? {}), [MCP_CLIENT_META]: client };
     }
     return upstream.client.request({ method: request.method, params }, Any as never);
   };
@@ -267,14 +295,24 @@ async function standalone(opts: McpStdioOptions, projectDir: string | null): Pro
     tokens: new TokenSet(config.token),
     defaultProject: async () => defaultProject,
   });
+  // The start set and instructions a daemon session on this project gets (mcp-sessions).
+  const start = new URLSearchParams();
+  applyStartToolsets(start, await projectStartToolsets(registry, defaultProject));
+  const boardDocs = registry.get("board_check") !== undefined;
   const server = new McpServer(
     { name: "fabdesk", title: "fabPlane", version: config.version, icons: FABDESK_SERVER_ICONS },
-    { instructions: INSTRUCTIONS },
+    {
+      instructions:
+        INSTRUCTIONS + (boardDocs ? boardWorkflowInstructions({ listed: start.get("start") === "board" }) : ""),
+    },
   );
   attachToRegistry(server, registry, ctxFactory, {
-    initialToolsets: [...DEFAULT_AGENT_TOOLSETS],
+    ...startOptionsFor(start, registry),
     apps: opts.apps ? "on" : "auto",
+    durableWaitMs: (client) =>
+      durableWaitForClient(client, { ...(opts.toolTimeoutSec ? { toolTimeoutSec: opts.toolTimeoutSec } : {}) }),
   });
+  if (boardDocs) registerBoardWorkflowDocs(server);
   const stdio = new StdioServerTransport();
   await server.connect(stdio);
   await new Promise<void>((resolveDone) => {

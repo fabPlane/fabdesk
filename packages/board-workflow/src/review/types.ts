@@ -183,5 +183,7 @@ export interface CustomSpec {
   /** Shell command with {pcb} {sch} {project} {netlist} {spec} {out}. Prints a JSON list of findings. */
   run: string;
   timeout?: number;
+  /** "sh" | "bash" | "cmd" | "powershell" | "pwsh"; default the platform shell (`/bin/sh`, Windows `cmd.exe`). */
+  shell?: string;
   _src?: string;
 }

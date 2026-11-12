@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, open, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { currentReviewHash } from "@fabdesk/board-workflow";
 import { acceptSummary, type AcceptRecord } from "@fabdesk/protocol";
 
 export type AcceptanceState = {
@@ -88,9 +89,10 @@ export async function initDoneMode(projectDir: string, boardAlreadyPlaced: boole
 }
 
 /**
- * The project's review gate as the board tools last reported it for the saved board. The board tools record it when
- * they run on the project's board (`board_check` on the review checks); a board change since
- * then makes it stale. pass = the review is current and every finding is settled.
+ * The project's review gate as the board tools last reported it. `board_review` records it (run, gate, dispose, fix,
+ * import_expert) together with the review's one design hash (board, schematics, project and rule files, requirements,
+ * `review.hash_extra`; `currentReviewHash`), so any change to what the review covered makes it stale here too: the
+ * Status page, Finish it and `board_release fab` all read this. pass = the review is current and every finding is settled.
  */
 export type ReviewGate = { state: "none" | "stale" | "open" | "errors" | "pass"; open?: number; mustFix?: number; at?: string };
 const gateFile = (dir: string) => join(dir, ".fabdesk", "board", "review-gate.json");
@@ -99,44 +101,50 @@ const boardSha = async (dir: string) => {
   const b = await readFile(join(dir, "board.kicad_pcb")).catch(() => null);
   return b ? createHash("sha256").update(b).digest("hex") : null;
 };
+const reviewDesignHash = (dir: string) => currentReviewHash(dir).catch(() => null);
 
 export async function recordReviewGate(projectDir: string, r: { current: boolean; open: number; mustFix: number; errors?: boolean }): Promise<void> {
   const state: ReviewGate["state"] = r.errors ? "errors" : !r.current ? "stale" : r.open > 0 ? "open" : "pass";
   await mkdir(join(projectDir, ".fabdesk", "board"), { recursive: true });
-  await writeFile(gateFile(projectDir), JSON.stringify({ state, open: r.open, mustFix: r.mustFix, boardSha256: await boardSha(projectDir), at: new Date().toISOString() }) + "\n");
+  await writeFile(gateFile(projectDir), JSON.stringify({ state, open: r.open, mustFix: r.mustFix, designHash: await reviewDesignHash(projectDir), at: new Date().toISOString() }) + "\n");
 }
 
 export async function readReviewGate(projectDir: string): Promise<ReviewGate> {
-  const d = JSON.parse((await readFile(gateFile(projectDir), "utf8").catch(() => "")) || "null") as (ReviewGate & { boardSha256?: string | null }) | null;
+  const d = JSON.parse((await readFile(gateFile(projectDir), "utf8").catch(() => "")) || "null") as (ReviewGate & { designHash?: string | null }) | null;
   if (!d?.state) return { state: "none" };
-  const stale = d.boardSha256 !== (await boardSha(projectDir));
+  // a record without a design hash (older, board-only records) cannot prove the design is unchanged: stale
+  const stale = !d.designHash || d.designHash !== (await reviewDesignHash(projectDir));
   return { state: stale ? "stale" : d.state, ...(d.open !== undefined ? { open: d.open } : {}), ...(d.mustFix !== undefined ? { mustFix: d.mustFix } : {}), ...(d.at ? { at: d.at } : {}) };
 }
 
 /**
  * Onboarding's guesses (net classes, pairs, anchors, planes) are the onboarding stage's first reading of a board; the review list
- * names what to confirm. `confirmed` is recorded by the agent after checking them against the circuit, and goes stale
- * when onboarding is derived again (onboard.json changes).
+ * names what to confirm. `confirmed` is recorded with `board_check {"confirm": true}` (who, when, a note) after the
+ * agent or owner checked them against the circuit, and goes stale when onboarding is derived again (onboard.json changes).
  */
-export type OnboardingCheck = { toConfirm: string[]; decided: string[]; counts: Record<string, unknown>; confirmed: boolean };
-const onboardDir = (dir: string) => join(dir, ".fabdesk", "board", "onboard");
+export type OnboardingCheck = { toConfirm: string[]; decided: string[]; counts: Record<string, unknown>; confirmed: boolean; by?: OnboardingConfirmer; at?: string };
+export type OnboardingConfirmer = "agent" | "owner";
+/** Where `onboard` (board-workflow) writes its record, and the confirmation kept beside it (bound to that record's hash). */
+const onboardFile = (dir: string) => join(dir, ".fabdesk", "board", "onboard.json");
+const confirmFile = (dir: string) => join(dir, ".fabdesk", "board", "onboard-confirmed.json");
 const shaOf = async (path: string) => {
   const b = await readFile(path).catch(() => null);
   return b ? createHash("sha256").update(b).digest("hex") : null;
 };
 
 export async function readOnboardingCheck(projectDir: string): Promise<OnboardingCheck | undefined> {
-  const raw = JSON.parse((await readFile(join(onboardDir(projectDir), "onboard.json"), "utf8").catch(() => "")) || "null") as { review?: string[]; decided?: string[]; counts?: Record<string, unknown> } | null;
+  const raw = JSON.parse((await readFile(onboardFile(projectDir), "utf8").catch(() => "")) || "null") as { review?: string[]; decided?: string[]; counts?: Record<string, unknown> } | null;
   if (!raw) return undefined;
-  const mark = JSON.parse((await readFile(join(onboardDir(projectDir), "confirmed.json"), "utf8").catch(() => "")) || "null") as { onboardSha256?: string } | null;
-  const confirmed = !!mark?.onboardSha256 && mark.onboardSha256 === (await shaOf(join(onboardDir(projectDir), "onboard.json")));
-  return { toConfirm: raw.review ?? [], decided: raw.decided ?? [], counts: raw.counts ?? {}, confirmed };
+  const mark = JSON.parse((await readFile(confirmFile(projectDir), "utf8").catch(() => "")) || "null") as { onboardSha256?: string; by?: OnboardingConfirmer; at?: string } | null;
+  const confirmed = !!mark?.onboardSha256 && mark.onboardSha256 === (await shaOf(onboardFile(projectDir)));
+  return { toConfirm: raw.review ?? [], decided: raw.decided ?? [], counts: raw.counts ?? {}, confirmed, ...(confirmed && mark?.by ? { by: mark.by } : {}), ...(confirmed && mark?.at ? { at: mark.at } : {}) };
 }
 
-export async function confirmOnboarding(projectDir: string, note?: string): Promise<boolean> {
-  const sha = await shaOf(join(onboardDir(projectDir), "onboard.json"));
+/** Record that the current onboarding proposals were checked against the circuit (false when nothing was onboarded). */
+export async function confirmOnboarding(projectDir: string, note?: string, by: OnboardingConfirmer = "agent"): Promise<boolean> {
+  const sha = await shaOf(onboardFile(projectDir));
   if (!sha) return false;
-  await writeFile(join(onboardDir(projectDir), "confirmed.json"), JSON.stringify({ onboardSha256: sha, at: new Date().toISOString(), ...(note ? { note } : {}) }) + "\n");
+  await writeFile(confirmFile(projectDir), JSON.stringify({ onboardSha256: sha, by, at: new Date().toISOString(), ...(note ? { note } : {}) }) + "\n");
   return true;
 }
 
@@ -144,7 +152,7 @@ export type BoardOverview = {
   history: Array<{ at: string; failing: string[]; pass: boolean; current: boolean }>;
   candidates: Array<{ id: string; verdict: string; startedAt: string; seconds: number; collateralNets: number }>;
   review: ReviewGate;
-  onboarding: { toConfirm: number; confirmed: boolean } | null;
+  onboarding: { toConfirm: number; confirmed: boolean; by?: OnboardingConfirmer; at?: string } | null;
 };
 
 /** What the Status page shows beyond the current A1-A9 line: recent results, edit candidates, review gate, onboarding. */
@@ -163,7 +171,7 @@ export async function readBoardOverview(projectDir: string, limit = 8): Promise<
   }));
   const candidates = cands.filter((c): c is NonNullable<typeof c> => !!c).sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, limit);
   const ob = await readOnboardingCheck(projectDir);
-  return { history, candidates, review: await readReviewGate(projectDir), onboarding: ob ? { toConfirm: ob.toConfirm.length, confirmed: ob.confirmed } : null };
+  return { history, candidates, review: await readReviewGate(projectDir), onboarding: ob ? { toConfirm: ob.toConfirm.length, confirmed: ob.confirmed, ...(ob.by ? { by: ob.by } : {}), ...(ob.at ? { at: ob.at } : {}) } : null };
 }
 
 /**
@@ -180,8 +188,8 @@ export async function releaseAdvisories(projectDir: string): Promise<string[]> {
   else if (acc.pass) lines.push("A1-A9 pass");
   else if (mode === "no-regression" && acc.regressions.length === 0) lines.push(`A1-A9: no new failure; ${acc.failing.join(", ")} failed before the work`);
   else lines.push(`A1-A9 failing ${acc.failing.join(", ")}${acc.regressions.length ? ` (new: ${acc.regressions.join(", ")})` : ""}`);
-  lines.push(gate.state === "pass" ? "Review gate passes" : gate.state === "none" ? "Review not run: board_check" : gate.state === "stale" ? "Review is stale (the board changed since): board_check" : gate.state === "errors" ? "Review has check errors" : `Review: ${gate.open ?? "?"} findings open (${gate.mustFix ?? 0} must-fix)`);
-  if (ob && !ob.confirmed && ob.toConfirm.length) lines.push(`Onboarding: ${ob.toConfirm.length} derived requirements not yet confirmed against the circuit`);
+  lines.push(gate.state === "pass" ? "Review gate passes" : gate.state === "none" ? "Review not run: board_review run" : gate.state === "stale" ? "Review is stale (the design changed since): board_review run" : gate.state === "errors" ? "Review has check errors" : `Review: ${gate.open ?? "?"} findings open (${gate.mustFix ?? 0} must-fix)`);
+  if (ob && !ob.confirmed && ob.toConfirm.length) lines.push(`Onboarding: ${ob.toConfirm.length} derived requirements not yet confirmed against the circuit: check them, then board_check {"confirm": true}`);
   return lines;
 }
 

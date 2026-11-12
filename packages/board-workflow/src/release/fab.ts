@@ -94,9 +94,9 @@ export interface FabResult {
 
 const reviewStop = (g: ReviewGateInfo): string | null => {
   if (g.state === "pass") return null;
-  if (g.state === "none") return "no review recorded for this board: run the review checks (board_check) first";
-  if (g.state === "stale") return "the review is of an earlier board (the board changed since): run the review checks again";
-  if (g.state === "errors") return "the review had check errors: fix them and run the review checks again";
+  if (g.state === "none") return "no review recorded for this design: run the review (board_review run) first";
+  if (g.state === "stale") return "the review is of an earlier design (board, schematics, project files or requirements changed since): run the review again (board_review run)";
+  if (g.state === "errors") return "the review had check errors: fix them and run the review again (board_review run)";
   return `review: ${g.open ?? "?"} findings open (${g.mustFix ?? 0} must-fix): settle each with evidence`;
 };
 

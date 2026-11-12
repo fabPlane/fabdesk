@@ -51,38 +51,54 @@ board_check ──► requirements (.fabdesk/board/requirements)  A1–A9 histor
 board_edit ◄── repair ── board_route (last mile bench, whole-board gate) ◄── board_route (place · rank · route)
      │                                                                               
      └─ candidate + origin.json ─► adoptCandidate ─► checkpoint · changed sheets · PCB delta as one KiCad commit · read-back
-board_review ── gate (design hash) ──► board_release fab (refuses unless the gate is pass for this exact board)
+board_review ── gate (design hash) ──► board_release fab (refuses unless the gate is pass for this exact design)
 board_review fix apply ──► board_edit (edit proposals become candidates; READY only if proof passes, finding gone, nothing new, 0 collateral)
 ```
 
 - **One definition of done.** `board_check` records A1–A9 with the board's hash. Finish it reads that record: a board that came in failing is
   done on "no new failure" against its first result; a built board is strict. The mode is set at the first Finish it and never loosened by a resume.
-- **One design hash** (board, schematics, project files, requirements). Any change makes the review stale; `board_release fab` reads the recorded gate.
+  Finish it applies the board plan (A1–A9 decide `verify`, a `review` milestone, the prompt naming `board_route` and `board_review`) only to a
+  project with a placed board, while the board tools are registered and Settings `boardChecksInFinishIt` is not off (`boardChecksApply`); a fresh
+  circuit design keeps the DRC/ERC plan (`route_run`, `verify_drc`) until its board exists. A run keeps the plan it started with.
+- **One design hash** (board, schematics, project and rule files, requirements, `review.hash_extra`: `reviewHash` / `currentReviewHash`). Any
+  change makes the review stale everywhere: the recorded gate (`review-gate.json`) carries that hash, so the Status page, Finish it and
+  `board_release fab` all read a gate that is stale as soon as anything the review covered changes. A gate recorded without it reads as stale.
 - **One adopt path.** Candidates (edit, silkscreen, last-mile accept) are folders with an `origin.json` (project + file hashes). `adoptCandidate`
-  refuses a stale origin, takes a checkpoint, writes changed schematic sheets, applies the PCB delta as one KiCad commit and reads it back.
+  refuses a stale origin, takes a checkpoint, copies the board and every sheet it will write to `adopt/<stamp>/before/`, writes changed schematic
+  sheets, applies the PCB delta as one KiCad commit and reads it back. All or nothing: if anything fails after the first write, the board and
+  sheets are restored from `before/` (a sheet that did not exist is removed) and the error says the project was restored, or names each file that
+  still differs and where its copy is.
+- **Onboarding is confirmed, not assumed.** Onboarding's derived requirements stay "not yet confirmed" (Status page, `release_build`) until
+  `board_check {"confirm": true}` records who checked them and when (`onboard-confirmed.json`, bound to `onboard.json`'s hash, so onboarding
+  again needs a new confirmation).
+- **Board jobs** (`board_job`, `durable.ts`) belong to the project they were started in: list, status, wait and cancel see only the caller's
+  project (`list` with `allProjects` shows every one). Finished jobs are kept 1 h (the newest 50); `cancel` reports how the job ended, or
+  `stopping`. Jobs live in the daemon's memory: an id from before a restart is reported as such, and the tool is run again.
 - **Toolsets by state.** A project with a placed board starts with `core`, `render` and `board` (not the circuit-authoring tools, one `load_toolset`
   away); a successful `circuit_build` or `pcb_update_from_schematic` switches `board` on for the session.
 
-State lives under `<project>/.fabdesk/board/`: `requirements/`, `accept/`, `done-mode.json`, `review/` (runs, `dispositions.json`, `intent.json`,
+State lives under `<project>/.fabdesk/board/`: `requirements/`, `onboard.json`, `onboard-confirmed.json`, `accept/`, `done-mode.json`, `review-gate.json`, `review/` (runs, `dispositions.json`, `intent.json`,
 `latest.json`), `layout/`, `lastmile/<workspace>/`, `edits/`, `release/`, `adopt/`.
 
 ## Engines
 
-The workflow is TypeScript; engines are programs it runs. The workflow installs none of them itself: KiCadRoutingTools and TraceMaker install on demand from Settings → Routers (`docs/routers.md`).
+The workflow is TypeScript; engines are programs it runs. KiCadRoutingTools and TraceMaker install themselves the first time a step needs them: the layout host's `ensure` (`board-host.ts` `engineEnsurer` → the router registry's `ensure`; `engineReady` / `requireEngine` in `layout/ctx.ts`) installs the missing engine inline with progress lines, one shared install for concurrent callers. KRT gets a private hash-locked Python (`krt-lock.json`, `--require-hashes`); when the machine has neither uv nor a Python ≥ 3.12 a pinned uv is downloaded to provision CPython 3.12, so nothing has to be preinstalled. A set override (Settings `krtDir`, `FABDESK_KRT_DIR`, `TRACEMAKER_BIN`) is used as given and never installed over; Settings `autoInstallEngines: false` turns installs on first use off; a failed automatic install is not retried automatically. The agent sees and installs engines with `board_engines` (status / install, a durable job); Settings → Routers and `registry.install(id)` remain. Details: `docs/routers.md`.
 
 | Engine | Used by | Found through |
 | --- | --- | --- |
 | `kicad-cli` (DRC, exports, Gerber plots) | all | the resolved KiCad CLI; DRC at **project severity** with owner-excluded items dropped (`runLiveDrc`) |
 | KiCadRoutingTools | `board_route` place, rank, route; every last-mile router, repair (rip) and nudge step; `why` forensics | Settings `krtDir`, then `FABDESK_KRT_DIR`, then the copy Settings → Routers → KiCadRoutingTools installed (pinned v0.23.8 + a private venv; `docs/routers.md`) |
 | TraceMaker | `board_route` route; last-mile `fill:tracemaker`; `why` causes and `validate` pair / return-path audits | the router registry (`docs/routers.md`), else `TRACEMAKER_BIN` |
-| fab_router, Freerouting | last-mile `fill:ROUTER`, and `finish` when KRT is missing | the PCB bridge (inside the app) |
+| fab_router, Freerouting | last-mile `fill:ROUTER`, and `finish` when KRT cannot be had | the PCB bridge (inside the app) |
 
 The last mile's step engine is `lastmile/engine.ts` (toolkit `lastmile.run_step`): a `krt` step runs its own plan through
 `routeKrt` (the same plan runner as layout) and merges the routed copper onto the native board; a `repair` step rips with
 `lastmile/rip.ts` and routes what the rip opened with its plan; a `nudge` step re-seats parts with `lastmile/nudge.ts`
 and re-routes the cut connections; `pairfix` runs in place; `fill` runs on the host's routers. Router steps work on boards of
-any file name (the host routers get a `board.kicad_pcb` scratch copy). Without KRT only `finish` (on the host router, recorded
-as a fallback), `fill` and the pair steps run; every other KRT step fails naming KRT.
+any file name (the host routers get a `board.kicad_pcb` scratch copy). A KRT step first installs KRT when it is missing; when it
+cannot be had (install error, broken override, auto-install off) only `finish` (on the host router, recorded as a fallback with the
+reason), `fill` and the pair steps run, and every other KRT step fails with the install's reason (its tail, so the bench's last 160
+characters keep the advice).
 | KiCad IPC | adopt | the bridge |
 
 ## Verification
@@ -107,13 +123,37 @@ toolkit and kicad-cli); each prints its usage in the file header. Full tables, w
 `bun run typecheck` passes. `bun run test` fails three tests, all in `packages/kicad/test/mechanical.test.ts`
 ("packaged kicad-cli mechanical truth"); they fail identically on a clean checkout of `origin/main`.
 
+### Verification on macOS and Windows
+
+The parts that touch the host OS are unit-tested with fake command output; `scripts/board-engines-smoke.ts` runs them for real and prints a
+JSON report (one row per check, exit 1 if any fails):
+
+- host memory: `sysinfo.hostMemory()` reads its platform source (`/proc`, `vm_stat`, `os`) with 0 < available ≤ total, and `sampleHost` can
+  statfs; on macOS the raw `vm_stat` and `sysctl vm.swapusage` output go into the report (the unit-test sample was written from memory);
+- `processRunning` finds the running Bun and not a made-up name (`pgrep`, `tasklist`); `treeRss` of the process (0 on Windows by design);
+- `nodeRun`: exit code, log flushed on resolve, stdout to a file, the child's priority read back (nice +5, or BELOW_NORMAL on Windows), 124 on
+  timeout;
+- a review custom check through the platform shell (`/bin/sh -c`, Windows `cmd.exe /d /s /c`; a check can name `"shell": "bash"` and others);
+- KiCadRoutingTools installed through the router registry (`install("krt")`) into a temp data dir, the venv Python from `krtPaths` importing
+  numpy, scipy, shapely and `grid_router`, and `routeKrt` routing `packages/board-workflow/test/fixtures/krt-smoke.kicad_pcb` (two nets, six
+  pads, both sides) with new copper and no failed nets.
+
+Run it locally with `bun scripts/board-engines-smoke.ts [--out report.json] [--keep] [--skip-krt]` (needs network for the KRT download).
+CI: `.github/workflows/board-engines.yml` runs it, plus `sysinfo.test.ts` and `resources-platform.test.ts`, on ubuntu-latest, a fresh
+Blacksmith macOS 15 (Apple Silicon) VM and a Blacksmith Windows Server 2025 VM, on PRs touching the board packages, routers or resources, and by
+`workflow_dispatch` (Actions → Board engines → Run workflow, or `gh workflow run board-engines.yml --ref <branch>`; dispatch needs the workflow
+on the default branch, so before merge push the branch and open a PR). Each job uploads `board-engines-smoke-<os>.json`. It needs only the three
+public submodules (no deploy key). Not covered: macOS x86_64, Windows on ARM (KRT ships no `grid_router` for it), Linux arm64, a machine
+without network, KiCad itself (no DRC or scoring in the smoke), and the desktop app's Settings → Routers flow (the smoke calls the registry
+directly).
+
 ## What differs from the oracle on purpose
 
 These are the port's own decisions, each recorded in the evidence file of its stage.
 
 - Anchor coordinates at micron precision (above). Orderings the oracle took from Python set hash order are sorted.
 - `place`: `(at …)` poses are handled (above). Scoring skips the schematic-parity DRC pass during routing (parity is not changed by routing); A3 is "not measured" there.
-- Review: custom checks (shell commands from project data) run only with `trustCustom`; the interconnect gate is a hook, default none; the BOM check reads BOM decisions written by `board_release bom`; storage is `.fabdesk/board/review/`, not a registry.
+- Review: custom checks (shell commands from project data) run only with `trustCustom`, in the platform shell unless the check names one; the interconnect gate is a hook, default none; the BOM check reads BOM decisions written by `board_release bom`; storage is `.fabdesk/board/review/`, not a registry.
 - Release: strict A1–A9 (no no-regression mode); exceptions only as `CHECK=FILE#ID` with an owner decision; nothing is written into the package folder until the gates pass; drill maps are Gerber X2, not PDF; the pixel-shift search replaces the FFT in `gerbcheck`.
 - Silk without pcbnew: shapes come from KiCad's own Gerber plots plus the board file, with a text-extent table measured against pcbnew (within 0.02 mm on all but one measured label).
 - Last mile: a `fit` picture is the SVG board view (rasterised by the host), not matplotlib; the nudge's fixed parts are the mechanical anchors plus locked footprints, not a spec regex.
@@ -122,7 +162,8 @@ These are the port's own decisions, each recorded in the evidence file of its st
 
 Not ported or not wired. None is hidden by a stub: an unported action fails by name.
 
-- **Last mile**: KiCadRoutingTools installs on demand (Settings → Routers), but it is not bundled: until it is installed (or `FABDESK_KRT_DIR` is set) the rip, route and nudge steps fail naming KRT and only `finish` (on the app's router), `fill` and the pair steps run. Its installer is verified on Linux x86_64 only; on macOS and Windows the Python lookup and the venv layout (`venv\Scripts\python.exe`) are covered by unit tests only. `fill:fastroute` is not available. `pairbench` (one table over several boards) is a harness, not a tool. The pair `vias` op keeps the toolkit's behaviour of never moving the N member alone (a signed-distance test; see the pair-op evidence).
+- **Engines**: KiCadRoutingTools and TraceMaker are not bundled; they install on first use (or with `board_engines`). Cold, KRT takes about 40 s on a fast link and ~125 MB of downloads; offline, the steps that need it fail with the reason and only `finish` (on the app's router), `fill` and the pair steps run. Linux arm64 and Windows arm64 have no prebuilt KRT core: it is built from source only when cargo and a C compiler are present (rustup is not bootstrapped; the source build is unverified on real ARM hardware and not reproducible, as the release has no `Cargo.lock`). The uv bootstrap and hash-locked install are verified cold on Linux x86_64 only (macOS and Windows paths are unit-tested with fakes). `route_run router=tracemaker`, `why` (causes) and `validate` (pair audit) install TraceMaker on first use too.
+- **Last mile**: KiCadRoutingTools' installer is verified by hand on Linux x86_64; on macOS arm64 and Windows x64 it is verified by the board engines CI job (see Verification on macOS and Windows), which has to run on a pushed branch before that counts. `fill:fastroute` is not available. `pairbench` (one table over several boards) is a harness, not a tool. The pair `vias` op keeps the toolkit's behaviour of never moving the N member alone (a signed-distance test; see the pair-op evidence).
 - **Layout**: plans that ask for `planes` or `escape` raise "not ported"; pair pass-through templates are empty; `add_courtyards` is not ported (check reports the parts, cannot fix them).
 - **Edit**: the churn-guard loop is not wired (`revertNets` exists); `apply_netclasses` for bare boards is not ported. Compute is synchronous, so a very large board blocks the core's event loop during `impact` or `apply`.
 - **Python commands with no counterpart**: `intent` (nothing writes `.fabdesk/board/review/intent.json`; the agent or owner edits the file), `cable` (chassis reach), a standalone `diff` picture (the change picture exists inside review fix candidates), `clean` (only `board_route prune`), `upgrade` (a pre-10 board is refused with a hint), `boards` / `status` registry views (the Status page and `board_review status` replace them), and `run` (autopilot; `board_review fix apply` covers its settle-and-build part).

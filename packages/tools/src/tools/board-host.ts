@@ -1,7 +1,8 @@
 /**
  * The layout host of the board tools: where the engines are (KiCadRoutingTools and TraceMaker from Settings → Routers,
- * or their overrides), how processes run, the DRC flavours (courtyard gate, refilled scoring) and admission by the
- * resource governor. Shared by `board_route`'s layout stages and its last mile.
+ * or their overrides), how a missing one installs on first use (`ensure`, through the router registry), how processes
+ * run, the DRC flavours (courtyard gate, refilled scoring) and admission by the resource governor. Shared by
+ * `board_route`'s layout stages and its last mile.
  */
 import { statfs } from "node:fs/promises";
 import { layout, sysinfo } from "@fabdesk/board-workflow";
@@ -20,6 +21,25 @@ const { nodeRun } = layout;
 export const krtDir = (env: NodeJS.ProcessEnv = process.env, settingsDir?: string | null, installed?: string | null): string | null =>
   settingsDir?.trim() || env["FABDESK_KRT_DIR"]?.trim() || installed || null;
 
+/**
+ * The engine's path, installing it through the router registry when it is missing and `autoInstallEngines` allows
+ * (one install per host even when parallel steps ask at once; concurrent hosts share the registry's install).
+ */
+export function engineEnsurer(ctx: ToolContext, note: (line: string) => void): NonNullable<LayoutHost["ensure"]> {
+  const once = new Map<string, Promise<layout.EngineReady>>();
+  return (engine) => {
+    let p = once.get(engine);
+    if (!p) {
+      const routers = ctx.services.routers;
+      p = routers
+        ? routers.ensure(engine, { onLine: note }).then((r) => (r.path ? { path: r.path } : { path: null, ...(r.why ? { why: r.why } : {}) }))
+        : Promise.resolve({ path: null, why: "this host has no router registry to install engines from" });
+      once.set(engine, p);
+    }
+    return p;
+  };
+}
+
 export function layoutHost(ctx: ToolContext, kicadCli: string | null, env: NodeJS.ProcessEnv = process.env): LayoutHost {
   const note = (s: string) => ctx.progress(0, s);
   const drc = async (board: string, outFile: string, opts: { parity: boolean; refill: boolean }) => {
@@ -32,6 +52,8 @@ export function layoutHost(ctx: ToolContext, kicadCli: string | null, env: NodeJ
       tracemaker: ctx.services.routers?.executable("tracemaker") ?? env["TRACEMAKER_BIN"] ?? null,
       kicadCli,
     },
+    // without a router registry there is nothing to install from: engines are what `tools` names
+    ...(ctx.services.routers ? { ensure: engineEnsurer(ctx, note) } : {}),
     spawn: nodeRun,
     courtyardDrc: async (board, report) => (await drc(board, report, { parity: false, refill: false })).violations.map((v) => ({ rule: v.rule, items: v.items.map((i) => ({ description: i.description })) })),
     scoreDrc: async (board, outFile, parity) => {

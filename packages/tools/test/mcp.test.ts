@@ -327,3 +327,51 @@ test("direct MCP rejects unknown top-level mutation fields", async () => {
     await server.close();
   }
 });
+
+test("a session's durable wait follows its client: initialize clientInfo, or the host a proxy names in _meta", async () => {
+  const { ToolRegistry, defineTool } = await import("../src/registry");
+  const { durableWaitMs } = await import("../src/durable");
+  const { MCP_CLIENT_META } = await import("../src/adapters/mcp");
+  const registry = new ToolRegistry([
+    defineTool({
+      name: "wait_probe",
+      toolset: "core",
+      title: "wait probe",
+      description: "returns the durable wait of this call",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+      scope: "global",
+      handler: async (_args, ctx) => ({ text: String(durableWaitMs(ctx)), json: { wait: durableWaitMs(ctx) } }),
+    }),
+  ]);
+  const services = mockServices([]);
+  const seen: Array<string | undefined> = [];
+  const open = async (clientName: string) => {
+    const server = new McpServer({ name: "fabdesk-test", version: "0.0.0" });
+    attachToRegistry(server, registry, contextFactory(services, null), {
+      toolsOnly: true,
+      durableWaitMs: (client) => {
+        seen.push(client?.name);
+        return client?.toolTimeoutSec ? client.toolTimeoutSec * 1000 : client?.name === "short-host" ? 50_000 : undefined;
+      },
+    });
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverT);
+    const client = new Client({ name: clientName, version: "1" });
+    await client.connect(clientT);
+    const wait = async (meta?: Record<string, unknown>) =>
+      ((await client.callTool({ name: "wait_probe", arguments: {}, ...(meta ? { _meta: meta } : {}) })).structuredContent as { wait: number }).wait;
+    return { server, client, wait };
+  };
+  const short = await open("short-host");
+  expect(await short.wait()).toBe(50_000);
+  await short.client.close();
+  const long = await open("long-host");
+  expect(await long.wait()).toBe(durableWaitMs());
+  // a proxy names its host (and its declared timeout); the hint stays for later calls of the session
+  expect(await long.wait({ [MCP_CLIENT_META]: { name: "short-host" } })).toBe(50_000);
+  expect(await long.wait()).toBe(50_000);
+  expect(await long.wait({ [MCP_CLIENT_META]: { name: "short-host", toolTimeoutSec: 120 } })).toBe(120_000);
+  await long.client.close();
+  expect(seen).toContain("long-host");
+});

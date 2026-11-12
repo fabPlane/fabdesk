@@ -1,0 +1,85 @@
+name: Board engines
+
+# The board workflow's host-facing parts on real Linux, macOS (Apple Silicon) and Windows: host memory (/proc, vm_stat,
+# os), process checks (pgrep, tasklist), the low-priority process runner, review custom checks through the platform
+# shell, and KiCadRoutingTools installed through the router registry, imported and routing a small committed board.
+# The unit tests cover the same code with fake command output; this job is what proves the real commands.
+# Script: scripts/board-engines-smoke.ts. Design note: docs/board-workflow-design.md ("Verification on macOS and Windows").
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "packages/board-workflow/**"
+      - "packages/tools/src/routers/**"
+      - "packages/tools/src/resources.ts"
+      - "packages/tools/src/tools/board-*.ts"
+      - "scripts/board-engines-smoke.ts"
+      - ".github/workflows/board-engines.yml"
+
+concurrency:
+  group: board-engines-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: smoke (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Fresh VMs (macOS and Windows on Blacksmith, as installer-test.yml): a clean machine per job, the way a user's machine
+          # first meets the KRT installer (no shared state from the self-hosted Mac).
+          - { name: linux-x64, runner: ubuntu-latest }
+          - { name: macos-arm64, runner: blacksmith-6vcpu-macos-15 }
+          - { name: windows-x64, runner: blacksmith-4vcpu-windows-2025 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Allow long paths (Windows)
+        if: runner.os == 'Windows'
+        run: git config --global core.longpaths true
+
+      - uses: actions/checkout@v5
+        with:
+          submodules: false
+          persist-credentials: false
+
+      # bun install's frozen lockfile needs every workspace on disk. These three submodules are public; the private
+      # vendor/fabplane is not needed (nothing the smoke imports reaches it), so no deploy key.
+      - name: Init the public submodules
+        run: git submodule update --init --depth 1 vendor/fab_cad vendor/fab_pcb vendor/fabplane-cli
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-
+
+      # No lifecycle scripts: the smoke needs none, and they would fetch Electron and other desktop-only binaries.
+      - run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Platform unit tests (sysinfo, resources)
+        run: bun test ./packages/board-workflow/test/sysinfo.test.ts ./packages/tools/test/resources-platform.test.ts
+
+      - name: Board engines smoke
+        run: bun scripts/board-engines-smoke.ts --out "artifacts/board-engines-smoke-${{ matrix.name }}.json"
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        continue-on-error: true
+        with:
+          name: board-engines-smoke-${{ matrix.name }}
+          path: artifacts/board-engines-smoke-${{ matrix.name }}.json
+          if-no-files-found: warn
+          retention-days: 14

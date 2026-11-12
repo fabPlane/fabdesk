@@ -8,6 +8,9 @@ The commands are shell commands from the project's own files, so `board_review r
 {"name": "my-check", "layer": "L3", "boards": ["my-board"],
  "run": "python3 checks/my_check.py {pcb} {netlist}", "timeout": 300}
 ```
-Placeholders: `{pcb} {sch} {project} {netlist} {spec} {out}`. Each finding:
+Placeholders: `{pcb} {sch} {project} {netlist} {spec} {out}`.
+`run` goes to the platform shell: `/bin/sh -c` on Linux and macOS, `cmd.exe /d /s /c` on Windows. A check written for
+one shell says so with `"shell": "bash"` (also `"sh"`, `"cmd"`, `"powershell"`, `"pwsh"`); on Windows `bash` must be on
+PATH (Git for Windows). A check meant for every OS is simplest as one interpreter call (`python3 checks/x.py {pcb}`). Each finding:
 `{"rule": "X", "severity": "must-fix|question|note", "claim": "...", "ref": "U1", "pad": "3", "net": "...", "key": "...", "suggest": "..."}`.
 A check that fails or prints anything but a JSON list is an error, never a pass.

@@ -12,6 +12,7 @@ import {
   remainingMilestones,
   snapshotNote,
 } from "./finish-it-plan";
+import { boardChecksApply } from "./finish-it";
 
 const NETLIST = {
   netlist: {
@@ -328,7 +329,54 @@ describe("Finish it review milestone", () => {
   test("the prompt carries the review step only with the board workflow", () => {
     const input = { projectName: "p", snapshot: clean, remaining: ["review" as const] };
     expect(finishItPrompt(input)).not.toContain("5. review");
-    expect(finishItPrompt(input, { boardChecks: true })).toContain("5. review — run the review checks");
+    expect(finishItPrompt(input, { boardChecks: true })).toContain("5. review — run board_review (action run)");
+  });
+  test("the prompt names the right tool for each step", () => {
+    const input = { projectName: "p", snapshot: clean, remaining: ["route" as const, "verify" as const, "review" as const] };
+    const board = finishItPrompt(input, { boardChecks: true });
+    expect(board).toContain("3. route — run board_route");
+    expect(board).not.toContain("route_run");
+    expect(board).toContain("board_review gate passes");
+    expect(board).not.toContain("review checks (board_check)");
+    // the board toolset is preloaded for a placed board: the text says so instead of asking for load_toolset first
+    expect(board).toContain("already loaded");
+    expect(board).not.toMatch(/Board workflow \(load_toolset/);
+    const plain = finishItPrompt(input);
+    expect(plain).toContain("3. route — run route_run");
+    expect(plain).not.toContain("board_route");
+    expect(plain).not.toContain("board_review");
+    expect(plain).toContain("verify_drc");
+  });
+});
+
+describe("Finish it board checks follow the project", () => {
+  const ready = { workflowReady: true, settings: {} };
+  const project = async (pcb: string | null) => {
+    const dir = await tempDir();
+    await writeFile(join(dir, "circuit.netlist.json"), JSON.stringify(NETLIST));
+    if (pcb !== null) await writeFile(join(dir, "board.kicad_pcb"), pcb);
+    return dir;
+  };
+  const plan = async (dir: string, opts: { workflowReady: boolean; settings: { boardChecksInFinishIt?: boolean } }) => {
+    const boardChecks = await boardChecksApply(dir, opts);
+    return { boardChecks, ids: planMilestones(await inspectProject(dir, { boardChecks })).map((m) => m.id) };
+  };
+  test("(a) a fresh circuit design (no board, or a blank board) keeps the DRC/ERC plan", async () => {
+    expect(await plan(await project(null), ready)).toEqual({ boardChecks: false, ids: ["schematic", "build", "route", "verify"] });
+    expect(await plan(await project("(kicad_pcb (version 20260831))\n"), ready)).toEqual({ boardChecks: false, ids: ["schematic", "build", "route", "verify"] });
+  });
+  test("(b) a placed board gets A1-A9 and the review milestone", async () => {
+    const dir = await project("(kicad_pcb (footprint \"R\"))\n");
+    const r = await plan(dir, ready);
+    expect(r).toEqual({ boardChecks: true, ids: ["schematic", "build", "route", "verify", "review"] });
+    expect((await inspectProject(dir, { boardChecks: true })).acceptance?.state).toBe("none");
+    // without the board workflow registered, the placed board keeps the old plan too
+    expect((await plan(dir, { workflowReady: false, settings: {} })).boardChecks).toBe(false);
+  });
+  test("(c) the setting turns it off for a placed board", async () => {
+    const dir = await project("(kicad_pcb (footprint \"R\"))\n");
+    expect(await plan(dir, { workflowReady: true, settings: { boardChecksInFinishIt: false } })).toEqual({ boardChecks: false, ids: ["schematic", "build", "route", "verify"] });
+    expect((await plan(dir, { workflowReady: true, settings: { boardChecksInFinishIt: true } })).boardChecks).toBe(true);
   });
 });
 

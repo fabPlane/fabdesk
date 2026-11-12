@@ -290,6 +290,11 @@ export const Settings = z.object({
    * `src/plugins` and `venv`). Null uses env `FABDESK_KRT_DIR`, then the installed copy.
    */
   krtDir: z.string().nullable().default(null),
+  /**
+   * Board tools install a missing engine (KiCadRoutingTools, TraceMaker) on first use. False makes them report it
+   * instead; `board_engines install` and Settings → Routers still install on request.
+   */
+  autoInstallEngines: z.boolean().default(true),
   defaultAgent: AgentId.default("claude"),
   /** Runtime mode new threads start in. */
   defaultRuntimeMode: RuntimeMode.default("full"),
@@ -309,6 +314,11 @@ export const Settings = z.object({
     )
     .default({}),
   keepCoreRunning: z.boolean().default(false),
+  /**
+   * Finish it judges a project with a placed board by the board workflow (A1-A9, the review gate, the board tools in
+   * the prompt). Absent or true: on. False keeps the DRC/ERC plan for every project.
+   */
+  boardChecksInFinishIt: z.boolean().optional(),
   webmcpWriteTools: z.boolean().default(false),
   /** Send crash/error reports to Sentry (only when a DSN is configured; see docs/sentry.md). */
   errorReporting: z.boolean().default(true),

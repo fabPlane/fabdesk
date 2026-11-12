@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRegistry, type BoardAdoptResult, type CoreServices } from "../src";
@@ -69,5 +69,44 @@ describe("adoptCandidate", () => {
     await writeFile(join(dir2, "board.kicad_sch"), "yet another");
     await writeFile(join(dir2, "origin.json"), JSON.stringify({ project: project.dir, files: { "board.kicad_sch": await sha("edited sheet") } }));
     await expect(adoptCandidate(await ctx(), { candidate: join(dir2, "c.kicad_pcb"), reason: "late" })).rejects.toThrow(/changed in the project since/);
+  });
+
+  async function withSheetCandidate(project: { dir: string }) {
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb original)");
+    await writeFile(join(project.dir, "board.kicad_sch"), "original sheet");
+    const dir = await mkdtemp(join(tmpdir(), "cand-"));
+    await writeFile(join(dir, "c.kicad_pcb"), "(kicad_pcb edited)");
+    await writeFile(join(dir, "board.kicad_sch"), "edited sheet");
+    await writeFile(join(dir, "power.kicad_sch"), "new sheet");
+    await writeFile(join(dir, "origin.json"), JSON.stringify({ project: project.dir, files: { "board.kicad_sch": await sha("original sheet") } }));
+    return join(dir, "c.kicad_pcb");
+  }
+
+  test("all or nothing: a failing KiCad commit puts the sheets (and a half-written board) back and says so", async () => {
+    const { project, ctx } = await setup(async (i) => {
+      await writeFile(i.target, "(kicad_pcb half written)");
+      throw new Error("IPC commit refused");
+    });
+    const candidate = await withSheetCandidate(project);
+    const err = await adoptCandidate(await ctx(), { candidate, reason: "edit" }).then(() => null, (e: Error) => e);
+    expect(err?.message).toContain("IPC commit refused");
+    expect(err?.message).toContain("The project was restored");
+    expect(await readFile(join(project.dir, "board.kicad_sch"), "utf8")).toBe("original sheet");
+    expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb original)");
+    expect(await readFile(join(project.dir, "power.kicad_sch")).catch(() => null)).toBeNull();
+  });
+
+  test("when the restore itself fails, the error names each file that differs and where its copy was", async () => {
+    const { project, ctx } = await setup(async (i) => {
+      await writeFile(i.target, "(kicad_pcb half written)");
+      await rm(join(project.dir, ".fabdesk", "board", "adopt"), { recursive: true, force: true });
+      throw new Error("IPC lost");
+    });
+    const candidate = await withSheetCandidate(project);
+    const err = await adoptCandidate(await ctx(), { candidate, reason: "edit" }).then(() => null, (e: Error) => e);
+    expect(err?.message).toContain("Restoring the project also failed");
+    expect(err?.message).toContain("board.kicad_pcb (previous copy: .fabdesk/board/adopt/");
+    expect(err?.message).toContain("board.kicad_sch (previous copy:");
+    expect(err?.message).not.toContain("power.kicad_sch");
   });
 });

@@ -72,6 +72,7 @@ export function mockServices(
       router: "capacity",
       tracemakerManifestUrl: null,
       krtDir: null,
+      autoInstallEngines: true,
       defaultAgent: "claude",
       defaultRuntimeMode: "full",
       agents: {},

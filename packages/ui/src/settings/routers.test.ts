@@ -191,5 +191,6 @@ describe("router settings helpers", () => {
     expect(stateLabel(setup)).toBe("setting up");
     expect(installProgressView(setup)).toEqual({ fraction: null, text: "Setting up Python (venv, numpy, scipy, shapely)…" });
     expect("krtDir" in withoutRouterDefault({ theme: "dark", krtDir: "/x" })).toBe(false);
+    expect("autoInstallEngines" in withoutRouterDefault({ theme: "dark", autoInstallEngines: false })).toBe(false);
   });
 });

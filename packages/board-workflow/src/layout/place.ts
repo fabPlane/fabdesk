@@ -6,7 +6,7 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { copyDir, seedCopyFilter } from "./score";
-import { FlowError, type LayoutHost } from "./ctx";
+import { FlowError, requireEngine, type LayoutHost } from "./ctx";
 import { krtCheckFloorplan, krtCheckGroups, krtMakeUnplaced, krtPaths, krtPlaceSimple, placerSummary } from "./engines";
 import type { Keepout } from "./spec";
 import { convertTransforms, footprintSpans, lockFootprints, lockedRefs, pose, transferPoses } from "./text";
@@ -75,8 +75,7 @@ export interface PlaceOptions {
 
 /** Run the placer for the seeds and gate each; writes `<out>/place.json`. Throws FlowError when the placer's inputs are rejected. */
 export async function placeKrt(host: LayoutHost, o: PlaceOptions): Promise<PlaceRecord> {
-  if (!host.tools.krt) throw new FlowError("KiCadRoutingTools is not installed (Settings → Routers, or FABDESK_KRT_DIR)");
-  const k = krtPaths(host.tools.krt);
+  const k = krtPaths(await requireEngine(host, "krt"));
   const kdir = join(o.out, "krt");
   await mkdir(kdir, { recursive: true });
   await copyFile(o.groups, join(o.out, "groups.json"));

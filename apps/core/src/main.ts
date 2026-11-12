@@ -18,7 +18,7 @@ Usage:
   fabdesk-core pair [--no-wait] [--invert] [--json]      # pairing QR + link for the running daemon; waits for the phone
   fabdesk-core devices list [--json]                     # paired phones on the running daemon
   fabdesk-core devices revoke <id|label>
-  fabdesk-core mcp [--standalone] [--apps] [--project <dir>]
+  fabdesk-core mcp [--standalone] [--apps] [--project <dir>] [--tool-timeout <sec>]   # --tool-timeout: the host's per-call timeout, if raised
   fabpcb tool search <words> | describe <name> | call <name> [--request <json>] | batch --input @calls.jsonl
   fabpcb env describe [--project <dir>]
   fabpcb env exec [--project <dir>] -- <command> [arguments...]
@@ -172,6 +172,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         ...(flag(f, "apps") ? { apps: true } : {}),
         ...(str(f, "project") ? { project: str(f, "project")! } : {}),
         ...(str(f, "data-dir") ? { dataDir: str(f, "data-dir")! } : {}),
+        ...((num(f, "tool-timeout") ?? 0) > 0 ? { toolTimeoutSec: num(f, "tool-timeout")! } : {}),
       });
       return 0;
     }

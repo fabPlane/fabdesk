@@ -41,6 +41,25 @@ const heartbeatMs = (): number =>
 
 export const MAX_INLINE_IMAGE_BYTES = 2 * 1024 * 1024;
 
+/**
+ * The client a session serves. A proxy (the stdio `fabdesk mcp`) opens the session itself, so it names the host it
+ * relays for in each tools/call's `_meta[MCP_CLIENT_META]`; otherwise it is the client's own `initialize` clientInfo.
+ * `toolTimeoutSec` is the host's per-call timeout when the proxy was told it (`fabdesk mcp --tool-timeout`).
+ */
+export const MCP_CLIENT_META = "fabdesk/client";
+export type McpClientHint = { name?: string; version?: string; toolTimeoutSec?: number };
+
+function clientHintFrom(meta: Record<string, unknown> | undefined): McpClientHint | undefined {
+  const raw = meta?.[MCP_CLIENT_META];
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  return {
+    ...(typeof r["name"] === "string" ? { name: r["name"] } : {}),
+    ...(typeof r["version"] === "string" ? { version: r["version"] } : {}),
+    ...(typeof r["toolTimeoutSec"] === "number" && r["toolTimeoutSec"] > 0 ? { toolTimeoutSec: r["toolTimeoutSec"] } : {}),
+  };
+}
+
 export type McpAttachment = {
   session: ToolSession;
   registered: Map<string, RegisteredTool>;
@@ -60,6 +79,8 @@ export type AttachOptions = {
   toolsOnly?: boolean;
   /** MCP Apps views and OpenAI extensions (`mcp-apps.ts`). Default `auto`; off with `toolsOnly`. */
   apps?: McpAppsMode;
+  /** The durable wait for this session's client (`ToolSession.durableWaitMs`); undefined keeps the default. */
+  durableWaitMs?: (client: McpClientHint | undefined) => number | undefined;
 };
 
 export function attachToRegistry(
@@ -72,6 +93,11 @@ export function attachToRegistry(
   const initialTools = opts.initialTools ? new Set(opts.initialTools) : null;
   const registered = new Map<string, RegisteredTool>();
   const sessionId = opts.sessionId ?? crypto.randomUUID();
+  let announced: McpClientHint | undefined;
+  const noteClient = (meta: Record<string, unknown> | undefined) => {
+    announced = clientHintFrom(meta) ?? announced;
+  };
+  const waitFor = opts.durableWaitMs;
 
   const session: ToolSession = {
     id: sessionId,
@@ -81,6 +107,9 @@ export function attachToRegistry(
       enabled.add(id);
       for (const def of registry.byToolset(id)) registered.get(def.name)?.enable();
     },
+    ...(waitFor
+      ? { durableWaitMs: () => waitFor(announced ?? (server.server.getClientVersion() as McpClientHint | undefined)) }
+      : {}),
   };
 
   for (const def of registry.list()) {
@@ -97,6 +126,7 @@ export function attachToRegistry(
         args: Record<string, unknown>,
         extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
       ): Promise<CallToolResult> => {
+        noteClient(extra._meta);
         const progressToken = extra._meta?.progressToken;
         let last: { pr: number; note?: string } = { pr: 0 };
         const send = (pr: number, note?: string) => {
@@ -159,6 +189,7 @@ export function attachToRegistry(
       registered,
       initialTools,
       new Set(opts.capabilityExclude ?? []),
+      noteClient,
     );
 
   if (!opts.toolsOnly) {
@@ -225,6 +256,7 @@ function registerCapabilityTools(
   registered: Map<string, RegisteredTool>,
   initialTools: Set<string> | null,
   excluded: Set<string>,
+  noteClient: (meta: Record<string, unknown> | undefined) => void,
 ): void {
   const discovered = new Set<string>();
   const search = server.registerTool(
@@ -304,6 +336,7 @@ function registerCapabilityTools(
       rawArgs: Record<string, unknown>,
       extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
     ): Promise<CallToolResult> => {
+      noteClient(extra._meta);
       const name = String(rawArgs["name"]);
       const args = (rawArgs["arguments"] ?? {}) as Record<string, unknown>;
       if (name === "capability_search" || name === "capability_call")

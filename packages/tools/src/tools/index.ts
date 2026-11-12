@@ -14,6 +14,7 @@ import { boardEditTools } from "./board-edit";
 import { boardReleaseTools } from "./board-release";
 import { boardSilkTools } from "./board-silk";
 import { boardRouteTools } from "./board-route";
+import { boardEngineTools } from "./board-engines";
 import { kicadTools } from "./kicad";
 import { inspectionTools } from "./inspection";
 import { nativeEditTools } from "./native-edit";
@@ -52,6 +53,7 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...boardReleaseTools,
   ...boardSilkTools,
   ...boardRouteTools,
+  ...boardEngineTools,
   ...releaseTools,
   ...renderTools,
   ...exportTools,
@@ -87,6 +89,7 @@ export * from "./verify";
 export * from "./board-check";
 export * from "./board-review";
 export * from "./board-route";
+export * from "./board-engines";
 export * from "./render";
 export * from "./export";
 export * from "./silk-art";

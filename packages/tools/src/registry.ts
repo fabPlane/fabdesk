@@ -126,6 +126,11 @@ export interface ToolSession {
   id: string;
   enabledToolsets(): ToolsetId[];
   enableToolset(id: ToolsetId): void;
+  /**
+   * How long a durable tool waits before it returns a job id, chosen for this session's client (its tool-call
+   * timeout); undefined keeps the default (`durable.ts`).
+   */
+  durableWaitMs?(): number | undefined;
 }
 
 export type ToolHandler<I extends z.ZodRawShape> = (

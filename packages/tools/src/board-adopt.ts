@@ -3,7 +3,7 @@
  * Checkpoint, then the schematic sheets and project libraries the candidate changed (only while the project's copy is
  * still the one the candidate was computed from), then the PCB delta as one KiCad commit over IPC, read back.
  */
-import { copyFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join, relative, resolve } from "node:path";
 import { jailPath, PROJECT_FILES } from "./fs";
@@ -43,6 +43,29 @@ export async function candidateOrigin(candidatePcb: string): Promise<{ project: 
     if (o?.files) return o;
   }
   return null;
+}
+
+/**
+ * Put every file `before` lists back as it was (a file that did not exist is removed) and say so: the error to throw
+ * after a failed adopt. When a restore fails, the message names each file that still differs and where its copy is.
+ */
+async function rolledBack(e: unknown, before: Array<{ name: string; dst: string; sha: string | null }>, keep: string, projectDir: string): Promise<ToolError> {
+  const why = e instanceof Error ? e.message : String(e);
+  const differs: string[] = [];
+  for (const b of before) {
+    if ((await sha256File(b.dst)) === b.sha) continue;
+    try {
+      if (b.sha) await copyFile(join(keep, b.name), b.dst);
+      else await rm(b.dst, { force: true });
+    } catch {
+      /* checked below */
+    }
+    if ((await sha256File(b.dst)) !== b.sha) differs.push(b.sha ? `${b.name} (previous copy: ${relative(projectDir, join(keep, b.name))})` : `${b.name} (did not exist before; remove it)`);
+  }
+  const code = e instanceof ToolError ? e.code : "internal";
+  if (!differs.length)
+    return new ToolError(`adopt failed: ${why}. The project was restored: the board and design files are as they were before the adopt (copies kept in ${relative(projectDir, keep)}).`, code);
+  return new ToolError(`adopt failed: ${why}. Restoring the project also failed; these files differ from before the adopt: ${differs.join("; ")}. Copy them back before continuing.`, code);
 }
 
 export type AdoptOutcome = {
@@ -91,14 +114,22 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
   const job = await governor().admit({ cls: "light", label: "adopt", paths: [project.dir], signal: ctx.signal, onWait: (w) => ctx.progress(0.2, w) });
   try {
     const keep = join(project.dir, ".fabdesk", "board", "adopt", stamp(), "before");
+    // all or nothing: the board and every design file are copied aside first; any failure after the first write puts
+    // them back, so the project never keeps new sheets beside the old board (or the reverse)
     const apply = async () => {
-      if (sheets.length) await mkdir(keep, { recursive: true });
-      for (const n of sheets) {
-        const dst = join(project.dir, n);
-        if (await stat(dst).catch(() => null)) await copyFile(dst, join(keep, n));
-        await copyFile(join(dirname(candidate), n), dst);
+      await mkdir(keep, { recursive: true });
+      const before: Array<{ name: string; dst: string; sha: string | null }> = [{ name: pcbRel, dst: target, sha: await sha256File(target) }];
+      for (const n of sheets) before.push({ name: n, dst: join(project.dir, n), sha: await sha256File(join(project.dir, n)) });
+      for (const b of before) if (b.sha) {
+        await mkdir(dirname(join(keep, b.name)), { recursive: true });
+        await copyFile(b.dst, join(keep, b.name));
       }
-      return adopter.adopt({ target, candidate, cli, signal: ctx.signal });
+      try {
+        for (const n of sheets) await copyFile(join(dirname(candidate), n), join(project.dir, n));
+        return await adopter.adopt({ target, candidate, cli, signal: ctx.signal });
+      } catch (e) {
+        throw await rolledBack(e, before, keep, project.dir);
+      }
     };
     const recovery = ctx.services.design.withSavedFilesRecovery;
     const result = recovery ? await recovery(project.dir, apply) : await apply();
@@ -109,7 +140,7 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
     const text = [
       `${clean ? "Adopted" : "Adopted with residual differences"}: ${relative(project.dir, target)} ← ${candidate}`,
       `removed ${fmt(result.delta.removed)}; added ${fmt(result.delta.added)}; changed ${fmt(result.delta.changed)}`,
-      ...(sheets.length ? [`design files written: ${sheets.join(", ")} (previous copies: ${relative(project.dir, keep)})`] : []),
+      ...(sheets.length ? [`design files written: ${sheets.join(", ")} (previous copies: ${relative(project.dir, keep)})`] : [`previous board: ${relative(project.dir, keep)}`]),
       `residual ${clean ? "none" : JSON.stringify(result.residual)}; checkpoint ${checkpoint.id}${point ? `; board timeline point ${point.ref.slice(0, 12)}` : ""}`,
     ].join("\n");
     return { text, data: { ...result, checkpointId: checkpoint.id, target, clean, designFiles: sheets, timelinePoint: point?.ref ?? null }, clean };

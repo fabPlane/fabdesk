@@ -29,7 +29,7 @@ export function installHintFor(
   if (id === "krt") {
     return [
       "KiCadRoutingTools is not installed.",
-      `Install it from Settings → Routers → KiCadRoutingTools (downloads the MIT v${KRT_VERSION} release, ~16 MB, and sets up a Python venv with numpy, scipy and shapely using uv or Python 3.9+), or set FABDESK_KRT_DIR to a build.`,
+      `Board tools install it on first use; or install it from Settings → Routers → KiCadRoutingTools or board_engines (downloads the MIT v${KRT_VERSION} release, ~16 MB, and a private hash-locked Python with numpy, scipy and shapely; uv and CPython are fetched when the machine has neither), or set FABDESK_KRT_DIR to a build.`,
       snapshot?.error ? `Last error: ${snapshot.error}` : "",
     ]
       .filter(Boolean)

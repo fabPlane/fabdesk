@@ -17,6 +17,9 @@ import {
 import { bundledHint, installHintFor } from "./hints";
 import { krtRootProblem, krtVersionAt, setupKrt, type KrtSetupDeps, type KrtSetupResult } from "./krt";
 import { parseTraceMakerVersion, resolveTraceMakerInstallArtifact } from "./tracemaker-release";
+import { extractZipArchive } from "./zip";
+
+export { extractZipArchive };
 
 const STATE_FILE = "state.json";
 const MAX_ARTIFACT_BYTES = 200 * 1024 * 1024;
@@ -38,6 +41,8 @@ type InstallJob = {
   total: number;
   phase: RouterInstallPhase;
   done: boolean;
+  /** Progress lines to every caller sharing this install (the first one and any that joined it). */
+  listeners: Set<(line: string) => void>;
 };
 
 type PersistedState = { routers: Partial<Record<RouterCatalogId, PersistedRouter>> };
@@ -48,6 +53,21 @@ export type RouterRegistrySettings = {
   tracemakerManifestUrl?: string | null;
   /** A KiCadRoutingTools build that wins over FABDESK_KRT_DIR and the installed copy. */
   krtDir?: string | null;
+  /** Board tools install a missing engine on first use (default true); false makes them report it instead. */
+  autoInstallEngines?: boolean;
+};
+
+export type RouterInstallOptions = {
+  /** Progress lines while it runs (phases, download share, the engine's own setup steps). */
+  onLine?: (line: string) => void;
+};
+
+/** What `ensure` found or did: the path to run, or why there is none (already phrased for the agent). */
+export type EngineEnsureResult = { id: RouterCatalogId; path: string | null; why?: string; installed?: boolean };
+
+export type EngineEnsureOptions = RouterInstallOptions & {
+  /** An explicit request (the `board_engines` tool, Settings): ignores `autoInstallEngines` and retries a failure. */
+  explicit?: boolean;
 };
 
 export type RouterRegistryDeps = {
@@ -66,7 +86,14 @@ export type RouterRegistryDeps = {
 export interface RouterRegistry {
   list(preferredRouter?: RouterCatalogId): RouterList;
   get(id: RouterCatalogId): RouterSnapshot;
-  install(id: RouterCatalogId): Promise<RouterSnapshot>;
+  install(id: RouterCatalogId, opts?: RouterInstallOptions): Promise<RouterSnapshot>;
+  /**
+   * The engine's runnable path, installing it first when it is missing and installable (one shared install for
+   * concurrent callers). Never installs over an override that is set but broken (Settings `krtDir`,
+   * FABDESK_KRT_DIR, TRACEMAKER_BIN, FREEROUTING_JAR): that is reported instead. Automatic calls honour
+   * `autoInstallEngines` and do not retry an install that already failed in this process.
+   */
+  ensure(id: RouterCatalogId, opts?: EngineEnsureOptions): Promise<EngineEnsureResult>;
   cancel(id: RouterCatalogId): Promise<RouterSnapshot>;
   uninstall(id: RouterCatalogId): Promise<RouterSnapshot>;
   executable(id: RouterCatalogId): string | null;
@@ -101,6 +128,8 @@ class FileRouterRegistry implements RouterRegistry {
   private readonly env: NodeJS.ProcessEnv;
   private readonly inflight = new Map<RouterCatalogId, InstallJob>();
   private readonly versionProbes = new Map<string, string | null>();
+  /** Automatic installs that failed in this process: not retried until an explicit install. */
+  private readonly autoFailed = new Map<RouterCatalogId, string>();
   private persisted: PersistedState = { routers: {} };
 
   constructor(private readonly deps: RouterRegistryDeps) {
@@ -126,9 +155,42 @@ class FileRouterRegistry implements RouterRegistry {
     return snap.ready && snap.path ? snap.path : null;
   }
 
-  async install(id: RouterCatalogId): Promise<RouterSnapshot> {
+  async ensure(id: RouterCatalogId, opts: EngineEnsureOptions = {}): Promise<EngineEnsureResult> {
+    const entry = this.entry(id);
+    const snap = this.snapshot(entry);
+    if (snap.ready && snap.path) return { id, path: snap.path };
+    if (snap.ready && entry.install === "bundled") return { id, path: null, why: `${entry.displayName} is bundled; it has no separate path` };
+    const problem = this.overrideProblem(id);
+    if (problem) return { id, path: null, why: `${problem} Fix or clear it; an installed copy is not used while it is set.` };
+    if (!opts.explicit) {
+      if (this.deps.settings?.().autoInstallEngines === false)
+        return { id, path: null, why: `${entry.displayName} is not installed and automatic installs are off (Settings autoInstallEngines). board_engines {"action":"install","engine":"${id}"} installs it.` };
+      const failed = this.autoFailed.get(id);
+      if (failed) return { id, path: null, why: `${failed} (not retried automatically; board_engines {"action":"install","engine":"${id}"} retries)` };
+    }
+    this.autoFailed.delete(id);
+    opts.onLine?.(`${entry.displayName} is not installed: installing it now (one time${entry.id === "krt" ? ", a few minutes cold" : ""})`);
+    const done = await this.install(id, opts.onLine ? { onLine: opts.onLine } : {});
+    if (done.ready && done.path) {
+      opts.onLine?.(`${entry.displayName} ${done.versionInstalled ?? ""} installed at ${done.path}`.replace(/\s+/g, " "));
+      return { id, path: done.path, installed: true };
+    }
+    let why = `${entry.displayName} did not install: ${done.error ?? done.notice ?? done.installHint}`;
+    if (id === "tracemaker" && !/TRACEMAKER_BIN/.test(why))
+      why += " If its binary manifest is unreachable (the GitHub release 404s while TensorFleet/fabdesk is private), set FABDESK_TRACEMAKER_MANIFEST_URL or Settings tracemakerManifestUrl to a public manifest, or TRACEMAKER_BIN.";
+    if (!/Installation cancelled/.test(why)) this.autoFailed.set(id, why);
+    return { id, path: null, why };
+  }
+
+  async install(id: RouterCatalogId, opts: RouterInstallOptions = {}): Promise<RouterSnapshot> {
     const existing = this.inflight.get(id);
-    if (existing) return existing.promise;
+    if (existing) {
+      if (opts.onLine) {
+        existing.listeners.add(opts.onLine);
+        opts.onLine(`joining the ${id} install already running (${existing.phase})`);
+      }
+      return existing.promise;
+    }
     const entry = this.entry(id);
     if (entry.install === "bundled" || this.bundled[id]) return this.snapshot(entry);
     const current = this.snapshot(entry);
@@ -156,6 +218,7 @@ class FileRouterRegistry implements RouterRegistry {
       total: artifact.bytes ?? 0,
       phase: "resolving",
       done: false,
+      listeners: new Set(opts.onLine ? [opts.onLine] : []),
     };
     const promise = this.runInstall(entry, artifact, abort, job);
     job.promise = promise;
@@ -391,9 +454,23 @@ class FileRouterRegistry implements RouterRegistry {
     let versionOverride: string | undefined;
     let resolveWarning: string | undefined;
     let swapped = false;
+    const emit = (line: string) => {
+      for (const listener of job.listeners) {
+        try {
+          listener(line);
+        } catch {
+          /* a caller that went away */
+        }
+      }
+    };
+    const phase = (next: RouterInstallPhase, line: string) => {
+      job.phase = next;
+      emit(line);
+    };
+    let shownShare = -1;
     try {
       if (entry.id === "tracemaker") {
-        job.phase = "resolving";
+        phase("resolving", `${entry.displayName}: resolving the download for this platform`);
         const resolved = await resolveTraceMakerInstallArtifact({
           source: artifact,
           ...(entry.binaryRelease ? { binaryRelease: entry.binaryRelease } : {}),
@@ -411,7 +488,7 @@ class FileRouterRegistry implements RouterRegistry {
       await rm(work, { recursive: true, force: true });
       await mkdir(work, { recursive: true, mode: 0o700 });
       const destFile = join(work, artifact.filename);
-      job.phase = "downloading";
+      phase("downloading", `${entry.displayName}: downloading ${artifact.filename}${artifact.bytes ? ` (${Math.round(artifact.bytes / 1e6)} MB)` : ""}`);
       const downloaded = await downloadAndVerify({
         url: artifact.url,
         dest: destFile,
@@ -423,12 +500,17 @@ class FileRouterRegistry implements RouterRegistry {
         onProgress: (received, total) => {
           job.received = received;
           job.total = total;
+          const share = total > 0 ? Math.floor((received / total) * 4) : -1;
+          if (share > shownShare && share < 4) {
+            shownShare = share;
+            if (share > 0) emit(`${entry.displayName}: ${share * 25}% of ${Math.round(total / 1e6)} MB`);
+          }
         },
       });
       abort.signal.throwIfAborted();
-      job.phase = "verifying";
+      phase("verifying", `${entry.displayName}: verifying sha256`);
       await verifyFileSha256(destFile, artifact.sha256);
-      job.phase = "extracting";
+      phase("extracting", `${entry.displayName}: extracting`);
       const extracted = join(work, "extracted");
       await mkdir(join(extracted, artifact.subdir ?? ""), { recursive: true });
       await this.materialize(artifact, destFile, join(extracted, artifact.subdir ?? ""));
@@ -442,8 +524,14 @@ class FileRouterRegistry implements RouterRegistry {
       let setupNotice: string | undefined;
       if (entry.id === "krt") {
         // The venv is made in place (its paths are absolute), after the swap; a failure restores the backup.
-        job.phase = "setup";
-        const setup = await (this.deps.krtSetup ?? setupKrt)(final, { env: this.env, signal: abort.signal });
+        phase("setup", `${entry.displayName}: setting up Python and the router core`);
+        const setup = await (this.deps.krtSetup ?? setupKrt)(final, {
+          env: this.env,
+          signal: abort.signal,
+          log: emit,
+          routersRoot: this.root,
+          ...(this.deps.fetch ? { fetch: this.deps.fetch } : {}),
+        });
         abort.signal.throwIfAborted();
         setupNotice = setup.notice;
       }
@@ -600,42 +688,6 @@ function findNamedFile(
     return null;
   };
   return walk(root, 0);
-}
-
-export async function extractZipArchive(
-  archive: string,
-  dest: string,
-  spawn: (cmd: string, args: string[]) => Promise<number>,
-  platform: string = process.platform,
-): Promise<void> {
-  const attempts: Array<{ cmd: string; args: string[] }> = [
-    { cmd: "unzip", args: ["-o", archive, "-d", dest] },
-  ];
-  if (platform === "win32" || platform === "windows") {
-    // Windows 10+ ships bsdtar, which extracts zip. PowerShell is the fallback
-    // when neither unzip nor tar is on PATH (typical Electron desktop).
-    attempts.push({ cmd: "tar", args: ["-xf", archive, "-C", dest] });
-    attempts.push({
-      cmd: "powershell",
-      args: [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        `Expand-Archive -Force -LiteralPath '${archive.replace(/'/g, "''")}' -DestinationPath '${dest.replace(/'/g, "''")}'`,
-      ],
-    });
-  }
-  const errors: string[] = [];
-  for (const attempt of attempts) {
-    try {
-      const code = await spawn(attempt.cmd, attempt.args);
-      if (code === 0) return;
-      errors.push(`${attempt.cmd} exited ${code}`);
-    } catch (error) {
-      errors.push(`${attempt.cmd}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  throw new Error(`failed to extract zip artifact (${errors.join("; ")})`);
 }
 
 async function defaultSpawn(cmd: string, args: string[]): Promise<number> {

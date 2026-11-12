@@ -150,7 +150,7 @@ async function checkAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
   ]);
   const ic = interconnectGate ? await interconnectGate({ projectDir: project.dir }) : { pass: true, text: "none (standalone project)" };
   const accText = acc.state === "none" ? "not measured: board_check" : acc.state === "stale" ? "measured on an earlier board: board_check" : acc.pass ? "A1-A9 pass" : `failing ${acc.failing.join(", ")}`;
-  const gateText = gate.state === "pass" ? "passes" : gate.state === "none" ? "not run" : gate.state === "stale" ? "stale (the board changed since)" : gate.state === "errors" ? "check errors" : `${gate.open ?? "?"} findings open (${gate.mustFix ?? 0} must-fix)`;
+  const gateText = gate.state === "pass" ? "passes" : gate.state === "none" ? "not run" : gate.state === "stale" ? "stale (the design changed since: board_review run)" : gate.state === "errors" ? "check errors" : `${gate.open ?? "?"} findings open (${gate.mustFix ?? 0} must-fix)`;
   const bomText = bom.state === "none" ? "no BOM check: action bom" : bom.state === "stale" ? "BOM check is of an earlier board: action bom" : `current (${bom.meta!.lines} lines, ${Object.entries(bom.meta!.summary).map(([k, v]) => `${k} ${v}`).join(", ")})`;
   const text = [
     `Release readiness for ${files.stem}:`,

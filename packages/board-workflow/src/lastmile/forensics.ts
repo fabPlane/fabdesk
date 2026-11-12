@@ -6,7 +6,7 @@
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { LayoutHost } from "../layout/ctx";
+import { engineReady, type LayoutHost } from "../layout/ctx";
 import { krtPaths } from "../layout/engines";
 import { convertTransforms } from "../layout/text";
 
@@ -53,8 +53,10 @@ export function forensicsLines(stdout: string): string[] {
 
 /** KRT net_forensics on `board` (already converted) for `nets`; null when KRT is not configured. */
 export async function krtForensics(host: LayoutHost, board: string, nets: string[], radius = 1.0): Promise<string[] | null> {
-  if (!host.tools.krt || !nets.length) return null;
-  const k = krtPaths(host.tools.krt);
+  if (!nets.length) return null;
+  const root = (await engineReady(host, "krt")).path;
+  if (!root) return null;
+  const k = krtPaths(root);
   const log = join(board + ".forensics.log");
   await host.spawn([...k.python, join(k.plugins, "py_tools", "net_forensics.py"), board, "--nets", ...nets, "--radius", String(radius)], {
     cwd: k.plugins,

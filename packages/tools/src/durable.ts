@@ -2,6 +2,10 @@
  * Durable board workflow jobs. A long call outlives one MCP request (a client times a call out at ~30 min):
  * `runDurable` waits up to DURABLE_WAIT, then returns a job id while the job keeps running under its own
  * cancel signal. The `board_job` tool waits for it, reports it or cancels it. Any tool can wrap its handler.
+ *
+ * Jobs belong to the project they were started in (`board_job` only shows a caller its own project's jobs), live in the
+ * daemon's memory (a restart forgets them; `unknownJobReason` says so), and finished ones are pruned after
+ * FINISHED_TTL_MS or beyond the newest MAX_FINISHED.
  */
 import type { ToolContext, ToolOutput } from "./registry";
 import { ToolError } from "./registry";
@@ -11,7 +15,10 @@ export type DurableState = "running" | "done" | "failed" | "cancelled";
 export type DurableJob = {
   id: string;
   tool: string;
+  /** The project the job was started in (null: none was resolved). */
+  projectId: string | null;
   startedAt: number;
+  endedAt?: number;
   state: DurableState;
   notes: string[];
   result?: ToolOutput;
@@ -26,9 +33,46 @@ let waitMs = 25 * 60_000;
 export function setDurableWaitMs(ms: number) {
   waitMs = ms;
 }
-export const durableWaitMs = () => waitMs;
-export const getDurableJob = (id: string) => jobs.get(id);
-export const listDurableJobs = () => [...jobs.values()];
+/** The wait for this call: the session's choice for its client (a short tool timeout), else the default. */
+export const durableWaitMs = (ctx?: Pick<ToolContext, "session">) => ctx?.session?.durableWaitMs?.() ?? waitMs;
+/** Finished jobs are kept this long, and at most this many, for `board_job` to report. */
+export const FINISHED_TTL_MS = 60 * 60_000;
+export const MAX_FINISHED = 50;
+const DAEMON_STARTED = Date.now();
+
+/** Drop finished jobs older than FINISHED_TTL_MS, then all but the newest MAX_FINISHED finished ones. */
+export function pruneDurableJobs(now = Date.now()): void {
+  const finished = [...jobs.values()].filter((j) => j.state !== "running").sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0));
+  finished.forEach((j, i) => {
+    if (i >= MAX_FINISHED || now - (j.endedAt ?? now) > FINISHED_TTL_MS) jobs.delete(j.id);
+  });
+}
+
+export const getDurableJob = (id: string) => (pruneDurableJobs(), jobs.get(id));
+/** Jobs of one project (null: started without one), or every job when `projectId` is undefined. */
+export const listDurableJobs = (projectId?: string | null) => {
+  pruneDurableJobs();
+  return [...jobs.values()].filter((j) => projectId === undefined || j.projectId === projectId);
+};
+
+/** Why `id` is not (or no longer) a job: started before the daemon restarted, or finished long enough ago to be pruned. */
+export function unknownJobReason(id: string): string {
+  const t = parseInt(/^bj-([0-9a-z]+)-/.exec(id)?.[1] ?? "", 36);
+  if (Number.isFinite(t) && t < DAEMON_STARTED)
+    return `board job ${id} was started before the daemon restarted; board jobs live in the daemon's memory, so its state and result are gone. Run the tool again (its records under .fabdesk/board/ are kept).`;
+  return `no board job ${id}: unknown, or finished more than ${FINISHED_TTL_MS / 60_000} min ago and pruned (the newest ${MAX_FINISHED} finished jobs are kept that long). board_job {"action": "list"} lists this project's jobs.`;
+}
+
+/**
+ * Cancel a job and report its real end state: `done`/`failed`/`cancelled` once it stopped within `ms`, `stopping` when it
+ * has not yet, and the unchanged state when it had already finished.
+ */
+export async function cancelDurableJob(job: DurableJob, ms = 15_000): Promise<{ state: DurableState | "stopping"; already: boolean }> {
+  if (job.state !== "running") return { state: job.state, already: true };
+  job.controller.abort();
+  await waitJob(job, ms);
+  return { state: job.state === "running" ? "stopping" : job.state, already: false };
+}
 
 const out = (text: string, json: unknown): ToolOutput => ({ text, json });
 
@@ -73,6 +117,7 @@ export async function runDurable(
   const job = {
     id: `bj-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
     tool,
+    projectId: ctx.project?.id ?? null,
     startedAt: Date.now(),
     state: "running",
     notes: [],
@@ -97,14 +142,17 @@ export async function runDurable(
     (r) => {
       job.result = r;
       job.state = "done";
+      job.endedAt = Date.now();
     },
     (e) => {
       job.error = e;
       job.state = controller.signal.aborted ? "cancelled" : "failed";
+      job.endedAt = Date.now();
     },
   );
+  pruneDurableJobs();
   jobs.set(job.id, job);
-  return (await waitJob(job, opts.waitMs ?? waitMs, ctx.signal)) ? settled(job) : stillRunning(job);
+  return (await waitJob(job, opts.waitMs ?? durableWaitMs(ctx), ctx.signal)) ? settled(job) : stillRunning(job);
 }
 
 /** Wrap a tool handler so it runs as a durable job. */
