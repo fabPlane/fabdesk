@@ -6,3 +6,5 @@ export * from "./files";
 export * from "./onboard";
 export * from "./accept";
 export * from "./history";
+export * from "./edit/index";
+export * from "./drc";
