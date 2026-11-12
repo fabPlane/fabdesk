@@ -492,6 +492,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       await agents.writeAgentDocs(project.dir, {
         projectName: project.name,
         toolsMarkdown: toolsMarkdown(registry),
+        boardWorkflow: boardWorkflowReady(),
         ...(cli ? { kicadCli: cli.path } : {}),
         shellExecutables: Object.fromEntries(
           ["python3", "rg", "bun"].flatMap((name) => {
