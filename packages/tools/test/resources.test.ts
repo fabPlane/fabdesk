@@ -17,6 +17,16 @@ describe("resource governor", () => {
     ok.release();
   });
 
+  test("a router job that fits the machine but not the memory available now is refused, not started", async () => {
+    const g = new ResourceGovernor(async () => host(10));
+    await expect(g.admit({ cls: "router", label: "lastmile krt", paths: ["/"], pollMs: 10, memGiB: 17.8 })).rejects.toThrow(/only 10 GiB is available now/);
+    // a light job keeps the liveness rule: nothing else runs, so it starts with a note
+    const notes: string[] = [];
+    const light = await g.admit({ cls: "light", label: "edit", paths: ["/"], pollMs: 10, memGiB: 12, onWait: (w) => notes.push(w) });
+    expect(notes[0]).toContain("starting anyway");
+    light.release();
+  });
+
   test("parallel router jobs whose estimates do not fit together run one after another", async () => {
     const g = new ResourceGovernor(async () => host(24));
     const a = await g.admit({ cls: "router", label: "a", paths: ["/"], pollMs: 10, memGiB: 18.6 });

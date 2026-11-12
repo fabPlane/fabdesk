@@ -115,7 +115,7 @@ describe("size limits", () => {
   test("a router footprint from outline area x copper layers limits candidates and stretches the budget (vme-wren OOM)", () => {
     // vme-wren: 160 x 233 mm, 12 copper, 71 MB; one KRT finish peaked at 17.1 GB, three in parallel ran 24 GiB out of memory
     const vme = layout.routerFootprint({ outline: { minX: 70.9, minY: 82.3, maxX: 231.1, maxY: 315.7 }, copperLayers: Array.from({ length: 12 }, (_, i) => `In${i}.Cu`) }, 71e6);
-    expect(vme.memGiB).toBeGreaterThan(17.1);
+    expect(vme.memGiB).toBeGreaterThan(16.25 * 1.05); // above the measured 33-min peak (16.25 GiB)
     expect(vme.memGiB).toBeLessThan(21);
     expect(vme.budgetS).toBeGreaterThan(1800);
     const lim = L.sizeLimits({ pcbBytes: 71e6, availableGiB: 24, jobs: 3, opens: 3, footprint: vme });
@@ -127,6 +127,11 @@ describe("size limits", () => {
     expect(small.memGiB).toBeLessThan(2);
     expect(L.sizeLimits({ pcbBytes: 3e6, availableGiB: 20, jobs: 6, opens: 5, footprint: small })).toMatchObject({ jobs: 6 });
     expect(layout.routerFootprint({ outline: null, copperLayers: ["F.Cu", "B.Cu"] }, 85e6).memGiB).toBe(5.1); // no outline: file-size rule
+    // the light scan reads the same outline and copper layers as the full parse
+    const text = `(kicad_pcb (version 20241229)\n\t(layers (0 "F.Cu" signal) (4 "In1.Cu" signal "L2") (2 "B.Cu" signal) (25 "Edge.Cuts" user))\n\t(gr_rect (start 10 20) (end 70 83) (layer "Edge.Cuts"))\n\t(gr_line (start 0 0) (end 500 500) (layer "F.SilkS"))\n\t(footprint "x" (layer "F.Cu") (at 1 1) (fp_line (start -900 0) (end 900 0) (layer "Edge.Cuts")))\n\t(gr_text "(layer \\"Edge.Cuts\\")" (at 0 0) (layer "F.SilkS"))\n)`;
+    const shape = layout.boardGridShape(text);
+    expect(shape).toEqual({ outline: { minX: 10, minY: 20, maxX: 70, maxY: 83 }, copperLayers: ["F.Cu", "In1.Cu", "B.Cu"] });
+    expect(parseBoard(text).outline).toEqual(shape.outline);
   });
 });
 

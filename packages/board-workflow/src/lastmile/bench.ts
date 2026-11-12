@@ -11,8 +11,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { stepsFor, type Step } from "./actions";
 import { compareKeys, figureLine, gate, keyOf, type Figures, type GateSlack, type OpenItem } from "./gate";
 import { hostMemory } from "../sysinfo";
-import { parseBoard } from "../board";
-import { routerFootprint, type RouterFootprint } from "../layout/footprint";
+import { boardGridShape, routerFootprint, type RouterFootprint } from "../layout/footprint";
 
 export interface Scored {
   figures: Figures;
@@ -131,7 +130,7 @@ async function boardFootprint(file: string, bytes: number): Promise<RouterFootpr
   const text = await readFile(file, "utf8").catch(() => null);
   if (!text) return undefined;
   try {
-    return routerFootprint(parseBoard(text), bytes);
+    return routerFootprint(boardGridShape(text), bytes);
   } catch {
     return undefined;
   }

@@ -9,7 +9,7 @@
  */
 import { readFile, readdir, stat, statfs } from "node:fs/promises";
 import { cpus, loadavg } from "node:os";
-import { layout, parseBoard, sysinfo } from "@fabdesk/board-workflow";
+import { layout, sysinfo } from "@fabdesk/board-workflow";
 import { isAbsolute, join } from "node:path";
 import { ToolError } from "./registry";
 
@@ -123,7 +123,7 @@ export class ResourceGovernor {
       if (host.memTotalGiB > 0 && own > host.memTotalGiB)
         throw new ToolError(
           `${input.label} needs about ${own} GiB of memory and this machine has ${round(host.memTotalGiB)} GiB in all; ` +
-            "it would run the machine out of memory. Use a machine with more memory, or a step that routes less of the board (for example window:X0,Y0,X1,Y1).",
+            "it would run the machine out of memory. A KRT or TraceMaker run grids the whole board whatever the step; use a machine with more memory, or fill:freerouting.",
           "precondition",
         );
       const sameClass = [...this.running.values()].filter((j) => j.cls === input.cls);
@@ -137,6 +137,14 @@ export class ResourceGovernor {
           : short && this.running.size
             ? `waiting for memory: ${round(free)} GiB free after reservations, ${need.memGiB} GiB needed (${this.running.size} board job(s) running)`
             : null;
+      if (!why && short && (input.cls === "router" || input.cls === "tracemaker") && own > host.memAvailableGiB)
+        // the liveness rule (start anyway when nothing else runs) is for estimates that may be pessimistic; a router run on a
+        // large board holds a grid that big, so starting it short of memory would run the machine out instead
+        throw new ToolError(
+          `${input.label} needs about ${own} GiB of memory and only ${round(host.memAvailableGiB)} GiB is available now (${round(host.memTotalGiB)} GiB in all); ` +
+            "close other applications and try again (a KRT or TraceMaker run grids the whole board whatever the step), or use fill:freerouting.",
+          "precondition",
+        );
       if (!why) {
         if (short)
           input.onWait?.(
@@ -200,7 +208,7 @@ export async function routerMemGiB(paths: string[]): Promise<number> {
   const text = await readFile(file, "utf8").catch(() => null);
   if (!text) return boardMemGiB(paths);
   try {
-    return layout.routerFootprint(parseBoard(text), bytes).memGiB;
+    return layout.routerFootprint(layout.boardGridShape(text), bytes).memGiB; // a light scan, not a full parse
   } catch {
     return boardMemGiB(paths);
   }
