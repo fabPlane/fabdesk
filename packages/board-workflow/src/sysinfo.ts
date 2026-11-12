@@ -135,13 +135,16 @@ export function parsePs(text: string): Array<{ pid: number; ppid: number; rssByt
   return rows;
 }
 
+/** PowerShell (CIM) listing in `parsePs`'s format: pid, parent pid, working set in KiB. */
+const WIN_PROCESSES =
+  "Get-CimInstance Win32_Process | ForEach-Object { '{0} {1} {2}' -f $_.ProcessId, $_.ParentProcessId, [math]::Round($_.WorkingSetSize / 1024) }";
+
 /**
  * Resident memory of a process and all its descendants (bytes); 0 when unavailable. Linux reads `/proc`, macOS (and a
- * Linux without `/proc`) one `ps` call; Windows has no parent links without WMI, so it reports 0.
+ * Linux without `/proc`) one `ps` call, Windows one PowerShell CIM query (working set, parent links).
  */
 export async function treeRss(root: number, deps: SysDeps = {}): Promise<number> {
   const d = resolve(deps);
-  if (d.platform === "win32") return 0;
   const children = new Map<number, number[]>();
   const rss = new Map<number, number>();
   const link = (pid: number, ppid: number) => (children.get(ppid) ?? children.set(ppid, []).get(ppid)!).push(pid);
@@ -153,7 +156,10 @@ export async function treeRss(root: number, deps: SysDeps = {}): Promise<number>
       if (ppid) link(Number(name), ppid);
     }
   } else {
-    const out = d.run("ps", ["-A", "-o", "pid=,ppid=,rss="]);
+    const out =
+      d.platform === "win32"
+        ? d.run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", WIN_PROCESSES])
+        : d.run("ps", ["-A", "-o", "pid=,ppid=,rss="]);
     if (out?.code !== 0) return 0;
     for (const r of parsePs(out.stdout)) {
       link(r.pid, r.ppid);
@@ -177,8 +183,9 @@ export async function treeRss(root: number, deps: SysDeps = {}): Promise<number>
 }
 
 /**
- * True while a program with this name runs anywhere on the machine. `pgrep -x` on Linux and macOS (Linux falls back to
- * `/proc/<pid>/comm` when pgrep is missing), `tasklist` on Windows (`name.exe`). False when nothing can tell.
+ * True while a program with this name runs anywhere on the machine. `pgrep -x` on Linux and macOS (macOS then checks
+ * `ps -A -o comm=` by base name; Linux falls back to `/proc/<pid>/comm` when pgrep is missing), `tasklist` on Windows
+ * (`name.exe`). False when nothing can tell.
  */
 export async function processRunning(name: string, deps: SysDeps = {}): Promise<boolean> {
   const d = resolve(deps);
@@ -188,7 +195,13 @@ export async function processRunning(name: string, deps: SysDeps = {}): Promise<
     return !!out && out.code === 0 && out.stdout.toLowerCase().includes(`"${image.toLowerCase()}"`);
   }
   const out = d.run("pgrep", ["-x", name]);
-  if (out) return out.code === 0;
+  if (out?.code === 0) return true;
+  if (d.platform === "darwin" || (!out && d.platform !== "linux")) {
+    // macOS pgrep can miss a program whose command name is its full path (seen on CI runners): match ps's comm by base name
+    const ps = d.run("ps", ["-A", "-o", "comm="]);
+    return !!ps && ps.code === 0 && ps.stdout.split("\n").some((l) => l.trim().split("/").pop() === name);
+  }
+  if (out) return false;
   if (d.platform !== "linux") return false;
   for (const pid of (await d.readdir("/proc")).filter((n) => /^\d+$/.test(n)))
     if ((await d.readFile(`/proc/${pid}/comm`)).trim() === name) return true;

@@ -136,7 +136,9 @@ describe("process tree memory", () => {
   });
 
   test("Windows reports 0 without running anything", async () => {
-    expect(await sysinfo.treeRss(10, fake({ platform: "win32" }))).toBe(0);
+    expect(await sysinfo.treeRss(10, fake({ platform: "win32" }))).toBe(0); // nothing answered
+    const win = fake({ platform: "win32", cmds: { [`powershell.exe -NoProfile -NonInteractive -Command ${"Get-CimInstance Win32_Process | ForEach-Object { '{0} {1} {2}' -f $_.ProcessId, $_.ParentProcessId, [math]::Round($_.WorkingSetSize / 1024) }"}`]: "4 0 100\n10 4 2048\n11 10 1024\n12 4 9999\n" } });
+    expect(await sysinfo.treeRss(10, win)).toBe((2048 + 1024) * 1024);
   });
 
   test("this process has resident memory", async () => {
@@ -148,6 +150,9 @@ describe("is a program running", () => {
   test("pgrep on Linux and macOS", async () => {
     expect(await sysinfo.processRunning("tracemaker", fake({ platform: "darwin", cmds: { "pgrep -x tracemaker": "4242\n" } }))).toBe(true);
     expect(await sysinfo.processRunning("tracemaker", fake({ platform: "darwin", cmds: { "pgrep -x tracemaker": null } }))).toBe(false);
+    // macOS: pgrep misses a full-path command name; ps comm by base name finds it
+    expect(await sysinfo.processRunning("bun", fake({ platform: "darwin", cmds: { "pgrep -x bun": null, "ps -A -o comm=": "/sbin/launchd\n/Users/runner/.bun/bin/bun\n" } }))).toBe(true);
+    expect(await sysinfo.processRunning("bun", fake({ platform: "darwin", cmds: { "pgrep -x bun": null, "ps -A -o comm=": "/sbin/launchd\nbunx\n" } }))).toBe(false);
     expect(await sysinfo.processRunning("tracemaker", fake({ platform: "linux", cmds: { "pgrep -x tracemaker": null } }))).toBe(false);
   });
 
