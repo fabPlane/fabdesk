@@ -25,7 +25,7 @@ import { PROJECT_FILES } from "../fs";
 import { boardMemGiB, governor } from "../resources";
 import { runTraceMaker } from "../routers";
 import { ToolError, defineTool, type ToolContext } from "../registry";
-import { ok, requireKicad } from "./common";
+import { ok, requireKicad, runLiveDrc } from "./common";
 
 const ACTIONS = ["new", "try", "loop", "status", "why", "crossings", "fit", "pairs", "validate", "accept", "undo", "view", "info", "prune"] as const;
 
@@ -83,7 +83,7 @@ async function openBench(ctx: ToolContext, name: string, req: Requirements) {
   const project = ctx.requireProject();
   const cli = await requireKicad(ctx);
   const drc: L.DrcFn = async ({ board, parity, outFile, signal }) => {
-    const r = await ctx.services.kicad.runDrc(cli, { board, outFile, severity: "project", schematicParity: parity, refillZones: true, ...(signal ? { signal } : {}) });
+    const r = await runLiveDrc(ctx, cli, { board, outFile, parity, refill: true, signal });
     return { violations: r.violations, unconnected: r.unconnected, parity: r.schematicParity.length };
   };
   return {

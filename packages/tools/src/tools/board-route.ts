@@ -36,7 +36,7 @@ const {
 import { durable } from "../durable";
 import { boardMemGiB, governor, sampleHost, type ResourceClass } from "../resources";
 import { ToolError, defineTool, type ToolContext } from "../registry";
-import { requireKicad } from "./common";
+import { requireKicad, runLiveDrc } from "./common";
 
 /** Where KiCadRoutingTools lives: `FABDESK_KRT_DIR` (a build with `src/plugins` and `venv/bin/python`). */
 export const krtDir = (env: NodeJS.ProcessEnv = process.env) => env["FABDESK_KRT_DIR"] || null;
@@ -45,7 +45,7 @@ export function layoutHost(ctx: ToolContext, kicadCli: string | null, env: NodeJ
   const note = (s: string) => ctx.progress(0, s);
   const drc = async (board: string, outFile: string, opts: { parity: boolean; refill: boolean }) => {
     const cli = await requireKicad(ctx);
-    return ctx.services.kicad.runDrc(cli, { board, outFile, severity: "all", schematicParity: opts.parity, refillZones: opts.refill, signal: ctx.signal });
+    return runLiveDrc(ctx, cli, { board, outFile, parity: opts.parity, refill: opts.refill, signal: ctx.signal });
   };
   return {
     tools: {

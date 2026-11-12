@@ -19,7 +19,7 @@ import { boardMemGiB, governor } from "../resources";
 import { readAcceptanceState, readReviewGate } from "../board-state";
 import { bomDirOf, readBomState, readLastFab, readProxies, releaseHome, sha256Of, writeBomMeta, writeLastFab, writeProxies } from "../release-state";
 import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
-import { ok, requireKicad } from "./common";
+import { ok, requireKicad, runLiveDrc } from "./common";
 
 /** The interconnect release gate of a host project (contracts between boards). Standalone Fabdesk projects have none. */
 type InterconnectGate = (input: { projectDir: string }) => Promise<{ pass: boolean; text: string }>;
@@ -193,7 +193,7 @@ async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
             pcb: files.pcb,
             parity: true,
             drc: async ({ board, parity, outFile }) => {
-              const d = await ctx.services.kicad.runDrc(cli, { board, outFile, severity: "all", schematicParity: parity, refillZones: true, signal: ctx.signal });
+              const d = await runLiveDrc(ctx, cli, { board, outFile, parity, refill: true, signal: ctx.signal });
               return { violations: d.violations, unconnected: d.unconnected.length, parity: d.schematicParity.length };
             },
           });

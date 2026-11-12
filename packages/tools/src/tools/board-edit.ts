@@ -17,7 +17,7 @@
 import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
 import { z } from "zod/v4";
-import { CHECK_NAMES, drcInputFromFile, runAcceptance, edit } from "@fabdesk/board-workflow";
+import { CHECK_NAMES, runAcceptance, edit } from "@fabdesk/board-workflow";
 type EditMode = edit.EditMode;
 type EditRunResult = edit.EditRunResult;
 const { runEdit } = edit;
@@ -26,7 +26,7 @@ import { runDurable } from "../durable";
 import { jailPath } from "../fs";
 import { ToolError, defineTool, type ToolContext } from "../registry";
 import { boardMemGiB, governor } from "../resources";
-import { ok, requireKicad } from "./common";
+import { ok, requireKicad, runLiveDrc } from "./common";
 
 const MOVE = z.object({
   ref: z.string(),
@@ -221,9 +221,8 @@ export const board_edit = defineTool({
                 pcb,
                 parity: true,
                 drc: async ({ board, parity, outFile }) => {
-                  await c.services.kicad.runDrc(cli!, { board, outFile, severity: "all", schematicParity: parity, refillZones: true, signal: c.signal });
-                  // `--severity-all` also reports violations the owner excluded; the checks judge the live ones
-                  return drcInputFromFile(outFile);
+                  const r = await runLiveDrc(c, cli!, { board, outFile, parity, refill: true, signal: c.signal });
+                  return { violations: r.violations, unconnected: r.unconnected.length, parity: r.schematicParity.length };
                 },
               }),
           },

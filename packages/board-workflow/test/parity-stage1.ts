@@ -11,7 +11,7 @@ import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { runDrc } from "../../kicad/src/index";
-import { checkAcceptance, figures, onboard, parseBoard, readRequirements, runAcceptance, type DrcInput, type Requirements } from "../src/index";
+import { checkAcceptance, drcInputFromFile, figures, onboard, parseBoard, readRequirements, runAcceptance, type DrcInput, type Requirements } from "../src/index";
 
 const { values: a } = parseArgs({
   options: {
@@ -176,11 +176,24 @@ const live = { path: cliPath, version: "unknown" };
 const t1 = Date.now();
 const run = await runAcceptance(proj, a.drc ? { drc: async () => drcIn } : {
   drc: async ({ board, parity, outFile }) => {
-      const r = await runDrc(live, { board, outFile, severity: "all", schematicParity: parity, refillZones: true });
-      return { violations: r.violations, unconnected: r.unconnected.length, parity: r.schematicParity.length };
+      // the DRC board_check runs: project severities, owner-excluded items dropped (same as the oracle's flags)
+      await runDrc(live, { board, outFile, severity: "project", schematicParity: parity, refillZones: true });
+      return drcInputFromFile(outFile);
     },
   });
 const liveSecs = (Date.now() - t1) / 1000;
+if (!a.drc) {
+  // for the record: what `--severity-all` would have given (the old board_check path)
+  const allFile = join(out, "severity-all.drc.json");
+  await runDrc(live, { board: join(proj, pcbName), outFile: allFile, severity: "all", schematicParity: true, refillZones: true });
+  const allIn = await drcInputFromFile(allFile);
+  const rawAll = JSON.parse(await readFile(allFile, "utf8"));
+  const sev = checkAcceptance(board0, baseReq, { violations: (rawAll.violations ?? []).map((v: { type: string; severity: string; description: string }) => ({ rule: v.type, severity: v.severity, description: v.description })), unconnected: (rawAll.unconnected_items ?? []).length, parity: (rawAll.schematic_parity ?? []).length }, { boardPath: join(proj, pcbName) });
+  const oracleA2 = checkAcceptance(board0, baseReq, drcIn, { boardPath: join(proj, pcbName) }).results.A2_drc;
+  const liveA2 = run.result.results.A2_drc;
+  console.log("A2 oracle DRC:", JSON.stringify(oracleA2), "\nA2 live project severity:", JSON.stringify(liveA2), "\nA2 live --severity-all raw:", JSON.stringify(sev.results.A2_drc), "\nexcluded-filtered --severity-all input A2 count:", allIn.violations.length);
+  record("live project-severity A2 equals oracle A2", JSON.stringify(oracleA2) === JSON.stringify(liveA2), { oracle: oracleA2, live: liveA2 });
+}
 record(`${a.drc ? "recorded" : "live"} TS DRC path: summary equals oracle-DRC summary`, JSON.stringify(run.result.summary) === JSON.stringify(checkAcceptance(board0, baseReq, drcIn).summary), run.result.summary);
 const rerun = await runAcceptance(proj, { drc: async () => drcIn });
 record("history: second run compares with baseline", !!rerun.baseline || !!rerun.previous, { baseline: rerun.baseline?.newFailures, previous: rerun.previous?.newFailures });

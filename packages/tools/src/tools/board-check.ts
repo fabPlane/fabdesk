@@ -19,7 +19,7 @@ import {
   type OnboardResult,
 } from "@fabdesk/board-workflow";
 import { ToolError, defineTool } from "../registry";
-import { requireKicad } from "./common";
+import { requireKicad, runLiveDrc } from "./common";
 
 function changeLines(c: Comparison, label: string): string[] {
   const moved = c.deltas.filter((d) => d.change !== "same" || !d.now.pass);
@@ -93,7 +93,7 @@ export const board_check = defineTool({
         ...(pcb ? { pcb } : {}),
         parity,
         drc: async ({ board, parity: withParity, outFile }) => {
-          const r = await ctx.services.kicad.runDrc(cli, { board, outFile, severity: "all", schematicParity: withParity, refillZones: true, signal: ctx.signal });
+          const r = await runLiveDrc(ctx, cli, { board, outFile, parity: withParity, refill: true, signal: ctx.signal });
           return { violations: r.violations, unconnected: r.unconnected.length, parity: r.schematicParity.length };
         },
       });
