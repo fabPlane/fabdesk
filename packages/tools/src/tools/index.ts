@@ -11,6 +11,7 @@ import { boardWorkspaceTools } from "./board-workspace";
 import { boardCheckTools } from "./board-check";
 import { boardReviewTools } from "./board-review";
 import { boardLastmileTools } from "./board-lastmile";
+import { boardEditTools } from "./board-edit";
 import { kicadTools } from "./kicad";
 import { inspectionTools } from "./inspection";
 import { nativeEditTools } from "./native-edit";
@@ -46,6 +47,7 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...boardCheckTools,
   ...boardReviewTools,
   ...boardLastmileTools,
+  ...boardEditTools,
   ...releaseTools,
   ...renderTools,
   ...exportTools,

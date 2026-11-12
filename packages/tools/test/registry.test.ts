@@ -310,6 +310,7 @@ describe("registry", () => {
       "board_check",
       "board_review",
       "board_lastmile",
+      "board_edit",
       "release_build",
       "render_pcb_readiness",
       "render_pcb_display",

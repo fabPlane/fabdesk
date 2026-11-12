@@ -8,3 +8,5 @@ export * from "./accept";
 export * from "./history";
 export * from "./review/index";
 export * as lastmile from "./lastmile/index";
+export * from "./edit/index";
+export * from "./drc";
