@@ -6,7 +6,7 @@
  */
 import type { Board, Pad } from "../board";
 import { pyRound } from "../accept";
-import type { Pt } from "./geometry";
+import { pyDict, pyFloat, type Pt } from "./geometry";
 
 export interface CrossingRow {
   ref: string;
@@ -77,7 +77,7 @@ export function findCrossings(
           nets: n,
           crossings_now: res[0]!,
           worst_case: (n * (n - 1)) / 2,
-          by_turn: Object.fromEntries([0, 90, 180, 270].map((r) => [String((f.rot + r) % 360), res[r]!])),
+          by_turn: Object.fromEntries([0, 90, 180, 270].map((r) => [pyFloat((f.rot + r) % 360), res[r]!])),
           best_rotation: (f.rot + best) % 360,
           crossings_best: res[best]!,
           best_faces_neighbour: faces[best]!,
@@ -99,6 +99,6 @@ export function crossingLines(rows: readonly CrossingRow[]): string[] {
       ? `turn to ${r.best_rotation} deg: ${r.crossings_best}` +
         (r.best_faces_neighbour ? "" : " (but those pads then face away: put the part on the other side of the neighbour's pad row instead)")
       : "no rotation helps: move it to the other side of the neighbour's pads, or to the other board side";
-    return `${r.ref.padEnd(12)} <-> ${r.neighbour.padEnd(12)} ${r.nets} nets  crossings ${r.crossings_now} of ${r.worst_case}  by rotation ${JSON.stringify(r.by_turn)}  -> ${advice}`;
+    return `${r.ref.padEnd(12)} <-> ${r.neighbour.padEnd(12)} ${r.nets} nets  crossings ${r.crossings_now} of ${r.worst_case}  by rotation ${pyDict(r.by_turn, String)}  -> ${advice}`;
   });
 }

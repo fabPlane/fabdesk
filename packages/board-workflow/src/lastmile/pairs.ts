@@ -8,7 +8,7 @@
 import { padOnLayer, type Board, type Pad, type Segment, type Via } from "../board";
 import { pyRound } from "../accept";
 import type { Requirements } from "../requirements";
-import { add, dot, dist, mul, norm, pyFloat, segDist, sub, type Pt } from "./geometry";
+import { add, dot, dist, mul, norm, pyDict, pyFloat, segDist, sub, type Pt } from "./geometry";
 
 export interface PairSpec {
   p: string;
@@ -165,11 +165,11 @@ export function measurePairs(board: Board, pairs: readonly PairSpec[], stack: re
 /** The toolkit's one-line-per-pair text of `measure`. */
 export function measureLines(m: Record<string, PairMeasure>, why: boolean): string[] {
   return Object.entries(m).map(([k, v]) => {
-    const sp = JSON.stringify(v.spacing.slice(0, 3)).replaceAll(",", ", ").replaceAll("[[", "[[");
+    const sp = `[${v.spacing.slice(0, 3).map(([d, l]) => `[${pyFloat(d)}, ${pyFloat(l)}]`).join(", ")}]`;
     return (
       `${k.padEnd(44)} share ${v.coupled_share.toFixed(2)}  target ${pyFloat(v.target_mm)}  P ${v.p_mm.toFixed(1).padStart(6)}  N ${v.n_mm.toFixed(1).padStart(6)}  ` +
-      `spacing ${sp}  widths ${JSON.stringify(v.widths)}` +
-      (why ? `  uncoupled ${JSON.stringify(v.uncoupled_mm)}` : "")
+      `spacing ${sp}  widths ${pyDict(v.widths, String)}` +
+      (why ? `  uncoupled ${pyDict(v.uncoupled_mm ?? {}, pyFloat)}` : "")
     );
   });
 }

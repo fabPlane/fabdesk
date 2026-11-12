@@ -24,7 +24,7 @@ describe("gate", () => {
   test("accepts a step with fewer opens", () => expect(L.gate(fig({ open: 3 }), fig())).toEqual([]));
   test("no gain, new DRC class, A7 and A8 worse are named", () => {
     expect(L.gate(fig(), fig())).toEqual(["no gain"]);
-    expect(L.gate(fig({ open: 1, drc: { clearance: 1 } }), fig())).toEqual(['new DRC class ["clearance"]']);
+    expect(L.gate(fig({ open: 1, drc: { clearance: 1 } }), fig())).toEqual(["new DRC class ['clearance']"]);
     expect(L.gate(fig({ open: 1, a7: 1 }), fig())).toEqual(["A7 worse"]);
     expect(L.gate(fig({ open: 1, a8: 1 }), fig())).toEqual(["A8 worse"]);
     expect(L.gate(fig({ open: 1, a8: 1 }), fig(), { a8_slack: 1 })).toEqual([]);
@@ -40,7 +40,7 @@ describe("gate", () => {
   });
   test("key order and line", () => {
     expect(L.compareKeys(L.keyOf(fig({ open: 2 })), L.keyOf(fig({ open: 3 })))).toBe(-1);
-    expect(L.figureLine(fig({ drc: { clearance: 2 } }))).toBe('open 5  drc 2 {"clearance":2}  a7 0  a8 0  pairs-todo 0');
+    expect(L.figureLine(fig({ drc: { clearance: 2 } }))).toBe("open 5  drc 2 {'clearance': 2}  a7 0  a8 0  pairs-todo 0");
   });
 });
 
@@ -144,7 +144,7 @@ describe("bench", () => {
     expect(r.accepted).toBe("finish");
     expect(bench.pointer).toBe(1);
     const byName = Object.fromEntries(r.candidates.map((c) => [c.name, c]));
-    expect(byName["rip"]!.rejected).toEqual(['new DRC class ["clearance"]']);
+    expect(byName["rip"]!.rejected).toEqual(["new DRC class ['clearance']"]);
     expect(byName["fill:x"]!.rejected[0]).toBe("router crashed");
     expect(r.lines.join("\n")).toContain("closed N3, N4");
     // a step that does not improve the whole board leaves it unchanged
@@ -245,7 +245,7 @@ describe("pairs measure", () => {
     // 0.9 mm apart: over its own pad (r 0.2), then within 1.5 mm of the pad (escape), the rest loose
     expect(wide.uncoupled_mm).toEqual({ loose: 8.3, escape: 1.5, on_pad: 0.2 });
     expect(wide.widths).toEqual({ "0.15": 2 });
-    expect(L.measureLines({ "P / N": wide }, true)[0]).toContain("uncoupled {\"loose\":8.3,\"escape\":1.5,\"on_pad\":0.2}");
+    expect(L.measureLines({ "P / N": wide }, true)[0]).toContain("uncoupled {'loose': 8.3, 'escape': 1.5, 'on_pad': 0.2}");
   });
 
   test("tighten moves P and N toward each other to the class spacing, DRC permitting", async () => {

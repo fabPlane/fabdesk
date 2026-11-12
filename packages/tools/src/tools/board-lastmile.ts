@@ -83,7 +83,7 @@ async function openBench(ctx: ToolContext, name: string, req: Requirements) {
   const project = ctx.requireProject();
   const cli = await requireKicad(ctx);
   const drc: L.DrcFn = async ({ board, parity, outFile, signal }) => {
-    const r = await ctx.services.kicad.runDrc(cli, { board, outFile, severity: "all", schematicParity: parity, refillZones: true, ...(signal ? { signal } : {}) });
+    const r = await ctx.services.kicad.runDrc(cli, { board, outFile, severity: "project", schematicParity: parity, refillZones: true, ...(signal ? { signal } : {}) });
     return { violations: r.violations, unconnected: r.unconnected, parity: r.schematicParity.length };
   };
   return {

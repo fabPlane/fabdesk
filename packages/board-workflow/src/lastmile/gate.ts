@@ -6,6 +6,7 @@
  */
 import { pyRound, type AcceptanceResult } from "../accept";
 import type { Requirements } from "../requirements";
+import { pyDict } from "./geometry";
 
 /** DRC classes present on every candidate of the carrier board (USB-C shell pads); never count against a step. */
 export const INHERITED = new Set(["hole_clearance"]);
@@ -68,7 +69,7 @@ export function figuresOf(acc: AcceptanceResult, opens: readonly OpenItem[], net
   for (const n of openNets) if (nets.power.has(n)) a7.add(n);
   const cp = (a8d["coupling"] ?? {}) as Record<string, { coupled_share: number; length_difference_mm: number; skew_limit_mm: number; uncoupled?: boolean }>;
   const pairs: Record<string, PairFigure> = {};
-  for (const [k, v] of Object.entries(cp)) pairs[k] = [v.coupled_share, v.length_difference_mm, v.skew_limit_mm, Boolean(v.uncoupled) || a8.has(k.split(" / ")[0]!)];
+  for (const [k, v] of Object.entries(cp)) pairs[k] = [v.coupled_share, v.length_difference_mm, v.skew_limit_mm, Boolean(v.uncoupled) || a8.has(k.split(" / ")[0]!) || a8.has(k.split(" / ").at(-1)!)];
   const errors = (r.A2_drc["errors"] ?? {}) as Record<string, number>;
   return {
     open: Number(r.A1_connectivity["unconnected"] ?? 0),
@@ -99,7 +100,7 @@ export interface GateSlack {
 export function gate(next: Figures, cur: Figures, acc: GateSlack = {}): string[] {
   const why: string[] = [];
   const fresh = Object.keys(next.drc).filter((k) => !(k in cur.drc)).sort();
-  if (fresh.length) why.push(`new DRC class ${JSON.stringify(fresh)}`);
+  if (fresh.length) why.push(`new DRC class [${fresh.map((x) => `'${x}'`).join(", ")}]`);
   if (next.a7 > cur.a7 + (acc.a7_slack ?? 0)) why.push("A7 worse");
   // A8 nets gate; pairs_todo also counts length-difference overruns (reported, not gating), so it may only veto a
   // step that does not improve A8 itself (2026-11-10: a bundle re-route took A8 2 -> 0 with pairs_todo 2 -> 3)
@@ -124,5 +125,5 @@ export function gate(next: Figures, cur: Figures, acc: GateSlack = {}): string[]
 /** One line of figures (bench status and try output). */
 export function figureLine(f: Figures): string {
   const drc = sum(Object.values(f.drc));
-  return `open ${f.open}  drc ${drc}${drc ? " " + JSON.stringify(f.drc) : ""}  a7 ${f.a7}  a8 ${f.a8}  pairs-todo ${f.pairs_todo}`;
+  return `open ${f.open}  drc ${drc}${drc ? " " + pyDict(f.drc, String) : ""}  a7 ${f.a7}  a8 ${f.a8}  pairs-todo ${f.pairs_todo}`;
 }

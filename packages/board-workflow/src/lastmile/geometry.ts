@@ -13,3 +13,7 @@ export function segDist(p: Pt, a: Pt, b: Pt): number {
 }
 /** Python's str(float) for a number that came from round(): `1` prints as `1.0`. */
 export const pyFloat = (x: number) => (Number.isInteger(x) ? x.toFixed(1) : String(x));
+/** Python's repr of a list of strings, `['a', 'b']` (user-facing text keeps the toolkit's wording). */
+export const pyStrList = (xs: readonly string[]) => `[${xs.map((x) => `'${x}'`).join(", ")}]`;
+/** Python's repr of a dict with string keys; `val` renders each value. */
+export const pyDict = <T>(o: Record<string, T>, val: (v: T) => string) => `{${Object.entries(o).map(([k, v]) => `'${k}': ${val(v)}`).join(", ")}}`;
