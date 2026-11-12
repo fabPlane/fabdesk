@@ -20,12 +20,14 @@ import { z } from "zod/v4";
 import { CHECK_NAMES, runAcceptance, edit } from "@fabdesk/board-workflow";
 type EditMode = edit.EditMode;
 type EditRunResult = edit.EditRunResult;
+type EditRunners = edit.EditRunners;
 const { runEdit } = edit;
 import { adoptCandidate } from "../board-adopt";
 import { runDurable } from "../durable";
 import { jailPath } from "../fs";
 import { ToolError, defineTool, type ToolContext } from "../registry";
 import { boardMemGiB, governor } from "../resources";
+import type { KicadCli } from "../services";
 import { ok, requireKicad, runLiveDrc } from "./common";
 import { repairEditCandidate } from "./board-lastmile-actions";
 
@@ -179,6 +181,24 @@ export function describeEdit(r: EditRunResult, adopted: string | null): string {
   return lines.join("\n");
 }
 
+/** The runners the edit pipeline needs: A1-A9 on a live DRC, and the last-mile `finish` step to repair cut nets. */
+export function editRunners(c: ToolContext, cli: KicadCli): EditRunners {
+  return {
+    progress: (p, note) => c.progress(p, note),
+    // nets the edit cut are reconnected by the last-mile bench's `finish` step before the A1-A9 proof
+    repair: (r) => repairEditCandidate(c, r),
+    accept: (dir, pcb) =>
+      runAcceptance(dir, {
+        pcb,
+        parity: true,
+        drc: async ({ board, parity, outFile }) => {
+          const r = await runLiveDrc(c, cli, { board, outFile, parity, refill: true, signal: c.signal });
+          return { violations: r.violations, unconnected: r.unconnected.length, parity: r.schematicParity.length };
+        },
+      }),
+  };
+}
+
 export const board_edit = defineTool({
   name: "board_edit",
   toolset: "board",
@@ -215,20 +235,7 @@ export const board_edit = defineTool({
           mode,
           ...(input.pcb ? { pcb: input.pcb } : {}),
           ...(input.candidate ? { candidate: (await jailPath(project.dir, input.candidate)) } : {}),
-          runners: {
-            progress: (p, note) => c.progress(p, note),
-            // nets the edit cut are reconnected by the last-mile bench's `finish` step before the A1-A9 proof
-            repair: (r) => repairEditCandidate(c, r),
-            accept: (dir, pcb) =>
-              runAcceptance(dir, {
-                pcb,
-                parity: true,
-                drc: async ({ board, parity, outFile }) => {
-                  const r = await runLiveDrc(c, cli!, { board, outFile, parity, refill: true, signal: c.signal });
-                  return { violations: r.violations, unconnected: r.unconnected.length, parity: r.schematicParity.length };
-                },
-              }),
-          },
+          runners: editRunners(c, cli!),
         });
         let adopted: string | null = null;
         let adoptData: unknown = null;

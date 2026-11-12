@@ -4,6 +4,9 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  createEditCandidateBuilder,
+  openReviewProject,
+  type ReviewEnv,
   childLists,
   drcInputFromRaw,
   listSpanAt,
@@ -288,5 +291,44 @@ describe("collateral, drc input and the helpers", () => {
     expect(() => {
       throw new EditStop("x");
     }).toThrow("x");
+  });
+});
+
+describe("review -> edit bridge (EditCandidateBuilder)", () => {
+  const plan = { id: "fix-DECAP", move: [{ ref: "C3", to: [50, 30, 90] }], displace: { radius: 3 } } as never;
+  const finding = { id: "L3:DECAP:U1:-", severity: "must-fix" } as never;
+  const fakeReview = (findings: Array<{ id: string; severity: string }>) =>
+    (async () => ({ review: { findings }, evaluation: {}, dir: "/nowhere" })) as never;
+  const build = async (findings: Array<{ id: string; severity: string }>, over: Partial<EditRunners> = {}) => {
+    const dir = await project();
+    const b = createEditCandidateBuilder({ project: await openReviewProject(dir), runners: runners(over), reviewEnv: {} as ReviewEnv, reviewCandidate: fakeReview(findings) });
+    return { dir, res: await b.build(plan, finding) };
+  };
+  test("READY: proof passes, the finding is gone, nothing new, no collateral", async () => {
+    const { res } = await build([]);
+    expect(res.ready).toBe(true);
+    expect(res.dir).toContain("/.fabdesk/board/edits/fix-DECAP-");
+    expect(res.notes.join(" ")).toContain("finding L3:DECAP:U1:- gone");
+    expect(JSON.parse(await readFile(join(res.dir!, "review-bridge.json"), "utf8")).ready).toBe(true);
+  });
+  test("not ready when the finding is still there, or a new must-fix appears", async () => {
+    expect((await build([{ id: "L3:DECAP:U1:-", severity: "must-fix" }])).res.notes.join(" ")).toContain("still present");
+    const added = await build([{ id: "L3:OTHER:R9:-", severity: "question" }]);
+    expect(added.res.ready).toBe(false);
+    expect(added.res.notes.join(" ")).toContain("new findings: L3:OTHER:R9:-");
+    // notes are not findings that block
+    expect((await build([{ id: "L3:NOTE:R9:-", severity: "note" }])).res.ready).toBe(true);
+  });
+  test("not ready when the proof fails (opens left by the edit)", async () => {
+    const { res } = await build([], { accept: (dir, pcb) => runAcceptance(dir, { pcb, drc: async () => ({ violations: [], unconnected: 2, parity: 0 }) }) });
+    expect(res.ready).toBe(false);
+    expect(res.notes.join(" ")).toContain("proof does not pass");
+  });
+  test("an unsolvable stop is reported, not built", async () => {
+    const dir = await project();
+    const b = createEditCandidateBuilder({ project: await openReviewProject(dir), runners: runners(), reviewEnv: {} as ReviewEnv, reviewCandidate: fakeReview([]) });
+    const res = await b.build({ id: "bad", remove: ["R2"] } as never, finding);
+    expect(res.ready).toBe(false);
+    expect(res.notes.join(" ")).toContain("STOP");
   });
 });

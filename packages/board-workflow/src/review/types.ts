@@ -87,6 +87,8 @@ export interface EditPlan {
     fields: Record<string, string>;
   }>;
   displace?: { radius: number; rotations: string };
+  /** Checks the source already fails, named with the reason; the edit is then judged by no new failure. */
+  accept_before?: Record<string, string>;
 }
 
 export interface Proposal {

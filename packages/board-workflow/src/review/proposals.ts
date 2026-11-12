@@ -92,7 +92,7 @@ function decapPlan(f: FindingRecord, board: ProposalTarget, info: ProposalInfo):
     }
   }
   if (!moves.length && !adds.length) return null;
-  const plan: EditPlan = { id: `fix-${f.id}`, authority: "review proposal (workflow)", reason: f.claim.slice(0, 200), board: board.dir, project: board.dir, spec: "" };
+  const plan: EditPlan = { id: `fix-${f.id.replace(/[^\w.-]+/g, "_")}`, authority: "review proposal (workflow)", reason: f.claim.slice(0, 200), board: board.dir, project: board.dir, spec: "" };
   if (moves.length) plan.move = moves.slice(0, 4);
   if (adds.length) plan.add = adds.slice(0, 4);
   return plan;

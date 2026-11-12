@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { z } from "zod/v4";
 import {
   dispose,
+  createEditCandidateBuilder,
   fixProposals,
   importExpert,
   openReviewProject,
@@ -35,6 +36,7 @@ import { runDurable } from "../durable";
 import { boardMemGiB, governor } from "../resources";
 import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
 import { ok, requireKicad } from "./common";
+import { editRunners } from "./board-edit";
 
 const BOM_PLACES = [".fabdesk/board/release/bom-decisions.json", ".fabdesk/board/bom/bom-decisions.json"];
 
@@ -60,7 +62,7 @@ export const board_review = defineTool({
   toolset: "board",
   title: "Review the whole board against one design hash",
   description:
-    "Whole-board design review. run: the checks (L0 identity/netlist, L1 ERC/DRC grouped + acceptance A1-A9 on the same DRC, L2 pin semantics + datasheet rule cards + evidence, L3 decoupling/current/impedance/ratings/manual items, L4 connector mouths, L5 interconnect gate, L6 BOM/coverage, L8 expert pack, custom checks) as findings (must-fix | question | note), each with a proposal; the record is bound to the design hash (board, schematics, project files, requirements) and goes stale when any of them changes. gate: 0 pass | 1 none/stale | 2 open | 3 check errors, open items lead with their proposal. dispose: settle a finding (state accept | fix | false-positive, by agent | owner, reason; false-positive needs thirdSource; an agent accepting a must-fix needs evidence unless the owner's intent allows it; id may end in *). fix: every open finding's proposal; apply settles what the owner's intent or evidence decides (edit proposals are listed with their plan, not built here). import_expert: add an independent reviewer's findings (file) to the current review. status: current or stale, open counts. The reviewer never edits the design; the gate result is kept for the project's status.",
+    "Whole-board design review. run: the checks (L0 identity/netlist, L1 ERC/DRC grouped + acceptance A1-A9 on the same DRC, L2 pin semantics + datasheet rule cards + evidence, L3 decoupling/current/impedance/ratings/manual items, L4 connector mouths, L5 interconnect gate, L6 BOM/coverage, L8 expert pack, custom checks) as findings (must-fix | question | note), each with a proposal; the record is bound to the design hash (board, schematics, project files, requirements) and goes stale when any of them changes. gate: 0 pass | 1 none/stale | 2 open | 3 check errors, open items lead with their proposal. dispose: settle a finding (state accept | fix | false-positive, by agent | owner, reason; false-positive needs thirdSource; an agent accepting a must-fix needs evidence unless the owner's intent allows it; id may end in *). fix: every open finding's proposal; apply settles what the owner's intent or evidence decides (edit proposals are built as candidate boards by the edit stage and reported READY only when the finding is gone, no new finding appears and nothing outside the plan changed). import_expert: add an independent reviewer's findings (file) to the current review. status: current or stale, open counts. The reviewer never edits the design; the gate result is kept for the project's status.",
   inputSchema: {
     action: z.enum(["run", "gate", "dispose", "fix", "import_expert", "status"]).default("run"),
     pcb: z.string().optional().describe("Board file, relative to the project; default board.kicad_pcb or the project's only .kicad_pcb."),
@@ -116,7 +118,16 @@ export const board_review = defineTool({
       }
       case "fix": {
         try {
-          const r = await fixProposals(project, { apply: input.apply });
+          // edit proposals become candidate boards through the edit stage when applying (the source is never touched)
+          const cli = input.apply ? await requireKicad(ctx) : null;
+          const builder = cli
+            ? createEditCandidateBuilder({
+                project,
+                runners: editRunners(ctx, cli),
+                reviewEnv: { kicad: (args) => runKicadCli(cli, args, { tolerateExit: true, signal: ctx.signal }), kicadVersion: cli.version, bom: () => bomDecisions(project.dir), trustCustom: false, signal: ctx.signal },
+              })
+            : undefined;
+          const r = await fixProposals(project, { apply: input.apply, ...(builder ? { builder } : {}) });
           if (input.apply) await recordGate(project, await reviewGate(project));
           return ok(r.lines.join("\n"), r);
         } catch (e) {

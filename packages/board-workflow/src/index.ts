@@ -7,6 +7,7 @@ export * from "./onboard";
 export * from "./accept";
 export * from "./history";
 export * from "./review/index";
+export * from "./review-edit";
 export * as lastmile from "./lastmile/index";
 export * as edit from "./edit/index";
 export * from "./drc";
