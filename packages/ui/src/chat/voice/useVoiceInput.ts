@@ -176,6 +176,8 @@ export function useVoiceInput({
       }
       if (e.repeat) return;
       if (!matchVoiceShortcut(e, shortcut)) return;
+      // Modal account recovery (and Settings) must not start the hidden composer mic.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       e.preventDefault();
       if (mode === "toggle") toggle();
       else if (stateRef.current.phase !== "recording") void start();

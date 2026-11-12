@@ -9,6 +9,7 @@ export const Credentials = z.object({
   subject: z.string(),
   handle: z.string().optional(),
   displayName: z.string().optional(),
+  email: z.string().optional(),
   obtainedAt: z.string(),
   expiresAt: z.string(),
 });

@@ -591,3 +591,24 @@ test("closing a project clears Back history, while a blocked close retains it", 
   expect(store.getState().closeProject()).toBe(true);
   expect(store.getState().navigationHistory).toEqual([]);
 });
+
+
+test("Account opens the shared profile window without navigating or losing settings and project drafts", () => {
+  const store = createUiStore({ getItem: () => null, setItem() {}, removeItem() {} });
+  store.getState().setActiveProject("project-profile");
+  store.getState().setDraft(newChatDraftKey("project-profile"), "Unsent design question");
+  store.getState().setNotesDraft("project-profile", { base: "saved", content: "unsaved" });
+  store.getState().setSettingsOpen(true, "appearance");
+  store.getState().setSettingsOpen(true, "auth");
+  expect(store.getState().profileOpen).toBe(true);
+  expect(store.getState().settingsOpen).toBe(true);
+  expect(store.getState().settingsSection).toBe("appearance");
+  expect(store.getState().activeProjectId).toBe("project-profile");
+  expect(store.getState().drafts[newChatDraftKey("project-profile")]).toBe("Unsent design question");
+  expect(store.getState().notesDrafts["project-profile"]?.content).toBe("unsaved");
+  store.getState().setProfileOpen(true, "invitation");
+  expect(store.getState().profileReason).toBe("invitation");
+  store.getState().setProfileOpen(false);
+  expect(store.getState().profileReason).toBeNull();
+  expect(store.getState().settingsOpen).toBe(true);
+});

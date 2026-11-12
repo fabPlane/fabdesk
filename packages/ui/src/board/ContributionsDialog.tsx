@@ -2,23 +2,33 @@ import type { ProjectDetail } from "@fabdesk/protocol";
 import { DownloadedCopyDialog } from "./DownloadedCopyDialog";
 import { useEffect, useId, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { errorPayload, useCoreClient } from "@fabdesk/client-core";
+import { cloudAccountId, useAuthStore, errorPayload, useCoreClient } from "@fabdesk/client-core";
 import { Button, Dialog, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import "./project-sharing.css";
 
 /** Separate from preview sharing: every editable-board publication is explicit. */
-export function ContributionsDialog({
+export function ContributionsDialog(props: { projectId: string; onClose: () => void }) {
+  const account = useAuthStore(s => cloudAccountId(s.state));
+  return <ContributionsForAccount key={account ?? "signed-out"} {...props} account={account} />;
+}
+
+function ContributionsForAccount({
+  account,
   projectId,
   onClose,
 }: {
+  account: string | null;
   projectId: string;
   onClose: () => void;
 }) {
   const client = useCoreClient(),
     cache = useQueryClient();
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const isCurrent = () => mounted.current && cloudAccountId(useAuthStore.getState().state) === account;
   const state = useQuery({
-    queryKey: ["contributions", client.baseUrl, projectId],
+    queryKey: ["contributions", client.baseUrl, projectId, account],
     queryFn: () => client.localContributions(projectId),
     refetchInterval: 5000,
   });
@@ -58,14 +68,16 @@ export function ContributionsDialog({
     setNotice("");
     try {
       await client.publishContribution(projectId, sourceId);
+      if (!isCurrent()) return;
       await cache.invalidateQueries({ queryKey: ["project", projectId] });
+      if (!isCurrent()) return;
       setNotice(replacing ? "Board update published." : "Design files shared with Contributors.");
       setConfirm(null);
     } catch (e) {
       setError(e);
     } finally {
       setBusy(null);
-      await state.refetch();
+      if (isCurrent()) await state.refetch();
     }
   };
   return (
@@ -179,7 +191,9 @@ export function ContributionsDialog({
                       setError(null);
                       try {
                         const p = await client.importTeamBoard(state.data!.projectId, b.id);
+                        if (!isCurrent()) return;
                         await cache.invalidateQueries();
+                        if (!isCurrent()) return;
                         const ui = useUiStore.getState();
                         if (ui.activeProjectId && ui.activeProjectId !== p.id) setDownloaded(p);
                         else if (ui.setActiveProject(p.id)) {

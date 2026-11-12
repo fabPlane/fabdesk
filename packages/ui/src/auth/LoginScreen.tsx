@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, Input, Spinner } from "../components/ui";
-import { useCore } from "@fabdesk/client-core";
+import { acceptAuthSnapshot, useCore } from "@fabdesk/client-core";
 import { useAuthStore } from "@fabdesk/client-core";
 import { isMac } from "../util";
 import { isRevealDevOptionsShortcut, showDevSignInOptions } from "./dev-options";
@@ -15,8 +16,8 @@ const STAGING_PASSWORD_HINT =
  */
 export function LoginScreen() {
   const { client, host } = useCore();
+  const cache = useQueryClient();
   const state = useAuthStore((s) => s.state);
-  const setState = useAuthStore((s) => s.setState);
   const [revealed, setRevealed] = useState(false);
   const devOptions = showDevSignInOptions({ devBuild: host.devBuild, revealed });
   const [busy, setBusy] = useState(false);
@@ -27,14 +28,16 @@ export function LoginScreen() {
   // Poll while pending in case the SSE stream is not up yet.
   useEffect(() => {
     if (state?.status !== "pending") return;
+    let active = true;
     const id = setInterval(() => {
+      const before = useAuthStore.getState().state;
       client
         .authState()
-        .then(setState)
+        .then((next) => { if (active) acceptAuthSnapshot(cache, before, next); })
         .catch(() => {});
     }, 2500);
-    return () => clearInterval(id);
-  }, [state?.status, client, setState]);
+    return () => { active = false; clearInterval(id); };
+  }, [state?.status, client, cache]);
 
   useEffect(() => {
     if (host.devBuild) return;
@@ -51,9 +54,10 @@ export function LoginScreen() {
     setBusy(true);
     setError(null);
     try {
+      const before = useAuthStore.getState().state;
       const next = await client.login({ email: email.trim(), password });
-      setState(next);
-      if (next.status === "error" && next.error) setError(next.error);
+      if (acceptAuthSnapshot(cache, before, next) && next.status === "error" && next.error)
+        setError(next.error);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -65,9 +69,12 @@ export function LoginScreen() {
     setBusy(true);
     setError(null);
     try {
+      const before = useAuthStore.getState().state;
       const next = await client.login();
-      setState(next);
-      if (next.pending) void host.openExternal(next.pending.verificationUriComplete);
+      acceptAuthSnapshot(cache, before, next);
+      const current = useAuthStore.getState().state;
+      if (current?.status === "pending" && current.pending)
+        void host.openExternal(current.pending.verificationUriComplete);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -76,6 +83,20 @@ export function LoginScreen() {
   };
 
   const pending = state?.status === "pending" ? state.pending : undefined;
+  const cancelSignIn = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await client.logout();
+      const before = useAuthStore.getState().state;
+      const next = await client.authState();
+      acceptAuthSnapshot(cache, before, next);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="flex h-full items-center justify-center overflow-y-auto bg-bg p-6" style={{ alignItems: "safe center" }}>
       <div className="w-full max-w-sm rounded-2xl border border-border bg-panel p-6 shadow-xl">
@@ -89,6 +110,9 @@ export function LoginScreen() {
             </div>
             <Button variant="primary" className="w-full" onClick={() => void host.openExternal(pending.verificationUriComplete)}>
               Open browser
+            </Button>
+            <Button className="w-full" disabled={busy} onClick={() => void cancelSignIn()}>
+              Cancel sign-in
             </Button>
             <div className="flex items-center justify-center gap-2 text-xs text-muted">
               <Spinner /> Waiting for approval... expires {new Date(pending.expiresAt).toLocaleTimeString()}

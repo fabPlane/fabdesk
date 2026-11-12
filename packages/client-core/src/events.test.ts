@@ -430,3 +430,16 @@ describe("finish_it events", () => {
     expect(qc.getQueryState(["thread", "th_1"])?.isInvalidated).toBe(true);
   });
 });
+
+test("an auth event supersedes an older in-flight status snapshot", async () => {
+  const qc = new QueryClient();
+  let finish!: (value: import('@fabdesk/protocol').AuthState) => void;
+  const response = new Promise<import('@fabdesk/protocol').AuthState>(resolve => { finish = resolve; });
+  const pending = qc.fetchQuery({ queryKey: ['auth'], queryFn: () => response }).catch(() => undefined);
+  const next = { mode: 'fabplane', status: 'signed_out' } as const;
+  handleCoreEvent({ topic: 'auth.state', ts: Date.now(), state: next }, { qc, client: {} as CoreClient });
+  finish({ mode: 'fabplane', status: 'signed_in', principal: { subject: 'previous-account' } });
+  await pending;
+  expect(qc.getQueryData<import('@fabdesk/protocol').AuthState>(['auth'])).toEqual(next);
+  qc.clear();
+});

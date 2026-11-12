@@ -182,17 +182,34 @@ export function Dialog({ open, onClose, closeDisabled = false, title, headerActi
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const frame = requestAnimationFrame(() => {
       const dialog = dialogRef.current;
-      if (dialog && !dialog.contains(document.activeElement)) {
+      const top = Array.from(document.querySelectorAll('[role="dialog"][aria-modal="true"]')).at(-1);
+      if (dialog && top === dialog && !dialog.contains(document.activeElement)) {
         (dialog.querySelector<HTMLElement>("[autofocus], input:not([type=hidden]):not([type=radio]):not([disabled]), textarea:not([disabled]), select:not([disabled])")
           ?? dialog.querySelector<HTMLElement>("button:not([disabled])") ?? dialog).focus();
       }
     });
+    const mountedDialog = dialogRef.current;
     return () => {
       cancelAnimationFrame(frame);
-      if (previous?.isConnected) previous.focus();
-      else fallbackFocusRef.current?.()?.focus();
+      // Refreshing an underlying account-dependent dialog must not steal focus from recovery.
+      const activeDialog = document.activeElement?.closest('[role="dialog"][aria-modal="true"]');
+      if (activeDialog && activeDialog !== mountedDialog) return;
+      const parentDialog = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')).filter(dialog => dialog !== mountedDialog).at(-1);
+      if (previous?.isConnected && (!parentDialog || parentDialog.contains(previous))) previous.focus();
+      else (fallbackFocusRef.current?.() ?? parentDialog?.querySelector<HTMLElement>('button:not([disabled])') ?? parentDialog)?.focus();
     };
   }, [open]);
+  useEffect(() => {
+    if (!open || closeDisabled) return;
+    // A focused button can lose focus when all actions are disabled during sign-in.
+    const frame = requestAnimationFrame(() => {
+      const dialog = dialogRef.current;
+      const top = Array.from(document.querySelectorAll('[role="dialog"][aria-modal="true"]')).at(-1);
+      if (dialog && top === dialog && !dialog.contains(document.activeElement))
+        (dialog.querySelector<HTMLElement>('button:not([disabled])') ?? dialog).focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open, closeDisabled]);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
