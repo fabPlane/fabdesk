@@ -237,7 +237,7 @@ export async function routePipeline(host: LayoutHost, o: RoutePipelineOptions): 
     const r = join(tm, "cli");
     await mkdir(r, { recursive: true });
     await proj(r);
-    const cmd = [tmBin, "route", current, "-o", join(r, `${o.stem}.kicad_pcb`), "--soft-zones", "--no-tracks-on", noTrack.join(","), "--work", String(plan.cli.work ?? 50000000), "--threads", "8", ...(plan.cli.extra ?? [])];
+    const cmd = [tmBin, "route", current, "-o", join(r, `${o.stem}.kicad_pcb`), "--soft-zones", ...(noTrack.length ? ["--no-tracks-on", noTrack.join(",")] : []), "--work", String(plan.cli.work ?? 50000000), "--threads", "8", ...(plan.cli.extra ?? [])];
     const nn = plan.cli.no_neck ? tmNets(plan.cli.no_neck, acc) : [];
     if (nn.length) cmd.push("--no-neck-nets", nn.join(","));
     const t1 = Date.now();

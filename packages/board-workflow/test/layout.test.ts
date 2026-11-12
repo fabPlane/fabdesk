@@ -335,6 +335,8 @@ describe("layout flow", () => {
     const reqs = (await readFile(join(st.ws, "route/tm/tm/requests.jsonl"), "utf8")).trim().split("\n").map((l) => JSON.parse(l));
     expect(reqs.map((x) => x.tool)).toEqual(["board_info", "route", "check", "save"]);
     expect(reqs[1].args.nets).toEqual(["USB_DP", "USB_DN"]);
+    // a board with no plane layers has no --no-tracks-on (TraceMaker rejects an empty layer list)
+    expect(calls.spawns.find((c) => c[1] === "route")).not.toContain("--no-tracks-on");
     // the finished flow hands the board to the last mile
     const flow = await loadFlow(st.ws);
     expect(flow.best_board?.open).toBe(3);

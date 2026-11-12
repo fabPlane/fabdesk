@@ -52,6 +52,50 @@ Without the courtyards the check agrees too (both FAIL on the same 11 parts; onl
 `tools/add_courtyards.py`). Finding while doing this: TS `convertTransforms` first missed `(scale 1 1)` and newline-formatted transform nodes;
 fixed and unit-tested.
 
-## Not measured
-`rank` and `route` (KRT/TraceMaker routing) were not run: they wait for the orchestrator's go for heavy jobs. They are covered by unit tests
-with fake engines (`layout.test.ts`: ranking order, hedge, TraceMaker one-at-a-time admission, STOP above `lastmile_max_open`, skip when TraceMaker is not installed).
+## rank and route on cm5_minima (measured, machine otherwise idle)
+
+Workspace: the `(at ...)`-format base, seeds 0-3 all gated (see above). KRT `krt-c6-20261110`, TraceMaker 0.12.1.
+
+**The oracle could not score this board at all.** `route_krt.py --score` ends with "is in the pre-10 file format (tracks name nets by
+number)": this KRT build writes KiCad 9-style `(net 178)` on tracks (net table `(net 178 "NAME")`), and the oracle's check
+(`LEGACY_ITEM_NET`) also trips on the zones' `(net 97)`. So there are no oracle `flow rank`/`flow route` figures for this board.
+My own decision: `nameCopperNets` rewrites the numeric net reference of routed copper to the net name before merging, and `scoreRoute`
+refuses a merged board that still has numeric copper nets. Measured effect: the first TS rank run, before this fix, scored A8 = 0 on every
+seed (it measured nothing: copper named by number matched no pair net) while open counts were right (KiCad reads both spellings).
+After the fix A8 is 20-30. Cross-check on the same merged board for seed 0: the oracle's `check_acceptance.py` (run on a copy whose zone
+`(net N)` lines were joined to the previous line so its guard passes) gives A1 18, A7 0, A8 20 (7 pairs uncoupled, 6 over skew), the same as TS
+(18 / 0 / 20, 7, 6). A2 courtyards_overlap: oracle 1, TS 2 (copper_edge_clearance 2 both); not explained.
+
+rank (4 seeds, `jobs 2`, KRT, `rank.json` plan): wall 286 / 546 / 359 / 359 s per seed.
+| seed | open | A8 nets | A7 nets |
+|---|---|---|---|
+| 0 | 18 | 20 | 0 |
+| 1 | 31 | 21 | 0 |
+| 2 | 22 | 21 | 0 |
+| 3 | 27 | 30 | 0 |
+Verdict `PASS rank best seed 0 open 18`. Oracle on seed 0 alone (`route_krt.py` same plan): routed (stage exit 0) in 4 m 31 s, then failed at scoring (above).
+
+route (best seed 0), one run, `PASS route best open 16 A8 22 A7 0`, wall 1028 s, lowest available memory during the run 16.6 GiB
+(start about 23-24 GiB, so roughly 7 GiB of system memory in use at peak by everything the run started; sampled every 2 s):
+| branch | open | A8 | A7 | DRC types (A2) |
+|---|---|---|---|---|
+| rank-f (KRT finish of the rank route) | 18 | 20 | 0 | courtyards_overlap 2, copper_edge_clearance 2 |
+| rank-f-g (fine finish) **winner** | 16 | 22 | 0 | same |
+| tm (TraceMaker session + CLI) | 16 | 36 | 0 | same |
+| tm-f / tm-f-g (KRT finish after TM) | 16 / 16 | 36 / 36 | 0 | same |
+rank-f-g and tm tie on open; the key then prefers fewer A8 nets, so the KRT branch wins. Verdict is PASS (16 <= `lastmile_max_open` 25).
+A1-A9 of the winner: A1 fail (16 open), A2 fail (the 4 DRC findings above), A3 not measured (parity off for scoring, so the 0 is "unchecked"),
+A4 A5 A6 pass, A7 pass, A8 fail (22 nets), A9 pass. TraceMaker session (both): 76 connections routed, open_after 0, unconnected 142
+after refill; CLI `routed 171/172 connections, 680 tracks, 154 vias`.
+
+**Second oracle gap, found by this run:** the oracle's TraceMaker CLI step passes `--no-tracks-on ""` when the board has no plane layers
+(`acceptance.stack_policy.no_track_layers` is `[]` here) and TraceMaker rejects it: `"" is not a copper layer`. Oracle `route_pipeline.py`
+(8 m 48 s wall) ran the session stage and then died on the missing CLI board; its session responses are identical to TS (routed 76, open_after 0,
+unconnected 142). The first TS route run failed the same way (`TraceMaker wrote no board`); my fix omits the flag when the list is empty.
+The oracle also crashes when the placed base has no `.kicad_dru` and the acceptance keeps native project rules (it copies the file
+unconditionally); I gave it an empty one for the comparison. TS skips a missing rules file.
+
+Not measured: vme-wren, jetson (not allowed); rank with the 8-seed default; any repeat of route for run-to-run spread.
+
+## Unit tests
+`rank` and `route` are also covered by unit tests with fake engines (`layout.test.ts`: ranking order, hedge, TraceMaker one-at-a-time admission, STOP above `lastmile_max_open`, skip when TraceMaker is not installed).
