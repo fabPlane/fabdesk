@@ -10,7 +10,6 @@ import { boardDiffTools } from "./board-diff";
 import { boardWorkspaceTools } from "./board-workspace";
 import { boardCheckTools } from "./board-check";
 import { boardReviewTools } from "./board-review";
-import { boardLastmileTools } from "./board-lastmile";
 import { boardEditTools } from "./board-edit";
 import { boardReleaseTools } from "./board-release";
 import { boardSilkTools } from "./board-silk";
@@ -49,7 +48,6 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...verifyTools,
   ...boardCheckTools,
   ...boardReviewTools,
-  ...boardLastmileTools,
   ...boardEditTools,
   ...boardReleaseTools,
   ...boardSilkTools,
@@ -88,7 +86,6 @@ export * from "./release";
 export * from "./verify";
 export * from "./board-check";
 export * from "./board-review";
-export * from "./board-lastmile";
 export * from "./board-route";
 export * from "./render";
 export * from "./export";

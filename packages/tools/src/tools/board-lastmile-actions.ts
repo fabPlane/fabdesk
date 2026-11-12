@@ -1,35 +1,27 @@
 /**
- * board_lastmile: the last mile of a routed board, as one tool (it is to be folded into `board_route` by the
- * orchestrator; the action vocabulary and workspace layout are this file's own until then).
- *
- * A workspace (`.fabdesk/board/lastmile/<ws>`) holds the accepted steps of one board. `try` runs alternatives in
- * parallel from the current board, scores every whole board (A1-A9 on a native DRC with refilled zones) and keeps the
- * best one that passes the gate; a step that does not improve the whole board is undone. `accept` hands the bench's
- * current board to `adoptCandidate` (one KiCad commit over IPC, `origin.json` beside the candidate).
+ * The last-mile actions of `board_route`: a workspace (`.fabdesk/board/lastmile/<name>`) holds the accepted steps of one
+ * board. `try` runs alternatives in parallel from the current board, scores every whole board (A1-A9 on a native DRC with
+ * refilled zones) and keeps the best one that passes the gate; a step that does not improve the whole board is undone.
+ * `accept` hands the bench's current board to `adoptCandidate` (one KiCad commit over IPC, `origin.json` beside the candidate).
  *
  * Engines: pair tightening (`tighten`) is native TypeScript. Router steps (finish, taps, pairs, fill) go to what the
  * host already has: TraceMaker from the router registry, else the bridge's fab_router / Freerouting, under the resource
  * governor. Steps that need a rip-up or placement helper (leg, blockers, a7, shorts, reroute, bundle, nudge, turn) report
- * that helper as unavailable until the layout stage provides it.
- *
- * Overlaps: replaces `verify_drc` as the judge of a routing step and the unroute/route_run/verify loop an agent
- * otherwise hand-rolls; `route_run` stays the first full route.
+ * that helper as unavailable (`board_edit` repair uses the `finish` step).
  */
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { z } from "zod/v4";
 import { lastmile as L, locateProject, onboard, parseBoard, profile, readRequirements, type Requirements } from "@fabdesk/board-workflow";
 import { adoptCandidate, designFileHashes } from "../board-adopt";
-import { durable } from "../durable";
 import { PROJECT_FILES } from "../fs";
 import { boardMemGiB, governor } from "../resources";
 import { runTraceMaker } from "../routers";
-import { ToolError, defineTool, type ToolContext } from "../registry";
+import { ToolError, type ToolContext, type ToolOutput } from "../registry";
 import { ok, requireKicad, runLiveDrc } from "./common";
 
-const ACTIONS = ["new", "try", "loop", "status", "why", "crossings", "fit", "pairs", "validate", "accept", "undo", "view", "info", "prune"] as const;
+export const LASTMILE_ACTIONS = ["new", "try", "loop", "why", "crossings", "fit", "pairs", "validate", "accept", "undo", "view", "info", "prune"] as const;
 
-const wsDir = (projectDir: string, name: string) => join(projectDir, ".fabdesk", "board", "lastmile", name);
+export const LASTMILE_DEFAULT_WORKSPACE = ".fabdesk/board/lastmile/main";
 
 async function requirementsFor(ctx: ToolContext, pcb?: string): Promise<Requirements> {
   const project = ctx.requireProject();
@@ -79,15 +71,14 @@ function createEngine(ctx: ToolContext, req: Requirements, drc: L.DrcFn, router:
   };
 }
 
-async function openBench(ctx: ToolContext, name: string, req: Requirements) {
-  const project = ctx.requireProject();
+export async function openBench(ctx: ToolContext, ws: string, req: Requirements) {
   const cli = await requireKicad(ctx);
   const drc: L.DrcFn = async ({ board, parity, outFile, signal }) => {
     const r = await runLiveDrc(ctx, cli, { board, outFile, parity, refill: true, signal });
     return { violations: r.violations, unconnected: r.unconnected, parity: r.schematicParity.length };
   };
   return {
-    ws: wsDir(project.dir, name),
+    ws,
     deps: (router: string, onLine?: (l: string) => void) => ({
       scorer: L.createScorer(req, drc),
       engine: createEngine(ctx, req, drc, router),
@@ -97,39 +88,7 @@ async function openBench(ctx: ToolContext, name: string, req: Requirements) {
   };
 }
 
-export const board_lastmile = defineTool({
-  name: "board_lastmile",
-  toolset: "board",
-  title: "Last mile of a routed board: try, judge, keep or undo",
-  description:
-    "The last mile of a routed board, in a workspace of accepted steps. new: start from the project's board (scored). try: run actions in parallel from the current board, score each whole board (A1-A9, native DRC with refilled zones), accept the best one that passes the gate (fewer opens, DRC errors, A7/A8 nets; no new DRC class; no failing pair worse), leave the board unchanged otherwise. Actions chain with '+': finish, rip, taps, leg, blockers:R, window:X0,Y0,X1,Y1, a7, shorts, tighten[:REGEX], reroute[:REGEX], mirror, pairs, pairs-all, bundle:REGEX, fill:ROUTER, nudge, turn (an unknown name lists the vocabulary). Order: rip, taps, pairs-all, leg | blockers:1.0, a7, bundle per pair bundle, pairs, validate; then crossings, fit, nudge. loop: one candidate per failing pair from a template with {pair}. status: figures and steps. why: what walls each open end. pairs: per-pair coupled share and each uncoupled mm by cause (loose, on_pad, between, escape, apart). crossings: parts whose connections cross and the rotation that fixes it. fit: placement dry run. validate: full proof with schematic parity. accept: adopt the current board into the project (one KiCad commit, checkpointed). undo, view (SVG window), info (parts and nets), prune (delete candidate folders). Long actions keep running as a board job (board_job).",
-  inputSchema: {
-    action: z.enum(ACTIONS),
-    ws: z.string().regex(/^[\w.-]+$/).max(60).default("main").describe("Workspace name."),
-    actions: z.array(z.string().max(300)).max(12).optional().describe("try: the actions to run in parallel, e.g. ['leg', 'blockers:1.0'] or ['taps+a7']."),
-    template: z.string().max(300).optional().describe("loop: action template with {pair}, e.g. 'tighten:{pair}'."),
-    pairs: z.string().max(200).optional().describe("pairs / loop: only pairs whose P or N net matches this regex."),
-    why: z.boolean().default(true).describe("pairs: split each uncoupled mm by cause."),
-    nets: z.array(z.string()).max(60).optional().describe("why: nets to inspect (default every open net); view: nets to highlight."),
-    refs: z.string().max(400).optional().describe("crossings: only these references, comma separated."),
-    items: z.array(z.string()).max(30).optional().describe("info: part references or net regexes."),
-    box: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional().describe("view: window X0 Y0 X1 Y1 in mm."),
-    side: z.enum(["F", "B", "both"]).default("both"),
-    candidate: z.string().optional().describe("accept: an earlier try's folder to accept after the gate re-runs on it (no re-route)."),
-    adopt: z.boolean().default(true).describe("accept: also write the current board into the project."),
-    reason: z.string().max(200).optional().describe("accept: what the change is, for the checkpoint."),
-    router: z.string().default("fab_router").describe("Router for finish/taps/pairs steps: fab_router, freerouting or tracemaker."),
-    noAccept: z.boolean().default(false),
-    slackA8: z.number().int().min(0).default(0),
-    jobs: z.number().int().min(1).max(8).optional(),
-    budget: z.number().positive().optional().describe("Seconds per action; default max(180, 6 per open, up to 1800)."),
-    maxRounds: z.number().int().min(1).max(20).default(6),
-    pcb: z.string().optional().describe("new: board file in the project."),
-  },
-  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
-  scope: "project",
-  longRunning: true,
-  handler: durable("board_lastmile", async (a, ctx): Promise<import("../registry").ToolOutput> => {
+export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: string): Promise<ToolOutput> {
     const project = ctx.requireProject();
     const req = await requirementsFor(ctx, a.pcb);
     const lines: string[] = [];
@@ -137,7 +96,7 @@ export const board_lastmile = defineTool({
       lines.push(l);
       ctx.progress(0.5, l);
     };
-    const { ws, deps } = await openBench(ctx, a.ws, req);
+    const { ws, deps } = await openBench(ctx, wsPath, req);
     const mk = () => deps(a.router, log);
     try {
       if (a.action === "new") {
@@ -160,11 +119,6 @@ export const board_lastmile = defineTool({
               return ps.length ? [Math.min(...ps.map((q) => q.x)) - 1, Math.min(...ps.map((q) => q.y)) - 1, Math.max(...ps.map((q) => q.x)) + 1, Math.max(...ps.map((q) => q.y)) + 1] : null;
             }, ...(a.jobs ? { jobs: a.jobs } : {}), ...(a.budget ? { budget: a.budget } : {}) });
           return ok(out.join("\n"), { step: bench.pointer, figures: bench.figures });
-        }
-        case "status": {
-          const sc = await bench.scoreDir(bench.dir);
-          const left = [`open nets: ${bench.openNets(sc).join(", ") || "none"}`, `DRC: ${JSON.stringify(sc.figures.drc)}`];
-          return ok([...bench.statusLines(), ...left].join("\n"), { step: bench.pointer, figures: bench.figures, history: bench.state.history.map((h) => ({ action: h.action, figures: h.figures })) });
         }
         case "why": {
           const sc = await bench.scoreDir(bench.dir);
@@ -211,7 +165,7 @@ export const board_lastmile = defineTool({
           if (!a.box) throw new ToolError("view needs box: [X0, Y0, X1, Y1] in mm", "invalid_args");
           const sc = await bench.scoreDir(bench.dir);
           const board = parseBoard(await readFile(bench.board, "utf8"));
-          const svg = L.renderBoardSvg(board, { window: a.box, side: a.side, ...(a.nets ? { nets: a.nets } : {}), opens: sc.opens, labels: true, title: `${a.ws} step ${bench.pointer}` });
+          const svg = L.renderBoardSvg(board, { window: a.box, side: a.side, ...(a.nets ? { nets: a.nets } : {}), opens: sc.opens, labels: true, title: `${basename(ws)} step ${bench.pointer}` });
           const out = join(bench.ws, "views", `s${bench.pointer}-${a.box.join("-")}-${a.side}.svg`);
           await mkdir(dirname(out), { recursive: true });
           await writeFile(out, svg);
@@ -237,7 +191,41 @@ export const board_lastmile = defineTool({
       if (e instanceof ToolError) throw e;
       throw new ToolError(e instanceof Error ? e.message : String(e), "precondition");
     }
-  }),
-});
+}
 
-export const boardLastmileTools = [board_lastmile];
+/** What `runLastmile` reads from the tool's input. */
+export interface LastmileArgs {
+  action: (typeof LASTMILE_ACTIONS)[number];
+  actions?: string[] | undefined;
+  template?: string | undefined;
+  pairs?: string | undefined;
+  why: boolean;
+  nets?: string[] | undefined;
+  refs?: string | undefined;
+  items?: string[] | undefined;
+  box?: [number, number, number, number] | undefined;
+  side: "F" | "B" | "both";
+  candidate?: string | undefined;
+  adopt: boolean;
+  reason?: string | undefined;
+  router: string;
+  noAccept: boolean;
+  slackA8: number;
+  jobs?: number | undefined;
+  budget?: number | undefined;
+  maxRounds: number;
+  pcb?: string | undefined;
+}
+
+/** The bench's status lines and figures, for `status` on a last-mile workspace. */
+export async function lastmileStatus(ctx: ToolContext, wsPath: string): Promise<{ text: string; json: Record<string, unknown> }> {
+  const req = await requirementsFor(ctx);
+  const { ws, deps } = await openBench(ctx, wsPath, req);
+  const bench = await L.Bench.open(ws, deps("fab_router"));
+  const sc = await bench.scoreDir(bench.dir);
+  const left = [`open nets: ${bench.openNets(sc).join(", ") || "none"}`, `DRC: ${JSON.stringify(sc.figures.drc)}`];
+  return {
+    text: [...bench.statusLines(), ...left].join("\n"),
+    json: { step: bench.pointer, figures: bench.figures, history: bench.state.history.map((h) => ({ action: h.action, figures: h.figures })) },
+  };
+}

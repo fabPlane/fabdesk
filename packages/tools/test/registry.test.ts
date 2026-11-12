@@ -309,7 +309,6 @@ describe("registry", () => {
       "verify_viagrid",
       "board_check",
       "board_review",
-      "board_lastmile",
       "board_edit",
       "board_release",
       "board_silk",

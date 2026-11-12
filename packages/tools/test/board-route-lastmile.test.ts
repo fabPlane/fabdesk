@@ -29,19 +29,19 @@ async function setup() {
   await writeFile(join(project.dir, "board.kicad_pcb"), BOARD);
   await writeFile(join(project.dir, "board.kicad_pro"), PRO);
   const services: CoreServices = mockServices([project]);
-  const def = createRegistry().get("board_lastmile")!;
+  const def = createRegistry().get("board_route")!;
   const call = async (args: Record<string, unknown>) => {
     const ctx = await contextFactory(services, project)({ def, projectRef: undefined, signal: new AbortController().signal, progress: () => {} } as never);
-    return def.handler({ ws: "main", why: true, side: "both", router: "fab_router", noAccept: false, slackA8: 0, maxRounds: 6, adopt: true, ...args } as never, ctx);
+    return def.handler({ why: true, side: "both", router: "fab_router", noAccept: false, slackA8: 0, maxRounds: 6, adopt: true, refresh: false, full: false, seeds: "0-7", all: false, until: "route", ...args } as never, ctx);
   };
   return { project, call };
 }
 
-describe("board_lastmile", () => {
-  test("is a board-toolset tool with one action input", () => {
-    const def = createRegistry().get("board_lastmile")!;
+describe("board_route last-mile actions", () => {
+  test("is a board-toolset tool with one action input covering layout and last mile", () => {
+    const def = createRegistry().get("board_route")!;
     expect(def.toolset).toBe("board");
-    expect(def.name).toBe("board_lastmile");
+    expect(def.name).toBe("board_route");
   });
 
   test("new, pairs --why, try tighten (pair copper only), status, accept refused at the start, undo", async () => {
@@ -56,7 +56,9 @@ describe("board_lastmile", () => {
     expect((t.json as { accepted: string }).accepted).toBe("tighten");
     const after = await call({ action: "pairs", why: false });
     expect(after.text).toMatch(/share (0\.9\d|1\.00)/); // tightened to the class spacing (jogs at the pads stay uncoupled)
-    expect((await call({ action: "status" })).text).toContain("step 1 of 1");
+    const st = await call({ action: "status" });
+    expect(st.text).toContain("step 1 of 1");
+    expect((st.json as { stage: string }).stage).toBe("lastmile");
     expect((await call({ action: "undo" })).text).toContain("step 0");
     await expect(call({ action: "undo" })).rejects.toThrow(/at the start board/);
     await expect(call({ action: "accept" })).rejects.toThrow(/nothing accepted yet/);

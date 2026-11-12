@@ -174,7 +174,7 @@ export class Bench {
   static async open(ws: string, deps: BenchDeps): Promise<Bench> {
     ws = resolve(ws);
     const text = await readFile(join(ws, "state.json"), "utf8").catch(() => null);
-    if (!text) throw new Error(`${ws}: no workspace (board_lastmile {action: "new"})`);
+    if (!text) throw new Error(`${ws}: no workspace (board_route {action: "new"})`);
     return new Bench(ws, JSON.parse(text) as BenchState, deps);
   }
 
