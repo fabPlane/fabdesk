@@ -1,0 +1,7 @@
+{"part": "TI BQ25798 (buck-boost charger, two half bridges)", "match": "BQ25798",
+ "checked_against_datasheet": false,
+ "source": "half-bridge bootstrap topology; to be confirmed against the BQ25798 datasheet (BTST1/SW1, BTST2/SW2)",
+ "rules": [
+  {"pin": "BTST1", "path": ["C"], "arrives_pin": "SW1", "why": "bootstrap capacitor of half bridge 1"},
+  {"pin": "BTST2", "path": ["C"], "arrives_pin": "SW2", "why": "bootstrap capacitor of half bridge 2"}
+ ]}
