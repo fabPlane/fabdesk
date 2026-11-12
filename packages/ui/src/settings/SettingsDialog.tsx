@@ -307,12 +307,20 @@ function AuthSection() {
   const localAllowed = useAuthStore((s) => s.localAllowed);
   const setState = useAuthStore((s) => s.setState);
   const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const login = async () => {
     setBusy(true);
+    setActionError(null);
     try {
+      if (state?.mode === "local" && host.setLocalAuth) {
+        await host.setLocalAuth(false);
+        return;
+      }
       setState(await client.login());
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
     }
@@ -364,7 +372,7 @@ function AuthSection() {
           </Button>
         </div>
       )}
-      {state.error && <div className="text-danger">{state.error}</div>}
+      {(actionError || state.error) && <div role="alert" className="text-danger">{actionError || state.error}</div>}
       <div className="flex gap-2">
         {state.status === "signed_in" && state.mode === "fabplane" ? (
           <Button onClick={() => void logout()} disabled={busy}>

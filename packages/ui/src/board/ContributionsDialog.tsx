@@ -1,6 +1,6 @@
 import type { ProjectDetail } from "@fabdesk/protocol";
 import { DownloadedCopyDialog } from "./DownloadedCopyDialog";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { errorPayload, useCoreClient } from "@fabdesk/client-core";
 import { Button, Dialog, Spinner } from "../components/ui";
@@ -27,18 +27,39 @@ export function ContributionsDialog({
     [notice, setNotice] = useState("");
   const [downloaded, setDownloaded] = useState<ProjectDetail | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
+  const confirmationTitleId = useId();
+  const confirmationRef = useRef<HTMLElement>(null);
+  const boardActions = useRef(new Map<string, HTMLButtonElement>());
+  const focusBoard = useRef<string | null>(null);
+  const rememberAction = (sourceId: string) => (button: HTMLButtonElement | null) => {
+    if (button) boardActions.current.set(sourceId, button);
+    else boardActions.current.delete(sourceId);
+  };
+  useEffect(() => {
+    if (confirm) {
+      if (focusBoard.current !== confirm) confirmationRef.current?.focus();
+      focusBoard.current = confirm;
+    } else if (focusBoard.current) {
+      const action = boardActions.current.get(focusBoard.current);
+      if (action && !action.disabled) {
+        action.focus();
+        focusBoard.current = null;
+      }
+    }
+  }, [confirm, busy, state.data]);
   const confirmedBoard = state.data?.boards.find((b) => b.sourceId === confirm);
   useEffect(() => {
     if (confirm && (!confirmedBoard?.canPublish || state.isError)) setConfirm(null);
   }, [confirm, confirmedBoard?.canPublish, state.isError]);
   const publish = async (sourceId: string) => {
+    const replacing = !!state.data?.boards.find((board) => board.sourceId === sourceId)?.revision;
     setBusy(sourceId);
     setError(null);
     setNotice("");
     try {
       await client.publishContribution(projectId, sourceId);
       await cache.invalidateQueries({ queryKey: ["project", projectId] });
-      setNotice("Board update published.");
+      setNotice(replacing ? "Board update published." : "Design files shared with Contributors.");
       setConfirm(null);
     } catch (e) {
       setError(e);
@@ -57,7 +78,8 @@ export function ContributionsDialog({
         className="fd-share-dialog fd-board-files-dialog"
       >
         <p className="fd-share-muted">
-          Contributors can download these files, edit a separate copy, then publish a board update.
+          Shared previews are view-only. For each board below, you can also share design files with
+          all project Contributors. They edit a separate copy, then publish an update.
         </p>
         <details className="fd-board-files-details">
           <summary>What files are shared?</summary>
@@ -115,7 +137,7 @@ export function ContributionsDialog({
                   <div className="fd-board-file-heading">
                     <strong>{b.name}</strong>
                     <span className="fd-board-file-status" data-shared={!!b.revision}>
-                      {b.revision ? "Shared with Contributors" : "Not shared"}
+                      {b.revision ? "Contributors can edit a copy" : "View only"}
                     </span>
                   </div>
                   {b.revision && (b.publishedBy || b.publishedAt) && (
@@ -141,7 +163,7 @@ export function ContributionsDialog({
                 </div>
                 {b.canPublish ? (
                   confirm !== b.sourceId && (
-                    <Button size="sm" disabled={!!busy} onClick={() => { setNotice(""); setError(null); setConfirm(b.sourceId); }}>
+                    <Button ref={rememberAction(b.sourceId)} size="sm" disabled={!!busy} onClick={() => { setNotice(""); setError(null); setConfirm(b.sourceId); }}>
                       {b.revision ? "Publish update" : "Share files"}
                     </Button>
                   )
@@ -149,6 +171,7 @@ export function ContributionsDialog({
                   <small>No local design files</small>
                 ) : b.revision && state.data?.role !== "viewer" ? (
                   <Button
+                    ref={rememberAction(b.sourceId)}
                     size="sm"
                     disabled={!!busy}
                     onClick={async () => {
@@ -177,8 +200,8 @@ export function ContributionsDialog({
             ))}
         </ul>
         {confirm && (
-          <section className="fd-contribution-confirm">
-            <strong>
+          <section className="fd-contribution-confirm" ref={confirmationRef} tabIndex={-1} aria-labelledby={confirmationTitleId}>
+            <strong id={confirmationTitleId}>
               {confirmedBoard?.revision
                 ? `Replace the shared version of ${confirmedBoard.name}?`
                 : `Share design files for ${confirmedBoard?.name ?? "this board"}?`}
