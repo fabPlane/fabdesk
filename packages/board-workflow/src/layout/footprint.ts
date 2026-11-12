@@ -5,9 +5,11 @@
  * at 20 min), while jetson (180 x 100 mm, 10 copper, 86 MB) took 4.0 GiB. The old rule (0.06 GiB per MB of board file)
  * said ~4 GiB for both, so three parallel last-mile candidates on vme-wren ran a 24 GiB machine out of memory.
  *
- * Calibrated on those two boards: 104 bytes per grid cell across all copper layers plus a 0.5 GiB base. vme-wren -> 17.9
- * GiB against a measured peak of 16.25 GiB (17.0 GB) over a full 33-min step budget (the same peak as at 20 min: it levels
- * off); jetson -> 7.5 GiB against 4.0 GiB measured. The file-size rule stays a floor.
+ * Two terms, the larger wins. Grid: 104 bytes per grid cell across all copper layers plus a 0.5 GiB base (vme-wren ->
+ * 17.9 GiB against a measured 16.25 GiB peak over a full 33-min step budget). Board content: 0.17 GiB per MB of board
+ * file, because heavier plans hold the board's items, nets and rip-up state as well as the grid: on jetson a `finish`
+ * took 4.0 GiB but a `try` of rip / pair routing reached 12.9 GiB (13.8 GB) in one KRT process (the grid term alone
+ * said 7.5, and two parallel candidates ran the machine out of memory) -> jetson 14.6 GiB, vme-wren 12.1 (grid wins).
  *
  * `boardGridShape` reads only what the estimate needs (the layer table and the top-level Edge.Cuts drawings) in one pass
  * over the text: a full parse of a 90 MB board costs about 0.7 GiB, and the estimate is taken when memory is tight.
@@ -18,7 +20,7 @@ import { kid, kids, num, parseSexpr, type SNode } from "../sexpr";
 export const ROUTER_GRID_MM = 0.05;
 const BYTES_PER_CELL = 104;
 const BASE_GIB = 0.5;
-const GIB_PER_BOARD_MB = 0.06;
+const ROUTER_GIB_PER_BOARD_MB = 0.17;
 
 export interface RouterFootprint {
   /** Grid cells over the outline on every copper layer, millions. */
@@ -35,7 +37,7 @@ export function routerFootprint(board: Pick<Board, "outline" | "copperLayers">, 
   const layers = Math.max(1, board.copperLayers.length);
   const cells = o ? ((o.maxX - o.minX) / gridMm) * ((o.maxY - o.minY) / gridMm) * layers : 0;
   const fromGrid = BASE_GIB + (cells * BYTES_PER_CELL) / 2 ** 30;
-  const fromFile = GIB_PER_BOARD_MB * (fileBytes / 1e6);
+  const fromFile = ROUTER_GIB_PER_BOARD_MB * (fileBytes / 1e6);
   const cellsM = cells / 1e6;
   return {
     cellsM: Math.round(cellsM * 10) / 10,

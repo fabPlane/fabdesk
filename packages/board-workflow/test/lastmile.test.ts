@@ -126,7 +126,11 @@ describe("size limits", () => {
     const small = layout.routerFootprint({ outline: { minX: 0, minY: 0, maxX: 60, maxY: 63 }, copperLayers: ["F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "B.Cu"] }, 3e6);
     expect(small.memGiB).toBeLessThan(2);
     expect(L.sizeLimits({ pcbBytes: 3e6, availableGiB: 20, jobs: 6, opens: 5, footprint: small })).toMatchObject({ jobs: 6 });
-    expect(layout.routerFootprint({ outline: null, copperLayers: ["F.Cu", "B.Cu"] }, 85e6).memGiB).toBe(5.1); // no outline: file-size rule
+    expect(layout.routerFootprint({ outline: null, copperLayers: ["F.Cu", "B.Cu"] }, 85e6).memGiB).toBe(14.5); // no outline: the board-content term
+    // jetson (180 x 100 mm, 10 copper, 86 MB): the board-content term wins (a rip / pair-routing KRT run reached 12.9 GiB)
+    const jetson = layout.routerFootprint({ outline: { minX: 0, minY: 0, maxX: 180, maxY: 100 }, copperLayers: Array.from({ length: 10 }, (_, i) => `In${i}.Cu`) }, 86e6);
+    expect(jetson.memGiB).toBeGreaterThan(12.9);
+    expect(L.sizeLimits({ pcbBytes: 86e6, availableGiB: 21.4, jobs: 4, opens: 40, footprint: jetson }).jobs).toBe(1);
     // the light scan reads the same outline and copper layers as the full parse
     const text = `(kicad_pcb (version 20241229)\n\t(layers (0 "F.Cu" signal) (4 "In1.Cu" signal "L2") (2 "B.Cu" signal) (25 "Edge.Cuts" user))\n\t(gr_rect (start 10 20) (end 70 83) (layer "Edge.Cuts"))\n\t(gr_line (start 0 0) (end 500 500) (layer "F.SilkS"))\n\t(footprint "x" (layer "F.Cu") (at 1 1) (fp_line (start -900 0) (end 900 0) (layer "Edge.Cuts")))\n\t(gr_text "(layer \\"Edge.Cuts\\")" (at 0 0) (layer "F.SilkS"))\n)`;
     const shape = layout.boardGridShape(text);
