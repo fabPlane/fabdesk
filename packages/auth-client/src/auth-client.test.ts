@@ -433,3 +433,35 @@ test("profile email survives online and offline reloads and is replaced by the v
   expect((await makeClient(server).client.load()).principal).toEqual({ subject: "taylor" });
   expect((await readCredentials(home))?.email).toBeUndefined();
 });
+
+test("a late 401 from the previous account cannot sign out the replacement session", async () => {
+  const server = fakeServer([{ access_token: "old-token", expires_in: 3600 }]);
+  let finish!: (response: Response) => void;
+  const delayed = new Promise<Response>(resolve => { finish = resolve; });
+  const { client } = makeClient(server, { fetchImpl: (async (input, init) =>
+    String(input).endsWith('/delayed-old-request') ? delayed : server.fetch(input, init)) as typeof fetch });
+  await client.login();
+  const oldRequest = client.authorizedFetch(`${ORIGIN}/delayed-old-request`);
+  await client.logout();
+  server.user = { subject: "replacement-account", email: "new@example.test" };
+  server.tokenSteps.push({ access_token: "new-token", expires_in: 3600 });
+  await client.login();
+  finish(new Response(null, { status: 401 }));
+  expect((await oldRequest).status).toBe(401);
+  expect(client.state().principal?.subject).toBe("replacement-account");
+  expect(client.token()).toBe("new-token");
+  expect((await readCredentials(home))?.token).toBe("new-token");
+});
+
+test("approval during an identity-service outage still allows explicit sign-out", async () => {
+  const server = fakeServer([{ access_token: "approved-offline", expires_in: 3600 }]);
+  const { client } = makeClient(server, { fetchImpl: (async (input, init) => {
+    if (String(input).endsWith('/v1/auth/me')) throw new TypeError('identity service offline');
+    return server.fetch(input, init);
+  }) as typeof fetch });
+  expect(await client.login()).toMatchObject({ status: 'signed_in', principal: { subject: '' } });
+  expect(client.token()).toBe('approved-offline');
+  await client.logout();
+  expect(client.state().status).toBe('signed_out');
+  expect(await readCredentials(home)).toBeUndefined();
+});

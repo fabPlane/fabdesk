@@ -82,6 +82,7 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
     if (!host.onMenu) return;
     return host.onMenu((command) => {
       const ui = useUiStore.getState();
+      if (ui.profileOpen) return;
       if (command === "new-chat") actions.newChat();
       else if (command === "palette") ui.setPaletteOpen(!ui.paletteOpen);
       else if (command === "settings") actions.openSettings();

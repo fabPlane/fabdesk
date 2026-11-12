@@ -398,6 +398,8 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       void qc.invalidateQueries({ queryKey: ["threads"] });
       break;
     case "auth.state":
+      // A status request started before this event must not resurrect the previous account.
+      void qc.cancelQueries({ queryKey: ["auth"] });
       useAuthStore.getState().setState(event.state);
       qc.setQueryData(["auth"], event.state);
       break;

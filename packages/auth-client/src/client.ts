@@ -382,7 +382,7 @@ export class AuthClient {
     const headers = new Headers(init?.headers);
     if (token) headers.set("authorization", `Bearer ${token}`);
     const res = await this.fetchImpl(input, { ...init, headers });
-    if (res.status === 401 && token && this.opts.mode === "fabplane") {
+    if (res.status === 401 && token && token === this.token() && this.opts.mode === "fabplane") {
       await this.clearAndSignOut("Session expired. Sign in again.");
     }
     return res;

@@ -4,7 +4,7 @@
  * Nothing here may touch the DOM — `document`, `window`, `localStorage` and friends belong to the
  * view packages.
  */
-export { cloudAccountId } from "./auth-cache";
+export { cloudAccountId, hasFabplaneSession, acceptAuthSnapshot } from "./auth-cache";
 export { CoreClient, CoreHttpError, parseJsonl } from "./CoreClient";
 export { useProjectStatus } from "./queries";
 export { nativeSourceCandidates } from "./native-source-candidates";

@@ -61,3 +61,23 @@ The first root run had one process-ownership cleanup assertion fail because an a
 passed; the subsequent feature root run also passed. No assertion was weakened and
 no skip was added. This observation is retained rather than asserting a proven cause.
 Existing optional native integration skips remain reported in the root test totals.
+
+## Follow-up bug audit
+
+- Reproduced and fixed a late previous-account HTTP 401 signing out the replacement
+  session, and an in-flight auth-status query overwriting a newer SSE sign-out event.
+- Delayed login responses now respect newer auth events. Native verification held a
+  pending HTTP response until after browser approval, then confirmed the signed-in
+  identity remained intact when that response arrived.
+- Profile owns workspace shortcuts and Electron menu actions, so Command-K and board
+  navigation cannot open or rearrange the workspace behind account recovery.
+- A session approved while the identity service is unavailable is labeled Signed in
+  with an explicit missing-details message and working Sign out. Unidentified-session
+  caches are still cleared on logout.
+- Returning to shared projects from an expired invitation reuses its existing dialog.
+- Dashboard/organization content mounts only while expanded and resets on account
+  change: native checks observed zero cloud-status requests while collapsed and one
+  request when opened.
+- Added six regression tests for auth ordering and fallback identity. Rechecked native
+  shortcuts/focus at both sizes, deferred login responses, missing identity, invitation
+  recovery and organization loading using disposable accounts and no agent runs.

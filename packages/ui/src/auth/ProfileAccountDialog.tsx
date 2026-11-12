@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { cloudAccountId, useAuthStore, useCore } from "@fabdesk/client-core";
-import type { AuthState } from "@fabdesk/protocol";
+import {
+  acceptAuthSnapshot,
+  cloudAccountId,
+  hasFabplaneSession,
+  useAuthStore,
+  useCore,
+} from "@fabdesk/client-core";
 import { Badge, Button, Dialog, Input, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { TeamProjectsDialog } from "../board/TeamProjectsDialog";
@@ -13,8 +18,10 @@ import "./profile-account.css";
 
 export function ProfileButton() {
   const state = useAuthStore((s) => s.state);
-  const signedIn = !!cloudAccountId(state);
-  const label = signedIn ? principalLabel(state?.principal, "fabplane") : "Signed out";
+  const signedIn = hasFabplaneSession(state);
+  const label = signedIn
+    ? principalLabel(state?.principal, "fabplane") || "fabPlane account"
+    : "Signed out";
   return (
     <button
       type="button"
@@ -35,7 +42,6 @@ export function ProfileButton() {
 export function ProfileAccountDialog() {
   const open = useUiStore((s) => s.profileOpen);
   const [shared, setShared] = useState(false);
-  const reason = useUiStore((s) => s.profileReason);
   if (typeof document === "undefined") return null;
   return createPortal(
     <>
@@ -44,7 +50,8 @@ export function ProfileAccountDialog() {
         <ProfileAccountWindow
           onShared={() => {
             useUiStore.getState().setProfileOpen(false);
-            if (reason !== "invitation") setShared(true);
+            if (!document.querySelector('[role="dialog"][aria-label="Projects shared with me"]'))
+              setShared(true);
           }}
         />
       )}
@@ -64,23 +71,29 @@ function ProfileAccountWindow({ onShared }: { onShared: () => void }) {
   const [switching, setSwitching] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [organizationOpen, setOrganizationOpen] = useState(false);
+  const accountId = cloudAccountId(state);
+  useEffect(() => setOrganizationOpen(false), [accountId]);
   const status = useQuery({
     queryKey: ["auth"],
     queryFn: () => client.authState(),
     retry: false,
     refetchInterval: state?.status === "pending" ? 2500 : false,
   });
-  const signedIn = !!cloudAccountId(state);
+  const signedIn = hasFabplaneSession(state);
   const local = state?.mode === "local";
   const pending = state?.status === "pending" ? state.pending : undefined;
   const failed = state?.status === "error";
   const expired = reason === "expired" || (state?.status === "signed_out" && !!state.error);
-  const label = signedIn ? principalLabel(state?.principal, "fabplane") : "fabPlane account";
+  const label = signedIn
+    ? principalLabel(state?.principal, "fabplane") || "fabPlane account"
+    : "fabPlane account";
   const previousStatus = useRef(state?.status);
   useEffect(() => {
     if (signedIn) {
       setSwitching(false);
       setPassword("");
+      setError(null);
       if (
         previousStatus.current !== "signed_in" &&
         useUiStore.getState().profileReason === "expired"
@@ -89,12 +102,6 @@ function ProfileAccountWindow({ onShared }: { onShared: () => void }) {
     }
     previousStatus.current = state?.status;
   }, [signedIn, state?.status]);
-  // Auth changes also arrive through SSE; write both consumers so polling cannot revive old identity.
-  const accept = async (next: AuthState) => {
-    await cache.cancelQueries({ queryKey: ["auth"] });
-    cache.setQueryData(["auth"], next);
-    useAuthStore.getState().setState(next);
-  };
   const run = async (action: () => Promise<void> | void) => {
     if (busy) return;
     setBusy(true);
@@ -113,13 +120,18 @@ function ProfileAccountWindow({ onShared }: { onShared: () => void }) {
       await host.setLocalAuth(false);
       return;
     }
+    const before = useAuthStore.getState().state;
     const next = await client.login(credentials);
-    await accept(next);
-    if (next.pending && !credentials) await host.openExternal(next.pending.verificationUriComplete);
+    acceptAuthSnapshot(cache, before, next);
+    const current = useAuthStore.getState().state;
+    if (current?.status === "pending" && current.pending && !credentials)
+      await host.openExternal(current.pending.verificationUriComplete);
   };
   const signOut = async () => {
     await client.logout();
-    await accept(await client.authState());
+    const before = useAuthStore.getState().state;
+    const next = await client.authState();
+    acceptAuthSnapshot(cache, before, next);
   };
   const close = () => {
     if (!busy) useUiStore.getState().setProfileOpen(false);
@@ -150,7 +162,14 @@ function ProfileAccountWindow({ onShared }: { onShared: () => void }) {
           </span>
           <div>
             <h2>{label}</h2>
-            {signedIn && <p>{state?.principal?.email || "No email provided by this account"}</p>}
+            {signedIn && (
+              <p>
+                {state?.principal?.email ||
+                  (cloudAccountId(state)
+                    ? "No email provided by this account"
+                    : "Account details are unavailable. You can sign out and try again.")}
+              </p>
+            )}
             <Badge tone={expired || failed ? "warning" : signedIn ? "success" : "neutral"}>
               {pending
                 ? "Signing in"
@@ -296,10 +315,14 @@ function ProfileAccountWindow({ onShared }: { onShared: () => void }) {
             Claude, Codex and other agents sign in separately from your fabPlane account.
           </p>
         </section>
-        {signedIn && (
-          <details className="fd-profile-section">
+        {signedIn && !!cloudAccountId(state) && (
+          <details
+            className="fd-profile-section"
+            open={organizationOpen}
+            onToggle={(event) => setOrganizationOpen(event.currentTarget.open)}
+          >
             <summary>Dashboard & organization</summary>
-            <CloudAccount dashboardUrl={state?.dashboardUrl} />
+            {organizationOpen && <CloudAccount dashboardUrl={state?.dashboardUrl} />}
           </details>
         )}
         {localAllowed && (
