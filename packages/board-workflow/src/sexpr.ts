@@ -88,3 +88,197 @@ export function num(x: SItem | undefined, fallback = 0): number {
   const v = typeof x === "string" ? Number(x) : NaN;
   return Number.isFinite(v) ? v : fallback;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Round-trip-safe writing. Edits are splices on the original text: bytes that are not edited are never
+// rewritten, so an edit-free write is the input byte for byte. `parseLossless`/`printLossless` give the same
+// guarantee for a full parse tree (every token keeps the whitespace before it).
+// ---------------------------------------------------------------------------------------------
+
+export interface Span {
+  start: number;
+  end: number;
+}
+
+/**
+ * Spans of the root's direct children that start with `key` followed by a space or newline (same rule as the
+ * toolkit's `block_pass.top_level`). Works on multi- and single-line files; quoted strings may hold parentheses.
+ */
+export function topLevelSpans(text: string, key: string): Span[] {
+  const spans: Span[] = [];
+  let depth = 0;
+  let start = -1;
+  let inStr = false;
+  const n = text.length;
+  for (let i = 0; i < n; i++) {
+    const ch = text[i]!;
+    if (inStr) {
+      if (ch === "\\") i++;
+      else if (ch === '"') inStr = false;
+    } else if (ch === '"') inStr = true;
+    else if (ch === "(") {
+      depth++;
+      if (depth === 2 && text.startsWith(key, i + 1)) {
+        const nx = text[i + 1 + key.length];
+        if (nx === " " || nx === "\n") start = i;
+      }
+    } else if (ch === ")") {
+      if (depth === 2 && start >= 0) {
+        spans.push({ start, end: i + 1 });
+        start = -1;
+      }
+      depth--;
+    }
+  }
+  return spans;
+}
+
+/** Span of the list that opens at `open` (the index of its `(`). */
+export function listSpanAt(text: string, open: number): Span {
+  let depth = 0;
+  for (let j = open; j < text.length; j++) {
+    const c = text[j]!;
+    if (c === '"') {
+      j++;
+      while (text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
+    } else if (c === "(") depth++;
+    else if (c === ")") {
+      depth--;
+      if (depth === 0) return { start: open, end: j + 1 };
+    }
+  }
+  throw new Error("unbalanced '(' in s-expression");
+}
+
+/** Direct children (lists) of the list at `span`, as spans. */
+export function childLists(text: string, span: Span): Span[] {
+  const out: Span[] = [];
+  let depth = 0;
+  let start = -1;
+  for (let i = span.start; i < span.end; i++) {
+    const ch = text[i]!;
+    if (ch === '"') {
+      i++;
+      while (text[i] !== '"') i += text[i] === "\\" ? 2 : 1;
+    } else if (ch === "(") {
+      depth++;
+      if (depth === 2) start = i;
+    } else if (ch === ")") {
+      if (depth === 2) out.push({ start, end: i + 1 });
+      depth--;
+    }
+  }
+  return out;
+}
+
+export interface TextEdit extends Span {
+  text: string;
+}
+
+/** Apply non-overlapping splices (any order) to `text`. */
+export function splice(text: string, edits: readonly TextEdit[]): string {
+  const sorted = [...edits].sort((a, b) => b.start - a.start);
+  let out = text;
+  let floor = Infinity;
+  for (const e of sorted) {
+    if (e.end > floor) throw new Error("overlapping text edits");
+    out = out.slice(0, e.start) + e.text + out.slice(e.end);
+    floor = e.start;
+  }
+  return out;
+}
+
+/** Delete spans the way the toolkit does: trailing blanks before the span go with it, the line break stays. */
+export function removeSpans(text: string, spans: readonly Span[]): string {
+  let out = text;
+  for (const s of [...spans].sort((a, b) => b.start - a.start)) out = out.slice(0, s.start).replace(/[ \t]+$/, "") + out.slice(s.end);
+  return out;
+}
+
+/** Quote an atom as a KiCad string. */
+export function quote(s: string): string {
+  return '"' + s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n") + '"';
+}
+
+export interface LAtom {
+  /** Whitespace before the token. */
+  ws: string;
+  /** The token exactly as written (quotes and escapes included). */
+  raw: string;
+  quoted: boolean;
+}
+export interface LList {
+  ws: string;
+  items: Array<LAtom | LList>;
+  /** Whitespace before the closing parenthesis. */
+  closeWs: string;
+}
+
+/** Lossless parse of the first list (and any trailing text, kept in `tail`). `printLossless` returns the input exactly. */
+export function parseLossless(text: string): { root: LList; head: string; tail: string } {
+  const stack: LList[] = [];
+  let root: LList | null = null;
+  let ws = "";
+  let i = 0;
+  const n = text.length;
+  let head = "";
+  let tailStart = n;
+  while (i < n) {
+    const c = text[i]!;
+    if (WS.has(c)) {
+      ws += c;
+      i++;
+    } else if (c === "(") {
+      const node: LList = { ws, items: [], closeWs: "" };
+      if (stack.length) stack[stack.length - 1]!.items.push(node);
+      else if (!root) {
+        root = node;
+        head = ws;
+        node.ws = "";
+      }
+      stack.push(node);
+      ws = "";
+      i++;
+    } else if (c === ")") {
+      const top = stack.pop();
+      if (!top) throw new Error("unbalanced ')' in s-expression");
+      top.closeWs = ws;
+      ws = "";
+      i++;
+      if (!stack.length) {
+        tailStart = i;
+        break;
+      }
+    } else if (c === '"') {
+      let j = i + 1;
+      while (j < n && text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
+      stack[stack.length - 1]!.items.push({ ws, raw: text.slice(i, j + 1), quoted: true });
+      ws = "";
+      i = j + 1;
+    } else {
+      let j = i;
+      while (j < n && !WS.has(text[j]!) && text[j] !== "(" && text[j] !== ")") j++;
+      if (!stack.length) throw new Error("atom outside a list in s-expression");
+      stack[stack.length - 1]!.items.push({ ws, raw: text.slice(i, j), quoted: false });
+      ws = "";
+      i = j;
+    }
+  }
+  if (stack.length || !root) throw new Error("unbalanced '(' in s-expression");
+  return { root, head, tail: ws + text.slice(tailStart) };
+}
+
+export function printLossless(p: { root: LList; head: string; tail: string }): string {
+  const out: string[] = [p.head];
+  const walk = (l: LList) => {
+    out.push(l.ws, "(");
+    for (const it of l.items) {
+      if ("items" in it) walk(it);
+      else out.push(it.ws, it.raw);
+    }
+    out.push(l.closeWs, ")");
+  };
+  walk(p.root);
+  out.push(p.tail);
+  return out.join("");
+}
