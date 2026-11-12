@@ -9,6 +9,7 @@ import { exportTools } from "./export";
 import { boardDiffTools } from "./board-diff";
 import { boardWorkspaceTools } from "./board-workspace";
 import { boardCheckTools } from "./board-check";
+import { boardReviewTools } from "./board-review";
 import { kicadTools } from "./kicad";
 import { inspectionTools } from "./inspection";
 import { nativeEditTools } from "./native-edit";
@@ -42,6 +43,7 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...boardDiffTools,
   ...verifyTools,
   ...boardCheckTools,
+  ...boardReviewTools,
   ...releaseTools,
   ...renderTools,
   ...exportTools,
@@ -75,6 +77,7 @@ export * from "./native-edit";
 export * from "./release";
 export * from "./verify";
 export * from "./board-check";
+export * from "./board-review";
 export * from "./render";
 export * from "./export";
 export * from "./silk-art";
