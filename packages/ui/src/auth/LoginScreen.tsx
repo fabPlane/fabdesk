@@ -83,6 +83,20 @@ export function LoginScreen() {
   };
 
   const pending = state?.status === "pending" ? state.pending : undefined;
+  const cancelSignIn = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await client.logout();
+      const before = useAuthStore.getState().state;
+      const next = await client.authState();
+      acceptAuthSnapshot(cache, before, next);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="flex h-full items-center justify-center overflow-y-auto bg-bg p-6" style={{ alignItems: "safe center" }}>
       <div className="w-full max-w-sm rounded-2xl border border-border bg-panel p-6 shadow-xl">
@@ -96,6 +110,9 @@ export function LoginScreen() {
             </div>
             <Button variant="primary" className="w-full" onClick={() => void host.openExternal(pending.verificationUriComplete)}>
               Open browser
+            </Button>
+            <Button className="w-full" disabled={busy} onClick={() => void cancelSignIn()}>
+              Cancel sign-in
             </Button>
             <div className="flex items-center justify-center gap-2 text-xs text-muted">
               <Spinner /> Waiting for approval... expires {new Date(pending.expiresAt).toLocaleTimeString()}

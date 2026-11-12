@@ -162,6 +162,8 @@ export async function revokeSession(
     const res = await fetchImpl(`${normalizeOrigin(apiOrigin)}/v1/auth/session`, {
       method: "DELETE",
       headers: { authorization: `Bearer ${token}` },
+      // Local sign-out must finish even when the remote revocation service stalls.
+      signal: AbortSignal.timeout(5000),
     });
     return res.ok || res.status === 401;
   } catch {

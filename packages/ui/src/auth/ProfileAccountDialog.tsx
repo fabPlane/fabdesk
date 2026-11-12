@@ -216,6 +216,9 @@ function ProfileAccountWindow({ onShared }: { onShared: () => void }) {
             >
               Open browser <Icon name="externalLink" width={15} height={15} />
             </Button>
+            <Button variant="ghost" onClick={() => void run(signOut)} disabled={busy}>
+              Cancel sign-in
+            </Button>
             <p role="status">
               <Spinner /> Waiting for approval · expires{" "}
               {new Date(pending.expiresAt).toLocaleTimeString([], {

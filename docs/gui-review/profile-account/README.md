@@ -117,3 +117,24 @@ Existing optional native integration skips remain reported in the root test tota
   data. No real publication, download, organization change or paid run is required.
   Checks cover failure/retry and selection at 1440×920 and 960×600, plus switching
   away/back during an import and confirming that a new import still opens normally.
+
+## Interrupted authentication audit
+
+- Four failing regression tests reproduced cancellation during identity lookup persisting
+  a token, a late token response undoing logout, delayed revocation clearing a replacement
+  account, and a delayed credential reload restoring the previous identity.
+- Auth operations now own their state changes and abort superseded requests. Credential
+  writes/deletes are serialized so old cleanup cannot erase a replacement session.
+  Tokens returned after cancellation are revoked on a best-effort basis.
+- Remote revocation has a five-second deadline; local credentials and signed-in state
+  are cleared before waiting for the server. A stalled server cannot hold sign-out forever.
+- Pending browser sign-in can be cancelled explicitly in Profile and the initial login
+  screen. Closing Profile still allows the pending flow to continue; cancellation is a
+  separate action. A retry obtains a new grant.
+- Eight additional lifecycle tests cover these races, pre-aborted requests, replacement
+  login deduplication, restart persistence and a real revocation timeout. Root typecheck,
+  desktop build and 3,085 root tests pass (38 existing optional skips, zero failures);
+  Mobile typecheck and 345 tests pass.
+- Native cancellation/retry, draft retention and focus return pass at 1440×920 and
+  960×600. The initial login screen, previous delayed-response/missing-identity checks
+  and a full app/daemon restart were rechecked with disposable accounts.

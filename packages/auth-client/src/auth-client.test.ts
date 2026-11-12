@@ -465,3 +465,177 @@ test("approval during an identity-service outage still allows explicit sign-out"
   expect(client.state().status).toBe('signed_out');
   expect(await readCredentials(home)).toBeUndefined();
 });
+
+function deferredAuth<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+describe("interrupted account lifecycle", () => {
+  test("abort during identity lookup cannot persist the approved token", async () => {
+    const server = fakeServer([{ access_token: "aborted-token", expires_in: 3600 }]);
+    const entered = deferredAuth<void>(), identity = deferredAuth<Response>();
+    const { client } = makeClient(server, { fetchImpl: (async (input, init) => {
+      if (String(input).endsWith("/v1/auth/me")) { entered.resolve(); return identity.promise; }
+      return server.fetch(input, init);
+    }) as typeof fetch });
+    const controller = new AbortController();
+    const login = client.login(controller.signal);
+    await entered.promise;
+    controller.abort();
+    identity.resolve(Response.json({ user: server.user }));
+    await login;
+    expect(server.revoked).toEqual(["aborted-token"]);
+    expect(client.state().status).toBe("signed_out");
+    expect(client.token()).toBeUndefined();
+    expect(await readCredentials(home)).toBeUndefined();
+  });
+
+  test("logout cancels a pending grant even when a token response arrives late", async () => {
+    const server = fakeServer();
+    const entered = deferredAuth<void>(), token = deferredAuth<Response>();
+    server.validTokens.add("late-token");
+    const { client } = makeClient(server, { fetchImpl: (async (input, init) => {
+      if (String(input).endsWith("/v1/auth/device/token")) { entered.resolve(); return token.promise; }
+      return server.fetch(input, init);
+    }) as typeof fetch });
+    const login = client.login();
+    await entered.promise;
+    await client.logout();
+    token.resolve(Response.json({ access_token: "late-token", token_type: "Bearer", expires_in: 3600 }));
+    await login;
+    expect(server.revoked).toEqual(["late-token"]);
+    expect(client.state().status).toBe("signed_out");
+    expect(client.token()).toBeUndefined();
+    expect(await readCredentials(home)).toBeUndefined();
+  });
+
+  test("late revocation completion cannot remove a replacement account", async () => {
+    const server = fakeServer([{ access_token: "old-session", expires_in: 3600 }]);
+    const entered = deferredAuth<void>(), revoke = deferredAuth<Response>();
+    const { client } = makeClient(server, { fetchImpl: (async (input, init) => {
+      if (String(input).endsWith("/v1/auth/session")) { entered.resolve(); return revoke.promise; }
+      return server.fetch(input, init);
+    }) as typeof fetch });
+    await client.login();
+    const logout = client.logout();
+    await entered.promise;
+    server.user = { subject: "new-account" };
+    server.tokenSteps.push({ access_token: "replacement-session", expires_in: 3600 });
+    await client.login();
+    revoke.resolve(new Response(null, { status: 204 }));
+    await logout;
+    expect(client.state().principal?.subject).toBe("new-account");
+    expect(client.token()).toBe("replacement-session");
+    expect((await readCredentials(home))?.token).toBe("replacement-session");
+  });
+
+  test("a late credential reload cannot restore the previous identity", async () => {
+    const server = fakeServer([{ access_token: "old-session", expires_in: 3600 }]);
+    const entered = deferredAuth<void>(), identity = deferredAuth<Response>();
+    let delay = false;
+    const { client } = makeClient(server, { fetchImpl: (async (input, init) => {
+      if (delay && String(input).endsWith("/v1/auth/me") && new Headers(init?.headers).get("authorization") === "Bearer old-session") {
+        entered.resolve(); return identity.promise;
+      }
+      return server.fetch(input, init);
+    }) as typeof fetch });
+    await client.login();
+    delay = true;
+    const load = client.load();
+    await entered.promise;
+    await client.logout();
+    server.user = { subject: "new-account" };
+    server.tokenSteps.push({ access_token: "replacement-session", expires_in: 3600 });
+    await client.login();
+    identity.resolve(Response.json({ user: { subject: "old-account", email: "old@example.test" } }));
+    await load;
+    expect(client.state().principal?.subject).toBe("new-account");
+    expect(client.token()).toBe("replacement-session");
+    expect((await readCredentials(home))?.token).toBe("replacement-session");
+  });
+
+  test("an already aborted sign-in never requests a device code or opens a browser", async () => {
+    const server = fakeServer();
+    const { client, opened } = makeClient(server);
+    const controller = new AbortController();
+    controller.abort();
+    expect((await client.login(controller.signal)).status).toBe("signed_out");
+    expect(server.requests).toHaveLength(0);
+    expect(opened).toHaveLength(0);
+  });
+
+  test("an aborted grant cannot join or clear the replacement login", async () => {
+    const server = fakeServer();
+    const firstEntered = deferredAuth<void>(), secondEntered = deferredAuth<void>();
+    const firstToken = deferredAuth<Response>(), secondToken = deferredAuth<Response>();
+    let polls = 0;
+    server.validTokens.add("new-token");
+    const { client } = makeClient(server, { fetchImpl: (async (input, init) => {
+      if (String(input).endsWith("/v1/auth/device/token")) {
+        if (++polls === 1) { firstEntered.resolve(); return firstToken.promise; }
+        secondEntered.resolve(); return secondToken.promise;
+      }
+      return server.fetch(input, init);
+    }) as typeof fetch });
+    const controller = new AbortController();
+    const oldLogin = client.login(controller.signal);
+    await firstEntered.promise;
+    controller.abort();
+    const newLogin = client.login();
+    await secondEntered.promise;
+    firstToken.resolve(Response.json({ error: "access_denied" }, { status: 400 }));
+    await oldLogin;
+    expect(client.state().status).toBe("pending");
+    expect(client.login()).toBe(newLogin);
+    secondToken.resolve(Response.json({ access_token: "new-token", token_type: "Bearer", expires_in: 3600 }));
+    await newLogin;
+    expect(client.token()).toBe("new-token");
+    expect((await readCredentials(home))?.token).toBe("new-token");
+  });
+
+  test("sign-in triggered by sign-out notification survives credential cleanup and restart", async () => {
+    const server = fakeServer([{ access_token: "old-token", expires_in: 3600 }]);
+    let armed = false, replacement: Promise<AuthState> | undefined;
+    const { client } = makeClient(server, { onState: state => {
+      if (armed && state.status === "signed_out") { armed = false; replacement = client.login(); }
+    } });
+    await client.login();
+    server.user = { subject: "replacement" };
+    server.tokenSteps.push({ access_token: "new-token", expires_in: 3600 });
+    armed = true;
+    await client.logout();
+    expect(replacement).toBeDefined();
+    await replacement;
+    expect(client.token()).toBe("new-token");
+    const restarted = makeClient(server).client;
+    expect((await restarted.load()).principal?.subject).toBe("replacement");
+    expect(restarted.token()).toBe("new-token");
+  });
+
+  test("unresponsive revocation cannot block sign-out indefinitely", async () => {
+    const server = fakeServer([{ access_token: "old-token", expires_in: 3600 }]);
+    const entered = deferredAuth<void>();
+    let revokeSignal: AbortSignal | null | undefined;
+    const { client } = makeClient(server, { fetchImpl: (async (input, init) => {
+      if (String(input).endsWith("/v1/auth/session")) {
+        revokeSignal = init?.signal;
+        entered.resolve();
+        return new Promise<Response>((_resolve, reject) => {
+          revokeSignal?.addEventListener("abort", () => reject(new DOMException("Timed out", "AbortError")), { once: true });
+        });
+      }
+      return server.fetch(input, init);
+    }) as typeof fetch });
+    await client.login();
+    const logout = client.logout();
+    await entered.promise;
+    expect(client.state().status).toBe("signed_out");
+    expect(client.token()).toBeUndefined();
+    expect(await readCredentials(home)).toBeUndefined();
+    await logout;
+    expect(revokeSignal?.aborted).toBe(true);
+  }, 10_000);
+
+});
