@@ -184,7 +184,8 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
           if (bench.pointer === 0) throw new ToolError("nothing accepted yet: the bench is at the start board", "precondition");
           const origin = (bench.state.meta?.["originFiles"] ?? {}) as Record<string, string>;
           await writeFile(join(bench.dir, "origin.json"), JSON.stringify({ project: project.dir, files: origin }, null, 1) + "\n");
-          const r = await adoptCandidate(ctx, { candidate: bench.candidateBoard(), reason: a.reason ?? `last mile: ${bench.state.history.slice(1, bench.pointer + 1).map((h) => h.action).join(", ")}`.slice(0, 190) });
+          // onto the board the bench started from (`new` records its file name in the project folder as state.pcb), never a default
+          const r = await adoptCandidate(ctx, { candidate: bench.candidateBoard(), board: bench.state.pcb, reason: a.reason ?? `last mile: ${bench.state.history.slice(1, bench.pointer + 1).map((h) => h.action).join(", ")}`.slice(0, 190) });
           return ok(r.text, r.data);
         }
         case "undo":

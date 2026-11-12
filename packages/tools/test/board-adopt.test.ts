@@ -31,7 +31,7 @@ describe("adoptCandidate", () => {
     await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb)");
     const candidate = join(await mkdtemp(join(tmpdir(), "cand-")), "c.kicad_pcb");
     await writeFile(candidate, "(kicad_pcb)");
-    const r = await adoptCandidate(await ctx(), { candidate, reason: "test" });
+    const r = await adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "test" });
     expect(seen).toHaveLength(1);
     expect(seen[0]!.target).toBe(join(project.dir, "board.kicad_pcb"));
     expect(r.text).toContain("removed trace 10; added trace 14; changed footprint 1");
@@ -40,11 +40,24 @@ describe("adoptCandidate", () => {
     expect(r.data.checkpointId).toMatch(/^task-/);
   });
 
+  test("applies onto the board it is given, never board.kicad_pcb by default", async () => {
+    const { project, seen, ctx } = await setup();
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb main)");
+    await writeFile(join(project.dir, "panel.kicad_pcb"), "(kicad_pcb panel)");
+    const candidate = join(await mkdtemp(join(tmpdir(), "cand-")), "panel.kicad_pcb");
+    await writeFile(candidate, "(kicad_pcb panel edited)");
+    await adoptCandidate(await ctx(), { candidate, board: "panel.kicad_pcb", reason: "panel" });
+    expect(seen.map((s) => s.target)).toEqual([join(project.dir, "panel.kicad_pcb")]);
+    await expect(adoptCandidate(await ctx(), { candidate, board: "missing.kicad_pcb", reason: "x" })).rejects.toThrow(/target board not found in the project: missing.kicad_pcb/);
+    await expect(adoptCandidate(await ctx(), { candidate, board: "../elsewhere.kicad_pcb", reason: "x" })).rejects.toThrow(/escapes the project/);
+    expect(seen).toHaveLength(1);
+  });
+
   test("refuses a non-board candidate and the target itself", async () => {
     const { project, ctx } = await setup();
     await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb)");
-    await expect(adoptCandidate(await ctx(), { candidate: "c.txt", reason: "x" })).rejects.toThrow(/must be a .kicad_pcb/);
-    await expect(adoptCandidate(await ctx(), { candidate: join(project.dir, "board.kicad_pcb"), reason: "x" })).rejects.toThrow(/is the target/);
+    await expect(adoptCandidate(await ctx(), { candidate: "c.txt", board: "board.kicad_pcb", reason: "x" })).rejects.toThrow(/must be a .kicad_pcb/);
+    await expect(adoptCandidate(await ctx(), { candidate: join(project.dir, "board.kicad_pcb"), board: "board.kicad_pcb", reason: "x" })).rejects.toThrow(/is the target/);
   });
 
   test("carries changed schematic sheets, keeps the previous copy, and refuses when the project moved on", async () => {
@@ -56,7 +69,7 @@ describe("adoptCandidate", () => {
     await writeFile(candidate, "(kicad_pcb edited)");
     await writeFile(join(dir, "board.kicad_sch"), "edited sheet");
     await writeFile(join(dir, "origin.json"), JSON.stringify({ project: project.dir, files: { "board.kicad_sch": await sha("original sheet") } }));
-    const r = await adoptCandidate(await ctx(), { candidate, reason: "edit" });
+    const r = await adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "edit" });
     expect(r.data.designFiles).toEqual(["board.kicad_sch"]);
     expect(await readFile(join(project.dir, "board.kicad_sch"), "utf8")).toBe("edited sheet");
     expect(r.text).toContain("previous copies");
@@ -68,7 +81,7 @@ describe("adoptCandidate", () => {
     await writeFile(join(dir2, "c.kicad_pcb"), "(kicad_pcb 2)");
     await writeFile(join(dir2, "board.kicad_sch"), "yet another");
     await writeFile(join(dir2, "origin.json"), JSON.stringify({ project: project.dir, files: { "board.kicad_sch": await sha("edited sheet") } }));
-    await expect(adoptCandidate(await ctx(), { candidate: join(dir2, "c.kicad_pcb"), reason: "late" })).rejects.toThrow(/changed in the project since/);
+    await expect(adoptCandidate(await ctx(), { candidate: join(dir2, "c.kicad_pcb"), board: "board.kicad_pcb", reason: "late" })).rejects.toThrow(/changed in the project since/);
   });
 
   async function withSheetCandidate(project: { dir: string }) {
@@ -88,7 +101,7 @@ describe("adoptCandidate", () => {
       throw new Error("IPC commit refused");
     });
     const candidate = await withSheetCandidate(project);
-    const err = await adoptCandidate(await ctx(), { candidate, reason: "edit" }).then(() => null, (e: Error) => e);
+    const err = await adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "edit" }).then(() => null, (e: Error) => e);
     expect(err?.message).toContain("IPC commit refused");
     expect(err?.message).toContain("The project was restored");
     expect(await readFile(join(project.dir, "board.kicad_sch"), "utf8")).toBe("original sheet");
@@ -103,7 +116,7 @@ describe("adoptCandidate", () => {
       throw new Error("IPC lost");
     });
     const candidate = await withSheetCandidate(project);
-    const err = await adoptCandidate(await ctx(), { candidate, reason: "edit" }).then(() => null, (e: Error) => e);
+    const err = await adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "edit" }).then(() => null, (e: Error) => e);
     expect(err?.message).toContain("Restoring the project also failed");
     expect(err?.message).toContain("board.kicad_pcb (previous copy: .fabdesk/board/adopt/");
     expect(err?.message).toContain("board.kicad_sch (previous copy:");

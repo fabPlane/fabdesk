@@ -88,7 +88,8 @@ async function run(a: Args, ctx: ToolContext): Promise<ToolOutput> {
       if (!r.only_labels_changed || r.after.bad > r.before.bad) {
         text.push(`Not adopted: ${r.only_labels_changed ? "the candidate has more labels with problems than the board" : "something other than labels changed"}.`);
       } else {
-        const ad = await adoptCandidate(ctx, { candidate: r.board, reason: a.reason });
+        // onto the board this run placed labels on (a named `pcb`, or the project's only board), never a default
+        const ad = await adoptCandidate(ctx, { candidate: r.board, board: relative(project.dir, files.pcb), reason: a.reason });
         text.push(ad.text);
       }
     } else text.push("Not adopted; run again with adopt, or adopt the candidate board yourself.");

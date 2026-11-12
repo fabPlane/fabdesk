@@ -6,7 +6,7 @@
 import { copyFile, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join, relative, resolve } from "node:path";
-import { jailPath, PROJECT_FILES } from "./fs";
+import { jailPath } from "./fs";
 import { saveBoardPoint } from "./board-history";
 import { governor } from "./resources";
 import { ToolError, type ToolContext } from "./registry";
@@ -74,16 +74,20 @@ export type AdoptOutcome = {
   clean: boolean;
 };
 
-export async function adoptCandidate(ctx: ToolContext, input: { candidate: string; board?: string; reason: string }): Promise<AdoptOutcome> {
+/**
+ * `board` is the project-relative board the stage worked on (the located `pcb`, the bench's board): required, so a
+ * candidate computed from `panel.kicad_pcb` can never be applied onto `board.kicad_pcb`.
+ */
+export async function adoptCandidate(ctx: ToolContext, input: { candidate: string; board: string; reason: string }): Promise<AdoptOutcome> {
   const project = ctx.requireProject();
   const adopter = ctx.services.boardAdopt;
   if (!adopter) throw new ToolError("adopting a candidate board is unavailable in this runtime", "unavailable");
   const { candidate } = input;
   if (!candidate.endsWith(".kicad_pcb")) throw new ToolError("candidate must be a .kicad_pcb", "invalid_args");
   if (!(await stat(candidate).catch(() => null))?.isFile()) throw new ToolError(`candidate not found: ${candidate}`, "not_found");
-  const target = await jailPath(project.dir, input.board ?? PROJECT_FILES.boardPcb);
+  const target = await jailPath(project.dir, input.board);
   if (!target.endsWith(".kicad_pcb") || !(await stat(target).catch(() => null))?.isFile())
-    throw new ToolError(`target board not found in the project: ${input.board ?? PROJECT_FILES.boardPcb}`, "not_found");
+    throw new ToolError(`target board not found in the project: ${input.board}`, "not_found");
   if (resolve(candidate) === resolve(target)) throw new ToolError("candidate is the target board", "invalid_args");
   const cli = await ctx.services.kicad.resolveCli();
   if (!cli) throw new ToolError("no kicad-cli found (Settings → KiCad CLI)", "unavailable");

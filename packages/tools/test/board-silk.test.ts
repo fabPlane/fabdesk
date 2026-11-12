@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { findKicadCli } from "@fabdesk/kicad";
 import { createRegistry, type BoardAdoptResult, type CoreServices } from "../src";
@@ -53,6 +53,21 @@ describe.skipIf(!cli)("board_silk (kicad-cli)", () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]!.target).toBe(join(project.dir, "board.kicad_pcb"));
     expect(a.text).toContain("residual none");
+  });
+
+  test("adopt targets the board that was placed: a named pcb, or a sole board not called board.kicad_pcb", async () => {
+    const { project, call, seen } = await setup();
+    // a panel beside the main board: place on the panel, adopt onto the panel
+    await writeFile(join(project.dir, "panel.kicad_pcb"), FIXTURE_BOARD);
+    await call({ action: "place", pcb: "panel.kicad_pcb", pictures: false, adopt: true });
+    expect(seen.map((s) => s.target)).toEqual([join(project.dir, "panel.kicad_pcb")]);
+    // the project's only board is foo.kicad_pcb
+    await rm(join(project.dir, "board.kicad_pcb"));
+    await rm(join(project.dir, "panel.kicad_pcb"));
+    await writeFile(join(project.dir, "foo.kicad_pcb"), FIXTURE_BOARD);
+    const r = await call({ action: "place", pictures: false, adopt: true });
+    expect(r.text).toContain("residual none");
+    expect(seen.map((s) => s.target)).toEqual([join(project.dir, "panel.kicad_pcb"), join(project.dir, "foo.kicad_pcb")]);
   });
 
   test("dry run solves and reports without writing; show draws pictures", async () => {
