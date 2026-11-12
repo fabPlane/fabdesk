@@ -6,7 +6,7 @@
  */
 import { statfs } from "node:fs/promises";
 import { layout, sysinfo } from "@fabdesk/board-workflow";
-import { boardMemGiB, governor, routerMemGiB, sampleHost, type ResourceClass } from "../resources";
+import { boardMemGiB, governor, routerFootprintFor, sampleHost, type ResourceClass } from "../resources";
 import type { ToolContext } from "../registry";
 import { requireKicad, runLiveDrc } from "./common";
 
@@ -64,8 +64,10 @@ export function layoutHost(ctx: ToolContext, kicadCli: string | null, env: NodeJ
       // KRT and TraceMaker hold a grid over the whole board: estimate from outline area x copper layers, not file size.
       // Freerouting and fab_router (fill steps) are not grid routers; they keep the file-size estimate.
       const gridRouter = (kind === "router" || kind === "tracemaker") && opts?.engine !== "freerouting" && opts?.engine !== "fab_router";
-      const memGiB = gridRouter ? await routerMemGiB(paths) : await boardMemGiB(paths);
-      const job = await governor().admit({ cls: kind as ResourceClass, label, paths, signal: ctx.signal, memGiB, onWait: note });
+      const fp = gridRouter ? await routerFootprintFor(paths) : null;
+      const memGiB = fp ? fp.memGiB : await boardMemGiB(paths);
+      // reserve the larger estimate; only the grid term (allocated whatever the plan) may refuse the run
+      const job = await governor().admit({ cls: kind as ResourceClass, label, paths, signal: ctx.signal, memGiB, ...(fp ? { hardGiB: fp.gridGiB } : {}), onWait: note });
       return { release: job.release };
     },
     memAvailableGiB: async () => (await sampleHost()).memAvailableGiB,

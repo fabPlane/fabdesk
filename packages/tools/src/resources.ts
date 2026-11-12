@@ -103,8 +103,13 @@ export class ResourceGovernor {
     /** Progress: why the job queues, and the note when it is admitted short on memory with nothing else running. */
     onWait?: (why: string) => void;
     pollMs?: number;
-    /** Memory this job will hold when it is more than its class default (a large board). */
+    /** Memory this job will hold when it is more than its class default (a large board): reserved while it runs. */
     memGiB?: number;
+    /**
+     * Memory the job certainly allocates (default `memGiB`): only this may refuse it (above the machine's total, or a
+     * router run above what is available now). A plan-dependent peak above it reserves but never refuses.
+     */
+    hardGiB?: number;
   }): Promise<RunningJob & { release(): void }> {
     const base = RESOURCE_NEEDS[input.cls];
     const need = { ...base, memGiB: Math.max(base.memGiB, input.memGiB ?? 0) };
@@ -119,7 +124,7 @@ export class ResourceGovernor {
           "precondition",
         );
       // only the job's own board-based estimate can refuse it; class defaults are conservative constants, not this board
-      const own = input.memGiB ?? 0;
+      const own = input.hardGiB ?? input.memGiB ?? 0;
       if (host.memTotalGiB > 0 && own > host.memTotalGiB)
         throw new ToolError(
           `${input.label} needs about ${own} GiB of memory and this machine has ${round(host.memTotalGiB)} GiB in all; ` +
@@ -209,20 +214,29 @@ export async function editMemGiB(paths: string[]): Promise<number> {
 }
 
 /**
- * Memory one router run (KiCadRoutingTools, TraceMaker) holds on the largest board the paths name: from the board's
- * outline area x copper layers (board-workflow `routerFootprint`, measured on vme-wren and jetson), never below the
- * file-size rule. 0 when no board is named.
+ * Memory one router run (KiCadRoutingTools, TraceMaker) holds on the largest board the paths name (board-workflow
+ * `routerFootprint`): `memGiB` is the larger of the grid term (outline area x copper layers / grid²) and the
+ * board-content term (0.17 GiB per MB of board file, a plan-dependent peak) and is what admission reserves; `gridGiB`
+ * is the grid term alone, allocated by any run whatever the plan, and is the only figure that may refuse a run.
+ * Zeros when no board is named.
  */
-export async function routerMemGiB(paths: string[]): Promise<number> {
+export async function routerFootprintFor(paths: string[]): Promise<{ memGiB: number; gridGiB: number }> {
   const { file, bytes } = await largestBoard(paths);
-  if (!file) return 0;
+  if (!file) return { memGiB: 0, gridGiB: 0 };
   const text = await readFile(file, "utf8").catch(() => null);
-  if (!text) return boardMemGiB(paths);
+  const fallback = await boardMemGiB(paths);
+  if (!text) return { memGiB: fallback, gridGiB: fallback };
   try {
-    return layout.routerFootprint(layout.boardGridShape(text), bytes).memGiB; // a light scan, not a full parse
+    const f = layout.routerFootprint(layout.boardGridShape(text), bytes); // a light scan, not a full parse
+    return { memGiB: f.memGiB, gridGiB: f.gridGiB };
   } catch {
-    return boardMemGiB(paths);
+    return { memGiB: fallback, gridGiB: fallback };
   }
+}
+
+/** `routerFootprintFor(paths).memGiB`: the reservation for one router run. */
+export async function routerMemGiB(paths: string[]): Promise<number> {
+  return (await routerFootprintFor(paths)).memGiB;
 }
 
 async function largestBoard(paths: string[]): Promise<{ file: string | null; bytes: number }> {

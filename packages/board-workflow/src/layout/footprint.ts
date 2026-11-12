@@ -25,8 +25,10 @@ const ROUTER_GIB_PER_BOARD_MB = 0.17;
 export interface RouterFootprint {
   /** Grid cells over the outline on every copper layer, millions. */
   cellsM: number;
-  /** Peak memory one router run is expected to hold, GiB. */
+  /** Peak memory one router run is expected to hold, GiB (the larger term: what admission reserves). */
   memGiB: number;
+  /** The grid term alone, GiB: what any KRT / TraceMaker run allocates whatever the plan (what may refuse a run). */
+  gridGiB: number;
   /** Suggested per-action time budget for a last-mile router step, seconds. */
   budgetS: number;
 }
@@ -42,6 +44,7 @@ export function routerFootprint(board: Pick<Board, "outline" | "copperLayers">, 
   return {
     cellsM: Math.round(cellsM * 10) / 10,
     memGiB: Math.round(Math.max(0.5, fromGrid, fromFile) * 10) / 10,
+    gridGiB: Math.round(Math.max(0.5, fromGrid) * 10) / 10,
     // one KRT finish on vme-wren (179 M cells) ran past 20 min; 10 s per million cells over a 180 s floor, at most an hour
     budgetS: Math.round(Math.min(3600, 180 + 10 * cellsM)),
   };

@@ -27,6 +27,17 @@ describe("resource governor", () => {
     light.release();
   });
 
+  test("a plan-dependent peak reserves but never refuses: only the grid term (hardGiB) can (16 GB laptop, jetson)", async () => {
+    const laptop = (avail: number): HostSample => ({ ...host(avail), memTotalGiB: 15 });
+    const g = new ResourceGovernor(async () => laptop(10));
+    const notes: string[] = [];
+    const run = await g.admit({ cls: "router", label: "lastmile krt", paths: ["/"], pollMs: 10, memGiB: 14.6, hardGiB: 7.5, onWait: (w) => notes.push(w) });
+    expect(notes[0]).toContain("starting anyway");
+    run.release();
+    await expect(g.admit({ cls: "router", label: "lastmile krt", paths: ["/"], pollMs: 10, memGiB: 14.6, hardGiB: 12 })).rejects.toThrow(/only 10 GiB is available now/);
+    await expect(g.admit({ cls: "router", label: "lastmile krt", paths: ["/"], pollMs: 10, memGiB: 20, hardGiB: 18 })).rejects.toThrow(/15 GiB in all/);
+  });
+
   test("parallel router jobs whose estimates do not fit together run one after another", async () => {
     const g = new ResourceGovernor(async () => host(24));
     const a = await g.admit({ cls: "router", label: "a", paths: ["/"], pollMs: 10, memGiB: 18.6 });
