@@ -7,3 +7,4 @@ export * from "./onboard";
 export * from "./accept";
 export * from "./history";
 export * as release from "./release";
+export * as silk from "./silk";
