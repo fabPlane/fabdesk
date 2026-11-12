@@ -4,6 +4,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { parseSexpr, kids, type SNode } from "../sexpr";
+import { topLevel } from "./text";
 
 export interface SesStats {
   segments: number;
@@ -18,14 +19,33 @@ const q = (s: string) => JSON.stringify(s);
 function existingCopper(board: string) {
   const segs = new Map<string, Array<[number, number, number, number]>>();
   const vias = new Set<string>();
-  const segRe = /\(segment\s+\(start ([-\d.]+) ([-\d.]+)\)\s+\(end ([-\d.]+) ([-\d.]+)\)\s+\(width [-\d.]+\)\s+\(layer "([^"]+)"\)\s+\(net "((?:[^"\\]|\\.)*)"\)/g;
-  for (const m of board.matchAll(segRe)) {
+  // board-level items only (spans, not a free regex over the file): no lazy match can run on into the next item
+  const segRe = /^\(segment\s+\(start ([-\d.]+) ([-\d.]+)\)\s+\(end ([-\d.]+) ([-\d.]+)\)\s+\(width [-\d.]+\)\s+\(layer "([^"]+)"\)\s+\(net "((?:[^"\\]|\\.)*)"\)/;
+  for (const [a, b] of topLevel(board, "segment")) {
+    const m = segRe.exec(board.slice(a, b));
+    if (!m) continue;
     const k = `${m[5]}\u0000${m[6]}`;
     (segs.get(k) ?? segs.set(k, []).get(k)!).push([Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])]);
   }
-  const viaRe = /\(via(?: \w+)?\s+\(at ([-\d.]+) ([-\d.]+)\)[\s\S]*?\(net "((?:[^"\\]|\\.)*)"\)/g;
-  for (const m of board.matchAll(viaRe)) vias.add(`${Math.round(Number(m[1]) * 1000) / 1000},${Math.round(Number(m[2]) * 1000) / 1000},${m[3]}`);
+  for (const [a, b] of topLevel(board, "via")) {
+    const body = board.slice(a, b);
+    const at = /^\(via(?:\s+\w+)?\s+\(at ([-\d.]+) ([-\d.]+)\)/.exec(body);
+    const net = /\(net "((?:[^"\\]|\\.)*)"\)/.exec(body);
+    if (at && net) vias.add(`${Math.round(Number(at[1]) * 1000) / 1000},${Math.round(Number(at[2]) * 1000) / 1000},${net[1]}`);
+  }
   return { segs, vias };
+}
+
+/**
+ * The board's copper layers in stack order (F.Cu, In1.Cu .. InN.Cu, B.Cu) from its `(layers ...)` table; empty when
+ * the board has no table.
+ */
+export function boardCopperLayers(board: string): string[] {
+  const table = topLevel(board, "layers")[0];
+  if (!table) return [];
+  const names = [...board.slice(...table).matchAll(/\(\s*\d+\s+"?((?:F|B|In\d+)\.Cu)"?/g)].map((m) => m[1]!);
+  const rank = (l: string) => (l === "F.Cu" ? 0 : l === "B.Cu" ? 1e6 : Number(/^In(\d+)/.exec(l)![1]));
+  return [...new Set(names)].sort((x, y) => rank(x) - rank(y));
 }
 
 function onSegment(p: [number, number], s: [number, number, number, number], tol = 0.002): boolean {
@@ -38,19 +58,26 @@ function onSegment(p: [number, number], s: [number, number, number, number], tol
 }
 
 export function viaKind(padstack: string, layers: readonly string[]): { kind: "through" | "micro" | "blind"; l1: string; l2: string; d: number; h: number } {
-  const m = /^Via\[(\d)-(\d)\]_(\d+):(\d+)_um/.exec(padstack);
+  const m = /^Via\[(\d+)-(\d+)\]_(\d+):(\d+)_um/.exec(padstack);
   if (!m) throw new Error("unknown via padstack " + padstack);
   const [a, b, d, h] = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
   const last = layers.length - 1;
+  if (b > last || a >= b) throw new Error(`via padstack ${padstack} does not fit the board's ${layers.length} copper layers`);
   const kind = a === 0 && b === last ? "through" : b - a === 1 && (a === 0 || a === last - 1) ? "micro" : "blind";
   return { kind, l1: layers[a]!, l2: layers[b]!, d: d / 1000, h: h / 1000 };
 }
 
 const isProtected = (n: SNode) => n.some((x) => Array.isArray(x) && x[0] === "type" && x[1] === "protect");
-const STACK8 = ["F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "In5.Cu", "In6.Cu", "B.Cu"];
 
-/** Existing copper stays byte-exact; only SES wires and vias not already present are appended. */
-export function sesImport(board: string, sesText: string, layers: readonly string[] = STACK8): { text: string; stats: SesStats } {
+/**
+ * Existing copper stays byte-exact; only SES wires and vias not already present are appended. Via padstacks
+ * (`Via[a-b]_...`) name copper layers by index, so the stack must be the board's: `layers` (stack order) when given,
+ * else the board's own `(layers ...)` table. A board without either, a via index past the stack, or a wire on a layer
+ * the stack lacks is refused (the toolkit assumed an 8-layer stack and mislabelled vias on any other board).
+ */
+export function sesImport(board: string, sesText: string, layers?: readonly string[]): { text: string; stats: SesStats } {
+  const stack = layers ?? boardCopperLayers(board);
+  if (stack.length < 2) throw new Error("SES import: the board's copper layers are unknown (no (layers ...) table and none given)");
   const ses = parseSexpr(sesText);
   const routes = kids(ses, "routes")[0]!;
   const res = kids(routes, "resolution")[0]!;
@@ -69,6 +96,7 @@ export function sesImport(board: string, sesText: string, layers: readonly strin
       }
       for (const path of kids(w, "path")) {
         const layer = String(path[1]);
+        if (!stack.includes(layer)) throw new Error(`SES import: wire on ${layer}, not a copper layer of this ${stack.length}-layer board`);
         const width = Number(path[2]) * scale;
         const pts: Array<[number, number]> = [];
         for (let i = 3; i < path.length - 1; i += 2) pts.push([Number(path[i]) * scale, -Number(path[i + 1]) * scale]);
@@ -94,7 +122,7 @@ export function sesImport(board: string, sesText: string, layers: readonly strin
         stats.skipped_existing_vias++;
         continue;
       }
-      const k = viaKind(String(v[1]), layers);
+      const k = viaKind(String(v[1]), stack);
       const head = k.kind === "through" ? "(via" : `(via ${k.kind}`;
       const fill = k.kind === "through" ? "" : " (capping yes) (filling yes)";
       out.push(`  ${head} (at ${x.toFixed(4)} ${y.toFixed(4)}) (size ${k.d}) (drill ${k.h}) (layers ${q(k.l1)} ${q(k.l2)})${fill} (net ${q(name)}) (uuid ${q(randomUUID())}))`);

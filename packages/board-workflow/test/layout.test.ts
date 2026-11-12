@@ -116,6 +116,35 @@ describe("board text edits", () => {
     const rep = replaceCopper(BOARD, routed);
     expect(rep.stats["routed_items"]).toEqual({ segment: 3, via: 1, arc: 0 });
   });
+  test("arcs inside polygon outlines are not routed copper: strip and replace leave them where they are", () => {
+    const polyArc = "(arc (start 1 0) (mid 1.5 0.5) (end 2 0))";
+    const fpPoly = `(fp_poly (pts (xy 0 0) ${polyArc} (xy 2 2)) (layer "F.Cu"))`;
+    const padPoly = `(pad "1" smd custom (at 0 0) (size 0.5 0.5) (layers "F.Cu") (net "A") (primitives (gr_poly (pts (xy 0 0) ${polyArc} (xy 2 2)) (width 0))))`;
+    const grPoly = `(gr_poly (pts (xy 10 10) (arc (start 11 10) (mid 11.5 10.5) (end 12 10)) (xy 12 12)) (layer "F.Cu") (net "A"))`;
+    const track = `(arc (start 5 5) (mid 6 6) (end 7 5) (width 0.2) (layer "F.Cu") (net "A") (uuid "ta"))`;
+    const sg = `(segment (start 0 0) (end 1 1) (width 0.2) (layer "F.Cu") (net "A") (uuid "s1"))`;
+    const via = `(via (at 3 3) (size 0.5) (drill 0.3) (layers "F.Cu" "B.Cu") (net "A") (uuid "v1"))`;
+    const board = `(kicad_pcb (version 20250114)\n\t(footprint "X" (layer "F.Cu") (at 0 0)\n\t\t${fpPoly}\n\t\t${padPoly})\n\t${grPoly}\n\t${track}\n\t${sg}\n\t${via}\n)\n`;
+    const s = stripCopper(board);
+    expect(s.removed).toEqual({ segment: 1, via: 1, arc: 1 });
+    expect(s.text).toContain(fpPoly);
+    expect(s.text).toContain(padPoly);
+    expect(s.text).toContain(grPoly);
+    expect(s.text).not.toContain('(uuid "ta")');
+    expect(s.text).not.toContain("(segment");
+    // replace: the routed board's polygon arcs are not appended as stray top-level arcs; native ones stay put
+    const routed = board.replace(sg, `(segment (start 0 0) (end 2 2) (width 0.2) (layer "F.Cu") (net "A") (uuid "s2"))`);
+    const rep = replaceCopper(board, routed);
+    expect(rep.stats["native_removed"]).toEqual({ segment: 1, via: 1, arc: 1 });
+    expect(rep.stats["routed_items"]).toEqual({ segment: 1, via: 1, arc: 1 });
+    expect(rep.text.split(polyArc)).toHaveLength(3); // the footprint's two, no more
+    expect(rep.text).toContain(grPoly);
+    expect(rep.text).toContain('(uuid "s2")');
+    expect(rep.text).not.toContain('(uuid "s1")');
+    expect(rep.text.match(/\n\(arc /g)).toHaveLength(1); // only the routed track arc lands at the top level
+    // CRLF boards strip the same
+    expect(stripCopper(board.replace(/\n/g, "\r\n")).removed).toEqual({ segment: 1, via: 1, arc: 1 });
+  });
   test("numeric net references on copper become names", () => {
     const t = '(kicad_pcb\n\t(net 0 "")\n\t(net 7 "A B")\n\t(segment (start 0 0) (end 1 1) (width 0.1) (layer "F.Cu") (net 7) (uuid "x"))\n\t(zone (net 7))\n)';
     const r = nameCopperNets(t);
@@ -125,12 +154,20 @@ describe("board text edits", () => {
     expect(nameCopperNets(BOARD).renamed).toBe(0);
   });
   test("SES import appends only new copper; DSN policy edit", () => {
-    const board = '(kicad_pcb\n\t(segment (start 0 0) (end 5 0) (width 0.15) (layer "F.Cu") (net "A") (uuid "x"))\n)\n';
+    const layers8 = `(layers (0 "F.Cu" signal) ${[1, 2, 3, 4, 5, 6].map((n) => `(${2 + 2 * n} "In${n}.Cu" signal)`).join(" ")} (2 "B.Cu" signal) (25 "Edge.Cuts" user))`;
+    const board = `(kicad_pcb\n\t${layers8}\n\t(segment (start 0 0) (end 5 0) (width 0.15) (layer "F.Cu") (net "A") (uuid "x"))\n)\n`;
     const ses = `(session x (routes (resolution um 10) (network_out (net A (wire (path F.Cu 1500 0 0 50000 0)) (wire (path F.Cu 1500 50000 0 50000 -50000)) (via "Via[0-7]_500:300_um" 50000 0)))))`;
     const r = sesImport(board, ses);
     expect(r.stats.skipped_existing_segments).toBe(1);
     expect(r.stats.segments).toBe(1);
     expect(r.stats.vias).toEqual({ "through:F.Cu-B.Cu": 1 });
+    // the via's layers come from the board's own stack: [0-3] on a 4-layer board is through, [0-7] does not fit it
+    const board4 = board.replace(layers8, '(layers (0 "F.Cu" signal) (4 "In1.Cu" signal) (6 "In2.Cu" signal) (2 "B.Cu" signal))');
+    expect(sesImport(board4, ses.replace("Via[0-7]", "Via[0-3]")).stats.vias).toEqual({ "through:F.Cu-B.Cu": 1 });
+    expect(sesImport(board4, ses.replace("Via[0-7]", "Via[0-1]")).stats.vias).toEqual({ "micro:F.Cu-In1.Cu": 1 });
+    expect(() => sesImport(board4, ses)).toThrow("does not fit the board's 4 copper layers");
+    expect(() => sesImport(board.replace(layers8, ""), ses)).toThrow("copper layers are unknown");
+    expect(sesImport(board.replace(layers8, ""), ses, ["F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "In5.Cu", "In6.Cu", "B.Cu"]).stats.segments).toBe(1);
     const dsn = "(class PWR_1 A B\n (circuit\n  (use_via x))\n)\n(layer In1.Cu (type power))";
     expect(dsnRules(dsn, ["PWR_1"], ["In1.Cu"]).text).toContain("(use_layer F.Cu B.Cu)");
     expect(() => dsnRules(dsn, ["PWR_9"], [])).toThrow("missing class");

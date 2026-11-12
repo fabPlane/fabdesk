@@ -24,7 +24,7 @@ import { boardPlan, globRe, applyAliases } from "./plan";
 import { loadPlan, routeKrt, routePipeline } from "./route";
 import { cmpScore, copyDir, readRequirementsDir, scoreOf, type ScoreFigures } from "./score";
 import type { LayoutSpec } from "./spec";
-import { footprintSpans } from "./text";
+import { copperItems, footprintSpans } from "./text";
 
 export const STAGES = ["check", "place", "rank", "route", "lastmile"] as const;
 export type Stage = (typeof STAGES)[number];
@@ -168,7 +168,7 @@ export async function stageCheck(host: LayoutHost, st: FlowState, opts: LayoutCh
   const nets = new Set([...[...text.matchAll(BOARD_NETS_A)].map((m) => m[1]!), ...[...text.matchAll(BOARD_NETS_B)].map((m) => m[1]!)]);
   info["footprints"] = fps.size;
   info["nets"] = nets.size;
-  const segs = (text.match(/\(segment\b/g) ?? []).length + (text.match(/\(arc\b(?=[^()]*\(start)/g) ?? []).length;
+  const segs = copperItems(text, ["segment", "arc"]).length; // board-level tracks only, not arcs of polygon outlines
   info["segments"] = segs;
   if (segs) warns.push(`base has ${segs} track segments: the placer moves parts under them (the layout base has its copper stripped)`);
 
