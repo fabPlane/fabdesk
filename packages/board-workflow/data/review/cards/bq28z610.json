@@ -1,0 +1,7 @@
+{"part": "TI BQ28Z610 (gas gauge, low-side coulomb counter)", "match": "BQ28Z610",
+ "checked_against_datasheet": true,
+ "source": "TI BQ28Z610 pin-function table, as applied in vaio_p_modding hardware/tf-battery-board-b8/B8.2-SAFETY-CORRECTION-REVIEW.md (SRP on the cell side of the shunt, SRN on the pack side)",
+ "rules": [
+  {"pin": "SRP", "path": ["R"], "arrives_pin": "VSS", "why": "SRP's Kelvin filter resistor lands on the cell-side shunt terminal, the IC's VSS reference."},
+  {"pin": "SRN", "path": ["R"], "not_arrives_pin": "VSS", "why": "SRN's Kelvin filter resistor lands on the pack-side shunt terminal, not on VSS."}
+ ]}

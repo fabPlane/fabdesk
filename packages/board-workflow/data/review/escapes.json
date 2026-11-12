@@ -1,0 +1,541 @@
+{
+ "schema": "REVIEWER_ESCAPES_V1",
+ "date": "2026-11-11",
+ "purpose": "Defects in this project's boards that got past the checks of their day. The benchmark for a reviewer: each replayable entry is a board in git with a known defect at a known ref/pin.",
+ "fields": {
+  "found_at": "design (before fab) | assembler (JLC prep) | bench (after assembly) | review (later desk review)",
+  "layer": "reviewer layer that should catch it (see design.md): L0 identity, L1 native, L2 semantics, L3 physics, L4 mechanical, L5 interconnect, L6 fab/assembly data, L7 bring-up",
+  "missed_by": "the checks that passed while the defect was present",
+  "replay": "git ref of a defective source, or null",
+  "pilot": "measured result of the 2026-11-11 pilot, or null",
+  "expect": "bench: {board config in boards/, ref, pad?, rule?, known_miss?}: a non-note finding at that ref (and pad/rule) must appear"
+ },
+ "escapes": [
+  {
+   "id": "E01",
+   "board": "carrier B2.17-B2.24.5",
+   "defect": "Both USB-C receptacles (J101, USB701) placed 180 deg backwards: pads are the mirror of the Molex SD-105450-001 layout; mouth faced 8.5 mm inboard.",
+   "found_at": "assembler",
+   "how": "JLC engineer and owner said 'looks backwards'; confirmed 2026-09-08 against the official Molex STEP and drawing.",
+   "missed_by": [
+    "KiCad renders (repo-generated STEP had the mouth on the wrong side)",
+    "orientation contract asserting mating_opening: outward",
+    "DRC/ERC"
+   ],
+   "cost": "Y75 built with J101/USB701 DNP; copper fix deferred to next revision.",
+   "layer": "L4",
+   "rule": "Verify connector orientation only against vendor geometry (manufacturer STEP/drawing), never a repo-generated model or a render.",
+   "evidence": "vaio_p_modding docs/findings/sbc/B2.24.4-electrical-functional-review.md Addendum 7 (280ccce3)",
+   "replay": "review/bench/boards/b2245 (B2.24.5, backwards) vs b22451 (B2.24.5.1, corrected)",
+   "pilot": "CAUGHT 2026-11-11 by the mouth check (courtyard vs contact pads of our footprint, no 3D model): J101 and USB701 must-fix on B2.24.5; 0 findings on B2.24.5.1.",
+   "expect": [
+    {
+     "board": "replay-b2245.json",
+     "ref": "J101",
+     "rule": "MOUTH"
+    },
+    {
+     "board": "replay-b2245.json",
+     "ref": "USB701",
+     "rule": "MOUTH"
+    }
+   ]
+  },
+  {
+   "id": "E02",
+   "board": "carrier B2.24.4 (Y73)",
+   "defect": "JLC engineering prep re-applied its library offset over our CPL pre-compensation (22 designators modified); JDISP1 set Assemble=No because JLC's footprint has 42 pads vs our 50.",
+   "found_at": "assembler",
+   "how": "Confirm Parts Placement screen.",
+   "missed_by": [
+    "cart preview",
+    "our CPL"
+   ],
+   "cost": "order held; manual reject with per-part instructions",
+   "layer": "L6",
+   "rule": "Predict the assembler's rotation and pad count from its own footprint (EasyEDA) and diff against ours before upload; the binding control is the Confirm Parts Placement response.",
+   "evidence": "B2.24.4-electrical-functional-review.md Addendum 3 (e902ab0c)",
+   "replay": null,
+   "pilot": null
+  },
+  {
+   "id": "E03",
+   "board": "A7.2",
+   "defect": "13 parts placed with wrong rotation although CPL matched KiCad.",
+   "found_at": "assembler",
+   "how": "JLC preview pink dot vs silk triangle.",
+   "missed_by": [
+    "CPL = KiCad check"
+   ],
+   "cost": "order correction",
+   "layer": "L6",
+   "rule": "Same as E02: assembler-library rotation per part (bomcheck.py now predicts it).",
+   "evidence": "memory: jlc-preview-rotation-check",
+   "replay": null,
+   "pilot": null
+  },
+  {
+   "id": "E04",
+   "board": "C6-eco95",
+   "defect": "LED C2286: JLC pad 1 = anode, KiCad pad 1 = cathode; rotation by pad number would reverse it.",
+   "found_at": "design",
+   "how": "bomcheck.py matched polarized parts by pin function (c03a0515).",
+   "missed_by": [
+    "rotation by pad number"
+   ],
+   "cost": "none (caught before fab)",
+   "layer": "L6",
+   "rule": "Match polarized parts by pin function, not pad number.",
+   "evidence": "io-c6/review/fab96, c03a0515",
+   "replay": "io-c6 before c03a0515",
+   "pilot": null
+  },
+  {
+   "id": "E05",
+   "board": "TF battery B8.1",
+   "defect": "Q3 2N7002K: OVP_GATE on pin 3 (drain), FUSE_HEATER on pin 1 (gate).",
+   "found_at": "review",
+   "how": "Later datasheet review after release of B8.1.",
+   "missed_by": [
+    "ERC 0",
+    "DRC 0",
+    "schematic/PCB parity 0",
+    "verify_pcb.py",
+    "earlier independent PCBA review"
+   ],
+   "cost": "B8.1 retired before fab.",
+   "layer": "L2",
+   "rule": "Net-name role vs pin role (and pin table vs an outside source).",
+   "evidence": "hardware/tf-battery-board-b8/B8.2-SAFETY-CORRECTION-REVIEW.md",
+   "replay": "vaio_p_modding 5f211f92",
+   "pilot": "CAUGHT by pinsense R: 'net OVP_GATE names a gate but lands on Q3 pin 3 (D); the gate is pin 1'. Native ERC on the same source: 0 errors.",
+   "expect": [
+    {
+     "board": "replay-b81.json",
+     "ref": "Q3",
+     "pad": "3",
+     "rule": "R"
+    }
+   ]
+  },
+  {
+   "id": "E06",
+   "board": "TF battery B8.1",
+   "defect": "BQ28Z610 SRP/SRN Kelvin filters on the wrong sides of the shunt (SRP must be cell side).",
+   "found_at": "review",
+   "how": "Datasheet review.",
+   "missed_by": [
+    "ERC",
+    "DRC",
+    "parity",
+    "verify_pcb.py"
+   ],
+   "cost": "B8.1 retired",
+   "layer": "L2",
+   "rule": "Part-specific rule card from the datasheet, checked topologically (SRP reaches the cell-side shunt terminal).",
+   "evidence": "B8.2-SAFETY-CORRECTION-REVIEW.md",
+   "replay": "vaio_p_modding 5f211f92",
+   "pilot": "MISSED by pinsense (needs a datasheet rule card; pin names alone carry no side). Since 2026-11-11 the bq28z610 rule card (SRP reaches VSS through one resistor) is expected to catch it.",
+   "expect": [
+    {
+     "board": "replay-b81.json",
+     "ref": "U1",
+     "rule": "CARD",
+     "pad": "3"
+    }
+   ]
+  },
+  {
+   "id": "E07",
+   "board": "TF battery B8.1/B8.2",
+   "defect": "BQ28Z610 and BQ294502 drawn with Connector_Generic Conn_01x13/01x07 symbols: ERC cannot reason about any pin.",
+   "found_at": "review",
+   "how": "B8.2 hardening review.",
+   "missed_by": [
+    "ERC 0 errors"
+   ],
+   "cost": "symbol rework",
+   "layer": "L2",
+   "rule": "Active parts must have real symbols, or every pin is checked against an outside pin table.",
+   "evidence": "95a48aa9",
+   "replay": "vaio_p_modding 5f211f92, b77348e0",
+   "pilot": "CAUGHT by pinsense G on B8.1 and B8.2; oracle read all 20 generic pins from JLC's symbols and found no contradiction; B8.3 (real symbols): 0 findings.",
+   "expect": [
+    {
+     "board": "replay-b81.json",
+     "ref": "U1",
+     "rule": "G"
+    },
+    {
+     "board": "replay-b81.json",
+     "ref": "U2",
+     "rule": "G"
+    },
+    {
+     "board": "replay-b82.json",
+     "ref": "U1",
+     "rule": "G"
+    },
+    {
+     "board": "replay-b82.json",
+     "ref": "U2",
+     "rule": "G"
+    }
+   ]
+  },
+  {
+   "id": "E08",
+   "board": "carrier A3.8.7(-C)",
+   "defect": "U701 and U707 (AP2265x USB power switches) nFAULT marked no-connect: over-current is silent. USB701 dead with VBUS 0 V; loose JUSB1 wires could current-limit KB_VBUS invisibly.",
+   "found_at": "bench",
+   "how": "2026-08-19 and 2026-09-07 bring-up; diagnosis time lost; cross-board audit 2026-09-02 'expose fault signals'.",
+   "missed_by": [
+    "ERC (no-connect flags make it clean)",
+    "DRC"
+   ],
+   "cost": "bench diagnosis sessions; confounded results",
+   "layer": "L2/L7",
+   "rule": "Status outputs (FAULT/PG/INT/ALERT) must reach a reader or carry a recorded reason.",
+   "evidence": "vaio-p-guides cm5-carrier-a3.8.7-c maintainer-log 2026-08-19/09-07; system-board-map/cross-board-development-audit-2026-09-02.md",
+   "replay": "vaio_cm5_carrier 0495966 (A3.8.7 source)",
+   "pilot": "CAUGHT by pinsense F (U701, U707, plus U702 PG). Native ERC: 4 errors / 282 warnings, none on these pins.",
+   "expect": [
+    {
+     "board": "replay-a387.json",
+     "ref": "U701",
+     "pad": "4",
+     "rule": "F"
+    },
+    {
+     "board": "replay-a387.json",
+     "ref": "U707",
+     "pad": "4",
+     "rule": "F"
+    }
+   ]
+  },
+  {
+   "id": "E09",
+   "board": "carrier A3.8.7",
+   "defect": "U704 HD3SS3220 on a Connector_Generic Conn_01x31 symbol.",
+   "found_at": "pilot",
+   "how": "pinsense G",
+   "missed_by": [
+    "ERC"
+   ],
+   "cost": "unknown (risk class, no bench failure attributed)",
+   "layer": "L2",
+   "rule": "as E07",
+   "evidence": "pilot",
+   "replay": "vaio_cm5_carrier 0495966",
+   "pilot": "CAUGHT by pinsense G (new finding, risk only).",
+   "expect": [
+    {
+     "board": "replay-a387.json",
+     "ref": "U704",
+     "rule": "G"
+    }
+   ]
+  },
+  {
+   "id": "E10",
+   "board": "RH-A10.1 / A14",
+   "defect": "Link 2 FFC delivered A14 J12 pin N to RH J13 pin 13-N: data lines on VBUS, nothing enumerated. Ground continuity looked right because grounds {1,4,9,12} are symmetric under reversal.",
+   "found_at": "bench",
+   "how": "2026-08-21 continuity mapping.",
+   "missed_by": [
+    "ground-only continuity",
+    "per-board DRC/ERC"
+   ],
+   "cost": "bench days; footprint rotation on next spin",
+   "layer": "L5",
+   "rule": "Cross-board numbered-pin one-to-one contract; continuity plan must use asymmetric pins.",
+   "evidence": "vaio-p-guides rh-usb-bench maintainer-log 2026-08-21",
+   "replay": null,
+   "pilot": null
+  },
+  {
+   "id": "E11",
+   "board": "carrier B2.28",
+   "defect": "J501 pad k carries HDMI contact 21-k (pin reversal); the adapters on hand use a different FFC pinout (tie 18/19/20 and 12/13).",
+   "found_at": "bench",
+   "how": "2026-10-15 photos + beep; recorded as release blocker 2026-09-23.",
+   "missed_by": [
+    "single-board review"
+   ],
+   "cost": "no HDMI on B2.28 until adapter swap",
+   "layer": "L5",
+   "rule": "Contract names the exact adapter/cable SKU and its pin map; reversal is a release blocker.",
+   "evidence": "hardware/interconnect-contracts.json carrier-hdmi-ffc-b228; vaio-p-guides cm5-carrier-b2.28",
+   "replay": null,
+   "pilot": null
+  },
+  {
+   "id": "E12",
+   "board": "C6 / carrier R1N SH-10",
+   "defect": "Original store SH-10 cable was reversed (owner re-pinned it).",
+   "found_at": "bench",
+   "how": "2026-11-11 bench.",
+   "missed_by": [],
+   "cost": "new catalog cable",
+   "layer": "L5",
+   "rule": "Catalog cable drawing with pin 1 -> 1, unpowered check on arrival (gate currently BLOCKED on it).",
+   "evidence": "bb5974a6",
+   "replay": null,
+   "pilot": null
+  },
+  {
+   "id": "E13",
+   "board": "battery adapter A6 / B2.18",
+   "defect": "GH-10 battery map spent four contacts per power rail and omitted PACK_NTC and PACK_PRESENT_N.",
+   "found_at": "review",
+   "how": "Safety review (a8152a12).",
+   "missed_by": [
+    "release of the map"
+   ],
+   "cost": "A6 rejected for live packs",
+   "layer": "L5/L2",
+   "rule": "Interface contract lists required safety signals per link; missing one fails.",
+   "evidence": "hardware/battery-adapter-a6-gh10/README.md",
+   "replay": null,
+   "pilot": null
+  },
+  {
+   "id": "E14",
+   "board": "CM5IO USB2+SDIO HAT A1",
+   "defect": "J1 Molex rotated 180 deg; stake holes are not rotationally symmetric so the part cannot be flipped in rework.",
+   "found_at": "bench",
+   "how": "2026-08-17 board photos.",
+   "missed_by": [
+    "DRC",
+    "renders"
+   ],
+   "cost": "J1 unused on the spin",
+   "layer": "L4/L6",
+   "rule": "Orientation vs vendor geometry and assembler library zero (E01/E02).",
+   "evidence": "hardware/cm5io-usb2-sdio-test-hat/evidence/2026-08-17-j1-orientation",
+   "replay": null,
+   "pilot": null
+  },
+  {
+   "id": "E15",
+   "board": "Koyomi LVDS HAT v1.1",
+   "defect": "Top-side-only assembly omitted bottom-side RN1-RN6, all six 47-ohm arrays in the LVDS path.",
+   "found_at": "bench",
+   "how": "2026-09-02 cross-board audit.",
+   "missed_by": [
+    "BOM/CPL generation"
+   ],
+   "cost": "hand work; legacy board not a release baseline",
+   "layer": "L6",
+   "rule": "Assembly coverage: every footprint with nets is assembled, or listed as post-assembly with a reason.",
+   "evidence": "cross-board-development-audit-2026-09-02.md",
+   "replay": "~/koyomi-lvds-hat",
+   "pilot": null
+  },
+  {
+   "id": "E16",
+   "board": "Koyomi LVDS HAT v1.1",
+   "defect": "Released with 3 ERC errors, 73 warnings, 20 DRC items incl. a courtyard overlap and copper-to-edge.",
+   "found_at": "review",
+   "how": "2026-09-02 audit re-ran KiCad 10.",
+   "missed_by": [
+    "no enforced native gate"
+   ],
+   "cost": "unclean baseline",
+   "layer": "L1",
+   "rule": "Native gates run fresh from the released source, with new-vs-baseline triage.",
+   "evidence": "cross-board audit",
+   "replay": "~/koyomi-lvds-hat",
+   "pilot": null
+  },
+  {
+   "id": "E17",
+   "board": "CM5IO A1",
+   "defect": "SOURCE_SHA256SUMS no longer matched build_fab.py/.sh: package stale vs the scripts that made it.",
+   "found_at": "review",
+   "how": "2026-09-02 audit.",
+   "missed_by": [
+    "output hash check (outputs matched themselves)"
+   ],
+   "cost": "package must be regenerated before reorder",
+   "layer": "L0",
+   "rule": "Bind outputs to source + build-script hashes; a review is valid only for the hash it ran on.",
+   "evidence": "cross-board audit",
+   "replay": null,
+   "pilot": null
+  },
+  {
+   "id": "E18",
+   "board": "CM5IO A1",
+   "defect": "USB pair released with 3.30 mm intra-pair length mismatch.",
+   "found_at": "review",
+   "how": "semantic release audit",
+   "missed_by": [
+    "DRC"
+   ],
+   "cost": "prototype SI risk",
+   "layer": "L3",
+   "rule": "Interface profiles (skew, coupling, vias, reference) gate, not report.",
+   "evidence": "cross-board audit",
+   "replay": null,
+   "pilot": null
+  },
+  {
+   "id": "E19",
+   "board": "RH (Fabdesk run)",
+   "defect": "41/41 manufacturing gate passed while both USB pairs exceeded the 0.5 mm skew gate on fresh recompute; router auto-applied with 111 unknown-net diagnostics; J13 model orientation unresolved.",
+   "found_at": "review",
+   "how": "~/pcb/analysis/rh-three-run-comparison.md fresh audit.",
+   "missed_by": [
+    "the tool's own gate"
+   ],
+   "cost": "candidate not releasable",
+   "layer": "L3/L0",
+   "rule": "Recompute from saved files; never accept a tool's self-report.",
+   "evidence": "~/pcb/analysis/rh-three-run-comparison.md",
+   "replay": null,
+   "pilot": null
+  },
+  {
+   "id": "E20",
+   "board": "RH (Codex run)",
+   "defect": "Rotation reported complete before a matching KiCad DRC.",
+   "found_at": "review",
+   "how": "trace analysis",
+   "missed_by": [
+    "agent claim"
+   ],
+   "cost": "rework",
+   "layer": "L0",
+   "rule": "Every claim cites a fresh, hash-bound check.",
+   "evidence": "~/pcb/analysis/ffc-connector-session-trace-analysis.md",
+   "replay": null,
+   "pilot": null
+  },
+  {
+   "id": "E21",
+   "board": "battery B5",
+   "defect": "Physical connector orientation/mouth problem (corrected in B6).",
+   "found_at": "review",
+   "how": "B6 revision",
+   "missed_by": [
+    "DRC/ERC"
+   ],
+   "cost": "revision",
+   "layer": "L4",
+   "rule": "as E01",
+   "evidence": "cross-board audit",
+   "replay": null,
+   "pilot": null
+  },
+  {
+   "id": "E22",
+   "board": "C6 lineage (rom154)",
+   "defect": "Assertion that STM32G0B1 PA9 is pin 20 (buckPG); on the actual KCU6 package PA9 is pin 19 and pin 20 is PC6.",
+   "found_at": "review",
+   "how": "package pin table check",
+   "missed_by": [
+    "agent assertion"
+   ],
+   "cost": "superseded claim",
+   "layer": "L2",
+   "rule": "Pin tables come from the exact package (LCSC/EasyEDA symbol or datasheet), never from a family table or memory.",
+   "evidence": "vaio_p_modding AGENTS.md (Circuit-first execution)",
+   "replay": null,
+   "pilot": null
+  },
+  {
+   "id": "E23",
+   "board": "C6-eco95",
+   "defect": "Decision-5 value swaps missing from circuit.json (requirements drift).",
+   "found_at": "design",
+   "how": "dcf76d59",
+   "missed_by": [
+    "6dff49b4"
+   ],
+   "cost": "small",
+   "layer": "L0/L6",
+   "rule": "BOM fields, circuit.json and board values compared every release.",
+   "evidence": "dcf76d59",
+   "replay": null,
+   "pilot": null
+  },
+  {
+   "id": "E24",
+   "board": "Koyomi compact R2.9",
+   "defect": "J1 short traced to FFC contact length (cable/connector mismatch).",
+   "found_at": "bench",
+   "how": "2026-08-28",
+   "missed_by": [
+    "per-board checks"
+   ],
+   "cost": "bench time",
+   "layer": "L5",
+   "rule": "Contract records cable contact type/length and stiffener against the connector drawing.",
+   "evidence": "vaio-p-guides a1e440c/00bee13",
+   "replay": null,
+   "pilot": null
+  },
+  {
+   "id": "E25",
+   "board": "carrier A3.8.7",
+   "defect": "NVMe media grows the wrong way (J701 rotation); JSD1 FFC faces backward (mutation script left it untouched); boards arrived on 70 mm assembly panel.",
+   "found_at": "bench",
+   "how": "2026-08-18 physical return",
+   "missed_by": [
+    "DRC/ERC",
+    "'known-clean' assumption"
+   ],
+   "cost": "revision",
+   "layer": "L4/L6",
+   "rule": "Every connector/media keeps an asserted exit direction; order checklist states depanelized delivery.",
+   "evidence": "vaio_cm5_carrier 93ad662",
+   "replay": "vaio_cm5_carrier 0495966",
+   "pilot": null
+  },
+  {
+   "id": "E26",
+   "board": "CM5 carrier (Codex session)",
+   "defect": "Bulk routing and skew tuning before stackup/planes/impedance/HDI policy were locked; 8/10-layer detours abandoned; 9 SI coupling warnings remained.",
+   "found_at": "review",
+   "how": "~/pcb/analysis/cm5-carrier-session-trace-analysis.md",
+   "missed_by": [],
+   "cost": "~4h of agent time",
+   "layer": "L3 (pre-route)",
+   "rule": "Rules review (stack, classes, pairs, references) is a gate before routing, not after.",
+   "evidence": "~/pcb/analysis/cm5-carrier-session-trace-analysis.md",
+   "replay": null,
+   "pilot": null
+  },
+  {
+   "id": "E27",
+   "board": "C6-eco95 (fabready99, 2026-11-11)",
+   "defect": "Silkscreen reference labels unreadable: 0 of 102 visible labels clean (90 over pads, 69 stacked on other labels, 87 under another part's body, 66 below 0.15 mm stroke); 214 parts unlabelled. Native DRC: 199 silk_over_copper, 184 silk_overlap, 5 silk_edge_clearance.",
+   "found_at": "review",
+   "how": "owner looked at the 3D render (2026-11-11): 'we need better tooling for silkscreen'",
+   "missed_by": [
+    "review drc check (silk warnings filed as notes)",
+    "KiCad DRC silk_overlap (strokes only: stacked labels whose boxes touch pass)",
+    "fab.py / gerbcheck"
+   ],
+   "cost": "a fab package with an illegible silkscreen behind a passing review gate",
+   "layer": "L6",
+   "rule": "Judge every label from exact shapes (copper with mask opening, other silk, bodies, edge, size, nearest part); place labels with a solver whose change is silk only and proved byte-identical elsewhere.",
+   "evidence": "~/pcb/flow/silk.py; vaio_p_modding 45cf4b2e io-c6/release/C6-eco95/C6.kicad_pcb",
+   "replay": "review/bench/boards/c6silk (C6.kicad_pcb at 45cf4b2e)",
+   "pilot": "CAUGHT 2026-11-11 by the silk check: L6:SILK labels question (102 of 102 labels); silk.py place: 196 labels clean, native silk_over_copper 199 -> 2 and silk_overlap 184 -> 2 (the 4 left are part outlines, reported as L6:SILK outline).",
+   "expect": [
+    {
+     "board": "replay-c6silk.json",
+     "ref": "",
+     "rule": "SILK"
+    }
+   ]
+  }
+ ],
+ "clean_boards": [
+  "replay-b83.json",
+  "replay-b22451.json"
+ ]
+}
