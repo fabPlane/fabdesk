@@ -128,7 +128,7 @@ export class AuthClient {
     if (this.opts.mode === "local") return this.current;
     const creds = await readCredentials(this.opts.home);
     if (!creds || normalizeOrigin(creds.apiOrigin) !== this.apiOrigin) return this.signedOut();
-    if (Date.parse(creds.expiresAt) <= Date.now()) return this.clearAndSignOut();
+    if (Date.parse(creds.expiresAt) <= Date.now()) return this.clearAndSignOut("Session expired. Sign in again.");
     this.creds = creds;
     let me;
     try {
@@ -149,7 +149,7 @@ export class AuthClient {
         principal: principalFrom(creds),
       });
     }
-    if (!me.ok || me.user === null) return this.clearAndSignOut();
+    if (!me.ok || me.user === null) return this.clearAndSignOut("Session expired or revoked. Sign in again.");
     const refreshed = await this.storeIdentity(creds, me.user);
     return this.setState({
       mode: "fabplane",
@@ -159,11 +159,13 @@ export class AuthClient {
   }
 
   private async storeIdentity(creds: Credentials, user: MeUser): Promise<Credentials> {
+    const { handle: _handle, displayName: _name, email: _email, ...session } = creds;
     const next: Credentials = {
-      ...creds,
+      ...session,
       subject: user.subject,
       ...(user.handle ? { handle: user.handle } : {}),
       ...(user.displayName ? { displayName: user.displayName } : {}),
+      ...(user.email ? { email: user.email } : {}),
     };
     if (JSON.stringify(next) !== JSON.stringify(creds))
       await writeCredentials(this.opts.home, next);
@@ -353,6 +355,7 @@ export class AuthClient {
       subject: user?.subject ?? "",
       ...(user?.handle ? { handle: user.handle } : {}),
       ...(user?.displayName ? { displayName: user.displayName } : {}),
+      ...(user?.email ? { email: user.email } : {}),
       obtainedAt: new Date(now).toISOString(),
       expiresAt: new Date(now + expiresInSec * 1000).toISOString(),
     };

@@ -1,3 +1,4 @@
+import { cloudAccountId } from "./auth-cache";
 import { inspectOutputRevision, type OutputRevisionTarget } from "./output-revision";
 import { saveAgentSelection } from "./agent-selection";
 import { projectAssistantRuns } from "./project-assistant-runs";
@@ -883,8 +884,9 @@ export function useUnqueueMessage() {
 
 export function useCloudStatus(enabled = true) {
   const client = useCoreClient();
+  const account = useAuthStore(s => cloudAccountId(s.state));
   return useQuery({
-    queryKey: ["cloud", "status"],
+    queryKey: ["cloud", "status", client.baseUrl, account],
     queryFn: () => client.cloudStatus(),
     enabled,
     staleTime: 30_000,
@@ -894,8 +896,9 @@ export function useCloudStatus(enabled = true) {
 
 export function useCloudDestinations(enabled = true) {
   const client = useCoreClient();
+  const account = useAuthStore(s => cloudAccountId(s.state));
   return useQuery({
-    queryKey: ["cloud", "destinations"],
+    queryKey: ["cloud", "destinations", client.baseUrl, account],
     queryFn: async () => (await client.cloudDestinations()).destinations,
     enabled,
     staleTime: 60_000,
@@ -910,8 +913,9 @@ export function shoppingListKey(projectId: string | null) {
 /** Polls while mounted so edits the agent makes through the shopping tools show up. */
 export function useShoppingList(projectId: string | null, enabled = true) {
   const client = useCoreClient();
+  const account = useAuthStore(s => cloudAccountId(s.state));
   return useQuery({
-    queryKey: shoppingListKey(projectId),
+    queryKey: [...shoppingListKey(projectId), client.baseUrl, account],
     queryFn: () => client.shoppingList(projectId!),
     enabled: enabled && !!projectId,
     refetchInterval: 15_000,
@@ -949,8 +953,9 @@ export function useShoppingListMutations(projectId: string | null) {
 
 export function useInventory(q: string, enabled = true) {
   const client = useCoreClient();
+  const account = useAuthStore(s => cloudAccountId(s.state));
   return useQuery({
-    queryKey: ["cloud", "inventory", q],
+    queryKey: ["cloud", "inventory", q, client.baseUrl, account],
     queryFn: () => client.searchInventory(q),
     enabled,
     retry: false,

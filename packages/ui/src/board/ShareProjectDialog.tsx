@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  cloudAccountId,
   errorPayload,
   useAuthStore,
   useBoardSources,
@@ -24,7 +25,11 @@ import "./project-sharing.css";
 type Props = { projectId: string; onClose: () => void; onDownload: () => void };
 class ClipboardCopyError extends Error {}
 /** Mounted per opening: drafts never masquerade as remotely saved visibility. */
-export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
+export function ShareProjectDialog(props: Props) {
+  const account = useAuthStore(s => cloudAccountId(s.state));
+  return <ShareProjectForAccount key={account ?? "signed-out"} {...props} account={account} />;
+}
+function ShareProjectForAccount({ projectId, onClose, onDownload, account }: Props & { account: string | null }) {
   const { client, host } = useCore(),
     cache = useQueryClient();
   const project = useProject(projectId),
@@ -76,6 +81,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
           : await client.publishProjectShare(projectId,
               changed || saved?.visibility === "private" ? selected : undefined,
               { updateOnly: !changed && saved?.visibility !== "private" });
+      if (cloudAccountId(useAuthStore.getState().state) !== account) return;
       cache.setQueryData(queryKey, result);
       setChoice(null);
       setNotice({
@@ -279,11 +285,10 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
                 <Button
                   size="sm"
                   onClick={() => {
-                    close();
-                    useUiStore.getState().setSettingsOpen(true, "auth");
+                    useUiStore.getState().setProfileOpen(true, account ? "expired" : "sharing");
                   }}
                 >
-                  Account settings
+                  Profile & account
                 </Button>
               )}
               <Button

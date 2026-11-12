@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { QueryClient } from "@tanstack/react-query";
 import type { AuthState } from "@fabdesk/protocol";
-import { resetCloudAccountCache } from "./auth-cache";
+import { cloudAccountId, resetCloudAccountCache } from "./auth-cache";
 
 const signedIn = (subject: string): AuthState => ({ mode: "fabplane", status: "signed_in", principal: { subject } });
 
@@ -36,4 +36,12 @@ test("an in-flight previous-account response cannot refill the cache after switc
   await pending;
   expect(qc.getQueryData(["cloud", "status"])).toBeUndefined();
   qc.clear();
+});
+
+
+test("cloud identity excludes local mode and non-authenticated states", () => {
+  expect(cloudAccountId(signedIn("taylor"))).toBe("taylor");
+  expect(cloudAccountId({ mode: "local", status: "signed_in", principal: { subject: "local" } })).toBeNull();
+  expect(cloudAccountId({ mode: "fabplane", status: "error", principal: { subject: "old" } })).toBeNull();
+  expect(cloudAccountId(null)).toBeNull();
 });

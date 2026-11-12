@@ -31,7 +31,7 @@ interface FakeServer {
   requests: Array<{ method: string; url: string; body?: unknown; auth?: string }>;
   tokenSteps: TokenStep[];
   validTokens: Set<string>;
-  user: { subject: string; handle?: string; displayName?: string } | null;
+  user: { subject: string; handle?: string; displayName?: string; email?: string } | null;
   offline: boolean;
   revoked: string[];
 }
@@ -350,9 +350,9 @@ describe("AuthClient.load", () => {
     const server = fakeServer(); // token not registered → 401
     await seed();
     const { client, states } = makeClient(server);
-    expect(await client.load()).toEqual({ mode: "fabplane", status: "signed_out" });
+    expect(await client.load()).toEqual({ mode: "fabplane", status: "signed_out", error: "Session expired or revoked. Sign in again." });
     expect(await readCredentials(home)).toBeUndefined();
-    expect(states).toEqual([{ mode: "fabplane", status: "signed_out" }]);
+    expect(states).toEqual([{ mode: "fabplane", status: "signed_out", error: "Session expired or revoked. Sign in again." }]);
   });
 
   test("missing, foreign-origin or expired credentials mean signed_out", async () => {
@@ -414,4 +414,22 @@ describe("authorizedFetch / logout", () => {
     expect(client.state()).toEqual({ mode: "fabplane", status: "signed_out" });
     expect(states.at(-1)).toEqual({ mode: "fabplane", status: "signed_out" });
   });
+});
+
+
+test("profile email survives online and offline reloads and is replaced by the verified identity", async () => {
+  const server = fakeServer([{ access_token: "profile-token", expires_in: 3600 }]);
+  server.user = { subject: "taylor", displayName: "Taylor Morgan", email: "taylor@example.test" };
+  const { client } = makeClient(server);
+  expect((await client.login()).principal?.email).toBe("taylor@example.test");
+  expect((await readCredentials(home))?.email).toBe("taylor@example.test");
+  expect((await makeClient(server).client.load()).principal?.email).toBe("taylor@example.test");
+  server.offline = true;
+  expect((await makeClient(server).client.load()).principal?.email).toBe("taylor@example.test");
+  server.offline = false;
+  server.user = { subject: "taylor", displayName: "Taylor", email: "updated@example.test" };
+  expect((await makeClient(server).client.load()).principal?.email).toBe("updated@example.test");
+  server.user = { subject: "taylor" };
+  expect((await makeClient(server).client.load()).principal).toEqual({ subject: "taylor" });
+  expect((await readCredentials(home))?.email).toBeUndefined();
 });

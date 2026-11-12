@@ -1,3 +1,4 @@
+import { cloudAccountId, useAuthStore } from "@fabdesk/client-core";
 import { FeedbackNotice } from "../components/FeedbackNotice";
 import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
@@ -187,6 +188,11 @@ export function ShoppingAddItem({ options, fab, onAdd, onClose }: { options: Des
 const looksLikeMpn = (s: string) => !/\s/.test(s) && /\d/.test(s) && s.length <= 60;
 
 export function ShoppingListTab() {
+  const account = useAuthStore(s => cloudAccountId(s.state));
+  return <ShoppingListTabForAccount key={account ?? "signed-out"} />;
+}
+
+function ShoppingListTabForAccount() {
   const [view, setView] = useState<"bom" | "order">("bom");
   const projectId = useUiStore(s => s.activeProjectId);
   useAssistantSurface(projectId ? { projectId, label: view === "bom" ? "Parts / Design BOM" : "Parts / Shopping", priority: 5, details: JSON.stringify({ view, projectId }) } : null);

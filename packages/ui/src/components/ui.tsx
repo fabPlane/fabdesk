@@ -182,13 +182,18 @@ export function Dialog({ open, onClose, closeDisabled = false, title, headerActi
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const frame = requestAnimationFrame(() => {
       const dialog = dialogRef.current;
-      if (dialog && !dialog.contains(document.activeElement)) {
+      const top = Array.from(document.querySelectorAll('[role="dialog"][aria-modal="true"]')).at(-1);
+      if (dialog && top === dialog && !dialog.contains(document.activeElement)) {
         (dialog.querySelector<HTMLElement>("[autofocus], input:not([type=hidden]):not([type=radio]):not([disabled]), textarea:not([disabled]), select:not([disabled])")
           ?? dialog.querySelector<HTMLElement>("button:not([disabled])") ?? dialog).focus();
       }
     });
+    const mountedDialog = dialogRef.current;
     return () => {
       cancelAnimationFrame(frame);
+      // Refreshing an underlying account-dependent dialog must not steal focus from recovery.
+      const activeDialog = document.activeElement?.closest('[role="dialog"][aria-modal="true"]');
+      if (activeDialog && activeDialog !== mountedDialog) return;
       if (previous?.isConnected) previous.focus();
       else fallbackFocusRef.current?.()?.focus();
     };
