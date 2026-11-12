@@ -11,6 +11,7 @@ import {
   type CoreServices,
   type ProjectHandle,
   type ToolRegistry,
+  projectHasPlacedBoard,
 } from "@fabdesk/tools";
 import type { AgentId } from "@fabdesk/protocol";
 import { AgentRunManager, type AgentAdapterLike } from "./agent-runs";
@@ -414,6 +415,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   }
 
   const registry = createRegistry({ channel: config.channel });
+  /** The board workflow stage tools are registered (board_check is the first of them). */
+  const boardWorkflowReady = () => registry.get("board_check") !== undefined;
   const ctxFactory = createContextFactory({ services, projects, tokens, telemetry });
   const mcp = new McpSessionManager({
     registry,
@@ -442,6 +445,10 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     ...(agentMcpProfile(agentInterface) ? { mcpProfile: agentMcpProfile(agentInterface)! } : {}),
     adapters,
     settings: () => store.settings.get(),
+    // a project that already has a placed board starts with the board toolset loaded, not behind load_toolset;
+    // only once the board workflow's check stage is registered (the set is board_job alone before that)
+    extraToolsets: async (project) =>
+      project && boardWorkflowReady() && (await projectHasPlacedBoard(project.dir)) ? ["board"] : [],
     workspaceDir: join(config.home, "workspace"),
     telemetry,
     agentEnvironment: async ({ cwd, project }) => {
@@ -508,6 +515,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     runs,
     projects,
     settings: () => store.settings.get(),
+    // the board's A1-A9 decide "verified" once the board workflow's check tool exists
+    boardChecks: boardWorkflowReady,
   });
 
   let resolveClosed!: (reason: string) => void;
