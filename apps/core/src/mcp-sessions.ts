@@ -140,7 +140,7 @@ export function startOptionsFor(
 
 /** A client times a tool call out after ~60 s unless it was raised (the MCP SDK default and Codex's). */
 export const DURABLE_WAIT_SHORT_MS = 50_000;
-const DURABLE_WAIT_MAX_MS = 25 * 60_000;
+export const DURABLE_WAIT_MAX_MS = 25 * 60_000;
 /** Clients whose tool calls outlast a durable job's wait (Claude Code resets its deadline on the progress heartbeat). */
 const LONG_CALL_CLIENTS = /^claude-code$/i;
 
