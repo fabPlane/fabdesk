@@ -38,6 +38,7 @@ const { values: a } = parseArgs({
     stages: { type: "string", default: "check" },
     seeds: { type: "string", default: "0-3" },
     source: { type: "string" },
+    "ts-only": { type: "boolean", default: false },
   },
 });
 if (!a.spec || !a.out) throw new Error("--spec and --out are required");
@@ -81,13 +82,13 @@ const host: LayoutHost = {
 // ---- oracle workspace and TypeScript workspace from the same spec
 const pyWs = join(out, "py-ws");
 const tsWs = join(out, "ts-ws");
-let r = await sh(["python3", join(a.toolkit!, "flow/flow.py"), "init", pyWs, "--spec", a.spec]);
+let r = a["ts-only"] ? { code: 0, out: "" } : await sh(["python3", join(a.toolkit!, "flow/flow.py"), "init", pyWs, "--spec", a.spec]);
 if (r.code) throw new Error("oracle init: " + r.out);
 const st = await initFlow(tsWs, spec, a.spec);
 
 if (stages.includes("check")) {
-  r = await sh(["python3", join(a.toolkit!, "flow/flow.py"), "check", pyWs]);
-  const py = JSON.parse(await readFile(join(pyWs, "check/result.json"), "utf8")) as { verdict: string; result: { fails: string[]; warns: string[]; info: Record<string, unknown> } };
+  if (!a["ts-only"]) r = await sh(["python3", join(a.toolkit!, "flow/flow.py"), "check", pyWs]);
+  const py = JSON.parse(await readFile(join(a["ts-only"] ? a.out + "/../run-place/py-ws" : pyWs, "check/result.json"), "utf8")) as { verdict: string; result: { fails: string[]; warns: string[]; info: Record<string, unknown> } };
   const ts = await stageCheck(host, st, {});
   const tsRes = ts.result as typeof py.result;
   rec("check verdict", ts.verdict, py.verdict);
@@ -112,9 +113,9 @@ if (a.source) {
 
 if (stages.includes("place")) {
   const t0 = Date.now();
-  r = await sh(["python3", join(a.toolkit!, "flow/flow.py"), "place", pyWs, "--seeds", a.seeds!]);
+  if (!a["ts-only"]) r = await sh(["python3", join(a.toolkit!, "flow/flow.py"), "place", pyWs, "--seeds", a.seeds!]);
   const pyWall = (Date.now() - t0) / 1000;
-  const py = JSON.parse(await readFile(join(pyWs, "place/result.json"), "utf8")) as { verdict: string; result: { seeds: Array<Record<string, unknown>> } };
+  const py = JSON.parse(await readFile(join(a["ts-only"] ? a.out + "/../run-place/py-ws" : pyWs, "place/result.json"), "utf8")) as { verdict: string; result: { seeds: Array<Record<string, unknown>> } };
   const t1 = Date.now();
   const ts = await stagePlace(host, st, { seeds: a.seeds! });
   const tsWall = (Date.now() - t1) / 1000;

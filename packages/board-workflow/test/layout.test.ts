@@ -222,7 +222,7 @@ function fakeHost(krt: string, opts: { tm?: boolean; courtyard?: (board: string)
       await Bun.write(o.log, log);
       return { code: 0, wallS: 0.1 };
     },
-    courtyardDrc: async (board) => Object.entries((opts.courtyard ?? (() => ({})))(board)).flatMap(([rule, n]) => Array.from({ length: n }, () => ({ rule, items: [{ description: "Footprint R1 on F.Cu" }, { description: "Footprint R2 on F.Cu" }] }))),
+    courtyardDrc: async (board) => Object.entries((opts.courtyard ?? (() => ({})))(board)).flatMap(([rule, n]) => Array.from({ length: n as number }, () => ({ rule, items: [{ description: "Footprint R1 on F.Cu" }, { description: "Footprint R2 on F.Cu" }] }))),
     scoreDrc: async (board) => ({ violations: [], unconnected: openOf(board), parity: 0 }),
     admit: async (kind, label) => {
       calls.admits.push({ kind, label });
