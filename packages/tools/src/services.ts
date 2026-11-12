@@ -7,6 +7,7 @@
  * api-server` per project) for building, querying, routing and library search; `KicadService`
  * runs the fork `kicad-cli` for DRC, renders and exports; `SimService` reads the netlist source.
  */
+import type { RunChild } from "./child-tasks";
 import type { CloudService } from "./cloud/service";
 import type { RouterRegistry } from "./routers/registry";
 import type {
@@ -1265,6 +1266,11 @@ export interface CoreServices {
   cadKernels?: import("./cad-kernel").CadKernelHost;
   /** Install-on-demand autorouter catalog (Settings → Routers). */
   routers?: RouterRegistry;
+  /**
+   * Run a heavy board computation in a child process of the core (its own heap, killable, the event loop stays free).
+   * Absent (tests, embedded hosts), tools run the computation in-process.
+   */
+  runChild?: RunChild;
   /** Optional: adopt a candidate board into the saved board over KiCad IPC (board workflow edits). */
   boardAdopt?: BoardAdoptService;
 }

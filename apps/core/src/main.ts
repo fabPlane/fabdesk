@@ -107,6 +107,11 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   const cmd = f._[0] ?? "help";
   if (str(f, "log")) setLogLevel(str(f, "log") as never);
   switch (cmd) {
+    case "board-child": {
+      // hidden: a heavy board computation started by the daemon (child-runner.ts); not for people
+      const { boardChildMain } = await import("./child-runner");
+      return boardChildMain(String(f._[1] ?? ""), String(f._[2] ?? ""), String(f._[3] ?? ""));
+    }
     case "version":
     case "--version":
     case "-v":

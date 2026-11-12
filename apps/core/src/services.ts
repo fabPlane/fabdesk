@@ -1,4 +1,5 @@
 /** Real CoreServices: wires the sibling packages and the FabPlane PCB and CAD bridges into the interface `@fabdesk/tools` expects. */
+import { createRunChild } from "./child-runner";
 import * as kicad from "@fabdesk/kicad";
 import * as sim from "@fabdesk/sim";
 import type { Principal, Settings } from "@fabdesk/protocol";
@@ -193,6 +194,7 @@ export async function createServices(
     }),
     cad,
     boardAdopt: { adopt: (input) => adoptBoard(input) },
+    runChild: createRunChild(),
     dispose: async () => {
       await Promise.all([sessions.dispose(), cad.dispose()]);
     },

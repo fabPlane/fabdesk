@@ -198,6 +198,17 @@ export async function boardMemGiB(paths: string[]): Promise<number> {
 }
 
 /**
+ * Memory an ECO (board_edit impact / apply / proof) holds on the largest board the paths name: about 0.16 GiB per MB of
+ * board file, measured on jetson (86 MB): the edit child peaked at 13.8 GB with its scoring DRC (impact alone 3.7 GiB,
+ * apply 6.8 GiB before scoring, kicad-cli's refilled DRC on top). The compute runs in a child process (child-tasks.ts),
+ * so this estimate is what keeps two edits, or an edit and a router run, from running out of memory together.
+ */
+export async function editMemGiB(paths: string[]): Promise<number> {
+  const { bytes } = await largestBoard(paths);
+  return Math.round((bytes / 1e6) * 0.16 * 10) / 10;
+}
+
+/**
  * Memory one router run (KiCadRoutingTools, TraceMaker) holds on the largest board the paths name: from the board's
  * outline area x copper layers (board-workflow `routerFootprint`, measured on vme-wren and jetson), never below the
  * file-size rule. 0 when no board is named.

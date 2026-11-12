@@ -26,7 +26,8 @@ import { adoptCandidate } from "../board-adopt";
 import { runDurable } from "../durable";
 import { jailPath } from "../fs";
 import { ToolError, defineTool, type ToolContext } from "../registry";
-import { boardMemGiB, governor } from "../resources";
+import { editMemGiB, governor } from "../resources";
+import { ChildTaskError, type EditChildInput } from "../child-tasks";
 import type { KicadCli } from "../services";
 import { ok, requireKicad, runLiveDrc } from "./common";
 import { repairEditCandidate } from "./board-lastmile-actions";
@@ -199,6 +200,41 @@ export function editRunners(c: ToolContext, cli: KicadCli): EditRunners {
   };
 }
 
+/**
+ * The edit pipeline with its heavy compute (impact, apply, proof) in a child process when the host can start one
+ * (`services.runChild`; see child-tasks.ts): on a large board it holds several GiB and minutes of CPU. The repair step
+ * (the last-mile bench, itself running router processes) stays here, between the child's apply and proof. Without
+ * `runChild` (tests, embedded hosts) the pipeline runs in-process as before.
+ */
+export async function runEditOutOfCore(
+  c: ToolContext,
+  o: { projectDir: string; plan: unknown; mode: EditMode; pcb?: string; candidate?: string },
+  cli: KicadCli | null,
+): Promise<EditRunResult> {
+  const run = c.services.runChild;
+  if (!run) return runEdit({ ...o, runners: editRunners(c, cli!) });
+  const child = async (mode: "impact" | "apply" | "proof", candidate?: string): Promise<EditRunResult> => {
+    const input: EditChildInput = { projectDir: o.projectDir, plan: o.plan, mode, ...(o.pcb ? { pcb: o.pcb } : {}), ...(candidate ? { candidate } : {}), kicadCli: cli?.path ?? null };
+    try {
+      return (await run("edit", input, { signal: c.signal, onProgress: (p, n) => c.progress(p, n) })) as EditRunResult;
+    } catch (e) {
+      if (e instanceof ChildTaskError && e.errorName === "EditStop") throw new ToolError(e.message, "precondition");
+      throw e;
+    }
+  };
+  if (o.mode === "impact" || o.mode === "proof") return child(o.mode, o.candidate);
+  const applied = await child("apply");
+  const routeAgain = applied.repair?.routeAgain ?? [];
+  if (o.mode === "apply" || applied.stage !== "apply" || applied.stop || !applied.candidate) return { ...applied, ...(applied.repair ? { repair: { ...applied.repair, available: true } } : {}) };
+  let note: string | undefined;
+  if (routeAgain.length) {
+    c.progress(0.55, "repair (route stage)");
+    note = (await repairEditCandidate(c, { candidateDir: applied.candidate.dir, pcb: applied.candidate.pcb, routeAgain })).note;
+  }
+  const proven = await child("proof", applied.candidate.dir);
+  return { ...proven, phases: { ...applied.phases, ...proven.phases }, repair: { available: true, routeAgain, ...(note ? { note } : {}) } };
+}
+
 export const board_edit = defineTool({
   name: "board_edit",
   toolset: "board",
@@ -225,18 +261,12 @@ export const board_edit = defineTool({
         label: "board_edit",
         paths: [project.dir],
         signal: c.signal,
-        memGiB: await boardMemGiB([project.dir]),
+        memGiB: await editMemGiB([project.dir]),
         onWait: (why) => c.progress(0, why),
       });
       try {
-        const result = await runEdit({
-          projectDir: project.dir,
-          plan,
-          mode,
-          ...(input.pcb ? { pcb: input.pcb } : {}),
-          ...(input.candidate ? { candidate: (await jailPath(project.dir, input.candidate)) } : {}),
-          runners: editRunners(c, cli!),
-        });
+        const candidate = input.candidate ? await jailPath(project.dir, input.candidate) : undefined;
+        const result = await runEditOutOfCore(c, { projectDir: project.dir, plan, mode, ...(input.pcb ? { pcb: input.pcb } : {}), ...(candidate ? { candidate } : {}) }, cli);
         let adopted: string | null = null;
         let adoptData: unknown = null;
         if (input.adopt) {
