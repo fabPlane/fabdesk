@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -32,7 +32,7 @@ import {
   type ReviewRecord,
 } from "../src/index";
 import { applyCards } from "../src/review/rulecards";
-import { customCheckArgv } from "../src/review/checks";
+import { customCheckArgv, customCommand } from "../src/review/checks";
 import { writeJsonFile } from "../src/files";
 
 const dirs: string[] = [];
@@ -316,6 +316,35 @@ describe("a review run, the gate and dispositions", () => {
     await writeFile(join(cd, "mine.json"), JSON.stringify({ name: "mine", run: "echo not-json" }));
     const bad = await runReview(p, { ...fakeEnv(), trustCustom: true }, { checks: ["custom"], offline: true });
     expect(bad.review.checks[0]!.status).toBe("error");
+  });
+
+  test("substituted paths are quoted for the shell: spaces, $() and ; are data", async () => {
+    expect(customCommand("x {pcb}", { pcb: "/a b/it's.kicad_pcb" }, undefined, "linux")).toBe(`x '/a b/it'\\''s.kicad_pcb'`);
+    expect(customCommand(`x "{pcb}" '{out}'`, { pcb: "/a b", out: "/o" }, "bash", "linux")).toBe("x '/a b' '/o'");
+    expect(customCommand("x {pcb}", { pcb: "C:\\a b\\it's.kicad_pcb" }, "pwsh", "win32")).toBe("x 'C:\\a b\\it''s.kicad_pcb'");
+    expect(customCommand("x {pcb}", { pcb: "C:\\a b\\b.kicad_pcb" }, undefined, "win32")).toBe('x "C:\\a b\\b.kicad_pcb"');
+    expect(customCommand("x {pcb}", { pcb: "C:\\100%\\b.kicad_pcb" }, undefined, "win32")).toEqual({ error: expect.stringContaining("cannot quote") });
+    if (process.platform === "win32") return;
+    const root = await mkdtemp(join(tmpdir(), "q-"));
+    const nasty = join(root, "a b;$(touch PWNED)`touch PWNED2`'x");
+    await mkdir(nasty, { recursive: true });
+    await writeFile(join(nasty, "b.kicad_pcb"), "(kicad_pcb)");
+    const cmd = customCommand("test -f {pcb} && echo ok", { pcb: join(nasty, "b.kicad_pcb") }, undefined, "linux") as string;
+    const p = Bun.spawn(["/bin/sh", "-c", cmd], { cwd: root, stdout: "pipe" });
+    expect((await new Response(p.stdout).text()).trim()).toBe("ok");
+    expect((await readdir(root)).filter((n) => n.startsWith("PWNED"))).toEqual([]);
+  });
+
+  test("untrusted owner checks are named in the gate, not silently skipped", async () => {
+    const dir = await project();
+    const cd = join(dir, ".fabdesk", "board", "review", "checks.d");
+    await mkdir(cd, { recursive: true });
+    await writeFile(join(cd, "mine.json"), JSON.stringify({ name: "mine", run: "echo '[]'" }));
+    const p = await openReviewProject(dir);
+    await runReview(p, fakeEnv(), { offline: true });
+    const g = await reviewGate(p);
+    expect(g.notRun).toBe(1);
+    expect(g.lines.some((l) => l.includes("1 owner check(s) not run (trustCustom off)"))).toBe(true);
   });
 
   test("custom checks run in the platform shell unless they name one", () => {
