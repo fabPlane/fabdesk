@@ -21,6 +21,8 @@ import { simTools } from "./sim";
 import { shoppingTools } from "./shopping";
 import { spatialTools } from "./spatial";
 import { verifyTools } from "./verify";
+import { boardTools } from "./board";
+import { withBoardHandoff } from "./board-handoff";
 
 export const allTools: ReadonlyArray<ToolDef> = [
   ...coreTools,
@@ -45,7 +47,8 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...appTools,
   ...shoppingTools,
   ...cadTools,
-] as unknown as ReadonlyArray<ToolDef>;
+  ...boardTools,
+].map((tool) => withBoardHandoff(tool as unknown as ToolDef)) as unknown as ReadonlyArray<ToolDef>;
 
 /** The v1 registry exposes both routers on every channel. */
 export function createRegistry(opts: { channel?: "public" | "internal" } = {}): ToolRegistry {
