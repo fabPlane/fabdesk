@@ -199,6 +199,59 @@ describe("step engine", () => {
   });
 });
 
+describe("step engine: plan files and aborts", () => {
+  test("plan:FILE resolves in the project, refuses a path outside it and names a missing file", async () => {
+    const { dir, req } = await c6();
+    const krt = join(dir, "krt");
+    await mkdir(join(krt, "src/plugins"), { recursive: true });
+    await mkdir(join(dir, "plans"), { recursive: true });
+    await writeFile(join(dir, "plans", "mine.json"), JSON.stringify(L.LASTMILE_PLANS["finish"]));
+    const outside = await tmp();
+    await writeFile(join(outside, "evil.json"), JSON.stringify(L.LASTMILE_PLANS["finish"]));
+    const spawns: string[][] = [];
+    const e = L.createStepEngine({
+      req,
+      drc: async () => ({ violations: [], unconnected: [], parity: 0 }),
+      scorer,
+      layout: fakeLayout(krt, spawns),
+      fallbackRouter: "fab_router",
+      fill: async () => ({}),
+      planRoot: dir,
+    });
+    // the daemon's cwd is not the project: a relative plan path still resolves against the project
+    const r = await e.run(L.stepsFor("plan:plans/mine.json")[0]!, input(dir, join(await tmp(), "p")));
+    expect("error" in r ? r.error : null).toBeNull();
+    expect(spawns.length).toBeGreaterThan(0);
+    await expect(e.run(L.stepsFor(`plan:${join(outside, "evil.json")}`)[0]!, input(dir, join(await tmp(), "q")))).rejects.toThrow("outside the project");
+    await expect(e.run(L.stepsFor("plan:../evil.json")[0]!, input(dir, join(await tmp(), "q2")))).rejects.toThrow(/outside the project|no such file/);
+    await expect(e.run(L.stepsFor("plan:plans/none.json")[0]!, input(dir, join(await tmp(), "r")))).rejects.toThrow("plan:plans/none.json: no such file");
+    const noRoot = engine(req, krt, [], []);
+    await expect(noRoot.run(L.stepsFor("plan:plans/mine.json")[0]!, input(dir, join(await tmp(), "s")))).rejects.toThrow("no project folder");
+  });
+
+  test("an aborted signal starts nothing: no step, no KRT stage, no process", async () => {
+    const { dir, req } = await c6();
+    const krt = join(dir, "krt");
+    await mkdir(join(krt, "src/plugins"), { recursive: true });
+    const spawns: string[][] = [];
+    const ac = new AbortController();
+    ac.abort();
+    const inp = { ...input(dir, join(await tmp(), "a")), signal: ac.signal };
+    await expect(engine(req, krt, spawns, []).run(L.stepsFor("finish")[0]!, inp)).rejects.toThrow();
+    expect(spawns).toHaveLength(0);
+    // routeKrt itself stops before its first stage
+    const rec = await layout.routeKrt({ ...fakeLayout(krt, spawns), signal: ac.signal }, { placed: dir, out: join(await tmp(), "k"), plan: L.LASTMILE_PLANS["finish"] as never, stem: "C6", req, score: false });
+    expect(rec.error).toMatch(/^aborted before stage/);
+    expect(spawns).toHaveLength(0);
+    // the real process runner refuses to start a child it could never stop
+    const d = await tmp();
+    const marker = join(d, "ran");
+    await expect(layout.nodeRun(["sh", "-c", `touch ${marker}`], { log: join(d, "log"), signal: ac.signal })).rejects.toThrow("not started");
+    await new Promise((r) => setTimeout(r, 200));
+    expect((await readdir(d)).includes("ran")).toBe(false);
+  });
+});
+
 describe("sweep", () => {
   test("a grid of poses round the part, flipped, without the current pose, each followed by the chain", () => {
     const acts = L.sweepActions(BOARD, ["R1"], { span: 0.5, step: 0.5, rotations: "flip", then: "blockers:1.0" });

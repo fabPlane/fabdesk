@@ -66,6 +66,17 @@ describe("actions", () => {
     expect(L.stepsFor("pairs-fix:USB")[0]!.args).toEqual(["--pairs", "USB"]);
     expect(L.stepsFor("taps+a7")).toHaveLength(2);
   });
+  test("malformed numbers fail the action by name (never a NaN pose); fill lists the real routers", () => {
+    expect(() => L.stepsFor("nudge:R1@1.2.3,4")).toThrow("nudge:R1@1.2.3,4: '1.2.3' is not a number");
+    expect(() => L.stepsFor("nudge:R1@1,2@90/9.0.1")).toThrow("'9.0.1' is not a number");
+    expect(() => L.stepsFor("turn:R1@90~1..5")).toThrow("'1..5' is not a number");
+    expect(() => L.stepsFor("window:0,0,5,x")).toThrow("'x' is not a number");
+    expect(() => L.stepsFor("fence:0,0,5=USB.*")).toThrow("a box is X0,Y0,X1,Y1");
+    expect(L.stepsFor("nudge:R1@-1.5,.5@90/180~2")[0]!.moves!.moves[0]).toEqual({ ref: "R1", radius: 2, near: [-1.5, 0.5], rotations: [90, 180] });
+    const fill = L.actionHelp().find((l) => l.startsWith("fill"))!;
+    expect(fill).not.toContain("fastroute");
+    expect(fill).toContain("fill:tracemaker|freerouting|fab_router");
+  });
   test("nudge, turn, bundle and fences", () => {
     const n = L.stepsFor("nudge:C1@10.5,20@0/90~3&C2@1,2")[0]!;
     expect(n.moves!.moves).toEqual([
@@ -190,6 +201,54 @@ describe("bench", () => {
     expect((await bench.acceptDir(dir)).ok).toBe(false); // no gain on itself
     await bench.try(["finish"], { noAccept: true });
     expect(await bench.prune()).toBe("pruned 1 candidate dirs; kept 2 accepted steps");
+  });
+
+  test("candidates that slug alike get their own folders; a cached score answers only for its own board", async () => {
+    expect(L.candidateSlugs(["finish", "finish", "Finish", "a b", "a_b"])).toEqual(["finish", "finish-2", "Finish-3", "a_b", "a_b-2"]);
+    const src = await project(5);
+    const ws = join(await mk(), "ws");
+    let n = 0;
+    const eng: L.StepEngine = {
+      async run(_step, input) {
+        await mkdir(input.out, { recursive: true });
+        await writeFile(join(input.out, input.pcb), `(kicad_pcb) ;; opens=${++n}`);
+        return { dir: input.out };
+      },
+    };
+    const { bench } = await L.Bench.create(ws, src, "board.kicad_pcb", { scorer, engine: eng, availableGiB: async () => 30 });
+    const r = await bench.try(["finish", "finish"], { noAccept: true, jobs: 2 });
+    const [a, b] = r.candidates;
+    expect(a!.dir).not.toBe(b!.dir);
+    expect([a!.figures!.open, b!.figures!.open].sort()).toEqual([1, 2]);
+    // the board changes under a cached score: it is scored again, not answered from the cache
+    await writeFile(join(a!.dir!, "board.kicad_pcb"), "(kicad_pcb) ;; opens=0");
+    expect((await bench.scoreDir(a!.dir!)).figures.open).toBe(0);
+    // a try folder left by a run that never saved its state is not reused
+    await mkdir(join(ws, "t2", "finish"), { recursive: true });
+    await writeFile(join(ws, "t2", "finish", "board.kicad_pcb"), "(kicad_pcb) ;; opens=0");
+    const r2 = await bench.try(["finish"], { noAccept: true });
+    expect(r2.candidates[0]!.dir).toContain(join(ws, "t3"));
+  });
+
+  test("an aborted job runs no further step of a chain", async () => {
+    const src = await project(5);
+    const ws = join(await mk(), "ws");
+    const ac = new AbortController();
+    const seen: string[] = [];
+    const eng: L.StepEngine = {
+      async run(step, input) {
+        seen.push(step.type);
+        ac.abort(); // cancelled while the first step runs
+        await mkdir(input.out, { recursive: true });
+        await writeFile(join(input.out, input.pcb), "(kicad_pcb) ;; opens=1");
+        return { dir: input.out };
+      },
+    };
+    const { bench } = await L.Bench.create(ws, src, "board.kicad_pcb", { scorer, engine: eng, availableGiB: async () => 30, signal: ac.signal });
+    const r = await bench.try(["tighten+tighten+tighten"]);
+    expect(seen).toEqual(["pairfix"]);
+    expect(r.candidates[0]!.error).toBeDefined();
+    expect(r.accepted).toBeNull();
   });
 
   test("a candidate over its budget is abandoned and fails", async () => {

@@ -98,6 +98,10 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
   let cur = krtIn;
   const t0 = Date.now();
   for (const [i, st] of plan.stages.entries()) {
+    if (host.signal?.aborted) {
+      record.error = `aborted before stage ${st.name}`;
+      break;
+    }
     const nxt = join(o.out, `s${i + 1}.kicad_pcb`);
     const args = expandArgs(st.args ?? [], plan, acc, sel);
     if (args === null) {
@@ -196,6 +200,7 @@ export async function routePipeline(host: LayoutHost, o: RoutePipelineOptions): 
   const spawnOpts = { ...(host.signal ? { signal: host.signal } : {}), ...(host.onPid ? { onPid: host.onPid } : {}) };
   let current = board;
   if (plan.session?.length) {
+    host.signal?.throwIfAborted();
     const reqs: unknown[] = [{ tool: "board_info", args: {} }];
     for (const st of plan.session) {
       const args: Record<string, any> = {
@@ -237,6 +242,7 @@ export async function routePipeline(host: LayoutHost, o: RoutePipelineOptions): 
     current = join(s1, `${o.stem}.kicad_pcb`);
   }
   if (plan.cli) {
+    host.signal?.throwIfAborted();
     const r = join(tm, "cli");
     await mkdir(r, { recursive: true });
     await proj(r);

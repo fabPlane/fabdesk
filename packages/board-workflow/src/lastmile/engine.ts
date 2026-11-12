@@ -11,15 +11,15 @@
  * means "route the opens; nothing is ripped", which any router can do); every other KRT step fails by name, so a step
  * never silently becomes a different one.
  */
-import { copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { copyFile, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parseBoard } from "../board";
 import type { Requirements } from "../requirements";
 import { engineReady, type LayoutHost } from "../layout/ctx";
 import type { KrtPlan } from "../layout/plan";
 import { routeKrt } from "../layout/route";
-import { addNewCopper, convertTransforms, nameCopperNets, replaceCopper } from "../layout/text";
-import type { Step } from "./actions";
+import { addNewCopper, convertTransforms, nameCopperNets, numericNetCopper, replaceCopper } from "../layout/text";
+import { FILL_ROUTERS, type Step } from "./actions";
 import { copyBoardFolder, type Scorer, type StepEngine, type StepInput, type StepOutcome } from "./bench";
 import type { DrcFn } from "./scoring";
 import { runTighten } from "./tighten";
@@ -43,6 +43,11 @@ export interface StepEngineHost {
   fallbackRouter: string;
   /** Per-router-run time limit, ms (a step's own budget still applies through its signal). */
   routerTimeoutMs?: number;
+  /**
+   * The folder `plan:FILE` resolves against (the project: board_route paths are project-relative). A plan outside it
+   * is refused; without it `plan:FILE` fails by name.
+   */
+  planRoot?: string;
 }
 
 const exists = (p: string) => stat(p).then(() => true, () => false);
@@ -87,7 +92,7 @@ async function krtRoute(h: StepEngineHost, src: string, out: string, pcb: string
   const native = await readFile(join(src, pcb), "utf8");
   const routed = nameCopperNets(await readFile(join(work, "routed-native-names.kicad_pcb"), "utf8")).text;
   const merged = plan.merge === "replace" ? replaceCopper(native, routed) : addNewCopper(native, nameCopperNets(convertTransforms(native).text).text, routed);
-  const numeric = (merged.text.match(/\((?:segment|via|arc)\b[^()]*(?:\([^()]*\)[^()]*)*?\(net \d+\)/g) ?? []).length;
+  const numeric = numericNetCopper(merged.text);
   if (numeric) throw new Error(`${numeric} copper items name their net by number after the merge`);
   await writeFile(join(out, pcb), merged.text);
   const stages = record.stages.map((s) => ({ name: s["name"], ...(s["skipped"] ? { skipped: s["skipped"] } : { exit: s["exit"], wall_s: s["wall_s"] }) }));
@@ -122,8 +127,27 @@ async function fillRoute(h: StepEngineHost, router: string, src: string, out: st
   return { engine: router, ...(s.message ? { message: s.message } : {}) };
 }
 
-async function stepPlan(step: Step): Promise<KrtPlan> {
-  if (step.planFile) return JSON.parse(await readFile(step.planFile, "utf8")) as KrtPlan;
+/** `plan:FILE` resolved inside `root` (symlinks followed); refused by name when missing or outside it. */
+export async function resolvePlanFile(root: string | undefined, file: string): Promise<string> {
+  const what = `plan:${file}`;
+  if (!root) throw new Error(`${what}: no project folder to resolve the plan file against`);
+  const top = await realpath(root);
+  const real = await realpath(resolve(top, file)).catch(() => null);
+  if (!real) throw new Error(`${what}: no such file in the project (paths are project-relative)`);
+  const rel = relative(top, real);
+  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error(`${what}: outside the project`);
+  return real;
+}
+
+async function stepPlan(h: StepEngineHost, step: Step): Promise<KrtPlan> {
+  if (step.planFile) {
+    const file = await resolvePlanFile(h.planRoot, step.planFile);
+    try {
+      return JSON.parse(await readFile(file, "utf8")) as KrtPlan;
+    } catch (e) {
+      throw new Error(`plan:${step.planFile}: not a JSON router plan (${e instanceof Error ? e.message : String(e)})`);
+    }
+  }
   if (!step.plan) throw new Error(`${step.type} step has no router plan`);
   return step.plan as unknown as KrtPlan;
 }
@@ -143,11 +167,12 @@ export function createStepEngine(h: StepEngineHost): StepEngine {
   return {
     async run(step: Step, input: StepInput): Promise<StepOutcome> {
       const { cur, out, pcb, signal } = input;
+      signal.throwIfAborted(); // between the steps of a chain and inside a step, nothing starts once the budget is spent
       switch (step.type) {
         case "pairfix":
           return runTighten({ step, input, req: h.req, drc: h.drc });
         case "fill": {
-          if (!step.router) return { error: "fill needs a router: fill:tracemaker, fill:freerouting or fill:fab_router" };
+          if (!step.router) return { error: `fill needs a router: ${FILL_ROUTERS.map((r) => `fill:${r}`).join(", ")}` };
           return { dir: out, info: await fillRoute(h, step.router, cur, out, pcb, signal) };
         }
         case "krt": {
@@ -156,31 +181,38 @@ export function createStepEngine(h: StepEngineHost): StepEngine {
             if (isFinish(step)) return { dir: out, info: { ...(await fillRoute(h, h.fallbackRouter, cur, out, pcb, signal)), fallback: `KiCadRoutingTools ${k.why ? `did not install (${k.why})` : "not configured"}: finish ran on ${h.fallbackRouter}` } };
             return { error: needsKrt(planName(step), k.why) };
           }
+          const plan = await stepPlan(h, step);
           // @pairs-todo reads what the start board fails
           await ensureScored(h, cur, pcb, signal);
-          return { dir: out, info: await krtRoute(h, cur, out, pcb, await stepPlan(step), signal) };
+          signal.throwIfAborted();
+          return { dir: out, info: await krtRoute(h, cur, out, pcb, plan, signal) };
         }
         case "repair": {
           const k = await krt();
           if (!k.path) return { error: needsKrt(`${planName(step)} after its rip`, k.why) };
+          const plan = await stepPlan(h, step);
           await ensureScored(h, cur, pcb, signal);
           const args = (step.rip ?? []).map((x) => x.replace("{start}", input.start));
           if (args.includes("--spare-open-nets")) await ensureScored(h, input.start, pcb, signal);
+          signal.throwIfAborted();
           const ripped = join(out, "ripped");
           const rip = await ripStep({ cur, out: ripped, pcb, args, req: h.req });
           if (!rip.removed) return { dir: cur, skipped: true, info: { rip } }; // nothing to repair: the board is unchanged
+          signal.throwIfAborted();
           const routed = join(out, "route");
-          return { dir: routed, info: { rip, ...(await krtRoute(h, ripped, routed, pcb, await stepPlan(step), signal)) } };
+          return { dir: routed, info: { rip, ...(await krtRoute(h, ripped, routed, pcb, plan, signal)) } };
         }
         case "nudge": {
           const k = await krt();
           if (!k.path) return { error: needsKrt("nudge (re-routing what it cuts)", k.why) };
           if (!step.moves) return { error: "nudge step has no moves" };
+          const plan = await stepPlan(h, step);
           const nudged = join(out, "nudged");
           const fixed = await fixedParts(h.req, join(cur, pcb));
           const nudge = await nudgeStep({ cur, out: nudged, pcb, moves: step.moves, req: h.req, courtyardDrc: h.layout.courtyardDrc, fixed: (r) => fixed.has(r) });
+          signal.throwIfAborted();
           const routed = join(out, "route");
-          return { dir: routed, info: { nudge, ...(await krtRoute(h, nudged, routed, pcb, await stepPlan(step), signal)) } };
+          return { dir: routed, info: { nudge, ...(await krtRoute(h, nudged, routed, pcb, plan, signal)) } };
         }
         default:
           return { error: `unknown step type ${(step as Step).type}` };
