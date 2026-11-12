@@ -23,3 +23,7 @@ apps/mobile/android/
 apps/mobile/modules/*/android/build/
 apps/mobile/modules/*/android/.cxx/
 *.keystore
+
+# Python bytecode
+__pycache__/
+*.pyc
