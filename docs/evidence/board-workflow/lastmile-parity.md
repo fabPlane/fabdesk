@@ -7,10 +7,11 @@ Date 2026-11-12. Oracle: toolkit branch `cmp/held-out-fixes` (`tools/lastmile.py
 
 Board: cm5_minima (`/home/shane/pcb-cmp/cm5_minima/proj2`, 112 footprints, 1884 segments, 18 differential pairs), spec
 `/home/shane/pcb-cmp/cm5_minima/onboard/spec.json`. Both sides read the same files; the TypeScript side onboards the copy itself
-(requirements equal to the oracle's, stage 1). One kicad-cli run per score (about 2.5 s). Run four times: as the board is
-(`--tighten '^/CM5/HDMI_PI'`, `--tighten .`) and with every pair class's `diff_pair_gap` set to 0.30 and to 0.20 in the requirements
-of both sides (a board "laid out to other rules"; 0.20 makes all 18 pairs tighten: 439 groups planned, 2318 segments). All four runs:
-22 of 22 rows agree (the last variant has a 23rd, TypeScript-only row). Run output: `lastmile-parity.md` of that run, last variant below.
+(requirements equal to the oracle's, stage 1). One kicad-cli run per score (about 2.5 s). Run four times after the last code change: as the board is
+(`--tighten .`) and with every pair class's `diff_pair_gap` set to 0.30 and to 0.20 in the requirements
+of both sides (a board "laid out to other rules"; 0.20 makes all 18 pairs tighten: 439 groups planned, 2318 segments; run twice, the
+second with the bench row). All four runs: 22 of 22 rows agree (the last has a 23rd, TypeScript-only row). An earlier run, before the
+fix of the failing flag of a pair (the oracle also counts the N net), had 21 of 22 and is not counted. Run output: `lastmile-parity.md` of that run, last variant below.
 
 | item | agrees | detail |
 |---|---|---|
