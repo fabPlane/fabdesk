@@ -10,6 +10,7 @@ import {
   attachToRegistry,
   FABDESK_SERVER_ICONS,
   TOOLSETS,
+  type ToolsetId,
   type ContextFactory,
   type McpAppsMode,
   type ToolRegistry,
@@ -60,6 +61,41 @@ export const NATIVE_CAPABILITY_EXCLUDE = ["load_toolset"] as const;
  * `schematic_edit` and the tools both paths share, so neither path waits behind `load_toolset`.
  */
 export const DEFAULT_AGENT_TOOLSETS = ["circuit", "verify", "render"] as const;
+
+/**
+ * `toolsets=all`, or a comma list added to the defaults (`toolsets=board`): a run on a project that already
+ * has a board starts with the board toolset instead of discovering it through `load_toolset`.
+ */
+export function initialToolsetsFor(param: string | null): ToolsetId[] {
+  if (param === "all") return [...TOOLSETS];
+  const extra = (param ?? "").split(",").filter((id): id is ToolsetId => (TOOLSETS as readonly string[]).includes(id));
+  return TOOLSETS.filter((id) => (DEFAULT_AGENT_TOOLSETS as readonly string[]).includes(id) || extra.includes(id));
+}
+
+/**
+ * The native profile (Codex) lists a fixed set at turn start and cannot load more; a toolset the project asks for
+ * (`toolsets=board`, an existing placed board) is added to it, or that agent could never reach it.
+ */
+export function nativeToolsFor(toolsetsParam: string | null, registry: Pick<ToolRegistry, "byToolset">): string[] {
+  const asked = initialToolsetsFor(toolsetsParam).filter((id) => !(DEFAULT_AGENT_TOOLSETS as readonly string[]).includes(id));
+  return [...new Set([...NATIVE_AGENT_TOOLS, ...asked.flatMap((id) => registry.byToolset(id).map((t) => t.name))])];
+}
+
+/**
+ * A run on a project that already has a placed board does not need the schematic-authoring tools (about 48k characters of
+ * schemas) in front of it: it starts with the board-reading tools, verification, rendering and the `board` toolset. The
+ * rest stays one `load_toolset` / `capability_search` away.
+ *
+ * PLACEHOLDER: BOARD_START_TOOLS names only tools that exist today. Later board-workflow stages (check, edit, route,
+ * release) register their tools in the `board` toolset, which is already part of BOARD_START_TOOLSETS, so they join the
+ * start set without touching this list; add a tool to BOARD_START_TOOLS only for one that lives in another toolset.
+ */
+export const BOARD_START_TOOLS = ["pcb_environment", "project_status", "pcb_inspect", "schematic_inspect", "schematic_review", "route_status"] as const;
+export const BOARD_START_TOOLSETS = ["core", "verify", "render", "board"] as const;
+
+export function boardStartTools(registry: Pick<ToolRegistry, "byToolset">): string[] {
+  return [...new Set([...BOARD_START_TOOLS, ...BOARD_START_TOOLSETS.flatMap((id) => registry.byToolset(id).map((t) => t.name))])];
+}
 
 export type McpSessionOptions = {
   registry: ToolRegistry;
@@ -189,11 +225,18 @@ export class McpSessionManager {
     // Codex snapshots MCP tools when a turn starts and currently ignores tools/list_changed.
     // Let clients that cannot refresh opt into the complete inventory at initialization.
     const query = new URL(req.url).searchParams;
-    const initialToolsets =
-      query.get("toolsets") === "all" ? [...TOOLSETS] : [...DEFAULT_AGENT_TOOLSETS];
+    const initialToolsets = initialToolsetsFor(query.get("toolsets"));
     const profile = query.get("profile");
     const initialTools =
-      profile === "planning" ? ["request_project_creation"] : profile === "native" ? [...NATIVE_AGENT_TOOLS] : profile === "substrate" ? [] : undefined;
+      profile === "planning"
+        ? ["request_project_creation"]
+        : profile === "native"
+          ? nativeToolsFor(query.get("toolsets"), this.opts.registry)
+          : profile === "substrate"
+            ? []
+            : query.get("start") === "board"
+              ? boardStartTools(this.opts.registry)
+              : undefined;
     // MCP Apps views: `auto` lists them for clients that advertise io.modelcontextprotocol/ui;
     // `?apps=on` forces them (stdio proxy started with --apps). The agent profiles never get them.
     const appsParam = query.get("apps");
