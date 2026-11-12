@@ -3,7 +3,8 @@ import { mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inflateRawSync } from "node:zlib";
-import { parseSexpr, release } from "../src";
+import { parseSexpr, release, topLevelSpans } from "../src";
+import { removeBlocks } from "../src/edit/text";
 
 const gerber = `%TF.FileFunction,Copper,L1,Top*%
 %FSLAX46Y46*%
@@ -308,12 +309,39 @@ describe("via bindings", () => {
     // geometry-only change: nothing but the two attributes on the vias that needed them
     expect(applied.replace(/\s*\((capping|filling) yes\)/g, "")).toBe(withVias);
   });
+  test("a CRLF board (KiCad block layout, `(via\\r\\n`) is classified like its LF twin", () => {
+    const lf = withVias.replace(/\(via( micro)? /g, (_m, k: string | undefined) => `(via${k ?? ""}\n\t\t`);
+    const crlf = lf.replace(/\r?\n/g, "\r\n");
+    const a = release.classifyVias(lf);
+    const b = release.classifyVias(crlf);
+    expect(a).toHaveLength(3);
+    expect(b.map(({ span_: _s, ...v }) => v)).toEqual(a.map(({ span_: _s, ...v }) => v));
+    const vip = release.viaBindings("b.kicad_pcb", b).record.counts;
+    expect(vip.via_in_pad).toBe(1);
+    expect(vip.require_fill_cap).toBe(2);
+    const applied = release.applyViaBindings(crlf, release.viaBindings("b.kicad_pcb", b).missing);
+    expect(applied.replace(/\r\n/g, "")).not.toContain("\n"); // stays CRLF
+    expect(release.viaBindings("b.kicad_pcb", release.classifyVias(applied)).missing).toHaveLength(0);
+  });
   test("pad shapes: rect, circle and oval hole tests", () => {
     const pad = { x: 0, y: 0, ang: 0, w: 1, h: 0.5 };
     expect(release.holeMeetsPad(0.7, 0, 0.3, { ...pad, shape: "rect" })).toBe(true);
     expect(release.holeMeetsPad(0.9, 0, 0.3, { ...pad, shape: "rect" })).toBe(false);
     expect(release.holeMeetsPad(0, 0.5, 0.3, { ...pad, shape: "circle" })).toBe(true);
     expect(release.holeMeetsPad(0.7, 0.4, 0.1, { ...pad, shape: "oval" })).toBe(false);
+  });
+});
+
+describe("CRLF boards", () => {
+  test("top-level blocks are found after any whitespace, so CRLF boards edit like LF ones", () => {
+    const lf = '(kicad_pcb\n\t(via\n\t\t(at 1 1)\n\t\t(net "A")\n\t)\n\t(segment\n\t\t(start 0 0)\n\t\t(net "A")\n\t)\n\t(via\t(at 2 2) (net "B"))\n)\n';
+    const crlf = lf.replace(/\n/g, "\r\n");
+    expect(topLevelSpans(lf, "via")).toHaveLength(2);
+    expect(topLevelSpans(crlf, "via")).toHaveLength(2);
+    expect(topLevelSpans(crlf, "segment")).toHaveLength(1);
+    const r = removeBlocks(crlf, "via", (b) => b.includes('(net "A")'));
+    expect(r.removed).toBe(1);
+    expect(r.text).not.toContain("(at 1 1)");
   });
 });
 

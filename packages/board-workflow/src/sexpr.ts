@@ -113,8 +113,9 @@ export interface Span {
 }
 
 /**
- * Spans of the root's direct children that start with `key` followed by a space or newline (same rule as the
- * toolkit's `block_pass.top_level`). Works on multi- and single-line files; quoted strings may hold parentheses.
+ * Spans of the root's direct children that start with `key` followed by whitespace (the toolkit's
+ * `block_pass.top_level` took a space or `\n`; any whitespace here, so `(via\r\n` on a CRLF board and `(via\t` count).
+ * Works on multi- and single-line files; quoted strings may hold parentheses.
  */
 export function topLevelSpans(text: string, key: string): Span[] {
   const spans: Span[] = [];
@@ -132,7 +133,7 @@ export function topLevelSpans(text: string, key: string): Span[] {
       depth++;
       if (depth === 2 && text.startsWith(key, i + 1)) {
         const nx = text[i + 1 + key.length];
-        if (nx === " " || nx === "\n") start = i;
+        if (nx !== undefined && WS.has(nx)) start = i;
       }
     } else if (ch === ")") {
       if (depth === 2 && start >= 0) {

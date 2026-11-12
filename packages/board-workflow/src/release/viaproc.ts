@@ -7,7 +7,7 @@
  * primitive extent. `applyViaBindings` writes `(capping yes) (filling yes)` on every via that needs them (an attribute
  * only: no geometry changes).
  */
-import { kid, kids, num, parseSexpr, type SNode } from "../sexpr";
+import { kid, kids, num, parseSexpr, topLevelSpans as sexprTopLevelSpans, type SNode } from "../sexpr";
 
 interface SmdPad {
   ref: string;
@@ -104,30 +104,9 @@ export function holeMeetsPad(vx: number, vy: number, rad: number, p: Pick<SmdPad
   return Math.hypot(Math.max(0, Math.abs(u) - hw), Math.max(0, Math.abs(v) - hh)) <= rad;
 }
 
-/** Spans of depth-1 s-expressions starting with `key`. */
+/** Spans of depth-1 s-expressions starting with `key` (any whitespace after the keyword, so CRLF boards read the same). */
 export function topLevelSpans(text: string, key: string): Array<[number, number]> {
-  const spans: Array<[number, number]> = [];
-  let depth = 0;
-  let start: number | null = null;
-  let inStr = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i]!;
-    if (inStr) {
-      if (ch === "\\") i++;
-      else if (ch === '"') inStr = false;
-    } else if (ch === '"') inStr = true;
-    else if (ch === "(") {
-      depth++;
-      if (depth === 2 && text.startsWith(key, i + 1) && /[ \n\t]/.test(text[i + 1 + key.length] ?? "")) start = i;
-    } else if (ch === ")") {
-      if (depth === 2 && start !== null) {
-        spans.push([start, i + 1]);
-        start = null;
-      }
-      depth--;
-    }
-  }
-  return spans;
+  return sexprTopLevelSpans(text, key).map((s): [number, number] => [s.start, s.end]);
 }
 
 export function classifyVias(text: string): ViaClass[] {
@@ -199,7 +178,8 @@ export function applyViaBindings(text: string, missing: ViaClass[]): string {
     const [s, e] = v.span_;
     let b = t.slice(s, e);
     b = b.replace(/\(capping \w+\)\s*|\(filling \w+\)\s*/g, "");
-    b = b.replace(/(\(layers[^)]*\))/, "$1\n\t\t(capping yes)\n\t\t(filling yes)");
+    const eol = b.includes("\r\n") ? "\r\n" : "\n"; // keep a CRLF board CRLF
+    b = b.replace(/(\(layers[^)]*\))/, `$1${eol}\t\t(capping yes)${eol}\t\t(filling yes)`);
     t = t.slice(0, s) + b + t.slice(e);
   }
   return t;
