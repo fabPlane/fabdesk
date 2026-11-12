@@ -386,14 +386,14 @@
    "board": "RH (Fabdesk run)",
    "defect": "41/41 manufacturing gate passed while both USB pairs exceeded the 0.5 mm skew gate on fresh recompute; router auto-applied with 111 unknown-net diagnostics; J13 model orientation unresolved.",
    "found_at": "review",
-   "how": "~/pcb/analysis/rh-three-run-comparison.md fresh audit.",
+   "how": "an earlier session-trace analysis: rh-three-run-comparison.md fresh audit.",
    "missed_by": [
     "the tool's own gate"
    ],
    "cost": "candidate not releasable",
    "layer": "L3/L0",
    "rule": "Recompute from saved files; never accept a tool's self-report.",
-   "evidence": "~/pcb/analysis/rh-three-run-comparison.md",
+   "evidence": "an earlier session-trace analysis: rh-three-run-comparison.md",
    "replay": null,
    "pilot": null
   },
@@ -409,7 +409,7 @@
    "cost": "rework",
    "layer": "L0",
    "rule": "Every claim cites a fresh, hash-bound check.",
-   "evidence": "~/pcb/analysis/ffc-connector-session-trace-analysis.md",
+   "evidence": "an earlier session-trace analysis: ffc-connector-session-trace-analysis.md",
    "replay": null,
    "pilot": null
   },
@@ -499,12 +499,12 @@
    "board": "CM5 carrier (Codex session)",
    "defect": "Bulk routing and skew tuning before stackup/planes/impedance/HDI policy were locked; 8/10-layer detours abandoned; 9 SI coupling warnings remained.",
    "found_at": "review",
-   "how": "~/pcb/analysis/cm5-carrier-session-trace-analysis.md",
+   "how": "an earlier session-trace analysis: cm5-carrier-session-trace-analysis.md",
    "missed_by": [],
    "cost": "~4h of agent time",
    "layer": "L3 (pre-route)",
    "rule": "Rules review (stack, classes, pairs, references) is a gate before routing, not after.",
-   "evidence": "~/pcb/analysis/cm5-carrier-session-trace-analysis.md",
+   "evidence": "an earlier session-trace analysis: cm5-carrier-session-trace-analysis.md",
    "replay": null,
    "pilot": null
   },
@@ -522,7 +522,7 @@
    "cost": "a fab package with an illegible silkscreen behind a passing review gate",
    "layer": "L6",
    "rule": "Judge every label from exact shapes (copper with mask opening, other silk, bodies, edge, size, nearest part); place labels with a solver whose change is silk only and proved byte-identical elsewhere.",
-   "evidence": "~/pcb/flow/silk.py; vaio_p_modding 45cf4b2e io-c6/release/C6-eco95/C6.kicad_pcb",
+   "evidence": "the toolkit silk solver; vaio_p_modding 45cf4b2e io-c6/release/C6-eco95/C6.kicad_pcb",
    "replay": "review/bench/boards/c6silk (C6.kicad_pcb at 45cf4b2e)",
    "pilot": "CAUGHT 2026-11-11 by the silk check: L6:SILK labels question (102 of 102 labels); silk.py place: 196 labels clean, native silk_over_copper 199 -> 2 and silk_overlap 184 -> 2 (the 4 left are part outlines, reported as L6:SILK outline).",
    "expect": [
