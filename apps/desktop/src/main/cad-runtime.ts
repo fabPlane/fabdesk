@@ -75,6 +75,7 @@ export class CadRuntimeManager {
   private operation: Promise<CadRuntimeState> | null = null;
   private abort: AbortController | null = null;
   private initialized = false;
+  private initialization: Promise<CadRuntimeState> | null = null;
   private deferred = false;
   private installedFailure = false;
   constructor(private readonly deps: Dependencies) {}
@@ -89,8 +90,19 @@ export class CadRuntimeManager {
   private get installed(): string {
     return join(this.deps.cache, CAD_RELEASE, "CADRuntime.app");
   }
-  async initialize(): Promise<CadRuntimeState> {
-    if (this.initialized) return this.current;
+  initialize(): Promise<CadRuntimeState> {
+    // Startup discovery and the first CAD request can overlap. Both must wait for
+    // the same verification/activation, even after filesystem cleanup is done.
+    if (this.initialization) return this.initialization;
+    if (this.initialized) return Promise.resolve(this.current);
+    const task = this.initializeInner();
+    this.initialization = task;
+    void task.finally(() => {
+      if (this.initialization === task) this.initialization = null;
+    }).catch(() => {});
+    return task;
+  }
+  private async initializeInner(): Promise<CadRuntimeState> {
     await mkdir(this.deps.cache, { recursive: true, mode: 0o700 });
     // Never remove another live process's partial download.
     const lock = join(this.deps.cache, "install.lock");

@@ -103,6 +103,54 @@ test("download cannot start without a prepared offer and repeated clicks share o
   await f.manager.download();
   expect(f.counts().engineRequests).toBe(1);
 });
+test("startup discovery and first CAD use share slow verification and activation", async () => {
+  let verificationStarted!: () => void;
+  const started = new Promise<void>((resolve) => { verificationStarted = resolve; });
+  let finishVerification!: () => void;
+  const gate = new Promise<void>((resolve) => { finishVerification = resolve; });
+  let verifications = 0;
+  const f = await fixture({
+    verify: async () => {
+      verifications++;
+      verificationStarted();
+      await gate;
+      return "verified-manifest";
+    },
+  });
+  await mkdir(join(f.cache, CAD_RELEASE, "CADRuntime.app"), { recursive: true });
+  const startup = f.manager.initialize();
+  await started;
+  expect(f.manager.initialize()).toBe(startup);
+  const firstUse = f.manager.prepare();
+  expect(f.manager.prepare()).toBe(firstUse);
+  expect(f.counts()).toEqual({ engineRequests: 0, metadataRequests: 0, activations: 0 });
+  finishVerification();
+  expect((await startup).status).toBe("ready");
+  expect((await firstUse).status).toBe("ready");
+  expect(verifications).toBe(1);
+  expect(f.counts()).toEqual({ engineRequests: 0, metadataRequests: 0, activations: 1 });
+});
+test("overlapping first use preserves a discovery verification failure without offering a download", async () => {
+  let verificationStarted!: () => void;
+  const started = new Promise<void>((resolve) => { verificationStarted = resolve; });
+  let failVerification!: () => void;
+  const gate = new Promise<void>((resolve) => { failVerification = resolve; });
+  const f = await fixture({
+    verify: async () => {
+      verificationStarted();
+      await gate;
+      throw new Error("invalid signature");
+    },
+  });
+  await mkdir(join(f.cache, CAD_RELEASE, "CADRuntime.app"), { recursive: true });
+  const startup = f.manager.initialize();
+  await started;
+  const firstUse = f.manager.prepare();
+  failVerification();
+  expect((await startup).status).toBe("error");
+  expect((await firstUse).message).toContain("invalid signature");
+  expect(f.counts()).toEqual({ engineRequests: 0, metadataRequests: 0, activations: 0 });
+});
 test("unsupported platform/OS and ordinary GUI app do not masquerade as an API engine", async () => {
   for (const overrides of [{ target: "linux-x64" }, { supportedOS: false }]) {
     const f = await fixture(overrides);
