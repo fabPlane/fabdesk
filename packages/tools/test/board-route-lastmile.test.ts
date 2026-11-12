@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { cp, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, relative } from "node:path";
 import { createRegistry, type CoreServices } from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
@@ -24,17 +25,22 @@ const PRO = JSON.stringify({
   board: { design_settings: { rules: { min_track_width: 0.1, min_clearance: 0.1 } } },
 });
 
-async function setup() {
+async function setup(stem = "board") {
   const project = await tempProject("lm");
-  await writeFile(join(project.dir, "board.kicad_pcb"), BOARD);
-  await writeFile(join(project.dir, "board.kicad_pro"), PRO);
-  const services: CoreServices = mockServices([project]);
+  await writeFile(join(project.dir, `${stem}.kicad_pcb`), BOARD);
+  await writeFile(join(project.dir, `${stem}.kicad_pro`), PRO);
+  const seen: Array<{ target: string; candidate: string }> = [];
+  const empty = { removed: {}, added: {}, changed: {} };
+  const services: CoreServices = {
+    ...mockServices([project]),
+    boardAdopt: { adopt: async (i) => (seen.push(i), { delta: empty, residual: empty, targetSha256Before: "a".repeat(64), targetSha256After: "b".repeat(64), timingsMs: {}, kicadCli: "kicad-cli" }) },
+  };
   const def = createRegistry().get("board_route")!;
   const call = async (args: Record<string, unknown>) => {
     const ctx = await contextFactory(services, project)({ def, projectRef: undefined, signal: new AbortController().signal, progress: () => {} } as never);
     return def.handler({ why: true, side: "both", router: "fab_router", noAccept: false, slackA8: 0, maxRounds: 6, adopt: true, refresh: false, full: false, seeds: "0-7", all: false, until: "route", ...args } as never, ctx);
   };
-  return { project, call };
+  return { project, call, seen };
 }
 
 describe("board_route last-mile actions", () => {
@@ -81,5 +87,44 @@ describe("board_route last-mile actions", () => {
     const i = await call({ action: "info", items: ["J1", "^USB_DP$"] });
     expect(i.text).toContain("J1  x  at 5.00,5.00");
     expect(i.text).toContain("USB_DP  total 20.00 mm");
+  });
+
+  test("accept adopts onto the board the bench started from, not board.kicad_pcb", async () => {
+    const { project, call, seen } = await setup("foo");
+    await call({ action: "new" });
+    expect((await call({ action: "try", actions: ["tighten"] })).text).toContain("ACCEPT");
+    const r = await call({ action: "accept", reason: "tightened" });
+    expect(seen.map((s) => s.target)).toEqual([join(project.dir, "foo.kicad_pcb")]);
+    expect(r.text).toContain("foo.kicad_pcb");
+  });
+
+  test("accept candidate: relative to the workspace, refused outside it (also through a symlink)", async () => {
+    const { project, call } = await setup();
+    const ws = join(project.dir, ".fabdesk/board/lastmile/main");
+    await call({ action: "new" });
+    const t = await call({ action: "try", actions: ["tighten"], noAccept: true });
+    const dir = (t.json as { candidates: Array<{ dir?: string }> }).candidates[0]!.dir!;
+    const rel = relative(ws, dir);
+    expect(rel.startsWith("..")).toBe(false);
+    const a = await call({ action: "accept", candidate: rel, adopt: false });
+    expect(a.text).toContain("ACCEPT");
+    for (const bad of ["../../../..", "/etc", "../main-other"])
+      await expect(call({ action: "accept", candidate: bad, adopt: false })).rejects.toThrow(/inside the workspace/);
+    const outside = await mkdtemp(join(tmpdir(), "lm-outside-"));
+    await cp(dir, outside, { recursive: true });
+    await symlink(outside, join(ws, "escape"));
+    await expect(call({ action: "accept", candidate: "escape", adopt: false })).rejects.toThrow(/inside the workspace/);
+  });
+
+  test("workspace stays under .fabdesk/board in the project, by real path; spec stays in the project", async () => {
+    const { project, call } = await setup();
+    for (const workspace of ["../elsewhere", "/tmp/ws", "lastmile-ws", ".fabdesk/other"])
+      await expect(call({ action: "new", workspace })).rejects.toThrow(/project directory|under .fabdesk\/board/);
+    const outside = await mkdtemp(join(tmpdir(), "ws-outside-"));
+    await mkdir(join(project.dir, ".fabdesk", "board"), { recursive: true });
+    await symlink(outside, join(project.dir, ".fabdesk", "board", "link"));
+    await expect(call({ action: "new", workspace: ".fabdesk/board/link/ws" })).rejects.toThrow(/outside the project|under .fabdesk\/board/);
+    await expect(call({ action: "check", spec: "../../etc/spec.json" })).rejects.toThrow(/escapes the project/);
+    expect((await call({ action: "new", workspace: ".fabdesk/board/lastmile/alt" })).text).toContain("open 0");
   });
 });

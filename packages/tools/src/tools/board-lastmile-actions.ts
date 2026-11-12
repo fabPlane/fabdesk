@@ -13,7 +13,7 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { lastmile as L, layout, locateProject, onboard, parseBoard, profile, readRequirements, type Requirements } from "@fabdesk/board-workflow";
 import { adoptCandidate, designFileHashes } from "../board-adopt";
-import { PROJECT_FILES } from "../fs";
+import { jailPath, PROJECT_FILES } from "../fs";
 import { runTraceMaker } from "../routers";
 import { ToolError, type ToolContext, type ToolOutput } from "../registry";
 import { ok, requireKicad, runLiveDrc } from "./common";
@@ -176,7 +176,11 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
         }
         case "accept": {
           if (a.candidate) {
-            const r = await bench.acceptDir(a.candidate, { slackA8: a.slackA8 });
+            // an earlier try's folder (`t3/c1`): relative to the workspace, and by real path inside it
+            const dir = await jailPath(bench.ws, a.candidate).catch(() => {
+              throw new ToolError(`candidate must be a try folder inside the workspace (e.g. t3/c1): ${a.candidate}`, "invalid_args");
+            });
+            const r = await bench.acceptDir(dir, { slackA8: a.slackA8 });
             lines.push(...r.lines);
             if (!r.ok) throw new ToolError(lines.join("\n"), "precondition");
           }

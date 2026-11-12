@@ -10,7 +10,7 @@
  * (single parts): board_route is the staged flow with seeds, gates, ranking and records.
  */
 import { mkdir, rm } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { join, relative } from "node:path";
 import { z } from "zod/v4";
 import { layout, readJsonOrNull } from "@fabdesk/board-workflow";
 type FlowState = layout.FlowState;
@@ -33,6 +33,7 @@ const {
   FlowError,
 } = layout;
 import { durable } from "../durable";
+import { jailPath } from "../fs";
 import { ToolError, defineTool } from "../registry";
 import { LASTMILE_ACTIONS, LASTMILE_DEFAULT_WORKSPACE, lastmileStatus, runLastmile } from "./board-lastmile-actions";
 
@@ -46,6 +47,22 @@ function describe(o: StageOutcome, st: FlowState, stage: string): string {
 const LAYOUT_ACTIONS = ["check", "place", "rank", "route", "auto", "status"] as const;
 const LASTMILE = new Set<string>(LASTMILE_ACTIONS);
 const LAYOUT_DEFAULT_WORKSPACE = join(".fabdesk/board/layout", "ws");
+
+/**
+ * A `workspace` argument as an absolute folder: project-relative, and (by real path, so a symlink cannot lead out) inside
+ * `<project>/.fabdesk/board/`, where every board stage writes until a candidate is adopted.
+ */
+export async function boardWorkspace(projectDir: string, rel: string): Promise<string> {
+  const inProject = await jailPath(projectDir, rel);
+  // the root itself must be the project's (not a symlink out of it), and exist so its real path can be compared
+  const root = await jailPath(projectDir, join(".fabdesk", "board"));
+  await mkdir(root, { recursive: true });
+  try {
+    return await jailPath(root, inProject);
+  } catch {
+    throw new ToolError(`workspace must be a folder under .fabdesk/board/ in the project: ${rel}`, "invalid_args");
+  }
+}
 
 export const board_route = defineTool({
   name: "board_route",
@@ -96,22 +113,17 @@ export const board_route = defineTool({
   handler: durable("board_route", async (args, ctx) => {
     const project = ctx.requireProject();
     const isLastmile = LASTMILE.has(args.action);
-    const inProject = (rel: string) => {
-      const dir = resolve(project.dir, rel);
-      const inside = relative(project.dir, dir);
-      if (inside.startsWith("..") || isAbsolute(inside)) throw new ToolError("workspace must be inside the project", "invalid_args");
-      return dir;
-    };
-    if (isLastmile) return runLastmile(args as never, ctx, inProject(args.workspace ?? LASTMILE_DEFAULT_WORKSPACE));
+    const inProject = (rel: string) => boardWorkspace(project.dir, rel);
+    if (isLastmile) return runLastmile(args as never, ctx, await inProject(args.workspace ?? LASTMILE_DEFAULT_WORKSPACE));
     const wsRel = args.workspace ?? LAYOUT_DEFAULT_WORKSPACE;
-    const ws = inProject(wsRel);
+    const ws = await inProject(wsRel);
     const jobs = args.jobs ?? 4;
     try {
       const flowJson = await readJsonOrNull<FlowState>(join(ws, "flow.json"));
       let st: FlowState | null = flowJson;
       if (args.action === "status") {
         // a last-mile workspace (named explicitly, or the only one there is) answers with the bench's figures
-        const lm = inProject(args.workspace ?? LASTMILE_DEFAULT_WORKSPACE);
+        const lm = await inProject(args.workspace ?? LASTMILE_DEFAULT_WORKSPACE);
         if ((args.workspace || !st) && (await readJsonOrNull<unknown>(join(lm, "state.json")))) {
           const r = await lastmileStatus(ctx, lm);
           return { text: r.text, json: { action: "status", stage: "lastmile", ...r.json } };
@@ -122,7 +134,7 @@ export const board_route = defineTool({
         let spec: LayoutSpec;
         let specPath: string;
         if (args.spec) {
-          specPath = resolve(project.dir, args.spec);
+          specPath = await jailPath(project.dir, args.spec);
           const s = await readJsonOrNull<LayoutSpec>(specPath);
           if (!s) throw new ToolError(`cannot read the layout spec ${args.spec}`, "invalid_args");
           spec = s;
