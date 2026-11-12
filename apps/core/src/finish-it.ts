@@ -12,7 +12,7 @@ import {
   type FinishItStatus,
   type Settings,
 } from "@fabdesk/protocol";
-import { ToolError, type ProjectHandle } from "@fabdesk/tools";
+import { initDoneMode, projectHasPlacedBoard, ToolError, type ProjectHandle } from "@fabdesk/tools";
 import type { AgentRunManager } from "./agent-runs";
 import type { EventBus } from "./bus";
 import { newId, type Store } from "./db";
@@ -50,6 +50,8 @@ export type FinishItDeps = {
   settings: () => Settings;
   commit?: (dir: string, message: string) => Promise<string | null>;
   maxFollowUps?: number;
+  /** True when the board workflow is installed: the board's A1-A9 then decide "verified", and the prompt names its tools. */
+  boardChecks?: () => boolean;
 };
 
 type Live = {
@@ -144,6 +146,8 @@ export class FinishItManager {
     if (busy)
       throw new ToolError(busy.message, "precondition");
 
+    // before the first snapshot: an already placed board is judged by "no new failure", a built one strictly
+    if (this.deps.boardChecks?.() === true) await initDoneMode(project.dir, await projectHasPlacedBoard(project.dir));
     const snap = await this.snapshot(project);
     const milestones = planMilestones(snap);
     const now = new Date().toISOString();
@@ -231,7 +235,7 @@ export class FinishItManager {
           snapshot: snap,
           remaining,
           ...(followUps > 0 ? { followUp: true } : {}),
-        });
+        }, { boardChecks: this.deps.boardChecks?.() === true });
         this.deps.store.threads.addMessage({
           threadId,
           role: "user",
@@ -336,7 +340,7 @@ export class FinishItManager {
             : {}),
         }
       : null;
-    return inspectProject(project.dir, { ...(lastRoute ? { lastRoute } : {}) });
+    return inspectProject(project.dir, { ...(lastRoute ? { lastRoute } : {}), boardChecks: this.deps.boardChecks?.() === true });
   }
 
   private async syncMilestonesById(projectId: string): Promise<void> {

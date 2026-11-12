@@ -44,7 +44,7 @@ export const load_toolset = defineTool({
   scope: "global",
   title: "Load a toolset",
   description:
-    "Enable an additional group of fabdesk tools for this session. Available toolsets are project (files, board settings, off-board parts library), circuit, route, kicad, verify, render, export, sim, app, shopping (fabplane.com shopping list and team inventory), and cad (the mechanical model in FreeCAD). Core tools are always available.",
+    "Enable an additional group of fabdesk tools for this session. Available toolsets are project (files, board settings, off-board parts library), circuit, route, kicad, verify, render, export, sim, app, shopping (fabplane.com shopping list and team inventory), cad (the mechanical model in FreeCAD), and board (board workflow jobs and stages). Core tools are always available.",
   inputSchema: {
     toolset: ToolsetIdOrAlias.describe(
       `Toolset to enable. Aliases ${Object.entries(TOOLSET_ALIASES)

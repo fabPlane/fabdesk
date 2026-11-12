@@ -22,3 +22,7 @@ export * from "./project-bom";
 export { prepareProjectShare, inspectProjectStatus } from "./project-share";
 
 export { prepareEditableBoard } from "./board-contributions";
+export * from "./resources";
+export * from "./board-state";
+export * from "./durable";
+export * from "./board-adopt";

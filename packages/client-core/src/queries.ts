@@ -72,6 +72,17 @@ export function useProjectStatus(projectId: string | null) {
   });
 }
 
+export function useBoardChecks(projectId: string | null) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["board-checks", projectId, client.baseUrl],
+    queryFn: () => client.getBoardChecks(projectId!),
+    enabled: !!projectId,
+    retry: false,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useProject(projectId: string | null) {
   const client = useCoreClient();
   return useQuery({

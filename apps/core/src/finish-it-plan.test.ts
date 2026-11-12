@@ -258,3 +258,94 @@ describe("finishItPrompt", () => {
     expect(snapshotNote("schematic", snap)).toContain("1 component");
   });
 });
+
+describe("Finish it with the board workflow's A1-A9", () => {
+  const clean = {
+    hasNetlist: true, netlistComponents: 3, hasBoard: true, hasSchematic: true,
+    routed: true, routeOpen: 0, drcErrors: 0, drcUnconnected: 0, ercErrors: 0, spiceOk: null,
+  };
+  test("without the board workflow DRC/ERC counts decide, as before", () => {
+    expect(milestoneDone("verify", clean)).toBe(true);
+  });
+  test("with the board workflow, clean DRC/ERC is not verified until A1-A9 pass on the saved board", () => {
+    for (const state of ["none", "stale"] as const)
+      expect(milestoneDone("verify", { ...clean, acceptance: { state, failing: [], pass: false, baselineFailing: [], regressions: [] } })).toBe(false);
+    expect(milestoneDone("verify", { ...clean, acceptance: { state: "current", failing: ["A8"], pass: false, baselineFailing: [], regressions: ["A8"] } })).toBe(false);
+    expect(milestoneDone("verify", { ...clean, acceptance: { state: "current", failing: [], pass: true, baselineFailing: [], regressions: [] } })).toBe(true);
+  });
+  test("a measured connectivity failure outranks an earlier route report", () => {
+    expect(milestoneDone("route", { ...clean, acceptance: { state: "current", failing: ["A1_connectivity"], pass: false, baselineFailing: [], regressions: ["A1_connectivity"] } })).toBe(false);
+    expect(milestoneDone("route", { ...clean, acceptance: { state: "stale", failing: ["A1_connectivity"], pass: false, baselineFailing: [], regressions: ["A1_connectivity"] } })).toBe(true);
+  });
+  test("verify note names what is failing; the board workflow tools count toward their milestones", () => {
+    expect(snapshotNote("verify", { ...clean, acceptance: { state: "current", failing: ["A3", "A8"], pass: false, baselineFailing: [], regressions: ["A3", "A8"] } })).toContain("A1-A9 failing A3, A8");
+    expect(milestoneForTool("mcp__fabdesk__board_route")).toBe("route");
+    expect(milestoneForTool("board_check")).toBe("verify");
+  });
+  test("inspectProject reads the recorded acceptance only when asked", async () => {
+    const dir = await tempDir();
+    expect((await inspectProject(dir)).acceptance).toBeUndefined();
+    expect((await inspectProject(dir, { boardChecks: true })).acceptance).toEqual({ state: "none", failing: [], pass: false, baselineFailing: [], regressions: [] });
+  });
+  test("a board that came in failing checks is done on no new failure, and the note says so", () => {
+    const acc = { state: "current" as const, failing: ["A2", "A3"], pass: false, baselineFailing: ["A2", "A3", "A8"], regressions: [] };
+    expect(milestoneDone("verify", { ...clean, acceptance: acc })).toBe(false);
+    expect(milestoneDone("verify", { ...clean, acceptance: acc, doneMode: "no-regression" })).toBe(true);
+    expect(snapshotNote("verify", { ...clean, acceptance: acc, doneMode: "no-regression" })).toContain("no new failure");
+    expect(milestoneDone("verify", { ...clean, doneMode: "no-regression", acceptance: { ...acc, failing: ["A2", "A5"], regressions: ["A5"] } })).toBe(false);
+  });
+  test("the prompt names the board workflow stages and A1-A9 only when it is installed", () => {
+    const input = { projectName: "p", snapshot: clean, remaining: ["verify" as const] };
+    expect(finishItPrompt(input)).not.toContain("board workflow_");
+    const p = finishItPrompt(input, { boardChecks: true });
+    expect(p).toContain("board_check");
+    expect(p).toContain("A1-A9 pass on the saved board");
+  });
+});
+
+describe("Finish it review milestone", () => {
+  const clean = {
+    hasNetlist: true, netlistComponents: 3, hasBoard: true, hasSchematic: true,
+    routed: true, routeOpen: 0, drcErrors: 0, drcUnconnected: 0, ercErrors: 0, spiceOk: null,
+  };
+  test("planned only where the board workflow can review; done only when the gate passes on the saved board", () => {
+    expect(planMilestones(clean).map((m) => m.id)).toEqual(["schematic", "build", "route", "verify"]);
+    const withReview = planMilestones({ ...clean, review: { state: "open", open: 3, mustFix: 1 } });
+    expect(withReview.map((m) => m.id)).toEqual(["schematic", "build", "route", "verify", "review"]);
+    expect(withReview.find((m) => m.id === "review")?.status).toBe("pending");
+    expect(milestoneDone("review", { ...clean, review: { state: "pass" } })).toBe(true);
+    for (const state of ["none", "stale", "open", "errors"] as const)
+      expect(milestoneDone("review", { ...clean, review: { state } })).toBe(false);
+    expect(milestoneDone("review", clean)).toBe(false);
+  });
+  test("notes and tools", () => {
+    expect(snapshotNote("review", { ...clean, review: { state: "open", open: 1, mustFix: 1 } })).toBe("1 finding open (1 must-fix)");
+    expect(snapshotNote("review", { ...clean, review: { state: "stale" } })).toContain("stale");
+    expect(milestoneForTool("mcp__fabdesk__board_review")).toBe("review");
+    expect(milestoneForTool("board_review")).toBe("review");
+    expect(milestoneForTool("board_release")).toBe("verify");
+  });
+  test("the prompt carries the review step only with the board workflow", () => {
+    const input = { projectName: "p", snapshot: clean, remaining: ["review" as const] };
+    expect(finishItPrompt(input)).not.toContain("5. review");
+    expect(finishItPrompt(input, { boardChecks: true })).toContain("5. review — run the review checks");
+  });
+});
+
+describe("Finish it on a board that came in failing checks (no new failure)", () => {
+  const clean = {
+    hasNetlist: true, netlistComponents: 3, hasBoard: true, hasSchematic: true,
+    routed: false, routeOpen: 9, drcErrors: 3, drcUnconnected: 9, ercErrors: 4, spiceOk: null,
+  };
+  const acc = (failing: string[], regressions: string[]) => ({ state: "current" as const, failing, pass: false, baselineFailing: ["A1_connectivity", "A2_drc"], regressions });
+  test("pre-existing opens and DRC/ERC findings do not keep route or verify pending", () => {
+    const snap = { ...clean, doneMode: "no-regression" as const, acceptance: acc(["A1_connectivity", "A2_drc"], []) };
+    expect(milestoneDone("route", snap)).toBe(true);
+    expect(milestoneDone("verify", snap)).toBe(true);
+  });
+  test("a new connectivity failure still does, and so does strict mode", () => {
+    expect(milestoneDone("route", { ...clean, doneMode: "no-regression", acceptance: acc(["A1_connectivity"], ["A1_connectivity"]) })).toBe(false);
+    expect(milestoneDone("route", { ...clean, doneMode: "strict", acceptance: acc(["A1_connectivity"], []) })).toBe(false);
+    expect(milestoneDone("verify", { ...clean, doneMode: "no-regression", acceptance: acc(["A5_anchors"], ["A5_anchors"]) })).toBe(false);
+  });
+});

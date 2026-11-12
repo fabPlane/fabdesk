@@ -27,6 +27,7 @@ function harness(
     run?: AgentAdapterLike["run"];
     resolveProject?: (id: string) => Promise<ProjectHandle | null>;
     detect?: NonNullable<AgentAdapterLike["detect"]>;
+    extraToolsets?: (project: ProjectHandle | null) => Promise<string[]>;
   } = {},
 ) {
   return (async () => {
@@ -64,6 +65,7 @@ function harness(
       workspaceDir: dir,
       abortSettleTimeoutMs: 100,
       ...(opts.resolveProject ? { resolveProject: opts.resolveProject } : {}),
+      ...(opts.extraToolsets ? { extraToolsets: opts.extraToolsets } : {}),
     });
     const project = (id: string): ProjectHandle =>
       ({ id, name: id, dir: join(dir, id), manifest: () => ProjectManifest.parse({ schema: 1, id, name: id, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), board: {} }) }) as unknown as ProjectHandle;
@@ -367,6 +369,16 @@ describe("captured workspace context", () => {
     await h.manager.drainQueue(t.id); expect(h.runs).toHaveLength(1);
     expect(h.store.threads.messages(t.id).some(message => message.contentMd.includes("queued workspace context belongs to another project"))).toBe(true);
   });
+});
+
+test("a run starts with the toolsets the project asks for, and without them when it asks for none or fails", async () => {
+  const asked: Array<string | null> = [];
+  const h = await harness({ extraToolsets: async (p) => { asked.push(p?.id ?? null); if (p?.id === "boom") throw new Error("x"); return p?.id === "board" ? ["board"] : []; } });
+  const url = () => new URL(h.runs.at(-1)!.session.mcp.url).searchParams.get("toolsets");
+  await h.start(h.thread().id, h.project("board")); expect(url()).toBe("board"); expect(new URL(h.runs.at(-1)!.session.mcp.url).searchParams.get("start")).toBe("board"); h.runs.at(-1)!.finish(); await settle();
+  await h.start(h.thread().id, h.project("blank")); expect(url()).toBeNull(); h.runs.at(-1)!.finish(); await settle();
+  await h.start(h.thread().id, h.project("boom")); expect(url()).toBeNull(); h.runs.at(-1)!.finish(); await settle();
+  expect(asked).toEqual(["board", "blank", "boom"]);
 });
 
 test("idea planning is restricted and promotion carries history into a fresh engineering session once", async () => {

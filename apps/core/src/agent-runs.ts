@@ -66,6 +66,15 @@ async function settledWithin(
   return settled;
 }
 
+function appendToolsets(url: string, toolsets: string[]): string {
+  if (!toolsets.length) return url;
+  const endpoint = new URL(url);
+  endpoint.searchParams.set("toolsets", toolsets.join(","));
+  // an existing board: the board-start tool set (see mcp-sessions BOARD_START_TOOLS)
+  if (toolsets.includes("board")) endpoint.searchParams.set("start", "board");
+  return endpoint.toString();
+}
+
 function appendMcpProfile(url: string, profile: "substrate" | "planning"): string {
   const endpoint = new URL(url);
   endpoint.searchParams.set("profile", profile);
@@ -79,6 +88,8 @@ export type RunDeps = {
   mcpUrl: string;
   /** Optional experimental MCP exposure profile appended to each run's endpoint. */
   mcpProfile?: "substrate";
+  /** Toolsets to start a run with besides the defaults, from the project (e.g. `board` on an existing placed board). */
+  extraToolsets?: (project: ProjectHandle | null) => Promise<string[]>;
   adapters: Partial<Record<AgentId, AgentAdapterLike>>;
   settings: () => Settings;
   /** Regenerates AGENTS.md/CLAUDE.md before the run. */
@@ -697,7 +708,7 @@ export class AgentRunManager {
       mcp: {
         url: planningOnly ? appendMcpProfile(this.deps.mcpUrl, "planning") : this.deps.mcpProfile
           ? appendMcpProfile(this.deps.mcpUrl, this.deps.mcpProfile)
-          : this.deps.mcpUrl,
+          : appendToolsets(this.deps.mcpUrl, (await this.deps.extraToolsets?.(input.project ?? null).catch(() => [])) ?? []),
         token,
       },
       ...(resume ? { resume } : {}),

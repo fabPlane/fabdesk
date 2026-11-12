@@ -366,6 +366,7 @@ describe("registry", () => {
       "cad_combine_parts",
       "cad_enclosure",
       "cad_fit",
+      "board_job",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
     expect(reg.byToolset("core").length).toBe(10);

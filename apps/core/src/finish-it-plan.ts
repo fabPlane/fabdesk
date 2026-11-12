@@ -13,6 +13,7 @@ import {
   type FinishItMilestoneId,
   type FinishItMilestoneState,
 } from "@fabdesk/protocol";
+import { acceptanceSatisfied, readAcceptanceState, readDoneMode, readReviewGate, type AcceptanceState, type DoneMode, type ReviewGate } from "@fabdesk/tools";
 
 export type FinishItSnapshot = {
   hasNetlist: boolean;
@@ -25,6 +26,15 @@ export type FinishItSnapshot = {
   drcUnconnected: number | null;
   ercErrors: number | null;
   spiceOk: boolean | null;
+  /**
+   * The board's own definition of done (A1-A9) when the board workflow is in use on this project; absent
+   * otherwise, and the DRC/ERC counts alone decide.
+   */
+  acceptance?: AcceptanceState;
+  /** Strict, or "no new failure" for a board that came in already failing checks (set when the run starts). */
+  doneMode?: DoneMode;
+  /** The board workflow's review gate for the saved board (present when the board workflow is in use). */
+  review?: ReviewGate;
 };
 
 export type FinishItRouteHint = {
@@ -122,7 +132,7 @@ function routeFilePassed(value: unknown): { routed: boolean; open: number | null
 
 export async function inspectProject(
   dir: string,
-  extras: { lastRoute?: FinishItRouteHint | null } = {},
+  extras: { lastRoute?: FinishItRouteHint | null; boardChecks?: boolean } = {},
 ): Promise<FinishItSnapshot> {
   const netlistRaw = await readJson(join(dir, "circuit.netlist.json"));
   const parsed = netlistRaw === null ? null : NetlistFile.safeParse(netlistRaw);
@@ -187,8 +197,12 @@ export async function inspectProject(
     drcUnconnected: drc?.unconnected ?? null,
     ercErrors: erc?.errors ?? null,
     spiceOk: spice,
+    ...(extras.boardChecks ? { acceptance: await readAcceptanceState(dir), doneMode: await readDoneMode(dir), review: await readReviewGate(dir) } : {}),
   };
 }
+
+/** Acceptance results are keyed `A1_connectivity`, `A2_drc`, ...: match a check by its code. */
+const hasCheck = (list: string[], code: string) => list.some((k) => k === code || k.startsWith(`${code}_`));
 
 export function milestoneDone(id: FinishItMilestoneId, snap: FinishItSnapshot): boolean {
   switch (id) {
@@ -196,9 +210,21 @@ export function milestoneDone(id: FinishItMilestoneId, snap: FinishItSnapshot): 
       return snap.hasNetlist && snap.netlistComponents > 0;
     case "build":
       return snap.hasBoard;
-    case "route":
+    case "route": {
+      // a measured A1 (connectivity) on this exact board outranks an earlier route report; a board that came in with
+      // opens is judged by no new failure (they were there before the work)
+      const a = snap.acceptance;
+      if (a?.state === "current" && hasCheck(a.failing, "A1")) return snap.doneMode === "no-regression" && !hasCheck(a.regressions, "A1");
       return snap.routed && (snap.routeOpen === null || snap.routeOpen === 0);
+    }
+    case "review":
+      // every finding settled on the saved board; a board change since the last review makes it stale
+      return snap.review?.state === "pass";
     case "verify":
+      // with the board workflow in use, done means A1-A9 pass on the saved board, not only DRC/ERC counts
+      if (snap.acceptance && !acceptanceSatisfied(snap.acceptance, snap.doneMode ?? "strict")) return false;
+      // no new failure: the board's own pre-existing DRC/ERC findings are judged by A1-A9, not by raw counts of zero
+      if (snap.acceptance && snap.doneMode === "no-regression") return true;
       return (
         snap.drcErrors === 0 &&
         (snap.drcUnconnected === null || snap.drcUnconnected === 0) &&
@@ -208,7 +234,8 @@ export function milestoneDone(id: FinishItMilestoneId, snap: FinishItSnapshot): 
 }
 
 export function planMilestones(snap: FinishItSnapshot): FinishItMilestone[] {
-  return FINISH_IT_MILESTONES.map((id) => {
+  // the review milestone exists only where the board workflow can run one
+  return FINISH_IT_MILESTONES.filter((id) => id !== "review" || snap.review !== undefined).map((id) => {
     const done = milestoneDone(id, snap);
     const status: FinishItMilestoneState = done ? "skipped" : "pending";
     return {
@@ -239,7 +266,14 @@ export function milestoneForTool(name: string): FinishItMilestoneId | null {
     case "route_run":
     case "route_status":
     case "route_unroute":
+    case "board_route":
+    case "board_edit":
       return "route";
+    case "board_check":
+    case "board_release":
+      return "verify";
+    case "board_review":
+      return "review";
     case "verify_drc":
     case "verify_erc":
     case "verify_gate":
@@ -263,6 +297,14 @@ export function snapshotNote(id: FinishItMilestoneId, snap: FinishItSnapshot): s
       if (snap.routed && (snap.routeOpen === null || snap.routeOpen === 0)) return "Routing closed";
       if (snap.routeOpen !== null) return `${snap.routeOpen} open connection${snap.routeOpen === 1 ? "" : "s"}`;
       return "Not routed";
+    case "review": {
+      const r = snap.review;
+      if (!r || r.state === "none") return "Review not run";
+      if (r.state === "pass") return "Review gate passes: every finding settled";
+      if (r.state === "stale") return "Review is stale (the board changed since)";
+      if (r.state === "errors") return "Review has check errors";
+      return `${r.open ?? "?"} finding${r.open === 1 ? "" : "s"} open (${r.mustFix ?? 0} must-fix)`;
+    }
     case "verify": {
       const parts: string[] = [];
       parts.push(
@@ -277,6 +319,22 @@ export function snapshotNote(id: FinishItMilestoneId, snap: FinishItSnapshot): s
             ? "ERC not run"
             : `ERC ${snap.ercErrors} error${snap.ercErrors === 1 ? "" : "s"}`,
         );
+      if (snap.acceptance)
+        parts.push(
+          snap.acceptance.state === "none"
+            ? "A1-A9 not measured"
+            : snap.acceptance.state === "stale"
+              ? "A1-A9 stale (board changed)"
+              : snap.acceptance.pass
+                ? "A1-A9 pass"
+                : `A1-A9 failing ${snap.acceptance.failing.join(", ")}${
+                    snap.doneMode === "no-regression"
+                      ? snap.acceptance.regressions.length
+                        ? `; new: ${snap.acceptance.regressions.join(", ")}`
+                        : " (all were failing before the work: no new failure)"
+                      : ""
+                  }`,
+        );
       if (snap.spiceOk === true) parts.push("SPICE ok");
       else if (snap.spiceOk === false) parts.push("SPICE failed");
       return parts.join(", ");
@@ -284,13 +342,22 @@ export function snapshotNote(id: FinishItMilestoneId, snap: FinishItSnapshot): s
   }
 }
 
+/**
+ * Stage tools are named for what later board-workflow stages register in the `board` toolset (board_check, board_edit,
+ * board_route, board_review, board_release); milestoneForTool already maps them, and a name that is not registered is
+ * simply never called.
+ */
+const BOARD_METHOD = `Board workflow (load_toolset {"toolset":"board"}): board_check measures A1-A9 on the saved board and says where it stands.
+An edit makes the review stale; long jobs return a job id (board_job waits for, reports or cancels them).
+Many opens after routing usually mean a placement problem: restructure the block or re-seed before tuning the router. Look at the board (render_view) before deciding.`;
+
 /** Prompt the existing agent to finish remaining work without asking the user. */
 export function finishItPrompt(input: {
   projectName: string;
   snapshot: FinishItSnapshot;
   remaining: FinishItMilestoneId[];
   followUp?: boolean;
-}): string {
+}, opts: { boardChecks?: boolean } = {}): string {
   const remaining = input.remaining
     .map((id) => `- ${FINISH_IT_MILESTONE_LABELS[id]} (${id})`)
     .join("\n");
@@ -318,9 +385,9 @@ How to finish each milestone:
 1. schematic — write or complete circuit.netlist.json (real parts and nets). Use library search tools when you need footprints.
 2. build — run circuit_build so board.kicad_pcb exists with placed footprints.
 3. route — run route_run and keep going until open connections are 0. Unroute and retry a net if needed.
-4. verify — run verify_erc (if a schematic exists), verify_drc, and sim_run when the design can be simulated. Fix violations and re-run until DRC errors and unconnected items are 0 (and ERC errors are 0 when a schematic exists). SPICE is best-effort: run it, but a missing simulator is not a reason to stop.
-
-Rules:
+4. verify — ${opts.boardChecks ? "run board_check: done means A1-A9 pass on the saved board with schematic parity (a board that came in already failing checks is judged by no new failure against its first result; name each pre-existing failure). Also run " : "run "}verify_erc (if a schematic exists), verify_drc, and sim_run when the design can be simulated. Fix violations and re-run until DRC errors and unconnected items are 0 (and ERC errors are 0 when a schematic exists). SPICE is best-effort: run it, but a missing simulator is not a reason to stop.
+${opts.boardChecks ? "5. review — run the review checks (board_check), then settle what they leave: dispose each finding with evidence or fix it. Done when the review gate passes. A finding only the owner can decide (spending money, changing a hard constraint) is reported, not decided: stop and list it.\n" : ""}
+${opts.boardChecks ? BOARD_METHOD + "\n\n" : ""}Rules:
 - Use the fabPlane MCP tools. Do not invent a parallel workflow.
 - Do not wait for another user message. Keep going until the remaining milestones are done or you are blocked by a missing tool/runtime.
 - Prefer fixing the design over declaring victory with open DRC/ERC errors.
