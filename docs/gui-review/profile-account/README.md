@@ -81,3 +81,19 @@ Existing optional native integration skips remain reported in the root test tota
 - Added six regression tests for auth ordering and fallback identity. Rechecked native
   shortcuts/focus at both sizes, deferred login responses, missing identity, invitation
   recovery and organization loading using disposable accounts and no agent runs.
+
+## Final audit follow-up
+
+- Reproduced a microphone request from Alt-Space while Profile was open. Voice
+  activation now ignores modal windows; native checks at both window sizes confirm
+  Profile and Settings block the shortcut while the normal composer still receives it.
+  Microphone access was mocked and rejected; no audio was recorded or transcribed.
+- Reproduced a delayed initial LoginScreen response reverting an approved session to
+  Pending and opening Profile unexpectedly. Initial device/password sign-in and
+  fallback polling now use the same guarded auth snapshots as Profile; unmounted
+  polling callbacks are discarded. The real Electron reproduction passes after rebuilding.
+- Root typecheck, desktop build and 3,077 root tests pass (38 existing optional skips,
+  zero failures). Existing auth-ordering regression tests remain unchanged.
+- Repeated native modal shortcuts, keyboard focus, missing-identity sign-out, deferred
+  sign-in responses, project/draft retention and Settings return at both window sizes.
+  The production SSO, live invitation delivery and native Windows limits above remain.
