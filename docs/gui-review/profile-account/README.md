@@ -97,3 +97,23 @@ Existing optional native integration skips remain reported in the root test tota
 - Repeated native modal shortcuts, keyboard focus, missing-identity sign-out, deferred
   sign-in responses, project/draft retention and Settings return at both window sizes.
   The production SSO, live invitation delivery and native Windows limits above remain.
+
+## Recovery edge-case audit
+
+- An unavailable invitation used to pin board selection to that missing project even
+  after selecting another accessible project. The dialog now shows an explicit empty
+  selection and allows another project to load, without an endless board spinner.
+- Shared-project Retry clears a previous import error and does not request boards for
+  a null project while the project list is recovering.
+- Dashboard/organization now displays query failures with Retry, and reports failed
+  organization changes. Failed saves retain the previously confirmed selection;
+  successful retries clear the error.
+- Reproduced a delayed import navigating the workspace after switching from account A
+  to B and back to A. Checking the account ID alone was insufficient: async sharing
+  actions now also check that their original dialog is still mounted, including after
+  awaiting cache refresh. Old dialog callbacks cannot navigate, restore sharing data,
+  or refetch private state after that dialog has been replaced.
+- Native regressions use injected failed/deferred CoreClient methods with disposable
+  data. No real publication, download, organization change or paid run is required.
+  Checks cover failure/retry and selection at 1440×920 and 960×600, plus switching
+  away/back during an import and confirming that a new import still opens normally.

@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { dashboardUrlFor } from "@fabdesk/protocol";
-import { useCloudStatus, useCore, usePatchSettings } from "@fabdesk/client-core";
-import { Button, Select } from "../components/ui";
+import { errorPayload, useCloudStatus, useCore, usePatchSettings } from "@fabdesk/client-core";
+import { Button, Select, Spinner } from "../components/ui";
 
 /** fabplane dashboard link and the org whose shopping lists and inventory fabdesk uses. */
 export function CloudAccount({ dashboardUrl }: { dashboardUrl: string | undefined }) {
@@ -11,7 +11,8 @@ export function CloudAccount({ dashboardUrl }: { dashboardUrl: string | undefine
   const patch = usePatchSettings();
   const url =
     status.data?.dashboardUrl ?? dashboardUrl ?? dashboardUrlFor("https://api.fabplane.com");
-  const orgs = status.data?.orgs ?? [];
+  const orgs = status.isError ? [] : status.data?.orgs ?? [];
+  const statusError = status.isError ? errorPayload(status.error).message : status.data?.error;
   return (
     <div className="space-y-2 rounded-md border border-border p-3" data-testid="cloud-account">
       <div className="flex items-center gap-2">
@@ -25,6 +26,11 @@ export function CloudAccount({ dashboardUrl }: { dashboardUrl: string | undefine
           Open fabplane dashboard &#8599;
         </Button>
       </div>
+      {status.isPending && <p role="status"><Spinner /> Loading organization details…</p>}
+      {statusError && <div role="alert" className="text-danger">
+        Could not load organization details. {statusError}{" "}
+        <Button size="sm" disabled={status.isFetching} onClick={() => void status.refetch()}>Retry</Button>
+      </div>}
       {orgs.length > 0 && (
         <label className="flex items-center gap-2">
           <span className="shrink-0">Active org</span>
@@ -53,7 +59,9 @@ export function CloudAccount({ dashboardUrl }: { dashboardUrl: string | undefine
         Shopping lists and inventory use this org. Manage members, invites and carts in the
         dashboard.
       </div>
-      {status.data?.error && <div className="text-danger">{status.data.error}</div>}
+      {patch.isError && <p role="alert" className="text-danger">
+        Could not change organization. {errorPayload(patch.error).message}
+      </p>}
     </div>
   );
 }

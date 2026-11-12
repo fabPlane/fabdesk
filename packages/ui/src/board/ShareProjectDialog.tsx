@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   cloudAccountId,
@@ -32,6 +32,8 @@ export function ShareProjectDialog(props: Props) {
 function ShareProjectForAccount({ projectId, onClose, onDownload, account }: Props & { account: string | null }) {
   const { client, host } = useCore(),
     cache = useQueryClient();
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const project = useProject(projectId),
     sources = useBoardSources(projectId);
   const appOrigin = useAuthStore((s) => s.state?.dashboardUrl);
@@ -81,7 +83,7 @@ function ShareProjectForAccount({ projectId, onClose, onDownload, account }: Pro
           : await client.publishProjectShare(projectId,
               changed || saved?.visibility === "private" ? selected : undefined,
               { updateOnly: !changed && saved?.visibility !== "private" });
-      if (cloudAccountId(useAuthStore.getState().state) !== account) return;
+      if (!mounted.current || cloudAccountId(useAuthStore.getState().state) !== account) return;
       cache.setQueryData(queryKey, result);
       setChoice(null);
       setNotice({
@@ -92,6 +94,7 @@ function ShareProjectForAccount({ projectId, onClose, onDownload, account }: Pro
             : result.visibility === "restricted" ? "Shared page updated. Only invited people can open it." : "Shared page updated. Anyone with the link can view it.",
       });
     } catch (failure) {
+      if (!mounted.current || cloudAccountId(useAuthStore.getState().state) !== account) return;
       setError(failure);
       // A timed-out request might have succeeded. Reconcile before allowing another mutation.
       await settings.refetch();
