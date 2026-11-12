@@ -6,7 +6,7 @@
  */
 import { statfs } from "node:fs/promises";
 import { layout, sysinfo } from "@fabdesk/board-workflow";
-import { boardMemGiB, governor, sampleHost, type ResourceClass } from "../resources";
+import { boardMemGiB, governor, routerMemGiB, sampleHost, type ResourceClass } from "../resources";
 import type { ToolContext } from "../registry";
 import { requireKicad, runLiveDrc } from "./common";
 
@@ -61,7 +61,9 @@ export function layoutHost(ctx: ToolContext, kicadCli: string | null, env: NodeJ
       return { violations: r.violations.map((v) => ({ rule: v.rule, severity: v.severity, description: v.description })), unconnected: r.unconnected.length, parity: r.schematicParity.length };
     },
     admit: async (kind, label, paths) => {
-      const job = await governor().admit({ cls: kind as ResourceClass, label, paths, signal: ctx.signal, memGiB: await boardMemGiB(paths), onWait: note });
+      // a router run holds a grid over the whole board: estimate from outline area x copper layers, not file size
+      const memGiB = kind === "router" || kind === "tracemaker" ? await routerMemGiB(paths) : await boardMemGiB(paths);
+      const job = await governor().admit({ cls: kind as ResourceClass, label, paths, signal: ctx.signal, memGiB, onWait: note });
       return { release: job.release };
     },
     memAvailableGiB: async () => (await sampleHost()).memAvailableGiB,

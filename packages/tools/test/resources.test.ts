@@ -10,6 +10,24 @@ const host = (memAvailableGiB: number, freeGiB = 100): HostSample => ({
 });
 
 describe("resource governor", () => {
+  test("a job estimated above the machine's total memory is refused, not started", async () => {
+    const g = new ResourceGovernor(async () => host(25));
+    await expect(g.admit({ cls: "router", label: "lastmile krt", paths: ["/"], pollMs: 10, memGiB: 40 })).rejects.toThrow(/needs about 40 GiB .* 30 GiB in all/);
+    const ok = await g.admit({ cls: "router", label: "fits", paths: ["/"], pollMs: 10, memGiB: 18 });
+    ok.release();
+  });
+
+  test("parallel router jobs whose estimates do not fit together run one after another", async () => {
+    const g = new ResourceGovernor(async () => host(24));
+    const a = await g.admit({ cls: "router", label: "a", paths: ["/"], pollMs: 10, memGiB: 18.6 });
+    const waits: string[] = [];
+    const second = g.admit({ cls: "router", label: "b", paths: ["/"], pollMs: 10, memGiB: 18.6, onWait: (w) => waits.push(w) });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(waits[0]).toContain("waiting for memory");
+    a.release();
+    (await second).release();
+  });
+
   test("TraceMaker jobs run one at a time; the second waits and then runs", async () => {
     const g = new ResourceGovernor(async () => host(25));
     const first = await g.admit({ cls: "tracemaker", label: "a", paths: ["/"], pollMs: 10 });

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   lastmile as L,
+  layout,
   parseBoard,
   type Requirements,
 } from "../src/index";
@@ -109,6 +110,23 @@ describe("size limits", () => {
     expect(L.sizeLimits({ pcbBytes: 1e6, availableGiB: 3, jobs: 4, opens: 500 }).budget).toBe(1800);
     expect(L.sizeLimits({ pcbBytes: 1e6, availableGiB: 3, jobs: 4, opens: 5, budget: 30 }).budget).toBe(30);
     expect(L.sizeLimits({ pcbBytes: 1e9, availableGiB: 1, jobs: 4, opens: 5 }).jobs).toBe(1);
+  });
+
+  test("a router footprint from outline area x copper layers limits candidates and stretches the budget (vme-wren OOM)", () => {
+    // vme-wren: 160 x 233 mm, 12 copper, 71 MB; one KRT finish peaked at 17.1 GB, three in parallel ran 24 GiB out of memory
+    const vme = layout.routerFootprint({ outline: { minX: 70.9, minY: 82.3, maxX: 231.1, maxY: 315.7 }, copperLayers: Array.from({ length: 12 }, (_, i) => `In${i}.Cu`) }, 71e6);
+    expect(vme.memGiB).toBeGreaterThan(17.1);
+    expect(vme.memGiB).toBeLessThan(21);
+    expect(vme.budgetS).toBeGreaterThan(1800);
+    const lim = L.sizeLimits({ pcbBytes: 71e6, availableGiB: 24, jobs: 3, opens: 3, footprint: vme });
+    expect(lim.jobs).toBe(1);
+    expect(lim.budget).toBe(vme.budgetS);
+    expect(lim.note).toContain("1 candidate(s) at a time");
+    // a small board keeps the file-size floor and the 180 s budget
+    const small = layout.routerFootprint({ outline: { minX: 0, minY: 0, maxX: 60, maxY: 63 }, copperLayers: ["F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "B.Cu"] }, 3e6);
+    expect(small.memGiB).toBeLessThan(2);
+    expect(L.sizeLimits({ pcbBytes: 3e6, availableGiB: 20, jobs: 6, opens: 5, footprint: small })).toMatchObject({ jobs: 6 });
+    expect(layout.routerFootprint({ outline: null, copperLayers: ["F.Cu", "B.Cu"] }, 85e6).memGiB).toBe(5.1); // no outline: file-size rule
   });
 });
 

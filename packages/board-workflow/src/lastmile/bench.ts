@@ -11,6 +11,8 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { stepsFor, type Step } from "./actions";
 import { compareKeys, figureLine, gate, keyOf, type Figures, type GateSlack, type OpenItem } from "./gate";
 import { hostMemory } from "../sysinfo";
+import { parseBoard } from "../board";
+import { routerFootprint, type RouterFootprint } from "../layout/footprint";
 
 export interface Scored {
   figures: Figures;
@@ -107,17 +109,32 @@ export async function copyBoardFolder(src: string, dst: string): Promise<void> {
     if (!COPY_SKIP.test(e.name)) await cp(join(src, e.name), join(dst, e.name), { recursive: true, filter: (p) => !COPY_SKIP.test(basename(p)) });
 }
 
-/** Parallel candidates and per-action time scaled to the board (toolkit size_limits). A candidate holds about 0.06 GiB per MB of board file. */
-export function sizeLimits(o: { pcbBytes: number; availableGiB: number; jobs: number; budget?: number | undefined; opens: number }) {
+/**
+ * Parallel candidates and per-action time scaled to the board (toolkit size_limits). `footprint` is one router run's
+ * memory and time on this board (layout/footprint.ts, from outline area x copper layers); without it a candidate is
+ * taken as 0.06 GiB per MB of board file, which badly undercounts large-area boards.
+ */
+export function sizeLimits(o: { pcbBytes: number; availableGiB: number; jobs: number; budget?: number | undefined; opens: number; footprint?: { memGiB: number; budgetS: number } | undefined }) {
   const mb = o.pcbBytes / 1e6;
-  const per = Math.max(0.5, 0.06 * mb);
+  const per = o.footprint?.memGiB ?? Math.max(0.5, 0.06 * mb);
   const fit = Math.max(1, Math.trunc((o.availableGiB - 2) / per));
   const jobs = Math.max(1, Math.min(o.jobs, fit));
-  const budget = o.budget ?? Math.max(180, Math.min(1800, 6 * o.opens));
+  const budget = o.budget ?? Math.max(180, Math.min(1800, 6 * o.opens), o.footprint?.budgetS ?? 0);
   const notes: string[] = [];
-  if (jobs < o.jobs) notes.push(`${jobs} candidate(s) at a time (board ${mb.toFixed(0)} MB, ~${per.toFixed(1)} GiB each, ${o.availableGiB.toFixed(1)} GiB available)`);
+  if (jobs < o.jobs) notes.push(`${jobs} candidate(s) at a time (board ${mb.toFixed(0)} MB, ~${per.toFixed(1)} GiB per router run, ${o.availableGiB.toFixed(1)} GiB available)`);
   if (o.budget === undefined && budget > 180) notes.push(`budget ${budget.toFixed(0)} s per action (${o.opens} opens)`);
   return { jobs, budget, note: notes.length ? "limits: " + notes.join("; ") : "" };
+}
+
+/** One router run's footprint on the board file (null when it cannot be read: the file-size rule applies). */
+async function boardFootprint(file: string, bytes: number): Promise<RouterFootprint | undefined> {
+  const text = await readFile(file, "utf8").catch(() => null);
+  if (!text) return undefined;
+  try {
+    return routerFootprint(parseBoard(text), bytes);
+  } catch {
+    return undefined;
+  }
 }
 
 /** The host's available memory (Linux MemAvailable, macOS vm_stat, Windows os.freemem), the number the governor admits on. */
@@ -294,7 +311,8 @@ export class Bench {
     const cands = actions.map((name, k) => ({ name, steps: stepsFor(name), slug: slugs[k]! }));
     const t0 = Date.now();
     const pcbBytes = (await stat(join(start, this.st.pcb)).catch(() => null))?.size ?? 0;
-    const lim = sizeLimits({ pcbBytes, availableGiB: await (this.deps.availableGiB ?? memAvailableGiB)(), jobs: o.jobs ?? 6, budget: o.budget, opens: f0.open });
+    const footprint = await boardFootprint(join(start, this.st.pcb), pcbBytes);
+    const lim = sizeLimits({ pcbBytes, availableGiB: await (this.deps.availableGiB ?? memAvailableGiB)(), jobs: o.jobs ?? 6, budget: o.budget, opens: f0.open, footprint });
     if (lim.note) this.say(lim.note, lines);
     const recs = await pool(cands, lim.jobs, (c) => this.runCandidate(c, start, join(tdir, c.slug), lim.budget));
     const slack: GateSlack = { a8_slack: o.slackA8 ?? 0 };

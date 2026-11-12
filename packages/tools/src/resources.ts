@@ -7,9 +7,9 @@
  * 11-14 GB RSS, and two at once OOM-killed the agent session; KiCad API servers are ~150-300 MB;
  * board copies (seeds, tries, candidates) filled the disk until runs started checking for 10 GB free.
  */
-import { readdir, stat, statfs } from "node:fs/promises";
+import { readFile, readdir, stat, statfs } from "node:fs/promises";
 import { cpus, loadavg } from "node:os";
-import { sysinfo } from "@fabdesk/board-workflow";
+import { layout, parseBoard, sysinfo } from "@fabdesk/board-workflow";
 import { isAbsolute, join } from "node:path";
 import { ToolError } from "./registry";
 
@@ -118,6 +118,14 @@ export class ResourceGovernor {
             "Free reproducible copies first (board copies from seeds, tries and candidates are reproducible).",
           "precondition",
         );
+      // only the job's own board-based estimate can refuse it; class defaults are conservative constants, not this board
+      const own = input.memGiB ?? 0;
+      if (host.memTotalGiB > 0 && own > host.memTotalGiB)
+        throw new ToolError(
+          `${input.label} needs about ${own} GiB of memory and this machine has ${round(host.memTotalGiB)} GiB in all; ` +
+            "it would run the machine out of memory. Use a machine with more memory, or a step that routes less of the board (for example window:X0,Y0,X1,Y1).",
+          "precondition",
+        );
       const sameClass = [...this.running.values()].filter((j) => j.cls === input.cls);
       // each running job's whole estimate (what it may still claim; see the class comment for the overlap with `available`)
       const reserved = [...this.running.values()].reduce((sum, j) => sum + (j.memGiB ?? RESOURCE_NEEDS[j.cls].memGiB), 0);
@@ -177,10 +185,36 @@ export const GIB_PER_BOARD_MB = 0.06;
  * folder one level down such as a bench's step). Returns 0 when no board is named; pass the result as `admit({ memGiB })`.
  */
 export async function boardMemGiB(paths: string[]): Promise<number> {
+  const { bytes } = await largestBoard(paths);
+  return Math.round((bytes / 1e6) * GIB_PER_BOARD_MB * 10) / 10;
+}
+
+/**
+ * Memory one router run (KiCadRoutingTools, TraceMaker) holds on the largest board the paths name: from the board's
+ * outline area x copper layers (board-workflow `routerFootprint`, measured on vme-wren and jetson), never below the
+ * file-size rule. 0 when no board is named.
+ */
+export async function routerMemGiB(paths: string[]): Promise<number> {
+  const { file, bytes } = await largestBoard(paths);
+  if (!file) return 0;
+  const text = await readFile(file, "utf8").catch(() => null);
+  if (!text) return boardMemGiB(paths);
+  try {
+    return layout.routerFootprint(parseBoard(text), bytes).memGiB;
+  } catch {
+    return boardMemGiB(paths);
+  }
+}
+
+async function largestBoard(paths: string[]): Promise<{ file: string | null; bytes: number }> {
   let largest = 0;
+  let file: string | null = null;
   const consider = async (p: string) => {
     const s = await stat(p).catch(() => null);
-    if (s?.isFile() && p.endsWith(".kicad_pcb")) largest = Math.max(largest, s.size);
+    if (s?.isFile() && p.endsWith(".kicad_pcb") && s.size > largest) {
+      largest = s.size;
+      file = p;
+    }
   };
   for (const a of paths.filter((x) => isAbsolute(x))) {
     if (a.endsWith(".kicad_pcb")) {
@@ -193,5 +227,5 @@ export async function boardMemGiB(paths: string[]): Promise<number> {
         for (const f of await readdir(join(a, e.name)).catch(() => [] as string[])) if (f.endsWith(".kicad_pcb")) await consider(join(a, e.name, f));
     }
   }
-  return Math.round((largest / 1e6) * GIB_PER_BOARD_MB * 10) / 10;
+  return { file, bytes: largest };
 }

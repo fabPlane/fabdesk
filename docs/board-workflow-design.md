@@ -34,7 +34,7 @@ stock agent. That is a goal: it has not been measured (see Not measured).
 
 `board_edit`, `board_release`, `board_silk`, `board_route` and `board_review run` run through `runDurable` (`board_check` and the other `board_review` actions return directly): a call waits up to 25 minutes, then returns a job id while the job continues
 (an MCP client drops a call at about 30 minutes). Every heavy tool is admitted by the resource governor by class (`light`, `router`,
-`tracemaker`) and by board size (about 0.06 GiB per MB of board file; one TraceMaker at a time). Memory is read the same way by the
+`tracemaker`) and by board size: a router run (KRT, TraceMaker) is estimated from outline area × copper layers / grid² (`layout/footprint.ts`: 104 bytes per 0.05 mm cell plus 0.5 GiB, calibrated on vme-wren, where one KRT `finish` peaked at 17.1 GB, and jetson, 4.0 GiB), other jobs at about 0.06 GiB per MB of board file; one TraceMaker at a time. The same estimate limits the last-mile bench's parallel candidates and stretches its per-action budget, and a job estimated above the machine's total memory is refused instead of started. (The file-size rule alone said ~4 GiB on vme-wren; three parallel `try` candidates ran a 24 GiB eval out of memory.) Memory is read the same way by the
 governor and the last-mile bench (`sysinfo.hostMemory` in `packages/board-workflow`): Linux `/proc/meminfo` MemAvailable, macOS `vm_stat`
 (total minus app memory, wired and compressed pages; `os.freemem()` alone undercounts a busy Mac), Windows `os.freemem()`. A job only waits on
 another admitted job: one that does not fit while nothing else runs starts at once with a "memory is short" note, so no class can wait forever.
