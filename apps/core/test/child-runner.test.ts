@@ -55,6 +55,38 @@ describe("board child process", () => {
     await expect(run("nope" as never, {}, {})).rejects.toThrow(/unknown child task nope/);
   }, 60_000);
 
+  test.skipIf(process.platform === "win32")("cancel kills the child's whole process group (the scoring DRC it started)", async () => {
+    const dir = await project();
+    const pidFile = join(dir, "grandchild.pid");
+    // the child starts a long-lived grandchild (as kicad-cli would be) and waits
+    const script = `const p = Bun.spawn(["sleep", "60"]); await Bun.write(${JSON.stringify(pidFile)}, String(p.pid)); await new Promise((r) => setTimeout(r, 60000));`;
+    const run = createRunChild([process.execPath, "-e", script, "--"]);
+    const ac = new AbortController();
+    const p = run("edit", { projectDir: dir }, { signal: ac.signal });
+    for (let i = 0; i < 50 && !(await Bun.file(pidFile).exists()); i++) await Bun.sleep(100);
+    const gpid = Number(await Bun.file(pidFile).text());
+    ac.abort();
+    await expect(p).rejects.toThrow(/cancelled/);
+    await Bun.sleep(300);
+    let alive = true;
+    try {
+      process.kill(gpid, 0);
+    } catch {
+      alive = false;
+    }
+    expect(alive).toBe(false);
+  }, 20_000);
+
+  test.skipIf(process.platform === "win32")("a child whose parent is gone (stdin closed) stops instead of finishing", async () => {
+    const dir = await project();
+    const inFile = join(dir, "in.json");
+    const outFile = join(dir, "out.json");
+    await writeFile(inFile, JSON.stringify({ projectDir: dir, plan: { id: "mv", move: [{ ref: "C3", to: [50, 30, 90] }] }, mode: "impact", kicadCli: null }));
+    const proc = Bun.spawn([process.execPath, MAIN, "board-child", "edit", inFile, outFile], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+    expect(await proc.exited).not.toBe(0);
+    expect(await Bun.file(outFile).exists()).toBe(false);
+  }, 30_000);
+
   test("cancel kills the child", async () => {
     const dir = await project();
     const run = createRunChild([process.execPath, "-e", "await new Promise((r) => setTimeout(r, 60000))", "--"]);

@@ -28,6 +28,8 @@ export class ChildTaskError extends Error {
   constructor(
     message: string,
     readonly errorName: string,
+    /** A `ToolError` code the child's error carried (invalid_args, not_found ...), to rebuild it in the parent. */
+    readonly code?: string,
   ) {
     super(message);
   }

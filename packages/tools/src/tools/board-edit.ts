@@ -219,6 +219,7 @@ export async function runEditOutOfCore(
       return (await run("edit", input, { signal: c.signal, onProgress: (p, n) => c.progress(p, n) })) as EditRunResult;
     } catch (e) {
       if (e instanceof ChildTaskError && e.errorName === "EditStop") throw new ToolError(e.message, "precondition");
+      if (e instanceof ChildTaskError && e.code) throw new ToolError(e.message, e.code as ToolError["code"]);
       throw e;
     }
   };
