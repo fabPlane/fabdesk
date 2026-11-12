@@ -1,10 +1,12 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   checkAcceptance,
   deriveRequirements,
+  designHash,
+  locateProject,
   findPairs,
   legacyNetRefs,
   onboard,
@@ -200,5 +202,41 @@ describe("onboard + runAcceptance on a project", () => {
     const st = await readAcceptanceState(dir);
     expect(st).toMatchObject({ state: "stale", regressions: ["A1"] });
     expect(parseBoard(BOARD).routedItems).toBe(4);
+  });
+});
+
+describe("design hash and project confinement", () => {
+  const sheet = (file: string) => `(kicad_sch (sheet (property "Sheetname" "s") (property "Sheetfile" "${file}")))`;
+  test("every referenced sheet is hashed: two folders deep and outside the project", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dh-"));
+    const dir = join(root, "proj");
+    await mkdir(join(dir, "hw", "power"), { recursive: true });
+    await mkdir(join(root, "common"), { recursive: true });
+    await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb)");
+    await writeFile(join(dir, "board.kicad_sch"), sheet("hw/power/psu.kicad_sch") + sheet("../common/x.kicad_sch"));
+    await writeFile(join(dir, "hw", "power", "psu.kicad_sch"), sheet("ldo.kicad_sch"));
+    await writeFile(join(dir, "hw", "power", "ldo.kicad_sch"), "(kicad_sch ldo-a)");
+    await writeFile(join(root, "common", "x.kicad_sch"), "(kicad_sch x-a)");
+    const h0 = await designHash(dir);
+    expect(Object.keys(h0.files)).toEqual(expect.arrayContaining(["hw/power/psu.kicad_sch", "hw/power/ldo.kicad_sch", "../common/x.kicad_sch"]));
+    await writeFile(join(dir, "hw", "power", "ldo.kicad_sch"), "(kicad_sch ldo-b)");
+    const h1 = await designHash(dir);
+    expect(h1.design).not.toBe(h0.design);
+    await writeFile(join(root, "common", "x.kicad_sch"), "(kicad_sch x-b)");
+    expect((await designHash(dir)).design).not.toBe(h1.design);
+    await rm(join(root, "common", "x.kicad_sch"));
+    expect((await designHash(dir)).files["../common/x.kicad_sch"]).toBe("MISSING");
+  });
+  test("locateProject refuses a board outside the project, keeps absolute paths inside it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "lp-"));
+    const dir = join(root, "proj");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb)");
+    await writeFile(join(root, "other.kicad_pcb"), "(kicad_pcb)");
+    expect((await locateProject(dir, join(dir, "board.kicad_pcb"))).stem).toBe("board");
+    await expect(locateProject(dir, "../other.kicad_pcb")).rejects.toThrow(/outside the project/);
+    await expect(locateProject(dir, join(root, "other.kicad_pcb"))).rejects.toThrow(/outside the project/);
+    await symlink(join(root, "other.kicad_pcb"), join(dir, "link.kicad_pcb"));
+    await expect(locateProject(dir, "link.kicad_pcb")).rejects.toThrow(/outside the project/);
   });
 });
