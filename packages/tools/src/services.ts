@@ -679,7 +679,8 @@ export interface KicadService {
     opts: {
       board: string;
       outFile: string;
-      severity?: "error" | "all";
+      /** "project": the project's own rule severities decide what is reported (the toolkit's last-mile scoring). */
+      severity?: "error" | "all" | "project";
       schematicParity?: boolean;
       refillZones?: boolean;
       signal?: AbortSignal;

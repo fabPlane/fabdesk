@@ -7,3 +7,4 @@ export * from "./onboard";
 export * from "./accept";
 export * from "./history";
 export * from "./review/index";
+export * as lastmile from "./lastmile/index";

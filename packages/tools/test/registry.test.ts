@@ -309,6 +309,7 @@ describe("registry", () => {
       "verify_viagrid",
       "board_check",
       "board_review",
+      "board_lastmile",
       "release_build",
       "render_pcb_readiness",
       "render_pcb_display",
