@@ -85,6 +85,8 @@ export function agentMcpProfile(
 }
 
 export type ServeOptions = {
+  /** Tests: override whether Finish it uses the board workflow's A1-A9 and review gate (default: board_check is registered). */
+  boardChecks?: () => boolean;
   /** Tests: simulate an orphan that cannot be stopped. */
   recoveryStop?: (pid: number) => void | Promise<void>;
   recoveryWaitMs?: number;
@@ -516,7 +518,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     projects,
     settings: () => store.settings.get(),
     // the board's A1-A9 decide "verified" once the board workflow's check tool exists
-    boardChecks: boardWorkflowReady,
+    boardChecks: opts.boardChecks ?? boardWorkflowReady,
   });
 
   let resolveClosed!: (reason: string) => void;
