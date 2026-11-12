@@ -38,6 +38,19 @@ describe("gate", () => {
     const next = fig({ open: 1, pairs: { "P / N": [0.16, 9.4, 0.5, true] } });
     expect(L.gate(next, cur)).toEqual(["pair worse: P coupled 0.39->0.16, P length diff 1->9.4"]);
   });
+  test("inherited DRC classes come from the board's requirements, not a carrier-board carve-out", () => {
+    const acc = { results: { A1_connectivity: { unconnected: 2 }, A2_drc: { errors: { hole_clearance: 3, clearance: 1 } }, A7_widths: {}, A8_pairs: {} } } as never;
+    const req = (lastmile?: unknown) => ({ acceptance: { net_classes: { classes: {} }, ...(lastmile ? { lastmile } : {}) } }) as unknown as Requirements;
+    // default: every class counts, so a step that adds hole_clearance is a new DRC class
+    const plain = L.figuresOf(acc, [], L.boardNets(req()));
+    expect(plain.drc).toEqual({ hole_clearance: 3, clearance: 1 });
+    expect(L.gate(fig({ open: 1, drc: plain.drc }), fig({ drc: { clearance: 1 } }))).toEqual(["new DRC class ['hole_clearance']"]);
+    // a board that declares it (the R1N/C6 carrier's USB-C shell pads) leaves it out of the figures
+    const carrier = L.figuresOf(acc, [], L.boardNets(req({ inherited_drc: ["hole_clearance"] })));
+    expect(carrier.drc).toEqual({ clearance: 1 });
+    expect(L.gate(fig({ open: 1, drc: carrier.drc }), fig({ drc: { clearance: 1 } }))).toEqual([]);
+    expect(() => L.boardNets(req({ inherited_drc: "hole_clearance" }))).toThrow("inherited_drc must be a list");
+  });
   test("key order and line", () => {
     expect(L.compareKeys(L.keyOf(fig({ open: 2 })), L.keyOf(fig({ open: 3 })))).toBe(-1);
     expect(L.figureLine(fig({ drc: { clearance: 2 } }))).toBe("open 5  drc 2 {'clearance': 2}  a7 0  a8 0  pairs-todo 0");

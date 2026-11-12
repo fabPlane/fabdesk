@@ -82,6 +82,12 @@ export interface Acceptance {
   /** Names of nets whose value differences are accepted (A4). */
   value_exceptions?: string[];
   automatic_checks?: Record<string, string>;
+  /**
+   * Last-mile bench settings. `inherited_drc`: DRC classes this board carries on every candidate whatever is routed
+   * (e.g. the R1N/C6 carrier's USB-C shell pads give `hole_clearance`); the bench's gate leaves them out of the DRC
+   * count and never calls them a new class. Absent or empty: every DRC class counts.
+   */
+  lastmile?: { inherited_drc?: string[] };
   [extra: string]: unknown;
 }
 
