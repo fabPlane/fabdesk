@@ -26,3 +26,5 @@ export * from "./resources";
 export * from "./board-state";
 export * from "./durable";
 export * from "./board-adopt";
+export { setInterconnectGate } from "./tools/board-release";
+export * from "./release-state";

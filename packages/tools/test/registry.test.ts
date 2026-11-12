@@ -311,6 +311,8 @@ describe("registry", () => {
       "board_review",
       "board_lastmile",
       "board_edit",
+      "board_release",
+      "board_silk",
       "release_build",
       "render_pcb_readiness",
       "render_pcb_display",

@@ -20,7 +20,7 @@ export {
   type Placement,
   type PlaceResult,
 } from "./place";
-export { rasterizeSvg, type RasterizedSvg } from "./raster";
+export { rasterizeSvg, rasterizeSvgPixels, type RasterizedSvg } from "./raster";
 export {
   renderPng,
   exportGlb,

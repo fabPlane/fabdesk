@@ -10,3 +10,5 @@ export * from "./review/index";
 export * as lastmile from "./lastmile/index";
 export * as edit from "./edit/index";
 export * from "./drc";
+export * as release from "./release";
+export * as silk from "./silk";
