@@ -48,7 +48,9 @@ pre-existing failure.
   by cause (`loose` is fixable in place; `on_pad`, `between`, `escape` come from pads, pinout and vias; `apart` needs a re-route). Pairs on a routed
   board: `tighten` first (vias, mirror, retune, width, tighten, skew, no router), then `loop` with `reroute:{pair}+shorts+blockers:1.0+tighten`.
   Rip, route and nudge steps run KiCadRoutingTools plans; when KRT cannot be had (install error, broken override, auto-install off) a step
-  that needs it fails naming why, and `finish`, `fill:ROUTER` and `tighten` still run.
+  that needs it fails naming why, and `finish`, `fill:ROUTER` and `tighten` still run. `finish` adds copper only on the nets that were open and
+  leaves every other net as it was; other steps may change more, and each `try` line says which other nets a candidate changed: for a "change
+  only this" task, prefer the candidate that changed none.
 - **Edit.** Write the change as a plan (remove, move with `to` or `near`, displace, swap, add, net). `impact` first: a STOP is your decision.
   When an edit displaces a dense region, stop editing and re-place with the moved parts as anchors.
 - **Review.** One design hash covers board, schematics, project files and requirements; any change makes the review stale. Settle each finding with

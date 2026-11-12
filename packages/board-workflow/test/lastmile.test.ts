@@ -274,6 +274,19 @@ describe("bench", () => {
     expect(r.accepted).toBeNull();
   });
 
+  test("try reports the nets a candidate changed beyond the ones that were open", async () => {
+    const d = await mk();
+    // open nets N0, N1 (the fake scorer names opens N0..); GND and +3V3 copper exist on the start board
+    await writeFile(join(d, "board.kicad_pcb"), `(kicad_pcb ;; opens=2\n\t(segment (start 0 0) (end 1 1) (width 0.2) (layer "F.Cu") (net "GND") (uuid "g1"))\n\t(segment (start 5 5) (end 6 6) (width 0.2) (layer "F.Cu") (net "+3V3") (uuid "p1"))\n)`);
+    await writeFile(join(d, "board.kicad_pro"), "{}");
+    const routed = `(kicad_pcb ;; opens=0\n\t(segment (start 0 0) (end 1 1) (width 0.2) (layer "F.Cu") (net "GND") (uuid "g1"))\n\t(segment (start 5 5) (end 6 6) (width 0.2) (layer "F.Cu") (net "+3V3") (uuid "p1"))\n\t(segment (start 2 2) (end 3 3) (width 0.2) (layer "F.Cu") (net "N0") (uuid "n0"))\n\t(segment (start 0 1) (end 0 2) (width 0.2) (layer "F.Cu") (net "GND") (uuid "stub"))\n)`;
+    const ws = join(await mk(), "ws");
+    const { bench } = await L.Bench.create(ws, d, "board.kicad_pcb", { scorer, engine: engine({ finish: routed }), availableGiB: async () => 30 });
+    const r = await bench.try(["finish"], {});
+    expect(r.candidates[0]!.otherNetsChanged).toEqual(["GND"]);
+    expect(r.lines.join("\n")).toContain("also changed 1 other net(s): GND");
+  });
+
   test("a candidate over its budget is abandoned and fails", async () => {
     const src = await project(2);
     const ws = join(await mk(), "ws");

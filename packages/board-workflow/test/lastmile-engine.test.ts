@@ -86,8 +86,8 @@ describe("step engine", () => {
     const krt = join(dir, "krt");
     await mkdir(join(krt, "src/plugins"), { recursive: true });
     const e = engine(req, krt, spawns, []);
-    const out = join(await tmp(), "finish");
-    const r = await e.run(L.stepsFor("finish")[0]!, input(dir, out));
+    const out = join(await tmp(), "rip");
+    const r = await e.run(L.stepsFor("rip")[0]!, input(dir, out));
     expect("error" in r ? r.error : null).toBeNull();
     if ("error" in r) return;
     expect(r.dir).toBe(out);
@@ -271,6 +271,55 @@ describe("admission names the engine", () => {
       { kind: "router", engine: "fab_router" },
       { kind: "tracemaker", engine: "tracemaker" },
     ]);
+  });
+});
+
+describe("finish changes only what was open", () => {
+  test("finish keeps new copper on the open nets only; the router's touches on other nets are counted, not kept", async () => {
+    const { dir, req } = await c6();
+    const krt = join(dir, "krt");
+    await mkdir(join(krt, "src/plugins"), { recursive: true });
+    const OTHER = `(segment (start 7 7) (end 8 8) (width 0.15) (layer "F.Cu") (net "GND") (uuid "krt-gnd-stub"))`;
+    const host: layout.LayoutHost = {
+      ...fakeLayout(krt, []),
+      spawn: async (cmd, o) => {
+        const si = cmd.findIndex((c) => c.endsWith(".py"));
+        if (/route(_diff)?\.py$/.test(cmd[si] ?? "")) {
+          const t = await readFile(cmd[si + 1]!, "utf8");
+          await writeFile(cmd[si + 2]!, t.replace(/\)\s*$/, `\n\t${NEW_SEG}\n\t${OTHER}\n)`));
+        }
+        await writeFile(o.log, "");
+        return { code: 0, wallS: 0.1 };
+      },
+    };
+    // the start board is open on SIG only
+    const openSig: L.Scorer = {
+      async score(d) {
+        const sc = await scorer.score(d, "", { parity: false });
+        await writeFile(join(d, ".lastmile", "drc-run.json"), JSON.stringify({ violations: [], unconnected: [{ items: [{ description: "Pad 1 [SIG] of U1", pos: { x: 31, y: 20 } }, { description: "Pad 1 [SIG] of R1", pos: { x: 19.5, y: 10 } }] }], parity: 0 }));
+        return sc;
+      },
+    };
+    const e = L.createStepEngine({ req, scorer: openSig, layout: host, fallbackRouter: "fab_router", drc: async () => ({ violations: [], unconnected: [], parity: 0 }), fill: async () => ({}) });
+    const out = join(await tmp(), "finish");
+    const r = await e.run(L.stepsFor("finish")[0]!, input(dir, out));
+    if ("error" in r) throw new Error(r.error);
+    const board = await readFile(join(out, "C6.kicad_pcb"), "utf8");
+    expect(board).toContain('(net "SIG")');
+    expect(board).toContain("(start 1 1) (end 2 2)");
+    expect(board).not.toContain("(start 7 7) (end 8 8)");
+    expect(board).toContain("sg-40.5-18-40.5-25-GND"); // the rest of the board exactly as it was
+    expect(r.info?.["restricted"]).toMatchObject({ only_open_nets: 1, other_nets_router_touched_not_kept: 1, other_nets_sample: ["GND"] });
+  });
+
+  test("copper by net: changed nets ignore uuids and number formatting; keepCopperOfNets drops other nets", () => {
+    const a = `(kicad_pcb\n\t(segment (start 1 1) (end 2 2) (width 0.15) (layer "F.Cu") (net "A") (uuid "u1"))\n\t(segment (start 3 3) (end 4 4) (width 0.15) (layer "F.Cu") (net "B") (uuid "u2"))\n)`;
+    const b = `(kicad_pcb\n\t(segment\n\t\t(start 1.0 1) (end 2 2.00) (width 0.15) (layer "F.Cu") (net "A") (uuid "x9"))\n\t(segment (start 3 3) (end 4 5) (width 0.15) (layer "F.Cu") (net "B") (uuid "u2"))\n\t(via (at 9 9) (size 0.5) (drill 0.3) (layers "F.Cu" "B.Cu") (net "C") (uuid "v1"))\n)`;
+    expect(layout.changedCopperNets(a, b)).toEqual(["B", "C"]);
+    const kept = layout.keepCopperOfNets(b, new Set(["C"]));
+    expect(kept).toContain('(net "C")');
+    expect(kept).not.toContain('(net "A")');
+    expect(kept).not.toContain('(net "B")');
   });
 });
 

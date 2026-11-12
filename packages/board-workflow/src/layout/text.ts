@@ -190,6 +190,49 @@ function itemsByContent(text: string): Map<string, string> {
   return out;
 }
 
+const NET_OF = /\(net "((?:[^"\\]|\\.)*)"\)/;
+const NUMBER = /-?\d+(?:\.\d+)?(?:e-?\d+)?/gi;
+
+/** A copper item as content: no uuid, whitespace and number formatting normalised (KRT and KiCad print the same item differently). */
+function copperKey(item: string): string {
+  return item
+    .replace(UUID_NODE, "")
+    .replace(NUMBER, (n) => String(Math.round(Number(n) * 1e4) / 1e4))
+    .replace(/\s+/g, " ")
+    .replace(/\( /g, "(")
+    .replace(/ \)/g, ")")
+    .trim();
+}
+
+/** Top-level copper of a board grouped by net name, each item as content (sorted). */
+export function copperByNet(text: string): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const { span } of copperItems(text)) {
+    const item = text.slice(...span);
+    const net = NET_OF.exec(item)?.[1] ?? "";
+    (out.get(net) ?? out.set(net, []).get(net)!).push(copperKey(item));
+  }
+  for (const v of out.values()) v.sort();
+  return out;
+}
+
+/** Nets whose copper differs between two boards (added, removed or moved items), sorted. */
+export function changedCopperNets(before: string, after: string): string[] {
+  const a = copperByNet(before), b = copperByNet(after);
+  const nets = new Set([...a.keys(), ...b.keys()]);
+  return [...nets].filter((n) => (a.get(n) ?? []).join("\n") !== (b.get(n) ?? []).join("\n")).sort();
+}
+
+/** `text` keeping only the top-level copper items of `nets` (other nets' copper dropped). */
+export function keepCopperOfNets(text: string, nets: ReadonlySet<string>): string {
+  let out = text;
+  for (const { span } of copperItems(text).reverse()) {
+    const net = NET_OF.exec(text.slice(...span))?.[1] ?? "";
+    if (!nets.has(net)) out = out.slice(0, span[0]) + out.slice(span[1]);
+  }
+  return out;
+}
+
 export interface MergeStats {
   mode: "add" | "replace" | "as-is" | "ses";
   [k: string]: unknown;

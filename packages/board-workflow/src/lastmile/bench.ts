@@ -12,6 +12,7 @@ import { stepsFor, type Step } from "./actions";
 import { compareKeys, figureLine, gate, keyOf, type Figures, type GateSlack, type OpenItem } from "./gate";
 import { hostMemory } from "../sysinfo";
 import { boardGridShape, routerFootprint, type RouterFootprint } from "../layout/footprint";
+import { changedCopperNets } from "../layout/text";
 
 export interface Scored {
   figures: Figures;
@@ -75,6 +76,8 @@ export interface BenchState {
 
 export interface CandidateRecord {
   name: string;
+  /** Nets whose copper this candidate changed that were not open on the board it started from (set by `try`). */
+  otherNetsChanged?: string[];
   wall_s: number;
   figures?: Figures;
   rejected: string[];
@@ -330,7 +333,14 @@ export class Bench {
       const after = new Set(this.openNets(await this.scoreDir(r.dir!)));
       const closed = [...before].filter((n) => !after.has(n)).sort();
       const fresh = [...after].filter((n) => !before.has(n)).sort();
-      const delta = [closed.length ? `closed ${closed.join(", ")}` : "", fresh.length ? `NEW open ${fresh.join(", ")}` : ""].filter(Boolean).join("; ");
+      // nets whose copper the candidate changed beyond the ones that were open: what a "change only this" task must see
+      const startText = await readFile(join(start, this.st.pcb), "utf8").catch(() => "");
+      const candText = await readFile(join(r.dir!, this.st.pcb), "utf8").catch(() => "");
+      r.otherNetsChanged = startText && candText ? changedCopperNets(startText, candText).filter((n) => !before.has(n)) : [];
+      const others = r.otherNetsChanged.length
+        ? `also changed ${r.otherNetsChanged.length} other net(s): ${r.otherNetsChanged.slice(0, 6).join(", ")}${r.otherNetsChanged.length > 6 ? ", ..." : ""}`
+        : "";
+      const delta = [closed.length ? `closed ${closed.join(", ")}` : "", fresh.length ? `NEW open ${fresh.join(", ")}` : "", others].filter(Boolean).join("; ");
       const verdict = ok[0] === r && !o.noAccept ? "ACCEPT" : r.rejected.length ? r.rejected.join("; ") : "passes gate";
       this.say(`  ${r.name.padEnd(28)} ${r.wall_s.toFixed(0).padStart(5)}s  ${figureLine(r.figures)}  -> ${verdict}${delta ? `  [${delta}]` : ""}`, lines);
     }
@@ -338,7 +348,7 @@ export class Bench {
       try: this.st.tries,
       from: this.st.pointer,
       wall_s: Math.round((Date.now() - t0) / 100) / 10,
-      results: recs.map((r) => ({ name: r.name, wall_s: r.wall_s, ...(r.figures ? { figures: r.figures } : {}), rejected: r.rejected, ...(r.dir ? { dir: r.dir } : {}) })),
+      results: recs.map((r) => ({ name: r.name, wall_s: r.wall_s, ...(r.figures ? { figures: r.figures } : {}), rejected: r.rejected, ...(r.dir ? { dir: r.dir } : {}), ...(r.otherNetsChanged ? { other_nets_changed: r.otherNetsChanged } : {}) })),
     });
     const best = ok[0];
     if (best && !o.noAccept) {

@@ -18,10 +18,10 @@ import type { Requirements } from "../requirements";
 import { engineReady, type LayoutHost } from "../layout/ctx";
 import type { KrtPlan } from "../layout/plan";
 import { routeKrt } from "../layout/route";
-import { addNewCopper, convertTransforms, nameCopperNets, numericNetCopper, replaceCopper } from "../layout/text";
+import { addNewCopper, changedCopperNets, convertTransforms, keepCopperOfNets, nameCopperNets, numericNetCopper, replaceCopper } from "../layout/text";
 import { FILL_ROUTERS, type Step } from "./actions";
 import { copyBoardFolder, type Scorer, type StepEngine, type StepInput, type StepOutcome } from "./bench";
-import type { DrcFn } from "./scoring";
+import { opensOf, type DrcFn, type DrcRun } from "./scoring";
 import { runTighten } from "./tighten";
 import { ripStep } from "./rip";
 import { nudgeStep } from "./nudge";
@@ -75,7 +75,13 @@ async function ensureScored(h: StepEngineHost, dir: string, pcb: string, signal:
  * the routed copper (KRT's copper replaces the native copper when the plan says `merge: replace`, else only new copper
  * is added). KRT's working files stay under `out/.lastmile/krt` (skipped when a folder is copied).
  */
-async function krtRoute(h: StepEngineHost, src: string, out: string, pcb: string, plan: KrtPlan, signal: AbortSignal): Promise<Record<string, unknown>> {
+/** Nets with an open connection on a scored board folder (its `.lastmile/drc-run.json`). */
+async function openNetsOf(dir: string): Promise<Set<string>> {
+  const run = JSON.parse(await readFile(join(dir, ".lastmile", "drc-run.json"), "utf8")) as DrcRun;
+  return new Set(opensOf(run.unconnected).map((o) => o.net));
+}
+
+async function krtRoute(h: StepEngineHost, src: string, out: string, pcb: string, plan: KrtPlan, signal: AbortSignal, onlyNets?: Set<string>): Promise<Record<string, unknown>> {
   await copyBoardFolder(src, out);
   const work = join(out, ".lastmile", "krt");
   await rm(work, { recursive: true, force: true });
@@ -91,12 +97,20 @@ async function krtRoute(h: StepEngineHost, src: string, out: string, pcb: string
   if (record.error) throw new Error(`KRT: ${record.error}`);
   const native = await readFile(join(src, pcb), "utf8");
   const routed = nameCopperNets(await readFile(join(work, "routed-native-names.kicad_pcb"), "utf8")).text;
-  const merged = plan.merge === "replace" ? replaceCopper(native, routed) : addNewCopper(native, nameCopperNets(convertTransforms(native).text).text, routed);
+  const source = () => nameCopperNets(convertTransforms(native).text).text;
+  let restricted: Record<string, unknown> | null = null;
+  let merged;
+  if (onlyNets) {
+    const src0 = source();
+    const others = changedCopperNets(src0, routed).filter((n) => !onlyNets.has(n));
+    merged = addNewCopper(native, src0, keepCopperOfNets(routed, onlyNets));
+    restricted = { only_open_nets: onlyNets.size, other_nets_router_touched_not_kept: others.length, ...(others.length ? { other_nets_sample: others.slice(0, 8) } : {}) };
+  } else merged = plan.merge === "replace" ? replaceCopper(native, routed) : addNewCopper(native, source(), routed);
   const numeric = numericNetCopper(merged.text);
   if (numeric) throw new Error(`${numeric} copper items name their net by number after the merge`);
   await writeFile(join(out, pcb), merged.text);
   const stages = record.stages.map((s) => ({ name: s["name"], ...(s["skipped"] ? { skipped: s["skipped"] } : { exit: s["exit"], wall_s: s["wall_s"] }) }));
-  return { engine: "krt", wall_s: record.wall_s, stages, merge: merged.stats };
+  return { engine: "krt", wall_s: record.wall_s, stages, merge: merged.stats, ...(restricted ? { restricted } : {}) };
 }
 
 /**
@@ -187,7 +201,10 @@ export function createStepEngine(h: StepEngineHost): StepEngine {
           // @pairs-todo reads what the start board fails
           await ensureScored(h, cur, pcb, signal);
           signal.throwIfAborted();
-          return { dir: out, info: await krtRoute(h, cur, out, pcb, plan, signal) };
+          // finish means "route the opens; nothing is ripped": only new copper on the nets that were open is kept, so the
+          // rest of the board stays exactly as it was (KRT also adds pad-entry stubs on other nets, which a reroute must not)
+          const onlyNets = step.planName === "finish" ? await openNetsOf(cur) : undefined;
+          return { dir: out, info: await krtRoute(h, cur, out, pcb, plan, signal, onlyNets) };
         }
         case "repair": {
           const k = await krt();
