@@ -8,6 +8,7 @@ import {
   compareTaskPcb,
   listTaskCheckpoints,
   restoreTaskCheckpoint,
+  retainTaskCheckpoint,
 } from "../src/task-checkpoints";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
@@ -497,4 +498,31 @@ test("project_status reports an unreadable task baseline instead of failing", as
   const result = await call("project_status", {});
   expect((result.json as any).taskComparison.error).toBeString();
   expect(result.text).toContain("Task baseline comparison unavailable");
+});
+
+test("checkpoints store unchanged content once and still restore each file on its own", async () => {
+  const project = await tempProject("task-dedupe");
+  const big = "(kicad_pcb " + "x".repeat(2_000_000) + ")";
+  await writeFile(join(project.dir, "board.kicad_pcb"), big);
+  await writeFile(join(project.dir, "board.kicad_sch"), "sheet");
+  const a = await retainTaskCheckpoint(project, { name: "a", reason: "first", role: "checkpoint" }, null);
+  await writeFile(join(project.dir, "board.kicad_sch"), "sheet v2");
+  const b = await retainTaskCheckpoint(project, { name: "b", reason: "second", role: "checkpoint" }, null);
+  const root = join(project.dir, ".fabdesk/task-checkpoints");
+  const sa = await fs.stat(join(root, a.id, "files/board.kicad_pcb"));
+  const sb = await fs.stat(join(root, b.id, "files/board.kicad_pcb"));
+  expect(sa.ino).toBe(sb.ino); // one copy of the unchanged 2 MB board
+  expect(sa.nlink).toBe(3); // blob + two checkpoints
+  expect(await readFile(join(root, a.id, "files/board.kicad_sch"), "utf8")).toBe("sheet");
+  expect(await readFile(join(root, b.id, "files/board.kicad_sch"), "utf8")).toBe("sheet v2");
+});
+
+test("KiCad strings with raw tabs (part fields) parse: JSON.parse would fail with 'Unterminated string'", async () => {
+  const { kicadString } = await import("../src/kicad-string");
+  expect(kicadString('"\t10uF 10% 10V"')).toBe("\t10uF 10% 10V");
+  expect(kicadString('"a \\"quoted\\" \\\\ back"')).toBe('a "quoted" \\ back');
+  expect(kicadString('"line1\\nline2"')).toBe("line1\nline2");
+  const { copperBoard } = await import("../src/routing-quality");
+  const board = '(kicad_pcb (version 20260206) (net 0 "") (net 1 "GND") (footprint "R" (property "Description" "\t10uF X7R")))';
+  expect(copperBoard(board).nets).toContain("GND");
 });
