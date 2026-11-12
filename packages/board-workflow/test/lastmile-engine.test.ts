@@ -252,6 +252,28 @@ describe("step engine: plan files and aborts", () => {
   });
 });
 
+describe("admission names the engine", () => {
+  test("KRT steps are admitted as krt (grid estimate); fill:freerouting and fill:fab_router are not", async () => {
+    const { dir, req } = await c6();
+    const krt = join(dir, "krt");
+    await mkdir(join(krt, "src/plugins"), { recursive: true });
+    const admits: Array<{ kind: string; engine?: string }> = [];
+    const host = { ...fakeLayout(krt, []), admit: async (kind: string, _l: string, _p: string[], o?: { engine?: string }) => (admits.push({ kind, ...(o?.engine ? { engine: o.engine } : {}) }), { release() {} }) };
+    const e = L.createStepEngine({
+      req, scorer, layout: host as never, fallbackRouter: "fab_router",
+      drc: async () => ({ violations: [], unconnected: [], parity: 0 }),
+      fill: async (_r, d) => { await writeFile(join(d, "board.kicad_pcb"), await readFile(join(d, "board.kicad_pcb"), "utf8")); return {}; },
+    });
+    for (const a of ["finish", "fill:freerouting", "fill:fab_router", "fill:tracemaker"]) await e.run(L.stepsFor(a)[0]!, input(dir, join(await tmp(), a.replace(":", "_"))));
+    expect(admits).toEqual([
+      { kind: "router", engine: "krt" },
+      { kind: "router", engine: "freerouting" },
+      { kind: "router", engine: "fab_router" },
+      { kind: "tracemaker", engine: "tracemaker" },
+    ]);
+  });
+});
+
 describe("sweep", () => {
   test("a grid of poses round the part, flipped, without the current pose, each followed by the chain", () => {
     const acts = L.sweepActions(BOARD, ["R1"], { span: 0.5, step: 0.5, rotations: "flip", then: "blockers:1.0" });

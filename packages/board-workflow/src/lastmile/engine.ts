@@ -81,7 +81,7 @@ async function krtRoute(h: StepEngineHost, src: string, out: string, pcb: string
   await rm(work, { recursive: true, force: true });
   await mkdir(join(out, ".lastmile"), { recursive: true });
   const host: LayoutHost = { ...h.layout, signal };
-  const admission = host.admit ? await host.admit("router", "lastmile krt", [src]) : { release() {} };
+  const admission = host.admit ? await host.admit("router", "lastmile krt", [src], { engine: "krt" }) : { release() {} };
   let record;
   try {
     record = await routeKrt(host, { placed: src, out: work, plan, stem: stemOf(pcb), req: h.req, score: false });
@@ -115,7 +115,8 @@ async function fillRoute(h: StepEngineHost, router: string, src: string, out: st
     for (const ext of ["kicad_pro", "kicad_dru"]) if (await exists(join(src, `${stem}.${ext}`))) await copyFile(join(src, `${stem}.${ext}`), join(scratch, `board.${ext}`));
   }
   const cls = router === "tracemaker" ? "tracemaker" : "router";
-  const admission = h.layout.admit ? await h.layout.admit(cls, `lastmile fill ${router}`, [src]) : { release() {} };
+  const engine = router === "tracemaker" ? "tracemaker" : router === "freerouting" ? "freerouting" : "fab_router";
+  const admission = h.layout.admit ? await h.layout.admit(cls, `lastmile fill ${router}`, [src], { engine }) : { release() {} };
   let s;
   try {
     s = await h.fill(router, scratch, { signal, timeoutMs: h.routerTimeoutMs ?? 600_000 });

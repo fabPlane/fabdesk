@@ -23,6 +23,7 @@ export interface Admission {
   release(): void;
 }
 export type ResourceKind = "light" | "router" | "tracemaker";
+export type RouterEngine = "krt" | "tracemaker" | "freerouting" | "fab_router";
 
 export interface LayoutHost {
   tools: LayoutTools;
@@ -36,8 +37,12 @@ export interface LayoutHost {
   courtyardDrc(board: string, report: string): Promise<Array<{ rule: string; items: Array<{ description: string }> }>>;
   /** Scoring DRC: refilled zones, optionally schematic parity. */
   scoreDrc(board: string, outFile: string, parity: boolean): Promise<DrcInput>;
-  /** Resource-class admission (the governor); default: admit at once. */
-  admit?(kind: ResourceKind, label: string, paths: string[]): Promise<Admission>;
+  /**
+   * Resource-class admission (the governor); default: admit at once. `engine` names the program the job runs: KRT and
+   * TraceMaker (the default for `router` / `tracemaker` jobs) hold a grid over the whole board and are admitted on that
+   * estimate; Freerouting and fab_router are not.
+   */
+  admit?(kind: ResourceKind, label: string, paths: string[], opts?: { engine?: RouterEngine }): Promise<Admission>;
   /** GiB of memory available now. */
   memAvailableGiB(): Promise<number>;
   diskFreeGiB(path: string): Promise<number>;

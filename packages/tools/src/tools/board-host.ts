@@ -60,9 +60,11 @@ export function layoutHost(ctx: ToolContext, kicadCli: string | null, env: NodeJ
       const r = await drc(board, outFile, { parity, refill: true });
       return { violations: r.violations.map((v) => ({ rule: v.rule, severity: v.severity, description: v.description })), unconnected: r.unconnected.length, parity: r.schematicParity.length };
     },
-    admit: async (kind, label, paths) => {
-      // a router run holds a grid over the whole board: estimate from outline area x copper layers, not file size
-      const memGiB = kind === "router" || kind === "tracemaker" ? await routerMemGiB(paths) : await boardMemGiB(paths);
+    admit: async (kind, label, paths, opts) => {
+      // KRT and TraceMaker hold a grid over the whole board: estimate from outline area x copper layers, not file size.
+      // Freerouting and fab_router (fill steps) are not grid routers; they keep the file-size estimate.
+      const gridRouter = (kind === "router" || kind === "tracemaker") && opts?.engine !== "freerouting" && opts?.engine !== "fab_router";
+      const memGiB = gridRouter ? await routerMemGiB(paths) : await boardMemGiB(paths);
       const job = await governor().admit({ cls: kind as ResourceClass, label, paths, signal: ctx.signal, memGiB, onWait: note });
       return { release: job.release };
     },
