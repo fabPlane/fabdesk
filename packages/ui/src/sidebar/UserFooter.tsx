@@ -12,14 +12,11 @@ import { cn, modKey } from "../util";
  * the gear opens Settings directly. Renders nothing unless the core reports a signed-in state.
  */
 export function UserFooter() {
-  const { client, host } = useCore();
+  const { host } = useCore();
   const auth = useAuthStore((s) => s.state);
-  const localAllowed = useAuthStore((s) => s.localAllowed);
-  const setAuthState = useAuthStore((s) => s.setState);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const setInventoryOpen = useUiStore((s) => s.setInventoryOpen);
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => setOpen(false), []);
@@ -62,23 +59,6 @@ export function UserFooter() {
   const openSettings = (section?: Parameters<typeof setSettingsOpen>[1]) => {
     close();
     setSettingsOpen(true, section);
-  };
-
-  const signOut = async () => {
-    close();
-    setBusy(true);
-    try {
-      if (local) {
-        await host.setLocalAuth?.(false);
-      } else {
-        await client.logout();
-        setAuthState(await client.authState());
-      }
-    } catch {
-      // The auth store keeps its last state; the Account settings section surfaces errors.
-    } finally {
-      setBusy(false);
-    }
   };
 
   return (
@@ -129,14 +109,6 @@ export function UserFooter() {
               fabplane dashboard <span className="ml-auto text-muted">&#8599;</span>
             </MenuItem>
           )}
-          {(!local || (localAllowed && host.setLocalAuth)) && (
-            <>
-              <div className="my-1 border-t border-border" />
-              <MenuItem danger onClick={() => void signOut()}>
-                {local ? "Leave local mode" : "Sign out"}
-              </MenuItem>
-            </>
-          )}
         </div>
       )}
       <div className="flex items-center gap-1">
@@ -150,7 +122,6 @@ export function UserFooter() {
           onClick={() => setOpen((v) => !v)}
           aria-haspopup="menu"
           aria-expanded={open}
-          disabled={busy}
           title={`${email ? `${label} (${email})` : label}${local ? " · Local mode" : ""}`}
           data-testid="user-menu-button"
         >

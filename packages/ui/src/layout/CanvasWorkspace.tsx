@@ -1,3 +1,4 @@
+import { ProfileButton } from "../auth/ProfileAccountDialog";
 import { WorkspaceBackButton } from "./WorkspaceBackButton";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
@@ -126,6 +127,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
         <span className="fd-canvas-connection" title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`}><i data-connected={connected} />{connected ? local ? "Local workspace" : "Remote workspace" : "Reconnecting…"}</span>
         {projectId && !fresh && !isDraft && <Button size="sm" variant="secondary" title="Review source and output updates" aria-current={area === "review" && boardTab === "updates" ? "page" : undefined} onClick={() => ui().setBoardTab("updates")}>Review</Button>}
         {projectId && !fresh && !isDraft && <HostedReviewTools key={projectId} projectId={projectId} shareButton />}
+        <ProfileButton />
         <WorkspaceMenu className="fd-workspace-overflow" label={<span aria-label="Workspace options"><Icon name="more" width={20} height={20} /></span>}>
           {projectId && <><div className="fd-menu-caption">Current project</div><button onClick={() => setProjectAction({ id: projectId, name, action: "rename", isDraft })}><Icon name="compose" width={16} height={16} />{isDraft ? "Rename idea" : "Rename project"}</button><button onClick={() => ui().requestProjectClose(true)}><Icon name="close" width={16} height={16} />Close project · Home</button><button onClick={() => setNavigationOpen(true)}><Icon name="sidebar" width={16} height={16} />Project conversations</button><div className="fd-menu-divider" /></>}
           <button onClick={() => ui().setPaletteOpen(true)}><Icon name="search" width={16} height={16} />Search commands</button>
@@ -165,7 +167,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
           </div></div>}
           <ThreadView presentation={fresh ? "start" : "chat"} referenceStart={referenceStart} />
         </section>
-        {showAssistant && !assistantOpen && <button className="fd-ask-fabdesk" data-assistant-launcher onClick={() => { setAssistantOpen(true); ui().focusComposer(); }}><Icon name="sparkles" width={19} height={19} /><span>Ask fabPlane</span><Icon name="mic" width={19} height={19} /></button>}
+        {showAssistant && !assistantOpen && <button className="fd-ask-fabdesk" aria-label="Ask fabPlane" data-assistant-launcher onClick={() => { setAssistantOpen(true); ui().focusComposer(); }}><Icon name="sparkles" width={19} height={19} /><span>Ask fabPlane</span><Icon name="mic" width={19} height={19} /></button>}
       {isDraft ? <div className="fd-draft-build-strip"><span><Icon name="compose" width={16} height={16} />Idea draft · No engineering files yet</span><Button variant="primary" disabled={draftRunning} onClick={() => { if (project.data) setSetupDraft(project.data); }}>{draftRunning ? "Reply in progress…" : "Create a project"}</Button></div> : fresh && <div className="fd-canvas-start-note">Your ideas and files stay with your project</div>}
     </main>}
     <Dialog open={navigationOpen} onClose={() => setNavigationOpen(false)} bare ariaLabel={projectId ? "Project conversations" : "Projects and conversations"} className="fd-canvas-drawer">

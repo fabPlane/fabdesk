@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { DrawingViewportMemory, type DrawingViewport } from "@fabdesk/client-core";
 import { Button, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -12,7 +13,7 @@ import "./svg-viewer-tools.css";
 const schematicViews = new DrawingViewportMemory();
 
 /** Zoomable vector image, isolated from the app's DOM and CSS layout. */
-export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, commentMode = false, initialFit = "sheet", fitLabel = "Fit sheet", focusRegion, onRegionFocused, onDrawingClick, onDrawingEscape }: {
+export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, commentMode = false, initialFit = "sheet", fitLabel = "Fit sheet", focusRegion, focusMotionEnabled = true, onRegionFocused, onDrawingClick, onDrawingEscape }: {
   svg: string;
   /** Preserve zoom and scroll when only presentation (such as blend) changes. */
   viewKey?: string;
@@ -24,7 +25,8 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
   initialFit?: "sheet" | "width";
   fitLabel?: string;
   /** Verified SVG coordinates, never raw native coordinates without a frame check. */
-  focusRegion?: SvgBox & { key: string };
+  focusRegion?: SvgBox & { key: string; animate?: boolean };
+  focusMotionEnabled?: boolean;
   onRegionFocused?: () => void;
   onDrawingClick?: (point: SvgPoint, event?: MouseEvent<HTMLDivElement>) => void;
   /** Return true when a source-local selection was dismissed. */
@@ -34,6 +36,8 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
   const drawing = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
   const [zoom, setZoom] = useState(1);
+  const [dismissedFocus, setDismissedFocus] = useState<string | null>(null);
+  const focusActive = !!focusRegion && dismissedFocus !== focusRegion.key;
   const viewport = useRef<HTMLDivElement>(null);
   const dragging = useSvgNavigation(viewport, drawing, zoom, setZoom, viewKey ?? svg, commentMode);
   const [source, setSource] = useState<{ svg: string; url: string } | null>(null);
@@ -48,16 +52,31 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
   useLayoutEffect(() => {
     savedView.current = viewportKey ? schematicViews.read(viewportKey, svg) : null;
     restoredView.current = false;
-    const frame = viewport.current;
+    const frame = viewport.current, host = drawing.current;
     return () => {
-      if (viewportKey && frame && currentView.current.ready) schematicViews.save(viewportKey, svg, { zoom: currentView.current.zoom, left: frame.scrollLeft, top: frame.scrollTop });
+      if (viewportKey && frame && currentView.current.ready) {
+        const visible = frame.getBoundingClientRect(), rect = host?.getBoundingClientRect();
+        const layoutWidth = host ? Number.parseFloat(host.style.width) : 0;
+        const visibleZoom = rect?.width && layoutWidth > 0 && host?.getAnimations().length
+          ? currentView.current.zoom * rect.width / layoutWidth : currentView.current.zoom;
+        schematicViews.save(viewportKey, svg, {
+          zoom: Math.max(.2, Math.min(64, visibleZoom)), left: frame.scrollLeft, top: frame.scrollTop,
+          ...(rect?.width && rect.height ? { centerX: (visible.left + frame.clientWidth / 2 - rect.left) / rect.width, centerY: (visible.top + frame.clientHeight / 2 - rect.top) / rect.height } : {}),
+        });
+      }
     };
   }, [viewportKey, svg]);
   useLayoutEffect(() => {
-    const saved = savedView.current, frame = viewport.current;
+    const saved = savedView.current, frame = viewport.current, host = drawing.current;
     if (!saved || restoredView.current || !frame || fitSize.width <= 1 || !loaded) return;
     if (zoom !== saved.zoom) { setZoom(saved.zoom); return; }
-    frame.scrollTo(saved.left, saved.top); restoredView.current = true;
+    if (saved.centerX !== undefined && saved.centerY !== undefined && host) {
+      // Raw scroll offsets include layout-specific focus padding. Restore the
+      // same drawing point when expanding/reopening or changing viewport size.
+      const rect = host.getBoundingClientRect(), visible = frame.getBoundingClientRect();
+      frame.scrollBy(rect.left + saved.centerX * rect.width - visible.left - frame.clientWidth / 2, rect.top + saved.centerY * rect.height - visible.top - frame.clientHeight / 2);
+    } else frame.scrollTo(saved.left, saved.top);
+    restoredView.current = true;
   }, [zoom, fitSize.width, fitSize.height, loaded]);
   const viewBox = useMemo(() => parseSvgViewBox(svg), [svg]);
   const [fallback, setFallback] = useState<{ svg: string; box: SvgBox } | null>(null);
@@ -136,30 +155,79 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
     });
   };
   const focusedRegion = useRef<string | null>(null);
-  useEffect(() => {
+  const focusMotion = useRef<Animation | null>(null);
+  const motionFrame = useRef(0);
+  const lastDrawingRect = useRef<DOMRect | null>(null);
+  const focusStart = useRef<{ key: string; rect: DOMRect | null } | null>(null);
+  const manualFocusKey = useRef<string | null>(null);
+  const stopFocusMotion = () => { cancelAnimationFrame(motionFrame.current); focusMotion.current?.cancel(); focusMotion.current = null; if (drawing.current) drawing.current.dataset["focusMotion"] = "idle"; };
+  // Keep the padded drawing area, but stop re-framing this selection after the
+  // user takes control. A new selection or explicit Focus has a fresh key.
+  const takeCameraControl = () => {
+    manualFocusKey.current = focusRegion?.key ?? null;
+    const host = drawing.current, frame = viewport.current;
+    const visible = focusMotion.current && host?.getBoundingClientRect();
+    stopFocusMotion();
+    if (!visible?.width || !host || !frame) return;
+    const destination = host.getBoundingClientRect();
+    if (!destination.width) return;
+    // Convert the visible animation frame into real zoom/scroll before the
+    // native pan/wheel and click handlers run. Cancel alone snaps to the final
+    // layout, so a click can otherwise identify a different part under the cursor.
+    flushSync(() => setZoom(Math.max(.2, Math.min(64, zoom * visible.width / destination.width))));
+    const committed = host.getBoundingClientRect();
+    frame.scrollBy(committed.left - visible.left, committed.top - visible.top);
+    lastDrawingRect.current = host.getBoundingClientRect();
+  };
+  // Remember the visible drawing before focus changes its zoom and scroll area.
+  useLayoutEffect(() => {
     const frame = viewport.current;
-    if (!focusRegion || focusedRegion.current === focusRegion.key || !frame || !box || !size || !current || loaded?.url !== current.url || fitSize.width <= 1 || fitSize.height <= 1) return;
-    focusedRegion.current = focusRegion.key;
-    const next = Math.max(.2, Math.min(64, Math.min((frame.clientWidth - 72) / (focusRegion.width / box.width * fitSize.width), (frame.clientHeight - 120) / (focusRegion.height / box.height * fitSize.height))));
+    const remember = () => { lastDrawingRect.current = drawing.current?.getBoundingClientRect() ?? null; };
+    remember(); frame?.addEventListener("scroll", remember);
+    return () => frame?.removeEventListener("scroll", remember);
+  }, [zoom, fitSize.width, fitSize.height]);
+  useEffect(() => () => stopFocusMotion(), []);
+  useEffect(() => { if (!focusMotionEnabled) stopFocusMotion(); }, [focusMotionEnabled]);
+  // Center only after React has committed the requested zoom. A frame callback can
+  // run against the old drawing dimensions, especially in a resized comparison pane.
+  useLayoutEffect(() => {
+    const frame = viewport.current, host = drawing.current;
+    const geometryKey = `${focusRegion?.key}/${fitSize.width}/${fitSize.height}`;
+    if (!focusMotionEnabled || !focusActive || !focusRegion || manualFocusKey.current === focusRegion.key || focusedRegion.current === geometryKey || !frame || !host || !box || !size || !current || loaded?.url !== current.url || fitSize.width <= 1 || fitSize.height <= 1) return;
+    if (focusStart.current?.key !== geometryKey) {
+      focusStart.current = { key: geometryKey, rect: lastDrawingRect.current };
+      stopFocusMotion();
+    }
+    const next = Math.max(.2, Math.min(64, Math.min((frame.clientWidth - Math.min(72, frame.clientWidth * .2)) / (focusRegion.width / box.width * fitSize.width), (frame.clientHeight - Math.min(120, frame.clientHeight * .2)) / (focusRegion.height / box.height * fitSize.height))));
+    if (Math.abs(zoom - next) > .0001) { setZoom(next); return; }
     const center = { x: (focusRegion.x + focusRegion.width / 2 - box.x) / box.width, y: (focusRegion.y + focusRegion.height / 2 - box.y) / box.height };
-    setZoom(next);
-    const animation = requestAnimationFrame(() => {
-      const host = drawing.current?.getBoundingClientRect(), rect = frame.getBoundingClientRect();
-      if (!host) return;
-      frame.scrollBy(host.left + center.x * host.width - rect.left - frame.clientWidth / 2, host.top + center.y * host.height - rect.top - frame.clientHeight / 2);
-      onRegionFocused?.();
-    });
-    return () => { cancelAnimationFrame(animation); focusedRegion.current = null; };
-  }, [focusRegion?.key, box?.width, box?.height, current?.url, loaded?.url, size, fitSize.width, fitSize.height]);
+    const drawingRect = host.getBoundingClientRect(), rect = frame.getBoundingClientRect();
+    frame.scrollBy(drawingRect.left + center.x * drawingRect.width - rect.left - frame.clientWidth / 2, drawingRect.top + center.y * drawingRect.height - rect.top - frame.clientHeight / 2);
+    const changedSelection = !focusedRegion.current?.startsWith(`${focusRegion.key}/`);
+    focusedRegion.current = geometryKey;
+    const before = focusStart.current?.rect, after = host.getBoundingClientRect();
+    if (changedSelection && focusRegion.animate && before && after.width && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const motion = host.animate([
+        { transform: `translate(${before.left - after.left}px, ${before.top - after.top}px) scale(${before.width / after.width})` },
+        { transform: "none" },
+      ], { duration: 320, easing: "cubic-bezier(.22,.61,.36,1)" });
+      focusMotion.current = motion; host.dataset["focusMotion"] = "running";
+      const rememberAnimation = () => { if (focusMotion.current !== motion) return; lastDrawingRect.current = host.getBoundingClientRect(); motionFrame.current = requestAnimationFrame(rememberAnimation); };
+      motionFrame.current = requestAnimationFrame(rememberAnimation);
+      motion.onfinish = () => { if (focusMotion.current === motion) { focusMotion.current = null; host.dataset["focusMotion"] = "idle"; lastDrawingRect.current = host.getBoundingClientRect(); } };
+    }
+    lastDrawingRect.current = host.getBoundingClientRect();
+    onRegionFocused?.();
+  }, [focusRegion?.key, box?.width, box?.height, current?.url, loaded?.url, size, fitSize.width, fitSize.height, zoom, focusActive, focusMotionEnabled]);
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
-    if (!onDrawingClick || (event.target as HTMLElement | null)?.closest("[data-comment-pin], [data-canvas-tools]")) return;
+    if (!onDrawingClick || (viewBox && !showingCurrent) || (event.target as HTMLElement | null)?.closest("[data-comment-pin], [data-canvas-tools]")) return;
     const host = drawing.current;
     if (!host || !box) return;
     const point = clientPointToSvg(box, host.getBoundingClientRect(), event.clientX, event.clientY);
     if (point) onDrawingClick(point, event);
   };
   return (
-    <div className="fd-svg-viewer relative flex h-full flex-col" onKeyDown={event => { if (event.key === "Escape" && onDrawingEscape?.()) { event.preventDefault(); event.stopPropagation(); requestAnimationFrame(() => drawing.current?.focus({ preventScroll: true })); } }}>
+    <div className="fd-svg-viewer relative flex h-full flex-col" onPointerDownCapture={takeCameraControl} onWheelCapture={takeCameraControl} onKeyDownCapture={event => { if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "+", "=", "-", "Enter", " "].includes(event.key)) takeCameraControl(); }} onKeyDown={event => { if (event.key === "Escape" && onDrawingEscape?.()) { event.preventDefault(); event.stopPropagation(); requestAnimationFrame(() => drawing.current?.focus({ preventScroll: true })); } }}>
       <div className="fd-svg-tools flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-3 py-2">
         <div className="fd-svg-zoom-group" role="group" aria-label="Drawing zoom">
         <Button size="sm" onClick={() => zoomAt(zoom / 1.25)} title="Zoom out" aria-label="Zoom out">
@@ -170,10 +238,10 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
           <Icon name="plus" width={16} height={16} />
         </Button>
         </div>
-        <Button size="sm" className="fd-svg-fit-button" title="Show the whole drawing" onClick={() => { setZoom(1); viewport.current?.scrollTo(0, 0); }}>
+        <Button size="sm" className="fd-svg-fit-button" title="Show the whole drawing" onClick={() => { setDismissedFocus(focusRegion?.key ?? null); setZoom(1); viewport.current?.scrollTo(0, 0); }}>
           {circuitView ? "Fit circuit" : fitLabel}
         </Button>
-        <Button size="sm" className="fd-svg-fit-button" title="Fill the available width; scroll to see the rest" onClick={() => { if (viewport.current) { zoomAt((viewport.current.clientWidth - 24) / fitSize.width); requestAnimationFrame(() => viewport.current?.scrollTo(0, 0)); } }}>Fit width</Button>
+        <Button size="sm" className="fd-svg-fit-button" title="Fill the available width; scroll to see the rest" onClick={() => { setDismissedFocus(focusRegion?.key ?? null); if (viewport.current) { zoomAt((viewport.current.clientWidth - 24) / fitSize.width); requestAnimationFrame(() => viewport.current?.scrollTo(0, 0)); } }}>Fit width</Button>
         {toolbar && <div className="fd-svg-context ml-auto flex items-center gap-1">{toolbar}</div>}
       </div>
       <div ref={viewport} tabIndex={0} aria-label="Drawing viewport. Drag to pan; scroll to zoom. Plus and minus zoom; arrow keys pan." className={cn("fd-svg-viewport min-h-0 flex-1 select-none overflow-auto overscroll-contain bg-panel-2/40 p-3", dragging ? "cursor-grabbing" : commentMode ? "cursor-crosshair" : "cursor-grab")}
@@ -181,15 +249,16 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
         >
         {!size && !failed && <div className="flex h-full items-center justify-center" role="status" aria-label="Loading board preview"><Spinner /></div>}
         {failed && <div className="p-4 text-sm text-muted" role="alert">Could not display this SVG preview. Try rendering it again.</div>}
-        <div className={focusRegion ? "fd-svg-focus-stage" : "contents"}>
+        <div className={focusActive ? "fd-svg-focus-stage" : "contents"}>
         <div
           ref={drawing}
           onClick={handleClick}
           role={onDrawingClick ? "group" : undefined}
+          aria-busy={!!viewBox && !showingCurrent}
           tabIndex={onDrawingClick ? 0 : undefined}
           aria-label={onDrawingClick ? "Drawing canvas. Click a location, or press Enter to select the center." : undefined}
           onKeyDown={(event) => {
-            if (event.target !== event.currentTarget || !box || !onDrawingClick) return;
+            if (event.target !== event.currentTarget || !box || !onDrawingClick || (viewBox && !showingCurrent)) return;
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
               onDrawingClick({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
@@ -219,7 +288,9 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
             <SvgCanvas svg={canvasSvg} image={image.current} width={fitSize.width * zoom} height={fitSize.height * zoom} />
           )}
           {!viewBox && <div className="fd-svg-document h-full w-full" dangerouslySetInnerHTML={{ __html: svg }} />}
-          {typeof overlay === "function" ? overlay(box) : overlay}
+          {/* A retained bitmap belongs to the previous SVG until the new image
+              loads. Never put new-source markers or hit targets on that bitmap. */}
+          {(!viewBox || showingCurrent) && (typeof overlay === "function" ? overlay(box) : overlay)}
         </div>
         </div>
       </div>

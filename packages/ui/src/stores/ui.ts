@@ -146,6 +146,9 @@ export interface UiState {
   setNotesDraft: (key: string, draft: { base: string; content: string } | null) => void;
   attachments: Record<string, PendingAttachment[]>;
   paletteOpen: boolean;
+  profileOpen: boolean;
+  profileReason: "invitation" | "sharing" | "expired" | null;
+  setProfileOpen: (open: boolean, reason?: "invitation" | "sharing" | "expired") => void;
   settingsOpen: boolean;
   /** Section the settings dialog should show when it next opens; null keeps the last one. */
   settingsSection: SettingsSection | null;
@@ -440,6 +443,9 @@ export function createUiStore(storage?: StateStorage) {
   }),
   attachments: {},
   paletteOpen: false,
+  profileOpen: false,
+  profileReason: null,
+  setProfileOpen: (profileOpen, reason) => set({ profileOpen, profileReason: profileOpen ? reason ?? null : null }),
   settingsOpen: false,
   settingsSection: null,
   sketchOpen: false,
@@ -502,7 +508,9 @@ export function createUiStore(storage?: StateStorage) {
     })),
   clearAttachments: (key) => set((s) => ({ attachments: { ...s.attachments, [key]: [] } })),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
-  setSettingsOpen: (settingsOpen, section) => set({ settingsOpen, settingsSection: settingsOpen ? (section ?? null) : null }),
+  setSettingsOpen: (settingsOpen, section) => set(settingsOpen && section === "auth"
+    ? { profileOpen: true, profileReason: null }
+    : { settingsOpen, settingsSection: settingsOpen ? (section ?? null) : null }),
   setSketchOpen: (sketchOpen, sketchMode = "draw", sourcePath) => set({ sketchOpen, sketchMode, sketchSourcePath: sketchOpen && sketchMode === "draw" ? sourcePath ?? null : null }),
   setAgentPickerOpen: (agentPickerOpen) => set({ agentPickerOpen }),
   setWhatsNewOpen: (whatsNewOpen) => set({ whatsNewOpen }),

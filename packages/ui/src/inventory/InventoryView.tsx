@@ -1,3 +1,4 @@
+import { cloudAccountId, useAuthStore } from "@fabdesk/client-core";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import type { InventoryItem } from "@fabdesk/protocol";
 import { useEffect, useState } from "react";
@@ -125,6 +126,11 @@ function InventoryRow({ item }: { item: InventoryItem }) {
 
 /** Center pane for the sidebar's Inventory tab: the active fabplane org's parts on hand. */
 export function InventoryView() {
+  const account = useAuthStore(s => cloudAccountId(s.state));
+  return <InventoryViewForAccount key={account ?? "signed-out"} />;
+}
+
+function InventoryViewForAccount() {
   const { host } = useCore();
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const setInventoryOpen = useUiStore((s) => s.setInventoryOpen);

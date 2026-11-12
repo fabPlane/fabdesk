@@ -4,6 +4,7 @@
  * Nothing here may touch the DOM — `document`, `window`, `localStorage` and friends belong to the
  * view packages.
  */
+export { cloudAccountId, hasFabplaneSession, acceptAuthSnapshot } from "./auth-cache";
 export { CoreClient, CoreHttpError, parseJsonl } from "./CoreClient";
 export { useProjectStatus } from "./queries";
 export { nativeSourceCandidates } from "./native-source-candidates";
@@ -261,3 +262,5 @@ export * from "./enclosure-setup";
 export * from "./enclosure-openings";
 
 export { DrawingViewportMemory, type DrawingViewport } from "./drawing-viewport";
+export { partScopeKey, usePartSelection, pcbSelectionParts, schematicSelectionParts, hitSelectionPart, type PartScope, type SelectablePart, type PartBox } from "./part-selection";
+export { inspectSelectionIndex, type SelectionIndex } from "./part-selection-source";

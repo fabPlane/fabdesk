@@ -1,6 +1,7 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  cloudAccountId,
   errorPayload,
   useAuthStore,
   useBoardSources,
@@ -24,9 +25,15 @@ import "./project-sharing.css";
 type Props = { projectId: string; onClose: () => void; onDownload: () => void };
 class ClipboardCopyError extends Error {}
 /** Mounted per opening: drafts never masquerade as remotely saved visibility. */
-export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
+export function ShareProjectDialog(props: Props) {
+  const account = useAuthStore(s => cloudAccountId(s.state));
+  return <ShareProjectForAccount key={account ?? "signed-out"} {...props} account={account} />;
+}
+function ShareProjectForAccount({ projectId, onClose, onDownload, account }: Props & { account: string | null }) {
   const { client, host } = useCore(),
     cache = useQueryClient();
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const project = useProject(projectId),
     sources = useBoardSources(projectId);
   const appOrigin = useAuthStore((s) => s.state?.dashboardUrl);
@@ -76,6 +83,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
           : await client.publishProjectShare(projectId,
               changed || saved?.visibility === "private" ? selected : undefined,
               { updateOnly: !changed && saved?.visibility !== "private" });
+      if (!mounted.current || cloudAccountId(useAuthStore.getState().state) !== account) return;
       cache.setQueryData(queryKey, result);
       setChoice(null);
       setNotice({
@@ -86,6 +94,7 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
             : result.visibility === "restricted" ? "Shared page updated. Only invited people can open it." : "Shared page updated. Anyone with the link can view it.",
       });
     } catch (failure) {
+      if (!mounted.current || cloudAccountId(useAuthStore.getState().state) !== account) return;
       setError(failure);
       // A timed-out request might have succeeded. Reconcile before allowing another mutation.
       await settings.refetch();
@@ -279,11 +288,10 @@ export function ShareProjectDialog({ projectId, onClose, onDownload }: Props) {
                 <Button
                   size="sm"
                   onClick={() => {
-                    close();
-                    useUiStore.getState().setSettingsOpen(true, "auth");
+                    useUiStore.getState().setProfileOpen(true, account ? "expired" : "sharing");
                   }}
                 >
-                  Account settings
+                  Profile & account
                 </Button>
               )}
               <Button

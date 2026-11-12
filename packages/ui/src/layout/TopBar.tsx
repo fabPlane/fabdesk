@@ -1,3 +1,4 @@
+import { ProfileButton } from "../auth/ProfileAccountDialog";
 import { WorkspaceBackButton } from "./WorkspaceBackButton";
 import { Badge, Button, IconButton } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -81,6 +82,7 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
           <span className="fd-topbar-status-dot mr-1.5 h-1.5 w-1.5 rounded-full bg-current" />
           <span className="fd-topbar-status-text">{connected ? "Core connected" : `Core ${coreStatus?.state ?? sseStatus}`}</span>
         </Badge>
+        <ProfileButton />
         <div className="fd-topbar-tools flex items-center gap-1">
           <IconButton title={`Command palette (${mod} + K)`} onClick={() => setPaletteOpen(true)}>
             <Icon name="search" width={20} height={20} />

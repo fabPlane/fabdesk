@@ -7,7 +7,7 @@ import { AssemblySchematicPreviewRevision, type ProjectBoardSources } from "@fab
 import { useCoreClient, assemblySelectionState, captureAssemblySchematicInspection, pcbToolJson, useAssemblySchematicPreview, useRunTool, type AssemblySceneSelection } from "@fabdesk/client-core";
 import { Select, Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
-import { SvgViewer } from "./SvgViewer";
+import { SelectableSvgViewer } from "./SelectableSvgViewer";
 import { parseSvgViewBox } from "./svg-coords";
 import { MissingNativeSource } from "./MissingNativeSource";
 
@@ -75,7 +75,7 @@ function AssemblySchematicContent({ projectId, data, selection, enabled, onBusyC
       <SchematicSheetNav sheets={pages} selected={preview.data?.sheet?.path} busy={busy} onSelect={setPage} />
       {showPrimaryRender && renderAction}
     </div>}
-    {drawing ? <SvgViewer viewportKey={JSON.stringify([client.baseUrl, projectId, board.sourceId, board.manifestSha256, nativeSheet?.identity ?? preview.data?.sheet?.path])} svg={drawing} initialFit={circuitView ? "sheet" : "width"} viewKey={`${projectId}/${board.sourceId}/${board.manifestSha256}/${preview.data?.sheet?.path}`} /> : <EmptyState title="See this board’s schematic">Create a preview of its saved native sheets to inspect them here.</EmptyState>}
+    {drawing ? <SelectableSvgViewer selectionSource={{ projectId, board, enabled: enabled && !busy }} selectionView="schematic" sheetPath={preview.data?.sheet?.path} onSelectionSheet={setPage} viewportKey={JSON.stringify([client.baseUrl, projectId, board.sourceId, board.manifestSha256, nativeSheet?.identity ?? preview.data?.sheet?.path])} svg={drawing} initialFit={circuitView ? "sheet" : "width"} viewKey={`${projectId}/${board.sourceId}/${board.manifestSha256}/${preview.data?.sheet?.path}`} /> : <EmptyState title="See this board’s schematic">Create a preview of its saved native sheets to inspect them here.</EmptyState>}
     {(error || tool.state.error) && <p role="alert" className="fd-assembly-detail-error">{error ?? tool.state.error}</p>}
   </div>;
 }

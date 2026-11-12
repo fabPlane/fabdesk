@@ -1,4 +1,5 @@
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { ProfileAccountDialog } from "../auth/ProfileAccountDialog";
 import { LoginScreen } from "../auth/LoginScreen";
 import { Button, Spinner } from "../components/ui";
 import { useCore, usePrivacy, useSettings, type HostAdapter } from "@fabdesk/client-core";
@@ -40,7 +41,8 @@ export function FabdeskApp({ client, host = browserHost, coreStatus, onRestartCo
 }
 
 function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo | undefined; onRestartCore?: (() => void) | undefined }) {
-  const { host, sseStatus } = useCore();
+  const { client, host, sseStatus } = useCore();
+  const enteredWorkspace = useRef<CoreClient | null>(null);
   useTheme();
   const auth = useAuthState();
   const settings = useSettings();
@@ -48,6 +50,11 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
   const authState = useAuthStore((s) => s.state);
   const setLocalAllowed = useAuthStore((s) => s.setLocalAllowed);
   const actions = useAppActions();
+  if (authState?.status === "signed_in") enteredWorkspace.current = client;
+  useEffect(() => useAuthStore.subscribe((next, previous) => {
+    if (previous.state?.status === "signed_in" && next.state?.status !== "signed_in" && next.state?.mode === "fabplane" && !useUiStore.getState().profileOpen)
+      useUiStore.getState().setProfileOpen(true);
+  }), [client]);
 
   useEffect(() => {
     host
@@ -75,6 +82,7 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
     if (!host.onMenu) return;
     return host.onMenu((command) => {
       const ui = useUiStore.getState();
+      if (ui.profileOpen) return;
       if (command === "new-chat") actions.newChat();
       else if (command === "palette") ui.setPaletteOpen(!ui.paletteOpen);
       else if (command === "settings") actions.openSettings();
@@ -123,7 +131,7 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
     );
   }
   if (needsPrivacyScreen(settings.data, privacyScreen)) return <FirstInstallPrivacy />;
-  if (authState.status !== "signed_in") return <LoginScreen />;
+  if (authState.status !== "signed_in" && enteredWorkspace.current !== client) return <><LoginScreen /><ProfileAccountDialog /></>;
   return (
     <>
       <AppShell onNewChat={actions.newChat} coreStatus={coreStatus} banner={banner} />
@@ -132,6 +140,7 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
       <SettingsDialog />
       <WhatsNewDialog />
       <SketchPad />
+      <ProfileAccountDialog />
     </>
   );
 }
