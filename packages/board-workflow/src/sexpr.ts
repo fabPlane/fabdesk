@@ -190,7 +190,8 @@ export interface TextEdit extends Span {
 
 /** Apply non-overlapping splices (any order) to `text`, in one pass (per-edit rebuilding is quadratic on large boards). */
 export function splice(text: string, edits: readonly TextEdit[]): string {
-  const sorted = [...edits].sort((a, b) => a.start - b.start);
+  // same start: later-listed edits first, as the right-to-left version produced (inserts at one point, insert before a replacement)
+  const sorted = edits.map((e, i) => ({ e, i })).sort((a, b) => a.e.start - b.e.start || b.i - a.i).map((x) => x.e);
   const parts: string[] = [];
   let at = 0;
   for (const e of sorted) {
