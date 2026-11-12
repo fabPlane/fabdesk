@@ -18,6 +18,7 @@ import type { EventBus } from "./bus";
 import { newId, type Store } from "./db";
 import { commitMilestone } from "./finish-it-git";
 import {
+  boardPlacedByOwner,
   finishItPrompt,
   inspectProject,
   milestoneDone,
@@ -161,9 +162,10 @@ export class FinishItManager {
     if (busy)
       throw new ToolError(busy.message, "precondition");
 
-    // before the first snapshot: an already placed board is judged by "no new failure", a built one strictly
+    // before the first snapshot: an owner's routed board is judged by "no new failure"; a board fabdesk built, or one
+    // not routed yet, strictly (boardChecks already implies a placed board, so placement alone says nothing)
     const boardChecks = await this.boardChecksFor(project);
-    if (boardChecks) await initDoneMode(project.dir, await projectHasPlacedBoard(project.dir));
+    if (boardChecks) await initDoneMode(project.dir, await boardPlacedByOwner(project.dir));
     const snap = await this.snapshot(project, boardChecks);
     const milestones = planMilestones(snap);
     const now = new Date().toISOString();
