@@ -1,6 +1,6 @@
 /** Export toolset: manufacturing outputs via kicad-cli. */
 import { readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { z } from "zod/v4";
 import { projectBomCsv } from "@fabdesk/protocol";
 import { PROJECT_FILES, ensureDir, jailPath, writeAtomic } from "../fs";
@@ -9,6 +9,8 @@ import { ToolError, defineTool } from "../registry";
 import { ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
 import { expectedPcbSource, withPcbOutput } from "../pcb-output";
 import { silk_art } from "./silk-art";
+import { projectHasPlacedBoard } from "../board-state";
+import { writeJlcExports } from "../release-jlc";
 
 const rel = (project: { dir: string }, abs: string) =>
   abs.startsWith(project.dir) ? abs.slice(project.dir.length + 1) : abs;
@@ -142,7 +144,7 @@ export const export_pos = defineTool({
   toolset: "export",
   title: "Export pick-and-place",
   description:
-    "Export the component placement (pick-and-place) CSV to exports/positions.csv. Requires kicad-cli and board.kicad_pcb.",
+    "Export the component placement (pick-and-place) CSV to exports/positions.csv. For a placed board also writes exports/positions-jlc.csv and exports/bom-jlc.csv: pad-centre positions from the board's own copper and the rotation JLC's own footprint needs per part (from board_release bom, else from its evidence cache), every row simulated on the copper. Requires kicad-cli and board.kicad_pcb.",
   inputSchema: { expectedSourceSha256: expectedPcbSource },
   annotations: {
     readOnlyHint: false,
@@ -151,16 +153,30 @@ export const export_pos = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async (args, ctx) => withPcbOutput(ctx, args.expectedSourceSha256, async (ctx) => {
+  handler: async (args, outer) => withPcbOutput(outer, args.expectedSourceSha256, async (ctx) => {
     const project = ctx.requireProject();
+    const real = outer.requireProject(); // the exporter runs on a staged copy; the BOM check lives with the real project
     const cli = await requireKicad(ctx);
     const board = await requireBoard(project);
     await ensureDir(p(project, PROJECT_FILES.exports));
     const output = p(project, PROJECT_FILES.exports, "positions.csv");
     ctx.progress(0.2, "exporting positions");
     await ctx.services.kicad.exportPos(cli, { board, output, signal: ctx.signal });
+    // a placed board also gets JLC's placement file: pad-centre positions from our copper, the rotation JLC's own
+    // footprint needs (see board_release bom), every row simulated on our copper
+    let jlc: Awaited<ReturnType<typeof writeJlcExports>> | undefined;
+    let jlcNote = "";
+    if (await projectHasPlacedBoard(project.dir)) {
+      ctx.progress(0.6, "JLC placement file");
+      try {
+        jlc = await writeJlcExports({ exportGerbers: (outDir) => ctx.services.kicad.exportGerbers(cli, { board, outDir, signal: ctx.signal }), projectDir: real.dir, pcb: board, stem: basename(board, ".kicad_pcb"), posCsv: output, outDir: p(project, PROJECT_FILES.exports), signal: ctx.signal });
+        jlcNote = `\nJLC placement exports/positions-jlc.csv (+ bom-jlc.csv): ${jlc.summary.placements} parts at pad-centre positions with JLC-simulated rotations (${jlc.summary.rotationDiffers} differ from KiCad), source ${jlc.source}; placement check ${jlc.summary.pass} pass, ${jlc.summary.fail} fail${jlc.failing.length ? ` (${jlc.failing.slice(0, 8).join(", ")})` : ""}, ${jlc.summary.noFootprint.length} without a JLC footprint; no LCSC code: ${jlc.summary.noLcscCode.join(", ") || "none"}.${jlc.source.startsWith("evidence") ? " Run board_release bom for JLC data on every part." : ""}`;
+      } catch (e) {
+        jlcNote = `\nJLC placement file not written: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    }
     ctx.progress(1, "done");
-    return ok(`Exported exports/positions.csv.`, { path: output });
+    return ok(`Exported exports/positions.csv.${jlcNote}`, { path: output, ...(jlc ? { jlc: { cpl: jlc.cpl, bom: jlc.bom, ...jlc.summary, source: jlc.source, failing: jlc.failing } } : {}) });
   }),
 });
 

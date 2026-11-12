@@ -9,6 +9,8 @@ import { exportTools } from "./export";
 import { boardDiffTools } from "./board-diff";
 import { boardWorkspaceTools } from "./board-workspace";
 import { boardCheckTools } from "./board-check";
+import { boardReleaseTools } from "./board-release";
+import { boardSilkTools } from "./board-silk";
 import { kicadTools } from "./kicad";
 import { inspectionTools } from "./inspection";
 import { nativeEditTools } from "./native-edit";
@@ -42,6 +44,8 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...boardDiffTools,
   ...verifyTools,
   ...boardCheckTools,
+  ...boardReleaseTools,
+  ...boardSilkTools,
   ...releaseTools,
   ...renderTools,
   ...exportTools,
