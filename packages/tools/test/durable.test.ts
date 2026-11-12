@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { cancelDurableJob, FINISHED_TTL_MS, getDurableJob, listDurableJobs, MAX_FINISHED, pruneDurableJobs, runDurable, setDurableWaitMs } from "../src/durable";
 import { board_job } from "../src/tools/board";
+import { createRegistry } from "../src";
+import { contextFactory, mockServices, tempProject } from "./mock-services";
 
 const base = (signal = new AbortController().signal) => ({ signal, progress: () => {} }) as never;
 type Out = { text: string; json?: { jobId?: string; state?: string } };
@@ -81,5 +83,79 @@ describe("board jobs are scoped, pruned and honest about their end", () => {
   test("at most MAX_FINISHED finished jobs are kept", async () => {
     for (let i = 0; i < MAX_FINISHED + 5; i++) await runDurable(inProject("pe"), "many", async () => ({ text: String(i) }), { waitMs: 500 });
     expect(listDurableJobs(undefined).filter((j) => j.state !== "running").length).toBeLessThanOrEqual(MAX_FINISHED);
+  });
+});
+
+describe("board_job reaches a job started with an explicit project", () => {
+  test("project-scoped: the same `project` argument reaches it; the session default (another project) does not", async () => {
+    const [home, other] = [await tempProject("bj-home"), await tempProject("bj-other")];
+    const services = mockServices([home, other]);
+    const registry = createRegistry();
+    expect(registry.get("board_job")!.scope ?? "project").toBe("project");
+    const factory = contextFactory(services, home); // the session's default project is `home`
+    const invoke = (args: Record<string, unknown>) =>
+      registry.invoke("board_job", args, (ref) => factory({ def: registry.get("board_job")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} })) as Promise<Out>;
+    // a stage tool called with project: other
+    const started = (await runDurable({ signal: new AbortController().signal, progress: () => {}, project: { id: other.id } } as never, "board_route", async () => {
+      await new Promise((z) => setTimeout(z, 60));
+      return { text: "routed" };
+    }, { waitMs: 5 })) as Out;
+    const id = started.json!.jobId!;
+    await expect(invoke({ jobId: id, action: "status" })).rejects.toThrow(/another project/);
+    expect((await invoke({ jobId: id, action: "status", project: other.id })).json?.state).toBe("running");
+    setDurableWaitMs(2000);
+    expect((await invoke({ jobId: id, project: other.id })).text).toBe("routed");
+  });
+});
+
+describe("aborting the waiting request never touches the job", () => {
+  test("Stop on the starting request returns a job id; the job finishes and its result is kept", async () => {
+    const ac = new AbortController();
+    const p = runDurable(base(ac.signal), "stop", async (c) => {
+      await new Promise((z) => setTimeout(z, 40));
+      expect(c.signal.aborted).toBe(false);
+      return { text: "kept" };
+    }, { waitMs: 5_000 }) as Promise<Out>;
+    ac.abort();
+    const r = await p;
+    expect(r.text).toContain("still running");
+    const id = r.json!.jobId!;
+    setDurableWaitMs(2000);
+    expect((await job({ jobId: id })).text).toBe("kept");
+    expect(getDurableJob(id)?.state).toBe("done");
+  });
+
+  test("a wait whose request is already aborted returns at once, and so does runDurable", async () => {
+    const ac = new AbortController();
+    ac.abort();
+    const t0 = Date.now();
+    const r = (await runDurable(base(ac.signal), "pre-aborted", async () => {
+      await new Promise((z) => setTimeout(z, 30));
+      return { text: "late" };
+    }, { waitMs: 5_000 })) as Out;
+    expect(Date.now() - t0).toBeLessThan(1_000);
+    expect(r.text).toContain("still running");
+    setDurableWaitMs(2000);
+    expect((await job({ jobId: r.json!.jobId! })).text).toBe("late");
+  });
+});
+
+describe("board_check is a durable board job", () => {
+  test("past the wait it returns a job id and keeps running; board_job gets the result", async () => {
+    const project = await tempProject("bj-check");
+    let release!: () => void;
+    const gate = new Promise<void>((z) => (release = z));
+    const base = mockServices([project]);
+    // kicad-cli resolution stands in for a long onboarding + DRC: it answers only when released
+    const services = { ...base, kicad: { ...base.kicad, resolveCli: async () => (await gate, null) } };
+    const registry = createRegistry();
+    const factory = contextFactory(services, project);
+    const session = { id: "s", durableWaitMs: () => 20 } as never;
+    const ctx = (name: string) => factory({ def: registry.get(name)!, projectRef: undefined, signal: new AbortController().signal, progress: () => {}, session });
+    const r = (await registry.invoke("board_check", {}, () => ctx("board_check"))) as Out;
+    expect(r.text).toContain("still running");
+    release();
+    setDurableWaitMs(2000);
+    await expect(registry.invoke("board_job", { jobId: r.json!.jobId! }, () => ctx("board_job"))).rejects.toThrow(/kicad-cli not found/);
   });
 });

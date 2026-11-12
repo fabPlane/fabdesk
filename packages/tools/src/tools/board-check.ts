@@ -19,6 +19,7 @@ import {
   type OnboardResult,
 } from "@fabdesk/board-workflow";
 import { confirmOnboarding, readOnboardingCheck } from "../board-state";
+import { durable } from "../durable";
 import { ToolError, defineTool } from "../registry";
 import { requireKicad, runLiveDrc } from "./common";
 
@@ -82,7 +83,8 @@ export const board_check = defineTool({
   },
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   longRunning: true,
-  handler: async ({ onboard: mode, pcb, parity, currents, fixed, confirm, by, note }, ctx) => {
+  // onboarding plus a DRC with refilled zones and parity can outlast a client's tool timeout: a board job past the wait
+  handler: durable("board_check", async ({ onboard: mode, pcb, parity, currents, fixed, confirm, by, note }, ctx) => {
     const project = ctx.requireProject();
     if (confirm) {
       const before = await readOnboardingCheck(project.dir);
@@ -132,7 +134,7 @@ export const board_check = defineTool({
       if (e instanceof ToolError) throw e;
       throw new ToolError(e instanceof Error ? e.message : String(e), "precondition");
     }
-  },
+  }),
 });
 
 export const boardCheckTools = [board_check];

@@ -76,14 +76,26 @@ export async function cancelDurableJob(job: DurableJob, ms = 15_000): Promise<{ 
 
 const out = (text: string, json: unknown): ToolOutput => ({ text, json });
 
-/** Resolve true when the job finished, false on timeout or when the waiting call itself is aborted. */
+/**
+ * Resolve true when the job finished, false on timeout or when the waiting call itself is aborted (already, or while
+ * waiting). Never rejects, and never touches the job: aborting a wait (the desktop's Stop on the request that started
+ * it) leaves the job running under its own signal; only `cancelDurableJob` stops it.
+ */
 export async function waitJob(job: DurableJob, ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return job.state !== "running";
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
   const timeout = new Promise<boolean>((z) => (timer = setTimeout(() => z(false), ms)));
-  const aborted = new Promise<boolean>((z) => signal?.addEventListener("abort", () => z(false), { once: true }));
-  const r = await Promise.race([job.done.then(() => true), timeout, aborted]);
-  clearTimeout(timer);
-  return r;
+  const aborted = new Promise<boolean>((z) => {
+    onAbort = () => z(false);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([job.done.then(() => true), timeout, aborted]);
+  } finally {
+    clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
+  }
 }
 
 /** The finished job's result, or its error rethrown. */
