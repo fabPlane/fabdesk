@@ -18,7 +18,7 @@ import { basename, join, resolve } from "node:path";
 import { REGISTRY } from "./checks";
 import { ReviewCtx, reviewHash, reviewHome, type ReviewEnv, type ReviewProject } from "./context";
 import { propose, coveringDecision } from "./proposals";
-import { loadCurrent, readDispositions, readIntent, runsDir, setLatest, writeDispositions } from "./store";
+import { loadCurrent, readDispositions, readIntent, reviewedPcb, runsDir, setLatest, writeDispositions } from "./store";
 import {
   STATES,
   findingId,
@@ -245,6 +245,7 @@ export async function runReview(project: ReviewProject, env: ReviewEnv, opts: Ru
   const review: ReviewRecord = {
     schema: "REVIEW_V1",
     board: project.name,
+    pcb: reviewedPcb(project),
     config: join(reviewHome(project.dir), "config.json"),
     hash: ctx.hash,
     files: ctx.files,

@@ -863,6 +863,12 @@ export async function checkBom(ctx: ReviewCtx): Promise<CheckResult> {
     r.detail = "no BOM decisions (the release stage's bomcheck writes them)";
     return r;
   }
+  if (d.stale) {
+    // decisions of another board are not evidence for this one: one must-fix, none of its lines trusted
+    r.findings.push(FIND({ layer: "L6", rule: "BOM", severity: "must-fix", claim: `BOM decisions are stale: ${d.stale}; their lines were not checked`, key: "stale", suggest: "run board_release bom again on this board" }));
+    r.detail = `BOM decisions stale: ${d.stale}`;
+    return r;
+  }
   ctx.bom = d;
   for (const rec of d.records) {
     const st = rec.status;

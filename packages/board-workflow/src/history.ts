@@ -2,7 +2,7 @@
  * Acceptance records: every A1-A9 result is kept under `.fabdesk/board/accept/`, keyed by the
  * design hash, and compared with the board as onboarded (the baseline) and with the previous result.
  */
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import { checkAcceptance, CHECK_KEYS, CHECK_NAMES, figures, toAcceptResults, type AcceptCode, type AcceptResult, type AcceptanceResult, type CheckCode, type CheckKey, type DrcInput } from "./accept";
@@ -25,8 +25,10 @@ export interface AcceptIndexEntry {
   figures: Record<AcceptCode, number>;
   /** The same verdicts in the protocol's `AcceptResult` shape. */
   results: AcceptResult[];
-  /** False when schematic parity was skipped for this run. */
+  /** False when schematic parity was skipped for this run (its A3 then never counts as passed). */
   parityChecked: boolean;
+  /** The board measured, project-relative with "/". */
+  pcb?: string;
   /** Result file, relative to the project. */
   file: string;
 }
@@ -155,6 +157,7 @@ export async function runAcceptance(
     figures: figs,
     results: toAcceptResults(result),
     parityChecked: parity,
+    pcb: relative(projectDir, files.pcb).split(sep).join("/"),
     file: `.fabdesk/board/accept/${id}.json`,
   };
   const recordPath = join(projectDir, entry.file);
@@ -182,24 +185,63 @@ export interface AcceptanceState {
   at?: string;
 }
 
-/** The latest recorded result, matched to the saved design by its hash. */
-export async function readAcceptanceState(projectDir: string): Promise<AcceptanceState> {
+/** What a saved acceptance result is matched against: the board file measured and the full design hash now. */
+export interface SavedBoard {
+  /** The board file's sha256 (null when it cannot be read). */
+  sha256: string | null;
+  /** The board, project-relative with "/". */
+  pcb: string | null;
+  /** `designHash(...).design`: board, schematics, project and rule files, requirements. */
+  design: string | null;
+}
+
+export async function savedBoard(projectDir: string, pcb?: string): Promise<SavedBoard> {
+  const files = await locateProject(projectDir, pcb).catch(() => null);
+  const bytes = files ? await readFile(files.pcb).catch(() => null) : null;
+  const design = await designHash(projectDir).then((d) => d.design, () => null);
+  return { sha256: bytes ? createHash("sha256").update(bytes).digest("hex") : null, pcb: files ? relative(projectDir, files.pcb).split(sep).join("/") : null, design };
+}
+
+/**
+ * A saved result is of the board as it is now: the same board file (content and, when recorded, name) and the same
+ * design hash (so a schematic, rule or requirements change makes it stale). Records written before the design hash was
+ * kept fall back to the board file alone.
+ */
+export function matchesSavedBoard(e: { sha256?: string | null; designHash?: string; pcb?: string }, now: SavedBoard): boolean {
+  if (!now.sha256 || e.sha256 !== now.sha256) return false;
+  if (e.pcb && e.pcb !== now.pcb) return false;
+  return !e.designHash || e.designHash === now.design;
+}
+
+/** A result's verdicts as they count for done: a run that skipped schematic parity never passes A3. */
+export function countedSummary<T extends Record<string, boolean>>(e: { summary?: T; parityChecked?: boolean }): Record<string, boolean> {
+  const sum: Record<string, boolean> = { ...(e.summary ?? {}) };
+  if (e.parityChecked === false) {
+    const keys = Object.keys(sum).filter((k) => k.startsWith("A3"));
+    for (const k of keys.length ? keys : ["A3"]) sum[k] = false;
+  }
+  return sum;
+}
+
+/** The newest result of the saved board and design (else the newest result, stale). */
+export async function readAcceptanceState(projectDir: string, pcb?: string): Promise<AcceptanceState> {
   const index = await readIndex(projectDir);
   const last = index[index.length - 1];
   if (!last) return { state: "none", failing: [], pass: false, baselineFailing: [], regressions: [] };
-  const now = await designHash(projectDir);
-  const current = now.design === last.designHash;
+  const now = await savedBoard(projectDir, pcb);
+  const hit = [...index].reverse().find((e) => matchesSavedBoard(e, now));
+  const entry = hit ?? last;
   const base = pickBaseline(index, await readOnboardRecord(projectDir)) ?? index[0]!;
   const codes = CHECK_KEYS.map((k) => k.slice(0, 2) as AcceptCode);
-  const failing = codes.filter((k) => !last.summary[k]);
+  const sum = countedSummary(entry);
+  const failing = codes.filter((k) => !sum[k]);
   const baselineFailing = codes.filter((k) => !base.summary[k]);
   return {
-    state: current ? "current" : "stale",
+    state: hit ? "current" : "stale",
     failing,
-    pass: current && failing.length === 0,
+    pass: !!hit && failing.length === 0,
     baselineFailing,
     regressions: failing.filter((k) => !baselineFailing.includes(k)),
-    at: last.at,
+    at: entry.at,
   };
 }
-
