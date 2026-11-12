@@ -59,7 +59,7 @@ export function describeRun(run: AcceptRun, onboarded: OnboardResult | null): st
 
 export const board_check = defineTool({
   name: "board_check",
-  toolset: "verify",
+  toolset: "board",
   title: "Check the board against its own requirements (A1-A9)",
   description:
     "The board's definition of done. Derives the board's requirements on first use (fixed parts as anchors, plane layers, power/pair/impedance classes, circuit snapshot; stored in .fabdesk/board/requirements, you own the numbers) and measures nine checks: A1 connectivity, A2 drc, A3 schematic parity (one kicad-cli DRC run, zones refilled), A4 circuit unchanged, A5 anchors in place, A6 stack and via spans, A7 power widths for their current, A8 differential pairs coupled, A9 heights. Every result is kept by design hash and compared with the board as onboarded (per check before -> now, new failures named) and with the previous run. A completed measurement is a result, not a tool failure.",
