@@ -55,20 +55,18 @@ fix of the failing flag of a pair (the oracle also counts the N net), had 21 of 
 
 ## Differences and what is not ported (my own decisions)
 
-- **`try finish` and the other router steps are not compared.** The toolkit runs KRT (`route_krt.py`, a Python plugin runtime); the
-  TypeScript bench runs the host's routers (TraceMaker from the router registry, else the bridge's fab_router / Freerouting) through a
-  `StepEngine`. A comparison of figures after `finish` would compare routers, not ports. The bench logic around a router step (parallel
-  candidates, memory-capped parallelism, per-action budget, whole-board gate, undo, accept) is tested with fake engines
+> **Superseded (2026-11-12, `feat/board-workflow-lastmile-repair`).** The router, rip, nudge and pair gaps this section
+> listed are closed: the step engine (`lastmile/engine.ts`) runs each KRT step's own plan through `routeKrt`, `repair` steps rip
+> with `lastmile/rip.ts` ([rip parity](lastmile-rip-parity.md)), `nudge` / `turn` / `fit` place with `lastmile/nudge.ts`
+> ([nudge parity](lastmile-nudge-parity.md)), and `tighten` runs all six pair ops ([pair-op parity](lastmile-pairops-parity.md):
+> R1N A8 24 -> 6, worst length difference 4.27 -> 1.57 mm, as the toolkit). `why` runs KRT's `net_forensics` and TraceMaker's
+> `causes` when installed; `validate` adds TraceMaker's pair and return-path audits. The original text follows as history.
+
+- **`try finish` and the other router steps are not compared.** (history) The toolkit runs KRT (`route_krt.py`); at the time the
+  TypeScript bench ran the host's routers through a `StepEngine`. The bench logic around a router step is tested with fake engines
   (`test/lastmile.test.ts`), and a real tighten step goes through it on cm5_minima (last row above: A8 1 to 0, accepted).
-- **Not ported: `rip_items.py`, `nudge_place.py`, `route_krt.py`.** The steps `repair` (leg, blockers, window, a7, shorts, reroute,
-  legs, mirror's repair stage, bundle with a window) and `nudge` (nudge, turn) need a rip-up / placement helper; `board_lastmile` reports
-  them unavailable until the layout stage supplies one (the interface is `StepEngine`). `fit` (placement dry run) likewise.
-- **Pair ops `vias`, `mirror`, `mirror-force`, `retune`, `skew` are not ported**; `width` and `tighten` are. The toolkit's bench action
-  `tighten` ran all six (default `--ops vias,mirror,retune,width,tighten,skew`); the TypeScript one runs `width,tighten` only. A step naming
-  an unported op fails with that message. Consequence: the toolkit's published "R1N A8 24 to 6" result is not reproduced here.
-- **`why`** reads the board model (foreign copper within a radius of each open end, nearest first), where the toolkit ran KRT's
-  `net_forensics` and TraceMaker's `causes`. Same question, a different method; not compared.
-- **`validate`**: A1-A9 with schematic parity and `validate.json`. The toolkit's TraceMaker pair and return-path audits are not run.
+- (history) `rip_items.py`, `nudge_place.py` and the pair ops `vias`, `mirror`, `mirror-force`, `retune`, `skew` were not ported, so
+  the toolkit's "R1N A8 24 to 6" result was not reproduced; `why` read only the board model and `validate` ran no TraceMaker audits.
 - **`view`** draws the board model as SVG (outline box, pads as circles, tracks, vias, opens, references) and rasterises it with the
   host's SVG rasteriser; the toolkit drew PNG with matplotlib including courtyards. `info` omits the courtyard size (not in the board model).
 - **`crossings`** in the tool treats anchors, locked parts and the default pattern `_(J|SW)\d|^FIT_` as fixed; the toolkit used the flow

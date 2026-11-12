@@ -25,7 +25,7 @@ stock agent. That is a goal: it has not been measured (see Not measured).
 | Tool | `action` | Library |
 | --- | --- | --- |
 | `board_check` | (one call) onboard on first use, then A1–A9 on the saved board, history, change against the board as onboarded | `accept`, `onboard`, `history` |
-| `board_route` | `check` `place` `rank` `route` `auto` `status` (layout); `new` `try` `loop` `why` `crossings` `fit` `pairs` `validate` `accept` `undo` `view` `info` `prune` (last mile) | `layout/`, `lastmile/` |
+| `board_route` | `check` `place` `rank` `route` `auto` `status` (layout); `new` `try` `loop` `sweep` `why` `crossings` `fit` `pairs` `validate` `accept` `undo` `view` `info` `prune` (last mile) | `layout/`, `lastmile/` |
 | `board_edit` | `mode` impact · apply · proof · full; `adopt` | `edit/` |
 | `board_review` | `run` `gate` `dispose` `fix` `import_expert` `status` | `review/` |
 | `board_silk` | `check` `place` `show` | `silk/` |
@@ -69,9 +69,16 @@ The workflow is TypeScript; engines are programs it runs and nothing here instal
 | Engine | Used by | Found through |
 | --- | --- | --- |
 | `kicad-cli` (DRC, exports, Gerber plots) | all | the resolved KiCad CLI; DRC at **project severity** with owner-excluded items dropped (`runLiveDrc`) |
-| KiCadRoutingTools | `board_route` place, rank, route | `FABDESK_KRT_DIR` |
-| TraceMaker | `board_route` route and last-mile steps | the router registry (`docs/routers.md`), else `TRACEMAKER_BIN` |
-| fab_router, Freerouting | last-mile router steps | the PCB bridge (inside the app) |
+| KiCadRoutingTools | `board_route` place, rank, route; every last-mile router, repair (rip) and nudge step; `why` forensics | `FABDESK_KRT_DIR` |
+| TraceMaker | `board_route` route; last-mile `fill:tracemaker`; `why` causes and `validate` pair / return-path audits | the router registry (`docs/routers.md`), else `TRACEMAKER_BIN` |
+| fab_router, Freerouting | last-mile `fill:ROUTER`, and `finish` when KRT is missing | the PCB bridge (inside the app) |
+
+The last mile's step engine is `lastmile/engine.ts` (toolkit `lastmile.run_step`): a `krt` step runs its own plan through
+`routeKrt` (the same plan runner as layout) and merges the routed copper onto the native board; a `repair` step rips with
+`lastmile/rip.ts` and routes what the rip opened with its plan; a `nudge` step re-seats parts with `lastmile/nudge.ts`
+and re-routes the cut connections; `pairfix` runs in place; `fill` runs on the host's routers. Router steps work on boards of
+any file name (the host routers get a `board.kicad_pcb` scratch copy). Without KRT only `finish` (on the host router, recorded
+as a fallback), `fill` and the pair steps run; every other KRT step fails naming KRT.
 | KiCad IPC | adopt | the bridge |
 
 ## Verification
@@ -87,6 +94,10 @@ toolkit and kicad-cli); each prints its usage in the file header. Full tables, w
 | Release and silk ([release](evidence/board-workflow/release-parity.md)) | jlcsim cm5, C6, R1N identical; BOM, viaproc identical; silk counts equal on four boards | 28 of 33 harness rows agree | silk: label positions equal for 104/112 on cm5 (greedy solver; small geometry differences), 7 vs 8 silk-over-copper hits, on the TF board 17 labels are hidden against the oracle's 16; gerbcheck uses its own reader (no gerbonara); Python `fab.py` itself never run (its review gate needs the toolkit registry) |
 | Layout ([layout](evidence/board-workflow/layout-parity.md)) | cm5_minima `check` and derived inputs agree; `place` differs | **oracle bug**: on boards with `(at x y rot)` poses the oracle's `set_pose` rotates but never moves footprints, so every seed fails the courtyard gate. The port handles `(at …)` and passes 4/4. | `rank` and `route` ran on cm5 (rank best seed 18 opens; route 16 opens, A1/A2/A8 failing, 1028 s) with **no oracle figures** (the oracle refuses this board as "pre-10 format" and its TraceMaker step crashes); vme-wren, jetson, default 8-seed rank, repeat runs: not run |
 | Last mile ([lastmile](evidence/board-workflow/lastmile-parity.md)) | cm5_minima, 22/22 rows (figures, 18 pair measurements, crossings, gate on 400 random pairs, tighten) | agree | `try finish` not compared (different routers); router wiring exercised with fakes and one real `tighten` run, not against a real bridge |
+| Last-mile rip ([rip](evidence/board-workflow/lastmile-rip-parity.md)) | C6 and cm5_minima, every `rip_items` mode (`--drc`, `--a7`, `--a8` short/long/`--around-ripped`, `--a8-uncoupled` with and without pad stubs, `--window`, `--around-opens`, `--spare-pairs`, `--spare-open-nets`), 40/40 rows | ripped boards and `rip.json` byte-identical | window order under `--a8 --around-ripped` is sorted (the oracle's follows Python set order); argparse prefix abbreviations not accepted |
+| Last-mile nudge and fit ([nudge](evidence/board-workflow/lastmile-nudge-parity.md)) | cm5_minima, C6, R1N: points, REF, REF.PAD, rotations, F/B turns, pair cuts, keepouts, fixed parts, R1N allow-all rule areas, two-part moves, `fit` printouts; 132/134 rows | every placed board byte-identical | 2 rows: C6's spec fixes parts that are not anchors (the port's fixed set is anchors plus locked footprints); the `fit` picture is the SVG view, not matplotlib |
+| Last-mile pair ops ([pair ops](evidence/board-workflow/lastmile-pairops-parity.md)) | R1N each op alone and the six-op `tighten` (193/195; 44/44 at the oracle's seed 37), cm5_minima as is (195/195) and at pair gap 0.20 (193/193) | agree: R1N A8 24 -> 6, worst length difference 4.27 -> 1.57 mm, DRC 0, collateral 0 on both sides; edited boards byte-identical at seed 37 | 2 rows: retune's walk direction comes from Python set order (the copper is the same; segment order, and so one round's DRC count, differs); mirror-force moving a plane-only ground via and skew banning a DRC-named segment are unit-tested only |
+| Last-mile engine with real KRT ([e2e](evidence/board-workflow/lastmile-krt-e2e.md)) | cm5_minima with 3 nets opened, board renamed `CM5.kicad_pcb`; `finish`, `rip`, `blockers:1.0`, `taps`, `pairs-all` against the toolkit's bench on the same KRT build; fakes for the no-KRT and `fill` paths | with the same requirements: figures agree on 4 of 5 and the routed copper is identical for `finish`, `rip`, `blockers:1.0`, `taps` | `pairs-all`: KRT's own finish stage is not deterministic on this board (the oracle rerun gives a third result); with the port's own onboarding the plane layers differ (In1/In4), so `@layers` does too; no C6/R1N-size board routed |
 | Integration ([integration](evidence/board-workflow/integration.md)) | live DRC severity; Finish it flag on and off; review → edit bridge on cm5 | A2 now agrees with the oracle (courtyards 1 = 1) | real `board_edit` with a router, and READY from the review bridge: not reached on cm5 (no router outside the app) |
 
 `bun run typecheck` passes. `bun run test` fails three tests, all in `packages/kicad/test/mechanical.test.ts`
@@ -101,13 +112,13 @@ These are the port's own decisions, each recorded in the evidence file of its st
 - Review: custom checks (shell commands from project data) run only with `trustCustom`; the interconnect gate is a hook, default none; the BOM check reads BOM decisions written by `board_release bom`; storage is `.fabdesk/board/review/`, not a registry.
 - Release: strict A1–A9 (no no-regression mode); exceptions only as `CHECK=FILE#ID` with an owner decision; nothing is written into the package folder until the gates pass; drill maps are Gerber X2, not PDF; the pixel-shift search replaces the FFT in `gerbcheck`.
 - Silk without pcbnew: shapes come from KiCad's own Gerber plots plus the board file, with a text-extent table measured against pcbnew (within 0.02 mm on all but one measured label).
-- Last mile: `tighten` runs the `width` and `tighten` ops only.
+- Last mile: a `fit` picture is the SVG board view (rasterised by the host), not matplotlib; the nudge's fixed parts are the mechanical anchors plus locked footprints, not a spec regex.
 
 ## Known gaps
 
 Not ported or not wired. None is hidden by a stub: an unported action fails by name.
 
-- **Last mile**: rip-up and nudge helpers (`repair` steps `leg`, `blockers`, `window`, `a7`, `shorts`, `reroute`, `legs`, bundle with window; `nudge`, `turn`; `fit`) return "helper not available". Pair ops `vias`, `mirror`, `retune`, `skew` are missing, so the toolkit's "R1N A8 24 → 6" result is not reproducible. `why` and `validate` have no KRT or TraceMaker forensics.
+- **Last mile**: KiCadRoutingTools is found only through `FABDESK_KRT_DIR` (no installer, no Settings entry), so on an install without it the rip, route and nudge steps fail naming KRT and only `finish` (on the app's router), `fill` and the pair steps run. `fill:fastroute` is not available. `pairbench` (one table over several boards) is a harness, not a tool. The pair `vias` op keeps the toolkit's behaviour of never moving the N member alone (a signed-distance test; see the pair-op evidence).
 - **Layout**: plans that ask for `planes` or `escape` raise "not ported"; pair pass-through templates are empty; `add_courtyards` is not ported (check reports the parts, cannot fix them).
 - **Edit**: the churn-guard loop is not wired (`revertNets` exists); `apply_netclasses` for bare boards is not ported. Compute is synchronous, so a very large board blocks the core's event loop during `impact` or `apply`.
 - **Python commands with no counterpart**: `intent` (nothing writes `.fabdesk/board/review/intent.json`; the agent or owner edits the file), `cable` (chassis reach), a standalone `diff` picture (the change picture exists inside review fix candidates), `clean` (only `board_route prune`), `upgrade` (a pre-10 board is refused with a hint), `boards` / `status` registry views (the Status page and `board_review status` replace them), and `run` (autopilot; `board_review fix apply` covers its settle-and-build part).

@@ -1,6 +1,7 @@
 /**
- * The `board` toolset: board workflow tools. This file holds the stage-independent ones; stage tools
- * (check, edit, route, release) are added by later stages and listed in BOARD_TOOLSET_TOOLS.
+ * The `board` toolset: board workflow tools. This file holds the stage-independent one (`board_job`); the stage tools
+ * (board_check, board_route, board_edit, board_review, board_silk, board_release) live in board-*.ts and are listed in
+ * BOARD_TOOLSET_TOOLS.
  */
 import { z } from "zod/v4";
 import { defineTool, ToolError } from "../registry";

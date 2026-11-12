@@ -24,7 +24,7 @@ onboard ─► layout (place · rank · route) ─► last mile ─► review �
 | --- | --- | --- | --- |
 | 1 onboard + check | \`board_check\` | derives the board's requirements on first use, then measures A1-A9 on the saved board and compares with the board as onboarded | your review of the onboarding proposals |
 | 2 layout | \`board_route\` check · place · rank · route · auto · status | fail-fast preflight, seeded placements gated on courtyard DRC, ranked by routed opens, then the best seed routed (30-60 min in all) | \`route\` PASS (few enough opens) |
-| 3 last mile | \`board_route\` new · try · loop · pairs · why · crossings · validate · accept | tries router and pair steps in parallel on the whole board, keeps the best one that improves the gate, undoes the rest | A1-A9 pass |
+| 3 last mile | \`board_route\` new · try · loop · sweep · pairs · why · crossings · fit · validate · accept | tries rip, route, pair and placement steps in parallel on the whole board, keeps the best one that improves the gate, undoes the rest | A1-A9 pass |
 | 4 edit | \`board_edit\` | an ECO as a plan across board, schematic and requirements: impact, candidate, repair of cut nets, A1-A9 proof, planned-versus-collateral diff, adopt | 0 collateral |
 | 5 review | \`board_review\` | whole-board review (20 checks) bound to one design hash; findings with proposals, dispositions, gate, fixes as proven candidates | gate 0: current, every finding settled |
 | 5b silkscreen | \`board_silk\` | judges every label from KiCad's exact shapes, places the ones that fail, shows silk over copper | no label problems |
@@ -45,9 +45,12 @@ pre-existing failure.
 - **Layout.** Many opens after \`route\` are a placement problem: restructure the block or try new seeds before tuning the router. Judge seeds on
   routed results over several seeds (router noise is large), move whole blocks rather than one part in a crowded corner, one TraceMaker job at a time.
 - **Last mile.** Order: rip, taps, pairs-all, leg | blockers:1.0 (try both in parallel), a7, bundle per pair bundle, pairs, validate. What is left
-  after that is placement: crossings, fit, nudge. A step that does not improve the whole-board gate is undone. Do not rip whole wide power nets.
-  A pair counts only when coupled; \`pairs\` splits each uncoupled mm by cause (\`loose\` is fixable in place; \`on_pad\`, \`between\`, \`escape\` come from
-  pads, pinout and vias; \`apart\` needs a re-route).
+  after that is placement: crossings, then \`fit\` (dry run of one nudge), then nudge or \`sweep\`. A step that does not improve the whole-board gate is
+  undone. Do not rip whole wide power nets. \`why\` names what walls each open end. A pair counts only when coupled; \`pairs\` splits each uncoupled mm
+  by cause (\`loose\` is fixable in place; \`on_pad\`, \`between\`, \`escape\` come from pads, pinout and vias; \`apart\` needs a re-route). Pairs on a routed
+  board: \`tighten\` first (vias, mirror, retune, width, tighten, skew, no router), then \`loop\` with \`reroute:{pair}+shorts+blockers:1.0+tighten\`.
+  Rip, route and nudge steps run KiCadRoutingTools plans; without KRT a step that needs it fails naming it, and \`finish\`, \`fill:ROUTER\` and
+  \`tighten\` still run.
 - **Edit.** Write the change as a plan (remove, move with \`to\` or \`near\`, displace, swap, add, net). \`impact\` first: a STOP is your decision.
   When an edit displaces a dense region, stop editing and re-place with the moved parts as anchors.
 - **Review.** One design hash covers board, schematics, project files and requirements; any change makes the review stale. Settle each finding with
