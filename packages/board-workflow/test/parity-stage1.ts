@@ -20,6 +20,7 @@ const { values: a } = parseArgs({
     "kicad-cli": { type: "string", default: "/usr/bin/kicad-cli-nightly" },
     toolkit: { type: "string", default: "/home/shane/pcb-worktrees/heldout" },
     drc: { type: "string" },
+    "no-stress": { type: "boolean", default: false },
   },
 });
 if (!a.board || !a.out) throw new Error("--board and --out are required");
@@ -141,7 +142,7 @@ req2.circuit.components[5]!.value = "STRESS-VALUE";
 req2.circuit.components[7]!.pins = { ...req2.circuit.components[7]!.pins, "1": "NO_SUCH_NET" };
 req2.circuit.components.push({ reference: "ZZ999", value: "x", pins: {} });
 void anchor;
-variants.push({ name: "stressed", req: req2, pcb: pcbName, note: "edited requirements: power class + tap + currents + neck scaling, pair width, planes/no-track layers, via span, heights, exceptions, moved anchor, changed value/pins, missing part" });
+if (!a["no-stress"]) variants.push({ name: "stressed", req: req2, pcb: pcbName, note: "edited requirements: power class + tap + currents + neck scaling, pair width, planes/no-track layers, via span, heights, exceptions, moved anchor, changed value/pins, missing part" });
 
 const pyCheck = async (v: Variant) => {
   const dir = join(out, `py-${v.name}`);
