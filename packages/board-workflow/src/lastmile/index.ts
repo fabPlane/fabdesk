@@ -11,3 +11,8 @@ export * from "./info";
 export * from "./tighten";
 export * from "./plans";
 export * from "./repair";
+export * from "./forensics";
+export * from "./sweep";
+export * from "./rip";
+export * from "./nudge";
+export * from "./engine";

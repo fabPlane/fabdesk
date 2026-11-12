@@ -30,7 +30,8 @@ const q = (s: string) => `"${s}"`;
 export interface RouteKrtOptions {
   placed: string;
   out: string;
-  plan: string;
+  /** A plan file, `builtin:<role>`, or the plan itself (a last-mile step carries its edited copy). */
+  plan: string | KrtPlan;
   stem: string;
   req: Requirements;
   score: boolean;
@@ -47,7 +48,7 @@ export interface RouteKrtRecord {
 export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<RouteKrtRecord> {
   if (!host.tools.krt) throw new FlowError("KiCadRoutingTools is not configured (FABDESK_KRT_DIR)");
   const acc = o.req.acceptance;
-  const plan = boardPlan(await loadPlan(o.plan), acc);
+  const plan = boardPlan(typeof o.plan === "string" ? await loadPlan(o.plan) : structuredClone(o.plan), acc);
   if (await pathExists(o.out)) throw new FlowError(`${o.out} exists`);
   await mkdir(o.out, { recursive: true });
   await writeFile(join(o.out, "plan.json"), JSON.stringify(plan, null, 1) + "\n");
@@ -83,7 +84,10 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
   await project("s0");
 
   const sel: Selectors = { pairsToReroute: [], cutNets: [], openBefore: [] };
-  const accOfPlaced = await readJsonOrNull<{ results?: { A8_pairs?: { pairs_to_reroute?: string[][] } } }>(join(o.placed, "acceptance.json"));
+  type PlacedAcc = { results?: { A8_pairs?: { pairs_to_reroute?: string[][] } } };
+  // a layout seed keeps its acceptance beside the board; a last-mile board keeps it under .lastmile/ (the bench's scorer)
+  const accOfPlaced =
+    (await readJsonOrNull<PlacedAcc>(join(o.placed, "acceptance.json"))) ?? (await readJsonOrNull<PlacedAcc>(join(o.placed, ".lastmile", "acceptance.json")));
   sel.pairsToReroute = accOfPlaced?.results?.A8_pairs?.pairs_to_reroute ?? [];
   const rip = await readJsonOrNull<{ nets?: string[]; open_before?: string[] }>(join(o.placed, "rip.json"));
   const nudge = await readJsonOrNull<{ cut_nets?: string[] }>(join(o.placed, "nudge.json"));

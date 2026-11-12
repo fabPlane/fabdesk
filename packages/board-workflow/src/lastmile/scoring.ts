@@ -1,5 +1,5 @@
 /** The bench's scorer: A1-A9 on a native DRC (refilled zones) for one board folder, plus the open connections. */
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { checkAcceptance, type DrcInput } from "../accept";
 import { parseBoard } from "../board";
@@ -37,6 +37,9 @@ export function createScorer(req: Requirements, drc: DrcFn): Scorer {
       const run = await drc({ board, parity: o.parity, outFile: join(dir, ".lastmile", "drc.json"), ...(o.signal ? { signal: o.signal } : {}) });
       const acc = checkAcceptance(parseBoard(await readFile(board, "utf8")), req, { violations: run.violations, unconnected: run.unconnected.length, parity: run.parity }, { parityChecked: o.parity, boardPath: board });
       const opens = opensOf(run.unconnected);
+      // kept beside the DRC report: later steps of a chain (repair rips, @pairs-todo) read what this board fails
+      await writeFile(join(dir, ".lastmile", "acceptance.json"), JSON.stringify(acc, null, 1) + "\n");
+      await writeFile(join(dir, ".lastmile", "drc-run.json"), JSON.stringify(run) + "\n");
       const a8 = acc.results.A8_pairs;
       const sc: Scored = {
         figures: figuresOf(acc, opens, nets),

@@ -1,0 +1,195 @@
+/**
+ * The last-mile step engine with fake engines: KRT plans route and merge onto boards of any file name, a step that
+ * needs KRT fails by name without it, `finish` falls back to the host router, `fill` runs in a board.kicad_pcb scratch
+ * copy. Also the sweep grid and the net_forensics parser.
+ */
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
+import { lastmile as L, layout, onboard, readRequirements, type Requirements } from "../src/index";
+import { BOARD, PRO } from "./edit-fixture";
+
+const dirs: string[] = [];
+const tmp = async () => {
+  const d = await mkdtemp(join(tmpdir(), "bw-engine-"));
+  dirs.push(d);
+  return d;
+};
+afterAll(async () => {
+  for (const d of dirs) await rm(d, { recursive: true, force: true });
+});
+
+const NEW_SEG = `(segment (start 1 1) (end 2 2) (width 0.15) (layer "F.Cu") (net "SIG") (uuid "krt-new"))`;
+
+/** Fake host: KRT stages copy their input board and add one segment; spawns are recorded. */
+function fakeLayout(krt: string | null, spawns: string[][]): layout.LayoutHost {
+  return {
+    tools: { krt, tracemaker: null, kicadCli: "/fake/kicad-cli" },
+    spawn: async (cmd, o) => {
+      spawns.push(cmd);
+      const si = cmd.findIndex((c) => c.endsWith(".py"));
+      if (/route(_diff)?\.py$/.test(cmd[si] ?? "")) {
+        const t = await readFile(cmd[si + 1]!, "utf8");
+        await writeFile(cmd[si + 2]!, t.replace(/\)\s*$/, `\n\t${NEW_SEG}\n)`));
+      }
+      await writeFile(o.log, "");
+      return { code: 0, wallS: 0.1 };
+    },
+    courtyardDrc: async () => [],
+    scoreDrc: async () => ({ violations: [], unconnected: 0, parity: 0 }),
+    memAvailableGiB: async () => 20,
+    diskFreeGiB: async () => 100,
+  };
+}
+
+const scorer: L.Scorer = {
+  async score(dir) {
+    await mkdir(join(dir, ".lastmile"), { recursive: true });
+    await writeFile(join(dir, ".lastmile", "drc-run.json"), JSON.stringify({ violations: [], unconnected: [], parity: 0 }));
+    await writeFile(join(dir, ".lastmile", "acceptance.json"), JSON.stringify({ summary: {}, results: { A8_pairs: { pairs_to_reroute: [] } } }));
+    return { figures: { open: 0 } as never, opens: [], summary: {}, pairsOverSkewLimit: 0, parityChecked: false, a8: { toReroute: [], failing: [] } };
+  },
+};
+
+/** A project whose board is not called board.kicad_pcb (the toolkit's boards are C6.kicad_pcb, R1N...). */
+async function c6(): Promise<{ dir: string; req: Requirements }> {
+  const dir = await tmp();
+  await writeFile(join(dir, "C6.kicad_pcb"), BOARD);
+  await writeFile(join(dir, "C6.kicad_pro"), PRO);
+  await onboard(dir, { name: "t", pcb: "C6.kicad_pcb" });
+  return { dir, req: (await readRequirements(dir))! };
+}
+
+function engine(req: Requirements, krt: string | null, spawns: string[][], fills: Array<{ router: string; dir: string; files: string[] }>) {
+  return L.createStepEngine({
+    req,
+    drc: async () => ({ violations: [], unconnected: [], parity: 0 }),
+    scorer,
+    layout: fakeLayout(krt, spawns),
+    fallbackRouter: "fab_router",
+    fill: async (router, dir) => {
+      fills.push({ router, dir, files: await readdir(dir) });
+      const b = join(dir, "board.kicad_pcb");
+      await writeFile(b, (await readFile(b, "utf8")).replace(/\)\s*$/, `\n\t(segment (start 5 5) (end 6 6) (width 0.15) (layer "F.Cu") (net "SIG") (uuid "fill-${router}"))\n)`));
+      return { message: `${router} done` };
+    },
+  });
+}
+
+const input = (cur: string, out: string) => ({ cur, out, start: cur, pcb: "C6.kicad_pcb", signal: new AbortController().signal });
+
+describe("step engine", () => {
+  test("a KRT step runs its own plan on a board of any name and merges the routed copper", async () => {
+    const { dir, req } = await c6();
+    const spawns: string[][] = [];
+    const krt = join(dir, "krt");
+    await mkdir(join(krt, "src/plugins"), { recursive: true });
+    const e = engine(req, krt, spawns, []);
+    const out = join(await tmp(), "finish");
+    const r = await e.run(L.stepsFor("finish")[0]!, input(dir, out));
+    expect("error" in r ? r.error : null).toBeNull();
+    if ("error" in r) return;
+    expect(r.dir).toBe(out);
+    expect(await readFile(join(out, "C6.kicad_pcb"), "utf8")).toContain('(uuid "krt-new")');
+    expect(r.info?.["engine"]).toBe("krt");
+    // the taps plan, not a generic route: its stages are the tap widths, each skipped on a board with no tap nets
+    const t = await e.run(L.stepsFor("taps")[0]!, input(dir, join(await tmp(), "taps")));
+    if ("error" in t) throw new Error(t.error);
+    const stages = t.info?.["stages"] as Array<{ name: string; skipped?: string }>;
+    expect(stages.map((s) => s.name)).toEqual(["tap0.3", "tap0.25", "tap0.2", "tap0.15"]);
+    expect(stages.every((s) => s.skipped === "nothing selected")).toBe(true);
+  });
+
+  test("rip routes with rip-sig's arguments (signal nets ripped, pairs and power protected)", async () => {
+    const { dir, req } = await c6();
+    const spawns: string[][] = [];
+    const krt = join(dir, "krt");
+    await mkdir(join(krt, "src/plugins"), { recursive: true });
+    const r = await engine(req, krt, spawns, []).run(L.stepsFor("rip")[0]!, input(dir, join(await tmp(), "rip")));
+    expect("error" in r).toBe(false);
+    const route = spawns.find((c) => c.some((x) => x.endsWith("route.py")))!;
+    expect(route).toContain("--rip-existing-nets");
+    expect(route).toContain("--keep-input-copper");
+  });
+
+  test("repair: rips, then routes what the rip opened with the step's plan; nothing ripped leaves the board as it was", async () => {
+    const { dir, req } = await c6();
+    const spawns: string[][] = [];
+    const krt = join(dir, "krt");
+    await mkdir(join(krt, "src/plugins"), { recursive: true });
+    const e = engine(req, krt, spawns, []);
+    const empty = await e.run(L.stepsFor("window:50,30,55,35")[0]!, input(dir, join(await tmp(), "w0")));
+    if ("error" in empty) throw new Error(empty.error);
+    expect(empty.skipped).toBe(true);
+    expect(empty.dir).toBe(dir);
+    expect(spawns).toHaveLength(0);
+    const out = join(await tmp(), "w1");
+    const r = await e.run(L.stepsFor("window:9,9,21,11")[0]!, input(dir, out));
+    if ("error" in r) throw new Error(r.error);
+    expect(r.dir).toBe(join(out, "route"));
+    const rip = r.info?.["rip"] as { removed: number; nets: string[] };
+    expect(rip.removed).toBeGreaterThan(0);
+    expect(rip.nets).toContain("SIG");
+    // opens-first: the nets open before the rip are routed first, then everything the rip opened
+    expect((r.info?.["stages"] as Array<{ name: string }>).map((s) => s.name)).toEqual(["opens-first", "finish"]);
+    const board = await readFile(join(out, "route", "C6.kicad_pcb"), "utf8");
+    expect(board).not.toContain("sg-19.5-10-10-10-SIG");
+    expect(board).toContain('(uuid "krt-new")');
+  });
+
+  test("without KRT a KRT step fails naming KRT; finish falls back to the host router", async () => {
+    const { dir, req } = await c6();
+    const fills: Array<{ router: string; dir: string; files: string[] }> = [];
+    const e = engine(req, null, [], fills);
+    for (const action of ["rip", "taps", "pairs-all", "pairs", "blockers:1.0", "a7", "nudge:R1@22,10"]) {
+      const r = await e.run(L.stepsFor(action)[0]!, input(dir, join(await tmp(), "x")));
+      expect("error" in r ? r.error : "").toContain("KiCadRoutingTools");
+    }
+    const out = join(await tmp(), "finish");
+    const r = await e.run(L.stepsFor("finish")[0]!, input(dir, out));
+    expect("error" in r).toBe(false);
+    if ("error" in r) return;
+    expect(r.info?.["fallback"]).toContain("fab_router");
+    expect(fills[0]!.files).toContain("board.kicad_pcb");
+    expect(await readFile(join(out, "C6.kicad_pcb"), "utf8")).toContain("fill-fab_router");
+    // router scratch files are kept out of the board folder copies
+    expect((await readdir(out)).filter((f) => f === "tracemaker" || f === "fill")).toEqual([]);
+  });
+
+  test("fill:ROUTER works on a stem-named board through a board.kicad_pcb scratch copy", async () => {
+    const { dir, req } = await c6();
+    const fills: Array<{ router: string; dir: string; files: string[] }> = [];
+    const out = join(await tmp(), "fill");
+    const r = await engine(req, null, [], fills).run(L.stepsFor("fill:tracemaker")[0]!, input(dir, out));
+    expect("error" in r ? r.error : null).toBeNull();
+    expect(fills[0]!.router).toBe("tracemaker");
+    expect(basename(fills[0]!.dir)).toBe("fill");
+    expect(await readFile(join(out, "C6.kicad_pcb"), "utf8")).toContain("fill-tracemaker");
+  });
+});
+
+describe("sweep", () => {
+  test("a grid of poses round the part, flipped, without the current pose, each followed by the chain", () => {
+    const acts = L.sweepActions(BOARD, ["R1"], { span: 0.5, step: 0.5, rotations: "flip", then: "blockers:1.0" });
+    expect(acts).toHaveLength(3 * 3 * 2 - 1);
+    expect(acts).toContain("nudge:R1@20.50,9.50@180~0.25+blockers:1.0");
+    expect(acts).not.toContain("nudge:R1@20.00,10.00@0~0.25+blockers:1.0");
+    expect(() => L.sweepActions(BOARD, ["NOPE"])).toThrow(/NOPE/);
+  });
+});
+
+describe("net_forensics", () => {
+  test("one line per stuck end with the nearest foreign copper", () => {
+    const out = L.forensicsLines(
+      [
+        "=== c18::USB_DP ===",
+        "  WALL around island2-end (10.0, 20.0), r=1.0",
+        "    c18::GND: track F.Cu 0.2mm, 0.31mm",
+        "    VBUS: via, 0.5mm",
+        "  GAP 3.2 mm between islands",
+      ].join("\n"),
+    );
+    expect(out).toEqual(["USB_DP", "    end (10.0, 20.0): GND track F.Cu 0.2mm; VBUS via", "  GAP 3.2 mm between islands"]);
+  });
+});

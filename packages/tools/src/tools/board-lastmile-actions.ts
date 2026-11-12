@@ -4,22 +4,22 @@
  * refilled zones) and keeps the best one that passes the gate; a step that does not improve the whole board is undone.
  * `accept` hands the bench's current board to `adoptCandidate` (one KiCad commit over IPC, `origin.json` beside the candidate).
  *
- * Engines: pair tightening (`tighten`) is native TypeScript. Router steps (finish, taps, pairs, fill) go to what the
- * host already has: TraceMaker from the router registry, else the bridge's fab_router / Freerouting, under the resource
- * governor. Steps that need a rip-up or placement helper (leg, blockers, a7, shorts, reroute, bundle, nudge, turn) report
- * that helper as unavailable (`board_edit` repair uses the `finish` step).
+ * Steps run in the library's step engine (`lastmile/engine.ts`): KiCadRoutingTools plans for the router steps, rip-up
+ * and nudge before their re-route, pair operations natively, and `fill:ROUTER` on the host's routers (TraceMaker from
+ * the router registry, the bridge's fab_router / Freerouting) under the resource governor. Without KRT only `finish`
+ * runs (on the host router); other KRT steps fail by name. Boards of any file name work.
  */
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { lastmile as L, locateProject, onboard, parseBoard, profile, readRequirements, type Requirements } from "@fabdesk/board-workflow";
 import { adoptCandidate, designFileHashes } from "../board-adopt";
 import { PROJECT_FILES } from "../fs";
-import { boardMemGiB, governor } from "../resources";
 import { runTraceMaker } from "../routers";
 import { ToolError, type ToolContext, type ToolOutput } from "../registry";
 import { ok, requireKicad, runLiveDrc } from "./common";
+import { layoutHost } from "./board-host";
 
-export const LASTMILE_ACTIONS = ["new", "try", "loop", "why", "crossings", "fit", "pairs", "validate", "accept", "undo", "view", "info", "prune"] as const;
+export const LASTMILE_ACTIONS = ["new", "try", "loop", "sweep", "why", "crossings", "fit", "pairs", "validate", "accept", "undo", "view", "info", "prune"] as const;
 
 export const LASTMILE_DEFAULT_WORKSPACE = ".fabdesk/board/lastmile/main";
 
@@ -34,40 +34,19 @@ async function requirementsFor(ctx: ToolContext, pcb?: string): Promise<Requirem
   return req;
 }
 
-/** Router steps through what the host has; pair tightening natively. */
-function createEngine(ctx: ToolContext, req: Requirements, drc: L.DrcFn, router: string): L.StepEngine {
-  return {
-    async run(step: L.Step, input): Promise<L.StepOutcome> {
-      if (step.type === "pairfix") return L.runTighten({ step, input, req, drc });
-      if (step.type === "repair" || step.type === "nudge")
-        return { error: `${step.type} step: the rip-up / placement helper it needs is not available in this build (layout stage)` };
-      if (input.pcb !== PROJECT_FILES.boardPcb) return { error: `routing steps work on ${PROJECT_FILES.boardPcb}; this board is ${input.pcb}` };
-      const which = step.type === "fill" && step.router ? step.router : router;
-      await L.copyBoardFolder(input.cur, input.out);
-      const cls = which === "tracemaker" ? "tracemaker" : "router";
-      const job = await governor().admit({
-        cls,
-        label: `lastmile ${step.type} ${which}`,
-        paths: [input.out],
-        signal: input.signal,
-        memGiB: await boardMemGiB([join(input.cur, input.pcb)]),
-      });
-      try {
-        const timeoutMs = 600_000;
-        if (which === "tracemaker") {
-          const binary = ctx.services.routers?.executable("tracemaker");
-          if (!binary) return { error: "TraceMaker is not installed (Settings → Routers)" };
-          const s = await runTraceMaker({ binary, snapshotDir: input.out, timeoutMs, signal: input.signal });
-          await copyFile(join(input.out, "tracemaker", "routed.kicad_pcb"), join(input.out, input.pcb));
-          return { dir: input.out, info: { router: which, message: s.message } };
-        }
-        if (which !== "fab_router" && which !== "freerouting") return { error: `router ${which} is not available here (fab_router, freerouting, tracemaker)` };
-        const s = await ctx.services.design.route(input.out, { router: which, maxTimeMs: timeoutMs }, { signal: input.signal });
-        return { dir: input.out, info: { router: which, message: s.message } };
-      } finally {
-        job.release();
-      }
-    },
+/** The host's routers for `fill` steps (and `finish` when KiCadRoutingTools is missing), on `dir/board.kicad_pcb` in place. */
+function hostFill(ctx: ToolContext): L.FillFn {
+  return async (router, dir, { signal, timeoutMs }) => {
+    if (router === "tracemaker") {
+      const binary = ctx.services.routers?.executable("tracemaker");
+      if (!binary) throw new Error("TraceMaker is not installed (Settings → Routers)");
+      const s = await runTraceMaker({ binary, snapshotDir: dir, timeoutMs, signal });
+      await copyFile(join(dir, "tracemaker", "routed.kicad_pcb"), join(dir, PROJECT_FILES.boardPcb));
+      return { message: s.message };
+    }
+    if (router !== "fab_router" && router !== "freerouting") throw new Error(`router ${router} is not available here (fab_router, freerouting, tracemaker)`);
+    const s = await ctx.services.design.route(dir, { router, maxTimeMs: timeoutMs }, { signal });
+    return { message: s.message };
   };
 }
 
@@ -77,14 +56,19 @@ export async function openBench(ctx: ToolContext, ws: string, req: Requirements)
     const r = await runLiveDrc(ctx, cli, { board, outFile, parity, refill: true, signal });
     return { violations: r.violations, unconnected: r.unconnected, parity: r.schematicParity.length };
   };
+  const host = layoutHost(ctx, cli.path);
   return {
     ws,
-    deps: (router: string, onLine?: (l: string) => void) => ({
-      scorer: L.createScorer(req, drc),
-      engine: createEngine(ctx, req, drc, router),
-      signal: ctx.signal,
-      ...(onLine ? { onLine } : {}),
-    }),
+    host,
+    deps: (router: string, onLine?: (l: string) => void) => {
+      const scorer = L.createScorer(req, drc);
+      return {
+        scorer,
+        engine: L.createStepEngine({ req, drc, scorer, layout: host, fill: hostFill(ctx), fallbackRouter: router }),
+        signal: ctx.signal,
+        ...(onLine ? { onLine } : {}),
+      };
+    },
   };
 }
 
@@ -96,7 +80,7 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
       lines.push(l);
       ctx.progress(0.5, l);
     };
-    const { ws, deps } = await openBench(ctx, wsPath, req);
+    const { ws, deps, host } = await openBench(ctx, wsPath, req);
     const mk = () => deps(a.router, log);
     try {
       if (a.action === "new") {
@@ -122,8 +106,20 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
         }
         case "why": {
           const sc = await bench.scoreDir(bench.dir);
-          const board = parseBoard(await readFile(bench.board, "utf8"));
-          return ok(L.whyLines(L.whyOpen(board, sc.opens, a.nets ?? null)).join("\n"));
+          const nets = a.nets?.length ? a.nets : bench.openNets(sc);
+          if (!nets.length) return ok("no open nets; name nets to inspect");
+          // KRT's net_forensics names what walls each stuck end; without KRT, the board model's reading
+          const stem = bench.state.pcb.replace(/\.kicad_pcb$/, "");
+          const rb = await L.routerBoard(bench.board, join(bench.ws, "why"), stem);
+          const krt = await L.krtForensics(host, rb, nets);
+          const out = krt ?? L.whyLines(L.whyOpen(parseBoard(await readFile(bench.board, "utf8")), sc.opens, nets)).slice(0, -1);
+          if (!krt) out.unshift("(KiCadRoutingTools not configured: walls from the board model, not KRT's net_forensics)");
+          if (!a.nets?.length) {
+            const causes = await L.tmCauses(host, rb);
+            out.push(...(causes ? ["TraceMaker causes:", ...causes.map((l) => "  " + l)] : ["(TraceMaker not installed: no cause classes)"]));
+          }
+          out.push("hint: walls within about 1 mm of a stuck end -> blockers:1.0 or leg; a pad caged by parts or a keepout -> nudge:REF@X,Y");
+          return ok(out.join("\n"));
         }
         case "crossings": {
           const board = parseBoard(await readFile(bench.board, "utf8"));
@@ -140,11 +136,39 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
           const m = L.measurePairs(board, L.classesAndPairs(req, a.pairs), profile(req.acceptance).copper, a.why);
           return ok(L.measureLines(m, a.why).join("\n") || "no pairs on this board", { pairs: m });
         }
-        case "fit":
-          throw new ToolError("fit (placement dry run) needs the placement helper of the layout stage, which is not available in this build", "unavailable");
+        case "fit": {
+          const steps = a.actions?.length === 1 ? L.stepsFor(a.actions[0]!) : [];
+          const st = steps[0];
+          if (steps.length !== 1 || st?.type !== "nudge" || !st.moves) throw new ToolError("fit takes one nudge:/turn: action in actions, e.g. ['nudge:U3@41.2,18@90']", "invalid_args");
+          const fixed = await L.fixedParts(req, bench.board);
+          const r = await L.fitStep({
+            cur: bench.dir,
+            out: join(bench.ws, "fit"),
+            pcb: bench.state.pcb,
+            moves: st.moves,
+            req,
+            courtyardDrc: host.courtyardDrc,
+            fixed: (ref) => fixed.has(ref),
+            ...(a.side !== "both" ? { side: a.side } : {}),
+            ...(a.box ? { box: a.box } : {}),
+            render: async (svg) => (await ctx.services.kicad.rasterizeSvg(svg, { maxWidth: 1400 })).png,
+          });
+          return ok(r.lines.join("\n"), r as unknown as Record<string, unknown>);
+        }
+        case "sweep": {
+          if (!a.refs) throw new ToolError("sweep needs refs: the parts to sweep, comma separated", "invalid_args");
+          const acts = L.sweepActions(await readFile(bench.board, "utf8"), a.refs.split(","), { ...(a.span ? { span: a.span } : {}), ...(a.step ? { step: a.step } : {}), rotations: a.rotations, ...(a.then ? { then: a.then } : {}) });
+          log(`sweep: ${acts.length} candidates`);
+          const r = await bench.try(acts, { noAccept: a.noAccept, slackA8: 0, jobs: a.jobs ?? 6, budget: a.budget ?? 900 });
+          return ok([...lines, ...r.lines].join("\n"), { accepted: r.accepted, step: r.pointer, figures: r.figures, candidates: r.candidates.length });
+        }
         case "validate": {
           const rec = await bench.validate();
-          return ok(JSON.stringify(rec, null, 1), rec);
+          const v = join(bench.ws, "validate");
+          const audit = await L.tmPairAudit(host, await L.routerBoard(join(v, bench.state.pcb), join(v, "tm"), bench.state.pcb.replace(/\.kicad_pcb$/, "")), v);
+          const full = { ...rec, ...(audit ? { return_path_warnings: audit.returnPathWarnings, tm_pairs: join(v, "tm-pairs.json") } : { tracemaker: "not installed: no pair or return-path audit" }) };
+          await writeFile(join(v, "validate.json"), JSON.stringify(full, null, 1) + "\n");
+          return ok(JSON.stringify(full, null, 1), full);
         }
         case "accept": {
           if (a.candidate) {
@@ -209,6 +233,10 @@ export interface LastmileArgs {
   adopt: boolean;
   reason?: string | undefined;
   router: string;
+  span?: number | undefined;
+  step?: number | undefined;
+  rotations: "keep" | "flip" | "all";
+  then?: string | undefined;
   noAccept: boolean;
   slackA8: number;
   jobs?: number | undefined;

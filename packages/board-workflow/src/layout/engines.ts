@@ -55,9 +55,10 @@ export const nodeRun: Spawn = (cmd, o) =>
       if (timer) clearTimeout(timer);
       o.signal?.removeEventListener("abort", abort);
       if (timedOut) log.write(`\nTIMEOUT after ${Math.round((o.timeoutMs ?? 0) / 1000)} s\n`);
-      log.end();
-      out?.end();
-      resolve({ code: timedOut ? 124 : (code ?? 1), wallS: Math.round((Date.now() - t0) / 100) / 10 });
+      const result = { code: timedOut ? 124 : (code ?? 1), wallS: Math.round((Date.now() - t0) / 100) / 10 };
+      // resolve once the log (and stdout file) are flushed: callers read them straight away
+      const ended = (w: NodeJS.WritableStream | null) => (w ? new Promise<void>((r) => w.end(r)) : Promise.resolve());
+      void Promise.all([ended(log), ended(out)]).then(() => resolve(result));
     });
   });
 

@@ -8,8 +8,7 @@
  * for the one engine that runs alone). Overlaps `route_run` (an autorouter call on the live board) and `pcb_place`
  * (single parts): board_route is the staged flow with seeds, gates, ranking and records.
  */
-import { spawnSync } from "node:child_process";
-import { mkdir, rm, statfs } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod/v4";
 import { layout, readJsonOrNull } from "@fabdesk/board-workflow";
@@ -23,7 +22,6 @@ const {
   layoutDir,
   loadFlow,
   nextStep,
-  nodeRun,
   prepareLayout,
   runAuto,
   stageCheck,
@@ -34,46 +32,11 @@ const {
   FlowError,
 } = layout;
 import { durable } from "../durable";
-import { boardMemGiB, governor, sampleHost, type ResourceClass } from "../resources";
-import { ToolError, defineTool, type ToolContext } from "../registry";
-import { requireKicad, runLiveDrc } from "./common";
+import { ToolError, defineTool } from "../registry";
 import { LASTMILE_ACTIONS, LASTMILE_DEFAULT_WORKSPACE, lastmileStatus, runLastmile } from "./board-lastmile-actions";
 
-/** Where KiCadRoutingTools lives: `FABDESK_KRT_DIR` (a build with `src/plugins` and `venv/bin/python`). */
-export const krtDir = (env: NodeJS.ProcessEnv = process.env) => env["FABDESK_KRT_DIR"] || null;
-
-export function layoutHost(ctx: ToolContext, kicadCli: string | null, env: NodeJS.ProcessEnv = process.env): LayoutHost {
-  const note = (s: string) => ctx.progress(0, s);
-  const drc = async (board: string, outFile: string, opts: { parity: boolean; refill: boolean }) => {
-    const cli = await requireKicad(ctx);
-    return runLiveDrc(ctx, cli, { board, outFile, parity: opts.parity, refill: opts.refill, signal: ctx.signal });
-  };
-  return {
-    tools: {
-      krt: krtDir(env),
-      tracemaker: ctx.services.routers?.executable("tracemaker") ?? env["TRACEMAKER_BIN"] ?? null,
-      kicadCli,
-    },
-    spawn: nodeRun,
-    courtyardDrc: async (board, report) => (await drc(board, report, { parity: false, refill: false })).violations.map((v) => ({ rule: v.rule, items: v.items.map((i) => ({ description: i.description })) })),
-    scoreDrc: async (board, outFile, parity) => {
-      const r = await drc(board, outFile, { parity, refill: true });
-      return { violations: r.violations.map((v) => ({ rule: v.rule, severity: v.severity, description: v.description })), unconnected: r.unconnected.length, parity: r.schematicParity.length };
-    },
-    admit: async (kind, label, paths) => {
-      const job = await governor().admit({ cls: kind as ResourceClass, label, paths, signal: ctx.signal, memGiB: await boardMemGiB(paths), onWait: note });
-      return { release: job.release };
-    },
-    memAvailableGiB: async () => (await sampleHost()).memAvailableGiB,
-    diskFreeGiB: async (path) => {
-      const s = await statfs(path);
-      return (s.bavail * s.bsize) / 1024 ** 3;
-    },
-    tracemakerBusy: async () => spawnSync("pgrep", ["-x", "tracemaker"]).status === 0,
-    log: note,
-    signal: ctx.signal,
-  };
-}
+export { krtDir, layoutHost } from "./board-host";
+import { layoutHost } from "./board-host";
 
 function describe(o: StageOutcome, st: FlowState, stage: string): string {
   return [o.verdict, ...o.lines, "", `next: ${nextStep(st).text}`, `record: ${join(st.ws, stage, "result.json")}`].join("\n");
@@ -88,11 +51,11 @@ export const board_route = defineTool({
   toolset: "board",
   title: "Layout and last mile: check, place, rank, route, tighten and finish",
   description:
-    "Everything between a placed board and a routed one. Two stages share the `workspace` folder argument (project-relative; default .fabdesk/board/layout/ws for the layout stages, .fabdesk/board/lastmile/main for the last mile). LAYOUT (needs board_check to have onboarded the board; the groups and keep-outs it proposes are in .fabdesk/board/layout/ for you to edit): check: seconds, fail-fast preflight (engines present, disk, fixed anchors, courtyards, groups, plans, pairs). place: KiCadRoutingTools seeds, each gated on KiCad courtyard DRC and fixed parts unmoved (minutes). rank: route the kept seeds and rank by open connections, then A8 pair nets, then A7 width nets (10-20 min). route: best seed through TraceMaker and KRT finishing, hedged; STOP when too many connections are open (that is a placement problem: change groups, then place again) (15-25 min). auto: the remaining layout stages up to `until`. status: stages, figures and next step (`finish` records the outcome); on a last-mile workspace, the bench figures and steps. Each layout stage writes WS/<stage>/result.json and ends PASS, FAIL <reason> or STOP <decision for you>. The route stage's board is the last mile's input. LAST MILE (a workspace of accepted steps on a routed board): new: start from the project's board (scored). try: run `actions` in parallel from the current board, score each whole board (A1-A9, native DRC with refilled zones), accept the best that passes the gate (fewer opens, DRC errors, A7/A8 nets; no new DRC class; no failing pair worse), leave the board unchanged otherwise. Actions chain with '+': finish, rip, taps, leg, blockers:R, window:X0,Y0,X1,Y1, a7, shorts, tighten[:REGEX], reroute[:REGEX], mirror, pairs, pairs-all, bundle:REGEX, fill:ROUTER, nudge, turn (an unknown name lists the vocabulary). Order: rip, taps, pairs-all, leg | blockers:1.0, a7, bundle per pair bundle, pairs, validate; then crossings, fit, nudge. loop: one candidate per failing pair from a `template` with {pair}. why: what walls each open end. pairs: per-pair coupled share and each uncoupled mm by cause (loose, on_pad, between, escape, apart). crossings: parts whose connections cross and the rotation that fixes it. fit: placement dry run. validate: full proof with schematic parity. accept: adopt the current board into the project (one KiCad commit, checkpointed). undo, view (SVG window), info (parts and nets), prune (delete candidate folders). Engines are not installed here: TraceMaker via Settings > Routers, KiCadRoutingTools via FABDESK_KRT_DIR. One TraceMaker job runs at a time on the machine; long actions keep running as a board job (board_job).",
+    "Everything between a placed board and a routed one. Two stages share the `workspace` folder argument (project-relative; default .fabdesk/board/layout/ws for the layout stages, .fabdesk/board/lastmile/main for the last mile). LAYOUT (needs board_check to have onboarded the board; the groups and keep-outs it proposes are in .fabdesk/board/layout/ for you to edit): check: seconds, fail-fast preflight (engines present, disk, fixed anchors, courtyards, groups, plans, pairs). place: KiCadRoutingTools seeds, each gated on KiCad courtyard DRC and fixed parts unmoved (minutes). rank: route the kept seeds and rank by open connections, then A8 pair nets, then A7 width nets (10-20 min). route: best seed through TraceMaker and KRT finishing, hedged; STOP when too many connections are open (that is a placement problem: change groups, then place again) (15-25 min). auto: the remaining layout stages up to `until`. status: stages, figures and next step (`finish` records the outcome); on a last-mile workspace, the bench figures and steps. Each layout stage writes WS/<stage>/result.json and ends PASS, FAIL <reason> or STOP <decision for you>. The route stage's board is the last mile's input. LAST MILE (a workspace of accepted steps on a routed board): new: start from the project's board (scored). try: run `actions` in parallel from the current board, score each whole board (A1-A9, native DRC with refilled zones), accept the best that passes the gate (fewer opens, DRC errors, A7/A8 nets; no new DRC class; no failing pair worse), leave the board unchanged otherwise. Actions chain with '+': finish, rip, taps, leg, blockers:R, window:X0,Y0,X1,Y1, a7, shorts, legs:R, tighten[:REGEX] (pair ops vias, mirror, retune, width, tighten, skew), reroute[:REGEX], mirror[:REGEX], pairs, pairs-m, pairs-all, pairs-fix, bundle:REGEX[@BOX], fence:BOX=NETREGEX, fill:ROUTER, nudge:REF@X,Y[@ROT][~R], turn:REF@ROT, plan:FILE (an unknown name lists the vocabulary). Order: rip, taps, pairs-all, leg | blockers:1.0, a7, bundle per pair bundle, pairs, validate; then crossings, fit, nudge. loop: one candidate per failing pair from a `template` with {pair} (e.g. 'reroute:{pair}+shorts+blockers:1.0+tighten'). sweep: grid of courtyard-gated poses round each of `refs` (span, step, rotations), each followed by `then`, best accepted. why: what walls each open end (KRT net_forensics) and TraceMaker's cause class of each open. pairs: per-pair coupled share and each uncoupled mm by cause (loose, on_pad, between, escape, apart). crossings: parts whose connections cross and the rotation that fixes it. fit: placement dry run of one nudge/turn action (poses or what blocks them, courtyard gate, a picture). validate: full proof with schematic parity. accept: adopt the current board into the project (one KiCad commit, checkpointed). undo, view (SVG window), info (parts and nets), prune (delete candidate folders). Engines are not installed here: TraceMaker via Settings > Routers, KiCadRoutingTools via FABDESK_KRT_DIR. Router, rip and nudge steps run KiCadRoutingTools plans; without KRT only finish (on `router`), fill:ROUTER and the in-place pair steps run, and the others fail naming KRT. One TraceMaker job runs at a time on the machine; long actions keep running as a board job (board_job).",
   inputSchema: {
     action: z
       .enum([...LAYOUT_ACTIONS, ...LASTMILE_ACTIONS])
-      .describe("Layout: check, place, rank, route, auto, status. Last mile: new, try, loop, why, crossings, fit, pairs, validate, accept, undo, view, info, prune."),
+      .describe("Layout: check, place, rank, route, auto, status. Last mile: new, try, loop, sweep, why, crossings, fit, pairs, validate, accept, undo, view, info, prune."),
     workspace: z.string().max(300).optional().describe("Workspace folder, relative to the project; default .fabdesk/board/layout/ws (layout) or .fabdesk/board/lastmile/main (last mile)."),
     // layout stages
     spec: z.string().max(300).optional().describe("Layout check: a layout spec file (project-relative) to start the workspace from, instead of the one derived from the board."),
@@ -104,19 +67,23 @@ export const board_route = defineTool({
     until: z.enum(["check", "place", "rank", "route"]).default("route").describe("Layout auto: the last stage to run."),
     finish: z.enum(["success", "failed", "blocked"]).optional().describe("Layout status: record the outcome of this layout run."),
     // last mile
-    actions: z.array(z.string().max(300)).max(12).optional().describe("Last-mile try: the actions to run in parallel, e.g. ['leg', 'blockers:1.0'] or ['taps+a7']."),
+    actions: z.array(z.string().max(300)).max(12).optional().describe("Last-mile try: the actions to run in parallel, e.g. ['leg', 'blockers:1.0'] or ['taps+a7']; fit: one nudge:/turn: action."),
     template: z.string().max(300).optional().describe("Last-mile loop: action template with {pair}, e.g. 'tighten:{pair}'."),
     pairs: z.string().max(200).optional().describe("Last-mile pairs / loop: only pairs whose P or N net matches this regex."),
     why: z.boolean().default(true).describe("Last-mile pairs: split each uncoupled mm by cause."),
     nets: z.array(z.string()).max(60).optional().describe("Last-mile why: nets to inspect (default every open net); view: nets to highlight."),
-    refs: z.string().max(400).optional().describe("Last-mile crossings: only these references, comma separated."),
+    refs: z.string().max(400).optional().describe("Last-mile crossings: only these references; sweep: the parts to sweep (comma separated)."),
     items: z.array(z.string()).max(30).optional().describe("Last-mile info: part references or net regexes."),
-    box: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional().describe("Last-mile view: window X0 Y0 X1 Y1 in mm."),
+    box: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional().describe("Last-mile view / fit: window X0 Y0 X1 Y1 in mm."),
     side: z.enum(["F", "B", "both"]).default("both").describe("Last-mile view: board side."),
     candidate: z.string().optional().describe("Last-mile accept: an earlier try's folder to accept after the gate re-runs on it (no re-route)."),
     adopt: z.boolean().default(true).describe("Last-mile accept: also write the current board into the project."),
     reason: z.string().max(200).optional().describe("Last-mile accept: what the change is, for the checkpoint."),
-    router: z.string().default("fab_router").describe("Last-mile router for finish/taps/pairs steps: fab_router, freerouting or tracemaker."),
+    router: z.string().default("fab_router").describe("Last-mile router for `finish` when KiCadRoutingTools is not configured: fab_router, freerouting or tracemaker (fill:ROUTER names its own)."),
+    span: z.number().positive().max(10).optional().describe("Last-mile sweep: half-width of the pose grid round each part, mm (default 1)."),
+    step: z.number().positive().max(5).optional().describe("Last-mile sweep: grid step, mm (default 0.5)."),
+    rotations: z.enum(["keep", "flip", "all"]).default("flip").describe("Last-mile sweep: rotations tried at each pose."),
+    then: z.string().max(300).optional().describe("Last-mile sweep: repair chain after each pose, e.g. 'blockers:1.0'."),
     noAccept: z.boolean().default(false).describe("Last-mile try: score the candidates but do not accept."),
     slackA8: z.number().int().min(0).default(0).describe("Last-mile try/accept: A8 nets the gate may let get worse."),
     budget: z.number().positive().optional().describe("Last-mile: seconds per action; default max(180, 6 per open, up to 1800)."),

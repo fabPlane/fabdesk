@@ -13,6 +13,8 @@ export interface Step {
   plan?: Record<string, unknown>;
   /** A plan file named by the caller (`plan:FILE`). */
   planFile?: string;
+  /** The template `plan` was copied from (`finish`, `pairs-todo`, `after-cut` ...), for messages and engine choice. */
+  planName?: string;
   /** `repair`: arguments of the rip selection (`--around-opens 1.0 --spare-pairs`). */
   rip?: string[];
   /** `nudge`: the pose moves and the gates (clearance, edge). */
@@ -26,7 +28,8 @@ export interface Step {
 export interface NudgeMove {
   ref: string;
   radius: number;
-  near?: [number, number];
+  /** A point, or a part / pad to sit next to (`REF`, `REF.PAD`). */
+  near?: [number, number] | string;
   rotations?: number[];
 }
 
@@ -37,8 +40,8 @@ const plan = (n: string): Record<string, unknown> => {
   if (!p) throw new Error(`no plan template ${n}`);
   return structuredClone(p);
 };
-const K = (n: string): Step => ({ type: "krt", plan: plan(n) });
-const REP = (rip: string[], p = "rip-sig"): Step => ({ type: "repair", rip, plan: plan(p) });
+const K = (n: string): Step => ({ type: "krt", plan: plan(n), planName: n });
+const REP = (rip: string[], p = "rip-sig"): Step => ({ type: "repair", rip, plan: plan(p), planName: p });
 
 type Builder = (arg: string) => Step[];
 export const ACTIONS: Record<string, { help: string; steps: Builder | null }> = {
@@ -125,7 +128,7 @@ export function stepsFor(action: string): Step[] {
           ...(m[4] ? { rotations: m[4].split("/").map(Number) } : {}),
         };
       });
-      steps.push({ type: "nudge", moves: { clearance: 0.2, edge: 0.4, moves }, plan: plan("after-cut") });
+      steps.push({ type: "nudge", moves: { clearance: 0.2, edge: 0.4, moves }, plan: plan("after-cut"), planName: "after-cut" });
     } else if (name === "bundle") {
       const at = arg.indexOf("@");
       const rx = at < 0 ? arg : arg.slice(0, at);
@@ -134,7 +137,7 @@ export function stepsFor(action: string): Step[] {
       p["bundle"] = rx;
       p["note"] = `bundle ${rx}: ` + String(p["note"] ?? "");
       for (const st of p["stages"] as Array<{ args: string[] }>) st.args = st.args.map((x) => x.replace("@pairs-todo=", "@bundle="));
-      steps.push(win ? { type: "repair", rip: ["--window", ...win.split(","), "--spare-pairs"], plan: p } : { type: "krt", plan: p });
+      steps.push(win ? { type: "repair", rip: ["--window", ...win.split(","), "--spare-pairs"], plan: p, planName: `bundle ${rx}` } : { type: "krt", plan: p, planName: `bundle ${rx}` });
     } else {
       if (!def.steps) throw new ActionError(`action '${name}' has no steps`);
       steps.push(...def.steps(arg));

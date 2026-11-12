@@ -66,10 +66,15 @@ describe("board_route last-mile actions", () => {
     expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(BOARD);
   });
 
-  test("fit says what it needs; view writes an SVG; unknown action names list the vocabulary", async () => {
+  test("fit dry-runs one nudge; KRT steps fail naming KRT when it is missing; view writes an SVG; unknown action names list the vocabulary", async () => {
     const { call } = await setup();
     await call({ action: "new" });
-    await expect(call({ action: "fit" })).rejects.toThrow(/placement helper/);
+    await expect(call({ action: "fit" })).rejects.toThrow(/one nudge:\/turn: action/);
+    const f = await call({ action: "fit", actions: ["nudge:U1@25,12~3"] });
+    expect(f.text).toMatch(/U1|NO FIT/);
+    const t = await call({ action: "try", actions: ["rip", "pairs-all"] });
+    expect(t.text).toContain("KiCadRoutingTools");
+    expect((t.json as { accepted: string | null }).accepted).toBeNull();
     const v = await call({ action: "view", box: [0, 0, 40, 30] });
     expect(String(v.text)).toMatch(/\.(svg|png)$/);
     await expect(call({ action: "try", actions: ["bogus"] })).rejects.toThrow(/unknown action 'bogus'/);
