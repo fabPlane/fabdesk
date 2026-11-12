@@ -11,7 +11,7 @@
  */
 import { readFileSync } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { runKicadCli, type KicadCli } from "@fabdesk/kicad";
 import { CHECK_KEYS } from "../accept";
 import { boardPinNames, readCplJlc, type BomResult } from "./bomcheck";
@@ -104,7 +104,7 @@ export async function resolveException(spec: string, baseDir: string): Promise<A
   const [check, ref] = [spec.slice(0, spec.indexOf("=")), spec.slice(spec.indexOf("=") + 1)];
   if (!check || !ref.includes("#")) throw new ReleaseStop("acceptance", `--accept ${spec}: expected CHECK=FILE#ID`);
   const [file, id] = [ref.slice(0, ref.indexOf("#")), ref.slice(ref.indexOf("#") + 1)];
-  const doc = JSON.parse(await readFile(file.startsWith("/") ? file : join(baseDir, file), "utf8").catch(() => "null"));
+  const doc = JSON.parse(await readFile(isAbsolute(file) ? file : join(baseDir, file), "utf8").catch(() => "null"));
   const lists = Array.isArray(doc) ? [doc] : doc && typeof doc === "object" ? Object.values(doc) : [];
   const recs = lists.filter(Array.isArray).flat().filter((r) => r && typeof r === "object") as Array<Record<string, unknown>>;
   const rec = recs.find((r) => r["id"] === id);

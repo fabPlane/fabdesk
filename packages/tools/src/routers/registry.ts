@@ -15,6 +15,7 @@ import {
   type RouterCatalogEntry,
 } from "./catalog";
 import { bundledHint, installHintFor } from "./hints";
+import { krtRootProblem, krtVersionAt, setupKrt, type KrtSetupDeps, type KrtSetupResult } from "./krt";
 import { parseTraceMakerVersion, resolveTraceMakerInstallArtifact } from "./tracemaker-release";
 
 const STATE_FILE = "state.json";
@@ -45,6 +46,8 @@ export type BundledRouter = { version?: string; path?: string };
 
 export type RouterRegistrySettings = {
   tracemakerManifestUrl?: string | null;
+  /** A KiCadRoutingTools build that wins over FABDESK_KRT_DIR and the installed copy. */
+  krtDir?: string | null;
 };
 
 export type RouterRegistryDeps = {
@@ -56,6 +59,8 @@ export type RouterRegistryDeps = {
   /** Live settings (re-read on each install). Env FABDESK_TRACEMAKER_MANIFEST_URL still wins. */
   settings?: () => RouterRegistrySettings;
   spawn?: (cmd: string, args: string[]) => Promise<number>;
+  /** KRT's post-extract step (venv + packages); injectable so tests need no Python or network. */
+  krtSetup?: (root: string, deps: KrtSetupDeps) => Promise<KrtSetupResult>;
 };
 
 export interface RouterRegistry {
@@ -230,13 +235,14 @@ class FileRouterRegistry implements RouterRegistry {
       };
     }
     if (local) {
-      const envName = this.overrideEnv(entry.id);
+      const envName = this.overrideSource(entry.id)?.name ?? this.overrideEnv(entry.id);
       const probed = this.probeVersion(entry.id, local);
+      const clear = envName.startsWith("Settings") ? "Clear that setting" : `Unset ${envName}`;
       return {
         ...this.base(entry),
         state: "installed",
         ready: true,
-        installHint: `Using ${envName}=${local}. Unset ${envName} to manage ${entry.displayName} from Settings.`,
+        installHint: `Using ${envName}=${local}. ${clear} to manage ${entry.displayName} from Settings.`,
         versionInstalled: probed ?? entry.version,
         path: local,
         overriddenBy: envName,
@@ -253,7 +259,9 @@ class FileRouterRegistry implements RouterRegistry {
         sourceOnly: !ready,
         installHint: ready
           ? `${entry.displayName} ${saved.version ?? entry.version} is installed.`
-          : `${entry.displayName} ${saved.version ?? entry.version} source package is installed, but there is no runnable binary yet. Build it in ${saved.path}, or set ${envName} to a built binary.`,
+          : entry.id === "krt"
+            ? `${entry.displayName} ${saved.version ?? entry.version} at ${saved.path} is incomplete (${krtRootProblem(saved.path) ?? "not runnable"}). Reinstall it, or set FABDESK_KRT_DIR to a build.`
+            : `${entry.displayName} ${saved.version ?? entry.version} source package is installed, but there is no runnable binary yet. Build it in ${saved.path}, or set ${envName} to a built binary.`,
         ...(saved.version ? { versionInstalled: saved.version } : {}),
         ...(saved.error ? { error: saved.error } : {}),
         ...(saved.notice ? { notice: saved.notice } : {}),
@@ -290,31 +298,42 @@ class FileRouterRegistry implements RouterRegistry {
       version: entry.version,
       homepage: entry.homepage,
       install: entry.install,
+      ...(entry.kind ? { kind: entry.kind } : {}),
     };
   }
 
   private overrideEnv(id: RouterCatalogId): string {
-    return id === "tracemaker" ? "TRACEMAKER_BIN" : id === "freerouting" ? "FREEROUTING_JAR" : "";
+    return id === "tracemaker" ? "TRACEMAKER_BIN" : id === "freerouting" ? "FREEROUTING_JAR" : id === "krt" ? "FABDESK_KRT_DIR" : "";
+  }
+
+  /** The override that is set, if any: Settings `krtDir` (KRT only), then the env var. */
+  private overrideSource(id: RouterCatalogId): { name: string; value: string } | null {
+    if (id === "krt") {
+      const fromSettings = this.deps.settings?.().krtDir?.trim();
+      if (fromSettings) return { name: "Settings krtDir", value: fromSettings };
+    }
+    const key = this.overrideEnv(id);
+    const value = key ? this.env[key]?.trim() : undefined;
+    return key && value ? { name: key, value } : null;
   }
 
   private localOverride(id: RouterCatalogId): string | null {
-    const key = this.overrideEnv(id);
-    if (!key) return null;
-    const value = this.env[key]?.trim();
+    const value = this.overrideSource(id)?.value;
     if (!value) return null;
     if (id === "tracemaker") return isRunnableFile(value) ? value : null;
     if (id === "freerouting") return isFile(value) ? value : null;
+    if (id === "krt") return krtRootProblem(value) === null ? value : null;
     return existsSync(value) ? value : null;
   }
 
-  /** Why an env override that is set cannot be used (so the card can say so instead of ignoring it). */
+  /** Why an override that is set cannot be used (so the card can say so instead of ignoring it). */
   private overrideProblem(id: RouterCatalogId): string | undefined {
-    const key = this.overrideEnv(id);
-    const value = key ? this.env[key]?.trim() : undefined;
-    if (!key || !value || this.localOverride(id)) return undefined;
-    return !existsSync(value)
-      ? `${key} is set to ${value}, which does not exist.`
-      : `${key} is set to ${value}, which is not a runnable ${id === "freerouting" ? "jar" : "executable file"}.`;
+    const source = this.overrideSource(id);
+    if (!source || this.localOverride(id)) return undefined;
+    const { name: key, value } = source;
+    if (!existsSync(value)) return `${key} is set to ${value}, which does not exist.`;
+    if (id === "krt") return `${key} is set to ${value}, which is not a KiCadRoutingTools build (${krtRootProblem(value)}).`;
+    return `${key} is set to ${value}, which is not a runnable ${id === "freerouting" ? "jar" : "executable file"}.`;
   }
 
   /**
@@ -331,6 +350,7 @@ class FileRouterRegistry implements RouterRegistry {
       if (isDirectory(path)) return findNamedFile(path, "tracemaker", isRunnableFile);
       return null;
     }
+    if (entry.id === "krt") return krtRootProblem(path) === null ? path : null;
     return existsSync(path) ? path : null;
   }
 
@@ -340,6 +360,7 @@ class FileRouterRegistry implements RouterRegistry {
 
   /** `tracemaker version`, then `--version`. Cached per path + mtime. */
   private probeVersion(id: RouterCatalogId, path: string): string | null {
+    if (id === "krt") return krtVersionAt(path);
     if (id !== "tracemaker") return null;
     let key = path;
     try {
@@ -409,8 +430,8 @@ class FileRouterRegistry implements RouterRegistry {
       await verifyFileSha256(destFile, artifact.sha256);
       job.phase = "extracting";
       const extracted = join(work, "extracted");
-      await mkdir(extracted, { recursive: true });
-      await this.materialize(artifact, destFile, extracted);
+      await mkdir(join(extracted, artifact.subdir ?? ""), { recursive: true });
+      await this.materialize(artifact, destFile, join(extracted, artifact.subdir ?? ""));
       abort.signal.throwIfAborted();
       // Swap the finished tree in only now, keeping the previous install until the new one is recorded,
       // so a failure at any step never leaves a half-installed directory behind.
@@ -418,12 +439,20 @@ class FileRouterRegistry implements RouterRegistry {
       if (existsSync(final)) await rename(final, backup);
       swapped = true;
       await rename(extracted, final);
-      const readyPath = this.findReadyPath(final, artifact) ?? final;
+      let setupNotice: string | undefined;
+      if (entry.id === "krt") {
+        // The venv is made in place (its paths are absolute), after the swap; a failure restores the backup.
+        job.phase = "setup";
+        const setup = await (this.deps.krtSetup ?? setupKrt)(final, { env: this.env, signal: abort.signal });
+        abort.signal.throwIfAborted();
+        setupNotice = setup.notice;
+      }
+      const readyPath = artifact.subdir ? final : (this.findReadyPath(final, artifact) ?? final);
       const binaryReady = this.binaryReady(entry, readyPath);
       if (binaryReady) await chmod(readyPath, 0o755).catch(() => undefined);
-      const notice = !binaryReady
+      const notice = setupNotice ?? (!binaryReady
         ? `${(resolveWarning ?? `No runnable ${entry.displayName} binary was in the downloaded archive.`).replace(/[.\s]*$/, "")}. Only the source package was downloaded, so ${entry.displayName} is not usable until you build it or set ${this.overrideEnv(entry.id)}.`
-        : undefined;
+        : undefined);
       this.persisted.routers[entry.id] = {
         state: "installed",
         version: versionOverride ?? entry.version,

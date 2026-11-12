@@ -71,6 +71,7 @@ export function mockServices(
       fpPcbBridgeUrl: null,
       router: "capacity",
       tracemakerManifestUrl: null,
+      krtDir: null,
       defaultAgent: "claude",
       defaultRuntimeMode: "full",
       agents: {},

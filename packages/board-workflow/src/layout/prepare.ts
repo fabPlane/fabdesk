@@ -4,7 +4,7 @@
  * Lives in `<project>/.fabdesk/board/layout/`; the agent edits `groups.json` and `spec.json` there.
  */
 import { copyFile, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { parseBoard } from "../board";
 import { boardHome, locateProject, writeJsonFile } from "../files";
 import { readOnboardRecord, requirementsDir } from "../onboard";
@@ -59,7 +59,7 @@ export async function prepareLayout(projectDir: string, opts: { pcb?: string; na
   if (!(await readdir(requirementsDir(projectDir)).catch(() => [])).length) throw new Error("requirements missing: run board_check first");
   await writeJsonFile(join(out, "groups.json"), { schema: 1, board: `${files.stem}.kicad_pcb`, groups });
   const spec: LayoutSpec = {
-    name: opts.name ?? projectDir.split("/").filter(Boolean).pop() ?? "board",
+    name: opts.name ?? (basename(projectDir) || "board"),
     stem: files.stem,
     base,
     requirements: requirementsDir(projectDir),

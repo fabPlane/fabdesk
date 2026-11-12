@@ -4,7 +4,7 @@
  * heights, and the circuit snapshot. Everything is a first proposal with its basis recorded; the
  * agent reviews `review` and owns the numbers afterwards (currents, widths, plane layers).
  */
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { legacyNetRefs, parseBoard, type Board, type Footprint, type Pad } from "./board";
 import {
@@ -450,10 +450,10 @@ export async function onboard(
   if (!opts.refresh && (await exists(join(dir, REQUIREMENT_FILES.acceptance))))
     throw new Error("requirements already exist (.fabdesk/board/requirements); pass refresh to derive them again");
   const settings = files.pro ? readProjectSettings(await readFile(files.pro, "utf8")) : readProjectSettings("{}");
-  const pcbName = files.pcb.slice(files.pcb.lastIndexOf("/") + 1);
+  const pcbName = basename(files.pcb);
   const derived = deriveRequirements(await readFile(files.pcb, "utf8"), settings, {
     ...opts,
-    name: opts.name ?? projectDir.split("/").filter(Boolean).pop() ?? "board",
+    name: opts.name ?? (basename(projectDir) || "board"),
     pcbName,
   });
   if (!files.pro) derived.review.push("no .kicad_pro: net classes and board rules are defaults");

@@ -12,6 +12,7 @@ import {
   canRecheck,
   canUninstall,
   installProgressView,
+  isEngine,
   isPreferred,
   primaryAction,
   primaryActionLabel,
@@ -124,7 +125,7 @@ export function RoutersSection() {
               )}
               {canRecheck(router) && (
                 <Button size="sm" disabled={busy} onClick={() => void install.mutateAsync(router.id)}>
-                  Check for binary
+                  {isEngine(router) ? "Reinstall" : "Check for binary"}
                 </Button>
               )}
               {canUninstall(router) && router.state === "failed" && (
@@ -132,13 +133,17 @@ export function RoutersSection() {
                   Clear error
                 </Button>
               )}
-              <Button
-                size="sm"
-                disabled={busy || !routerUsable(router) || preferredHere}
-                onClick={() => void patch.mutateAsync({ preferredRouter: router.id })}
-              >
-                {preferredHere ? "Default" : "Set default"}
-              </Button>
+              {!isEngine(router) && (
+                <Button
+                  size="sm"
+                  disabled={busy || !routerUsable(router) || preferredHere}
+                  onClick={() => {
+                    if (router.id !== "krt") void patch.mutateAsync({ preferredRouter: router.id });
+                  }}
+                >
+                  {preferredHere ? "Default" : "Set default"}
+                </Button>
+              )}
             </div>
           </div>
         );
@@ -172,6 +177,27 @@ export function RoutersSection() {
             const next = event.target.value.trim() || null;
             const current = settings.data?.tracemakerManifestUrl ?? null;
             if (next !== current) void patch.mutateAsync({ tracemakerManifestUrl: next });
+          }}
+        />
+      </label>
+      <label className="block space-y-1 pt-2">
+        <span className="text-xs font-medium">KiCadRoutingTools folder</span>
+        <span className="block text-[11px] leading-4 text-muted">
+          Use your own KiCadRoutingTools build (a folder with <code className="font-mono">src/plugins</code> and{" "}
+          <code className="font-mono">venv</code>) instead of the installed copy. Empty uses env{" "}
+          <code className="font-mono">FABDESK_KRT_DIR</code>, then the copy installed above.
+        </span>
+        <input
+          key={settings.data?.krtDir ?? "empty"}
+          className="mt-1 w-full rounded-md border border-border bg-panel-2 px-2 py-1 font-mono text-[11px]"
+          data-testid="krt-dir"
+          placeholder="(installed copy)"
+          defaultValue={settings.data?.krtDir ?? ""}
+          disabled={busyBase}
+          onBlur={(event) => {
+            const next = event.target.value.trim() || null;
+            const current = settings.data?.krtDir ?? null;
+            if (next !== current) void patch.mutateAsync({ krtDir: next });
           }}
         />
       </label>

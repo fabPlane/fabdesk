@@ -1,5 +1,6 @@
 import type { RouterCatalogId, RouterSnapshot } from "@fabdesk/protocol";
 import { TRACEMAKER_HOMEPAGE, TRACEMAKER_VERSION } from "./catalog";
+import { KRT_VERSION } from "./krt";
 
 export function installHintFor(
   id: RouterCatalogId,
@@ -20,6 +21,15 @@ export function installHintFor(
     return [
       "Freerouting is not installed.",
       "Install it from Settings → Routers (downloads the GPL-3.0 JAR into the fabdesk data dir), or set FREEROUTING_JAR to an existing jar.",
+      snapshot?.error ? `Last error: ${snapshot.error}` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+  if (id === "krt") {
+    return [
+      "KiCadRoutingTools is not installed.",
+      `Install it from Settings → Routers → KiCadRoutingTools (downloads the MIT v${KRT_VERSION} release, ~16 MB, and sets up a Python venv with numpy, scipy and shapely using uv or Python 3.9+), or set FABDESK_KRT_DIR to a build.`,
       snapshot?.error ? `Last error: ${snapshot.error}` : "",
     ]
       .filter(Boolean)

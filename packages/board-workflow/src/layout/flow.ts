@@ -12,7 +12,7 @@
  * recorded in `WS/flow.json`. The last mile (`lastmile/`) starts from `best_board`, the route stage's board.
  */
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import { checkAcceptance } from "../accept";
 import { parseBoard } from "../board";
 import { readJsonOrNull } from "../files";
@@ -79,7 +79,7 @@ export interface StageOutcome {
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "");
 const round1 = (x: number) => Math.round(x * 10) / 10;
-const rel = (spec: LayoutSpec, p: string) => (p.startsWith("builtin:") || p.startsWith("/") ? p : resolve(spec.base, "..", p));
+const rel = (spec: LayoutSpec, p: string) => (p.startsWith("builtin:") || isAbsolute(p) ? p : resolve(spec.base, "..", p));
 
 // ---------------------------------------------------------------- state
 
@@ -140,7 +140,7 @@ export async function stageCheck(host: LayoutHost, st: FlowState, opts: LayoutCh
   const lines: string[] = [];
   const need = (ok: unknown, msg: string, fix: string) => void (ok || fails.push(`${msg} -> ${fix}`));
 
-  need(host.tools.krt && (await pathExists(join(host.tools.krt, "src/plugins"))), `krt missing at ${host.tools.krt ?? "(not configured)"}`, "set FABDESK_KRT_DIR to a KiCadRoutingTools build");
+  need(host.tools.krt && (await pathExists(join(host.tools.krt, "src/plugins"))), `krt missing at ${host.tools.krt ?? "(not installed)"}`, "install KiCadRoutingTools in Settings → Routers, or set FABDESK_KRT_DIR");
   need(host.tools.tracemaker && (await pathExists(host.tools.tracemaker)), `tracemaker missing at ${host.tools.tracemaker ?? "(not installed)"}`, "install it in Settings → Routers, or set TRACEMAKER_BIN");
   need(host.tools.kicadCli, "no KiCad CLI", "install KiCad or set KICAD_CLI");
   info["disk_gib"] = round1(await host.diskFreeGiB(st.ws));
@@ -204,7 +204,7 @@ export async function stageCheck(host: LayoutHost, st: FlowState, opts: LayoutCh
   for (const t of sp.templates ?? []) {
     const tr = JSON.parse(await readFile(rel(sp, t), "utf8")) as { anchor?: string; members?: Array<{ ref: string }> };
     const bad = [tr.anchor, ...(tr.members ?? []).map((m) => m.ref)].filter((r): r is string => !!r && !fps.has(r));
-    need(!bad.length, `template ${t.split("/").pop()}: refs not on board ${pyList(bad)}`, "refit the template to this board");
+    need(!bad.length, `template ${basename(t)}: refs not on board ${pyList(bad)}`, "refit the template to this board");
   }
 
   const req = await readRequirementsDir(reqDir);
@@ -431,7 +431,10 @@ export async function stageRoute(host: LayoutHost, st: FlowState): Promise<Stage
     // One TraceMaker job per machine (11-14 GB): the governor admits one `tracemaker` job at a time and waits for memory;
     // a TraceMaker started by another process is waited on too.
     await admitted(host, "tracemaker", "route TraceMaker", [best.placed], async () => {
-      while (host.tracemakerBusy && (await host.tracemakerBusy())) await new Promise((r) => setTimeout(r, 15_000));
+      for (let noted = false; host.tracemakerBusy && !host.signal?.aborted && (await host.tracemakerBusy()); noted = true) {
+        if (!noted) host.log?.("waiting: a TraceMaker outside this job is running (one per machine)");
+        await new Promise((r) => setTimeout(r, 15_000));
+      }
       results["tm_lock_wait_s"] = round1((Date.now() - t0) / 1000);
       await rm(tm, { recursive: true, force: true });
       await routePipeline(host, { placed: best.placed, out: tm, plan: rel(sp, sp.plans.tm), stem: sp.stem, req, budgetMs: (B.tm ?? 20) * 60_000 }).catch((e) => {

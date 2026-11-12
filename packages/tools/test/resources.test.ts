@@ -47,7 +47,9 @@ describe("resource governor", () => {
     expect(await boardMemGiB([join(dir, "a.kicad_pcb")])).toBe(3);
     expect(await boardMemGiB([dir])).toBe(3);
     expect(await boardMemGiB(["relative", join(dir, "none")])).toBe(0);
+    // a big board's light job waits for memory while another board job holds it
     const g = new ResourceGovernor(async () => host(2.5));
+    const other = await g.admit({ cls: "light", label: "other", paths: ["/"] });
     const ac = new AbortController();
     const waits: string[] = [];
     const j = g.admit({ cls: "light", label: "big", paths: ["/"], memGiB: 3, pollMs: 10, signal: ac.signal, onWait: (w) => waits.push(w) });
@@ -55,5 +57,6 @@ describe("resource governor", () => {
     expect(waits[0]).toContain("waiting for memory");
     ac.abort();
     await expect(j).rejects.toThrow(/cancelled/);
+    other.release();
   });
 });

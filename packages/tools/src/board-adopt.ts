@@ -88,7 +88,7 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
     ctx.services.runtimeId,
   );
   ctx.progress(0.2, sheets.length ? `writing ${sheets.length} design file(s), then the board as one KiCad commit` : "applying candidate as one KiCad commit");
-  const job = await governor().admit({ cls: "light", label: "adopt", paths: [project.dir], signal: ctx.signal });
+  const job = await governor().admit({ cls: "light", label: "adopt", paths: [project.dir], signal: ctx.signal, onWait: (w) => ctx.progress(0.2, w) });
   try {
     const keep = join(project.dir, ".fabdesk", "board", "adopt", stamp(), "before");
     const apply = async () => {

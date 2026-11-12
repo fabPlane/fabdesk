@@ -14,7 +14,7 @@
  * edits a design.
  */
 import { mkdir, readdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { REGISTRY } from "./checks";
 import { ReviewCtx, reviewHash, reviewHome, type ReviewEnv, type ReviewProject } from "./context";
 import { propose, coveringDecision } from "./proposals";
@@ -263,7 +263,7 @@ export async function runReview(project: ReviewProject, env: ReviewEnv, opts: Ru
   await writeFile(join(out, "review.json"), JSON.stringify(review, null, 1) + "\n");
   const evaluation = evaluate(review, await readDispositions(project.dir), intent);
   await writeFile(join(out, "review.md"), reportMd(review, evaluation));
-  if (!want) await setLatest(project.dir, out.slice(out.lastIndexOf("/") + 1));
+  if (!want) await setLatest(project.dir, basename(out));
   return { review, evaluation, dir: out };
 }
 

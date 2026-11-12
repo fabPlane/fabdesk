@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { stepsFor, type Step } from "./actions";
 import { compareKeys, figureLine, gate, keyOf, type Figures, type GateSlack, type OpenItem } from "./gate";
+import { hostMemory } from "../sysinfo";
 
 export interface Scored {
   figures: Figures;
@@ -47,7 +48,7 @@ export interface StepEngine {
 export interface BenchDeps {
   scorer: Scorer;
   engine: StepEngine;
-  /** Memory available now, GiB (default: /proc/meminfo MemAvailable). */
+  /** Memory available now, GiB (default: `hostMemory()`, the same reading the resource governor uses). */
   availableGiB?: () => Promise<number>;
   onLine?: (line: string) => void;
   signal?: AbortSignal;
@@ -119,11 +120,8 @@ export function sizeLimits(o: { pcbBytes: number; availableGiB: number; jobs: nu
   return { jobs, budget, note: notes.length ? "limits: " + notes.join("; ") : "" };
 }
 
-async function memAvailableGiB(): Promise<number> {
-  const t = await readFile("/proc/meminfo", "utf8").catch(() => "");
-  const m = /MemAvailable:\s+(\d+)/.exec(t);
-  return m ? Number(m[1]) / 2 ** 20 : 64;
-}
+/** The host's available memory (Linux MemAvailable, macOS vm_stat, Windows os.freemem), the number the governor admits on. */
+const memAvailableGiB = async (): Promise<number> => (await hostMemory()).availableGiB;
 
 const slug = (s: string) => s.replace(/[^\w.+-]+/g, "_");
 

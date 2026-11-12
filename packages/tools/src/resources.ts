@@ -6,8 +6,9 @@
  * 11-14 GB RSS, and two at once OOM-killed the agent session; KiCad API servers are ~150-300 MB;
  * board copies (seeds, tries, candidates) filled the disk until runs started checking for 10 GB free.
  */
-import { readFile, readdir, stat, statfs } from "node:fs/promises";
-import { cpus } from "node:os";
+import { readdir, stat, statfs } from "node:fs/promises";
+import { cpus, loadavg } from "node:os";
+import { sysinfo } from "@fabdesk/board-workflow";
 import { isAbsolute, join } from "node:path";
 import { ToolError } from "./registry";
 
@@ -40,58 +41,43 @@ export type HostSample = {
 
 export type RunningJob = { id: string; label: string; cls: ResourceClass; startedAt: number; pid?: number; peakRssGiB: number; memGiB?: number };
 
-async function meminfo(): Promise<Record<string, number>> {
-  const text = await readFile("/proc/meminfo", "utf8").catch(() => "");
-  const out: Record<string, number> = {};
-  for (const line of text.split("\n")) {
-    const m = /^(\w+):\s+(\d+)\s*kB/.exec(line);
-    if (m) out[m[1]!] = Number(m[2]) * 1024;
-  }
-  return out;
+/** Seams for `sampleHost` (tests simulate macOS, Windows and hosts with no data): memory, load, CPUs and disk. */
+export interface SampleDeps {
+  memory?: () => Promise<sysinfo.HostMemory>;
+  loadavg?: () => number[];
+  cpus?: () => number;
+  statfs?: (path: string) => Promise<{ bavail: number; bsize: number; blocks: number } | null>;
 }
 
-export async function sampleHost(paths: string[] = []): Promise<HostSample> {
-  const m = await meminfo();
-  const load = await readFile("/proc/loadavg", "utf8").catch(() => "0");
+/**
+ * The host now, on Linux, macOS and Windows: memory from `sysinfo.hostMemory` (the bench reads the same number), load
+ * from `os.loadavg()` (always 0 on Windows, which has no load average; nothing admits on it), disk by `statfs` per
+ * path (a path statfs cannot read is left out, so it is not checked).
+ */
+export async function sampleHost(paths: string[] = [], deps: SampleDeps = {}): Promise<HostSample> {
+  const mem = await (deps.memory ?? (() => sysinfo.hostMemory()))().catch(() => null);
+  const load = (deps.loadavg ?? loadavg)()[0] ?? 0;
   const disk = [];
   for (const path of [...new Set(paths)]) {
-    const s = await statfs(path).catch(() => null);
+    const s = await (deps.statfs ? deps.statfs(path) : statfs(path)).catch(() => null);
     if (!s) continue;
     const free = s.bavail * s.bsize, total = s.blocks * s.bsize;
     disk.push({ path, freeGiB: round(free / GiB), totalGiB: round(total / GiB), freeShare: total ? round(free / total) : 0 });
   }
   return {
-    memTotalGiB: round((m["MemTotal"] ?? 0) / GiB),
-    memAvailableGiB: round((m["MemAvailable"] ?? 0) / GiB),
-    swapUsedGiB: round(((m["SwapTotal"] ?? 0) - (m["SwapFree"] ?? 0)) / GiB),
-    load1: Number(load.split(" ")[0]) || 0,
-    cpus: cpus().length,
+    memTotalGiB: mem?.totalGiB ?? 0,
+    memAvailableGiB: mem?.availableGiB ?? 0,
+    swapUsedGiB: mem?.swapUsedGiB ?? 0,
+    load1: Number.isFinite(load) ? round(load) : 0,
+    cpus: (deps.cpus ?? (() => cpus().length))(),
     disk,
   };
 }
 
 const round = (x: number) => Math.round(x * 100) / 100;
 
-/** Resident memory of a process and all its descendants (bytes); 0 when unavailable. */
-export async function treeRss(root: number): Promise<number> {
-  const children = new Map<number, number[]>();
-  for (const name of await readdir("/proc").catch(() => [] as string[])) {
-    if (!/^\d+$/.test(name)) continue;
-    const stat = await readFile(`/proc/${name}/stat`, "utf8").catch(() => "");
-    const ppid = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]);
-    if (ppid) (children.get(ppid) ?? children.set(ppid, []).get(ppid)!).push(Number(name));
-  }
-  let total = 0;
-  const queue = [root];
-  while (queue.length) {
-    const pid = queue.pop()!;
-    const status = await readFile(`/proc/${pid}/status`, "utf8").catch(() => "");
-    const kb = /VmRSS:\s+(\d+)/.exec(status);
-    if (kb) total += Number(kb[1]) * 1024;
-    queue.push(...(children.get(pid) ?? []));
-  }
-  return total;
-}
+/** Resident memory of a process and all its descendants (bytes); 0 when unavailable (Linux `/proc`, macOS `ps`, Windows 0). */
+export const treeRss = (root: number): Promise<number> => sysinfo.treeRss(root);
 
 type Waiter = () => void;
 
@@ -99,6 +85,10 @@ type Waiter = () => void;
  * One per core process. `admit` resolves when the class's needs are met (memory, exclusivity, disk),
  * calling `onWait` with the reason while it queues; disk below the floor is refused with a proposal
  * instead of waited on, since waiting never frees disk.
+ *
+ * Liveness: a job only ever waits on another admitted job, which will release. Short memory with no other
+ * admitted job running is admitted at once with a note (every class alike): nothing this governor controls
+ * would free memory, the needs are estimates, and refusing would make heavy tools unusable on a small machine.
  */
 export class ResourceGovernor {
   readonly running = new Map<string, RunningJob>();
@@ -111,6 +101,7 @@ export class ResourceGovernor {
     label: string;
     paths: string[];
     signal?: AbortSignal;
+    /** Progress: why the job queues, and the note when it is admitted short on memory with nothing else running. */
     onWait?: (why: string) => void;
     pollMs?: number;
     /** Memory this job will hold when it is more than its class default (a large board). */
@@ -135,13 +126,19 @@ export class ResourceGovernor {
         0,
       );
       const free = host.memAvailableGiB - reserved;
+      const short = free < need.memGiB;
       const why =
         need.exclusive && sameClass.length
           ? `waiting: one ${input.cls} job at a time (${sameClass[0]!.label} running)`
-          : free < need.memGiB
-            ? `waiting for memory: ${round(free)} GiB free after reservations, ${need.memGiB} GiB needed`
+          : short && this.running.size
+            ? `waiting for memory: ${round(free)} GiB free after reservations, ${need.memGiB} GiB needed (${this.running.size} board job(s) running)`
             : null;
       if (!why) {
+        if (short)
+          input.onWait?.(
+            `memory is short: ${round(host.memAvailableGiB)} GiB available, ${need.memGiB} GiB estimated for ${input.label}; ` +
+              "no other board job is running, so waiting would not free any — starting anyway (close other applications if the machine starts swapping)",
+          );
         const job: RunningJob = { id: `job${++this.seq}`, label: input.label, cls: input.cls, startedAt: Date.now(), peakRssGiB: 0, memGiB: need.memGiB };
         this.running.set(job.id, job);
         return {

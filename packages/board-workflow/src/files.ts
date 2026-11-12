@@ -1,7 +1,7 @@
 /** Where the workflow keeps its records, and how it finds a project's KiCad files. */
 import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
-import { basename, join, relative } from "node:path";
+import { basename, isAbsolute, join, relative } from "node:path";
 
 export const BOARD_DIR = ".fabdesk/board";
 
@@ -28,7 +28,7 @@ export async function exists(path: string): Promise<boolean> {
 /** The project's board: `pcb` (relative to the project or absolute), else `board.kicad_pcb`, else the only `.kicad_pcb`. */
 export async function locateProject(projectDir: string, pcb?: string): Promise<ProjectFiles> {
   let file: string;
-  if (pcb) file = pcb.startsWith("/") ? pcb : join(projectDir, pcb);
+  if (pcb) file = isAbsolute(pcb) ? pcb : join(projectDir, pcb);
   else {
     const names = (await readdir(projectDir)).filter((n) => n.endsWith(".kicad_pcb") && !n.startsWith("_autosave"));
     const pick = names.includes("board.kicad_pcb") ? "board.kicad_pcb" : names.length === 1 ? names[0] : undefined;

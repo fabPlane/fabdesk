@@ -13,7 +13,7 @@
  * single-run readings). Starting a fresh-context reviewer (L8) is the owner's call and is not done here.
  */
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { z } from "zod/v4";
 import {
   dispose,
@@ -136,7 +136,7 @@ export const board_review = defineTool({
       }
       case "import_expert": {
         needs(input.file, "file");
-        const path = input.file!.startsWith("/") ? input.file! : join(dir, input.file!);
+        const path = isAbsolute(input.file!) ? input.file! : join(dir, input.file!);
         const ex = JSON.parse(await readFile(path, "utf8").catch(() => "null")) as ExpertFile | null;
         if (!ex) throw new ToolError(`cannot read ${path} as JSON`, "invalid_args");
         try {

@@ -1,8 +1,11 @@
 /** Install-on-demand autorouter catalog shared by the daemon, tools, and Settings UI. */
 import { z } from "zod/v4";
 
-/** Catalog routers. `capacity` is a legacy input alias for `fab_router`, not a catalog entry. */
-export const RouterCatalogId = z.enum(["fab_router", "freerouting", "tracemaker"]);
+/**
+ * Catalog entries. `capacity` is a legacy input alias for `fab_router`, not a catalog entry. `krt`
+ * (KiCadRoutingTools) is an engine the board workflow runs, not a `route_run` router (`kind: "engine"`).
+ */
+export const RouterCatalogId = z.enum(["fab_router", "freerouting", "tracemaker", "krt"]);
 export type RouterCatalogId = z.infer<typeof RouterCatalogId>;
 
 export const RouterInstallState = z.enum([
@@ -15,7 +18,7 @@ export const RouterInstallState = z.enum([
 export type RouterInstallState = z.infer<typeof RouterInstallState>;
 
 /** Install phases the registry reports while a job is running. */
-export const RouterInstallPhase = z.enum(["resolving", "downloading", "verifying", "extracting"]);
+export const RouterInstallPhase = z.enum(["resolving", "downloading", "verifying", "extracting", "setup"]);
 export type RouterInstallPhase = z.infer<typeof RouterInstallPhase>;
 
 export const RouterProgress = z.object({
@@ -34,6 +37,8 @@ export const RouterSnapshot = z.object({
   version: z.string(),
   homepage: z.string(),
   install: z.enum(["bundled", "download"]),
+  /** `engine`: run by the board workflow, never a `route_run` router (no picker entry, no Set default). Omitted means router. */
+  kind: z.enum(["router", "engine"]).optional(),
   state: RouterInstallState,
   ready: z.boolean(),
   /** Runtime health is separate from package installation; an installed engine can be unavailable. */
@@ -48,7 +53,7 @@ export const RouterSnapshot = z.object({
   path: z.string().optional(),
   /** Installed package is source only: there is no runnable binary until it is built. */
   sourceOnly: z.boolean().optional(),
-  /** Env var (TRACEMAKER_BIN / FREEROUTING_JAR) that supplies this router; Uninstall cannot remove it. */
+  /** Env var (TRACEMAKER_BIN / FREEROUTING_JAR / FABDESK_KRT_DIR) or setting that supplies this router; Uninstall cannot remove it. */
   overriddenBy: z.string().optional(),
 });
 export type RouterSnapshot = z.infer<typeof RouterSnapshot>;

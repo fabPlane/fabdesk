@@ -6,7 +6,7 @@
  */
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { checkAcceptance, profile, pyRound, type DrcInput } from "../accept";
 import { kids, type SNode } from "../sexpr";
 import { BUILTIN_CARDS, INTERFACE_PROFILES } from "./data";
@@ -134,7 +134,7 @@ export async function checkIdentity(ctx: ReviewCtx): Promise<CheckResult> {
     const head = (await spawn(["git", "-C", root, "rev-parse", "HEAD"])).out.trim();
     const rel: string[] = [];
     for (const k of Object.keys(ctx.files)) {
-      const abs = k.startsWith("/") ? k : join(b.dir, k);
+      const abs = isAbsolute(k) ? k : join(b.dir, k);
       if ((await exists(abs)) && abs.startsWith(root + "/")) rel.push(abs.slice(root.length + 1));
     }
     const st = rel.length ? (await spawn(["git", "-C", root, "status", "--porcelain", "--", ...rel])).out.split("\n").filter(Boolean) : [];

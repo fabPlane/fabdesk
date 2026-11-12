@@ -5,8 +5,9 @@
  * router registry of the tools package).
  */
 import { spawn as nodeSpawn } from "node:child_process";
-import { createReadStream, createWriteStream } from "node:fs";
-import { join } from "node:path";
+import { createReadStream, createWriteStream, existsSync } from "node:fs";
+import { constants, setPriority } from "node:os";
+import { join, posix, win32 } from "node:path";
 
 export interface RunOptions {
   cwd?: string;
@@ -28,17 +29,41 @@ export interface RunResult {
 }
 export type Spawn = (cmd: string[], opts: RunOptions) => Promise<RunResult>;
 
-/** Run a command at low priority (`nice -n 5`, as the toolkit did), logging to a file. 124 on timeout. */
+const NICE = ["/usr/bin/nice", "/bin/nice"];
+let niceBin: string | null | undefined;
+
+/**
+ * How to start `cmd` at low priority: through `nice -n 5` where `nice` exists (Linux, macOS; it applies from exec, so
+ * children the engine forks inherit it), otherwise directly and lowered after spawn with `os.setPriority` (Windows:
+ * BELOW_NORMAL, which child processes inherit too).
+ */
+export function lowPriority(cmd: string[], o: { platform?: NodeJS.Platform; nice?: string | null } = {}): { argv: string[]; setPriority: number | null } {
+  const platform = o.platform ?? process.platform;
+  const nice = platform === "win32" ? null : o.nice !== undefined ? o.nice : (niceBin ??= NICE.find((p) => existsSync(p)) ?? null);
+  if (nice) return { argv: [nice, "-n", "5", ...cmd], setPriority: null };
+  return { argv: cmd, setPriority: platform === "win32" ? constants.priority.PRIORITY_BELOW_NORMAL : 5 };
+}
+
+/** Run a command at low priority (`nice -n 5` as the toolkit did, or the OS priority API), logging to a file. 124 on timeout. */
 export const nodeRun: Spawn = (cmd, o) =>
   new Promise((resolve, reject) => {
     const t0 = Date.now();
     const log = createWriteStream(o.log);
     const out = o.stdout ? createWriteStream(o.stdout) : null;
-    const child = nodeSpawn("nice", ["-n", "5", ...cmd], {
+    const lp = lowPriority(cmd);
+    const child = nodeSpawn(lp.argv[0]!, lp.argv.slice(1), {
       cwd: o.cwd,
       env: { ...process.env, ...o.env },
       stdio: [o.stdin ? "pipe" : "ignore", "pipe", "pipe"],
+      windowsHide: true,
     });
+    if (child.pid && lp.setPriority !== null) {
+      try {
+        setPriority(child.pid, lp.setPriority);
+      } catch {
+        /* priority is a courtesy; the job runs either way */
+      }
+    }
     if (child.pid) o.onPid?.(child.pid);
     if (o.stdin) createReadStream(o.stdin).pipe(child.stdin!);
     child.stdout!.on("data", (c: Buffer) => (out ?? log).write(c));
@@ -70,9 +95,14 @@ export interface KrtPaths {
   python: string[];
 }
 
-/** KRT build layout: `src/plugins` holds its scripts, `venv/bin/python` runs them (`-E -s`: no user site, no env). */
-export function krtPaths(root: string): KrtPaths {
-  return { root, plugins: join(root, "src/plugins"), python: [join(root, "venv/bin/python"), "-E", "-s"] };
+/**
+ * KRT build layout: `src/plugins` holds its scripts, the venv's interpreter runs them (`-E -s`: no user site, no env).
+ * The venv interpreter is `venv/bin/python` on POSIX and `venv\Scripts\python.exe` on Windows.
+ */
+export function krtPaths(root: string, platform: NodeJS.Platform = process.platform): KrtPaths {
+  const p = platform === "win32" ? win32 : posix;
+  const python = platform === "win32" ? p.join(root, "venv", "Scripts", "python.exe") : p.join(root, "venv", "bin", "python");
+  return { root, plugins: p.join(root, "src", "plugins"), python: [python, "-E", "-s"] };
 }
 
 /** The last `JSON_SUMMARY:` line of a placer log, as the `final` block. */

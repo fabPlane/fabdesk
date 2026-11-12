@@ -1,5 +1,5 @@
 /** What a review run holds while its checks run: the project, its design hash, the kicad-cli and the shared readings. */
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { readdir, readFile } from "node:fs/promises";
 import { readBoard, type Board } from "../board";
 import { parseSexpr, type SNode } from "../sexpr";
@@ -121,7 +121,7 @@ export async function reviewHash(project: ReviewProject): Promise<{ hash: string
     for (const n of (await readdir(reqDir)).filter((x) => x.endsWith(".json") && !x.startsWith("~")).sort())
       files[`.fabdesk/board/requirements/${n}`] = createHash("sha256").update(await readFile(join(reqDir, n))).digest("hex");
   for (const rel of extra) {
-    const p = rel.startsWith("/") ? rel : join(project.dir, rel);
+    const p = isAbsolute(rel) ? rel : join(project.dir, rel);
     files[rel] = (await exists(p)) ? createHash("sha256").update(await readFile(p)).digest("hex") : "MISSING";
   }
   if (!extra.length) return { hash: d.design, files: { ...files } };

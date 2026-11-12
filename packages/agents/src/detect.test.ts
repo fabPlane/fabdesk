@@ -87,6 +87,7 @@ describe("detectAgents", () => {
       fpPcbBridgeUrl: null,
       router: "fab_router",
       tracemakerManifestUrl: null,
+      krtDir: null,
       defaultAgent: "claude",
       defaultRuntimeMode: "full",
       agents: {

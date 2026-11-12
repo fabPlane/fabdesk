@@ -34,7 +34,11 @@ stock agent. That is a goal: it has not been measured (see Not measured).
 
 `board_edit`, `board_release`, `board_silk`, `board_route` and `board_review run` run through `runDurable` (`board_check` and the other `board_review` actions return directly): a call waits up to 25 minutes, then returns a job id while the job continues
 (an MCP client drops a call at about 30 minutes). Every heavy tool is admitted by the resource governor by class (`light`, `router`,
-`tracemaker`) and by board size (about 0.06 GiB per MB of board file; one TraceMaker at a time).
+`tracemaker`) and by board size (about 0.06 GiB per MB of board file; one TraceMaker at a time). Memory is read the same way by the
+governor and the last-mile bench (`sysinfo.hostMemory` in `packages/board-workflow`): Linux `/proc/meminfo` MemAvailable, macOS `vm_stat`
+(total minus app memory, wired and compressed pages; `os.freemem()` alone undercounts a busy Mac), Windows `os.freemem()`. A job only waits on
+another admitted job: one that does not fit while nothing else runs starts at once with a "memory is short" note, so no class can wait forever.
+Low disk is refused, not waited on.
 
 Each stage's result is data, not a tool error: a STOP, a FAIL or `NOT RELEASED (<gate>)` comes back as a normal result with its reason.
 
@@ -64,12 +68,12 @@ State lives under `<project>/.fabdesk/board/`: `requirements/`, `accept/`, `done
 
 ## Engines
 
-The workflow is TypeScript; engines are programs it runs and nothing here installs them beyond what Fabdesk already does.
+The workflow is TypeScript; engines are programs it runs. The workflow installs none of them itself: KiCadRoutingTools and TraceMaker install on demand from Settings → Routers (`docs/routers.md`).
 
 | Engine | Used by | Found through |
 | --- | --- | --- |
 | `kicad-cli` (DRC, exports, Gerber plots) | all | the resolved KiCad CLI; DRC at **project severity** with owner-excluded items dropped (`runLiveDrc`) |
-| KiCadRoutingTools | `board_route` place, rank, route; every last-mile router, repair (rip) and nudge step; `why` forensics | `FABDESK_KRT_DIR` |
+| KiCadRoutingTools | `board_route` place, rank, route; every last-mile router, repair (rip) and nudge step; `why` forensics | Settings `krtDir`, then `FABDESK_KRT_DIR`, then the copy Settings → Routers → KiCadRoutingTools installed (pinned v0.23.8 + a private venv; `docs/routers.md`) |
 | TraceMaker | `board_route` route; last-mile `fill:tracemaker`; `why` causes and `validate` pair / return-path audits | the router registry (`docs/routers.md`), else `TRACEMAKER_BIN` |
 | fab_router, Freerouting | last-mile `fill:ROUTER`, and `finish` when KRT is missing | the PCB bridge (inside the app) |
 
@@ -118,7 +122,7 @@ These are the port's own decisions, each recorded in the evidence file of its st
 
 Not ported or not wired. None is hidden by a stub: an unported action fails by name.
 
-- **Last mile**: KiCadRoutingTools is found only through `FABDESK_KRT_DIR` (no installer, no Settings entry), so on an install without it the rip, route and nudge steps fail naming KRT and only `finish` (on the app's router), `fill` and the pair steps run. `fill:fastroute` is not available. `pairbench` (one table over several boards) is a harness, not a tool. The pair `vias` op keeps the toolkit's behaviour of never moving the N member alone (a signed-distance test; see the pair-op evidence).
+- **Last mile**: KiCadRoutingTools installs on demand (Settings → Routers), but it is not bundled: until it is installed (or `FABDESK_KRT_DIR` is set) the rip, route and nudge steps fail naming KRT and only `finish` (on the app's router), `fill` and the pair steps run. Its installer is verified on Linux x86_64 only; on macOS and Windows the Python lookup and the venv layout (`venv\Scripts\python.exe`) are covered by unit tests only. `fill:fastroute` is not available. `pairbench` (one table over several boards) is a harness, not a tool. The pair `vias` op keeps the toolkit's behaviour of never moving the N member alone (a signed-distance test; see the pair-op evidence).
 - **Layout**: plans that ask for `planes` or `escape` raise "not ported"; pair pass-through templates are empty; `add_courtyards` is not ported (check reports the parts, cannot fix them).
 - **Edit**: the churn-guard loop is not wired (`revertNets` exists); `apply_netclasses` for bare boards is not ported. Compute is synchronous, so a very large board blocks the core's event loop during `impact` or `apply`.
 - **Python commands with no counterpart**: `intent` (nothing writes `.fabdesk/board/review/intent.json`; the agent or owner edits the file), `cable` (chassis reach), a standalone `diff` picture (the change picture exists inside review fix candidates), `clean` (only `board_route prune`), `upgrade` (a pre-10 board is refused with a hint), `boards` / `status` registry views (the Status page and `board_review status` replace them), and `run` (autopilot; `board_review fix apply` covers its settle-and-build part).

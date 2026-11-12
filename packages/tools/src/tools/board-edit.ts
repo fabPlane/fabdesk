@@ -226,7 +226,7 @@ export const board_edit = defineTool({
         paths: [project.dir],
         signal: c.signal,
         memGiB: await boardMemGiB([project.dir]),
-        onWait: (why) => c.progress(0, `waiting: ${why}`),
+        onWait: (why) => c.progress(0, why),
       });
       try {
         const result = await runEdit({

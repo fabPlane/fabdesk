@@ -1,4 +1,5 @@
 import type { RouterCatalogId } from "@fabdesk/protocol";
+import { KRT_BYTES, KRT_HOMEPAGE, KRT_SHA256, KRT_URL, KRT_VERSION } from "./krt";
 import {
   defaultTraceMakerBinaryRelease,
   type TraceMakerBinaryRelease,
@@ -15,6 +16,8 @@ export type RouterArtifact = {
   format: RouterArtifactFormat;
   /** Path relative to the extracted tree, or the saved filename for `jar`/`file`. */
   executable?: string;
+  /** Extract the archive into this subdirectory of the install (KRT's zip becomes `<root>/src`). */
+  subdir?: string;
 };
 
 export type RouterCatalogEntry = {
@@ -26,6 +29,8 @@ export type RouterCatalogEntry = {
   version: string;
   homepage: string;
   install: "bundled" | "download";
+  /** `engine`: run by the board workflow, not offered as a `route_run` router. Omitted means router. */
+  kind?: "router" | "engine";
   artifact?: RouterArtifact;
   /** Weekly TensorFleet-built binaries; Install prefers these over `artifact`. */
   binaryRelease?: TraceMakerBinaryRelease;
@@ -71,6 +76,11 @@ const STRENGTHS = {
     "Best whole-board routing and dense-pad completion in the team's comparison",
     "Writes tracks and vias directly into `.kicad_pcb` (no DSN round-trip)",
     "Judged by KiCad DRC; optional GPU/Metal acceleration",
+  ],
+  krt: [
+    "Placer and router behind board_route's place, rank and route stages",
+    "Runs every last-mile router, rip and nudge step, and the `why` forensics",
+    "Rust A* core with differential pairs, fanout and plane routing",
   ],
 } as const;
 
@@ -133,6 +143,26 @@ export function defaultRouterCatalog(env: NodeJS.ProcessEnv = process.env): Rout
         filename: `tracemaker-${TRACEMAKER_VERSION}.tar.gz`,
         format: "tar.gz",
         executable: "tracemaker",
+      },
+    },
+    {
+      id: "krt",
+      displayName: "KiCadRoutingTools",
+      description:
+        "Python + Rust placer and router (MIT) the board workflow runs. Install downloads the pinned release and sets up a private Python venv (numpy, scipy, shapely) with uv or the system Python.",
+      strengths: [...STRENGTHS.krt],
+      license: "MIT",
+      version: KRT_VERSION,
+      homepage: KRT_HOMEPAGE,
+      install: "download",
+      kind: "engine",
+      artifact: {
+        url: env["FABDESK_KRT_URL"] ?? KRT_URL,
+        sha256: env["FABDESK_KRT_SHA256"] ?? KRT_SHA256,
+        ...(env["FABDESK_KRT_URL"] ? {} : { bytes: KRT_BYTES }),
+        filename: `KiCadRoutingTools-${KRT_VERSION}.zip`,
+        format: "zip",
+        subdir: "src",
       },
     },
   ];

@@ -46,7 +46,7 @@ export interface RouteKrtRecord {
 
 /** Run a KRT plan on `placed`; `<out>/score` holds the scored board when `score` is set and every stage wrote a board. */
 export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<RouteKrtRecord> {
-  if (!host.tools.krt) throw new FlowError("KiCadRoutingTools is not configured (FABDESK_KRT_DIR)");
+  if (!host.tools.krt) throw new FlowError("KiCadRoutingTools is not installed (Settings → Routers, or FABDESK_KRT_DIR)");
   const acc = o.req.acceptance;
   const plan = boardPlan(typeof o.plan === "string" ? await loadPlan(o.plan) : structuredClone(o.plan), acc);
   if (await pathExists(o.out)) throw new FlowError(`${o.out} exists`);

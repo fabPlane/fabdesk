@@ -11,6 +11,58 @@ until you pick a router in Settings, pin `fabdesk.json`, or pass `route_run.rout
 | `fab_router` | Bundled on the PCB bridge | Fast iteration, automatic selective reroutes, Freerouting fallback |
 | `freerouting` | Bundled in packaged desktop builds; otherwise downloaded (GPL-3.0 JAR) | Best simple-board routing quality |
 | `tracemaker` | Weekly TensorFleet binary (source tarball fallback) | Best whole-board routing and dense pads |
+| `krt` | Pinned upstream release + a private Python venv (see below) | Engine, not a `route_run` router: the board workflow's placer and KRT router |
+
+## KiCadRoutingTools (engine)
+
+[KiCadRoutingTools](https://github.com/drandyhaas/KiCadRoutingTools) (KRT, **MIT**, Python + a Rust core) is what
+`board_route` places and routes with, and what every last-mile router, rip and nudge step runs. It sits in Settings →
+Routers as **KiCadRoutingTools** with `kind: "engine"`: it has Install / Uninstall / Reinstall like the routers, but no
+*Set default* and no entry in the Route Cinema picker or `route_run.router`.
+
+**Where the board tools find it** (`krtDir` in `packages/tools/src/tools/board-host.ts`):
+
+1. Settings `krtDir` (Settings → Routers → *KiCadRoutingTools folder*), returned as given so a wrong path fails the
+   layout `check` by name;
+2. env `FABDESK_KRT_DIR`;
+3. the installed copy, `<fabdesk data dir>/routers/krt`.
+
+A build is any folder with `src/plugins/py_router/route.py`, a venv interpreter (`venv/bin/python`, or
+`venv\Scripts\python.exe` on Windows) and `src/plugins/rust_router/grid_router.{so,pyd}`. The card shows an override
+as `installed (Settings krtDir)` / `(FABDESK_KRT_DIR)`, or says why a set path is not a build.
+
+**Install** (`packages/tools/src/routers/krt.ts`):
+
+1. Download `KiCadRoutingTools-0.23.8.zip` from the upstream GitHub release (16,067,806 bytes), verify SHA-256
+   `0179da836e6d41484701a9b840e2e30e94465cd7dc1c226e0c7bf850fe78453f`, extract it into `routers/krt/src`.
+   (`FABDESK_KRT_URL` / `FABDESK_KRT_SHA256` override both, for a mirror.)
+2. Copy the bundled Rust core for this OS/arch (`grid_router-{linux-x86_64,macos-arm64,macos-x86_64}.so`,
+   `grid_router-windows-x86_64.pyd`) to `grid_router.so` / `.pyd`, the name KRT's CLIs import (KRT's own
+   `_resolve_rust_binary` does this inside KiCad). Other platforms (Linux arm64, Windows arm64) fail with that reason.
+3. Make `routers/krt/venv` with the first Python that works, then install the routing packages:
+   - `FABDESK_KRT_PYTHON` when set (used alone, so a wrong value fails loudly);
+   - **uv** (`FABDESK_KRT_UV`, PATH, `~/.local/bin`, `~/.cargo/bin`, Homebrew): a uv-managed CPython 3.12 kept inside
+     the install (`routers/krt/python`), so it matches the parity runs, goes with Uninstall and survives OS Python
+     upgrades;
+   - otherwise a system Python ≥ 3.9 (KRT's core is `abi3-py39`): Linux `python3`, `python3.13` … `python3.9`;
+     macOS python.org, Homebrew, KiCad.app's bundled Python, and `/usr/bin/python3` only when the Command Line Tools
+     are installed (else it is a stub that opens an install dialog); Windows the `py -3` launcher, `python` on PATH
+     (not the Store alias), then KiCad's `bin\python.exe`. The venv is made by uv when uv exists (no `ensurepip`
+     needed), else `python -m venv` + pip.
+   - Packages: `numpy==2.5.4 scipy==1.18.1 shapely==2.2.0` (what every parity run used), wheels only; if that Python
+     has no wheels for them, KRT's own floors (`numpy>=1.22 scipy>=1.7 shapely>=2.0`) with a card notice.
+     **Pillow** (raster previews) and **ortools** (the bus step, ~100 MB) are optional in KRT's `requirements.txt`
+     and are not installed: none of the scripts the workflow runs (route, route_diff, route_planes, place_simple,
+     check_floorplan, check_groups, net_forensics, make_unplaced) imports them on the paths it uses.
+4. Import check: the venv imports numpy, scipy, shapely and `grid_router` together.
+
+The venv is made in place after the extracted tree is swapped in (venv paths are absolute); any failure restores the
+previous install. When no Python works the card says what was tried and what to install (uv, or Python 3.9+ —
+`python3-venv` on Debian/Ubuntu). fabdesk itself ships no Python.
+
+Measured 2026-11-12 on Linux x86_64 (warm uv / pip caches, so mostly local work): about **8 s** to install;
+on disk about **320 MB** with uv (36 MB scripts, 178 MB venv, 104 MB managed CPython) or about **270 MB** with the
+system Python (233 MB venv). A cold install also downloads ~60 MB of wheels and, with uv, ~30 MB of CPython.
 
 ## TraceMaker size and license
 

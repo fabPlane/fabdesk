@@ -181,4 +181,15 @@ describe("router settings helpers", () => {
     expect(ready[0]?.label).toBe("Default (TraceMaker)");
     expect(options[0]?.label).toBe("Default (TraceMaker not ready → Freerouting → fab_router)");
   });
+
+  test("KiCadRoutingTools is an engine: installable here, never a route_run picker option", () => {
+    const krt = router({ id: "krt", displayName: "KiCadRoutingTools", kind: "engine", state: "installed", ready: true, versionInstalled: "0.23.8" });
+    expect(routerPickerOptions([krt]).map((o) => o.id)).toEqual(["default"]);
+    expect(stateLabel(krt)).toBe("installed 0.23.8");
+    expect(stateLabel({ ...krt, ready: false })).toBe("incomplete");
+    const setup = router({ id: "krt", kind: "engine", state: "installing", progress: { received: 0, total: 0, phase: "setup" } });
+    expect(stateLabel(setup)).toBe("setting up");
+    expect(installProgressView(setup)).toEqual({ fraction: null, text: "Setting up Python (venv, numpy, scipy, shapely)…" });
+    expect("krtDir" in withoutRouterDefault({ theme: "dark", krtDir: "/x" })).toBe(false);
+  });
 });

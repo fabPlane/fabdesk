@@ -75,7 +75,7 @@ export interface PlaceOptions {
 
 /** Run the placer for the seeds and gate each; writes `<out>/place.json`. Throws FlowError when the placer's inputs are rejected. */
 export async function placeKrt(host: LayoutHost, o: PlaceOptions): Promise<PlaceRecord> {
-  if (!host.tools.krt) throw new FlowError("KiCadRoutingTools is not configured (FABDESK_KRT_DIR)");
+  if (!host.tools.krt) throw new FlowError("KiCadRoutingTools is not installed (Settings → Routers, or FABDESK_KRT_DIR)");
   const k = krtPaths(host.tools.krt);
   const kdir = join(o.out, "krt");
   await mkdir(kdir, { recursive: true });

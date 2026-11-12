@@ -285,6 +285,11 @@ export const Settings = z.object({
    * Env `FABDESK_TRACEMAKER_MANIFEST_URL` overrides this.
    */
   tracemakerManifestUrl: z.string().nullable().default(null),
+  /**
+   * A KiCadRoutingTools build to use instead of the one Settings → Routers installs (a folder with
+   * `src/plugins` and `venv`). Null uses env `FABDESK_KRT_DIR`, then the installed copy.
+   */
+  krtDir: z.string().nullable().default(null),
   defaultAgent: AgentId.default("claude"),
   /** Runtime mode new threads start in. */
   defaultRuntimeMode: RuntimeMode.default("full"),

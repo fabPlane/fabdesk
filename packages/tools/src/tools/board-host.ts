@@ -1,11 +1,10 @@
 /**
- * The layout host of the board tools: where the engines are (KiCadRoutingTools from `FABDESK_KRT_DIR`, TraceMaker from
- * the router registry), how processes run, the DRC flavours (courtyard gate, refilled scoring) and admission by the
+ * The layout host of the board tools: where the engines are (KiCadRoutingTools and TraceMaker from Settings → Routers,
+ * or their overrides), how processes run, the DRC flavours (courtyard gate, refilled scoring) and admission by the
  * resource governor. Shared by `board_route`'s layout stages and its last mile.
  */
-import { spawnSync } from "node:child_process";
 import { statfs } from "node:fs/promises";
-import { layout } from "@fabdesk/board-workflow";
+import { layout, sysinfo } from "@fabdesk/board-workflow";
 import { boardMemGiB, governor, sampleHost, type ResourceClass } from "../resources";
 import type { ToolContext } from "../registry";
 import { requireKicad, runLiveDrc } from "./common";
@@ -13,8 +12,13 @@ import { requireKicad, runLiveDrc } from "./common";
 type LayoutHost = layout.LayoutHost;
 const { nodeRun } = layout;
 
-/** Where KiCadRoutingTools lives: `FABDESK_KRT_DIR` (a build with `src/plugins` and `venv/bin/python`). */
-export const krtDir = (env: NodeJS.ProcessEnv = process.env) => env["FABDESK_KRT_DIR"] || null;
+/**
+ * Where KiCadRoutingTools lives (a build with `src/plugins` and a `venv`): Settings `krtDir`, then `FABDESK_KRT_DIR`,
+ * then the copy Settings → Routers installed. An explicit setting is returned as given, so a wrong path fails the
+ * layout `check` by name instead of quietly using another copy.
+ */
+export const krtDir = (env: NodeJS.ProcessEnv = process.env, settingsDir?: string | null, installed?: string | null): string | null =>
+  settingsDir?.trim() || env["FABDESK_KRT_DIR"]?.trim() || installed || null;
 
 export function layoutHost(ctx: ToolContext, kicadCli: string | null, env: NodeJS.ProcessEnv = process.env): LayoutHost {
   const note = (s: string) => ctx.progress(0, s);
@@ -24,7 +28,7 @@ export function layoutHost(ctx: ToolContext, kicadCli: string | null, env: NodeJ
   };
   return {
     tools: {
-      krt: krtDir(env),
+      krt: krtDir(env, ctx.services.settings?.().krtDir, ctx.services.routers?.executable("krt")),
       tracemaker: ctx.services.routers?.executable("tracemaker") ?? env["TRACEMAKER_BIN"] ?? null,
       kicadCli,
     },
@@ -43,7 +47,7 @@ export function layoutHost(ctx: ToolContext, kicadCli: string | null, env: NodeJ
       const s = await statfs(path);
       return (s.bavail * s.bsize) / 1024 ** 3;
     },
-    tracemakerBusy: async () => spawnSync("pgrep", ["-x", "tracemaker"]).status === 0,
+    tracemakerBusy: () => sysinfo.processRunning("tracemaker"),
     log: note,
     signal: ctx.signal,
   };

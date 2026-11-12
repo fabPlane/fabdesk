@@ -129,7 +129,7 @@ async function stepPlan(step: Step): Promise<KrtPlan> {
 }
 
 /** Kept short: the bench shows the last 160 characters of a step error. */
-const needsKrt = (what: string) => `${what} needs KiCadRoutingTools (FABDESK_KRT_DIR not set); without it: finish, fill:ROUTER, tighten`;
+const needsKrt = (what: string) => `${what} needs KiCadRoutingTools (Settings → Routers, or FABDESK_KRT_DIR); without it: finish, fill:ROUTER, tighten`;
 
 export function createStepEngine(h: StepEngineHost): StepEngine {
   const krt = () => h.layout.tools.krt;

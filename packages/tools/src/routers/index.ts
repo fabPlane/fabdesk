@@ -39,6 +39,22 @@ export {
 } from "./checksum";
 export { bundledHint, installHintFor } from "./hints";
 export {
+  KRT_BYTES,
+  KRT_FLOOR_DEPS,
+  KRT_PINNED_DEPS,
+  KRT_SHA256,
+  KRT_URL,
+  KRT_VERSION,
+  findUv,
+  krtRootProblem,
+  krtRustBinary,
+  pythonCandidates,
+  setupKrt,
+  type KrtRun,
+  type KrtSetupDeps,
+  type KrtSetupResult,
+} from "./krt";
+export {
   createRouterRegistry,
   extractZipArchive,
   probeTraceMakerCliVersion,
