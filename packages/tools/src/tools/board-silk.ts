@@ -18,7 +18,7 @@ import { boardMemGiB, governor } from "../resources";
 import { defineTool, type ToolContext, type ToolOutput } from "../registry";
 import { ok, requireKicad } from "./common";
 
-const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
+const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\.(\d+)Z$/, "$1Z"); // milliseconds: two runs in one second must not share a folder
 const silkHome = (dir: string) => join(releaseHome(dir), "..", "silk");
 
 const Input = {
