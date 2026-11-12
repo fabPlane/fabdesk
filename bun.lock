@@ -123,6 +123,14 @@
         "typescript": "5.9.2",
       },
     },
+    "packages/board-workflow": {
+      "name": "@fabdesk/board-workflow",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/bun": "1.2.21",
+        "typescript": "5.9.2",
+      },
+    },
     "packages/client-core": {
       "name": "@fabdesk/client-core",
       "version": "0.1.0",
@@ -204,6 +212,7 @@
       "dependencies": {
         "@fabdesk/board-art": "workspace:*",
         "@fabdesk/board-diff": "workspace:*",
+        "@fabdesk/board-workflow": "workspace:*",
         "@fabdesk/kicad": "workspace:*",
         "@fabdesk/product-video": "workspace:*",
         "@fabdesk/protocol": "workspace:*",
@@ -346,7 +355,7 @@
     },
     "vendor/fabplane-cli": {
       "name": "fabplane-cli",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "bin": {
         "fabplane": "dist/cli.js",
       },
@@ -703,6 +712,8 @@
     "@fabdesk/board-art": ["@fabdesk/board-art@workspace:packages/board-art"],
 
     "@fabdesk/board-diff": ["@fabdesk/board-diff@workspace:packages/board-diff"],
+
+    "@fabdesk/board-workflow": ["@fabdesk/board-workflow@workspace:packages/board-workflow"],
 
     "@fabdesk/client-core": ["@fabdesk/client-core@workspace:packages/client-core"],
 
