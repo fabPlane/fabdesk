@@ -1,6 +1,7 @@
 /**
  * Host resources as part of the tool: heavy board workflow jobs (autorouters, placement seeds, last-mile tries)
- * ask a process-wide governor for admission, are watched while they run, and report what they used.
+ * ask a process-wide governor for admission. Admission is the whole of it: a running job is not watched or stopped
+ * by the governor (no per-job RSS sampling, no memory-floor watchdog); its estimate is held until it releases.
  *
  * Measured basis (io-c6 placement/routing records): one TraceMaker route of a 318-part board holds
  * 11-14 GB RSS, and two at once OOM-killed the agent session; KiCad API servers are ~150-300 MB;
@@ -27,9 +28,6 @@ export const RESOURCE_NEEDS: Record<ResourceClass, { memGiB: number; exclusive: 
   tracemaker: { memGiB: 12, exclusive: true, diskGiB: 10 },
 };
 
-/** Below this much available memory a running job is stopped before the kernel picks a victim. */
-export const MEM_FLOOR_GIB = 1.5;
-
 export type HostSample = {
   memTotalGiB: number;
   memAvailableGiB: number;
@@ -39,7 +37,7 @@ export type HostSample = {
   disk: Array<{ path: string; freeGiB: number; totalGiB: number; freeShare: number }>;
 };
 
-export type RunningJob = { id: string; label: string; cls: ResourceClass; startedAt: number; pid?: number; peakRssGiB: number; memGiB?: number };
+export type RunningJob = { id: string; label: string; cls: ResourceClass; startedAt: number; memGiB?: number };
 
 /** Seams for `sampleHost` (tests simulate macOS, Windows and hosts with no data): memory, load, CPUs and disk. */
 export interface SampleDeps {
@@ -76,15 +74,16 @@ export async function sampleHost(paths: string[] = [], deps: SampleDeps = {}): P
 
 const round = (x: number) => Math.round(x * 100) / 100;
 
-/** Resident memory of a process and all its descendants (bytes); 0 when unavailable (Linux `/proc`, macOS `ps`, Windows 0). */
-export const treeRss = (root: number): Promise<number> => sysinfo.treeRss(root);
-
 type Waiter = () => void;
 
 /**
  * One per core process. `admit` resolves when the class's needs are met (memory, exclusivity, disk),
  * calling `onWait` with the reason while it queues; disk below the floor is refused with a proposal
  * instead of waited on, since waiting never frees disk.
+ *
+ * Memory: free = available now − the estimate of every admitted job still running. The governor does not measure a
+ * job's own use, so a job that already holds its memory is counted twice (once gone from `available`, once reserved);
+ * near the limit a heavy job therefore queues somewhat early behind another, which errs toward not swapping.
  *
  * Liveness: a job only ever waits on another admitted job, which will release. Short memory with no other
  * admitted job running is admitted at once with a note (every class alike): nothing this governor controls
@@ -120,11 +119,8 @@ export class ResourceGovernor {
           "precondition",
         );
       const sameClass = [...this.running.values()].filter((j) => j.cls === input.cls);
-      // memory other heavy jobs already admitted will still claim (they may not have peaked yet)
-      const reserved = [...this.running.values()].reduce(
-        (sum, j) => sum + Math.max(0, (j.memGiB ?? RESOURCE_NEEDS[j.cls].memGiB) - j.peakRssGiB),
-        0,
-      );
+      // each running job's whole estimate (what it may still claim; see the class comment for the overlap with `available`)
+      const reserved = [...this.running.values()].reduce((sum, j) => sum + (j.memGiB ?? RESOURCE_NEEDS[j.cls].memGiB), 0);
       const free = host.memAvailableGiB - reserved;
       const short = free < need.memGiB;
       const why =
@@ -139,7 +135,7 @@ export class ResourceGovernor {
             `memory is short: ${round(host.memAvailableGiB)} GiB available, ${need.memGiB} GiB estimated for ${input.label}; ` +
               "no other board job is running, so waiting would not free any — starting anyway (close other applications if the machine starts swapping)",
           );
-        const job: RunningJob = { id: `job${++this.seq}`, label: input.label, cls: input.cls, startedAt: Date.now(), peakRssGiB: 0, memGiB: need.memGiB };
+        const job: RunningJob = { id: `job${++this.seq}`, label: input.label, cls: input.cls, startedAt: Date.now(), memGiB: need.memGiB };
         this.running.set(job.id, job);
         return {
           ...job,
@@ -161,12 +157,6 @@ export class ResourceGovernor {
         input.signal?.addEventListener("abort", w, { once: true });
       });
     }
-  }
-
-  /** Record a running job's process tree for status, peak RSS and the memory floor watchdog. */
-  track(id: string, pid: number) {
-    const job = this.running.get(id);
-    if (job) job.pid = pid;
   }
 }
 
