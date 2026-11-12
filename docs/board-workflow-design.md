@@ -3,7 +3,7 @@
 This is the reviewer's document for `feat/board-workflow`. The agent-facing text is [board-workflow.md](board-workflow.md) (the same text
 the agent doc carries; a test keeps them equal). Per-stage measurements are in
 [evidence/board-workflow/](evidence/board-workflow/); this page says what exists, how it fits together, what was and was not verified,
-and what is missing.
+and what is missing. How to review this work, step by step: [board-workflow-review.md](board-workflow-review.md).
 
 ## What this is
 
