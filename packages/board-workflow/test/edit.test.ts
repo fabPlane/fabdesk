@@ -4,25 +4,18 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  EditStop,
-  SheetSet,
   childLists,
-  diffBoards,
   drcInputFromRaw,
-  judge,
   listSpanAt,
   onboard,
   parseLossless,
-  parsePlan,
   printLossless,
   removeSpans,
-  revertNets,
   runAcceptance,
-  runEdit,
   splice,
   topLevelSpans,
-  type EditRunners,
 } from "../src/index";
+import { EditStop, SheetSet, diffBoards, judge, parsePlan, revertNets, runEdit, type EditRunners } from "../src/edit/index";
 import { g } from "../src/edit/fmt";
 import { planMoves } from "../src/edit/move";
 import { pruneDangling } from "../src/edit/prune";

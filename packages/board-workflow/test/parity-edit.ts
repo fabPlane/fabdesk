@@ -12,7 +12,8 @@ import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { runDrc } from "../../kicad/src/index";
-import { drcInputFromFile, onboard, parseBoard, runAcceptance, runEdit, type EditRunResult, type EditRunners } from "../src/index";
+import { drcInputFromFile, onboard, parseBoard, runAcceptance } from "../src/index";
+import { runEdit, type EditRunResult, type EditRunners } from "../src/edit/index";
 
 const { values: a } = parseArgs({
   options: {

@@ -17,7 +17,10 @@
 import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
 import { z } from "zod/v4";
-import { CHECK_NAMES, drcInputFromFile, runAcceptance, runEdit, type EditMode, type EditRunResult } from "@fabdesk/board-workflow";
+import { CHECK_NAMES, drcInputFromFile, runAcceptance, edit } from "@fabdesk/board-workflow";
+type EditMode = edit.EditMode;
+type EditRunResult = edit.EditRunResult;
+const { runEdit } = edit;
 import { adoptCandidate } from "../board-adopt";
 import { runDurable } from "../durable";
 import { jailPath } from "../fs";
