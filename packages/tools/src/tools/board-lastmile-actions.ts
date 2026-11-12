@@ -229,3 +229,14 @@ export async function lastmileStatus(ctx: ToolContext, wsPath: string): Promise<
     json: { step: bench.pointer, figures: bench.figures, history: bench.state.history.map((h) => ({ action: h.action, figures: h.figures })) },
   };
 }
+
+/** `board_edit`'s repair hook: the last-mile bench's `finish` step on the edit candidate (the route stage's job). */
+export async function repairEditCandidate(
+  ctx: ToolContext,
+  input: { candidateDir: string; pcb: string; routeAgain: string[] },
+  router = "fab_router",
+): Promise<{ note: string }> {
+  const req = await requirementsFor(ctx);
+  const { deps } = await openBench(ctx, join(input.candidateDir, ".lastmile"), req);
+  return L.repairCandidate(deps(router, (l) => ctx.progress(0.6, l)), input);
+}

@@ -316,3 +316,19 @@ describe("crossings, view, why, info", () => {
     expect(L.infoLines(b, ["zzz"])[0]).toBe("zzz: no part or net matches");
   });
 });
+
+describe("repairCandidate (board_edit repair hook)", () => {
+  test("finish on the candidate reconnects what the edit cut and writes the board back", async () => {
+    const src = await project(4);
+    const r = await L.repairCandidate({ scorer, engine: engine({ finish: "(kicad_pcb) ;; opens=1" }), availableGiB: async () => 30 }, { candidateDir: src, pcb: "board.kicad_pcb", routeAgain: ["N1", "N2"] });
+    expect(r.note).toContain("open 4 -> 1");
+    expect(await readFile(join(src, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb) ;; opens=1");
+  });
+  test("a finish that does not pass the gate leaves the candidate as edited and says why", async () => {
+    const src = await project(4);
+    const r = await L.repairCandidate({ scorer, engine: engine({ finish: "(kicad_pcb) ;; opens=2 drc=clearance" }), availableGiB: async () => 30 }, { candidateDir: src, pcb: "board.kicad_pcb", routeAgain: ["N1"] });
+    expect(r.note).toContain("left the board as edited");
+    expect(r.note).toContain("new DRC class");
+    expect(await readFile(join(src, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb) ;; opens=4");
+  });
+});

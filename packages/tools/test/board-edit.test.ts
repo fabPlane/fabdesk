@@ -9,7 +9,7 @@ import { contextFactory, mockServices, tempProject } from "./mock-services";
 const empty = { removed: {}, added: {}, changed: {} };
 const adoptResult = (): BoardAdoptResult => ({ delta: { removed: { KOT_PCB_FOOTPRINT: 1 }, added: {}, changed: {} }, residual: empty, targetSha256Before: "a".repeat(64), targetSha256After: "b".repeat(64), timingsMs: { commit: 5 }, kicadCli: "kicad-cli" });
 
-async function setup() {
+async function setup(route?: (dir: string) => Promise<void>) {
   const project = await tempProject("edit");
   await writeFile(join(project.dir, "board.kicad_pcb"), BOARD);
   await writeFile(join(project.dir, "board.kicad_pro"), PRO);
@@ -20,6 +20,7 @@ async function setup() {
   const drcRuns: string[] = [];
   const services: CoreServices = {
     ...base,
+    ...(route ? { design: { ...base.design, route: async (dir: string) => (await route(dir), { message: "routed" }) } } : {}),
     boardAdopt: { adopt: async (i) => (adopted.push(i), adoptResult()) },
     kicad: {
       ...base.kicad,
@@ -86,10 +87,24 @@ describe("board_edit", () => {
   test("a candidate that opened connections is returned with them, and adopt is refused", async () => {
     const { run, adopted } = await setup();
     const r = await run({ plan: { id: "mv", move: [{ ref: "C3", to: [50, 30, 90] }], displace: { radius: 3 } }, adopt: true });
-    expect(r.text).toContain("Repair: no route stage ran. 2 net(s) lost copper and must be routed again in the candidate: GND, VIN");
+    // the last-mile bench ran `finish` on the candidate; the stub router closed nothing, so the board stays as edited
+    expect(r.text).toContain("Repair (route stage): last mile left the board as edited (no gain); nets to route again: GND, VIN");
     expect(r.text).toMatch(/FAIL/);
     expect(r.text).toContain("adopt refused: the proof does not pass");
     expect(adopted).toEqual([]);
     expect((r.json["proof"] as { figures: { open: number } }).figures.open).toBe(2);
+  });
+
+  test("nets the edit cut are reconnected by the last-mile finish step before the proof", async () => {
+    const { run, adopted } = await setup(async (dir) => {
+      // the router closes both opens: the board comes back without the marker the fake DRC reads as "copper lost"
+      const f = join(dir, "board.kicad_pcb");
+      await writeFile(f, (await readFile(f, "utf8")).replace("(translate 50.0000 30.0000)", "(translate 50.0000 30.0001)"));
+    });
+    const r = await run({ plan: { id: "mv", move: [{ ref: "C3", to: [50, 30, 90] }], displace: { radius: 3 } }, adopt: true });
+    expect(r.text).toContain("Repair (route stage): last mile finish: open 2 -> 0");
+    expect((r.json["proof"] as { figures: { open: number } }).figures.open).toBe(0);
+    expect(r.text).not.toContain("adopt refused: the proof does not pass");
+    expect(adopted).toHaveLength(1);
   });
 });

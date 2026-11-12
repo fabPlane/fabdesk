@@ -10,3 +10,4 @@ export * from "./why";
 export * from "./info";
 export * from "./tighten";
 export * from "./plans";
+export * from "./repair";
