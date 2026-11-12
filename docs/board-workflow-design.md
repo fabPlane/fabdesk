@@ -170,6 +170,7 @@ Not ported or not wired. None is hidden by a stub: an unported action fails by n
 - **Interconnect contracts**: a hook (`setInterconnectGate`), default none for a standalone project.
 - **Not in the UI**: adopting or undoing a candidate, diffs, visual constraint capture. The Status page shows A1–A9, review gate and onboarding.
 - **Codex**: its client ignores a toolset added mid-session, so a board built in-session is picked up on the next run.
+- **Adopt on Windows**: the private `kicad-cli api-server` pair listens on a loopback WebSocket (fab_pcb's Windows transport) and is stopped with `taskkill /T /F`; unit-tested only, not yet run on a Windows host.
 
 ## Native tools the board tools overlap
 

@@ -163,6 +163,48 @@ describe("mcp adapter", () => {
     expect(attachment.session.enabledToolsets()).toEqual(["core", "route"]);
   });
 
+  test("a start list hiding part of a start toolset: load_toolset exposes the rest", async () => {
+    // A `start=board` session: circuit and verify are start toolsets, but the exact start list lists only some of their tools.
+    const registry = createRegistry();
+    const board = ["core", "render", "board"].flatMap((id) => registry.byToolset(id as never).map((t) => t.name));
+    const initialTools = [...board.filter((n) => n !== "verify_drc"), "schematic_inspect", "verify_erc"];
+    const project = await tempProject("mcp-board-start");
+    const server = new McpServer({ name: "fabdesk-test", version: "0.0.0" });
+    const attachment = attachToRegistry(server, registry, contextFactory(mockServices([project]), project), {
+      initialToolsets: ["circuit", "verify", "render", "board"],
+      initialTools,
+    });
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverT);
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    await client.connect(clientT);
+    try {
+      let listChanged = 0;
+      client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
+        listChanged++;
+      });
+      const listed = async () => (await client.listTools()).tools.map((t) => t.name);
+      const before = await listed();
+      for (const n of ["schematic_edit", "pcb_update_from_schematic", "verify_drc", "verify_gate"]) expect(before).not.toContain(n);
+      // Only the toolsets the list fully exposes count as enabled.
+      expect(attachment.session.enabledToolsets()).toEqual(["core", "render", "board"]);
+      const circuit = await client.callTool({ name: "load_toolset", arguments: { toolset: "circuit" } });
+      expect(circuit.isError).toBeFalsy();
+      expect(await listed()).toEqual(expect.arrayContaining(["schematic_edit", "pcb_update_from_schematic"]));
+      await client.callTool({ name: "load_toolset", arguments: { toolset: "verify" } });
+      expect(await listed()).toContain("verify_gate");
+      // core is always reported enabled; loading it still exposes what the start list hid (verify_drc).
+      await client.callTool({ name: "load_toolset", arguments: { toolset: "core" } });
+      expect(await listed()).toContain("verify_drc");
+      expect(attachment.session.enabledToolsets()).toEqual(expect.arrayContaining(["core", "circuit", "verify", "render", "board"]));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(listChanged).toBeGreaterThan(0);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   test("core tools visible, load_toolset enables more and emits list_changed", async () => {
     const { client, attachment } = await pair();
     const initial = await client.listTools();

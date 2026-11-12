@@ -129,6 +129,8 @@ type Pending = PendingApproval | PendingInput;
 export type ActiveRun = {
   runId: string;
   threadId: string;
+  /** The agent the run drives (its MCP config decides the tool timeout the daemon may wait within). */
+  agentId: AgentId;
   /** The project the run writes, or null for a scratch run. Held as the project's lease. */
   projectId: string | null;
   runtimeMode: RuntimeMode;
@@ -224,6 +226,13 @@ export class AgentRunManager {
     const info = this.deps.tokens.lookup(token);
     const run = info?.kind === "run" && info.runId ? this.active.get(info.runId) : undefined;
     return run?.runtimeMode === "supervised";
+  }
+
+  /** The agent of the active run this token belongs to, or null. */
+  activeRunAgent(token: string | null): AgentId | null {
+    const info = this.deps.tokens.lookup(token);
+    const run = info?.kind === "run" && info.runId ? this.active.get(info.runId) : undefined;
+    return run && !run.stopping ? run.agentId : null;
   }
 
   isActiveRunToken(token: string | null): boolean {
@@ -671,6 +680,7 @@ export class AgentRunManager {
     const active: ActiveRun = {
       runId: run.id,
       threadId: input.threadId,
+      agentId: input.agentId,
       projectId: input.project?.id ?? null,
       runtimeMode,
       abort: () => {},

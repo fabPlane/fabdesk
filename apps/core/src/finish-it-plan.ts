@@ -201,6 +201,45 @@ export async function inspectProject(
   };
 }
 
+/**
+ * The board has routed copper: a top-level `(segment`, `(arc` or `(via` of the `kicad_pcb` form (footprint graphics are
+ * `fp_*` and nested, zones are not routing). Scans s-expression depth, skipping quoted strings; line endings do not matter.
+ */
+export function boardHasRoutedCopper(pcb: string): boolean {
+  let depth = 0;
+  for (let i = 0; i < pcb.length; i++) {
+    const c = pcb.charCodeAt(i);
+    if (c === 34 /* " */) {
+      for (i++; i < pcb.length && pcb.charCodeAt(i) !== 34; i++) if (pcb.charCodeAt(i) === 92 /* \ */) i++;
+    } else if (c === 40 /* ( */) {
+      depth++;
+      if (depth === 2 && /^(segment|arc|via)[\s)]/.test(pcb.slice(i + 1, i + 9))) return true;
+    } else if (c === 41 /* ) */) depth--;
+  }
+  return false;
+}
+
+/**
+ * fabdesk itself produced the board in this project: a successful circuit_build (`reports/build.json`) or a saved
+ * pcb_update_from_schematic (`reports/schematic-sync.json`).
+ */
+export async function fabdeskBuiltBoard(dir: string): Promise<boolean> {
+  const build = (await readJson(join(dir, "reports", "build.json"))) as { ok?: unknown } | null;
+  const sync = (await readJson(join(dir, "reports", "schematic-sync.json"))) as { saved?: unknown } | null;
+  return build?.ok === true || sync?.saved === true;
+}
+
+/**
+ * The board came in from its owner, so Finish it judges it by no new failure (`initDoneMode`): it already has routed
+ * copper and fabdesk did not build it here. A placed but unrouted board (a fabdesk build, or an owner's placement
+ * waiting for routing) is judged strictly, so its first board_check's open connections are not forgiven as a baseline.
+ */
+export async function boardPlacedByOwner(dir: string): Promise<boolean> {
+  const pcb = await readFile(join(dir, "board.kicad_pcb"), "utf8").catch(() => null);
+  if (pcb === null || !boardHasRoutedCopper(pcb)) return false;
+  return !(await fabdeskBuiltBoard(dir));
+}
+
 /** Acceptance results are keyed `A1_connectivity`, `A2_drc`, ...: match a check by its code. */
 const hasCheck = (list: string[], code: string) => list.some((k) => k === code || k.startsWith(`${code}_`));
 

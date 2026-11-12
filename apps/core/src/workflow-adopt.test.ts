@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { chmod, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { adoptBoard, diffItems, normalisedItemJson } from "./workflow-adopt";
+import { adoptBoard, apiServerEndpoint, diffItems, killTree, normalisedItemJson } from "./workflow-adopt";
 
 const item = (typeName: string, id: string, body: Record<string, unknown>) => ({
   typeName,
@@ -63,5 +63,14 @@ describe("adopt server cleanup", () => {
     expect(() => process.kill(pid, 0)).toThrow();
     const after = (await readdir(tmpdir())).filter((f) => f.startsWith("fabdesk-adopt-")).length;
     expect(after).toBeLessThanOrEqual(before);
+  });
+
+  test("Windows: the api-server listens on a loopback WebSocket and its process tree is killed with taskkill", () => {
+    expect(apiServerEndpoint("win32", "C:\\tmp\\a", 41234)).toMatch(/^ws:\/\/127\.0\.0\.1:41234\/kicad\//);
+    expect(apiServerEndpoint("linux", "/tmp/a", 0)).toBe(join("/tmp/a", "api.sock"));
+    const calls: Array<[string, string[]]> = [];
+    killTree({ pid: 4242 }, "SIGTERM", "win32", (cmd, args) => void calls.push([cmd, args]));
+    killTree({ pid: undefined }, "SIGKILL", "win32", (cmd, args) => void calls.push([cmd, args]));
+    expect(calls).toEqual([["taskkill", ["/PID", "4242", "/T", "/F"]]]);
   });
 });

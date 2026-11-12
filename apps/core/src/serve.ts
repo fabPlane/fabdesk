@@ -39,7 +39,7 @@ import type { Hono } from "hono";
 import { createApp, type Env } from "./http/app";
 import { JobRunner } from "./jobs";
 import { logger, errMsg } from "./log";
-import { McpSessionManager, projectStartToolsets } from "./mcp-sessions";
+import { McpSessionManager, projectStartToolsets, RAISED_TOOL_TIMEOUT_AGENTS } from "./mcp-sessions";
 import { machineName } from "./net";
 import { Notifier } from "./notifier";
 import { ProjectStore } from "./projects";
@@ -437,7 +437,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     },
     // an external session (stdio proxy, `?project=`) starts with the toolsets a desktop run on that project gets
     startToolsets: async (ref) => projectStartToolsets(registry, await projects.resolve(ref)),
-    ownRun: (token) => runs.isActiveRunToken(token),
+    // only agents whose tool timeout fabdesk raised wait the full durable wait (Cursor and Grok keep their default)
+    ownRun: (token) => RAISED_TOOL_TIMEOUT_AGENTS.has(runs.activeRunAgent(token) ?? ""),
   });
 
   const adapters = opts.adapters ?? (await loadAdapters());

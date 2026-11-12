@@ -13,11 +13,12 @@
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
+import { createServer } from "node:net";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { KiCad, type Board } from "@fp-pcb/client";
-import { NngIpcTransport } from "@fp-pcb/client/transport";
+import { NngIpcTransport, NngWsTransport } from "@fp-pcb/client/transport";
 import { ToolError, type BoardAdoptResult, type KicadCli } from "@fabdesk/tools";
 
 type AnyItem = { id: string; typeName: string; toJson(): unknown };
@@ -67,60 +68,127 @@ export function diffItems(a: Map<string, AnyItem>, b: Map<string, AnyItem>) {
   return { removed, added, changed, summary };
 }
 
-type Held = { procs: ChildProcess[]; dirs: string[]; transports: NngIpcTransport[] };
+type Held = { procs: ChildProcess[]; dirs: string[]; transports: Array<NngIpcTransport | NngWsTransport> };
+
+/** Unused loopback TCP port, released again for the KiCad child (as fab_pcb's bridge allocates its ws port). */
+async function freePort(): Promise<number> {
+  return new Promise((resolvePort, reject) => {
+    const server = createServer();
+    server.unref();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close((e) => (e ? reject(e) : port ? resolvePort(port) : reject(new Error("no free loopback port"))));
+    });
+  });
+}
+
+/**
+ * Where the private api-server listens: a Unix socket in the adopt's temp dir, or on Windows (no Unix sockets for
+ * KiCad's nng IPC) a loopback WebSocket, the transport fab_pcb's bridge uses there (`KICAD_SOCKET_TRANSPORT` = ws).
+ */
+export function apiServerEndpoint(platform: NodeJS.Platform, dir: string, port: number): string {
+  return platform === "win32" ? `ws://127.0.0.1:${port}/kicad/adopt-${port}` : join(dir, "api.sock");
+}
 
 async function serve(cli: string, board: string, held: Held, signal?: AbortSignal) {
   const dir = await mkdtemp(join(tmpdir(), "fabdesk-adopt-"));
   held.dirs.push(dir);
-  const sock = join(dir, "api.sock");
-  // own process group: a packaged kicad-cli is often a shell wrapper, and the server under it must go too
-  const proc = spawn(cli, ["api-server", "--socket", sock, board], {
+  const win = process.platform === "win32";
+  const endpoint = apiServerEndpoint(process.platform, dir, win ? await freePort() : 0);
+  // own process group (POSIX): a packaged kicad-cli is often a shell wrapper, and the server under it must go too;
+  // on Windows the tree is killed with taskkill /T instead
+  const proc = spawn(cli, ["api-server", "--socket", endpoint, board], {
     stdio: ["ignore", "pipe", "pipe"],
-    detached: true,
+    detached: !win,
+    windowsHide: true,
   });
   held.procs.push(proc);
   let log = "";
   proc.stdout?.on("data", (b: Buffer) => (log += b));
   proc.stderr?.on("data", (b: Buffer) => (log += b));
-  for (let i = 0; ; i++) {
-    if (signal?.aborted) throw new ToolError("adopt cancelled", "cancelled");
-    if (await stat(sock).then((s) => s.isSocket(), () => false)) break;
-    if (proc.exitCode !== null || i > 1200)
-      throw new ToolError(
-        `KiCad could not open ${board}: ${log.trim().slice(-400) || "no output"}. ` +
-          "The selected kicad-cli must read this board's file format (Settings → KiCad CLI).",
-        "precondition",
-      );
-    await new Promise((z) => setTimeout(z, 100));
+  proc.on("error", (e) => (log += `\n${e.message}`));
+  const couldNotOpen = () =>
+    new ToolError(
+      `KiCad could not open ${board}: ${log.trim().slice(-400) || "no output"}. ` +
+        "The selected kicad-cli must read this board's file format (Settings → KiCad CLI).",
+      "precondition",
+    );
+  let transport: NngIpcTransport | NngWsTransport;
+  if (win) {
+    // no socket file to wait for: dial with retries until KiCad listens, failing as soon as the process exits
+    transport = new NngWsTransport({
+      url: endpoint,
+      defaultTimeoutMs: 600_000,
+      connectTimeoutMs: 120_000,
+      reconnect: { initialDelayMs: 50, maxDelayMs: 500, maxAttempts: 600 },
+    });
+    held.transports.push(transport);
+    const exited = new Promise<never>((_, reject) => {
+      const fail = () => reject(couldNotOpen());
+      if (proc.exitCode !== null) fail();
+      proc.once("exit", fail);
+      proc.once("error", fail);
+    });
+    const aborted = new Promise<never>((_, reject) =>
+      signal?.addEventListener("abort", () => reject(new ToolError("adopt cancelled", "cancelled")), { once: true }),
+    );
+    exited.catch(() => {});
+    aborted.catch(() => {});
+    await Promise.race([transport.ready(), exited, aborted]);
+  } else {
+    for (let i = 0; ; i++) {
+      if (signal?.aborted) throw new ToolError("adopt cancelled", "cancelled");
+      if (await stat(endpoint).then((s) => s.isSocket(), () => false)) break;
+      if (proc.exitCode !== null || i > 1200) throw couldNotOpen();
+      await new Promise((z) => setTimeout(z, 100));
+    }
+    transport = new NngIpcTransport({ path: endpoint, defaultTimeoutMs: 600_000, connectTimeoutMs: 120_000 });
+    held.transports.push(transport);
+    await transport.ready();
   }
-  const transport = new NngIpcTransport({ path: sock, defaultTimeoutMs: 600_000, connectTimeoutMs: 120_000 });
-  held.transports.push(transport);
-  await transport.ready();
   const kicad = await KiCad.connect(transport, { clientName: "fabdesk/workflow-adopt" });
   const doc = (await kicad.currentBoard()) ?? (await kicad.openBoard(board));
   return { doc };
 }
 
-const killGroup = (p: ChildProcess, sig: NodeJS.Signals) => {
+/**
+ * Kills the server and whatever it started: the POSIX process group (signalled even when its leader already exited,
+ * since a wrapper may leave the server behind), or on Windows the process tree (`taskkill /T /F`; there is no
+ * graceful signal, so SIGTERM and SIGKILL both force it).
+ */
+export function killTree(
+  p: Pick<ChildProcess, "pid">,
+  sig: NodeJS.Signals,
+  platform: NodeJS.Platform = process.platform,
+  run: (cmd: string, args: string[]) => void = (cmd, args) => {
+    spawn(cmd, args, { stdio: "ignore", windowsHide: true }).on("error", () => {});
+  },
+): void {
   if (p.pid === undefined) return;
+  if (platform === "win32") {
+    run("taskkill", ["/PID", String(p.pid), "/T", "/F"]);
+    return;
+  }
   try {
     process.kill(-p.pid, sig);
   } catch {
     // group already gone
   }
-};
+}
 
-/** Stops every server this adopt started (whole process groups, SIGKILL after 3 s) and removes its temp dirs. */
+/** Stops every server this adopt started (whole process groups or trees, SIGKILL after 3 s) and removes its temp dirs. */
 export async function releaseHeld(held: Held): Promise<void> {
   await Promise.all(held.transports.map((t) => t.close().catch(() => {})));
   // the group is signalled even when its leader already exited: a wrapper may leave the server behind
-  for (const p of held.procs) killGroup(p, "SIGTERM");
+  for (const p of held.procs) killTree(p, "SIGTERM");
   const live = held.procs.filter((p) => p.exitCode === null && p.signalCode === null);
   await Promise.all(
     live.map(
       (p) =>
         new Promise<void>((done) => {
-          const t = setTimeout(() => (killGroup(p, "SIGKILL"), done()), 3000);
+          const t = setTimeout(() => (killTree(p, "SIGKILL"), done()), 3000);
           p.once("exit", () => (clearTimeout(t), done()));
         }),
     ),

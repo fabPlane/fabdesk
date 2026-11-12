@@ -3,7 +3,10 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { initDoneMode } from "@fabdesk/tools";
 import {
+  boardHasRoutedCopper,
+  boardPlacedByOwner,
   finishItPrompt,
   inspectProject,
   milestoneDone,
@@ -395,5 +398,52 @@ describe("Finish it on a board that came in failing checks (no new failure)", ()
     expect(milestoneDone("route", { ...clean, doneMode: "no-regression", acceptance: acc(["A1_connectivity"], ["A1_connectivity"]) })).toBe(false);
     expect(milestoneDone("route", { ...clean, doneMode: "strict", acceptance: acc(["A1_connectivity"], []) })).toBe(false);
     expect(milestoneDone("verify", { ...clean, doneMode: "no-regression", acceptance: acc(["A5_anchors"], ["A5_anchors"]) })).toBe(false);
+  });
+});
+
+describe("which board Finish it judges by no new failure", () => {
+  test("routed copper is a top-level segment, arc or via; footprint graphics, zones and strings are not", () => {
+    expect(boardHasRoutedCopper('(kicad_pcb\n  (footprint "R" (fp_arc (start 0 0)) (pad "1" smd))\n  (zone (net 1))\n)')).toBe(false);
+    expect(boardHasRoutedCopper('(kicad_pcb (gr_text "(segment (start 0 0))") (property "x" "a \\" (via"))')).toBe(false);
+    expect(boardHasRoutedCopper("(kicad_pcb\r\n\t(footprint \"R\")\r\n\t(segment\r\n\t\t(start 0 0))\r\n)")).toBe(true);
+    expect(boardHasRoutedCopper("(kicad_pcb (footprint R) (via (at 1 1)))")).toBe(true);
+    expect(boardHasRoutedCopper("(kicad_pcb (footprint R) (arc (start 0 0) (mid 1 1) (end 2 0)))")).toBe(true);
+  });
+
+  const board = async (pcb: string, reports: Record<string, unknown> = {}) => {
+    const dir = await tempDir();
+    await writeFile(join(dir, "board.kicad_pcb"), pcb);
+    await mkdir(join(dir, "reports"), { recursive: true });
+    for (const [name, value] of Object.entries(reports)) await writeFile(join(dir, "reports", `${name}.json`), JSON.stringify(value));
+    return dir;
+  };
+  const routed = '(kicad_pcb (footprint "R") (segment (start 0 0) (end 1 0)))';
+  const unrouted = '(kicad_pcb (footprint "R") (footprint "C"))';
+
+  test("an owner's routed board: no new failure", async () => {
+    const dir = await board(routed);
+    expect(await boardPlacedByOwner(dir)).toBe(true);
+    expect(await initDoneMode(dir, await boardPlacedByOwner(dir))).toBe("no-regression");
+  });
+  test("a placed but never-routed board (fabdesk-built or not) is strict, so its opens are never a baseline", async () => {
+    for (const reports of [{}, { build: { ok: true } }]) {
+      const dir = await board(unrouted, reports);
+      expect(await boardPlacedByOwner(dir)).toBe(false);
+      expect(await initDoneMode(dir, await boardPlacedByOwner(dir))).toBe("strict");
+    }
+    // ...and with A1 failing on that board, route is not done
+    const snap = {
+      hasNetlist: true, netlistComponents: 2, hasBoard: true, hasSchematic: true, routed: false, routeOpen: null,
+      drcErrors: null, drcUnconnected: null, ercErrors: null, spiceOk: null, doneMode: "strict" as const,
+      acceptance: { state: "current" as const, failing: ["A1_connectivity", "A2_drc"], pass: false, baselineFailing: ["A1_connectivity", "A2_drc"], regressions: [] },
+    };
+    expect(milestoneDone("route", snap)).toBe(false);
+    expect(milestoneDone("verify", snap)).toBe(false);
+  });
+  test("a routed board fabdesk built here (circuit_build or a saved schematic sync) is strict", async () => {
+    expect(await boardPlacedByOwner(await board(routed, { build: { ok: true } }))).toBe(false);
+    expect(await boardPlacedByOwner(await board(routed, { "schematic-sync": { saved: true } }))).toBe(false);
+    // a failed build or an unsaved preview did not produce the board
+    expect(await boardPlacedByOwner(await board(routed, { build: { ok: false }, "schematic-sync": { saved: false } }))).toBe(true);
   });
 });

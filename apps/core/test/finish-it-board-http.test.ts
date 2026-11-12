@@ -100,7 +100,7 @@ async function finish(id: string) {
 describe("Finish it with the board workflow on", () => {
   test("clean DRC/route reports are not finished until A1-A9 and the review gate say so; the agent is told the board stages", async () => {
     lastPrompt = null;
-    const pcb = "(kicad_pcb (footprint \"R\") board-open)\n";
+    const pcb = "(kicad_pcb (footprint \"R\") (segment (start 0 0) (end 1 0)) board-open)\n";
     const project = await cleanProject("Needs Acceptance", pcb);
     const session = await finish(project.id);
     const ids = session.milestones.map((m) => m.id);
@@ -108,7 +108,7 @@ describe("Finish it with the board workflow on", () => {
     const pending = session.milestones.filter((m) => m.status === "pending" || m.status === "running").map((m) => m.id);
     expect(pending).toContain("verify");
     expect(pending).toContain("review");
-    // first snapshot of a placed, never measured board: judged by no new failure
+    // first snapshot of an owner's routed, never measured board: judged by no new failure
     expect(JSON.parse(await Bun.file(join(project.path, ".fabdesk/board/done-mode.json")).text()).mode).toBe("no-regression");
     for (let i = 0; i < 100 && runsIn(project.path) === 0; i++) await Bun.sleep(25);
     expect(runsIn(project.path)).toBeGreaterThan(0);
@@ -120,6 +120,24 @@ describe("Finish it with the board workflow on", () => {
       if (body.session && body.session.status !== "running" && body.session.status !== "stopping") break;
       await Bun.sleep(25);
     }
+  });
+
+  test("a placed board that is not routed yet, or that fabdesk built, is judged strictly", async () => {
+    const unrouted = await cleanProject("Unrouted Board", "(kicad_pcb (footprint \"R\") board-unrouted)\n");
+    await finish(unrouted.id);
+    expect(JSON.parse(await Bun.file(join(unrouted.path, ".fabdesk/board/done-mode.json")).text()).mode).toBe("strict");
+    await api(`/projects/${unrouted.id}/finish-it/stop`, { method: "POST" });
+    const built = await cleanProject("Built Board", "(kicad_pcb (footprint \"R\") (via (at 1 1)) board-built)\n");
+    await writeFile(join(built.path, "reports/build.json"), JSON.stringify({ ok: true, at: "t" }));
+    await finish(built.id);
+    expect(JSON.parse(await Bun.file(join(built.path, ".fabdesk/board/done-mode.json")).text()).mode).toBe("strict");
+    await api(`/projects/${built.id}/finish-it/stop`, { method: "POST" });
+    for (const id of [unrouted.id, built.id])
+      for (let i = 0; i < 400; i++) {
+        const body = (await (await api(`/projects/${id}/finish-it`)).json()) as { session: FinishItSession | null };
+        if (body.session && body.session.status !== "running" && body.session.status !== "stopping") break;
+        await Bun.sleep(25);
+      }
   });
 
   test("passing A1-A9 plus a passing review gate on the saved board complete it without an agent", async () => {
