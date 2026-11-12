@@ -225,12 +225,19 @@ export function changedCopperNets(before: string, after: string): string[] {
 
 /** `text` keeping only the top-level copper items of `nets` (other nets' copper dropped). */
 export function keepCopperOfNets(text: string, nets: ReadonlySet<string>): string {
-  let out = text;
-  for (const { span } of copperItems(text).reverse()) {
+  // one pass, joining the kept pieces: removing items one by one rebuilds the whole board text each time (quadratic: ~8 min
+  // on an 87 MB board with 25k copper items). copperItems' spans are ascending and do not overlap.
+  const parts: string[] = [];
+  let at = 0;
+  for (const { span } of copperItems(text)) {
     const net = NET_OF.exec(text.slice(...span))?.[1] ?? "";
-    if (!nets.has(net)) out = out.slice(0, span[0]) + out.slice(span[1]);
+    if (!nets.has(net)) {
+      parts.push(text.slice(at, span[0]));
+      at = span[1];
+    }
   }
-  return out;
+  parts.push(text.slice(at));
+  return parts.join("");
 }
 
 export interface MergeStats {
