@@ -192,6 +192,17 @@ function* undersize(
   }
 }
 
+/** Power-class segments below their class width that are neither a neck nor a tap (A7's failing copper). */
+export function undersizeSegments(segs: Segment[], vias: Via[], pads: Pad[], acc: Acceptance, stack: readonly string[]): Array<[string, Segment]> {
+  const padsByNet = new Map<string, Pad[]>();
+  for (const p of pads) (padsByNet.get(p.net) ?? padsByNet.set(p.net, []).get(p.net)!).push(p);
+  const nc = acc.net_classes;
+  const neck = Number(/([\d.]+) mm/.exec(nc.neck_allowance)![1]);
+  const taps: Record<string, Record<string, TapPad>> = {};
+  for (const [n, d] of Object.entries(nc.tap_pads ?? {})) if (!n.startsWith("_") && typeof d === "object") taps[n] = d as Record<string, TapPad>;
+  return [...undersize(segs, nc.classes as Record<string, PwrClass>, neck, padsByNet, vias, taps, nc.neck_scaling, nc.net_current_A, stack)];
+}
+
 export interface ProfileView {
   ground: string;
   planes: Set<string>;

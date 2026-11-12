@@ -14,7 +14,7 @@
  * - A differential pair that loses any copper loses all of it so it is routed again as a pair.
  */
 import { readBoard } from "../board";
-import { kid, kids, num, parseSexpr, removeSpans, type SNode } from "../sexpr";
+import { keepoutBlocks, kid, kids, num, parseSexpr, removeSpans, type SNode } from "../sexpr";
 import {
   itemHitsBox, localBox, onLayers, overlap, padList, routedItems, rotPt, transformItem, worldBox,
   type Box, type Pt, type RoutedItem,
@@ -280,7 +280,7 @@ export function planMoves(
   const radius = displace?.radius ?? (displace ? 10 : 0);
   const keepouts: Box[] = [];
   for (const z of kids(root, "zone")) {
-    if (!kid(z, "keepout")) continue;
+    if (!keepoutBlocks(z, ["footprints", "tracks"])) continue; // pure rule areas (allow all) scope DRC rules only
     const pts: Pt[] = [];
     for (const poly of kids(z, "polygon")) for (const q of kids(kid(poly, "pts") ?? [], "xy")) pts.push([num(q[1]), num(q[2])]);
     if (pts.length) keepouts.push([Math.min(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1]))]);

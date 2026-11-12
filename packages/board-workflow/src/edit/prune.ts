@@ -1,4 +1,5 @@
 /** Copper left hanging by an edit: dangling tracks and vias, and routes of nets that lost every pad (the toolkit's `route_region`). */
+import { pyRound } from "../accept";
 import { parseBoard } from "../board";
 import { removeSpans, topLevelSpans, type Span } from "../sexpr";
 
@@ -24,7 +25,8 @@ export function pruneDangling(text: string, only?: Set<string>): { text: string;
         items.push({ kind, span, net, pts });
       }
     }
-    const key = (net: string, x: number, y: number) => `${net}|${(Math.round(x * 1000) / 1000).toFixed(3)}|${(Math.round(y * 1000) / 1000).toFixed(3)}`;
+    // Python round(x, 3) (half to even on the binary value), as route_region.prune_dangling keys track ends
+    const key = (net: string, x: number, y: number) => `${net}|${pyRound(x, 3).toFixed(3)}|${pyRound(y, 3).toFixed(3)}`;
     const ends = new Map<string, number>();
     for (const it of items) for (const [x, y] of it.pts) ends.set(key(it.net, x, y), (ends.get(key(it.net, x, y)) ?? 0) + 1);
     const segsByNet = new Map<string, Array<[Pt, Pt, number, number]>>();

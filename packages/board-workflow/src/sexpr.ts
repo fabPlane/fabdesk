@@ -79,6 +79,18 @@ export function kid(node: SNode, key: string): SNode | undefined {
   return undefined;
 }
 
+/**
+ * A zone's keepout disallows any of `what` (footprints, tracks, vias, pads, copperpour). A rule area that allows
+ * everything only scopes custom DRC rules (R1N's "BENCH ... landing" areas) and blocks nothing (toolkit
+ * check_acceptance.keepout_blocks).
+ */
+export function keepoutBlocks(zone: SNode, what: string | string[] = "footprints"): boolean {
+  const k = kid(zone, "keepout");
+  if (!k) return false;
+  const keys = Array.isArray(what) ? what : [what];
+  return k.slice(1).some((x) => Array.isArray(x) && typeof x[0] === "string" && keys.includes(x[0]) && x[1] === "not_allowed");
+}
+
 /** Atoms of a node after its head, as strings (nested lists skipped). */
 export function atoms(node: SNode | undefined): string[] {
   return node ? node.slice(1).filter((x): x is string => typeof x === "string") : [];

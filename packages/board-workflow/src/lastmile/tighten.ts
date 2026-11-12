@@ -12,71 +12,23 @@
  * (a coupled run, or one width change) named in a DRC item the source board does not have is reverted (or falls back) and
  * the board is built again, until no new item is left. Only pair-net segments are edited.
  *
- * NOT ported from the toolkit (the bench's `tighten` there also ran them first/last): vias, mirror, mirror-force,
- * retune, skew. A step naming them fails with that message.
+ * Before the rounds, as their own DRC-guarded passes (pairops.ts): vias, mirror / mirror-force, retune; after them: skew.
+ * The order and the default `--ops vias,mirror,retune,width,tighten,skew` are the toolkit's `cmd_run`.
  */
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { pyRound } from "../accept";
-import { parseBoard, viaSpan, type Board, type Pad, type Segment } from "../board";
+import { checkAcceptance, profile, pyRound } from "../accept";
+import { parseBoard, viaSpan, type Board, type Pad } from "../board";
 import type { Requirements } from "../requirements";
-import { profile } from "../accept";
 import type { Step } from "./actions";
 import type { StepInput, StepOutcome } from "./bench";
 import { copyBoardFolder } from "./bench";
 import { add, cross2, dot, mul, norm, segDist, sub, type Pt } from "./geometry";
 import { Grid, classesAndPairs, measurePairs, padLayers, type PairSpec } from "./pairs";
+import { NUM, drcItems, drcRun, fmt, mirrorPass, readSegments, retunePass, sig, skewPass, unit, uuid5url, viasPass, type Item, type PassCtx, type PSeg } from "./pairops";
 import type { DrcFn } from "./scoring";
 
-const ITEM = /\(segment\b(?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)/gs;
-const NUM = "(-?[\\d.]+(?:e-?\\d+)?)";
-
-export interface PSeg extends Segment {
-  net: string;
-  net_raw: string;
-  uuid: string;
-  span: [number, number] | null;
-  orig?: string;
-  orig_ab?: [Pt, Pt];
-}
-
-const unit = (a: Pt): Pt => {
-  const n = norm(a);
-  return n ? [a[0] / n, a[1] / n] : [0, 0];
-};
-
-/** UUID version 5 in the URL namespace, as Python's uuid5(NAMESPACE_URL, name). */
-export function uuid5url(name: string): string {
-  const ns = Buffer.from("6ba7b8119dad11d180b400c04fd430c8", "hex");
-  const h = createHash("sha1").update(ns).update(name).digest();
-  h[6] = (h[6]! & 0x0f) | 0x50;
-  h[8] = (h[8]! & 0x3f) | 0x80;
-  const x = h.subarray(0, 16).toString("hex");
-  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
-}
-
-export function readSegments(text: string): PSeg[] {
-  const segs: PSeg[] = [];
-  for (const m of text.matchAll(ITEM)) {
-    const blk = m[0];
-    const g = (rx: RegExp) => rx.exec(blk);
-    const st = g(new RegExp(`\\(start ${NUM} ${NUM}\\)`))!;
-    const en = g(new RegExp(`\\(end ${NUM} ${NUM}\\)`))!;
-    const netRaw = g(/\(net ("(?:[^"\\]|\\.)*"|\d+)\)/)![1]!;
-    segs.push({
-      a: [Number(st[1]), Number(st[2])],
-      b: [Number(en[1]), Number(en[2])],
-      w: Number(g(new RegExp(`\\(width ${NUM}\\)`))![1]),
-      layer: g(/\(layer "([^"]+)"\)/)![1]!,
-      net_raw: netRaw,
-      net: netRaw.startsWith('"') ? (JSON.parse(netRaw) as string) : "",
-      uuid: g(/\(uuid "([^"]+)"\)/)![1]!,
-      span: [m.index!, m.index! + blk.length],
-    });
-  }
-  return segs;
-}
+export { readSegments, readVias, uuid5url, type PSeg } from "./pairops";
 
 type Iv = { lo: number; hi: number; vec: Pt; ov: number; key: string; role: "P" | "N" };
 type Obst = Map<string, Array<[Pt, number]>>;
@@ -458,7 +410,16 @@ export function build(segs: PSeg[], pads: Pad[], board: Board, shifts: Map<strin
   return { res, jogs, touched, invalid };
 }
 
-const fmt = (x: number) => x.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+/** Python's repr of a float (shortest round trip; `2.0`, `5e-05`). */
+export function pyRepr(x: number): string {
+  if (Object.is(x, -0)) return "-0.0";
+  const a = Math.abs(x);
+  if (Number.isInteger(x) && a < 1e16) return x.toFixed(1);
+  if (a !== 0 && (a < 1e-4 || a >= 1e16)) return x.toExponential().replace(/e([+-])(\d)$/, "e$10$2");
+  return String(x);
+}
+/** Python's str() of a point tuple, `(15.3, 2.0)`: the jog uuids are uuid5 of it, as the toolkit's. */
+const pyTuple = (p: Pt) => `(${pyRepr(p[0])}, ${pyRepr(p[1])})`;
 
 export function writeBoard(text: string, segs: PSeg[], out: Map<string, [Pt, Pt, number]>, jogs: Built["jogs"], wOf: (u: string) => number): string {
   const segBy = new Map(segs.map((s) => [s.uuid, s]));
@@ -482,7 +443,7 @@ export function writeBoard(text: string, segs: PSeg[], out: Map<string, [Pt, Pt,
   for (const s of segs) if (s.span === null && out.has(s.uuid)) added.push(seg(out.get(s.uuid)![0], out.get(s.uuid)![1], out.get(s.uuid)![2], s, s.uuid));
   for (const j of jogs) {
     const s = segBy.get(j.from)!;
-    j.uuid = uuid5url(`pairfix:${s.uuid}:${j.a.join(",")}:${j.b.join(",")}`);
+    j.uuid = uuid5url(`pairfix:${s.uuid}:${pyTuple(j.a)}:${pyTuple(j.b)}`);
     added.push(seg(j.a, j.b, wOf(s.uuid), s, j.uuid));
   }
   if (added.length) {
@@ -492,26 +453,35 @@ export function writeBoard(text: string, segs: PSeg[], out: Map<string, [Pt, Pt,
   return t;
 }
 
-type Item = { type: string; items: Array<{ description?: string; uuid?: string; pos?: { x: number; y: number } }> };
-const sig = (v: Item) => `${v.type}|${v.items.map((i) => i.description ?? "").sort().join("|")}`;
-
-async function drcItems(drc: DrcFn, board: string, outFile: string, signal: AbortSignal): Promise<Item[]> {
-  const r = await drc({ board, parity: false, outFile, signal });
-  return [
-    ...r.violations.filter((v) => v.severity === "error").map((v) => ({ type: v.rule, items: v.items ?? [] })),
-    ...r.unconnected.map((u) => ({ type: "unconnected", items: u.items })),
-  ];
-}
-
-const UNPORTED = ["vias", "mirror", "mirror-force", "retune", "skew"];
+/** Ops named in `--ops` that this port refuses (all of pairfix.py's ops are ported). */
+const UNPORTED: string[] = [];
+/** pairfix.py `run --ops` default: in-place via and path moves first, then widths and spacing, length matching last. */
+export const DEFAULT_OPS = "vias,mirror,retune,width,tighten,skew";
 
 export interface TightenInput {
   step: Step;
   input: StepInput;
   req: Requirements;
   drc: DrcFn;
-  /** Rounds of DRC-guarded edits (default 12). */
+  /** Rounds of DRC-guarded edits per pass (default 12; `--rounds N` in the step's args wins). */
   rounds?: number;
+}
+
+/**
+ * Nets failing A8 on the source board (pairfix.py reads SRC/acceptance.json): the scorer's `.lastmile/acceptance.json` in
+ * `cur` when present, else A8 computed here from the base DRC. null (every pair) when neither is available.
+ */
+async function failingNets(cur: string, text: string, req: Requirements, run: Awaited<ReturnType<typeof drcRun>>["run"]): Promise<Set<string> | null> {
+  const det = (acc: { results?: Record<string, Record<string, unknown>> }) => new Set(Object.keys((acc.results?.["A8_pairs"]?.["detail"] ?? {}) as object));
+  for (const f of [join(cur, ".lastmile", "acceptance.json"), join(cur, "acceptance.json")]) {
+    const t = await readFile(f, "utf8").catch(() => null);
+    if (t !== null) return det(JSON.parse(t));
+  }
+  try {
+    return det(checkAcceptance(parseBoard(text), req, { violations: run.violations, unconnected: run.unconnected.length, parity: 0 }) as never);
+  } catch {
+    return null;
+  }
 }
 
 /** One pairfix step: copy the board folder to `input.out`, edit the pair copper there, return the folder. */
@@ -519,20 +489,47 @@ export async function runTighten(o: TightenInput): Promise<StepOutcome> {
   const t0 = Date.now();
   const args = o.step.args ?? [];
   const arg = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
-  const ops = new Set((arg("--ops") ?? "width,tighten").split(","));
+  const ops = new Set((arg("--ops") ?? DEFAULT_OPS).split(","));
   const bad = UNPORTED.filter((x) => ops.has(x));
-  if (bad.length) return { error: `pairfix ops not ported: ${bad.join(", ")} (ported: width, tighten)` };
+  if (bad.length) return { error: `pairfix ops not ported: ${bad.join(", ")}` };
   const { input } = o;
   await copyBoardFolder(input.cur, input.out);
   const boardFile = join(input.out, input.pcb);
-  const text0 = await readFile(boardFile, "utf8");
-  const stack = profile(o.req.acceptance).copper;
+  const textOrig = await readFile(boardFile, "utf8");
+  let text = textOrig;
+  const prof = profile(o.req.acceptance);
+  const stack = prof.copper;
   const pairs = classesAndPairs(o.req, arg("--pairs") ?? null);
-  const model = parseBoard(text0);
+  const maxRounds = arg("--rounds") !== undefined ? Number(arg("--rounds")) : (o.rounds ?? 12);
+  const baseRun = await drcRun(o.drc, join(input.cur, input.pcb), join(input.out, "base.drc.json"), input.signal);
+  const base = new Set(baseRun.items.map(sig));
+  const before = measurePairs(parseBoard(text), pairs, stack);
+  const ctx: PassCtx = { boardFile, outDir: join(input.out, ".lastmile", "pairfix"), base, rounds: maxRounds, drc: o.drc, signal: input.signal, req: o.req, stack, ground: prof.ground };
+  const passS: Record<string, number> = {};
+  const timed = async <T>(name: string, f: () => Promise<T>): Promise<T> => {
+    const t = Date.now();
+    const r = await f();
+    passS[name] = Math.round((Date.now() - t) / 100) / 10;
+    return r;
+  };
+  let viasRep: unknown = null;
+  let mirrorRep: unknown = null;
+  let retuneRep: unknown = null;
+  let skewRep: unknown = null;
+  const needFailing = ops.has("vias") || ops.has("mirror") || ops.has("mirror-force");
+  const failing = needFailing ? await failingNets(input.cur, text, o.req, baseRun.run) : null;
+  const onlyFailing = pairs.filter((pr) => failing === null || failing.has(pr.p) || failing.has(pr.n));
+  if (ops.has("vias")) ({ text, rep: viasRep } = await timed("vias", () => viasPass(text, onlyFailing, ctx)));
+  if (ops.has("mirror") || ops.has("mirror-force")) {
+    const force = ops.has("mirror-force");
+    ({ text, rep: mirrorRep } = await timed("mirror", () => mirrorPass(text, onlyFailing, ctx, force)));
+    if (force) for (const v of await drcItems(o.drc, boardFile, join(ctx.outDir, "mirror-final.drc.json"), input.signal)) base.add(sig(v)); // the displaced tracks: the repair step's
+  }
+  if (ops.has("retune")) ({ text, rep: retuneRep } = await timed("retune", () => retunePass(text, pairs, ctx)));
+  const model = parseBoard(text);
   const pads = model.pads;
-  let segs = readSegments(text0);
-  const base = new Set((await drcItems(o.drc, join(input.cur, input.pcb), join(input.out, "base.drc.json"), input.signal)).map(sig));
-  const before = measurePairs(model, pairs, stack);
+  const segs = readSegments(text);
+  const tTight = Date.now();
   const { widths, ivs, obst, byNet } = plan(segs, pads, model, pairs, ops, stack);
   const widx = new Map([...widths.keys()].map((u) => [u, 0]));
   const active = new Map<string, number>();
@@ -547,13 +544,12 @@ export async function runTighten(o: TightenInput): Promise<StepOutcome> {
   const rounds: Array<Record<string, unknown>> = [];
   const reverted = new Map<string, number>();
   const invalidAll = new Set<string>();
-  const maxRounds = o.rounds ?? 12;
-  let newCount = 0;
-  let eff: PSeg[] = segs;
+  let newCount: number | null = null;
   for (let rnd = 1; rnd <= maxRounds; rnd++) {
     let built: Built;
     let psegs: PSeg[];
     let shifts: Map<string, Shift>;
+    let eff: PSeg[];
     for (;;) {
       ({ segs: psegs, shifts } = makePieces(segs, ivs, obst, byNet, active));
       eff = effective(psegs, shifts);
@@ -567,7 +563,8 @@ export async function runTighten(o: TightenInput): Promise<StepOutcome> {
     const pmap = new Map(psegs.map((s) => [s.uuid, s]));
     const origOf = (u: string) => pmap.get(u)?.orig ?? u;
     const wOf = (u: string) => (widths.has(origOf(u)) ? widths.get(origOf(u))![widx.get(origOf(u))!]! : pmap.get(u)!.w);
-    await writeFile(boardFile, writeBoard(text0, eff, built.res, built.jogs, wOf));
+    await writeFile(boardFile, writeBoard(text, eff, built.res, built.jogs, wOf));
+    const td = Date.now();
     const items = await drcItems(o.drc, boardFile, join(input.out, `round${rnd}.drc.json`), input.signal);
     const fresh = items.filter((v) => !base.has(sig(v)));
     newCount = fresh.length;
@@ -588,9 +585,13 @@ export async function runTighten(o: TightenInput): Promise<StepOutcome> {
       const n = netOf.get(u);
       return n && byNet.has(n) ? (byNet.get(n)!.p === n ? "P" : "N") : null;
     };
-    for (const v of fresh) {
-      let hit = new Set<string>();
+    const ownedBy = (v: Item) => {
+      const hit = new Set<string>();
       for (const i of v.items) for (const g of owner.get(i.uuid ?? "") ?? []) hit.add(g);
+      return new Set([...hit].filter(Boolean));
+    };
+    for (const v of fresh) {
+      let hit = ownedBy(v);
       const roles = new Set(v.items.map((i) => role(i.uuid ?? "")).filter((r): r is string => !!r));
       if (!hit.size)
         for (const i of v.items) {
@@ -604,7 +605,18 @@ export async function runTighten(o: TightenInput): Promise<StepOutcome> {
         for (const x of roles) r.add(x);
       }
     }
-    rounds.push({ round: rnd, active_groups: [...active.values()].filter((m) => m < 3).length, jogs: built.jogs.length, new_items: fresh.length });
+    const newTypes: Record<string, number> = {};
+    for (const v of fresh) newTypes[v.type] = (newTypes[v.type] ?? 0) + 1;
+    rounds.push({
+      round: rnd,
+      drc_s: Math.round((Date.now() - td) / 100) / 10,
+      active_groups: [...active.values()].filter((m) => m < 3).length,
+      width_changes: [...widths].filter(([u, ws]) => widx.get(u)! < ws.length - 1).length,
+      jogs: built.jogs.length,
+      new_items: fresh.length,
+      new_types: newTypes,
+      unattributed: fresh.filter((v) => !ownedBy(v).size).length,
+    });
     if (!fresh.length) break;
     if (!bad.size) break;
     for (const [g, roles] of bad) {
@@ -615,21 +627,36 @@ export async function runTighten(o: TightenInput): Promise<StepOutcome> {
       } else if (active.has(g)) active.set(g, step(g, roles));
     }
   }
+  passS["width_tighten"] = Math.round((Date.now() - tTight) / 100) / 10;
+  if (ops.has("skew")) {
+    const cur = await readFile(boardFile, "utf8");
+    ({ rep: skewRep } = await timed("skew", () => skewPass(cur, pairs, ctx)));
+  }
   const finalText = await readFile(boardFile, "utf8");
   const after = measurePairs(parseBoard(finalText), pairs, stack);
+  // collateral: non-pair copper must be byte-identical (pair vias are this tool's to move)
   const nonpair = (t: string) => readSegments(t).filter((s) => !byNet.has(s.net)).map((s) => t.slice(s.span![0], s.span![1]));
-  const a0 = new Set(nonpair(text0));
-  const a1 = new Set(nonpair(finalText));
-  const collateral = [...a0].filter((x) => !a1.has(x)).length + [...a1].filter((x) => !a0.has(x)).length;
+  const viaTxt = (t: string) => [...t.matchAll(/\(via\b(?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)/gs)].map((m) => m[0]).filter((v) => ![...byNet.keys()].some((n) => v.includes(`(net "${n}")`)));
+  const symDiff = (x: string[], y: string[]) => {
+    const a0 = new Set(x);
+    const a1 = new Set(y);
+    return [...a0].filter((v) => !a1.has(v)).length + [...a1].filter((v) => !a0.has(v)).length;
+  };
+  const collateral = symDiff(nonpair(textOrig), nonpair(finalText)) + symDiff(viaTxt(textOrig), viaTxt(finalText));
   const modes = { 0: "both", 1: "P only", 2: "N only", 3: "reverted" } as Record<number, string>;
   const groupModes: Record<string, number> = {};
   for (const m of active.values()) groupModes[modes[m]!] = (groupModes[modes[m]!] ?? 0) + 1;
-  void segs;
-  segs = eff;
+  const widthApplied: Record<string, number> = {};
+  for (const [u, ws] of widths)
+    if (widx.get(u)! < ws.length - 1) {
+      const k = Number.isInteger(ws[widx.get(u)!]!) ? ws[widx.get(u)!]!.toFixed(1) : String(ws[widx.get(u)!]!);
+      widthApplied[k] = (widthApplied[k] ?? 0) + 1;
+    }
   return {
     dir: input.out,
     info: {
       pairfix: {
+        pairs: arg("--pairs") ?? null,
         ops: [...ops].sort(),
         rounds,
         final_new_drc: newCount,
@@ -639,8 +666,14 @@ export async function runTighten(o: TightenInput): Promise<StepOutcome> {
         groups_reverted: [...reverted.keys()].filter((g) => !g.startsWith("w:")).sort(),
         groups_invalid_geometry: [...invalidAll].sort(),
         width_planned: widths.size,
+        width_applied: widthApplied,
+        vias: viasRep,
+        mirror: mirrorRep,
+        retune: retuneRep,
+        skew: skewRep,
         collateral_items: collateral,
         wall_s: Math.round((Date.now() - t0) / 100) / 10,
+        pass_s: passS,
         pairs_before_after: Object.fromEntries(
           Object.keys(before).map((k) => [k, { share: [before[k]!.coupled_share, after[k]!.coupled_share], len_diff: [pyRound(Math.abs(before[k]!.p_mm - before[k]!.n_mm), 2), pyRound(Math.abs(after[k]!.p_mm - after[k]!.n_mm), 2)] }]),
         ),

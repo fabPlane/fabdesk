@@ -253,7 +253,7 @@ describe("pairs measure", () => {
     await writeFile(join(dir, "board.kicad_pcb"), board(0.9));
     const out = join(await mk(), "out");
     const drc = async () => ({ violations: [], unconnected: [], parity: 0 });
-    const r = await L.runTighten({ step: { type: "pairfix", args: [] }, input: { cur: dir, out, start: dir, pcb: "board.kicad_pcb", signal: new AbortController().signal }, req, drc });
+    const r = await L.runTighten({ step: { type: "pairfix", args: ["--ops", "width,tighten"] }, input: { cur: dir, out, start: dir, pcb: "board.kicad_pcb", signal: new AbortController().signal }, req, drc });
     expect("error" in r).toBe(false);
     const after = L.measurePairs(parseBoard(await readFile(join(out, "board.kicad_pcb"), "utf8")), L.classesAndPairs(req), stack, false)["P / N"]!;
     expect(after.coupled_share).toBeGreaterThanOrEqual(0.9); // the 45 degree jogs at the pad and the free end stay uncoupled
@@ -275,14 +275,17 @@ describe("pairs measure", () => {
       const moved = !text.includes("(end 10 0.9)") || !text.includes("(start 0 0.9)");
       return { violations: moved && calls <= 2 ? [{ rule: "clearance", severity: "error", description: "x", items: [{ description: "Track on F.Cu", pos: { x: 5, y: 0.5 } }] }] : [], unconnected: [], parity: 0 };
     };
-    const r = await L.runTighten({ step: { type: "pairfix", args: [] }, input: { cur: dir, out, start: dir, pcb: "board.kicad_pcb", signal: new AbortController().signal }, req, drc });
+    const r = await L.runTighten({ step: { type: "pairfix", args: ["--ops", "width,tighten"] }, input: { cur: dir, out, start: dir, pcb: "board.kicad_pcb", signal: new AbortController().signal }, req, drc });
     const info = (r as unknown as { info: { pairfix: { rounds: unknown[] } } }).info.pairfix;
     expect(info.rounds.length).toBeGreaterThan(1);
   });
 
-  test("ops not ported are refused by name", async () => {
-    const r = await L.runTighten({ step: { type: "pairfix", args: ["--ops", "mirror-force"] }, input: { cur: "/x", out: "/y", start: "/x", pcb: "b", signal: new AbortController().signal }, req, drc: async () => ({ violations: [], unconnected: [], parity: 0 }) });
-    expect(r).toEqual({ error: "pairfix ops not ported: mirror-force (ported: width, tighten)" });
+  test("the default ops are the toolkit's six, all ported", async () => {
+    const dir = await mk();
+    await writeFile(join(dir, "board.kicad_pcb"), board(0.35));
+    const r = await L.runTighten({ step: { type: "pairfix", args: [] }, input: { cur: dir, out: join(await mk(), "out"), start: dir, pcb: "board.kicad_pcb", signal: new AbortController().signal }, req, drc: async () => ({ violations: [], unconnected: [], parity: 0 }) });
+    expect(L.DEFAULT_OPS).toBe("vias,mirror,retune,width,tighten,skew");
+    expect((r as unknown as { info: { pairfix: { ops: string[] } } }).info.pairfix.ops).toEqual(["mirror", "retune", "skew", "tighten", "vias", "width"]);
   });
 });
 
