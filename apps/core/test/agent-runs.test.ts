@@ -12,6 +12,7 @@ import type { ProjectHandle } from "@fabdesk/tools";
 import { AgentRunManager, type AgentAdapterLike } from "../src/agent-runs";
 import { TokenSet } from "../src/auth";
 import { Store } from "../src/db";
+import { DURABLE_WAIT_SHORT_MS, durableWaitForClient, RAISED_TOOL_TIMEOUT_AGENTS } from "../src/mcp-sessions";
 
 const stores: Store[] = [];
 afterEach(() => {
@@ -402,4 +403,21 @@ test("idea planning is restricted and promotion carries history into a fresh eng
   await h.start(t.id, p, "Explain the result");
   expect(h.runs[2]?.session.resume).toBe("s2");
   h.runs[2]!.finish(); await settle();
+});
+
+test("a run token names its agent; only agents whose tool timeout fabdesk raised get the full durable wait", async () => {
+  const h = await harness();
+  expect(h.manager.activeRunAgent(null)).toBeNull();
+  await h.start(h.thread().id, null);
+  const token = h.runs.at(-1)!.session.mcp.token;
+  expect(h.manager.activeRunAgent(token)).toBe("claude");
+  expect(durableWaitForClient(undefined, { ownRun: RAISED_TOOL_TIMEOUT_AGENTS.has("claude") })).toBeUndefined();
+  // Cursor and Grok configs carry no tool-timeout key: their own runs return a job id after the short wait
+  for (const agent of ["cursor", "grok"]) {
+    expect(RAISED_TOOL_TIMEOUT_AGENTS.has(agent)).toBe(false);
+    expect(durableWaitForClient({ name: agent }, { ownRun: RAISED_TOOL_TIMEOUT_AGENTS.has(agent) })).toBe(DURABLE_WAIT_SHORT_MS);
+  }
+  h.runs.at(-1)!.finish();
+  await settle();
+  expect(h.manager.activeRunAgent(token)).toBeNull();
 });

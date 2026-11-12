@@ -138,6 +138,13 @@ export function startOptionsFor(
   };
 }
 
+/**
+ * Agents whose MCP config fabdesk writes with a raised per-call tool timeout (Codex `tool_timeout_sec=1830`, Claude
+ * `timeout: 1_830_000`). Cursor's `.cursor/mcp.json` and Grok's `[mcp_servers.*]` have no known tool-timeout key, so
+ * their runs keep the client default and board calls there return a job id after the short wait.
+ */
+export const RAISED_TOOL_TIMEOUT_AGENTS: ReadonlySet<string> = new Set(["codex", "claude"]);
+
 /** A client times a tool call out after ~60 s unless it was raised (the MCP SDK default and Codex's). */
 export const DURABLE_WAIT_SHORT_MS = 50_000;
 export const DURABLE_WAIT_MAX_MS = 25 * 60_000;
@@ -146,7 +153,7 @@ const LONG_CALL_CLIENTS = /^claude-code$/i;
 
 /**
  * How long a board tool waits before it returns a job id (`runDurable`), per session client. undefined keeps the
- * default 25 min: fabdesk's own runs (it raises each agent's tool timeout, e.g. Codex `tool_timeout_sec=1830`) and
+ * default 25 min: fabdesk's own runs of an agent whose tool timeout it raised (RAISED_TOOL_TIMEOUT_AGENTS) and
  * clients known to wait. A declared timeout (`toolTimeoutSec`, from `fabdesk mcp --tool-timeout` or `/mcp?toolTimeoutSec=`)
  * waits just under it. Anything else, external Codex included, keeps its 60 s default as far as fabdesk can tell, so the
  * call returns a job id after 50 s and `board_job` continues it.
@@ -262,7 +269,10 @@ export type McpSessionOptions = {
    * started in): `projectStartToolsets`, so an external client gets a desktop run's start set without `load_toolset`.
    */
   startToolsets?: (projectRef: string) => Promise<readonly string[]>;
-  /** The token belongs to a run fabdesk launched (it set that agent's tool timeout); see `durableWaitForClient`. */
+  /**
+   * The token belongs to a run fabdesk launched whose agent it raised the tool timeout for (RAISED_TOOL_TIMEOUT_AGENTS);
+   * see `durableWaitForClient`.
+   */
   ownRun?: (token: string | null) => boolean;
   userInput?: {
     enabledFor(token: string | null): boolean;
