@@ -32,10 +32,17 @@ import type { KicadCli } from "../services";
 import { ok, requireKicad, runLiveDrc } from "./common";
 import { repairEditCandidate } from "./board-lastmile-actions";
 
+/**
+ * Fixed-length number lists as `array` + `length(n)`, not tuples: the MCP SDK writes a tuple as array-form
+ * `items: [...]`, and Codex silently drops every tool whose schema has one (board_edit and board_route were missing
+ * from its tool list). The tools test checks the listed schemas.
+ */
+const nums = (n: number) => z.array(z.number()).length(n);
+
 const MOVE = z.object({
   ref: z.string(),
-  to: z.tuple([z.number(), z.number(), z.number()]).optional().describe("[x, y, rotation degrees]: the new origin pose; side kept."),
-  near: z.union([z.string(), z.tuple([z.number(), z.number()])]).optional().describe("Instead of `to`: sit next to a part, a REF.PAD, or a point; the tool picks the pose."),
+  to: nums(3).optional().describe("[x, y, rotation degrees]: the new origin pose; side kept."),
+  near: z.union([z.string(), nums(2)]).optional().describe("Instead of `to`: sit next to a part, a REF.PAD, or a point; the tool picks the pose."),
   carry: z.array(z.string()).optional().describe("Parts that move rigidly with it (their internal copper too)."),
   carry_auto: z.array(z.string()).optional().describe("These parts plus the parts whose every non-ground net stays inside the block."),
   anchor: z.boolean().optional().describe("The new pose becomes a mechanical anchor (required for a fixed part)."),
@@ -58,7 +65,7 @@ const PLAN = z
         clearance: z.number().optional(),
         pad_clearance: z.number().optional(),
         rotations: z.enum(["keep", "any"]).optional(),
-        near: z.record(z.string(), z.tuple([z.number(), z.number()])).optional(),
+        near: z.record(z.string(), nums(2)).optional(),
         fixed_allowed: z.record(z.string(), z.string()).optional().describe("Fixed parts the plan lets move, each with the reason."),
       })
       .optional()
@@ -85,7 +92,7 @@ const PLAN = z
           value: z.string().optional(),
           footprint: z.string().optional(),
           pins: z.record(z.string(), z.string()).describe("Pad number -> net."),
-          near: z.union([z.string(), z.tuple([z.number(), z.number()])]).optional(),
+          near: z.union([z.string(), nums(2)]).optional(),
           side: z.enum(["F", "B"]).optional(),
           rot: z.number().optional(),
           fields: z.record(z.string(), z.string()).optional(),

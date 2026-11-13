@@ -27,6 +27,28 @@ async function pair(
 }
 
 describe("mcp adapter", () => {
+  test("no listed input schema has array-form `items` (tuples): Codex silently drops such a tool", async () => {
+    // Codex 0.167 left board_edit and board_route out of its tool list because their schemas held z.tuple, which the
+    // SDK writes as `items: [...]`; use `z.array(...).length(n)` instead.
+    const registry = createRegistry();
+    const { client, server } = await pair(registry.list().map((tool) => tool.name));
+    try {
+      const tuples: string[] = [];
+      const walk = (o: unknown, path: string): void => {
+        if (Array.isArray(o)) return o.forEach((v, i) => walk(v, `${path}[${i}]`));
+        if (!o || typeof o !== "object") return;
+        for (const [k, v] of Object.entries(o)) {
+          if (k === "items" && Array.isArray(v)) tuples.push(path);
+          walk(v, `${path}.${k}`);
+        }
+      };
+      for (const tool of (await client.listTools()).tools) walk(tool.inputSchema, tool.name);
+      expect(tuples).toEqual([]);
+    } finally {
+      await server.close();
+    }
+  });
+
   test("all exposed and discovered tools carry explicit effect annotations", async () => {
     const registry = createRegistry();
     const { client, server } = await pair(registry.list().map((tool) => tool.name));

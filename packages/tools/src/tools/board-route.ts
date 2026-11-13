@@ -92,7 +92,7 @@ export const board_route = defineTool({
     nets: z.array(z.string()).max(60).optional().describe("Last-mile why: nets to inspect (default every open net); view: nets to highlight."),
     refs: z.string().max(400).optional().describe("Last-mile crossings: only these references; sweep: the parts to sweep (comma separated)."),
     items: z.array(z.string()).max(30).optional().describe("Last-mile info: part references or net regexes."),
-    box: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional().describe("Last-mile view / fit: window X0 Y0 X1 Y1 in mm."),
+    box: z.array(z.number()).length(4).optional()  /* not a tuple: Codex drops tools with array-form `items` (board-edit.ts `nums`) */.describe("Last-mile view / fit: window X0 Y0 X1 Y1 in mm."),
     side: z.enum(["F", "B", "both"]).default("both").describe("Last-mile view: board side."),
     candidate: z.string().optional().describe("Last-mile accept: an earlier try's folder to accept after the gate re-runs on it (no re-route)."),
     adopt: z.boolean().default(true).describe("Last-mile accept: also write the current board into the project."),
