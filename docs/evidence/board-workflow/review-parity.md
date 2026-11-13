@@ -95,18 +95,19 @@ Findings: oracle 103, port 103. Check errors: oracle none, port none.
 8. **`acceptance` check** runs the ported A1-A9 (`checkAcceptance`) on the same DRC JSON instead of the Python script; it is
    skipped when the project has no requirements (the oracle: no flow spec). The PWR_* proxy hand-off to A7 applies when requirements exist.
 9. **Gate classification**: the "candidate" and failed-candidate classes read `review/fixes/combined.json` and
-   `fixes/*-repaired/review-hash.json` (what the edit stage writes when it builds candidates); with none, those classes are empty.
+   `fixes/<id>-repaired/review-hash.json`, which `fixProposals` writes when it builds candidates (2026-11-13); records of another
+   design hash are ignored.
 10. Float formatting in claim text follows Python's `:g`, `:.nf` and `str(float)` where the claims use them; evidence JSON is written
    with Python's separators. A float that Python prints as `2.0` and JSON.parse reads as `2` prints as `2.0` only where the value is
    known to be a float (coordinates, widths); a claim built from a JSON-sourced integer-valued float could still read `2` against `2.0`.
 
 ## Not ported or not exercised
 
-- `fix --apply` building edit candidates (edit.py ladder, editbench proof, re-check, combined candidate, `change.html`),
-  `review try` (the agent's own plan through the same proof) and `--no-build`: they need the edit stage. `fixProposals` lists every
-  proposal, settles the workflow's disposition proposals, and returns edit proposals with their plan (`EditCandidateBuilder` is the
-  hook the edit stage implements). The change picture (`diffBoards`, `changePage`, `changeSvgStandalone`, `changeSummary`) is ported and
-  unit-tested but nothing calls it yet. The edit plan shape in proposals is the toolkit's (`move` with `near`/`make_room`, `add` with `like`).
+- `fix --apply` building edit candidates, the combined candidate, `change.html` per READY candidate, `--no-build`, `review try`
+  and `pcb run` / `pcb intent`: ported on 2026-11-13 (`review-edit.ts` `createEditCandidateBuilder` build/prove,
+  `review/candidates.ts`, `review/autopilot.ts`, `review/intent.ts`) and unit-tested with a fake builder; not compared against the
+  oracle on a board (the oracle's editbench needs its registry). A candidate is judged by a full review of the candidate (the oracle
+  re-runs identity, netlist and the finding's check). The `silk` check runs inside the review (unit-tested; not part of the cm5 comparison).
 - Fresh-agent L8 expert launching: not done by design (needs owner approval). The pack, `EXPERT-BRIEF.md` and `import_expert` are ported.
 - `review bench` (escape replay, `escapes.json`): not ported or run; its boards (C6-eco95, R1N, A2v5, replay-*) are not available here
   and C6 is large. The data file is shipped in `data/review/`.

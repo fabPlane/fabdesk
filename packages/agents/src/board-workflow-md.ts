@@ -7,7 +7,8 @@ export const BOARD_WORKFLOW_MD = `## Board workflow
 The board toolset (\`load_toolset {"toolset":"board"}\`) is the method for taking a placed board to a releasable one. **The owner gives
 intent; the tools handle the rest.** Intent is goals, constraints, preferences and decisions, kept in
 \`.fabdesk/board/review/intent.json\` (\`goal\`, \`constraints\`, \`decisions\` with \`covers\` patterns that settle matching findings in every
-later run, \`preferences.ask_owner_for\` / \`workflow_decides\`). Rules, placement, routing, edits, review and fixes are the tools' and the
+later run, \`preferences.ask_owner_for\` / \`workflow_decides\`; \`board_review intent_init\` writes the skeleton, \`intent_decide\` records an
+owner answer). Rules, placement, routing, edits, review and fixes are the tools' and the
 agent's job. A gate is never a bare block: every open item carries a proposal (who acts, what it does, what it changes in
 practice); ask the owner only for what intent does not decide, recommended option first.
 
@@ -26,7 +27,7 @@ onboard ─► layout (place · rank · route) ─► last mile ─► review �
 | 2 layout | \`board_route\` check · place · rank · route · auto · status · courtyards | fail-fast preflight, seeded placements gated on courtyard DRC, ranked by routed opens, then the best seed routed (30-60 min in all) | \`route\` PASS (few enough opens) |
 | 3 last mile | \`board_route\` new · try · loop · sweep · pairs · why · crossings · fit · validate · accept | tries rip, route, pair and placement steps in parallel on the whole board, keeps the best one that improves the gate, undoes the rest | A1-A9 pass |
 | 4 edit | \`board_edit\` | an ECO as a plan across board, schematic and requirements: impact, candidate, repair of cut nets, A1-A9 proof, planned-versus-collateral diff, adopt | 0 collateral |
-| 5 review | \`board_review\` | whole-board review (20 checks) bound to one design hash; findings with proposals, dispositions, gate, fixes as proven candidates | gate 0: current, every finding settled |
+| 5 review | \`board_review\` | whole-board review (21 checks, silk labels among them) bound to one design hash; findings with proposals, dispositions, gate, fixes as proven candidates; \`autopilot\` runs review, fixes and leaves only the owner's questions | gate 0: current, every finding settled |
 | 5b silkscreen | \`board_silk\` | judges every label from KiCad's exact shapes, places the ones that fail, shows silk over copper | no label problems |
 | 6 release | \`board_release\` | BOM and JLC rotations, Gerber render check, release readiness, the fabrication package behind its gates | the gates below |
 
@@ -34,7 +35,7 @@ Where a request starts (then follow the stages from there):
 
 | Asked to ... | Start with |
 | --- | --- |
-| check or review a board, find faults before ordering | \`board_review {"action": "run"}\`: ERC, DRC with parity, A1-A9, pin functions against datasheets, decoupling, supply widths and current, impedance, ratings, connector mouths, BOM, in one pass as findings with evidence; then read for what checks cannot judge (values against the circuit's intent) |
+| check or review a board, find faults before ordering | \`board_review {"action": "run"}\`: ERC, DRC with parity, A1-A9, pin functions against datasheets, decoupling, supply widths and current, impedance, ratings, connector mouths, BOM, silk labels, in one pass as findings with evidence; then read for what checks cannot judge (values against the circuit's intent) |
 | say where a board stands, what to do next | \`board_check\` (A1-A9, then the review and release state and one next step) |
 | add, remove, move, swap or reconnect parts | \`board_edit\` (a plan; it repairs cut nets and proves the result) |
 | route nets that are open, fix pairs, widths or DRC | \`board_route\` last mile (\`new\`, then \`try\`) |
@@ -71,7 +72,10 @@ pre-existing failure.
 - **Review.** One design hash covers board, schematics, project files and requirements; any change makes the review stale. Settle each finding with
   evidence: a must-fix is fixed, or accepted by the owner (or by you with evidence when intent allows); a false-positive needs a third source
   (neither the design nor the check); a question closes with any disposition that has a reason. A fix candidate is READY only when the proof
-  passes, the finding is gone, no new finding appears and 0 nets are collateral. Starting an independent reviewer on the expert pack costs an agent run: ask first.
+  passes, the finding is gone, no new finding appears and 0 nets are collateral. \`fix\` with \`apply\` also proves every READY edit applied together
+  (the combined candidate: one change per board) and writes a change picture beside each READY candidate; \`try\` puts your own plan
+  through the same proof for the finding ids it should fix; \`autopilot\` is review if stale, then \`fix\` with \`apply\`, then only what needs
+  the owner. Starting an independent reviewer on the expert pack costs an agent run: ask first.
 - **Release.** \`board_release fab\` refuses, writing nothing, unless in order: the interconnect gate (none for a standalone project), the review
   gate for this exact board, A1-A9 with parity (an exception only with an owner decision), via-in-pad and microvia fill and cap bindings; then CAM is
   exported twice with identical hashes and the Gerbers are rendered and compared with KiCad's plot. Package only a board whose review covers that exact version.
