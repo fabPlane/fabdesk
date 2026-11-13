@@ -96,6 +96,9 @@ describe("board_route last-mile actions", () => {
     const r = await call({ action: "accept", reason: "tightened" });
     expect(seen.map((s) => s.target)).toEqual([join(project.dir, "foo.kicad_pcb")]);
     expect(r.text).toContain("foo.kicad_pcb");
+    // where the adopted board stands against the workspace's start, so no hand DRC/diff is needed
+    expect(r.text).toMatch(/Board now: open \d+ .*\(start: open \d+/);
+    expect(r.text).toContain("parts moved: none");
   });
 
   test("accept candidate: relative to the workspace, refused outside it (also through a symlink)", async () => {
@@ -108,6 +111,12 @@ describe("board_route last-mile actions", () => {
     expect(rel.startsWith("..")).toBe(false);
     const a = await call({ action: "accept", candidate: rel, adopt: false });
     expect(a.text).toContain("ACCEPT");
+    // the path a try reports (project-relative or absolute) names the same folder
+    const t2 = await call({ action: "try", actions: ["tighten"], noAccept: true });
+    const dir2 = (t2.json as { candidates: Array<{ dir?: string }> }).candidates[0]!.dir!;
+    // (resolved and judged by the gate: no gain over the board just accepted, not a path refusal)
+    await expect(call({ action: "accept", candidate: relative(project.dir, dir2), adopt: false })).rejects.toThrow(/no gain/);
+    await expect(call({ action: "accept", candidate: dir2, adopt: false })).rejects.toThrow(/no gain/);
     for (const bad of ["../../../..", "/etc", "../main-other"])
       await expect(call({ action: "accept", candidate: bad, adopt: false })).rejects.toThrow(/inside the workspace/);
     const outside = await mkdtemp(join(tmpdir(), "lm-outside-"));

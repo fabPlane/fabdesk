@@ -10,8 +10,8 @@
  * runs (on the host router); other KRT steps fail by name. Boards of any file name work.
  */
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
-import { lastmile as L, layout, locateProject, onboard, parseBoard, profile, readRequirements, type Requirements } from "@fabdesk/board-workflow";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
+import { edit, lastmile as L, layout, locateProject, onboard, parseBoard, profile, readRequirements, type Requirements } from "@fabdesk/board-workflow";
 import { adoptCandidate, designFileHashes } from "../board-adopt";
 import { jailPath, PROJECT_FILES } from "../fs";
 import { runTraceMaker } from "../routers";
@@ -177,8 +177,11 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
         }
         case "accept": {
           if (a.candidate) {
-            // an earlier try's folder (`t3/c1`): relative to the workspace, and by real path inside it
-            const dir = await jailPath(bench.ws, a.candidate).catch(() => {
+            // an earlier try's folder: relative to the workspace (`t3/c1`) or to the project (the `dir` a try reports,
+            // `.fabdesk/board/lastmile/main/t3/c1`), and by real path inside the workspace
+            const fromProject = relative(bench.ws, isAbsolute(a.candidate) ? a.candidate : join(project.dir, a.candidate));
+            const rel = fromProject && !fromProject.startsWith("..") && !isAbsolute(fromProject) ? fromProject : a.candidate;
+            const dir = await jailPath(bench.ws, rel).catch(() => {
               throw new ToolError(`candidate must be a try folder inside the workspace (e.g. t3/c1): ${a.candidate}`, "invalid_args");
             });
             const r = await bench.acceptDir(dir, { slackA8: a.slackA8 });
@@ -191,7 +194,8 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
           await writeFile(join(bench.dir, "origin.json"), JSON.stringify({ project: project.dir, files: origin }, null, 1) + "\n");
           // onto the board the bench started from (`new` records its file name in the project folder as state.pcb), never a default
           const r = await adoptCandidate(ctx, { candidate: bench.candidateBoard(), board: bench.state.pcb, reason: a.reason ?? `last mile: ${bench.state.history.slice(1, bench.pointer + 1).map((h) => h.action).join(", ")}`.slice(0, 190) });
-          return ok(r.text, r.data);
+          const standing = await adoptedStanding(bench).catch(() => null);
+          return ok([r.text, ...(standing?.lines ?? [])].join("\n"), { ...(r.data as object), ...(standing ? { standing: standing.json } : {}) });
         }
         case "undo":
           return ok(await bench.undo(), { step: bench.pointer });
@@ -277,4 +281,28 @@ export async function repairEditCandidate(
   const req = await requirementsFor(ctx);
   const { deps } = await openBench(ctx, join(input.candidateDir, ".lastmile"), req);
   return L.repairCandidate(deps(router, (l) => ctx.progress(0.6, l)), { ...input, projectDir: ctx.requireProject().dir });
+}
+
+/**
+ * What an adopted last-mile board is, against the board the workspace started from: the figures before and now, the
+ * nets whose copper changed (split into the ones that were open and the others) and parts moved, so the agent does not
+ * have to re-derive it with its own DRC run and diff.
+ */
+async function adoptedStanding(bench: L.Bench): Promise<{ lines: string[]; json: Record<string, unknown> }> {
+  const s0 = bench.state.history[0]!;
+  const startText = await readFile(join(s0.dir, bench.state.pcb), "utf8");
+  const nowText = await readFile(bench.candidateBoard(), "utf8");
+  const wasOpen = new Set((await bench.scoreDir(s0.dir)).opens.map((o) => o.net));
+  const changed = layout.changedCopperNets(startText, nowText);
+  const routed = changed.filter((n) => wasOpen.has(n));
+  const others = changed.filter((n) => !wasOpen.has(n));
+  const moved = edit.diffBoards(startText, nowText).moved;
+  const list = (xs: string[]) => (xs.length ? `${xs.length} (${xs.slice(0, 8).join(", ")}${xs.length > 8 ? ", ..." : ""})` : "none");
+  return {
+    lines: [
+      `Board now: ${L.figureLine(bench.figures)}   (start: ${L.figureLine(s0.figures)})`,
+      `Copper changed on nets that were open: ${list(routed)}; on other nets: ${list(others)}; parts moved: ${list(moved)}.`,
+    ],
+    json: { figures: bench.figures, start: s0.figures, routedNets: routed, otherNetsChanged: others, partsMoved: moved },
+  };
 }
