@@ -6,6 +6,7 @@
  */
 import { padOnLayer, viaSpan, type Board, type Pad, type Segment, type Via } from "./board";
 import type { Acceptance, NetClassSpec, Requirements, TapPad } from "./requirements";
+import { planeLayerNames } from "./requirements";
 
 export const CHECK_NAMES = {
   A1: "connectivity",
@@ -262,7 +263,7 @@ export function profile(acc: Acceptance): ProfileView {
   }
   return {
     ground: sp.ground_net ?? "GND",
-    planes: new Set(sp.plane_layers ?? []),
+    planes: new Set(planeLayerNames(sp.plane_layers)),
     copper: sp.copper_layers ?? ["F.Cu", "B.Cu"],
     spans,
     valueExceptions: new Set(acc.value_exceptions ?? []),

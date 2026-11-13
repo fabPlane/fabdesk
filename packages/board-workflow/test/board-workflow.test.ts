@@ -12,6 +12,7 @@ import {
   onboard,
   parseBoard,
   parseSexpr,
+  profile,
   pyRound,
   readAcceptanceState,
   readProjectSettings,
@@ -110,6 +111,13 @@ describe("onboarding", () => {
 });
 
 describe("acceptance", () => {
+  test("plane_layers as {layer: net} (the toolkit's current form) means the same layers as the list", () => {
+    const base = { schema: "X", stack_policy: { copper_layers: ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"], ground_net: "GND", via_spans: {} } };
+    const asMap = profile({ ...base, stack_policy: { ...base.stack_policy, plane_layers: { "In1.Cu": "GND", "In2.Cu": "GND" } } } as never);
+    const asList = profile({ ...base, stack_policy: { ...base.stack_policy, plane_layers: ["In1.Cu", "In2.Cu"] } } as never);
+    expect([...asMap.planes].sort()).toEqual(["In1.Cu", "In2.Cu"]);
+    expect([...asList.planes].sort()).toEqual(["In1.Cu", "In2.Cu"]);
+  });
   const settings = readProjectSettings(PRO);
   const reqs = () => deriveRequirements(BOARD, settings, { pcbName: "b" }).requirements;
   const clean = { violations: [], unconnected: 0, parity: 0 };

@@ -63,7 +63,8 @@ export interface Acceptance {
   };
   stack_policy: {
     copper_layers: string[];
-    plane_layers: string[];
+    /** Layer names, or `{layer: net}` (the toolkit's current form; boardctx takes `set()` of it, i.e. the layers). */
+    plane_layers: string[] | Record<string, string>;
     no_track_layers?: string[];
     ground_net: string;
     /** `{ through: ["F.Cu","B.Cu"] }` or `{ blind: [["In1.Cu","In4.Cu"], ...] }`. */
@@ -127,3 +128,9 @@ export const REQUIREMENT_FILES = {
   mechanical: "mechanical.json",
   heights: "heights.json",
 } as const;
+
+/** The plane layers of a stack policy, either form (`["In1.Cu"]` or `{"In1.Cu": "GND"}`), as boardctx's `set()`. */
+export function planeLayerNames(v: string[] | Record<string, string> | undefined | null): string[] {
+  if (!v) return [];
+  return Array.isArray(v) ? v : Object.keys(v);
+}

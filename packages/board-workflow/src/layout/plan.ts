@@ -3,6 +3,7 @@
  * layers, aliases from the board's acceptance). Port of `route_krt.board_plan` / `expand`, `boardctx` helpers.
  */
 import type { Acceptance, NetClassSpec } from "../requirements";
+import { planeLayerNames } from "../requirements";
 
 const STACK8 = ["F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "In5.Cu", "In6.Cu", "B.Cu"];
 const LEGACY_PLANES = ["In1.Cu", "In6.Cu"];
@@ -81,7 +82,7 @@ type Classes = Record<string, NetClassSpec>;
 export function profilePlanes(acc: Acceptance): string[] {
   const sp = acc.stack_policy ?? ({} as Acceptance["stack_policy"]);
   const legacy = acc.schema === "C6_ACCEPTANCE_V1";
-  return sp.plane_layers ?? (legacy ? LEGACY_PLANES : []);
+  return sp.plane_layers ? planeLayerNames(sp.plane_layers) : legacy ? LEGACY_PLANES : [];
 }
 
 /** Copper layers tracks may use: the acceptance's copper layers minus its no-track layers (default: the plane layers). */
