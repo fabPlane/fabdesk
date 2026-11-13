@@ -56,7 +56,7 @@ export async function repairCandidate(
   if (!o.actions && prior.open !== null && prior.open >= UNROUTED_OPENS) {
     const nets = o.routeAgain.length > 6 ? `${o.routeAgain.slice(0, 6).join(", ")} and ${o.routeAgain.length - 6} more` : o.routeAgain.join(", ");
     const note = `last mile skipped: the board had ${prior.open} open connections before the edit (not routed yet), so routing it is board_route's job (layout check/route, then the last mile), not the edit's; the edit's nets (${nets || "none"}) are among the opens it will route.`;
-    return { note, workspace: "", steps: [] };
+    return { note, workspace: "", steps: [], start: { line: `not routed before the edit (open ${prior.open})`, wall_s: 0 } };
   }
   const ws = join(o.candidateDir, ".lastmile"); // skipped by the bench's folder copy
   await rm(ws, { recursive: true, force: true });
