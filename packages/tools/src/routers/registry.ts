@@ -95,7 +95,30 @@ export type RouterRegistryDeps = {
   spawn?: (cmd: string, args: string[]) => Promise<number>;
   /** KRT's post-extract step (venv + packages); injectable so tests need no Python or network. */
   krtSetup?: (root: string, deps: KrtSetupDeps) => Promise<KrtSetupResult>;
+  /** atlc's post-extract build (configure + make); injectable so tests need no C compiler. */
+  atlcBuild?: (srcDir: string, log: (line: string) => void, signal: AbortSignal) => Promise<void>;
 };
+
+/** The source tree inside atlc's install. */
+const ATLC_SRC = "atlc-4.6.1";
+const PATH_ATLC = "atlc on PATH";
+
+/**
+ * Build atlc from its source tree: `sh configure` then `make -C src atlc` (single-threaded, as Debian builds it;
+ * `-fcommon` for GCC 10+, which upstream predates). Needs sh, a C compiler and make.
+ */
+export async function buildAtlc(srcDir: string, log: (line: string) => void, signal: AbortSignal): Promise<void> {
+  if (process.platform === "win32") throw new Error("atlc builds with sh, a C compiler and make, which Windows lacks; install an atlc build and set ATLC_BIN");
+  for (const [what, cmd] of [
+    ["configure", ["sh", "./configure", "CFLAGS=-O2 -fcommon"]],
+    ["make", ["make", "-C", "src", "atlc"]],
+  ] as const) {
+    log(`atlc: ${what}`);
+    const p = Bun.spawn([...cmd], { cwd: srcDir, stdout: "pipe", stderr: "pipe", signal });
+    const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+    if (code !== 0) throw new Error(`atlc ${what} failed (exit ${code}; a C compiler and make are needed): ${`${out}\n${err}`.trim().slice(-400)}`);
+  }
+}
 
 export interface RouterRegistry {
   list(preferredRouter?: RouterCatalogId): RouterList;
@@ -420,7 +443,7 @@ class FileRouterRegistry implements RouterRegistry {
         ...this.base(entry),
         state: "installed",
         ready: true,
-        installHint: `Using ${envName}=${local}. ${clear} to manage ${entry.displayName} from Settings.`,
+        installHint: envName === PATH_ATLC ? `Using the atlc on PATH at ${local}.` : `Using ${envName}=${local}. ${clear} to manage ${entry.displayName} from Settings.`,
         versionInstalled: probed ?? entry.version,
         path: local,
         overriddenBy: envName,
@@ -481,7 +504,7 @@ class FileRouterRegistry implements RouterRegistry {
   }
 
   private overrideEnv(id: RouterCatalogId): string {
-    return id === "tracemaker" ? "TRACEMAKER_BIN" : id === "freerouting" ? "FREEROUTING_JAR" : id === "krt" ? "FABDESK_KRT_DIR" : "";
+    return id === "tracemaker" ? "TRACEMAKER_BIN" : id === "freerouting" ? "FREEROUTING_JAR" : id === "krt" ? "FABDESK_KRT_DIR" : id === "atlc" ? "ATLC_BIN" : "";
   }
 
   /** The override that is set, if any: Settings `krtDir` (KRT only), then the env var. */
@@ -492,13 +515,19 @@ class FileRouterRegistry implements RouterRegistry {
     }
     const key = this.overrideEnv(id);
     const value = key ? this.env[key]?.trim() : undefined;
-    return key && value ? { name: key, value } : null;
+    if (key && value) return { name: key, value };
+    if (id === "atlc") {
+      // a system package (Debian/Ubuntu `atlc`) is used as it is
+      const onPath = Bun.which("atlc", { PATH: this.env["PATH"] ?? "" });
+      if (onPath) return { name: PATH_ATLC, value: onPath };
+    }
+    return null;
   }
 
   private localOverride(id: RouterCatalogId): string | null {
     const value = this.overrideSource(id)?.value;
     if (!value) return null;
-    if (id === "tracemaker") return isRunnableFile(value) ? value : null;
+    if (id === "tracemaker" || id === "atlc") return isRunnableFile(value) ? value : null;
     if (id === "freerouting") return isFile(value) ? value : null;
     if (id === "krt") return krtRootProblem(value) === null ? value : null;
     return existsSync(value) ? value : null;
@@ -529,6 +558,7 @@ class FileRouterRegistry implements RouterRegistry {
       return null;
     }
     if (entry.id === "krt") return krtRootProblem(path) === null ? path : null;
+    if (entry.id === "atlc") return isRunnableFile(path) ? path : isDirectory(path) ? findNamedFile(path, "atlc", isRunnableFile) : null;
     return existsSync(path) ? path : null;
   }
 
@@ -642,6 +672,11 @@ class FileRouterRegistry implements RouterRegistry {
       swapped = true;
       await rename(extracted, final);
       let setupNotice: string | undefined;
+      if (entry.id === "atlc") {
+        phase("setup", `${entry.displayName}: building from source`);
+        await (this.deps.atlcBuild ?? buildAtlc)(join(final, ATLC_SRC), emit, abort.signal);
+        abort.signal.throwIfAborted();
+      }
       if (entry.id === "krt") {
         // The venv is made in place (its paths are absolute), after the swap; a failure restores the backup.
         phase("setup", `${entry.displayName}: setting up Python and the router core`);
@@ -719,9 +754,9 @@ class FileRouterRegistry implements RouterRegistry {
       return target;
     }
     const spawn = this.deps.spawn ?? defaultSpawn;
-    if (artifact.format === "tar.gz") {
-      const code = await spawn("tar", ["-xzf", archive, "-C", dest]);
-      if (code !== 0) throw new Error("failed to extract tar.gz artifact");
+    if (artifact.format === "tar.gz" || artifact.format === "tar.bz2") {
+      const code = await spawn("tar", [artifact.format === "tar.gz" ? "-xzf" : "-xjf", archive, "-C", dest]);
+      if (code !== 0) throw new Error(`failed to extract ${artifact.format} artifact`);
     } else {
       await extractZipArchive(archive, dest, spawn);
     }

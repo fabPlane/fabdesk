@@ -5,7 +5,7 @@ import { z } from "zod/v4";
  * Catalog entries. `capacity` is a legacy input alias for `fab_router`, not a catalog entry. `krt`
  * (KiCadRoutingTools) is an engine the board workflow runs, not a `route_run` router (`kind: "engine"`).
  */
-export const RouterCatalogId = z.enum(["fab_router", "freerouting", "tracemaker", "krt"]);
+export const RouterCatalogId = z.enum(["fab_router", "freerouting", "tracemaker", "krt", "atlc"]);
 export type RouterCatalogId = z.infer<typeof RouterCatalogId>;
 
 export const RouterInstallState = z.enum([

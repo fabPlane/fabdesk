@@ -5,7 +5,7 @@ import {
   type TraceMakerBinaryRelease,
 } from "./tracemaker-release";
 
-export type RouterArtifactFormat = "jar" | "zip" | "tar.gz" | "file";
+export type RouterArtifactFormat = "jar" | "zip" | "tar.gz" | "tar.bz2" | "file";
 
 export type RouterArtifact = {
   url: string;
@@ -61,6 +61,18 @@ export const TRACEMAKER_URL =
   "https://github.com/DingoOz/TraceMaker/archive/refs/tags/v0.8.0.tar.gz";
 export const TRACEMAKER_HOMEPAGE = "https://github.com/DingoOz/TraceMaker";
 
+/**
+ * atlc 4.6.1 (GPL-2.0-or-later), the finite-difference transmission-line solver `board_review section` runs. Upstream
+ * publishes source only; Install downloads Debian's pristine copy of the upstream tarball and builds `src/atlc` with the
+ * machine's C compiler (`sh configure && make`, single-threaded like Debian's package). An `atlc` on PATH (Debian/Ubuntu
+ * package `atlc`) or ATLC_BIN is used instead when present.
+ */
+export const ATLC_VERSION = "4.6.1";
+export const ATLC_SHA256 = "0ad8f9bb2a9c59ed452ffd8fdbad85a53d0c3022e69d479caa4ab9c0a6841321";
+export const ATLC_BYTES = 1_784_110;
+export const ATLC_URL = "https://deb.debian.org/debian/pool/main/a/atlc/atlc_4.6.1.orig.tar.bz2";
+export const ATLC_HOMEPAGE = "https://atlc.sourceforge.net";
+
 const STRENGTHS = {
   fab_router: [
     "Bundled router when the active PCB backend exposes the engine",
@@ -81,6 +93,11 @@ const STRENGTHS = {
     "Placer and router behind board_route's place, rank and route stages",
     "Runs every last-mile router, rip and nudge step, and the `why` forensics",
     "Rust A* core with differential pairs, fanout and plane routing",
+  ],
+  atlc: [
+    "Finite-difference 2D cross-section impedance for board_review section (Zdiff, Zo, Zodd/Zeven)",
+    "Arbitrary conductor and dielectric shapes: etched trapezoids, soldermask, stripline and microstrip",
+    "The solver behind the toolkit's stack106 USB 90 / LVDS 100 ohm proof",
   ],
 } as const;
 
@@ -163,6 +180,26 @@ export function defaultRouterCatalog(env: NodeJS.ProcessEnv = process.env): Rout
         filename: `KiCadRoutingTools-${KRT_VERSION}.zip`,
         format: "zip",
         subdir: "src",
+      },
+    },
+    {
+      id: "atlc",
+      displayName: "atlc",
+      description:
+        "Finite-difference transmission-line calculator (GPL-2.0-or-later) for board_review section. Install downloads the pinned 4.6.1 source and builds it with the machine's C compiler; an atlc on PATH or ATLC_BIN is used instead when present.",
+      strengths: [...STRENGTHS.atlc],
+      license: "GPL-2.0-or-later",
+      version: ATLC_VERSION,
+      homepage: ATLC_HOMEPAGE,
+      install: "download",
+      kind: "engine",
+      artifact: {
+        url: env["FABDESK_ATLC_URL"] ?? ATLC_URL,
+        sha256: env["FABDESK_ATLC_SHA256"] ?? ATLC_SHA256,
+        ...(env["FABDESK_ATLC_URL"] ? {} : { bytes: ATLC_BYTES }),
+        filename: `atlc-${ATLC_VERSION}.tar.bz2`,
+        format: "tar.bz2",
+        executable: `atlc-${ATLC_VERSION}/src/atlc`,
       },
     },
   ];

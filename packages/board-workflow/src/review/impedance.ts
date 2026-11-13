@@ -191,3 +191,14 @@ export function shortSection(z0: number, zs: number, er: number, lengthMm: numbe
     round_trip_fraction_of_rise: (2 * delayNs) / riseNs,
   };
 }
+
+/** The toolkit's model text for a short-section record (its module docstring). */
+export const SHORT_SECTION_MODEL =
+  "Finite lossless mismatched-section check, not an eye or compliance simulation.\n\nAll lengths in mm, time in ns, impedance in ohms. A section of Zs is inserted\nbetween identical Z0 lines and terminated in Z0. The reported frequency-domain\nreflection is at the specified edge knee (0.5/tr). The higher-frequency spectrum,\nvias, package parasitics and P/N asymmetry are deliberately not hidden by this\nsimple calculation; assembled SI remains a prototype test.\n";
+
+export type ShortSectionCase = { name?: string; z0: number; zs: number; er: number; length_mm: number; rise_ns: number; [k: string]: unknown };
+
+/** short_section.py's record for `{cases, sources}`: every case with its delay and reflections. */
+export function shortSectionReport(spec: { cases: ShortSectionCase[]; sources?: unknown[] }): { model: string; sources: unknown[]; rows: Array<ShortSectionCase & ShortSectionResult> } {
+  return { model: SHORT_SECTION_MODEL, sources: spec.sources ?? [], rows: spec.cases.map((c) => ({ ...c, ...shortSection(c.z0, c.zs, c.er, c.length_mm, c.rise_ns) })) };
+}
