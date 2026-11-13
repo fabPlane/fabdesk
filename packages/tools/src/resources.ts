@@ -113,6 +113,7 @@ export class ResourceGovernor {
   }): Promise<RunningJob & { release(): void }> {
     const base = RESOURCE_NEEDS[input.cls];
     const need = { ...base, memGiB: Math.max(base.memGiB, input.memGiB ?? 0) };
+    let lastReason = "";
     for (;;) {
       if (input.signal?.aborted) throw new ToolError("cancelled while waiting for resources", "cancelled");
       const host = await this.sample(input.paths);
@@ -166,7 +167,10 @@ export class ResourceGovernor {
           },
         };
       }
-      input.onWait?.(why);
+      // one note per reason, not one per poll (a wait of minutes would flood the job's notes the agent reads)
+      const reason = why.replace(/[\d.]+/g, "#");
+      if (reason !== lastReason) input.onWait?.(why);
+      lastReason = reason;
       await new Promise<void>((resolve) => {
         const w: Waiter = () => {
           this.waiters.delete(w);
