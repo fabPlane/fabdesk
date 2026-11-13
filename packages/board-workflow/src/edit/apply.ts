@@ -229,7 +229,7 @@ export async function applyEdit(
     for (const ad of linkAdds) {
       let lk = directLink(text, ad.ref, ad.near as string, clearance);
       // blocked where the landing put it: try poses round the target pad, nearest first, each through the same
-      // courtyard-gated placement; the first that places and links wins (boards up to 30 MB: each try re-reads it)
+      // courtyard-gated placement (boards up to 30 MB: each try re-reads it)
       if ("skipped" in lk.log && text.length < 30e6) {
         const near = ad.near as string;
         const tb = readBoard(parseSexpr(text)).pads.find((p) => `${p.ref}.${p.pad}` === near);
@@ -237,19 +237,28 @@ export async function applyEdit(
         if (tb)
           for (const r of [1.2, 1.6, 2.0, 2.5, 3.0])
             for (let k = 0; k < 8; k++) for (const rot of ad.rot !== undefined ? [ad.rot] : [0, 90, 180, 270]) tries.push([tb.x + r * Math.cos((k * Math.PI) / 4), tb.y + r * Math.sin((k * Math.PI) / 4), rot]);
+        // poses that link, nearest first; one that cuts no other net's copper wins at once, else the one cutting
+        // fewest. Nets a pose cuts become planned (the ledger's landing cut nets): the repair routes them again.
+        const own = new Set(Object.values(ad.pins));
+        let best: { text: string; log: LinkLog; cut: string[]; extra: number } | null = null;
         for (const to of tries) {
-          let placed: string;
+          let pm: ReturnType<typeof planMoves>;
           try {
-            placed = planMoves(text, isFixed, [{ ref: ad.ref, to }], null, pairs0).text;
+            pm = planMoves(text, isFixed, [{ ref: ad.ref, to }], null, pairs0);
           } catch (e) {
             if (e instanceof EditStop) continue;
             throw e;
           }
-          const l2 = directLink(placed, ad.ref, near, clearance);
-          if (!("skipped" in l2.log)) {
-            lk = { text: l2.text, log: { ...l2.log, placed: to.map((v) => Math.round(v * 1e4) / 1e4) as [number, number, number] } };
-            break;
-          }
+          const cut = pm.led.cut_nets.filter((n) => !own.has(n));
+          if (best && cut.length >= best.extra) continue;
+          const l2 = directLink(pm.text, ad.ref, near, clearance);
+          if ("skipped" in l2.log) continue;
+          best = { text: l2.text, log: { ...l2.log, placed: to.map((v) => Math.round(v * 1e4) / 1e4) as [number, number, number] }, cut: pm.led.cut_nets, extra: cut.length };
+          if (!cut.length) break;
+        }
+        if (best) {
+          lk = { text: best.text, log: best.log };
+          if (log.landing) log.landing.cut_nets = [...new Set([...log.landing.cut_nets, ...best.cut])].sort();
         }
       }
       text = lk.text;
