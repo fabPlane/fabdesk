@@ -166,7 +166,7 @@ describe("a review run, the gate and dispositions", () => {
     expect((await reviewGate(project_)).exit).toBe(1);
     const r = await runReview(project_, fakeEnv(), { offline: true });
     const names = r.review.checks.map((c) => c.name);
-    expect(names).toEqual(["identity", "netlist", "erc", "drc", "acceptance", "pinsense", "cards", "decoupling", "current", "divider", "impedance", "manual", "mouth", "interconnect", "bom", "ratings", "coverage", "silk", "evidence", "custom", "pack"]);
+    expect(names).toEqual(["identity", "netlist", "erc", "drc", "acceptance", "pinsense", "cards", "decoupling", "current", "inner_power", "divider", "impedance", "manual", "mouth", "interconnect", "bom", "ratings", "coverage", "silk", "evidence", "custom", "pack"]);
     const by = (rule: string) => r.review.findings.filter((f) => f.rule === rule);
     expect(by("MOUTH")[0]!.severity).toBe("must-fix");
     expect(by("MOUTH")[0]!.ref).toBe("J1");
