@@ -63,8 +63,9 @@ export function footprintSpans(text: string): Map<string, Span> {
 export type Pose = [number, number, number];
 
 export function pose(body: string): Pose {
-  const t = /\(transform\s+\(translate ([-\d.]+) ([-\d.]+)\)\s+\(rotate ([-\d.]+)\)/.exec(body);
-  if (t) return [Number(t[1]), Number(t[2]), Number(t[3])];
+  // KiCad leaves `(rotate)` out of a transform at 0 degrees (C6's C18_IC201); block_pass.pose then found no pose
+  const t = /\(transform\s+\(translate ([-\d.]+) ([-\d.]+)\)(?:\s+\(rotate ([-\d.]+)\))?/.exec(body);
+  if (t) return [Number(t[1]), Number(t[2]), Number(t[3] ?? 0)];
   const head = body.slice(0, body.indexOf("(property") < 0 ? body.length : body.indexOf("(property"));
   const at = /\(at ([-\d.]+) ([-\d.]+)(?: ([-\d.]+))?\)/.exec(head);
   if (!at) throw new Error("footprint without a pose");
@@ -97,7 +98,8 @@ export function setPose(body: string, x1: number, y1: number, r1: number): strin
   if (/\(transform\s+\(translate/.test(body)) {
     let out = body.replace(/\(translate [-\d.]+ [-\d.]+\)/, `(translate ${f4(x1)} ${f4(y1)})`);
     if (d) {
-      out = out.replace(/\(rotate [-\d.]+\)/, `(rotate ${g(mod360(r1))})`);
+      if (/\(transform\s+\(translate [-\d.]+ [-\d.]+\)\s+\(rotate /.test(out)) out = out.replace(/\(rotate [-\d.]+\)/, `(rotate ${g(mod360(r1))})`);
+      else out = out.replace(/(\(translate [-\d.]+ [-\d.]+\))/, `$1 (rotate ${g(mod360(r1))})`);
       out = out.replace(AT, turn(d));
     }
     return out;
