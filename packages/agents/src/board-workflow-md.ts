@@ -91,7 +91,9 @@ and basis); \`inner_neck_allowance_mm: 0\` on a power class makes every inner se
   inner layer from a plan JSON) and \`pour\` (net zones over open power connections, never thinner than class width; it closes an open only where
   the copper fits, not a structural one). The TraceMaker route plan takes the same as \`planes\` / \`escape\` before routing.
 - **Edit.** Write the change as a plan (remove, move with \`to\` or \`near\`, displace, swap, add, net; \`legalise\` seats test points at the free
-  spot nearest their net's other pads, many in one plan). \`impact\` first: a STOP is your decision.
+  spot nearest their net's other pads, many in one plan). \`impact\` first: a STOP is your decision. A \`near\` pose that lands on other nets'
+  copper is named in impact with the nearest pose that cuts none: take it with the move's \`clear: true\` (and a radius that reaches it)
+  rather than probing \`to\` poses one by one, or keep the first pose and let the repair route the cut nets.
   Three keys are local fixes on the routed copper, never routing: \`copper\` (a filled/capped via at a pad with \`via_at_pad\`, dead ends pruned
   with \`prune_signal_leaves\` / \`prune_track_leaves\`, copper removed by uuid with \`remove_items\`, \`source_sha256\` pins the board you read);
   \`hole\` (resize an NPTH locating hole to \`size_mm\`, round or oval, with its courtyards, keep-out and library footprint); \`stack\` (a

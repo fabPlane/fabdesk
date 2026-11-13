@@ -52,6 +52,7 @@ const MOVE = z.object({
   make_room: z.boolean().optional(),
   clearance: z.number().optional().describe("near: courtyard clearance for this part, mm (default displace.clearance, 0.2)."),
   edge: z.number().optional().describe("near: margin from the board outline for this part, mm (default 0.4)."),
+  clear: z.boolean().optional().describe("near: only poses whose courtyard lands on no other net's copper (no cut of unrelated tracks; the repair routes only this part's nets). Impact names the nearest such pose when the default search takes one on copper."),
 });
 
 const PLAN = z

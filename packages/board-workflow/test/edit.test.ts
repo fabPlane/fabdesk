@@ -305,6 +305,21 @@ describe("collateral, drc input and the helpers", () => {
     expect(auto.led.carry_auto).toEqual({ R1: ["R2"] });
     expect(auto.led.carried.map((c) => c.ref)).toEqual(["R2"]);
   });
+  test("near on copper: impact names the nearest pose that cuts no other net; clear: true takes it, or stops saying why", () => {
+    let band = "";
+    for (let y = 13; y <= 27; y += 0.5) band += seg(21, y, 38, y, "OTHER");
+    const b2 = BOARD.replace(/\n\)$/, `${band}\n)`);
+    const r = planMoves(b2, (r_) => r_ === "J1", [{ ref: "C3", near: "U1", radius: 6 }], { radius: 6 }, []);
+    expect(r.led.landing_removed_nets).toEqual(["OTHER"]); // the toolkit's order: a pose on copper when nothing near is clear
+    const nc = r.led.near_clear![0]!;
+    expect(nc).toMatchObject({ ref: "C3", chosen_cuts: 4, target: [30, 20] });
+    expect(nc.clear_mm!).toBeGreaterThan(6);
+    const c = planMoves(b2, (r_) => r_ === "J1", [{ ref: "C3", near: "U1", radius: Math.ceil(nc.clear_mm!), clear: true }], { radius: 6 }, []);
+    expect(c.led.near[0]!.to).toEqual(nc.clear!);
+    expect(c.led.landing_removed_nets).toEqual([]);
+    expect(c.led.near_clear).toBeUndefined();
+    expect(() => planMoves(b2, (r_) => r_ === "J1", [{ ref: "C3", near: "U1", radius: 6, clear: true }], { radius: 6 }, [])).toThrow(/clear of other nets' copper \(clear: true\)/);
+  });
   test("legalise (tp_legalise): test points go to the nearest free spot to their net's other pads, many in one plan, rotation kept", () => {
     const tps = fpT("TP1", 55, 35, [["1", "SIG2", 0, 0]], { box: [-0.5, -0.5, 0.5, 0.5], value: "TP" }) + fpT("TP2", 5, 35, [["1", "SIG", 0, 0]], { box: [-0.5, -0.5, 0.5, 0.5], value: "TP", rot: 90 });
     const board = BOARD.replace(/\n\)$/, `${tps}\n)`);

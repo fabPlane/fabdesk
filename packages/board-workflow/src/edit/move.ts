@@ -45,6 +45,11 @@ export interface MoveSpec {
   clearance?: number;
   /** near: margin from the board outline for this part (default the plan's displace edge, 0.4 mm). */
   edge?: number;
+  /**
+   * near: only poses whose courtyard lands on no other net's copper (no landing cut). Without it the search keeps the
+   * toolkit's order, which takes a pose on copper when nothing clear is within 1.5 mm of the first legal ring.
+   */
+  clear?: boolean;
   /** Pose from tp_legalise's search (plan.legalise); its clearance is also this part's gap when judging what is in the way. */
   legalise?: { clearance: number; edge: number; radius: number };
 }
@@ -76,6 +81,11 @@ export interface MoveLedger {
   pruned: number;
   internal_nets_moved: string[];
   new_courtyards: Record<string, number[]>;
+  /**
+   * A near pose that lands on other nets' copper, and the nearest pose that lands on none (searched up to 4 mm past the
+   * radius), so the agent need not probe poses one by one (a jetson LED move took 15 impact calls).
+   */
+  near_clear?: Array<{ ref: string; chosen_cuts: number; clear: Pose | null; clear_mm: number | null; target: [number, number] }>;
 }
 
 type Fx = (x: number, y: number) => Pt;
@@ -273,11 +283,11 @@ export function planMoves(
   type Reseat = [string, Pt | undefined | null, "keep" | "any", string[], number | null];
   const reseat: Reseat[] = [];
   const makeRoom = new Set<string>();
-  const nearOpts = new Map<string, { clearance?: number; edge?: number }>();
+  const nearOpts = new Map<string, { clearance?: number; edge?: number; clear?: boolean }>();
   for (const m of nearMoves) {
     const nr = m.near!;
     let tgt: Pt;
-    nearOpts.set(m.ref, { ...(m.clearance !== undefined ? { clearance: m.clearance } : {}), ...(m.edge !== undefined ? { edge: m.edge } : {}) });
+    nearOpts.set(m.ref, { ...(m.clearance !== undefined ? { clearance: m.clearance } : {}), ...(m.edge !== undefined ? { edge: m.edge } : {}), ...(m.clear ? { clear: true } : {}) });
     if (Array.isArray(nr)) tgt = [Number(nr[0]), Number(nr[1])];
     else if (nr === "net" || nr.startsWith("net:")) {
       // the centroid of the other pads on a net (the toolkit's tp_legalise target); "net" = the part's own single net
@@ -392,39 +402,62 @@ export function planMoves(
       return true;
     };
     const step = !block.length ? 0.1 : 0.25;
+    const clearOnly = !!nearOpts.get(o)?.clear;
+    /** The pose's cost (landing hits weigh 1000 each) and box, or null when it is not legal; `tally` names what is in the way. */
+    const evalPose = (x: number, y: number, rot: number, tally: boolean): { cst: number; hits: number; wb: Box } | null => {
+      const wb = worldBox(lb, x, y, rot);
+      if (wb[0] < BX[0] + emO || wb[1] < BX[1] + emO || wb[2] > BX[2] - emO || wb[3] > BX[3] - emO) return null;
+      if (occupiedList(blockers, side(o), wb, gapO)) {
+        if (tally) tallyWay(side(o), wb);
+        return null;
+      }
+      if (allDrills.some((d) => overlap(wb, d, gapO)) || keepouts.some((kz) => overlap(wb, kz, 0))) return null;
+      const ownDrills = padList(raw.get(o)!, x, y, rot).filter((p) => p.drilled).map((p) => p.box);
+      if (ownDrills.some((d) => blockers.some(([, b]) => overlap(d, b, 0)))) return null;
+      if (block.length && !blockLegal(x, y, rot)) return null;
+      let hits = landingHits(o, [x, y, rot]);
+      for (const [c, p_] of blockPoses(x, y, rot)) hits += landingHits(c, p_);
+      return { cst: cost(x, y, rot) + 1000.0 * hits, hits, wb };
+    };
+    const ringPoses = function* (rr: number) {
+      const steps = Math.max(1, Math.floor((2 * Math.PI * rr) / step));
+      for (let kk = 0; kk < steps; kk++) yield [tx + rr * Math.cos((2 * Math.PI * kk) / steps), ty + rr * Math.sin((2 * Math.PI * kk) / steps)] as const;
+    };
     let firstLegal: number | null = null;
     let best: [number, number, number, number, Box] | null = null;
+    let bestHits = 0;
     for (let ring = 0; ring <= Math.floor(radiusO / step); ring++) {
       const rr = ring * step;
-      const steps = Math.max(1, Math.floor((2 * Math.PI * rr) / step));
-      for (let kk = 0; kk < steps; kk++) {
-        const x = tx + rr * Math.cos((2 * Math.PI * kk) / steps);
-        const y = ty + rr * Math.sin((2 * Math.PI * kk) / steps);
+      for (const [x, y] of ringPoses(rr)) {
         for (const rot of rots) {
-          const wb = worldBox(lb, x, y, rot);
-          if (wb[0] < BX[0] + emO || wb[1] < BX[1] + emO || wb[2] > BX[2] - emO || wb[3] > BX[3] - emO) continue;
-          if (occupiedList(blockers, side(o), wb, gapO)) {
-            if (firstLegal === null) tallyWay(side(o), wb);
-            continue;
-          }
-          if (allDrills.some((d) => overlap(wb, d, gapO)) || keepouts.some((kz) => overlap(wb, kz, 0))) continue;
-          const ownDrills = padList(raw.get(o)!, x, y, rot).filter((p) => p.drilled).map((p) => p.box);
-          if (ownDrills.some((d) => blockers.some(([, b]) => overlap(d, b, 0)))) continue;
-          if (block.length && !blockLegal(x, y, rot)) continue;
-          let hits = landingHits(o, [x, y, rot]);
-          for (const [c, p_] of blockPoses(x, y, rot)) hits += landingHits(c, p_);
-          const cst = cost(x, y, rot) + 1000.0 * hits;
-          if (!best || cst < best[0]) best = [cst, round(x, 3), round(y, 3), mod(rot, 360), wb];
+          const e = evalPose(x, y, rot, firstLegal === null);
+          if (!e || (clearOnly && e.hits)) continue;
+          if (!best || e.cst < best[0]) { best = [e.cst, round(x, 3), round(y, 3), mod(rot, 360), e.wb]; bestHits = e.hits; }
         }
       }
       if (best && firstLegal === null) firstLegal = rr;
       if (best && (best[0] < 1000.0 || rr >= firstLegal! + 1.5)) break; // first legal ring wins unless every pose there lands on copper: look up to 1.5 mm further
     }
+    if (best && bestHits && nearRefs.has(o)) {
+      // the chosen pose cuts other nets' copper: name the nearest pose that cuts none (to the radius and 4 mm past it)
+      let clear: [Pose, number] | null = null;
+      for (let ring = 0; ring <= Math.floor((radiusO + 4) / step) && !clear; ring++) {
+        const rr = ring * step;
+        let bestRing: [number, Pose] | null = null;
+        for (const [x, y] of ringPoses(rr))
+          for (const rot of rots) {
+            const e = evalPose(x, y, rot, false);
+            if (e && !e.hits && (!bestRing || e.cst < bestRing[0])) bestRing = [e.cst, [round(x, 3), round(y, 3), mod(rot, 360)]];
+          }
+        if (bestRing) clear = [bestRing[1], round(rr, 2)];
+      }
+      (led.near_clear ??= []).push({ ref: o, chosen_cuts: bestHits, clear: clear ? clear[0] : null, clear_mm: clear ? clear[1] : null, target: [round(tx, 3), round(ty, 3)] });
+    }
     const wayTxt = () => {
       const top = [...inWayNear].sort((a_, b_) => b_[1] - a_[1]).slice(0, 5).map(([r_]) => r_);
       return top.length ? `; in the way: ${top.join(", ")} (courtyards)` : "";
     };
-    if (!best) return stop(`STOP part ${o} has no legal pose within ${radiusO} mm of its target ${tx.toFixed(2)},${ty.toFixed(2)} (${whyO.join("; ")}${wayTxt()}): move it in the plan, move what is in the way, or raise the radius`);
+    if (!best) return stop(`STOP part ${o} has no legal pose${clearOnly ? " clear of other nets' copper (clear: true)" : ""} within ${radiusO} mm of its target ${tx.toFixed(2)},${ty.toFixed(2)} (${whyO.join("; ")}${wayTxt()}): move it in the plan, move what is in the way, or raise the radius${clearOnly ? " (or drop clear: the repair routes cut nets again)" : ""}`);
     const [, x, y, rot, wb] = best;
     occupied.set(o, [side(o), wb]);
     newPose.set(o, [x, y, rot]);

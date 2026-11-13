@@ -304,6 +304,12 @@ export function impactLines(rep: ImpactReport): string[] {
     for (const m of mv.moved) out.push(`move  ${m.ref} ${pyAny(m.from)} -> ${pyAny(m.to)}  fixed ${py(m.fixed)} anchor ${py(m.anchor)}`);
     for (const m of mv.carried) out.push(`carry ${m.ref} with ${m.with} -> ${pyAny(m.to)}`);
     for (const m of mv.near) out.push(`near  ${m.ref} ${pyAny(m.from)} -> ${pyAny(m.to)} (${pyNum(m.shift_mm)} mm): ${m.why.join("; ")}`);
+    for (const c of mv.near_clear ?? [])
+      out.push(
+        c.clear
+          ? `near  ${c.ref}: that pose lands on other nets' copper (${c.chosen_cuts} cut); the nearest pose that cuts none is ${pyAny(c.clear)}, ${pyNum(c.clear_mm!)} mm from the target ${pyAny(c.target)}: take it with the move's clear: true (radius >= ${Math.ceil(c.clear_mm!)}) or to: ${pyAny(c.clear)}`
+          : `near  ${c.ref}: that pose lands on other nets' copper (${c.chosen_cuts} cut) and no pose within the radius + 4 mm cuts none: keep it (the repair routes the cut nets again) or move what is in the way`,
+      );
     for (const m of mv.displaced) out.push(`displace ${m.ref} ${pyAny(m.from)} -> ${pyAny(m.to)} (${pyNum(m.shift_mm)} mm): ${m.why.join("; ")}`);
     out.push(`copper: fan-out/landing cut ${mv.copper_removed} items + ${mv.pruned} pruned, ${mv.copper_moved} carried; nets to route again ${mv.cut_nets.length}: ${pyList(mv.cut_nets)}`);
     if (mv.landing_removed_nets.length) out.push(`landing: other nets cut under the new footprints: ${pyList(mv.landing_removed_nets)}`);
