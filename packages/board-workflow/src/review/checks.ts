@@ -491,6 +491,65 @@ class Heap {
   }
 }
 
+/** A connector's reference (J1, USB701, CN2, BT1, P3, X1). */
+const CONNECTOR_REF = /^(J|USB|CN|BT|P|X)\d/;
+/** A supply net by name (VBUS_USB2.0, +5V, M2_3V3, HDMI_+5V, VIN, +BATT) ... */
+const SUPPLY_NET = /(VBUS|VIN|VCC|VDD|VSYS|VBAT|BATT?)|(^|[^A-Za-z0-9])\+?\d+V\d*|_\d+V\d*$/i;
+/** ... and not a control signal named after one (VBUS_EN, PWR_BUT, nLED_PWR, VBUS_DET, PGOOD). */
+const SUPPLY_CONTROL = /(_EN$|EN$|_BUT|LED|SENSE|_OK$|PGOOD|_PG$|DET|_ID$|_CC\d?$|SCL|SDA|IRQ|INT\b|SYNC|GPIO|BAD|RST|RESET|CLK|_TX|_RX|MISO|MOSI|~\{)/i;
+
+/** IPC-2221 external-layer ampacity (A) of a track: width and thickness in mm, rise in degrees C. */
+export function ipc2221ExternalAmps(widthMm: number, thicknessMm: number, riseC: number): number {
+  const areaMil2 = (widthMm / 0.0254) * (thicknessMm / 0.0254);
+  return 0.048 * riseC ** 0.44 * areaMil2 ** 0.725;
+}
+
+/**
+ * Supply nets (a supply name, a capacitor on the net, no control/signal token) that enter through a connector, carry
+ * no declared current, and are routed at signal width: at least
+ * 80 % of at least 5 mm of track at or below the board's length-weighted median track width. On cm5_minima this is
+ * the seeded 0.15 mm VBUS and nothing on the unseeded board (its supplies run at 0.25 mm and up; 0.15 mm stretches on
+ * +1V8 / +3V3_PI are short IC fan-outs on nets no connector feeds).
+ */
+export function signalWidthSupplies(ctx: ReviewCtx, declared: Set<string>, riseC = 20): Finding[] {
+  const board = ctx.board;
+  const len = (sg: { a: [number, number]; b: [number, number] }) => Math.hypot(sg.a[0] - sg.b[0], sg.a[1] - sg.b[1]);
+  const all = board.segments.map((sg) => [sg.w, len(sg)] as [number, number]).sort((a, b) => a[0] - b[0]);
+  const total = all.reduce((t, [, l]) => t + l, 0);
+  if (!total) return [];
+  let acc = 0, signalW = all[all.length - 1]![0];
+  for (const [w, l] of all) if ((acc += l) >= total / 2) { signalW = w; break; }
+  const fed = new Map<string, Set<string>>();
+  for (const p of board.pads) if (p.net && CONNECTOR_REF.test(p.ref)) (fed.get(p.net) ?? fed.set(p.net, new Set()).get(p.net)!).add(p.ref);
+  // a rail has decoupling: a capacitor on the net (signals named after their IO voltage, I2C0_SCL_1V8, do not)
+  const capped = new Set(board.pads.filter((p) => p.net && /^C\d/.test(p.ref)).map((p) => p.net));
+  const out: Finding[] = [];
+  for (const [net, refs] of [...fed].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    if (declared.has(net) || !SUPPLY_NET.test(net) || SUPPLY_CONTROL.test(net) || !capped.has(net)) continue;
+    const segs = board.segments.filter((sg) => sg.net === net);
+    const L = segs.reduce((t, sg) => t + len(sg), 0);
+    const narrow = segs.filter((sg) => sg.w <= signalW + 1e-6).reduce((t, sg) => t + len(sg), 0);
+    if (L < 5 || narrow / L < 0.8) continue;
+    const wmin = Math.min(...segs.map((sg) => sg.w));
+    const amps = ipc2221ExternalAmps(wmin, 0.035, riseC);
+    const via = [...refs].sort().join(", ");
+    out.push(
+      FIND({
+        layer: "L3",
+        rule: "SUPPLY_WIDTH",
+        severity: "question",
+        ref: [...refs].sort()[0]!,
+        net,
+        key: `supply-width-${net}`,
+        claim: `${net} enters through ${via} and is routed at signal width: ${Math.round((100 * narrow) / L)}% of ${pyRound(L, 1)} mm at or below ${signalW} mm (narrowest ${wmin} mm, about ${pyRound(amps, 2)} A at ${riseC} C rise on 35 um outer copper, IPC-2221); no current is declared for it`,
+        evidence: [{ source: "board", detail: `track widths on ${net}: ${[...new Set(segs.map((sg) => sg.w))].sort((a, b) => a - b).join(", ")} mm; board median track width ${signalW} mm` }],
+        suggest: `declare ${net}'s current (review.currents) so the current check sizes it, or widen it to what ${via} can deliver`,
+      }),
+    );
+  }
+  return out;
+}
+
 export async function checkCurrent(ctx: ReviewCtx): Promise<CheckResult> {
   const r = newResult("current", "L3");
   const acc = ctx.acceptance;
@@ -501,6 +560,9 @@ export async function checkCurrent(ctx: ReviewCtx): Promise<CheckResult> {
   for (const [k, v] of Object.entries(ctx.project.cfg.currents ?? {})) cur[k] = Number(v);
   const cfg = ctx.project.cfg.current_check ?? {};
   const riseMax = cfg.rise_max_c ?? 20.0, dropPct = cfg.drop_max_pct ?? 2.0, minLen = cfg.min_track_mm ?? 2.0;
+  // supply nets without a declared current are still looked at: one that enters through a connector and is routed at
+  // signal width is a question (a narrowed VBUS passes DRC, ERC and A1-A9; the eval's seeded review fault)
+  r.findings.push(...signalWidthSupplies(ctx, new Set(Object.keys(cur)), riseMax));
   if (!Object.keys(cur).length) {
     r.status = "skipped";
     r.detail = "no currents declared (acceptance net_current_A / class current_max_A / review.currents)";

@@ -32,7 +32,7 @@ import {
   type ReviewRecord,
 } from "../src/index";
 import { applyCards } from "../src/review/rulecards";
-import { customCheckArgv, customCommand } from "../src/review/checks";
+import { customCheckArgv, customCommand, ipc2221ExternalAmps, signalWidthSupplies } from "../src/review/checks";
 import { writeJsonFile } from "../src/files";
 
 const dirs: string[] = [];
@@ -431,3 +431,25 @@ describe("the change picture", () => {
     expect(changeSvgStandalone(d)).not.toContain("var(--");
   });
 });
+
+describe("SUPPLY_WIDTH: a connector-fed rail routed at signal width (no current declared)", () => {
+  const seg = (net: string, w: number, x0: number, x1: number) => ({ a: [x0, 0] as [number, number], b: [x1, 0] as [number, number], w, layer: "F.Cu", net });
+  const pad = (ref: string, net: string) => ({ ref, pad: "1", net, x: 0, y: 0, r: 0.3, layers: ["F.Cu"] });
+  const board = (vbusW: number) => ({
+    segments: [seg("SIG", 0.2, 0, 60), seg("VBUS", vbusW, 0, 10), seg("I2C_SCL_3V3", 0.2, 0, 10), seg("VBUS_EN", 0.2, 0, 10), seg("+3V3", 0.15, 0, 3)],
+    pads: [pad("USB1", "VBUS"), pad("C1", "VBUS"), pad("J2", "I2C_SCL_3V3"), pad("USB1", "VBUS_EN"), pad("C2", "VBUS_EN"), pad("J3", "+3V3"), pad("C3", "+3V3")],
+  });
+  test("flags the narrowed rail only (not a signal named after its IO voltage, an enable line, or a short fan-out)", () => {
+    const f = signalWidthSupplies({ board: board(0.15) } as never, new Set());
+    expect(f.map((x) => [x.rule, x.net, x.ref, x.severity])).toEqual([["SUPPLY_WIDTH", "VBUS", "USB1", "question"]]);
+    expect(f[0]!.claim).toContain("100% of 10 mm at or below 0.2 mm");
+  });
+  test("a rail at power width, or one with a declared current, is left to the current check", () => {
+    expect(signalWidthSupplies({ board: board(0.5) } as never, new Set())).toEqual([]);
+    expect(signalWidthSupplies({ board: board(0.15) } as never, new Set(["VBUS"]))).toEqual([]);
+  });
+  test("IPC-2221 external ampacity: 0.15 mm on 35 um at 20 C is about 0.8 A", () => {
+    expect(ipc2221ExternalAmps(0.15, 0.035, 20)).toBeCloseTo(0.82, 1);
+  });
+});
+
