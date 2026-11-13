@@ -11,7 +11,7 @@
  * TraceMaker plan. Its `escape` (power_escape stubs) is not set: the TypeScript route pipeline does not run power_escape.
  */
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { profile } from "../accept";
 import { parseBoard } from "../board";
 import type { Requirements } from "../requirements";
@@ -97,7 +97,7 @@ export async function blockEval(host: LayoutHost, o: BlockEvalOptions): Promise<
   const names = groups.map((g) => g.name);
   const placed = join(o.out, "placed");
   await mkdir(o.out, { recursive: true });
-  await cp(o.placed, placed, { recursive: true, filter: (s) => { const n = s.slice(s.lastIndexOf("/") + 1); return s === o.placed || !(n === "tm" || /^acceptance.*\.json$/.test(n) || n.startsWith("score")); } });
+  await cp(o.placed, placed, { recursive: true, filter: (s) => s === o.placed || !(basename(s) === "tm" || /^acceptance.*\.json$/.test(basename(s)) || basename(s).startsWith("score")) });
   const board = join(placed, `${o.stem}.kicad_pcb`);
   const rec: BlockEvalRecord = { groups: names, replace: !!o.replace, seed: o.seed ?? 1 };
   const save = () => writeFile(join(o.out, "eval.json"), JSON.stringify(rec, null, 1) + "\n");
