@@ -48,7 +48,8 @@ preinstall); `board_engines` shows their state or installs ahead. A set override
 **anchors** in place (A5), **stack** and via spans as declared (A6), power **widths** for their current (A7), differential **pairs**
 coupled (A8), **heights** within the limits (A9; not set when the board has none). DRC is the project's own rule severities with
 owner-excluded items left out. A board that came in already failing is judged by no new failure against its first result; name each
-pre-existing failure.
+pre-existing failure. A board whose acceptance does not keep its native rules (onboarded bare) is judged on the acceptance's classes and rules:
+they are written into each scored copy's project file first, and the release writes them into the project (a change stops it: run the review again).
 
 ### Working rules
 
@@ -60,9 +61,12 @@ pre-existing failure.
   by cause (`loose` is fixable in place; `on_pad`, `between`, `escape` come from pads, pinout and vias; `apart` needs a re-route). Pairs on a routed
   board: `tighten` first (vias, mirror, retune, width, tighten, skew, no router), then `loop` with `reroute:{pair}+shorts+blockers:1.0+tighten`.
   Rip, route and nudge steps run KiCadRoutingTools plans; when KRT cannot be had (install error, broken override, auto-install off) a step
-  that needs it fails naming why, and `finish`, `fill:ROUTER` and `tighten` still run. `finish` adds copper only on the nets that were open and
+  that needs it fails naming why, and `finish`, `fill:ROUTER`, `tighten` and the power steps still run. `finish` adds copper only on the nets that were open and
   leaves every other net as it was; other steps may change more, and each `try` line says which other nets a candidate changed: for a "change
-  only this" task, prefer the candidate that changed none.
+  only this" task, prefer the candidate that changed none. Power copper without a router: `escape` (pad-width bridges and stubs at fine-pitch
+  power pins narrower than their class, within the 1 mm neck rule; chain a router, `escape+finish`), `planes:FILE` (a split power plane on an
+  inner layer from a plan JSON) and `pour` (net zones over open power connections, never thinner than class width; it closes an open only where
+  the copper fits, not a structural one). The TraceMaker route plan takes the same as `planes` / `escape` before routing.
 - **Edit.** Write the change as a plan (remove, move with `to` or `near`, displace, swap, add, net; `legalise` seats test points at the free
   spot nearest their net's other pads, many in one plan). `impact` first: a STOP is your decision.
   When an edit displaces a dense region, stop editing and re-place with the moved parts as anchors.
