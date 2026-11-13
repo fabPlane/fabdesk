@@ -1,9 +1,13 @@
-/** The bench's scorer: A1-A9 on a native DRC (refilled zones) for one board folder, plus the open connections. */
+/**
+ * The bench's scorer: the acceptance rules applied to the folder's project file, then A1-A9 on a native DRC (refilled
+ * zones) for one board folder, plus the open connections.
+ */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { checkAcceptance, type DrcInput } from "../accept";
 import { parseBoard } from "../board";
 import type { Requirements } from "../requirements";
+import { applyProjectRules } from "../rules";
 import type { Scored, Scorer } from "./bench";
 import { boardNets, figuresOf, type OpenItem } from "./gate";
 
@@ -34,6 +38,8 @@ export function createScorer(req: Requirements, drc: DrcFn): Scorer {
     async score(dir, pcb, o) {
       await mkdir(join(dir, ".lastmile"), { recursive: true });
       const board = join(dir, pcb);
+      // the toolkit's bench scored after apply_netclasses (score_dir, validate): DRC reads the project's classes and rules
+      await applyProjectRules(dir, pcb, req);
       const run = await drc({ board, parity: o.parity, outFile: join(dir, ".lastmile", "drc.json"), ...(o.signal ? { signal: o.signal } : {}) });
       const acc = checkAcceptance(parseBoard(await readFile(board, "utf8")), req, { violations: run.violations, unconnected: run.unconnected.length, parity: run.parity }, { parityChecked: o.parity, boardPath: board });
       const opens = opensOf(run.unconnected);

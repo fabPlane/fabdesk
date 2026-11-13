@@ -20,6 +20,7 @@ import { fillAddDefaults, impact, impactLines, type ImpactReport } from "./impac
 import { coordinatesInPlan, parsePlan, type EditPlan } from "./plan";
 import { judge, type Judgement } from "./proof";
 import { EditStop } from "./sch";
+import { applyProjectRules } from "../rules";
 
 export type EditMode = "impact" | "apply" | "proof" | "full";
 
@@ -135,7 +136,22 @@ async function beforeScore(env: EditEnv, copy: string, runners: EditRunners): Pr
   return { scored: run.result };
 }
 
-export async function runEdit(input: EditRunInput): Promise<EditRunResult> {
+/**
+ * Scoring as the toolkit's `edit.py score` did it: the folder's acceptance rules applied to its project file
+ * (`apply_netclasses`), then A1-A9. A no-op for a board that keeps its native rules.
+ */
+export function withProjectRules(r: EditRunners): EditRunners {
+  return {
+    ...r,
+    accept: async (dir, pcb) => {
+      await applyProjectRules(dir, pcb);
+      return r.accept(dir, pcb);
+    },
+  };
+}
+
+export async function runEdit(input0: EditRunInput): Promise<EditRunResult> {
+  const input = { ...input0, runners: withProjectRules(input0.runners) };
   const mode = input.mode ?? "full";
   const plan = parsePlan(input.plan);
   const t0 = Date.now();
@@ -167,7 +183,7 @@ export async function runEdit(input: EditRunInput): Promise<EditRunResult> {
   let applied: Awaited<ReturnType<typeof applyEdit>>;
   const projectHashes = await designFileHashes(env.projectDir);
   try {
-    applied = await applyEdit(plan, env, out, { score: async (d) => (await input.runners.accept(d, env.pcbName)).result, beforeScored: (d) => beforeScore(env, d, input.runners) });
+    applied = await applyEdit(plan, env, out, { score: async (d) => (await input.runners.accept(d, env.pcbName)).result, beforeScored: async (d) => (await applyProjectRules(d, env.pcbName), beforeScore(env, d, input.runners)) });
   } catch (e) {
     if (!(e instanceof EditStop)) throw e;
     return { ...common, stage: "apply", verdict: e.message, stop: /^STOP/.test(e.message) };

@@ -15,7 +15,7 @@
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { z } from "zod/v4";
-import { CHECK_KEYS, locateProject, openReviewProject, readRequirements, release, reviewGate, runAcceptance, type AcceptRun } from "@fabdesk/board-workflow";
+import { applyProjectRules, CHECK_KEYS, locateProject, openReviewProject, readRequirements, release, reviewGate, runAcceptance, type AcceptRun } from "@fabdesk/board-workflow";
 import { runDurable } from "../durable";
 import { jailPath } from "../fs";
 import { boardMemGiB, governor } from "../resources";
@@ -261,6 +261,8 @@ async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
           const g = await reviewGate(await openReviewProject(project.dir, files.pcb));
           return { state: g.state, open: g.open, mustFix: g.mustFix };
         },
+        // the acceptance's net classes and rules on the project file before A1-A9 (no-op when the board keeps its native rules)
+        rules: () => applyProjectRules(project.dir, files.pcb),
         acceptance: async () => {
           if (!(await readRequirements(project.dir))) throw new release.ReleaseStop("acceptance", "STOP acceptance: no requirements for this board: run board_check first");
           const run: AcceptRun = await runAcceptance(project.dir, {
