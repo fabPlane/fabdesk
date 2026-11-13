@@ -16,7 +16,7 @@ import { padList, segBoxHit, type Box, type Pt } from "./geom";
 import { rawFootprints } from "./move";
 
 export type LinkLog =
-  | { from: string; to: string; layer: string; width: number; mm: number; points: Pt[]; /** The pose the part was moved to so the track fits. */ placed?: [number, number, number] }
+  | { from: string; to: string; layer: string; width: number; mm: number; points: Pt[]; /** The pose the part was moved to so the track fits. */ placed?: [number, number, number]; /** Parts whose courtyards blocked the poses tried nearer the pad. */ nearer_blocked_by?: string[] }
   | { from: string; to: string; skipped: string };
 
 const d2 = (a: Pt, b: Pt) => Math.hypot(a[0] - b[0], a[1] - b[1]);

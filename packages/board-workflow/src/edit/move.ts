@@ -310,7 +310,13 @@ export function planMoves(
     const lb = localBox(raw.get(o)!);
     const roomy = makeRoom.has(o);
     // make_room: only fixed parts, drilled pads and parts already re-seated block the pose; others are displaced
-    const blockers = [...occupied].filter(([r_]) => !roomy || fixed(r_) || newPose.has(r_)).map(([, v]) => v);
+    const blockersR = [...occupied].filter(([r_]) => !roomy || fixed(r_) || newPose.has(r_));
+    const blockers = blockersR.map(([, v]) => v);
+    // what stood in the way of poses nearer than the first legal one (named in a STOP, so the agent knows why)
+    const inWayNear = new Map<string, number>();
+    const tallyWay = (sd: string, b: Box) => {
+      for (const [r_, [s_, bb]] of blockersR) if (s_ === sd && overlap(b, bb, gap)) inWayNear.set(r_, (inWayNear.get(r_) ?? 0) + 1);
+    };
     const block = nearCarry.get(o) ?? [];
     const blb = new Map(block.map((c) => [c, localBox(raw.get(c)!)]));
     const blockPoses = (x: number, y: number, rot: number): Map<string, Pose> => {
@@ -361,7 +367,10 @@ export function planMoves(
         for (const rot of rots) {
           const wb = worldBox(lb, x, y, rot);
           if (wb[0] < BX[0] + em || wb[1] < BX[1] + em || wb[2] > BX[2] - em || wb[3] > BX[3] - em) continue;
-          if (occupiedList(blockers, side(o), wb, gap)) continue;
+          if (occupiedList(blockers, side(o), wb, gap)) {
+            if (firstLegal === null) tallyWay(side(o), wb);
+            continue;
+          }
           if (allDrills.some((d) => overlap(wb, d, gap)) || keepouts.some((kz) => overlap(wb, kz, 0))) continue;
           const ownDrills = padList(raw.get(o)!, x, y, rot).filter((p) => p.drilled).map((p) => p.box);
           if (ownDrills.some((d) => blockers.some(([, b]) => overlap(d, b, 0)))) continue;
@@ -375,7 +384,11 @@ export function planMoves(
       if (best && firstLegal === null) firstLegal = rr;
       if (best && (best[0] < 1000.0 || rr >= firstLegal! + 1.5)) break; // first legal ring wins unless every pose there lands on copper: look up to 1.5 mm further
     }
-    if (!best) return stop(`STOP part ${o} has no legal pose within ${radiusO} mm of its target ${tx.toFixed(2)},${ty.toFixed(2)} (${whyO.join("; ")}): move it in the plan or raise the radius`);
+    const wayTxt = () => {
+      const top = [...inWayNear].sort((a_, b_) => b_[1] - a_[1]).slice(0, 5).map(([r_]) => r_);
+      return top.length ? `; in the way: ${top.join(", ")} (courtyards)` : "";
+    };
+    if (!best) return stop(`STOP part ${o} has no legal pose within ${radiusO} mm of its target ${tx.toFixed(2)},${ty.toFixed(2)} (${whyO.join("; ")}${wayTxt()}): move it in the plan, move what is in the way, or raise the radius`);
     const [, x, y, rot, wb] = best;
     occupied.set(o, [side(o), wb]);
     newPose.set(o, [x, y, rot]);

@@ -241,19 +241,21 @@ export async function applyEdit(
         // fewest. Nets a pose cuts become planned (the ledger's landing cut nets): the repair routes them again.
         const own = new Set(Object.values(ad.pins));
         let best: { text: string; log: LinkLog; cut: string[]; extra: number } | null = null;
+        const nearerBlocked = new Set<string>(); // parts in the way of poses tried before the chosen one (nearer first)
         for (const to of tries) {
           let pm: ReturnType<typeof planMoves>;
           try {
             pm = planMoves(text, isFixed, [{ ref: ad.ref, to }], null, pairs0);
           } catch (e) {
-            if (e instanceof EditStop) continue;
-            throw e;
+            if (!(e instanceof EditStop)) throw e;
+            if (!best) for (const m of e.message.matchAll(/(?:^|[:;,] )([A-Z]{1,4}\d+[A-Z]?) \(/g)) if (m[1] !== ad.ref) nearerBlocked.add(m[1]!);
+            continue;
           }
           const cut = pm.led.cut_nets.filter((n) => !own.has(n));
           if (best && cut.length >= best.extra) continue;
           const l2 = directLink(pm.text, ad.ref, near, clearance);
           if ("skipped" in l2.log) continue;
-          best = { text: l2.text, log: { ...l2.log, placed: to.map((v) => Math.round(v * 1e4) / 1e4) as [number, number, number] }, cut: pm.led.cut_nets, extra: cut.length };
+          best = { text: l2.text, log: { ...l2.log, placed: to.map((v) => Math.round(v * 1e4) / 1e4) as [number, number, number], ...(nearerBlocked.size ? { nearer_blocked_by: [...nearerBlocked].sort().slice(0, 8) } : {}) }, cut: pm.led.cut_nets, extra: cut.length };
           if (!cut.length) break;
         }
         if (best) {

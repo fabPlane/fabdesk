@@ -164,7 +164,7 @@ export function describeEdit(r: EditRunResult, adopted: string | null): string {
       lines.push(
         "skipped" in l
           ? `Direct track ${l.from} -> ${l.to}: none (${l.skipped}); the repair routes it if it is open.`
-          : `Direct track ${l.from} -> ${l.to}: ${l.mm} mm on ${l.layer} at ${l.width} mm${l.placed ? `, after moving ${ad.ref} to [${l.placed.join(", ")}] so it fits` : ""}.`,
+          : `Direct track ${l.from} -> ${l.to}: ${l.mm} mm on ${l.layer} at ${l.width} mm${l.placed ? `, after moving ${ad.ref} to [${l.placed.join(", ")}] so it fits: the nearest pose (rings 1.2-3 mm round the pad, 4 rotations) that places and links${l.nearer_blocked_by?.length ? `; nearer poses are blocked by ${l.nearer_blocked_by.join(", ")}` : ""}` : ""}.`,
       );
     }
   }
