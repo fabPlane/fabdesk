@@ -63,7 +63,9 @@ export function pyRound(x: number, nd: number): number {
   const frac = exact.slice(exact.indexOf(".") + 1 + nd);
   if (/^50*$/.test(frac)) {
     const down = Number(exact.slice(0, exact.indexOf(".") + 1 + nd));
-    const last = Number(exact.slice(exact.indexOf(".") + nd, exact.indexOf(".") + nd + 1));
+    // the last kept digit (for nd = 0 the one before the point)
+    const at = nd === 0 ? exact.indexOf(".") - 1 : exact.indexOf(".") + nd;
+    const last = Number(exact[at]);
     return last % 2 === 0 ? down : Number((down + Math.sign(x) * 10 ** -nd).toFixed(nd));
   }
   return Number(x.toFixed(nd));
