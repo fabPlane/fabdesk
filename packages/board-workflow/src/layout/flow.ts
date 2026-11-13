@@ -188,7 +188,7 @@ export async function stageCheck(host: LayoutHost, st: FlowState, opts: LayoutCh
 
   // courtyards: a footprint without pads (logo, graphic, board name) has nothing to collide on copper
   const noCrt = [...fps].filter(([r, b]) => !b.includes("CrtYd") && !r.startsWith("FIT_") && b.includes("(pad ")).map(([r]) => r).sort();
-  need(!noCrt.length, `${noCrt.length} parts without courtyard: ${pyList(noCrt.slice(0, 8))}`, "add courtyards (courtyard DRC cannot see these parts)");
+  need(!noCrt.length, `${noCrt.length} parts without courtyard: ${pyList(noCrt.slice(0, 8))}`, "add them: board_route {\"action\":\"courtyards\"} (courtyard DRC cannot see these parts)");
 
   // groups cover every movable part exactly once
   const groups = (JSON.parse(await readFile(rel(sp, sp.groups), "utf8")) as { groups: Array<{ name: string; refs: string[] }> }).groups;
