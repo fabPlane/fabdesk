@@ -312,6 +312,14 @@ describe("judging", () => {
     expect(judge(J(b), J(res({ ...b, A8_pairs: { pass: false, nets_failing: 3 } }))).verdict).toBe("FAIL regress ['A8 2->3']");
     expect(judge(J(b), J(res({ ...b, A6_stack: { pass: false } }))).verdict).toBe("FAIL regress ['A6_stack']");
   });
+  test("a source that already had opens (placed, unrouted): A1 judged by count, not required to pass", () => {
+    const b = res({ A1_connectivity: { pass: false, unconnected: 208 }, A2_drc: { pass: false, errors: { courtyards_overlap: 7 } } });
+    expect(judge(J(b), J(b)).verdict).toBe("PASS (no regression)");
+    expect(judge(J(b), J(res({ ...b, A1_connectivity: { pass: false, unconnected: 209 } }))).verdict).toBe("FAIL regress ['A1 opens 208->209']");
+    // a connected source must stay connected (unchanged)
+    const c = res({ A2_drc: { pass: false, errors: { courtyards_overlap: 3 } } });
+    expect(judge(J(c), J(res({ ...c, A1_connectivity: { pass: false, unconnected: 1 } }))).verdict).toBe("FAIL regress ['A1_connectivity']");
+  });
 });
 
 describe("collateral, drc input and the helpers", () => {
