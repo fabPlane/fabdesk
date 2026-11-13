@@ -787,6 +787,69 @@ function valueOhm(v: string): number | null {
   return x;
 }
 
+/** Feedback reference voltages of common regulators (V). */
+export const COMMON_VREF = [0.5, 0.6, 0.765, 0.8, 0.9, 1.0, 1.2, 1.22, 1.23, 1.24, 1.25];
+const FB_PIN = /^(FB|VFB|FEEDBACK|ADJ|VADJ|FB[0-9])$/;
+
+/**
+ * Regulator feedback dividers against the rail they set: for each FB / VFB / ADJ pin with exactly one resistor to
+ * ground and one to another net whose voltage is known (declared or in its name, M2_3V3 = 3.3 V), the reference the
+ * divider implies (Vrail / (1 + Rtop / Rbottom)) must be a common regulator reference (within 4 %); otherwise the
+ * finding gives the rail voltage the divider sets at the usual references. Datasheet-free: a wrong value
+ * (a seeded R706 1k2 for 2k2 put an AP3441's M2_3V3 at 5.6 V) passes ERC, DRC and A1-A9.
+ */
+export async function checkDivider(ctx: ReviewCtx): Promise<CheckResult> {
+  const r = newResult("divider", "L3");
+  const comps = ctx.comps;
+  if (!comps) {
+    r.status = "skipped";
+    r.detail = "no netlist";
+    return r;
+  }
+  const declared = ctx.project.cfg.net_voltages ?? {};
+  const resOn = new Map<string, Array<{ ref: string; other: string; ohm: number }>>();
+  for (const c of comps.values()) {
+    if (!/^R\d/.test(c.ref)) continue;
+    const ps = [...c.pins.values()];
+    const ohm = valueOhm(c.value);
+    if (ps.length !== 2 || !ohm) continue;
+    for (const [a, b] of [[ps[0]!, ps[1]!], [ps[1]!, ps[0]!]] as const) (resOn.get(a.net) ?? resOn.set(a.net, []).get(a.net)!).push({ ref: c.ref, other: b.net, ohm });
+  }
+  let checked = 0;
+  for (const c of [...comps.values()].sort((a, b) => (a.ref < b.ref ? -1 : 1)))
+    for (const [pad, pin] of c.pins) {
+      if (!FB_PIN.test(pin.name.toUpperCase().replace(/[^A-Z0-9]/g, ""))) continue;
+      const rs = resOn.get(pin.net) ?? [];
+      const bot = rs.filter((x) => P.isGndNet(x.other));
+      const top = rs.filter((x) => !P.isGndNet(x.other) && x.other !== pin.net);
+      if (bot.length !== 1 || top.length !== 1) continue;
+      const rail = top[0]!.other;
+      const vout = netVolts(rail, declared);
+      if (!vout || vout <= 0) continue;
+      checked++;
+      const k = 1 + top[0]!.ohm / bot[0]!.ohm;
+      const implied = vout / k;
+      if (COMMON_VREF.some((v) => Math.abs(implied - v) / v <= 0.04)) continue;
+      const at = [0.6, 0.8, 1.0, 1.25].map((v) => `${f(v * k, 2)} V at ${v} V`).join(", ");
+      r.findings.push(
+        FIND({
+          layer: "L3",
+          rule: "DIVIDER",
+          severity: implied < 0.4 || implied > 1.3 ? "must-fix" : "question",
+          ref: c.ref,
+          pad,
+          net: rail,
+          key: `${c.ref}-${pad}`,
+          claim: `${c.ref} ${pin.name}: divider ${top[0]!.ref} ${comps.get(top[0]!.ref)?.value ?? ""} (to ${rail}) / ${bot[0]!.ref} ${comps.get(bot[0]!.ref)?.value ?? ""} (to ground) implies a ${f(implied, 3)} V reference for ${g(vout)} V on ${rail}, not a common regulator reference; it sets ${rail} to ${at}`,
+          evidence: [{ source: "netlist", detail: `Rtop ${top[0]!.ohm} ohm, Rbottom ${bot[0]!.ohm} ohm, ratio ${f(k, 3)}; ${rail} = ${g(vout)} V from ${Object.keys(declared).length ? "the declared voltages or " : ""}its name` }],
+          suggest: `check ${c.ref}'s reference voltage in its datasheet and the values of ${top[0]!.ref} / ${bot[0]!.ref}`,
+        }),
+      );
+    }
+  r.detail = `${checked} feedback divider(s) checked`;
+  return r;
+}
+
 export async function checkRatings(ctx: ReviewCtx): Promise<CheckResult> {
   const r = newResult("ratings", "L3");
   if (!ctx.comps) {
@@ -1235,6 +1298,7 @@ export const REGISTRY: Array<[string, (ctx: ReviewCtx) => Promise<CheckResult>]>
   ["cards", checkCards],
   ["decoupling", checkDecoupling],
   ["current", checkCurrent],
+  ["divider", checkDivider],
   ["impedance", checkImpedance],
   ["manual", checkManual],
   ["mouth", checkMouth],

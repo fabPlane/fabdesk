@@ -32,7 +32,7 @@ import {
   type ReviewRecord,
 } from "../src/index";
 import { applyCards } from "../src/review/rulecards";
-import { customCheckArgv, customCommand, ipc2221ExternalAmps, signalWidthSupplies } from "../src/review/checks";
+import { checkDivider, customCheckArgv, customCommand, ipc2221ExternalAmps, signalWidthSupplies } from "../src/review/checks";
 import { writeJsonFile } from "../src/files";
 
 const dirs: string[] = [];
@@ -214,7 +214,7 @@ describe("a review run, the gate and dispositions", () => {
     expect((await reviewGate(project_)).exit).toBe(1);
     const r = await runReview(project_, fakeEnv(), { offline: true });
     const names = r.review.checks.map((c) => c.name);
-    expect(names).toEqual(["identity", "netlist", "erc", "drc", "acceptance", "pinsense", "cards", "decoupling", "current", "impedance", "manual", "mouth", "interconnect", "bom", "ratings", "coverage", "evidence", "custom", "pack"]);
+    expect(names).toEqual(["identity", "netlist", "erc", "drc", "acceptance", "pinsense", "cards", "decoupling", "current", "divider", "impedance", "manual", "mouth", "interconnect", "bom", "ratings", "coverage", "evidence", "custom", "pack"]);
     const by = (rule: string) => r.review.findings.filter((f) => f.rule === rule);
     expect(by("MOUTH")[0]!.severity).toBe("must-fix");
     expect(by("MOUTH")[0]!.ref).toBe("J1");
@@ -450,6 +450,30 @@ describe("SUPPLY_WIDTH: a connector-fed rail routed at signal width (no current 
   });
   test("IPC-2221 external ampacity: 0.15 mm on 35 um at 20 C is about 0.8 A", () => {
     expect(ipc2221ExternalAmps(0.15, 0.035, 20)).toBeCloseTo(0.82, 1);
+  });
+});
+
+describe("DIVIDER: a regulator's feedback divider against the rail it sets", () => {
+  const pin = (name: string, net: string) => ({ name, type: "passive", net, nodes: 2 });
+  const comp = (ref: string, value: string, pins: Array<[string, string, string]>) =>
+    [ref, { ref, value, footprint: "", lib: "", part: "", desc: "", fields: {}, pins: new Map(pins.map(([p, n, net]) => [p, pin(n, net)])) }] as const;
+  const comps = (rBottom: string) =>
+    new Map([
+      comp("U702", "AP3441SHE-7B", [["5", "FB", "/FB"], ["3", "SW", "/LX"]]),
+      comp("R705", "10k", [["1", "~", "M2_3V3"], ["2", "~", "/FB"]]),
+      comp("R706", rBottom, [["1", "~", "/FB"], ["2", "~", "GND"]]),
+    ]);
+  test("2k2 gives 3.33 V at a 0.6 V reference: nothing; 1k2 gives 5.6 V: must-fix naming both resistors", async () => {
+    expect((await checkDivider({ comps: comps("2k2"), project: { cfg: {} } } as never)).findings).toEqual([]);
+    const r = await checkDivider({ comps: comps("1k2"), project: { cfg: {} } } as never);
+    expect(r.findings.map((x) => [x.rule, x.ref, x.net, x.severity])).toEqual([["DIVIDER", "U702", "M2_3V3", "must-fix"]]);
+    expect(r.findings[0]!.claim).toContain("R705 10k (to M2_3V3) / R706 1k2 (to ground)");
+    expect(r.findings[0]!.claim).toContain("5.60 V at 0.6 V");
+  });
+  test("a rail whose voltage is not known (no declared voltage, none in its name) is not judged", async () => {
+    const c = comps("1k2");
+    c.get("R705")!.pins.get("1")!.net = "VOUT";
+    expect((await checkDivider({ comps: c, project: { cfg: {} } } as never)).detail).toBe("0 feedback divider(s) checked");
   });
 });
 
