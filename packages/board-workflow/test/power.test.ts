@@ -1,6 +1,10 @@
 /** The power ports: power_escape, power_planes, pour_opens (toolkit tools/*.py), as library calls, last-mile steps and route-pipeline steps. */
 import { describe, expect, test } from "bun:test";
-import { kid, kids, parseSexpr, type Acceptance } from "../src/index";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { parseBoard, kid, kids, parseSexpr, type Acceptance } from "../src/index";
+import { prepareRouteBase } from "../src/layout/index";
 import { checkPlanesPlan, fnmatch, label, layerOf, mst, powerEscape, powerPlanes, pourOpens, rects, PlanesError } from "../src/power/index";
 
 const pad = (num: string, x: number, y: number, w: number, h: number, net: string, side = "F") =>
@@ -122,5 +126,20 @@ describe("pour_opens", () => {
     expect(fnmatch("[x", "[x")).toBe(true);
     expect([...layerOf("Via [GND] on B.Cu - F.Cu")].sort()).toEqual(["B.Cu", "F.Cu"]);
     expect([...layerOf("Zone [GND] on In1.Cu")]).toEqual([]);
+  });
+});
+
+describe("route pipeline pre-routing steps", () => {
+  test("plan.planes (relative to the plan root) then plan.escape on the base board", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "route-base-"));
+    await writeFile(join(dir, "b.kicad_pcb"), board(qfn() + fp("J1", 2, 5, [pad("1", 0, 0, 1, 1, "VIN")])));
+    await writeFile(join(dir, "planes.json"), JSON.stringify({ layer: "In1.Cu", fill_net: "GND", nets: [{ net: "VIN" }] }));
+    const acc = acceptance({ PWR_600: { track_width: 0.6, nets: ["VIN"] } });
+    const log = await prepareRouteBase(dir, "b", acc, { planes: "planes.json", escape: { max_stub: 0.5 } }, dir);
+    expect(log["planes"]).toMatchObject({ layer: "In1.Cu", zones: 2 });
+    expect(log["escape"]).toMatchObject({ bridges: 1 });
+    const text = await readFile(join(dir, "b.kicad_pcb"), "utf8");
+    expect(kids(parseSexpr(text), "zone")).toHaveLength(2);
+    expect(parseBoard(text).segments.length).toBe(3);
   });
 });

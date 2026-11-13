@@ -8,7 +8,7 @@ export * from "./score";
 export * from "./ses";
 export * from "./facing";
 export { parseSeeds, nativeCourtyard, placeKrt, type PlaceRecord, type SeedRecord } from "./place";
-export { loadPlan, routeKrt, routePipeline } from "./route";
+export { loadPlan, prepareRouteBase, routeKrt, routePipeline } from "./route";
 export * from "./flow";
 export * from "./courtyards";
 export * from "./pairseat";

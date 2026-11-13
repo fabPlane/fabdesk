@@ -5,8 +5,9 @@
  */
 import { randomUUID } from "node:crypto";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { Acceptance, Requirements } from "../requirements";
+import { checkPlanesPlan, powerEscape, powerPlanes } from "../power/index";
 import { readJsonOrNull } from "../files";
 import { FlowError, requireEngine, type LayoutHost } from "./ctx";
 import { krtPaths, krtRouterScript, routeSummaries } from "./engines";
@@ -152,8 +153,10 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
 // ---------------------------------------------------------------- TraceMaker
 
 interface TmPlan {
+  /** A power-planes plan file (power/planes.ts), relative to `planRoot`: split plane zones written before routing. */
   planes?: string;
-  escape?: unknown;
+  /** Fine-pitch power escapes (power/escape.ts) before routing; an object sets the stub reach and clearance, mm. */
+  escape?: boolean | { max_stub?: number; clearance?: number };
   session?: Array<{ name: string; nets: string | string[]; work?: number; variants?: number; hints?: Record<string, any>; options?: Record<string, unknown>; seed?: number; first?: boolean }>;
   cli?: { work?: number; no_neck?: string | string[] | null; extra?: string[] };
 }
@@ -173,6 +176,31 @@ export interface RoutePipelineOptions {
   stem: string;
   req: Requirements;
   budgetMs?: number;
+  /** Where a relative `planes` file resolves (the layout folder, like the spec's plan paths); default the plan's folder. */
+  planRoot?: string;
+}
+
+/**
+ * The toolkit's pre-routing steps on the base copy (route_pipeline.py): split power planes from the plan's `planes` file,
+ * then fine-pitch power escapes when the plan asks. Returns what each did, for the pipeline record.
+ */
+export async function prepareRouteBase(base: string, stem: string, acc: Acceptance, plan: Pick<TmPlan, "planes" | "escape">, planRoot: string): Promise<Record<string, unknown>> {
+  const log: Record<string, unknown> = {};
+  const board = join(base, `${stem}.kicad_pcb`);
+  if (plan.planes) {
+    const file = resolve(planRoot, plan.planes);
+    const p = checkPlanesPlan(JSON.parse(await readFile(file, "utf8").catch(() => { throw new FlowError(`plan.planes: cannot read ${file}`); })));
+    const r = powerPlanes(await readFile(board, "utf8"), p);
+    await writeFile(board, r.text);
+    log["planes"] = r.record;
+  }
+  if (plan.escape) {
+    const e = typeof plan.escape === "object" ? plan.escape : {};
+    const r = powerEscape(await readFile(board, "utf8"), acc, { ...(e.max_stub !== undefined ? { maxStub: e.max_stub } : {}), ...(e.clearance !== undefined ? { clearance: e.clearance } : {}) });
+    await writeFile(board, r.text);
+    log["escape"] = r.stats;
+  }
+  return log;
 }
 
 /** TraceMaker: session stages for the plan's nets, then the CLI for everything left; scored into `<out>/score`. */
@@ -186,7 +214,7 @@ export async function routePipeline(host: LayoutHost, o: RoutePipelineOptions): 
   const base = join(o.out, "base");
   await copyDir(o.placed, base, (n) => n !== "tm" && !n.endsWith(".json"));
   if (await pathExists(join(o.placed, "manufacturing-via-process.json"))) await copyFile(join(o.placed, "manufacturing-via-process.json"), join(base, "manufacturing-via-process.json"));
-  if (plan.planes || plan.escape) throw new FlowError("plan.planes / plan.escape (power_planes, power_escape) are not ported to the TypeScript workflow");
+  Object.assign(log, await prepareRouteBase(base, o.stem, acc, plan, o.planRoot ?? (o.plan.startsWith("builtin:") ? base : dirname(o.plan))));
   await applyNetclasses(join(base, `${o.stem}.kicad_pro`), acc);
   const tm = join(o.out, "tm");
   await mkdir(tm, { recursive: true });

@@ -441,7 +441,7 @@ export async function stageRoute(host: LayoutHost, st: FlowState): Promise<Stage
       }
       results["tm_lock_wait_s"] = round1((Date.now() - t0) / 1000);
       await rm(tm, { recursive: true, force: true });
-      await routePipeline(host, { placed: best.placed, out: tm, plan: rel(sp, sp.plans.tm), stem: sp.stem, req, budgetMs: (B.tm ?? 20) * 60_000 }).catch((e) => {
+      await routePipeline(host, { placed: best.placed, out: tm, plan: rel(sp, sp.plans.tm), stem: sp.stem, req, budgetMs: (B.tm ?? 20) * 60_000, planRoot: resolve(sp.base, "..") }).catch((e) => {
         if (!(e instanceof FlowError)) throw e;
         lines.push(`TraceMaker: ${e.message}`);
       });
