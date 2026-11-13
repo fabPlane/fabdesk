@@ -148,7 +148,7 @@ export async function stageCheck(host: LayoutHost, st: FlowState, opts: LayoutCh
   need(host.tools.kicadCli, "no KiCad CLI", "install KiCad or set KICAD_CLI");
   info["disk_gib"] = round1(await host.diskFreeGiB(st.ws));
   info["mem_avail_gib"] = round1(await host.memAvailableGiB());
-  need((info["disk_gib"] as number) >= 10, `disk ${info["disk_gib"]} GiB free`, "free reproducible board copies (seeds, tries)");
+  need((info["disk_gib"] as number) >= 10, `disk ${info["disk_gib"]} GiB free`, "free reproducible board copies (seeds, tries): board_route clean lists them, apply deletes");
   if ((info["mem_avail_gib"] as number) < 14) warns.push(`${info["mem_avail_gib"]} GiB available: TraceMaker (11-14 GB) would wait or OOM`);
 
   const pcb = boardFile(base, st);

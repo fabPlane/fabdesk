@@ -94,4 +94,6 @@ pre-existing failure.
 | Review | settle each question with evidence | evidence is what makes a review mean something |
 | A rule vetoes a real gain | change the rule or gate and record its basis | gates are provisional |
 
-Housekeeping: board copies (seeds, candidates, tries) fill disk quickly; `board_route prune` deletes unused last-mile candidates and the layout check refuses below 10 GiB free.
+Housekeeping: board copies (seeds, candidates, tries, review runs, adopt backups) fill disk quickly; `board_route clean` lists the reproducible
+ones with size and reason (`apply: true` deletes them; candidates that can still be adopted and accepted steps stay), `board_route prune`
+deletes one workspace's unused last-mile candidates, and the layout check refuses below 10 GiB free.

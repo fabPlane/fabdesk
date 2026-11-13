@@ -121,7 +121,7 @@ export class ResourceGovernor {
       if (lowDisk)
         throw new ToolError(
           `disk: ${lowDisk.freeGiB} GiB free (${Math.round(lowDisk.freeShare * 100)} %) on ${lowDisk.path}; a ${input.cls} job needs ${need.diskGiB} GiB and 10 %. ` +
-            "Free reproducible copies first (board copies from seeds, tries and candidates are reproducible).",
+            "Free reproducible copies first: board_route {\"action\": \"clean\"} lists the board copies from seeds, tries, candidates and old runs (apply: true deletes them).",
           "precondition",
         );
       // only the job's own board-based estimate can refuse it; class defaults are conservative constants, not this board
