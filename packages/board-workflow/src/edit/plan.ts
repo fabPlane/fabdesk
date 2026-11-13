@@ -57,19 +57,15 @@ export interface LegaliseSpec {
   radius?: number;
 }
 
-/** `legalise` as `move` entries (`near: "net"`, rotation kept); a ref the plan already moves is left to its own move. */
+/** `legalise` as `move` entries whose pose tp_legalise's search computes (rotation kept); a ref the plan already moves is left to its own move. */
 export function legaliseMoves(spec: string[] | LegaliseSpec, already: ReadonlySet<string> = new Set()): MoveSpec[] {
   const s: LegaliseSpec = Array.isArray(spec) ? { refs: spec } : spec;
   return s.refs
     .filter((r) => !already.has(r))
     .map((ref) => ({
       ref,
-      near: "net",
-      rotations: "keep" as const,
-      radius: s.radius ?? 40,
-      clearance: s.clearance ?? 0.15,
-      edge: s.edge ?? 0.5,
-      basis: "legalise: nearest free spot to the centroid of its net's other pads",
+      legalise: { clearance: s.clearance ?? 0.15, edge: s.edge ?? 0.5, radius: s.radius ?? 40 },
+      basis: "legalise (tp_legalise): nearest free spot to the centroid of its net's other pads",
     }));
 }
 
@@ -84,7 +80,7 @@ export interface EditPlan {
   /**
    * Test points (and any part whose pads are on one net) to re-seat at the nearest free spot to the centroid of the
    * other pads on their net: courtyard and drilled pads clear by `clearance`, the outline by `edge`, rotation and side
-   * kept (the toolkit's tools/tp_legalise.py). Each becomes a `move` with `near: "net"`.
+   * kept (the toolkit's tools/tp_legalise.py, its own search, in the order given). Each becomes a `move` to that pose.
    */
   legalise?: string[] | LegaliseSpec;
   swap?: SwapSpec[];
@@ -121,7 +117,7 @@ export function parsePlan(raw: unknown): EditPlan {
   }
   for (const m of plan.move ?? []) {
     if (!isObj(m) || typeof m.ref !== "string") throw new Error("plan.move entries need a ref");
-    if (m.to === undefined && m.near === undefined) throw new Error(`move ${m.ref}: give "to": [x, y, rotation] or "near"`);
+    if (m.to === undefined && m.near === undefined && m.legalise === undefined) throw new Error(`move ${m.ref}: give "to": [x, y, rotation] or "near"`);
     if (m.to !== undefined && (!Array.isArray(m.to) || m.to.length !== 3 || m.to.some((v) => typeof v !== "number")))
       throw new Error(`move ${m.ref}: "to" is [x, y, rotation]`);
   }

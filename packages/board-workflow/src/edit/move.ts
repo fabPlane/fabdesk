@@ -5,7 +5,8 @@
  * - `to` is the new origin pose of `ref` (x, y, rotation; side kept). `carry` parts move rigidly with it; copper of nets
  *   whose every pad is on carried parts moves with them, so a block keeps its internal routing. `carry_auto` adds the
  *   named parts' net-local satellites. `near` picks the pose next to a part, a REF.PAD, a point, or the centroid of the
- *   other pads on a net (`net:NAME`; `net` = the part's own single net, which the plan's `legalise` uses for test points).
+ *   other pads on a net (`net:NAME`; `net` = the part's own single net). The plan's `legalise` moves get their poses from
+ *   tp_legalise's own search (`legalise.ts`) and are then plain moves.
  * - Fan-out: every other track/via/arc touching a moved part's old pads is removed, then dangling copper of those nets is
  *   pruned: only the connections leaving the block open.
  * - Landing: copper of other nets crossing the new pads is removed, and through vias inside the new courtyard.
@@ -24,6 +25,7 @@ import { g, mod, round } from "./fmt";
 import { pruneDangling } from "./prune";
 import { stop } from "./sch";
 import { footprintSpans, setPose } from "./text";
+import { legalisePoses } from "./legalise";
 
 export type Pose = [number, number, number];
 
@@ -43,6 +45,8 @@ export interface MoveSpec {
   clearance?: number;
   /** near: margin from the board outline for this part (default the plan's displace edge, 0.4 mm). */
   edge?: number;
+  /** Pose from tp_legalise's search (plan.legalise); its clearance is also this part's gap when judging what is in the way. */
+  legalise?: { clearance: number; edge: number; radius: number };
 }
 
 export interface DisplaceSpec {
@@ -134,6 +138,15 @@ export function planMoves(
     boxOf.set(r, worldBox(localBox(raw.get(r)!), f.x, f.y, f.rot));
   }
   const newPose = new Map<string, Pose>();
+  // legalise moves: their poses from tp_legalise's own search on the board as it is, in plan order, then plain moves
+  const legal = movesIn.filter((m) => m.legalise && m.to === undefined && m.near === undefined);
+  const moveGap = new Map<string, number>();
+  if (legal.length) {
+    const poses = legalisePoses(text0, legal.map((m) => m.ref), legal[0]!.legalise!);
+    movesIn = movesIn.map((m) => (legal.includes(m) ? { ...m, to: poses.get(m.ref)! } : m));
+    for (const m of legal) moveGap.set(m.ref, m.legalise!.clearance);
+  }
+  const gapOf = (r: string) => moveGap.get(r) ?? gap;
   const nearMoves = movesIn.filter((m) => m.near !== undefined && m.to === undefined);
   const moves = movesIn.filter((m) => !nearMoves.includes(m));
   for (const m of nearMoves) if (!fps.has(m.ref)) return stop(`FAIL ${m.ref}: not on the board`);
@@ -226,9 +239,10 @@ export function planMoves(
       const why: string[] = [];
       const sameP = close(newBox.get(r)!, boxOf.get(r)!);
       // a part taking the exact place another moving part leaves (a swap) inherits that part's neighbours
-      const inherited = moving.some((v) => v !== r && side(v) === side(r) && close(newBox.get(r)!, boxOf.get(v)!) && overlap(boxOf.get(v)!, boxOf.get(o)!, gap));
-      if (side(o) === side(r) && overlap(newBox.get(r)!, boxOf.get(o)!, gap) && !(sameP && overlap(boxOf.get(r)!, boxOf.get(o)!, gap)) && !inherited) why.push("courtyard");
-      else if (inherited && overlap(newBox.get(r)!, boxOf.get(o)!, gap)) (led.inherited_overlaps ??= []).push(`${r} takes the place of a moving part already next to ${o}`);
+      const gr = gapOf(r);
+      const inherited = moving.some((v) => v !== r && side(v) === side(r) && close(newBox.get(r)!, boxOf.get(v)!) && overlap(boxOf.get(v)!, boxOf.get(o)!, gr));
+      if (side(o) === side(r) && overlap(newBox.get(r)!, boxOf.get(o)!, gr) && !(sameP && overlap(boxOf.get(r)!, boxOf.get(o)!, gr)) && !inherited) why.push("courtyard");
+      else if (inherited && overlap(newBox.get(r)!, boxOf.get(o)!, gr)) (led.inherited_overlaps ??= []).push(`${r} takes the place of a moving part already next to ${o}`);
       if ((drills.get(o) ?? []).some((d) => overlap(newBox.get(r)!, d, 0))) why.push("its drilled pad under the new courtyard");
       if (newDrills.get(r)!.some((nd) => overlap(nd, boxOf.get(o)!, 0))) why.push("new drilled pad through its courtyard");
       if (why.length) (inWay.get(o) ?? inWay.set(o, []).get(o)!).push(`${r}: ${why.join(", ")}`);
@@ -242,7 +256,7 @@ export function planMoves(
     for (const o of moving.slice(i + 1)) {
       const r = moving[i]!;
       if (groupFx.get(r)![0] === groupFx.get(o)![0]) continue; // one rigid block keeps its own spacing
-      if (side(o) === side(r) && overlap(newBox.get(r)!, newBox.get(o)!, gap)) return stop(`STOP moved parts ${r} and ${o} overlap at their new poses`);
+      if (side(o) === side(r) && overlap(newBox.get(r)!, newBox.get(o)!, Math.min(gapOf(r), gapOf(o)))) return stop(`STOP moved parts ${r} and ${o} overlap at their new poses`);
     }
   led.in_way = Object.fromEntries(inWay);
   if (inWay.size && !displace)

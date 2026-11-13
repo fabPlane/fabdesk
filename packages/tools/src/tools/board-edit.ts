@@ -83,7 +83,7 @@ const PLAN = z
         }),
       ])
       .optional()
-      .describe("Test points (any part whose pads are on one net), many in one plan: each is re-seated at the nearest free spot to the centroid of the other pads on its net (0.1 mm spiral; courtyards and drilled pads clear, the outline by edge; rotation and side kept), in the order given, each placed part an obstacle for the next. Each becomes a move with near \"net\": impact, cut fan-out, repair and proof as for any move."),
+      .describe("Test points, many in one plan: each is re-seated at the first free spot on a 0.1 mm spiral round the centroid of the other pads on its (first pad's) net, exactly as the toolkit's tp_legalise.py (courtyards on its side and every drilled pad clear by clearance, the outline's bounding box by edge; rotation and side kept; in the order given, each placed part an obstacle for the next). Each becomes a move to that pose: impact, cut fan-out, repair and proof as for any move."),
     swap: z
       .array(
         z.object({

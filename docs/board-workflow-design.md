@@ -26,7 +26,7 @@ stock agent. That is a goal: it has not been measured (see Not measured).
 | --- | --- | --- |
 | `board_check` | (one call) onboard on first use, then A1–A9 on the saved board, history, change against the board as onboarded; `upgrade` (pre-10 file format), `confirm`, `candidate` | `accept`, `onboard`, `history` |
 | `board_route` | `check` `place` `rank` `route` `auto` `status` `courtyards` (layout; the layout spec carries pairseat templates); `new` `try` `loop` `sweep` `why` `crossings` `fit` `pairs` `validate` `accept` `undo` `view` `info` `prune` (last mile); `clean` (housekeeping, the toolkit's `clean.py` for `.fabdesk/board/`) | `layout/`, `lastmile/`, `clean.ts` |
-| `board_edit` | `mode` impact · apply · proof · full; `adopt`; plan keys remove, move (`to`, `near` a part / pad / point / `net:NAME`), displace, `legalise` (the toolkit's `tp_legalise`: test points to their net's centroid, oracle poses equal on the unit board), swap, add, net | `edit/` |
+| `board_edit` | `mode` impact · apply · proof · full; `adopt`; plan keys remove, move (`to`, `near` a part / pad / point / `net:NAME`), displace, `legalise` (the toolkit's `tp_legalise`, its own search: test points to the first free spot round their net's centroid; poses equal tp_legalise.py's on cm5_minima TP101–TP106, vme-wren TP1–TP6 and all 115 jetson test points), swap, add, net | `edit/` |
 | `board_review` | `run` `gate` `dispose` `fix` `try` `autopilot` `intent` `intent_init` `intent_decide` `import_expert` `status` | `review/`, `review-edit.ts` |
 | `board_silk` | `check` `place` `show` | `silk/` |
 | `board_release` | `bom` `gerb` `check` `fab` `cam` `vias` | `release/` |

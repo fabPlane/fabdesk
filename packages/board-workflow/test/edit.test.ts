@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createEditCandidateBuilder,
@@ -22,6 +22,7 @@ import { EditStop, SheetSet, diffBoards, judge, parsePlan, revertNets, runEdit, 
 import { directLink, segSegDist } from "../src/edit/link";
 import { g } from "../src/edit/fmt";
 import { planMoves } from "../src/edit/move";
+import { legalisePoses, pySum } from "../src/edit/legalise";
 import { pruneDangling } from "../src/edit/prune";
 
 const dirs: string[] = [];
@@ -307,17 +308,48 @@ describe("collateral, drc input and the helpers", () => {
     const tps = fpT("TP1", 55, 35, [["1", "SIG2", 0, 0]], { box: [-0.5, -0.5, 0.5, 0.5], value: "TP" }) + fpT("TP2", 5, 35, [["1", "SIG", 0, 0]], { box: [-0.5, -0.5, 0.5, 0.5], value: "TP", rot: 90 });
     const board = BOARD.replace(/\n\)$/, `${tps}\n)`);
     const plan = parsePlan({ id: "tp", legalise: ["TP1", "TP2"] });
-    expect(plan.move?.map((m) => [m.ref, m.near, m.rotations, m.clearance, m.edge, m.radius])).toEqual([["TP1", "net", "keep", 0.15, 0.5, 40], ["TP2", "net", "keep", 0.15, 0.5, 40]]);
-    const { led, text } = planMoves(board, (r) => r === "J1", plan.move!, plan.displace, []);
-    // SIG2's other pads: R1.2 (20.5, 10) and R2.1 (19.5, 14): centroid (20, 12) is free (0.15 mm from R1 and R2 courtyards)
-    expect(led.near.find((n) => n.ref === "TP1")?.to).toEqual([20, 12, 0]);
+    expect(plan.move?.map((m) => [m.ref, m.legalise])).toEqual([["TP1", { clearance: 0.15, edge: 0.5, radius: 40 }], ["TP2", { clearance: 0.15, edge: 0.5, radius: 40 }]]);
+    // SIG2's other pads: R1.2 (20.5, 10) and R2.1 (19.5, 14): centroid (20, 12) is free (0.15 mm from R1 and R2 courtyards);
     // SIG: R1.1 (19.5, 10) and U1.2 (31, 20): centroid (25.25, 15). Both poses as the toolkit's tp_legalise.py on this board.
-    expect(led.near.find((n) => n.ref === "TP2")?.to).toEqual([25.25, 15, 90]);
+    expect([...legalisePoses(board, ["TP1", "TP2"])]).toEqual([["TP1", [20, 12, 0]], ["TP2", [25.25, 15, 90]]]);
+    // the edit applies them as plain moves; R1/R2 at 0.15-0.2 mm are not "in the way" (the legalise clearance is the gap)
+    const { led, text } = planMoves(board, (r) => r === "J1", plan.move!, plan.displace, []);
+    expect(led.moved.map((m) => [m.ref, m.to])).toEqual([["TP1", [20, 12, 0]], ["TP2", [25.25, 15, 90]]]);
+    expect(led.displaced).toEqual([]);
     expect(text).toContain("(translate 20.0000 12.0000)");
-    // a part on several nets needs its net named; a ref the plan already moves keeps its own move
+    // each placed part is an obstacle for the next: TP3 on SIG2 too (the centroids of TP1 and TP3 nearly coincide) lands
+    // clear of where TP1 was just placed (1 mm boxes, 0.15 mm apart at least)
+    const tp3 = fpT("TP3", 54, 35, [["1", "SIG2", 0, 0]], { box: [-0.5, -0.5, 0.5, 0.5], value: "TP" });
+    const three = legalisePoses(BOARD.replace(/\n\)$/, `${tps}${tp3}\n)`), ["TP1", "TP3"]);
+    const [a, b] = [three.get("TP1")!, three.get("TP3")!];
+    expect(Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]))).toBeGreaterThanOrEqual(1.15 - 1e-9);
+    expect(Math.hypot(a[0] - b[0], a[1] - b[1])).toBeLessThan(3);
+    // a move near a net still works for any part; a ref the plan already moves keeps its own move
     expect(() => planMoves(board, () => false, [{ ref: "R1", near: "net" }], undefined, [])).toThrow(/R1 has pads on 2 nets/);
-    expect(parsePlan({ id: "tp", move: [{ ref: "TP1", to: [1, 2, 0] }], legalise: { refs: ["TP1", "TP2"], clearance: 0.3 } }).move?.map((m) => [m.ref, m.clearance])).toEqual([["TP1", undefined], ["TP2", 0.3]]);
+    expect(parsePlan({ id: "tp", move: [{ ref: "TP1", to: [1, 2, 0] }], legalise: { refs: ["TP1", "TP2"], clearance: 0.3 } }).move?.map((m) => [m.ref, m.legalise?.clearance])).toEqual([["TP1", undefined], ["TP2", 0.3]]);
     expect(() => parsePlan({ id: "tp", legalise: [] })).toThrow(/plan.legalise/);
+  });
+
+  test("the legalise centroid sums as Python's sum() (jetson TP45's net: a plain sum rounds the tie the other way)", () => {
+    const xs = [151.82500000000002, 215.64499999999998, 227.2, 226];
+    expect(xs.reduce((t, x) => t + x, 0) / 4).toBe(205.16750000000002);
+    expect(pySum(xs) / 4).toBe(205.1675); // python3 -c "print(sum([151.82500000000002, 215.64499999999998, 227.2, 226.0]) / 4)"
+    expect(pySum([0.1, 0.2, 0.3])).toBe(0.6);
+    expect(pySum([])).toBe(0);
+  });
+
+  // the toolkit's tp_legalise.py --refs TP101,...,TP106 on cm5_minima (2026-11-13): every pose equal
+  const cm5Board = join(homedir(), "pcb-cmp/cm5_minima/proj2/board.kicad_pcb");
+  test.skipIf(!existsSync(cm5Board))("legalise on cm5_minima: the six test points land where tp_legalise.py puts them", async () => {
+    const poses = legalisePoses(await readFile(cm5Board, "utf8"), ["TP101", "TP102", "TP103", "TP104", "TP105", "TP106"]);
+    expect(Object.fromEntries(poses)).toEqual({
+      TP101: [108.257, 60.371, 0],
+      TP102: [106.901, 62.537, 0],
+      TP103: [98.429, 64.835, 0],
+      TP104: [105.126, 55.754, 0],
+      TP105: [107.361, 55.605, 0],
+      TP106: [105.085, 53.599, 0],
+    });
   });
   test("a fit/do-not-fit swap sets the footprint attribute and the symbol flags together", async () => {
     const dir = await project();
