@@ -56,6 +56,8 @@ coupled (A8), **heights** within the limits (A9; not set when the board has none
 owner-excluded items left out. A board that came in already failing is judged by no new failure against its first result; name each
 pre-existing failure. A board whose acceptance does not keep its native rules (onboarded bare) is judged on the acceptance's classes and rules:
 they are written into each scored copy's project file first, and the release writes them into the project (a change stops it: run the review again).
+A courtyard overlap counts in A2 unless its two footprints are named in the acceptance's \`courtyard_overlap_exceptions\` (with the measured gaps
+and basis); \`inner_neck_allowance_mm: 0\` on a power class makes every inner segment below its inner width fail A7 (no neck allowance).
 
 ### Working rules
 
@@ -66,6 +68,8 @@ they are written into each scored copy's project file first, and the release wri
   as sub-groups), \`floorplan\` places group by group with the rest locked (a gated result joins the seeds for \`rank\`), \`block_eval\` judges one
   block alone over 2-3 placer seeds, \`placement\` scores any placement before routing (HPWL, 90-degree turns that save >= 15 %, congestion,
   via sites); check a rotation idea there before trying it.
+- **Courtyards.** A pads-only courtyard can be smaller than the part: \`board_route {"action": "courtyards", "refit": "J101", "bodies": "requirements/part-bodies.json"}\`
+  rebuilds only the named footprints' courtyards round pads and datasheet body (body drawn on Fab); nothing else changes.
 - **Last mile.** Order: rip, taps, pairs-all, leg | blockers:1.0 (try both in parallel), a7, bundle per pair bundle, pairs, validate. What is left
   after that is placement: crossings, then \`fit\` (dry run of one nudge), then nudge or \`sweep\`. A step that does not improve the whole-board gate is
   undone. Do not rip whole wide power nets. \`why\` names what walls each open end. A pair counts only when coupled; \`pairs\` splits each uncoupled mm
