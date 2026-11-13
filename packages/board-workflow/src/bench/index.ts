@@ -2,3 +2,4 @@
 export * from "./editbench";
 export * from "./pairbench";
 export * from "./review-bench";
+export * from "./editrun";

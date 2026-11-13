@@ -42,12 +42,15 @@ export interface RepairStep {
   open: number;
   /** First rejection reason when nothing was kept. */
   why?: string;
+  /** Seconds the try took, and its last line (`now   step 1: ...`), as editbench records them. */
+  wall_s: number;
+  out: string[];
 }
 
 export async function repairCandidate(
   deps: BenchDeps,
   o: { candidateDir: string; pcb: string; routeAgain: string[]; actions?: string[]; projectDir?: string },
-): Promise<{ note: string; workspace: string; steps: RepairStep[] }> {
+): Promise<{ note: string; workspace: string; steps: RepairStep[]; start: { line: string; wall_s: number } }> {
   const pcb = isAbsolute(o.pcb) ? relative(o.candidateDir, o.pcb) : o.pcb;
   const prior = await before(o.candidateDir);
   if (!o.actions && prior.open !== null && prior.open >= UNROUTED_OPENS) {
@@ -57,14 +60,18 @@ export async function repairCandidate(
   }
   const ws = join(o.candidateDir, ".lastmile"); // skipped by the bench's folder copy
   await rm(ws, { recursive: true, force: true });
-  const { bench } = await Bench.create(ws, o.candidateDir, pcb, deps, {});
+  const t0 = Date.now();
+  const { bench, line } = await Bench.create(ws, o.candidateDir, pcb, deps, {});
+  const secs = (since: number) => Math.round((Date.now() - since) / 100) / 10;
+  const startRec = { line, wall_s: secs(t0) };
   const start = bench.figures;
   const a8b = prior.a8;
   const steps: RepairStep[] = [];
   const run = async (actions: string[]) => {
+    const t = Date.now();
     const r = await bench.try(actions, { budget: STEP_BUDGET_S });
     const why = r.accepted ? undefined : r.candidates.flatMap((c) => c.rejected)[0];
-    steps.push({ try: actions, accepted: r.accepted, open: bench.figures.open, ...(why ? { why: why.slice(0, 120) } : {}) });
+    steps.push({ try: actions, accepted: r.accepted, open: bench.figures.open, ...(why ? { why: why.slice(0, 120) } : {}), wall_s: secs(t), out: r.lines.slice(-1) });
   };
   const needs = (f: Figures) => f.open > 0 || f.a7 > 0;
   if (o.actions) await run(o.actions);
@@ -81,5 +88,5 @@ export async function repairCandidate(
   const trail = steps.map((s) => `${s.try.join("+")}: ${s.accepted ? `kept, open ${s.open}` : `nothing kept${s.why ? ` (${s.why})` : ""}`}`).join("; ");
   const head = kept ? `last mile: open ${start.open} -> ${end.open} (${figureLine(end)})` : `last mile left the board as edited (open ${start.open})`;
   const note = `${head}; steps: ${trail || "none needed"}; nets cut by the edit: ${nets || "none"}. Workspace ${shown} (board_route info/view/why with workspace=${shown}).`;
-  return { note, workspace: shown, steps };
+  return { note, workspace: shown, steps, start: startRec };
 }

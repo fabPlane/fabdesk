@@ -5,12 +5,15 @@
  *   validate   bench.py cmd_validate's pair-net audit    -> lastmile/forensics.ts declaredPairNets + tmPairAudit
  *   view       tools/board_view.py --drc / --layers      -> lastmile/view.ts renderBoardSvg (drc, layers)
  *   region     route_region.py rip + prune + --escape    -> last-mile `cut:` + `escape` (engine steps, no router)
+ *   editrun    flow/editbench.py run PLAN OUT            -> bench/editrun.ts runEditBench (scripts/bench.ts edit-run)
  *
  *   bun packages/board-workflow/test/parity-lastmile-tools.ts --out DIR [--toolkit ~/pcb] [--only netpath,validate,view,region]
  *       [--tracemaker BIN] [--slow]   (--slow: netpath on vme too; the oracle takes about an hour there)
  *
- * Not part of `bun run test` (needs the Python toolkit and the owner's boards). Runs no router and no kicad-cli; the
- * validate section runs TraceMaker's read-only `return-paths` audit (seconds) when --tracemaker is given.
+ * Not part of `bun run test` (needs the Python toolkit and the owner's boards). Runs no router; the validate section runs
+ * TraceMaker's read-only `return-paths` audit (seconds) when --tracemaker is given; editrun (not in the default set) runs
+ * kicad-cli DRC on one small edit task, each side in turn. Careful: the oracle's editbench repairs with its configured KRT
+ * whenever the edited board has opens or A7 failures (inherited ones too), so point editrun at a board that passes them.
  */
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -27,6 +30,11 @@ const { values: a } = parseArgs({
     out: { type: "string" },
     toolkit: { type: "string", default: "/home/shane/pcb" },
     only: { type: "string", default: "netpath,validate,view,region" },
+    /** editrun: the board folder and task (one small task; it runs kicad-cli DRC a few times on each side) */
+    "edit-board": { type: "string", default: "/home/shane/pcb-cmp/cm5_minima/proj2" },
+    "edit-task": { type: "string", default: "value" },
+    "edit-heldout": { type: "boolean", default: false },
+    "kicad-cli": { type: "string", default: "/usr/bin/kicad-cli-nightly" },
     tracemaker: { type: "string" },
     /** also the vme board in the netpath section (the oracle takes about an hour on it) */
     slow: { type: "boolean", default: false },
@@ -346,6 +354,75 @@ print(json.dumps({'removed': removed, 'escape': esc}))
     record("region", `${action}: escaped board, lines as a multiset (uuids aside)`, JSON.stringify(a) === JSON.stringify(b), { py: a.length, ts: b.length });
     record("region", `${action}: chain is cut, escape, after-cut`, steps.map((s) => s.planName ?? s.type).join(",") === "cut,escape,after-cut");
   }
+}
+
+// ---------------------------------------------------------------- editrun (item 4)
+// One edit task (default: cm5's `value` task, no copper change, so no router) through both runners. Compared: the
+// result's keys in order, verdict, final and final_detail, churn (but collateral_top's values), agent_coordinates,
+// interventions, repair_steps, and the phase names (timings differ by machine and implementation).
+if (only.has("editrun")) {
+  const { readdir, cp } = await import("node:fs/promises");
+  const { bench, onboard, runAcceptance, drcInputFromFile } = await import("../src/index");
+  const { runDrc } = await import("../../kicad/src/index");
+  const d = join(out, "editrun");
+  const proj = join(d, "proj");
+  await mkdir(proj, { recursive: true });
+  const srcB = a["edit-board"]!;
+  for (const n of await readdir(srcB)) if (/\.(kicad_pcb|kicad_pro|kicad_sch|kicad_sym|kicad_dru)$|^(fp|sym)-lib-table$/.test(n) || n.endsWith(".pretty")) await cp(join(srcB, n), join(proj, n), { recursive: true });
+  const ob = await onboard(proj, { name: "erun" });
+  const stem = (await readdir(proj)).find((n) => n.endsWith(".kicad_pcb"))!.replace(/\.kicad_pcb$/, "");
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\\-]/g, "\\$&");
+  const specFile = join(d, "spec.json");
+  await writeFile(specFile, JSON.stringify({ name: "erun", stem, base: proj, requirements: join(proj, ".fabdesk/board/requirements"), fixed: `^(${ob.fixed.map(esc).join("|")})$`, templates: [] }));
+  const tasks = await bench.writeEditTasks({ name: "erun", src: proj, stem, requirements: join(proj, ".fabdesk/board/requirements"), fixed: `^(${ob.fixed.map(esc).join("|")})$`, spec: specFile, out: join(d, "plans") });
+  const task = a["edit-task"]!;
+  if (!tasks[task]) throw new Error(`no ${task} task on this board (${Object.keys(tasks).join(", ")})`);
+  const planPath = join(d, "plans", `${task}.json`);
+  const kcli = { path: a["kicad-cli"]!, version: "" } as never;
+  const t0 = Date.now();
+  const ts = await bench.runEditBench({
+    planPath,
+    out: join(d, "ts"),
+    heldout: !!a["edit-heldout"],
+    toolVersion: "ts",
+    accept: (dir, pcb) =>
+      runAcceptance(dir, {
+        pcb,
+        parity: true,
+        drc: async ({ board, parity, outFile }) => {
+          await runDrc(kcli, { board, outFile, severity: "project", schematicParity: parity, refillZones: true });
+          return drcInputFromFile(outFile);
+        },
+      }),
+    repair: async () => {
+      throw new Error("the editrun parity task needs no repair (pick a task that cuts no copper)");
+    },
+  });
+  const tsS = (Date.now() - t0) / 1000;
+  const pyroot = join(d, "pyroot");
+  await mkdir(pyroot, { recursive: true });
+  const t1 = Date.now();
+  await run(["nice", "python3", join(a.toolkit!, "flow/editbench.py"), "run", planPath, join(d, "py"), ...(a["edit-heldout"] ? ["--heldout"] : [])], { KICAD_CLI: a["kicad-cli"]!, PCB_PROJECT: pyroot, PYTHONHASHSEED: "0" });
+  const pyS = (Date.now() - t1) / 1000;
+  const py = JSON.parse(await readFile(join(d, "py", "result.json"), "utf8")) as Record<string, unknown>;
+  console.log(`editrun ${task}: ts ${tsS.toFixed(0)} s (${ts["verdict"]}), py ${pyS.toFixed(0)} s (${py["verdict"]})`);
+  const keys = (x: Record<string, unknown>) => Object.keys(x).filter((k) => k !== "candidate");
+  // the toolkit opens a bench on every edited board (phase bench_new, after_edit); the edit stage only when the edit cut nets
+  const pyKeys = keys(py).filter((k) => !(k === "after_edit" && !("after_edit" in ts)));
+  record("editrun", `${task}: result keys in the toolkit's order`, JSON.stringify(pyKeys) === JSON.stringify(keys(ts)), { py: keys(py), ts: keys(ts) });
+  const phaseNames = (x: unknown) => Object.keys(x as object).filter((k) => k !== "bench_new");
+  record("editrun", `${task}: phases ${Object.keys(ts["phases"] as object).join(",")}`, JSON.stringify(phaseNames(py["phases"])) === JSON.stringify(phaseNames(ts["phases"])), { py: py["phases"], ts: ts["phases"] });
+  // a STOP names each side's own folder
+  const unpath = (v: unknown) => (typeof v === "string" ? v.replace(/\(see [^)]*\)?/, "(see ...)").replace(/: (use the schematic set|name each in plan).*$/, "") : v);
+  for (const k of ["verdict", "final", "final_detail", "agent_coordinates", "interventions", "repair_steps"]) record("editrun", `${task}: ${k} ${JSON.stringify(unpath(ts[k]))}`, JSON.stringify(unpath(py[k])) === JSON.stringify(unpath(ts[k])), { py: py[k], ts: ts[k] });
+  const ch = (x: unknown) => {
+    const c = { ...(x as Record<string, unknown>) };
+    c["collateral_top"] = Object.keys((c["collateral_top"] ?? {}) as object);
+    return c;
+  };
+  record("editrun", `${task}: churn ${JSON.stringify(ch(ts["churn"]))}`, JSON.stringify(ch(py["churn"])) === JSON.stringify(ch(ts["churn"])), { py: py["churn"], ts: ts["churn"] });
+  const table = bench.editTable(await bench.readEditResults([join(d, "ts"), join(d, "py")]));
+  record("editrun", `${task}: edit-table reads both results (${table.json.length} rows)`, table.json.length === 2 && table.json.every((r) => r.verdict), table.md);
 }
 
 await writeFile(join(out, "parity.json"), JSON.stringify({ rows }, null, 1) + "\n");
