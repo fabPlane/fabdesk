@@ -6,14 +6,16 @@
  *   reviewGate     0 pass | 1 no/stale review | 2 open findings | 3 check errors; open items lead with their proposal
  *   dispose        a finding's disposition (state, who, reason, third source)
  *   importExpert   an independent reviewer's findings into the current review
- *   fixProposals   every open finding's proposal; `apply` settles what intent/evidence decides
+ *   fixProposals   every open finding's proposal; `apply` settles what intent/evidence decides, builds and proves an edit
+ *                  candidate per edit proposal, the combined candidate and a change picture per READY one (candidates.ts)
+ *   (candidates.ts) tryPlan: the agent's own plan through the same proof
  *
  * Findings: must-fix | question | note. Notes never block. A question is closed by any disposition with a reason; a
  * must-fix only by fixing it (it disappears) or by an owner 'accept'. 'false-positive' needs a third source. A
  * disposition is keyed by finding id and carries to later runs; the report marks it as carried. The reviewer never
  * edits a design.
  */
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { REGISTRY } from "./checks";
 import { ReviewCtx, reviewHash, reviewHome, type ReviewEnv, type ReviewProject } from "./context";
@@ -34,6 +36,7 @@ import {
   type ReviewRecord,
 } from "./types";
 import { readJsonOrNull } from "../files";
+import { changePicture, combinedCandidate, fixesDir, readCandidateRecord, writeCandidateRecord, type CombinedRecord } from "./candidates";
 
 export const GATE_PASS = 0, GATE_STALE = 1, GATE_OPEN = 2, GATE_ERROR = 3;
 
@@ -101,17 +104,20 @@ export interface Classified {
 
 /**
  * Open items by who moves them: auto (the workflow applies), candidate (fixed in a READY candidate, awaiting adoption),
- * task (agent work the tools cannot do yet), owner. Candidates are read from `review/fixes/` where the edit stage that
- * builds them records its result (`combined.json` {ready, fixes}, `*-repaired/review-hash.json`).
+ * task (agent work the tools cannot do yet), owner. Candidates are read from `review/fixes/`, where `fixProposals`
+ * records them (`combined.json` {ready, fixes, hash}, `<id>-repaired/review-hash.json` {hash, cand}); with `hash`, a
+ * record of another design is ignored.
  */
-export async function classify(project: ReviewProject, open: Row[]): Promise<Classified> {
+export async function classify(project: ReviewProject, open: Row[], hash?: string): Promise<Classified> {
   const fixes = join(reviewHome(project.dir), "fixes");
-  const comb = await readJsonOrNull<{ ready?: boolean; fixes?: string[] }>(join(fixes, "combined.json"));
-  const inCand = new Set(comb?.ready ? (comb.fixes ?? []) : []);
+  // a record of another design (given `hash`) says nothing about this one
+  const mine = (h: string | undefined) => !hash || h === hash;
+  const comb = await readJsonOrNull<{ ready?: boolean; fixes?: string[]; hash?: string }>(join(fixes, "combined.json"));
+  const inCand = new Set(comb?.ready && mine(comb.hash) ? (comb.fixes ?? []) : []);
   const failed = new Set<string>();
   for (const n of (await readdir(fixes).catch(() => [] as string[])).filter((x) => x.endsWith("-repaired"))) {
-    const rec = await readJsonOrNull<{ cand?: [string, string, number] }>(join(fixes, n, "review-hash.json"));
-    if (rec?.cand && rec.cand[2] !== 0) failed.add(rec.cand[0]);
+    const rec = await readJsonOrNull<{ cand?: [string, string, number]; hash?: string }>(join(fixes, n, "review-hash.json"));
+    if (rec?.cand && rec.cand[2] !== 0 && mine(rec.hash)) failed.add(rec.cand[0]);
   }
   const out: Classified = { auto: [], candidate: [], task: [], owner: [] };
   for (const r of open) {
@@ -322,7 +328,7 @@ export async function reviewGate(project: ReviewProject): Promise<GateResult> {
     return { ...nr, exit: GATE_ERROR, state: "errors", current: true, open: ev.open.length, mustFix: ev.open.filter((r) => r.severity === "must-fix").length, errors: true, lines: ["REVIEW GATE: BLOCKED (check errors)", ...ev.errors.map((c) => `- ${c.name}: ${c.detail}`), ...nrLines] };
   if (ev.open.length) {
     // solution first: what the workflow does, then what needs the owner
-    const k = await classify(project, ev.open);
+    const k = await classify(project, ev.open, cur.review.hash);
     const lines = [`REVIEW GATE: ${ev.open.length} open — ${k.auto.length} the workflow applies (\`board_review fix\`), ${k.candidate.length} fixed in a READY candidate (adopt it), ${k.task.length} agent tasks, ${k.owner.length} need the owner`];
     for (const r of k.owner) lines.push(ownerLine(r));
     for (const [tag, rows] of [["candidate", k.candidate], ["auto", k.auto], ["task", k.task]] as const)
@@ -388,12 +394,33 @@ export async function importExpert(project: ReviewProject, ex: ExpertFile, sourc
 
 // ---------------------------------------------------------------- fix
 
+/** One edit candidate as the review sees it: built, proven and re-reviewed (READY), or why not. */
+export interface Candidate {
+  id: string;
+  dir?: string;
+  ready: boolean;
+  notes: string[];
+  /** The plan the candidate was built from (for a proposal: the ladder rung that built it). */
+  plan?: EditPlan;
+  verdict?: string;
+  /** Targeted findings still in the candidate's review. */
+  stillOpen?: string[];
+  /** Must-fix or question findings the source's review did not have. */
+  newFindings?: string[];
+  collateralNets?: number;
+  unplannedMoved?: number;
+  proofPass?: boolean;
+}
+
 /**
- * What builds an edit candidate from a proposal's plan. The edit stage provides it; until it is wired, edit proposals are
- * listed as tasks with their plan and nothing is built.
+ * What builds an edit candidate. The edit stage provides it (`createEditCandidateBuilder`); without one, edit proposals
+ * are listed with their plan and nothing is built.
  */
 export interface EditCandidateBuilder {
-  build(plan: EditPlan, finding: FindingRecord): Promise<{ id: string; dir?: string; ready: boolean; notes: string[] }>;
+  /** A workflow proposal's plan, up the ladder of least disturbance, proven against the one finding it fixes. */
+  build(plan: EditPlan, finding: FindingRecord): Promise<Candidate>;
+  /** One plan as written (the agent's own, or the combined one), proven against every finding it targets. */
+  prove(plan: EditPlan, findings: FindingRecord[]): Promise<Candidate>;
 }
 
 export interface FixResult {
@@ -403,13 +430,26 @@ export interface FixResult {
   /** Findings settled by the workflow's own disposition (apply only). */
   settled: string[];
   /** Edit proposals: built as candidates when a builder is wired, else listed with their plan. */
-  edits: Array<{ id: string; plan: EditPlan; candidate?: { id: string; dir?: string; ready: boolean; notes: string[] } }>;
+  edits: Array<{ id: string; plan: EditPlan; candidate?: Candidate; reused?: boolean }>;
+  /** Every READY edit applied together in one candidate and proven (two or more READY edits; apply only). */
+  combined?: CombinedRecord;
+  /** The change picture of every READY candidate (and of the combined one): `change.html` beside its board. */
+  pictures: Array<{ id: string; page: string; summary: string }>;
   tasks: Array<{ id: string; steps: string[] }>;
   commands: Array<{ id: string; cmd: string }>;
   lines: string[];
 }
 
-export async function fixProposals(project: ReviewProject, opts: { apply?: boolean; builder?: EditCandidateBuilder } = {}): Promise<FixResult> {
+export interface FixOptions {
+  apply?: boolean;
+  builder?: EditCandidateBuilder;
+  /** False: settle only, build no candidate copies (the toolkit's --no-build, for a low disk). */
+  build?: boolean;
+  /** Leave out the agent-task and command lines (the autopilot prints its own summary). */
+  quiet?: boolean;
+}
+
+export async function fixProposals(project: ReviewProject, opts: FixOptions = {}): Promise<FixResult> {
   const cur = await loadCurrent(project);
   if (cur.state !== "current" || !cur.review || !cur.run) throw new Error(`review is ${cur.state}: run board_review first`);
   const review = cur.review;
@@ -417,8 +457,9 @@ export async function fixProposals(project: ReviewProject, opts: { apply?: boole
   const ev = evaluate(review, await readDispositions(project.dir), intent);
   const wf = ev.open.filter((r) => r.proposal?.by === "workflow");
   const ow = ev.open.filter((r) => r.proposal?.by !== "workflow");
-  const res: FixResult = { open: ev.open.length, workflow: [], owner: [], settled: [], edits: [], tasks: [], commands: [], lines: [`${project.name}: ${ev.open.length} open: ${wf.length} for the workflow, ${ow.length} for the owner`] };
+  const res: FixResult = { open: ev.open.length, workflow: [], owner: [], settled: [], edits: [], pictures: [], tasks: [], commands: [], lines: [`${project.name}: ${ev.open.length} open: ${wf.length} for the workflow, ${ow.length} for the owner`] };
   const d = await readDispositions(project.dir);
+  const build = opts.build ?? true;
   for (const r of wf) {
     const ap = r.proposal!.apply;
     res.workflow.push({ id: r.id, action: r.proposal!.action, kind: ap.kind });
@@ -429,21 +470,55 @@ export async function fixProposals(project: ReviewProject, opts: { apply?: boole
     if (ap.kind === "disposition") {
       d[r.id] = { state: ap.state, by: ap.as === "owner" ? "owner" : "agent", reason: ap.reason, third_source: ap.third_source ?? "", date: new Date().toISOString(), hash: review.hash, claim: r.claim.slice(0, 200), via: "board_review fix" };
       res.settled.push(r.id);
-    } else if (ap.kind === "edit") {
+    } else if (ap.kind === "edit" && opts.builder && !build) res.tasks.push({ id: r.id, steps: ["candidate not built: disk low (free space, then fix again)"] });
+    else if (ap.kind === "edit") {
       const entry: FixResult["edits"][number] = { id: r.id, plan: ap.plan };
-      if (opts.builder) entry.candidate = await opts.builder.build(ap.plan, r);
+      if (opts.builder) {
+        // same design, same plan: the proven candidate is reused, not built again
+        const prev = await readCandidateRecord(project.dir, r.id, review.hash, ap.plan);
+        if (prev) {
+          entry.candidate = prev;
+          entry.reused = true;
+        } else {
+          entry.candidate = await opts.builder.build(ap.plan, r);
+          await writeCandidateRecord(project.dir, r.id, review.hash, ap.plan, entry.candidate);
+        }
+      }
       res.edits.push(entry);
     } else if (ap.kind === "command") res.commands.push({ id: r.id, cmd: ap.cmd });
     else res.tasks.push({ id: r.id, steps: ap.steps });
+  }
+  if (opts.apply && opts.builder && build) {
+    const ready = res.edits.filter((e) => e.candidate?.ready && e.candidate.dir);
+    // one change per board: every READY edit in one plan, proven together
+    if (ready.length > 1) res.combined = await combinedCandidate(project, review, ready.map((e) => ({ id: e.id, plan: e.candidate!.plan ?? e.plan })), opts.builder);
+    // fewer than two READY edits now: an earlier combined record no longer stands for this set of fixes
+    else await rm(join(fixesDir(project.dir), "combined.json"), { force: true });
   }
   if (opts.apply) {
     await writeDispositions(project.dir, d);
     await writeFile(join(cur.run, "review.md"), reportMd(review, evaluate(review, d, intent)));
     res.lines.push(`  settled ${res.settled.length} with recorded reasons`);
     for (const e of res.edits)
-      res.lines.push(e.candidate ? `  candidate for ${e.id}: ${e.candidate.notes.join("; ").slice(0, 200)} (${e.candidate.ready ? "READY" : "not ready"})` : `  edit proposal ${e.id}: no candidate built (the edit stage is not wired to the review yet); plan ${JSON.stringify(e.plan).slice(0, 200)}`);
-    for (const t of res.tasks) res.lines.push(`  agent task ${t.id}: ${t.steps.join("; ").slice(0, 160)}`);
-    for (const c of res.commands) res.lines.push(`  command ${c.id}: ${c.cmd}`);
+      res.lines.push(
+        e.candidate
+          ? `  candidate for ${e.id}: ${e.candidate.notes.join("; ").slice(0, 200)} (${e.candidate.ready ? "READY" : "not ready"})${e.reused ? " [reused: same design, same plan]" : ""}${e.candidate.dir ? `\n      ${e.candidate.dir}` : ""}`
+          : `  edit proposal ${e.id}: no candidate built (no edit stage wired); plan ${JSON.stringify(e.plan).slice(0, 200)}`,
+      );
+    // every READY candidate comes with a picture of its change
+    const pics: Array<{ id: string; dir: string }> = res.edits.filter((e) => e.candidate?.ready && e.candidate.dir).map((e) => ({ id: e.id, dir: e.candidate!.dir! }));
+    if (res.combined?.ready) pics.push({ id: `combined (${res.combined.fixes.length} fixes)`, dir: res.combined.dir });
+    for (const p of pics) {
+      const pic = await changePicture(project, p.dir).catch(() => null);
+      if (pic) res.pictures.push({ id: p.id, ...pic });
+    }
+    for (const p of res.pictures) res.lines.push(`  change picture ${p.id}: ${p.summary}\n      ${p.page}`);
+    if (res.combined)
+      res.lines.push(`  COMBINED candidate (${res.combined.fixes.length} fixes): ${res.combined.verdict}; still open ${res.combined.still_open.length ? res.combined.still_open.join(", ") : "none"}; collateral nets ${res.combined.collateral_nets ?? "?"}; ${res.combined.ready ? "READY for adoption" : "not ready"}\n      ${res.combined.dir}`);
+    if (!opts.quiet) {
+      for (const t of res.tasks) res.lines.push(`  agent task ${t.id}: ${t.steps.join("; ").slice(0, 160)}`);
+      for (const c of res.commands) res.lines.push(`  command ${c.id}: ${c.cmd}`);
+    }
   }
   for (const r of ow) {
     res.owner.push({ id: r.id, severity: r.severity, action: r.proposal?.action ?? "", effect: r.proposal?.effect ?? "" });
