@@ -22,6 +22,8 @@ import { confirmOnboarding, readOnboardingCheck } from "../board-state";
 import { durable } from "../durable";
 import { ToolError, defineTool } from "../registry";
 import { requireKicad, runLiveDrc } from "./common";
+import { boardWorkspace } from "./board-route";
+import { statusLines, workflowStatus } from "./board-status";
 
 function changeLines(c: Comparison, label: string): string[] {
   const moved = c.deltas.filter((d) => d.change !== "same" || !d.now.pass);
@@ -74,6 +76,11 @@ export const board_check = defineTool({
       .default("auto")
       .describe("auto: derive the requirements only when missing. refresh: derive them again from the board (overwrites edits to the requirements)."),
     pcb: z.string().optional().describe("Board file, relative to the project; default board.kicad_pcb or the project's only .kicad_pcb."),
+    candidate: z
+      .string()
+      .max(300)
+      .optional()
+      .describe("Score this folder instead of the project: a folder under .fabdesk/board/ (an edit candidate .fabdesk/board/edits/<id>, a last-mile try or workspace folder). Its own requirements when it has them, else the project's; nothing is onboarded or adopted, and the project's history is untouched."),
     parity: z.boolean().default(true).describe("Include schematic parity (A3); it is most of a DRC run's time."),
     currents: z.record(z.string(), z.number().positive()).optional().describe("Expected current per net in amps, stored with the requirements when onboarding (the A7 neck rule scales with it)."),
     fixed: z.array(z.string()).optional().describe("Extra fixed references when onboarding (connectors, switches, holes, netless and locked parts are fixed already)."),
@@ -84,8 +91,35 @@ export const board_check = defineTool({
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   longRunning: true,
   // onboarding plus a DRC with refilled zones and parity can outlast a client's tool timeout: a board job past the wait
-  handler: durable("board_check", async ({ onboard: mode, pcb, parity, currents, fixed, confirm, by, note }, ctx) => {
+  handler: durable("board_check", async ({ onboard: mode, pcb, candidate, parity, currents, fixed, confirm, by, note }, ctx) => {
     const project = ctx.requireProject();
+    if (candidate && !confirm) {
+      const dir = await boardWorkspace(project.dir, candidate);
+      const cli = await requireKicad(ctx);
+      const own = await readRequirements(dir);
+      const req = own ?? (await readRequirements(project.dir));
+      if (!req) throw new ToolError("no requirements: run board_check on the project first (it onboards the board)", "precondition");
+      ctx.progress(0.2, "running DRC with refilled zones on the candidate");
+      try {
+        const run = await runAcceptance(dir, {
+          ...(pcb ? { pcb } : {}),
+          parity,
+          requirements: req,
+          drc: async ({ board, parity: withParity, outFile }) => {
+            const r = await runLiveDrc(ctx, cli, { board, outFile, parity: withParity, refill: true, signal: ctx.signal });
+            return { violations: r.violations, unconnected: r.unconnected.length, parity: r.schematicParity.length };
+          },
+        });
+        ctx.progress(1, "done");
+        return {
+          text: `Candidate ${candidate} (requirements: ${own ? "its own" : "the project's"}):\n${describeRun(run, null)}`,
+          json: { candidate, ownRequirements: !!own, id: run.entry.id, summary: run.entry.summary, results: run.entry.results, record: run.recordPath },
+        };
+      } catch (e) {
+        if (e instanceof ToolError) throw e;
+        throw new ToolError(e instanceof Error ? e.message : String(e), "precondition");
+      }
+    }
     if (confirm) {
       const before = await readOnboardingCheck(project.dir);
       if (!before || !(await confirmOnboarding(project.dir, note, by)))
@@ -116,10 +150,12 @@ export const board_check = defineTool({
           return { violations: r.violations, unconnected: r.unconnected.length, parity: r.schematicParity.length };
         },
       });
+      const status = await workflowStatus(project.dir, run, pcb);
       ctx.progress(1, "done");
       return {
-        text: describeRun(run, onboarded),
+        text: [describeRun(run, onboarded), ...statusLines(status)].join("\n"),
         json: {
+          status,
           id: run.entry.id,
           designHash: run.entry.designHash,
           summary: run.entry.summary,
