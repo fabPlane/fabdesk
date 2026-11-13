@@ -248,7 +248,9 @@ describe("the keys through impact, apply, proof", () => {
     expect(await readFile(join(cand, "Parts.pretty/FIT_P2.kicad_mod"), "utf8")).toContain("(drill oval 2 1.8)");
     expect(await readFile(join(dir, "Parts.pretty/FIT_P2.kicad_mod"), "utf8")).toBe(lib);
     const origin = JSON.parse(await readFile(join(cand, "origin.json"), "utf8"));
-    expect(origin.extra).toEqual({ "Parts.pretty/FIT_P2.kicad_mod": sha256(lib) });
+    // the library footprint, and the requirements the edit changed (the hole's Value in circuit.json, the edit's record in acceptance.json)
+    expect(Object.keys(origin.extra).sort()).toEqual([".fabdesk/board/requirements/acceptance.json", ".fabdesk/board/requirements/circuit.json", "Parts.pretty/FIT_P2.kicad_mod"]);
+    expect(origin.extra["Parts.pretty/FIT_P2.kicad_mod"]).toBe(sha256(lib));
     expect(JSON.parse(await readFile(join(cand, "hole-edit.json"), "utf8"))).toMatchObject({ ref: "FIT_P2", size_mm: [2, 1.8], copper_authored: 0 });
     expect(r.diff?.moved).toEqual([]);
     expect(Object.keys(r.diff?.copper_changed_nets ?? {})).toEqual([]);
