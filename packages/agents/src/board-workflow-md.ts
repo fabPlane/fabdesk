@@ -67,7 +67,8 @@ pre-existing failure.
   that needs it fails naming why, and \`finish\`, \`fill:ROUTER\` and \`tighten\` still run. \`finish\` adds copper only on the nets that were open and
   leaves every other net as it was; other steps may change more, and each \`try\` line says which other nets a candidate changed: for a "change
   only this" task, prefer the candidate that changed none.
-- **Edit.** Write the change as a plan (remove, move with \`to\` or \`near\`, displace, swap, add, net). \`impact\` first: a STOP is your decision.
+- **Edit.** Write the change as a plan (remove, move with \`to\` or \`near\`, displace, swap, add, net; \`legalise\` seats test points at the free
+  spot nearest their net's other pads, many in one plan). \`impact\` first: a STOP is your decision.
   When an edit displaces a dense region, stop editing and re-place with the moved parts as anchors.
 - **Review.** One design hash covers board, schematics, project files and requirements; any change makes the review stale. Settle each finding with
   evidence: a must-fix is fixed, or accepted by the owner (or by you with evidence when intent allows); a false-positive needs a third source

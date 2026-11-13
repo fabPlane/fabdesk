@@ -47,6 +47,32 @@ export interface NetSpec {
   tap_basis?: string;
 }
 
+export interface LegaliseSpec {
+  refs: string[];
+  /** Courtyard clearance to other parts and drilled pads, mm (default 0.15, as tp_legalise). */
+  clearance?: number;
+  /** Margin from the board outline, mm (default 0.5). */
+  edge?: number;
+  /** Search radius round the net centroid, mm (default 40). */
+  radius?: number;
+}
+
+/** `legalise` as `move` entries (`near: "net"`, rotation kept); a ref the plan already moves is left to its own move. */
+export function legaliseMoves(spec: string[] | LegaliseSpec, already: ReadonlySet<string> = new Set()): MoveSpec[] {
+  const s: LegaliseSpec = Array.isArray(spec) ? { refs: spec } : spec;
+  return s.refs
+    .filter((r) => !already.has(r))
+    .map((ref) => ({
+      ref,
+      near: "net",
+      rotations: "keep" as const,
+      radius: s.radius ?? 40,
+      clearance: s.clearance ?? 0.15,
+      edge: s.edge ?? 0.5,
+      basis: "legalise: nearest free spot to the centroid of its net's other pads",
+    }));
+}
+
 export interface EditPlan {
   id: string;
   authority?: string;
@@ -55,6 +81,12 @@ export interface EditPlan {
   remove?: string[];
   move?: MoveSpec[];
   displace?: DisplaceSpec;
+  /**
+   * Test points (and any part whose pads are on one net) to re-seat at the nearest free spot to the centroid of the
+   * other pads on their net: courtyard and drilled pads clear by `clearance`, the outline by `edge`, rotation and side
+   * kept (the toolkit's tools/tp_legalise.py). Each becomes a `move` with `near: "net"`.
+   */
+  legalise?: string[] | LegaliseSpec;
   swap?: SwapSpec[];
   add?: AddSpec[];
   net?: NetSpec[];
@@ -79,6 +111,14 @@ export function parsePlan(raw: unknown): EditPlan {
   if (typeof plan.id !== "string" || !/^[\w.-]+$/.test(plan.id)) throw new Error("plan.id is required (letters, digits, - _ .)");
   strList(plan.remove, "remove");
   strList(plan.accept_unconnected, "accept_unconnected");
+  if (plan.legalise !== undefined) {
+    const l = plan.legalise;
+    const refs = Array.isArray(l) ? l : isObj(l) ? (l as LegaliseSpec).refs : undefined;
+    if (!Array.isArray(refs) || !refs.length || refs.some((x) => typeof x !== "string"))
+      throw new Error('plan.legalise is a list of references, or {"refs": [...], "clearance", "edge", "radius"}');
+    const moved = new Set((plan.move ?? []).map((m) => (isObj(m) ? String(m.ref) : "")));
+    plan.move = [...(plan.move ?? []), ...legaliseMoves(l, moved)];
+  }
   for (const m of plan.move ?? []) {
     if (!isObj(m) || typeof m.ref !== "string") throw new Error("plan.move entries need a ref");
     if (m.to === undefined && m.near === undefined) throw new Error(`move ${m.ref}: give "to": [x, y, rotation] or "near"`);

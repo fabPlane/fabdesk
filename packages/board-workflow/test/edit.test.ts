@@ -27,7 +27,7 @@ import { pruneDangling } from "../src/edit/prune";
 const dirs: string[] = [];
 afterAll(() => Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true }))));
 
-import { BOARD, PRO, SHEET, seg } from "./edit-fixture";
+import { BOARD, PRO, SHEET, fpT, seg } from "./edit-fixture";
 
 async function project(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "edit-"));
@@ -302,6 +302,22 @@ describe("collateral, drc input and the helpers", () => {
     const auto = planMoves(BOARD, (r) => r === "J1", [{ ref: "R1", to: [20, 30, 0], carry_auto: ["R1"] }], { radius: 4 }, []);
     expect(auto.led.carry_auto).toEqual({ R1: ["R2"] });
     expect(auto.led.carried.map((c) => c.ref)).toEqual(["R2"]);
+  });
+  test("legalise (tp_legalise): test points go to the nearest free spot to their net's other pads, many in one plan, rotation kept", () => {
+    const tps = fpT("TP1", 55, 35, [["1", "SIG2", 0, 0]], { box: [-0.5, -0.5, 0.5, 0.5], value: "TP" }) + fpT("TP2", 5, 35, [["1", "SIG", 0, 0]], { box: [-0.5, -0.5, 0.5, 0.5], value: "TP", rot: 90 });
+    const board = BOARD.replace(/\n\)$/, `${tps}\n)`);
+    const plan = parsePlan({ id: "tp", legalise: ["TP1", "TP2"] });
+    expect(plan.move?.map((m) => [m.ref, m.near, m.rotations, m.clearance, m.edge, m.radius])).toEqual([["TP1", "net", "keep", 0.15, 0.5, 40], ["TP2", "net", "keep", 0.15, 0.5, 40]]);
+    const { led, text } = planMoves(board, (r) => r === "J1", plan.move!, plan.displace, []);
+    // SIG2's other pads: R1.2 (20.5, 10) and R2.1 (19.5, 14): centroid (20, 12) is free (0.15 mm from R1 and R2 courtyards)
+    expect(led.near.find((n) => n.ref === "TP1")?.to).toEqual([20, 12, 0]);
+    // SIG: R1.1 (19.5, 10) and U1.2 (31, 20): centroid (25.25, 15). Both poses as the toolkit's tp_legalise.py on this board.
+    expect(led.near.find((n) => n.ref === "TP2")?.to).toEqual([25.25, 15, 90]);
+    expect(text).toContain("(translate 20.0000 12.0000)");
+    // a part on several nets needs its net named; a ref the plan already moves keeps its own move
+    expect(() => planMoves(board, () => false, [{ ref: "R1", near: "net" }], undefined, [])).toThrow(/R1 has pads on 2 nets/);
+    expect(parsePlan({ id: "tp", move: [{ ref: "TP1", to: [1, 2, 0] }], legalise: { refs: ["TP1", "TP2"], clearance: 0.3 } }).move?.map((m) => [m.ref, m.clearance])).toEqual([["TP1", undefined], ["TP2", 0.3]]);
+    expect(() => parsePlan({ id: "tp", legalise: [] })).toThrow(/plan.legalise/);
   });
   test("a fit/do-not-fit swap sets the footprint attribute and the symbol flags together", async () => {
     const dir = await project();
