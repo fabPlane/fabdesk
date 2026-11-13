@@ -125,6 +125,18 @@ slow link spent 14 min on the wheels alone (uv prints nothing meanwhile, so the 
 on disk for KRT (scripts, venv, managed CPython) plus 42 MB for the pinned uv. A cold install downloads ~16 MB of
 KRT, ~18 MB of uv, ~30 MB of CPython and ~60 MB of wheels.
 
+## atlc (engine)
+
+`board_review section` (finite-difference cross-section impedance, the toolkit's `review/atlc_section.py`) runs atlc 4.6.1
+(GPL-2.0-or-later, https://atlc.sourceforge.net) as a separate program. Upstream publishes source only, so the registry entry
+`atlc` (kind `engine`) downloads Debian's pristine copy of the upstream tarball
+(`https://deb.debian.org/debian/pool/main/a/atlc/atlc_4.6.1.orig.tar.bz2`, 1 784 110 bytes, sha256 `0ad8f9bb…6841321`;
+`FABDESK_ATLC_URL` / `FABDESK_ATLC_SHA256` override) and builds `atlc-4.6.1/src/atlc` with `sh ./configure CFLAGS="-O2 -fcommon"`
+and `make -C src atlc` (single-threaded, like Debian's package; a few seconds; needs a C compiler and make). `ATLC_BIN` wins, then an
+`atlc` on PATH (the Debian/Ubuntu `atlc` package) is used as it is. Windows has no build path: set `ATLC_BIN`. Verified on Linux x86_64
+(the built binary gives the same impedances as Debian's on the C6 stack106 sections); macOS is untested (the 2008 `config.guess` may
+not know arm64 Macs: then install atlc another way and set `ATLC_BIN`).
+
 ## TraceMaker size and license
 
 TraceMaker is [DingoOz/TraceMaker](https://github.com/DingoOz/TraceMaker), C++20, **GPL-3.0-or-later**.

@@ -11,6 +11,8 @@
  * toolkit's `pcb run` (review if stale -> fixes -> owner questions); `intent*` read and write the owner's intent file;
  * `import_expert` adds an independent reviewer's findings. `cable`, `page` and `diff` (board-review-views.ts) look at
  * boards without touching the review record: cable reach in a chassis, the KiCad-plot board page, the change picture.
+ * `section` and `short_section` (board-review-section.ts) are impedance proofs from geometry: an atlc finite-difference
+ * cross section, and the edge-knee reflection of short off-impedance stretches.
  * The gate is recorded for the project's status (`recordReviewGate`). The reviewer never edits a design.
  *
  * Replaces in intent: the DRC/ERC summaries of `verify_drc` and `verify_erc` as a release judgement (those stay as
