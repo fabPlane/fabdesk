@@ -186,7 +186,7 @@ export interface RunOptions {
   /** Run only these checks (a partial run is not linked as the latest review). */
   checks?: string[];
   offline?: boolean;
-  /** Checks other stages add (the silk check of the silk stage), run after the built-in ones and before `pack`. */
+  /** Checks a host adds, run after the built-in ones and before `pack`. */
   extraChecks?: Array<[string, (ctx: ReviewCtx) => Promise<CheckResult>]>;
   progress?: (note: string) => void;
   now?: () => Date;

@@ -176,6 +176,8 @@ export interface ReviewConfig {
   bom?: Record<string, unknown>;
   custom?: CustomSpec[];
   board_id?: string;
+  /** The silk check's rules: a silk plan (`board_silk`'s `plan`: heights, stroke, clear, skip, hide, inside_ok ...). */
+  silk?: Record<string, unknown>;
 }
 
 export interface CustomSpec {

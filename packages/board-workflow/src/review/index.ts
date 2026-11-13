@@ -5,6 +5,7 @@ export * from "./review";
 export * from "./proposals";
 export * from "./diff";
 export { REGISTRY, loadProjectCards, pyDumps, netVolts, capValue, traceRiseC, widthFor, rise2221, assembled } from "./checks";
+export { checkSilk, silkFindings, SILK_LABEL } from "./silk-check";
 export { loadNetlist, parseXml, lcsc, type Comp, type NetPin } from "./netlist";
 export { Fetch, edaPinNames, fetchCacheDir, EDA_URL } from "./fetch";
 export * as pinsense from "./pinsense";

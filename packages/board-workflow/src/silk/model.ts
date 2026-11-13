@@ -253,9 +253,14 @@ export function readSilkParts(root: SNode): { parts: Record<string, Part>; texts
   return { parts, texts, outline, holes };
 }
 
-async function plotShapes(cli: KicadCli, board: string, dir: string, signal?: AbortSignal) {
+/** How the model runs kicad-cli: a resolved CLI, or a runner of its own (the review's, which returns a failed exit). */
+export type SilkKicad = { cli: KicadCli; run?: never } | { run: (args: string[]) => Promise<unknown>; cli?: never };
+
+async function plotShapes(k: SilkKicad, board: string, dir: string, signal?: AbortSignal) {
   await mkdir(dir, { recursive: true });
-  await runKicadCli(cli, ["pcb", "export", "gerbers", "--layers", "F.Mask,B.Mask,F.Silkscreen,B.Silkscreen", "--output", dir + "/", board], { ...(signal ? { signal } : {}) });
+  const args = ["pcb", "export", "gerbers", "--layers", "F.Mask,B.Mask,F.Silkscreen,B.Silkscreen", "--output", dir + "/", board];
+  if (k.run) await k.run(args);
+  else await runKicadCli(k.cli, args, { ...(signal ? { signal } : {}) });
   const { readdir } = await import("node:fs/promises");
   const names = await readdir(dir);
   const read = async (layer: string) => {
@@ -265,14 +270,14 @@ async function plotShapes(cli: KicadCli, board: string, dir: string, signal?: Ab
   return { fMask: await read("F_Mask"), bMask: await read("B_Mask"), fSilk: await read("F_Silkscreen"), bSilk: await read("B_Silkscreen") };
 }
 
-export async function buildSilkModel(pcbText: string, opts: { cli: KicadCli; workDir: string; signal?: AbortSignal }): Promise<SilkModel> {
+export async function buildSilkModel(pcbText: string, opts: SilkKicad & { workDir: string; signal?: AbortSignal }): Promise<SilkModel> {
   const root = parseSexpr(pcbText);
   const { parts, texts, outline, holes } = readSilkParts(root);
   const scratch = join(opts.workDir, "plot");
   await mkdir(scratch, { recursive: true });
   const board = join(scratch, "silkplot.kicad_pcb");
   await writeFile(board, plotCopy(pcbText));
-  const sh = await plotShapes(opts.cli, board, join(scratch, "gerbers"), opts.signal);
+  const sh = await plotShapes(opts, board, join(scratch, "gerbers"), opts.signal);
   const m: SilkModel = {
     parts,
     copper: { F: [], B: [] },
