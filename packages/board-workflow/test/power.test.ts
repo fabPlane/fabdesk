@@ -1,9 +1,10 @@
 /** The power ports: power_escape, power_planes, pour_opens (toolkit tools/*.py), as library calls, last-mile steps and route-pipeline steps. */
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseBoard, kid, kids, parseSexpr, type Acceptance } from "../src/index";
+import { stepsFor, ActionError, powerStep } from "../src/lastmile/index";
 import { prepareRouteBase } from "../src/layout/index";
 import { checkPlanesPlan, fnmatch, label, layerOf, mst, powerEscape, powerPlanes, pourOpens, rects, PlanesError } from "../src/power/index";
 
@@ -126,6 +127,40 @@ describe("pour_opens", () => {
     expect(fnmatch("[x", "[x")).toBe(true);
     expect([...layerOf("Via [GND] on B.Cu - F.Cu")].sort()).toEqual(["B.Cu", "F.Cu"]);
     expect([...layerOf("Zone [GND] on In1.Cu")]).toEqual([]);
+  });
+});
+
+describe("last-mile power actions", () => {
+  test("escape, planes and pour parse into their steps; bad arguments are refused by name", () => {
+    expect(stepsFor("escape")).toEqual([{ type: "escape", escape: { maxStub: 0.9, clearance: 0.1 } }]);
+    expect(stepsFor("escape:0.5,0.12+finish")[0]).toEqual({ type: "escape", escape: { maxStub: 0.5, clearance: 0.12 } });
+    expect(stepsFor("planes:plans/in1.json")).toEqual([{ type: "planes", planFile: "plans/in1.json" }]);
+    expect(stepsFor("pour")).toEqual([{ type: "pour", pour: { nets: [], margin: 1.5, minWidthScale: 1 } }]);
+    expect(stepsFor("pour:*3V3,VBUS~1@0.8")).toEqual([{ type: "pour", pour: { nets: ["*3V3", "VBUS"], margin: 1, minWidthScale: 0.8 } }]);
+    expect(() => stepsFor("escape:x")).toThrow(ActionError);
+    expect(() => stepsFor("planes")).toThrow(/planes:FILE/);
+    expect(() => stepsFor("pour:A~1.2.3")).toThrow(/not a number/);
+  });
+  test("a power step writes a board folder the bench scores; nothing to add leaves the board as it was", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "power-step-"));
+    const cur = join(dir, "cur");
+    await mkdir(cur);
+    await writeFile(join(cur, "b.kicad_pcb"), board(qfn()));
+    const req = { acceptance: acceptance({ PWR_600: { track_width: 0.6, nets: ["VIN"] } }) } as never;
+    const host = { req, planFile: async (f: string) => join(dir, f), scored: async () => {} };
+    const input = { cur, out: join(dir, "out"), start: cur, pcb: "b.kicad_pcb", signal: new AbortController().signal };
+    const r = await powerStep({ type: "escape", escape: { maxStub: 0.9, clearance: 0.1 } }, input, host);
+    expect(r).toMatchObject({ dir: join(dir, "out"), info: { engine: "power_escape", bridges: 1, stubs: 2 } });
+    expect(segs(await readFile(join(dir, "out", "b.kicad_pcb"), "utf8"))).toHaveLength(3);
+    expect(JSON.parse(await readFile(join(dir, "out", ".lastmile", "escape.json"), "utf8")).bridges).toBe(1);
+    // pour on a board with no open power connection: skipped, the start board kept
+    await mkdir(join(cur, ".lastmile"), { recursive: true });
+    await writeFile(join(cur, ".lastmile", "drc-run.json"), JSON.stringify({ violations: [], unconnected: [], parity: 0 }));
+    const p = await powerStep({ type: "pour", pour: { nets: [], margin: 1.5, minWidthScale: 1 } }, { ...input, out: join(dir, "out2") }, host);
+    expect(p).toMatchObject({ dir: cur, skipped: true, info: { pours: 0 } });
+    // a broken plan file fails the step by name
+    await writeFile(join(dir, "bad.json"), JSON.stringify({ layer: "F.Cu", nets: [] }));
+    expect(await powerStep({ type: "planes", planFile: "bad.json" }, { ...input, out: join(dir, "out3") }, host)).toMatchObject({ error: expect.stringContaining("planes:bad.json: power planes plan: layer") });
   });
 });
 

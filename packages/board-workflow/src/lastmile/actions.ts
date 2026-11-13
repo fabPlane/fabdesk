@@ -5,7 +5,7 @@
  */
 import { LASTMILE_PLANS } from "./plans";
 
-export type StepType = "krt" | "repair" | "nudge" | "fill" | "pairfix";
+export type StepType = "krt" | "repair" | "nudge" | "fill" | "pairfix" | "escape" | "planes" | "pour";
 
 export interface Step {
   type: StepType;
@@ -23,6 +23,10 @@ export interface Step {
   router?: string;
   /** `pairfix`: arguments (`--pairs REGEX`, `--ops mirror-force`). */
   args?: string[];
+  /** `escape`: how far a stub reaches beyond the pad edge and the clearance it keeps, mm. */
+  escape?: { maxStub: number; clearance: number };
+  /** `pour`: more nets as shell globs, the margin round an open's ends and the min_thickness scale (`planes` uses `planFile`). */
+  pour?: { nets: string[]; margin: number; minWidthScale: number };
 }
 
 export interface NudgeMove {
@@ -92,6 +96,33 @@ export const ACTIONS: Record<string, { help: string; steps: Builder | null }> = 
   nudge: { help: "nudge:REF@X,Y[@ROT[/ROT..]][~RADIUS][&REF2@..]  re-seat parts near points (pose computed, courtyard-gated), cut pairs re-routed as pairs", steps: null },
   turn: { help: "turn:REF@ROT[/ROT..][~RADIUS]  re-seat a part where it is at another rotation (see `crossings`)", steps: null },
   plan: { help: "plan:FILE  any router plan", steps: (a) => [{ type: "krt", planFile: a }] },
+  escape: {
+    help:
+      "escape[:STUB[,CLEARANCE]]  fine-pitch power escapes, no router: pad-width bridges between adjacent same-net pins and pad-width stubs out from power pins narrower than their class (STUB mm beyond the pad, default 0.9, never past 1.0 mm from its centre: the neck rule), each clear of other-net copper by CLEARANCE (default 0.1); chain a router after it, e.g. escape+finish",
+    steps: (a) => {
+      const [s, c, ...more] = a ? a.split(",") : [];
+      if (more.length) throw new ActionError(`escape:${a}: escape[:STUB[,CLEARANCE]]`);
+      return [{ type: "escape", escape: { maxStub: s ? num(`escape:${a}`, s) : 0.9, clearance: c ? num(`escape:${a}`, c) : 0.1 } }];
+    },
+  },
+  planes: {
+    help:
+      "planes:FILE  split power plane on an inner layer from a plan JSON in the project (layer, nets with weights, reach_mm, fill_net, keepout_circles ...): grid cells go to the nearest plan net's pads, pieces joined by corridors, the fill net elsewhere; zones only, no router",
+    steps: (a) => {
+      if (!a) throw new ActionError("planes:FILE  a power-planes plan JSON, project-relative");
+      return [{ type: "planes", planFile: a }];
+    },
+  },
+  pour: {
+    help:
+      "pour[:GLOB,..][~MARGIN][@SCALE]  net zones over the open connections of power nets (and nets matching a shell GLOB; '+' chains actions, so write ?5V for +5V) on the outer layer both ends share, MARGIN mm round the ends (default 1.5); KiCad's fill keeps clearances and never goes thinner than class width x SCALE (default 1.0), so a pour only connects where the current fits",
+    steps: (a) => {
+      const m = /^([^~@]*)(?:~([^~@]+))?(?:@([^~@]+))?$/.exec(a);
+      if (!m) throw new ActionError(`pour:${a}: pour[:GLOB,..][~MARGIN][@SCALE]`);
+      const what = `pour:${a}`;
+      return [{ type: "pour", pour: { nets: m[1] ? m[1].split(",").filter(Boolean) : [], margin: m[2] ? num(what, m[2]) : 1.5, minWidthScale: m[3] ? num(what, m[3]) : 1.0 } }];
+    },
+  },
 };
 
 export class ActionError extends Error {}

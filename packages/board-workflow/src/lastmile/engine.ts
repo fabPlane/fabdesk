@@ -6,6 +6,7 @@
  *   nudge   re-seat parts (nudge_place, courtyard-gated), then the step's KRT plan re-routes the cut connections
  *   pairfix pair width / tighten / vias / mirror / retune / skew in place (no router)
  *   fill    another router fills the opens, everything else fixed (the host's routers)
+ *   escape / planes / pour   power copper without a router (lastmile/power.ts): escapes, a split inner plane, pours
  *
  * KiCadRoutingTools is an engine the host may not have. Without it only `finish` still runs, on the host's router (it
  * means "route the opens; nothing is ripped", which any router can do); every other KRT step fails by name, so a step
@@ -25,6 +26,7 @@ import { opensOf, type DrcFn, type DrcRun } from "./scoring";
 import { runTighten } from "./tighten";
 import { ripStep } from "./rip";
 import { nudgeStep } from "./nudge";
+import { powerStep } from "./power";
 
 /** Fill the opens of `dir/board.kicad_pcb` in place with `router` (the host's routers); the board file name is fixed. */
 export type FillFn = (router: string, dir: string, o: { signal: AbortSignal; timeoutMs: number }) => Promise<{ message?: string }>;
@@ -175,7 +177,7 @@ async function stepPlan(h: StepEngineHost, step: Step): Promise<KrtPlan> {
 export const needsKrt = (what: string, why?: string) =>
   why
     ? `${what}: KRT did not install (${why.length > 100 ? `…${why.slice(-100)}` : why})`
-    : `${what} needs KiCadRoutingTools (board_engines install krt, or FABDESK_KRT_DIR); without it: finish, fill:ROUTER, tighten`;
+    : `${what} needs KiCadRoutingTools (board_engines install krt, or FABDESK_KRT_DIR); without it: finish, fill:ROUTER, tighten, escape, planes, pour`;
 
 export function createStepEngine(h: StepEngineHost): StepEngine {
   /** KRT's root, installed on first use when the host can; `why` says what stopped that. */
@@ -187,6 +189,10 @@ export function createStepEngine(h: StepEngineHost): StepEngine {
       switch (step.type) {
         case "pairfix":
           return runTighten({ step, input, req: h.req, drc: h.drc });
+        case "escape":
+        case "planes":
+        case "pour":
+          return powerStep(step, input, { req: h.req, planFile: (f) => resolvePlanFile(h.planRoot, f).catch((e: Error) => Promise.reject(new Error(e.message.replace(/^plan:/, "planes:")))), scored: () => ensureScored(h, cur, pcb, signal) });
         case "fill": {
           if (!step.router) return { error: `fill needs a router: ${FILL_ROUTERS.map((r) => `fill:${r}`).join(", ")}` };
           return { dir: out, info: await fillRoute(h, step.router, cur, out, pcb, signal) };
