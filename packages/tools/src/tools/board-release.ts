@@ -114,8 +114,19 @@ async function gerbAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
     }
     const r = await release.gerbCheck({ gerbers: dir, pcb: files.pcb, out: join(work, "check"), cli, dpi: a.dpi, signal: ctx.signal, onProgress: (l) => ctx.progress(0.5, `rendering ${l}`) });
     const rows = Object.entries(r.layers).map(([k, v]) => `${k.padEnd(13)} gerber ${v.gerber_px ?? "-"} px  kicad ${v.kicad_px ?? "-"} px  beyond 1 px ${v.beyond_1px ?? "-"} (${((v.diff_share ?? 0) * 100).toFixed(3)} %)  ${v.error ?? (v.pass ? "PASS" : "FAIL")}`);
-    const text = [`${r.pass ? "PASS" : "FAIL"} ${Object.values(r.layers).filter((v) => v.pass).length}/${Object.keys(r.layers).length} layers at ${a.dpi} dpi (a layer passes when the differences that survive a 1-pixel band are under 0.1 % of the drawn area)`, ...rows, `drill: ${Object.entries(r.drill).map(([n, d]) => `${n} ${d.holes_or_slots} holes/slots, ${d.tools} tools`).join("; ") || "no drill files"}`, ...(r.unsupported.length ? [`reader limits: ${r.unsupported.join(", ")}`] : []), `Pictures of the differences (red: Gerber only, blue: KiCad only): ${relative(project.dir, join(work, "check"))}/diff-*.png`].join("\n");
-    return ok(text, { pass: r.pass, layers: r.layers, drill: r.drill, dir: relative(project.dir, join(work, "check")) });
+    // copper that fails against a fresh fill but matches the saved fills: the Gerbers were plotted from stale pours
+    const badCu = Object.entries(r.layers).filter(([k, v]) => !v.pass && !v.error && k.endsWith("_Cu")).map(([k]) => k);
+    let stale: string[] = [];
+    if (badCu.length) {
+      ctx.progress(0.8, "checking the failing copper against the saved zone fills");
+      const r2 = await release.gerbCheck({ gerbers: dir, pcb: files.pcb, out: join(work, "check-saved-fills"), cli, dpi: a.dpi, signal: ctx.signal, checkZones: false, only: badCu });
+      stale = badCu.filter((k) => r2.layers[k]?.pass);
+    }
+    const staleLine = stale.length
+      ? [`CAUSE: ${stale.join(", ")} match the board's saved zone fills, not a fresh fill: the Gerbers were plotted from stale pours. Refill the zones before exporting (board_release fab and its CAM export refill; by hand: kicad-cli pcb export gerbers --check-zones, or kicad-cli pcb drc --refill-zones --save-board first). A fab builds what the Gerbers show.`]
+      : [];
+    const text = [`${r.pass ? "PASS" : "FAIL"} ${Object.values(r.layers).filter((v) => v.pass).length}/${Object.keys(r.layers).length} layers at ${a.dpi} dpi (a layer passes when the differences that survive a 1-pixel band are under 0.1 % of the drawn area)`, ...staleLine, ...rows, `drill: ${Object.entries(r.drill).map(([n, d]) => `${n} ${d.holes_or_slots} holes/slots, ${d.tools} tools`).join("; ") || "no drill files"}`, ...(r.unsupported.length ? [`reader limits: ${r.unsupported.join(", ")}`] : []), `Pictures of the differences (red: Gerber only, blue: KiCad only): ${relative(project.dir, join(work, "check"))}/diff-*.png`].join("\n");
+    return ok(text, { pass: r.pass, layers: r.layers, drill: r.drill, dir: relative(project.dir, join(work, "check")), ...(stale.length ? { staleZoneFills: stale } : {}) });
   } finally {
     job.release();
   }

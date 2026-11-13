@@ -203,6 +203,10 @@ export interface GerbCheckOptions {
   tol?: number;
   signal?: AbortSignal;
   onProgress?: (layer: string) => void;
+  /** Plot KiCad's side with a fresh zone fill (`--check-zones`, default true); false plots the board's saved fills. */
+  checkZones?: boolean;
+  /** Only these layers (keys of LAYERS); default every layer found. */
+  only?: string[];
 }
 
 export async function gerbCheck(o: GerbCheckOptions): Promise<GerbCheckResult> {
@@ -223,14 +227,14 @@ export async function gerbCheck(o: GerbCheckOptions): Promise<GerbCheckResult> {
   const width = Math.round(((box.x1 - box.x0) * dpi) / 25.4);
   const res: GerbCheckResult = { gerbers: o.gerbers, pcb: o.pcb, dpi, layers: {}, drill: {}, unsupported: [], pass: false };
   for (const [k, name] of Object.entries(found)) {
-    if (k === "Edge_Cuts") continue;
+    if (k === "Edge_Cuts" || (o.only && !o.only.includes(k))) continue;
     if (o.signal?.aborted) throw new Error("cancelled");
     o.onProgress?.(k);
     const kl = LAYERS[k]!;
     const ksvg = join(o.out, `kicad-${k}.svg`);
     const r = await runKicadCli(
       o.cli,
-      ["pcb", "export", "svg", "--check-zones", "--layers", kl, "--mode-single", "--exclude-drawing-sheet", "--page-size-mode", "2", "--black-and-white", "--drill-shape-opt", "0", "--output", ksvg, o.pcb],
+      ["pcb", "export", "svg", ...(o.checkZones === false ? [] : ["--check-zones"]), "--layers", kl, "--mode-single", "--exclude-drawing-sheet", "--page-size-mode", "2", "--black-and-white", "--drill-shape-opt", "0", "--output", ksvg, o.pcb],
       { tolerateExit: true, ...(o.signal ? { signal: o.signal } : {}) },
     );
     if (r.exitCode) {
