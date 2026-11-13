@@ -138,7 +138,8 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
         case "pairs": {
           const board = parseBoard(await readFile(bench.board, "utf8"));
           const m = L.measurePairs(board, L.classesAndPairs(req, a.pairs), profile(req.acceptance).copper, a.why);
-          return ok(L.measureLines(m, a.why).join("\n") || "no pairs on this board", { pairs: m });
+          const next = L.pairsNext(m);
+          return ok([...L.measureLines(m, a.why), ...next].join("\n") || "no pairs on this board", { pairs: m, ...(next.length ? { next } : {}) });
         }
         case "fit": {
           const steps = a.actions?.length === 1 ? L.stepsFor(a.actions[0]!) : [];

@@ -493,3 +493,15 @@ describe("repairCandidate (board_edit repair hook)", () => {
     expect(L.repairStages(f(0, 1))).toEqual([["a7"], ["rip", "blockers:1.0"]]);
   });
 });
+
+describe("pairsNext: the step to try for pairs that are not coupled", () => {
+  const m = (share: number) => ({ class: "PAIR_100OHM", target_mm: 0.38, p_mm: 10, n_mm: 10, coupled_share: share, spacing: [], widths: {} });
+  test("routed apart -> bundle (with the router's short-leg caveat); partly coupled -> reroute; coupled -> nothing", () => {
+    const next = L.pairsNext({ "/H.CK_P / /H.CK_N": m(0.03), "/U.D_P / /U.D_N": m(0.7), "/E.T_P / /E.T_N": m(0.97) });
+    expect(next).toHaveLength(2);
+    expect(next[0]).toContain('"bundle:^(/H\\.CK_P)$"');
+    expect(next[0]).toContain("electrically short");
+    expect(next[1]).toContain('"reroute:^(/U\\.D_P)$"');
+    expect(L.pairsNext({ a: m(0.95) })).toEqual([]);
+  });
+});

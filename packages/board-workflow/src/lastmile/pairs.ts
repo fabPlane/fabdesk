@@ -163,6 +163,29 @@ export function measurePairs(board: Board, pairs: readonly PairSpec[], stack: re
 }
 
 /** The toolkit's one-line-per-pair text of `measure`. */
+/**
+ * The step to try next for pairs that are not coupled, from how they are routed: pairs routed apart (coupled share
+ * under 0.5: single-ended routing, the eval's HDMI pairs at 0.02-0.03) need ripping and routing again together as
+ * pairs (`bundle:REGEX`, or `pairs-all` for every pair); partly coupled ones (0.5-0.9) a local re-route of their
+ * uncoupled stretches (`reroute:REGEX`). An agent given only the table tried reroute/tighten, which cannot couple a
+ * pair routed apart, and then routed the pairs by hand. On the eval's HDMI board (0.5 mm pitch connector) bundle
+ * fails in both the toolkit and here: KRT defers the short fan-out legs to single-ended; the line says so.
+ */
+export function pairsNext(m: Record<string, PairMeasure>): string[] {
+  const esc = (n: string) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pName = (k: string) => k.split(" / ")[0]!;
+  const rx = (ks: string[]) => `^(${ks.map((k) => esc(pName(k))).join("|")})$`;
+  const apart = Object.entries(m).filter(([, v]) => v.coupled_share < 0.5).map(([k]) => k);
+  const partly = Object.entries(m).filter(([, v]) => v.coupled_share >= 0.5 && v.coupled_share < 0.9).map(([k]) => k);
+  const out: string[] = [];
+  if (apart.length)
+    out.push(
+      `Next: ${apart.length} pair(s) routed apart (coupled share < 0.5): rip and route them again together as pairs: try {"actions": ["bundle:${rx(apart)}"${apart.length > 2 ? ', "pairs-all"' : ""}]} (reroute / tighten only fix stretches of a pair that is already coupled). If that does not pass the gate, look at the try folder's krt/s1-pairs-*.log: KiCadRoutingTools routes a leg single-ended when it is "electrically short" (under max(5 x the centerline setback, 3 mm) of coupled run), which a tight connector fan-out makes common; those legs then need routing by hand to the pair rules (width, gap, length match), checked with this pairs report and the gate.`,
+    );
+  if (partly.length) out.push(`Next: ${partly.length} pair(s) partly coupled: try {"actions": ["reroute:${rx(partly)}", "reroute:${rx(partly)}!"]} (cut and re-route their uncoupled stretches; ! also re-routes uncoupled pad stubs)`);
+  return out;
+}
+
 export function measureLines(m: Record<string, PairMeasure>, why: boolean): string[] {
   return Object.entries(m).map(([k, v]) => {
     const sp = `[${v.spacing.slice(0, 3).map(([d, l]) => `[${pyFloat(d)}, ${pyFloat(l)}]`).join(", ")}]`;
