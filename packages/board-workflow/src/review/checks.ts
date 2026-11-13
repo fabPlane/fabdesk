@@ -21,6 +21,7 @@ import { ReviewCtx, reviewHome } from "./context";
 import { SEVERITIES, findingId, makeFinding, newResult, type CheckResult, type Finding, type FindingInput, type Severity } from "./types";
 import { exists } from "../files";
 import { checkSilk } from "./silk-check";
+import { checkInnerPower } from "./power-stack";
 
 const FIND = (x: FindingInput) => makeFinding(x);
 const pyList = (xs: string[]) => `[${xs.map((x) => `'${x}'`).join(", ")}]`;
@@ -1310,6 +1311,7 @@ export const REGISTRY: Array<[string, (ctx: ReviewCtx) => Promise<CheckResult>]>
   ["cards", checkCards],
   ["decoupling", checkDecoupling],
   ["current", checkCurrent],
+  ["inner_power", checkInnerPower],
   ["divider", checkDivider],
   ["impedance", checkImpedance],
   ["manual", checkManual],

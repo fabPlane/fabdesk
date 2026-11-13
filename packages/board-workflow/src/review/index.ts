@@ -18,3 +18,5 @@ export * as impedance from "./impedance";
 export { applyCards } from "./rulecards";
 export { BUILTIN_CARDS, INTERFACE_PROFILES, ORACLE_ERRATA, ESCAPES, SEEDS } from "./data";
 export { boardParts, boardOutline, mouthOf } from "./geometry";
+export { stackCensus, auditPower, terminal, riseEcss2152Vac, checkInnerPower, supplierStack, type StackCensus, type PowerAudit, type PowerRow, type SupplierStack } from "./power-stack";
+export { resistanceGraph, pathCensus, padRing, type PathCensus, type PathTrack, type PathVia, type PathPad } from "./current-paths";

@@ -173,6 +173,8 @@ export interface ReviewConfig {
   decoupling?: { max_mm?: number; max_mm_bulk?: number };
   current_check?: { rise_max_c?: number; drop_max_pct?: number; min_track_mm?: number; method?: "ipc2152" | "ipc2221" };
   currents?: Record<string, number>;
+  /** The complete inner-power audit (`inner_power` check): on (optionally with limits) or off; default on when the acceptance has a `supplier_stack`. */
+  inner_power?: boolean | { rise_max_c?: number; drop_max_pct?: number };
   impedance?: { model_uncertainty_pct?: number; min_run_mm?: number };
   net_voltages?: Record<string, number>;
   manual_review?: string[];

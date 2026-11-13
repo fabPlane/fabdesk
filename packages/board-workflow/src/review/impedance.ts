@@ -145,3 +145,49 @@ export function measuredGap(pSegs: Segment[], nSegs: Segment[], w: number, sClas
   }
   return out;
 }
+
+type Cx = [number, number];
+/** CPython's complex division (Smith's method, `_Py_c_quot`). */
+function cdiv(a: Cx, b: Cx): Cx {
+  const absRe = Math.abs(b[0]), absIm = Math.abs(b[1]);
+  if (absRe >= absIm) {
+    if (absRe === 0) throw new Error("complex division by zero");
+    const ratio = b[1] / b[0], denom = b[0] + b[1] * ratio;
+    return [(a[0] + a[1] * ratio) / denom, (a[1] - a[0] * ratio) / denom];
+  }
+  const ratio = b[0] / b[1], denom = b[0] * ratio + b[1];
+  return [(a[0] * ratio + a[1]) / denom, (a[1] * ratio - a[0]) / denom];
+}
+
+export interface ShortSectionResult {
+  delay_ps: number;
+  round_trip_ps: number;
+  rise_ns: number;
+  knee_GHz: number;
+  interface_step_reflection: number;
+  section_reflection_at_knee: number;
+  round_trip_fraction_of_rise: number;
+}
+
+/**
+ * A finite lossless mismatched section (the toolkit's `review/short_section.py`): a section of `zs` ohm and `lengthMm`
+ * inserted between identical `z0` lines and terminated in `z0`; the reflection at the edge knee (0.5 / rise). Not an eye or
+ * compliance simulation: higher harmonics, vias, package parasitics and P/N asymmetry are not in it.
+ */
+export function shortSection(z0: number, zs: number, er: number, lengthMm: number, riseNs: number): ShortSectionResult {
+  const delayNs = (lengthMm * Math.sqrt(er)) / 299.792458;
+  const fGHz = 0.5 / riseNs;
+  const t = Math.tan(2 * Math.PI * fGHz * delayNs);
+  // zin = zs (z0 + j zs t) / (zs + j z0 t)
+  const zin = cdiv([zs * z0, zs * (zs * t)], [zs, z0 * t]);
+  const g = cdiv([zin[0] - z0, zin[1]], [zin[0] + z0, zin[1]]);
+  return {
+    delay_ps: delayNs * 1000,
+    round_trip_ps: delayNs * 2000,
+    rise_ns: riseNs,
+    knee_GHz: fGHz,
+    interface_step_reflection: Math.abs((zs - z0) / (zs + z0)),
+    section_reflection_at_knee: Math.hypot(g[0], g[1]),
+    round_trip_fraction_of_rise: (2 * delayNs) / riseNs,
+  };
+}
