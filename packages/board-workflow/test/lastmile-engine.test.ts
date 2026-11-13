@@ -138,6 +138,51 @@ describe("step engine", () => {
     expect(board).toContain('(uuid "krt-new")');
   });
 
+  test("region:BOX!escape runs route_region's order: rip all nets in the box (no router), escapes on the ripped board, then after-cut routes the cut pairs as pairs", async () => {
+    const { dir, req } = await c6();
+    // SIG / SIG2 as a declared pair, so after-cut's pair stage names the nets the cut opened (rip.json carried through escape)
+    req.acceptance.net_classes.classes["PAIRX"] = { pairs: [["SIG", "SIG2"]], nets: ["SIG", "SIG2"], diff_pair_width: 0.2, diff_pair_gap: 0.15, layers: ["F.Cu"], track_width: 0.2 } as never;
+    const spawns: string[][] = [];
+    const krt = join(dir, "krt");
+    await mkdir(join(krt, "src/plugins"), { recursive: true });
+    const e = engine(req, krt, spawns, []);
+    const steps = L.stepsFor("region:9,9,21,15!escape");
+    expect(steps.map((s) => s.type)).toEqual(["cut", "escape", "krt"]);
+    let cur = dir;
+    const infos: Array<Record<string, unknown> | undefined> = [];
+    for (const [i, st] of steps.entries()) {
+      const r = await e.run(st, { ...input(cur, join(await tmp(), `s${i}`)), start: dir });
+      if ("error" in r) throw new Error(r.error);
+      infos.push(r.info);
+      if (i === 0) {
+        expect(spawns).toHaveLength(0); // the cut runs no router
+        const ripped = await readFile(join(r.dir, "C6.kicad_pcb"), "utf8");
+        expect(ripped).not.toContain("sg-19.5-10-10-10-SIG");
+        expect(ripped).not.toContain("sg-20.5-10-19.5-14-SIG2");
+        expect(ripped).toContain("sg-39.5-18-29-20-VIN"); // outside the box
+        expect(JSON.parse(await readFile(join(r.dir, "rip.json"), "utf8")).nets).toEqual(["SIG", "SIG2"]);
+      }
+      cur = r.dir;
+    }
+    expect(infos[0]?.["removed"]).toEqual({ segment: 2, via: 0, arc: 0, pruned: 0 });
+    expect(infos[1]?.["engine"]).toBe("power_escape");
+    const diff = spawns.find((c) => c.some((x) => x.endsWith("route_diff.py")))!;
+    const nets = diff.slice(diff.indexOf("--nets") + 1, diff.indexOf("--nets") + 3);
+    expect(nets.sort()).toEqual(["SIG", "SIG2"]);
+    expect(await readFile(join(cur, "C6.kicad_pcb"), "utf8")).toContain('(uuid "krt-new")');
+  });
+
+  test("cut runs without KRT; like route_region it prunes dangling copper on the whole board even when the box is empty", async () => {
+    const { dir, req } = await c6();
+    const e = engine(req, null, [], []);
+    const r = await e.run(L.stepsFor("cut:50,30,55,35")[0]!, input(dir, join(await tmp(), "c0")));
+    if ("error" in r) throw new Error(r.error);
+    const removed = r.info?.["removed"] as { segment: number; via: number; pruned: number };
+    expect([removed.segment, removed.via]).toEqual([0, 0]);
+    // the fixture's GND stub ends in a via joined to nothing: route_region's prune_dangling drops it
+    expect(removed.pruned).toBeGreaterThan(0);
+  });
+
   test("without KRT a KRT step fails naming KRT; finish falls back to the host router", async () => {
     const { dir, req } = await c6();
     const fills: Array<{ router: string; dir: string; files: string[] }> = [];

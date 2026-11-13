@@ -17,3 +17,4 @@ export * from "./rip";
 export * from "./nudge";
 export * from "./engine";
 export * from "./power";
+export * from "./netpath";

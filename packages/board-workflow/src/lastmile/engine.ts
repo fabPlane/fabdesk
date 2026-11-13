@@ -9,6 +9,9 @@
  *   pairfix pair width / tighten / vias / mirror / retune / skew in place (no router)
  *   fill    another router fills the opens, everything else fixed (the host's routers)
  *   escape / planes / pour   power copper without a router (lastmile/power.ts): escapes, a split inner plane, pours
+ *   cut     route_region's rip (every track/arc/via with a point in the boxes, all nets, then dangling copper), no router;
+ *           rip.json names the cut nets, so a later `after-cut` plan (`route`, `region:`) routes cut pairs as pairs.
+ *           `region:BOX!escape` = cut, escape, after-cut: route_region --escape's order (escapes on the ripped board)
  *
  * KiCadRoutingTools is an engine the host may not have. Without it only `finish` still runs, on the host's router (it
  * means "route the opens; nothing is ripped", which any router can do); every other KRT step fails by name, so a step
@@ -29,7 +32,7 @@ import { runTighten } from "./tighten";
 import { ripStep } from "./rip";
 import { nudgeStep } from "./nudge";
 import { powerStep } from "./power";
-import { replaceGroups } from "./replace";
+import { regionRip, replaceGroups } from "./replace";
 import { readFloorplan, type Blocks } from "../layout/floorplan";
 import { fixedRegex } from "../layout/spec";
 
@@ -186,7 +189,7 @@ async function stepPlan(h: StepEngineHost, step: Step): Promise<KrtPlan> {
 export const needsKrt = (what: string, why?: string) =>
   why
     ? `${what}: KRT did not install (${why.length > 100 ? `…${why.slice(-100)}` : why})`
-    : `${what} needs KiCadRoutingTools (board_engines install krt); without it: finish, fill:ROUTER, tighten, escape, planes, pour`;
+    : `${what} needs KiCadRoutingTools (board_engines install krt); without it: finish, fill:ROUTER, tighten, escape, planes, pour, cut`;
 
 export function createStepEngine(h: StepEngineHost): StepEngine {
   /** KRT's root, installed on first use when the host can; `why` says what stopped that. */
@@ -202,6 +205,28 @@ export function createStepEngine(h: StepEngineHost): StepEngine {
         case "planes":
         case "pour":
           return powerStep(step, input, { req: h.req, planFile: (f) => resolvePlanFile(h.planRoot, f).catch((e: Error) => Promise.reject(new Error(e.message.replace(/^plan:/, "planes:")))), scored: () => ensureScored(h, cur, pcb, signal) });
+        case "cut": {
+          if (!step.cut || (!step.cut.boxes.length && step.cut.aroundOpens === undefined)) return { error: "cut needs a box: cut:X0,Y0,X1,Y1 or cut:opens~MM" };
+          const regions = [...step.cut.boxes] as Array<[number, number, number, number]>;
+          const m = step.cut.aroundOpens;
+          if (m !== undefined) {
+            // route_region --around-opens: a box round each end of every open connection (the stuck pins, not the span)
+            await ensureScored(h, cur, pcb, signal);
+            const run = JSON.parse(await readFile(join(cur, ".lastmile", "drc-run.json"), "utf8")) as DrcRun;
+            for (const u of run.unconnected) for (const i of u.items) regions.push([(i.pos?.x ?? 0) - m, (i.pos?.y ?? 0) - m, (i.pos?.x ?? 0) + m, (i.pos?.y ?? 0) + m]);
+            if (!regions.length) return { dir: cur, skipped: true, info: { engine: "cut", note: "no open connections to cut round" } };
+          }
+          const text = await readFile(join(cur, pcb), "utf8");
+          const r = regionRip(text, regions);
+          const info = { engine: "cut", boxes: regions, removed: r.removed, nets: r.nets.length };
+          if (r.text === text) return { dir: cur, skipped: true, info };
+          await copyBoardFolder(cur, out);
+          await writeFile(join(out, pcb), r.text);
+          // rip.json as rip_items writes it: `nets` feeds @cut-pairs of a later after-cut plan
+          const n = r.removed.segment + r.removed.via + r.removed.arc;
+          await writeFile(join(out, "rip.json"), JSON.stringify({ src: cur, removed: n, pruned: r.removed.pruned, nets: r.nets, windows: regions, open_before: [] }, null, 1) + "\n");
+          return { dir: out, info };
+        }
         case "fill": {
           if (!step.router) return { error: `fill needs a router: ${FILL_ROUTERS.map((r) => `fill:${r}`).join(", ")}` };
           return { dir: out, info: await fillRoute(h, step.router, cur, out, pcb, signal) };

@@ -5,7 +5,7 @@
  */
 import { LASTMILE_PLANS } from "./plans";
 
-export type StepType = "krt" | "repair" | "nudge" | "fill" | "pairfix" | "escape" | "planes" | "pour" | "replace";
+export type StepType = "krt" | "repair" | "nudge" | "fill" | "pairfix" | "escape" | "planes" | "pour" | "replace" | "cut";
 
 export interface Step {
   type: StepType;
@@ -29,6 +29,11 @@ export interface Step {
   pour?: { nets: string[]; margin: number; minWidthScale: number };
   /** `replace`: floorplan groups to rip and re-place (route_region --replace), the floorplan file, the placer seed. */
   replace?: { groups: string[]; floorplan?: string; seed?: number };
+  /**
+   * `cut`: boxes X0,Y0,X1,Y1 whose copper is ripped, all nets (route_region's rip), no router; `aroundOpens` adds a box
+   * of +-that many mm round each end of every open connection of the board the step starts from (`--around-opens`).
+   */
+  cut?: { boxes: number[][]; aroundOpens?: number };
 }
 
 export interface NudgeMove {
@@ -125,6 +130,21 @@ export const ACTIONS: Record<string, { help: string; steps: Builder | null }> = 
       return [{ type: "pour", pour: { nets: m[1] ? m[1].split(",").filter(Boolean) : [], margin: m[2] ? num(what, m[2]) : 1.5, minWidthScale: m[3] ? num(what, m[3]) : 1.0 } }];
     },
   },
+  cut: {
+    help:
+      "cut:X0,Y0,X1,Y1[;X0,Y0,X1,Y1..|;opens~MM]  rip every track, arc and via with a point in the boxes (all nets, pairs too) and the copper left dangling, no router (route_region's rip); opens~MM adds a box of +-MM round each end of every open connection; chain what comes next, e.g. cut:opens~1.5+escape+route (= region:opens~1.5!escape)",
+    steps: (a) => [{ type: "cut", cut: boxes(`cut:${a}`, a) }],
+  },
+  region: {
+    help:
+      "region:X0,Y0,X1,Y1[;..|;opens~MM][!escape]  route_region: cut the boxes (all nets; opens~MM = --around-opens MM), with !escape add the fine-pitch power escapes on the ripped board (escape), then route the opens: cut pairs again as pairs, their legs, then the rest (after-cut)",
+    steps: (a) => {
+      const esc = a.endsWith("!escape");
+      const spec = esc ? a.slice(0, -"!escape".length) : a;
+      return [{ type: "cut", cut: boxes(`region:${a}`, spec) }, ...(esc ? [{ type: "escape" as const, escape: { maxStub: 0.9, clearance: 0.1 } }] : []), K("after-cut")];
+    },
+  },
+  route: { help: "route the opens after a cut: cut pairs again as pairs, their single-ended legs, then everything else (the after-cut plan)", steps: () => [K("after-cut")] },
   replace: {
     help:
       "replace:GROUP[,GROUP..][@FLOORPLAN][#SEED]  the per-block loop: rip every track and via in the floorplan groups' regions (all nets), re-place the groups inside their regions with everything else locked (TraceMaker placer, courtyard-gated), then route the opens; FLOORPLAN defaults to .fabdesk/board/layout/floorplan.json (blocks.json beside it)",
@@ -149,6 +169,17 @@ function box(action: string, s: string): number[] {
   const v = s.split(",");
   if (v.length !== 4) throw new ActionError(`${action}: a box is X0,Y0,X1,Y1 (got '${s}')`);
   return v.map((x) => num(action, x));
+}
+/** One or more boxes separated by ';', and `opens~MM` (a box round each open end). */
+function boxes(action: string, s: string): { boxes: number[][]; aroundOpens?: number } {
+  if (!s) throw new ActionError(`${action}: give a box X0,Y0,X1,Y1 (several separated by ';') or opens~MM`);
+  const out: { boxes: number[][]; aroundOpens?: number } = { boxes: [] };
+  for (const b of s.split(";")) {
+    const m = /^opens(?:~(.*))?$/.exec(b);
+    if (m) out.aroundOpens = m[1] === undefined ? 1.0 : num(action, m[1]);
+    else out.boxes.push(box(action, b));
+  }
+  return out;
 }
 /** The box's numbers as written, once each is checked. */
 const boxArgs = (action: string, s: string): string[] => (box(action, s), s.split(","));
