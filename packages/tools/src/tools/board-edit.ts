@@ -121,6 +121,37 @@ const PLAN = z
       )
       .optional(),
     net: z.array(z.object({ pin: z.string().describe("REF.PAD"), to: z.string(), tap_width: z.number().optional(), tap_basis: z.string().optional() })).optional().describe("Move a pad to another net: the pad, the schematic label at its pin, and both nets' dangling copper."),
+    copper: z
+      .object({
+        via_at_pad: z.array(z.object({ ref: z.string(), pad: z.union([z.string(), z.number()]), diameter: z.number(), drill: z.number() })).optional().describe("A filled/capped F.Cu-B.Cu via at the pad's centre, on the pad's net (refused when a via is already there)."),
+        prune_signal_leaves: z.array(z.string()).optional().describe("Nets whose dead ends go: tracks are split at same-net junctions, unanchored pieces dropped, a one-layer via removed only when its tracks share an exact endpoint; the net's surviving tracks are rewritten as split pieces. Refused on plane (zone) nets."),
+        prune_track_leaves: z.array(z.string()).optional().describe("As prune_signal_leaves for plane nets: track leaves only, every via kept."),
+        remove_items: z.array(z.string()).optional().describe("Copper items (segment, via, arc) by uuid; each must match exactly one."),
+        source_sha256: z.string().optional().describe("sha256 of the source board the plan was written against (refused when the board differs)."),
+      })
+      .optional()
+      .describe("Local copper support edits, as the toolkit's flow/copper_plan.py; never routes. Runs after the plan's moves."),
+    hole: z
+      .object({
+        ref: z.string().describe("The locating hole's reference: one unnetted NPTH pad at the origin, footprint at rotation 0."),
+        size_mm: nums(2).describe("[X, Y] mm: round when equal, else an oval slot."),
+        clearance_mm: z.number().optional().describe("Courtyard and keep-out margin, mm (default 0.25)."),
+        keepout: z.boolean().optional().describe('false: the board has no zone named "Mechanical REF surface copper and via clearance" to resize.'),
+      })
+      .optional()
+      .describe("Resize an NPTH locating hole (flow/mechanical_hole.py): pad, value, courtyards, named keep-out, and the project library footprint (carried on adopt); centre, copper and everything else unchanged."),
+    stack: z
+      .object({
+        classes: z.record(z.string(), z.record(z.string(), z.unknown())).optional().describe("Acceptance class -> keys merged into it (e.g. diff_pair_gap)."),
+        split_classes: z.record(z.string(), z.object({ from: z.string(), nets: z.array(z.string()).optional(), pairs: z.array(z.array(z.string())).optional(), updates: z.record(z.string(), z.unknown()) })).optional().describe("New class: a copy of `from` holding just these nets or pairs, with updates."),
+        acceptance: z.record(z.string(), z.unknown()).optional().describe("Merged into acceptance.json (e.g. a supplier_stack record)."),
+        remove_acceptance_paths: z.array(z.string()).optional().describe("Dotted acceptance.json keys removed after the merge."),
+        dielectrics: z.record(z.string(), z.object({ er: z.number() })).optional().describe('Stackup layer ("dielectric 1") -> epsilon_r.'),
+        copper_source: z.string().optional().describe("A project .kicad_pcb (a bench result) that replaces the whole board first; a plan of its own."),
+        remove_vias: z.array(z.object({ uuid: z.string(), net: z.string(), reason: z.string() })).optional().describe("Vias removed by uuid and net, each with the engineering reason."),
+      })
+      .optional()
+      .describe("A supplier-stack / rule plan (flow/stack_plan.py) proved like any edit; adopt carries acceptance.json and the stackup."),
     accept_unconnected: z.array(z.string()).optional().describe("REF.PAD left alone on a single-pad net, reviewed (impact lists them)."),
     accept_before: z.record(z.string(), z.string()).optional().describe("Parity/circuit/anchor/height checks (A3_parity ...) that already fail on the source, each with the reason."),
     notes: z.record(z.string(), z.string()).optional(),
@@ -170,6 +201,9 @@ export function describeEdit(r: EditRunResult, adopted: string | null): string {
       ap.swaps.length ? `swapped ${ap.swaps.length} footprint(s)` : "",
       ap.adds.length ? `added ${ap.adds.map((a) => a.ref).join(", ")}` : "",
       ap.net_changes.length ? `re-netted ${ap.net_changes.map((c) => `${c.pin} ${c.from} -> ${c.to}`).join(", ")}` : "",
+      ap.copper ? `copper: ${ap.copper.added_vias} via(s) added, ${ap.copper.removed.explicit} named item(s), ${ap.copper.removed.single_layer_vias} one-layer via(s) and ${ap.copper.removed.leaf_tracks} leaf piece(s) removed on ${ap.copper.nets.join(", ") || "no nets"}` : "",
+      ap.hole ? `hole ${ap.hole.ref} -> ${ap.hole.size_mm.join(" x ")} mm (library ${ap.hole.library_file})` : "",
+      ap.stack ? `stack: classes ${[...ap.stack.classes_updated, ...ap.stack.classes_split].join(", ") || "none"}, dielectrics ${Object.keys(ap.stack.dielectrics).length}, vias removed ${ap.stack.removed_vias.length}${ap.stack.copper_source ? `, board from ${ap.stack.copper_source}` : ""}` : "",
     ].filter(Boolean);
     lines.push(`Applied: ${bits.join("; ") || "field/value changes only"}.`);
     for (const ad of ap.adds) {
@@ -281,7 +315,7 @@ export const board_edit = defineTool({
   toolset: "board",
   title: "Engineering change on a routed board (impact, apply, proof)",
   description:
-    "An ECO on a routed board as a plan, not as hand edits. Plan keys: remove [refs]; move [{ref, to:[x,y,rot] | near:REF|REF.PAD|[x,y], carry, carry_auto, anchor, basis}] with displace {radius, ...} (parts in the way are re-seated nearby, fixed parts stop it); near: net:NAME seats a part at the free spot nearest the centroid of that net's other pads; legalise [refs] or {refs, clearance, edge, radius} does that for many test points at once (each at its own net's centroid, rotation kept); swap [{ref, value, fields, footprint:LIB:NAME, side, dnp}] (a position swap of two parts is two moves); add [{ref, like, pins:{pad:net}, near, value, footprint}] (copies the template symbol and footprint, one label per pin); net [{pin:REF.PAD, to:NET}] (pad, schematic label and dangling copper). mode impact: what it touches (parts, nets, copper, requirement entries, contracts, schematic symbols) and a verdict; STOP means a decision (pins left alone, fixed part in the way, anchor) and writes nothing. mode apply: scores the unedited project, makes the change on board AND schematic sheets in a candidate folder (.fabdesk/board/edits/<id>-<time>) with edited requirements and an origin.json, and lists the nets to route again. mode proof: A1-A9 on the candidate against the project before the edit (strict if it passed, no new failure if it already failed) and the planned-versus-collateral diff. full (default) = impact, apply, proof. adopt: true writes a PASSING candidate into the project (sheets, then the board as one KiCad commit). In full/apply, nets the edit cut are reconnected in the candidate by board_route's last-mile steps in order (finish; pairs if a pair got worse; then while opens remain taps, a7, leg, rip+blockers:1.0; each kept only if the whole board improves under its gate) before the proof; the candidate's last-mile workspace stays at <candidate>/.lastmile for board_route info/view/why/try (pass it as workspace). After the proof a churn guard gives nets the plan did not touch their original copper back when the board scores no worse. A candidate that still has opens is not adopted. A completed measurement is a result, not a tool failure.",
+    "An ECO on a routed board as a plan, not as hand edits. Plan keys: remove [refs]; move [{ref, to:[x,y,rot] | near:REF|REF.PAD|[x,y], carry, carry_auto, anchor, basis}] with displace {radius, ...} (parts in the way are re-seated nearby, fixed parts stop it); near: net:NAME seats a part at the free spot nearest the centroid of that net's other pads; legalise [refs] or {refs, clearance, edge, radius} does that for many test points at once (each at its own net's centroid, rotation kept); swap [{ref, value, fields, footprint:LIB:NAME, side, dnp}] (a position swap of two parts is two moves); add [{ref, like, pins:{pad:net}, near, value, footprint}] (copies the template symbol and footprint, one label per pin); net [{pin:REF.PAD, to:NET}] (pad, schematic label and dangling copper); copper {via_at_pad [{ref, pad, diameter, drill}], prune_signal_leaves, prune_track_leaves, remove_items [uuid], source_sha256} (the toolkit's copper_plan: a filled/capped via at a pad, dead-end pruning, named copper removal; never routes); hole {ref, size_mm:[x,y], clearance_mm} (mechanical_hole: resize an NPTH locating hole with its courtyards, keep-out and library footprint); stack {classes, split_classes, acceptance, remove_acceptance_paths, dielectrics, remove_vias, copper_source} (stack_plan: supplier stack-up and class plan). mode impact: what it touches (parts, nets, copper, requirement entries, contracts, schematic symbols) and a verdict; STOP means a decision (pins left alone, fixed part in the way, anchor) and writes nothing. mode apply: scores the unedited project, makes the change on board AND schematic sheets in a candidate folder (.fabdesk/board/edits/<id>-<time>) with edited requirements and an origin.json, and lists the nets to route again. mode proof: A1-A9 on the candidate against the project before the edit (strict if it passed, no new failure if it already failed) and the planned-versus-collateral diff. full (default) = impact, apply, proof. adopt: true writes a PASSING candidate into the project (sheets, then the board as one KiCad commit). In full/apply, nets the edit cut are reconnected in the candidate by board_route's last-mile steps in order (finish; pairs if a pair got worse; then while opens remain taps, a7, leg, rip+blockers:1.0; each kept only if the whole board improves under its gate) before the proof; the candidate's last-mile workspace stays at <candidate>/.lastmile for board_route info/view/why/try (pass it as workspace). After the proof a churn guard gives nets the plan did not touch their original copper back when the board scores no worse. A candidate that still has opens is not adopted. A completed measurement is a result, not a tool failure.",
   inputSchema: {
     plan: z.union([PLAN, z.string()]).describe("The plan: an object, inline JSON text, or a project-relative path to a JSON file."),
     mode: z.enum(["impact", "apply", "proof", "full"]).default("full"),

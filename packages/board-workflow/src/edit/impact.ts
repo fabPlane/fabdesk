@@ -14,6 +14,7 @@ import { EditStop, SheetSet, projectLibSymbol } from "./sch";
 import { planMoves, type MoveLedger } from "./move";
 import { footprintSpans } from "./text";
 import { round } from "./fmt";
+import { impactKeys, keysImpactLines, type KeysImpact } from "./keys";
 
 export const RAIL = /GND|VBUS|V\d|\dV\d|3V3|5V|1V8|1V1|2V5|VCC|VDD|SYS$|PWR|^unconnected-/i;
 
@@ -43,6 +44,8 @@ export interface ImpactReport {
   adds?: Array<Record<string, unknown>>;
   net_changes?: Array<{ pin: string; from: string; to: string; old_net_pads_left: number }>;
   moves?: MoveLedger;
+  /** The candidate-flow keys: copper (copper_plan), hole (mechanical_hole), stack (stack_plan). */
+  keys?: KeysImpact;
   verdict: string;
 }
 
@@ -276,6 +279,7 @@ export function impact(plan: EditPlan, env: EditEnv): ImpactReport {
       moveStop = e.message;
     }
   }
+  if (plan.copper || plan.hole || plan.stack) rep.keys = impactKeys(plan, env, rep.review);
   const accepted = new Set(plan.accept_unconnected ?? []);
   const unacked = rep.unconnected_pins.filter((u) => !accepted.has(u.split(" ")[0]!));
   const fails = rep.review.filter((x) => x.startsWith("FAIL"));
@@ -305,6 +309,7 @@ export function impactLines(rep: ImpactReport): string[] {
     if (mv.landing_removed_nets.length) out.push(`landing: other nets cut under the new footprints: ${pyList(mv.landing_removed_nets)}`);
     for (const [r, b] of Object.entries(mv.new_courtyards)) out.push(`court ${r} ${pyAny(b)}`);
   }
+  if (rep.keys) out.push(...keysImpactLines(rep.keys));
   for (const r of rep.review) out.push(`REVIEW ${r}`);
   out.push(rep.verdict);
   return out;

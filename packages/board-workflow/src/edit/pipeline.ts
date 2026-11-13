@@ -190,7 +190,14 @@ export async function runEdit(input0: EditRunInput): Promise<EditRunResult> {
   }
   lap("apply", t);
   const pcb = join(out, env.pcbName);
-  await writeJsonFile(join(out, "origin.json"), { project: env.projectDir, files: projectHashes });
+  // files besides the board and the sheets the candidate changed (hole's library footprint, stack's acceptance.json), with
+  // the project's hash of each when the candidate was computed: adopt carries them, and refuses when the project's moved on
+  const extra: Record<string, string | null> = {};
+  for (const rel of applied.log.extra_files ?? []) {
+    const b = await readFile(join(env.projectDir, rel)).catch(() => null);
+    extra[rel] = b ? createHash("sha256").update(b).digest("hex") : null;
+  }
+  await writeJsonFile(join(out, "origin.json"), { project: env.projectDir, files: projectHashes, ...(Object.keys(extra).length ? { extra } : {}) });
   await mkdir(dirname(join(out, "before", env.pcbName)), { recursive: true });
   await writeFile(join(out, "before", env.pcbName), env.pcbText);
   const ledger = { plan, impact: rep, applied: applied.log };

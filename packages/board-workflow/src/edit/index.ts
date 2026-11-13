@@ -8,3 +8,7 @@ export * from "./pipeline";
 export { EditStop } from "./sch";
 export { SheetSet } from "./sch";
 export type { MoveSpec, DisplaceSpec, MoveLedger } from "./move";
+export { stackupText, withStackup } from "./stack";
+export type { CopperSpec } from "./copper";
+export type { HoleSpec } from "./hole";
+export type { StackSpec } from "./stack";

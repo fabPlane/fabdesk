@@ -22,7 +22,11 @@ import { footprintSpans, refOf, removeBlocks, sideOf } from "./text";
 import { readBoard } from "../board";
 import { parseSexpr } from "../sexpr";
 import { readProjectSettings } from "../project";
+import { sha256 } from "./copper";
 import { directLink, type LinkLog } from "./link";
+import { applyCopper, applyHole, applyStackBoard, holeRecord, stackAcceptance, type CopperLog, type StackLog } from "./keys";
+import { holeValue, type HoleRecord } from "./hole";
+import { dirname } from "node:path";
 
 /** What a scoring run returns (an `AcceptanceResult` fits). */
 export interface Scored {
@@ -51,6 +55,14 @@ export interface ApplyLog {
   moves?: MoveLedger;
   symbols: number;
   schematic_orphans_removed?: Record<string, { wire: number; label: number; no_connect: number }>;
+  /** plan.copper (copper_plan): counts and the nets it touched; the full ledger is copper-ledger.json. */
+  copper?: CopperLog;
+  /** plan.hole (mechanical_hole): the hole-edit.json record. */
+  hole?: HoleRecord;
+  /** plan.stack (stack_plan): what changed; the record is stack-plan.json. */
+  stack?: StackLog;
+  /** Project-relative files besides the board and the sheets that the candidate changed (a library footprint, acceptance.json): adopt carries them. */
+  extra_files?: string[];
 }
 
 /** Files a scoring copy does not need: models, documents and history. */
@@ -116,6 +128,13 @@ export async function applyEdit(
   const sheets = new SheetSet(out);
   const pcbPath = join(out, env.pcbName);
   let text = await readFile(pcbPath, "utf8");
+  // stack (stack_plan): copper_source, named via removals and dielectrics, on the board as the plan names it
+  let stackLog: ReturnType<typeof applyStackBoard>["log"] | null = null;
+  if (plan.stack) {
+    const r = applyStackBoard(text, plan, env);
+    text = r.text;
+    stackLog = r.log;
+  }
   // board: footprints, copper on dead nets, dangling copper on reduced nets
   const rb = removeBlocks(text, "footprint", (blk) => gone.has(refOf(blk) ?? ""));
   text = rb.text;
@@ -273,7 +292,29 @@ export async function applyEdit(
     text = r.text;
     log.moves = r.led;
   }
+  // hole (mechanical_hole) and copper (copper_plan) after the moves, on the board as edited
+  const extra: string[] = [];
+  let hole: ReturnType<typeof applyHole> | null = null;
+  if (plan.hole) {
+    hole = applyHole(text, plan, env);
+    text = hole.text;
+    await mkdir(dirname(join(out, hole.libRel)), { recursive: true });
+    await writeFile(join(out, hole.libRel), hole.libText);
+    extra.push(hole.libRel);
+  }
+  let copperLedger: unknown = null;
+  if (plan.copper) {
+    const r = applyCopper(text, plan, env);
+    text = r.text;
+    log.copper = r.log;
+    copperLedger = r.ledger;
+  }
   await writeFile(pcbPath, text);
+  if (hole) {
+    log.hole = holeRecord(plan, env.pcbText, text, hole.centre, hole.libRel);
+    jsonOut(join(out, "hole-edit.json"), log.hole);
+  }
+  if (copperLedger) jsonOut(join(out, "copper-ledger.json"), { ...(copperLedger as object), source_sha256: sha256(env.pcbText), output_sha256: sha256(text) });
   // schematic symbols
   for (const name of sheets.names) {
     const t = sheets.texts.get(name)!;
@@ -295,6 +336,8 @@ export async function applyEdit(
     if (sw.value !== undefined) comp.get(sw.ref)!["value"] = sw.value;
     if (sw.footprint) comp.get(sw.ref)!["footprint"] = sw.footprint;
   }
+  // the hole's new Value (fabdesk's circuit.json lists board-only parts too; the toolkit's does not)
+  if (plan.hole && comp.has(plan.hole.ref)) comp.get(plan.hole.ref)!["value"] = holeValue(plan.hole.ref, plan.hole.size_mm);
   for (const nc of plan.net ?? []) {
     const [r, pd] = splitPin(nc.pin);
     const x = comp.get(r)!;
@@ -350,6 +393,11 @@ export async function applyEdit(
       cur[nc.pin] = { width: nc.tap_width, basis: nc.tap_basis ?? plan.reason ?? "" };
     }
   }
+  if (plan.stack) {
+    const r = stackAcceptance(acc as unknown as Record<string, unknown>, plan.stack);
+    log.stack = { classes_updated: r.updated, classes_split: r.split, removed_paths: r.removed_paths, ...stackLog! };
+    extra.push(join(BOARD_DIR, "requirements", REQUIREMENT_FILES.acceptance));
+  }
   const edits = ((acc as Record<string, unknown>)["edits"] ??= []) as unknown[];
   edits.push({
     id: plan.id, authority: plan.authority ?? null, reason: plan.reason ?? null,
@@ -357,8 +405,15 @@ export async function applyEdit(
     swapped: [...log.swaps, ...(plan.swap ?? []).filter((s) => !s.footprint).map((s) => ({ ref: s.ref, value: s.value ?? null, fields: s.fields ?? null }))],
     added: log.adds, net_changes: log.net_changes, removed: [...gone].sort(), nets_deleted: [...dead].sort(),
     accepted_unconnected: plan.accept_unconnected ?? [], notes: plan.notes ?? {},
+    ...(log.copper ? { copper: log.copper } : {}), ...(log.hole ? { hole: log.hole } : {}), ...(log.stack ? { stack: log.stack } : {}),
   });
   jsonOut(join(rq, REQUIREMENT_FILES.acceptance), acc);
+  if (log.stack)
+    jsonOut(join(out, "stack-plan.json"), {
+      plan: plan.id, source: env.projectDir, out, source_pcb_sha256: sha256(env.pcbText), pcb_sha256: sha256(text),
+      copper_source: log.stack.copper_source, changed_copper: log.stack.changed_copper, removed_vias: log.stack.removed_vias,
+    });
+  if (extra.length) log.extra_files = extra;
   jsonOut(join(out, "edit.json"), { plan, impact: rep, applied: log });
   return { rep, log, pcbText: text };
 }

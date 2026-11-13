@@ -60,6 +60,28 @@ describe("adoptCandidate", () => {
     await expect(adoptCandidate(await ctx(), { candidate: join(project.dir, "board.kicad_pcb"), board: "board.kicad_pcb", reason: "x" })).rejects.toThrow(/is the target/);
   });
 
+  test("carries origin.json's extra files (an edit's library footprint, acceptance.json) and the stackup the KiCad commit cannot", async () => {
+    const { project, ctx } = await setup();
+    const stack = (er: string) => `(kicad_pcb\n  (setup\n    (stackup\n      (layer "dielectric 1" (type "core") (epsilon_r ${er}))))\n  (footprint "x"))\n`;
+    await writeFile(join(project.dir, "board.kicad_pcb"), stack("4.5"));
+    await mkdir(join(project.dir, "Parts.pretty"), { recursive: true });
+    await writeFile(join(project.dir, "Parts.pretty/FIT_P2.kicad_mod"), "old hole");
+    const dir = await mkdtemp(join(tmpdir(), "cand-"));
+    const candidate = join(dir, "board.kicad_pcb");
+    await writeFile(candidate, stack("4.17"));
+    await mkdir(join(dir, "Parts.pretty"), { recursive: true });
+    await writeFile(join(dir, "Parts.pretty/FIT_P2.kicad_mod"), "new hole");
+    await writeFile(join(dir, "origin.json"), JSON.stringify({ project: project.dir, files: {}, extra: { "Parts.pretty/FIT_P2.kicad_mod": await sha("old hole") } }));
+    const r = await adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "hole" });
+    expect(r.data.designFiles).toEqual(["Parts.pretty/FIT_P2.kicad_mod"]);
+    expect(await readFile(join(project.dir, "Parts.pretty/FIT_P2.kicad_mod"), "utf8")).toBe("new hole");
+    expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(stack("4.17"));
+    expect(r.text).toContain("stackup written from the candidate");
+    // the project's library footprint moved on since the candidate: refused, nothing written
+    await writeFile(join(project.dir, "Parts.pretty/FIT_P2.kicad_mod"), "someone else's hole");
+    await expect(adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "hole" })).rejects.toThrow(/Parts.pretty\/FIT_P2.kicad_mod changed in the project/);
+  });
+
   test("carries changed schematic sheets, keeps the previous copy, and refuses when the project moved on", async () => {
     const { project, ctx } = await setup();
     await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb)");

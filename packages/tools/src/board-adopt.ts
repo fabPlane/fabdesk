@@ -12,6 +12,8 @@ import { governor } from "./resources";
 import { ToolError, type ToolContext } from "./registry";
 import type { BoardAdoptResult } from "./services";
 import { retainTaskCheckpoint } from "./task-checkpoints";
+import { edit } from "@fabdesk/board-workflow";
+import { writeFile } from "node:fs/promises";
 
 const sha256File = async (path: string) => {
   const b = await readFile(path).catch(() => null);
@@ -37,7 +39,7 @@ export async function designFileHashes(dir: string): Promise<Record<string, stri
  * Where a stage recorded the project's design files when it computed the candidate: `origin.json`
  * (`{ project, files: {name: sha256} }`) beside or one folder above the candidate board. Absent = PCB only.
  */
-export async function candidateOrigin(candidatePcb: string): Promise<{ project: string; files: Record<string, string> } | null> {
+export async function candidateOrigin(candidatePcb: string): Promise<{ project: string; files: Record<string, string>; extra?: Record<string, string | null> } | null> {
   for (const dir of [dirname(candidatePcb), dirname(dirname(candidatePcb))]) {
     const o = JSON.parse((await readFile(join(dir, "origin.json"), "utf8").catch(() => "")) || "null");
     if (o?.files) return o;
@@ -104,6 +106,13 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
     if (stale.length)
       throw new ToolError(`adopt refused: ${stale.join(", ")} changed in the project since this candidate was computed; compute it again`, "precondition");
     for (const [n, h] of Object.entries(cand)) if (now[n] !== h) sheets.push(n);
+    // other project files the candidate changed (an edit's library footprint, acceptance.json): only while the project
+    // still holds what the candidate started from
+    for (const [rel, h] of Object.entries(origin.extra ?? {})) {
+      const p = await jailPath(project.dir, rel);
+      if ((await sha256File(p)) !== h) throw new ToolError(`adopt refused: ${rel} changed in the project since this candidate was computed; compute it again`, "precondition");
+      if ((await sha256File(join(dirname(candidate), rel))) !== h) sheets.push(rel);
+    }
   }
   ctx.progress(0.05, "retaining checkpoint");
   // the board timeline (board history in the app) gets the step: the board before, then the adopted one
@@ -118,6 +127,7 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
   const job = await governor().admit({ cls: "light", label: "adopt", paths: [project.dir], signal: ctx.signal, onWait: (w) => ctx.progress(0.2, w) });
   try {
     const keep = join(project.dir, ".fabdesk", "board", "adopt", stamp(), "before");
+    let stackupWritten = false;
     // all or nothing: the board and every design file are copied aside first; any failure after the first write puts
     // them back, so the project never keeps new sheets beside the old board (or the reverse)
     const apply = async () => {
@@ -129,8 +139,20 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
         await copyFile(b.dst, join(keep, b.name));
       }
       try {
-        for (const n of sheets) await copyFile(join(dirname(candidate), n), join(project.dir, n));
-        return await adopter.adopt({ target, candidate, cli, signal: ctx.signal });
+        for (const n of sheets) {
+          await mkdir(dirname(join(project.dir, n)), { recursive: true });
+          await copyFile(join(dirname(candidate), n), join(project.dir, n));
+        }
+        const res = await adopter.adopt({ target, candidate, cli, signal: ctx.signal });
+        // the stackup (dielectrics) is board setup, not an item: the IPC delta cannot carry it, so it is written as text
+        const want = edit.stackupText(await readFile(candidate, "utf8"));
+        const have = await readFile(target, "utf8");
+        const cur = edit.stackupText(have);
+        if (want !== null && cur !== null && want.replace(/\s+/g, " ") !== cur.replace(/\s+/g, " ")) {
+          await writeFile(target, edit.withStackup(have, want));
+          stackupWritten = true;
+        }
+        return res;
       } catch (e) {
         throw await rolledBack(e, before, keep, project.dir);
       }
@@ -145,6 +167,7 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
       `${clean ? "Adopted" : "Adopted with residual differences"}: ${relative(project.dir, target)} ← ${candidate}`,
       `removed ${fmt(result.delta.removed)}; added ${fmt(result.delta.added)}; changed ${fmt(result.delta.changed)}`,
       ...(sheets.length ? [`design files written: ${sheets.join(", ")} (previous copies: ${relative(project.dir, keep)})`] : [`previous board: ${relative(project.dir, keep)}`]),
+      ...(stackupWritten ? ["stackup written from the candidate (board setup; the KiCad commit carries items only)"] : []),
       `residual ${clean ? "none" : JSON.stringify(result.residual)}; checkpoint ${checkpoint.id}${point ? `; board timeline point ${point.ref.slice(0, 12)}` : ""}`,
     ].join("\n");
     return { text, data: { ...result, checkpointId: checkpoint.id, target, clean, designFiles: sheets, timelinePoint: point?.ref ?? null }, clean };

@@ -81,6 +81,12 @@ and basis); `inner_neck_allowance_mm: 0` on a power class makes every inner segm
   the copper fits, not a structural one). The TraceMaker route plan takes the same as `planes` / `escape` before routing.
 - **Edit.** Write the change as a plan (remove, move with `to` or `near`, displace, swap, add, net; `legalise` seats test points at the free
   spot nearest their net's other pads, many in one plan). `impact` first: a STOP is your decision.
+  Three keys are local fixes on the routed copper, never routing: `copper` (a filled/capped via at a pad with `via_at_pad`, dead ends pruned
+  with `prune_signal_leaves` / `prune_track_leaves`, copper removed by uuid with `remove_items`, `source_sha256` pins the board you read);
+  `hole` (resize an NPTH locating hole to `size_mm`, round or oval, with its courtyards, keep-out and library footprint); `stack` (a
+  supplier stack-up and rule plan: class updates and `split_classes`, an `acceptance` merge, `dielectrics` epsilon_r, `remove_vias` each
+  with a reason, or `copper_source` to take a bench result's board). Each is proved like any other edit; repair what a tighter rule fails
+  with the last mile, not with coordinates in the plan.
   When an edit displaces a dense region, stop editing and re-place with the moved parts as anchors.
 - **Review.** One design hash covers board, schematics, project files and requirements; any change makes the review stale. Settle each finding with
   evidence: a must-fix is fixed, or accepted by the owner (or by you with evidence when intent allows); a false-positive needs a third source
