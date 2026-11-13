@@ -46,6 +46,8 @@ export interface PoolSeed {
   why: string;
   away?: string[];
   kept?: boolean;
+  /** Where the placement came from when not a KRT seed (`floorplan <file> seed N`: board_route floorplan, numbered 1000 + N). */
+  source?: string;
 }
 export interface RankedSeed {
   seed: number;
@@ -89,6 +91,8 @@ export async function loadFlow(ws: string): Promise<FlowState> {
   return st;
 }
 const save = (ws: string, st: FlowState) => writeFile(join(ws, "flow.json"), JSON.stringify(st, null, 1) + "\n");
+/** Write the workspace state (flow.json). */
+export const saveFlow = (st: FlowState) => save(st.ws, st);
 
 /** Workspace from a spec: the base project is copied in (without prl, acceptance or score files). */
 export async function initFlow(wsInput: string, spec: LayoutSpec, specPath: string, now = Date.now()): Promise<FlowState> {

@@ -17,3 +17,4 @@ export * from "./placement";
 export * from "./blocks";
 export * from "./floorplan";
 export * from "./blockeval";
+export * from "./blockstage";

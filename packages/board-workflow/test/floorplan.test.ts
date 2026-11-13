@@ -15,6 +15,9 @@ import {
   readFloorplan,
   selectGroups,
   singlePadParts,
+  stageFloorplan,
+  FLOORPLAN_POOL_BASE,
+  type FlowState,
   stagingRegion,
   type Blocks,
   type Floorplan,
@@ -196,6 +199,28 @@ describe("floorplanRun (floorplan_run.py)", async () => {
       base, out: join(tmp, "run3"), stem: "b", floorplan: fpCore, blocks, fixed: FIXED, legalise: (t) => t,
     });
     expect(r.stop).toMatch(/native courtyard check failed/);
+  });
+});
+
+describe("stageFloorplan (board_route floorplan)", () => {
+  test("a gated result joins the place pool as seed 1000 + seed, kept, with placement figures", async () => {
+    const ws = join(tmp, "ws");
+    const reqDir = join(tmp, "req");
+    await mkdir(join(ws, "base"), { recursive: true });
+    await mkdir(reqDir, { recursive: true });
+    await writeFile(join(ws, "base", "b.kicad_pcb"), BOARD);
+    const acc = { stack_policy: { ground_net: "GND" }, net_classes: { classes: {} } };
+    for (const [f, v] of [["acceptance.json", acc], ["circuit.json", { components: [] }], ["mechanical.json", { anchors: [] }], ["heights.json", { entries: [] }]] as const) await writeFile(join(reqDir, f), JSON.stringify(v));
+    await writeFile(join(tmp, "fp.json"), JSON.stringify({ courtyard_clearance_mm: 0.3, groups: [plan.groups[0], plan.groups[1]] }));
+    await writeFile(join(tmp, "blocks.json"), JSON.stringify(blocks));
+    const st = { ws, spec: { stem: "b", base: join(ws, "base"), requirements: reqDir, fixed: "^J" }, stages: { check: { status: "pass", started: 0 } }, decisions: [], place_pool: [{ seed: 3, gate: true, kept: true }] } as unknown as FlowState;
+    const o = await stageFloorplan(fakeHost(), st, { floorplan: join(tmp, "fp.json"), blocks: join(tmp, "blocks.json"), seed: 2 });
+    expect(o.ok).toBe(true);
+    expect(o.verdict).toMatch(/^PASS floorplan fp-s2/);
+    expect(st.place_pool!.map((s) => [s.seed, s.kept])).toEqual([[3, true], [FLOORPLAN_POOL_BASE + 2, true]]);
+    expect(st.place_pool![1]!.placed).toBe(join(ws, "floorplan", "fp-s2"));
+    expect(o.lines.some((l) => l.startsWith("HPWL"))).toBe(true);
+    expect(JSON.parse(await readFile(join(ws, "flow.json"), "utf8")).place_pool).toHaveLength(2);
   });
 });
 

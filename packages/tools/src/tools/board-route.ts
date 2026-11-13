@@ -10,7 +10,7 @@
  * (single parts): board_route is the staged flow with seeds, gates, ranking and records.
  */
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod/v4";
 import { applyClean, cleanBytes, cleanLines, cleanPlan, layout, locateProject, readJsonOrNull } from "@fabdesk/board-workflow";
 type FlowState = layout.FlowState;
@@ -45,7 +45,7 @@ function describe(o: StageOutcome, st: FlowState, stage: string): string {
   return [o.verdict, ...o.lines, "", `next: ${nextStep(st).text}`, `record: ${join(st.ws, stage, "result.json")}`].join("\n");
 }
 
-const LAYOUT_ACTIONS = ["check", "place", "rank", "route", "auto", "status", "courtyards", "clean"] as const;
+const LAYOUT_ACTIONS = ["check", "place", "rank", "route", "auto", "status", "courtyards", "clean", "placement", "blocks", "floorplan", "block_eval"] as const;
 const LASTMILE = new Set<string>(LASTMILE_ACTIONS);
 const LAYOUT_DEFAULT_WORKSPACE = join(".fabdesk/board/layout", "ws");
 
@@ -68,7 +68,7 @@ export async function boardWorkspace(projectDir: string, rel: string): Promise<s
 const ROUTE_INPUT = {
   action: z
     .enum([...LAYOUT_ACTIONS, ...LASTMILE_ACTIONS])
-    .describe("Layout: check, place, rank, route, auto, status, courtyards. Last mile: new, try, loop, sweep, why, crossings, fit, pairs, validate, accept, undo, view, info, prune. Housekeeping: clean (every board stage's reproducible copies in .fabdesk/board/; dry run unless apply)."),
+    .describe("Layout: check, place, rank, route, auto, status, courtyards; floorplan path: blocks, floorplan, block_eval, placement. Last mile: new, try, loop, sweep, why, crossings, fit, pairs, validate, accept, undo, view, info, prune. Housekeeping: clean (every board stage's reproducible copies in .fabdesk/board/; dry run unless apply)."),
   workspace: z.string().max(300).optional().describe("Workspace folder, relative to the project; default .fabdesk/board/layout/ws (layout) or .fabdesk/board/lastmile/main (last mile)."),
   // layout stages
   spec: z.string().max(300).optional().describe("Layout check: a layout spec file (project-relative) to start the workspace from, instead of the one derived from the board."),
@@ -87,7 +87,7 @@ const ROUTE_INPUT = {
   nets: z.array(z.string()).max(60).optional().describe("Last-mile why: nets to inspect (default every open net); view: nets to highlight."),
   refs: z.string().max(400).optional().describe("Last-mile crossings: only these references; sweep: the parts to sweep (comma separated)."),
   items: z.array(z.string()).max(30).optional().describe("Last-mile info: part references or net regexes."),
-  box: z.array(z.number()).length(4).optional()  /* not a tuple: Codex drops tools with array-form `items` (board-edit.ts `nums`) */.describe("Last-mile view / fit: window X0 Y0 X1 Y1 in mm."),
+  box: z.array(z.number()).length(4).optional()  /* not a tuple: Codex drops tools with array-form `items` (board-edit.ts `nums`) */.describe("Last-mile view / fit, block_eval picture: window X0 Y0 X1 Y1 in mm."),
   side: z.enum(["F", "B", "both"]).default("both").describe("Last-mile view: board side."),
   candidate: z.string().optional().describe("Last-mile accept: an earlier try's folder to accept after the gate re-runs on it (no re-route)."),
   adopt: z.boolean().default(true).describe("Last-mile accept: also write the current board into the project."),
@@ -101,10 +101,17 @@ const ROUTE_INPUT = {
   slackA8: z.number().int().min(0).default(0).describe("Last-mile try/accept: A8 nets the gate may let get worse."),
   budget: z.number().positive().optional().describe("Last-mile: seconds per action; default max(180, 6 per open, up to 1800)."),
   maxRounds: z.number().int().min(1).max(20).default(6).describe("Last-mile loop: rounds."),
-  pcb: z.string().optional().describe("Last-mile new: board file in the project."),
+  pcb: z.string().optional().describe("Last-mile new: board file in the project. Placement / blocks: the board to check (default the project board; blocks: the layout base). Block_eval: a placed board, whose folder is evaluated (default the layout base)."),
   margin: z.number().min(0).max(2).default(0.25).describe("Courtyards: margin round the pad extent for an added courtyard (IPC-7351 nominal 0.25 mm)."),
   halo: z.string().max(400).optional().describe("Courtyards: comma-separated references whose courtyard becomes an escape halo (pad extent + haloMm) in the layout workspace's base board only (placement room round escape-heavy parts; never the fab board)."),
   haloMm: z.number().min(0).max(5).default(0.8).describe("Courtyards: halo size round the pads."),
+  floorplan: z.string().max(300).optional().describe("Floorplan / block_eval: the FLOORPLAN.json (project-relative; default .fabdesk/board/layout/floorplan.json): {courtyard_clearance_mm, groups: [{name, blocks | parts, region: [X0,Y0,X1,Y1], pinned?: {REF: [x,y,rot]}, courtyard_clearance_mm?, of?}]}, groups placed in order."),
+  blocks: z.string().max(300).optional().describe("Floorplan / block_eval / placement: the BLOCKS.json (default blocks.json beside the floorplan, else .fabdesk/board/layout/blocks.json); blocks: where to write it."),
+  split: z.string().max(400).optional().describe("Blocks: comma-separated schematic sheets (file names without .kicad_sch) to split into one block per anchor IC."),
+  groups: z.string().max(400).optional().describe("Block_eval: comma-separated floorplan groups (their sub-groups come along)."),
+  replace: z.boolean().default(false).describe("Block_eval: re-place the groups in their regions first (rest locked, gated) before routing their nets."),
+  seed: z.number().int().min(0).max(999).optional().describe("Floorplan / block_eval: TraceMaker placer seed (default 1)."),
+  time: z.number().positive().max(600).optional().describe("Floorplan: placer annealing seconds per group (default 30)."),
   apply: z.boolean().default(false).describe("Clean: delete what the dry run lists (refused while a board job or routing runs in this project). Default: list only."),
   keep: z.number().int().min(1).max(50).default(3).describe("Clean: newest review runs, adopt backups, upgraded copies and Gerber check runs to keep."),
 };
@@ -115,7 +122,7 @@ export const board_route = defineTool({
   toolset: "board",
   title: "Layout and last mile: check, place, rank, route, tighten and finish",
   description:
-    "Everything between a placed board and a routed one. Two stages share the `workspace` folder argument (project-relative; default .fabdesk/board/layout/ws for the layout stages, .fabdesk/board/lastmile/main for the last mile). LAYOUT (needs board_check to have onboarded the board; the groups and keep-outs it proposes are in .fabdesk/board/layout/ for you to edit): check: seconds, fail-fast preflight (engines present, disk, fixed anchors, courtyards, groups, plans, pairs). place: KiCadRoutingTools seeds, each gated on KiCad courtyard DRC and fixed parts unmoved (minutes). rank: route the kept seeds and rank by open connections, then A8 pair nets, then A7 width nets (10-20 min). route: best seed through TraceMaker and KRT finishing, hedged; STOP when too many connections are open (that is a placement problem: change groups, then place again) (15-25 min). auto: the remaining layout stages up to `until`. courtyards: a courtyard (pad extent + margin) for every footprint with pads and none, and inverted courtyard rectangles put right, written into the board (the layout check flags parts without one: courtyard DRC cannot see them); with halo, escape halos on the layout base only (placement room round escape-heavy parts). status: stages, figures and next step (`finish` records the outcome); on a last-mile workspace, the bench figures and steps. Each layout stage writes WS/<stage>/result.json and ends PASS, FAIL <reason> or STOP <decision for you>. The route stage's board is the last mile's input. LAST MILE (a workspace of accepted steps on a routed board): new: start from the project's board (scored). try: run `actions` in parallel from the current board, score each whole board (A1-A9, native DRC with refilled zones), accept the best that passes the gate (fewer opens, DRC errors, A7/A8 nets; no new DRC class; no failing pair worse), leave the board unchanged otherwise. Actions chain with '+': finish, rip, taps, leg, blockers:R, window:X0,Y0,X1,Y1, a7, shorts, legs:R, tighten[:REGEX] (pair ops vias, mirror, retune, width, tighten, skew), reroute[:REGEX], mirror[:REGEX], pairs, pairs-m, pairs-all, pairs-fix, bundle:REGEX[@BOX], fence:BOX=NETREGEX, fill:ROUTER, nudge:REF@X,Y[@ROT][~R], turn:REF@ROT, plan:FILE; power copper, no router: escape[:STUB,CLEARANCE] (pad-width bridges and stubs at fine-pitch power pins narrower than their class, within the 1 mm neck rule; chain a router after it, e.g. escape+finish), planes:FILE (split power plane on an inner layer from a plan JSON in the project), pour[:GLOB,..][~MARGIN][@SCALE] (net zones over open power connections on the outer layer both ends share, never thinner than class width) (an unknown name lists the vocabulary). Order: rip, taps, pairs-all, leg | blockers:1.0, a7, bundle per pair bundle, pairs, validate; then crossings, fit, nudge. loop: one candidate per failing pair from a `template` with {pair} (e.g. 'reroute:{pair}+shorts+blockers:1.0+tighten'). sweep: grid of courtyard-gated poses round each of `refs` (span, step, rotations), each followed by `then`, best accepted. why: what walls each open end (KRT net_forensics) and TraceMaker's cause class of each open. pairs: per-pair coupled share and each uncoupled mm by cause (loose, on_pad, between, escape, apart). crossings: parts whose connections cross and the rotation that fixes it. fit: placement dry run of one nudge/turn action (poses or what blocks them, courtyard gate, a picture). validate: full proof with schematic parity. accept: adopt the current board into the project (one KiCad commit, checkpointed). undo, view (SVG window), info (parts and nets), prune (delete this workspace's candidate folders). HOUSEKEEPING: clean: every board stage's reproducible copies in .fabdesk/board/ (review runs beyond the newest `keep`, edit candidates that can no longer be adopted, old adopt backups, layout seeds and routes once the route stage finished, unaccepted last-mile tries, one-shot adopt inputs), each with size and reason; a dry run unless apply: true. Engines install themselves on first use: the first step that needs KiCadRoutingTools or TraceMaker downloads and sets it up (sha256-checked; KRT gets its own hash-locked Python, nothing has to be preinstalled; minutes the first time, progress lines meanwhile); board_engines shows them or installs ahead. A set TRACEMAKER_BIN / FABDESK_KRT_DIR / Settings krtDir is used as given and never installed over. Router, rip and nudge steps run KiCadRoutingTools plans; when KRT cannot be had only finish (on `router`), fill:ROUTER, the in-place pair steps and the power steps run, and the others fail naming why. One TraceMaker job runs at a time on the machine; long actions keep running as a board job (board_job).",
+    "Everything between a placed board and a routed one. Two stages share the `workspace` folder argument (project-relative; default .fabdesk/board/layout/ws for the layout stages, .fabdesk/board/lastmile/main for the last mile). LAYOUT (needs board_check to have onboarded the board; the groups and keep-outs it proposes are in .fabdesk/board/layout/ for you to edit): check: seconds, fail-fast preflight (engines present, disk, fixed anchors, courtyards, groups, plans, pairs). place: KiCadRoutingTools seeds, each gated on KiCad courtyard DRC and fixed parts unmoved (minutes). rank: route the kept seeds and rank by open connections, then A8 pair nets, then A7 width nets (10-20 min). route: best seed through TraceMaker and KRT finishing, hedged; STOP when too many connections are open (that is a placement problem: change groups, then place again) (15-25 min). auto: the remaining layout stages up to `until`. courtyards: a courtyard (pad extent + margin) for every footprint with pads and none, and inverted courtyard rectangles put right, written into the board (the layout check flags parts without one: courtyard DRC cannot see them); with halo, escape halos on the layout base only (placement room round escape-heavy parts). status: stages, figures and next step (`finish` records the outcome); on a last-mile workspace, the bench figures and steps. FLOORPLAN PATH (the toolkit's block passes, beside the KRT seeds; TraceMaker's placer tracemaker-place must sit next to TraceMaker or be TRACEMAKER_PLACE_BIN): blocks: BLOCKS.json from the layout base (or pcb): one block per schematic sheet, `split` sheets one per anchor IC, with courtyard area per side (seconds). floorplan: you write FLOORPLAN.json (groups of blocks or explicit parts, each with a region, in order; pinned poses; sub-groups with `of`); each group is placed by TraceMaker inside its region with everything else locked and keep-outs over fixed connectors, poses copied back, verified (all placed, nothing else moved), then test points legalised and native courtyard DRC; a gated result joins the place pool as seed 1000+seed (kept), so rank routes it with the KRT seeds (minutes). block_eval: one block judged alone: optionally re-place its groups (replace), then TraceMaker routes only its nets on the copper-free board; failed connections with reasons and eval.svg (minutes; optimistic, ground drops left out). placement: score a placement before routing (no router, seconds): HPWL per net and per block, parts whose best 90-degree turn saves >= 15 % of their nets' HPWL, RUDY congestion, through-via site share near each net; on the project board or pcb. Each layout stage writes WS/<stage>/result.json and ends PASS, FAIL <reason> or STOP <decision for you>. The route stage's board is the last mile's input. LAST MILE (a workspace of accepted steps on a routed board): new: start from the project's board (scored). try: run `actions` in parallel from the current board, score each whole board (A1-A9, native DRC with refilled zones), accept the best that passes the gate (fewer opens, DRC errors, A7/A8 nets; no new DRC class; no failing pair worse), leave the board unchanged otherwise. Actions chain with '+': finish, rip, taps, leg, blockers:R, window:X0,Y0,X1,Y1, a7, shorts, legs:R, tighten[:REGEX] (pair ops vias, mirror, retune, width, tighten, skew), reroute[:REGEX], mirror[:REGEX], pairs, pairs-m, pairs-all, pairs-fix, bundle:REGEX[@BOX], fence:BOX=NETREGEX, fill:ROUTER, nudge:REF@X,Y[@ROT][~R], turn:REF@ROT, plan:FILE; power copper, no router: escape[:STUB,CLEARANCE] (pad-width bridges and stubs at fine-pitch power pins narrower than their class, within the 1 mm neck rule; chain a router after it, e.g. escape+finish), planes:FILE (split power plane on an inner layer from a plan JSON in the project), pour[:GLOB,..][~MARGIN][@SCALE] (net zones over open power connections on the outer layer both ends share, never thinner than class width); replace:GROUP[,GROUP][@FLOORPLAN][#SEED] (the per-block loop: rip the floorplan groups' regions, re-place them there with the rest locked, gate, route) (an unknown name lists the vocabulary). Order: rip, taps, pairs-all, leg | blockers:1.0, a7, bundle per pair bundle, pairs, validate; then crossings, fit, nudge. loop: one candidate per failing pair from a `template` with {pair} (e.g. 'reroute:{pair}+shorts+blockers:1.0+tighten'). sweep: grid of courtyard-gated poses round each of `refs` (span, step, rotations), each followed by `then`, best accepted. why: what walls each open end (KRT net_forensics) and TraceMaker's cause class of each open. pairs: per-pair coupled share and each uncoupled mm by cause (loose, on_pad, between, escape, apart). crossings: parts whose connections cross and the rotation that fixes it. fit: placement dry run of one nudge/turn action (poses or what blocks them, courtyard gate, a picture). validate: full proof with schematic parity. accept: adopt the current board into the project (one KiCad commit, checkpointed). undo, view (SVG window), info (parts and nets), prune (delete this workspace's candidate folders). HOUSEKEEPING: clean: every board stage's reproducible copies in .fabdesk/board/ (review runs beyond the newest `keep`, edit candidates that can no longer be adopted, old adopt backups, layout seeds and routes once the route stage finished, unaccepted last-mile tries, one-shot adopt inputs), each with size and reason; a dry run unless apply: true. Engines install themselves on first use: the first step that needs KiCadRoutingTools or TraceMaker downloads and sets it up (sha256-checked; KRT gets its own hash-locked Python, nothing has to be preinstalled; minutes the first time, progress lines meanwhile); board_engines shows them or installs ahead. A set TRACEMAKER_BIN / FABDESK_KRT_DIR / Settings krtDir is used as given and never installed over. Router, rip and nudge steps run KiCadRoutingTools plans; when KRT cannot be had only finish (on `router`), fill:ROUTER, the in-place pair steps and the power steps run, and the others fail naming why. One TraceMaker job runs at a time on the machine; long actions keep running as a board job (board_job).",
   inputSchema: ROUTE_INPUT,
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
   longRunning: true,
@@ -160,6 +167,7 @@ const routeHandler = durable("board_route", async (args: RouteArgs, ctx: ToolCon
       await mkdir(ws, { recursive: true });
       st = await initFlow(ws, spec, specPath);
     }
+    if (args.action === "placement" || args.action === "blocks") return await placementAction(args, ctx, st, ws);
     if (!st) st = await loadFlow(ws);
     if (args.action === "status") {
       const text = [...statusLines(st), "", `next: ${nextStep(st).text}`, ...(args.finish ? [await finishFlow(st, args.finish)] : [])].join("\n");
@@ -173,6 +181,24 @@ const routeHandler = durable("board_route", async (args: RouteArgs, ctx: ToolCon
       return {
         text: [...lines, "", ...(last ? [`next: ${nextStep(state).text}`] : ["nothing to run: every stage up to " + args.until + " already passed"])].join("\n"),
         json: { action: "auto", ok: !r.stopped, stopped: r.stopped?.verdict ?? null, ran: r.ran.map((x) => ({ stage: x.stage, verdict: x.outcome.verdict })), best_board: state.best_board },
+      };
+    }
+    if (args.action === "floorplan" || args.action === "block_eval") {
+      const files = await floorplanFiles(project.dir, args);
+      const o =
+        args.action === "floorplan"
+          ? await layout.stageFloorplan(host, state, { ...files, ...(args.seed !== undefined ? { seed: args.seed } : {}), ...(args.time ? { time: args.time } : {}) })
+          : await layout.stageBlockEval(host, state, {
+              ...files,
+              groups: (args.groups ?? "").split(",").map((g) => g.trim()).filter(Boolean),
+              replace: args.replace,
+              ...(args.seed !== undefined ? { seed: args.seed } : {}),
+              ...(args.pcb ? { placed: join(await jailPath(project.dir, args.pcb), "..") } : {}),
+              ...(args.box ? { window: args.box as [number, number, number, number] } : {}),
+            });
+      return {
+        text: [o.verdict, ...o.lines, "", `next: ${nextStep(state).text}`].join("\n"),
+        json: { action: args.action, ok: o.ok, verdict: o.verdict, result: o.result, ...(o.board ? { board: o.board } : {}), workspace: state.ws },
       };
     }
     const o =
@@ -217,6 +243,50 @@ async function cleanAction(args: RouteArgs, ctx: ToolContext) {
     throw new ToolError(`clean refused: ${busy.length ? `${busy.length} board job(s) running (${busy.map((j) => j.tool).join(", ")})` : "routing is active"}; their folders may still be inputs. Wait for them (board_job), then clean.`, "precondition");
   const r = await applyClean(project.dir, plan);
   return { text: [`Removed ${r.removed} item(s), ${cleanBytes(r.bytes)}:`, ...lines.slice(1)].join("\n"), json: { action: "clean", applied: true, removed: r.removed, bytes: r.bytes, remove: plan.remove } };
+}
+
+/** The floorplan and blocks files of a floorplan / block_eval call, inside the project. */
+async function floorplanFiles(projectDir: string, args: { floorplan?: string | undefined; blocks?: string | undefined; action: string; groups?: string | undefined }) {
+  const floorplan = await jailPath(projectDir, args.floorplan ?? join(".fabdesk/board/layout", "floorplan.json"));
+  if (!(await readJsonOrNull<unknown>(floorplan))) throw new ToolError(`no floorplan at ${relative(projectDir, floorplan)}: write FLOORPLAN.json (board_route blocks lists the blocks a group can name)`, "precondition");
+  let blocks = args.blocks ? await jailPath(projectDir, args.blocks) : join(floorplan, "..", "blocks.json");
+  if (!args.blocks && !(await readJsonOrNull<unknown>(blocks))) blocks = await jailPath(projectDir, join(".fabdesk/board/layout", "blocks.json"));
+  if (args.action === "block_eval" && !args.groups) throw new ToolError("block_eval needs groups (comma-separated floorplan group names)", "invalid_args");
+  return { floorplan, blocks };
+}
+
+/**
+ * board_route placement (the toolkit's placement_check.py) and blocks (block_inventory.py): pure geometry on a board,
+ * no router. The layout spec gives the fixed pattern and the requirements (ground net, heights).
+ */
+async function placementAction(args: RouteArgs, ctx: ToolContext, st: FlowState | null, ws: string) {
+  const project = ctx.requireProject();
+  const spec = st?.spec ?? (await prepareLayout(project.dir, { name: project.name })).spec;
+  const reqDir = isAbsolute(spec.requirements) ? spec.requirements : resolve(spec.base, "..", spec.requirements);
+  const req = await layout.readRequirementsDir(reqDir);
+  const ground = req.acceptance.stack_policy.ground_net ?? "GND";
+  const base = join(ws, "base", `${spec.stem}.kicad_pcb`);
+  const board = args.pcb ? await jailPath(project.dir, args.pcb) : args.action === "blocks" && (await readFile(base, "utf8").then(() => true, () => false)) ? base : (await locateProject(project.dir)).pcb;
+  const text = await readFile(board, "utf8").catch(() => {
+    throw new ToolError(`cannot read ${relative(project.dir, board)}`, "invalid_args");
+  });
+  const dir = layoutDir(project.dir);
+  await mkdir(dir, { recursive: true });
+  if (args.action === "blocks") {
+    const r = layout.blocksFor(text, { split: (args.split ?? "").split(",").map((x) => x.trim()).filter(Boolean), ground, heights: req.heights.entries ?? [] });
+    const target = args.blocks ? await jailPath(project.dir, args.blocks) : join(dir, "blocks.json");
+    await writeFile(target, JSON.stringify(r.blocks, null, 1) + "\n");
+    return { text: [`${Object.keys(r.blocks).length} blocks of ${relative(project.dir, board)} -> ${relative(project.dir, target)} (a floorplan group names them in \`blocks\`):`, ...r.lines].join("\n"), json: { action: "blocks", file: relative(project.dir, target), blocks: r.blocks } };
+  }
+  const blocksFile = args.blocks ? await jailPath(project.dir, args.blocks) : join(dir, "blocks.json");
+  const blocks = await readJsonOrNull<Record<string, { parts: string[] }>>(blocksFile);
+  const r = layout.placementFor(text, { fixed: new RegExp(spec.fixed), ground, ...(blocks ? { blocks } : {}), board: relative(project.dir, board) });
+  const target = join(dir, "placement.json");
+  await writeFile(target, JSON.stringify(r.report, null, 1) + "\n");
+  return {
+    text: [`Placement of ${relative(project.dir, board)} (ground ${ground} left out; fixed parts are not rotation candidates):`, ...r.lines, `full report: ${relative(project.dir, target)}`].join("\n"),
+    json: { action: "placement", file: relative(project.dir, target), hpwl_total_mm: r.report.hpwl_total_mm, hpwl_by_block_mm: r.report.hpwl_by_block_mm, rotation_flagged: r.report.rotation.flagged, congestion: { max: r.report.congestion.max, cells_over_2: r.report.congestion.cells_over_2, top: r.report.congestion.top.slice(0, 5) }, via_sites: { ...r.report.via_sites, free_by_10mm_cell: undefined } },
+  };
 }
 
 /**

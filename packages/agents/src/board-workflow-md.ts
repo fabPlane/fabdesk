@@ -24,7 +24,7 @@ onboard ─► layout (place · rank · route) ─► last mile ─► review �
 | Stage | Tool | What it does in one line | Gate before the next stage |
 | --- | --- | --- | --- |
 | 1 onboard + check | \`board_check\` | derives the board's requirements on first use, then measures A1-A9 on the saved board and compares with the board as onboarded; a board saved by KiCad 9 or older is refused until \`upgrade: true\` (a checked copy written over it, the previous board kept) | your review of the onboarding proposals, recorded with \`board_check {"confirm": true}\` |
-| 2 layout | \`board_route\` check · place · rank · route · auto · status · courtyards | fail-fast preflight, seeded placements gated on courtyard DRC, ranked by routed opens, then the best seed routed (30-60 min in all) | \`route\` PASS (few enough opens) |
+| 2 layout | \`board_route\` check · place · rank · route · auto · status · courtyards; floorplan path: blocks · floorplan · block_eval · placement | fail-fast preflight, seeded placements (KRT seeds, or block passes from your floorplan) gated on courtyard DRC, ranked by routed opens, then the best seed routed (30-60 min in all) | \`route\` PASS (few enough opens) |
 | 3 last mile | \`board_route\` new · try · loop · sweep · pairs · why · crossings · fit · validate · accept | tries rip, route, pair and placement steps in parallel on the whole board, keeps the best one that improves the gate, undoes the rest | A1-A9 pass |
 | 4 edit | \`board_edit\` | an ECO as a plan across board, schematic and requirements: impact, candidate, repair of cut nets, A1-A9 proof, planned-versus-collateral diff, adopt | 0 collateral |
 | 5 review | \`board_review\` | whole-board review (21 checks, silk labels among them) bound to one design hash; findings with proposals, dispositions, gate, fixes as proven candidates; \`autopilot\` runs review, fixes and leaves only the owner's questions | gate 0: current, every finding settled |
@@ -61,11 +61,17 @@ they are written into each scored copy's project file first, and the release wri
 
 - **Layout.** Many opens after \`route\` are a placement problem: restructure the block or try new seeds before tuning the router. Judge seeds on
   routed results over several seeds (router noise is large), move whole blocks rather than one part in a crowded corner, one TraceMaker job at a time.
+  When seeds keep failing in one dense block, give it structure: \`blocks\` lists the board's blocks (sheets, split ones by anchor IC), you write
+  \`.fabdesk/board/layout/floorplan.json\` (groups of blocks or explicit parts with a region each, in order, pinned poses, rows along a signal path
+  as sub-groups), \`floorplan\` places group by group with the rest locked (a gated result joins the seeds for \`rank\`), \`block_eval\` judges one
+  block alone over 2-3 placer seeds, \`placement\` scores any placement before routing (HPWL, 90-degree turns that save >= 15 %, congestion,
+  via sites); check a rotation idea there before trying it.
 - **Last mile.** Order: rip, taps, pairs-all, leg | blockers:1.0 (try both in parallel), a7, bundle per pair bundle, pairs, validate. What is left
   after that is placement: crossings, then \`fit\` (dry run of one nudge), then nudge or \`sweep\`. A step that does not improve the whole-board gate is
   undone. Do not rip whole wide power nets. \`why\` names what walls each open end. A pair counts only when coupled; \`pairs\` splits each uncoupled mm
   by cause (\`loose\` is fixable in place; \`on_pad\`, \`between\`, \`escape\` come from pads, pinout and vias; \`apart\` needs a re-route). Pairs on a routed
   board: \`tighten\` first (vias, mirror, retune, width, tighten, skew, no router), then \`loop\` with \`reroute:{pair}+shorts+blockers:1.0+tighten\`.
+  With a floorplan, finish block by block: \`replace:GROUP\` rips the group's region, re-places it there with the rest locked and routes again.
   Rip, route and nudge steps run KiCadRoutingTools plans; when KRT cannot be had (install error, broken override, auto-install off) a step
   that needs it fails naming why, and \`finish\`, \`fill:ROUTER\`, \`tighten\` and the power steps still run. \`finish\` adds copper only on the nets that were open and
   leaves every other net as it was; other steps may change more, and each \`try\` line says which other nets a candidate changed: for a "change
