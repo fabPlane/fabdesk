@@ -5,6 +5,7 @@ export * from "./review";
 export * from "./proposals";
 export * from "./diff";
 export * as cable from "./cable";
+export * as boardPage from "./page";
 export * from "./candidates";
 export * from "./intent";
 export * from "./autopilot";
