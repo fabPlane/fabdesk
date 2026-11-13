@@ -71,7 +71,12 @@ and basis); `inner_neck_allowance_mm: 0` on a power class makes every inner segm
   undone. Do not rip whole wide power nets. `why` names what walls each open end. A pair counts only when coupled; `pairs` splits each uncoupled mm
   by cause (`loose` is fixable in place; `on_pad`, `between`, `escape` come from pads, pinout and vias; `apart` needs a re-route). Pairs on a routed
   board: `tighten` first (vias, mirror, retune, width, tighten, skew, no router), then `loop` with `reroute:{pair}+shorts+blockers:1.0+tighten`.
-  With a floorplan, finish block by block: `replace:GROUP` rips the group's region, re-places it there with the rest locked and routes again.
+  `pairs` also gives each pair's connected path pad to pad (tails and branches left out), the length the signal runs; tune length matching to
+  that, not to the segment sums. With a floorplan, finish block by block: `replace:GROUP` rips the group's region, re-places it there with the
+  rest locked and routes again. To redo a region with the placement kept: `region:X0,Y0,X1,Y1` (or `region:opens~1.5`, boxes round each open
+  end) cuts all copper there and routes again, cut pairs as pairs; `region:...!escape` adds the power escapes on the ripped board first; `cut:BOX`
+  only cuts, so you can chain your own steps before `route`. `view` draws a window with the DRC markers, optionally only some copper `layers`,
+  and with `candidate` a try's board instead of the current step.
   Rip, route and nudge steps run KiCadRoutingTools plans; when KRT cannot be had (install error, broken override, auto-install off) a step
   that needs it fails naming why, and `finish`, `fill:ROUTER`, `tighten` and the power steps still run. `finish` adds copper only on the nets that were open and
   leaves every other net as it was; other steps may change more, and each `try` line says which other nets a candidate changed: for a "change

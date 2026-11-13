@@ -441,3 +441,43 @@ describe("an added part placed next to a pad gets a direct track to it", () => {
   });
 });
 
+
+describe("editbench run (bench.ts edit-run)", () => {
+  test("verdict strings as the toolkit writes them", async () => {
+    const { editBenchVerdict } = await import("../src/bench/editrun");
+    const all = { A1_connectivity: true, A2_drc: true, A3_parity: true, A7_widths: true, A8_pairs: true };
+    expect(editBenchVerdict(all, 0, { summary: all }, false)).toBe("PASS all A1-A9 with parity");
+    expect(editBenchVerdict({ ...all, A2_drc: false, A7_widths: false }, 0, { summary: all }, false)).toBe("FAIL A2_drc,A7_widths");
+    const before = { summary: { ...all, A8_pairs: false }, results: { A8_pairs: { nets_failing: 2 } } };
+    expect(editBenchVerdict({ ...all, A8_pairs: false }, 2, before, true)).toBe("PASS (no regression)");
+    expect(editBenchVerdict({ ...all, A8_pairs: false, A7_widths: false }, 4, before, true)).toBe("FAIL regress ['A7_widths', 'A8 2->4']");
+  });
+  test("one plan through the edit stage on a copy of its project: the toolkit's result.json, read by edit-table", async () => {
+    const { bench } = await import("../src/index");
+    const dir = await project();
+    const out = await mkdtemp(join(tmpdir(), "erun-"));
+    dirs.push(out);
+    const planPath = join(out, "move.json");
+    await writeFile(planPath, JSON.stringify({ id: "bench-t-move", project: dir, move: [{ ref: "C3", to: [50, 30, 90] }], displace: { radius: 3 } }));
+    const res = await bench.runEditBench({
+      planPath,
+      out: join(out, "run"),
+      toolVersion: "abc",
+      accept: (d, pcb) => runAcceptance(d, { pcb, drc: async () => clean }),
+      repair: async () => ({ note: "fake", start: { line: "ws: open 1  drc 0  a7 0  a8 0  pairs-todo 0", wall_s: 0.5 }, steps: [{ try: ["finish"], accepted: "c1", open: 0, wall_s: 1.25, out: ["now   step 1: open 0"] }] }),
+      now: () => new Date(2026, 10, 13, 9, 5, 7),
+    });
+    expect(Object.keys(res)).toEqual(["plan", "id", "tool_version", "phases", "started", "agent_coordinates", "interventions", "impact_verdict", "after_edit", "repair_steps", "final", "final_detail", "verdict", "churn", "candidate", "total_s"]);
+    expect(Object.keys(res["phases"] as object)).toEqual(["impact", "apply", "bench_new", "repair", "proof", "guard", "diff"]);
+    expect(res["started"]).toBe("2026-11-13T09:05:07");
+    expect(res["after_edit"]).toBe("ws: open 1  drc 0  a7 0  a8 0  pairs-todo 0");
+    expect(res["repair_steps"]).toEqual([{ try: ["finish"], wall_s: 1.25, out: ["now   step 1: open 0"] }]);
+    expect(String(res["verdict"])).toMatch(/^(PASS all A1-A9 with parity|FAIL )/);
+    expect(Object.keys(res["churn"] as object)).toEqual(["unplanned_moved", "collateral_nets", "collateral_mm", "planned_nets", "collateral_top"]);
+    // the source project is untouched: the candidate lives in the run's copy
+    expect(String(res["candidate"]).startsWith(join(out, "run", "project"))).toBe(true);
+    expect(existsSync(join(dir, ".fabdesk", "board", "edits"))).toBe(false);
+    const t = bench.editTable(await bench.readEditResults([join(out, "run")]));
+    expect(t.json[0]).toMatchObject({ board: "t", task: "move", tool: "abc", verdict: res["verdict"] });
+  });
+});
