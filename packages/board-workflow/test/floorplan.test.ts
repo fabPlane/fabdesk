@@ -16,6 +16,8 @@ import {
   selectGroups,
   singlePadParts,
   stageFloorplan,
+  placerBeside,
+  tracemakerPlacer,
   FLOORPLAN_POOL_BASE,
   type FlowState,
   stagingRegion,
@@ -199,6 +201,55 @@ describe("floorplanRun (floorplan_run.py)", async () => {
       base, out: join(tmp, "run3"), stem: "b", floorplan: fpCore, blocks, fixed: FIXED, legalise: (t) => t,
     });
     expect(r.stop).toMatch(/native courtyard check failed/);
+  });
+});
+
+describe("tracemakerPlacer: where the floorplan passes find tracemaker-place", () => {
+  const saved = process.env["TRACEMAKER_PLACE_BIN"];
+  afterAll(() => {
+    if (saved === undefined) delete process.env["TRACEMAKER_PLACE_BIN"];
+    else process.env["TRACEMAKER_PLACE_BIN"] = saved;
+  });
+  const host = (tools: Partial<LayoutHost["tools"]>, extra: Partial<LayoutHost> = {}): LayoutHost => ({ ...fakeHost(), ...extra, tools: { krt: null, tracemaker: null, kicadCli: null, ...tools } });
+
+  test("beside the binary (an archive), else the build tree's src/place (a source build); .exe pairs with .exe", async () => {
+    const d = join(tmp, "placer-near");
+    await mkdir(join(d, "flat"), { recursive: true });
+    await mkdir(join(d, "build", "src", "app"), { recursive: true });
+    await mkdir(join(d, "build", "src", "place"), { recursive: true });
+    await mkdir(join(d, "win"), { recursive: true });
+    await writeFile(join(d, "flat", "tracemaker-place"), "");
+    await writeFile(join(d, "build", "src", "place", "tracemaker-place"), "");
+    await writeFile(join(d, "win", "tracemaker-place.exe"), "");
+    expect(placerBeside(join(d, "flat", "tracemaker"))).toBe(join(d, "flat", "tracemaker-place"));
+    expect(placerBeside(join(d, "build", "src", "app", "tracemaker"))).toBe(join(d, "build", "src", "place", "tracemaker-place"));
+    expect(placerBeside(join(d, "win", "tracemaker.exe"))).toBe(join(d, "win", "tracemaker-place.exe"));
+    expect(placerBeside(join(d, "win", "tracemaker"))).toBeNull();
+  });
+
+  test("TRACEMAKER_PLACE_BIN wins; then the host's placer; then the host's ensurePlacer (cached); then beside TraceMaker", async () => {
+    delete process.env["TRACEMAKER_PLACE_BIN"];
+    const near = join(tmp, "placer-near");
+    // beside TraceMaker (a host without a registry)
+    expect(await tracemakerPlacer(host({ tracemaker: join(near, "build", "src", "app", "tracemaker") }))).toBe(join(near, "build", "src", "place", "tracemaker-place"));
+    await expect(tracemakerPlacer(host({ tracemaker: join(near, "win", "tracemaker") }))).rejects.toThrow(/tracemaker-place is not next to TraceMaker .*set TRACEMAKER_PLACE_BIN/);
+    // the host's: tools first, else ensurePlacer, whose answer is kept in tools
+    expect(await tracemakerPlacer(host({ tracemakerPlace: "/opt/tm/tracemaker-place" }))).toBe("/opt/tm/tracemaker-place");
+    let asked = 0;
+    const h = host({}, { ensurePlacer: async () => (asked++, { path: "/reg/tracemaker-place" }) });
+    expect(await tracemakerPlacer(h)).toBe("/reg/tracemaker-place");
+    expect(await tracemakerPlacer(h)).toBe("/reg/tracemaker-place");
+    expect(asked).toBe(1);
+    expect(h.tools.tracemakerPlace).toBe("/reg/tracemaker-place");
+    await expect(tracemakerPlacer(host({}, { ensurePlacer: async () => ({ path: null, why: "the published TraceMaker release has none yet" }) }))).rejects.toThrow(
+      /floorplan passes need TraceMaker's placer \(tracemaker-place\): the published TraceMaker release has none yet/,
+    );
+    // the override wins over all of them, and a wrong one fails by name
+    process.env["TRACEMAKER_PLACE_BIN"] = join(near, "flat", "tracemaker-place");
+    expect(await tracemakerPlacer(host({ tracemakerPlace: "/opt/tm/tracemaker-place" }))).toBe(join(near, "flat", "tracemaker-place"));
+    process.env["TRACEMAKER_PLACE_BIN"] = join(near, "nope");
+    await expect(tracemakerPlacer(host({ tracemakerPlace: "/opt/tm/tracemaker-place" }))).rejects.toThrow(/TRACEMAKER_PLACE_BIN is set to .*nope, which does not exist/);
+    delete process.env["TRACEMAKER_PLACE_BIN"];
   });
 });
 

@@ -94,6 +94,7 @@ power_escape and the port does not set it. The base plan is the layout spec's Tr
 
 - No real tracemaker-place run: an eval held the machine (KRT on cm5) the whole session. The passes replay recorded TraceMaker
   outputs instead, which checks the transfer, locking and verification logic on real placer poses.
-- Fabdesk's TraceMaker build packages `tracemaker` only; the floorplan path needs `tracemaker-place` from an upstream release or
-  `TRACEMAKER_PLACE_BIN`.
+- Fabdesk's TraceMaker build packaged `tracemaker` only at the time; it now ships `tracemaker-place` beside it
+  ([routers](../../routers.md#tracemakers-placer-tracemaker-place)). A real placer run through `floorplanRun` (a 5-part board,
+  two groups, native courtyard DRC stubbed) passed on Linux with a locally built v0.12.1 archive installed by the registry.
 - block_eval's TraceMaker session and render; last-mile `replace:` end to end (fails naming KRT when KRT is missing, tested).

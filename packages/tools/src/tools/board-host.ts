@@ -40,8 +40,18 @@ export function engineEnsurer(ctx: ToolContext, note: (line: string) => void): N
   };
 }
 
+/** TraceMaker's placer through the router registry (installing or upgrading TraceMaker first); once per host. */
+export function placerEnsurer(ctx: ToolContext, note: (line: string) => void): NonNullable<LayoutHost["ensurePlacer"]> {
+  let p: Promise<layout.EngineReady> | undefined;
+  return () =>
+    (p ??= ctx.services.routers
+      ? ctx.services.routers.ensurePlacer({ onLine: note }).then((r) => (r.path ? { path: r.path } : { path: null, ...(r.why ? { why: r.why } : {}) }))
+      : Promise.resolve({ path: null, why: "this host has no router registry to install engines from" }));
+}
+
 export function layoutHost(ctx: ToolContext, kicadCli: string | null, env: NodeJS.ProcessEnv = process.env): LayoutHost {
   const note = (s: string) => ctx.progress(0, s);
+  const placer = ctx.services.routers?.get("tracemaker").placer;
   const drc = async (board: string, outFile: string, opts: { parity: boolean; refill: boolean }) => {
     const cli = await requireKicad(ctx);
     return runLiveDrc(ctx, cli, { board, outFile, parity: opts.parity, refill: opts.refill, signal: ctx.signal });
@@ -50,10 +60,11 @@ export function layoutHost(ctx: ToolContext, kicadCli: string | null, env: NodeJ
     tools: {
       krt: krtDir(env, ctx.services.settings?.().krtDir, ctx.services.routers?.executable("krt")),
       tracemaker: ctx.services.routers?.executable("tracemaker") ?? env["TRACEMAKER_BIN"] ?? null,
+      tracemakerPlace: env["TRACEMAKER_PLACE_BIN"]?.trim() || (placer?.ready && placer.path ? placer.path : null),
       kicadCli,
     },
     // without a router registry there is nothing to install from: engines are what `tools` names
-    ...(ctx.services.routers ? { ensure: engineEnsurer(ctx, note) } : {}),
+    ...(ctx.services.routers ? { ensure: engineEnsurer(ctx, note), ensurePlacer: placerEnsurer(ctx, note) } : {}),
     spawn: nodeRun,
     courtyardDrc: async (board, report) => (await drc(board, report, { parity: false, refill: false })).violations.map((v) => ({ rule: v.rule, items: v.items.map((i) => ({ description: i.description })) })),
     scoreDrc: async (board, outFile, parity) => {

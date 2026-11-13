@@ -236,14 +236,36 @@ export interface GroupPassRecord {
   placer_unplaced?: unknown[];
 }
 
-/** TraceMaker's placer: `TRACEMAKER_PLACE_BIN`, else `tracemaker-place` next to the TraceMaker binary. */
+/**
+ * tracemaker-place for a TraceMaker binary: beside it (fabdesk's archives, an upstream install's bin/), else in a CMake
+ * build tree's src/place next to src/app. (The router registry's `traceMakerPlacerNear` also searches a source package.)
+ */
+export function placerBeside(tm: string): string | null {
+  const names = /\.exe$/i.test(basename(tm)) ? ["tracemaker-place.exe", "tracemaker-place"] : ["tracemaker-place"];
+  for (const name of names) for (const p of [join(dirname(tm), name), join(dirname(tm), "..", "place", name)]) if (existsSync(p)) return p;
+  return null;
+}
+
+/**
+ * TraceMaker's placer: `TRACEMAKER_PLACE_BIN`, else the host's (the router registry's copy beside TraceMaker, installing
+ * or upgrading TraceMaker on first use), else `tracemaker-place` beside the TraceMaker binary.
+ */
 export async function tracemakerPlacer(host: LayoutHost): Promise<string> {
-  const env = process.env["TRACEMAKER_PLACE_BIN"];
-  if (env) return env;
+  const env = process.env["TRACEMAKER_PLACE_BIN"]?.trim();
+  if (env) {
+    if (!existsSync(env)) throw new FlowError(`TRACEMAKER_PLACE_BIN is set to ${env}, which does not exist: fix or clear it (the floorplan passes need TraceMaker's placer)`);
+    return env;
+  }
+  if (host.tools.tracemakerPlace) return host.tools.tracemakerPlace;
+  if (host.ensurePlacer) {
+    const r = await host.ensurePlacer();
+    if (!r.path) throw new FlowError(`the floorplan passes need TraceMaker's placer (tracemaker-place): ${r.why ?? "not found"}`);
+    host.tools.tracemakerPlace = r.path;
+    return r.path;
+  }
   const tm = await requireEngine(host, "tracemaker");
-  const exe = basename(tm).endsWith(".exe") ? "tracemaker-place.exe" : "tracemaker-place";
-  const p = join(dirname(tm), exe);
-  if (!existsSync(p)) throw new FlowError(`${exe} is not next to TraceMaker (${tm}): the floorplan passes need TraceMaker's placer; set TRACEMAKER_PLACE_BIN to it`);
+  const p = placerBeside(tm);
+  if (!p) throw new FlowError(`tracemaker-place is not next to TraceMaker (${tm}): the floorplan passes need TraceMaker's placer; set TRACEMAKER_PLACE_BIN to it`);
   return p;
 }
 

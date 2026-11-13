@@ -55,6 +55,13 @@ export const RouterSnapshot = z.object({
   sourceOnly: z.boolean().optional(),
   /** Env var (TRACEMAKER_BIN / FREEROUTING_JAR / FABDESK_KRT_DIR) or setting that supplies this router; Uninstall cannot remove it. */
   overriddenBy: z.string().optional(),
+  /**
+   * TraceMaker only: its placer (`tracemaker-place`, which board_route's floorplan path runs), found beside the binary,
+   * in a source build's tree, or from TRACEMAKER_PLACE_BIN (`overriddenBy`). `why` says what is missing when not ready.
+   */
+  placer: z
+    .object({ ready: z.boolean(), path: z.string().optional(), overriddenBy: z.string().optional(), why: z.string().optional() })
+    .optional(),
 });
 export type RouterSnapshot = z.infer<typeof RouterSnapshot>;
 
