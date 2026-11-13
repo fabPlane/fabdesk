@@ -73,7 +73,7 @@ type Fx = (x: number, y: number) => Pt;
 const key = (s: number, e: number) => `${s}:${e}`;
 const num4 = (p: Pose): Pose => [round(p[0], 4), round(p[1], 4), p[2]];
 
-function rawFootprints(root: SNode): Map<string, SNode> {
+export function rawFootprints(root: SNode): Map<string, SNode> {
   const out = new Map<string, SNode>();
   for (const fp of kids(root, "footprint")) {
     const props = new Map<string, string>();

@@ -178,10 +178,19 @@ export async function runEdit(input: EditRunInput): Promise<EditRunResult> {
   await mkdir(dirname(join(out, "before", env.pcbName)), { recursive: true });
   await writeFile(join(out, "before", env.pcbName), env.pcbText);
   const ledger = { plan, impact: rep, applied: applied.log };
-  const routeAgain = [...new Set([...(applied.log.moves?.cut_nets ?? []), ...(applied.log.landing?.cut_nets ?? []), ...(applied.log.pad_cut?.cut_nets ?? [])])].sort();
+  const routeAgain = routeAgainOf(applied.log, plan);
   const candidate = { dir: out, pcb, origin: join(out, "origin.json") };
   if (mode === "apply") return { ...common, stage: "apply", verdict: "PASS apply", stop: false, candidate, applied: applied.log, repair: { available: !!input.runners.repair, routeAgain }, ...(await diffOnly(env.pcbText, applied.pcbText, ledger)) };
   return finish({ ...common, candidate, applied: applied.log }, env, plan, ledger, routeAgain, input, t0);
+}
+
+/**
+ * Nets the repair should look at: the ones the edit cut, and an added part's pin nets (a new part is a new connection:
+ * placed off a pour, or with no direct track, its pads are open and only the repair routes them).
+ */
+export function routeAgainOf(applied: ApplyLog, plan: EditPlan): string[] {
+  const added = (plan.add ?? []).flatMap((ad) => Object.values(ad.pins));
+  return [...new Set([...(applied.moves?.cut_nets ?? []), ...(applied.landing?.cut_nets ?? []), ...(applied.pad_cut?.cut_nets ?? []), ...added])].filter(Boolean).sort();
 }
 
 async function diffOnly(before: string, after: string, ledger: { plan: EditPlan; impact: ImpactReport; applied: ApplyLog }) {
@@ -283,7 +292,7 @@ async function proofOnly(input: EditRunInput, plan: EditPlan, env: EditEnv, base
   const dir = input.candidate ?? (await newestCandidate(env.projectDir, plan.id));
   if (!dir || !(await exists(join(dir, "edit.json")))) throw new EditStop(`FAIL proof: no candidate for plan ${plan.id} (run mode apply first, or name the candidate folder)`);
   const ledger = await readJson<{ plan: EditPlan; impact: ImpactReport; applied: ApplyLog }>(join(dir, "edit.json"));
-  const routeAgain = [...new Set([...(ledger.applied.moves?.cut_nets ?? []), ...(ledger.applied.landing?.cut_nets ?? []), ...(ledger.applied.pad_cut?.cut_nets ?? [])])].sort();
+  const routeAgain = routeAgainOf(ledger.applied, ledger.plan);
   const candidate = { dir, pcb: join(dir, env.pcbName), origin: join(dir, "origin.json") };
   const res = await finish({ ...base, impact: ledger.impact, impactLines: impactLines(ledger.impact), candidate, applied: ledger.applied }, env, plan, ledger, routeAgain, input, Date.now());
   return res;

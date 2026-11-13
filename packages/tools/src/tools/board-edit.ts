@@ -92,7 +92,8 @@ const PLAN = z
           value: z.string().optional(),
           footprint: z.string().optional(),
           pins: z.record(z.string(), z.string()).describe("Pad number -> net."),
-          near: z.union([z.string(), nums(2)]).optional(),
+          near: z.union([z.string(), nums(2)]).optional().describe("A part, a REF.PAD (the part also gets a direct track to that pad when it shares its net), or a point."),
+          link: z.boolean().optional().describe("With near REF.PAD: false skips the direct track (default: add it when a straight or one-bend track clears)."),
           side: z.enum(["F", "B"]).optional(),
           rot: z.number().optional(),
           fields: z.record(z.string(), z.string()).optional(),
@@ -157,6 +158,15 @@ export function describeEdit(r: EditRunResult, adopted: string | null): string {
       ap.net_changes.length ? `re-netted ${ap.net_changes.map((c) => `${c.pin} ${c.from} -> ${c.to}`).join(", ")}` : "",
     ].filter(Boolean);
     lines.push(`Applied: ${bits.join("; ") || "field/value changes only"}.`);
+    for (const ad of ap.adds) {
+      const l = ad.link;
+      if (!l) continue;
+      lines.push(
+        "skipped" in l
+          ? `Direct track ${l.from} -> ${l.to}: none (${l.skipped}); the repair routes it if it is open.`
+          : `Direct track ${l.from} -> ${l.to}: ${l.mm} mm on ${l.layer} at ${l.width} mm${l.placed ? `, after moving ${ad.ref} to [${l.placed.join(", ")}] so it fits` : ""}.`,
+      );
+    }
   }
   if (r.repair) {
     const nets = r.repair.routeAgain.length;

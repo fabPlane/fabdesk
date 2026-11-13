@@ -19,6 +19,7 @@ import {
   topLevelSpans,
 } from "../src/index";
 import { EditStop, SheetSet, diffBoards, judge, parsePlan, revertNets, runEdit, type EditRunners } from "../src/edit/index";
+import { directLink, segSegDist } from "../src/edit/link";
 import { g } from "../src/edit/fmt";
 import { planMoves } from "../src/edit/move";
 import { pruneDangling } from "../src/edit/prune";
@@ -364,3 +365,31 @@ describe("review -> edit bridge (EditCandidateBuilder)", () => {
     expect(res.notes.join(" ")).toContain("STOP");
   });
 });
+
+describe("an added part placed next to a pad gets a direct track to it", () => {
+  test("add near U1.1 (VIN): a clear straight or one-bend VIN track from the new part's VIN pad to U1.1", async () => {
+    const dir = await project();
+    const r = await runEdit({ projectDir: dir, mode: "apply", plan: { id: "dec", add: [{ ref: "C9", like: "C1", pins: { "1": "VIN", "2": "GND" }, near: "U1.1", height_mm: 1 }], displace: { radius: 6 } }, runners: runners() });
+    expect(r.verdict).toBe("PASS apply");
+    const link = (r.applied as { adds: Array<{ link?: Record<string, unknown> }> }).adds[0]!.link!;
+    expect(link).toMatchObject({ from: "C9.1", to: "U1.1", layer: "F.Cu" });
+    expect(link["skipped"]).toBeUndefined();
+    const text = await readFile(r.candidate!.pcb, "utf8");
+    const pts = link["points"] as Array<[number, number]>;
+    expect(text).toContain(`(start ${pts[0]![0].toFixed(4)} ${pts[0]![1].toFixed(4)})`);
+    expect(r.repair?.routeAgain).toEqual(["GND", "VIN"]); // an add's nets go to the repair
+  });
+  test("link: false leaves it to the pours / last mile; a pad of no shared net is reported, not linked", async () => {
+    const dir = await project();
+    const off = await runEdit({ projectDir: dir, mode: "apply", plan: { id: "dec", add: [{ ref: "C9", like: "C1", pins: { "1": "VIN", "2": "GND" }, near: "U1.1", link: false, height_mm: 1 }], displace: { radius: 6 } }, runners: runners() });
+    expect((off.applied as { adds: Array<{ link?: unknown }> }).adds[0]!.link).toBeUndefined();
+    const t = directLink(BOARD, "C1", "U1.2", 0.2); // C1 has no SIG pad
+    expect(t.log).toEqual({ from: "C1.?", to: "U1.2", skipped: "C1 has no pad on SIG" });
+    expect(t.text).toBe(BOARD);
+  });
+  test("segment distance: crossing 0, parallel the gap", () => {
+    expect(segSegDist([0, 0], [2, 0], [1, -1], [1, 1])).toBe(0);
+    expect(segSegDist([0, 0], [2, 0], [0, 1], [2, 1])).toBe(1);
+  });
+});
+

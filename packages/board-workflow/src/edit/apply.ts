@@ -21,6 +21,8 @@ import { SheetSet, addSymbol, relabel, removePinOrphans, setSymFlags, setSymProp
 import { footprintSpans, refOf, removeBlocks, sideOf } from "./text";
 import { readBoard } from "../board";
 import { parseSexpr } from "../sexpr";
+import { readProjectSettings } from "../project";
+import { directLink, type LinkLog } from "./link";
 
 /** What a scoring run returns (an `AcceptanceResult` fits). */
 export interface Scored {
@@ -40,7 +42,7 @@ export interface ApplyLog {
   pruned_items?: number;
   pad_cut?: { removed: number; pruned: number; cut_nets: string[] };
   swaps: SwapLog[];
-  adds: Array<{ ref: string; footprint_file: string; schematic: string; near: unknown }>;
+  adds: Array<{ ref: string; footprint_file: string; schematic: string; near: unknown; link?: LinkLog }>;
   net_changes: Array<{ pin: string; from: string; to: string; schematic: string; label_was: string }>;
   net_change_pruned?: number;
   net_change_padless_deleted?: number;
@@ -217,6 +219,43 @@ export async function applyEdit(
     const r = planMoves(text, isFixed, landing, plan.displace ?? { radius: 6 }, pairs0);
     text = r.text;
     log.landing = r.led;
+  }
+  // an added part placed next to a pad gets a direct track to it when it shares that pad's net (a decoupling
+  // capacitor's connection), not only the pour; `link: false` in the add leaves it to the pour / the last mile
+  const linkAdds = (plan.add ?? []).filter((ad) => typeof ad.near === "string" && ad.near.includes(".") && ad.link !== false);
+  if (linkAdds.length) {
+    const ps = readProjectSettings(await readFile(join(env.projectDir, `${env.stem}.kicad_pro`), "utf8").catch(() => "{}"));
+    const clearance = Math.max(ps.classes.find((c) => c.name === "Default")?.clearance ?? 0, ps.minClearance ?? 0) || 0.2;
+    for (const ad of linkAdds) {
+      let lk = directLink(text, ad.ref, ad.near as string, clearance);
+      // blocked where the landing put it: try poses round the target pad, nearest first, each through the same
+      // courtyard-gated placement; the first that places and links wins (boards up to 30 MB: each try re-reads it)
+      if ("skipped" in lk.log && text.length < 30e6) {
+        const near = ad.near as string;
+        const tb = readBoard(parseSexpr(text)).pads.find((p) => `${p.ref}.${p.pad}` === near);
+        const tries: Array<[number, number, number]> = [];
+        if (tb)
+          for (const r of [1.2, 1.6, 2.0, 2.5, 3.0])
+            for (let k = 0; k < 8; k++) for (const rot of ad.rot !== undefined ? [ad.rot] : [0, 90, 180, 270]) tries.push([tb.x + r * Math.cos((k * Math.PI) / 4), tb.y + r * Math.sin((k * Math.PI) / 4), rot]);
+        for (const to of tries) {
+          let placed: string;
+          try {
+            placed = planMoves(text, isFixed, [{ ref: ad.ref, to }], null, pairs0).text;
+          } catch (e) {
+            if (e instanceof EditStop) continue;
+            throw e;
+          }
+          const l2 = directLink(placed, ad.ref, near, clearance);
+          if (!("skipped" in l2.log)) {
+            lk = { text: l2.text, log: { ...l2.log, placed: to.map((v) => Math.round(v * 1e4) / 1e4) as [number, number, number] } };
+            break;
+          }
+        }
+      }
+      text = lk.text;
+      const entry = log.adds.find((x) => x.ref === ad.ref);
+      if (entry) entry.link = lk.log;
+    }
   }
   if (plan.move?.length) {
     const r = planMoves(text, isFixed, plan.move, plan.displace, pairs0);

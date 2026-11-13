@@ -25,6 +25,8 @@ export interface AddSpec {
   pins: Record<string, string>;
   /** A part, a `REF.PAD`, or a point. Default: next to `like`. */
   near?: string | [number, number];
+  /** With `near: "REF.PAD"`: a direct track from this part's pad on that pad's net to it (default true; false leaves the connection to pours and the last mile). */
+  link?: boolean;
   side?: "F" | "B";
   rot?: number;
   fields?: Record<string, string>;
