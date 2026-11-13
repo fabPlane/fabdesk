@@ -59,3 +59,20 @@ ${fp("R1", 10, 10)}${fp("R2", 14, 10, 90)}${fp("R3", 20, 10, 0, "B")}
 	(gr_text "HELLO" (at 15 16 0) (layer "F.SilkS") (uuid "a0000000-0000-4000-8000-000000000001") (effects (font (size 1 1) (thickness 0.15))))
 )
 `;
+
+const seatFp = (ref: string, x: number, y: number, rot: number, pads: Array<[string, string, number, number]>) => `
+	(footprint "Lib:${ref}"
+		(layer "F.Cu")
+		(at ${x} ${y} ${rot})
+		(property "Reference" "${ref}" (at 0 0))
+		${pads.map(([n, net, px, py]) => `(pad "${n}" smd rect (at ${px} ${py} ${rot}) (size 0.6 0.4) (layers "F.Cu") (net "${net}"))`).join("\n\t\t")}
+	)`;
+// U1 (QFN-ish): the USB pair on its left side through R1/R2, the LVDS pair on its bottom side through FL1 (one part, two pads per net side)
+export const SEAT_BOARD = `(kicad_pcb (version 20250114)
+	(layers (0 "F.Cu" signal) (2 "B.Cu" signal) (25 "Edge.Cuts" user))
+	${seatFp("U1", 30, 20, 0, [["1", "USB_C_DP", -2.5, -0.25], ["2", "USB_C_DN", -2.5, 0.25], ["3", "GND", 2.5, 0], ["4", "VCC", 0, -2.5], ["5", "LV1_P", -0.25, 2.5], ["6", "LV1_N", 0.25, 2.5]])}
+	${seatFp("R1", 20, 10, 0, [["1", "USB_C_DP", -0.8, 0], ["2", "USB_DP", 0.8, 0]])}
+	${seatFp("R2", 23, 12, 90, [["1", "USB_C_DN", -0.8, 0], ["2", "USB_DN", 0.8, 0]])}
+	${seatFp("FL1", 40, 30, 0, [["1", "LV1_P", -1, -0.5], ["2", "LV1_N", -1, 0.5], ["3", "LV_P", 1, -0.5], ["4", "LV_N", 1, 0.5]])}
+	${seatFp("J1", 5, 5, 0, [["1", "USB_DP", 0, 0], ["2", "USB_DN", 1, 0], ["3", "LV_P", 2, 0], ["4", "LV_N", 3, 0], ["5", "GND", 4, 0]])}
+)`;

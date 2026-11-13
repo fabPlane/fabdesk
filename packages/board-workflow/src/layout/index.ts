@@ -11,4 +11,5 @@ export { parseSeeds, nativeCourtyard, placeKrt, type PlaceRecord, type SeedRecor
 export { loadPlan, routeKrt, routePipeline } from "./route";
 export * from "./flow";
 export * from "./courtyards";
+export * from "./pairseat";
 export * from "./footprint";

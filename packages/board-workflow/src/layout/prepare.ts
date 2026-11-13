@@ -7,8 +7,9 @@ import { copyFile, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/p
 import { basename, join } from "node:path";
 import { parseBoard } from "../board";
 import { boardHome, locateProject, writeJsonFile } from "../files";
-import { readOnboardRecord, requirementsDir } from "../onboard";
+import { readOnboardRecord, readRequirements, requirementsDir } from "../onboard";
 import { pathExists } from "./fsx";
+import { pairSeat, seatGroups } from "./pairseat";
 import { BUILTIN_PLAN_REFS, deriveGroups, escapeKeepouts, fixedRegex, type LayoutSpec } from "./spec";
 import { lockFootprints, stripCopper } from "./text";
 
@@ -53,10 +54,25 @@ export async function prepareLayout(projectDir: string, opts: { pcb?: string; na
   const board = parseBoard(text);
   const keepouts = escapeKeepouts(board.pads, fixed);
   decided.push(`${keepouts.length} escape keep-outs for fine-pitch fixed rows`);
-  const groups = deriveGroups(board, new Set(fixed));
+  if (!(await readdir(requirementsDir(projectDir)).catch(() => [])).length) throw new Error("requirements missing: run board_check first");
+  let groups = deriveGroups(board, new Set(fixed));
+  // pass-through parts of pairs seated on their chip's pins (the toolkit's flow/pairseat.py); members join the chip's group
+  const req = await readRequirements(projectDir);
+  const rows = req ? pairSeat(board, req.acceptance, new RegExp(fixedRegex(fixed))) : {};
+  const templates: string[] = [];
+  await rm(join(out, "templates"), { recursive: true, force: true });
+  if (Object.keys(rows).length) {
+    groups = seatGroups(groups, rows);
+    for (const [chip, row] of Object.entries(rows)) {
+      const f = join(out, "templates", `${chip}.row.json`);
+      await writeJsonFile(f, row);
+      templates.push(f);
+    }
+    decided.push("pair pass-through templates: " + Object.entries(rows).map(([c, r]) => `${c}: ${JSON.stringify(r.members.map((m) => m.ref))}`).join("; "));
+    review.push("templates: check each pass-through row in layout/templates/ (edit or drop a member; spec.templates lists them)");
+  }
   decided.push(`${groups.length} groups: ` + groups.map((g) => `${g.name}(${g.refs.length})`).join(", "));
   review.push("groups: check dense blocks; add datasheet templates for switchers and serializers (spec.templates)");
-  if (!(await readdir(requirementsDir(projectDir)).catch(() => [])).length) throw new Error("requirements missing: run board_check first");
   await writeJsonFile(join(out, "groups.json"), { schema: 1, board: `${files.stem}.kicad_pcb`, groups });
   const spec: LayoutSpec = {
     name: opts.name ?? (basename(projectDir) || "board"),
@@ -65,7 +81,7 @@ export async function prepareLayout(projectDir: string, opts: { pcb?: string; na
     requirements: requirementsDir(projectDir),
     fixed: fixedRegex(fixed),
     groups: join(out, "groups.json"),
-    templates: [],
+    templates,
     plans: { ...BUILTIN_PLAN_REFS },
     keepouts,
     cull_keep_fraction: 1.0,
