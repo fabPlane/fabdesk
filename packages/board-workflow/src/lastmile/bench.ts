@@ -342,9 +342,12 @@ export class Bench {
       if (r.figures && r.dir && startText) {
         const candText = await readFile(join(r.dir, this.st.pcb), "utf8").catch(() => "");
         r.otherNetsChanged = candText ? changedCopperNets(startText, candText).filter((n) => !before.has(n)) : [];
-        // only for a step that closed opens (a router run): a step meant to change other nets (tighten, pair ops, rip,
-        // nudge) would just be undone, at the cost of another whole-board score
-        if (r.otherNetsChanged.length && r.figures.open < f0.open && !o.noScoped) {
+        // only for a router or repair step (KRT, repair, fill) that closed opens or otherwise improved the board (a
+        // shorts pass that cleared a crossing but rewrote 17 power nets, jetson): a step meant to change other nets
+        // (tighten, pair ops, nudge) would just be undone, at the cost of another whole-board score
+        const routerish = (cands.find((c) => c.name === r.name)?.steps ?? []).every((st) => st.type === "krt" || st.type === "repair" || st.type === "fill");
+        const improved = r.figures.open < f0.open || compareKeys(keyOf(r.figures), keyOf(f0)) < 0;
+        if (r.otherNetsChanged.length && routerish && improved && !o.noScoped) {
           const sdir = `${r.dir}~scoped`;
           const sc: CandidateRecord = { name: `${r.name}~scoped`, wall_s: r.wall_s, rejected: [], steps: [], scopedFrom: { name: r.name, reverted: r.otherNetsChanged } };
           try {
