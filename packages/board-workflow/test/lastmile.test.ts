@@ -299,8 +299,19 @@ describe("bench", () => {
     const ws = join(await mk(), "ws");
     const { bench } = await L.Bench.create(ws, d, "board.kicad_pcb", { scorer, engine: engine({ finish: routed }), availableGiB: async () => 30 });
     const r = await bench.try(["finish"], {});
-    expect(r.candidates[0]!.otherNetsChanged).toEqual(["GND"]);
+    const byName = Object.fromEntries(r.candidates.map((c) => [c.name, c]));
+    expect(byName["finish"]!.otherNetsChanged).toEqual(["GND"]);
     expect(r.lines.join("\n")).toContain("also changed 1 other net(s): GND");
+    // the scoped sibling: the same routing with GND's copper as it was; equal figures, so the smaller change is accepted
+    expect(byName["finish~scoped"]!.scopedFrom).toEqual({ name: "finish", reverted: ["GND"] });
+    expect(r.accepted).toBe("finish~scoped");
+    const kept = await readFile(join(bench.dir, "board.kicad_pcb"), "utf8");
+    expect(kept).toContain('(uuid "n0")');
+    expect(kept).not.toContain('(uuid "stub")');
+    // noScoped: only the router's own board
+    const ws2 = join(await mk(), "ws2");
+    const { bench: b2 } = await L.Bench.create(ws2, d, "board.kicad_pcb", { scorer, engine: engine({ finish: routed }), availableGiB: async () => 30 });
+    expect((await b2.try(["finish"], { noScoped: true })).candidates.map((c) => c.name)).toEqual(["finish"]);
   });
 
   test("a candidate over its budget is abandoned and fails", async () => {

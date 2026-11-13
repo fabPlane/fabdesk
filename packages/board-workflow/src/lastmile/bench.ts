@@ -13,6 +13,7 @@ import { compareKeys, figureLine, gate, keyOf, type Figures, type GateSlack, typ
 import { hostMemory } from "../sysinfo";
 import { boardGridShape, routerFootprint, type RouterFootprint } from "../layout/footprint";
 import { changedCopperNets } from "../layout/text";
+import { revertNets } from "../edit/diff";
 
 export interface Scored {
   figures: Figures;
@@ -78,6 +79,8 @@ export interface CandidateRecord {
   name: string;
   /** Nets whose copper this candidate changed that were not open on the board it started from (set by `try`). */
   otherNetsChanged?: string[];
+  /** For a `~scoped` record: the candidate it was made from, with these nets' copper put back as they were. */
+  scopedFrom?: { name: string; reverted: string[] };
   wall_s: number;
   figures?: Figures;
   rejected: string[];
@@ -311,7 +314,7 @@ export class Bench {
    * Run the actions in parallel from the current board, score each whole board, accept the best one that passes the
    * gate (unless `noAccept`), print one line each.
    */
-  async try(actions: string[], o: { noAccept?: boolean; jobs?: number; slackA8?: number; budget?: number } = {}): Promise<TryResult> {
+  async try(actions: string[], o: { noAccept?: boolean; jobs?: number; slackA8?: number; budget?: number; noScoped?: boolean } = {}): Promise<TryResult> {
     const lines: string[] = [];
     const start = this.dir;
     const f0 = this.figures;
@@ -326,9 +329,41 @@ export class Bench {
     const footprint = await boardFootprint(join(start, this.st.pcb), pcbBytes);
     const lim = sizeLimits({ pcbBytes, availableGiB: await (this.deps.availableGiB ?? memAvailableGiB)(), jobs: o.jobs ?? 6, budget: o.budget, opens: f0.open, footprint });
     if (lim.note) this.say(lim.note, lines);
-    const recs = await pool(cands, lim.jobs, (c) => this.runCandidate(c, start, join(tdir, c.slug), lim.budget));
+    const ran = await pool(cands, lim.jobs, (c) => this.runCandidate(c, start, join(tdir, c.slug), lim.budget));
     const slack: GateSlack = { a8_slack: o.slackA8 ?? 0 };
     const before = new Set(this.openNets(await this.scoreDir(start)));
+    // nets whose copper a candidate changed beyond the ones that were open: what a "change only this" task must see.
+    // Each such candidate that closed opens also gets a scoped sibling with those nets' copper put back as it was (what agents did by hand
+    // on held-out reroutes: the router closed the opens but rewrote other nets, or crossed them), scored like any other;
+    // it goes first so that on equal figures the smaller change wins.
+    const startText = await readFile(join(start, this.st.pcb), "utf8").catch(() => "");
+    const recs: CandidateRecord[] = [];
+    for (const r of ran) {
+      if (r.figures && r.dir && startText) {
+        const candText = await readFile(join(r.dir, this.st.pcb), "utf8").catch(() => "");
+        r.otherNetsChanged = candText ? changedCopperNets(startText, candText).filter((n) => !before.has(n)) : [];
+        // only for a step that closed opens (a router run): a step meant to change other nets (tighten, pair ops, rip,
+        // nudge) would just be undone, at the cost of another whole-board score
+        if (r.otherNetsChanged.length && r.figures.open < f0.open && !o.noScoped) {
+          const sdir = `${r.dir}~scoped`;
+          const sc: CandidateRecord = { name: `${r.name}~scoped`, wall_s: r.wall_s, rejected: [], steps: [], scopedFrom: { name: r.name, reverted: r.otherNetsChanged } };
+          try {
+            await rm(sdir, { recursive: true, force: true });
+            await copyBoardFolder(r.dir, sdir);
+            await writeFile(join(sdir, this.st.pcb), revertNets(startText, candText, r.otherNetsChanged));
+            const t1 = Date.now();
+            sc.figures = (await this.scoreDir(sdir)).figures;
+            sc.dir = sdir;
+            sc.wall_s = Math.round((r.wall_s + (Date.now() - t1) / 1000) * 10) / 10;
+            sc.otherNetsChanged = [];
+          } catch (e) {
+            sc.error = e instanceof Error ? e.message : String(e);
+          }
+          recs.push(sc);
+        }
+      }
+      recs.push(r);
+    }
     this.say(`from  ${figureLine(f0)}`, lines);
     for (const r of recs) r.rejected = r.error ? [r.error.slice(-160).replaceAll("\n", " ")] : gate(r.figures!, f0, slack);
     const ok = recs.filter((r) => !r.rejected.length).sort((a, b) => compareKeys(keyOf(a.figures!), keyOf(b.figures!)));
@@ -340,11 +375,10 @@ export class Bench {
       const after = new Set(this.openNets(await this.scoreDir(r.dir!)));
       const closed = [...before].filter((n) => !after.has(n)).sort();
       const fresh = [...after].filter((n) => !before.has(n)).sort();
-      // nets whose copper the candidate changed beyond the ones that were open: what a "change only this" task must see
-      const startText = await readFile(join(start, this.st.pcb), "utf8").catch(() => "");
-      const candText = await readFile(join(r.dir!, this.st.pcb), "utf8").catch(() => "");
-      r.otherNetsChanged = startText && candText ? changedCopperNets(startText, candText).filter((n) => !before.has(n)) : [];
-      const others = r.otherNetsChanged.length
+      r.otherNetsChanged ??= [];
+      const others = r.scopedFrom
+        ? `${r.scopedFrom.name} with ${r.scopedFrom.reverted.length} other net(s) put back: ${r.scopedFrom.reverted.slice(0, 6).join(", ")}${r.scopedFrom.reverted.length > 6 ? ", ..." : ""}`
+        : r.otherNetsChanged.length
         ? `also changed ${r.otherNetsChanged.length} other net(s): ${r.otherNetsChanged.slice(0, 6).join(", ")}${r.otherNetsChanged.length > 6 ? ", ..." : ""}`
         : "";
       const delta = [closed.length ? `closed ${closed.join(", ")}` : "", fresh.length ? `NEW open ${fresh.join(", ")}` : "", others].filter(Boolean).join("; ");

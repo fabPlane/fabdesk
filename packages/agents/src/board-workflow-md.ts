@@ -84,9 +84,10 @@ and basis); \`inner_neck_allowance_mm: 0\` on a power class makes every inner se
   only cuts, so you can chain your own steps before \`route\`. \`view\` draws a window with the DRC markers, optionally only some copper \`layers\`,
   and with \`candidate\` a try's board instead of the current step.
   Rip, route and nudge steps run KiCadRoutingTools plans; when KRT cannot be had (install error, broken override, auto-install off) a step
-  that needs it fails naming why, and \`finish\`, \`fill:ROUTER\`, \`tighten\` and the power steps still run. \`finish\` adds copper only on the nets that were open and
-  leaves every other net as it was; other steps may change more, and each \`try\` line says which other nets a candidate changed: for a "change
-  only this" task, prefer the candidate that changed none. Power copper without a router: \`escape\` (pad-width bridges and stubs at fine-pitch
+  that needs it fails naming why, and \`finish\`, \`fill:ROUTER\`, \`tighten\` and the power steps still run. A router step can also rewrite
+  nets that were not open (KRT's \`finish\` did on large boards); each \`try\` line says which other nets a candidate changed, and a candidate
+  that closed opens and changed other nets gets a \`NAME~scoped\` sibling with those nets' copper put back, scored like any other and preferred
+  on equal figures. For a "change only this" task, accept a candidate that changed no other net (the \`~scoped\` one), never splice copper by hand. Power copper without a router: \`escape\` (pad-width bridges and stubs at fine-pitch
   power pins narrower than their class, within the 1 mm neck rule; chain a router, \`escape+finish\`), \`planes:FILE\` (a split power plane on an
   inner layer from a plan JSON) and \`pour\` (net zones over open power connections, never thinner than class width; it closes an open only where
   the copper fits, not a structural one). The TraceMaker route plan takes the same as \`planes\` / \`escape\` before routing.
