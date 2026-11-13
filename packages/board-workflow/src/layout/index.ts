@@ -15,3 +15,5 @@ export * from "./pairseat";
 export * from "./footprint";
 export * from "./placement";
 export * from "./blocks";
+export * from "./floorplan";
+export * from "./blockeval";
