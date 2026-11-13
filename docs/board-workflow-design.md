@@ -227,7 +227,7 @@ description names the board tool that supersedes it for that job, and the start 
 
 - The code is in `packages/board-workflow` (TypeScript, root workspace); tools are thin wrappers in `packages/tools/src/tools/board-*.ts`. Add a new
   workflow step to the library first, then expose it through the stage's existing tool as another `action`, not as a new tool.
-- Parity harnesses: `packages/board-workflow/test/parity-{stage1,edit,review,release,layout,lastmile,power,cable,page,diff,bench,courtyards,acceptance,lastmile-tools}.ts`, and `review-seeds.ts`. Measurement harnesses (edit suite, pair bench, escape replay): `packages/board-workflow/scripts/bench.ts`. They need the
+- Parity harnesses: `packages/board-workflow/test/parity-{acceptance,bench,cable,courtyards,diff,edit,editkeys,floorplan,lastmile-tools,lastmile,layout,nudge,page,pairops,placement,power-stack,power,region,release,review,rip,stage1}.ts`, and `review-seeds.ts`. Measurement harnesses (edit suite, pair bench, escape replay): `packages/board-workflow/scripts/bench.ts`. They need the
   Python oracle checked out and `kicad-cli`; run one heavy board job at a time (routing on large boards holds several GiB, and an earlier
   run of several jobs at once exhausted memory).
 - `.gitignore` contains `release/`; `packages/board-workflow/src/release/` is excepted. Check `git status --ignored` after adding a directory named like an ignored one.
