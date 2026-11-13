@@ -13,3 +13,5 @@ export * from "./flow";
 export * from "./courtyards";
 export * from "./pairseat";
 export * from "./footprint";
+export * from "./placement";
+export * from "./blocks";
