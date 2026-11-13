@@ -93,7 +93,9 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
   const rip = await readJsonOrNull<{ nets?: string[]; open_before?: string[] }>(join(o.placed, "rip.json"));
   const nudge = await readJsonOrNull<{ cut_nets?: string[] }>(join(o.placed, "nudge.json"));
   sel.cutNets = [...(rip?.nets ?? []), ...(nudge?.cut_nets ?? [])];
-  sel.openBefore = rip?.open_before ?? [];
+  // after a rip, the nets open before it; otherwise the nets open on this board (the last-mile bench's score of it)
+  const scored = rip ? null : await readJsonOrNull<{ opens?: Array<{ net?: string }> }>(join(o.placed, "lastmile.score.json"));
+  sel.openBefore = rip?.open_before ?? [...new Set((scored?.opens ?? []).map((x) => x.net).filter((n): n is string => !!n))].sort();
 
   const record: RouteKrtRecord = { stages: [] };
   let cur = krtIn;

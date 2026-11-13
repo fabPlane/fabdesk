@@ -83,7 +83,9 @@ and basis); `inner_neck_allowance_mm: 0` on a power class makes every inner segm
   that needs it fails naming why, and `finish`, `fill:ROUTER`, `tighten` and the power steps still run. A router step can also rewrite
   nets that were not open (KRT's `finish` did on large boards); each `try` line says which other nets a candidate changed, and a candidate
   that closed opens and changed other nets gets a `NAME~scoped` sibling with those nets' copper put back, scored like any other and preferred
-  on equal figures. For a "change only this" task, accept a candidate that changed no other net (the `~scoped` one), never splice copper by hand. Power copper without a router: `escape` (pad-width bridges and stubs at fine-pitch
+  on equal figures. For a "change only this" task, accept a candidate that changed no other net (the `~scoped` one), never splice copper by hand.
+  To re-route a few nets on a large board, `opens` (finish limited to the nets open now) returns in a minute or two where `finish` can take
+  ten or more; try both in one `try`. Power copper without a router: `escape` (pad-width bridges and stubs at fine-pitch
   power pins narrower than their class, within the 1 mm neck rule; chain a router, `escape+finish`), `planes:FILE` (a split power plane on an
   inner layer from a plan JSON) and `pour` (net zones over open power connections, never thinner than class width; it closes an open only where
   the copper fits, not a structural one). The TraceMaker route plan takes the same as `planes` / `escape` before routing.

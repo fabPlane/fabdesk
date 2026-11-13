@@ -274,6 +274,25 @@ describe("step engine: plan files and aborts", () => {
     await expect(noRoot.run(L.stepsFor("plan:plans/mine.json")[0]!, input(dir, join(await tmp(), "s")))).rejects.toThrow("no project folder");
   });
 
+  test("opens: finish limited to the nets open on the start board (from the bench's score); none scored, the stage is skipped", async () => {
+    const { dir, req } = await c6();
+    const krt = join(dir, "krt");
+    await mkdir(join(krt, "src/plugins"), { recursive: true });
+    await writeFile(join(dir, "lastmile.score.json"), JSON.stringify({ opens: [{ net: "SIG" }, { net: "SIG" }, { net: "N2" }] }));
+    const spawns: string[][] = [];
+    const r = await engine(req, krt, spawns, []).run(L.stepsFor("opens")[0]!, input(dir, join(await tmp(), "o")));
+    expect("error" in r).toBe(false);
+    const route = spawns.find((c) => c.some((x) => /route\.py$/.test(x)))!;
+    const at = route.indexOf("--nets");
+    expect(at).toBeGreaterThan(0);
+    expect(route.slice(at + 1, at + 3).sort()).toEqual(["N2", "SIG"]);
+    expect(route).not.toContain("@open-before");
+    // the toolkit's finish is unchanged: no --nets
+    const spawns2: string[][] = [];
+    await engine(req, krt, spawns2, []).run(L.stepsFor("finish")[0]!, input(dir, join(await tmp(), "f")));
+    expect(spawns2.find((c) => c.some((x) => /route\.py$/.test(x)))!).not.toContain("--nets");
+  });
+
   test("an aborted signal starts nothing: no step, no KRT stage, no process", async () => {
     const { dir, req } = await c6();
     const krt = join(dir, "krt");

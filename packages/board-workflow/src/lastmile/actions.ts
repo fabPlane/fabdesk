@@ -52,6 +52,17 @@ const plan = (n: string): Record<string, unknown> => {
   return structuredClone(p);
 };
 const K = (n: string): Step => ({ type: "krt", plan: plan(n), planName: n });
+/**
+ * `finish` limited to the nets open on the board it starts from (KRT `--nets @open-before`; with no rip before it, the
+ * bench's score of that board names them). Not a toolkit plan: on held-out 12-layer boards `finish` (every unrouted
+ * connection) ran past 6 minutes, and agents wrote this restriction by hand and had their nets in 1-2 minutes.
+ */
+const finishOpens = (): Step => {
+  const f = structuredClone(plan("finish")) as { note?: string; stages: Array<{ args: string[] }> };
+  f.note = "fabdesk: finish limited to the nets open on the start board (--nets @open-before)";
+  f.stages[0]!.args = [...f.stages[0]!.args, "--nets", "@open-before"];
+  return { type: "krt", plan: f as Record<string, unknown>, planName: "finish-opens" };
+};
 const REP = (rip: string[], p = "rip-sig"): Step => ({ type: "repair", rip, plan: plan(p), planName: p });
 
 /** The host routers a `fill` step can name (the tools package's hostFill runs exactly these). */
@@ -60,6 +71,7 @@ export const FILL_ROUTERS = ["tracemaker", "freerouting", "fab_router"] as const
 type Builder = (arg: string) => Step[];
 export const ACTIONS: Record<string, { help: string; steps: Builder | null }> = {
   finish: { help: "route the opens; nothing is ripped", steps: () => [K("finish")] },
+  opens: { help: "route only the nets open now (finish limited to them, nothing ripped): on a large board much faster than finish", steps: () => [finishOpens()] },
   rip: { help: "route the opens; signal nets may be ripped whole (pairs and wide power protected)", steps: () => [K("rip-sig")] },
   leg: {
     help: "leg-level rip with near-target blocker selection, then repair its shorts keeping the new routes",
