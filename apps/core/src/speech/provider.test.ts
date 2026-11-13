@@ -1,3 +1,5 @@
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, test } from "bun:test";
 import { createCloudSpeechProvider } from "./cloud";
 import { createLocalSpeechProvider, installLocalSpeechModel, localSpeechPaths, whisperCliArgs } from "./local";
@@ -48,7 +50,7 @@ describe("speech providers", () => {
   });
 
   test("local runs whisper-cli and deletes the temp audio", async () => {
-    const home = `/tmp/fabdesk-speech-${Date.now()}`;
+    const home = join(tmpdir(), `fabdesk-speech-${Date.now()}`);
     const paths = localSpeechPaths(home);
     const ran: string[] = [];
     const missing = createLocalSpeechProvider({
@@ -90,7 +92,7 @@ describe("speech providers", () => {
       "--prompt",
       "USB-C",
     ]);
-    const home = `/tmp/fabdesk-speech-wav-${Date.now()}`;
+    const home = join(tmpdir(), `fabdesk-speech-wav-${Date.now()}`);
     const converted: string[] = [];
     const provider = createLocalSpeechProvider({
       home,
@@ -126,7 +128,7 @@ describe("speech providers", () => {
   });
 
   test("installLocalSpeechModel writes through the injected downloader", async () => {
-    const home = `/tmp/fabdesk-speech-install-${Date.now()}`;
+    const home = join(tmpdir(), `fabdesk-speech-install-${Date.now()}`);
     let dest = "";
     const result = await installLocalSpeechModel({
       home,
