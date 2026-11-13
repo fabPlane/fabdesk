@@ -9,7 +9,8 @@
  * and, with `apply`, settles what intent or evidence decides, builds and proves edit candidates (and the combined one,
  * with a change picture per READY candidate); `try` proves the agent's own plan the same way; `autopilot` is the
  * toolkit's `pcb run` (review if stale -> fixes -> owner questions); `intent*` read and write the owner's intent file;
- * `import_expert` adds an independent reviewer's findings.
+ * `import_expert` adds an independent reviewer's findings. `cable`, `page` and `diff` (board-review-views.ts) look at
+ * boards without touching the review record: cable reach in a chassis, the KiCad-plot board page, the change picture.
  * The gate is recorded for the project's status (`recordReviewGate`). The reviewer never edits a design.
  *
  * Replaces in intent: the DRC/ERC summaries of `verify_drc` and `verify_erc` as a release judgement (those stay as
@@ -50,6 +51,7 @@ import { boardMemGiB, governor } from "../resources";
 import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
 import { ok, requireKicad } from "./common";
 import { editRunners } from "./board-edit";
+import { cableAction, diffAction, pageAction } from "./board-review-views";
 
 /**
  * The release stage's BOM decisions (`board_release bom`, under `bomDirOf`), for the review of `pcb`. A BOM check made
@@ -105,9 +107,9 @@ export const board_review = defineTool({
   toolset: "board",
   title: "Review the whole board against one design hash",
   description:
-    "Whole-board design review: the first call when asked to review a board or find its faults before ordering (then read for what the checks cannot judge). run: the checks (L0 identity/netlist, L1 ERC/DRC grouped + acceptance A1-A9 on the same DRC, L2 pin semantics + datasheet rule cards + evidence, L3 decoupling/current/divider/impedance/ratings/manual items, L4 connector mouths, L5 interconnect gate, L6 BOM/coverage/silk labels, L8 expert pack, custom checks) as findings (must-fix | question | note), each with a proposal; the record is bound to the design hash (board, schematics, project files, requirements) and goes stale when any of them changes. gate: 0 pass | 1 none/stale | 2 open | 3 check errors, open items lead with their proposal. dispose: settle a finding (state accept | fix | false-positive, by agent | owner, reason; false-positive needs thirdSource; an agent accepting a must-fix needs evidence unless the owner's intent allows it; id may end in *). fix: every open finding's proposal; apply settles what the owner's intent or evidence decides (edit proposals are built as candidate boards by the edit stage and reported READY only when the finding is gone, no new finding appears and nothing outside the plan changed). With apply, two or more READY candidates are also applied together as one combined candidate and proven (fixes/combined.json), and every READY candidate gets a change picture (change.html beside its board). try: your own board_edit plan (plan) proven exactly like the workflow's for the finding ids it should fix (ids): READY only when the proof passes, every one of them is gone, no new finding appears and nothing outside the plan changed. autopilot: review if stale, then fix with apply (settle, build and prove candidates, the combined candidate, pictures), then only what needs the owner; on a low disk it settles only. intent / intent_init / intent_decide: the owner's intent file (.fabdesk/board/review/intent.json): show it; write a skeleton (constraints from the requirements, the goal left to the owner, what the owner wants to be asked); record an owner decision (id, decision, covers: finding-id patterns it settles in every later review, effect). Record a decision only when the owner gave it. import_expert: add an independent reviewer's findings (file) to the current review. status: current or stale, open counts. The reviewer never edits the design; the gate result is kept for the project's status.",
+    "Whole-board design review: the first call when asked to review a board or find its faults before ordering (then read for what the checks cannot judge). run: the checks (L0 identity/netlist, L1 ERC/DRC grouped + acceptance A1-A9 on the same DRC, L2 pin semantics + datasheet rule cards + evidence, L3 decoupling/current/divider/impedance/ratings/manual items, L4 connector mouths, L5 interconnect gate, L6 BOM/coverage/silk labels, L8 expert pack, custom checks) as findings (must-fix | question | note), each with a proposal; the record is bound to the design hash (board, schematics, project files, requirements) and goes stale when any of them changes. gate: 0 pass | 1 none/stale | 2 open | 3 check errors, open items lead with their proposal. dispose: settle a finding (state accept | fix | false-positive, by agent | owner, reason; false-positive needs thirdSource; an agent accepting a must-fix needs evidence unless the owner's intent allows it; id may end in *). fix: every open finding's proposal; apply settles what the owner's intent or evidence decides (edit proposals are built as candidate boards by the edit stage and reported READY only when the finding is gone, no new finding appears and nothing outside the plan changed). With apply, two or more READY candidates are also applied together as one combined candidate and proven (fixes/combined.json), and every READY candidate gets a change picture (change.html beside its board). try: your own board_edit plan (plan) proven exactly like the workflow's for the finding ids it should fix (ids): READY only when the proof passes, every one of them is gone, no new finding appears and nothing outside the plan changed. autopilot: review if stale, then fix with apply (settle, build and prove candidates, the combined candidate, pictures), then only what needs the owner; on a low disk it settles only. intent / intent_init / intent_decide: the owner's intent file (.fabdesk/board/review/intent.json): show it; write a skeleton (constraints from the requirements, the goal left to the owner, what the owner wants to be asked); record an owner decision (id, decision, covers: finding-id patterns it settles in every later review, effect). Record a decision only when the owner gave it. import_expert: add an independent reviewer's findings (file) to the current review. status: current or stale, open counts. cable: does a catalog cable reach between two boards' connectors in the case, in each stated frame (chassis JSON: frames of boards with origin, yaw, mirror, face_z; cables with a/b [board, ref], length_mm, tolerance_mm, lead_mm, bend_mm, basis): mouths from the footprints, shortest orthogonal path with leads, turns and bends, slack, PASS/FAIL, flags for a mouth inside its board or a cable needing a fold store; seconds, no KiCad; for multi-board products, after moving a connector, or with sweep to find where on an edge a connector gives the most slack. page: one interactive HTML page comparing boards (compare: LABEL=PATH) from KiCad's own layer plots, with opens and DRC errors from the DRC report beside each board (acceptance.drc.json, or drc to run one) and 3D renders. diff: the change picture old -> new (tracks and vias added/removed, parts moved with arrows) as HTML + SVG. The reviewer never edits the design; the gate result is kept for the project's status.",
   inputSchema: {
-    action: z.enum(["run", "gate", "dispose", "fix", "try", "autopilot", "intent", "intent_init", "intent_decide", "import_expert", "status"]).default("run"),
+    action: z.enum(["run", "gate", "dispose", "fix", "try", "autopilot", "intent", "intent_init", "intent_decide", "import_expert", "status", "cable", "page", "diff"]).default("run"),
     pcb: z.string().optional().describe("Board file, relative to the project; default board.kicad_pcb or the project's only .kicad_pcb."),
     checks: z.array(z.string().max(40)).max(30).optional().describe("run: only these checks (a partial run is not the project's review and does not set the gate)."),
     offline: z.boolean().default(false).describe("run: never fetch from the network (JLC/EasyEDA symbols); cached records are still read."),
@@ -124,11 +126,31 @@ export const board_review = defineTool({
     decision: z.string().max(2000).optional().describe("intent_decide: the owner's answer, in their words."),
     covers: z.array(z.string().max(300)).max(50).optional().describe("intent_decide: finding-id patterns the decision settles (* ? [seq]), e.g. L4:MOUTH:J1:*."),
     effect: z.string().max(1000).optional().describe("intent_decide: what the decision changes in practice."),
+    chassis: z.string().max(500).optional().describe("cable: the chassis JSON file, relative to the project."),
+    root: z.string().max(500).optional().describe("cable: folder the chassis's relative board paths resolve against, relative to the project (default the project; the mating board may live beside it)."),
+    frame: z.string().max(200).optional().describe("cable: only this frame."),
+    frames: z.array(z.string().max(200)).max(50).optional().describe("cable with sweep: only these frames."),
+    boards: z.record(z.string().max(100), z.string().max(500)).optional().describe("cable: replace a board's file in every frame, {BOARD: path} (an edited board or an edit candidate), resolved like the chassis paths."),
+    sweep: z.string().max(200).optional().describe("cable: BOARD:REF to slide along one edge of its board, reporting the slack of every cable using it per position."),
+    edge: z.enum(["right", "left", "front", "back"]).optional().describe("cable with sweep: the edge (default right; front = +Y)."),
+    step: z.number().positive().max(50).optional().describe("cable with sweep: mm between positions (default 1)."),
+    compare: z.array(z.string().max(600)).max(12).optional().describe("page: boards as LABEL=PATH (a .kicad_pcb or a folder holding one, relative to the project); default the project's board."),
+    title: z.string().max(200).optional().describe("page: the page title."),
+    render3d: z.boolean().default(true).describe("page: embed KiCad 3D renders of both sides."),
+    drc: z.boolean().default(false).describe("page: run DRC on each board for its opens and errors instead of reading acceptance.drc.json beside it."),
+    old: z.string().max(600).optional().describe("diff: the earlier board (file or folder, relative to the project)."),
+    new: z.string().max(600).optional().describe("diff: the later board (default the project's board)."),
+    layers: z.array(z.string().max(40)).max(40).optional().describe("diff: draw copper on these layers only (counts still cover all)."),
+    out: z.string().max(500).optional().describe("page / diff: the .html file to write, relative to the project (default .fabdesk/board/review/board-page.html or change.html)."),
   },
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: false },
   longRunning: true,
   handler: async (input, ctx): Promise<ToolOutput> => {
     const dir = ctx.requireProject().dir;
+    // looking at boards: no review record involved (and a multi-board project need not name one board)
+    if (input.action === "cable") return cableAction(dir, input);
+    if (input.action === "diff") return diffAction(dir, input);
+    if (input.action === "page") return runDurable(ctx, "board_review", (c) => pageAction(c, dir, input));
     let project: ReviewProject;
     try {
       project = await openReviewProject(dir, input.pcb);

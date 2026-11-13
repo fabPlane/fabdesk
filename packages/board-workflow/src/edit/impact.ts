@@ -268,7 +268,7 @@ export function impact(plan: EditPlan, env: EditEnv): ImpactReport {
         const refsNamed = led.moved.map((m) => m.ref).filter((r) => refPat(r).test(blob));
         if (refsNamed.length) {
           rep.contracts.push({ id: ent["id"], boards: ent["boards"], matched: refsNamed, why: "moved connector" });
-          rep.review.push(`${ent["id"]}: moved connector [${refsNamed.map((r) => `'${r}'`).join(", ")}]: check the cable path to the mating board`);
+          rep.review.push(`${ent["id"]}: moved connector [${refsNamed.map((r) => `'${r}'`).join(", ")}]: check the cable path to the mating board (board_review action=cable)`);
         }
       }
     } catch (e) {
