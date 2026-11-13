@@ -29,12 +29,13 @@ describe("board page (board_page.py)", () => {
     expect(() => svgBody("<svg>")).toThrow(/viewBox/);
   });
 
-  test("drcItems: opens with net and both ends, error-severity violations only", () => {
+  test("drcItems: opens with net and both ends, error-severity violations only, exclusions left out", () => {
     const d = drcItems({
       unconnected_items: [{ items: [{ description: "Pad 1 [SIG]  of U1", pos: { x: 1, y: 2 } }, { description: "Pad 2 [SIG] of R1", pos: { x: 3, y: 4 } }] }, { items: [{ description: "Track", pos: { x: 0, y: 0 } }] }],
       violations: [
         { type: "clearance", severity: "error", description: "x".repeat(200), items: [{ description: "", pos: { x: 5, y: 6 } }] },
         { type: "silk_overlap", severity: "warning", description: "w", items: [{ description: "", pos: { x: 0, y: 0 } }] },
+        { type: "clearance", severity: "error", description: "owner excluded", excluded: true, items: [{ description: "", pos: { x: 0, y: 0 } }] },
       ],
     });
     expect(d.opens).toEqual([

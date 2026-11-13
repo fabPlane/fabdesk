@@ -70,17 +70,18 @@ interface DrcJson {
   violations?: Array<{ type: string; severity?: string; description: string; items: DrcItem[]; excluded?: boolean }>;
 }
 
-/** Opens (net, both ends, every item's description) and error-severity violations from a native DRC report (`drc_items`). */
+/** Opens (net, both ends, every item's description) and error-severity violations from a native DRC report (`drc_items`), owner exclusions left out. */
 export function drcItems(d: DrcJson): { opens: PageOpen[]; viol: PageViolation[] } {
   const opens: PageOpen[] = [], viol: PageViolation[] = [];
+  // items the owner excluded in KiCad are not shown (the workflow's DRC reading: project severity, exclusions dropped)
   for (const u of d.unconnected_items ?? []) {
     const it = u.items;
-    if (!it.length) continue;
+    if (!it.length || u.excluded) continue;
     const net = /\[([^\]]+)\]/.exec(it[0]!.description);
     opens.push({ net: net ? net[1]! : "?", a: [it[0]!.pos.x, it[0]!.pos.y], b: [it[it.length - 1]!.pos.x, it[it.length - 1]!.pos.y], d: it.map((i) => i.description.replace(/\s+/g, " ")).join(" / ") });
   }
   for (const v of d.violations ?? []) {
-    if (v.severity !== "error" || !v.items.length) continue;
+    if (v.severity !== "error" || !v.items.length || v.excluded) continue;
     const p = v.items[0]!.pos;
     viol.push({ t: v.type, p: [p.x, p.y], d: [...v.description].slice(0, 160).join("") });
   }
