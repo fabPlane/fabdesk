@@ -26,6 +26,17 @@ onboard ─► layout (place · rank · route) ─► last mile ─► review �
 | 5b silkscreen | `board_silk` | judges every label from KiCad's exact shapes, places the ones that fail, shows silk over copper | no label problems |
 | 6 release | `board_release` | BOM and JLC rotations, Gerber render check, release readiness, the fabrication package behind its gates | the gates below |
 
+Where a request starts (then follow the stages from there):
+
+| Asked to ... | Start with |
+| --- | --- |
+| check or review a board, find faults before ordering | `board_review {"action": "run"}`: ERC, DRC with parity, A1-A9, pin functions against datasheets, decoupling, supply widths and current, impedance, ratings, connector mouths, BOM, in one pass as findings with evidence; then read for what checks cannot judge (values against the circuit's intent) |
+| say where a board stands, what to do next | `board_check` (A1-A9, then the review and release state and one next step) |
+| add, remove, move, swap or reconnect parts | `board_edit` (a plan; it repairs cut nets and proves the result) |
+| route nets that are open, fix pairs, widths or DRC | `board_route` last mile (`new`, then `try`) |
+| fix silkscreen | `board_silk` |
+| produce the fab package | `board_release` (`check`, then `fab`) |
+
 Long jobs return a job id: `board_job` waits for, reports or cancels them. One heavy job runs at a time; the resource governor queues the rest.
 Engines (KiCadRoutingTools, TraceMaker) install themselves the first time a step needs them (minutes, with progress lines; nothing to
 preinstall); `board_engines` shows their state or installs ahead. A set override (`FABDESK_KRT_DIR`, `TRACEMAKER_BIN`) is used as given.
