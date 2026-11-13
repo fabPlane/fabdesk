@@ -10,7 +10,7 @@
  * runs (on the host router); other KRT steps fail by name. Boards of any file name work.
  */
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { edit, lastmile as L, layout, locateProject, onboard, parseBoard, profile, readRequirements, type Requirements } from "@fabdesk/board-workflow";
 import { adoptCandidate, designFileHashes } from "../board-adopt";
 import { jailPath, PROJECT_FILES } from "../fs";
@@ -89,7 +89,9 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
       if (a.action === "new") {
         const files = await locateProject(project.dir, a.pcb);
         const origin = await designFileHashes(project.dir);
-        const { bench, line } = await L.Bench.create(ws, project.dir, basename(files.pcb), mk(), { project: project.dir, originFiles: origin });
+        const own = (await locateProject(project.dir)).pcb;
+        const from = a.pcb && resolve(files.pcb) !== resolve(own) ? files.pcb : undefined;
+        const { bench, line } = await L.Bench.create(ws, project.dir, basename(own), mk(), { project: project.dir, originFiles: origin, ...(from ? { from: relative(project.dir, from).split("\\").join("/") } : {}) }, from);
         return ok(line + `\nworkspace ${bench.ws}`, { ws: bench.ws, figures: bench.figures });
       }
       const bench = await L.Bench.open(ws, mk());

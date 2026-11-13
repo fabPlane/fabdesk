@@ -5,7 +5,7 @@
  * that passes the gate and leaves the board unchanged otherwise. Routers and other engines are not here: a Step is run
  * by the StepEngine the host supplies; scoring (A1-A9 plus native DRC) by the Scorer.
  */
-import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile, copyFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { stepsFor, type Step } from "./actions";
@@ -186,12 +186,19 @@ export class Bench {
     private readonly deps: BenchDeps,
   ) {}
 
-  static async create(ws: string, srcDir: string, pcb: string, deps: BenchDeps, meta: Record<string, unknown> = {}): Promise<{ bench: Bench; line: string }> {
+  /**
+   * `board`: start from this board file instead of srcDir's own `pcb` (the layout route stage's result, an edit
+   * candidate): the folder copy brings the project's design files, then the named board is written over its board.
+   * Without it a `new` given a routed board elsewhere scored the project's unrouted board (an s7-whole run: open 209
+   * instead of the route stage's 18).
+   */
+  static async create(ws: string, srcDir: string, pcb: string, deps: BenchDeps, meta: Record<string, unknown> = {}, board?: string): Promise<{ bench: Bench; line: string }> {
     ws = resolve(ws);
     if (await stat(ws).catch(() => null)) throw new Error(`${ws} exists`);
     await mkdir(ws, { recursive: true });
     const s0 = join(ws, "s0");
     await copyBoardFolder(srcDir, s0);
+    if (board && resolve(board) !== resolve(srcDir, pcb)) await copyFile(resolve(board), join(s0, pcb));
     const sc = await deps.scorer.score(s0, pcb, { parity: false, ...(deps.signal ? { signal: deps.signal } : {}) });
     await writeJson(join(s0, SCORE_CACHE), { ...sc, board_sha256: await sha(join(s0, pcb)) } satisfies ScoreCache);
     const st: BenchState = {
