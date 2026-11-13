@@ -36,6 +36,8 @@ Where a request starts (then follow the stages from there):
 | add, remove, move, swap or reconnect parts | `board_edit` (a plan; it repairs cut nets and proves the result) |
 | route nets that are open, fix pairs, widths or DRC | `board_route` last mile (`new`, then `try`) |
 | fix silkscreen | `board_silk` |
+| check that cables reach between boards (multi-board product), or after moving a connector | `board_review {"action": "cable", "chassis": "chassis.json"}`: every catalog cable in every stated frame (PASS/FAIL, slack, flags); `boards` swaps in an edited board, `sweep` finds where on an edge a connector gives the most slack; a PASS is reach in the stated frame, not installed fit |
+| show or compare boards, or what an edit changed | `board_review page` (KiCad-plot page of one or more boards with opens and DRC errors) or `board_review diff` (old -> new change picture) |
 | produce the fab package | `board_release fab` for a release (its gates: settled review, A1-A9 or owner exceptions, BOM); for a board the owner approved as it is, `board_release cam` (Gerbers from a fresh zone fill, drill, BOM, placement, render check; one call) |
 
 Long jobs return a job id: `board_job` waits for, reports or cancels them. One heavy job runs at a time; the resource governor queues the rest.
