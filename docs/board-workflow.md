@@ -35,7 +35,7 @@ Where a request starts (then follow the stages from there):
 | add, remove, move, swap or reconnect parts | `board_edit` (a plan; it repairs cut nets and proves the result) |
 | route nets that are open, fix pairs, widths or DRC | `board_route` last mile (`new`, then `try`) |
 | fix silkscreen | `board_silk` |
-| produce the fab package | `board_release` (`check`, then `fab`) |
+| produce the fab package | `board_release fab` for a release (its gates: settled review, A1-A9 or owner exceptions, BOM); for a board the owner approved as it is, `board_release cam` (Gerbers from a fresh zone fill, drill, BOM, placement, render check; one call) |
 
 Long jobs return a job id: `board_job` waits for, reports or cancels them. One heavy job runs at a time; the resource governor queues the rest.
 Engines (KiCadRoutingTools, TraceMaker) install themselves the first time a step needs them (minutes, with progress lines; nothing to

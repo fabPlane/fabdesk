@@ -9,7 +9,7 @@
  * `export_zip` (fab exports twice, proves the files reproducible and checks them) and `release_build`'s fabrication
  * export (that one stays a non-blocking record; this is the hard gate). Nothing here shells out to a toolkit.
  */
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { z } from "zod/v4";
 import { CHECK_KEYS, locateProject, openReviewProject, readRequirements, release, reviewGate, runAcceptance, type AcceptRun } from "@fabdesk/board-workflow";
@@ -20,6 +20,7 @@ import { readAcceptanceState, readReviewGate } from "../board-state";
 import { bomDirOf, readBomState, readLastFab, readProxies, releaseHome, sha256Of, writeBomMeta, writeLastFab, writeProxies } from "../release-state";
 import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
 import { ok, requireKicad, runLiveDrc } from "./common";
+import { runKicadCli } from "@fabdesk/kicad";
 
 /** The interconnect release gate of a host project (contracts between boards). Standalone Fabdesk projects have none. */
 type InterconnectGate = (input: { projectDir: string }) => Promise<{ pass: boolean; text: string }>;
@@ -33,7 +34,7 @@ const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+
 const Proxies = z.record(z.string(), z.object({ proxy: z.string(), why: z.string().optional() }));
 
 const Input = {
-  action: z.enum(["bom", "gerb", "check", "fab"]).describe("bom: part identity, stock, lifecycle, JLC footprint fit and CPL rotation per line. gerb: render check of Gerbers against KiCad's plot. check: release readiness (or JLC placement simulation of an existing package). fab: the fabrication package; refuses unless every gate passes."),
+  action: z.enum(["bom", "gerb", "check", "fab", "cam"]).describe("cam: the CAM set in `out` (default fab/) without the release gates, for a board the owner approved as it is or to look at the outputs: Gerbers plotted from a fresh zone fill, PTH/NPTH drill with maps, BOM (one row per value+footprint with its references), placement CSV, the Gerber render check and a README saying it is not a gated release. bom: part identity, stock, lifecycle, JLC footprint fit and CPL rotation per line. gerb: render check of Gerbers against KiCad's plot. check: release readiness (or JLC placement simulation of an existing package). fab: the fabrication package; refuses unless every gate passes."),
   pcb: z.string().optional().describe("Board file, relative to the project; default board.kicad_pcb or the project's only .kicad_pcb."),
   boards: z.number().int().min(1).max(10000).default(5).describe("bom: boards to cover with stock (+10 % and 2 spare)."),
   fMax: z.number().positive().optional().describe("bom: height limit above the top surface in mm (from the board's own limit)."),
@@ -46,7 +47,7 @@ const Input = {
   dpi: z.number().int().min(100).max(1200).default(400).describe("gerb/fab: render resolution of the Gerber check."),
   package: z.string().optional().describe("check: a fabrication package folder in the project; runs JLC's footprint on its copper (the proxies check) instead of the readiness report."),
   proxies: Proxies.optional().describe("check/fab: {LCSC: {proxy, why}} same-package stand-ins where JLC has no footprint; saved in the project for later runs."),
-  out: z.string().optional().describe("fab: package folder, new, inside the project (default exports/release-<time>)."),
+  out: z.string().optional().describe("fab: package folder, new, inside the project (default exports/release-<time>); cam: new or empty folder (default fab)."),
   accept: z.array(z.string()).default([]).describe('fab: owner-accepted exceptions "CHECK=FILE#ID" (e.g. A8_pairs=notes/decisions.json#pair-spacing): a failing acceptance check passes only with an owner decision of that id in the file; recorded in the manifest.'),
   cpl: z.string().optional().describe("fab: a reviewed placement CSV in the project (KiCad pos format with hand corrections) used for the JLC CPL; refs must match the JLC BOM."),
   step: z.boolean().default(true).describe("fab: include the STEP model."),
@@ -127,6 +128,59 @@ async function gerbAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
       : [];
     const text = [`${r.pass ? "PASS" : "FAIL"} ${Object.values(r.layers).filter((v) => v.pass).length}/${Object.keys(r.layers).length} layers at ${a.dpi} dpi (a layer passes when the differences that survive a 1-pixel band are under 0.1 % of the drawn area)`, ...staleLine, ...rows, `drill: ${Object.entries(r.drill).map(([n, d]) => `${n} ${d.holes_or_slots} holes/slots, ${d.tools} tools`).join("; ") || "no drill files"}`, ...(r.unsupported.length ? [`reader limits: ${r.unsupported.join(", ")}`] : []), `Pictures of the differences (red: Gerber only, blue: KiCad only): ${relative(project.dir, join(work, "check"))}/diff-*.png`].join("\n");
     return ok(text, { pass: r.pass, layers: r.layers, drill: r.drill, dir: relative(project.dir, join(work, "check")), ...(stale.length ? { staleZoneFills: stale } : {}) });
+  } finally {
+    job.release();
+  }
+}
+
+/**
+ * The CAM set without the release gates (the eval's "approved as it is, produce the package" request: every arm that
+ * exported by hand plotted stale zone fills). Same CAM path as `fab` (fresh fill, separate PTH/NPTH, maps), plus KiCad's
+ * BOM and placement files and the render check; the README says what was and was not checked.
+ */
+async function camAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
+  const project = ctx.requireProject();
+  const files = await locateProject(project.dir, a.pcb);
+  const cli = await requireKicad(ctx);
+  const outRel = a.out ?? "fab";
+  const out = await jailPath(project.dir, outRel);
+  const existing = await readdir(out).catch(() => [] as string[]);
+  if (existing.length) throw new ToolError(`${outRel} exists and is not empty: name a new folder with out`, "invalid_args");
+  const job = await admit(ctx, "board_release cam", [files.pcb]);
+  try {
+    const gerbers = join(out, "gerbers"), drill = join(out, "drill"), asm = join(out, "assembly");
+    await Promise.all([mkdir(gerbers, { recursive: true }), mkdir(drill, { recursive: true }), mkdir(asm, { recursive: true })]);
+    ctx.progress(0.1, "Gerbers (fresh zone fill) and drill");
+    await release.exportCam(cli, files.pcb, gerbers, release.requiredLayers(await readFile(files.pcb, "utf8")), ctx.signal);
+    ctx.progress(0.4, "render check of the Gerbers against KiCad's plot");
+    const chk = await release.gerbCheck({ gerbers, pcb: files.pcb, out: join(releaseHome(project.dir), `cam-${stamp()}`, "check"), cli, dpi: a.dpi, signal: ctx.signal });
+    for (const n of await readdir(gerbers)) if (/\.drl$|-drl_map\./i.test(n)) await rename(join(gerbers, n), join(drill, n));
+    ctx.progress(0.8, "BOM and placement");
+    const sch = join(project.dir, `${files.stem}.kicad_sch`);
+    const bom = join(asm, `${files.stem}-bom.csv`), pos = join(asm, `${files.stem}-pos.csv`);
+    const o = ctx.signal ? { signal: ctx.signal } : {};
+    await runKicadCli(cli, ["sch", "export", "bom", "--fields", "Reference,Value,Footprint,${QUANTITY},LCSC,MPN,Manufacturer", "--labels", "Designators,Value,Footprint,Qty,LCSC,MPN,Manufacturer", "--group-by", "Value,Footprint,LCSC,MPN", "--ref-range-delimiter", "", "--exclude-dnp", "--output", bom, sch], o);
+    await runKicadCli(cli, ["pcb", "export", "pos", "--format", "csv", "--units", "mm", "--side", "both", "--exclude-dnp", "--output", pos, files.pcb], o);
+    const passed = Object.entries(chk.layers).filter(([, v]) => v.pass).map(([k]) => k);
+    const failed = Object.entries(chk.layers).filter(([, v]) => !v.pass).map(([k, v]) => `${k} ${((v.diff_share ?? 0) * 100).toFixed(2)} %`);
+    const drills = Object.entries(chk.drill).map(([n, d]) => `${n} ${d.holes_or_slots} holes/slots`);
+    const readme = [
+      `# CAM set for ${files.stem}`,
+      "",
+      "Made by board_release cam: not a gated release (the review, A1-A9 acceptance, via processing and BOM part identity were not checked here; board_release fab is the release).",
+      "",
+      "- gerbers/: every copper, mask, silkscreen and paste layer and the outline, plotted after a fresh zone fill (kicad-cli --check-zones)",
+      "- drill/: plated and non-plated Excellon files, separate, with drill maps",
+      `- assembly/${files.stem}-bom.csv: one row per value + footprint with its references (DNP excluded)`,
+      `- assembly/${files.stem}-pos.csv: reference, value, package, X, Y, rotation, side (mm, DNP excluded)`,
+      "",
+      `Render check against KiCad's plot of the board (${chk.dpi} dpi): ${chk.pass ? "PASS" : "FAIL"}; passing ${passed.join(", ")}${failed.length ? `; failing ${failed.join(", ")}` : ""}.`,
+      `Drill: ${drills.join("; ")}.`,
+      "",
+    ].join("\n");
+    await writeFile(join(out, "README.md"), readme);
+    const list = [...(await readdir(gerbers)).map((n) => `gerbers/${n}`), ...(await readdir(drill)).map((n) => `drill/${n}`), `assembly/${files.stem}-bom.csv`, `assembly/${files.stem}-pos.csv`, "README.md"];
+    return ok([`CAM set in ${outRel} (not a gated release; board_release fab is the release):`, ...list.map((n) => `  ${n}`), readme.split("\n").slice(-4, -1).join("\n")].join("\n"), { out: outRel, files: list, render: { pass: chk.pass, failing: failed }, drill: chk.drill });
   } finally {
     job.release();
   }
@@ -257,7 +311,7 @@ export const board_release = defineTool({
   longRunning: true,
   handler: async (args, ctx) => {
     const a = args as Args;
-    return runDurable(ctx, "board_release", (c) => (a.action === "bom" ? bomAction(a, c) : a.action === "gerb" ? gerbAction(a, c) : a.action === "check" ? checkAction(a, c) : fabAction(a, c)));
+    return runDurable(ctx, "board_release", (c) => (a.action === "bom" ? bomAction(a, c) : a.action === "gerb" ? gerbAction(a, c) : a.action === "check" ? checkAction(a, c) : a.action === "cam" ? camAction(a, c) : fabAction(a, c)));
   },
 });
 

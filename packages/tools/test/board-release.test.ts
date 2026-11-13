@@ -42,6 +42,16 @@ async function setup(boardText = BOARD(), overrides: Partial<CoreServices> = {})
 
 afterEach(() => setInterconnectGate(null));
 
+describe("cam (the CAM set without the release gates)", () => {
+  test("refuses a non-empty out folder and one outside the project", async () => {
+    const { project, call } = await setup();
+    await mkdir(join(project.dir, "fab"), { recursive: true });
+    await writeFile(join(project.dir, "fab", "old.gbr"), "x");
+    await expect(call("board_release", { action: "cam" })).rejects.toThrow(/fab exists and is not empty/);
+    await expect(call("board_release", { action: "cam", out: "../elsewhere" })).rejects.toThrow(/escapes the project/);
+  });
+});
+
 describe("registration", () => {
   test("board_release and board_silk are in the board toolset with underscore names and an action", () => {
     const reg = createRegistry();
