@@ -178,6 +178,18 @@ async function project(openCount = 5) {
 }
 
 describe("bench", () => {
+  test("new from a named board (the layout route stage's result) scores that board, with the project's design files", async () => {
+    const src = await project(209);
+    const routed = join(src, ".fabdesk", "ws", "route", "board.kicad_pcb");
+    await mkdir(join(routed, ".."), { recursive: true });
+    await writeFile(routed, "(kicad_pcb) ;; opens=18");
+    const ws = join(await mk(), "w");
+    const { bench, line } = await L.Bench.create(ws, src, "board.kicad_pcb", { scorer, engine: engine({}), availableGiB: async () => 30 }, {}, routed);
+    expect(line).toContain("open 18");
+    expect(bench.figures.open).toBe(18);
+    expect(await readFile(join(ws, "s0", "board.kicad_pro"), "utf8")).toBe("{}");
+    expect(await readFile(join(src, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb) ;; opens=209"); // the project board is untouched until accept
+  });
   test("new scores the start board; try accepts the best passing candidate, rejects and undoes", async () => {
     const src = await project(5);
     const ws = join(await mk(), "ws");
@@ -480,6 +492,21 @@ describe("repairCandidate (board_edit repair hook)", () => {
     expect(r.workspace).toBe(".lastmile");
     expect(await readFile(join(src, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb) ;; opens=0");
     expect(await stat(join(src, ".lastmile", "state.json")).then(() => true, () => false)).toBe(true);
+  });
+  test("a board that was not routed before the edit is left to board_route (no whole-board routing inside the edit)", async () => {
+    const src = await project(212);
+    await writeFile(join(src, "before-acceptance.json"), JSON.stringify({ results: { A1_connectivity: { unconnected: 210 } } }));
+    const r = await L.repairCandidate({ scorer, engine: engine({ finish: "(kicad_pcb) ;; opens=0" }), availableGiB: async () => 30 }, { candidateDir: src, pcb: "board.kicad_pcb", routeAgain: ["+5V", "GND"] });
+    expect(r.steps).toEqual([]);
+    expect(r.note).toContain("210 open connections before the edit");
+    expect(r.note).toContain("board_route");
+    expect(await readFile(join(src, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb) ;; opens=212");
+  });
+  test("a routed board with a few opens before the edit is still repaired", async () => {
+    const src = await project(4);
+    await writeFile(join(src, "before-acceptance.json"), JSON.stringify({ results: { A1_connectivity: { unconnected: 1 } } }));
+    const r = await L.repairCandidate({ scorer, engine: engine({ finish: "(kicad_pcb) ;; opens=1" }), availableGiB: async () => 30 }, { candidateDir: src, pcb: "board.kicad_pcb", routeAgain: ["N1"] });
+    expect(r.note).toContain("open 4 -> 1");
   });
   test("nothing to repair runs no step", async () => {
     const src = await project(0);

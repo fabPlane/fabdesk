@@ -21,11 +21,19 @@ export function repairStages(f: Figures): string[][] {
   return [f.open ? ["taps"] : [], f.a7 ? ["a7"] : [], f.open ? ["leg"] : [], ["rip", "blockers:1.0"]].filter((s) => s.length);
 }
 
-async function a8Before(candidateDir: string): Promise<number> {
+/**
+ * A source board with this many open connections before the edit was not routed yet (a placed board on its way to
+ * layout): the edit's repair would route the whole board inside the edit (an s7-whole run spent 16 minutes there and
+ * the agent cancelled it). editbench only ever repairs routed boards; routing a placed board is board_route's job.
+ */
+export const UNROUTED_OPENS = 20;
+
+async function before(candidateDir: string): Promise<{ a8: number; open: number | null }> {
   const rec = JSON.parse(await readFile(join(candidateDir, "before-acceptance.json"), "utf8").catch(() => "{}")) as {
-    results?: { A8_pairs?: { nets_failing?: number } };
+    results?: { A8_pairs?: { nets_failing?: number }; A1_connectivity?: { unconnected?: number } };
   };
-  return rec.results?.A8_pairs?.nets_failing ?? 0;
+  const open = rec.results?.A1_connectivity?.unconnected;
+  return { a8: rec.results?.A8_pairs?.nets_failing ?? 0, open: typeof open === "number" ? open : null };
 }
 
 export interface RepairStep {
@@ -41,11 +49,17 @@ export async function repairCandidate(
   o: { candidateDir: string; pcb: string; routeAgain: string[]; actions?: string[]; projectDir?: string },
 ): Promise<{ note: string; workspace: string; steps: RepairStep[] }> {
   const pcb = isAbsolute(o.pcb) ? relative(o.candidateDir, o.pcb) : o.pcb;
+  const prior = await before(o.candidateDir);
+  if (!o.actions && prior.open !== null && prior.open >= UNROUTED_OPENS) {
+    const nets = o.routeAgain.length > 6 ? `${o.routeAgain.slice(0, 6).join(", ")} and ${o.routeAgain.length - 6} more` : o.routeAgain.join(", ");
+    const note = `last mile skipped: the board had ${prior.open} open connections before the edit (not routed yet), so routing it is board_route's job (layout check/route, then the last mile), not the edit's; the edit's nets (${nets || "none"}) are among the opens it will route.`;
+    return { note, workspace: "", steps: [] };
+  }
   const ws = join(o.candidateDir, ".lastmile"); // skipped by the bench's folder copy
   await rm(ws, { recursive: true, force: true });
   const { bench } = await Bench.create(ws, o.candidateDir, pcb, deps, {});
   const start = bench.figures;
-  const a8b = await a8Before(o.candidateDir);
+  const a8b = prior.a8;
   const steps: RepairStep[] = [];
   const run = async (actions: string[]) => {
     const r = await bench.try(actions, { budget: STEP_BUDGET_S });
