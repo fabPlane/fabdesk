@@ -19,6 +19,7 @@ import { loadEditEnv, type EditEnv } from "./env";
 import { fillAddDefaults, impact, impactLines, type ImpactReport } from "./impact";
 import { coordinatesInPlan, parsePlan, type EditPlan } from "./plan";
 import { judge, type Judgement } from "./proof";
+import { carryExclusions, exclusionsText, readDrcExclusions, violationId, withDrcExclusions, type CarriedExclusion, type DrcViolation } from "./exclusions";
 import { EditStop } from "./sch";
 import { applyProjectRules } from "../rules";
 import { REQUIREMENT_FILES } from "../requirements";
@@ -74,6 +75,8 @@ export interface EditRunResult {
   churn?: Churn;
   /** The churn guard: collateral nets given their source copper back; kept when the board scored no worse. */
   guard?: { nets: string[]; kept: boolean; why?: string };
+  /** DRC exclusions the edit made stale and that were re-keyed in the candidate's project file (see `exclusions.ts`). */
+  exclusions?: { carried: CarriedExclusion[]; notes: string[] };
   agentCoordinates: number;
   phases: Record<string, number>;
 }
@@ -121,19 +124,24 @@ export const SCORE_BASIS = "drc-error-parity-v1";
 async function beforeScore(env: EditEnv, copy: string, runners: EditRunners): Promise<{ scored: Scored; cached?: string }> {
   const dh = (await designHash(copy)).design;
   const cache = join(editsDir(env.projectDir), ".before", createHash("sha256").update(`${SCORE_BASIS}:${dh}`).digest("hex").slice(0, 24));
-  const seed = async (entry: AcceptIndexEntry, result: unknown) => {
+  // the source's DRC report travels with the score: the proof reads its violations (DRC exclusions that follow the edit)
+  const drcOf = (file: string) => file.replace(/\.json$/, ".drc.json");
+  const seed = async (entry: AcceptIndexEntry, result: unknown, drc: string) => {
     const dir = acceptDir(copy);
     await mkdir(dir, { recursive: true });
     await writeJsonFile(join(copy, entry.file), result);
+    await writeFile(join(copy, drcOf(entry.file)), drc);
     await writeJsonFile(join(dir, "index.json"), [entry]);
   };
   const hit = await readJson<{ entry: AcceptIndexEntry; result: Scored }>(join(cache, "before.json")).catch(() => null);
-  if (hit?.result?.summary && hit.result.results) {
-    await seed(hit.entry, hit.result);
+  const hitDrc = hit ? await readFile(join(cache, "before.drc.json"), "utf8").catch(() => null) : null;
+  if (hit?.result?.summary && hit.result.results && hitDrc !== null) {
+    await seed(hit.entry, hit.result, hitDrc);
     return { scored: hit.result, cached: hit.entry.id };
   }
   const run = await runners.accept(copy, env.pcbName);
   await writeJsonFile(join(cache, "before.json"), { entry: run.entry, result: run.result });
+  await cp(join(copy, drcOf(run.entry.file)), join(cache, "before.drc.json")).catch(() => {});
   return { scored: run.result };
 }
 
@@ -208,7 +216,11 @@ export async function runEdit(input0: EditRunInput): Promise<EditRunResult> {
     const now = await hashOf(join(out, rel));
     if (now !== null && now !== was) extra[rel] = was;
   }
-  await writeJsonFile(join(out, "origin.json"), { project: env.projectDir, files: projectHashes, ...(Object.keys(extra).length ? { extra } : {}) });
+  // the project's DRC exclusions as they were: adopt carries the candidate's (re-keyed by the proof) only while they still are
+  const proRel = join(dirname(env.pcbName), `${env.stem}.kicad_pro`);
+  const proText = await readFile(join(env.projectDir, proRel), "utf8").catch(() => null);
+  const exclusions = proText !== null ? { file: proRel, sha256: createHash("sha256").update(exclusionsText(readDrcExclusions(proText))).digest("hex") } : null;
+  await writeJsonFile(join(out, "origin.json"), { project: env.projectDir, files: projectHashes, ...(Object.keys(extra).length ? { extra } : {}), ...(exclusions ? { exclusions } : {}) });
   await mkdir(dirname(join(out, "before", env.pcbName)), { recursive: true });
   await writeFile(join(out, "before", env.pcbName), env.pcbText);
   const ledger = { plan, impact: rep, applied: applied.log };
@@ -279,11 +291,68 @@ async function finish(
       ch = churn(d, ledger);
     }
   }
+  // DRC exclusions the edit made stale (a swapped or moved part the owner had excluded), re-keyed, then scored again
+  t = Date.now();
+  const ex = await followExclusions(dir, env, plan.id, source, after, run, input.runners, say);
+  if (ex) {
+    run = ex.run;
+    base.phases["exclusions"] = Math.round((Date.now() - t) / 100) / 10;
+    await writeJsonFile(join(dir, "drc-exclusions.json"), { carried: ex.carried, notes: ex.notes });
+  }
+  const exclusions = ex && (ex.carried.length || ex.notes.length) ? { carried: ex.carried, notes: ex.notes } : undefined;
   const j = judge(beforeRec, run.result);
   await writeJsonFile(join(dir, "diff.json"), { ...d, churn: ch, ...(guard ? { guard } : {}) });
   const proof = { ...j, id: run.entry.id, record: run.recordPath, comparison: view(run.baseline ?? run.previous), before: beforeRec.summary as Record<string, boolean>, after: run.result.summary as Record<string, boolean> };
   await writeJsonFile(join(dir, "proof.json"), proof);
-  return { ...base, stage: "proof", verdict: j.verdict, stop: false, repair, proof, diff: d, churn: ch, ...(guard ? { guard } : {}) };
+  return { ...base, stage: "proof", verdict: j.verdict, stop: false, repair, proof, diff: d, churn: ch, ...(guard ? { guard } : {}), ...(exclusions ? { exclusions } : {}) };
+}
+
+/**
+ * Re-key the project's DRC exclusions that the edit made stale (`carryExclusions`: parts moved together, or an identical
+ * part in an excluded one's place), in the candidate's project file, and score again. A re-keyed exclusion KiCad does
+ * not then match is put back as it was (and the board scored once more), so the proof never counts on a guess.
+ * Null when there is nothing to look at (no exclusions, no source DRC report, nothing new).
+ */
+async function followExclusions(
+  dir: string,
+  env: EditEnv,
+  editId: string,
+  source: string,
+  after: string,
+  run: AcceptRun,
+  runners: EditRunners,
+  say: (p: number, note: string) => void,
+): Promise<{ run: AcceptRun; carried: CarriedExclusion[]; notes: string[] } | null> {
+  const pro = join(dir, dirname(env.pcbName), `${env.stem}.kicad_pro`);
+  const proText = await readFile(pro, "utf8").catch(() => null);
+  const exclusions = proText !== null ? readDrcExclusions(proText) : null;
+  if (proText === null || !exclusions?.length) return null;
+  const index = await readJson<AcceptIndexEntry[]>(join(acceptDir(dir), "index.json")).catch(() => [] as AcceptIndexEntry[]);
+  const first = index[0];
+  if (!first || first.id === run.entry.id) return null;
+  const violations = async (file: string) =>
+    ((JSON.parse(await readFile(join(dir, file.replace(/\.json$/, ".drc.json")), "utf8")) as { violations?: DrcViolation[] }).violations ?? []);
+  const sourceViolations = await violations(first.file).catch(() => null);
+  const afterViolations = await violations(run.entry.file).catch(() => null);
+  if (!sourceViolations || !afterViolations) return null;
+  const c = carryExclusions({ exclusions, source, after, sourceViolations, afterViolations, editId });
+  if (!c.carried.length) return c.notes.length ? { run, carried: [], notes: c.notes } : null;
+  say(0.9, `DRC exclusions: ${c.carried.length} re-keyed after the edit, scoring again`);
+  await writeFile(pro, withDrcExclusions(proText, c.entries));
+  let next = await runners.accept(dir, env.pcbName);
+  const left = new Set((await violations(next.entry.file).catch(() => [] as DrcViolation[])).filter((v) => !v.excluded).map(violationId));
+  const missed = c.carried.filter((k) => left.has(k.violation));
+  const notes = [...c.notes];
+  if (missed.length) {
+    const back = c.entries.map((e) => {
+      const m = missed.find((k) => k.to === e.key);
+      return m ? exclusions.find((o) => o.key === m.from) ?? e : e;
+    });
+    await writeFile(pro, missed.length === c.carried.length ? proText : withDrcExclusions(proText, back));
+    next = await runners.accept(dir, env.pcbName);
+    for (const k of missed) notes.push(`not carried: ${k.line}: KiCad did not match the re-keyed exclusion, so this stays a new violation`);
+  }
+  return { run: next, carried: c.carried.filter((k) => !missed.includes(k)), notes };
 }
 
 /**

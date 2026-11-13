@@ -235,6 +235,60 @@ describe("apply, proof and the candidate", () => {
   });
 });
 
+describe("DRC exclusions follow an edit", () => {
+  const UC = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  // C1 and C3 overlap on purpose (an owner's exclusion at (41, 10)); the plan swaps C1 and C2 (same footprint id)
+  const KEY = (a: string, b: string) => `courtyards_overlap|41000000|10000000|${a}|${b}`;
+  async function swapProject(): Promise<string> {
+    const dir = await project();
+    const board = (await readFile(join(dir, "board.kicad_pcb"), "utf8")).replace('(uuid "fp-C1")', `(uuid "${UC(1)}")`).replace('(uuid "fp-C2")', `(uuid "${UC(2)}")`).replace('(uuid "fp-C3")', `(uuid "${UC(3)}")`);
+    await writeFile(join(dir, "board.kicad_pcb"), board);
+    const pro = JSON.parse(await readFile(join(dir, "board.kicad_pro"), "utf8"));
+    pro.board.design_settings.drc_exclusions = [[KEY(UC(1), UC(3)), "Intentional Overlap"]];
+    await writeFile(join(dir, "board.kicad_pro"), JSON.stringify(pro, null, 2));
+    return dir;
+  }
+  /** A KiCad stand-in: whatever sits at (40, 10) overlaps C3; the marker is excluded when the project holds its exact key (`matches` decides). */
+  const fakeDrc = (matches: (key: string, at: string) => boolean): EditRunners["accept"] => (d, pcb) =>
+    runAcceptance(d, {
+      pcb,
+      drc: async ({ board, outFile }) => {
+        const text = await readFile(board, "utf8");
+        const at = /\(uuid "([^"]+)"\)\s*\(transform\s*\(translate 40(?:\.0+)? 10(?:\.0+)?\)/.exec(text)?.[1] ?? "none";
+        const keys = (JSON.parse(await readFile(board.replace(/\.kicad_pcb$/, ".kicad_pro"), "utf8")).board?.design_settings?.drc_exclusions ?? []).map((e: string[]) => e[0]);
+        const v = { type: "courtyards_overlap", severity: "error", description: "Courtyards overlap", items: [{ uuid: at, description: "Footprint" }, { uuid: UC(3), description: "Footprint C3" }] };
+        const raw = { violations: keys.some((k: string) => k === KEY(at, UC(3)) && matches(k, at)) ? [] : [v] };
+        await writeFile(outFile, JSON.stringify(raw));
+        return { ...drcInputFromRaw(raw), unconnected: 0 };
+      },
+    });
+  const plan = { id: "swap-c", move: [{ ref: "C1", to: [40, 14, 0] }, { ref: "C2", to: [40, 10, 0] }] };
+
+  test("a swap carries the owner's exclusion to the part now in its place; the proof does not regress and adopt is told", async () => {
+    const dir = await swapProject();
+    const r = await runEdit({ projectDir: dir, plan, mode: "full", runners: runners({ accept: fakeDrc(() => true) }) });
+    expect(r.exclusions?.carried.map((c) => c.line)).toEqual(["courtyards_overlap C1 + C3 at (41, 10) -> C2 + C3 at (41, 10) (C2 took C1's place)"]);
+    expect(r.proof?.figures.drc).toEqual({});
+    expect(r.verdict).toStartWith("PASS");
+    const pro = JSON.parse(await readFile(join(r.candidate!.dir, "board.kicad_pro"), "utf8"));
+    expect(pro.board.design_settings.drc_exclusions).toEqual([[KEY(UC(2), UC(3)), "Intentional Overlap [carried by edit swap-c]"]]);
+    // the project's own file is untouched; origin.json records its exclusions so adopt can tell if they moved on
+    expect(JSON.parse(await readFile(join(dir, "board.kicad_pro"), "utf8")).board.design_settings.drc_exclusions).toEqual([[KEY(UC(1), UC(3)), "Intentional Overlap"]]);
+    expect(JSON.parse(await readFile(r.candidate!.origin, "utf8")).exclusions).toMatchObject({ file: "board.kicad_pro" });
+    expect(JSON.parse(await readFile(join(r.candidate!.dir, "drc-exclusions.json"), "utf8")).carried).toHaveLength(1);
+  });
+
+  test("a re-keyed exclusion KiCad does not match is put back, said so, and the violation counts", async () => {
+    const dir = await swapProject();
+    const r = await runEdit({ projectDir: dir, plan, mode: "full", runners: runners({ accept: fakeDrc((_k, at) => at !== UC(2)) }) });
+    expect(r.exclusions?.carried).toEqual([]);
+    expect(r.exclusions?.notes[0]).toContain("KiCad did not match the re-keyed exclusion");
+    expect(r.verdict).toBe("FAIL A2_drc"); // strict: the source passed every check
+    const pro = JSON.parse(await readFile(join(r.candidate!.dir, "board.kicad_pro"), "utf8"));
+    expect(pro.board.design_settings.drc_exclusions).toEqual([[KEY(UC(1), UC(3)), "Intentional Overlap"]]);
+  });
+});
+
 describe("judging", () => {
   const res = (over: Record<string, unknown> = {}) => ({
     A1_connectivity: { pass: true, unconnected: 0 },

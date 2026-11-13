@@ -12,3 +12,5 @@ export { stackupText, withStackup } from "./stack";
 export type { CopperSpec } from "./copper";
 export type { HoleSpec } from "./hole";
 export type { StackSpec } from "./stack";
+export { carryExclusions, readDrcExclusions, withDrcExclusions, withExclusionChanges, exclusionsText, parseExclusionKey, violationId, itemIndex } from "./exclusions";
+export type { Exclusion, CarriedExclusion, CarryResult, DrcViolation } from "./exclusions";
