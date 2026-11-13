@@ -1,9 +1,12 @@
 /**
- * board_release: the release stage. One tool, four actions:
+ * board_release: the release stage. One tool, six actions:
  *   bom    every BOM line to a manufacturable part with evidence, and the CPL rotation JLC's own footprint needs
  *   gerb   do the Gerbers show the board? (independent reader's render against KiCad's plot, drill counts)
  *   check  release readiness without writing a package; with `package`, JLC's footprint simulated on that package's copper
  *   fab    the fabrication package, refusing unless every gate passes in order
+ *   vias   the vias the fab gate needs filled and capped (via-in-pad, microvias); with `apply`, set them (the toolkit's
+ *          viaproc --apply) through adopt
+ *   cam    the CAM set without the gates
  *
  * Overlaps `export_pos` (JLC rotations and pad-centre positions are emitted there too), `export_gerbers`/`export_drill`/
  * `export_zip` (fab exports twice, proves the files reproducible and checks them) and `release_build`'s fabrication
@@ -20,6 +23,7 @@ import { readAcceptanceState, readReviewGate } from "../board-state";
 import { bomDirOf, readBomState, readLastFab, readProxies, releaseHome, sha256Of, writeBomMeta, writeLastFab, writeProxies } from "../release-state";
 import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
 import { ok, requireKicad, runLiveDrc } from "./common";
+import { adoptCandidate } from "../board-adopt";
 import { runKicadCli } from "@fabdesk/kicad";
 
 /** The interconnect release gate of a host project (contracts between boards). Standalone Fabdesk projects have none. */
@@ -34,7 +38,7 @@ const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+
 const Proxies = z.record(z.string(), z.object({ proxy: z.string(), why: z.string().optional() }));
 
 const Input = {
-  action: z.enum(["bom", "gerb", "check", "fab", "cam"]).describe("cam: the CAM set in `out` (default fab/) without the release gates, for a board the owner approved as it is or to look at the outputs: Gerbers plotted from a fresh zone fill, PTH/NPTH drill with maps, BOM (one row per value+footprint with its references), placement CSV, the Gerber render check and a README saying it is not a gated release. bom: part identity, stock, lifecycle, JLC footprint fit and CPL rotation per line. gerb: render check of Gerbers against KiCad's plot. check: release readiness (or JLC placement simulation of an existing package). fab: the fabrication package; refuses unless every gate passes."),
+  action: z.enum(["bom", "gerb", "check", "fab", "cam", "vias"]).describe("vias: every via whose drill meets SMD pad copper (via-in-pad) and every microvia needs (filling yes) (capping yes) (IPC-4761 Type VII) for the fab gate: lists them, which lack the attributes, and the pads they sit in; with apply: true, writes the two attributes on the missing ones (an attribute only, no geometry) into the project board through adopt (one KiCad commit, checkpointed) and checks the board again. Fill and cap is a fab process the order must name (costlier); moving a via out of the pad (board_edit / last mile) is the alternative. cam: the CAM set in `out` (default fab/) without the release gates, for a board the owner approved as it is or to look at the outputs: Gerbers plotted from a fresh zone fill, PTH/NPTH drill with maps, BOM (one row per value+footprint with its references), placement CSV, the Gerber render check and a README saying it is not a gated release. bom: part identity, stock, lifecycle, JLC footprint fit and CPL rotation per line. gerb: render check of Gerbers against KiCad's plot. check: release readiness (or JLC placement simulation of an existing package). fab: the fabrication package; refuses unless every gate passes."),
   pcb: z.string().optional().describe("Board file, relative to the project; default board.kicad_pcb or the project's only .kicad_pcb."),
   boards: z.number().int().min(1).max(10000).default(5).describe("bom: boards to cover with stock (+10 % and 2 spare)."),
   fMax: z.number().positive().optional().describe("bom: height limit above the top surface in mm (from the board's own limit)."),
@@ -51,6 +55,7 @@ const Input = {
   accept: z.array(z.string()).default([]).describe('fab: owner-accepted exceptions "CHECK=FILE#ID" (e.g. A8_pairs=notes/decisions.json#pair-spacing): a failing acceptance check passes only with an owner decision of that id in the file; recorded in the manifest.'),
   cpl: z.string().optional().describe("fab: a reviewed placement CSV in the project (KiCad pos format with hand corrections) used for the JLC CPL; refs must match the JLC BOM."),
   step: z.boolean().default(true).describe("fab: include the STEP model."),
+  apply: z.boolean().default(false).describe("vias: write (filling yes) (capping yes) on the vias that need them and lack them, into the project board (adopt); default only lists them."),
 };
 
 type Args = {
@@ -300,18 +305,63 @@ async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
   }
 }
 
+const viaLine = (v: release.ViaClass) => `${v.type} via ${v.net || "(no net)"} @ ${v.xy.join(",")} drill ${v.drill_mm}${v.in_component_lands.length ? ` in ${v.in_component_lands.join(", ")}` : ""}${v.native_filling && v.native_capping ? " (filled+capped)" : ""}`;
+
+/**
+ * board_release vias (the toolkit's flow/viaproc.py; `apply` = `--apply`): the vias the fab gate needs filled and capped,
+ * and with `apply` the attributes written into the project board as an adopted candidate.
+ */
+async function viasAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
+  const project = ctx.requireProject();
+  const files = await locateProject(project.dir, a.pcb);
+  const text = await readFile(files.pcb, "utf8");
+  const { record, missing } = release.viaBindings(files.pcb, release.classifyVias(text));
+  const c = record.counts;
+  const head = `Vias: ${c.vias} (${c.through} through, ${c.micro} micro); ${c.via_in_pad} in pads; ${c.require_fill_cap} need fill+cap, ${missing.length} lack it${c.filled_not_required ? `; ${c.filled_not_required} filled or capped without needing it` : ""}.`;
+  const rule = `Rule: ${record.rule}`;
+  if (!missing.length)
+    return ok([head, record.bindings.length ? "Every via that needs fill+cap has it: the fab gate's via step passes." : "No via needs fill+cap.", rule].join("\n"), { counts: c, missing: [], bindings: record.bindings });
+  const list = lines(missing.map((v) => `- ${viaLine(v)}`), 30);
+  if (!a.apply)
+    return ok([head, "Missing (filling yes) (capping yes):", ...list, rule, 'board_release {"action": "vias", "apply": true} writes them into the board (the fab order must then ask for filled and capped vias); or move the vias out of the pads.'].join("\n"), {
+      counts: c,
+      missing: missing.map(({ span_: _s, ...v }) => v),
+      bindings: record.bindings,
+    });
+  const dir = join(releaseHome(project.dir), "vias");
+  await mkdir(dir, { recursive: true });
+  const cand = join(dir, `${files.stem}.kicad_pcb`);
+  await writeFile(cand, release.applyViaBindings(text, missing));
+  const reason = `via fill+cap: (filling yes) (capping yes) on ${missing.length} via(s) in pads or microvias`;
+  const ad = await adoptCandidate(ctx, { candidate: cand, board: relative(project.dir, files.pcb), reason });
+  const after = release.viaBindings(files.pcb, release.classifyVias(await readFile(files.pcb, "utf8")));
+  await writeFile(join(dir, "via-process-bindings.json"), JSON.stringify(after.record, null, 1) + "\n");
+  return ok(
+    [
+      head,
+      `${reason}:`,
+      ...list,
+      ad.text,
+      after.missing.length
+        ? `STILL MISSING after the adopt: ${after.missing.length} via(s): ${after.missing.slice(0, 6).map(viaLine).join("; ")}`
+        : "Checked again: every via that needs fill+cap has it. The fab order must ask for filled and capped vias (IPC-4761 Type VII).",
+    ].join("\n"),
+    { counts: c, applied: missing.length, stillMissing: after.missing.length, bindings: relative(project.dir, join(dir, "via-process-bindings.json")), adopt: ad.data },
+  );
+}
+
 export const board_release = defineTool({
   name: "board_release",
   toolset: "board",
   title: "Release: BOM and JLC rotations, Gerber check, readiness, fabrication package",
   description:
-    "The release stage. bom: every BOM line to a manufacturable part with evidence (LCSC detail, JLC stock and library type, lifecycle, JLC's own footprint against ours, 3D model, height), RESOLVED / RISK / OWNER / PROPOSED / UNRESOLVED, and the CPL rotation JLC needs per part. gerb: Gerbers read by an independent reader and compared pixel for pixel with KiCad's plot, drill counts. check: where the release stands (interconnect, review, acceptance, via bindings, BOM), or with package: JLC's footprint simulated on that package's copper (proxies = same-package stand-ins). fab: the fabrication package, written only when the gates pass in order: interconnect (none for a standalone project), review settled for this exact board, A1-A9 with parity (an exception only with an owner decision), via-in-pad and microvias filled and capped; then CAM exported twice with identical hashes, Gerber render check, JLC BOM/CPL with every row simulated on our copper. A refused release is a result: it names the gate and writes nothing (the package is built in a temporary folder and moved into place only when every check passed; proxies are saved only with a release).",
+    "The release stage. bom: every BOM line to a manufacturable part with evidence (LCSC detail, JLC stock and library type, lifecycle, JLC's own footprint against ours, 3D model, height), RESOLVED / RISK / OWNER / PROPOSED / UNRESOLVED, and the CPL rotation JLC needs per part. gerb: Gerbers read by an independent reader and compared pixel for pixel with KiCad's plot, drill counts. vias: the vias in pads and microvias that need (filling yes) (capping yes), and with apply: true the attributes written into the board (adopt), so the fab gate's via step can pass. check: where the release stands (interconnect, review, acceptance, via bindings, BOM), or with package: JLC's footprint simulated on that package's copper (proxies = same-package stand-ins). fab: the fabrication package, written only when the gates pass in order: interconnect (none for a standalone project), review settled for this exact board, A1-A9 with parity (an exception only with an owner decision), via-in-pad and microvias filled and capped; then CAM exported twice with identical hashes, Gerber render check, JLC BOM/CPL with every row simulated on our copper. A refused release is a result: it names the gate and writes nothing (the package is built in a temporary folder and moved into place only when every check passed; proxies are saved only with a release).",
   inputSchema: Input,
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: false },
   longRunning: true,
   handler: async (args, ctx) => {
     const a = args as Args;
-    return runDurable(ctx, "board_release", (c) => (a.action === "bom" ? bomAction(a, c) : a.action === "gerb" ? gerbAction(a, c) : a.action === "check" ? checkAction(a, c) : a.action === "cam" ? camAction(a, c) : fabAction(a, c)));
+    return runDurable(ctx, "board_release", (c) => (a.action === "bom" ? bomAction(a, c) : a.action === "gerb" ? gerbAction(a, c) : a.action === "check" ? checkAction(a, c) : a.action === "cam" ? camAction(a, c) : a.action === "vias" ? viasAction(a, c) : fabAction(a, c)));
   },
 });
 

@@ -29,7 +29,7 @@ onboard ─► layout (place · rank · route) ─► last mile ─► review �
 | 4 edit | \`board_edit\` | an ECO as a plan across board, schematic and requirements: impact, candidate, repair of cut nets, A1-A9 proof, planned-versus-collateral diff, adopt | 0 collateral |
 | 5 review | \`board_review\` | whole-board review (21 checks, silk labels among them) bound to one design hash; findings with proposals, dispositions, gate, fixes as proven candidates; \`autopilot\` runs review, fixes and leaves only the owner's questions | gate 0: current, every finding settled |
 | 5b silkscreen | \`board_silk\` | judges every label from KiCad's exact shapes, places the ones that fail, shows silk over copper | no label problems |
-| 6 release | \`board_release\` | BOM and JLC rotations, Gerber render check, release readiness, the fabrication package behind its gates | the gates below |
+| 6 release | \`board_release\` | BOM and JLC rotations, Gerber render check, release readiness, via fill and cap (\`vias\`), the fabrication package behind its gates | the gates below |
 
 Where a request starts (then follow the stages from there):
 
@@ -79,6 +79,8 @@ pre-existing failure.
 - **Release.** \`board_release fab\` refuses, writing nothing, unless in order: the interconnect gate (none for a standalone project), the review
   gate for this exact board, A1-A9 with parity (an exception only with an owner decision), via-in-pad and microvia fill and cap bindings; then CAM is
   exported twice with identical hashes and the Gerbers are rendered and compared with KiCad's plot. Package only a board whose review covers that exact version.
+  A via STOP: \`board_release vias\` names the vias in pads and the microvias; \`apply: true\` sets fill and cap on them (the order must then ask
+  for filled, capped vias), or move the vias out of the pads.
 - **Look at the board** (\`render_view\`, \`board_route view\` / \`info\`) rather than parsing it ad hoc. Let the tools author tracks and vias; hand
   coordinates are fine when they are the better path.
 - **Hard limits** come only from the owner's intent and project policy: hard constraints, interconnect contracts, no powered work, purchases or supplier messages.
@@ -88,7 +90,7 @@ pre-existing failure.
 | Where | Default | Why |
 | --- | --- | --- |
 | After onboarding | review planes, fixed parts, power widths from current, pair width/gap from the stack | onboarding guesses; you know the circuit |
-| Before place | datasheet templates for switchers and dense serializers; pass-through parts facing their pins | placers do not read datasheets |
+| Before place | pass-through parts of pairs (series R, filters, ESD) seated on their chip pins: \`.fabdesk/board/layout/templates/\`, written by the layout check (edit or drop rows); add datasheet templates for switchers and dense serializers | placers do not read datasheets |
 | Place / route STOP | treat many opens as a placement problem | placement was the bigger lever when measured |
 | Last mile | the step order above; check placement moves with \`fit\` first | a step that does not help is undone anyway |
 | Edit | write the change as a plan | tool-made changes are reproducible and proven |

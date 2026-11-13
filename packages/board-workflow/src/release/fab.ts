@@ -265,7 +265,7 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
   note("via process bindings");
   const { record: viaRec, missing } = viaBindings(inp.pcb, classifyVias(pcbText));
   if (missing.length)
-    throw new ReleaseStop("vias", `STOP via bindings: ${missing.length} via(s) in pads or microvias lack (filling yes) (capping yes): ${missing.slice(0, 6).map((v) => `${v.net}@${v.xy.join(",")}`).join("; ")}`, viaRec.counts);
+    throw new ReleaseStop("vias", `STOP via bindings: ${missing.length} via(s) in pads or microvias lack (filling yes) (capping yes): ${missing.slice(0, 6).map((v) => `${v.net}@${v.xy.join(",")}`).join("; ")}. Set them with board_release {"action": "vias", "apply": true} (the order must then ask for filled and capped vias), or move the vias out of the pads`, viaRec.counts);
   // a BOM check of another board is refused before anything is exported
   const hasCplJlc = !!inp.bomDir && (await stat(join(inp.bomDir, "cpl-jlc.csv")).then(() => true, () => false));
   if (hasCplJlc && inp.bomBoardSha !== undefined && inp.bomBoardSha !== sha256(await readFile(inp.pcb)))
