@@ -7,7 +7,7 @@
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join } from "node:path";
-import { checkAcceptance, profile, pyRound, type DrcInput } from "../accept";
+import { checkAcceptance, courtyardException, profile, PWR_PROXY, pyRound, type DrcInput } from "../accept";
 import { kids, type SNode } from "../sexpr";
 import { BUILTIN_CARDS, INTERFACE_PROFILES } from "./data";
 import { Fetch, EDA_URL, edaPinNames, fetchCacheDir } from "./fetch";
@@ -43,7 +43,6 @@ const ERC_ENV = new Set(["lib_symbol_issues", "lib_symbol_mismatch", "footprint_
 const DRC_QUESTION = new Set(["courtyards_overlap", "solder_mask_bridge", "track_dangling", "via_dangling", "footprint_type_mismatch", "lib_footprint_mismatch", "copper_edge_clearance", "hole_clearance", "clearance", "missing_courtyard", "malformed_courtyard", "npth_inside_courtyard", "pth_inside_courtyard", "item_on_disabled_layer", "footprint_symbol_mismatch", "shorting_items", "tracks_crossing", "hole_to_hole", "annular_width", "drill_out_of_range", "via_diameter", "track_width", "connection_width", "diff_pair_gap_out_of_range"]);
 const DRC_ENV = new Set(["lib_footprint_issues"]);
 const EXAMPLES = 4;
-const PWR_PROXY_RE = /rule 'PWR_\d+ (outer width|inner width|neck in courtyard)'/;
 
 interface RawItem {
   description?: string;
@@ -60,6 +59,8 @@ interface Judged {
   match: string | RegExp;
   by: string;
   reason: string;
+  /** A further test on the finding itself (the toolkit's `accept`): judged elsewhere only when it holds. */
+  accept?: (v: RawViolation) => boolean;
 }
 
 const items = (v: RawViolation) => cut((v.items ?? []).map((i) => i.description ?? "").join("; "), 220);
@@ -73,7 +74,7 @@ function group(violations: RawViolation[], source: string, layer: string, rule: 
   const groups = new Map<string, { sev: string; typ: string; vs: RawViolation[] }>();
   const notes: Array<[RawViolation, Judged]> = [];
   for (const v of violations) {
-    const why = judged.find((j) => v.type === j.type && new RegExp(j.match).test(v.description ?? ""));
+    const why = judged.find((j) => v.type === j.type && new RegExp(j.match).test(v.description ?? "") && (!j.accept || j.accept(v)));
     if (why) {
       notes.push([v, why]);
       continue;
@@ -200,7 +201,17 @@ export async function checkDrc(ctx: ReviewCtx): Promise<CheckResult> {
   const judged: Judged[] = [...(ctx.project.cfg.native?.judged_elsewhere ?? [])];
   if (ctx.acceptance && !judged.some((j) => j.type === "track_width"))
     // a board with requirements: its acceptance (A7) owns the PWR_* proxy findings
-    judged.push({ type: "track_width", match: PWR_PROXY_RE, by: "A7", reason: "generated PWR_* class-width rules are a courtyard proxy for the neck rule; A7 judges power widths" });
+    judged.push({ type: "track_width", match: PWR_PROXY, by: "A7", reason: "generated PWR_* class-width rules are a courtyard proxy for the neck rule; A7 judges power widths" });
+  const acc = ctx.acceptance;
+  if (acc?.courtyard_overlap_exceptions?.length)
+    // courtyard overlaps the board's acceptance.json accepts by name (pair + measured gaps)
+    judged.push({
+      type: "courtyards_overlap",
+      match: "",
+      by: "A2-named-exceptions",
+      accept: (v) => courtyardException(v, acc) !== null,
+      reason: "courtyard overlap accepted by name in acceptance.json courtyard_overlap_exceptions (measured copper/body gaps recorded there)",
+    });
   const sev = (sv: string, t: string): Severity | null => {
     if (sv === "exclusion") return null;
     if (sv === "error") return "must-fix";
@@ -228,7 +239,7 @@ export async function checkAcceptanceLayer(ctx: ReviewCtx): Promise<CheckResult>
   }
   const raw = await readJson<{ violations?: RawViolation[]; unconnected_items?: unknown[]; schematic_parity?: unknown[] }>(ctx.drc);
   const drc: DrcInput = {
-    violations: (raw?.violations ?? []).map((v) => ({ rule: v.type, severity: v.severity, description: v.description ?? "" })),
+    violations: (raw?.violations ?? []).map((v) => ({ rule: v.type, severity: v.severity, description: v.description ?? "", items: (v.items ?? []).map((i) => ({ description: i.description ?? "" })) })),
     unconnected: (raw?.unconnected_items ?? []).length,
     parity: (raw?.schematic_parity ?? []).length,
   };

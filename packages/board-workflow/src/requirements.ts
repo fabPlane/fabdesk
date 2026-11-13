@@ -7,6 +7,8 @@ export interface PowerClass {
   inner_track_width: number | null;
   nets: string[];
   current_max_A?: number;
+  /** 0: strict inner necks (every inner segment below inner_track_width fails A7, no neck allowance, no tap). */
+  inner_neck_allowance_mm?: number;
   basis?: string;
 }
 
@@ -79,6 +81,11 @@ export interface Acceptance {
     router_width_rules: { neck_floor_mm: number };
     classes: Record<string, NetClassSpec>;
   };
+  /**
+   * Courtyard overlaps accepted by name (A2 and the review's drc check): each entry names exactly two footprints in
+   * `refs` and records the measured copper/body gaps and the basis; any other overlap still counts.
+   */
+  courtyard_overlap_exceptions?: Array<{ refs: string[]; [extra: string]: unknown }>;
   /** Names of nets whose value differences are accepted (A4). */
   value_exceptions?: string[];
   automatic_checks?: Record<string, string>;

@@ -32,7 +32,7 @@ import {
   type ReviewRecord,
 } from "../src/index";
 import { applyCards } from "../src/review/rulecards";
-import { checkDivider, customCheckArgv, customCommand, ipc2221ExternalAmps, signalWidthSupplies } from "../src/review/checks";
+import { checkDivider, checkDrc, customCheckArgv, customCommand, ipc2221ExternalAmps, signalWidthSupplies } from "../src/review/checks";
 import { writeJsonFile } from "../src/files";
 import { NETLIST, PCB, comp, fakeEnv, fp, node } from "./review-fixture";
 
@@ -429,3 +429,31 @@ describe("DIVIDER: a regulator's feedback divider against the rail it sets", () 
   });
 });
 
+
+describe("the review's drc check and the board's acceptance", () => {
+  test("named PWR proxies go to A7; only the courtyard overlaps acceptance.json names go to A2's exceptions", async () => {
+    const out = await tmp();
+    const overlap = (a: string, b: string) => ({ type: "courtyards_overlap", severity: "error", description: "Courtyards overlap", items: [{ description: `Footprint ${a}` }, { description: `Footprint ${b}` }] });
+    const drc = {
+      violations: [
+        overlap("J1", "U1"),
+        overlap("U1", "C1"),
+        { type: "track_width", severity: "error", description: "Track width (rule 'PWR_LOGIC_3313 inner width'; min 0.25 mm; actual 0.2 mm)" },
+        { type: "track_width", severity: "error", description: "Track width (rule 'USB90 width'; min 0.1 mm)" },
+      ],
+      unconnected_items: [],
+      schematic_parity: [],
+    };
+    const env = { kicadVersion: "fake", kicad: async (args: string[]) => (await writeFile(args[args.indexOf("-o") + 1]!, JSON.stringify(drc)), { stdout: "", stderr: "", exitCode: 0 }) };
+    const ctx = (acceptance: unknown) => ({ out, env, project: { pcb: join(out, "b.kicad_pcb"), cfg: {} }, acceptance, drc: null }) as never;
+    const r = await checkDrc(ctx({ courtyard_overlap_exceptions: [{ refs: ["U1", "J1"], basis: "measured" }] }));
+    const claims = r.findings.map((f) => `${f.severity} ${f.claim}`);
+    expect(claims).toContain("must-fix DRC error courtyards_overlap: 1 item(s) - Courtyards overlap"); // U1-C1 is not named
+    expect(claims).toContain("must-fix DRC error track_width: 1 item(s) - Track width (rule 'USB90 width'; min 0.1 mm)");
+    expect(claims.some((c) => c.startsWith("note 1 DRC courtyards_overlap item(s) judged by A2-named-exceptions"))).toBe(true);
+    expect(claims.some((c) => c.startsWith("note 1 DRC track_width item(s) judged by A7"))).toBe(true);
+    // without the key every overlap is a finding
+    const bare = await checkDrc(ctx({}));
+    expect(bare.findings.map((f) => f.claim)).toContain("DRC error courtyards_overlap: 2 item(s) - Courtyards overlap");
+  });
+});

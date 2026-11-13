@@ -77,7 +77,7 @@ async function main(): Promise<void> {
           courtyardDrc: async (board, report) => (await runDrc(cli, { board, outFile: report, severity: "all", schematicParity: false, refillZones: false })).violations.map((v) => ({ rule: v.rule, items: v.items.map((i) => ({ description: i.description })) })),
           scoreDrc: async (board, outFile, parity) => {
             const x = await drc({ board, outFile, parity });
-            return { violations: x.violations.map((v) => ({ rule: v.rule, severity: v.severity, description: v.description })), unconnected: x.unconnected.length, parity: x.parity };
+            return { violations: x.violations.map((v) => ({ rule: v.rule, severity: v.severity, description: v.description, items: (v.items ?? []).map((i) => ({ description: i.description })) })), unconnected: x.unconnected.length, parity: x.parity };
           },
           memAvailableGiB: async () => 16,
           diskFreeGiB: async () => 100,

@@ -69,7 +69,7 @@ export function layoutHost(ctx: ToolContext, kicadCli: string | null, env: NodeJ
     courtyardDrc: async (board, report) => (await drc(board, report, { parity: false, refill: false })).violations.map((v) => ({ rule: v.rule, items: v.items.map((i) => ({ description: i.description })) })),
     scoreDrc: async (board, outFile, parity) => {
       const r = await drc(board, outFile, { parity, refill: true });
-      return { violations: r.violations.map((v) => ({ rule: v.rule, severity: v.severity, description: v.description })), unconnected: r.unconnected.length, parity: r.schematicParity.length };
+      return { violations: r.violations.map((v) => ({ rule: v.rule, severity: v.severity, description: v.description, items: v.items.map((i) => ({ description: i.description })) })), unconnected: r.unconnected.length, parity: r.schematicParity.length };
     },
     admit: async (kind, label, paths, opts) => {
       // KRT and TraceMaker hold a grid over the whole board: estimate from outline area x copper layers, not file size.

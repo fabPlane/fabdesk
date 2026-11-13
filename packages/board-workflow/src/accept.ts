@@ -32,14 +32,47 @@ export const CHECK_KEYS = [
 ] as const;
 export type CheckKey = (typeof CHECK_KEYS)[number];
 
-/** DRC findings from the generated PWR_* class-width rules are a courtyard proxy for the neck rule; A7 judges widths. */
-const PWR_PROXY = /rule 'PWR_\d+ (outer width|inner width|neck in courtyard)'/;
+/**
+ * DRC findings from the generated PWR_* class-width rules are a courtyard proxy for the neck rule; A7 judges widths.
+ * Named classes (`PWR_LOGIC_3313`) count as well as numbered ones (`PWR_200`). Shared with the review's drc check.
+ */
+export const PWR_PROXY = /rule 'PWR_[A-Za-z0-9_]+ (outer width|inner width|neck in courtyard)'/;
+
+/** One DRC finding as the checks read it; `items` (KiCad's affected items) is what names a courtyard overlap's footprints. */
+export interface DrcFinding {
+  rule: string;
+  severity: string;
+  description: string;
+  items?: Array<{ description: string }>;
+}
 
 /** What the checks need from a KiCad DRC run (a `DrcReport` from @fabdesk/kicad fits). */
 export interface DrcInput {
-  violations: Array<{ rule: string; severity: string; description: string }>;
+  violations: DrcFinding[];
   unconnected: number;
   parity: number;
+}
+
+/** A courtyard overlap the board's acceptance accepts by name: exactly two footprints, with the measured gaps and basis. */
+export interface CourtyardOverlapException {
+  refs: string[];
+  [extra: string]: unknown;
+}
+
+/**
+ * The acceptance.json `courtyard_overlap_exceptions` entry that accepts this DRC courtyards_overlap item, or null
+ * (check_acceptance.courtyard_exception). Each entry names exactly two footprints; only that pair is accepted, never
+ * courtyard overlaps in general. `rule` is the DRC type (`type` in KiCad's raw JSON).
+ */
+export function courtyardException(v: { rule?: string; type?: string; items?: Array<{ description?: string }> }, acc: Pick<Acceptance, "courtyard_overlap_exceptions">): CourtyardOverlapException | null {
+  if ((v.rule ?? v.type) !== "courtyards_overlap") return null;
+  const refs = new Set<string>();
+  for (const i of v.items ?? []) {
+    const m = /^Footprint (\S+)/.exec(i.description ?? "");
+    if (m) refs.add(m[1]!);
+  }
+  if (refs.size !== 2) return null;
+  return (acc.courtyard_overlap_exceptions ?? []).find((e) => new Set(e.refs).size === refs.size && e.refs.every((r) => refs.has(r))) ?? null;
 }
 
 export type Verdict = { pass: boolean; [field: string]: unknown };
@@ -181,6 +214,11 @@ function* undersize(
         const inner = s.layer !== "F.Cu" && s.layer !== "B.Cu";
         const need = inner ? (c.inner_track_width ?? Infinity) || Infinity : c.track_width!;
         if (s.w + 1e-6 >= need) continue;
+        // inner_neck_allowance_mm 0: strict inner necks, every under-width inner segment fails (no neck, no tap)
+        if (inner && (c.inner_neck_allowance_mm === 0 || (c.inner_neck_allowance_mm as unknown) === false)) {
+          yield [net, s];
+          continue;
+        }
         if (!(inner && (c.inner_track_width ?? null) === null)) {
           if (scaling) {
             const allow = Math.min(scaling.cap_mm, neck * (s.w / scaling.ref_width_mm) * (scaling.ref_current_A / amps));
@@ -261,14 +299,23 @@ export function checkAcceptance(board: Board, req: Requirements, drc: DrcInput, 
   for (const p of board.pads) (padsByNet.get(p.net) ?? padsByNet.set(p.net, []).get(p.net)!).push(p);
   const R = {} as AcceptanceResults;
 
-  const proxy = (v: DrcInput["violations"][number]) => v.rule === "track_width" && PWR_PROXY.test(v.description);
+  const proxy = (v: DrcFinding) => v.rule === "track_width" && PWR_PROXY.test(v.description);
+  const accepted = drc.violations.filter((v) => v.severity === "error" && courtyardException(v, acc));
   const errors = counter(
-    drc.violations.filter((v) => v.severity === "error" && !proxy(v)),
+    drc.violations.filter((v) => v.severity === "error" && !proxy(v) && !courtyardException(v, acc)),
     (v) => v.rule,
   );
   const proxyN = drc.violations.filter((v) => v.severity === "error" && proxy(v)).length;
   R.A1_connectivity = { pass: drc.unconnected === 0, unconnected: drc.unconnected };
   R.A2_drc = { pass: !Object.keys(errors).length, errors, class_width_proxy_findings_judged_by_A7: proxyN };
+  if (acc.courtyard_overlap_exceptions?.length) {
+    // named pairs accepted in acceptance.json, with measured gaps; and the ones the board no longer has
+    const seen = accepted.map((v) => [...courtyardException(v, acc)!.refs].sort());
+    const key = (x: string[]) => JSON.stringify(x);
+    const seenKeys = new Set(seen.map(key));
+    R.A2_drc["accepted_courtyard_overlaps"] = seen;
+    R.A2_drc["courtyard_exceptions_not_present"] = acc.courtyard_overlap_exceptions.map((e) => [...e.refs].sort()).filter((x) => !seenKeys.has(key(x)));
+  }
   R.A3_parity = { pass: drc.parity === 0, items: drc.parity, ...(opts.parityChecked === false ? { checked: false } : {}) };
 
   // A4 circuit
@@ -500,7 +547,7 @@ export function toAcceptResults(r: AcceptanceResult): AcceptResult[] {
   const a8 = res.A8_pairs;
   return [
     one("A1", "A1_connectivity", { unconnected: f.A1 }, [`${f.A1} unconnected items (KiCad DRC, refilled zones)`]),
-    one("A2", "A2_drc", { errors: f.A2, class_width_proxy_findings: Number(res.A2_drc["class_width_proxy_findings_judged_by_A7"] ?? 0) }, Object.entries(a2).map(([k, n]) => `${n} x ${k}`)),
+    one("A2", "A2_drc", { errors: f.A2, class_width_proxy_findings: Number(res.A2_drc["class_width_proxy_findings_judged_by_A7"] ?? 0), ...(Array.isArray(res.A2_drc["accepted_courtyard_overlaps"]) ? { accepted_courtyard_overlaps: (res.A2_drc["accepted_courtyard_overlaps"] as unknown[]).length } : {}) }, Object.entries(a2).map(([k, n]) => `${n} x ${k}`)),
     one("A3", "A3_parity", { items: f.A3, measured: res.A3_parity["checked"] !== false }, [`${f.A3} schematic/PCB parity items`], res.A3_parity["checked"] === false),
     one("A4", "A4_circuit", { missing: (res.A4_circuit["missing"] as unknown[]).length, pin_net_diff: (res.A4_circuit["pin_net_diff"] as unknown[]).length, value_diff: (res.A4_circuit["value_diff"] as unknown[]).length },
       [...list("missing parts", res.A4_circuit["missing"]), ...list("pin/net differences", res.A4_circuit["pin_net_diff"]), ...list("value differences", res.A4_circuit["value_diff"])]),
