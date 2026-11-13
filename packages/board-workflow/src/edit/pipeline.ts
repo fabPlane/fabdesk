@@ -21,6 +21,7 @@ import { coordinatesInPlan, parsePlan, type EditPlan } from "./plan";
 import { judge, type Judgement } from "./proof";
 import { EditStop } from "./sch";
 import { applyProjectRules } from "../rules";
+import { REQUIREMENT_FILES } from "../requirements";
 
 export type EditMode = "impact" | "apply" | "proof" | "full";
 
@@ -193,9 +194,19 @@ export async function runEdit(input0: EditRunInput): Promise<EditRunResult> {
   // files besides the board and the sheets the candidate changed (hole's library footprint, stack's acceptance.json), with
   // the project's hash of each when the candidate was computed: adopt carries them, and refuses when the project's moved on
   const extra: Record<string, string | null> = {};
-  for (const rel of applied.log.extra_files ?? []) {
-    const b = await readFile(join(env.projectDir, rel)).catch(() => null);
-    extra[rel] = b ? createHash("sha256").update(b).digest("hex") : null;
+  const hashOf = async (path: string) => {
+    const b = await readFile(path).catch(() => null);
+    return b ? createHash("sha256").update(b).digest("hex") : null;
+  };
+  for (const rel of applied.log.extra_files ?? []) extra[rel] = await hashOf(join(env.projectDir, rel));
+  // the requirements the edit changed (an added or removed part in circuit.json, a moved anchor in mechanical.json):
+  // without them the adopted board fails A4 against the project's old circuit (an s7-whole agent copied them by hand)
+  for (const f of Object.values(REQUIREMENT_FILES)) {
+    const rel = `${BOARD_DIR}/requirements/${f}`;
+    if (rel in extra) continue;
+    const was = await hashOf(join(env.projectDir, rel));
+    const now = await hashOf(join(out, rel));
+    if (now !== null && now !== was) extra[rel] = was;
   }
   await writeJsonFile(join(out, "origin.json"), { project: env.projectDir, files: projectHashes, ...(Object.keys(extra).length ? { extra } : {}) });
   await mkdir(dirname(join(out, "before", env.pcbName)), { recursive: true });

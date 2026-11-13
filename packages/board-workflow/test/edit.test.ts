@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -426,6 +427,16 @@ describe("an added part placed next to a pad gets a direct track to it", () => {
     const pts = link["points"] as Array<[number, number]>;
     expect(text).toContain(`(start ${pts[0]![0].toFixed(4)} ${pts[0]![1].toFixed(4)})`);
     expect(r.repair?.routeAgain).toEqual(["GND", "VIN"]); // an add's nets go to the repair
+  });
+  test("the candidate's origin.json names the requirements the add changed (circuit.json), with the project's hash, so adopt carries them", async () => {
+    const dir = await project();
+    const r = await runEdit({ projectDir: dir, mode: "apply", plan: { id: "dec", add: [{ ref: "C9", like: "C1", pins: { "1": "VIN", "2": "GND" }, near: "U1.1", height_mm: 1 }], displace: { radius: 6 } }, runners: runners() });
+    const cand = join(r.candidate!.pcb, "..");
+    const origin = JSON.parse(await readFile(join(cand, "origin.json"), "utf8")) as { extra?: Record<string, string | null> };
+    const rel = ".fabdesk/board/requirements/circuit.json";
+    const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
+    expect(origin.extra?.[rel]).toBe(sha(await readFile(join(dir, rel))));
+    expect(await readFile(join(cand, rel), "utf8")).toContain('"C9"');
   });
   test("link: false leaves it to the pours / last mile; a pad of no shared net is reported, not linked", async () => {
     const dir = await project();
