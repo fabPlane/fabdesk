@@ -18,3 +18,4 @@ export * as silk from "./silk";
 export * as layout from "./layout/index";
 export * as sysinfo from "./sysinfo";
 export * from "./rules";
+export * as power from "./power/index";
