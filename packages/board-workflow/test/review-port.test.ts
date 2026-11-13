@@ -1,16 +1,20 @@
 /**
  * The review-stage pieces ported from the toolkit: silk inside the review, `review try`, the combined candidate and
- * change pictures of `review fix --apply`.
+ * change pictures of `review fix --apply`, `pcb run` (autopilot) and `pcb intent init|decide`.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  autopilot,
   classify,
   combinePlans,
   evaluate,
   fixProposals,
+  intentDecide,
+  intentInit,
+  intentShow,
   loadCurrent,
   openReviewProject,
   planSig,
@@ -252,5 +256,95 @@ describe("review try", () => {
     await runReview(p, fakeEnv(), { offline: true });
     await writeFile(join(dir, "board.kicad_pcb"), PCB + "\n");
     await expect(tryPlan(p, { plan: { id: "x" } as EditPlan }, fakeBuilder(dir).b)).rejects.toThrow(/review is stale/);
+  });
+});
+
+describe("autopilot (pcb run)", () => {
+  test("reviews when stale, applies the workflow's fixes, and ends with only the owner's questions", async () => {
+    const dir = await project();
+    const p = await openReviewProject(dir);
+    const { b, calls } = fakeBuilder(dir);
+    let admitted = 0;
+    const r = await autopilot(p, fakeEnv(), { offline: true, builder: b, admit: async () => (admitted++, { release: () => {} }) });
+    expect(admitted).toBe(1);
+    expect(r.reviewed).not.toBeNull();
+    expect(r.lines[0]).toMatch(/^\[1\/3\] review .* \(design [0-9a-f]{12}; no review\)$/);
+    expect(r.lines).toContain("[2/3] workflow fixes: settle what intent/evidence decides, build and prove edit candidates");
+    expect(r.lines).toContain("[3/3] what is left");
+    expect(r.lines.some((l) => l.startsWith("   settled "))).toBe(true);
+    expect(r.gate.exit).toBe(2);
+    expect(r.owner.length).toBeGreaterThan(0);
+    expect(r.lines.filter((l) => l.startsWith("   NEEDS OWNER")).length).toBe(r.owner.length);
+    // with edit proposals: the review is current, candidates are built and pictured, the combined one proven
+    const [first] = await withEdits(dir);
+    const r2 = await autopilot(p, fakeEnv(), { offline: true, builder: b });
+    expect(r2.reviewed).toBeNull();
+    expect(r2.lines[0]).toMatch(/^\[1\/3\] review current \([0-9a-f]{12}\)$/);
+    expect(r2.lines.some((l) => l.startsWith(`   candidate for ${first}`))).toBe(true);
+    expect(r2.lines.some((l) => l.startsWith(`   change picture ${first}`))).toBe(true);
+    expect(r2.lines.some((l) => l.startsWith("   COMBINED candidate (2 fixes)"))).toBe(true);
+    expect(r2.lines.some((l) => /^   agent tasks: \d+; fixed in the READY candidate: 2 /.test(l))).toBe(true);
+    expect(calls.build).toHaveLength(2);
+    // again: everything reused
+    await autopilot(p, fakeEnv(), { offline: true, builder: b });
+    expect(calls.build).toHaveLength(2);
+    expect(calls.prove).toHaveLength(1);
+  });
+
+  test("a low disk is said first and nothing is built", async () => {
+    const dir = await project();
+    const p = await openReviewProject(dir);
+    await runReview(p, fakeEnv(), { offline: true });
+    await withEdits(dir);
+    const { b, calls } = fakeBuilder(dir);
+    const r = await autopilot(p, fakeEnv(), { offline: true, builder: b, lowDisk: "disk low: 1.0 GiB free (1 %)" });
+    expect(r.lines[0]).toBe("[0/3] disk low: 1.0 GiB free (1 %)");
+    expect(calls.build).toEqual([]);
+  });
+});
+
+describe("the owner's intent file", () => {
+  test("init writes a skeleton once, with constraints from the requirements", async () => {
+    const dir = await project();
+    const req = join(dir, ".fabdesk", "board", "requirements");
+    await writeJsonFile(join(req, "acceptance.json"), { heights: { F_max_mm: 6.5, B_max_mm: 1e9 } });
+    await writeJsonFile(join(req, "circuit.json"), { components: [], basis: "t" });
+    await writeJsonFile(join(req, "mechanical.json"), { units: "mm", anchors: [{ reference: "J1", at: ["2", "15"], rotation: ["0"], layer: "F.Cu" }], basis: "t" });
+    await writeJsonFile(join(req, "heights.json"), { entries: [], basis: "t" });
+    const p = await openReviewProject(dir);
+    expect((await intentShow(p)).intent).toBeNull();
+    const r = await intentInit(p);
+    expect(r.intent.goal).toContain("TODO (owner)");
+    expect(r.intent.constraints).toEqual([
+      { id: "fixed", kind: "hard", text: 'fixed parts keep pose and face (requirements fixed: ["J1"])', source: join(req, "mechanical.json") },
+      { id: "heights", kind: "hard", text: "top <= 6.5 mm, bottom <= 1000000000 mm", source: join(req, "acceptance.json") },
+    ]);
+    expect(r.intent.preferences?.ask_owner_for).toContain("accepting a must-fix");
+    expect(JSON.parse(await readFile(r.path, "utf8")).schema).toBe("INTENT_V1");
+    await expect(intentInit(p)).rejects.toThrow("exists");
+    expect((await intentShow(p)).lines).toContain("  hard  heights: top <= 6.5 mm, bottom <= 1000000000 mm");
+  });
+
+  test("decide records an owner answer that settles the findings it covers, in this and every later review", async () => {
+    const dir = await project();
+    const p = await openReviewProject(dir);
+    await expect(intentDecide(p, { id: "D1", decision: "x" })).rejects.toThrow("no intent");
+    await intentInit(p);
+    const run = await runReview(p, fakeEnv(), { offline: true });
+    const mouth = run.review.findings.find((f) => f.rule === "MOUTH")!;
+    expect(run.evaluation.open.some((x) => x.id === mouth.id)).toBe(true);
+    const d = await intentDecide(p, { id: "usb-in", decision: "the USB-C faces in on purpose (cable inside the case)", covers: ["L4:MOUTH:J1*"], effect: "the connector stays", date: "2026-11-13" });
+    expect(d.decision).toEqual({ id: "usb-in", date: "2026-11-13", by: "owner", decision: "the USB-C faces in on purpose (cable inside the case)", covers: [{ id: "L4:MOUTH:J1*" }], effect: "the connector stays", source: `board_review intent_decide ${p.name}` });
+    expect(d.settles).toEqual([mouth.id]);
+    expect(d.lines[0]).toBe("recorded usb-in; it settles L4:MOUTH:J1* in every later review");
+    await expect(intentDecide(p, { id: "usb-in", decision: "again" })).rejects.toThrow("decision usb-in exists");
+    // read back by the review: settled by the owner, cited
+    const g = await reviewGate(p);
+    expect([...(g.classified?.owner ?? []), ...(g.classified?.auto ?? []), ...(g.classified?.task ?? [])]).not.toContain(mouth.id);
+    const next = await runReview(p, fakeEnv(), { offline: true });
+    const row = next.evaluation.rows.find((x) => x.id === mouth.id)!;
+    expect(row.open).toBe(false);
+    expect(row.disposition?.reason).toContain("intent decision usb-in");
+    expect((await intentShow(p)).lines.at(-1)).toContain("[settles: L4:MOUTH:J1*]");
   });
 });

@@ -8,7 +8,8 @@
  *   importExpert   an independent reviewer's findings into the current review
  *   fixProposals   every open finding's proposal; `apply` settles what intent/evidence decides, builds and proves an edit
  *                  candidate per edit proposal, the combined candidate and a change picture per READY one (candidates.ts)
- *   (candidates.ts) tryPlan: the agent's own plan through the same proof
+ *   (candidates.ts) tryPlan: the agent's own plan through the same proof; (autopilot.ts) review -> fixes -> owner only;
+ *   (intent.ts)    the owner's intent file: init, decide, show
  *
  * Findings: must-fix | question | note. Notes never block. A question is closed by any disposition with a reason; a
  * must-fix only by fixing it (it disappears) or by an owner 'accept'. 'false-positive' needs a third source. A

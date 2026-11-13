@@ -146,14 +146,19 @@ export type Dispositions = Record<string, Disposition>;
 
 /** The owner's intent file: decisions that settle findings, and how far the agent's own judgement goes. */
 export interface Intent {
+  schema?: "INTENT_V1";
+  board?: string;
   goal?: string;
-  constraints?: string[];
+  /** Hard or soft limits the workflow keeps (the toolkit writes objects; plain strings are read too). */
+  constraints?: Array<string | { id: string; kind: "hard" | "soft" | string; text: string; source?: string }>;
   decisions?: Array<{
     id: string;
     decision: string;
     date?: string;
+    by?: string;
     effect?: string;
     source?: string;
+    /** Findings it settles: an id pattern (fnmatch), or a rule with optional refs. */
     covers?: Array<{ id?: string; rule?: string; refs?: string[] }>;
   }>;
   preferences?: { ask_owner_for?: string[]; workflow_decides?: string[] };

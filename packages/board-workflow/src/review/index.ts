@@ -5,6 +5,8 @@ export * from "./review";
 export * from "./proposals";
 export * from "./diff";
 export * from "./candidates";
+export * from "./intent";
+export * from "./autopilot";
 export { REGISTRY, loadProjectCards, pyDumps, netVolts, capValue, traceRiseC, widthFor, rise2221, assembled } from "./checks";
 export { checkSilk, silkFindings, SILK_LABEL } from "./silk-check";
 export { loadNetlist, parseXml, lcsc, type Comp, type NetPin } from "./netlist";
