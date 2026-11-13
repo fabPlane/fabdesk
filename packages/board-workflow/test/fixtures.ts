@@ -76,3 +76,30 @@ export const SEAT_BOARD = `(kicad_pcb (version 20250114)
 	${seatFp("FL1", 40, 30, 0, [["1", "LV1_P", -1, -0.5], ["2", "LV1_N", -1, 0.5], ["3", "LV_P", 1, -0.5], ["4", "LV_N", 1, 0.5]])}
 	${seatFp("J1", 5, 5, 0, [["1", "USB_DP", 0, 0], ["2", "USB_DN", 1, 0], ["3", "LV_P", 2, 0], ["4", "LV_N", 3, 0], ["5", "GND", 4, 0]])}
 )`;
+
+/** FIXTURE_BOARD as KiCad 9 writes copper (one field per line, the net by number): a segment, a via and a zone on numbered nets. */
+export const LEGACY_BOARD = FIXTURE_BOARD.replace('(net 1) (uuid "80000000', '\n\t\t(net 1)\n\t\t(uuid "80000000').replace(
+  /\n\)\n$/,
+  `
+	(via
+		(at 25 15)
+		(size 0.6)
+		(drill 0.3)
+		(layers "F.Cu" "B.Cu")
+		(net 2)
+		(uuid "b0000000-0000-4000-8000-000000000001")
+	)
+	(zone
+		(net 1)
+		(net_name "A")
+		(layer "B.Cu")
+		(uuid "c0000000-0000-4000-8000-000000000001")
+		(hatch edge 0.5)
+		(connect_pads (clearance 0.5))
+		(min_thickness 0.25)
+		(fill (thermal_gap 0.5) (thermal_bridge_width 0.5))
+		(polygon (pts (xy 1 1) (xy 29 1) (xy 29 19) (xy 1 19)))
+	)
+)
+`,
+);

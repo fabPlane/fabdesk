@@ -152,3 +152,43 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
     job.release();
   }
 }
+
+/**
+ * Replace the project's board file with `candidate` as a file write, for a change KiCad's item delta cannot carry (a file
+ * format upgrade: the items are the same, so an IPC adopt would save nothing). Same safeguards as `adoptCandidate`:
+ * routing must be idle, a checkpoint and a board timeline point first, the previous board copied to
+ * `.fabdesk/board/adopt/<stamp>/before/`, restored if the write fails.
+ */
+export async function replaceBoardFile(ctx: ToolContext, input: { candidate: string; board: string; reason: string }): Promise<{ text: string; keep: string; checkpointId: string; timelinePoint: string | null }> {
+  const project = ctx.requireProject();
+  const target = await jailPath(project.dir, input.board);
+  if (!target.endsWith(".kicad_pcb") || !(await stat(target).catch(() => null))?.isFile()) throw new ToolError(`target board not found in the project: ${input.board}`, "not_found");
+  if (!(await stat(input.candidate).catch(() => null))?.isFile()) throw new ToolError(`candidate not found: ${input.candidate}`, "not_found");
+  const route = ctx.services.routeRuns.latest(project.id);
+  if (route && ["queued", "running", "cancel_requested", "cancelling"].includes(route.state)) throw new ToolError("refused: routing is active; wait for it to finish", "precondition");
+  const pcbRel = relative(project.dir, target);
+  await saveBoardPoint(project, pcbRel, "Before board file replace").catch(() => null);
+  const checkpoint = await retainTaskCheckpoint(project, { name: `before-replace-${Date.now()}`, reason: `before replacing ${pcbRel}: ${input.reason}`, role: "checkpoint" }, ctx.services.runtimeId);
+  const job = await governor().admit({ cls: "light", label: "board file replace", paths: [project.dir], signal: ctx.signal, onWait: (w) => ctx.progress(0.2, w) });
+  try {
+    const keep = join(project.dir, ".fabdesk", "board", "adopt", stamp(), "before");
+    const apply = async () => {
+      await mkdir(dirname(join(keep, pcbRel)), { recursive: true });
+      await copyFile(target, join(keep, pcbRel));
+      try {
+        await copyFile(input.candidate, target);
+      } catch (e) {
+        await copyFile(join(keep, pcbRel), target).catch(() => null);
+        throw e;
+      }
+    };
+    const recovery = ctx.services.design.withSavedFilesRecovery;
+    if (recovery) await recovery(project.dir, apply);
+    else await apply();
+    const point = await saveBoardPoint(project, pcbRel, `Replaced: ${input.reason}`.slice(0, 120)).catch(() => null);
+    const text = `Wrote ${pcbRel} (${input.reason}); previous board: ${relative(project.dir, join(keep, pcbRel))}; checkpoint ${checkpoint.id}${point ? `; board timeline point ${point.ref.slice(0, 12)}` : ""}`;
+    return { text, keep: join(keep, pcbRel), checkpointId: checkpoint.id, timelinePoint: point?.ref ?? null };
+  } finally {
+    job.release();
+  }
+}

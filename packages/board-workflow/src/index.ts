@@ -6,6 +6,7 @@ export * from "./files";
 export * from "./onboard";
 export * from "./accept";
 export * from "./history";
+export * from "./upgrade";
 export * from "./review/index";
 export * from "./review-edit";
 export * as lastmile from "./lastmile/index";

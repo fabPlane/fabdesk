@@ -55,7 +55,7 @@ export interface BoardModel {
 /** A board's model for edits; refuses the pre-10 file format (tracks name nets by number). */
 export function boardModel(text: string, name = "board"): BoardModel {
   if (legacyNetRefs(text))
-    throw new EditStop(`STOP ${name} is in the pre-10 file format (tracks name nets by number), which the edit tools cannot follow: upgrade a copy with kicad-cli pcb upgrade (KiCad rewrites it in the current format)`);
+    throw new EditStop(`STOP ${name} is in the pre-10 file format (tracks name nets by number), which the edit tools cannot follow: upgrade it first (board_check upgrade: true upgrades a checked copy and writes it over the board, keeping the previous one)`);
   const board = parseBoard(text);
   const byNet = new Map<string, Pad[]>();
   for (const p of board.pads) if (p.net) (byNet.get(p.net) ?? byNet.set(p.net, []).get(p.net)!).push(p);

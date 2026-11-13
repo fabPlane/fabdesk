@@ -133,7 +133,7 @@ export async function runAcceptance(
   const legacy = legacyNetRefs(text);
   if (legacy)
     throw new Error(
-      `${files.pcb} is in the pre-10 KiCad file format (tracks name nets by number); every copper-based check would pass on nothing. Upgrade a copy with kicad-cli pcb upgrade.`,
+      `${files.pcb} is in the pre-10 KiCad file format (tracks name nets by number); every copper-based check would pass on nothing. Upgrade it first (board_check upgrade: true).`,
     );
   const parity = opts.parity !== false;
   const before = await designHash(projectDir);

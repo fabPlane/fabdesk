@@ -23,7 +23,7 @@ onboard ─► layout (place · rank · route) ─► last mile ─► review �
 
 | Stage | Tool | What it does in one line | Gate before the next stage |
 | --- | --- | --- | --- |
-| 1 onboard + check | \`board_check\` | derives the board's requirements on first use, then measures A1-A9 on the saved board and compares with the board as onboarded | your review of the onboarding proposals, recorded with \`board_check {"confirm": true}\` |
+| 1 onboard + check | \`board_check\` | derives the board's requirements on first use, then measures A1-A9 on the saved board and compares with the board as onboarded; a board saved by KiCad 9 or older is refused until \`upgrade: true\` (a checked copy written over it, the previous board kept) | your review of the onboarding proposals, recorded with \`board_check {"confirm": true}\` |
 | 2 layout | \`board_route\` check · place · rank · route · auto · status · courtyards | fail-fast preflight, seeded placements gated on courtyard DRC, ranked by routed opens, then the best seed routed (30-60 min in all) | \`route\` PASS (few enough opens) |
 | 3 last mile | \`board_route\` new · try · loop · sweep · pairs · why · crossings · fit · validate · accept | tries rip, route, pair and placement steps in parallel on the whole board, keeps the best one that improves the gate, undoes the rest | A1-A9 pass |
 | 4 edit | \`board_edit\` | an ECO as a plan across board, schematic and requirements: impact, candidate, repair of cut nets, A1-A9 proof, planned-versus-collateral diff, adopt | 0 collateral |
