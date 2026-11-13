@@ -5,7 +5,7 @@
  */
 import { LASTMILE_PLANS } from "./plans";
 
-export type StepType = "krt" | "repair" | "nudge" | "fill" | "pairfix" | "escape" | "planes" | "pour";
+export type StepType = "krt" | "repair" | "nudge" | "fill" | "pairfix" | "escape" | "planes" | "pour" | "replace";
 
 export interface Step {
   type: StepType;
@@ -27,6 +27,8 @@ export interface Step {
   escape?: { maxStub: number; clearance: number };
   /** `pour`: more nets as shell globs, the margin round an open's ends and the min_thickness scale (`planes` uses `planFile`). */
   pour?: { nets: string[]; margin: number; minWidthScale: number };
+  /** `replace`: floorplan groups to rip and re-place (route_region --replace), the floorplan file, the placer seed. */
+  replace?: { groups: string[]; floorplan?: string; seed?: number };
 }
 
 export interface NudgeMove {
@@ -121,6 +123,15 @@ export const ACTIONS: Record<string, { help: string; steps: Builder | null }> = 
       if (!m) throw new ActionError(`pour:${a}: pour[:GLOB,..][~MARGIN][@SCALE]`);
       const what = `pour:${a}`;
       return [{ type: "pour", pour: { nets: m[1] ? m[1].split(",").filter(Boolean) : [], margin: m[2] ? num(what, m[2]) : 1.5, minWidthScale: m[3] ? num(what, m[3]) : 1.0 } }];
+    },
+  },
+  replace: {
+    help:
+      "replace:GROUP[,GROUP..][@FLOORPLAN][#SEED]  the per-block loop: rip every track and via in the floorplan groups' regions (all nets), re-place the groups inside their regions with everything else locked (TraceMaker placer, courtyard-gated), then route the opens; FLOORPLAN defaults to .fabdesk/board/layout/floorplan.json (blocks.json beside it)",
+    steps: (a) => {
+      const m = /^([^@#]+)(?:@([^#]+))?(?:#(\d+))?$/.exec(a);
+      if (!m) throw new ActionError("replace:GROUP[,GROUP..][@FLOORPLAN][#SEED]");
+      return [{ type: "replace", replace: { groups: m[1]!.split(",").filter(Boolean), ...(m[2] ? { floorplan: m[2] } : {}), ...(m[3] ? { seed: Number(m[3]) } : {}) }, plan: plan("after-cut"), planName: "after-cut" }];
     },
   },
 };

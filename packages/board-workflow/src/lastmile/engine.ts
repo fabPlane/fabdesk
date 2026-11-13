@@ -4,6 +4,8 @@
  *   krt     the step's KiCadRoutingTools plan (route_krt), new copper merged onto the native board
  *   repair  rip selected copper (rip_items), then the step's KRT plan routes what the rip opened
  *   nudge   re-seat parts (nudge_place, courtyard-gated), then the step's KRT plan re-routes the cut connections
+ *   replace rip the floorplan groups' regions, re-place the groups there (route_region --replace), then the step's KRT
+ *           plan routes the opens
  *   pairfix pair width / tighten / vias / mirror / retune / skew in place (no router)
  *   fill    another router fills the opens, everything else fixed (the host's routers)
  *   escape / planes / pour   power copper without a router (lastmile/power.ts): escapes, a split inner plane, pours
@@ -27,6 +29,9 @@ import { runTighten } from "./tighten";
 import { ripStep } from "./rip";
 import { nudgeStep } from "./nudge";
 import { powerStep } from "./power";
+import { replaceGroups } from "./replace";
+import { readFloorplan, type Blocks } from "../layout/floorplan";
+import { fixedRegex } from "../layout/spec";
 
 /** Fill the opens of `dir/board.kicad_pcb` in place with `router` (the host's routers); the board file name is fixed. */
 export type FillFn = (router: string, dir: string, o: { signal: AbortSignal; timeoutMs: number }) => Promise<{ message?: string }>;
@@ -53,6 +58,9 @@ export interface StepEngineHost {
 }
 
 const exists = (p: string) => stat(p).then(() => true, () => false);
+/** Where `replace:` finds the floorplan and blocks unless the action names a floorplan (project-relative). */
+export const DEFAULT_FLOORPLAN = ".fabdesk/board/layout/floorplan.json";
+export const DEFAULT_BLOCKS = ".fabdesk/board/layout/blocks.json";
 const stemOf = (pcb: string) => basename(pcb).replace(/\.kicad_pcb$/, "");
 
 /** The plan a step was built from, for messages ("finish", "pairs-todo", "plan:FILE" ...). */
@@ -238,6 +246,33 @@ export function createStepEngine(h: StepEngineHost): StepEngine {
           signal.throwIfAborted();
           const routed = join(out, "route");
           return { dir: routed, info: { nudge, ...(await krtRoute(h, nudged, routed, pcb, plan, signal)) } };
+        }
+        case "replace": {
+          const k = await krt();
+          if (!k.path) return { error: needsKrt("replace (re-routing the region)", k.why) };
+          if (!step.replace) return { error: "replace step has no groups" };
+          const plan = await stepPlan(h, step);
+          const fpRel = step.replace.floorplan ?? DEFAULT_FLOORPLAN;
+          const fpFile = await resolvePlanFile(h.planRoot, fpRel).catch((e: Error) => Promise.reject(new Error(e.message.replace(`plan:${fpRel}`, `replace floorplan ${fpRel}`))));
+          const blocksFile = (await exists(join(fpFile, "..", "blocks.json"))) ? join(fpFile, "..", "blocks.json") : await resolvePlanFile(h.planRoot, DEFAULT_BLOCKS).catch(() => null);
+          if (!blocksFile) return { error: `replace: no blocks.json beside ${fpRel} (board_route blocks writes ${DEFAULT_BLOCKS})` };
+          const blocks = JSON.parse(await readFile(blocksFile, "utf8")) as Blocks;
+          const floorplan = readFloorplan(JSON.parse(await readFile(fpFile, "utf8")), blocks);
+          const fixed = await fixedParts(h.req, join(cur, pcb));
+          const replaced = join(out, "replaced");
+          const admission = h.layout.admit ? await h.layout.admit("tracemaker", "lastmile replace", [cur]) : { release() {} };
+          let rec;
+          try {
+            rec = await replaceGroups({ ...h.layout, signal }, { cur, out: replaced, pcb, floorplan, blocks, groups: step.replace.groups, fixed: new RegExp(fixed.size ? fixedRegex([...fixed]) : "^$"), ...(step.replace.seed !== undefined ? { seed: step.replace.seed } : {}) });
+          } finally {
+            admission.release();
+          }
+          const summary = { groups: rec.groups, removed: rec.removed, passes: rec.placement.groups.map((g) => ({ group: g.group, parts: g.parts, placed: g.placed, ok: g.ok })), native_courtyard: rec.placement.native_courtyard };
+          if (!rec.placement.ok) return { error: `replace: block placement failed: ${rec.placement.groups.filter((g) => !g.ok).map((g) => `${g.group} placed ${g.placed} of ${g.parts}`).join("; ")}` };
+          if (Object.keys(rec.placement.native_courtyard ?? {}).length) return { error: `replace: native courtyard check failed ${JSON.stringify(rec.placement.native_courtyard)}` };
+          signal.throwIfAborted();
+          const routed = join(out, "route");
+          return { dir: routed, info: { replace: summary, ...(await krtRoute(h, replaced, routed, pcb, plan, signal)) } };
         }
         default:
           return { error: `unknown step type ${(step as Step).type}` };

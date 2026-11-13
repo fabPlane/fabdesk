@@ -78,8 +78,9 @@ describe("board_route last-mile actions", () => {
     await expect(call({ action: "fit" })).rejects.toThrow(/one nudge:\/turn: action/);
     const f = await call({ action: "fit", actions: ["nudge:U1@25,12~3"] });
     expect(f.text).toMatch(/U1|NO FIT/);
-    const t = await call({ action: "try", actions: ["rip", "pairs-all"] });
+    const t = await call({ action: "try", actions: ["rip", "pairs-all", "replace:core"] });
     expect(t.text).toContain("KiCadRoutingTools");
+    expect(t.text).toContain("replace (re-routing the region)");
     expect((t.json as { accepted: string | null }).accepted).toBeNull();
     const v = await call({ action: "view", box: [0, 0, 40, 30] });
     expect(String(v.text)).toMatch(/\.(svg|png)$/);
