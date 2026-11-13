@@ -97,6 +97,11 @@ and basis); `inner_neck_allowance_mm: 0` on a power class makes every inner segm
   with a reason, or `copper_source` to take a bench result's board). Each is proved like any other edit; repair what a tighter rule fails
   with the last mile, not with coordinates in the plan.
   When an edit displaces a dense region, stop editing and re-place with the moved parts as anchors.
+  The owner's DRC exclusions follow the edit: when a part the owner had excluded moves with its partner, or an identical part takes its
+  place (a swap), the proof re-keys that exclusion in the candidate's project file, scores again and prints one `DRC exclusion carried` line
+  each (rule, parts, old -> new); anything else that the edit makes newly fail is a real violation, and `not carried` says why. Adopt writes
+  the candidate's exclusions into the project (that key only). Never copy a candidate's board or project file by hand: adopt also carries the
+  requirements (anchors, circuit) and works when the board was saved by a newer KiCad than the app's (it writes the file and says so).
 - **Review.** One design hash covers board, schematics, project files and requirements; any change makes the review stale. Settle each finding with
   evidence: a must-fix is fixed, or accepted by the owner (or by you with evidence when intent allows); a false-positive needs a third source
   (neither the design nor the check); a question closes with any disposition that has a reason. A fix candidate is READY only when the proof

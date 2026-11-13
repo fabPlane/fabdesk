@@ -68,6 +68,26 @@ board_review fix apply ──► board_edit (edit proposals become candidates; R
   sheets, applies the PCB delta as one KiCad commit and reads it back. All or nothing: if anything fails after the first write, the board and
   sheets are restored from `before/` (a sheet that did not exist is removed) and the error says the project was restored, or names each file that
   still differs and where its copy is.
+  A board saved by a newer KiCad than the PCB bridge's: the bridge cannot create a session on it, so none holds it open (`formatTooNew`
+  recognises only KiCad's "created with a more recent version" refusal; any other bridge error still refuses) and the commit goes ahead with
+  the selected kicad-cli (Settings → KiCad CLI, then `KICAD_CLI`). When that kicad-cli refuses the format too, the candidate's text is
+  written over the board under the same checkpoint and copy-aside, read back (sha256 equal to the candidate's, parses as a `kicad_pcb`), and
+  the result says it took the file path and why (no KiCad load check is possible then). `adoptBoard` puts the api-server's own output into
+  the error when KiCad drops the connection, so the refusal is recognisable from either process.
+- **DRC exclusions follow an edit** (fabdesk's own; the toolkit had none). KiCad keys an exclusion by rule, marker position (nm) and the two
+  item uuids and matches exactly, so a swapped or moved excluded part comes back as a new error. After the churn guard, `followExclusions`
+  (`edit/exclusions.ts`) looks at each candidate violation that is new (not in the source's DRC report, which the before-score cache now
+  keeps beside the score) and re-keys a stale source exclusion only when the new marker is the old one geometrically: (a) the same item pair
+  whose footprints all moved by one rigid motion (position mapped by it, exact for quarter turns), or (b) one item unchanged and the other now
+  a footprint with the same footprint id that arrived at the old owner's pose (within 1 um) while that owner left (position kept). Item order
+  is the candidate violation's (KiCad's main/aux). It writes the candidate's `.kicad_pro` (only that array's text), scores again, and puts
+  back any re-keyed entry KiCad does not then match (scoring once more), so the proof never relies on a guess. Both storage forms are read
+  and written: `[key, comment]` up to design settings v2, and KiCad 10.99's v3 objects (`marker.error_type` is the IPC `DrcErrorType`;
+  `drc-error-types.ts` holds the 74-rule map read off KiCad 10.99 itself). `origin.json` records a digest of the project's exclusions; adopt
+  applies the edit's change (dropped and added keys) to the project file as it is after the commit (a KiCad 10.99 save re-stores every entry
+  as v3), refusing when the project's exclusions moved on. Verified on the held-out cm5 swap (J502 <-> J601, `start.kicad_pcb`, kicad-cli
+  10.99): the J1/J601 "Intentional Overlap" is carried to J502/J1, A2 stays at 3 (it was 3 -> 4), and after adopt (IPC with the nightly, and
+  the file path with the bundled 10.99 that cannot open the board) the project's own DRC shows the same 3 errors.
 - **Onboarding is confirmed, not assumed.** Onboarding's derived requirements stay "not yet confirmed" (Status page, `release_build`) until
   `board_check {"confirm": true}` records who checked them and when (`onboard-confirmed.json`, bound to `onboard.json`'s hash, so onboarding
   again needs a new confirmation).
