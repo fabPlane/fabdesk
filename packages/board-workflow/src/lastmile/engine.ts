@@ -179,13 +179,14 @@ async function stepPlan(h: StepEngineHost, step: Step): Promise<KrtPlan> {
 }
 
 /**
- * Kept short: the bench shows the last 160 characters of a step error. With `why` (the host tried to install KRT and
+ * Kept short: the bench shows the last 160 characters of a step error (the step's name leads it, so the message must
+ * leave room for it: `replace (re-routing the region)` was cut when the power steps joined the list). With `why` (the host tried to install KRT and
  * could not) its tail is kept, where the install's own advice is.
  */
 export const needsKrt = (what: string, why?: string) =>
   why
     ? `${what}: KRT did not install (${why.length > 100 ? `…${why.slice(-100)}` : why})`
-    : `${what} needs KiCadRoutingTools (board_engines install krt, or FABDESK_KRT_DIR); without it: finish, fill:ROUTER, tighten, escape, planes, pour`;
+    : `${what} needs KiCadRoutingTools (board_engines install krt); without it: finish, fill:ROUTER, tighten, escape, planes, pour`;
 
 export function createStepEngine(h: StepEngineHost): StepEngine {
   /** KRT's root, installed on first use when the host can; `why` says what stopped that. */
