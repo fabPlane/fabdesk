@@ -185,6 +185,12 @@ export function describeEdit(r: EditRunResult, adopted: string | null): string {
   }
   const ch = r.churn!;
   lines.push(`Planned vs collateral: ${r.diff!.removed.length} removed, ${r.diff!.added.length} added, ${ch.planned_parts_moved.length} planned part(s) moved, unplanned parts moved ${py(ch.unplanned_moved.length)}${ch.unplanned_moved.length ? ` (${ch.unplanned_moved.join(", ")})` : ""}; collateral copper ${ch.collateral_nets} nets / ${ch.collateral_mm} mm.`);
+  if (r.guard)
+    lines.push(
+      r.guard.kept
+        ? `Churn guard: ${r.guard.nets.length} net(s) the plan did not touch got their original copper back (${r.guard.nets.slice(0, 8).join(", ")}${r.guard.nets.length > 8 ? " ..." : ""}); the board scored no worse.`
+        : `Churn guard: putting the original copper back on ${r.guard.nets.length} untouched net(s) scored ${r.guard.why ?? "worse"}, so the repaired copper stays.`,
+    );
   lines.push(adopted ?? (p.pass ? "Passes: board_edit with adopt true writes it into the project." : "Not adoptable as it stands: the proof does not pass."));
   return lines.join("\n");
 }
@@ -193,7 +199,7 @@ export function describeEdit(r: EditRunResult, adopted: string | null): string {
 export function editRunners(c: ToolContext, cli: KicadCli): EditRunners {
   return {
     progress: (p, note) => c.progress(p, note),
-    // nets the edit cut are reconnected by the last-mile bench's `finish` step before the A1-A9 proof
+    // nets the edit cut are reconnected by the last-mile bench (editbench order: finish, pairs, taps, a7, leg, rip + blockers)
     repair: (r) => repairEditCandidate(c, r),
     accept: (dir, pcb) =>
       runAcceptance(dir, {
@@ -251,7 +257,7 @@ export const board_edit = defineTool({
   toolset: "board",
   title: "Engineering change on a routed board (impact, apply, proof)",
   description:
-    "An ECO on a routed board as a plan, not as hand edits. Plan keys: remove [refs]; move [{ref, to:[x,y,rot] | near:REF|REF.PAD|[x,y], carry, carry_auto, anchor, basis}] with displace {radius, ...} (parts in the way are re-seated nearby, fixed parts stop it); swap [{ref, value, fields, footprint:LIB:NAME, side, dnp}] (a position swap of two parts is two moves); add [{ref, like, pins:{pad:net}, near, value, footprint}] (copies the template symbol and footprint, one label per pin); net [{pin:REF.PAD, to:NET}] (pad, schematic label and dangling copper). mode impact: what it touches (parts, nets, copper, requirement entries, contracts, schematic symbols) and a verdict; STOP means a decision (pins left alone, fixed part in the way, anchor) and writes nothing. mode apply: scores the unedited project, makes the change on board AND schematic sheets in a candidate folder (.fabdesk/board/edits/<id>-<time>) with edited requirements and an origin.json, and lists the nets to route again. mode proof: A1-A9 on the candidate against the project before the edit (strict if it passed, no new failure if it already failed) and the planned-versus-collateral diff. full (default) = impact, apply, proof. adopt: true writes a PASSING candidate into the project (sheets, then the board as one KiCad commit). In full/apply, nets the edit cut are reconnected in the candidate by board_route's `finish` last-mile step (kept only if the whole board improves under its gate) before the proof; a candidate that still has opens is not adopted. A completed measurement is a result, not a tool failure.",
+    "An ECO on a routed board as a plan, not as hand edits. Plan keys: remove [refs]; move [{ref, to:[x,y,rot] | near:REF|REF.PAD|[x,y], carry, carry_auto, anchor, basis}] with displace {radius, ...} (parts in the way are re-seated nearby, fixed parts stop it); swap [{ref, value, fields, footprint:LIB:NAME, side, dnp}] (a position swap of two parts is two moves); add [{ref, like, pins:{pad:net}, near, value, footprint}] (copies the template symbol and footprint, one label per pin); net [{pin:REF.PAD, to:NET}] (pad, schematic label and dangling copper). mode impact: what it touches (parts, nets, copper, requirement entries, contracts, schematic symbols) and a verdict; STOP means a decision (pins left alone, fixed part in the way, anchor) and writes nothing. mode apply: scores the unedited project, makes the change on board AND schematic sheets in a candidate folder (.fabdesk/board/edits/<id>-<time>) with edited requirements and an origin.json, and lists the nets to route again. mode proof: A1-A9 on the candidate against the project before the edit (strict if it passed, no new failure if it already failed) and the planned-versus-collateral diff. full (default) = impact, apply, proof. adopt: true writes a PASSING candidate into the project (sheets, then the board as one KiCad commit). In full/apply, nets the edit cut are reconnected in the candidate by board_route's last-mile steps in order (finish; pairs if a pair got worse; then while opens remain taps, a7, leg, rip+blockers:1.0; each kept only if the whole board improves under its gate) before the proof; the candidate's last-mile workspace stays at <candidate>/.lastmile for board_route info/view/why/try (pass it as workspace). After the proof a churn guard gives nets the plan did not touch their original copper back when the board scores no worse. A candidate that still has opens is not adopted. A completed measurement is a result, not a tool failure.",
   inputSchema: {
     plan: z.union([PLAN, z.string()]).describe("The plan: an object, inline JSON text, or a project-relative path to a JSON file."),
     mode: z.enum(["impact", "apply", "proof", "full"]).default("full"),

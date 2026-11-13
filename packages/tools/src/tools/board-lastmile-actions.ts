@@ -276,5 +276,5 @@ export async function repairEditCandidate(
 ): Promise<{ note: string }> {
   const req = await requirementsFor(ctx);
   const { deps } = await openBench(ctx, join(input.candidateDir, ".lastmile"), req);
-  return L.repairCandidate(deps(router, (l) => ctx.progress(0.6, l)), input);
+  return L.repairCandidate(deps(router, (l) => ctx.progress(0.6, l)), { ...input, projectDir: ctx.requireProject().dir });
 }

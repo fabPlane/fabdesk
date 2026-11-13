@@ -6,9 +6,10 @@
  * `adoptCandidate` reads to write it into the project.
  */
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import type { AcceptRun } from "../history";
+import { figures } from "../accept";
 import { acceptDir, type AcceptIndexEntry } from "../history";
 import { BOARD_DIR, designHash, exists, readJson, writeJsonFile } from "../files";
 import type { Comparison } from "../history";
@@ -69,6 +70,8 @@ export interface EditRunResult {
   proof?: Judgement & { id: string; record: string; comparison: ComparisonView | null; before: Record<string, boolean>; after: Record<string, boolean> };
   diff?: BoardDiff;
   churn?: Churn;
+  /** The churn guard: collateral nets given their source copper back; kept when the board scored no worse. */
+  guard?: { nets: string[]; kept: boolean; why?: string };
   agentCoordinates: number;
   phases: Record<string, number>;
 }
@@ -212,17 +215,68 @@ async function finish(
   say(0.7, "A1-A9 proof");
   t = Date.now();
   const beforeRec = await readJson<Scored>(join(dir, "before-acceptance.json"));
-  const run = await input.runners.accept(dir, env.pcbName);
+  let run = await input.runners.accept(dir, env.pcbName);
   base.phases["proof"] = Math.round((Date.now() - t) / 100) / 10;
-  const j = judge(beforeRec, run.result);
-  const after = await readFile(base.candidate.pcb, "utf8");
+  let after = await readFile(base.candidate.pcb, "utf8");
   const source = await readFile(join(dir, "before", env.pcbName), "utf8");
-  const d = diffBoards(source, after);
-  const ch = churn(d, ledger);
-  await writeJsonFile(join(dir, "diff.json"), { ...d, churn: ch });
+  let d = diffBoards(source, after);
+  let ch = churn(d, ledger);
+  // churn guard (editbench): nets the plan did not touch get their original copper back if the whole board stays as good
+  let guard: EditRunResult["guard"];
+  if (ch.collateral_nets) {
+    say(0.85, `churn guard: original copper back on ${ch.collateral_nets} untouched net(s), then score`);
+    t = Date.now();
+    const g = await churnGuard(dir, env.pcbName, source, after, Object.keys(ch.collateral_detail), run, input.runners);
+    base.phases["guard"] = Math.round((Date.now() - t) / 100) / 10;
+    guard = { nets: Object.keys(ch.collateral_detail).sort(), kept: g.kept, ...(g.why ? { why: g.why } : {}) };
+    if (g.kept) {
+      run = g.run;
+      after = g.text;
+      d = diffBoards(source, after);
+      ch = churn(d, ledger);
+    }
+  }
+  const j = judge(beforeRec, run.result);
+  await writeJsonFile(join(dir, "diff.json"), { ...d, churn: ch, ...(guard ? { guard } : {}) });
   const proof = { ...j, id: run.entry.id, record: run.recordPath, comparison: view(run.baseline ?? run.previous), before: beforeRec.summary as Record<string, boolean>, after: run.result.summary as Record<string, boolean> };
   await writeJsonFile(join(dir, "proof.json"), proof);
-  return { ...base, stage: "proof", verdict: j.verdict, stop: false, repair, proof, diff: d, churn: ch };
+  return { ...base, stage: "proof", verdict: j.verdict, stop: false, repair, proof, diff: d, churn: ch, ...(guard ? { guard } : {}) };
+}
+
+/**
+ * The editbench churn guard: a copy of the candidate with the collateral nets' copper taken from the source board,
+ * scored; kept only when it is no worse on A1 opens, A2 errors, A7 and A8 nets and passes at least as many checks.
+ * When kept, its board and its acceptance record (with its index entry) move into the candidate.
+ */
+async function churnGuard(
+  dir: string,
+  pcbName: string,
+  source: string,
+  after: string,
+  nets: string[],
+  run: AcceptRun,
+  runners: EditRunners,
+): Promise<{ kept: false; why?: string } | { kept: true; text: string; run: AcceptRun; why?: undefined }> {
+  const scratch = join(dirname(dir), `.${basename(dir)}.guard`);
+  await rm(scratch, { recursive: true, force: true });
+  try {
+    await cp(dir, scratch, { recursive: true, filter: (src) => basename(src) !== ".lastmile" });
+    const text = revertNets(source, after, nets);
+    await writeFile(join(scratch, pcbName), text);
+    const g = await runners.accept(scratch, pcbName);
+    const a = figures(g.result), b = figures(run.result);
+    const passes = (r: AcceptRun["result"]) => Object.values(r.summary).filter(Boolean).length;
+    const worse = (["A1", "A2", "A7", "A8"] as const).filter((k) => a[k] > b[k]);
+    if (worse.length || passes(g.result) < passes(run.result))
+      return { kept: false, why: worse.length ? `worse on ${worse.map((k) => `${k} ${b[k]}->${a[k]}`).join(", ")}` : "fewer checks pass" };
+    await writeFile(join(dir, pcbName), text);
+    for (const f of [g.entry.file, g.entry.file.replace(/\.json$/, ".drc.json")]) await cp(join(scratch, f), join(dir, f)).catch(() => {});
+    const index = await readJson<AcceptIndexEntry[]>(join(acceptDir(dir), "index.json")).catch(() => [] as AcceptIndexEntry[]);
+    await writeJsonFile(join(acceptDir(dir), "index.json"), [...index, g.entry]);
+    return { kept: true, text, run: { ...g, recordPath: join(dir, g.entry.file) } };
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
 }
 
 async function proofOnly(input: EditRunInput, plan: EditPlan, env: EditEnv, base: { mode: EditMode; planId: string; agentCoordinates: number; phases: Record<string, number> }): Promise<EditRunResult> {

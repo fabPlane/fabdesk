@@ -159,6 +159,33 @@ describe("apply, proof and the candidate", () => {
     expect(text).toContain("(rotate 90)");
   });
 
+  // a repair that also changes a net the plan never touched (SIG2): the churn guard puts SIG2's copper back
+  const strayRepair = (): NonNullable<EditRunners["repair"]> => async ({ pcb }) => {
+    const t = await readFile(pcb, "utf8");
+    const end = t.trimEnd().lastIndexOf(")");
+    await writeFile(pcb, `${t.slice(0, end)}  ${seg(20.5, 10, 25, 10, "SIG2")}\n)\n`);
+    return { note: "stray" };
+  };
+  test("churn guard: a collateral net gets its source copper back when the board scores no worse", async () => {
+    const dir = await project();
+    const r = await runEdit({ projectDir: dir, plan: { id: "mv", move: [{ ref: "C3", to: [50, 30, 90] }], displace: { radius: 3 } }, mode: "full", runners: runners({ repair: strayRepair() }) });
+    expect(r.guard).toEqual({ nets: ["SIG2"], kept: true });
+    expect(r.churn?.collateral_nets).toBe(0);
+    expect(await readFile(r.candidate!.pcb, "utf8")).not.toContain("(end 25 10)");
+    const index = JSON.parse(await readFile(join(r.candidate!.dir, ".fabdesk/board/accept/index.json"), "utf8")) as Array<{ file: string; sha256: string }>;
+    expect(await readFile(join(r.candidate!.dir, index.at(-1)!.file), "utf8")).toContain('"summary"'); // the guard's record moved in
+    expect(existsSync(join(dir, ".fabdesk/board/edits", `.${r.candidate!.dir.split("/").pop()}.guard`))).toBe(false);
+  });
+  test("churn guard: the candidate is kept as repaired when putting the copper back scores worse", async () => {
+    const dir = await project();
+    const err = { violations: [{ rule: "clearance", severity: "error", description: "x" }], unconnected: 0, parity: 0 };
+    const accept: EditRunners["accept"] = (d, pcb) => runAcceptance(d, { pcb, drc: async () => (d.endsWith(".guard") ? err : clean) });
+    const r = await runEdit({ projectDir: dir, plan: { id: "mv", move: [{ ref: "C3", to: [50, 30, 90] }], displace: { radius: 3 } }, mode: "full", runners: runners({ accept, repair: strayRepair() }) });
+    expect(r.guard).toMatchObject({ nets: ["SIG2"], kept: false, why: "worse on A2 0->1" });
+    expect(r.churn?.collateral_nets).toBe(1);
+    expect(await readFile(r.candidate!.pcb, "utf8")).toContain("(end 25 10)");
+  });
+
   test("add copies a template symbol with one label per pin; net moves a pin and its label; swap changes value and field", async () => {
     const dir = await project();
     const r = await runEdit({

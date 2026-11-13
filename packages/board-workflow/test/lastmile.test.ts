@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -467,5 +467,29 @@ describe("repairCandidate (board_edit repair hook)", () => {
     expect(r.note).toContain("left the board as edited");
     expect(r.note).toContain("new DRC class");
     expect(await readFile(join(src, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb) ;; opens=4");
+  });
+  test("opens left after finish go through editbench's chain (taps, leg, rip + blockers); the workspace is kept", async () => {
+    const src = await project(4);
+    const r = await L.repairCandidate(
+      { scorer, engine: engine({ finish: "(kicad_pcb) ;; opens=2", "rip-sig": "(kicad_pcb) ;; opens=0" }), availableGiB: async () => 30 },
+      { candidateDir: src, pcb: "board.kicad_pcb", routeAgain: ["N1"], projectDir: src },
+    );
+    expect(r.steps.map((s) => s.try.join("+"))).toEqual(["finish", "taps", "leg", "rip+blockers:1.0"]);
+    expect(r.steps.map((s) => !!s.accepted)).toEqual([true, false, false, true]);
+    expect(r.note).toContain("open 4 -> 0");
+    expect(r.workspace).toBe(".lastmile");
+    expect(await readFile(join(src, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb) ;; opens=0");
+    expect(await stat(join(src, ".lastmile", "state.json")).then(() => true, () => false)).toBe(true);
+  });
+  test("nothing to repair runs no step", async () => {
+    const src = await project(0);
+    const r = await L.repairCandidate({ scorer, engine: engine({}), availableGiB: async () => 30 }, { candidateDir: src, pcb: "board.kicad_pcb", routeAgain: [] });
+    expect(r.steps).toEqual([]);
+    expect(r.note).toContain("none needed");
+  });
+  test("repairStages follows editbench: taps and leg only with opens, a7 only with A7 failures", () => {
+    const f = (open: number, a7: number) => ({ open, a7, a7_mm: 0, a8: 0, drc: {}, pairs_todo: 0, pairs: {} });
+    expect(L.repairStages(f(2, 0))).toEqual([["taps"], ["leg"], ["rip", "blockers:1.0"]]);
+    expect(L.repairStages(f(0, 1))).toEqual([["a7"], ["rip", "blockers:1.0"]]);
   });
 });
