@@ -23,7 +23,8 @@ import { parseBoard } from "../board";
 import type { Requirements } from "../requirements";
 import { engineReady, type LayoutHost } from "../layout/ctx";
 import type { KrtPlan } from "../layout/plan";
-import { routeKrt } from "../layout/route";
+import { routeKrt, type RouteKrtOptions } from "../layout/route";
+import { hasPairStageOptions } from "../layout/krt-override";
 import { addNewCopper, changedCopperNets, convertTransforms, keepCopperOfNets, nameCopperNets, numericNetCopper, replaceCopper } from "../layout/text";
 import { FILL_ROUTERS, type Step } from "./actions";
 import { copyBoardFolder, type Scorer, type StepEngine, type StepInput, type StepOutcome } from "./bench";
@@ -69,7 +70,7 @@ const stemOf = (pcb: string) => basename(pcb).replace(/\.kicad_pcb$/, "");
 /** The plan a step was built from, for messages ("finish", "pairs-todo", "plan:FILE" ...). */
 const planName = (step: Step) => (step.planFile ? `plan:${step.planFile}` : (step.planName ?? "krt"));
 // a finish with fences or kept-out layers is not one the host router can stand in for (it would ignore them)
-const isFinish = (step: Step) => step.type === "krt" && step.planName === "finish" && !step.plan?.["fences"] && !step.avoidLayers?.length;
+const isFinish = (step: Step) => step.type === "krt" && step.planName === "finish" && !step.plan?.["fences"] && !step.avoidLayers?.length && !hasPairStageOptions(step.pairOptions);
 
 /** Parts a nudge may not move: the board's mechanical anchors and every locked footprint. */
 export async function fixedParts(req: Requirements, boardFile: string): Promise<Set<string>> {
@@ -95,7 +96,13 @@ async function openNetsOf(dir: string): Promise<Set<string>> {
   return new Set(opensOf(run.unconnected).map((o) => o.net));
 }
 
-async function krtRoute(h: StepEngineHost, src: string, out: string, pcb: string, plan: KrtPlan, signal: AbortSignal, onlyNets?: Set<string>, avoidLayers?: readonly string[]): Promise<Record<string, unknown>> {
+/** What a step asks of its KRT plan beyond the plan itself (`~avoid` layers, `!short` / `!match` on its pair stages). */
+const krtStepOptions = (step: Step): Pick<RouteKrtOptions, "avoidLayers" | "pairOptions"> => ({
+  ...(step.avoidLayers?.length ? { avoidLayers: step.avoidLayers } : {}),
+  ...(hasPairStageOptions(step.pairOptions) ? { pairOptions: step.pairOptions } : {}),
+});
+
+async function krtRoute(h: StepEngineHost, src: string, out: string, pcb: string, plan: KrtPlan, signal: AbortSignal, onlyNets: Set<string> | undefined, opts: Pick<RouteKrtOptions, "avoidLayers" | "pairOptions">): Promise<Record<string, unknown>> {
   await copyBoardFolder(src, out);
   const work = join(out, ".lastmile", "krt");
   await rm(work, { recursive: true, force: true });
@@ -104,7 +111,7 @@ async function krtRoute(h: StepEngineHost, src: string, out: string, pcb: string
   const admission = host.admit ? await host.admit("router", "lastmile krt", [src], { engine: "krt" }) : { release() {} };
   let record;
   try {
-    record = await routeKrt(host, { placed: src, out: work, plan, stem: stemOf(pcb), req: h.req, score: false, ...(avoidLayers?.length ? { avoidLayers } : {}) });
+    record = await routeKrt(host, { placed: src, out: work, plan, stem: stemOf(pcb), req: h.req, score: false, ...opts });
   } finally {
     admission.release();
   }
@@ -124,7 +131,7 @@ async function krtRoute(h: StepEngineHost, src: string, out: string, pcb: string
   if (numeric) throw new Error(`${numeric} copper items name their net by number after the merge`);
   await writeFile(join(out, pcb), merged.text);
   const stages = record.stages.map((s) => ({ name: s["name"], ...(s["skipped"] ? { skipped: s["skipped"] } : { exit: s["exit"], wall_s: s["wall_s"] }) }));
-  return { engine: "krt", wall_s: record.wall_s, stages, merge: merged.stats, ...(restricted ? { restricted } : {}), ...(record.avoided ? { avoided: record.avoided } : {}) };
+  return { engine: "krt", wall_s: record.wall_s, stages, merge: merged.stats, ...(restricted ? { restricted } : {}), ...(record.avoided ? { avoided: record.avoided } : {}), ...(record.pair_options ? { pair_options: record.pair_options } : {}) };
 }
 
 /**
@@ -245,7 +252,7 @@ export function createStepEngine(h: StepEngineHost): StepEngine {
           // finish means "route the opens; nothing is ripped": only new copper on the nets that were open is kept, so the
           // rest of the board stays exactly as it was (KRT also adds pad-entry stubs on other nets, which a reroute must not)
           const onlyNets = step.planName === "finish" ? await openNetsOf(cur) : undefined;
-          return { dir: out, info: await krtRoute(h, cur, out, pcb, plan, signal, onlyNets, step.avoidLayers) };
+          return { dir: out, info: await krtRoute(h, cur, out, pcb, plan, signal, onlyNets, krtStepOptions(step)) };
         }
         case "repair": {
           const k = await krt();
@@ -260,7 +267,7 @@ export function createStepEngine(h: StepEngineHost): StepEngine {
           if (!rip.removed) return { dir: cur, skipped: true, info: { rip } }; // nothing to repair: the board is unchanged
           signal.throwIfAborted();
           const routed = join(out, "route");
-          return { dir: routed, info: { rip, ...(await krtRoute(h, ripped, routed, pcb, plan, signal, undefined, step.avoidLayers)) } };
+          return { dir: routed, info: { rip, ...(await krtRoute(h, ripped, routed, pcb, plan, signal, undefined, krtStepOptions(step))) } };
         }
         case "nudge": {
           const k = await krt();
@@ -272,7 +279,7 @@ export function createStepEngine(h: StepEngineHost): StepEngine {
           const nudge = await nudgeStep({ cur, out: nudged, pcb, moves: step.moves, req: h.req, courtyardDrc: h.layout.courtyardDrc, fixed: (r) => fixed.has(r) });
           signal.throwIfAborted();
           const routed = join(out, "route");
-          return { dir: routed, info: { nudge, ...(await krtRoute(h, nudged, routed, pcb, plan, signal, undefined, step.avoidLayers)) } };
+          return { dir: routed, info: { nudge, ...(await krtRoute(h, nudged, routed, pcb, plan, signal, undefined, krtStepOptions(step))) } };
         }
         case "replace": {
           const k = await krt();
@@ -299,7 +306,7 @@ export function createStepEngine(h: StepEngineHost): StepEngine {
           if (Object.keys(rec.placement.native_courtyard ?? {}).length) return { error: `replace: native courtyard check failed ${JSON.stringify(rec.placement.native_courtyard)}` };
           signal.throwIfAborted();
           const routed = join(out, "route");
-          return { dir: routed, info: { replace: summary, ...(await krtRoute(h, replaced, routed, pcb, plan, signal, undefined, step.avoidLayers)) } };
+          return { dir: routed, info: { replace: summary, ...(await krtRoute(h, replaced, routed, pcb, plan, signal, undefined, krtStepOptions(step))) } };
         }
         default:
           return { error: `unknown step type ${(step as Step).type}` };

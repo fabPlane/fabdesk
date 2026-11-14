@@ -28,8 +28,9 @@ function fakeLayout(krt: string | null, spawns: string[][]): layout.LayoutHost {
     tools: { krt, tracemaker: null, kicadCli: "/fake/kicad-cli" },
     spawn: async (cmd, o) => {
       spawns.push(cmd);
-      const si = cmd.findIndex((c) => c.endsWith(".py"));
-      if (/route(_diff)?\.py$/.test(cmd[si] ?? "")) {
+      // the router script, whether run directly or through the override wrapper (krt_override.py ... -- SCRIPT ARGS)
+      const si = cmd.findIndex((c) => /route(_diff)?\.py$/.test(c));
+      if (si >= 0) {
         const t = await readFile(cmd[si + 1]!, "utf8");
         await writeFile(cmd[si + 2]!, t.replace(/\)\s*$/, `\n\t${NEW_SEG}\n)`));
       }
@@ -322,6 +323,77 @@ describe("step engine: plan files and aborts", () => {
     const r2 = plain.find((c) => c.some((x) => /route\.py$/.test(x)))!;
     expect(r2.slice(r2.indexOf("--layers") + 1, r2.indexOf("--layers") + 7)).toEqual(["F.Cu", "In2.Cu", "In4.Cu", "In5.Cu", "In7.Cu", "B.Cu"]);
     expect(r2).not.toContain("--layer-costs");
+  });
+
+  test("!short / !match: the pair stages run through the override wrapper with the short-leg rule lowered and intra-pair matching; other stages run directly", async () => {
+    const { dir, req } = await c6();
+    req.acceptance.net_classes.classes["PAIRX"] = { pairs: [["SIG", "SIG2"]], nets: ["SIG", "SIG2"], diff_pair_width: 0.2, diff_pair_gap: 0.15, layers: ["F.Cu"], track_width: 0.2 } as never;
+    const krt = join(dir, "krt");
+    await mkdir(join(krt, "src/plugins"), { recursive: true });
+    const spawns: string[][] = [];
+    const steps = L.stepsFor("pairs-all!short!match=0.8");
+    expect(steps[0]!.pairOptions).toEqual({ shortLegs: { setbacks: 1, floorMm: 1 }, intraMatch: 0.8 });
+    const out = join(await tmp(), "o");
+    const r = await engine(req, krt, spawns, []).run(steps[0]!, input(dir, out));
+    if ("error" in r) throw new Error(r.error);
+    const work = join(out, ".lastmile", "krt");
+    const diff = spawns.find((c) => c.some((x) => x.endsWith("route_diff.py")))!;
+    const py = layout.krtPaths(krt).python;
+    expect(diff.slice(0, py.length + 1)).toEqual([...py, join(work, "krt_override.py")]);
+    expect(diff.slice(py.length + 1, py.length + 6)).toEqual(["--set", "diff_pair_multipoint.DIFF_PAIR_MIN_COUPLED_FLOOR_MM=1", "--set", "diff_pair_multipoint.DIFF_PAIR_MIN_COUPLED_SETBACKS=1", "--"]);
+    // the script's own argv follows unchanged: input, output, then the stage's args with the matching flags added
+    const si = diff.findIndex((x) => x.endsWith("route_diff.py"));
+    expect(diff[si + 1]).toBe(join(work, "s0.kicad_pcb"));
+    expect(diff[si + 2]).toBe(join(work, "s1.kicad_pcb"));
+    expect(diff.slice(diff.indexOf("--diff-pair-intra-match"), diff.indexOf("--diff-pair-intra-match") + 3)).toEqual(["--diff-pair-intra-match", "--length-match-tolerance", "0.8"]);
+    for (const c of spawns.filter((c) => c.some((x) => /[\\/]route\.py$/.test(x)))) {
+      expect(c.join(" ")).not.toContain("krt_override.py");
+      expect(c).not.toContain("--diff-pair-intra-match");
+    }
+    expect(await readFile(join(work, "krt_override.py"), "utf8")).toBe(layout.KRT_OVERRIDE_SCRIPT);
+    // plan.json and the stage records say what ran
+    const plan = JSON.parse(await readFile(join(work, "plan.json"), "utf8")) as layout.KrtPlan;
+    const pairStage = plan.stages.find((s) => s.tool === "route_diff")!;
+    expect(pairStage["krt_overrides"]).toEqual({ diff_pair_multipoint: { DIFF_PAIR_MIN_COUPLED_SETBACKS: 1, DIFF_PAIR_MIN_COUPLED_FLOOR_MM: 1 } });
+    expect(plan.stages.filter((s) => s.tool !== "route_diff").every((s) => !s["krt_overrides"])).toBe(true);
+    expect(plan.note).toContain("short legs coupled");
+    const krtRec = JSON.parse(await readFile(join(work, "krt.json"), "utf8")) as layout.RouteKrtRecord;
+    expect(krtRec.stages.find((s) => s["tool"] === "route_diff")!["krt_overrides"]).toEqual(pairStage["krt_overrides"]);
+    expect((r.info?.["pair_options"] as Array<{ stage: string }>).map((x) => x.stage)).toEqual(["pairs-pairx"]);
+    // the same action without modifiers runs KRT directly
+    const plain: string[][] = [];
+    await engine(req, krt, plain, []).run(L.stepsFor("pairs-all")[0]!, input(dir, join(await tmp(), "p")));
+    expect(plain.flat().some((x) => x.endsWith("krt_override.py"))).toBe(false);
+  });
+
+  test("a constant the installed KRT does not have stops the stage by name; a plan with no pair stage refuses !short", async () => {
+    const { dir, req } = await c6();
+    req.acceptance.net_classes.classes["PAIRX"] = { pairs: [["SIG", "SIG2"]], nets: ["SIG", "SIG2"], diff_pair_width: 0.2, diff_pair_gap: 0.15, layers: ["F.Cu"], track_width: 0.2 } as never;
+    const krt = join(dir, "krt");
+    await mkdir(join(krt, "src/plugins"), { recursive: true });
+    const host = fakeLayout(krt, []);
+    const failing: layout.LayoutHost = {
+      ...host,
+      spawn: async (cmd, o) => {
+        if (cmd.some((x) => x.endsWith("krt_override.py"))) {
+          await writeFile(o.log, "KRT_OVERRIDE_ERROR: diff_pair_multipoint has no DIFF_PAIR_MIN_COUPLED_SETBACKS (KiCadRoutingTools changed?); the stage was not run\n");
+          return { code: 3, wallS: 0.1 };
+        }
+        return host.spawn(cmd, o);
+      },
+    };
+    const rec = await layout.routeKrt(failing, { placed: dir, out: join(await tmp(), "k"), plan: L.LASTMILE_PLANS["pairs-g2"] as never, stem: "C6", req, score: false, pairOptions: { shortLegs: { setbacks: 1, floorMm: 1 } } });
+    expect(rec.error).toBe("stage pairs-pairx: diff_pair_multipoint has no DIFF_PAIR_MIN_COUPLED_SETBACKS (KiCadRoutingTools changed?); the stage was not run");
+    expect(rec.stages).toHaveLength(1);
+    // a plan without a route_diff stage: the option would do nothing, so the run is refused before any stage
+    const spawns: string[][] = [];
+    await expect(layout.routeKrt(fakeLayout(krt, spawns), { placed: dir, out: join(await tmp(), "f"), plan: L.LASTMILE_PLANS["finish"] as never, stem: "C6", req, score: false, pairOptions: { shortLegs: { setbacks: 1, floorMm: 1 } } })).rejects.toThrow(/no route_diff stage/);
+    expect(spawns).toHaveLength(0);
+    // a plan file's own krt_overrides are honoured, and checked
+    const own = structuredClone(L.LASTMILE_PLANS["pairs-g2"]) as unknown as layout.KrtPlan;
+    own.stages[0]!["krt_overrides"] = { diff_pair_multipoint: { "bad name": 1 } };
+    await expect(layout.routeKrt(fakeLayout(krt, spawns), { placed: dir, out: join(await tmp(), "g"), plan: own, stem: "C6", req, score: false })).rejects.toThrow(/not a Python name/);
+    expect(spawns).toHaveLength(0);
   });
 
   test("an aborted signal starts nothing: no step, no KRT stage, no process", async () => {

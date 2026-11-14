@@ -14,6 +14,7 @@ import { krtPaths, krtRouterScript, routeSummaries } from "./engines";
 import { pathExists } from "./fsx";
 import { applyAliases, avoidLayersInPlan, boardPlan, expandArgs, pairClasses, signalLayers, BUILTIN_PLANS, type ExpandedPlan, type KrtPlan, type Selectors } from "./plan";
 import { applyNetclasses, copyDir, scoreRoute } from "./score";
+import { checkKrtOverrides, hasKrtOverrides, hasPairStageOptions, krtStageCommand, pairOptionsInPlan, KRT_OVERRIDE_FILE, KRT_OVERRIDE_SCRIPT, type PairOptionsRecord, type PairStageOptions } from "./krt-override";
 import { appendBeforeClose, convertTransforms } from "./text";
 
 /** A plan by reference: a JSON file, or `builtin:<role>`. */
@@ -40,11 +41,18 @@ export interface RouteKrtOptions {
   budgetMs?: number;
   /** Layers kept out of reach after the plan's macros expand (`avoidLayersInPlan`: inner left out, outer costed). */
   avoidLayers?: readonly string[];
+  /**
+   * Options for the plan's pair stages (`route_diff`), applied after its macros expand (`pairOptionsInPlan`): KRT's
+   * short-leg rule lowered through the override wrapper, intra-pair length matching. Refused when the plan has no pair stage.
+   */
+  pairOptions?: PairStageOptions;
 }
 export interface RouteKrtRecord {
   stages: Array<Record<string, unknown>>;
   /** What `avoidLayers` did, per stage. */
   avoided?: Array<{ stage: string; removed: string[]; costed: string[] }>;
+  /** What `pairOptions` did, per pair stage. */
+  pair_options?: PairOptionsRecord[];
   wall_s?: number;
   error?: string;
 }
@@ -56,6 +64,22 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
   let plan = boardPlan(typeof o.plan === "string" ? await loadPlan(o.plan) : structuredClone(o.plan), acc);
   let avoided: RouteKrtRecord["avoided"];
   if (o.avoidLayers?.length) ({ plan, record: avoided } = avoidLayersInPlan(plan, o.avoidLayers));
+  let pairRec: RouteKrtRecord["pair_options"];
+  if (hasPairStageOptions(o.pairOptions)) {
+    try {
+      ({ plan, record: pairRec } = pairOptionsInPlan(plan, o.pairOptions));
+    } catch (e) {
+      throw new FlowError(e instanceof Error ? e.message : String(e));
+    }
+  }
+  // every stage's overrides checked before anything runs (a plan file may carry its own)
+  const overrides = plan.stages.map((st) => {
+    try {
+      return checkKrtOverrides(st["krt_overrides"], `stage ${st.name}`);
+    } catch (e) {
+      throw new FlowError(e instanceof Error ? e.message : String(e));
+    }
+  });
   if (await pathExists(o.out)) throw new FlowError(`${o.out} exists`);
   await mkdir(o.out, { recursive: true });
   await writeFile(join(o.out, "plan.json"), JSON.stringify(plan, null, 1) + "\n");
@@ -103,7 +127,9 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
   const scored = rip ? null : await readJsonOrNull<{ opens?: Array<{ net?: string }> }>(join(o.placed, "lastmile.score.json"));
   sel.openBefore = rip?.open_before ?? [...new Set((scored?.opens ?? []).map((x) => x.net).filter((n): n is string => !!n))].sort();
 
-  const record: RouteKrtRecord = { stages: [], ...(avoided ? { avoided } : {}) };
+  const wrapper = join(o.out, KRT_OVERRIDE_FILE);
+  if (overrides.some(hasKrtOverrides)) await writeFile(wrapper, KRT_OVERRIDE_SCRIPT);
+  const record: RouteKrtRecord = { stages: [], ...(avoided ? { avoided } : {}), ...(pairRec ? { pair_options: pairRec } : {}) };
   let cur = krtIn;
   const t0 = Date.now();
   for (const [i, st] of plan.stages.entries()) {
@@ -124,7 +150,8 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
       record.error = `budget exhausted before stage ${st.name}`;
       break;
     }
-    const r = await host.spawn([...k.python, krtRouterScript(k, st.tool), cur, nxt, ...args, ...(plan.common ?? [])], {
+    const ov = overrides[i]!;
+    const r = await host.spawn(krtStageCommand(k.python, krtRouterScript(k, st.tool), [cur, nxt, ...args, ...(plan.common ?? [])], hasKrtOverrides(ov) ? { wrapper, overrides: ov } : undefined), {
       cwd: k.plugins,
       env: { ...plan.env, ...st.env },
       log,
@@ -132,9 +159,15 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
       ...(host.signal ? { signal: host.signal } : {}),
       ...(host.onPid ? { onPid: host.onPid } : {}),
     });
-    const rec = { name: st.name, tool: st.tool, exit: r.code, wall_s: r.wallS, ...routeSummaries(await readFile(log, "utf8").catch(() => "")) };
+    const logText = await readFile(log, "utf8").catch(() => "");
+    const rec = { name: st.name, tool: st.tool, exit: r.code, wall_s: r.wallS, ...(hasKrtOverrides(ov) ? { krt_overrides: ov } : {}), ...routeSummaries(logText) };
     record.stages.push(rec);
     host.log?.(JSON.stringify({ name: rec.name, exit: rec.exit, wall_s: rec.wall_s }));
+    const overrideError = /^KRT_OVERRIDE_ERROR: (.*)$/m.exec(logText);
+    if (overrideError) {
+      record.error = `stage ${st.name}: ${overrideError[1]}`;
+      break;
+    }
     if (!(await pathExists(nxt))) {
       record.error = `stage ${st.name} wrote no board`;
       break;

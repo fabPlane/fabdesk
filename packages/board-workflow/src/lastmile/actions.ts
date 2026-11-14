@@ -4,6 +4,8 @@
  * them (`pairfix` in this package, router steps through a StepEngine that wraps what the host has installed).
  */
 import { LASTMILE_PLANS } from "./plans";
+import { pairStages, SHORT_LEG_RULE, type PairStageOptions } from "../layout/krt-override";
+import type { PlanStage } from "../layout/plan";
 
 export type StepType = "krt" | "repair" | "nudge" | "fill" | "pairfix" | "escape" | "planes" | "pour" | "replace" | "cut";
 
@@ -40,6 +42,12 @@ export interface Step {
    * candidate that split another net's pour; honoured by every step that runs a KRT plan.
    */
   avoidLayers?: string[];
+  /**
+   * Options for the pair stages (`route_diff`) of the step's KRT plan, from the action's `!short` / `!match[=MM]`
+   * modifiers (routeKrt `pairOptions`): couple the short fan-out legs too (KRT's short-leg rule lowered through the
+   * override wrapper, layout/krt-override.ts), P/N length matching inside each pair.
+   */
+  pairOptions?: PairStageOptions;
 }
 
 /** Steps that run a KRT plan (and so can honour `avoidLayers`). */
@@ -205,6 +213,50 @@ function boxes(action: string, s: string): { boxes: number[][]; aroundOpens?: nu
 /** The box's numbers as written, once each is checked. */
 const boxArgs = (action: string, s: string): string[] => (box(action, s), s.split(","));
 
+/**
+ * Modifiers an action that routes pairs as pairs takes (`pairs!short`, `bundle:REGEX@BOX!short!match!outer=2`): written after
+ * the action and its argument, each behind a `!`. They apply to the pair stages (KRT `route_diff`) of the action's
+ * router plans and make no sense elsewhere, so an action without such a stage refuses them by name.
+ */
+export const PAIR_MODIFIERS: Record<string, string> = {
+  short: `couple the short fan-out legs too: KiCadRoutingTools routes a pair leg single-ended when it has under max(5 x the centerline setback, 3 mm) of coupled run ("electrically short", every leg of a 0.5 mm pitch connector fan-out); !short lowers that rule to max(${SHORT_LEG_RULE.setbacks} x setback, ${SHORT_LEG_RULE.floorMm} mm) for this action's pair stages (the installed KRT is not edited)`,
+  match: "match[=MM]  P/N length matching inside each pair as it is routed (--diff-pair-intra-match --length-match-tolerance MM, default 1.0)",
+  outer: "outer=COST  the outer layers (F.Cu, B.Cu) at this layer cost in the pair stages instead of the templates' 20, for pairs whose pads and short legs are on an outer layer (a connector and its ESD parts on F.Cu)",
+};
+const MATCH = /^match(?:=(.*))?$/;
+const OUTER = /^outer=(.*)$/;
+
+/**
+ * A part's `!short` / `!match[=MM]` / `!outer=COST` taken off (wherever they sit among its `!` suffixes): the rest of
+ * the part as written, the options, and the modifiers as written (`mods`, for actions that hand them on).
+ */
+export function pairModifiers(part: string): { part: string; options: PairStageOptions | null; mods: string } {
+  const toks = part.split("!");
+  const keep = [toks[0]!];
+  const mods: string[] = [];
+  const o: PairStageOptions = {};
+  for (const tk of toks.slice(1)) {
+    const m = MATCH.exec(tk);
+    const c = OUTER.exec(tk);
+    if (tk === "short") o.shortLegs = { ...SHORT_LEG_RULE };
+    else if (m) {
+      o.intraMatch = m[1] === undefined ? 1.0 : num(`${part}: !match`, m[1]);
+      if (!(o.intraMatch > 0)) throw new ActionError(`${part}: !match=MM needs a tolerance above 0`);
+    } else if (c) {
+      o.outerCost = num(`${part}: !outer`, c[1]);
+      if (!(o.outerCost >= 1)) throw new ActionError(`${part}: !outer=COST needs a cost of at least 1 (1 = no penalty)`);
+    } else {
+      keep.push(tk);
+      continue;
+    }
+    mods.push("!" + tk);
+  }
+  return { part: keep.join("!"), options: mods.length ? o : null, mods: mods.join("") };
+}
+
+/** True when the step's router plan has a pair stage (a `plan:FILE` is read only when it runs, so it counts). */
+const routesPairs = (s: Step) => runsKrtPlan(s) && (!!s.planFile || pairStages(((s.plan?.["stages"] as PlanStage[] | undefined) ?? [])).length > 0);
+
 const NUDGE = /^([^@]+)@([-\d.]+),([-\d.]+)(?:@([\d./]+))?(?:~([\d.]+))?$/;
 const TURN = /^([^@]+)()()@([\d./]+)(?:~([\d.]+))?$/;
 
@@ -214,10 +266,17 @@ export function stepsFor(action: string): Step[] {
   const fences: Array<{ name: string; box: number[]; nets: string }> = [];
   const parts = action
     .split("+")
-    .map((p) => (p.split(":")[0] === "pairs-fix" ? ((r) => `tighten${r}+reroute${r}+shorts+tighten${r}`)(p.includes(":") ? ":" + p.slice(p.indexOf(":") + 1) : "") : p))
+    .map((p) => {
+      // pairs-fix[:REGEX][!short][!match]: the modifiers go to its re-route, the one step that routes pairs
+      const { part: q, mods } = pairModifiers(p);
+      if (q.split(":")[0] !== "pairs-fix") return p;
+      const r = q.includes(":") ? ":" + q.slice(q.indexOf(":") + 1) : "";
+      return `tighten${r}+reroute${r}${mods}+shorts+tighten${r}`;
+    })
     .join("+")
     .split("+");
-  for (const part of parts) {
+  for (const whole of parts) {
+    const { part, options: pairOptions } = pairModifiers(whole);
     const i = part.indexOf(":");
     const name = i < 0 ? part : part.slice(0, i);
     const arg = i < 0 ? "" : part.slice(i + 1);
@@ -255,6 +314,12 @@ export function stepsFor(action: string): Step[] {
       if (!def.steps) throw new ActionError(`action '${name}' has no steps`);
       steps.push(...def.steps(arg));
     }
+    if (pairOptions) {
+      const routing = steps.slice(first).filter(routesPairs);
+      if (!routing.length)
+        throw new ActionError(`${whole}: !short / !match / !outer apply to actions that route pairs as pairs (pairs, pairs-m, pairs-all, bundle, reroute, route, region, nudge, turn, replace, plan:FILE); '${name}' has no pair stage`);
+      for (let k = first; k < steps.length; k++) if (routesPairs(steps[k]!)) steps[k] = { ...steps[k]!, pairOptions: { ...steps[k]!.pairOptions, ...pairOptions } };
+    }
     if (fences.length)
       for (let k = first; k < steps.length; k++) {
         const s = steps[k]!;
@@ -265,7 +330,12 @@ export function stepsFor(action: string): Step[] {
 }
 
 export function actionHelp(): string[] {
-  return [...Object.entries(ACTIONS).map(([k, v]) => `${k.padEnd(10)} ${v.help}`), "chain with '+', e.g. taps+a7"];
+  return [
+    ...Object.entries(ACTIONS).map(([k, v]) => `${k.padEnd(10)} ${v.help}`),
+    "chain with '+', e.g. taps+a7",
+    "modifiers of an action that routes pairs as pairs, after it and its argument (e.g. bundle:HDMI!short!match!outer=2):",
+    ...Object.entries(PAIR_MODIFIERS).map(([k, v]) => `  !${/^\S+\s\s/.test(v) && v.startsWith(k) ? v : `${k.padEnd(8)} ${v}`}`),
+  ];
 }
 
 /** Last-mile order of a board (WORKFLOW.md section 3); the agent decides what to try, the bench judges. */

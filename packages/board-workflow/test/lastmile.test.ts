@@ -94,6 +94,89 @@ describe("actions", () => {
     expect(() => L.stepsFor("nope")).toThrow(/unknown action 'nope'/);
     expect(() => L.stepsFor("nudge:bad")).toThrow(/nudge:REF@X,Y/);
   });
+  test("!short / !match[=MM] / !outer=COST: options of the pair stages, on any action that routes pairs as pairs", () => {
+    const short = { setbacks: 1, floorMm: 1 };
+    expect(L.stepsFor("pairs!short")[0]!.pairOptions).toEqual({ shortLegs: short });
+    expect(L.stepsFor("pairs-all!match")[0]!.pairOptions).toEqual({ intraMatch: 1 });
+    expect(L.stepsFor("pairs-all!match=0.5!outer=2")[0]!.pairOptions).toEqual({ intraMatch: 0.5, outerCost: 2 });
+    // bundle: the regex and the box as before, the modifiers after them
+    const b = L.stepsFor("bundle:^(HDMI_PI.*)$@90,60,110,75!short!match")[0]!;
+    expect(b.type).toBe("repair");
+    expect(b.plan!["bundle"]).toBe("^(HDMI_PI.*)$");
+    expect(b.rip).toEqual(["--window", "90", "60", "110", "75", "--spare-pairs"]);
+    expect(b.pairOptions).toEqual({ shortLegs: short, intraMatch: 1 });
+    expect(L.stepsFor("bundle:HDMI!outer=1")[0]!.plan!["bundle"]).toBe("HDMI");
+    // a regex's own '!' (a lookahead) is kept; only the modifier words are taken off
+    expect(L.stepsFor("bundle:^(?!USB).*!short")[0]!.plan!["bundle"]).toBe("^(?!USB).*");
+    // reroute:REGEX! keeps its own meaning (cut uncoupled pad stubs) beside the modifiers, in either order
+    expect(L.stepsFor("reroute:HDMI!!short")[0]!.rip).toEqual(["--a8-uncoupled", "HDMI", "--rip-pad-stubs"]);
+    expect(L.stepsFor("reroute:HDMI!short")[0]!.rip).toEqual(["--a8-uncoupled", "HDMI"]);
+    // region's !escape and the modifiers mix
+    const reg = L.stepsFor("region:1,1,5,5!short!escape");
+    expect(reg.map((s) => s.type)).toEqual(["cut", "escape", "krt"]);
+    expect(reg[2]!.pairOptions).toEqual({ shortLegs: short });
+    expect(reg[0]!.pairOptions).toBeUndefined();
+    // in a chain, only the part that carries them
+    const ch = L.stepsFor("bundle:HDMI!short+tighten:HDMI");
+    expect(ch[0]!.pairOptions).toEqual({ shortLegs: short });
+    expect(ch[1]!.pairOptions).toBeUndefined();
+    // pairs-fix hands them to its re-route, the one step that routes pairs
+    const pf = L.stepsFor("pairs-fix:HDMI!short");
+    expect(pf.map((s) => s.type)).toEqual(["pairfix", "repair", "repair", "pairfix"]);
+    expect(pf.map((s) => !!s.pairOptions)).toEqual([false, true, false, false]);
+    expect(pf[0]!.args).toEqual(["--pairs", "HDMI"]);
+    // plan:FILE is read when it runs, so it takes them (routeKrt refuses a plan without a pair stage)
+    expect(L.stepsFor("plan:p.json!short")[0]!.pairOptions).toEqual({ shortLegs: short });
+    // refused by name: actions with no pair stage, bad numbers
+    expect(() => L.stepsFor("finish!short")).toThrow("finish!short: !short / !match / !outer apply to actions that route pairs as pairs");
+    expect(() => L.stepsFor("tighten:HDMI!match")).toThrow(/'tighten' has no pair stage/);
+    expect(() => L.stepsFor("legs:1.0!short")).toThrow(/'legs' has no pair stage/);
+    expect(() => L.stepsFor("pairs!match=x")).toThrow("'x' is not a number");
+    expect(() => L.stepsFor("pairs!match=0")).toThrow("needs a tolerance above 0");
+    expect(() => L.stepsFor("pairs!outer=0.5")).toThrow("needs a cost of at least 1");
+    expect(() => L.stepsFor("pairs!outer")).toThrow(/unknown action 'pairs!outer'/);
+    // the vocabulary lists them
+    expect(L.actionHelp().join("\n")).toContain("!short");
+    expect(L.actionHelp().join("\n")).toContain("!outer=COST");
+  });
+  test("pair-stage options on an expanded plan: overrides on route_diff stages only, matching args, outer layer costs", () => {
+    const plan = {
+      aliases: [],
+      unaliases: [],
+      stages: [
+        { name: "pairs-x", tool: "route_diff", args: ["--nets", "A", "B", "--layers", "F.Cu", "In2.Cu", "B.Cu", "--layer-costs", "20", "1", "20", "--grid-step", "0.05"] },
+        { name: "legs", tool: "route", args: ["--layers", "F.Cu", "B.Cu"] },
+      ],
+    } as layout.ExpandedPlan;
+    const r = layout.pairOptionsInPlan(plan, { shortLegs: { setbacks: 1, floorMm: 1 }, intraMatch: 1, outerCost: 2 });
+    expect(r.plan.stages[0]!.args).toEqual(["--nets", "A", "B", "--layers", "F.Cu", "In2.Cu", "B.Cu", "--layer-costs", "2", "1", "2", "--grid-step", "0.05", "--diff-pair-intra-match", "--length-match-tolerance", "1"]);
+    expect(r.plan.stages[0]!["krt_overrides"]).toEqual({ diff_pair_multipoint: { DIFF_PAIR_MIN_COUPLED_SETBACKS: 1, DIFF_PAIR_MIN_COUPLED_FLOOR_MM: 1 } });
+    expect(r.plan.stages[1]).toEqual(plan.stages[1]!);
+    expect(r.record).toEqual([{ stage: "pairs-x", krt_overrides: r.plan.stages[0]!["krt_overrides"] as layout.KrtOverrides, args_added: ["--diff-pair-intra-match", "--length-match-tolerance", "1"], outer_cost: 2 }]);
+    // an existing tolerance is replaced, the flag not doubled; a stage without costs gets them after its layers
+    expect(layout.intraMatchArgs(["--diff-pair-intra-match", "--length-match-tolerance", "3"], 0.5)).toEqual(["--diff-pair-intra-match", "--length-match-tolerance", "0.5"]);
+    expect(layout.outerCostArgs(["--layers", "F.Cu", "In2.Cu", "B.Cu", "--grid-step", "0.05"], 3)).toEqual(["--layers", "F.Cu", "In2.Cu", "B.Cu", "--layer-costs", "3", "1", "3", "--grid-step", "0.05"]);
+    expect(layout.outerCostArgs(["--layers", "F.Cu", "B.Cu", "--layer-costs", "-1", "20"], 2)).toEqual(["--layers", "F.Cu", "B.Cu", "--layer-costs", "-1", "2"]);
+    expect(() => layout.pairOptionsInPlan({ ...plan, stages: [plan.stages[1]!] }, { shortLegs: { setbacks: 1, floorMm: 1 } })).toThrow("the plan has no route_diff stage, so !short would do nothing");
+  });
+  test("the override wrapper's command line: the script's argv unchanged after --, constants in a stable order", () => {
+    const py = ["/k/venv/bin/python", "-E", "-s"];
+    expect(layout.krtStageCommand(py, "/k/route_diff.py", ["in", "out", "--nets", "A"])).toEqual([...py, "/k/route_diff.py", "in", "out", "--nets", "A"]);
+    expect(layout.krtStageCommand(py, "/k/route_diff.py", ["in", "out"], { wrapper: "/w/krt_override.py", overrides: {} })).toEqual([...py, "/k/route_diff.py", "in", "out"]);
+    expect(layout.krtStageCommand(py, "/k/route_diff.py", ["in", "out"], { wrapper: "/w/krt_override.py", overrides: { m2: { B: true }, m1: { Z: 1.5, A: "x" } } })).toEqual([
+      ...py, "/w/krt_override.py", "--set", 'm1.A="x"', "--set", "m1.Z=1.5", "--set", "m2.B=true", "--", "/k/route_diff.py", "in", "out",
+    ]);
+    expect(() => layout.checkKrtOverrides({ "a-b": { X: 1 } }, "s")).toThrow("not a Python module name");
+    expect(() => layout.checkKrtOverrides({ m: { X: [1] } }, "s")).toThrow("must be a number, boolean or string");
+    expect(() => layout.checkKrtOverrides({ m: { X: Number.NaN } }, "s")).toThrow("must be a number");
+    expect(layout.checkKrtOverrides({ "pkg.mod": { X_1: 2 } }, "s")).toEqual({ "pkg.mod": { X_1: 2 } });
+    // the wrapper fails loudly on a missing module or constant, and on a change of type
+    const w = layout.KRT_OVERRIDE_SCRIPT;
+    expect(w).toContain('fail("%s has no %s (KiCadRoutingTools changed?); the stage was not run" % (mod, name))');
+    expect(w).toContain("sys.exit(3)");
+    expect(w).toContain('runpy.run_path(script, run_name="__main__")');
+    expect(w).toContain("sys.path[0] = os.path.dirname(script)");
+  });
   test("plans are the toolkit's templates", () => {
     expect(Object.keys(L.LASTMILE_PLANS).sort()).toEqual(["after-cut", "finish", "opens-first", "pairs-g2", "pairs-reroute", "pairs-todo-m", "pairs-todo", "rip-sig-leg-nt", "rip-sig", "taps"].sort());
   });
