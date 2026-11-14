@@ -636,6 +636,9 @@ describe("pairsNext: the step to try for pairs that are not coupled", () => {
     expect(next).toHaveLength(2);
     expect(next[0]).toContain('"bundle:^(/H\\.CK_P)$"');
     expect(next[0]).toContain("electrically short");
+    // the next try for a tight fan-out names the modifiers, and parses as an action
+    expect(next[0]).toContain('"bundle:^(/H\\.CK_P)$!short!match!outer=2"');
+    expect(L.stepsFor("bundle:^(/H\\.CK_P)$!short!match!outer=2")[0]!.pairOptions).toEqual({ shortLegs: { setbacks: 1, floorMm: 1 }, intraMatch: 1, outerCost: 2 });
     expect(next[1]).toContain('"reroute:^(/U\\.D_P)$"');
     expect(L.pairsNext({ a: m(0.95) })).toEqual([]);
   });

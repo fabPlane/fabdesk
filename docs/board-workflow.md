@@ -73,6 +73,12 @@ and basis); `inner_neck_allowance_mm: 0` on a power class makes every inner segm
   undone. Do not rip whole wide power nets. `why` names what walls each open end. A pair counts only when coupled; `pairs` splits each uncoupled mm
   by cause (`loose` is fixable in place; `on_pad`, `between`, `escape` come from pads, pinout and vias; `apart` needs a re-route). Pairs on a routed
   board: `tighten` first (vias, mirror, retune, width, tighten, skew, no router), then `loop` with `reroute:{pair}+shorts+blockers:1.0+tighten`.
+  Pairs routed apart (coupled share near 0) need `bundle:REGEX` instead. Through a tight connector fan-out (0.5 mm pitch, ESD parts in line)
+  KiCadRoutingTools routes the short legs single-ended; add modifiers after the action: `!short` couples them (its short-leg rule lowered to
+  1 x setback / 1 mm; the installed KRT is not edited), `!match[=MM]` length-matches P/N as they route, `!outer=COST` sets the F.Cu/B.Cu
+  cost of the pair stages (the templates use 20; 2 when the pads and legs are on an outer layer). E.g. `bundle:HDMI!short!match!outer=2`,
+  then the same for a pair still apart with the others in place, then `tighten`. They fit any action that routes pairs as pairs (`pairs`,
+  `pairs-all`, `bundle`, `reroute`, `route`, `region`, `nudge`, `plan:FILE`).
   `pairs` also gives each pair's connected path pad to pad (tails and branches left out), the length the signal runs; tune length matching to
   that, not to the segment sums. With a floorplan, finish block by block: `replace:GROUP` rips the group's region, re-places it there with the
   rest locked and routes again. To redo a region with the placement kept: `region:X0,Y0,X1,Y1` (or `region:opens~1.5`, boxes round each open

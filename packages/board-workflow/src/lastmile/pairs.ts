@@ -168,8 +168,9 @@ export function measurePairs(board: Board, pairs: readonly PairSpec[], stack: re
  * under 0.5: single-ended routing, the eval's HDMI pairs at 0.02-0.03) need ripping and routing again together as
  * pairs (`bundle:REGEX`, or `pairs-all` for every pair); partly coupled ones (0.5-0.9) a local re-route of their
  * uncoupled stretches (`reroute:REGEX`). An agent given only the table tried reroute/tighten, which cannot couple a
- * pair routed apart, and then routed the pairs by hand. On the eval's HDMI board (0.5 mm pitch connector) bundle
- * fails in both the toolkit and here: KRT defers the short fan-out legs to single-ended; the line says so.
+ * pair routed apart, and then routed the pairs by hand. On the eval's HDMI board (0.5 mm pitch connector) plain bundle
+ * fails in both the toolkit and here (KRT defers the short fan-out legs to single-ended); the line names the
+ * `!short!match!outer=2` bundle as the next try.
  */
 export function pairsNext(m: Record<string, PairMeasure>): string[] {
   const esc = (n: string) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -180,7 +181,7 @@ export function pairsNext(m: Record<string, PairMeasure>): string[] {
   const out: string[] = [];
   if (apart.length)
     out.push(
-      `Next: ${apart.length} pair(s) routed apart (coupled share < 0.5): rip and route them again together as pairs: try {"actions": ["bundle:${rx(apart)}"${apart.length > 2 ? ', "pairs-all"' : ""}]} (reroute / tighten only fix stretches of a pair that is already coupled). If that does not pass the gate, look at the try folder's krt/s1-pairs-*.log: KiCadRoutingTools routes a leg single-ended when it is "electrically short" (under max(5 x the centerline setback, 3 mm) of coupled run), which a tight connector fan-out makes common; those legs then need routing by hand to the pair rules (width, gap, length match), checked with this pairs report and the gate.`,
+      `Next: ${apart.length} pair(s) routed apart (coupled share < 0.5): rip and route them again together as pairs: try {"actions": ["bundle:${rx(apart)}"${apart.length > 2 ? ', "pairs-all"' : ""}]} (reroute / tighten only fix stretches of a pair that is already coupled). Through a tight connector fan-out (0.5 mm pitch) KiCadRoutingTools routes the short legs single-ended ("electrically short" in the try folder's krt/s1-pairs-*.log: under max(5 x setback, 3 mm) of coupled run), so try the same bundle with the modifiers beside it: "bundle:${rx(apart)}!short!match!outer=2" (!short couples those legs, !match length-matches P/N, !outer=2 lets the pairs use the outer layer their pads are on). A pair still apart after that: bundle it alone again with the others in place; then tighten what is left loose.`,
     );
   if (partly.length) out.push(`Next: ${partly.length} pair(s) partly coupled: try {"actions": ["reroute:${rx(partly)}", "reroute:${rx(partly)}!"]} (cut and re-route their uncoupled stretches; ! also re-routes uncoupled pad stubs)`);
   return out;
