@@ -480,6 +480,15 @@ export function connectedComponentsForNet(
         if (pointTouchesRow(point, via)) union(trackKey(track, tIndex), viaKey(via, index));
     }
   }
+  // tracks meet each other at shared endpoints on the same layer (a bend, a junction): without this a pad-track-bend-
+  // track-pad route read as two islands
+  const ends = new Map<string, number[]>();
+  for (const [tIndex, track] of tracks.entries())
+    for (const point of rowPoints(track)) {
+      const key = `${String(track["layer"] ?? "")}|${point.x.toFixed(3)}|${point.y.toFixed(3)}`;
+      (ends.get(key) ?? ends.set(key, []).get(key)!).push(tIndex);
+    }
+  for (const idx of ends.values()) for (const k of idx.slice(1)) union(trackKey(tracks[idx[0]!]!, idx[0]!), trackKey(tracks[k]!, k));
   for (const [pIndex, pad] of pads.entries()) {
     const at = rowCenter(pad);
     if (!at) continue;
