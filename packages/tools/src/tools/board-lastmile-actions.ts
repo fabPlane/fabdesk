@@ -68,6 +68,8 @@ export async function openBench(ctx: ToolContext, ws: string, req: Requirements)
         scorer,
         // plan:FILE is project-relative, like every board_route path
         engine: L.createStepEngine({ req, drc, scorer, layout: host, fill: hostFill(ctx, host), fallbackRouter: router, planRoot: ctx.requireProject().dir }),
+        // what `@layers` routes on: a `~avoid` retry names only these
+        routingLayers: layout.signalLayers(req.acceptance),
         signal: ctx.signal,
         ...(onLine ? { onLine } : {}),
       };
@@ -110,7 +112,7 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
         case "try": {
           if (!a.actions?.length) throw new ToolError("try needs actions, e.g. ['leg', 'blockers:1.0']", "invalid_args");
           const r = await bench.try(a.actions, { noAccept: a.noAccept, slackA8: a.slackA8, ...(a.jobs ? { jobs: a.jobs } : {}), ...(a.budget ? { budget: a.budget } : {}) });
-          return ok(r.lines.join("\n"), { accepted: r.accepted, step: r.pointer, figures: r.figures, candidates: r.candidates.map((c) => ({ name: c.name, wall_s: c.wall_s, figures: c.figures, rejected: c.rejected, dir: c.dir, ...(c.otherNetsChanged ? { otherNetsChanged: c.otherNetsChanged } : {}) })) });
+          return ok(r.lines.join("\n"), { accepted: r.accepted, step: r.pointer, figures: r.figures, candidates: r.candidates.map((c) => ({ name: c.name, wall_s: c.wall_s, figures: c.figures, rejected: c.rejected, dir: c.dir, ...(c.otherNetsChanged ? { otherNetsChanged: c.otherNetsChanged } : {}), ...(c.pourSplits?.length ? { pourSplits: c.pourSplits } : {}), ...(c.avoidFrom ? { avoidFrom: c.avoidFrom } : {}) })) });
         }
         case "loop": {
           if (!a.template?.includes("{pair}")) throw new ToolError("loop needs a template with {pair}, e.g. 'tighten:{pair}'", "invalid_args");

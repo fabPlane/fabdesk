@@ -121,6 +121,21 @@ any file name (the host routers get a `board.kicad_pcb` scratch copy). A KRT ste
 cannot be had (install error, broken override, auto-install off) only `finish` (on the host router, recorded as a fallback with the
 reason), `fill` and the pair steps run, and every other KRT step fails with the install's reason (its tail, so the bench's last 160
 characters keep the advice).
+
+Pour splits (`lastmile/pours.ts`, fabdesk only): after a `try`'s candidates are scored, a candidate that left open a net that was
+connected on the start board is checked against that net's pours (zone outlines, read with a light scan, not a full parse): if
+the candidate's new tracks of other nets cross one, the try line says `split a pour: NET on LAYER`. A candidate whose steps run
+KRT plans is then retried once as `NAME~avoid:LAYERS`: the same steps with `Step.avoidLayers`, which `routeKrt` applies after the
+plan's macros expand (`layout/plan.ts` `avoidLayerArgs`). An inner layer is left out of `--layers`, unless that would leave the
+stage no inner layer, in which case it is costed. An outer layer gets `--layer-costs` 10, because leaving F/B out made KRT write
+no board. The avoided layers are: the split layers; outer layers with a pour of a connected net within 2 mm of the new tracks' box;
+and inner layers with such a pour that are plane-like, meaning under a quarter of the busiest inner routing layer's track length.
+The plane-like rule is needed because avoiding only the split layer moves the tracks onto the next pour layer. On the jetson
+reroute (2026-11-14), `opens` closed the four TPM nets and islanded a `/Power/USBPD2_HV` pad. The agent's next plan, with F/B
+costed, split `+5V` on In4.Cu instead: In4 carries nine pours and 644 mm of track against In7's 8590, and the onboarding listed
+only In1/In3/In6/In8 as planes. The plan that worked left In4 out and put F/B at cost 10, which is what the rule produces there.
+The retry passes the gate on its own like any candidate. A fill candidate's split is named but not retried, because the host
+routers take no layer option.
 | KiCad IPC | adopt | the bridge |
 
 ## Verification
@@ -197,6 +212,11 @@ These are the port's own decisions, each recorded in the evidence file of its st
   none), not the oracle's carrier-board `hole_clearance`; candidates of one try get unique folders (the oracle refused a
   duplicate output folder); copper merges touch only board-level tracks, vias and arcs (the oracle's regex also cut arcs out of
   pad and polygon outlines).
+  The ranking among passing candidates is fabdesk's: a candidate that split a pour (see Pour splits above) ranks after every
+  passing candidate that split none, whatever its figures; the toolkit's key alone preferred open 40 -> 1 with a power pad newly
+  islanded. The gate itself (`gate()`, also re-run by `accept`) is unchanged: when the only passing candidate split a pour, it is
+  still accepted, as the toolkit's bench would accept it, and its line names the split. The `~scoped` and `~avoid` siblings are
+  fabdesk's too.
 - Inner power: the toolkit ran its audit as the custom check `checks.d/inner-power.json` (an absolute path to its Python, a `boards` list of the C6 boards); here it is the built-in `inner_power` check, on when the acceptance has a `supplier_stack` or `review.inner_power` is set (with optional `rise_max_c` / `drop_max_pct`), with the custom check's findings and ids (`L3:INNER_POWER:-:-:complete`, `...:<net>` must-fix), so dispositions carry over. A `*.Cu` pad spans the acceptance's `stack_policy.copper_layers`, else the board's copper layers (the toolkit's global board context, C6's 8 layers unless `FLOW_SPEC` names the board). The old `current` check stays as it was (the toolkit kept its own too). Evidence detail is the audit row as JSON (the toolkit's custom-check wrapper dropped it).
 - `board_review section` runs atlc as an engine (installed and built from source on first use) rather than a TypeScript solver: atlc is GPL, and its numbers are wanted exactly. The bitmap is drawn by a port of Pillow 10.2's scan-line fill so the solver input is byte-identical.
 - Power ports: `power_planes` takes the board outline's bounding box for its grid (the script had C6's 74.9 x 65.4 mm box written in) unless

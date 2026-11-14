@@ -89,7 +89,11 @@ and basis); \`inner_neck_allowance_mm: 0\` on a power class makes every inner se
   that closed opens and changed other nets gets a \`NAME~scoped\` sibling with those nets' copper put back, scored like any other and preferred
   on equal figures. For a "change only this" task, accept a candidate that changed no other net (the \`~scoped\` one), never splice copper by hand.
   To re-route a few nets on a large board, \`opens\` (finish limited to the nets open now) returns in a minute or two where \`finish\` can take
-  ten or more; try both in one \`try\`. Power copper without a router: \`escape\` (pad-width bridges and stubs at fine-pitch
+  ten or more; try both in one \`try\`. New tracks can also split another net's copper pour, so that the refill islands a pad that was connected:
+  the try line says \`split a pour: NET on LAYER\`, and the bench retries that step once as \`NAME~avoid:LAYERS\` with those layers out of reach
+  of its router plans (inner layers left out, F/B at layer cost 10). The layers are the split ones, outer layers with pours near the new
+  tracks, and inner layers that carry pours but little track. A candidate that split a pour ranks after every passing one that split none;
+  take the \`~avoid\` result rather than writing a router plan by hand. Power copper without a router: \`escape\` (pad-width bridges and stubs at fine-pitch
   power pins narrower than their class, within the 1 mm neck rule; chain a router, \`escape+finish\`), \`planes:FILE\` (a split power plane on an
   inner layer from a plan JSON) and \`pour\` (net zones over open power connections, never thinner than class width; it closes an open only where
   the copper fits, not a structural one). The TraceMaker route plan takes the same as \`planes\` / \`escape\` before routing.

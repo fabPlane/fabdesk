@@ -8,11 +8,13 @@
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile, copyFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { stepsFor, type Step } from "./actions";
+import { runsKrtPlan, stepsFor, type Step } from "./actions";
 import { compareKeys, figureLine, gate, keyOf, type Figures, type GateSlack, type OpenItem } from "./gate";
 import { hostMemory } from "../sysinfo";
 import { boardGridShape, routerFootprint, type RouterFootprint } from "../layout/footprint";
-import { changedCopperNets } from "../layout/text";
+import { changedCopperNets, copperItems, newCopperItems } from "../layout/text";
+import { AVOID_LAYER_COST } from "../layout/plan";
+import { avoidLayersFor, boardPours, pourSplits, splitLine, trackLengthByLayer, tracksOf, type Pour, type PourSplit, type Track } from "./pours";
 import { revertNets } from "../edit/diff";
 
 export interface Scored {
@@ -55,6 +57,11 @@ export interface BenchDeps {
   availableGiB?: () => Promise<number>;
   onLine?: (line: string) => void;
   signal?: AbortSignal;
+  /**
+   * The layers a KRT plan's `@layers` routes on (the requirements' signal layers), when the host knows them: a `~avoid`
+   * retry names only those (without it, every copper layer that qualifies, plane layers included, where it is a no-op).
+   */
+  routingLayers?: readonly string[];
 }
 
 export interface HistoryEntry {
@@ -81,6 +88,10 @@ export interface CandidateRecord {
   otherNetsChanged?: string[];
   /** For a `~scoped` record: the candidate it was made from, with these nets' copper put back as they were. */
   scopedFrom?: { name: string; reverted: string[] };
+  /** Nets this candidate left open that were connected on the start board, whose pour its new tracks cross (set by `try`). */
+  pourSplits?: PourSplit[];
+  /** For a `~avoid` record: the candidate it retries, with these layers kept out of reach of its KRT plans. */
+  avoidFrom?: { name: string; layers: string[] };
   wall_s: number;
   figures?: Figures;
   rejected: string[];
@@ -93,7 +104,7 @@ export interface TryLog {
   try: number;
   from: number;
   wall_s: number;
-  results: Array<Pick<CandidateRecord, "name" | "wall_s" | "figures" | "rejected" | "dir">>;
+  results: Array<Pick<CandidateRecord, "name" | "wall_s" | "figures" | "rejected" | "dir"> & Record<string, unknown>>;
 }
 
 export interface TryResult {
@@ -146,6 +157,8 @@ async function boardFootprint(file: string, bytes: number): Promise<RouterFootpr
 const memAvailableGiB = async (): Promise<number> => (await hostMemory()).availableGiB;
 
 const slug = (s: string) => s.replace(/[^\w.+-]+/g, "_");
+/** Stack order of a copper layer name: F.Cu, In1.Cu ... InN.Cu, B.Cu. */
+const layerRank = (l: string) => (l === "F.Cu" ? 0 : l === "B.Cu" ? 1e6 : Number(/^In(\d+)\.Cu$/.exec(l)?.[1] ?? 5e5));
 
 /**
  * One folder name per candidate of a try: actions that slug alike (`finish` twice, two regexes) or differ only in case
@@ -314,7 +327,7 @@ export class Bench {
    * Run the actions in parallel from the current board, score each whole board, accept the best one that passes the
    * gate (unless `noAccept`), print one line each.
    */
-  async try(actions: string[], o: { noAccept?: boolean; jobs?: number; slackA8?: number; budget?: number; noScoped?: boolean } = {}): Promise<TryResult> {
+  async try(actions: string[], o: { noAccept?: boolean; jobs?: number; slackA8?: number; budget?: number; noScoped?: boolean; noAvoid?: boolean } = {}): Promise<TryResult> {
     const lines: string[] = [];
     const start = this.dir;
     const f0 = this.figures;
@@ -330,22 +343,72 @@ export class Bench {
     const lim = sizeLimits({ pcbBytes, availableGiB: await (this.deps.availableGiB ?? memAvailableGiB)(), jobs: o.jobs ?? 6, budget: o.budget, opens: f0.open, footprint });
     if (lim.note) this.say(lim.note, lines);
     const ran = await pool(cands, lim.jobs, (c) => this.runCandidate(c, start, join(tdir, c.slug), lim.budget));
+    const stepsOf = new Map<CandidateRecord, Step[]>(ran.map((r, k) => [r, cands[k]!.steps]));
     const slack: GateSlack = { a8_slack: o.slackA8 ?? 0 };
     const before = new Set(this.openNets(await this.scoreDir(start)));
+    const startText = await readFile(join(start, this.st.pcb), "utf8").catch(() => "");
+
+    // Pour splits (fabdesk): a candidate whose new tracks cross the pour of a net it left open, a net that was connected,
+    // split that pour when KiCad refilled it (jetson: `opens` closed the 4 TPM nets and islanded a /Power/USBPD2_HV pad).
+    // Each one whose steps run KRT plans is retried once with the layers in question kept out of reach (`~avoid`).
+    let startPours: { pours: Pour[]; copper: string[]; trackLength: Map<string, number> } | null = null;
+    const startInfo = () => {
+      if (!startPours) {
+        const copper = boardGridShape(startText).copperLayers.sort((a, b) => layerRank(a) - layerRank(b));
+        const tracks = tracksOf(copperItems(startText, ["segment", "arc"]).map(({ span }) => startText.slice(...span)));
+        startPours = { copper, pours: boardPours(startText, copper), trackLength: trackLengthByLayer(tracks) };
+      }
+      return startPours;
+    };
+    /** Sets `pourSplits`; returns the candidate's new tracks when it left a connected net open (null otherwise). */
+    const detect = async (r: CandidateRecord): Promise<Track[] | null> => {
+      if (!r.figures || !r.dir || !startText) return null;
+      const after = this.openNets(await this.scoreDir(r.dir));
+      const fresh = after.filter((n) => !before.has(n));
+      r.pourSplits = [];
+      if (!fresh.length) return null;
+      const candText = await readFile(join(r.dir, this.st.pcb), "utf8").catch(() => "");
+      if (!candText) return null;
+      const tracks = tracksOf(newCopperItems(startText, candText, ["segment", "arc"]));
+      r.pourSplits = pourSplits(startInfo().pours, tracks, fresh);
+      return tracks;
+    };
+    const retries: Array<{ from: CandidateRecord; cand: { name: string; steps: Step[]; slug: string }; layers: string[] }> = [];
+    for (const [k, r] of ran.entries()) {
+      const tracks = await detect(r);
+      const steps = cands[k]!.steps;
+      if (o.noAvoid || !tracks || !r.pourSplits?.length || !steps.some(runsKrtPlan)) continue;
+      const info = startInfo();
+      const layers = avoidLayersFor({ splits: r.pourSplits, pours: info.pours, newTracks: tracks, trackLength: info.trackLength, openBefore: before, copperLayers: info.copper, routingLayers: this.deps.routingLayers });
+      if (!layers.length) continue;
+      const name = `${r.name}~avoid:${layers.join(",")}`;
+      retries.push({ from: r, layers, cand: { name, slug: `${cands[k]!.slug}~avoid`, steps: steps.map((st) => (runsKrtPlan(st) ? { ...st, avoidLayers: layers } : st)) } });
+    }
+    const retried = new Map<CandidateRecord, CandidateRecord>();
+    if (retries.length) {
+      const out = await pool(retries, lim.jobs, (x) => this.runCandidate(x.cand, start, join(tdir, x.cand.slug), lim.budget));
+      for (const [i, rec] of out.entries()) {
+        const x = retries[i]!;
+        rec.avoidFrom = { name: x.from.name, layers: x.layers };
+        stepsOf.set(rec, x.cand.steps);
+        await detect(rec);
+        retried.set(x.from, rec);
+      }
+    }
+
     // nets whose copper a candidate changed beyond the ones that were open: what a "change only this" task must see.
     // Each such candidate that closed opens also gets a scoped sibling with those nets' copper put back as it was (what agents did by hand
     // on held-out reroutes: the router closed the opens but rewrote other nets, or crossed them), scored like any other;
-    // it goes first so that on equal figures the smaller change wins.
-    const startText = await readFile(join(start, this.st.pcb), "utf8").catch(() => "");
+    // it goes first so that on equal figures the smaller change wins (a `~avoid` retry goes before the candidate it retries).
     const recs: CandidateRecord[] = [];
-    for (const r of ran) {
+    for (const r of ran.flatMap((x) => [...(retried.has(x) ? [retried.get(x)!] : []), x])) {
       if (r.figures && r.dir && startText) {
         const candText = await readFile(join(r.dir, this.st.pcb), "utf8").catch(() => "");
         r.otherNetsChanged = candText ? changedCopperNets(startText, candText).filter((n) => !before.has(n)) : [];
         // only for a router or repair step (KRT, repair, fill) that closed opens or otherwise improved the board (a
         // shorts pass that cleared a crossing but rewrote 17 power nets, jetson): a step meant to change other nets
         // (tighten, pair ops, nudge) would just be undone, at the cost of another whole-board score
-        const routerish = (cands.find((c) => c.name === r.name)?.steps ?? []).every((st) => st.type === "krt" || st.type === "repair" || st.type === "fill");
+        const routerish = (stepsOf.get(r) ?? []).every((st) => st.type === "krt" || st.type === "repair" || st.type === "fill");
         const improved = r.figures.open < f0.open || compareKeys(keyOf(r.figures), keyOf(f0)) < 0;
         if (r.otherNetsChanged.length && routerish && improved && !o.noScoped) {
           const sdir = `${r.dir}~scoped`;
@@ -359,6 +422,7 @@ export class Bench {
             sc.dir = sdir;
             sc.wall_s = Math.round((r.wall_s + (Date.now() - t1) / 1000) * 10) / 10;
             sc.otherNetsChanged = [];
+            await detect(sc);
           } catch (e) {
             sc.error = e instanceof Error ? e.message : String(e);
           }
@@ -369,7 +433,11 @@ export class Bench {
     }
     this.say(`from  ${figureLine(f0)}`, lines);
     for (const r of recs) r.rejected = r.error ? [r.error.slice(-160).replaceAll("\n", " ")] : gate(r.figures!, f0, slack);
-    const ok = recs.filter((r) => !r.rejected.length).sort((a, b) => compareKeys(keyOf(a.figures!), keyOf(b.figures!)));
+    // fabdesk: among passing candidates, one that split a pour ranks after every one that split none (the toolkit's key
+    // alone took open 40 -> 1 with a power pad newly islanded over a retry that kept every pour whole); it is still
+    // accepted when it is the only one that passes, as the toolkit's gate would
+    const splitRank = (r: CandidateRecord) => (r.pourSplits?.length ? 1 : 0);
+    const ok = recs.filter((r) => !r.rejected.length).sort((a, b) => splitRank(a) - splitRank(b) || compareKeys(keyOf(a.figures!), keyOf(b.figures!)));
     for (const r of recs) {
       if (!r.figures) {
         this.say(`  ${r.name.padEnd(28)} ${r.wall_s.toFixed(0).padStart(5)}s  FAILED: ${r.rejected[0]}`, lines);
@@ -379,20 +447,22 @@ export class Bench {
       const closed = [...before].filter((n) => !after.has(n)).sort();
       const fresh = [...after].filter((n) => !before.has(n)).sort();
       r.otherNetsChanged ??= [];
-      const others = r.scopedFrom
+      const others = r.avoidFrom
+        ? `retry of ${r.avoidFrom.name} with ${r.avoidFrom.layers.join(", ")} kept out of reach (inner layers left out, outer at cost ${AVOID_LAYER_COST})${r.otherNetsChanged.length ? `; also changed ${r.otherNetsChanged.length} other net(s): ${r.otherNetsChanged.slice(0, 6).join(", ")}${r.otherNetsChanged.length > 6 ? ", ..." : ""}` : ""}`
+        : r.scopedFrom
         ? `${r.scopedFrom.name} with ${r.scopedFrom.reverted.length} other net(s) put back: ${r.scopedFrom.reverted.slice(0, 6).join(", ")}${r.scopedFrom.reverted.length > 6 ? ", ..." : ""}`
         : r.otherNetsChanged.length
         ? `also changed ${r.otherNetsChanged.length} other net(s): ${r.otherNetsChanged.slice(0, 6).join(", ")}${r.otherNetsChanged.length > 6 ? ", ..." : ""}`
         : "";
-      const delta = [closed.length ? `closed ${closed.join(", ")}` : "", fresh.length ? `NEW open ${fresh.join(", ")}` : "", others].filter(Boolean).join("; ");
-      const verdict = ok[0] === r && !o.noAccept ? "ACCEPT" : r.rejected.length ? r.rejected.join("; ") : "passes gate";
+      const delta = [closed.length ? `closed ${closed.join(", ")}` : "", fresh.length ? `NEW open ${fresh.join(", ")}` : "", splitLine(r.pourSplits ?? []), others].filter(Boolean).join("; ");
+      const verdict = ok[0] === r && !o.noAccept ? "ACCEPT" : r.rejected.length ? r.rejected.join("; ") : splitRank(r) && ok.some((x) => !splitRank(x)) ? "passes gate (ranked after those that split no pour)" : "passes gate";
       this.say(`  ${r.name.padEnd(28)} ${r.wall_s.toFixed(0).padStart(5)}s  ${figureLine(r.figures)}  -> ${verdict}${delta ? `  [${delta}]` : ""}`, lines);
     }
     (this.st.log ??= []).push({
       try: this.st.tries,
       from: this.st.pointer,
       wall_s: Math.round((Date.now() - t0) / 100) / 10,
-      results: recs.map((r) => ({ name: r.name, wall_s: r.wall_s, ...(r.figures ? { figures: r.figures } : {}), rejected: r.rejected, ...(r.dir ? { dir: r.dir } : {}), ...(r.otherNetsChanged ? { other_nets_changed: r.otherNetsChanged } : {}) })),
+      results: recs.map((r) => ({ name: r.name, wall_s: r.wall_s, ...(r.figures ? { figures: r.figures } : {}), rejected: r.rejected, ...(r.dir ? { dir: r.dir } : {}), ...(r.otherNetsChanged ? { other_nets_changed: r.otherNetsChanged } : {}), ...(r.pourSplits?.length ? { pour_splits: r.pourSplits } : {}), ...(r.avoidFrom ? { avoid_from: r.avoidFrom } : {}) })),
     });
     const best = ok[0];
     if (best && !o.noAccept) {

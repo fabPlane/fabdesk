@@ -222,6 +222,27 @@ export function copperByNet(text: string): Map<string, string[]> {
   return out;
 }
 
+/**
+ * Top-level copper items of `after` that `before` does not have (by content, as `copperByNet` compares them; an item
+ * written twice counts twice), in file order: the copper a step added.
+ */
+export function newCopperItems(before: string, after: string, kinds: readonly CopperKind[] = COPPER_KINDS): string[] {
+  const old = new Map<string, number>();
+  for (const { span } of copperItems(before, kinds)) {
+    const k = copperKey(before.slice(...span));
+    old.set(k, (old.get(k) ?? 0) + 1);
+  }
+  const out: string[] = [];
+  for (const { span } of copperItems(after, kinds)) {
+    const item = after.slice(...span);
+    const k = copperKey(item);
+    const n = old.get(k) ?? 0;
+    if (n > 0) old.set(k, n - 1);
+    else out.push(item);
+  }
+  return out;
+}
+
 /** Nets whose copper differs between two boards (added, removed or moved items), sorted. */
 export function changedCopperNets(before: string, after: string): string[] {
   const a = copperByNet(before), b = copperByNet(after);
