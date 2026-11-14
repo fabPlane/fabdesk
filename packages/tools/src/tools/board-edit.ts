@@ -44,7 +44,7 @@ const MOVE = z.object({
   to: nums(3).optional().describe("[x, y, rotation degrees]: the new origin pose; side kept."),
   near: z.union([z.string(), nums(2)]).optional().describe('Instead of `to`: sit next to a part, a REF.PAD, a point, or "net:NAME" (the centroid of the other pads on that net; "net" = the part\'s own single net); the tool picks the pose.'),
   carry: z.array(z.string()).optional().describe("Parts that move rigidly with it (their internal copper too)."),
-  carry_auto: z.array(z.string()).optional().describe("These parts plus the parts whose every non-ground net stays inside the block."),
+  carry_auto: z.union([z.array(z.string()), z.boolean()]).optional().describe("These parts plus the parts whose every non-ground net stays inside the block (true: this part)."),
   anchor: z.boolean().optional().describe("The new pose becomes a mechanical anchor (required for a fixed part)."),
   basis: z.string().optional(),
   radius: z.number().optional(),

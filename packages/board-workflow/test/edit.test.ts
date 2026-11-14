@@ -347,6 +347,14 @@ describe("collateral, drc input and the helpers", () => {
     expect(d).toMatchObject({ unconnected: 0, parity: 1 });
     expect(d.violations).toHaveLength(1);
   });
+  test("parsePlan: carry_auto true means this part; a wrong type is refused by name, not a crash", () => {
+    expect(parsePlan({ id: "m", move: [{ ref: "R1", to: [20, 30, 0], carry_auto: true }] }).move![0]!.carry_auto).toEqual(["R1"]);
+    expect(parsePlan({ id: "m", move: [{ ref: "R1", to: [20, 30, 0], carry_auto: false }] }).move![0]!.carry_auto).toBeUndefined();
+    expect(() => parsePlan({ id: "m", move: [{ ref: "R1", to: [20, 30, 0], carry_auto: "R2" }] })).toThrow(/carry_auto" is a list/);
+    expect(() => parsePlan({ id: "m", move: [{ ref: "R1", to: [20, 30, 0], carry: true }] })).toThrow(/carry" is a list/);
+    const auto = planMoves(BOARD, (r) => r === "J1", parsePlan({ id: "m", move: [{ ref: "R1", to: [20, 30, 0], carry_auto: true }] }).move!, { radius: 4 }, []);
+    expect(auto.led.carry_auto).toEqual({ R1: ["R2"] });
+  });
   test("planMoves: a swap of two parts' poses is two moves and re-seats nothing", () => {
     const { led } = planMoves(BOARD, (r) => r === "J1", [{ ref: "C1", to: [40, 14, 0] }, { ref: "C2", to: [40, 10, 0] }], undefined, []);
     expect(led.moved.map((m) => m.ref)).toEqual(["C1", "C2"]);

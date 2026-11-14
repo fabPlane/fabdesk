@@ -130,6 +130,14 @@ export function parsePlan(raw: unknown): EditPlan {
   for (const m of plan.move ?? []) {
     if (!isObj(m) || typeof m.ref !== "string") throw new Error("plan.move entries need a ref");
     if (m.to === undefined && m.near === undefined && m.legalise === undefined) throw new Error(`move ${m.ref}: give "to": [x, y, rotation] or "near"`);
+    // carry_auto: true means this move's own part (an agent wrote it so; spreading the boolean crashed the edit child)
+    const ca = (m as { carry_auto?: unknown }).carry_auto;
+    if (ca === true) m.carry_auto = [m.ref];
+    else if (ca === false || ca === null) delete m.carry_auto;
+    else if (ca !== undefined && (!Array.isArray(ca) || ca.some((x) => typeof x !== "string")))
+      throw new Error(`move ${m.ref}: "carry_auto" is a list of references (or true for this part)`);
+    const cr = (m as { carry?: unknown }).carry;
+    if (cr !== undefined && (!Array.isArray(cr) || cr.some((x) => typeof x !== "string"))) throw new Error(`move ${m.ref}: "carry" is a list of references`);
     if (m.to !== undefined && (!Array.isArray(m.to) || m.to.length !== 3 || m.to.some((v) => typeof v !== "number")))
       throw new Error(`move ${m.ref}: "to" is [x, y, rotation]`);
   }
