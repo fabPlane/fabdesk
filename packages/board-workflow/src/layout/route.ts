@@ -12,7 +12,7 @@ import { readJsonOrNull } from "../files";
 import { FlowError, requireEngine, type LayoutHost } from "./ctx";
 import { krtPaths, krtRouterScript, routeSummaries } from "./engines";
 import { pathExists } from "./fsx";
-import { applyAliases, boardPlan, expandArgs, pairClasses, signalLayers, BUILTIN_PLANS, type ExpandedPlan, type KrtPlan, type Selectors } from "./plan";
+import { applyAliases, avoidLayersInPlan, boardPlan, expandArgs, pairClasses, signalLayers, BUILTIN_PLANS, type ExpandedPlan, type KrtPlan, type Selectors } from "./plan";
 import { applyNetclasses, copyDir, scoreRoute } from "./score";
 import { appendBeforeClose, convertTransforms } from "./text";
 
@@ -38,9 +38,13 @@ export interface RouteKrtOptions {
   score: boolean;
   /** Wall-clock budget for the whole run (the toolkit killed the process at its budget). */
   budgetMs?: number;
+  /** Layers kept out of reach after the plan's macros expand (`avoidLayersInPlan`: inner left out, outer costed). */
+  avoidLayers?: readonly string[];
 }
 export interface RouteKrtRecord {
   stages: Array<Record<string, unknown>>;
+  /** What `avoidLayers` did, per stage. */
+  avoided?: Array<{ stage: string; removed: string[]; costed: string[] }>;
   wall_s?: number;
   error?: string;
 }
@@ -49,7 +53,9 @@ export interface RouteKrtRecord {
 export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<RouteKrtRecord> {
   const krtRoot = await requireEngine(host, "krt");
   const acc = o.req.acceptance;
-  const plan = boardPlan(typeof o.plan === "string" ? await loadPlan(o.plan) : structuredClone(o.plan), acc);
+  let plan = boardPlan(typeof o.plan === "string" ? await loadPlan(o.plan) : structuredClone(o.plan), acc);
+  let avoided: RouteKrtRecord["avoided"];
+  if (o.avoidLayers?.length) ({ plan, record: avoided } = avoidLayersInPlan(plan, o.avoidLayers));
   if (await pathExists(o.out)) throw new FlowError(`${o.out} exists`);
   await mkdir(o.out, { recursive: true });
   await writeFile(join(o.out, "plan.json"), JSON.stringify(plan, null, 1) + "\n");
@@ -97,7 +103,7 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
   const scored = rip ? null : await readJsonOrNull<{ opens?: Array<{ net?: string }> }>(join(o.placed, "lastmile.score.json"));
   sel.openBefore = rip?.open_before ?? [...new Set((scored?.opens ?? []).map((x) => x.net).filter((n): n is string => !!n))].sort();
 
-  const record: RouteKrtRecord = { stages: [] };
+  const record: RouteKrtRecord = { stages: [], ...(avoided ? { avoided } : {}) };
   let cur = krtIn;
   const t0 = Date.now();
   for (const [i, st] of plan.stages.entries()) {

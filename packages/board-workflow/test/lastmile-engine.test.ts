@@ -293,6 +293,37 @@ describe("step engine: plan files and aborts", () => {
     expect(spawns2.find((c) => c.some((x) => /route\.py$/.test(x)))!).not.toContain("--nets");
   });
 
+  test("a step's avoidLayers apply after @layers expands: an inner layer left out, outer layers at cost 10 (jetson's working plan)", async () => {
+    const { dir, req } = await c6();
+    const ten = ["F.Cu", ...Array.from({ length: 8 }, (_, i) => `In${i + 1}.Cu`), "B.Cu"];
+    const { no_track_layers: _n, ...sp } = req.acceptance.stack_policy;
+    req.acceptance.stack_policy = { ...sp, copper_layers: ten, plane_layers: ["In1.Cu", "In3.Cu", "In6.Cu", "In8.Cu"] } as never;
+    const krt = join(dir, "krt");
+    await mkdir(join(krt, "src/plugins"), { recursive: true });
+    await writeFile(join(dir, "lastmile.score.json"), JSON.stringify({ opens: [{ net: "SIG" }] }));
+    const spawns: string[][] = [];
+    const step = { ...L.stepsFor("opens")[0]!, avoidLayers: ["F.Cu", "In4.Cu", "B.Cu"] };
+    const out = join(await tmp(), "o");
+    const r = await engine(req, krt, spawns, []).run(step, input(dir, out));
+    expect("error" in r).toBe(false);
+    const route = spawns.find((c) => c.some((x) => /route\.py$/.test(x)))!;
+    const at = route.indexOf("--layers");
+    expect(route.slice(at + 1, at + 6)).toEqual(["F.Cu", "In2.Cu", "In5.Cu", "In7.Cu", "B.Cu"]);
+    expect(route[at + 6]).toBe("--layer-costs");
+    expect(route.slice(at + 7, at + 12)).toEqual(["10", "1", "1", "1", "10"]);
+    expect(route).toContain("--keep-input-copper");
+    expect((r as { info: Record<string, unknown> }).info["avoided"]).toEqual([{ stage: "finish", removed: ["In4.Cu"], costed: ["F.Cu", "B.Cu"] }]);
+    // the plan KRT ran is written with the change and says so
+    const plan = JSON.parse(await readFile(join(out, ".lastmile", "krt", "plan.json"), "utf8")) as layout.KrtPlan;
+    expect(plan.note).toContain("kept out of reach: F.Cu, In4.Cu, B.Cu");
+    // without avoidLayers the same step routes on every signal layer at the default cost
+    const plain: string[][] = [];
+    await engine(req, krt, plain, []).run(L.stepsFor("opens")[0]!, input(dir, join(await tmp(), "p")));
+    const r2 = plain.find((c) => c.some((x) => /route\.py$/.test(x)))!;
+    expect(r2.slice(r2.indexOf("--layers") + 1, r2.indexOf("--layers") + 7)).toEqual(["F.Cu", "In2.Cu", "In4.Cu", "In5.Cu", "In7.Cu", "B.Cu"]);
+    expect(r2).not.toContain("--layer-costs");
+  });
+
   test("an aborted signal starts nothing: no step, no KRT stage, no process", async () => {
     const { dir, req } = await c6();
     const krt = join(dir, "krt");

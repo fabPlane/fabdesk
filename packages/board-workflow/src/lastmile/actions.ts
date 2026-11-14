@@ -34,7 +34,16 @@ export interface Step {
    * of +-that many mm round each end of every open connection of the board the step starts from (`--around-opens`).
    */
   cut?: { boxes: number[][]; aroundOpens?: number };
+  /**
+   * Layers the step's KRT plan keeps out of reach, applied after its macros expand (`layout/plan.ts` avoidLayerArgs:
+   * an inner layer left out of `--layers`, an outer one at `--layer-costs` 10). Set by the bench's `~avoid` retry of a
+   * candidate that split another net's pour; honoured by every step that runs a KRT plan.
+   */
+  avoidLayers?: string[];
 }
+
+/** Steps that run a KRT plan (and so can honour `avoidLayers`). */
+export const runsKrtPlan = (s: Step) => (s.type === "krt" || s.type === "repair" || s.type === "nudge" || s.type === "replace") && !!(s.plan || s.planFile);
 
 export interface NudgeMove {
   ref: string;
