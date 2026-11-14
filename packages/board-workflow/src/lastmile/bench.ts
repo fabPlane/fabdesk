@@ -408,7 +408,10 @@ export class Bench {
         // only for a router or repair step (KRT, repair, fill) that closed opens or otherwise improved the board (a
         // shorts pass that cleared a crossing but rewrote 17 power nets, jetson): a step meant to change other nets
         // (tighten, pair ops, nudge) would just be undone, at the cost of another whole-board score
-        const routerish = (stepsOf.get(r) ?? []).every((st) => st.type === "krt" || st.type === "repair" || st.type === "fill");
+        // a step whose plan routes pairs (route_diff: pairs, bundle, reroute ...) is meant to rewrite those pair nets, which
+        // were not open: its scoped sibling would only put them back (a wasted whole-board score, DRC-dirty)
+        const pairStage = (st: Step) => ((st.plan as { stages?: Array<{ tool?: string }> } | undefined)?.stages ?? []).some((g) => g.tool === "route_diff");
+        const routerish = (stepsOf.get(r) ?? []).every((st) => (st.type === "krt" || st.type === "repair" || st.type === "fill") && !pairStage(st));
         const improved = r.figures.open < f0.open || compareKeys(keyOf(r.figures), keyOf(f0)) < 0;
         if (r.otherNetsChanged.length && routerish && improved && !o.noScoped) {
           const sdir = `${r.dir}~scoped`;

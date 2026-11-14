@@ -411,6 +411,19 @@ describe("bench", () => {
     expect(r.candidates.find((c) => c.name === "shorts~scoped")!.scopedFrom).toEqual({ name: "shorts", reverted: ["+1V8", "SIG"] });
   });
 
+  test("a pair-routing step (route_diff stage) that rewrites its pairs gets no ~scoped sibling", async () => {
+    const d = await mk();
+    const seg = (net: string, u: string, x = 0) => `\n\t(segment (start ${x} 0) (end ${x + 1} 1) (width 0.2) (layer "F.Cu") (net "${net}") (uuid "${u}"))`;
+    await writeFile(join(d, "board.kicad_pcb"), `(kicad_pcb ;; opens=1${seg("HDMI_P", "p1")}${seg("HDMI_N", "n1", 3)}\n)`);
+    await writeFile(join(d, "board.kicad_pro"), "{}");
+    const routed = `(kicad_pcb ;; opens=0${seg("HDMI_P", "p2", 1)}${seg("HDMI_N", "n2", 4)}\n)`;
+    const ws = join(await mk(), "ws");
+    const table = Object.fromEntries(Object.keys(L.LASTMILE_PLANS).map((k) => [k, routed]));
+    const { bench } = await L.Bench.create(ws, d, "board.kicad_pcb", { scorer, engine: engine(table), availableGiB: async () => 30 });
+    const r = await bench.try(["pairs-all"], {});
+    expect(r.candidates.map((c) => c.name)).toEqual(["pairs-all"]);
+  });
+
   test("a candidate over its budget is abandoned and fails", async () => {
     const src = await project(2);
     const ws = join(await mk(), "ws");
