@@ -3,9 +3,11 @@ import { readCopper, quality, qualityText, referenceFacts } from "../routing-qua
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod/v4";
+import { formatTooNew } from "../board-adopt";
+import { boardFileRows, FILE_READER_UNAVAILABLE, type BoardFileRows } from "../board-file-rows";
 import { PROJECT_FILES } from "../fs";
 import { ToolError, defineTool } from "../registry";
-import type { DesignRow } from "../services";
+import type { DesignRow, DesignSelect } from "../services";
 import { ok, p, table } from "./common";
 
 const Kind = z.enum([
@@ -55,7 +57,7 @@ export const pcb_inspect = defineTool({
   toolset: "circuit",
   title: "Inspect a PCB region",
   description:
-    "Optional board selects a declared assembly source at its captured manifest SHA; results include _board identity. Assembly roots require explicit source selection. routing_quality returns per-net copper widths, planar chord length, via counts and sizes, layers, and name-identified pairs; accepts nets and is requested alone. Inspect a bounded part of the saved native PCB by item kind, reference, net, layer, rectangle, or point/radius. Layers accept F.Cu, BL_F_Cu, or the KiCad enum number (3); vias occupy every copper layer they span. board_geometry returns board-owned outline and graphic shapes; request footprint_geometry explicitly for footprint-owned courtyard and fabrication primitives, and include zones to see pour occupancy. islandsOfNet returns the copper islands of those nets (pad/via/track/zone connectivity). Returns compact exact millimetre coordinates, AABB, source revision, bounds, and a truncation indicator.",
+    "Optional board selects a declared assembly source at its captured manifest SHA; results include _board identity. Assembly roots require explicit source selection. routing_quality returns per-net copper widths, planar chord length, via counts and sizes, layers, and name-identified pairs; accepts nets and is requested alone. Inspect a bounded part of the saved native PCB by item kind, reference, net, layer, rectangle, or point/radius. Layers accept F.Cu, BL_F_Cu, or the KiCad enum number (3); vias occupy every copper layer they span. board_geometry returns board-owned outline and graphic shapes; request footprint_geometry explicitly for footprint-owned courtyard and fabrication primitives, and include zones to see pour occupancy. islandsOfNet returns the copper islands of those nets (pad/via/track/zone connectivity). Returns compact exact millimetre coordinates, AABB, source revision, bounds, and a truncation indicator. A board saved by a newer KiCad than the PCB bridge's is read straight from board.kicad_pcb instead, and source.reader \"file\" lists the kinds that answered: every kind but unrouted, which needs KiCad's ratsnest (islandsOfNet still shows split copper).",
   inputSchema: {
     kinds: z
       .array(Kind)
@@ -104,10 +106,10 @@ export const pcb_inspect = defineTool({
     }
     const boardPath = p(project, PROJECT_FILES.boardPcb);
     let revision: string | null;
+    let boardBytes: Buffer | null = null;
     try {
-      revision = createHash("sha256")
-        .update(await readFile(boardPath))
-        .digest("hex");
+      boardBytes = await readFile(boardPath);
+      revision = createHash("sha256").update(boardBytes).digest("hex");
     } catch {
       revision = null;
     }
@@ -151,7 +153,24 @@ export const pcb_inspect = defineTool({
         results,
       });
     }
-    const allPads = refSet ? await ctx.services.design.query(project.dir, "pads") : null;
+    // A board saved by a newer KiCad than the bridge's is refused on load; answer from the file text instead (only
+    // for that refusal: any other bridge error still fails the call).
+    const fallback: { reader: { reason: string; rows: BoardFileRows } | null } = { reader: null };
+    const query = async (kind: Exclude<DesignSelect, "outline">): Promise<DesignRow[] | null> => {
+      if (!fallback.reader) {
+        try {
+          return await ctx.services.design.query(project.dir, kind);
+        } catch (e) {
+          const reason = formatTooNew(e);
+          if (!reason || !boardBytes) throw e;
+          fallback.reader = { reason, rows: boardFileRows(boardBytes.toString("utf8")) };
+        }
+      }
+      return fallback.reader.rows.rows(kind);
+    };
+    const fromFile: string[] = [];
+    const unavailable: Record<string, string> = {};
+    const allPads = refSet ? await query("pads") : null;
     const referencedPads = allPads
       ? allPads.filter((row) =>
           values(row, ["component"]).some((value) => refSet!.has(value.toLowerCase())),
@@ -159,8 +178,12 @@ export const pcb_inspect = defineTool({
       : [];
     const allPoints: Point[] = [];
     for (const kind of ordinaryKinds) {
-      const rows =
-        kind === "pads" && allPads ? allPads : await ctx.services.design.query(project.dir, kind);
+      const rows = kind === "pads" && allPads ? allPads : await query(kind);
+      if (!rows) {
+        unavailable[kind] = FILE_READER_UNAVAILABLE[kind] ?? `${kind} needs the PCB bridge`;
+        continue;
+      }
+      if (fallback.reader) fromFile.push(kind);
       const filtered = rows.filter((row) => {
         if (
           refSet &&
@@ -207,14 +230,16 @@ export const pcb_inspect = defineTool({
       ([kind, result]) =>
         `${kind}: ${result.total}${result.truncated ? ` (showing ${result.returned})` : ""}${result.rows.length ? `\n${table(result.rows)}` : ""}`,
     );
+    for (const [kind, why] of Object.entries(unavailable)) sections.push(`${kind}: not available: ${why}.`);
     let islands: CopperIsland[] | undefined;
     if (islandsOfNet?.length) {
       const copper = {
-        pads: await ctx.services.design.query(project.dir, "pads"),
-        vias: await ctx.services.design.query(project.dir, "vias"),
-        tracks: await ctx.services.design.query(project.dir, "tracks"),
-        zones: await ctx.services.design.query(project.dir, "zones"),
+        pads: (await query("pads")) ?? [],
+        vias: (await query("vias")) ?? [],
+        tracks: (await query("tracks")) ?? [],
+        zones: (await query("zones")) ?? [],
       };
+      if (fallback.reader) fromFile.push("islandsOfNet");
       islands = islandsOfNet.flatMap((net) => connectedComponentsForNet(net, copper));
       if (islands.length)
         sections.push(
@@ -226,9 +251,24 @@ export const pcb_inspect = defineTool({
             .join("; ")}`,
         );
     }
+    const reader = fallback.reader;
+    const source = reader
+      ? {
+          reader: "file" as const,
+          reason: `the PCB bridge's KiCad cannot open this board (${reader.reason}), so it was read directly from ${PROJECT_FILES.boardPcb}`,
+          fileVersion: reader.rows.version,
+          kinds: fromFile,
+          unavailable,
+        }
+      : null;
+    if (reader && source)
+      sections.unshift(
+        `Read ${PROJECT_FILES.boardPcb} directly: the PCB bridge's KiCad is older than this board (${reader.reason}${source.fileVersion !== null && !reader.reason.includes(String(source.fileVersion)) ? `; the file is format ${source.fileVersion}` : ""}). From the file reader: ${fromFile.join(", ") || "nothing"}.${Object.keys(unavailable).length ? ` Not available: ${Object.keys(unavailable).join(", ")}.` : ""}`,
+      );
     return ok(sections.join("\n\n"), {
       contract: { name: "fabdesk.pcb-inspection", version: "2.0.0" },
       revision,
+      ...(source ? { source } : {}),
       coordinateSystem: { units: "mm", origin: "KiCad board origin", x: "right", y: "down" },
       query: {
         kinds,
