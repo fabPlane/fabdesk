@@ -2,9 +2,11 @@
 export function acknowledgeComposerDraft<A, C>(
   current: { text: string; attachments: readonly A[]; contexts: readonly C[] },
   submitted: { text: string; attachments: readonly A[]; contexts: readonly C[] },
+  textEditedSinceSubmission = false,
 ) {
   return {
-    text: current.text === submitted.text ? "" : current.text,
+    // Equal words can still be a new draft after clearing, retyping or undoing.
+    text: !textEditedSinceSubmission && current.text === submitted.text ? "" : current.text,
     // Identity matters: removing and reattaching the same path is a new draft item.
     attachments: current.attachments.filter(item => !submitted.attachments.includes(item)),
     contexts: current.contexts.filter(item => !submitted.contexts.includes(item)),

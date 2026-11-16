@@ -21,3 +21,13 @@ test("delayed acceptance preserves edits made while another chat is open", async
   expect(drafts.a).toEqual({ text: "Next question", attachments: [nextAttachment], contexts: [] });
   expect(drafts.b.text).toBe("Other chat's unsent question");
 });
+
+test("a retyped identical question survives acknowledgement while submitted attachments clear", () => {
+  const original = { path: "original.png" }, next = { path: "next.png" };
+  const submitted = { text: "Repeat this question", attachments: [original], contexts: [] };
+  const current = { ...submitted, attachments: [original, next] };
+  expect(acknowledgeComposerDraft(current, submitted, true)).toEqual({
+    text: "Repeat this question", attachments: [next], contexts: [],
+  });
+  expect(acknowledgeComposerDraft(current, submitted, false).text).toBe("");
+});

@@ -260,6 +260,12 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
     const workspaceContext = captureAssistantContext(selectAssistantState(useUiStore.getState()), boardSources.data, boardSources.isFetching || boardSources.isError, matchingContexts);
     setSending(true);
     setError(null);
+    // Keep observing this chat even if navigation unmounts its composer. Comparing
+    // only the final text cannot distinguish a newly retyped identical question.
+    let textEditedSinceSubmission = false;
+    const stopWatchingDraft = useUiStore.subscribe((next, previous) => {
+      if (next.drafts[draftKey] !== previous.drafts[draftKey]) textEditedSinceSubmission = true;
+    });
     try {
       let threadId = thread?.id;
       let created = preparedThread.current;
@@ -278,10 +284,10 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
       };
       // The queue endpoint starts immediately when idle and queues if a run began meanwhile.
       await queueMessage.mutateAsync({ threadId, input });
-      if ((useUiStore.getState().drafts[draftKey] ?? "") === draft) voice.reset();
+      if (!textEditedSinceSubmission && (useUiStore.getState().drafts[draftKey] ?? "") === draft) voice.reset();
       useUiStore.setState(state => {
         const remaining = acknowledgeComposerDraft({ text: state.drafts[draftKey] ?? "", attachments: state.attachments[draftKey] ?? [], contexts: state.draftBoardContexts[draftKey] ?? [] },
-          { text: draft, attachments: pending, contexts: matchingContexts ?? [] });
+          { text: draft, attachments: pending, contexts: matchingContexts ?? [] }, textEditedSinceSubmission);
         return { drafts: { ...state.drafts, [draftKey]: remaining.text }, attachments: { ...state.attachments, [draftKey]: remaining.attachments }, draftBoardContexts: { ...state.draftBoardContexts, [draftKey]: remaining.contexts } };
       });
       void qc.invalidateQueries({ queryKey: ["messages", threadId] });
@@ -296,6 +302,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
       // Retain this prepared thread and the visible draft for a normal retry.
       setError(e);
     } finally {
+      stopWatchingDraft();
       setSending(false);
     }
   }, [draft, rootAutomation, matchingContexts, boardSources.data, boardSources.isFetching, boardSources.isError, setDraftBoardContext, sending, saveEffort.isPending, loadingThread, settings.data, savePreference.isPending, startMode, projectId, setProjectPickerOpen, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
