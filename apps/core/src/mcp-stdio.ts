@@ -30,6 +30,7 @@ import { createContextFactory } from "./context";
 import { Store } from "./db";
 import { logger, errMsg } from "./log";
 import { DEFAULT_AGENT_TOOLSETS, INSTRUCTIONS } from "./mcp-sessions";
+import { MCP_MAX_TOOL_INPUT_ELEMENTS } from "./mcp-limits";
 import { ProjectStore } from "./projects";
 import { pidAlive } from "./serve";
 
@@ -269,7 +270,7 @@ async function standalone(opts: McpStdioOptions, projectDir: string | null): Pro
   });
   const server = new McpServer(
     { name: "fabdesk", title: "fabPlane", version: config.version, icons: FABDESK_SERVER_ICONS },
-    { instructions: INSTRUCTIONS },
+    { instructions: INSTRUCTIONS, maxToolInputElements: MCP_MAX_TOOL_INPUT_ELEMENTS },
   );
   attachToRegistry(server, registry, ctxFactory, {
     initialToolsets: [...DEFAULT_AGENT_TOOLSETS],
