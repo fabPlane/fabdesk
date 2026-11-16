@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { onboard } from "@fabdesk/board-workflow";
+import { onboard, runAcceptance } from "@fabdesk/board-workflow";
 import { createRegistry, type BoardAdoptResult, type CoreServices } from "../src";
 import { BOARD, PRO, SHEET } from "../../board-workflow/test/edit-fixture";
+import { ResourceGovernor, setGovernor } from "../src/resources";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
 const empty = { removed: {}, added: {}, changed: {} };
@@ -39,7 +40,7 @@ async function setup(route?: (dir: string) => Promise<void>) {
     const ctx = await contextFactory(services, project)({ def, projectRef: undefined, signal: new AbortController().signal, progress: () => {} } as never);
     return (def.handler as unknown as (a: object, c: unknown) => Promise<{ text: string; json: Record<string, unknown>; isError?: boolean }>)({ mode: "full", adopt: false, ...args }, ctx);
   };
-  return { project, run, adopted, drcRuns };
+  return { project, run, adopted, drcRuns, services };
 }
 
 describe("board_edit", () => {
@@ -82,6 +83,40 @@ describe("board_edit", () => {
     const n = project2.drcRuns.length;
     await project2.run({ plan: { id: "two", remove: ["C2"] } });
     expect(project2.drcRuns.length - n).toBe(1);
+  });
+
+  test("adopted ECO passes A4/A5 against the live requirements", async () => {
+    const { project, run, services } = await setup();
+    services.boardAdopt = { adopt: async ({ target, candidate }) => { await copyFile(candidate, target); return adoptResult(); } };
+    await run({ plan: { id: "rm-live", remove: ["C3"] }, adopt: true });
+    const after = await runAcceptance(project.dir, { drc: async () => ({ violations: [], unconnected: 0, parity: 0 }) });
+    expect(after.result.summary.A4_circuit).toBe(true);
+    expect(after.result.summary.A5_anchors).toBe(true);
+  });
+
+  test("on a 4 GiB host edit releases its 2 GiB reservation before repair and adoption", async () => {
+    const stages: string[] = [];
+    class ConstrainedGovernor extends ResourceGovernor {
+      override async admit(input: Parameters<ResourceGovernor["admit"]>[0]) {
+        expect(this.running.size).toBe(0);
+        stages.push(input.label);
+        return super.admit({ ...input, memGiB: input.label === "board_edit" ? 2 : 3 });
+      }
+    }
+    const g = new ConstrainedGovernor(async () => ({ memTotalGiB: 4, memAvailableGiB: 4, swapUsedGiB: 0, load1: 0, cpus: 4, disk: [] }));
+    setGovernor(g);
+    try {
+      const { run, adopted } = await setup(async (dir) => {
+        const f = join(dir, "board.kicad_pcb");
+        await writeFile(f, (await readFile(f, "utf8")).replace("(translate 50.0000 30.0000)", "(translate 50.0000 30.0001)"));
+      });
+      await run({ plan: { id: "constrained", move: [{ ref: "C3", to: [50, 30, 90] }], displace: { radius: 3 } }, adopt: true });
+      expect(adopted).toHaveLength(1);
+      expect(stages.filter((s) => s === "board_edit")).toHaveLength(2);
+      expect(stages.at(-1)).toBe("adopt");
+      expect(stages.some((s) => s !== "board_edit" && s !== "adopt")).toBe(true);
+      expect(g.running.size).toBe(0);
+    } finally { setGovernor(null); }
   });
 
   test("a candidate that opened connections is returned with them, and adopt is refused", async () => {

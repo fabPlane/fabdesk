@@ -230,6 +230,23 @@ describe("bench", () => {
     expect(await bench.prune()).toBe("pruned 1 candidate dirs; kept 2 accepted steps");
   });
 
+  test("prune preserves an accepted step nested inside a chained candidate", async () => {
+    const src = await project(5);
+    const ws = join(await mk(), "ws");
+    const { bench } = await L.Bench.create(ws, src, "board.kicad_pcb", { scorer, engine: engine({ finish: "(kicad_pcb) ;; opens=2" }), availableGiB: async () => 30 });
+    const accepted = join(ws, "t1", "rip+finish", "s2");
+    const unused = join(ws, "t1", "rip+finish-other");
+    await mkdir(accepted, { recursive: true });
+    await mkdir(unused, { recursive: true });
+    await writeFile(join(accepted, "board.kicad_pcb"), "(kicad_pcb) ;; opens=2");
+    expect((await bench.acceptDir(accepted)).ok).toBe(true);
+    expect(await bench.prune()).toBe("pruned 1 candidate dirs; kept 2 accepted steps");
+    expect(await readFile(bench.candidateBoard(), "utf8")).toContain("opens=2");
+    expect(await readdir(join(ws, "t1"))).toEqual(["rip+finish"]);
+    const reopened = await L.Bench.open(ws, { scorer, engine: engine({}), availableGiB: async () => 30 });
+    expect(await readFile(reopened.candidateBoard(), "utf8")).toContain("opens=2");
+  });
+
   test("candidates that slug alike get their own folders; a cached score answers only for its own board", async () => {
     expect(L.candidateSlugs(["finish", "finish", "Finish", "a b", "a_b"])).toEqual(["finish", "finish-2", "Finish-3", "a_b", "a_b-2"]);
     const src = await project(5);

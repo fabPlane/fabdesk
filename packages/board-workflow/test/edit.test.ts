@@ -138,7 +138,9 @@ describe("apply, proof and the candidate", () => {
     expect(circuit.components.map((c: { reference: string }) => c.reference)).not.toContain("C3");
     const origin = JSON.parse(await readFile(cand.origin, "utf8"));
     expect(origin.project).toBe(dir);
-    expect(Object.keys(origin.files)).toEqual(["board.kicad_sch"]);
+    expect(origin.files["board.kicad_pcb"]).toBe((await import("node:crypto")).createHash("sha256").update(BOARD).digest("hex"));
+    expect(origin.files["board.kicad_sch"]).toBeDefined();
+    expect(origin.files[join(".fabdesk", "board", "requirements", "circuit.json")]).toBeDefined();
     expect(r.diff?.removed).toEqual(["C3"]);
     expect(r.churn).toMatchObject({ collateral_nets: 0, unplanned_moved: [] });
     // A4 (circuit) judged on the candidate's own, edited requirements

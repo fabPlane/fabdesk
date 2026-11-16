@@ -8,6 +8,7 @@
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { isInside } from "../files";
 import { stepsFor, type Step } from "./actions";
 import { compareKeys, figureLine, gate, keyOf, type Figures, type GateSlack, type OpenItem } from "./gate";
 import { hostMemory } from "../sysinfo";
@@ -454,7 +455,7 @@ export class Bench {
       if (!/^t\d+$/.test(t)) continue;
       for (const c of await readdir(join(this.ws, t)).catch(() => [] as string[])) {
         const r = resolve(this.ws, t, c);
-        if (!keep.some((k) => k === r || k.startsWith(r + "/"))) {
+        if (!keep.some((k) => isInside(r, k))) {
           await rm(r, { recursive: true, force: true });
           gone++;
         }

@@ -5,6 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { ChildTaskError, type EditChildInput } from "../src/child-tasks";
 import { runEditOutOfCore } from "../src/tools/board-edit";
+import { governor } from "../src/resources";
 import { ToolError } from "../src/registry";
 
 const ctx = (run: (task: string, input: unknown) => Promise<unknown>) =>
@@ -15,6 +16,7 @@ describe("board_edit out of the core", () => {
     const calls: EditChildInput[] = [];
     const run = async (task: string, input: unknown) => {
       expect(task).toBe("edit");
+      expect([...governor().running.values()].map((j) => j.label)).toContain("board_edit");
       const i = input as EditChildInput;
       calls.push(i);
       if (i.mode === "apply") return { stage: "apply", verdict: "PASS apply", stop: false, phases: { impact: 1, apply: 2 }, candidate: { dir: "/p/.fabdesk/board/edits/x", pcb: "/p/.fabdesk/board/edits/x/board.kicad_pcb", origin: "o" }, repair: { available: false, routeAgain: [] } };
@@ -25,6 +27,7 @@ describe("board_edit out of the core", () => {
     expect(calls[1]!.candidate).toBe("/p/.fabdesk/board/edits/x");
     expect(calls[0]!.kicadCli).toBe("/usr/bin/kicad-cli");
     expect(r.stage).toBe("proof");
+    expect([...governor().running.values()].map((j) => j.label)).not.toContain("board_edit");
     expect(r.phases).toEqual({ impact: 1, apply: 2, proof: 3 });
     expect(r.repair).toEqual({ available: true, routeAgain: [] });
   });
@@ -53,5 +56,6 @@ describe("board_edit out of the core", () => {
     const nf = await runEditOutOfCore(ctx(notFound), { projectDir: "/p", plan: { id: "x" }, mode: "impact" }, null).catch((e) => e);
     expect(nf).toBeInstanceOf(ToolError);
     expect((nf as ToolError).code).toBe("not_found");
+    expect([...governor().running.values()].map((j) => j.label)).not.toContain("board_edit");
   });
 });

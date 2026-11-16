@@ -1,11 +1,12 @@
 /**
  * Adopt a board candidate (made by an edit, last-mile or review stage in a scratch folder) into the project.
- * Checkpoint, then the schematic sheets and project libraries the candidate changed (only while the project's copy is
+ * Checkpoint, then the schematic sheets, project libraries and requirements the candidate changed (only while the project's copy is
  * still the one the candidate was computed from), then the PCB delta as one KiCad commit over IPC, read back.
  */
-import { copyFile, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join, relative, resolve } from "node:path";
+import { edit } from "@fabdesk/board-workflow";
 import { jailPath } from "./fs";
 import { saveBoardPoint } from "./board-history";
 import { governor } from "./resources";
@@ -19,19 +20,8 @@ const sha256File = async (path: string) => {
 };
 const stamp = () => new Date().toISOString().replace(/[:.]/g, "-");
 
-/** Design files whose change a candidate may carry into the project (besides the PCB). */
-const DESIGN_FILE = /\.(kicad_sch|kicad_sym)$|^(sym|fp)-lib-table$/;
-
-/** sha256 of every design file directly in `dir`. */
-export async function designFileHashes(dir: string): Promise<Record<string, string>> {
-  const out: Record<string, string> = {};
-  for (const name of await readdir(dir).catch(() => [] as string[]))
-    if (DESIGN_FILE.test(name)) {
-      const h = await sha256File(join(dir, name));
-      if (h) out[name] = h;
-    }
-  return out;
-}
+/** Source revision plus the design and requirement files a candidate may carry. */
+export const designFileHashes = edit.designFileHashes;
 
 /**
  * Where a stage recorded the project's design files when it computed the candidate: `origin.json`
@@ -94,20 +84,30 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
   const route = ctx.services.routeRuns.latest(project.id);
   if (route && ["queued", "running", "cancel_requested", "cancelling"].includes(route.state))
     throw new ToolError("adopt refused: routing is active; wait for it to finish", "precondition");
-  // which design files the candidate changes, and whether the project still holds what the change started from
   const origin = await candidateOrigin(candidate);
+  const pcbRel = relative(project.dir, target);
   const sheets: string[] = [];
-  if (origin && resolve(origin.project) === resolve(project.dir)) {
+  const matchingOrigin = origin && resolve(origin.project) === resolve(project.dir) ? origin : null;
+  const checkSourceBoard = async () => {
+    if (matchingOrigin && (!matchingOrigin.files[pcbRel] || await sha256File(target) !== matchingOrigin.files[pcbRel]))
+      throw new ToolError(`adopt refused: ${pcbRel} changed in the project since this candidate was computed (or its source revision is missing); compute it again`, "precondition");
+  };
+  const checkDesign = async () => {
+    sheets.length = 0;
+    if (!matchingOrigin) return;
     const now = await designFileHashes(project.dir);
     const cand = await designFileHashes(dirname(candidate));
-    const stale = Object.keys(origin.files).filter((n) => now[n] !== origin.files[n] && cand[n] !== now[n]);
+    const names = Object.keys(cand).filter((n) => !n.endsWith(".kicad_pcb"));
+    const stale = [...new Set([...Object.keys(matchingOrigin.files), ...names])]
+      .filter((n) => !n.endsWith(".kicad_pcb") && now[n] !== matchingOrigin.files[n] && cand[n] !== now[n]);
     if (stale.length)
       throw new ToolError(`adopt refused: ${stale.join(", ")} changed in the project since this candidate was computed; compute it again`, "precondition");
-    for (const [n, h] of Object.entries(cand)) if (now[n] !== h) sheets.push(n);
-  }
+    for (const n of names) if (now[n] !== cand[n]) sheets.push(n);
+  };
+  await checkSourceBoard();
+  await checkDesign();
   ctx.progress(0.05, "retaining checkpoint");
   // the board timeline (board history in the app) gets the step: the board before, then the adopted one
-  const pcbRel = relative(project.dir, target);
   await saveBoardPoint(project, pcbRel, "Before adopt").catch(() => null);
   const checkpoint = await retainTaskCheckpoint(
     project,
@@ -121,6 +121,9 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
     // all or nothing: the board and every design file are copied aside first; any failure after the first write puts
     // them back, so the project never keeps new sheets beside the old board (or the reverse)
     const apply = async () => {
+      // Recheck after admission and saved-file recovery, which can both wait.
+      await checkSourceBoard();
+      await checkDesign();
       await mkdir(keep, { recursive: true });
       const before: Array<{ name: string; dst: string; sha: string | null }> = [{ name: pcbRel, dst: target, sha: await sha256File(target) }];
       for (const n of sheets) before.push({ name: n, dst: join(project.dir, n), sha: await sha256File(join(project.dir, n)) });
@@ -128,11 +131,17 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
         await mkdir(dirname(join(keep, b.name)), { recursive: true });
         await copyFile(b.dst, join(keep, b.name));
       }
+      let boardStarted = false;
       try {
-        for (const n of sheets) await copyFile(join(dirname(candidate), n), join(project.dir, n));
+        for (const n of sheets) {
+          await mkdir(dirname(join(project.dir, n)), { recursive: true });
+          await copyFile(join(dirname(candidate), n), join(project.dir, n));
+        }
+        await checkSourceBoard();
+        boardStarted = true;
         return await adopter.adopt({ target, candidate, cli, signal: ctx.signal });
       } catch (e) {
-        throw await rolledBack(e, before, keep, project.dir);
+        throw await rolledBack(e, boardStarted ? before : before.filter((b) => b.dst !== target), keep, project.dir);
       }
     };
     const recovery = ctx.services.design.withSavedFilesRecovery;

@@ -79,13 +79,21 @@ export interface ComparisonView {
   changes: Array<{ code: string; name: string; before: string; now: string; change: string }>;
 }
 
-const DESIGN_FILE = /\.(kicad_sch|kicad_sym)$|^(sym|fp)-lib-table$/;
+const DESIGN_FILE = /\.(kicad_pcb|kicad_sch|kicad_sym)$|^(sym|fp)-lib-table$/;
 
-/** sha256 of every design file directly in `dir` (what `adoptCandidate` compares). */
+/** Source revision and adoptable design/requirement files (project-relative paths). */
 export async function designFileHashes(dir: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   for (const name of (await readdir(dir).catch(() => [] as string[])).sort())
     if (DESIGN_FILE.test(name)) out[name] = createHash("sha256").update(await readFile(join(dir, name))).digest("hex");
+  const requirements = async (rel: string): Promise<void> => {
+    for (const entry of await readdir(join(dir, rel), { withFileTypes: true }).catch(() => [])) {
+      const name = join(rel, entry.name);
+      if (entry.isDirectory()) await requirements(name);
+      else if (entry.isFile()) out[name] = createHash("sha256").update(await readFile(join(dir, name))).digest("hex");
+    }
+  };
+  await requirements(join(BOARD_DIR, "requirements"));
   return out;
 }
 
@@ -163,6 +171,7 @@ export async function runEdit(input: EditRunInput): Promise<EditRunResult> {
   say(0.15, "scoring the unedited project, then applying the edit");
   let applied: Awaited<ReturnType<typeof applyEdit>>;
   const projectHashes = await designFileHashes(env.projectDir);
+  projectHashes[env.pcbName] = createHash("sha256").update(env.pcbText).digest("hex");
   try {
     applied = await applyEdit(plan, env, out, { score: async (d) => (await input.runners.accept(d, env.pcbName)).result, beforeScored: (d) => beforeScore(env, d, input.runners) });
   } catch (e) {

@@ -75,8 +75,9 @@ async function run(a: Args, ctx: ToolContext): Promise<ToolOutput> {
       return ok(`dry run: ${r.placed}/${r.wanted} placed; ${r.fit_nowhere} fit nowhere; blockers of those: ${counts(r.blockers)}`, r);
     }
     const out = join(work, "candidate");
+    const origin = await designFileHashes(project.dir);
     const r = await silk.silkPlace({ pcb: files.pcb, out, plan, cli, pictures: a.pictures, signal: ctx.signal, log: (s) => ctx.progress(0.5, s) });
-    await writeFile(join(out, "origin.json"), JSON.stringify({ project: project.dir, files: await designFileHashes(project.dir) }) + "\n");
+    await writeFile(join(out, "origin.json"), JSON.stringify({ project: project.dir, files: origin }) + "\n");
     const text = [
       `${r.mode} mode: ${r.kept} clean labels kept, ${r.placed} placed; before ${r.before.labels} labels (${r.before.bad} with problems), after ${r.after.labels} labels (${r.after.bad} with problems); ${r.fit_nowhere.length} parts fit nowhere; only labels changed: ${r.only_labels_changed}`,
       `after: ${counts(r.after.counts)}; free texts ${r.texts_before.texts_bad} of ${r.texts_before.texts} with problems before, ${r.texts_after.texts_bad} after (${r.texts_moved} moved)`,

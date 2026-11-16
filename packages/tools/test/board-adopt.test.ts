@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRegistry, type BoardAdoptResult, type CoreServices } from "../src";
-import { adoptCandidate } from "../src/board-adopt";
+import { adoptCandidate, designFileHashes } from "../src/board-adopt";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
 const empty = { removed: {}, added: {}, changed: {} };
@@ -21,7 +21,7 @@ async function setup(adopt?: (i: { target: string; candidate: string }) => Promi
   };
   const def = createRegistry().get("board_job")!;
   const ctx = () => contextFactory(services, project)({ def, projectRef: undefined, signal: new AbortController().signal, progress: () => {} } as never);
-  return { project, seen, ctx };
+  return { project, seen, ctx, services };
 }
 const sha = async (s: string) => (await import("node:crypto")).createHash("sha256").update(s).digest("hex");
 
@@ -68,7 +68,7 @@ describe("adoptCandidate", () => {
     const candidate = join(dir, "c.kicad_pcb");
     await writeFile(candidate, "(kicad_pcb edited)");
     await writeFile(join(dir, "board.kicad_sch"), "edited sheet");
-    await writeFile(join(dir, "origin.json"), JSON.stringify({ project: project.dir, files: { "board.kicad_sch": await sha("original sheet") } }));
+    await writeFile(join(dir, "origin.json"), JSON.stringify({ project: project.dir, files: await designFileHashes(project.dir) }));
     const r = await adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "edit" });
     expect(r.data.designFiles).toEqual(["board.kicad_sch"]);
     expect(await readFile(join(project.dir, "board.kicad_sch"), "utf8")).toBe("edited sheet");
@@ -80,7 +80,7 @@ describe("adoptCandidate", () => {
     await mkdir(dir2, { recursive: true });
     await writeFile(join(dir2, "c.kicad_pcb"), "(kicad_pcb 2)");
     await writeFile(join(dir2, "board.kicad_sch"), "yet another");
-    await writeFile(join(dir2, "origin.json"), JSON.stringify({ project: project.dir, files: { "board.kicad_sch": await sha("edited sheet") } }));
+    await writeFile(join(dir2, "origin.json"), JSON.stringify({ project: project.dir, files: { "board.kicad_pcb": await sha("(kicad_pcb)"), "board.kicad_sch": await sha("edited sheet") } }));
     await expect(adoptCandidate(await ctx(), { candidate: join(dir2, "c.kicad_pcb"), board: "board.kicad_pcb", reason: "late" })).rejects.toThrow(/changed in the project since/);
   });
 
@@ -91,9 +91,50 @@ describe("adoptCandidate", () => {
     await writeFile(join(dir, "c.kicad_pcb"), "(kicad_pcb edited)");
     await writeFile(join(dir, "board.kicad_sch"), "edited sheet");
     await writeFile(join(dir, "power.kicad_sch"), "new sheet");
-    await writeFile(join(dir, "origin.json"), JSON.stringify({ project: project.dir, files: { "board.kicad_sch": await sha("original sheet") } }));
+    const req = join(".fabdesk", "board", "requirements");
+    await mkdir(join(project.dir, req), { recursive: true });
+    await mkdir(join(dir, req), { recursive: true });
+    await writeFile(join(project.dir, req, "circuit.json"), "old circuit");
+    await writeFile(join(dir, req, "circuit.json"), "edited circuit");
+    await writeFile(join(dir, req, "mechanical.json"), "new anchors");
+    await writeFile(join(dir, "origin.json"), JSON.stringify({ project: project.dir, files: await designFileHashes(project.dir) }));
     return join(dir, "c.kicad_pcb");
   }
+
+  test("adopts edited and new requirements along with the sheets", async () => {
+    const { project, ctx } = await setup();
+    const candidate = await withSheetCandidate(project);
+    const r = await adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "ECO" });
+    expect(r.data.designFiles).toContain(join(".fabdesk", "board", "requirements", "circuit.json"));
+    expect(await readFile(join(project.dir, ".fabdesk/board/requirements/circuit.json"), "utf8")).toBe("edited circuit");
+    expect(await readFile(join(project.dir, ".fabdesk/board/requirements/mechanical.json"), "utf8")).toBe("new anchors");
+  });
+
+  test("refuses stale requirements, including a concurrently created requirement", async () => {
+    for (const name of ["circuit.json", "mechanical.json"]) {
+      const { project, ctx, seen } = await setup();
+      const candidate = await withSheetCandidate(project);
+      await writeFile(join(project.dir, ".fabdesk/board/requirements", name), "newer requirement");
+      await expect(adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "ECO" })).rejects.toThrow(/changed in the project since/);
+      expect(seen).toHaveLength(0);
+      expect(await readFile(join(project.dir, ".fabdesk/board/requirements", name), "utf8")).toBe("newer requirement");
+      expect(await readFile(join(project.dir, "board.kicad_sch"), "utf8")).toBe("original sheet");
+    }
+  });
+
+  test("refuses a newer PCB both before admission and after saved-file recovery", async () => {
+    for (const duringRecovery of [false, true]) {
+      const { project, ctx, services, seen } = await setup();
+      const candidate = await withSheetCandidate(project);
+      const change = () => writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb newer)");
+      if (duringRecovery) services.design.withSavedFilesRecovery = async (_dir, apply) => { await change(); return apply(); };
+      else await change();
+      await expect(adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "ECO" })).rejects.toThrow(/board.kicad_pcb changed/);
+      expect(seen).toHaveLength(0);
+      expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb newer)");
+      expect(await readFile(join(project.dir, "board.kicad_sch"), "utf8")).toBe("original sheet");
+    }
+  });
 
   test("all or nothing: a failing KiCad commit puts the sheets (and a half-written board) back and says so", async () => {
     const { project, ctx } = await setup(async (i) => {
@@ -107,6 +148,8 @@ describe("adoptCandidate", () => {
     expect(await readFile(join(project.dir, "board.kicad_sch"), "utf8")).toBe("original sheet");
     expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb original)");
     expect(await readFile(join(project.dir, "power.kicad_sch")).catch(() => null)).toBeNull();
+    expect(await readFile(join(project.dir, ".fabdesk/board/requirements/circuit.json"), "utf8")).toBe("old circuit");
+    expect(await readFile(join(project.dir, ".fabdesk/board/requirements/mechanical.json")).catch(() => null)).toBeNull();
   });
 
   test("when the restore itself fails, the error names each file that differs and where its copy was", async () => {
