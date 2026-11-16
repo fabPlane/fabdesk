@@ -31,6 +31,7 @@
     "esbuild"
   ],
   "overrides": {
+    "dompurify": "3.4.18",
     "hono": "4.13.7",
     "fast-xml-parser": "5.11.1",
     "nanoid": "3.3.19",
@@ -78,6 +79,8 @@
     "usage:restore": "bun run scripts/restore-usage-record.ts"
   },
   "devDependencies": {
+    "dompurify": "3.4.18",
+    "jsdom": "31.0.1",
     "@types/bun": "1.2.21",
     "prettier": "3.6.2",
     "typescript": "5.9.2"
