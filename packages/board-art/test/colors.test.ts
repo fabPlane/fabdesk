@@ -8,6 +8,7 @@ import {
   resolveArtOptions,
   previewSvg,
   type ArtOptions,
+  ORIGINAL_RECOLOR,
 } from "../src";
 
 const options: ArtOptions = {
@@ -27,6 +28,50 @@ const raster = {
   data: new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 255, 255, 255, 255, 0, 0, 255, 0]),
 };
 const image = { ...rgbaToGray(raster), rgba: raster.data };
+
+test("recolor effects preserve source bytes, dot geometry and exact original reset", () => {
+  const originalBytes = new Uint8Array(image.rgba!);
+  const original = convertImage(image, options);
+  for (const mode of ["grayscale", "duotone"] as const) {
+    const changed = convertImage(image, { ...options, recolor: { ...ORIGINAL_RECOLOR, mode } });
+    expect(changed.clipped.map(({ color, ...geometry }) => geometry)).toEqual(original.clipped.map(({ color, ...geometry }) => geometry));
+    expect(changed.clipped.map(p => p.color)).not.toEqual(original.clipped.map(p => p.color));
+    expect(convertImage(image, { ...options, recolor: { ...ORIGINAL_RECOLOR, mode, amount: 0 } })).toMatchObject({ clipped: original.clipped });
+  }
+  expect(convertImage(image, { ...options, recolor: { ...ORIGINAL_RECOLOR } }).clipped).toEqual(original.clipped);
+  expect(image.rgba).toEqual(originalBytes);
+});
+
+test("duotone maps dark and light pixels to chosen colors in the reference export", () => {
+  const raster = { width: 2, height: 1, data: new Uint8Array([0, 0, 0, 255, 255, 255, 255, 255]) };
+  const image = { ...rgbaToGray(raster), rgba: raster.data };
+  const recolor = { ...ORIGINAL_RECOLOR, mode: "duotone" as const, shadow: "#123456", highlight: "#abcdef" };
+  const job = buildBoardArt(image, { ...options, recolor });
+  expect(new Set(job.art.clipped.map(p => p.color))).toEqual(new Set(["#123456", "#abcdef"]));
+  const reference = new TextDecoder().decode(job.files.find(f => f.name === "color-artwork-reference.svg")!.data);
+  expect(reference).toContain('fill="#123456"'); expect(reference).toContain('fill="#abcdef"');
+  const readme = new TextDecoder().decode(job.files.find(f => f.name === "README.txt")!.data);
+  expect(readme).toContain("Color effect: duotone");
+  expect(readme).toContain("NOT a JLCPCB multicolor production package");
+  const settings = JSON.parse(new TextDecoder().decode(job.files.find(f => f.name === "artwork-settings.json")!.data));
+  expect(settings.recolor).toEqual(recolor);
+});
+
+test("invalid recoloring is rejected and monotone fabrication remains unchanged", () => {
+  for (const amount of [NaN, -1, 1.1]) expect(() => resolveArtOptions({ ...options, recolor: { ...ORIGINAL_RECOLOR, amount } })).toThrow("strength");
+  expect(() => resolveArtOptions({ ...options, recolor: { ...ORIGINAL_RECOLOR, shadow: 'red"' } })).toThrow("hex");
+  const original = buildBoardArt(image, { ...options, colorMode: "monotone" });
+  const recolored = buildBoardArt(image, { ...options, colorMode: "monotone", recolor: { ...ORIGINAL_RECOLOR, mode: "duotone" } });
+  expect(recolored.gerbers).toEqual(original.gerbers); expect(recolored.kicadPcb).toEqual(original.kicadPcb);
+});
+
+test("small boards retain opaque dark source colors at the default feature size", () => {
+  const source = { width: 2, height: 1, data: new Uint8Array([0, 0, 0, 255, 255, 255, 255, 255]) };
+  const art = convertImage({ ...rgbaToGray(source), rgba: source.data }, {
+    style: "realistic", color: "white", outline: "rectangle", widthMm: 40, heightMm: 30, colorMode: "multicolor",
+  });
+  expect(new Set(art.clipped.map(p => p.color))).toEqual(new Set(["#000000", "#ffffff"]));
+});
 
 test("board image framing keeps physical layers and colors without the preview stage", () => {
   for (const outline of ["rectangle", "rounded", "circle"] as const) {
