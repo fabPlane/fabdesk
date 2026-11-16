@@ -127,7 +127,7 @@ export default defineConfig(({ mode }) => {
   return {
     main: {
       // Workspace packages (and their zod) are bundled into main; everything else stays external.
-      plugins: [nativeSpeechPlugin(), externalizeDepsPlugin({ exclude: ["@fabdesk/updates", "@fabdesk/protocol", "zod"] })],
+      plugins: [nativeSpeechPlugin(), externalizeDepsPlugin({ exclude: ["@fabdesk/auth-client", "@fabdesk/updates", "@fabdesk/protocol", "zod"] })],
       define: sentryDefine,
       build: {
         rollupOptions: { input: resolve(__dirname, "src/main/index.ts") },

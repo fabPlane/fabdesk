@@ -41,6 +41,11 @@ bun test
 bun run dev
 ```
 
+Projects use `FABDESK_PROJECTS_DIR` when set. Otherwise, existing `~/Fabdesk` or `~/fabdesk`
+workspaces are preserved, except when that directory is a Fabdesk source checkout. New workspaces
+use `~/Fabdesk Projects`, keeping project files separate from a conventional `~/fabdesk` clone.
+The daemon and desktop PCB/CAD bridges use the same directory resolver; no existing files are moved.
+
 `bun run dev` starts **fabPlane Dev**, an isolated Electron identity (separate userData, single-instance
 lock, core home and port) so it can run at the same time as an installed production fabPlane. See
 [docs/dev-loop.md](docs/dev-loop.md).
