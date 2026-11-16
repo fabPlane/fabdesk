@@ -4,12 +4,24 @@ import { projectJobBoard, type ProjectJob } from "./project-jobs";
 const record = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 const resultJson = (job: ProjectJob) => record(record(job.result)?.json);
 
+/** Attention reflects recorded problems, never an inferred design pass/fail. */
+export function activityNeedsAttention(job: ProjectJob): boolean {
+  if (job.status === "failed") return true;
+  if (job.status !== "done") return false;
+  if (record(job.result)?.isError === true) return true;
+  const json = resultJson(job), counts = record(json?.counts);
+  if (/verify|drc|erc/.test(job.kind) && counts) {
+    return [counts.errors, counts.warnings].some(count => Number.isSafeInteger(count) && Number(count) > 0);
+  }
+  return job.kind.replace(/^tool:/, "") === "bom_read" && json?.complete === false;
+}
+
 /** Fold consecutive successful read operations only; keep every run available for inspection. */
 export function activityGroups(jobs: ProjectJob[], manifest: Pick<ToolManifestEntry, "name" | "annotations">[]) {
   const groups: ProjectJob[][] = [];
   const readOnly = new Set(manifest.filter(tool => tool.annotations.readOnlyHint).map(tool => tool.name));
   const key = (job: ProjectJob) => {
-    if (job.status !== "done" || record(job.result)?.isError === true || !readOnly.has(job.kind.replace(/^tool:/, ""))) return null;
+    if (job.status !== "done" || activityNeedsAttention(job) || !readOnly.has(job.kind.replace(/^tool:/, ""))) return null;
     return JSON.stringify([job.projectId, job.kind, projectJobBoard(job)]);
   };
   for (const job of jobs) {
@@ -25,12 +37,12 @@ export function activityOutcome(job: ProjectJob): string {
   if (job.status === "failed") return job.error?.split("\n")[0]?.slice(0, 180) || "Task failed. Open details for the recorded error.";
   if (job.status === "cancelled") return "Task cancelled";
   if (job.status !== "done") return job.note || (job.status === "queued" ? "Waiting to start" : "Working…");
+  if (record(job.result)?.isError === true) return "Run finished with reported concerns. Review the result.";
   const json = resultJson(job), counts = record(json?.counts);
   if (/verify|drc|erc/.test(job.kind) && counts && Number.isSafeInteger(counts.errors) && Number.isSafeInteger(counts.warnings) && Number(counts.errors) >= 0 && Number(counts.warnings) >= 0) {
-    return `Saved report: ${counts.errors} errors · ${counts.warnings} warnings. Review coverage and freshness in Checks.`;
+    return `Saved report: ${counts.errors} ${counts.errors === 1 ? "error" : "errors"} · ${counts.warnings} ${counts.warnings === 1 ? "warning" : "warnings"}. Review coverage and freshness in Checks.`;
   }
   if (job.kind.replace(/^tool:/, "") === "bom_read" && Array.isArray(json?.lines)) return `${json.lines.length} BOM lines read${json.complete === false ? " · incomplete source coverage" : ""}`;
-  if (record(job.result)?.isError === true) return "Run finished with reported concerns. Review the result.";
   return "Run finished. Review its recorded result.";
 }
 
