@@ -31,6 +31,7 @@
     "esbuild"
   ],
   "overrides": {
+    "body-parser": "2.4.0",
     "hono": "4.13.7",
     "fast-xml-parser": "5.11.1",
     "nanoid": "3.3.19",
