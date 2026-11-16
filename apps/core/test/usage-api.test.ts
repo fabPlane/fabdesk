@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -9,9 +9,11 @@ import { fileDumpReference } from "../src/run-dump-file";
 import { MAX_UPLOAD_BYTES, UsageApiArchiveWriter, type UploadPacing } from "../src/usage-api";
 import { ArchiveConsentRevokedError, ArchiveRecordTooLargeError } from "../src/usage-archive";
 
+// Synthetic credentials are generated locally and accepted only by the mock fetch.
+const installationId = randomUUID();
 const installation = {
-  installationId: "550e8400-e29b-41d4-a716-446655440000",
-  token: "550e8400-e29b-41d4-a716-446655440000." + "a".repeat(64),
+  installationId,
+  token: `${installationId}.${randomBytes(32).toString("hex")}`,
 };
 
 describe("usage API archive", () => {
