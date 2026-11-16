@@ -3,11 +3,11 @@
 - Bun 1.4.x monorepo. Run everything from the repo root: `bun install`, `bun run typecheck`, `bun run test` (not bare `bun test`, which recurses into `vendor/`).
 - Build on a branch and open a PR **against `main`**; do not commit directly to `main`. The only exception is a small fix that cleans up a mistake already on `main`.
 - Do not use a `dev` (or any other long-lived integration) branch, in this repo or in `vendor/fab_pcb`: target `main` and stack short-lived feature branches instead. The old `dev` branches were folded into `main` on 2026-10-02. `vendor/fab_pcb` must always pin a commit on fab_pcb's `main`.
-- Never run `bun install` inside `vendor/fabplane` or `vendor/fab_pcb`. `vendor/fab_pcb/packages/{proto,client,kicad-wasm}` are root workspaces (the client's tests import kicad-wasm); `bun run fp-pcb:types` (part of `typecheck`) emits their declarations; `apps/core/tsconfig.typecheck.json` maps the imports to them for `tsc` only (Bun honours tsconfig `paths` at runtime, so the mapping must stay out of the config chain Bun reads).
+- Never run `bun install` inside `vendor/fab_pcb`. `vendor/fab_pcb/packages/{proto,client,kicad-wasm}` are root workspaces (the client's tests import kicad-wasm); `bun run fp-pcb:types` (part of `typecheck`) emits their declarations; `apps/core/tsconfig.typecheck.json` maps the imports to them for `tsc` only (Bun honours tsconfig `paths` at runtime, so the mapping must stay out of the config chain Bun reads).
 - `vendor/*` are git submodules. Do not edit them here; change fabplane via a PR to `TensorFleet/fabplane.com` and FabPlane PCB via a PR to `fabPlane/fab_pcb`, then bump with `bun run submodules:update`.
 - `vendor/fabplane-cli` (public, fabPlane/fabplane-cli) is the fabplane.com API client/CLI/MCP package; the daemon's carts + inventory go through it (`docs/fabplane-cli.md`). Add new fabplane.com calls there, not ad hoc in fabdesk.
 - FreeCAD (the `cad` toolset, the desktop's CAD tab) goes through the FabPlane CAD bridge from `vendor/fab_cad` (fabPlane/fab_cad, over the fabPlane/FreeCAD fork's API); see `docs/fab-cad.md`. `vendor/fab_cad/packages/{protocol,client,mock-server,bridge}` are root workspaces; `bun run fab-cad:types` (part of `typecheck`) emits the client's declarations for `tsc`, like `fp-pcb:types`. Never `bun install` inside `vendor/fab_cad`.
-- Import fabplane's KiCad CLI helpers via the `@pcb/pcb/kicad-cli` subpath only. The package root pulls in sharp and the AWS SDK.
+- KiCad CLI helpers are maintained in `packages/kicad`; do not restore the private website-workspace dependency.
 - fabPlane code imports `zod/v4` (root and mobile pin zod 4.6.7; keep the subpath imports).
 - MCP tool names use underscores (`circuit_build`), never dots.
 - `export_stencil` builds a 3D-printed solder stencil STL from `F.Paste` / `B.Paste` (pure TypeScript in `@fabdesk/kicad`, no kicad-cli).
@@ -21,25 +21,11 @@
 - Daily jobs: security scan + issue filing is `.github/workflows/security-scan.yml` (`bun run security:scan` / `security:issues`). Open-PR relevance notifies the Grok Cloud Agent (`bun run pr:relevance`). See `docs/daily-jobs.md`.
 - Open-source catalog preview/photo images are published by the **fabplane.com** `catalog-sync` GitHub Action (`workflow_dispatch`, or a `main` push that touches catalog seed / preview generator paths only). Fabdesk merges do not upload to R2. Do not add a fabdesk workflow that syncs catalog images on every merge.
 
-## Staging login (Cloud Agents)
+## Local development and public contributions
 
-Staging is on Tailscale (`tag:cursor-staging`, ports 4000 and 5173 only). Production (`api.fabplane.com`) stays password-off.
+All source submodules are public. Do not add private-repository or organization-secret requirements to contributor setup or pull-request checks. The root TypeScript settings belong to this repository.
 
-- API: `http://fabplane-staging.tail4f6a7.ts.net:4000`
-- Device UI: `http://fabplane-staging.tail4f6a7.ts.net:5173/device`
-- Accounts: `maya` / `demo`, password `fabplane-dev`
-
-Set the Cursor environment secret `TS_AUTH_KEY`. After `start-tailscale.sh` joins the tailnet:
-
-```bash
-export ALL_PROXY=socks5h://127.0.0.1:1055
-export HTTP_PROXY=http://127.0.0.1:1054
-export HTTPS_PROXY=http://127.0.0.1:1054
-FABPLANE_API_ORIGIN=http://fabplane-staging.tail4f6a7.ts.net:4000 \
-  bun run --cwd apps/core src/main.ts login --email maya --password fabplane-dev
-```
-
-Never send those credentials to `https://api.fabplane.com`.
+Use an isolated local development profile. Set `FABDESK_AUTH_MODE=local` only in development channels; production password login stays disabled. Internal staging access is managed separately and must not be documented with credentials or private hostnames here.
 
 ## Backend deploys
 
