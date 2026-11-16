@@ -115,7 +115,8 @@ jobs:
       matrix:
         format: [AppImage, deb]
     # Installing desktop packages requires sudo and a fresh machine.
-    runs-on: ubuntu-latest
+    # Keep the previous Ubuntu 22.04 desktop baseline and package names.
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
