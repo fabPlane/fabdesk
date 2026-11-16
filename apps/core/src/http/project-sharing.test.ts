@@ -96,10 +96,10 @@ test("publishes only the server-prepared project snapshot and confirms revocatio
   expect((await app.request("/projects/local/share")).status).toBe(200);
   const response = await app.request("/projects/local/share", {
     method: "PUT",
-    body: JSON.stringify({ secret: "ignore client payload" }),
+    body: JSON.stringify({ secret: "not-a-secret: ignored client payload" }),
   });
   expect(await response.json()).toEqual(published);
-  expect(JSON.stringify(payload)).not.toContain("ignore client payload");
+  expect(JSON.stringify(payload)).not.toContain("not-a-secret: ignored client payload");
   expect(JSON.stringify(payload)).not.toContain("native board");
   expect(await (await app.request("/projects/local/share", { method: "DELETE" })).json()).toEqual({
     visibility: "private",
