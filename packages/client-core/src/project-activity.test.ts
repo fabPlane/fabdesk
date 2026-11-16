@@ -41,3 +41,15 @@ test("opens exact existing outputs without borrowing foreign paths or packaged Z
   expect(activityArtifacts({ ...value, result: { json: { files: ["gerbers/front.gbr", "renders/top.png"] } } }, "p", "/projects/p", files)).toEqual(["renders/top.png"]);
   expect(activityArtifacts({ ...value, result: { json: { modelPath: "renders/top.png" } } }, "p", "/projects/p", files)).toEqual(["renders/top.png"]);
 });
+
+test("Windows absolute outputs resolve within the current project without accepting sibling or traversal paths", () => {
+  const files = [{ path: "exports/fab.zip" }, { path: "renders/top.png" }];
+  const value = job("windows", { result: { json: { path: "C:\\Projects\\Pulse\\exports\\fab.zip", files: [
+    "c:/projects/pulse/renders/top.png", "C:\\Projects\\Pulse-other\\renders\\top.png",
+    "D:\\Projects\\Pulse\\renders\\top.png", "C:\\Projects\\Pulse\\..\\renders\\top.png",
+    "C:\\Projects\\Pulse\\exports\\missing.zip", "exports\\fab.zip",
+  ] } } });
+  expect(activityArtifacts(value, "p", "C:\\Projects\\Pulse", files)).toEqual(["exports/fab.zip", "renders/top.png"]);
+  expect(activityArtifacts(value, "p", "C:/Projects/Pulse/", files)).toEqual(["exports/fab.zip", "renders/top.png"]);
+  expect(activityArtifacts(value, "p", "/projects/p", files)).toEqual([]);
+});

@@ -56,10 +56,15 @@ export function activityArtifacts(job: ProjectJob, projectId: string, projectPat
   const candidates: unknown[] = [json.path, json.modelPath, json.pngPath, json.poster, json.receiptPath, json.manifest];
   if (Array.isArray(json.files)) candidates.push(...json.files);
   else if (record(json.files)) candidates.push(...Object.values(record(json.files)!));
-  const root = projectPath.replace(/\/+$/, "") + "/", existing = new Set(files.map(file => file.path));
+  const windowsRoot = /^[a-z]:[\\/]/i.test(projectPath);
+  const root = (windowsRoot ? projectPath.replaceAll("\\", "/") : projectPath).replace(/\/+$/, "") + "/";
+  const existing = new Set(files.map(file => file.path));
   const paths = candidates.flatMap(value => {
     if (typeof value !== "string") return [];
-    const relative = value.startsWith(root) ? value.slice(root.length) : value;
+    // Native Windows tools may return drive-qualified paths; inventory paths stay project-relative.
+    const candidate = windowsRoot && /^[a-z]:[\\/]/i.test(value) ? value.replaceAll("\\", "/") : value;
+    const insideRoot = windowsRoot ? candidate.toLowerCase().startsWith(root.toLowerCase()) : candidate.startsWith(root);
+    const relative = insideRoot ? candidate.slice(root.length) : candidate;
     if (relative.startsWith("/") || relative.includes("\\") || relative.split("/").some(part => !part || part === "." || part === "..") || !existing.has(relative)) return [];
     return [relative];
   });
