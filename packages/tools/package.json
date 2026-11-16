@@ -18,7 +18,7 @@
     "@fabdesk/kicad": "workspace:*",
     "@fabdesk/product-video": "workspace:*",
     "@fabdesk/protocol": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "hono": "4.13.7",
     "zod": "3.25.76"
   },
