@@ -193,6 +193,7 @@ export * from "./output-library";
 export * from "./imported-boards";
 
 export * from "./assembly-scene";
+export * from "./project-status-navigation";
 export * from "./board-workspace";
 export * from "./assembly-map-layout";
 export * from "./sketch-recovery";

@@ -1,4 +1,4 @@
-import { captureAssemblySelection, useBoardSources, useProjectStatus } from "@fabdesk/client-core";
+import { projectStatusTarget, useBoardSources, useProjectStatus } from "@fabdesk/client-core";
 import { sharedCheckLabel, sharedModelLabel, sharedSourceLabel, type SharedBoard } from "@fabdesk/protocol";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -12,15 +12,14 @@ export function ProjectStatus() {
   const ui = () => useUiStore.getState();
   useAssistantSurface(projectId ? { projectId, label: "Project Status", priority: 10, details: JSON.stringify({ boards: status.data?.boards, savedInformationOnly: true, checking: status.isFetching, instruction: "Saved checks and model inputs do not establish completion, compatibility or manufacturing approval." }) } : null);
   const unavailable = status.isFetching || sources.isFetching || sources.isError;
-  const open = (board: SharedBoard, tab: "pcb" | "drc" | "3d") => {
+  const target = (board: SharedBoard, tab: "design" | "drc" | "3d") => projectId && sources.data
+    ? projectStatusTarget(projectId, board, sources.data, tab, ui().assemblyBoardByProject[projectId]) : null;
+  const open = (board: SharedBoard, tab: "design" | "drc" | "3d") => {
     if (!projectId || unavailable || ui().activeProjectId !== projectId || !sources.data) return;
-    if (sources.data.mode === "assembly") {
-      const instance = sources.data.assembly?.instances.find(i => i.sourceId === board.id);
-      const selection = instance ? captureAssemblySelection(sources.data, instance.id) : null;
-      if (!selection) return;
-      ui().setAssemblyBoard(selection);
-    }
-    ui().setBoardTab(tab);
+    const destination = target(board, tab);
+    if (!destination) return;
+    if (destination.selection) ui().setAssemblyBoard(destination.selection);
+    ui().setBoardTab(destination.tab);
   };
   if (!projectId) return <EmptyState title="Choose a project to see its status" />;
   if (status.isError || sources.isError) return <LoadError title="Could not check saved board status" onRetry={() => { void status.refetch(); void sources.refetch(); }} />;
@@ -37,9 +36,9 @@ export function ProjectStatus() {
       <div className="fd-project-status-table" role="table" aria-label="Board status" aria-busy={unavailable}>
         <div className="fd-project-status-row fd-project-status-labels" role="row"><span role="columnheader">Board</span><span role="columnheader">Saved PCB checks</span><span role="columnheader">Saved 3D</span></div>
         {status.data.boards.map(board => <div key={board.id} className="fd-project-status-row" role="row">
-          <div role="cell"><button className="fd-project-status-name" disabled={unavailable || !board.sourceAvailable} onClick={() => open(board, "pcb")}>{board.name}</button><small>{sharedSourceLabel(board)}</small></div>
-          <div role="cell" data-label="Saved PCB checks"><button className="fd-project-status-value" disabled={unavailable || !board.sourceAvailable} data-warning={board.checks.state === "source-changed" || (board.checks.findingCount ?? 0) > 0} onClick={() => open(board, "drc")}>{sharedCheckLabel(board.checks)}</button></div>
-          <div role="cell" data-label="Saved 3D"><button className="fd-project-status-value" disabled={unavailable || !board.sourceAvailable} data-warning={board.modelState === "source-changed" || board.modelState === "artifact-changed"} onClick={() => open(board, "3d")}>{sharedModelLabel(board)}</button></div>
+          <div role="cell"><button className="fd-project-status-name" disabled={unavailable || !target(board, "design")} onClick={() => open(board, "design")}>{board.name}</button><small>{sharedSourceLabel(board)}</small></div>
+          <div role="cell" data-label="Saved PCB checks"><button className="fd-project-status-value" disabled={unavailable || !target(board, "drc")} data-warning={board.checks.state === "source-changed" || (board.checks.findingCount ?? 0) > 0} onClick={() => open(board, "drc")}>{sharedCheckLabel(board.checks)}</button></div>
+          <div role="cell" data-label="Saved 3D"><button className="fd-project-status-value" disabled={unavailable || !target(board, "3d")} data-warning={board.modelState === "source-changed" || board.modelState === "artifact-changed"} onClick={() => open(board, "3d")}>{sharedModelLabel(board)}</button></div>
         </div>)}
       </div>
       <footer className="fd-project-status-footer"><div><Button size="sm" variant="ghost" onClick={() => ui().setBoardTab("bom")}>Parts &amp; BOM</Button>{sources.data?.mode === "assembly" && <Button size="sm" variant="ghost" onClick={() => ui().setWorkspaceArea("overview")}>Connection map</Button>}</div>
