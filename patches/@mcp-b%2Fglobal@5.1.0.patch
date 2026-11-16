@@ -1,0 +1,13 @@
+diff --git a/dist/index.js b/dist/index.js
+index 0a4139bd082acac09e37f1f5a583f6f1bf696aea..b0ee48004d32bd4147f7fdf089e269bd3651e17b 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -72,7 +72,7 @@ function initializeWebModelContext(options) {
+ 	const server = new BrowserMcpServer({
+ 		name: `${window.location.hostname || "localhost"}-webmcp`,
+ 		version: "1.0.0"
+-	}, { native });
++	}, { native, maxToolInputElements: 50_000 });
+ 	const previousDocumentModelContextDescriptor = Object.getOwnPropertyDescriptor(document, "modelContext");
+ 	const previousNavigatorModelContextDescriptor = Object.getOwnPropertyDescriptor(navigator, "modelContext");
+ 	try {

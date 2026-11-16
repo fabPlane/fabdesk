@@ -26,14 +26,14 @@
     "@fp-pcb/client": "workspace:*",
     "@fp-pcb/proto": "workspace:*",
     "fabplane-cli": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.222.0",
     "@opentelemetry/resources": "^2.11.0",
     "@opentelemetry/sdk-trace-node": "^2.11.0",
     "@sentry/bun": "^10.73.0",
     "hono": "4.13.7",
-    "zod": "3.25.76"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@fab-cad/bridge": "workspace:*",
