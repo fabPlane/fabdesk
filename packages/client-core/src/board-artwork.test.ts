@@ -83,7 +83,7 @@ test("unsafe paths and invalid dimensions are rejected before writing", async ()
 
 test("saved artwork retains incoming color settings alongside guarded placement and view", async () => {
   const f = fixture();
-  Object.assign(f.args.settings, { colorMode: "multicolor", printedBackground: "#abcdef", inkColor: "#123456" });
+  Object.assign(f.args.settings, { colorMode: "multicolor", printedBackground: "#abcdef", inkColor: "#123456", recolor: { mode: "duotone", amount: .65, shadow: "#123456", highlight: "#abcdef" } });
   await saveBoardArtwork(f.args);
   const loaded = await loadBoardArtwork(f.client, "one");
   expect(loaded?.record.settings).toEqual(f.args.settings);

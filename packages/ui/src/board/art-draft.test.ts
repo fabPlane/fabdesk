@@ -17,6 +17,7 @@ const draft: ArtDraft = {
   sourceName: "source.png",
   options: {
     colorMode: "multicolor",
+    recolor: { mode: "duotone", amount: .6, shadow: "#30204f", highlight: "#ffe4b5" },
     printedBackground: "#abcdef",
     inkColor: "#654321",
     color: "red",

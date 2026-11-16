@@ -5,6 +5,8 @@ import {
   ART_STYLES,
   BOARD_FINISH,
   type ColorMode,
+  ORIGINAL_RECOLOR,
+  type ArtworkRecolor,
   OUTLINE_KINDS,
   buildBoardArt,
   fitArtPlacement,
@@ -37,6 +39,7 @@ import { buildSketchPngFile } from "./art-sketch-upload";
 import { ArtworkStart } from "./ArtworkStart";
 import { ConfirmationToast, FeedbackNotice } from "../components/FeedbackNotice";
 import { ArtColorControls } from "./ArtColorControls";
+import { ArtRecolorControls } from "./ArtRecolorControls";
 import { artImageName, buildArtPng } from "./art-image-export";
 import { artDraftStore, bytesToBase64, base64ToBytes, type ArtDraft } from "./art-draft";
 
@@ -102,6 +105,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
   const [gray, setGray] = useState<GrayImage | null>(null);
   const [sourceName, setSourceName] = useState<string | null>(null);
   const [colorMode, setColorMode] = useState<ColorMode>(initial.current?.settings.colorMode ?? "monotone");
+  const [recolor, setRecolor] = useState<ArtworkRecolor>(initial.current?.settings.recolor ?? { ...ORIGINAL_RECOLOR });
   const [printedBackground, setPrintedBackground] = useState<string | null>(initial.current?.settings.printedBackground ?? null);
   const [inkColor, setInkColor] = useState(initial.current?.settings.inkColor ?? BOARD_FINISH[initial.current?.settings.color ?? "green"].silk);
   const [localFile, setLocalFile] = useState<File | null>(null);
@@ -170,6 +174,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
       threshold,
       layers,
       colorMode,
+      recolor,
       printedBackground,
       inkColor,
     }),
@@ -185,6 +190,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
       threshold,
       layers,
       colorMode,
+      recolor,
       printedBackground,
       inkColor,
     ],
@@ -230,6 +236,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
       setThreshold(settings.threshold); setLayers(settings.layers); setPlacement(settings.placement);
       setLockProportions(settings.lockProportions); setZoom(view.zoom); setPlacing(view.placing);
       setColorMode(settings.colorMode ?? "monotone"); setPrintedBackground(settings.printedBackground ?? null); setInkColor(settings.inkColor ?? BOARD_FINISH[settings.color].silk);
+      setRecolor(settings.recolor ?? { ...ORIGINAL_RECOLOR });
     };
     void (async () => {
       setLoading(true); setHydrated(false); setRestoreFailed(false);
@@ -246,7 +253,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
           if (session.savedImage === session.image) setSavedImage(image);
         } else if (working) {
           const o = working.options;
-          apply({ style:o.style, color:o.color, crop:o.crop ?? "none", outline:o.outline, widthMm:o.widthMm, heightMm:o.heightMm, invert:o.invert ?? false, threshold:o.threshold ?? .5, layers:[...(o.layers ?? ["silk"])], placement:o.placement ?? null, lockProportions:working.lockProportions ?? true, colorMode:o.colorMode ?? "monotone", printedBackground:o.printedBackground ?? null, inkColor:o.inkColor ?? BOARD_FINISH[o.color].silk }, working.view ?? saved?.record.view ?? {zoom:1, placing:true});
+          apply({ style:o.style, color:o.color, crop:o.crop ?? "none", outline:o.outline, widthMm:o.widthMm, heightMm:o.heightMm, invert:o.invert ?? false, threshold:o.threshold ?? .5, layers:[...(o.layers ?? ["silk"])], placement:o.placement ?? null, lockProportions:working.lockProportions ?? true, colorMode:o.colorMode ?? "monotone", recolor:o.recolor ?? { ...ORIGINAL_RECOLOR }, printedBackground:o.printedBackground ?? null, inkColor:o.inkColor ?? BOARD_FINISH[o.color].silk }, working.view ?? saved?.record.view ?? {zoom:1, placing:true});
           if (working.source) await loadBytes(base64ToBytes(working.source), working.sourceName ?? "art.png", null, id, false);
         } else if (saved) {
             apply(saved.record.settings, saved.record.view); baseText.current = saved.text;
@@ -261,7 +268,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
     return () => { cancelled = true; loadId.current++; };
   }, [client, projectId, loadBytes, restoreNonce, drafts]);
 
-  const draftSettings: BoardArtworkSettings = { style, color, crop, outline, widthMm, heightMm, invert, threshold, layers, placement, lockProportions, colorMode, printedBackground, inkColor };
+  const draftSettings: BoardArtworkSettings = { style, color, crop, outline, widthMm, heightMm, invert, threshold, layers, placement, lockProportions, colorMode, recolor, printedBackground, inkColor };
   const draftView: BoardArtworkView = { zoom, placing };
   const draftSignature = JSON.stringify({ settings: draftSettings, view: draftView });
   const draftSaved = !!sourceImage && sourceImage === savedImage && draftSignature === savedSettings;
@@ -670,6 +677,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
           </details>
           <ArtColorControls
             mode={colorMode}
+            recolorControls={<ArtRecolorControls image={gray} value={recolor} onChange={setRecolor} />}
             onMode={(mode) => {
               setColorMode(mode);
               if (mode === "multicolor") {
@@ -809,7 +817,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
         {gray && <div className="fd-art-toolbar">
           <span>
             {outline === "circle" ? `Ø ${widthMm} mm` : `${widthMm} × ${heightMm} mm`} ·{" "}
-            {STYLE_LABELS[style]}
+            {colorMode === "multicolor" ? "Color halftone" : STYLE_LABELS[style]}
           </span>
           {svg && (
             <div className="flex flex-wrap items-center gap-1">
