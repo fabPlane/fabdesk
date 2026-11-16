@@ -80,6 +80,9 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
   const drafts = useMemo(() => artDraftStore(client, projectId), [client, projectId]);
   const [hydrated, setHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState("Loading saved artwork…");
+  const [draftSaveError, setDraftSaveError] = useState<string | null>(null);
+  const [draftSaving, setDraftSaving] = useState(false);
+  const [draftSaveAttempt, setDraftSaveAttempt] = useState(0);
   const [sourceData, setSourceData] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const loadId = useRef(0);
@@ -197,29 +200,33 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
     if (!hydrated) return;
     drafts.stage(draft);
     setSaveStatus("Saving draft…");
+    setDraftSaving(true);
     let active = true;
     const save = () =>
       void drafts
         .save()
         .then(() => {
-          if (active)
+          if (active) {
+            setDraftSaveError(null);
             setSaveStatus(
               projectId ? "Draft saved in project" : "Unassigned draft saved on this device",
             );
+          }
         })
         .catch((e: unknown) => {
           if (active) {
-            setSaveStatus("Draft not saved — use Save draft to retry");
-            setError(String(e));
+            setSaveStatus("Draft not saved");
+            setDraftSaveError(e instanceof Error ? e.message : String(e));
           }
-        });
+        })
+        .finally(() => { if (active) setDraftSaving(false); });
     const timer = setTimeout(save, 400);
     return () => {
       active = false;
       clearTimeout(timer);
       save();
     };
-  }, [draft, drafts, hydrated, projectId]);
+  }, [draft, drafts, hydrated, projectId, draftSaveAttempt]);
 
   useEffect(() => {
     const id = ++loadId.current;
@@ -272,7 +279,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
   const draftSettings: BoardArtworkSettings = { style, color, crop, outline, widthMm, heightMm, invert, threshold, layers, placement, lockProportions, colorMode, printedBackground, inkColor };
   const draftView: BoardArtworkView = { zoom, placing };
   const draftSignature = JSON.stringify({ settings: draftSettings, view: draftView });
-  const draftSaved = !restoreFailed && !!sourceImage && sourceImage === savedImage && draftSignature === savedSettings;
+  const draftSaved = !restoreFailed && !draftSaveError && !draftSaving && !!sourceImage && sourceImage === savedImage && draftSignature === savedSettings;
   useEffect(() => {
     if (!sourceImage || !sourceImageName || !gray || loading) return;
     artworkSessions.set(client.baseUrl, projectId, { image: sourceImage, name: sourceImageName, settings: draftSettings, view: draftView, baseText: baseText.current, savedImage, savedSettings, boardPreview: savedBoardPreview, ...(draftDestination.current ? { pendingProjectId: draftDestination.current } : {}) });
@@ -556,6 +563,13 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
     void onFile(event.dataTransfer.files[0]);
   };
   const choose = () => input.current?.click();
+  const draftSaveNotice = draftSaveError && <FeedbackNotice tone="error" title="Draft not saved">
+    <p>{draftSaveError}</p>
+    <p>Your changes are kept in this window. Retry to save them before closing the app.</p>
+    <Button disabled={draftSaving || !hydrated || busy || loading} onClick={() => setDraftSaveAttempt(value => value + 1)}>
+      {draftSaving ? "Retrying draft save…" : "Retry draft save"}
+    </Button>
+  </FeedbackNotice>;
 
   return (
     <div
@@ -592,6 +606,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
           {projectId ? `Project artwork · ${project.data?.name ?? "this project"}` : "Unassigned artwork draft"}
         </p>
         <p className="mt-1 text-[11px] text-muted" role="status">{draftSaved ? "Artwork saved to project" : saveStatus}</p>
+        {draftSaveNotice}
         {error && <FeedbackNotice className="fd-art-error" tone="error" title="Artwork needs attention">{error}{restoreFailed && <><p>The draft stays visible. Retry before changing or saving it.</p><Button onClick={() => { setError(null); setRestoreNonce(value => value + 1); }}>Retry saved artwork</Button></>}</FeedbackNotice>}
         <div className={`fd-art-upload ${dragging ? "is-dragging" : ""}`}>
           <Icon name="image" width={26} height={26} aria-hidden="true" />
@@ -865,6 +880,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
         )}
         {!svg && !loading && !converting && (
           <>
+          {!gray && draftSaveNotice}
           {!gray && error && <FeedbackNotice className="fd-art-entry-error" tone="error" title="Could not open artwork">{error}</FeedbackNotice>}
           <ArtworkStart projectId={projectId} sketches={sketches} disabled={busy || loading || !hydrated} restoring={loading}
             onUpload={choose} onSketch={path => void onSketch(path)}
