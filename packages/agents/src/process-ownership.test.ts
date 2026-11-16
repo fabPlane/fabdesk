@@ -11,14 +11,18 @@ test("crashed owner releases its verified orphan writer; live owner and reused P
     stdout: "ignore",
     stderr: "ignore",
   });
+  let release = async () => {};
   try {
-    const release = await trackAgentProcess(directory, child.pid);
+    release = await trackAgentProcess(directory, child.pid);
     expect(
       (await recoverAgentProcesses(directory, (pid) => killTree(pid, "SIGKILL"))).liveOwners,
     ).toEqual([process.pid]);
     expect(child.exitCode).toBeNull();
     const path = join(directory, (await readdir(directory))[0]!);
     const record = JSON.parse(await readFile(path, "utf8"));
+    // A crashed owner cannot keep sampling. Stop the live tracker before
+    // restoring a simulated crash record so it cannot overwrite recovery.
+    await release();
     record.ownerIdentity = "dead-core-incarnation";
     record.identity = "old-pid-incarnation";
     await writeFile(path, JSON.stringify(record));
@@ -39,8 +43,8 @@ test("crashed owner releases its verified orphan writer; live owner and reused P
     ).toBe(1);
     await child.exited;
     expect(await readdir(directory)).toEqual([]);
-    await release();
   } finally {
+    await release();
     if (child.exitCode === null) child.kill();
     await child.exited;
     await rm(directory, { recursive: true, force: true });
