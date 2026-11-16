@@ -1,6 +1,6 @@
 [submodule "vendor/fabplane"]
 	path = vendor/fabplane
-	url = ../fabplane.com.git
+	url = https://github.com/TensorFleet/fabplane.com.git
 	branch = main
 [submodule "vendor/fab_pcb"]
 	path = vendor/fab_pcb

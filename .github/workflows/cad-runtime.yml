@@ -12,12 +12,12 @@ concurrency:
 jobs:
   runtime:
     if: github.ref == 'refs/heads/main'
-    runs-on: blacksmith-6vcpu-macos-15
+    runs-on: macos-15
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v5
         with:
-          repository: TensorFleet/fabdesk
+          repository: ${{ github.repository }}
           ref: 4e33f0cd2c60f854f02ca18cc1cc7896c17ab147
           submodules: false
           persist-credentials: false
