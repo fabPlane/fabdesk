@@ -124,7 +124,7 @@ jobs:
       - name: Fetch KiCad runtime metadata
         run: |
           git init -q "$RUNNER_TEMP/kicad-src"
-          git -C "$RUNNER_TEMP/kicad-src" remote add origin https://github.com/TensorFleet/kicad.git
+          git -C "$RUNNER_TEMP/kicad-src" remote add origin https://github.com/fabPlane/kicad.git
           git -C "$RUNNER_TEMP/kicad-src" sparse-checkout set --no-cone tools/nightly/linux
           git -C "$RUNNER_TEMP/kicad-src" fetch --depth 1 --filter=blob:none origin '${{ steps.nightly.outputs.commit }}'
           git -C "$RUNNER_TEMP/kicad-src" checkout -q FETCH_HEAD

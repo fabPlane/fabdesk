@@ -11,7 +11,7 @@ source "$SCRIPT_DIR/paths.sh"
 
 artifacts_dir="$(abs_existing_dir "${1:?artifacts directory with manifest.json}")"
 release_tag="${TRACEMAKER_RELEASE_TAG:?}"
-repo="${GITHUB_REPOSITORY:-TensorFleet/fabdesk}"
+repo="${GITHUB_REPOSITORY:-fabPlane/fabdesk}"
 
 notice() {
   echo "::notice::$1"

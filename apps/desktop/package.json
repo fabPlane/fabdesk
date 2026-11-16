@@ -2,7 +2,7 @@
   "name": "@fabdesk/desktop",
   "productName": "fabPlane",
   "desktopName": "com.tensorfleet.fabdesk.desktop",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "fabPlane: AI PCB generator desktop app",
   "author": {
     "name": "TensorFleet",

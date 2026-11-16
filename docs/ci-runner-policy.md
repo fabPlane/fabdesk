@@ -42,6 +42,14 @@ detection.
 
 No override is set by preparing this change.
 
+## GitHub-hosted bootstrap
+
+The new repository sets `LINUX_RUNNER=github-hosted` while owned runners are
+being connected. This selects `ubuntu-latest` without requiring a NAS heartbeat
+or Blacksmith installation. `FORCE_BLACKSMITH_LINUX` still takes precedence; fork
+PRs always remain isolated on GitHub-hosted Ubuntu. Unset `LINUX_RUNNER` only
+after registering a matching NAS runner for this repository.
+
 ## Durable Blacksmith override
 
 Set the variable in GitHub repository Settings → Secrets and variables →
@@ -49,21 +57,21 @@ Actions → Variables. Alternatively, from an existing authenticated
 administrator shell:
 
 ```sh
-gh variable set FORCE_BLACKSMITH_LINUX --repo TensorFleet/fabdesk --body true
+gh variable set FORCE_BLACKSMITH_LINUX --repo fabPlane/fabdesk --body true
 ```
 
 `LINUX_RUNNER=blacksmith` is equivalent:
 
 ```sh
-gh variable set LINUX_RUNNER --repo TensorFleet/fabdesk --body blacksmith
+gh variable set LINUX_RUNNER --repo fabPlane/fabdesk --body blacksmith
 ```
 
 Restore the default NAS path by unsetting the variable or setting a
 non-matching value:
 
 ```sh
-gh variable set FORCE_BLACKSMITH_LINUX --repo TensorFleet/fabdesk --body false
-gh variable set LINUX_RUNNER --repo TensorFleet/fabdesk --body ""
+gh variable set FORCE_BLACKSMITH_LINUX --repo fabPlane/fabdesk --body false
+gh variable set LINUX_RUNNER --repo fabPlane/fabdesk --body ""
 ```
 
 The durable override does not cancel already-running jobs. Re-run queued NAS
@@ -76,13 +84,13 @@ timestamp five minutes in the future:
 
 ```sh
 outage_until=$(( $(date +%s) + 300 ))
-gh variable set NAS_RUNNER_OUTAGE_UNTIL --repo TensorFleet/fabdesk --body "$outage_until"
+gh variable set NAS_RUNNER_OUTAGE_UNTIL --repo fabPlane/fabdesk --body "$outage_until"
 ```
 
 After recovery, set the variable to `0` to disable the lease:
 
 ```sh
-gh variable set NAS_RUNNER_OUTAGE_UNTIL --repo TensorFleet/fabdesk --body 0
+gh variable set NAS_RUNNER_OUTAGE_UNTIL --repo fabPlane/fabdesk --body 0
 ```
 
 The lease limits how long new jobs may be routed to Blacksmith; it does not

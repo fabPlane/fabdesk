@@ -16,7 +16,7 @@ source_url="${TRACEMAKER_SOURCE_URL:?}"
 src_tree="${TRACEMAKER_SRC:-}"
 built_at="${TRACEMAKER_BUILT_AT:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
 release_tag="${TRACEMAKER_RELEASE_TAG:?}"
-repo="${GITHUB_REPOSITORY:-TensorFleet/fabdesk}"
+repo="${GITHUB_REPOSITORY:-fabPlane/fabdesk}"
 
 if [ -n "$src_tree" ]; then
   src_tree="$(abs_existing_dir "$src_tree")"

@@ -12,12 +12,12 @@ concurrency:
 jobs:
   runtime:
     if: github.ref == 'refs/heads/main'
-    runs-on: blacksmith-6vcpu-macos-15
+    runs-on: macos-15
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v5
         with:
-          repository: TensorFleet/fabdesk
+          repository: ${{ github.repository }}
           ref: 4e33f0cd2c60f854f02ca18cc1cc7896c17ab147
           submodules: false
           persist-credentials: false
@@ -26,7 +26,10 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
       - name: Initialize existing source workspaces
-        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli vendor/fab_cad
+        run: |
+          # The reviewed source predates the owner move and has a relative URL.
+          git config submodule.vendor/fabplane.url https://github.com/TensorFleet/fabplane.com.git
+          git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli vendor/fab_cad
       - name: Resolve exact PCB workspace pin
         id: fab-pcb
         run: echo "commit=$(git ls-tree HEAD vendor/fab_pcb | awk '{print $3}')" >> "$GITHUB_OUTPUT"
@@ -47,7 +50,7 @@ jobs:
           test "$(uname -m)" = arm64
           test "$(git rev-parse HEAD)" = 4e33f0cd2c60f854f02ca18cc1cc7896c17ab147
           brew install cmake ninja llvm@22 qtbase qttools opencascade boost xerces-c eigen yaml-cpp python@3.12 icu4c@78 tbb
-          python3 scripts/build-freecad-macos.py --source "$RUNNER_TEMP/cad-source" --build "$RUNNER_TEMP/cad-build" --install "$RUNNER_TEMP/cad-install"
+          python3 scripts/build-freecad-macos.py --jobs 2 --source "$RUNNER_TEMP/cad-source" --build "$RUNNER_TEMP/cad-build" --install "$RUNNER_TEMP/cad-install"
           python3 scripts/prepare-freecad-macos.py --install "$RUNNER_TEMP/cad-install" --source "$RUNNER_TEMP/cad-source" --python-home /opt/homebrew/opt/python@3.12/Frameworks/Python.framework/Versions/3.12 --output "$RUNNER_TEMP/cad-runtime" --source-cache "$RUNNER_TEMP/cad-sources"
           FABDESK_FREECAD_RUNTIME="$RUNNER_TEMP/cad-runtime" bun run cad:stage --target bun-darwin-arm64
           bun run cad:smoke dist/cad/darwin-arm64/bundle.json
