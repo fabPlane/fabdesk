@@ -62,7 +62,8 @@ bash scripts/protect-main.sh
 
 This applies the reviewed `.github/main-protection.json`: PRs, up-to-date passing
 Core verification / Secret scan / TraceMaker checks, resolved conversations,
-administrator enforcement, and no force pushes or main deletion. Approving-review
+administrator enforcement, no force pushes or main deletion, and approval for
+all external-contributor workflows once public. Approving-review
 count starts at zero so a sole maintainer can use PRs; increase it once independent
 reviewers are available. The API command never changes visibility or billing.
 Verify the returned checks and the rule in GitHub Settings before accepting code.

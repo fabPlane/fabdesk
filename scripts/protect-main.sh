@@ -9,3 +9,9 @@ actual=$(gh repo view "$repo" --json nameWithOwner --jq .nameWithOwner)
 gh api --method PUT "repos/$repo/branches/main/protection" \
   --input .github/main-protection.json \
   --jq '{url, enforce_admins: .enforce_admins.enabled, checks: .required_status_checks.contexts, force_pushes: .allow_force_pushes.enabled, deletions: .allow_deletions.enabled}'
+# GitHub accepts this policy only once the repository is public.
+visibility=$(gh repo view "$repo" --json visibility --jq .visibility)
+if [ "$visibility" = PUBLIC ]; then
+  gh api --method PUT "repos/$repo/actions/permissions/fork-pr-contributor-approval" \
+    -f approval_policy=all_external_contributors
+fi
