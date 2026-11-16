@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,19 +26,19 @@ test("Settings opt-out cancels a pending retry, and opting back in resumes the u
   const attempted = new Promise<void>((resolve) => {
     firstAttempt = resolve;
   });
+  // Synthetic credentials for this loopback-only receiver, never a live account.
+  const installationId = randomUUID();
+  const installation = {
+    installationId,
+    token: `${installationId}.${randomBytes(32).toString("hex")}`,
+  };
   const uploads: number[] = [];
   const receiver = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
       if (request.method === "POST")
-        return Response.json(
-          {
-            installationId: "550e8400-e29b-41d4-a716-446655440000",
-            token: "550e8400-e29b-41d4-a716-446655440000." + "a".repeat(64),
-          },
-          { status: 201 },
-        );
+        return Response.json(installation, { status: 201 });
       if (request.method !== "PUT") return new Response(null, { status: 404 });
       uploads.push(Date.now());
       if (uploads.length === 1) {
