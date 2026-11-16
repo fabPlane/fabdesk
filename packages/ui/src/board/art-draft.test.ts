@@ -71,6 +71,38 @@ test("a corrupt or newer draft fails visibly instead of being mistaken for an em
   ).toThrow("six-digit hex");
 });
 
+test("failed draft writes retain the newest edits and a retry persists them across reopening", async () => {
+  const files = new Map<string, string>();
+  let failWrites = false;
+  const fetch = async (input: string | URL | Request, init?: RequestInit) => {
+    const key = String(input);
+    if (init?.method === "PUT") {
+      if (failWrites) return new Response("Draft storage unavailable", { status: 503 });
+      files.set(key, String(init.body));
+      return new Response("ok");
+    }
+    return new Response(files.get(key) ?? "not found", { status: files.has(key) ? 200 : 404 });
+  };
+  const client = new CoreClient({ baseUrl: "http://draft-retry-test", token: "test", fetch });
+  const store = artDraftStore(client, "art-first");
+  store.stage(draft);
+  await store.save();
+  failWrites = true;
+  const changed = { ...draft, view: { zoom: 1.25, placing: false } };
+  store.stage(changed);
+  await expect(store.save()).rejects.toThrow();
+  const latest = { ...changed, options: { ...changed.options, widthMm: 100 } };
+  store.stage(latest);
+  await expect(store.save()).rejects.toThrow();
+  expect(await store.load()).toEqual(latest);
+  const reopened = () => artDraftStore(new CoreClient({ baseUrl: client.baseUrl, token: "test", fetch }), "art-first").load();
+  expect(await reopened()).toEqual(draft);
+  failWrites = false;
+  await store.save();
+  expect(await reopened()).toEqual(latest);
+  expect([...files.keys()].every(key => key.endsWith(ART_DRAFT_PATH))).toBe(true);
+});
+
 test("legacy artwork drafts load while invalid view settings fail visibly", () => {
   const { view, lockProportions, ...legacy } = draft;
   expect(parseArtDraft(JSON.stringify(legacy))).toEqual(legacy);

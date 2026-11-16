@@ -13,7 +13,10 @@ async function sha256(image: Blob): Promise<string> {
 export async function loadBoardArtwork(client: ArtworkFiles, projectId: string) {
   const text = await readOptional(client, projectId);
   if (text === null) return null;
-  const record = SavedBoardArtwork.parse(JSON.parse(text));
+  let raw: unknown;
+  try { raw = JSON.parse(text); }
+  catch (cause) { throw new Error("Saved artwork settings could not be read. Keep your draft and retry after recovering the saved settings.", { cause }); }
+  const record = SavedBoardArtwork.parse(raw);
   if (record.owner.projectId !== projectId) throw new Error("Saved artwork belongs to another project. It was not opened.");
   const image = await client.readFileBlob(projectId, record.source.path);
   if (image.size !== record.source.bytes || await sha256(image) !== record.source.sha256) throw new Error("Saved artwork image changed or is incomplete. Your draft was not replaced.");
