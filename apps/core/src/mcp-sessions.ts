@@ -17,6 +17,7 @@ import {
 import { PERMISSION_PROMPT_TOOL } from "@fabdesk/agents";
 import type { PermissionPromptResult } from "./agent-runs";
 import { logger, errMsg } from "./log";
+import { MCP_MAX_REQUEST_BYTES, MCP_MAX_TOOL_INPUT_ELEMENTS } from "./mcp-limits";
 
 type Session = {
   id: string;
@@ -161,9 +162,13 @@ export class McpSessionManager {
         version: this.opts.version,
         icons: FABDESK_SERVER_ICONS,
       },
-      { instructions: INSTRUCTIONS + (canAsk ? USER_INPUT_INSTRUCTIONS : "") },
+      {
+        instructions: INSTRUCTIONS + (canAsk ? USER_INPUT_INSTRUCTIONS : ""),
+        maxToolInputElements: MCP_MAX_TOOL_INPUT_ELEMENTS,
+      },
     );
     const transport = new WebStandardStreamableHTTPServerTransport({
+      maxRequestBodySize: MCP_MAX_REQUEST_BYTES,
       sessionIdGenerator: () => crypto.randomUUID(),
       enableDnsRebindingProtection: this.allowedHosts.length > 0,
       ...(this.allowedHosts.length > 0 ? { allowedHosts: this.allowedHosts } : {}),
