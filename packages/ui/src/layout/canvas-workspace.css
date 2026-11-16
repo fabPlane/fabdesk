@@ -194,6 +194,12 @@
 .fd-model-message { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); display:flex; align-items:center; flex-direction:column; gap:14px; max-width:440px; padding:22px; border-radius:12px; background:var(--fd-panel); text-align:center; }
 .fd-model-view-tools { position:absolute; left:28px; bottom:26px; display:flex; align-items:center; gap:15px; padding:7px 14px; border:1px solid var(--fd-border); border-radius:24px; background:var(--fd-panel); box-shadow:0 3px 10px #102a2010; }
 .fd-model-view-tools span { color:var(--fd-muted); font-size:11px; }
+.fd-file-model-preview { display:flex; flex-direction:column; overflow:hidden; }
+.fd-file-model-status { flex:none; margin:0; padding:8px 12px; color:var(--fd-muted); font-size:11px; }
+.fd-file-model-preview > .fd-model-canvas { flex:1; height:auto; min-height:180px; }
+.fd-file-model-preview .fd-model-viewport { bottom:80px; }
+.fd-file-model-preview .fd-model-view-tools { left:12px; bottom:12px; max-width:calc(100% - 24px); flex-wrap:wrap; gap:6px; border-radius:12px; }
+.fd-file-model-preview .fd-model-message { width:calc(100% - 24px); box-sizing:border-box; overflow-wrap:anywhere; }
 .fd-board-model-actions { position:absolute; top:12px; right:28px; display:flex; gap:8px; }
 .fd-model-export-error { position:absolute; top:58px; right:28px; max-width:420px; max-height:180px; overflow:auto; padding:16px; border:1px solid var(--fd-border); border-radius:12px; color:var(--fd-warning); background:var(--fd-panel); font-size:12px; }
 .fd-mechanical-workspace { height:100%; position:relative; min-height:0; }
