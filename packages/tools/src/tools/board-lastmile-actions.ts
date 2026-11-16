@@ -10,8 +10,8 @@
  * runs (on the host router); other KRT steps fail by name. Boards of any file name work.
  */
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
-import { lastmile as L, layout, locateProject, onboard, parseBoard, profile, readRequirements, type Requirements } from "@fabdesk/board-workflow";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { edit, lastmile as L, layout, locateProject, onboard, parseBoard, profile, readRequirements, type Requirements } from "@fabdesk/board-workflow";
 import { adoptCandidate, designFileHashes } from "../board-adopt";
 import { jailPath, PROJECT_FILES } from "../fs";
 import { runTraceMaker } from "../routers";
@@ -68,6 +68,8 @@ export async function openBench(ctx: ToolContext, ws: string, req: Requirements)
         scorer,
         // plan:FILE is project-relative, like every board_route path
         engine: L.createStepEngine({ req, drc, scorer, layout: host, fill: hostFill(ctx, host), fallbackRouter: router, planRoot: ctx.requireProject().dir }),
+        // what `@layers` routes on: a `~avoid` retry names only these
+        routingLayers: layout.signalLayers(req.acceptance),
         signal: ctx.signal,
         ...(onLine ? { onLine } : {}),
       };
@@ -89,15 +91,28 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
       if (a.action === "new") {
         const files = await locateProject(project.dir, a.pcb);
         const origin = await designFileHashes(project.dir);
-        const { bench, line } = await L.Bench.create(ws, project.dir, basename(files.pcb), mk(), { project: project.dir, originFiles: origin });
+        const own = (await locateProject(project.dir)).pcb;
+        const from = a.pcb && resolve(files.pcb) !== resolve(own) ? files.pcb : undefined;
+        const { bench, line } = await L.Bench.create(ws, project.dir, basename(own), mk(), { project: project.dir, originFiles: origin, ...(from ? { from: relative(project.dir, from).split("\\").join("/") } : {}) }, from);
         return ok(line + `\nworkspace ${bench.ws}`, { ws: bench.ws, figures: bench.figures });
       }
       const bench = await L.Bench.open(ws, mk());
+      /**
+       * An earlier try's folder: relative to the workspace (`t3/c1`) or to the project (the `dir` a try reports,
+       * `.fabdesk/board/lastmile/main/t3/c1`), and by real path inside the workspace.
+       */
+      const candidateDir = async (candidate: string) => {
+        const fromProject = relative(bench.ws, isAbsolute(candidate) ? candidate : join(project.dir, candidate));
+        const rel = fromProject && !fromProject.startsWith("..") && !isAbsolute(fromProject) ? fromProject : candidate;
+        return jailPath(bench.ws, rel).catch(() => {
+          throw new ToolError(`candidate must be a try folder inside the workspace (e.g. t3/c1): ${candidate}`, "invalid_args");
+        });
+      };
       switch (a.action) {
         case "try": {
           if (!a.actions?.length) throw new ToolError("try needs actions, e.g. ['leg', 'blockers:1.0']", "invalid_args");
           const r = await bench.try(a.actions, { noAccept: a.noAccept, slackA8: a.slackA8, ...(a.jobs ? { jobs: a.jobs } : {}), ...(a.budget ? { budget: a.budget } : {}) });
-          return ok(r.lines.join("\n"), { accepted: r.accepted, step: r.pointer, figures: r.figures, candidates: r.candidates.map((c) => ({ name: c.name, wall_s: c.wall_s, figures: c.figures, rejected: c.rejected, dir: c.dir, ...(c.otherNetsChanged ? { otherNetsChanged: c.otherNetsChanged } : {}) })) });
+          return ok(r.lines.join("\n"), { accepted: r.accepted, step: r.pointer, figures: r.figures, candidates: r.candidates.map((c) => ({ name: c.name, wall_s: c.wall_s, figures: c.figures, rejected: c.rejected, dir: c.dir, ...(c.otherNetsChanged ? { otherNetsChanged: c.otherNetsChanged } : {}), ...(c.pourSplits?.length ? { pourSplits: c.pourSplits } : {}), ...(c.avoidFrom ? { avoidFrom: c.avoidFrom } : {}) })) });
         }
         case "loop": {
           if (!a.template?.includes("{pair}")) throw new ToolError("loop needs a template with {pair}, e.g. 'tighten:{pair}'", "invalid_args");
@@ -137,8 +152,14 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
         }
         case "pairs": {
           const board = parseBoard(await readFile(bench.board, "utf8"));
-          const m = L.measurePairs(board, L.classesAndPairs(req, a.pairs), profile(req.acceptance).copper, a.why);
-          return ok(L.measureLines(m, a.why).join("\n") || "no pairs on this board", { pairs: m });
+          const specs = L.classesAndPairs(req, a.pairs);
+          const stack = profile(req.acceptance).copper;
+          const m = L.measurePairs(board, specs, stack, a.why);
+          const next = L.pairsNext(m);
+          // P / N above are segment sums; the connected path (net_path_measure) is the length the signal runs, tails left out
+          const paths = L.measurePairPaths(board, specs, stack);
+          const pathLines = paths.length ? ["connected path pad to pad, mm (tails and branches left out; P / N above are segment sums):", ...L.pairPathLines(paths)] : [];
+          return ok([...L.measureLines(m, a.why), ...pathLines, ...next].join("\n") || "no pairs on this board", { pairs: m, paths, ...(next.length ? { next } : {}) });
         }
         case "fit": {
           const steps = a.actions?.length === 1 ? L.stepsFor(a.actions[0]!) : [];
@@ -170,17 +191,14 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
           const rec = await bench.validate();
           const v = join(bench.ws, "validate");
           await layout.engineReady(host, "tracemaker");
-          const audit = await L.tmPairAudit(host, await L.routerBoard(join(v, bench.state.pcb), join(v, "tm"), bench.state.pcb.replace(/\.kicad_pcb$/, "")), v);
+          const audit = await L.tmPairAudit(host, await L.routerBoard(join(v, bench.state.pcb), join(v, "tm"), bench.state.pcb.replace(/\.kicad_pcb$/, "")), v, L.declaredPairNets(req.acceptance));
           const full = { ...rec, ...(audit ? { return_path_warnings: audit.returnPathWarnings, tm_pairs: join(v, "tm-pairs.json") } : { tracemaker: "not installed: no pair or return-path audit" }) };
           await writeFile(join(v, "validate.json"), JSON.stringify(full, null, 1) + "\n");
           return ok(JSON.stringify(full, null, 1), full);
         }
         case "accept": {
           if (a.candidate) {
-            // an earlier try's folder (`t3/c1`): relative to the workspace, and by real path inside it
-            const dir = await jailPath(bench.ws, a.candidate).catch(() => {
-              throw new ToolError(`candidate must be a try folder inside the workspace (e.g. t3/c1): ${a.candidate}`, "invalid_args");
-            });
+            const dir = await candidateDir(a.candidate);
             const r = await bench.acceptDir(dir, { slackA8: a.slackA8 });
             lines.push(...r.lines);
             if (!r.ok) throw new ToolError(lines.join("\n"), "precondition");
@@ -191,16 +209,36 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
           await writeFile(join(bench.dir, "origin.json"), JSON.stringify({ project: project.dir, files: origin }, null, 1) + "\n");
           // onto the board the bench started from (`new` records its file name in the project folder as state.pcb), never a default
           const r = await adoptCandidate(ctx, { candidate: bench.candidateBoard(), board: bench.state.pcb, reason: a.reason ?? `last mile: ${bench.state.history.slice(1, bench.pointer + 1).map((h) => h.action).join(", ")}`.slice(0, 190) });
-          return ok(r.text, r.data);
+          const standing = await adoptedStanding(bench).catch(() => null);
+          return ok([r.text, ...(standing?.lines ?? [])].join("\n"), { ...(r.data as object), ...(standing ? { standing: standing.json } : {}) });
         }
         case "undo":
           return ok(await bench.undo(), { step: bench.pointer });
         case "view": {
           if (!a.box) throw new ToolError("view needs box: [X0, Y0, X1, Y1] in mm", "invalid_args");
-          const sc = await bench.scoreDir(bench.dir);
-          const board = parseBoard(await readFile(bench.board, "utf8"));
-          const svg = L.renderBoardSvg(board, { window: a.box, side: a.side, ...(a.nets ? { nets: a.nets } : {}), opens: sc.opens, labels: true, title: `${basename(ws)} step ${bench.pointer}` });
-          const out = join(bench.ws, "views", `s${bench.pointer}-${a.box.join("-")}-${a.side}.svg`);
+          // the current step, or a try candidate (toolkit bench.py view --board): its board and its own DRC run
+          const dir = a.candidate ? await candidateDir(a.candidate) : bench.dir;
+          const tag = a.candidate ? `b-${relative(bench.ws, dir).replace(/[^A-Za-z0-9]+/g, "_").slice(-60)}` : `s${bench.pointer}`;
+          const board = parseBoard(await readFile(join(dir, bench.state.pcb), "utf8").catch(() => {
+            throw new ToolError(`no board ${bench.state.pcb} in ${relative(project.dir, dir)}`, "not_found");
+          }));
+          let drc: L.ViewDrc | null = null;
+          if (a.drc !== false) {
+            const runFile = join(dir, ".lastmile", "drc-run.json");
+            const readRun = () => readFile(runFile, "utf8").then((t) => JSON.parse(t) as L.DrcRun, () => null);
+            const sc = (await readRun()) ? null : await bench.scoreDir(dir);
+            drc = (await readRun()) ?? { unconnected: (sc?.opens ?? []).map((u) => ({ items: [{ description: `[${u.net}]`, pos: { x: u.a[0], y: u.a[1] } }, { description: `[${u.net}]`, pos: { x: u.b[0], y: u.b[1] } }] })) };
+          }
+          const svg = L.renderBoardSvg(board, {
+            window: a.box,
+            side: a.side,
+            ...(a.nets ? { nets: a.nets } : {}),
+            ...(a.layers?.length ? { layers: a.layers } : {}),
+            ...(drc ? { drc } : {}),
+            labels: true,
+            title: `${basename(ws)} ${a.candidate ? tag : `step ${bench.pointer}`}`,
+          });
+          const out = join(bench.ws, "views", `${tag}-${a.box.join("-")}-${a.side}.svg`);
           await mkdir(dirname(out), { recursive: true });
           await writeFile(out, svg);
           let png: string | null = null;
@@ -239,6 +277,8 @@ export interface LastmileArgs {
   items?: string[] | undefined;
   box?: [number, number, number, number] | undefined;
   side: "F" | "B" | "both";
+  drc?: boolean | undefined;
+  layers?: string[] | undefined;
   candidate?: string | undefined;
   adopt: boolean;
   reason?: string | undefined;
@@ -276,5 +316,29 @@ export async function repairEditCandidate(
 ): Promise<{ note: string }> {
   const req = await requirementsFor(ctx);
   const { deps } = await openBench(ctx, join(input.candidateDir, ".lastmile"), req);
-  return L.repairCandidate(deps(router, (l) => ctx.progress(0.6, l)), input);
+  return L.repairCandidate(deps(router, (l) => ctx.progress(0.6, l)), { ...input, projectDir: ctx.requireProject().dir });
+}
+
+/**
+ * What an adopted last-mile board is, against the board the workspace started from: the figures before and now, the
+ * nets whose copper changed (split into the ones that were open and the others) and parts moved, so the agent does not
+ * have to re-derive it with its own DRC run and diff.
+ */
+async function adoptedStanding(bench: L.Bench): Promise<{ lines: string[]; json: Record<string, unknown> }> {
+  const s0 = bench.state.history[0]!;
+  const startText = await readFile(join(s0.dir, bench.state.pcb), "utf8");
+  const nowText = await readFile(bench.candidateBoard(), "utf8");
+  const wasOpen = new Set((await bench.scoreDir(s0.dir)).opens.map((o) => o.net));
+  const changed = layout.changedCopperNets(startText, nowText);
+  const routed = changed.filter((n) => wasOpen.has(n));
+  const others = changed.filter((n) => !wasOpen.has(n));
+  const moved = edit.diffBoards(startText, nowText).moved;
+  const list = (xs: string[]) => (xs.length ? `${xs.length} (${xs.slice(0, 8).join(", ")}${xs.length > 8 ? ", ..." : ""})` : "none");
+  return {
+    lines: [
+      `Board now: ${L.figureLine(bench.figures)}   (start: ${L.figureLine(s0.figures)})`,
+      `Copper changed on nets that were open: ${list(routed)}; on other nets: ${list(others)}; parts moved: ${list(moved)}.`,
+    ],
+    json: { figures: bench.figures, start: s0.figures, routedNets: routed, otherNetsChanged: others, partsMoved: moved },
+  };
 }

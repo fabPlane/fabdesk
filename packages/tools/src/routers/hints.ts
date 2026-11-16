@@ -1,5 +1,5 @@
 import type { RouterCatalogId, RouterSnapshot } from "@fabdesk/protocol";
-import { TRACEMAKER_HOMEPAGE, TRACEMAKER_VERSION } from "./catalog";
+import { ATLC_VERSION, TRACEMAKER_HOMEPAGE, TRACEMAKER_VERSION } from "./catalog";
 import { KRT_VERSION } from "./krt";
 
 export function installHintFor(
@@ -30,6 +30,15 @@ export function installHintFor(
     return [
       "KiCadRoutingTools is not installed.",
       `Board tools install it on first use; or install it from Settings → Routers → KiCadRoutingTools or board_engines (downloads the MIT v${KRT_VERSION} release, ~16 MB, and a private hash-locked Python with numpy, scipy and shapely; uv and CPython are fetched when the machine has neither), or set FABDESK_KRT_DIR to a build.`,
+      snapshot?.error ? `Last error: ${snapshot.error}` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+  if (id === "atlc") {
+    return [
+      "atlc is not installed.",
+      `board_review section installs it on first use; or install it from Settings → Routers → atlc or board_engines (downloads the GPL v${ATLC_VERSION} source, ~2 MB, and builds it with the machine's C compiler: cc and make are needed), or install your system's atlc package, or set ATLC_BIN.`,
       snapshot?.error ? `Last error: ${snapshot.error}` : "",
     ]
       .filter(Boolean)

@@ -134,6 +134,14 @@ export function routeSummaries(log: string): Record<string, unknown> {
         }
       }
     }
+    // the override wrapper's report (layout/krt-override.ts): each constant's old and new value
+    if (line.startsWith("KRT_OVERRIDES: ")) {
+      try {
+        out["overrides_applied"] = JSON.parse(line.slice("KRT_OVERRIDES: ".length));
+      } catch {
+        /* not JSON */
+      }
+    }
     if (line.startsWith("JSON_SUMMARY:") && line.includes("routed_diff_pairs")) {
       try {
         const d = JSON.parse(line.slice("JSON_SUMMARY:".length)) as Record<string, unknown>;

@@ -33,12 +33,20 @@ export async function copyDir(src: string, dst: string, keep: (name: string) => 
 
 /**
  * Apply the acceptance's rules and net classes to a `.kicad_pro` copy and write its `.kicad_dru` (power widths, neck
- * proxy, scoped rules). A board whose acceptance keeps its native rules is left alone.
+ * proxy, scoped rules). A board whose acceptance keeps its native rules is left alone. A file already holding what would
+ * be written is not rewritten (the release applies these to the project itself; an unchanged project stays untouched).
  */
 export async function applyNetclasses(proPath: string, acc: Acceptance): Promise<string> {
+  return (await writeNetclasses(proPath, acc)).text;
+}
+
+/** `applyNetclasses`, also saying whether a file changed. */
+export async function writeNetclasses(proPath: string, acc: Acceptance): Promise<{ changed: boolean; text: string }> {
   const mr = acc.manufacturing_rules;
-  if (mr.native_project_rules) return `native project rules kept (${basename(proPath)})`;
-  const pro = JSON.parse(await readFile(proPath, "utf8")) as Record<string, any>;
+  if (mr.native_project_rules) return { changed: false, text: `native project rules kept (${basename(proPath)})` };
+  const raw = await readFile(proPath, "utf8");
+  const pro = JSON.parse(raw) as Record<string, any>;
+  const was = JSON.stringify(JSON.parse(raw));
   const rules = ((pro["board"] ??= {}).design_settings ??= {}).rules ??= {};
   const d = mr.adopted.default_class;
   rules.min_track_width = mr.adopted.min_track_width;
@@ -53,7 +61,8 @@ export async function applyNetclasses(proPath: string, acc: Acceptance): Promise
   }
   (pro["net_settings"] ??= {}).classes = classes;
   pro["net_settings"].netclass_patterns = patterns;
-  await writeFile(proPath, JSON.stringify(pro, null, 2) + "\n");
+  const proChanged = JSON.stringify(pro) !== was;
+  if (proChanged) await writeFile(proPath, JSON.stringify(pro, null, 2) + "\n");
 
   const wr = acc.net_classes.router_width_rules;
   const text = ["(version 1)"];
@@ -71,8 +80,12 @@ export async function applyNetclasses(proPath: string, acc: Acceptance): Promise
       text.push(`(rule "${name} neck in courtyard"\n  (condition "A.NetClass == '${name}' && A.intersectsCourtyard('*')")\n  (layer outer)\n  (constraint track_width (min ${wr.neck_floor_mm}mm) (opt ${c.track_width}mm)))`);
   for (const r of (mr.scoped_rules ?? []) as Array<{ name: string; condition: string; constraint: string }>)
     text.push(`(rule "${r.name}"\n  (condition "${r.condition}")\n  (constraint ${r.constraint}))`);
-  await writeFile(proPath.replace(/\.kicad_pro$/, ".kicad_dru"), text.join("\n") + "\n");
-  return `${classes.length} classes, ${patterns.length} net patterns; ${text.length - 1} rules`;
+  const druPath = proPath.replace(/\.kicad_pro$/, ".kicad_dru");
+  const dru = text.join("\n") + "\n";
+  const druChanged = (await readFile(druPath, "utf8").catch(() => null)) !== dru;
+  if (druChanged) await writeFile(druPath, dru);
+  const changed = proChanged || druChanged;
+  return { changed, text: `${classes.length} classes, ${patterns.length} net patterns; ${text.length - 1} rules${changed ? "" : " (already applied)"}` };
 }
 
 export type MergeMode =

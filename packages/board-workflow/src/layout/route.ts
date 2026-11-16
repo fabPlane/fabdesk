@@ -5,14 +5,16 @@
  */
 import { randomUUID } from "node:crypto";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { Acceptance, Requirements } from "../requirements";
+import { checkPlanesPlan, powerEscape, powerPlanes } from "../power/index";
 import { readJsonOrNull } from "../files";
 import { FlowError, requireEngine, type LayoutHost } from "./ctx";
 import { krtPaths, krtRouterScript, routeSummaries } from "./engines";
 import { pathExists } from "./fsx";
-import { applyAliases, boardPlan, expandArgs, pairClasses, signalLayers, BUILTIN_PLANS, type ExpandedPlan, type KrtPlan, type Selectors } from "./plan";
+import { applyAliases, avoidLayersInPlan, boardPlan, expandArgs, pairClasses, signalLayers, BUILTIN_PLANS, type ExpandedPlan, type KrtPlan, type Selectors } from "./plan";
 import { applyNetclasses, copyDir, scoreRoute } from "./score";
+import { checkKrtOverrides, hasKrtOverrides, hasPairStageOptions, krtStageCommand, pairOptionsInPlan, KRT_OVERRIDE_FILE, KRT_OVERRIDE_SCRIPT, type PairOptionsRecord, type PairStageOptions } from "./krt-override";
 import { appendBeforeClose, convertTransforms } from "./text";
 
 /** A plan by reference: a JSON file, or `builtin:<role>`. */
@@ -37,9 +39,20 @@ export interface RouteKrtOptions {
   score: boolean;
   /** Wall-clock budget for the whole run (the toolkit killed the process at its budget). */
   budgetMs?: number;
+  /** Layers kept out of reach after the plan's macros expand (`avoidLayersInPlan`: inner left out, outer costed). */
+  avoidLayers?: readonly string[];
+  /**
+   * Options for the plan's pair stages (`route_diff`), applied after its macros expand (`pairOptionsInPlan`): KRT's
+   * short-leg rule lowered through the override wrapper, intra-pair length matching. Refused when the plan has no pair stage.
+   */
+  pairOptions?: PairStageOptions;
 }
 export interface RouteKrtRecord {
   stages: Array<Record<string, unknown>>;
+  /** What `avoidLayers` did, per stage. */
+  avoided?: Array<{ stage: string; removed: string[]; costed: string[] }>;
+  /** What `pairOptions` did, per pair stage. */
+  pair_options?: PairOptionsRecord[];
   wall_s?: number;
   error?: string;
 }
@@ -48,7 +61,25 @@ export interface RouteKrtRecord {
 export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<RouteKrtRecord> {
   const krtRoot = await requireEngine(host, "krt");
   const acc = o.req.acceptance;
-  const plan = boardPlan(typeof o.plan === "string" ? await loadPlan(o.plan) : structuredClone(o.plan), acc);
+  let plan = boardPlan(typeof o.plan === "string" ? await loadPlan(o.plan) : structuredClone(o.plan), acc);
+  let avoided: RouteKrtRecord["avoided"];
+  if (o.avoidLayers?.length) ({ plan, record: avoided } = avoidLayersInPlan(plan, o.avoidLayers));
+  let pairRec: RouteKrtRecord["pair_options"];
+  if (hasPairStageOptions(o.pairOptions)) {
+    try {
+      ({ plan, record: pairRec } = pairOptionsInPlan(plan, o.pairOptions));
+    } catch (e) {
+      throw new FlowError(e instanceof Error ? e.message : String(e));
+    }
+  }
+  // every stage's overrides checked before anything runs (a plan file may carry its own)
+  const overrides = plan.stages.map((st) => {
+    try {
+      return checkKrtOverrides(st["krt_overrides"], `stage ${st.name}`);
+    } catch (e) {
+      throw new FlowError(e instanceof Error ? e.message : String(e));
+    }
+  });
   if (await pathExists(o.out)) throw new FlowError(`${o.out} exists`);
   await mkdir(o.out, { recursive: true });
   await writeFile(join(o.out, "plan.json"), JSON.stringify(plan, null, 1) + "\n");
@@ -92,9 +123,13 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
   const rip = await readJsonOrNull<{ nets?: string[]; open_before?: string[] }>(join(o.placed, "rip.json"));
   const nudge = await readJsonOrNull<{ cut_nets?: string[] }>(join(o.placed, "nudge.json"));
   sel.cutNets = [...(rip?.nets ?? []), ...(nudge?.cut_nets ?? [])];
-  sel.openBefore = rip?.open_before ?? [];
+  // after a rip, the nets open before it; otherwise the nets open on this board (the last-mile bench's score of it)
+  const scored = rip ? null : await readJsonOrNull<{ opens?: Array<{ net?: string }> }>(join(o.placed, "lastmile.score.json"));
+  sel.openBefore = rip?.open_before ?? [...new Set((scored?.opens ?? []).map((x) => x.net).filter((n): n is string => !!n))].sort();
 
-  const record: RouteKrtRecord = { stages: [] };
+  const wrapper = join(o.out, KRT_OVERRIDE_FILE);
+  if (overrides.some(hasKrtOverrides)) await writeFile(wrapper, KRT_OVERRIDE_SCRIPT);
+  const record: RouteKrtRecord = { stages: [], ...(avoided ? { avoided } : {}), ...(pairRec ? { pair_options: pairRec } : {}) };
   let cur = krtIn;
   const t0 = Date.now();
   for (const [i, st] of plan.stages.entries()) {
@@ -115,7 +150,8 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
       record.error = `budget exhausted before stage ${st.name}`;
       break;
     }
-    const r = await host.spawn([...k.python, krtRouterScript(k, st.tool), cur, nxt, ...args, ...(plan.common ?? [])], {
+    const ov = overrides[i]!;
+    const r = await host.spawn(krtStageCommand(k.python, krtRouterScript(k, st.tool), [cur, nxt, ...args, ...(plan.common ?? [])], hasKrtOverrides(ov) ? { wrapper, overrides: ov } : undefined), {
       cwd: k.plugins,
       env: { ...plan.env, ...st.env },
       log,
@@ -123,9 +159,15 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
       ...(host.signal ? { signal: host.signal } : {}),
       ...(host.onPid ? { onPid: host.onPid } : {}),
     });
-    const rec = { name: st.name, tool: st.tool, exit: r.code, wall_s: r.wallS, ...routeSummaries(await readFile(log, "utf8").catch(() => "")) };
+    const logText = await readFile(log, "utf8").catch(() => "");
+    const rec = { name: st.name, tool: st.tool, exit: r.code, wall_s: r.wallS, ...(hasKrtOverrides(ov) ? { krt_overrides: ov } : {}), ...routeSummaries(logText) };
     record.stages.push(rec);
     host.log?.(JSON.stringify({ name: rec.name, exit: rec.exit, wall_s: rec.wall_s }));
+    const overrideError = /^KRT_OVERRIDE_ERROR: (.*)$/m.exec(logText);
+    if (overrideError) {
+      record.error = `stage ${st.name}: ${overrideError[1]}`;
+      break;
+    }
     if (!(await pathExists(nxt))) {
       record.error = `stage ${st.name} wrote no board`;
       break;
@@ -152,8 +194,10 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
 // ---------------------------------------------------------------- TraceMaker
 
 interface TmPlan {
+  /** A power-planes plan file (power/planes.ts), relative to `planRoot`: split plane zones written before routing. */
   planes?: string;
-  escape?: unknown;
+  /** Fine-pitch power escapes (power/escape.ts) before routing; an object sets the stub reach and clearance, mm. */
+  escape?: boolean | { max_stub?: number; clearance?: number };
   session?: Array<{ name: string; nets: string | string[]; work?: number; variants?: number; hints?: Record<string, any>; options?: Record<string, unknown>; seed?: number; first?: boolean }>;
   cli?: { work?: number; no_neck?: string | string[] | null; extra?: string[] };
 }
@@ -173,6 +217,31 @@ export interface RoutePipelineOptions {
   stem: string;
   req: Requirements;
   budgetMs?: number;
+  /** Where a relative `planes` file resolves (the layout folder, like the spec's plan paths); default the plan's folder. */
+  planRoot?: string;
+}
+
+/**
+ * The toolkit's pre-routing steps on the base copy (route_pipeline.py): split power planes from the plan's `planes` file,
+ * then fine-pitch power escapes when the plan asks. Returns what each did, for the pipeline record.
+ */
+export async function prepareRouteBase(base: string, stem: string, acc: Acceptance, plan: Pick<TmPlan, "planes" | "escape">, planRoot: string): Promise<Record<string, unknown>> {
+  const log: Record<string, unknown> = {};
+  const board = join(base, `${stem}.kicad_pcb`);
+  if (plan.planes) {
+    const file = resolve(planRoot, plan.planes);
+    const p = checkPlanesPlan(JSON.parse(await readFile(file, "utf8").catch(() => { throw new FlowError(`plan.planes: cannot read ${file}`); })));
+    const r = powerPlanes(await readFile(board, "utf8"), p);
+    await writeFile(board, r.text);
+    log["planes"] = r.record;
+  }
+  if (plan.escape) {
+    const e = typeof plan.escape === "object" ? plan.escape : {};
+    const r = powerEscape(await readFile(board, "utf8"), acc, { ...(e.max_stub !== undefined ? { maxStub: e.max_stub } : {}), ...(e.clearance !== undefined ? { clearance: e.clearance } : {}) });
+    await writeFile(board, r.text);
+    log["escape"] = r.stats;
+  }
+  return log;
 }
 
 /** TraceMaker: session stages for the plan's nets, then the CLI for everything left; scored into `<out>/score`. */
@@ -186,7 +255,7 @@ export async function routePipeline(host: LayoutHost, o: RoutePipelineOptions): 
   const base = join(o.out, "base");
   await copyDir(o.placed, base, (n) => n !== "tm" && !n.endsWith(".json"));
   if (await pathExists(join(o.placed, "manufacturing-via-process.json"))) await copyFile(join(o.placed, "manufacturing-via-process.json"), join(base, "manufacturing-via-process.json"));
-  if (plan.planes || plan.escape) throw new FlowError("plan.planes / plan.escape (power_planes, power_escape) are not ported to the TypeScript workflow");
+  Object.assign(log, await prepareRouteBase(base, o.stem, acc, plan, o.planRoot ?? (o.plan.startsWith("builtin:") ? base : dirname(o.plan))));
   await applyNetclasses(join(base, `${o.stem}.kicad_pro`), acc);
   const tm = join(o.out, "tm");
   await mkdir(tm, { recursive: true });

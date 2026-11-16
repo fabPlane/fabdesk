@@ -122,8 +122,9 @@ describe("board_edit", () => {
   test("a candidate that opened connections is returned with them, and adopt is refused", async () => {
     const { run, adopted } = await setup();
     const r = await run({ plan: { id: "mv", move: [{ ref: "C3", to: [50, 30, 90] }], displace: { radius: 3 } }, adopt: true });
-    // the last-mile bench ran `finish` on the candidate; the stub router closed nothing, so the board stays as edited
-    expect(r.text).toContain("Repair (route stage): last mile left the board as edited (no gain); nets to route again: GND, VIN");
+    // the last-mile bench ran its chain on the candidate (finish, then the KRT steps, which need KRT); nothing closed, so the board stays as edited
+    expect(r.text).toContain("Repair (route stage): last mile left the board as edited (open 2); steps: finish: nothing kept (no gain);");
+    expect(r.text).toContain("nets cut by the edit: GND, VIN. Workspace .fabdesk/board/edits/");
     expect(r.text).toMatch(/FAIL/);
     expect(r.text).toContain("adopt refused: the proof does not pass");
     expect(adopted).toEqual([]);
@@ -137,7 +138,8 @@ describe("board_edit", () => {
       await writeFile(f, (await readFile(f, "utf8")).replace("(translate 50.0000 30.0000)", "(translate 50.0000 30.0001)"));
     });
     const r = await run({ plan: { id: "mv", move: [{ ref: "C3", to: [50, 30, 90] }], displace: { radius: 3 } }, adopt: true });
-    expect(r.text).toContain("Repair (route stage): last mile finish: open 2 -> 0");
+    expect(r.text).toContain("Repair (route stage): last mile: open 2 -> 0");
+    expect(r.text).toContain("steps: finish: kept, open 0;");
     expect((r.json["proof"] as { figures: { open: number } }).figures.open).toBe(0);
     expect(r.text).not.toContain("adopt refused: the proof does not pass");
     expect(adopted).toHaveLength(1);

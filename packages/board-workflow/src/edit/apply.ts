@@ -21,6 +21,12 @@ import { SheetSet, addSymbol, relabel, removePinOrphans, setSymFlags, setSymProp
 import { footprintSpans, refOf, removeBlocks, sideOf } from "./text";
 import { readBoard } from "../board";
 import { parseSexpr } from "../sexpr";
+import { readProjectSettings } from "../project";
+import { sha256 } from "./copper";
+import { directLink, type LinkLog } from "./link";
+import { applyCopper, applyHole, applyStackBoard, holeRecord, stackAcceptance, type CopperLog, type StackLog } from "./keys";
+import { holeValue, type HoleRecord } from "./hole";
+import { dirname } from "node:path";
 
 /** What a scoring run returns (an `AcceptanceResult` fits). */
 export interface Scored {
@@ -40,7 +46,7 @@ export interface ApplyLog {
   pruned_items?: number;
   pad_cut?: { removed: number; pruned: number; cut_nets: string[] };
   swaps: SwapLog[];
-  adds: Array<{ ref: string; footprint_file: string; schematic: string; near: unknown }>;
+  adds: Array<{ ref: string; footprint_file: string; schematic: string; near: unknown; link?: LinkLog }>;
   net_changes: Array<{ pin: string; from: string; to: string; schematic: string; label_was: string }>;
   net_change_pruned?: number;
   net_change_padless_deleted?: number;
@@ -49,6 +55,14 @@ export interface ApplyLog {
   moves?: MoveLedger;
   symbols: number;
   schematic_orphans_removed?: Record<string, { wire: number; label: number; no_connect: number }>;
+  /** plan.copper (copper_plan): counts and the nets it touched; the full ledger is copper-ledger.json. */
+  copper?: CopperLog;
+  /** plan.hole (mechanical_hole): the hole-edit.json record. */
+  hole?: HoleRecord;
+  /** plan.stack (stack_plan): what changed; the record is stack-plan.json. */
+  stack?: StackLog;
+  /** Project-relative files besides the board and the sheets that the candidate changed (a library footprint, acceptance.json): adopt carries them. */
+  extra_files?: string[];
 }
 
 /** Files a scoring copy does not need: models, documents and history. */
@@ -114,6 +128,13 @@ export async function applyEdit(
   const sheets = new SheetSet(out);
   const pcbPath = join(out, env.pcbName);
   let text = await readFile(pcbPath, "utf8");
+  // stack (stack_plan): copper_source, named via removals and dielectrics, on the board as the plan names it
+  let stackLog: ReturnType<typeof applyStackBoard>["log"] | null = null;
+  if (plan.stack) {
+    const r = applyStackBoard(text, plan, env);
+    text = r.text;
+    stackLog = r.log;
+  }
   // board: footprints, copper on dead nets, dangling copper on reduced nets
   const rb = removeBlocks(text, "footprint", (blk) => gone.has(refOf(blk) ?? ""));
   text = rb.text;
@@ -218,12 +239,82 @@ export async function applyEdit(
     text = r.text;
     log.landing = r.led;
   }
+  // an added part placed next to a pad gets a direct track to it when it shares that pad's net (a decoupling
+  // capacitor's connection), not only the pour; `link: false` in the add leaves it to the pour / the last mile
+  const linkAdds = (plan.add ?? []).filter((ad) => typeof ad.near === "string" && ad.near.includes(".") && ad.link !== false);
+  if (linkAdds.length) {
+    const ps = readProjectSettings(await readFile(join(env.projectDir, `${env.stem}.kicad_pro`), "utf8").catch(() => "{}"));
+    const clearance = Math.max(ps.classes.find((c) => c.name === "Default")?.clearance ?? 0, ps.minClearance ?? 0) || 0.2;
+    for (const ad of linkAdds) {
+      let lk = directLink(text, ad.ref, ad.near as string, clearance);
+      // blocked where the landing put it: try poses round the target pad, nearest first, each through the same
+      // courtyard-gated placement (boards up to 30 MB: each try re-reads it)
+      if ("skipped" in lk.log && text.length < 30e6) {
+        const near = ad.near as string;
+        const tb = readBoard(parseSexpr(text)).pads.find((p) => `${p.ref}.${p.pad}` === near);
+        const tries: Array<[number, number, number]> = [];
+        if (tb)
+          for (const r of [1.2, 1.6, 2.0, 2.5, 3.0])
+            for (let k = 0; k < 8; k++) for (const rot of ad.rot !== undefined ? [ad.rot] : [0, 90, 180, 270]) tries.push([tb.x + r * Math.cos((k * Math.PI) / 4), tb.y + r * Math.sin((k * Math.PI) / 4), rot]);
+        // poses that link, nearest first; one that cuts no other net's copper wins at once, else the one cutting
+        // fewest. Nets a pose cuts become planned (the ledger's landing cut nets): the repair routes them again.
+        const own = new Set(Object.values(ad.pins));
+        let best: { text: string; log: LinkLog; cut: string[]; extra: number } | null = null;
+        const nearerBlocked = new Set<string>(); // parts in the way of poses tried before the chosen one (nearer first)
+        for (const to of tries) {
+          let pm: ReturnType<typeof planMoves>;
+          try {
+            pm = planMoves(text, isFixed, [{ ref: ad.ref, to }], null, pairs0);
+          } catch (e) {
+            if (!(e instanceof EditStop)) throw e;
+            if (!best) for (const m of e.message.matchAll(/(?:^|[:;,] )([A-Z]{1,4}\d+[A-Z]?) \(/g)) if (m[1] !== ad.ref) nearerBlocked.add(m[1]!);
+            continue;
+          }
+          const cut = pm.led.cut_nets.filter((n) => !own.has(n));
+          if (best && cut.length >= best.extra) continue;
+          const l2 = directLink(pm.text, ad.ref, near, clearance);
+          if ("skipped" in l2.log) continue;
+          best = { text: l2.text, log: { ...l2.log, placed: to.map((v) => Math.round(v * 1e4) / 1e4) as [number, number, number], ...(nearerBlocked.size ? { nearer_blocked_by: [...nearerBlocked].sort().slice(0, 8) } : {}) }, cut: pm.led.cut_nets, extra: cut.length };
+          if (!cut.length) break;
+        }
+        if (best) {
+          lk = { text: best.text, log: best.log };
+          if (log.landing) log.landing.cut_nets = [...new Set([...log.landing.cut_nets, ...best.cut])].sort();
+        }
+      }
+      text = lk.text;
+      const entry = log.adds.find((x) => x.ref === ad.ref);
+      if (entry) entry.link = lk.log;
+    }
+  }
   if (plan.move?.length) {
     const r = planMoves(text, isFixed, plan.move, plan.displace, pairs0);
     text = r.text;
     log.moves = r.led;
   }
+  // hole (mechanical_hole) and copper (copper_plan) after the moves, on the board as edited
+  const extra: string[] = [];
+  let hole: ReturnType<typeof applyHole> | null = null;
+  if (plan.hole) {
+    hole = applyHole(text, plan, env);
+    text = hole.text;
+    await mkdir(dirname(join(out, hole.libRel)), { recursive: true });
+    await writeFile(join(out, hole.libRel), hole.libText);
+    extra.push(hole.libRel);
+  }
+  let copperLedger: unknown = null;
+  if (plan.copper) {
+    const r = applyCopper(text, plan, env);
+    text = r.text;
+    log.copper = r.log;
+    copperLedger = r.ledger;
+  }
   await writeFile(pcbPath, text);
+  if (hole) {
+    log.hole = holeRecord(plan, env.pcbText, text, hole.centre, hole.libRel);
+    jsonOut(join(out, "hole-edit.json"), log.hole);
+  }
+  if (copperLedger) jsonOut(join(out, "copper-ledger.json"), { ...(copperLedger as object), source_sha256: sha256(env.pcbText), output_sha256: sha256(text) });
   // schematic symbols
   for (const name of sheets.names) {
     const t = sheets.texts.get(name)!;
@@ -245,6 +336,8 @@ export async function applyEdit(
     if (sw.value !== undefined) comp.get(sw.ref)!["value"] = sw.value;
     if (sw.footprint) comp.get(sw.ref)!["footprint"] = sw.footprint;
   }
+  // the hole's new Value (fabdesk's circuit.json lists board-only parts too; the toolkit's does not)
+  if (plan.hole && comp.has(plan.hole.ref)) comp.get(plan.hole.ref)!["value"] = holeValue(plan.hole.ref, plan.hole.size_mm);
   for (const nc of plan.net ?? []) {
     const [r, pd] = splitPin(nc.pin);
     const x = comp.get(r)!;
@@ -300,6 +393,11 @@ export async function applyEdit(
       cur[nc.pin] = { width: nc.tap_width, basis: nc.tap_basis ?? plan.reason ?? "" };
     }
   }
+  if (plan.stack) {
+    const r = stackAcceptance(acc as unknown as Record<string, unknown>, plan.stack);
+    log.stack = { classes_updated: r.updated, classes_split: r.split, removed_paths: r.removed_paths, ...stackLog! };
+    extra.push(join(BOARD_DIR, "requirements", REQUIREMENT_FILES.acceptance));
+  }
   const edits = ((acc as Record<string, unknown>)["edits"] ??= []) as unknown[];
   edits.push({
     id: plan.id, authority: plan.authority ?? null, reason: plan.reason ?? null,
@@ -307,8 +405,15 @@ export async function applyEdit(
     swapped: [...log.swaps, ...(plan.swap ?? []).filter((s) => !s.footprint).map((s) => ({ ref: s.ref, value: s.value ?? null, fields: s.fields ?? null }))],
     added: log.adds, net_changes: log.net_changes, removed: [...gone].sort(), nets_deleted: [...dead].sort(),
     accepted_unconnected: plan.accept_unconnected ?? [], notes: plan.notes ?? {},
+    ...(log.copper ? { copper: log.copper } : {}), ...(log.hole ? { hole: log.hole } : {}), ...(log.stack ? { stack: log.stack } : {}),
   });
   jsonOut(join(rq, REQUIREMENT_FILES.acceptance), acc);
+  if (log.stack)
+    jsonOut(join(out, "stack-plan.json"), {
+      plan: plan.id, source: env.projectDir, out, source_pcb_sha256: sha256(env.pcbText), pcb_sha256: sha256(text),
+      copper_source: log.stack.copper_source, changed_copper: log.stack.changed_copper, removed_vias: log.stack.removed_vias,
+    });
+  if (extra.length) log.extra_files = extra;
   jsonOut(join(out, "edit.json"), { plan, impact: rep, applied: log });
   return { rep, log, pcbText: text };
 }

@@ -6,9 +6,10 @@
  * `adoptCandidate` reads to write it into the project.
  */
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import type { AcceptRun } from "../history";
+import { figures } from "../accept";
 import { acceptDir, type AcceptIndexEntry } from "../history";
 import { BOARD_DIR, designHash, exists, readJson, writeJsonFile } from "../files";
 import type { Comparison } from "../history";
@@ -18,7 +19,10 @@ import { loadEditEnv, type EditEnv } from "./env";
 import { fillAddDefaults, impact, impactLines, type ImpactReport } from "./impact";
 import { coordinatesInPlan, parsePlan, type EditPlan } from "./plan";
 import { judge, type Judgement } from "./proof";
+import { carryExclusions, exclusionsText, readDrcExclusions, violationId, withDrcExclusions, type CarriedExclusion, type DrcViolation } from "./exclusions";
 import { EditStop } from "./sch";
+import { applyProjectRules } from "../rules";
+import { REQUIREMENT_FILES } from "../requirements";
 
 export type EditMode = "impact" | "apply" | "proof" | "full";
 
@@ -69,6 +73,10 @@ export interface EditRunResult {
   proof?: Judgement & { id: string; record: string; comparison: ComparisonView | null; before: Record<string, boolean>; after: Record<string, boolean> };
   diff?: BoardDiff;
   churn?: Churn;
+  /** The churn guard: collateral nets given their source copper back; kept when the board scored no worse. */
+  guard?: { nets: string[]; kept: boolean; why?: string };
+  /** DRC exclusions the edit made stale and that were re-keyed in the candidate's project file (see `exclusions.ts`). */
+  exclusions?: { carried: CarriedExclusion[]; notes: string[] };
   agentCoordinates: number;
   phases: Record<string, number>;
 }
@@ -124,23 +132,43 @@ export const SCORE_BASIS = "drc-error-parity-v1";
 async function beforeScore(env: EditEnv, copy: string, runners: EditRunners): Promise<{ scored: Scored; cached?: string }> {
   const dh = (await designHash(copy)).design;
   const cache = join(editsDir(env.projectDir), ".before", createHash("sha256").update(`${SCORE_BASIS}:${dh}`).digest("hex").slice(0, 24));
-  const seed = async (entry: AcceptIndexEntry, result: unknown) => {
+  // the source's DRC report travels with the score: the proof reads its violations (DRC exclusions that follow the edit)
+  const drcOf = (file: string) => file.replace(/\.json$/, ".drc.json");
+  const seed = async (entry: AcceptIndexEntry, result: unknown, drc: string) => {
     const dir = acceptDir(copy);
     await mkdir(dir, { recursive: true });
     await writeJsonFile(join(copy, entry.file), result);
+    await writeFile(join(copy, drcOf(entry.file)), drc);
     await writeJsonFile(join(dir, "index.json"), [entry]);
   };
   const hit = await readJson<{ entry: AcceptIndexEntry; result: Scored }>(join(cache, "before.json")).catch(() => null);
-  if (hit?.result?.summary && hit.result.results) {
-    await seed(hit.entry, hit.result);
+  const hitDrc = hit ? await readFile(join(cache, "before.drc.json"), "utf8").catch(() => null) : null;
+  if (hit?.result?.summary && hit.result.results && hitDrc !== null) {
+    await seed(hit.entry, hit.result, hitDrc);
     return { scored: hit.result, cached: hit.entry.id };
   }
   const run = await runners.accept(copy, env.pcbName);
   await writeJsonFile(join(cache, "before.json"), { entry: run.entry, result: run.result });
+  await cp(join(copy, drcOf(run.entry.file)), join(cache, "before.drc.json")).catch(() => {});
   return { scored: run.result };
 }
 
-export async function runEdit(input: EditRunInput): Promise<EditRunResult> {
+/**
+ * Scoring as the toolkit's `edit.py score` did it: the folder's acceptance rules applied to its project file
+ * (`apply_netclasses`), then A1-A9. A no-op for a board that keeps its native rules.
+ */
+export function withProjectRules(r: EditRunners): EditRunners {
+  return {
+    ...r,
+    accept: async (dir, pcb) => {
+      await applyProjectRules(dir, pcb);
+      return r.accept(dir, pcb);
+    },
+  };
+}
+
+export async function runEdit(input0: EditRunInput): Promise<EditRunResult> {
+  const input = { ...input0, runners: withProjectRules(input0.runners) };
   const mode = input.mode ?? "full";
   const plan = parsePlan(input.plan);
   const t0 = Date.now();
@@ -173,21 +201,51 @@ export async function runEdit(input: EditRunInput): Promise<EditRunResult> {
   const projectHashes = await designFileHashes(env.projectDir);
   projectHashes[env.pcbName] = createHash("sha256").update(env.pcbText).digest("hex");
   try {
-    applied = await applyEdit(plan, env, out, { score: async (d) => (await input.runners.accept(d, env.pcbName)).result, beforeScored: (d) => beforeScore(env, d, input.runners) });
+    applied = await applyEdit(plan, env, out, { score: async (d) => (await input.runners.accept(d, env.pcbName)).result, beforeScored: async (d) => (await applyProjectRules(d, env.pcbName), beforeScore(env, d, input.runners)) });
   } catch (e) {
     if (!(e instanceof EditStop)) throw e;
     return { ...common, stage: "apply", verdict: e.message, stop: /^STOP/.test(e.message) };
   }
   lap("apply", t);
   const pcb = join(out, env.pcbName);
-  await writeJsonFile(join(out, "origin.json"), { project: env.projectDir, files: projectHashes });
+  // files besides the board and the sheets the candidate changed (hole's library footprint, stack's acceptance.json), with
+  // the project's hash of each when the candidate was computed: adopt carries them, and refuses when the project's moved on
+  const extra: Record<string, string | null> = {};
+  const hashOf = async (path: string) => {
+    const b = await readFile(path).catch(() => null);
+    return b ? createHash("sha256").update(b).digest("hex") : null;
+  };
+  for (const rel of applied.log.extra_files ?? []) extra[rel] = await hashOf(join(env.projectDir, rel));
+  // the requirements the edit changed (an added or removed part in circuit.json, a moved anchor in mechanical.json):
+  // without them the adopted board fails A4 against the project's old circuit (an s7-whole agent copied them by hand)
+  for (const f of Object.values(REQUIREMENT_FILES)) {
+    const rel = `${BOARD_DIR}/requirements/${f}`;
+    if (rel in extra) continue;
+    const was = await hashOf(join(env.projectDir, rel));
+    const now = await hashOf(join(out, rel));
+    if (now !== null && now !== was) extra[rel] = was;
+  }
+  // the project's DRC exclusions as they were: adopt carries the candidate's (re-keyed by the proof) only while they still are
+  const proRel = join(dirname(env.pcbName), `${env.stem}.kicad_pro`);
+  const proText = await readFile(join(env.projectDir, proRel), "utf8").catch(() => null);
+  const exclusions = proText !== null ? { file: proRel, sha256: createHash("sha256").update(exclusionsText(readDrcExclusions(proText))).digest("hex") } : null;
+  await writeJsonFile(join(out, "origin.json"), { project: env.projectDir, files: projectHashes, ...(Object.keys(extra).length ? { extra } : {}), ...(exclusions ? { exclusions } : {}) });
   await mkdir(dirname(join(out, "before", env.pcbName)), { recursive: true });
   await writeFile(join(out, "before", env.pcbName), env.pcbText);
   const ledger = { plan, impact: rep, applied: applied.log };
-  const routeAgain = [...new Set([...(applied.log.moves?.cut_nets ?? []), ...(applied.log.landing?.cut_nets ?? []), ...(applied.log.pad_cut?.cut_nets ?? [])])].sort();
+  const routeAgain = routeAgainOf(applied.log, plan);
   const candidate = { dir: out, pcb, origin: join(out, "origin.json") };
   if (mode === "apply") return { ...common, stage: "apply", verdict: "PASS apply", stop: false, candidate, applied: applied.log, repair: { available: !!input.runners.repair, routeAgain }, ...(await diffOnly(env.pcbText, applied.pcbText, ledger)) };
   return finish({ ...common, candidate, applied: applied.log }, env, plan, ledger, routeAgain, input, t0);
+}
+
+/**
+ * Nets the repair should look at: the ones the edit cut, and an added part's pin nets (a new part is a new connection:
+ * placed off a pour, or with no direct track, its pads are open and only the repair routes them).
+ */
+export function routeAgainOf(applied: ApplyLog, plan: EditPlan): string[] {
+  const added = (plan.add ?? []).flatMap((ad) => Object.values(ad.pins));
+  return [...new Set([...(applied.moves?.cut_nets ?? []), ...(applied.landing?.cut_nets ?? []), ...(applied.pad_cut?.cut_nets ?? []), ...added])].filter(Boolean).sort();
 }
 
 async function diffOnly(before: string, after: string, ledger: { plan: EditPlan; impact: ImpactReport; applied: ApplyLog }) {
@@ -221,24 +279,132 @@ async function finish(
   say(0.7, "A1-A9 proof");
   t = Date.now();
   const beforeRec = await readJson<Scored>(join(dir, "before-acceptance.json"));
-  const run = await input.runners.accept(dir, env.pcbName);
+  let run = await input.runners.accept(dir, env.pcbName);
   base.phases["proof"] = Math.round((Date.now() - t) / 100) / 10;
-  const j = judge(beforeRec, run.result);
-  const after = await readFile(base.candidate.pcb, "utf8");
+  let after = await readFile(base.candidate.pcb, "utf8");
   const source = await readFile(join(dir, "before", env.pcbName), "utf8");
-  const d = diffBoards(source, after);
-  const ch = churn(d, ledger);
-  await writeJsonFile(join(dir, "diff.json"), { ...d, churn: ch });
+  let d = diffBoards(source, after);
+  let ch = churn(d, ledger);
+  // churn guard (editbench): nets the plan did not touch get their original copper back if the whole board stays as good
+  let guard: EditRunResult["guard"];
+  if (ch.collateral_nets) {
+    say(0.85, `churn guard: original copper back on ${ch.collateral_nets} untouched net(s), then score`);
+    t = Date.now();
+    const g = await churnGuard(dir, env.pcbName, source, after, Object.keys(ch.collateral_detail), run, input.runners);
+    base.phases["guard"] = Math.round((Date.now() - t) / 100) / 10;
+    guard = { nets: Object.keys(ch.collateral_detail).sort(), kept: g.kept, ...(g.why ? { why: g.why } : {}) };
+    if (g.kept) {
+      run = g.run;
+      after = g.text;
+      d = diffBoards(source, after);
+      ch = churn(d, ledger);
+    }
+  }
+  // DRC exclusions the edit made stale (a swapped or moved part the owner had excluded), re-keyed, then scored again
+  t = Date.now();
+  const ex = await followExclusions(dir, env, plan.id, source, after, run, input.runners, say);
+  if (ex) {
+    run = ex.run;
+    base.phases["exclusions"] = Math.round((Date.now() - t) / 100) / 10;
+    await writeJsonFile(join(dir, "drc-exclusions.json"), { carried: ex.carried, notes: ex.notes });
+  }
+  const exclusions = ex && (ex.carried.length || ex.notes.length) ? { carried: ex.carried, notes: ex.notes } : undefined;
+  const j = judge(beforeRec, run.result);
+  await writeJsonFile(join(dir, "diff.json"), { ...d, churn: ch, ...(guard ? { guard } : {}) });
   const proof = { ...j, id: run.entry.id, record: run.recordPath, comparison: view(run.baseline ?? run.previous), before: beforeRec.summary as Record<string, boolean>, after: run.result.summary as Record<string, boolean> };
   await writeJsonFile(join(dir, "proof.json"), proof);
-  return { ...base, stage: "proof", verdict: j.verdict, stop: false, repair, proof, diff: d, churn: ch };
+  return { ...base, stage: "proof", verdict: j.verdict, stop: false, repair, proof, diff: d, churn: ch, ...(guard ? { guard } : {}), ...(exclusions ? { exclusions } : {}) };
+}
+
+/**
+ * Re-key the project's DRC exclusions that the edit made stale (`carryExclusions`: parts moved together, or an identical
+ * part in an excluded one's place), in the candidate's project file, and score again. A re-keyed exclusion KiCad does
+ * not then match is put back as it was (and the board scored once more), so the proof never counts on a guess.
+ * Null when there is nothing to look at (no exclusions, no source DRC report, nothing new).
+ */
+async function followExclusions(
+  dir: string,
+  env: EditEnv,
+  editId: string,
+  source: string,
+  after: string,
+  run: AcceptRun,
+  runners: EditRunners,
+  say: (p: number, note: string) => void,
+): Promise<{ run: AcceptRun; carried: CarriedExclusion[]; notes: string[] } | null> {
+  const pro = join(dir, dirname(env.pcbName), `${env.stem}.kicad_pro`);
+  const proText = await readFile(pro, "utf8").catch(() => null);
+  const exclusions = proText !== null ? readDrcExclusions(proText) : null;
+  if (proText === null || !exclusions?.length) return null;
+  const index = await readJson<AcceptIndexEntry[]>(join(acceptDir(dir), "index.json")).catch(() => [] as AcceptIndexEntry[]);
+  const first = index[0];
+  if (!first || first.id === run.entry.id) return null;
+  const violations = async (file: string) =>
+    ((JSON.parse(await readFile(join(dir, file.replace(/\.json$/, ".drc.json")), "utf8")) as { violations?: DrcViolation[] }).violations ?? []);
+  const sourceViolations = await violations(first.file).catch(() => null);
+  const afterViolations = await violations(run.entry.file).catch(() => null);
+  if (!sourceViolations || !afterViolations) return null;
+  const c = carryExclusions({ exclusions, source, after, sourceViolations, afterViolations, editId });
+  if (!c.carried.length) return c.notes.length ? { run, carried: [], notes: c.notes } : null;
+  say(0.9, `DRC exclusions: ${c.carried.length} re-keyed after the edit, scoring again`);
+  await writeFile(pro, withDrcExclusions(proText, c.entries));
+  let next = await runners.accept(dir, env.pcbName);
+  const left = new Set((await violations(next.entry.file).catch(() => [] as DrcViolation[])).filter((v) => !v.excluded).map(violationId));
+  const missed = c.carried.filter((k) => left.has(k.violation));
+  const notes = [...c.notes];
+  if (missed.length) {
+    const back = c.entries.map((e) => {
+      const m = missed.find((k) => k.to === e.key);
+      return m ? exclusions.find((o) => o.key === m.from) ?? e : e;
+    });
+    await writeFile(pro, missed.length === c.carried.length ? proText : withDrcExclusions(proText, back));
+    next = await runners.accept(dir, env.pcbName);
+    for (const k of missed) notes.push(`not carried: ${k.line}: KiCad did not match the re-keyed exclusion, so this stays a new violation`);
+  }
+  return { run: next, carried: c.carried.filter((k) => !missed.includes(k)), notes };
+}
+
+/**
+ * The editbench churn guard: a copy of the candidate with the collateral nets' copper taken from the source board,
+ * scored; kept only when it is no worse on A1 opens, A2 errors, A7 and A8 nets and passes at least as many checks.
+ * When kept, its board and its acceptance record (with its index entry) move into the candidate.
+ */
+async function churnGuard(
+  dir: string,
+  pcbName: string,
+  source: string,
+  after: string,
+  nets: string[],
+  run: AcceptRun,
+  runners: EditRunners,
+): Promise<{ kept: false; why?: string } | { kept: true; text: string; run: AcceptRun; why?: undefined }> {
+  const scratch = join(dirname(dir), `.${basename(dir)}.guard`);
+  await rm(scratch, { recursive: true, force: true });
+  try {
+    await cp(dir, scratch, { recursive: true, filter: (src) => basename(src) !== ".lastmile" });
+    const text = revertNets(source, after, nets);
+    await writeFile(join(scratch, pcbName), text);
+    const g = await runners.accept(scratch, pcbName);
+    const a = figures(g.result), b = figures(run.result);
+    const passes = (r: AcceptRun["result"]) => Object.values(r.summary).filter(Boolean).length;
+    const worse = (["A1", "A2", "A7", "A8"] as const).filter((k) => a[k] > b[k]);
+    if (worse.length || passes(g.result) < passes(run.result))
+      return { kept: false, why: worse.length ? `worse on ${worse.map((k) => `${k} ${b[k]}->${a[k]}`).join(", ")}` : "fewer checks pass" };
+    await writeFile(join(dir, pcbName), text);
+    for (const f of [g.entry.file, g.entry.file.replace(/\.json$/, ".drc.json")]) await cp(join(scratch, f), join(dir, f)).catch(() => {});
+    const index = await readJson<AcceptIndexEntry[]>(join(acceptDir(dir), "index.json")).catch(() => [] as AcceptIndexEntry[]);
+    await writeJsonFile(join(acceptDir(dir), "index.json"), [...index, g.entry]);
+    return { kept: true, text, run: { ...g, recordPath: join(dir, g.entry.file) } };
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
 }
 
 async function proofOnly(input: EditRunInput, plan: EditPlan, env: EditEnv, base: { mode: EditMode; planId: string; agentCoordinates: number; phases: Record<string, number> }): Promise<EditRunResult> {
   const dir = input.candidate ?? (await newestCandidate(env.projectDir, plan.id));
   if (!dir || !(await exists(join(dir, "edit.json")))) throw new EditStop(`FAIL proof: no candidate for plan ${plan.id} (run mode apply first, or name the candidate folder)`);
   const ledger = await readJson<{ plan: EditPlan; impact: ImpactReport; applied: ApplyLog }>(join(dir, "edit.json"));
-  const routeAgain = [...new Set([...(ledger.applied.moves?.cut_nets ?? []), ...(ledger.applied.landing?.cut_nets ?? []), ...(ledger.applied.pad_cut?.cut_nets ?? [])])].sort();
+  const routeAgain = routeAgainOf(ledger.applied, ledger.plan);
   const candidate = { dir, pcb: join(dir, env.pcbName), origin: join(dir, "origin.json") };
   const res = await finish({ ...base, impact: ledger.impact, impactLines: impactLines(ledger.impact), candidate, applied: ledger.applied }, env, plan, ledger, routeAgain, input, Date.now());
   return res;

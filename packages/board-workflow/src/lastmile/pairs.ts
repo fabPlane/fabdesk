@@ -163,6 +163,30 @@ export function measurePairs(board: Board, pairs: readonly PairSpec[], stack: re
 }
 
 /** The toolkit's one-line-per-pair text of `measure`. */
+/**
+ * The step to try next for pairs that are not coupled, from how they are routed: pairs routed apart (coupled share
+ * under 0.5: single-ended routing, the eval's HDMI pairs at 0.02-0.03) need ripping and routing again together as
+ * pairs (`bundle:REGEX`, or `pairs-all` for every pair); partly coupled ones (0.5-0.9) a local re-route of their
+ * uncoupled stretches (`reroute:REGEX`). An agent given only the table tried reroute/tighten, which cannot couple a
+ * pair routed apart, and then routed the pairs by hand. On the eval's HDMI board (0.5 mm pitch connector) plain bundle
+ * fails in both the toolkit and here (KRT defers the short fan-out legs to single-ended); the line names the
+ * `!short!match!outer=2` bundle as the next try.
+ */
+export function pairsNext(m: Record<string, PairMeasure>): string[] {
+  const esc = (n: string) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pName = (k: string) => k.split(" / ")[0]!;
+  const rx = (ks: string[]) => `^(${ks.map((k) => esc(pName(k))).join("|")})$`;
+  const apart = Object.entries(m).filter(([, v]) => v.coupled_share < 0.5).map(([k]) => k);
+  const partly = Object.entries(m).filter(([, v]) => v.coupled_share >= 0.5 && v.coupled_share < 0.9).map(([k]) => k);
+  const out: string[] = [];
+  if (apart.length)
+    out.push(
+      `Next: ${apart.length} pair(s) routed apart (coupled share < 0.5): rip and route them again together as pairs: try {"actions": ["bundle:${rx(apart)}"${apart.length > 2 ? ', "pairs-all"' : ""}]} (reroute / tighten only fix stretches of a pair that is already coupled). Through a tight connector fan-out (0.5 mm pitch) KiCadRoutingTools routes the short legs single-ended ("electrically short" in the try folder's krt/s1-pairs-*.log: under max(5 x setback, 3 mm) of coupled run), so try the same bundle with the modifiers beside it: "bundle:${rx(apart)}!short!match!outer=2" (!short couples those legs, !match length-matches P/N, !outer=2 lets the pairs use the outer layer their pads are on). A pair still apart after that: bundle it alone again with the others in place; then tighten what is left loose.`,
+    );
+  if (partly.length) out.push(`Next: ${partly.length} pair(s) partly coupled: try {"actions": ["reroute:${rx(partly)}", "reroute:${rx(partly)}!"]} (cut and re-route their uncoupled stretches; ! also re-routes uncoupled pad stubs)`);
+  return out;
+}
+
 export function measureLines(m: Record<string, PairMeasure>, why: boolean): string[] {
   return Object.entries(m).map(([k, v]) => {
     const sp = `[${v.spacing.slice(0, 3).map(([d, l]) => `[${pyFloat(d)}, ${pyFloat(l)}]`).join(", ")}]`;

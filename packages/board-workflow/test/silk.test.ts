@@ -241,7 +241,7 @@ describe.skipIf(!cli)("with kicad-cli", () => {
     const bad = await release.gerbCheck({ gerbers: join(dir, "g2"), pcb: join(dir, "fx.kicad_pcb"), out: join(dir, "c2"), cli: cli!, dpi: 400 });
     expect(bad.layers["F_Cu"]!.pass).toBe(false);
     expect(bad.pass).toBe(false);
-  });
+  }, 60_000); // kicad-cli exports and renders: past 5 s on a loaded machine
   test("fab: with every gate passing, writes a package whose CAM is reproducible and whose Gerbers check out", async () => {
     const dir = await project();
     const out = join(dir, "pkg");

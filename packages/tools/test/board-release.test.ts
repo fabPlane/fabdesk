@@ -42,6 +42,16 @@ async function setup(boardText = BOARD(), overrides: Partial<CoreServices> = {})
 
 afterEach(() => setInterconnectGate(null));
 
+describe("cam (the CAM set without the release gates)", () => {
+  test("refuses a non-empty out folder and one outside the project", async () => {
+    const { project, call } = await setup();
+    await mkdir(join(project.dir, "fab"), { recursive: true });
+    await writeFile(join(project.dir, "fab", "old.gbr"), "x");
+    await expect(call("board_release", { action: "cam" })).rejects.toThrow(/fab exists and is not empty/);
+    await expect(call("board_release", { action: "cam", out: "../elsewhere" })).rejects.toThrow(/escapes the project/);
+  });
+});
+
 describe("registration", () => {
   test("board_release and board_silk are in the board toolset with underscore names and an action", () => {
     const reg = createRegistry();
@@ -92,6 +102,37 @@ describe("board_release", () => {
     await recordAcceptance(project.dir, { at: new Date().toISOString(), sha256: sha2, results: ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9"].map((code) => ({ code, status: "pass", figures: {}, evidence: [] })) as never });
     r = await call("board_release", { action: "check" });
     expect(r.json.ready).toBe(true);
+  });
+
+  test("vias lists the vias that need fill+cap; apply writes the attributes through adopt and checks again", async () => {
+    // a through via in R1's pad 2 (board 10,9.5 at rot 90) and one in the open
+    const vias = `(via (at 10 9.5) (size 0.4) (drill 0.2) (layers "F.Cu" "B.Cu") (net "A") (uuid "v1"))
+  (via (at 20 15) (size 0.4) (drill 0.2) (layers "F.Cu" "B.Cu") (net "B") (uuid "v2"))`;
+    const adopted: string[] = [];
+    const { project, call } = await setup(BOARD(vias), {
+      boardAdopt: {
+        adopt: async (i: { target: string; candidate: string }) => {
+          adopted.push(i.candidate);
+          await writeFile(i.target, await readFile(i.candidate, "utf8"));
+          return { delta: { removed: {}, added: {}, changed: { KOT_PCB_VIA: 1 } }, residual: { removed: {}, added: {}, changed: {} }, targetSha256Before: "a", targetSha256After: "b", timingsMs: {}, kicadCli: "kicad-cli" };
+        },
+      },
+    });
+    let r = await call("board_release", { action: "vias" });
+    expect(r.text).toContain("1 in pads; 1 need fill+cap, 1 lack it");
+    expect(r.text).toContain("through via A @ 10,9.5 drill 0.2 in R1.2");
+    expect(r.json.missing).toHaveLength(1);
+    expect(adopted).toHaveLength(0); // listing writes nothing
+    r = await call("board_release", { action: "vias", apply: true });
+    expect(adopted).toHaveLength(1);
+    expect(r.json.applied).toBe(1);
+    expect(r.json.stillMissing).toBe(0);
+    expect(r.text).toContain("every via that needs fill+cap has it");
+    const board = await readFile(join(project.dir, "board.kicad_pcb"), "utf8");
+    expect(board.match(/\(filling yes\)/g)).toHaveLength(1);
+    expect(board).toMatch(/\(uuid "v1"\)/);
+    r = await call("board_release", { action: "vias" });
+    expect(r.text).toContain("Every via that needs fill+cap has it");
   });
 
   test("fab refuses in order, names the gate, and writes no package; a host's interconnect gate runs first", async () => {

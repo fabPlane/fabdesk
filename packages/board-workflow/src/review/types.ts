@@ -146,14 +146,19 @@ export type Dispositions = Record<string, Disposition>;
 
 /** The owner's intent file: decisions that settle findings, and how far the agent's own judgement goes. */
 export interface Intent {
+  schema?: "INTENT_V1";
+  board?: string;
   goal?: string;
-  constraints?: string[];
+  /** Hard or soft limits the workflow keeps (the toolkit writes objects; plain strings are read too). */
+  constraints?: Array<string | { id: string; kind: "hard" | "soft" | string; text: string; source?: string }>;
   decisions?: Array<{
     id: string;
     decision: string;
     date?: string;
+    by?: string;
     effect?: string;
     source?: string;
+    /** Findings it settles: an id pattern (fnmatch), or a rule with optional refs. */
     covers?: Array<{ id?: string; rule?: string; refs?: string[] }>;
   }>;
   preferences?: { ask_owner_for?: string[]; workflow_decides?: string[] };
@@ -168,6 +173,8 @@ export interface ReviewConfig {
   decoupling?: { max_mm?: number; max_mm_bulk?: number };
   current_check?: { rise_max_c?: number; drop_max_pct?: number; min_track_mm?: number; method?: "ipc2152" | "ipc2221" };
   currents?: Record<string, number>;
+  /** The complete inner-power audit (`inner_power` check): on (optionally with limits) or off; default on when the acceptance has a `supplier_stack`. */
+  inner_power?: boolean | { rise_max_c?: number; drop_max_pct?: number };
   impedance?: { model_uncertainty_pct?: number; min_run_mm?: number };
   net_voltages?: Record<string, number>;
   manual_review?: string[];
@@ -176,6 +183,8 @@ export interface ReviewConfig {
   bom?: Record<string, unknown>;
   custom?: CustomSpec[];
   board_id?: string;
+  /** The silk check's rules: a silk plan (`board_silk`'s `plan`: heights, stroke, clear, skip, hide, inside_ok ...). */
+  silk?: Record<string, unknown>;
 }
 
 export interface CustomSpec {

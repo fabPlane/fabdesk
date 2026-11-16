@@ -46,6 +46,8 @@ export interface PoolSeed {
   why: string;
   away?: string[];
   kept?: boolean;
+  /** Where the placement came from when not a KRT seed (`floorplan <file> seed N`: board_route floorplan, numbered 1000 + N). */
+  source?: string;
 }
 export interface RankedSeed {
   seed: number;
@@ -89,6 +91,8 @@ export async function loadFlow(ws: string): Promise<FlowState> {
   return st;
 }
 const save = (ws: string, st: FlowState) => writeFile(join(ws, "flow.json"), JSON.stringify(st, null, 1) + "\n");
+/** Write the workspace state (flow.json). */
+export const saveFlow = (st: FlowState) => save(st.ws, st);
 
 /** Workspace from a spec: the base project is copied in (without prl, acceptance or score files). */
 export async function initFlow(wsInput: string, spec: LayoutSpec, specPath: string, now = Date.now()): Promise<FlowState> {
@@ -148,7 +152,7 @@ export async function stageCheck(host: LayoutHost, st: FlowState, opts: LayoutCh
   need(host.tools.kicadCli, "no KiCad CLI", "install KiCad or set KICAD_CLI");
   info["disk_gib"] = round1(await host.diskFreeGiB(st.ws));
   info["mem_avail_gib"] = round1(await host.memAvailableGiB());
-  need((info["disk_gib"] as number) >= 10, `disk ${info["disk_gib"]} GiB free`, "free reproducible board copies (seeds, tries)");
+  need((info["disk_gib"] as number) >= 10, `disk ${info["disk_gib"]} GiB free`, "free reproducible board copies (seeds, tries): board_route clean lists them, apply deletes");
   if ((info["mem_avail_gib"] as number) < 14) warns.push(`${info["mem_avail_gib"]} GiB available: TraceMaker (11-14 GB) would wait or OOM`);
 
   const pcb = boardFile(base, st);
@@ -188,7 +192,7 @@ export async function stageCheck(host: LayoutHost, st: FlowState, opts: LayoutCh
 
   // courtyards: a footprint without pads (logo, graphic, board name) has nothing to collide on copper
   const noCrt = [...fps].filter(([r, b]) => !b.includes("CrtYd") && !r.startsWith("FIT_") && b.includes("(pad ")).map(([r]) => r).sort();
-  need(!noCrt.length, `${noCrt.length} parts without courtyard: ${pyList(noCrt.slice(0, 8))}`, "add courtyards (courtyard DRC cannot see these parts)");
+  need(!noCrt.length, `${noCrt.length} parts without courtyard: ${pyList(noCrt.slice(0, 8))}`, "add them: board_route {\"action\":\"courtyards\"} (courtyard DRC cannot see these parts)");
 
   // groups cover every movable part exactly once
   const groups = (JSON.parse(await readFile(rel(sp, sp.groups), "utf8")) as { groups: Array<{ name: string; refs: string[] }> }).groups;
@@ -441,7 +445,7 @@ export async function stageRoute(host: LayoutHost, st: FlowState): Promise<Stage
       }
       results["tm_lock_wait_s"] = round1((Date.now() - t0) / 1000);
       await rm(tm, { recursive: true, force: true });
-      await routePipeline(host, { placed: best.placed, out: tm, plan: rel(sp, sp.plans.tm), stem: sp.stem, req, budgetMs: (B.tm ?? 20) * 60_000 }).catch((e) => {
+      await routePipeline(host, { placed: best.placed, out: tm, plan: rel(sp, sp.plans.tm), stem: sp.stem, req, budgetMs: (B.tm ?? 20) * 60_000, planRoot: resolve(sp.base, "..") }).catch((e) => {
         if (!(e instanceof FlowError)) throw e;
         lines.push(`TraceMaker: ${e.message}`);
       });

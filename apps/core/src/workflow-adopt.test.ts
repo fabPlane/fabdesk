@@ -65,6 +65,22 @@ describe("adopt server cleanup", () => {
     expect(after).toBeLessThanOrEqual(before);
   });
 
+  test.skipIf(process.platform === "win32" || !Bun.which("python3"))("a KiCad that drops the connection instead of loading the board: its own output goes into the error", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "adopt-drop-"));
+    const board = join(dir, "board.kicad_pcb");
+    await writeFile(board, "(kicad_pcb)");
+    // listens, takes the connection, says why it cannot load the board and closes (what a KiCad older than the file does)
+    const cli = join(dir, "kicad-cli");
+    await writeFile(
+      cli,
+      `#!/bin/sh\npython3 -c '\nimport socket, sys\ns = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1)\nc, _ = s.accept()\nsys.stderr.write("Failed to load board: KiCad was unable to open this file because it was created with a more recent version than the one you are running.\\n"); sys.stderr.flush()\nc.close(); s.close()\n' "$3"\nexit 1\n`,
+    );
+    await chmod(cli, 0o755);
+    const err = await adoptBoard({ target: board, candidate: board, cli: { path: cli } as never }).then(() => null, (e: Error) => e);
+    expect(err?.message).toContain("--- kicad-cli output ---");
+    expect(err?.message).toContain("created with a more recent version than the one you are running");
+  });
+
   test("Windows: the api-server listens on a loopback WebSocket and its process tree is killed with taskkill", () => {
     expect(apiServerEndpoint("win32", "C:\\tmp\\a", 41234)).toMatch(/^ws:\/\/127\.0\.0\.1:41234\/kicad\//);
     expect(apiServerEndpoint("linux", "/tmp/a", 0)).toBe(join("/tmp/a", "api.sock"));

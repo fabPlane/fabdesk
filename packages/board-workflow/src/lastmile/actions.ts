@@ -4,8 +4,10 @@
  * them (`pairfix` in this package, router steps through a StepEngine that wraps what the host has installed).
  */
 import { LASTMILE_PLANS } from "./plans";
+import { pairStages, SHORT_LEG_RULE, type PairStageOptions } from "../layout/krt-override";
+import type { PlanStage } from "../layout/plan";
 
-export type StepType = "krt" | "repair" | "nudge" | "fill" | "pairfix";
+export type StepType = "krt" | "repair" | "nudge" | "fill" | "pairfix" | "escape" | "planes" | "pour" | "replace" | "cut";
 
 export interface Step {
   type: StepType;
@@ -23,7 +25,33 @@ export interface Step {
   router?: string;
   /** `pairfix`: arguments (`--pairs REGEX`, `--ops mirror-force`). */
   args?: string[];
+  /** `escape`: how far a stub reaches beyond the pad edge and the clearance it keeps, mm. */
+  escape?: { maxStub: number; clearance: number };
+  /** `pour`: more nets as shell globs, the margin round an open's ends and the min_thickness scale (`planes` uses `planFile`). */
+  pour?: { nets: string[]; margin: number; minWidthScale: number };
+  /** `replace`: floorplan groups to rip and re-place (route_region --replace), the floorplan file, the placer seed. */
+  replace?: { groups: string[]; floorplan?: string; seed?: number };
+  /**
+   * `cut`: boxes X0,Y0,X1,Y1 whose copper is ripped, all nets (route_region's rip), no router; `aroundOpens` adds a box
+   * of +-that many mm round each end of every open connection of the board the step starts from (`--around-opens`).
+   */
+  cut?: { boxes: number[][]; aroundOpens?: number };
+  /**
+   * Layers the step's KRT plan keeps out of reach, applied after its macros expand (`layout/plan.ts` avoidLayerArgs:
+   * an inner layer left out of `--layers`, an outer one at `--layer-costs` 10). Set by the bench's `~avoid` retry of a
+   * candidate that split another net's pour; honoured by every step that runs a KRT plan.
+   */
+  avoidLayers?: string[];
+  /**
+   * Options for the pair stages (`route_diff`) of the step's KRT plan, from the action's `!short` / `!match[=MM]`
+   * modifiers (routeKrt `pairOptions`): couple the short fan-out legs too (KRT's short-leg rule lowered through the
+   * override wrapper, layout/krt-override.ts), P/N length matching inside each pair.
+   */
+  pairOptions?: PairStageOptions;
 }
+
+/** Steps that run a KRT plan (and so can honour `avoidLayers`). */
+export const runsKrtPlan = (s: Step) => (s.type === "krt" || s.type === "repair" || s.type === "nudge" || s.type === "replace") && !!(s.plan || s.planFile);
 
 export interface NudgeMove {
   ref: string;
@@ -41,6 +69,17 @@ const plan = (n: string): Record<string, unknown> => {
   return structuredClone(p);
 };
 const K = (n: string): Step => ({ type: "krt", plan: plan(n), planName: n });
+/**
+ * `finish` limited to the nets open on the board it starts from (KRT `--nets @open-before`; with no rip before it, the
+ * bench's score of that board names them). Not a toolkit plan: on held-out 12-layer boards `finish` (every unrouted
+ * connection) ran past 6 minutes, and agents wrote this restriction by hand and had their nets in 1-2 minutes.
+ */
+const finishOpens = (): Step => {
+  const f = structuredClone(plan("finish")) as { note?: string; stages: Array<{ args: string[] }> };
+  f.note = "fabdesk: finish limited to the nets open on the start board (--nets @open-before)";
+  f.stages[0]!.args = [...f.stages[0]!.args, "--nets", "@open-before"];
+  return { type: "krt", plan: f as Record<string, unknown>, planName: "finish-opens" };
+};
 const REP = (rip: string[], p = "rip-sig"): Step => ({ type: "repair", rip, plan: plan(p), planName: p });
 
 /** The host routers a `fill` step can name (the tools package's hostFill runs exactly these). */
@@ -49,6 +88,7 @@ export const FILL_ROUTERS = ["tracemaker", "freerouting", "fab_router"] as const
 type Builder = (arg: string) => Step[];
 export const ACTIONS: Record<string, { help: string; steps: Builder | null }> = {
   finish: { help: "route the opens; nothing is ripped", steps: () => [K("finish")] },
+  opens: { help: "route only the nets open now (finish limited to them, nothing ripped): on a large board much faster than finish", steps: () => [finishOpens()] },
   rip: { help: "route the opens; signal nets may be ripped whole (pairs and wide power protected)", steps: () => [K("rip-sig")] },
   leg: {
     help: "leg-level rip with near-target blocker selection, then repair its shorts keeping the new routes",
@@ -92,6 +132,57 @@ export const ACTIONS: Record<string, { help: string; steps: Builder | null }> = 
   nudge: { help: "nudge:REF@X,Y[@ROT[/ROT..]][~RADIUS][&REF2@..]  re-seat parts near points (pose computed, courtyard-gated), cut pairs re-routed as pairs", steps: null },
   turn: { help: "turn:REF@ROT[/ROT..][~RADIUS]  re-seat a part where it is at another rotation (see `crossings`)", steps: null },
   plan: { help: "plan:FILE  any router plan", steps: (a) => [{ type: "krt", planFile: a }] },
+  escape: {
+    help:
+      "escape[:STUB[,CLEARANCE]]  fine-pitch power escapes, no router: pad-width bridges between adjacent same-net pins and pad-width stubs out from power pins narrower than their class (STUB mm beyond the pad, default 0.9, never past 1.0 mm from its centre: the neck rule), each clear of other-net copper by CLEARANCE (default 0.1); chain a router after it, e.g. escape+finish",
+    steps: (a) => {
+      const [s, c, ...more] = a ? a.split(",") : [];
+      if (more.length) throw new ActionError(`escape:${a}: escape[:STUB[,CLEARANCE]]`);
+      return [{ type: "escape", escape: { maxStub: s ? num(`escape:${a}`, s) : 0.9, clearance: c ? num(`escape:${a}`, c) : 0.1 } }];
+    },
+  },
+  planes: {
+    help:
+      "planes:FILE  split power plane on an inner layer from a plan JSON in the project (layer, nets with weights, reach_mm, fill_net, keepout_circles ...): grid cells go to the nearest plan net's pads, pieces joined by corridors, the fill net elsewhere; zones only, no router",
+    steps: (a) => {
+      if (!a) throw new ActionError("planes:FILE  a power-planes plan JSON, project-relative");
+      return [{ type: "planes", planFile: a }];
+    },
+  },
+  pour: {
+    help:
+      "pour[:GLOB,..][~MARGIN][@SCALE]  net zones over the open connections of power nets (and nets matching a shell GLOB; '+' chains actions, so write ?5V for +5V) on the outer layer both ends share, MARGIN mm round the ends (default 1.5); KiCad's fill keeps clearances and never goes thinner than class width x SCALE (default 1.0), so a pour only connects where the current fits",
+    steps: (a) => {
+      const m = /^([^~@]*)(?:~([^~@]+))?(?:@([^~@]+))?$/.exec(a);
+      if (!m) throw new ActionError(`pour:${a}: pour[:GLOB,..][~MARGIN][@SCALE]`);
+      const what = `pour:${a}`;
+      return [{ type: "pour", pour: { nets: m[1] ? m[1].split(",").filter(Boolean) : [], margin: m[2] ? num(what, m[2]) : 1.5, minWidthScale: m[3] ? num(what, m[3]) : 1.0 } }];
+    },
+  },
+  cut: {
+    help:
+      "cut:X0,Y0,X1,Y1[;X0,Y0,X1,Y1..|;opens~MM]  rip every track, arc and via with a point in the boxes (all nets, pairs too) and the copper left dangling, no router (route_region's rip); opens~MM adds a box of +-MM round each end of every open connection; chain what comes next, e.g. cut:opens~1.5+escape+route (= region:opens~1.5!escape)",
+    steps: (a) => [{ type: "cut", cut: boxes(`cut:${a}`, a) }],
+  },
+  region: {
+    help:
+      "region:X0,Y0,X1,Y1[;..|;opens~MM][!escape]  route_region: cut the boxes (all nets; opens~MM = --around-opens MM), with !escape add the fine-pitch power escapes on the ripped board (escape), then route the opens: cut pairs again as pairs, their legs, then the rest (after-cut)",
+    steps: (a) => {
+      const esc = a.endsWith("!escape");
+      const spec = esc ? a.slice(0, -"!escape".length) : a;
+      return [{ type: "cut", cut: boxes(`region:${a}`, spec) }, ...(esc ? [{ type: "escape" as const, escape: { maxStub: 0.9, clearance: 0.1 } }] : []), K("after-cut")];
+    },
+  },
+  route: { help: "route the opens after a cut: cut pairs again as pairs, their single-ended legs, then everything else (the after-cut plan)", steps: () => [K("after-cut")] },
+  replace: {
+    help:
+      "replace:GROUP[,GROUP..][@FLOORPLAN][#SEED]  the per-block loop: rip every track and via in the floorplan groups' regions (all nets), re-place the groups inside their regions with everything else locked (TraceMaker placer, courtyard-gated), then route the opens; FLOORPLAN defaults to .fabdesk/board/layout/floorplan.json (blocks.json beside it)",
+    steps: (a) => {
+      const m = /^([^@#]+)(?:@([^#]+))?(?:#(\d+))?$/.exec(a);
+      if (!m) throw new ActionError("replace:GROUP[,GROUP..][@FLOORPLAN][#SEED]");
+      return [{ type: "replace", replace: { groups: m[1]!.split(",").filter(Boolean), ...(m[2] ? { floorplan: m[2] } : {}), ...(m[3] ? { seed: Number(m[3]) } : {}) }, plan: plan("after-cut"), planName: "after-cut" }];
+    },
+  },
 };
 
 export class ActionError extends Error {}
@@ -108,8 +199,63 @@ function box(action: string, s: string): number[] {
   if (v.length !== 4) throw new ActionError(`${action}: a box is X0,Y0,X1,Y1 (got '${s}')`);
   return v.map((x) => num(action, x));
 }
+/** One or more boxes separated by ';', and `opens~MM` (a box round each open end). */
+function boxes(action: string, s: string): { boxes: number[][]; aroundOpens?: number } {
+  if (!s) throw new ActionError(`${action}: give a box X0,Y0,X1,Y1 (several separated by ';') or opens~MM`);
+  const out: { boxes: number[][]; aroundOpens?: number } = { boxes: [] };
+  for (const b of s.split(";")) {
+    const m = /^opens(?:~(.*))?$/.exec(b);
+    if (m) out.aroundOpens = m[1] === undefined ? 1.0 : num(action, m[1]);
+    else out.boxes.push(box(action, b));
+  }
+  return out;
+}
 /** The box's numbers as written, once each is checked. */
 const boxArgs = (action: string, s: string): string[] => (box(action, s), s.split(","));
+
+/**
+ * Modifiers an action that routes pairs as pairs takes (`pairs!short`, `bundle:REGEX@BOX!short!match!outer=2`): written after
+ * the action and its argument, each behind a `!`. They apply to the pair stages (KRT `route_diff`) of the action's
+ * router plans and make no sense elsewhere, so an action without such a stage refuses them by name.
+ */
+export const PAIR_MODIFIERS: Record<string, string> = {
+  short: `couple the short fan-out legs too: KiCadRoutingTools routes a pair leg single-ended when it has under max(5 x the centerline setback, 3 mm) of coupled run ("electrically short", every leg of a 0.5 mm pitch connector fan-out); !short lowers that rule to max(${SHORT_LEG_RULE.setbacks} x setback, ${SHORT_LEG_RULE.floorMm} mm) for this action's pair stages (the installed KRT is not edited)`,
+  match: "match[=MM]  P/N length matching inside each pair as it is routed (--diff-pair-intra-match --length-match-tolerance MM, default 1.0)",
+  outer: "outer=COST  the outer layers (F.Cu, B.Cu) at this layer cost in the pair stages instead of the templates' 20, for pairs whose pads and short legs are on an outer layer (a connector and its ESD parts on F.Cu)",
+};
+const MATCH = /^match(?:=(.*))?$/;
+const OUTER = /^outer=(.*)$/;
+
+/**
+ * A part's `!short` / `!match[=MM]` / `!outer=COST` taken off (wherever they sit among its `!` suffixes): the rest of
+ * the part as written, the options, and the modifiers as written (`mods`, for actions that hand them on).
+ */
+export function pairModifiers(part: string): { part: string; options: PairStageOptions | null; mods: string } {
+  const toks = part.split("!");
+  const keep = [toks[0]!];
+  const mods: string[] = [];
+  const o: PairStageOptions = {};
+  for (const tk of toks.slice(1)) {
+    const m = MATCH.exec(tk);
+    const c = OUTER.exec(tk);
+    if (tk === "short") o.shortLegs = { ...SHORT_LEG_RULE };
+    else if (m) {
+      o.intraMatch = m[1] === undefined ? 1.0 : num(`${part}: !match`, m[1]);
+      if (!(o.intraMatch > 0)) throw new ActionError(`${part}: !match=MM needs a tolerance above 0`);
+    } else if (c) {
+      o.outerCost = num(`${part}: !outer`, c[1]);
+      if (!(o.outerCost >= 1)) throw new ActionError(`${part}: !outer=COST needs a cost of at least 1 (1 = no penalty)`);
+    } else {
+      keep.push(tk);
+      continue;
+    }
+    mods.push("!" + tk);
+  }
+  return { part: keep.join("!"), options: mods.length ? o : null, mods: mods.join("") };
+}
+
+/** True when the step's router plan has a pair stage (a `plan:FILE` is read only when it runs, so it counts). */
+const routesPairs = (s: Step) => runsKrtPlan(s) && (!!s.planFile || pairStages(((s.plan?.["stages"] as PlanStage[] | undefined) ?? [])).length > 0);
 
 const NUDGE = /^([^@]+)@([-\d.]+),([-\d.]+)(?:@([\d./]+))?(?:~([\d.]+))?$/;
 const TURN = /^([^@]+)()()@([\d./]+)(?:~([\d.]+))?$/;
@@ -120,10 +266,17 @@ export function stepsFor(action: string): Step[] {
   const fences: Array<{ name: string; box: number[]; nets: string }> = [];
   const parts = action
     .split("+")
-    .map((p) => (p.split(":")[0] === "pairs-fix" ? ((r) => `tighten${r}+reroute${r}+shorts+tighten${r}`)(p.includes(":") ? ":" + p.slice(p.indexOf(":") + 1) : "") : p))
+    .map((p) => {
+      // pairs-fix[:REGEX][!short][!match]: the modifiers go to its re-route, the one step that routes pairs
+      const { part: q, mods } = pairModifiers(p);
+      if (q.split(":")[0] !== "pairs-fix") return p;
+      const r = q.includes(":") ? ":" + q.slice(q.indexOf(":") + 1) : "";
+      return `tighten${r}+reroute${r}${mods}+shorts+tighten${r}`;
+    })
     .join("+")
     .split("+");
-  for (const part of parts) {
+  for (const whole of parts) {
+    const { part, options: pairOptions } = pairModifiers(whole);
     const i = part.indexOf(":");
     const name = i < 0 ? part : part.slice(0, i);
     const arg = i < 0 ? "" : part.slice(i + 1);
@@ -161,6 +314,12 @@ export function stepsFor(action: string): Step[] {
       if (!def.steps) throw new ActionError(`action '${name}' has no steps`);
       steps.push(...def.steps(arg));
     }
+    if (pairOptions) {
+      const routing = steps.slice(first).filter(routesPairs);
+      if (!routing.length)
+        throw new ActionError(`${whole}: !short / !match / !outer apply to actions that route pairs as pairs (pairs, pairs-m, pairs-all, bundle, reroute, route, region, nudge, turn, replace, plan:FILE); '${name}' has no pair stage`);
+      for (let k = first; k < steps.length; k++) if (routesPairs(steps[k]!)) steps[k] = { ...steps[k]!, pairOptions: { ...steps[k]!.pairOptions, ...pairOptions } };
+    }
     if (fences.length)
       for (let k = first; k < steps.length; k++) {
         const s = steps[k]!;
@@ -171,7 +330,12 @@ export function stepsFor(action: string): Step[] {
 }
 
 export function actionHelp(): string[] {
-  return [...Object.entries(ACTIONS).map(([k, v]) => `${k.padEnd(10)} ${v.help}`), "chain with '+', e.g. taps+a7"];
+  return [
+    ...Object.entries(ACTIONS).map(([k, v]) => `${k.padEnd(10)} ${v.help}`),
+    "chain with '+', e.g. taps+a7",
+    "modifiers of an action that routes pairs as pairs, after it and its argument (e.g. bundle:HDMI!short!match!outer=2):",
+    ...Object.entries(PAIR_MODIFIERS).map(([k, v]) => `  !${/^\S+\s\s/.test(v) && v.startsWith(k) ? v : `${k.padEnd(8)} ${v}`}`),
+  ];
 }
 
 /** Last-mile order of a board (WORKFLOW.md section 3); the agent decides what to try, the bench judges. */

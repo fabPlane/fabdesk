@@ -139,9 +139,14 @@ export interface Mouth {
   sig: Array<[number, number]>;
 }
 
-/** Where a connector's plug enters: the courtyard side opposite the contact-pad centroid. Null when it has no contact pads. */
-export function mouthOf(fp: SNode): Mouth | null {
-  const { x, y, rot } = footprintPose(fp);
+/**
+ * Where a connector's plug enters: the courtyard side opposite the contact-pad centroid. Null when it has no contact pads.
+ * `pose` places the footprint elsewhere (x, y, rot) without editing the board (the cable sweep's trial poses).
+ */
+export function mouthOf(fp: SNode, pose?: readonly [number, number, number]): Mouth | null {
+  // the toolkit reads the pose through its board model, which keeps rot % 360 (cos/sin of -90 and 270 differ in the last bit)
+  const fpPose = footprintPose(fp);
+  const { x, y, rot } = pose ? { x: pose[0], y: pose[1], rot: pose[2] } : { ...fpPose, rot: mod360(fpPose.rot) };
   const box = worldBox(localBox(fp), x, y, rot);
   const c = Math.cos((rot * Math.PI) / 180), s = Math.sin((rot * Math.PI) / 180);
   const sig: Array<[number, number]> = [];

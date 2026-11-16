@@ -100,6 +100,7 @@ export function attachToRegistry(
   const noteClient = (meta: Record<string, unknown> | undefined) => {
     announced = clientHintFrom(meta) ?? announced;
   };
+  const clientName = (): string | undefined => announced?.name ?? (server.server.getClientVersion() as McpClientHint | undefined)?.name;
   const waitFor = opts.durableWaitMs;
 
   const session: ToolSession = {
@@ -174,7 +175,7 @@ export function attachToRegistry(
               ...(extra.authInfo?.token ? { token: extra.authInfo.token } : {}),
             }),
           );
-          return await toCallToolResult(output);
+          return await toCallToolResult(output, { structured: wantsStructured(output, clientName()) });
         } catch (e) {
           return errorResult(e);
         } finally {
@@ -197,6 +198,7 @@ export function attachToRegistry(
       initialTools,
       new Set(opts.capabilityExclude ?? []),
       noteClient,
+      clientName,
     );
 
   if (!opts.toolsOnly) {
@@ -264,6 +266,7 @@ function registerCapabilityTools(
   initialTools: Set<string> | null,
   excluded: Set<string>,
   noteClient: (meta: Record<string, unknown> | undefined) => void,
+  clientName: () => string | undefined,
 ): void {
   const discovered = new Set<string>();
   const search = server.registerTool(
@@ -363,7 +366,7 @@ function registerCapabilityTools(
             ...(extra.authInfo?.token ? { token: extra.authInfo.token } : {}),
           }),
         );
-        return toCallToolResult(output);
+        return toCallToolResult(output, { structured: wantsStructured(output, clientName()) });
       } catch (error) {
         return errorResult(error);
       }
@@ -378,7 +381,19 @@ export function errorResult(e: unknown): CallToolResult {
   return { isError: true, content: [{ type: "text", text: msg }] };
 }
 
-export async function toCallToolResult(output: ToolOutput): Promise<CallToolResult> {
+/**
+ * Clients that hand the model `structuredContent` instead of the text block when a result has both: Claude Code
+ * (2.1.x) does, so a fabdesk agent on Claude read every board tool's JSON (pairs tables, phases) and never the summary
+ * written for it, while Codex read the text. For these clients a result that has text leaves the JSON out.
+ */
+export const STRUCTURED_FIRST_CLIENTS = /^claude-code$/i;
+
+/** Whether a result for this client carries `structuredContent` next to its text. */
+export function wantsStructured(output: ToolOutput, clientName: string | undefined): boolean {
+  return !(output.text !== undefined && clientName !== undefined && STRUCTURED_FIRST_CLIENTS.test(clientName));
+}
+
+export async function toCallToolResult(output: ToolOutput, opts: { structured?: boolean } = {}): Promise<CallToolResult> {
   const content: CallToolResult["content"] = [];
   const text =
     output.text ?? (output.json !== undefined ? JSON.stringify(output.json, null, 2) : "ok");
@@ -414,6 +429,7 @@ export async function toCallToolResult(output: ToolOutput): Promise<CallToolResu
     }
   }
   const structured =
+    opts.structured !== false &&
     output.json !== undefined &&
     output.json !== null &&
     typeof output.json === "object" &&

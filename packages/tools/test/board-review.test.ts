@@ -154,6 +154,36 @@ describe("board_review", () => {
     expect((await readReviewGate(project.dir)).state).toBe("none");
   });
 
+  test("intent_init, intent_decide and intent: the owner's decision settles what it covers and the gate is recorded", async () => {
+    const { project, call } = await setup();
+    expect((await call({ action: "intent" })).text).toContain("intent_init");
+    await expect(call({ action: "intent_decide", id: "D1", decision: "x" })).rejects.toThrow(/no intent/);
+    const init = await call({ action: "intent_init" });
+    expect(init.text).toContain("fill the goal");
+    await expect(call({ action: "intent_init" })).rejects.toThrow(/exists/);
+    await call({ action: "run", offline: true });
+    await expect(call({ action: "intent_decide", id: "D1" })).rejects.toThrow(/needs decision/);
+    const d = await call({ action: "intent_decide", id: "D1", decision: "the USB-C faces in on purpose", covers: ["L4:MOUTH:J1*"] });
+    expect(d.text).toContain("recorded D1; it settles L4:MOUTH:J1*");
+    expect(d.json?.["settles"]).toEqual(["L4:MOUTH:J1:-"]);
+    expect((await call({ action: "intent" })).text).toContain("dec   D1");
+    const g = (await readReviewGate(project.dir)) as { state: string };
+    expect(g.state).toBe("open");
+  });
+
+  test("autopilot reviews, applies the fixes and ends with the owner's questions; try checks its inputs", async () => {
+    const { project, call } = await setup();
+    const r = await call({ action: "autopilot", offline: true });
+    expect(r.text).toMatch(/\[1\/3\] review/);
+    expect(r.text).toContain("[3/3] what is left");
+    expect(r.text).toContain("NEEDS OWNER");
+    expect((await readReviewGate(project.dir)).state).toBe("open");
+    await expect(call({ action: "try" })).rejects.toThrow(/try needs plan/);
+    await expect(call({ action: "try", plan: { id: "mine" }, ids: ["L9:NOPE:-:-"] })).rejects.toThrow(/not in the current review/);
+    await expect(call({ action: "try", plan: "../nowhere.json" })).rejects.toThrow(/cannot read the plan/);
+    await expect(call({ action: "try", plan: "[1]" })).rejects.toThrow(/cannot read the plan|JSON object/);
+  });
+
   test("import_expert and pcb stay inside the project", async () => {
     const { project, call } = await setup();
     await call({ action: "run", offline: true });

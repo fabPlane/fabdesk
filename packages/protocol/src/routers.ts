@@ -5,7 +5,7 @@ import { z } from "zod/v4";
  * Catalog entries. `capacity` is a legacy input alias for `fab_router`, not a catalog entry. `krt`
  * (KiCadRoutingTools) is an engine the board workflow runs, not a `route_run` router (`kind: "engine"`).
  */
-export const RouterCatalogId = z.enum(["fab_router", "freerouting", "tracemaker", "krt"]);
+export const RouterCatalogId = z.enum(["fab_router", "freerouting", "tracemaker", "krt", "atlc"]);
 export type RouterCatalogId = z.infer<typeof RouterCatalogId>;
 
 export const RouterInstallState = z.enum([
@@ -55,6 +55,13 @@ export const RouterSnapshot = z.object({
   sourceOnly: z.boolean().optional(),
   /** Env var (TRACEMAKER_BIN / FREEROUTING_JAR / FABDESK_KRT_DIR) or setting that supplies this router; Uninstall cannot remove it. */
   overriddenBy: z.string().optional(),
+  /**
+   * TraceMaker only: its placer (`tracemaker-place`, which board_route's floorplan path runs), found beside the binary,
+   * in a source build's tree, or from TRACEMAKER_PLACE_BIN (`overriddenBy`). `why` says what is missing when not ready.
+   */
+  placer: z
+    .object({ ready: z.boolean(), path: z.string().optional(), overriddenBy: z.string().optional(), why: z.string().optional() })
+    .optional(),
 });
 export type RouterSnapshot = z.infer<typeof RouterSnapshot>;
 

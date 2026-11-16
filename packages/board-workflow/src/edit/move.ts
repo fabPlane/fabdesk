@@ -4,7 +4,9 @@
  *
  * - `to` is the new origin pose of `ref` (x, y, rotation; side kept). `carry` parts move rigidly with it; copper of nets
  *   whose every pad is on carried parts moves with them, so a block keeps its internal routing. `carry_auto` adds the
- *   named parts' net-local satellites. `near` picks the pose next to a part, a REF.PAD or a point.
+ *   named parts' net-local satellites. `near` picks the pose next to a part, a REF.PAD, a point, or the centroid of the
+ *   other pads on a net (`net:NAME`; `net` = the part's own single net). The plan's `legalise` moves get their poses from
+ *   tp_legalise's own search (`legalise.ts`) and are then plain moves.
  * - Fan-out: every other track/via/arc touching a moved part's old pads is removed, then dangling copper of those nets is
  *   pruned: only the connections leaving the block open.
  * - Landing: copper of other nets crossing the new pads is removed, and through vias inside the new courtyard.
@@ -23,6 +25,7 @@ import { g, mod, round } from "./fmt";
 import { pruneDangling } from "./prune";
 import { stop } from "./sch";
 import { footprintSpans, setPose } from "./text";
+import { legalisePoses } from "./legalise";
 
 export type Pose = [number, number, number];
 
@@ -38,6 +41,17 @@ export interface MoveSpec {
   radius?: number;
   rotations?: "keep" | "any";
   make_room?: boolean;
+  /** near: courtyard clearance to other parts and drilled pads for this part (default the plan's displace clearance, 0.2 mm). */
+  clearance?: number;
+  /** near: margin from the board outline for this part (default the plan's displace edge, 0.4 mm). */
+  edge?: number;
+  /**
+   * near: only poses whose courtyard lands on no other net's copper (no landing cut). Without it the search keeps the
+   * toolkit's order, which takes a pose on copper when nothing clear is within 1.5 mm of the first legal ring.
+   */
+  clear?: boolean;
+  /** Pose from tp_legalise's search (plan.legalise); its clearance is also this part's gap when judging what is in the way. */
+  legalise?: { clearance: number; edge: number; radius: number };
 }
 
 export interface DisplaceSpec {
@@ -67,13 +81,18 @@ export interface MoveLedger {
   pruned: number;
   internal_nets_moved: string[];
   new_courtyards: Record<string, number[]>;
+  /**
+   * A near pose that lands on other nets' copper, and the nearest pose that lands on none (searched up to 4 mm past the
+   * radius), so the agent need not probe poses one by one (a jetson LED move took 15 impact calls).
+   */
+  near_clear?: Array<{ ref: string; chosen_cuts: number; clear: Pose | null; clear_mm: number | null; target: [number, number] }>;
 }
 
 type Fx = (x: number, y: number) => Pt;
 const key = (s: number, e: number) => `${s}:${e}`;
 const num4 = (p: Pose): Pose => [round(p[0], 4), round(p[1], 4), p[2]];
 
-function rawFootprints(root: SNode): Map<string, SNode> {
+export function rawFootprints(root: SNode): Map<string, SNode> {
   const out = new Map<string, SNode>();
   for (const fp of kids(root, "footprint")) {
     const props = new Map<string, string>();
@@ -129,6 +148,15 @@ export function planMoves(
     boxOf.set(r, worldBox(localBox(raw.get(r)!), f.x, f.y, f.rot));
   }
   const newPose = new Map<string, Pose>();
+  // legalise moves: their poses from tp_legalise's own search on the board as it is, in plan order, then plain moves
+  const legal = movesIn.filter((m) => m.legalise && m.to === undefined && m.near === undefined);
+  const moveGap = new Map<string, number>();
+  if (legal.length) {
+    const poses = legalisePoses(text0, legal.map((m) => m.ref), legal[0]!.legalise!);
+    movesIn = movesIn.map((m) => (legal.includes(m) ? { ...m, to: poses.get(m.ref)! } : m));
+    for (const m of legal) moveGap.set(m.ref, m.legalise!.clearance);
+  }
+  const gapOf = (r: string) => moveGap.get(r) ?? gap;
   const nearMoves = movesIn.filter((m) => m.near !== undefined && m.to === undefined);
   const moves = movesIn.filter((m) => !nearMoves.includes(m));
   for (const m of nearMoves) if (!fps.has(m.ref)) return stop(`FAIL ${m.ref}: not on the board`);
@@ -221,9 +249,10 @@ export function planMoves(
       const why: string[] = [];
       const sameP = close(newBox.get(r)!, boxOf.get(r)!);
       // a part taking the exact place another moving part leaves (a swap) inherits that part's neighbours
-      const inherited = moving.some((v) => v !== r && side(v) === side(r) && close(newBox.get(r)!, boxOf.get(v)!) && overlap(boxOf.get(v)!, boxOf.get(o)!, gap));
-      if (side(o) === side(r) && overlap(newBox.get(r)!, boxOf.get(o)!, gap) && !(sameP && overlap(boxOf.get(r)!, boxOf.get(o)!, gap)) && !inherited) why.push("courtyard");
-      else if (inherited && overlap(newBox.get(r)!, boxOf.get(o)!, gap)) (led.inherited_overlaps ??= []).push(`${r} takes the place of a moving part already next to ${o}`);
+      const gr = gapOf(r);
+      const inherited = moving.some((v) => v !== r && side(v) === side(r) && close(newBox.get(r)!, boxOf.get(v)!) && overlap(boxOf.get(v)!, boxOf.get(o)!, gr));
+      if (side(o) === side(r) && overlap(newBox.get(r)!, boxOf.get(o)!, gr) && !(sameP && overlap(boxOf.get(r)!, boxOf.get(o)!, gr)) && !inherited) why.push("courtyard");
+      else if (inherited && overlap(newBox.get(r)!, boxOf.get(o)!, gr)) (led.inherited_overlaps ??= []).push(`${r} takes the place of a moving part already next to ${o}`);
       if ((drills.get(o) ?? []).some((d) => overlap(newBox.get(r)!, d, 0))) why.push("its drilled pad under the new courtyard");
       if (newDrills.get(r)!.some((nd) => overlap(nd, boxOf.get(o)!, 0))) why.push("new drilled pad through its courtyard");
       if (why.length) (inWay.get(o) ?? inWay.set(o, []).get(o)!).push(`${r}: ${why.join(", ")}`);
@@ -237,7 +266,7 @@ export function planMoves(
     for (const o of moving.slice(i + 1)) {
       const r = moving[i]!;
       if (groupFx.get(r)![0] === groupFx.get(o)![0]) continue; // one rigid block keeps its own spacing
-      if (side(o) === side(r) && overlap(newBox.get(r)!, newBox.get(o)!, gap)) return stop(`STOP moved parts ${r} and ${o} overlap at their new poses`);
+      if (side(o) === side(r) && overlap(newBox.get(r)!, newBox.get(o)!, Math.min(gapOf(r), gapOf(o)))) return stop(`STOP moved parts ${r} and ${o} overlap at their new poses`);
     }
   led.in_way = Object.fromEntries(inWay);
   if (inWay.size && !displace)
@@ -254,11 +283,25 @@ export function planMoves(
   type Reseat = [string, Pt | undefined | null, "keep" | "any", string[], number | null];
   const reseat: Reseat[] = [];
   const makeRoom = new Set<string>();
+  const nearOpts = new Map<string, { clearance?: number; edge?: number; clear?: boolean }>();
   for (const m of nearMoves) {
     const nr = m.near!;
     let tgt: Pt;
+    nearOpts.set(m.ref, { ...(m.clearance !== undefined ? { clearance: m.clearance } : {}), ...(m.edge !== undefined ? { edge: m.edge } : {}), ...(m.clear ? { clear: true } : {}) });
     if (Array.isArray(nr)) tgt = [Number(nr[0]), Number(nr[1])];
-    else if (nr.includes(".")) {
+    else if (nr === "net" || nr.startsWith("net:")) {
+      // the centroid of the other pads on a net (the toolkit's tp_legalise target); "net" = the part's own single net
+      let net = nr.slice(4);
+      if (nr === "net") {
+        const nets = [...new Set(Object.values(fps.get(m.ref)!.pins).filter((n) => n))];
+        if (nets.length !== 1) return stop(`FAIL near net: ${m.ref} has pads on ${nets.length ? `${nets.length} nets (${nets.slice(0, 4).join(", ")})` : "no net"}; name the net (near "net:NAME"), a REF.PAD or a point`);
+        net = nets[0]!;
+      }
+      const own = new Set([m.ref, ...(nearCarry.get(m.ref) ?? [])]);
+      const others = pads.filter((q) => q.net === net && !own.has(q.ref));
+      if (!others.length) return stop(`FAIL near ${nr}: no other pad on net ${net}`);
+      tgt = [others.reduce((t, q) => t + q.x, 0) / others.length, others.reduce((t, q) => t + q.y, 0) / others.length];
+    } else if (nr.includes(".")) {
       const dot = nr.lastIndexOf(".");
       const rr = nr.slice(0, dot);
       const pp = nr.slice(dot + 1);
@@ -309,8 +352,17 @@ export function planMoves(
     const f = fps.get(o)!;
     const lb = localBox(raw.get(o)!);
     const roomy = makeRoom.has(o);
+    // a near move may set its own courtyard clearance and edge margin (legalise: the toolkit's tp_legalise 0.15 / 0.5 mm)
+    const gapO = nearOpts.get(o)?.clearance ?? gap;
+    const emO = nearOpts.get(o)?.edge ?? em;
     // make_room: only fixed parts, drilled pads and parts already re-seated block the pose; others are displaced
-    const blockers = [...occupied].filter(([r_]) => !roomy || fixed(r_) || newPose.has(r_)).map(([, v]) => v);
+    const blockersR = [...occupied].filter(([r_]) => !roomy || fixed(r_) || newPose.has(r_));
+    const blockers = blockersR.map(([, v]) => v);
+    // what stood in the way of poses nearer than the first legal one (named in a STOP, so the agent knows why)
+    const inWayNear = new Map<string, number>();
+    const tallyWay = (sd: string, b: Box) => {
+      for (const [r_, [s_, bb]] of blockersR) if (s_ === sd && overlap(b, bb, gapO)) inWayNear.set(r_, (inWayNear.get(r_) ?? 0) + 1);
+    };
     const block = nearCarry.get(o) ?? [];
     const blb = new Map(block.map((c) => [c, localBox(raw.get(c)!)]));
     const blockPoses = (x: number, y: number, rot: number): Map<string, Pose> => {
@@ -343,39 +395,69 @@ export function planMoves(
     const blockLegal = (x: number, y: number, rot: number): boolean => {
       for (const [c, pose_] of blockPoses(x, y, rot)) {
         const cb = worldBox(blb.get(c)!, ...pose_);
-        if (cb[0] < BX[0] + em || cb[1] < BX[1] + em || cb[2] > BX[2] - em || cb[3] > BX[3] - em) return false;
-        if (occupiedList(blockers, side(c), cb, gap)) return false;
-        if (allDrills.some((dd) => overlap(cb, dd, gap))) return false;
+        if (cb[0] < BX[0] + emO || cb[1] < BX[1] + emO || cb[2] > BX[2] - emO || cb[3] > BX[3] - emO) return false;
+        if (occupiedList(blockers, side(c), cb, gapO)) return false;
+        if (allDrills.some((dd) => overlap(cb, dd, gapO))) return false;
       }
       return true;
     };
     const step = !block.length ? 0.1 : 0.25;
+    const clearOnly = !!nearOpts.get(o)?.clear;
+    /** The pose's cost (landing hits weigh 1000 each) and box, or null when it is not legal; `tally` names what is in the way. */
+    const evalPose = (x: number, y: number, rot: number, tally: boolean): { cst: number; hits: number; wb: Box } | null => {
+      const wb = worldBox(lb, x, y, rot);
+      if (wb[0] < BX[0] + emO || wb[1] < BX[1] + emO || wb[2] > BX[2] - emO || wb[3] > BX[3] - emO) return null;
+      if (occupiedList(blockers, side(o), wb, gapO)) {
+        if (tally) tallyWay(side(o), wb);
+        return null;
+      }
+      if (allDrills.some((d) => overlap(wb, d, gapO)) || keepouts.some((kz) => overlap(wb, kz, 0))) return null;
+      const ownDrills = padList(raw.get(o)!, x, y, rot).filter((p) => p.drilled).map((p) => p.box);
+      if (ownDrills.some((d) => blockers.some(([, b]) => overlap(d, b, 0)))) return null;
+      if (block.length && !blockLegal(x, y, rot)) return null;
+      let hits = landingHits(o, [x, y, rot]);
+      for (const [c, p_] of blockPoses(x, y, rot)) hits += landingHits(c, p_);
+      return { cst: cost(x, y, rot) + 1000.0 * hits, hits, wb };
+    };
+    const ringPoses = function* (rr: number) {
+      const steps = Math.max(1, Math.floor((2 * Math.PI * rr) / step));
+      for (let kk = 0; kk < steps; kk++) yield [tx + rr * Math.cos((2 * Math.PI * kk) / steps), ty + rr * Math.sin((2 * Math.PI * kk) / steps)] as const;
+    };
     let firstLegal: number | null = null;
     let best: [number, number, number, number, Box] | null = null;
+    let bestHits = 0;
     for (let ring = 0; ring <= Math.floor(radiusO / step); ring++) {
       const rr = ring * step;
-      const steps = Math.max(1, Math.floor((2 * Math.PI * rr) / step));
-      for (let kk = 0; kk < steps; kk++) {
-        const x = tx + rr * Math.cos((2 * Math.PI * kk) / steps);
-        const y = ty + rr * Math.sin((2 * Math.PI * kk) / steps);
+      for (const [x, y] of ringPoses(rr)) {
         for (const rot of rots) {
-          const wb = worldBox(lb, x, y, rot);
-          if (wb[0] < BX[0] + em || wb[1] < BX[1] + em || wb[2] > BX[2] - em || wb[3] > BX[3] - em) continue;
-          if (occupiedList(blockers, side(o), wb, gap)) continue;
-          if (allDrills.some((d) => overlap(wb, d, gap)) || keepouts.some((kz) => overlap(wb, kz, 0))) continue;
-          const ownDrills = padList(raw.get(o)!, x, y, rot).filter((p) => p.drilled).map((p) => p.box);
-          if (ownDrills.some((d) => blockers.some(([, b]) => overlap(d, b, 0)))) continue;
-          if (block.length && !blockLegal(x, y, rot)) continue;
-          let hits = landingHits(o, [x, y, rot]);
-          for (const [c, p_] of blockPoses(x, y, rot)) hits += landingHits(c, p_);
-          const cst = cost(x, y, rot) + 1000.0 * hits;
-          if (!best || cst < best[0]) best = [cst, round(x, 3), round(y, 3), mod(rot, 360), wb];
+          const e = evalPose(x, y, rot, firstLegal === null);
+          if (!e || (clearOnly && e.hits)) continue;
+          if (!best || e.cst < best[0]) { best = [e.cst, round(x, 3), round(y, 3), mod(rot, 360), e.wb]; bestHits = e.hits; }
         }
       }
       if (best && firstLegal === null) firstLegal = rr;
       if (best && (best[0] < 1000.0 || rr >= firstLegal! + 1.5)) break; // first legal ring wins unless every pose there lands on copper: look up to 1.5 mm further
     }
-    if (!best) return stop(`STOP part ${o} has no legal pose within ${radiusO} mm of its target ${tx.toFixed(2)},${ty.toFixed(2)} (${whyO.join("; ")}): move it in the plan or raise the radius`);
+    if (best && bestHits && nearRefs.has(o)) {
+      // the chosen pose cuts other nets' copper: name the nearest pose that cuts none (to the radius and 4 mm past it)
+      let clear: [Pose, number] | null = null;
+      for (let ring = 0; ring <= Math.floor((radiusO + 4) / step) && !clear; ring++) {
+        const rr = ring * step;
+        let bestRing: [number, Pose] | null = null;
+        for (const [x, y] of ringPoses(rr))
+          for (const rot of rots) {
+            const e = evalPose(x, y, rot, false);
+            if (e && !e.hits && (!bestRing || e.cst < bestRing[0])) bestRing = [e.cst, [round(x, 3), round(y, 3), mod(rot, 360)]];
+          }
+        if (bestRing) clear = [bestRing[1], round(rr, 2)];
+      }
+      (led.near_clear ??= []).push({ ref: o, chosen_cuts: bestHits, clear: clear ? clear[0] : null, clear_mm: clear ? clear[1] : null, target: [round(tx, 3), round(ty, 3)] });
+    }
+    const wayTxt = () => {
+      const top = [...inWayNear].sort((a_, b_) => b_[1] - a_[1]).slice(0, 5).map(([r_]) => r_);
+      return top.length ? `; in the way: ${top.join(", ")} (courtyards)` : "";
+    };
+    if (!best) return stop(`STOP part ${o} has no legal pose${clearOnly ? " clear of other nets' copper (clear: true)" : ""} within ${radiusO} mm of its target ${tx.toFixed(2)},${ty.toFixed(2)} (${whyO.join("; ")}${wayTxt()}): move it in the plan, move what is in the way, or raise the radius${clearOnly ? " (or drop clear: the repair routes cut nets again)" : ""}`);
     const [, x, y, rot, wb] = best;
     occupied.set(o, [side(o), wb]);
     newPose.set(o, [x, y, rot]);
@@ -400,7 +482,7 @@ export function planMoves(
       const drillsNow = [o, ...block].flatMap((r_) => padList(raw.get(r_)!, ...newPose.get(r_)!).filter((p_) => p_.drilled).map((p_) => p_.box));
       for (const [r_, [s_, b_]] of [...occupied]) {
         if (newPose.has(r_) || r_ === o || block.includes(r_)) continue;
-        const hit = boxesNow.some(([sb, bb]) => s_ === sb && overlap(bb, b_, gap)) || drillsNow.some((dd) => overlap(dd, b_, 0));
+        const hit = boxesNow.some(([sb, bb]) => s_ === sb && overlap(bb, b_, gapO)) || drillsNow.some((dd) => overlap(dd, b_, 0));
         if (hit) {
           if (fixed(r_)) return stop(`STOP make_room for ${o} would displace fixed part ${r_}`);
           occupied.delete(r_);

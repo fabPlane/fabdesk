@@ -189,7 +189,7 @@ export function deriveRequirements(
   if (legacy)
     throw new Error(
       `${opts.pcbName} is in the pre-10 KiCad file format (${legacy} items name their net by number); ` +
-        "tracks would match no net by name. Upgrade a copy with KiCad (kicad-cli pcb upgrade) and onboard that.",
+        "tracks would match no net by name. Upgrade it first: board_check upgrade: true (a checked copy written over the board, the previous one kept), or upgradeCopy.",
     );
   const board: Board = parseBoard(boardText);
   const fps = board.footprints;

@@ -3,6 +3,7 @@
  * layers, aliases from the board's acceptance). Port of `route_krt.board_plan` / `expand`, `boardctx` helpers.
  */
 import type { Acceptance, NetClassSpec } from "../requirements";
+import { planeLayerNames } from "../requirements";
 
 const STACK8 = ["F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "In5.Cu", "In6.Cu", "B.Cu"];
 const LEGACY_PLANES = ["In1.Cu", "In6.Cu"];
@@ -81,7 +82,7 @@ type Classes = Record<string, NetClassSpec>;
 export function profilePlanes(acc: Acceptance): string[] {
   const sp = acc.stack_policy ?? ({} as Acceptance["stack_policy"]);
   const legacy = acc.schema === "C6_ACCEPTANCE_V1";
-  return sp.plane_layers ?? (legacy ? LEGACY_PLANES : []);
+  return sp.plane_layers ? planeLayerNames(sp.plane_layers) : legacy ? LEGACY_PLANES : [];
 }
 
 /** Copper layers tracks may use: the acceptance's copper layers minus its no-track layers (default: the plane layers). */
@@ -193,6 +194,77 @@ export function boardPlan(plan: KrtPlan, acc: Acceptance): ExpandedPlan {
   const { aliases: _a, ...rest } = plan;
   const un = auto ? autoAliases(acc).unaliases : (plan.unaliases ?? []);
   return { ...rest, stages, aliases: al, unaliases: un };
+}
+
+/**
+ * `--layer-costs` an outer layer gets when a step keeps it out of reach (the cost agents set by hand on F/B on jetson,
+ * 2026-11-14; inner layers stayed at 1).
+ */
+export const AVOID_LAYER_COST = 10;
+const COPPER_LAYER = /^(F|B|In\d+)\.Cu$/;
+const OUTER_LAYERS = new Set(["F.Cu", "B.Cu"]);
+const COST = /^-?(?:\d+(?:\.\d*)?|\.\d+)$/;
+
+/**
+ * One stage's expanded arguments with `avoid` kept out of reach (fabdesk, the last mile's `~avoid` retry): an inner
+ * layer is left out of `--layers` (and its `--layer-costs` entry with it); an outer layer gets a cost of at least
+ * AVOID_LAYER_COST, since leaving F/B out makes KRT write no board where pads sit on them. A stage keeps at least one
+ * inner layer: when every inner layer it routes on is to be avoided, they are costed instead of left out. A negative
+ * (forbidden) cost stays as it is. A stage without `--layers` is unchanged.
+ */
+export function avoidLayerArgs(args: readonly string[], avoid: readonly string[]): { args: string[]; removed: string[]; costed: string[] } {
+  const at = args.indexOf("--layers");
+  if (at < 0 || !avoid.length) return { args: [...args], removed: [], costed: [] };
+  let end = at + 1;
+  while (end < args.length && COPPER_LAYER.test(args[end]!)) end++;
+  const layers = args.slice(at + 1, end);
+  const ca = args.indexOf("--layer-costs");
+  let cend = ca + 1;
+  if (ca >= 0) while (cend < args.length && COST.test(args[cend]!)) cend++;
+  const given = ca >= 0 ? args.slice(ca + 1, cend) : [];
+  const costs = layers.map((_, i) => given[i] ?? "1");
+  const want = new Set(avoid);
+  const inner = layers.filter((l) => !OUTER_LAYERS.has(l));
+  const drop = new Set(inner.some((l) => !want.has(l)) ? inner.filter((l) => want.has(l)) : []);
+  const keptLayers: string[] = [];
+  const keptCosts: string[] = [];
+  const costed: string[] = [];
+  layers.forEach((l, i) => {
+    if (drop.has(l)) return;
+    let c = costs[i]!;
+    if (want.has(l) && Number(c) >= 0 && Number(c) < AVOID_LAYER_COST) {
+      c = String(AVOID_LAYER_COST);
+      costed.push(l);
+    }
+    keptLayers.push(l);
+    keptCosts.push(c);
+  });
+  const removed = layers.filter((l) => drop.has(l));
+  if (!removed.length && !costed.length) return { args: [...args], removed, costed };
+  // rebuild: the layer list in place, the cost list in place (or right after the layers when the stage had none)
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (i === at) {
+      out.push("--layers", ...keptLayers);
+      if (ca < 0) out.push("--layer-costs", ...keptCosts);
+      i = end - 1;
+    } else if (i === ca) {
+      out.push("--layer-costs", ...keptCosts);
+      i = cend - 1;
+    } else out.push(args[i]!);
+  }
+  return { args: out, removed, costed };
+}
+
+/** `avoidLayerArgs` on every stage of an expanded plan; `record` says per stage what was left out and what was costed. */
+export function avoidLayersInPlan(plan: ExpandedPlan, avoid: readonly string[]): { plan: ExpandedPlan; record: Array<{ stage: string; removed: string[]; costed: string[] }> } {
+  const record: Array<{ stage: string; removed: string[]; costed: string[] }> = [];
+  const stages = plan.stages.map((st) => {
+    const r = avoidLayerArgs(st.args ?? [], avoid);
+    if (r.removed.length || r.costed.length) record.push({ stage: st.name, removed: r.removed, costed: r.costed });
+    return { ...st, args: r.args };
+  });
+  return { plan: { ...plan, stages, note: `${plan.note ? plan.note + " " : ""}[fabdesk: kept out of reach: ${avoid.join(", ")}]` }, record };
 }
 
 interface RouterRules {

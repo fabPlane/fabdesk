@@ -35,6 +35,7 @@ import {
   type ResourceKind,
 } from "../src/layout/index";
 import { onboard, parseBoard, readRequirements } from "../src/index";
+import { SEAT_BOARD } from "./fixtures";
 
 const fp = (ref: string, x: number, y: number, pads: Array<[string, string, number, number]>, rot = 0, crt = true) => `
 	(footprint "Lib:${ref}"
@@ -301,6 +302,21 @@ describe("layout flow", () => {
     expect(prep.spec.plans.rank).toBe("builtin:rank");
     const again = await prepareLayout(dir);
     expect(again.spec).toEqual(prep.spec);
+  });
+
+  test("prepare seats pair pass-through parts as templates, members in their chip's group", async () => {
+    const dir = await tmp();
+    await writeFile(join(dir, "board.kicad_pcb"), SEAT_BOARD);
+    await writeFile(join(dir, "board.kicad_pro"), PRO);
+    await onboard(dir, { name: "t" });
+    const prep = await prepareLayout(dir, { name: "t" });
+    expect(prep.spec.templates.map((t) => basename(t))).toEqual(["U1.row.json"]);
+    const row = JSON.parse(await readFile(prep.spec.templates[0]!, "utf8")) as { anchor: string; members: Array<{ ref: string; rot: number }> };
+    expect(row.anchor).toBe("U1");
+    expect(row.members.map((m) => [m.ref, m.rot])).toEqual([["R2", 180], ["R1", 180]]);
+    const groups = JSON.parse(await readFile(prep.spec.groups, "utf8")) as { groups: Array<{ anchor?: string; refs: string[] }> };
+    expect(groups.groups.find((g) => g.anchor === "U1")?.refs).toEqual(expect.arrayContaining(["R1", "R2"]));
+    expect(prep.decided.join("\n")).toContain("pair pass-through templates: U1: [\"R2\",\"R1\"]");
   });
 
   test("check passes, and says why it fails", async () => {

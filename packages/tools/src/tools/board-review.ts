@@ -2,11 +2,17 @@
  * board_review: the whole-board design review, bound to one design hash.
  *
  * `run` executes the checks (identity, netlist, ERC and DRC grouped by type, acceptance A1-A9 on this run's DRC, pin
- * semantics, datasheet rule cards, decoupling, current, impedance, manual items, connector mouths, interconnect gate, BOM,
- * ratings, coverage, evidence, custom checks, expert pack) and keeps the record under `.fabdesk/board/review/runs/`.
+ * semantics, datasheet rule cards, decoupling, current, divider, impedance, manual items, connector mouths, interconnect
+ * gate, BOM, ratings, coverage, silk labels, evidence, custom checks, expert pack) and keeps the record under `.fabdesk/board/review/runs/`.
  * Every finding carries a proposal. `gate` reports 0 pass | 1 none or stale | 2 open | 3 check errors, open items leading
  * with their proposal; `dispose` records a disposition (carried to later runs by finding id); `fix` lists the proposals
- * and, with `apply`, settles what intent or evidence decides; `import_expert` adds an independent reviewer's findings.
+ * and, with `apply`, settles what intent or evidence decides, builds and proves edit candidates (and the combined one,
+ * with a change picture per READY candidate); `try` proves the agent's own plan the same way; `autopilot` is the
+ * toolkit's `pcb run` (review if stale -> fixes -> owner questions); `intent*` read and write the owner's intent file;
+ * `import_expert` adds an independent reviewer's findings. `cable`, `page` and `diff` (board-review-views.ts) look at
+ * boards without touching the review record: cable reach in a chassis, the KiCad-plot board page, the change picture.
+ * `section` and `short_section` (board-review-section.ts) are impedance proofs from geometry: an atlc finite-difference
+ * cross section, and the edge-knee reflection of short off-impedance stretches.
  * The gate is recorded for the project's status (`recordReviewGate`). The reviewer never edits a design.
  *
  * Replaces in intent: the DRC/ERC summaries of `verify_drc` and `verify_erc` as a release judgement (those stay as
@@ -16,9 +22,17 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
 import {
+  autopilot,
   dispose,
   createEditCandidateBuilder,
   fixProposals,
+  intentDecide,
+  intentInit,
+  intentShow,
+  lowDisk,
+  tryPlan,
+  type EditCandidateBuilder,
+  type EditPlan,
   importExpert,
   openReviewProject,
   reviewGate,
@@ -31,7 +45,7 @@ import {
   type ReviewProject,
   confineToProject,
 } from "@fabdesk/board-workflow";
-import { runKicadCli } from "@fabdesk/kicad";
+import { runKicadCli, type KicadCli } from "@fabdesk/kicad";
 import { clearReviewGate, recordReviewGate } from "../board-state";
 import { bomDirOf, readBomState } from "../release-state";
 import { runDurable } from "../durable";
@@ -39,6 +53,8 @@ import { boardMemGiB, governor } from "../resources";
 import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
 import { ok, requireKicad } from "./common";
 import { editRunners } from "./board-edit";
+import { cableAction, diffAction, pageAction } from "./board-review-views";
+import { sectionAction, shortSectionAction } from "./board-review-section";
 
 /**
  * The release stage's BOM decisions (`board_release bom`, under `bomDirOf`), for the review of `pcb`. A BOM check made
@@ -65,30 +81,83 @@ function gateText(g: GateResult): string {
   return [...g.lines, `gate exit ${g.exit}`].join("\n");
 }
 
+/** Edit candidates through the edit stage (the source is never touched), each reviewed with the source's BOM decisions. */
+function candidateBuilder(ctx: ToolContext, project: ReviewProject, cli: KicadCli): EditCandidateBuilder {
+  return createEditCandidateBuilder({
+    project,
+    runners: editRunners(ctx, cli),
+    reviewEnv: { kicad: (args) => runKicadCli(cli, args, { tolerateExit: true, signal: ctx.signal }), kicadVersion: cli.version, bom: () => bomDecisions(project.dir), trustCustom: false, signal: ctx.signal },
+  });
+}
+
+/** An edit plan given as an object, inline JSON text, or a project-relative JSON file. */
+async function readPlan(dir: string, plan: unknown): Promise<EditPlan> {
+  let raw: unknown = plan;
+  if (typeof plan === "string") {
+    const t = plan.trim();
+    try {
+      raw = t.startsWith("{") ? JSON.parse(t) : JSON.parse(await readFile(await confineToProject(dir, t, "plan file"), "utf8"));
+    } catch (e) {
+      throw new ToolError(`cannot read the plan: ${e instanceof Error ? e.message : String(e)}`, "invalid_args");
+    }
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new ToolError("plan must be a JSON object (a board_edit plan)", "invalid_args");
+  return raw as EditPlan;
+}
+
 export const board_review = defineTool({
   name: "board_review",
   toolset: "board",
   title: "Review the whole board against one design hash",
   description:
-    "Whole-board design review. run: the checks (L0 identity/netlist, L1 ERC/DRC grouped + acceptance A1-A9 on the same DRC, L2 pin semantics + datasheet rule cards + evidence, L3 decoupling/current/impedance/ratings/manual items, L4 connector mouths, L5 interconnect gate, L6 BOM/coverage, L8 expert pack, custom checks) as findings (must-fix | question | note), each with a proposal; the record is bound to the design hash (board, schematics, project files, requirements) and goes stale when any of them changes. gate: 0 pass | 1 none/stale | 2 open | 3 check errors, open items lead with their proposal. dispose: settle a finding (state accept | fix | false-positive, by agent | owner, reason; false-positive needs thirdSource; an agent accepting a must-fix needs evidence unless the owner's intent allows it; id may end in *). fix: every open finding's proposal; apply settles what the owner's intent or evidence decides (edit proposals are built as candidate boards by the edit stage and reported READY only when the finding is gone, no new finding appears and nothing outside the plan changed). import_expert: add an independent reviewer's findings (file) to the current review. status: current or stale, open counts. The reviewer never edits the design; the gate result is kept for the project's status.",
+    "Whole-board design review: the first call when asked to review a board or find its faults before ordering (then read for what the checks cannot judge). run: the checks (L0 identity/netlist, L1 ERC/DRC grouped + acceptance A1-A9 on the same DRC, L2 pin semantics + datasheet rule cards + evidence, L3 decoupling/current/divider/impedance/ratings/manual items, L4 connector mouths, L5 interconnect gate, L6 BOM/coverage/silk labels, L8 expert pack, custom checks) as findings (must-fix | question | note), each with a proposal; the record is bound to the design hash (board, schematics, project files, requirements) and goes stale when any of them changes. gate: 0 pass | 1 none/stale | 2 open | 3 check errors, open items lead with their proposal. dispose: settle a finding (state accept | fix | false-positive, by agent | owner, reason; false-positive needs thirdSource; an agent accepting a must-fix needs evidence unless the owner's intent allows it; id may end in *). fix: every open finding's proposal; apply settles what the owner's intent or evidence decides (edit proposals are built as candidate boards by the edit stage and reported READY only when the finding is gone, no new finding appears and nothing outside the plan changed). With apply, two or more READY candidates are also applied together as one combined candidate and proven (fixes/combined.json), and every READY candidate gets a change picture (change.html beside its board). try: your own board_edit plan (plan) proven exactly like the workflow's for the finding ids it should fix (ids): READY only when the proof passes, every one of them is gone, no new finding appears and nothing outside the plan changed. autopilot: review if stale, then fix with apply (settle, build and prove candidates, the combined candidate, pictures), then only what needs the owner; on a low disk it settles only. intent / intent_init / intent_decide: the owner's intent file (.fabdesk/board/review/intent.json): show it; write a skeleton (constraints from the requirements, the goal left to the owner, what the owner wants to be asked); record an owner decision (id, decision, covers: finding-id patterns it settles in every later review, effect). Record a decision only when the owner gave it. import_expert: add an independent reviewer's findings (file) to the current review. status: current or stale, open counts. cable: does a catalog cable reach between two boards' connectors in the case, in each stated frame (chassis JSON: frames of boards with origin, yaw, mirror, face_z; cables with a/b [board, ref], length_mm, tolerance_mm, lead_mm, bend_mm, basis): mouths from the footprints, shortest orthogonal path with leads, turns and bends, slack, PASS/FAIL, flags for a mouth inside its board or a cable needing a fold store; seconds, no KiCad; for multi-board products, after moving a connector, or with sweep to find where on an edge a connector gives the most slack. page: one interactive HTML page comparing boards (compare: LABEL=PATH) from KiCad's own layer plots, with opens and DRC errors from the DRC report beside each board (acceptance.drc.json, or drc to run one) and 3D renders. diff: the change picture old -> new (tracks and vias added/removed, parts moved with arrows) as HTML + SVG. section: finite-difference cross-section impedance through atlc (spec: a pair's geometry or a full section; pixelMm sizes): Zdiff, Zo, Zodd/Zeven per pixel size, the field-solver check behind a pair class's width/gap on a supplier stack (installs atlc on first use). short_section: the lossless reflection at the edge knee of short off-impedance stretches (spec cases), to bound an escape or fan-out. The reviewer never edits the design; the gate result is kept for the project's status.",
   inputSchema: {
-    action: z.enum(["run", "gate", "dispose", "fix", "import_expert", "status"]).default("run"),
+    action: z.enum(["run", "gate", "dispose", "fix", "try", "autopilot", "intent", "intent_init", "intent_decide", "import_expert", "status", "cable", "page", "diff", "section", "short_section"]).default("run"),
     pcb: z.string().optional().describe("Board file, relative to the project; default board.kicad_pcb or the project's only .kicad_pcb."),
     checks: z.array(z.string().max(40)).max(30).optional().describe("run: only these checks (a partial run is not the project's review and does not set the gate)."),
     offline: z.boolean().default(false).describe("run: never fetch from the network (JLC/EasyEDA symbols); cached records are still read."),
     trustCustom: z.boolean().default(false).describe("run: execute the project's custom check commands (review/checks.d, review.custom). They are shell commands from the project's files, so they run only when you say so."),
-    id: z.string().max(300).optional().describe("dispose: finding id; a trailing * matches a prefix."),
+    id: z.string().max(300).optional().describe("dispose: finding id; a trailing * matches a prefix. intent_decide: the decision's id (D1, usb-orientation ...)."),
     state: z.enum(["accept", "fix", "false-positive"]).optional().describe("dispose: the disposition."),
     by: z.enum(["agent", "owner"]).optional().describe("dispose: who decided. Record the owner only when the owner said so."),
     reason: z.string().max(2000).optional().describe("dispose: why, with the evidence."),
     thirdSource: z.string().max(1000).optional().describe("dispose: a source that is neither the design nor the check (datasheet page, measurement); false-positive needs it."),
     file: z.string().max(500).optional().describe("import_expert: the expert's JSON file ({reviewer, findings[]}), relative to the project."),
-    apply: z.boolean().default(false).describe("fix: record the workflow's dispositions (otherwise only list the proposals)."),
+    apply: z.boolean().default(false).describe("fix: record the workflow's dispositions and build the edit candidates (otherwise only list the proposals)."),
+    plan: z.union([z.record(z.string(), z.unknown()), z.string().max(200_000)]).optional().describe("try: a board_edit plan (id, move, add, swap, remove, net, displace ...): an object, inline JSON text, or a project-relative JSON file."),
+    ids: z.array(z.string().max(300)).max(50).optional().describe("try: the finding ids the plan should fix (each must be in the current review; every one must be gone for READY)."),
+    decision: z.string().max(2000).optional().describe("intent_decide: the owner's answer, in their words."),
+    covers: z.array(z.string().max(300)).max(50).optional().describe("intent_decide: finding-id patterns the decision settles (* ? [seq]), e.g. L4:MOUTH:J1:*."),
+    effect: z.string().max(1000).optional().describe("intent_decide: what the decision changes in practice."),
+    chassis: z.string().max(500).optional().describe("cable: the chassis JSON file, relative to the project."),
+    root: z.string().max(500).optional().describe("cable: folder the chassis's relative board paths resolve against, relative to the project (default the project; the mating board may live beside it)."),
+    frame: z.string().max(200).optional().describe("cable: only this frame."),
+    frames: z.array(z.string().max(200)).max(50).optional().describe("cable with sweep: only these frames."),
+    boards: z.record(z.string().max(100), z.string().max(500)).optional().describe("cable: replace a board's file in every frame, {BOARD: path} (an edited board or an edit candidate), resolved like the chassis paths."),
+    sweep: z.string().max(200).optional().describe("cable: BOARD:REF to slide along one edge of its board, reporting the slack of every cable using it per position."),
+    edge: z.enum(["right", "left", "front", "back"]).optional().describe("cable with sweep: the edge (default right; front = +Y)."),
+    step: z.number().positive().max(50).optional().describe("cable with sweep: mm between positions (default 1)."),
+    compare: z.array(z.string().max(600)).max(12).optional().describe("page: boards as LABEL=PATH (a .kicad_pcb or a folder holding one, relative to the project); default the project's board."),
+    title: z.string().max(200).optional().describe("page: the page title."),
+    render3d: z.boolean().default(true).describe("page: embed KiCad 3D renders of both sides."),
+    drc: z.boolean().default(false).describe("page: run DRC on each board for its opens and errors instead of reading acceptance.drc.json beside it."),
+    old: z.string().max(600).optional().describe("diff: the earlier board (file or folder, relative to the project)."),
+    new: z.string().max(600).optional().describe("diff: the later board (default the project's board)."),
+    layers: z.array(z.string().max(40)).max(40).optional().describe("diff: draw copper on these layers only (counts still cover all)."),
+    out: z.string().max(500).optional().describe("page / diff: the .html file to write, relative to the project (default .fabdesk/board/review/board-page.html or change.html). section: the output stem (default .fabdesk/board/review/sections/section; -<N>um.json/.bmp/.log are added). short_section: the .json record (default .fabdesk/board/review/sections/short-section.json)."),
+    spec: z.union([z.record(z.string(), z.unknown()), z.string().max(200_000)]).optional().describe("section: {pair: {width, gap, thickness, hnear, hfar?, er?, top_etch?, margin?, mask?}} in mm (hfar = the far plane for stripline; top_etch default 0.01778 mm; mask = microstrip soldermask) or a full section {box, dielectrics: [{y0, y1, er}], dielectric_polygons?, conductors: [{potential: 1|0|-1, points}]}. short_section: {cases: [{name, z0, zs, er, length_mm, rise_ns}], sources?}. An object, inline JSON text, or a project-relative JSON file."),
+    pixelMm: z.array(z.number().min(0.0005).max(0.05)).max(3).optional().describe("section: pixel sizes in mm, one solve each (default [0.004]); two sizes (e.g. [0.002, 0.001]) show convergence. Smaller is slower: 2 um takes about 10 s, 1 um a few minutes."),
   },
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: false },
   longRunning: true,
   handler: async (input, ctx): Promise<ToolOutput> => {
     const dir = ctx.requireProject().dir;
+    // looking at boards: no review record involved (and a multi-board project need not name one board)
+    if (input.action === "cable") return cableAction(dir, input);
+    if (input.action === "diff") return diffAction(dir, input);
+    if (input.action === "page") return runDurable(ctx, "board_review", (c) => pageAction(c, dir, input));
+    if (input.action === "short_section") return shortSectionAction(dir, input);
+    if (input.action === "section") return runDurable(ctx, "board_review", (c) => sectionAction(c, dir, input, (l) => c.progress(0.5, l)));
     let project: ReviewProject;
     try {
       project = await openReviewProject(dir, input.pcb);
@@ -128,16 +197,63 @@ export const board_review = defineTool({
         try {
           // edit proposals become candidate boards through the edit stage when applying (the source is never touched)
           const cli = input.apply ? await requireKicad(ctx) : null;
-          const builder = cli
-            ? createEditCandidateBuilder({
-                project,
-                runners: editRunners(ctx, cli),
-                reviewEnv: { kicad: (args) => runKicadCli(cli, args, { tolerateExit: true, signal: ctx.signal }), kicadVersion: cli.version, bom: () => bomDecisions(project.dir), trustCustom: false, signal: ctx.signal },
-              })
-            : undefined;
+          const builder = cli ? candidateBuilder(ctx, project, cli) : undefined;
           const r = await fixProposals(project, { apply: input.apply, ...(builder ? { builder } : {}) });
           if (input.apply) await recordGate(project, await reviewGate(project));
           return ok(r.lines.join("\n"), r);
+        } catch (e) {
+          throw new ToolError(e instanceof Error ? e.message : String(e), "precondition");
+        }
+      }
+      case "try": {
+        needs(input.plan, "plan");
+        const plan = await readPlan(dir, input.plan);
+        return runDurable(ctx, "board_review", async (c) => {
+          const cli = await requireKicad(c);
+          try {
+            const r = await tryPlan(project, { plan, ids: input.ids ?? [] }, candidateBuilder(c, project, cli));
+            return ok(r.lines.join("\n"), r);
+          } catch (e) {
+            throw new ToolError(e instanceof Error ? e.message : String(e), "precondition");
+          }
+        });
+      }
+      case "autopilot":
+        return runDurable(ctx, "board_review", async (c) => {
+          const cli = await requireKicad(c);
+          const env: ReviewEnv = { kicad: (args) => runKicadCli(cli, args, { tolerateExit: true, signal: c.signal }), kicadVersion: cli.version, bom: () => bomDecisions(project.dir, project.pcb), trustCustom: input.trustCustom, signal: c.signal };
+          let n = 0;
+          const r = await autopilot(project, env, {
+            offline: input.offline,
+            builder: candidateBuilder(c, project, cli),
+            lowDisk: await lowDisk(project.dir),
+            progress: (note) => c.progress(Math.min(0.5, 0.05 + 0.02 * ++n), note),
+            admit: async () => governor().admit({ cls: "light", label: "board_review", paths: [project.dir], signal: c.signal, memGiB: await boardMemGiB([project.pcb]), onWait: (why) => c.progress(0, why) }),
+          });
+          await recordGate(project, r.gate);
+          return ok(r.lines.join("\n"), { reviewed: r.reviewed, settled: r.fix.settled, edits: r.fix.edits, combined: r.fix.combined ?? null, pictures: r.fix.pictures, tasks: r.fix.tasks, commands: r.fix.commands, owner: r.fix.owner, gate: r.gate });
+        });
+      case "intent": {
+        const r = await intentShow(project);
+        return ok(r.lines.join("\n"), r);
+      }
+      case "intent_init": {
+        try {
+          const r = await intentInit(project);
+          await recordGate(project, await reviewGate(project));
+          return ok(r.lines.join("\n"), r);
+        } catch (e) {
+          throw new ToolError(e instanceof Error ? e.message : String(e), "precondition");
+        }
+      }
+      case "intent_decide": {
+        needs(input.id, "id");
+        needs(input.decision, "decision");
+        try {
+          const r = await intentDecide(project, { id: input.id!, decision: input.decision!, covers: input.covers ?? [], ...(input.effect ? { effect: input.effect } : {}) });
+          const g = await reviewGate(project);
+          await recordGate(project, g);
+          return ok(`${r.lines.join("\n")}\n${g.lines[0]}`, { ...r, gate: g });
         } catch (e) {
           throw new ToolError(e instanceof Error ? e.message : String(e), "precondition");
         }

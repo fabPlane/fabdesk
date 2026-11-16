@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -94,6 +94,89 @@ describe("actions", () => {
     expect(() => L.stepsFor("nope")).toThrow(/unknown action 'nope'/);
     expect(() => L.stepsFor("nudge:bad")).toThrow(/nudge:REF@X,Y/);
   });
+  test("!short / !match[=MM] / !outer=COST: options of the pair stages, on any action that routes pairs as pairs", () => {
+    const short = { setbacks: 1, floorMm: 1 };
+    expect(L.stepsFor("pairs!short")[0]!.pairOptions).toEqual({ shortLegs: short });
+    expect(L.stepsFor("pairs-all!match")[0]!.pairOptions).toEqual({ intraMatch: 1 });
+    expect(L.stepsFor("pairs-all!match=0.5!outer=2")[0]!.pairOptions).toEqual({ intraMatch: 0.5, outerCost: 2 });
+    // bundle: the regex and the box as before, the modifiers after them
+    const b = L.stepsFor("bundle:^(HDMI_PI.*)$@90,60,110,75!short!match")[0]!;
+    expect(b.type).toBe("repair");
+    expect(b.plan!["bundle"]).toBe("^(HDMI_PI.*)$");
+    expect(b.rip).toEqual(["--window", "90", "60", "110", "75", "--spare-pairs"]);
+    expect(b.pairOptions).toEqual({ shortLegs: short, intraMatch: 1 });
+    expect(L.stepsFor("bundle:HDMI!outer=1")[0]!.plan!["bundle"]).toBe("HDMI");
+    // a regex's own '!' (a lookahead) is kept; only the modifier words are taken off
+    expect(L.stepsFor("bundle:^(?!USB).*!short")[0]!.plan!["bundle"]).toBe("^(?!USB).*");
+    // reroute:REGEX! keeps its own meaning (cut uncoupled pad stubs) beside the modifiers, in either order
+    expect(L.stepsFor("reroute:HDMI!!short")[0]!.rip).toEqual(["--a8-uncoupled", "HDMI", "--rip-pad-stubs"]);
+    expect(L.stepsFor("reroute:HDMI!short")[0]!.rip).toEqual(["--a8-uncoupled", "HDMI"]);
+    // region's !escape and the modifiers mix
+    const reg = L.stepsFor("region:1,1,5,5!short!escape");
+    expect(reg.map((s) => s.type)).toEqual(["cut", "escape", "krt"]);
+    expect(reg[2]!.pairOptions).toEqual({ shortLegs: short });
+    expect(reg[0]!.pairOptions).toBeUndefined();
+    // in a chain, only the part that carries them
+    const ch = L.stepsFor("bundle:HDMI!short+tighten:HDMI");
+    expect(ch[0]!.pairOptions).toEqual({ shortLegs: short });
+    expect(ch[1]!.pairOptions).toBeUndefined();
+    // pairs-fix hands them to its re-route, the one step that routes pairs
+    const pf = L.stepsFor("pairs-fix:HDMI!short");
+    expect(pf.map((s) => s.type)).toEqual(["pairfix", "repair", "repair", "pairfix"]);
+    expect(pf.map((s) => !!s.pairOptions)).toEqual([false, true, false, false]);
+    expect(pf[0]!.args).toEqual(["--pairs", "HDMI"]);
+    // plan:FILE is read when it runs, so it takes them (routeKrt refuses a plan without a pair stage)
+    expect(L.stepsFor("plan:p.json!short")[0]!.pairOptions).toEqual({ shortLegs: short });
+    // refused by name: actions with no pair stage, bad numbers
+    expect(() => L.stepsFor("finish!short")).toThrow("finish!short: !short / !match / !outer apply to actions that route pairs as pairs");
+    expect(() => L.stepsFor("tighten:HDMI!match")).toThrow(/'tighten' has no pair stage/);
+    expect(() => L.stepsFor("legs:1.0!short")).toThrow(/'legs' has no pair stage/);
+    expect(() => L.stepsFor("pairs!match=x")).toThrow("'x' is not a number");
+    expect(() => L.stepsFor("pairs!match=0")).toThrow("needs a tolerance above 0");
+    expect(() => L.stepsFor("pairs!outer=0.5")).toThrow("needs a cost of at least 1");
+    expect(() => L.stepsFor("pairs!outer")).toThrow(/unknown action 'pairs!outer'/);
+    // the vocabulary lists them
+    expect(L.actionHelp().join("\n")).toContain("!short");
+    expect(L.actionHelp().join("\n")).toContain("!outer=COST");
+  });
+  test("pair-stage options on an expanded plan: overrides on route_diff stages only, matching args, outer layer costs", () => {
+    const plan = {
+      aliases: [],
+      unaliases: [],
+      stages: [
+        { name: "pairs-x", tool: "route_diff", args: ["--nets", "A", "B", "--layers", "F.Cu", "In2.Cu", "B.Cu", "--layer-costs", "20", "1", "20", "--grid-step", "0.05"] },
+        { name: "legs", tool: "route", args: ["--layers", "F.Cu", "B.Cu"] },
+      ],
+    } as layout.ExpandedPlan;
+    const r = layout.pairOptionsInPlan(plan, { shortLegs: { setbacks: 1, floorMm: 1 }, intraMatch: 1, outerCost: 2 });
+    expect(r.plan.stages[0]!.args).toEqual(["--nets", "A", "B", "--layers", "F.Cu", "In2.Cu", "B.Cu", "--layer-costs", "2", "1", "2", "--grid-step", "0.05", "--diff-pair-intra-match", "--length-match-tolerance", "1"]);
+    expect(r.plan.stages[0]!["krt_overrides"]).toEqual({ diff_pair_multipoint: { DIFF_PAIR_MIN_COUPLED_SETBACKS: 1, DIFF_PAIR_MIN_COUPLED_FLOOR_MM: 1 } });
+    expect(r.plan.stages[1]).toEqual(plan.stages[1]!);
+    expect(r.record).toEqual([{ stage: "pairs-x", krt_overrides: r.plan.stages[0]!["krt_overrides"] as layout.KrtOverrides, args_added: ["--diff-pair-intra-match", "--length-match-tolerance", "1"], outer_cost: 2 }]);
+    // an existing tolerance is replaced, the flag not doubled; a stage without costs gets them after its layers
+    expect(layout.intraMatchArgs(["--diff-pair-intra-match", "--length-match-tolerance", "3"], 0.5)).toEqual(["--diff-pair-intra-match", "--length-match-tolerance", "0.5"]);
+    expect(layout.outerCostArgs(["--layers", "F.Cu", "In2.Cu", "B.Cu", "--grid-step", "0.05"], 3)).toEqual(["--layers", "F.Cu", "In2.Cu", "B.Cu", "--layer-costs", "3", "1", "3", "--grid-step", "0.05"]);
+    expect(layout.outerCostArgs(["--layers", "F.Cu", "B.Cu", "--layer-costs", "-1", "20"], 2)).toEqual(["--layers", "F.Cu", "B.Cu", "--layer-costs", "-1", "2"]);
+    expect(() => layout.pairOptionsInPlan({ ...plan, stages: [plan.stages[1]!] }, { shortLegs: { setbacks: 1, floorMm: 1 } })).toThrow("the plan has no route_diff stage, so !short would do nothing");
+  });
+  test("the override wrapper's command line: the script's argv unchanged after --, constants in a stable order", () => {
+    const py = ["/k/venv/bin/python", "-E", "-s"];
+    expect(layout.krtStageCommand(py, "/k/route_diff.py", ["in", "out", "--nets", "A"])).toEqual([...py, "/k/route_diff.py", "in", "out", "--nets", "A"]);
+    expect(layout.krtStageCommand(py, "/k/route_diff.py", ["in", "out"], { wrapper: "/w/krt_override.py", overrides: {} })).toEqual([...py, "/k/route_diff.py", "in", "out"]);
+    expect(layout.krtStageCommand(py, "/k/route_diff.py", ["in", "out"], { wrapper: "/w/krt_override.py", overrides: { m2: { B: true }, m1: { Z: 1.5, A: "x" } } })).toEqual([
+      ...py, "/w/krt_override.py", "--set", 'm1.A="x"', "--set", "m1.Z=1.5", "--set", "m2.B=true", "--", "/k/route_diff.py", "in", "out",
+    ]);
+    expect(() => layout.checkKrtOverrides({ "a-b": { X: 1 } }, "s")).toThrow("not a Python module name");
+    expect(() => layout.checkKrtOverrides({ m: { X: [1] } }, "s")).toThrow("must be a number, boolean or string");
+    expect(() => layout.checkKrtOverrides({ m: { X: Number.NaN } }, "s")).toThrow("must be a number");
+    expect(layout.checkKrtOverrides({ "pkg.mod": { X_1: 2 } }, "s")).toEqual({ "pkg.mod": { X_1: 2 } });
+    // the wrapper fails loudly on a missing module or constant, and on a change of type
+    const w = layout.KRT_OVERRIDE_SCRIPT;
+    expect(w).toContain('fail("%s has no %s (KiCadRoutingTools changed?); the stage was not run" % (mod, name))');
+    expect(w).toContain("sys.exit(3)");
+    expect(w).toContain('runpy.run_path(script, run_name="__main__")');
+    expect(w).toContain("sys.path[0] = os.path.dirname(script)");
+  });
   test("plans are the toolkit's templates", () => {
     expect(Object.keys(L.LASTMILE_PLANS).sort()).toEqual(["after-cut", "finish", "opens-first", "pairs-g2", "pairs-reroute", "pairs-todo-m", "pairs-todo", "rip-sig-leg-nt", "rip-sig", "taps"].sort());
   });
@@ -178,6 +261,18 @@ async function project(openCount = 5) {
 }
 
 describe("bench", () => {
+  test("new from a named board (the layout route stage's result) scores that board, with the project's design files", async () => {
+    const src = await project(209);
+    const routed = join(src, ".fabdesk", "ws", "route", "board.kicad_pcb");
+    await mkdir(join(routed, ".."), { recursive: true });
+    await writeFile(routed, "(kicad_pcb) ;; opens=18");
+    const ws = join(await mk(), "w");
+    const { bench, line } = await L.Bench.create(ws, src, "board.kicad_pcb", { scorer, engine: engine({}), availableGiB: async () => 30 }, {}, routed);
+    expect(line).toContain("open 18");
+    expect(bench.figures.open).toBe(18);
+    expect(await readFile(join(ws, "s0", "board.kicad_pro"), "utf8")).toBe("{}");
+    expect(await readFile(join(src, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb) ;; opens=209"); // the project board is untouched until accept
+  });
   test("new scores the start board; try accepts the best passing candidate, rejects and undoes", async () => {
     const src = await project(5);
     const ws = join(await mk(), "ws");
@@ -304,8 +399,46 @@ describe("bench", () => {
     const ws = join(await mk(), "ws");
     const { bench } = await L.Bench.create(ws, d, "board.kicad_pcb", { scorer, engine: engine({ finish: routed }), availableGiB: async () => 30 });
     const r = await bench.try(["finish"], {});
-    expect(r.candidates[0]!.otherNetsChanged).toEqual(["GND"]);
+    const byName = Object.fromEntries(r.candidates.map((c) => [c.name, c]));
+    expect(byName["finish"]!.otherNetsChanged).toEqual(["GND"]);
     expect(r.lines.join("\n")).toContain("also changed 1 other net(s): GND");
+    // the scoped sibling: the same routing with GND's copper as it was; equal figures, so the smaller change is accepted
+    expect(byName["finish~scoped"]!.scopedFrom).toEqual({ name: "finish", reverted: ["GND"] });
+    expect(r.accepted).toBe("finish~scoped");
+    const kept = await readFile(join(bench.dir, "board.kicad_pcb"), "utf8");
+    expect(kept).toContain('(uuid "n0")');
+    expect(kept).not.toContain('(uuid "stub")');
+    // noScoped: only the router's own board
+    const ws2 = join(await mk(), "ws2");
+    const { bench: b2 } = await L.Bench.create(ws2, d, "board.kicad_pcb", { scorer, engine: engine({ finish: routed }), availableGiB: async () => 30 });
+    expect((await b2.try(["finish"], { noScoped: true })).candidates.map((c) => c.name)).toEqual(["finish"]);
+  });
+
+  test("a repair step that clears a DRC class and rewrites another net also gets a ~scoped sibling", async () => {
+    const d = await mk();
+    const seg = (net: string, u: string, x = 0) => `\n\t(segment (start ${x} 0) (end ${x + 1} 1) (width 0.2) (layer "F.Cu") (net "${net}") (uuid "${u}"))`;
+    await writeFile(join(d, "board.kicad_pcb"), `(kicad_pcb ;; opens=0 drc=tracks_crossing${seg("SIG", "s1")}${seg("+1V8", "p1", 5)}\n)`);
+    await writeFile(join(d, "board.kicad_pro"), "{}");
+    const fixed = `(kicad_pcb ;; opens=0${seg("SIG", "s2", 2)}${seg("+1V8", "p2", 7)}\n)`;
+    const ws = join(await mk(), "ws");
+    const { bench } = await L.Bench.create(ws, d, "board.kicad_pcb", { scorer, engine: engine({ "rip-sig": fixed }), availableGiB: async () => 30 });
+    const r = await bench.try(["shorts"], {});
+    const names = r.candidates.map((c) => c.name);
+    expect(names).toContain("shorts~scoped");
+    expect(r.candidates.find((c) => c.name === "shorts~scoped")!.scopedFrom).toEqual({ name: "shorts", reverted: ["+1V8", "SIG"] });
+  });
+
+  test("a pair-routing step (route_diff stage) that rewrites its pairs gets no ~scoped sibling", async () => {
+    const d = await mk();
+    const seg = (net: string, u: string, x = 0) => `\n\t(segment (start ${x} 0) (end ${x + 1} 1) (width 0.2) (layer "F.Cu") (net "${net}") (uuid "${u}"))`;
+    await writeFile(join(d, "board.kicad_pcb"), `(kicad_pcb ;; opens=1${seg("HDMI_P", "p1")}${seg("HDMI_N", "n1", 3)}\n)`);
+    await writeFile(join(d, "board.kicad_pro"), "{}");
+    const routed = `(kicad_pcb ;; opens=0${seg("HDMI_P", "p2", 1)}${seg("HDMI_N", "n2", 4)}\n)`;
+    const ws = join(await mk(), "ws");
+    const table = Object.fromEntries(Object.keys(L.LASTMILE_PLANS).map((k) => [k, routed]));
+    const { bench } = await L.Bench.create(ws, d, "board.kicad_pcb", { scorer, engine: engine(table), availableGiB: async () => 30 });
+    const r = await bench.try(["pairs-all"], {});
+    expect(r.candidates.map((c) => c.name)).toEqual(["pairs-all"]);
   });
 
   test("a candidate over its budget is abandoned and fails", async () => {
@@ -484,5 +617,59 @@ describe("repairCandidate (board_edit repair hook)", () => {
     expect(r.note).toContain("left the board as edited");
     expect(r.note).toContain("new DRC class");
     expect(await readFile(join(src, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb) ;; opens=4");
+  });
+  test("opens left after finish go through editbench's chain (taps, leg, rip + blockers); the workspace is kept", async () => {
+    const src = await project(4);
+    const r = await L.repairCandidate(
+      { scorer, engine: engine({ finish: "(kicad_pcb) ;; opens=2", "rip-sig": "(kicad_pcb) ;; opens=0" }), availableGiB: async () => 30 },
+      { candidateDir: src, pcb: "board.kicad_pcb", routeAgain: ["N1"], projectDir: src },
+    );
+    expect(r.steps.map((s) => s.try.join("+"))).toEqual(["finish", "taps", "leg", "rip+blockers:1.0"]);
+    expect(r.steps.map((s) => !!s.accepted)).toEqual([true, false, false, true]);
+    expect(r.note).toContain("open 4 -> 0");
+    expect(r.workspace).toBe(".lastmile");
+    expect(await readFile(join(src, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb) ;; opens=0");
+    expect(await stat(join(src, ".lastmile", "state.json")).then(() => true, () => false)).toBe(true);
+  });
+  test("a board that was not routed before the edit is left to board_route (no whole-board routing inside the edit)", async () => {
+    const src = await project(212);
+    await writeFile(join(src, "before-acceptance.json"), JSON.stringify({ results: { A1_connectivity: { unconnected: 210 } } }));
+    const r = await L.repairCandidate({ scorer, engine: engine({ finish: "(kicad_pcb) ;; opens=0" }), availableGiB: async () => 30 }, { candidateDir: src, pcb: "board.kicad_pcb", routeAgain: ["+5V", "GND"] });
+    expect(r.steps).toEqual([]);
+    expect(r.note).toContain("210 open connections before the edit");
+    expect(r.note).toContain("board_route");
+    expect(await readFile(join(src, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb) ;; opens=212");
+  });
+  test("a routed board with a few opens before the edit is still repaired", async () => {
+    const src = await project(4);
+    await writeFile(join(src, "before-acceptance.json"), JSON.stringify({ results: { A1_connectivity: { unconnected: 1 } } }));
+    const r = await L.repairCandidate({ scorer, engine: engine({ finish: "(kicad_pcb) ;; opens=1" }), availableGiB: async () => 30 }, { candidateDir: src, pcb: "board.kicad_pcb", routeAgain: ["N1"] });
+    expect(r.note).toContain("open 4 -> 1");
+  });
+  test("nothing to repair runs no step", async () => {
+    const src = await project(0);
+    const r = await L.repairCandidate({ scorer, engine: engine({}), availableGiB: async () => 30 }, { candidateDir: src, pcb: "board.kicad_pcb", routeAgain: [] });
+    expect(r.steps).toEqual([]);
+    expect(r.note).toContain("none needed");
+  });
+  test("repairStages follows editbench: taps and leg only with opens, a7 only with A7 failures", () => {
+    const f = (open: number, a7: number) => ({ open, a7, a7_mm: 0, a8: 0, drc: {}, pairs_todo: 0, pairs: {} });
+    expect(L.repairStages(f(2, 0))).toEqual([["taps"], ["leg"], ["rip", "blockers:1.0"]]);
+    expect(L.repairStages(f(0, 1))).toEqual([["a7"], ["rip", "blockers:1.0"]]);
+  });
+});
+
+describe("pairsNext: the step to try for pairs that are not coupled", () => {
+  const m = (share: number) => ({ class: "PAIR_100OHM", target_mm: 0.38, p_mm: 10, n_mm: 10, coupled_share: share, spacing: [], widths: {} });
+  test("routed apart -> bundle (with the router's short-leg caveat); partly coupled -> reroute; coupled -> nothing", () => {
+    const next = L.pairsNext({ "/H.CK_P / /H.CK_N": m(0.03), "/U.D_P / /U.D_N": m(0.7), "/E.T_P / /E.T_N": m(0.97) });
+    expect(next).toHaveLength(2);
+    expect(next[0]).toContain('"bundle:^(/H\\.CK_P)$"');
+    expect(next[0]).toContain("electrically short");
+    // the next try for a tight fan-out names the modifiers, and parses as an action
+    expect(next[0]).toContain('"bundle:^(/H\\.CK_P)$!short!match!outer=2"');
+    expect(L.stepsFor("bundle:^(/H\\.CK_P)$!short!match!outer=2")[0]!.pairOptions).toEqual({ shortLegs: { setbacks: 1, floorMm: 1 }, intraMatch: 1, outerCost: 2 });
+    expect(next[1]).toContain('"reroute:^(/U\\.D_P)$"');
+    expect(L.pairsNext({ a: m(0.95) })).toEqual([]);
   });
 });

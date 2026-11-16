@@ -63,8 +63,9 @@ export function footprintSpans(text: string): Map<string, Span> {
 export type Pose = [number, number, number];
 
 export function pose(body: string): Pose {
-  const t = /\(transform\s+\(translate ([-\d.]+) ([-\d.]+)\)\s+\(rotate ([-\d.]+)\)/.exec(body);
-  if (t) return [Number(t[1]), Number(t[2]), Number(t[3])];
+  // KiCad leaves `(rotate)` out of a transform at 0 degrees (C6's C18_IC201); block_pass.pose then found no pose
+  const t = /\(transform\s+\(translate ([-\d.]+) ([-\d.]+)\)(?:\s+\(rotate ([-\d.]+)\))?/.exec(body);
+  if (t) return [Number(t[1]), Number(t[2]), Number(t[3] ?? 0)];
   const head = body.slice(0, body.indexOf("(property") < 0 ? body.length : body.indexOf("(property"));
   const at = /\(at ([-\d.]+) ([-\d.]+)(?: ([-\d.]+))?\)/.exec(head);
   if (!at) throw new Error("footprint without a pose");
@@ -97,7 +98,8 @@ export function setPose(body: string, x1: number, y1: number, r1: number): strin
   if (/\(transform\s+\(translate/.test(body)) {
     let out = body.replace(/\(translate [-\d.]+ [-\d.]+\)/, `(translate ${f4(x1)} ${f4(y1)})`);
     if (d) {
-      out = out.replace(/\(rotate [-\d.]+\)/, `(rotate ${g(mod360(r1))})`);
+      if (/\(transform\s+\(translate [-\d.]+ [-\d.]+\)\s+\(rotate /.test(out)) out = out.replace(/\(rotate [-\d.]+\)/, `(rotate ${g(mod360(r1))})`);
+      else out = out.replace(/(\(translate [-\d.]+ [-\d.]+\))/, `$1 (rotate ${g(mod360(r1))})`);
       out = out.replace(AT, turn(d));
     }
     return out;
@@ -217,6 +219,27 @@ export function copperByNet(text: string): Map<string, string[]> {
     (out.get(net) ?? out.set(net, []).get(net)!).push(copperKey(item));
   }
   for (const v of out.values()) v.sort();
+  return out;
+}
+
+/**
+ * Top-level copper items of `after` that `before` does not have (by content, as `copperByNet` compares them; an item
+ * written twice counts twice), in file order: the copper a step added.
+ */
+export function newCopperItems(before: string, after: string, kinds: readonly CopperKind[] = COPPER_KINDS): string[] {
+  const old = new Map<string, number>();
+  for (const { span } of copperItems(before, kinds)) {
+    const k = copperKey(before.slice(...span));
+    old.set(k, (old.get(k) ?? 0) + 1);
+  }
+  const out: string[] = [];
+  for (const { span } of copperItems(after, kinds)) {
+    const item = after.slice(...span);
+    const k = copperKey(item);
+    const n = old.get(k) ?? 0;
+    if (n > 0) old.set(k, n - 1);
+    else out.push(item);
+  }
   return out;
 }
 

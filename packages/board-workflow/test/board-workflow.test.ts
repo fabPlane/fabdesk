@@ -12,6 +12,7 @@ import {
   onboard,
   parseBoard,
   parseSexpr,
+  profile,
   pyRound,
   readAcceptanceState,
   readProjectSettings,
@@ -110,6 +111,13 @@ describe("onboarding", () => {
 });
 
 describe("acceptance", () => {
+  test("plane_layers as {layer: net} (the toolkit's current form) means the same layers as the list", () => {
+    const base = { schema: "X", stack_policy: { copper_layers: ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"], ground_net: "GND", via_spans: {} } };
+    const asMap = profile({ ...base, stack_policy: { ...base.stack_policy, plane_layers: { "In1.Cu": "GND", "In2.Cu": "GND" } } } as never);
+    const asList = profile({ ...base, stack_policy: { ...base.stack_policy, plane_layers: ["In1.Cu", "In2.Cu"] } } as never);
+    expect([...asMap.planes].sort()).toEqual(["In1.Cu", "In2.Cu"]);
+    expect([...asList.planes].sort()).toEqual(["In1.Cu", "In2.Cu"]);
+  });
   const settings = readProjectSettings(PRO);
   const reqs = () => deriveRequirements(BOARD, settings, { pcbName: "b" }).requirements;
   const clean = { violations: [], unconnected: 0, parity: 0 };
@@ -160,6 +168,54 @@ describe("acceptance", () => {
     // R1.1 is a tap pad (0.15 mm); a 0.15 mm stub from VIN's trunk to R1 is judged as a tap, not an undersize track
     const b = parseBoard(BOARD.replace(seg(0, 0, 10, 0, 0.1, "F.Cu", "VIN"), seg(19, 10, 19.2, 10, 0.15, "F.Cu", "VIN")));
     expect(checkAcceptance(b, q, clean).results.A7_widths["pass"]).toBe(true);
+  });
+  test("named PWR classes are courtyard proxies too (PWR_LOGIC_3313), not only PWR_<digits>", () => {
+    const r = checkAcceptance(board, reqs(), {
+      violations: [
+        { rule: "track_width", severity: "error", description: "Track width (rule 'PWR_LOGIC_3313 inner width'; min 0.2)" },
+        { rule: "track_width", severity: "error", description: "Track width (rule 'PWR_LCD33_3313 neck in courtyard'; min 0.2)" },
+        { rule: "track_width", severity: "error", description: "Track width (rule 'USB90 width'; min 0.1)" },
+      ],
+      unconnected: 0,
+      parity: 0,
+    });
+    expect(r.results.A2_drc).toMatchObject({ pass: false, errors: { track_width: 1 }, class_width_proxy_findings_judged_by_A7: 2 });
+  });
+  test("courtyard overlaps are accepted only for the footprint pairs acceptance.json names; gone ones are reported", () => {
+    const q = reqs();
+    q.acceptance.courtyard_overlap_exceptions = [
+      { refs: ["U1", "R1"], gap_mm: 0.2, basis: "measured" },
+      { refs: ["J1", "H1"], basis: "measured" },
+    ];
+    const overlap = (a: string, b: string) => ({ rule: "courtyards_overlap", severity: "error", description: "Courtyards overlap", items: [{ description: `Footprint ${a} [x]` }, { description: `Footprint ${b}` }] });
+    const r = checkAcceptance(board, q, {
+      violations: [overlap("R1", "U1"), overlap("R1", "J1"), { rule: "courtyards_overlap", severity: "error", description: "Courtyards overlap" }, { ...overlap("R1", "U1"), severity: "warning" }],
+      unconnected: 0,
+      parity: 0,
+    });
+    expect(r.results.A2_drc).toEqual({
+      pass: false,
+      errors: { courtyards_overlap: 2 }, // R1-J1 is not named; an overlap without items names no pair
+      class_width_proxy_findings_judged_by_A7: 0,
+      accepted_courtyard_overlaps: [["R1", "U1"]],
+      courtyard_exceptions_not_present: [["H1", "J1"]],
+    });
+    expect(toAcceptResults(r).find((x) => x.code === "A2")!.figures["accepted_courtyard_overlaps"]).toBe(1);
+    // without the key the result keeps its old shape
+    expect(Object.keys(checkAcceptance(board, reqs(), clean).results.A2_drc)).toEqual(["pass", "errors", "class_width_proxy_findings_judged_by_A7"]);
+  });
+  test("inner_neck_allowance_mm 0: an under-width inner segment fails A7 even within the neck of a pad", () => {
+    const q = reqs();
+    const vin = Object.values(q.acceptance.net_classes.classes).find((c) => c.nets?.includes("VIN"))!;
+    vin.inner_track_width = 0.4;
+    // a 0.2 mm inner stub from J1.1 (5,5): within the 1 mm neck allowance, so it passes until the allowance is 0
+    const b = parseBoard(BOARD.replace(seg(0, 0, 10, 0, 0.1, "F.Cu", "VIN"), seg(5, 5, 5.5, 5, 0.2, "In1.Cu", "VIN")));
+    expect(checkAcceptance(b, q, clean).results.A7_widths["pass"]).toBe(true);
+    vin.inner_neck_allowance_mm = 0;
+    expect(checkAcceptance(b, q, clean).results.A7_widths).toMatchObject({ pass: false, undersize_length_mm: { VIN: 0.5 } });
+    // outer copper keeps its neck allowance
+    const outer = parseBoard(BOARD.replace(seg(0, 0, 10, 0, 0.1, "F.Cu", "VIN"), seg(5, 5, 5.5, 5, 0.2, "F.Cu", "VIN")));
+    expect(checkAcceptance(outer, q, clean).results.A7_widths["pass"]).toBe(true);
   });
   test("pyRound follows Python on ties and exact values", () => {
     expect(pyRound(0.125, 2)).toBe(0.12);

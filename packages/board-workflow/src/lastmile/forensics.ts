@@ -1,8 +1,8 @@
 /**
  * Router forensics for `why` and `validate` (toolkit bench.py cmd_why / cmd_validate): KiCadRoutingTools'
  * net_forensics names the copper walling each stuck end; TraceMaker classifies every open connection (`causes`),
- * measures pairs (`pairs`) and audits return paths (`return-paths --diff-pairs`). Each engine is optional: what is not
- * installed is reported as such, and the board-model reading in why.ts still answers.
+ * measures pairs (`pairs`) and audits the return path of every declared pair net (`return-paths --nets`). Each engine is
+ * optional: what is not installed is reported as such, and the board-model reading in why.ts still answers.
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -81,10 +81,21 @@ export async function tmCauses(host: LayoutHost, board: string): Promise<string[
   return t.split("\n").filter((l) => l.trim() && !skip.some((p) => l.startsWith(p))).slice(-6);
 }
 
-/** TraceMaker pair report (`pairs --json`) and return-path audit; written beside `board`. */
-export async function tmPairAudit(host: LayoutHost, board: string, outDir: string): Promise<{ pairs: string; returnPaths: string; returnPathWarnings: number } | null> {
+/**
+ * Every net of every pair the acceptance classes declare, sorted (toolkit bench.py cmd_validate): the return-path audit
+ * names them with `--nets`, since TraceMaker's own pair inference (`--diff-pairs`) misses D+/D- nets ending DP/DM and
+ * filter-to-IC names.
+ */
+export function declaredPairNets(acc: { net_classes: { classes: Record<string, { pairs?: string[][] }> } }): string[] {
+  const nets = new Set<string>();
+  for (const c of Object.values(acc.net_classes.classes)) for (const pair of c.pairs ?? []) for (const n of pair) nets.add(n);
+  return [...nets].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/** TraceMaker pair report (`pairs --json`) and the return-path audit of `pairNets`; written beside `board`. */
+export async function tmPairAudit(host: LayoutHost, board: string, outDir: string, pairNets: readonly string[]): Promise<{ pairs: string; returnPaths: string; returnPathWarnings: number } | null> {
   if (!host.tools.tracemaker) return null;
   const pairs = (await tm(host, ["pairs", board, "--json", join(outDir, "tm-pairs.json")], join(outDir, "tm-pairs.txt"))) ?? "";
-  const returnPaths = (await tm(host, ["return-paths", board, "--diff-pairs"], join(outDir, "tm-return-paths.txt"))) ?? "";
+  const returnPaths = (await tm(host, ["return-paths", board, "--nets", pairNets.join(",")], join(outDir, "tm-return-paths.txt"))) ?? "";
   return { pairs, returnPaths, returnPathWarnings: returnPaths.split("\n").filter((l) => l.trimEnd().endsWith("WARN")).length };
 }

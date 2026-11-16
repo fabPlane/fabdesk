@@ -53,9 +53,11 @@ cat > "$ws/fakebin/cmake" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ " $* " == *" --build "* ]]; then
-  mkdir -p build/cpu-only/src/app
+  [[ " $* " == *" --target tracemaker --target tracemaker-place "* ]] || { echo "build.sh did not ask for both targets: $*" >&2; exit 1; }
+  mkdir -p build/cpu-only/src/app build/cpu-only/src/place
   printf '#!/bin/sh\nexit 0\n' > build/cpu-only/src/app/tracemaker
-  chmod +x build/cpu-only/src/app/tracemaker
+  printf '#!/bin/sh\nexit 0\n' > build/cpu-only/src/place/tracemaker-place
+  chmod +x build/cpu-only/src/app/tracemaker build/cpu-only/src/place/tracemaker-place
   echo "[63/63] Linking CXX executable src/app/tracemaker"
   exit 0
 fi
@@ -70,14 +72,18 @@ chmod +x "$ws/fakebin/cmake"
 binary="$(awk -F= '/^binary=/{print $2}' "$ROOT/build.out")"
 assert_eq "$binary" "$ws/TraceMaker/build/cpu-only/src/app/tracemaker" "build.sh emits an absolute binary path"
 assert_file "$binary"
+placer_out="$(awk -F= '/^placer=/{print $2}' "$ROOT/build.out")"
+assert_eq "$placer_out" "$ws/TraceMaker/build/cpu-only/src/place/tracemaker-place" "build.sh emits the placer path"
+assert_eq "$(find_placer "$binary")" "$placer_out" "find_placer finds src/place from src/app"
 
 # Windows configure uses cmake -S/-B, not --preset (upstream PATH is Unix-only).
 cat > "$ws/fakebin/cmake" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ " $* " == *" --build "* ]]; then
-  mkdir -p build/windows-x86_64/src/app
+  mkdir -p build/windows-x86_64/src/app build/windows-x86_64/src/place
   printf 'MZ\n' > build/windows-x86_64/src/app/tracemaker.exe
+  printf 'MZ\n' > build/windows-x86_64/src/place/tracemaker-place.exe
   echo "[63/63] Linking CXX executable src/app/tracemaker.exe"
   exit 0
 fi
@@ -98,6 +104,28 @@ chmod +x "$ws/fakebin/cmake"
 win_binary="$(awk -F= '/^binary=/{print $2}' "$ROOT/build-win.out")"
 assert_eq "$win_binary" "$ws/TraceMaker/build/windows-x86_64/src/app/tracemaker.exe" "build.sh windows emits tracemaker.exe"
 assert_file "$win_binary"
+assert_eq "$(awk -F= '/^placer=/{print $2}' "$ROOT/build-win.out")" "$ws/TraceMaker/build/windows-x86_64/src/place/tracemaker-place.exe" "build.sh windows emits tracemaker-place.exe"
+
+# A build that leaves no placer fails by name (the archive would break board_route's floorplan path).
+rm -rf "$ws/TraceMaker/build"
+cat > "$ws/fakebin/cmake" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ " $* " == *" --build "* ]]; then
+  mkdir -p build/cpu-only/src/app
+  printf '#!/bin/sh\nexit 0\n' > build/cpu-only/src/app/tracemaker
+  chmod +x build/cpu-only/src/app/tracemaker
+  exit 0
+fi
+mkdir -p build/cpu-only
+EOF
+chmod +x "$ws/fakebin/cmake"
+if (cd "$ws" && PATH="$ws/fakebin:$PATH" bash "$SCRIPT_DIR/build.sh" TraceMaker linux-x86_64 >"$ROOT/build-noplacer.out" 2>&1); then
+  echo "FAIL build.sh succeeded without tracemaker-place"
+  fail=1
+else
+  assert_contains "$ROOT/build-noplacer.out" "tracemaker-place target"
+fi
 
 # --- fake tracemaker CLI for smoke + package ---
 fake_bin="$ROOT/bin/tracemaker"
@@ -138,6 +166,32 @@ exit 2
 EOF
 chmod +x "$fake_bin"
 
+# --- fake tracemaker-place beside it (package.sh / smoke.sh find it there) ---
+cat > "$ROOT/bin/tracemaker-place" <<'EOF'
+#!/bin/sh
+if [ "$1" = "--help" ]; then
+  echo "TraceMaker placer"
+  echo "  -o, --output TEXT  --mode TEXT  --time FLOAT  --seed UINT"
+  echo "  --courtyard-clearance-mm FLOAT  --json TEXT"
+  exit 0
+fi
+out=""; json=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2; continue ;;
+    --json) json="$2"; shift 2; continue ;;
+  esac
+  shift
+done
+[ -n "$out" ] || { echo "missing -o" >&2; exit 2; }
+printf '(kicad_pcb (version 20241229))\n' > "$out"
+[ -z "$json" ] || printf '{"fixed_parts": []}\n' > "$json"
+echo "  conflicts       before          0      after          0   new 0 (outside board: 0 -> 0)"
+echo "  legalisation: 2 placed, 0 failed, mean displacement 0.12 mm, max 0.25 mm"
+exit 0
+EOF
+chmod +x "$ROOT/bin/tracemaker-place"
+
 # smoke from a different cwd with a relative fixture path
 (
   cd "$ROOT"
@@ -146,6 +200,29 @@ chmod +x "$fake_bin"
 assert_file "$ROOT/smoke-out/routed.kicad_pcb"
 assert_contains "$ROOT/smoke.log" "smoke ok"
 assert_contains "$ROOT/smoke.log" "tracemaker 0.9.0"
+assert_contains "$ROOT/smoke.log" "place exit 0"
+assert_file "$ROOT/smoke-out/placed.kicad_pcb"
+assert_file "$ROOT/smoke-out/place.json"
+# A placer whose output lacks the lines the floorplan path parses fails the smoke.
+mkdir -p "$ROOT/badplacer"
+cp "$fake_bin" "$ROOT/badplacer/tracemaker"
+cat > "$ROOT/badplacer/tracemaker-place" <<'EOF'
+#!/bin/sh
+if [ "$1" = --help ]; then echo "--output --mode --time --seed --courtyard-clearance-mm --json"; exit 0; fi
+while [ $# -gt 0 ]; do
+  [ "$1" = -o ] && echo x > "$2"
+  [ "$1" = --json ] && echo "{}" > "$2"
+  shift
+done
+exit 0
+EOF
+chmod +x "$ROOT/badplacer/tracemaker-place"
+if bash "$SCRIPT_DIR/smoke.sh" "$ROOT/badplacer/tracemaker" "$SCRIPT_DIR/fixtures/smoke.kicad_pcb" "$ROOT/smoke-bad" >"$ROOT/smoke-bad.log" 2>&1; then
+  echo "FAIL smoke.sh passed a placer without the legalisation / conflicts lines"
+  fail=1
+else
+  assert_contains "$ROOT/smoke-bad.log" "legalisation / conflicts"
+fi
 
 # --- package both platforms (relative dest + TRACEMAKER_SRC) ---
 src_tree="$ROOT/tm-src"
@@ -189,7 +266,7 @@ assert_file "$ROOT/pack/macos-arm64/NOTICE"
 assert_contains "$ROOT/pack/macos-arm64/DEPENDENCIES.txt" "static libzstd.a"
 assert_contains "$SCRIPT_DIR/package.sh" "shasum -a 256"
 tar -tzf "$ROOT/pack/macos-arm64/tracemaker-macos-arm64.tar.gz" > "$ROOT/macos-tar.list"
-for _need in tracemaker LICENSE NOTICE SOURCE.txt DEPENDENCIES.txt; do
+for _need in tracemaker tracemaker-place LICENSE NOTICE SOURCE.txt DEPENDENCIES.txt; do
   if grep -q "${_need}$" "$ROOT/macos-tar.list" || grep -q "/${_need}$" "$ROOT/macos-tar.list"; then
     echo "ok   macos archive contains $_need"
   else
@@ -205,6 +282,7 @@ mac = json.loads(pathlib.Path("$ROOT/pack/macos-arm64/asset.json").read_text())
 assert mac["platform"] == "macos-arm64"
 assert mac["format"] == "tar.gz"
 assert mac["executable"] == "tracemaker"
+assert mac["placer"] == "tracemaker-place"
 assert mac["linkage"] == "system-libc-or-frameworks"
 assert mac["minos"] == "15.0"
 assert mac["cxxRuntime"] == "llvm-static"
@@ -218,12 +296,13 @@ win = json.loads(pathlib.Path("$ROOT/pack/windows-x86_64/asset.json").read_text(
 assert win["platform"] == "windows-x86_64"
 assert win["format"] == "zip"
 assert win["executable"] == "tracemaker.exe"
+assert win["placer"] == "tracemaker-place.exe"
 assert "minos" not in win
 print("ok   windows asset.json has format zip / executable tracemaker.exe")
 PY
 if command -v unzip >/dev/null; then
   unzip -l "$ROOT/pack/windows-x86_64/tracemaker-windows-x86_64.zip" > "$ROOT/windows-zip.list"
-  for _need in tracemaker.exe LICENSE NOTICE SOURCE.txt DEPENDENCIES.txt; do
+  for _need in tracemaker.exe tracemaker-place.exe LICENSE NOTICE SOURCE.txt DEPENDENCIES.txt; do
     if grep -q "${_need}" "$ROOT/windows-zip.list"; then
       echo "ok   windows archive contains $_need"
     else
@@ -302,7 +381,7 @@ python3 - <<PY
 import zipfile
 z = zipfile.ZipFile("$ROOT/pack/windows-nozip/tracemaker-windows-x86_64.zip")
 names = set(z.namelist())
-missing = [n for n in ("tracemaker.exe", "LICENSE", "NOTICE", "SOURCE.txt", "DEPENDENCIES.txt") if n not in names]
+missing = [n for n in ("tracemaker.exe", "tracemaker-place.exe", "LICENSE", "NOTICE", "SOURCE.txt", "DEPENDENCIES.txt") if n not in names]
 if missing:
     raise SystemExit(f"FAIL python zipfile layout missing {missing}; have {sorted(names)}")
 print("ok   python zipfile fallback layout", sorted(n for n in names if "/" not in n.rstrip("/")))
@@ -339,9 +418,13 @@ partial.write_text(json.dumps({
                "sourceUrl": "https://example.test/src.tgz"},
   "assets": [{"platform": "linux-x86_64", "filename": "tracemaker-linux-x86_64.tar.gz",
               "url": "https://example.test/linux.tgz", "sha256": "a"*64, "bytes": 1, "format": "tar.gz",
-              "executable": "tracemaker"}]
+              "executable": "tracemaker", "placer": "tracemaker-place"}]
 }) + "\n")
+old = json.loads(partial.read_text())
+del old["assets"][0]["placer"]
+pathlib.Path("$ROOT/preplacer-manifest.json").write_text(json.dumps(old) + "\n")
 PY
+assert_eq "$(missing_expected_platforms "$ROOT/preplacer-manifest.json")" "linux-x86_64 macos-arm64 windows-x86_64" "an asset without the placer counts as missing (rebuilt)"
 assert_eq "$(missing_expected_platforms "$ROOT/partial-manifest.json")" "macos-arm64 windows-x86_64" "linux-only manifest is missing macos + windows"
 assert_eq "$(missing_expected_platforms "$ROOT/no-such-manifest.json")" "linux-x86_64 macos-arm64 windows-x86_64" "missing file → all platforms"
 printf '%s\n' '{"platforms":{"windows-x86_64":{"status":"failed","attempts":3}}}' > "$ROOT/waived-status.json"
@@ -778,7 +861,12 @@ if "strip" not in names or "codesign" not in names:
     raise SystemExit(f"FAIL expected strip+codesign in {names}")
 if names.index("strip") > names.index("codesign"):
     raise SystemExit(f"FAIL codesign ran before strip: {names}")
-print("ok   package.sh codesign runs after strip")
+signed = [line.split()[-1].rsplit("/", 1)[-1] for line in log if line.startswith("codesign ")]
+if sorted(signed) != ["tracemaker", "tracemaker-place"]:
+    raise SystemExit(f"FAIL expected both programs ad-hoc signed, got {signed}")
+if max(i for i, n in enumerate(names) if n == "strip") > names.index("codesign"):
+    raise SystemExit(f"FAIL a strip ran after codesign: {names}")
+print("ok   package.sh strips then ad-hoc signs tracemaker and tracemaker-place")
 PY
 if grep -E 'declare -A|mapfile|readarray|\$\{[A-Za-z_][A-Za-z0-9_]*,,\}' \
   "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/macos-llvm.sh" "$SCRIPT_DIR/verify-macos.sh" \

@@ -64,7 +64,7 @@ export function churn(d: BoardDiff, ledger: { applied: ApplyLog; impact: ImpactR
   const kinds = ["moved", "carried", "near", "displaced"] as const;
   for (const k of kinds) for (const m of mv?.[k] ?? []) parts.add(m.ref);
   const nets = new Set<string>([...(mv?.cut_nets ?? []), ...(mv?.internal_nets_moved ?? []), ...imp.copper.delete_on_nets, ...imp.copper.prune_on_nets]);
-  for (const n of [...(ap.pad_cut?.cut_nets ?? []), ...(ap.landing?.cut_nets ?? [])]) nets.add(n);
+  for (const n of [...(ap.pad_cut?.cut_nets ?? []), ...(ap.landing?.cut_nets ?? []), ...(ap.copper?.nets ?? []), ...(ap.stack?.nets ?? [])]) nets.add(n);
   for (const c of ap.net_changes) {
     nets.add(c.from);
     nets.add(c.to);

@@ -12,13 +12,15 @@ import { runDurable } from "../durable";
 import { ToolError, defineTool, type ToolContext } from "../registry";
 import { ok } from "./common";
 
-const ENGINES = ["krt", "tracemaker", "freerouting"] as const satisfies readonly RouterCatalogId[];
+const ENGINES = ["krt", "tracemaker", "freerouting", "atlc"] as const satisfies readonly RouterCatalogId[];
 /** What `all` installs: the engines board_route runs (Freerouting is bundled or a `route_run` choice). */
 const WORKFLOW_ENGINES = ["krt", "tracemaker"] as const;
 
 function row(s: RouterSnapshot): string {
   const head = `${s.id}: ${s.ready ? "ready" : s.state.replace("_", " ")}${s.versionInstalled ? ` ${s.versionInstalled}` : ""}${s.path ? ` at ${s.path}` : ""}`;
-  const extra = [s.overriddenBy ? `from ${s.overriddenBy}` : "", s.error ? `error: ${s.error}` : "", s.notice ? `note: ${s.notice}` : "", !s.ready && !s.error ? s.installHint : ""];
+  // TraceMaker's placer (board_route's floorplan path) is reported on its own line once TraceMaker itself is there
+  const placer = s.placer && (s.ready || s.placer.overriddenBy) ? `placer: ${s.placer.ready ? `tracemaker-place at ${s.placer.path}${s.placer.overriddenBy ? ` (from ${s.placer.overriddenBy})` : ""}` : `missing: ${s.placer.why ?? "not found"}`}` : "";
+  const extra = [s.overriddenBy ? `from ${s.overriddenBy}` : "", placer, s.error ? `error: ${s.error}` : "", s.notice ? `note: ${s.notice}` : "", !s.ready && !s.error ? s.installHint : ""];
   return [head, ...extra.filter(Boolean).map((l) => `  ${l}`)].join("\n");
 }
 
@@ -34,7 +36,7 @@ async function status(ctx: ToolContext) {
     `automatic install on first use: ${auto ? "on" : "off (Settings autoInstallEngines)"}`,
   ].join("\n");
   return ok(text, {
-    engines: snaps.map((s) => ({ id: s.id, state: s.state, ready: s.ready, ...(s.path ? { path: s.path } : {}), ...(s.versionInstalled ? { version: s.versionInstalled } : {}), ...(s.overriddenBy ? { overriddenBy: s.overriddenBy } : {}), ...(s.error ? { error: s.error } : {}), ...(s.notice ? { notice: s.notice } : {}) })),
+    engines: snaps.map((s) => ({ id: s.id, state: s.state, ready: s.ready, ...(s.path ? { path: s.path } : {}), ...(s.placer ? { placer: s.placer } : {}), ...(s.versionInstalled ? { version: s.versionInstalled } : {}), ...(s.overriddenBy ? { overriddenBy: s.overriddenBy } : {}), ...(s.error ? { error: s.error } : {}), ...(s.notice ? { notice: s.notice } : {}) })),
     kicadCli: cli?.path ?? null,
     autoInstall: auto,
   });
@@ -45,7 +47,7 @@ export const board_engines = defineTool({
   toolset: "board",
   title: "Board engines: status and install",
   description:
-    "The engines the board tools run: KiCadRoutingTools (krt: layout check/place/rank/route, last-mile router, rip and nudge steps, why), TraceMaker (layout route, fill:tracemaker) and Freerouting, plus the KiCad CLI. status (default): each one's state, version, path, override and last error. install: install `engine` (krt, tracemaker, freerouting, or all = krt + tracemaker) now; downloads are sha256-checked, KRT gets a private hash-locked Python (uv and CPython are fetched when the machine has neither; nothing needs to be preinstalled). Board tools also install a missing engine on first use, so this is for installing ahead of a long run or installing again after a failure. A set override (Settings krtDir, FABDESK_KRT_DIR, TRACEMAKER_BIN, FREEROUTING_JAR) that is broken is reported, not installed over. Installs take seconds to a few minutes and run as a board job (board_job).",
+    "The engines the board tools run: KiCadRoutingTools (krt: layout check/place/rank/route, last-mile router, rip and nudge steps, why), TraceMaker (layout route, fill:tracemaker; its placer tracemaker-place runs the floorplan path), Freerouting and atlc (board_review section's finite-difference impedance solver; built from source, or the system's atlc), plus the KiCad CLI. status (default): each one's state, version, path, override and last error, and whether TraceMaker's placer is there. install: install `engine` (krt, tracemaker, freerouting, atlc, or all = krt + tracemaker) now; downloads are sha256-checked, KRT gets a private hash-locked Python (uv and CPython are fetched when the machine has neither; nothing needs to be preinstalled). Board tools also install a missing engine on first use, so this is for installing ahead of a long run or installing again after a failure. install tracemaker also reinstalls a TraceMaker whose archive predates the placer. A set override (Settings krtDir, FABDESK_KRT_DIR, TRACEMAKER_BIN, TRACEMAKER_PLACE_BIN, FREEROUTING_JAR, ATLC_BIN) that is broken is reported, not installed over. Installs take seconds to a few minutes and run as a board job (board_job).",
   inputSchema: {
     action: z.enum(["status", "install"]).default("status"),
     engine: z.enum([...ENGINES, "all"]).optional().describe("install: which engine; default all (krt + tracemaker)."),
@@ -65,15 +67,25 @@ export const board_engines = defineTool({
         job.progress(0.5, l);
       };
       const results = [];
+      let placer: { path: string | null; why?: string; installed?: boolean } | undefined;
       for (const id of ids) {
         job.signal.throwIfAborted();
         const r = await routers.ensure(id, { explicit: true, onLine: note });
         results.push(r);
         note(r.path ? `${id}: ready at ${r.path}` : `${id}: not installed: ${r.why ?? "unknown reason"}`);
+        if (id === "tracemaker" && r.path) {
+          // the floorplan path's placer ships with TraceMaker; an install from an older archive is upgraded here
+          const p = await routers.ensurePlacer({ explicit: true, onLine: note });
+          placer = p;
+          note(p.path ? `tracemaker-place: ready at ${p.path}` : `tracemaker-place: missing: ${p.why ?? "unknown reason"}`);
+        }
       }
       const failed = results.filter((r) => !r.path);
       const text = [...lines, "", failed.length ? `${failed.length} of ${results.length} not installed` : `ready: ${results.map((r) => r.id).join(", ")}`].join("\n");
-      return ok(text, { engines: results.map((r) => ({ id: r.id, ready: !!r.path, ...(r.path ? { path: r.path } : {}), ...(r.why ? { why: r.why } : {}), ...(r.installed ? { installed: true } : {}) })) });
+      return ok(text, {
+        engines: results.map((r) => ({ id: r.id, ready: !!r.path, ...(r.path ? { path: r.path } : {}), ...(r.why ? { why: r.why } : {}), ...(r.installed ? { installed: true } : {}) })),
+        ...(placer ? { placer: { ready: !!placer.path, ...(placer.path ? { path: placer.path } : {}), ...(placer.why ? { why: placer.why } : {}), ...(placer.installed ? { installed: true } : {}) } } : {}),
+      });
     });
   },
 });

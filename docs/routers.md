@@ -107,11 +107,16 @@ The missing engine is installed inline with progress lines and the step continue
   steps then report the missing engine;
 - an automatic install that failed is not retried automatically in the same core process; `board_engines install`
   (or Settings → Install) retries;
-- `route_run router=tracemaker`, `why`'s cause classes and `validate`'s pair audit install TraceMaker on first use as well.
+- `route_run router=tracemaker`, `why`'s cause classes and `validate`'s pair audit install TraceMaker on first use as well;
+- the floorplan path (`board_route action=floorplan`, `block_eval`, last-mile `replace:`) runs TraceMaker's placer
+  `tracemaker-place` through `ensurePlacer` (`placerEnsurer` in `board-host.ts`, `tracemakerPlacer` in
+  `layout/floorplan.ts`); see [TraceMaker's placer](#tracemakers-placer-tracemaker-place).
 
 The agent can also see and install engines itself with the `board_engines` tool (`board` toolset, global): `status`
-lists each engine's state, path, override and last error plus kicad-cli and the auto-install setting; `install`
-(`engine`: krt, tracemaker, freerouting, or all = krt + tracemaker) runs as a durable board job. Programmatic callers
+lists each engine's state, path, override and last error (and, under TraceMaker, `placer:` with where `tracemaker-place`
+is or why it is missing) plus kicad-cli and the auto-install setting; `install` (`engine`: krt, tracemaker, freerouting,
+or all = krt + tracemaker; tracemaker also upgrades an install whose archive predates the placer) runs as a durable
+board job. Programmatic callers
 (CI) keep using `registry.install("krt")`.
 
 Measured 2026-11-12 on Linux x86_64, **cold** on a bare-machine simulation (empty HOME, PATH without uv or Python, a
@@ -119,6 +124,18 @@ fresh data dir): about **39 s** in all (uv download 3 s, managed CPython 1 s, ha
 slow link spent 14 min on the wheels alone (uv prints nothing meanwhile, so the install logs a heartbeat every minute); about **320 MB**
 on disk for KRT (scripts, venv, managed CPython) plus 42 MB for the pinned uv. A cold install downloads ~16 MB of
 KRT, ~18 MB of uv, ~30 MB of CPython and ~60 MB of wheels.
+
+## atlc (engine)
+
+`board_review section` (finite-difference cross-section impedance, the toolkit's `review/atlc_section.py`) runs atlc 4.6.1
+(GPL-2.0-or-later, https://atlc.sourceforge.net) as a separate program. Upstream publishes source only, so the registry entry
+`atlc` (kind `engine`) downloads Debian's pristine copy of the upstream tarball
+(`https://deb.debian.org/debian/pool/main/a/atlc/atlc_4.6.1.orig.tar.bz2`, 1 784 110 bytes, sha256 `0ad8f9bb…6841321`;
+`FABDESK_ATLC_URL` / `FABDESK_ATLC_SHA256` override) and builds `atlc-4.6.1/src/atlc` with `sh ./configure CFLAGS="-O2 -fcommon"`
+and `make -C src atlc` (single-threaded, like Debian's package; a few seconds; needs a C compiler and make). `ATLC_BIN` wins, then an
+`atlc` on PATH (the Debian/Ubuntu `atlc` package) is used as it is. Windows has no build path: set `ATLC_BIN`. Verified on Linux x86_64
+(the built binary gives the same impedances as Debian's on the C6 stack106 sections); macOS is untested (the 2008 `config.guess` may
+not know arm64 Macs: then install atlc another way and set `ATLC_BIN`).
 
 ## TraceMaker size and license
 
@@ -139,6 +156,32 @@ on this repo.
 3. If that host is unreachable, or has no asset for this platform, fall back to the
    pinned upstream source tarball. The package is then `installed` but **not ready** until
    you build it or set `TRACEMAKER_BIN`.
+
+### TraceMaker's placer (`tracemaker-place`)
+
+Every published archive carries upstream's placer `tracemaker-place` (`.exe` on Windows) beside `tracemaker`: `build.sh`
+builds both CMake targets (`src/place` has existed since v0.8.0, and its CLI is the one `floorplan.ts` calls:
+`board -o out --mode full --time --seed --courtyard-clearance-mm --json`), `package.sh` gives it the same strip, library
+bundling (`$ORIGIN/lib` on Linux, DLLs beside the `.exe` on Windows), Windows DLL probe and macOS ad-hoc signature, and
+`smoke.sh` runs `tracemaker-place --help` (checking those flags) and a 2-part placement on the smoke fixture (checking
+the `legalisation: N placed, M failed` and `conflicts before … after … new …` lines and the `--json` report's
+`fixed_parts`, which the floorplan passes parse). On macOS both programs pass `verify-macos.sh` for the variant that is
+published. `asset.json` / the manifest name it (`"placer": "tracemaker-place"`).
+
+The registry resolves it (`traceMakerPlacerNear`, the snapshot's `placer` field, `ensurePlacer`):
+
+1. `TRACEMAKER_PLACE_BIN` when set (a broken value is reported, never installed over);
+2. beside the TraceMaker binary (the installed archive, an upstream install's `bin/`, or `TRACEMAKER_BIN`'s folder);
+3. the CMake build tree's `src/place` next to `src/app` (a source build, including `TRACEMAKER_BIN` pointing into one),
+   then anywhere in a source package built in place.
+
+`ensurePlacer` installs TraceMaker first when it is missing (the same rules as `ensure`). A managed install from an
+archive that predates the placer (no `placer` key) is replaced once from the current release, but only after the
+manifest shows that release carries it, so nothing is re-downloaded for nothing; automatic upgrades honour
+`autoInstallEngines` and are not retried after a failure (`board_engines install tracemaker` retries). A
+`TRACEMAKER_BIN` or source-package install is never replaced; the reason says what to build or set. `resolve-upstream.sh`
+counts a published platform only when its asset names the placer, so the first weekly run after this change rebuilds the
+existing `tracemaker-v0.12.1-db5950f` release's linux and macOS archives instead of skipping them.
 
 Each published archive contains the upstream `LICENSE` (and `NOTICE` when present) plus
 `SOURCE.txt` with the pinned upstream tag and commit. That is the GPL-3.0 §6 source offer
@@ -162,7 +205,7 @@ Measured 2026-10-09 (source fallback, still used when no binary exists for the p
 | `linux-x86_64` | yes | `cpu-only` on Ubuntu 26.04 / GCC 15 | No CUDA. Non-system libs (zstd, sqlite) are bundled with `$ORIGIN/lib` when present. Remaining dynamic deps are glibc. |
 | `macos-arm64` | yes | `macos-metal` | Two variants in one job; **publish the first that passes smoke**. **A (preferred):** Apple clang + system `/usr/lib/libc++.1.dylib` (single C++ runtime; Metal/Foundation already load Apple libc++). **B:** Homebrew LLVM `clang++` + **static** `libc++` / `libc++abi` / `libunwind` (run 38016562996 linked B then SIGABRT on `--help`). Both apply the v0.9.0 `from_chars(double)` + `<cstdlib>` patch and `-Werror=unguarded-availability-new` on A. `CMAKE_OSX_DEPLOYMENT_TARGET=15.0`. SQLite: isolated headers + static `libsqlite3.a` or `/usr/lib/libsqlite3.dylib`. zstd is **static** `libzstd.a`. `--help` / `version` do not call Metal (`MTLCopyAllDevices` is lazy; smoke uses `route --no-gpu`). Smoke abort uploads unpackaged binaries + `lldb` / `DYLD_PRINT_LIBRARIES` / crash reports as `tracemaker-macos-arm64-debug`. Manifest records `minos=15.0`, `cxxRuntime`, and `macosVariant`. |
 | `macos-x86_64` | no | — | Intel macOS runners are not cheap enough for a weekly job; brew bottles on the arm64 runner are arm64. |
-| `windows-x86_64` | best-effort | no upstream preset; MSYS2 UCRT64 + Ninja | GCC-only `Warnings.cmake` and the `base` preset's Unix `PATH` rule out MSVC. Static libgcc/libstdc++ / zstd / sqlite. Archive is `.zip` with `tracemaker.exe`. A Windows failure does not block linux/macos. |
+| `windows-x86_64` | best-effort | no upstream preset; MSYS2 UCRT64 + Ninja | GCC-only `Warnings.cmake` and the `base` preset's Unix `PATH` rule out MSVC. Static libgcc/libstdc++ / zstd / sqlite. Archive is `.zip` with `tracemaker.exe` and `tracemaker-place.exe`. A Windows failure does not block linux/macos. |
 
 Users do not need CMake or a C++ toolchain to *install* a published binary. They still need
 a matching OS/arch (glibc x86_64 Linux, Apple silicon macOS 15+, or 64-bit Windows).

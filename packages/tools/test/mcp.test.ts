@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
-import { attachToRegistry, createRegistry } from "../src";
+import { attachToRegistry, createRegistry, toCallToolResult, wantsStructured } from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
 async function pair(
@@ -27,6 +27,40 @@ async function pair(
 }
 
 describe("mcp adapter", () => {
+  test("Claude Code gets the text, not the JSON, when a tool wrote both (it hands the model structuredContent)", async () => {
+    const out = { text: "finish 29s open 0 -> ACCEPT", json: { figures: { open: 0 } } };
+    expect(wantsStructured(out, "claude-code")).toBe(false);
+    expect(wantsStructured(out, "codex-mcp-client")).toBe(true);
+    expect(wantsStructured(out, undefined)).toBe(true);
+    expect(wantsStructured({ json: { a: 1 } }, "claude-code")).toBe(true); // no text: the JSON is the result
+    const forClaude = await toCallToolResult(out, { structured: false });
+    expect(forClaude.structuredContent).toBeUndefined();
+    expect(forClaude.content).toEqual([{ type: "text", text: "finish 29s open 0 -> ACCEPT" }]);
+    expect((await toCallToolResult(out)).structuredContent).toEqual({ figures: { open: 0 } });
+  });
+
+  test("no listed input schema has array-form `items` (tuples): Codex silently drops such a tool", async () => {
+    // Codex 0.167 left board_edit and board_route out of its tool list because their schemas held z.tuple, which the
+    // SDK writes as `items: [...]`; use `z.array(...).length(n)` instead.
+    const registry = createRegistry();
+    const { client, server } = await pair(registry.list().map((tool) => tool.name));
+    try {
+      const tuples: string[] = [];
+      const walk = (o: unknown, path: string): void => {
+        if (Array.isArray(o)) return o.forEach((v, i) => walk(v, `${path}[${i}]`));
+        if (!o || typeof o !== "object") return;
+        for (const [k, v] of Object.entries(o)) {
+          if (k === "items" && Array.isArray(v)) tuples.push(path);
+          walk(v, `${path}.${k}`);
+        }
+      };
+      for (const tool of (await client.listTools()).tools) walk(tool.inputSchema, tool.name);
+      expect(tuples).toEqual([]);
+    } finally {
+      await server.close();
+    }
+  });
+
   test("all exposed and discovered tools carry explicit effect annotations", async () => {
     const registry = createRegistry();
     const { client, server } = await pair(registry.list().map((tool) => tool.name));

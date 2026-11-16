@@ -146,11 +146,23 @@ async function serve(cli: string, board: string, held: Held, signal?: AbortSigna
     }
     transport = new NngIpcTransport({ path: endpoint, defaultTimeoutMs: 600_000, connectTimeoutMs: 120_000 });
     held.transports.push(transport);
-    await transport.ready();
   }
-  const kicad = await KiCad.connect(transport, { clientName: "fabdesk/workflow-adopt" });
-  const doc = (await kicad.currentBoard()) ?? (await kicad.openBoard(board));
-  return { doc };
+  try {
+    if (!win) await transport.ready();
+    const kicad = await KiCad.connect(transport, { clientName: "fabdesk/workflow-adopt" });
+    const doc = (await kicad.currentBoard()) ?? (await kicad.openBoard(board));
+    return { doc };
+  } catch (e) {
+    // a KiCad that cannot load the board (a newer file format, say) drops the connection; what it printed says why, and
+    // adopt reads that to choose its fallback, so it goes into the error (after a moment for the output to arrive)
+    await new Promise((z) => setTimeout(z, 300));
+    const said = log.trim();
+    if (!said) throw e;
+    throw new ToolError(
+      `KiCad could not open ${board}: ${e instanceof Error ? e.message : String(e)}\n--- kicad-cli output ---\n${said.slice(-600)}`,
+      "precondition",
+    );
+  }
 }
 
 /**

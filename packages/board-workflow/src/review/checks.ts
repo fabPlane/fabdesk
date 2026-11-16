@@ -7,7 +7,7 @@
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join } from "node:path";
-import { checkAcceptance, profile, pyRound, type DrcInput } from "../accept";
+import { checkAcceptance, courtyardException, profile, PWR_PROXY, pyRound, type DrcInput } from "../accept";
 import { kids, type SNode } from "../sexpr";
 import { BUILTIN_CARDS, INTERFACE_PROFILES } from "./data";
 import { Fetch, EDA_URL, edaPinNames, fetchCacheDir } from "./fetch";
@@ -20,6 +20,8 @@ import { applyCards } from "./rulecards";
 import { ReviewCtx, reviewHome } from "./context";
 import { SEVERITIES, findingId, makeFinding, newResult, type CheckResult, type Finding, type FindingInput, type Severity } from "./types";
 import { exists } from "../files";
+import { checkSilk } from "./silk-check";
+import { checkInnerPower } from "./power-stack";
 
 const FIND = (x: FindingInput) => makeFinding(x);
 const pyList = (xs: string[]) => `[${xs.map((x) => `'${x}'`).join(", ")}]`;
@@ -42,7 +44,6 @@ const ERC_ENV = new Set(["lib_symbol_issues", "lib_symbol_mismatch", "footprint_
 const DRC_QUESTION = new Set(["courtyards_overlap", "solder_mask_bridge", "track_dangling", "via_dangling", "footprint_type_mismatch", "lib_footprint_mismatch", "copper_edge_clearance", "hole_clearance", "clearance", "missing_courtyard", "malformed_courtyard", "npth_inside_courtyard", "pth_inside_courtyard", "item_on_disabled_layer", "footprint_symbol_mismatch", "shorting_items", "tracks_crossing", "hole_to_hole", "annular_width", "drill_out_of_range", "via_diameter", "track_width", "connection_width", "diff_pair_gap_out_of_range"]);
 const DRC_ENV = new Set(["lib_footprint_issues"]);
 const EXAMPLES = 4;
-const PWR_PROXY_RE = /rule 'PWR_\d+ (outer width|inner width|neck in courtyard)'/;
 
 interface RawItem {
   description?: string;
@@ -59,6 +60,8 @@ interface Judged {
   match: string | RegExp;
   by: string;
   reason: string;
+  /** A further test on the finding itself (the toolkit's `accept`): judged elsewhere only when it holds. */
+  accept?: (v: RawViolation) => boolean;
 }
 
 const items = (v: RawViolation) => cut((v.items ?? []).map((i) => i.description ?? "").join("; "), 220);
@@ -72,7 +75,7 @@ function group(violations: RawViolation[], source: string, layer: string, rule: 
   const groups = new Map<string, { sev: string; typ: string; vs: RawViolation[] }>();
   const notes: Array<[RawViolation, Judged]> = [];
   for (const v of violations) {
-    const why = judged.find((j) => v.type === j.type && new RegExp(j.match).test(v.description ?? ""));
+    const why = judged.find((j) => v.type === j.type && new RegExp(j.match).test(v.description ?? "") && (!j.accept || j.accept(v)));
     if (why) {
       notes.push([v, why]);
       continue;
@@ -199,7 +202,17 @@ export async function checkDrc(ctx: ReviewCtx): Promise<CheckResult> {
   const judged: Judged[] = [...(ctx.project.cfg.native?.judged_elsewhere ?? [])];
   if (ctx.acceptance && !judged.some((j) => j.type === "track_width"))
     // a board with requirements: its acceptance (A7) owns the PWR_* proxy findings
-    judged.push({ type: "track_width", match: PWR_PROXY_RE, by: "A7", reason: "generated PWR_* class-width rules are a courtyard proxy for the neck rule; A7 judges power widths" });
+    judged.push({ type: "track_width", match: PWR_PROXY, by: "A7", reason: "generated PWR_* class-width rules are a courtyard proxy for the neck rule; A7 judges power widths" });
+  const acc = ctx.acceptance;
+  if (acc?.courtyard_overlap_exceptions?.length)
+    // courtyard overlaps the board's acceptance.json accepts by name (pair + measured gaps)
+    judged.push({
+      type: "courtyards_overlap",
+      match: "",
+      by: "A2-named-exceptions",
+      accept: (v) => courtyardException(v, acc) !== null,
+      reason: "courtyard overlap accepted by name in acceptance.json courtyard_overlap_exceptions (measured copper/body gaps recorded there)",
+    });
   const sev = (sv: string, t: string): Severity | null => {
     if (sv === "exclusion") return null;
     if (sv === "error") return "must-fix";
@@ -227,7 +240,7 @@ export async function checkAcceptanceLayer(ctx: ReviewCtx): Promise<CheckResult>
   }
   const raw = await readJson<{ violations?: RawViolation[]; unconnected_items?: unknown[]; schematic_parity?: unknown[] }>(ctx.drc);
   const drc: DrcInput = {
-    violations: (raw?.violations ?? []).map((v) => ({ rule: v.type, severity: v.severity, description: v.description ?? "" })),
+    violations: (raw?.violations ?? []).map((v) => ({ rule: v.type, severity: v.severity, description: v.description ?? "", items: (v.items ?? []).map((i) => ({ description: i.description ?? "" })) })),
     unconnected: (raw?.unconnected_items ?? []).length,
     parity: (raw?.schematic_parity ?? []).length,
   };
@@ -491,6 +504,65 @@ class Heap {
   }
 }
 
+/** A connector's reference (J1, USB701, CN2, BT1, P3, X1). */
+const CONNECTOR_REF = /^(J|USB|CN|BT|P|X)\d/;
+/** A supply net by name (VBUS_USB2.0, +5V, M2_3V3, HDMI_+5V, VIN, +BATT) ... */
+const SUPPLY_NET = /(VBUS|VIN|VCC|VDD|VSYS|VBAT|BATT?)|(^|[^A-Za-z0-9])\+?\d+V\d*|_\d+V\d*$/i;
+/** ... and not a control signal named after one (VBUS_EN, PWR_BUT, nLED_PWR, VBUS_DET, PGOOD). */
+const SUPPLY_CONTROL = /(_EN$|EN$|_BUT|LED|SENSE|_OK$|PGOOD|_PG$|DET|_ID$|_CC\d?$|SCL|SDA|IRQ|INT\b|SYNC|GPIO|BAD|RST|RESET|CLK|_TX|_RX|MISO|MOSI|~\{)/i;
+
+/** IPC-2221 external-layer ampacity (A) of a track: width and thickness in mm, rise in degrees C. */
+export function ipc2221ExternalAmps(widthMm: number, thicknessMm: number, riseC: number): number {
+  const areaMil2 = (widthMm / 0.0254) * (thicknessMm / 0.0254);
+  return 0.048 * riseC ** 0.44 * areaMil2 ** 0.725;
+}
+
+/**
+ * Supply nets (a supply name, a capacitor on the net, no control/signal token) that enter through a connector, carry
+ * no declared current, and are routed at signal width: at least
+ * 80 % of at least 5 mm of track at or below the board's length-weighted median track width. On cm5_minima this is
+ * the seeded 0.15 mm VBUS and nothing on the unseeded board (its supplies run at 0.25 mm and up; 0.15 mm stretches on
+ * +1V8 / +3V3_PI are short IC fan-outs on nets no connector feeds).
+ */
+export function signalWidthSupplies(ctx: ReviewCtx, declared: Set<string>, riseC = 20): Finding[] {
+  const board = ctx.board;
+  const len = (sg: { a: [number, number]; b: [number, number] }) => Math.hypot(sg.a[0] - sg.b[0], sg.a[1] - sg.b[1]);
+  const all = board.segments.map((sg) => [sg.w, len(sg)] as [number, number]).sort((a, b) => a[0] - b[0]);
+  const total = all.reduce((t, [, l]) => t + l, 0);
+  if (!total) return [];
+  let acc = 0, signalW = all[all.length - 1]![0];
+  for (const [w, l] of all) if ((acc += l) >= total / 2) { signalW = w; break; }
+  const fed = new Map<string, Set<string>>();
+  for (const p of board.pads) if (p.net && CONNECTOR_REF.test(p.ref)) (fed.get(p.net) ?? fed.set(p.net, new Set()).get(p.net)!).add(p.ref);
+  // a rail has decoupling: a capacitor on the net (signals named after their IO voltage, I2C0_SCL_1V8, do not)
+  const capped = new Set(board.pads.filter((p) => p.net && /^C\d/.test(p.ref)).map((p) => p.net));
+  const out: Finding[] = [];
+  for (const [net, refs] of [...fed].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    if (declared.has(net) || !SUPPLY_NET.test(net) || SUPPLY_CONTROL.test(net) || !capped.has(net)) continue;
+    const segs = board.segments.filter((sg) => sg.net === net);
+    const L = segs.reduce((t, sg) => t + len(sg), 0);
+    const narrow = segs.filter((sg) => sg.w <= signalW + 1e-6).reduce((t, sg) => t + len(sg), 0);
+    if (L < 5 || narrow / L < 0.8) continue;
+    const wmin = Math.min(...segs.map((sg) => sg.w));
+    const amps = ipc2221ExternalAmps(wmin, 0.035, riseC);
+    const via = [...refs].sort().join(", ");
+    out.push(
+      FIND({
+        layer: "L3",
+        rule: "SUPPLY_WIDTH",
+        severity: "question",
+        ref: [...refs].sort()[0]!,
+        net,
+        key: `supply-width-${net}`,
+        claim: `${net} enters through ${via} and is routed at signal width: ${Math.round((100 * narrow) / L)}% of ${pyRound(L, 1)} mm at or below ${signalW} mm (narrowest ${wmin} mm, about ${pyRound(amps, 2)} A at ${riseC} C rise on 35 um outer copper, IPC-2221); no current is declared for it`,
+        evidence: [{ source: "board", detail: `track widths on ${net}: ${[...new Set(segs.map((sg) => sg.w))].sort((a, b) => a - b).join(", ")} mm; board median track width ${signalW} mm` }],
+        suggest: `declare ${net}'s current (review.currents) so the current check sizes it, or widen it to what ${via} can deliver`,
+      }),
+    );
+  }
+  return out;
+}
+
 export async function checkCurrent(ctx: ReviewCtx): Promise<CheckResult> {
   const r = newResult("current", "L3");
   const acc = ctx.acceptance;
@@ -501,6 +573,9 @@ export async function checkCurrent(ctx: ReviewCtx): Promise<CheckResult> {
   for (const [k, v] of Object.entries(ctx.project.cfg.currents ?? {})) cur[k] = Number(v);
   const cfg = ctx.project.cfg.current_check ?? {};
   const riseMax = cfg.rise_max_c ?? 20.0, dropPct = cfg.drop_max_pct ?? 2.0, minLen = cfg.min_track_mm ?? 2.0;
+  // supply nets without a declared current are still looked at: one that enters through a connector and is routed at
+  // signal width is a question (a narrowed VBUS passes DRC, ERC and A1-A9; the eval's seeded review fault)
+  r.findings.push(...signalWidthSupplies(ctx, new Set(Object.keys(cur)), riseMax));
   if (!Object.keys(cur).length) {
     r.status = "skipped";
     r.detail = "no currents declared (acceptance net_current_A / class current_max_A / review.currents)";
@@ -723,6 +798,69 @@ function valueOhm(v: string): number | null {
   let x = Number(m[1]) * mult[m[2]!]!;
   if (m[3]) x += Number("0." + m[3]) * mult[m[2]!]!;
   return x;
+}
+
+/** Feedback reference voltages of common regulators (V). */
+export const COMMON_VREF = [0.5, 0.6, 0.765, 0.8, 0.9, 1.0, 1.2, 1.22, 1.23, 1.24, 1.25];
+const FB_PIN = /^(FB|VFB|FEEDBACK|ADJ|VADJ|FB[0-9])$/;
+
+/**
+ * Regulator feedback dividers against the rail they set: for each FB / VFB / ADJ pin with exactly one resistor to
+ * ground and one to another net whose voltage is known (declared or in its name, M2_3V3 = 3.3 V), the reference the
+ * divider implies (Vrail / (1 + Rtop / Rbottom)) must be a common regulator reference (within 4 %); otherwise the
+ * finding gives the rail voltage the divider sets at the usual references. Datasheet-free: a wrong value
+ * (a seeded R706 1k2 for 2k2 put an AP3441's M2_3V3 at 5.6 V) passes ERC, DRC and A1-A9.
+ */
+export async function checkDivider(ctx: ReviewCtx): Promise<CheckResult> {
+  const r = newResult("divider", "L3");
+  const comps = ctx.comps;
+  if (!comps) {
+    r.status = "skipped";
+    r.detail = "no netlist";
+    return r;
+  }
+  const declared = ctx.project.cfg.net_voltages ?? {};
+  const resOn = new Map<string, Array<{ ref: string; other: string; ohm: number }>>();
+  for (const c of comps.values()) {
+    if (!/^R\d/.test(c.ref)) continue;
+    const ps = [...c.pins.values()];
+    const ohm = valueOhm(c.value);
+    if (ps.length !== 2 || !ohm) continue;
+    for (const [a, b] of [[ps[0]!, ps[1]!], [ps[1]!, ps[0]!]] as const) (resOn.get(a.net) ?? resOn.set(a.net, []).get(a.net)!).push({ ref: c.ref, other: b.net, ohm });
+  }
+  let checked = 0;
+  for (const c of [...comps.values()].sort((a, b) => (a.ref < b.ref ? -1 : 1)))
+    for (const [pad, pin] of c.pins) {
+      if (!FB_PIN.test(pin.name.toUpperCase().replace(/[^A-Z0-9]/g, ""))) continue;
+      const rs = resOn.get(pin.net) ?? [];
+      const bot = rs.filter((x) => P.isGndNet(x.other));
+      const top = rs.filter((x) => !P.isGndNet(x.other) && x.other !== pin.net);
+      if (bot.length !== 1 || top.length !== 1) continue;
+      const rail = top[0]!.other;
+      const vout = netVolts(rail, declared);
+      if (!vout || vout <= 0) continue;
+      checked++;
+      const k = 1 + top[0]!.ohm / bot[0]!.ohm;
+      const implied = vout / k;
+      if (COMMON_VREF.some((v) => Math.abs(implied - v) / v <= 0.04)) continue;
+      const at = [0.6, 0.8, 1.0, 1.25].map((v) => `${f(v * k, 2)} V at ${v} V`).join(", ");
+      r.findings.push(
+        FIND({
+          layer: "L3",
+          rule: "DIVIDER",
+          severity: implied < 0.4 || implied > 1.3 ? "must-fix" : "question",
+          ref: c.ref,
+          pad,
+          net: rail,
+          key: `${c.ref}-${pad}`,
+          claim: `${c.ref} ${pin.name}: divider ${top[0]!.ref} ${comps.get(top[0]!.ref)?.value ?? ""} (to ${rail}) / ${bot[0]!.ref} ${comps.get(bot[0]!.ref)?.value ?? ""} (to ground) implies a ${f(implied, 3)} V reference for ${g(vout)} V on ${rail}, not a common regulator reference; it sets ${rail} to ${at}`,
+          evidence: [{ source: "netlist", detail: `Rtop ${top[0]!.ohm} ohm, Rbottom ${bot[0]!.ohm} ohm, ratio ${f(k, 3)}; ${rail} = ${g(vout)} V from ${Object.keys(declared).length ? "the declared voltages or " : ""}its name` }],
+          suggest: `check ${c.ref}'s reference voltage in its datasheet and the values of ${top[0]!.ref} / ${bot[0]!.ref}`,
+        }),
+      );
+    }
+  r.detail = `${checked} feedback divider(s) checked`;
+  return r;
 }
 
 export async function checkRatings(ctx: ReviewCtx): Promise<CheckResult> {
@@ -1173,6 +1311,8 @@ export const REGISTRY: Array<[string, (ctx: ReviewCtx) => Promise<CheckResult>]>
   ["cards", checkCards],
   ["decoupling", checkDecoupling],
   ["current", checkCurrent],
+  ["inner_power", checkInnerPower],
+  ["divider", checkDivider],
   ["impedance", checkImpedance],
   ["manual", checkManual],
   ["mouth", checkMouth],
@@ -1180,6 +1320,7 @@ export const REGISTRY: Array<[string, (ctx: ReviewCtx) => Promise<CheckResult>]>
   ["bom", checkBom],
   ["ratings", checkRatings],
   ["coverage", checkCoverage],
+  ["silk", checkSilk],
   ["evidence", checkEvidence],
   ["custom", checkCustom],
   ["pack", checkPack],

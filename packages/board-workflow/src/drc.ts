@@ -11,6 +11,7 @@ interface RawItem {
   severity?: string;
   description?: string;
   excluded?: boolean;
+  items?: Array<{ description?: string }>;
 }
 interface RawDrc {
   violations?: RawItem[];
@@ -21,7 +22,7 @@ interface RawDrc {
 export function drcInputFromRaw(raw: RawDrc): DrcInput {
   const live = (l: RawItem[] | undefined) => (l ?? []).filter((v) => !v.excluded);
   return {
-    violations: live(raw.violations).map((v) => ({ rule: v.type ?? "unknown", severity: v.severity ?? "error", description: v.description ?? "" })),
+    violations: live(raw.violations).map((v) => ({ rule: v.type ?? "unknown", severity: v.severity ?? "error", description: v.description ?? "", items: (v.items ?? []).map((i) => ({ description: i.description ?? "" })) })),
     unconnected: live(raw.unconnected_items).length,
     parity: live(raw.schematic_parity).length,
   };

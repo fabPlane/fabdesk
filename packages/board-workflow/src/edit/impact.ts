@@ -14,6 +14,7 @@ import { EditStop, SheetSet, projectLibSymbol } from "./sch";
 import { planMoves, type MoveLedger } from "./move";
 import { footprintSpans } from "./text";
 import { round } from "./fmt";
+import { impactKeys, keysImpactLines, type KeysImpact } from "./keys";
 
 export const RAIL = /GND|VBUS|V\d|\dV\d|3V3|5V|1V8|1V1|2V5|VCC|VDD|SYS$|PWR|^unconnected-/i;
 
@@ -43,6 +44,8 @@ export interface ImpactReport {
   adds?: Array<Record<string, unknown>>;
   net_changes?: Array<{ pin: string; from: string; to: string; old_net_pads_left: number }>;
   moves?: MoveLedger;
+  /** The candidate-flow keys: copper (copper_plan), hole (mechanical_hole), stack (stack_plan). */
+  keys?: KeysImpact;
   verdict: string;
 }
 
@@ -55,7 +58,7 @@ export interface BoardModel {
 /** A board's model for edits; refuses the pre-10 file format (tracks name nets by number). */
 export function boardModel(text: string, name = "board"): BoardModel {
   if (legacyNetRefs(text))
-    throw new EditStop(`STOP ${name} is in the pre-10 file format (tracks name nets by number), which the edit tools cannot follow: upgrade a copy with kicad-cli pcb upgrade (KiCad rewrites it in the current format)`);
+    throw new EditStop(`STOP ${name} is in the pre-10 file format (tracks name nets by number), which the edit tools cannot follow: upgrade it first (board_check upgrade: true upgrades a checked copy and writes it over the board, keeping the previous one)`);
   const board = parseBoard(text);
   const byNet = new Map<string, Pad[]>();
   for (const p of board.pads) if (p.net) (byNet.get(p.net) ?? byNet.set(p.net, []).get(p.net)!).push(p);
@@ -268,7 +271,7 @@ export function impact(plan: EditPlan, env: EditEnv): ImpactReport {
         const refsNamed = led.moved.map((m) => m.ref).filter((r) => refPat(r).test(blob));
         if (refsNamed.length) {
           rep.contracts.push({ id: ent["id"], boards: ent["boards"], matched: refsNamed, why: "moved connector" });
-          rep.review.push(`${ent["id"]}: moved connector [${refsNamed.map((r) => `'${r}'`).join(", ")}]: check the cable path to the mating board`);
+          rep.review.push(`${ent["id"]}: moved connector [${refsNamed.map((r) => `'${r}'`).join(", ")}]: check the cable path to the mating board (board_review action=cable)`);
         }
       }
     } catch (e) {
@@ -276,6 +279,7 @@ export function impact(plan: EditPlan, env: EditEnv): ImpactReport {
       moveStop = e.message;
     }
   }
+  if (plan.copper || plan.hole || plan.stack) rep.keys = impactKeys(plan, env, rep.review);
   const accepted = new Set(plan.accept_unconnected ?? []);
   const unacked = rep.unconnected_pins.filter((u) => !accepted.has(u.split(" ")[0]!));
   const fails = rep.review.filter((x) => x.startsWith("FAIL"));
@@ -300,11 +304,18 @@ export function impactLines(rep: ImpactReport): string[] {
     for (const m of mv.moved) out.push(`move  ${m.ref} ${pyAny(m.from)} -> ${pyAny(m.to)}  fixed ${py(m.fixed)} anchor ${py(m.anchor)}`);
     for (const m of mv.carried) out.push(`carry ${m.ref} with ${m.with} -> ${pyAny(m.to)}`);
     for (const m of mv.near) out.push(`near  ${m.ref} ${pyAny(m.from)} -> ${pyAny(m.to)} (${pyNum(m.shift_mm)} mm): ${m.why.join("; ")}`);
+    for (const c of mv.near_clear ?? [])
+      out.push(
+        c.clear
+          ? `near  ${c.ref}: that pose lands on other nets' copper (${c.chosen_cuts} cut); the nearest pose that cuts none is ${pyAny(c.clear)}, ${pyNum(c.clear_mm!)} mm from the target ${pyAny(c.target)}: take it with the move's clear: true (radius >= ${Math.ceil(c.clear_mm!)}) or to: ${pyAny(c.clear)}`
+          : `near  ${c.ref}: that pose lands on other nets' copper (${c.chosen_cuts} cut) and no pose within the radius + 4 mm cuts none: keep it (the repair routes the cut nets again) or move what is in the way`,
+      );
     for (const m of mv.displaced) out.push(`displace ${m.ref} ${pyAny(m.from)} -> ${pyAny(m.to)} (${pyNum(m.shift_mm)} mm): ${m.why.join("; ")}`);
     out.push(`copper: fan-out/landing cut ${mv.copper_removed} items + ${mv.pruned} pruned, ${mv.copper_moved} carried; nets to route again ${mv.cut_nets.length}: ${pyList(mv.cut_nets)}`);
     if (mv.landing_removed_nets.length) out.push(`landing: other nets cut under the new footprints: ${pyList(mv.landing_removed_nets)}`);
     for (const [r, b] of Object.entries(mv.new_courtyards)) out.push(`court ${r} ${pyAny(b)}`);
   }
+  if (rep.keys) out.push(...keysImpactLines(rep.keys));
   for (const r of rep.review) out.push(`REVIEW ${r}`);
   out.push(rep.verdict);
   return out;

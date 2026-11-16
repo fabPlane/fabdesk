@@ -7,6 +7,8 @@ export interface LayoutTools {
   krt: string | null;
   /** TraceMaker binary from the router registry or `TRACEMAKER_BIN`; null when not installed. */
   tracemaker: string | null;
+  /** TraceMaker's placer (`tracemaker-place`): `TRACEMAKER_PLACE_BIN` or the registry's copy beside TraceMaker. */
+  tracemakerPlace?: string | null;
   kicadCli: string | null;
 }
 
@@ -32,6 +34,11 @@ export interface LayoutHost {
    * only what `tools` says. Never called for an engine `tools` already names (a set override is used, or fails, as given).
    */
   ensure?(engine: EngineId): Promise<EngineReady>;
+  /**
+   * TraceMaker's placer, installing (or upgrading) TraceMaker first when it is missing (the host's router registry).
+   * Absent: the placer is `tools.tracemakerPlace`, else looked for beside the TraceMaker binary.
+   */
+  ensurePlacer?(): Promise<EngineReady>;
   spawn: Spawn;
   /** Courtyard gate: KiCad DRC, all severities, no refill, no parity. Rows are `{rule, items[].description}`. */
   courtyardDrc(board: string, report: string): Promise<Array<{ rule: string; items: Array<{ description: string }> }>>;

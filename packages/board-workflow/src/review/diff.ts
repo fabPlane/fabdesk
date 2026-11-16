@@ -113,14 +113,16 @@ export async function diffBoards(oldPath: string, newPath: string): Promise<Boar
 }
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-const n3 = (v: number) => v.toFixed(3);
+/** Python `f"{v:.Nf}"`: an exact binary tie (87.3125) rounds half-even, where toFixed rounds it up. */
+const fx = (v: number, nd: number) => pyRound(v, nd).toFixed(nd);
+const n3 = (v: number) => fx(v, 3);
 
 export function changeSvg(d: BoardDiff, layers?: ReadonlySet<string>): string {
   const xs = d.edge.flatMap((e) => [e[0], e[2]]), ys = d.edge.flatMap((e) => [e[1], e[3]]);
   const [lx, ly] = [xs.length ? xs : [0, 100], ys.length ? ys : [0, 100]];
   const x0 = Math.min(...lx) - 2, y0 = Math.min(...ly) - 2, x1 = Math.max(...lx) + 2, y1 = Math.max(...ly) + 2;
   const keep = (s: Segment) => !layers || layers.has(s.layer);
-  const out: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x0.toFixed(2)} ${y0.toFixed(2)} ${(x1 - x0).toFixed(2)} ${(y1 - y0).toFixed(2)}" class="board">`];
+  const out: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${fx(x0, 2)} ${fx(y0, 2)} ${fx(x1 - x0, 2)} ${fx(y1 - y0, 2)}" class="board">`];
   for (const e of d.edge) {
     if (e[4] === "gr_rect") out.push(`<rect x="${n3(Math.min(e[0], e[2]))}" y="${n3(Math.min(e[1], e[3]))}" width="${n3(Math.abs(e[2] - e[0]))}" height="${n3(Math.abs(e[3] - e[1]))}" class="edge"/>`);
     else out.push(`<line x1="${n3(e[0])}" y1="${n3(e[1])}" x2="${n3(e[2])}" y2="${n3(e[3])}" class="edge"/>`);
@@ -155,26 +157,42 @@ export function changeSvg(d: BoardDiff, layers?: ReadonlySet<string>): string {
   return out.join("\n");
 }
 
-const LIGHT = { bg: "#f7f7f4", fg: "#1d2422", sameF: "#c9a58c", sameB: "#9fb3cf", sameI: "#b9c4bf", add: "#1f9d55", del: "#d23c3c", edge: "#1d2422" };
-const DRAWING_CSS = (c: typeof LIGHT) =>
-  `.edge{fill:none;stroke:${c.edge};stroke-width:0.15} line.same{stroke-linecap:round;opacity:.55} line.same.f{stroke:${c.sameF}} line.same.b{stroke:${c.sameB}} line.same.i{stroke:${c.sameI}} line.add{stroke:${c.add};stroke-linecap:round} line.del{stroke:${c.del};stroke-linecap:round;stroke-dasharray:.3 .2} .vadd{fill:${c.add}} .vdel{fill:none;stroke:${c.del};stroke-width:.08} .padd{fill:none;stroke:${c.add};stroke-width:.12} .pdel{fill:none;stroke:${c.del};stroke-width:.12;stroke-dasharray:.4 .25} .arrow{stroke:${c.fg};stroke-width:.1} .ahead{fill:${c.fg}} .lbl{font-size:1.1px;fill:${c.fg}}`;
+/** The drawing's rules from the page CSS with the light palette's literal colours (the toolkit's `standalone_svg`). */
+function standaloneCss(): string {
+  const ri = PAGE_CSS.indexOf(":root {");
+  const root = PAGE_CSS.slice(ri + 7, PAGE_CSS.indexOf("}", ri));
+  const vars = new Map([...root.matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((m) => [m[1]!, m[2]!]));
+  let css = PAGE_CSS.slice(0, PAGE_CSS.indexOf("@media")) + PAGE_CSS.slice(PAGE_CSS.indexOf("body {")); // light palette only
+  css = css.replace(/var\((--[\w-]+)\)/g, (_, k: string) => vars.get(k) ?? "#888"); // literal colours for any viewer
+  const keep = [".edge", "line.", ".vadd", ".vdel", ".padd", ".pdel", ".arrow", ".ahead", ".lbl"]; // drawing rules only
+  return css.split("}").filter((r) => keep.some((k) => r.trim().startsWith(k))).map((r) => `${r.trim()}}`).join(" ");
+}
 
 /** The drawing with its own (light) styles, for viewers and converters that do not load the page. */
 export function changeSvgStandalone(d: BoardDiff, layers?: ReadonlySet<string>): string {
-  return changeSvg(d, layers).replace('class="board">', `class="board"><style>${DRAWING_CSS(LIGHT)} svg{background:${LIGHT.bg}}</style>`);
+  return changeSvg(d, layers).replace('class="board">', () => `class="board"><style>${standaloneCss()} svg{background:#f7f7f4}</style>`);
 }
 
 const PAGE_CSS = `
-:root { --bg:#f7f7f4; --fg:#1d2422; --muted:#62706b; --line:#d8dbd5; --same-f:#c9a58c; --same-b:#9fb3cf; --same-i:#b9c4bf; --add:#1f9d55; --del:#d23c3c; --edge:#1d2422; }
-@media (prefers-color-scheme: dark) { :root { --bg:#141918; --fg:#e4eae7; --muted:#9aa8a3; --line:#2c3735; --same-f:#6e5646; --same-b:#475a75; --same-i:#4a5450; --add:#4fd389; --del:#ff6b6b; --edge:#c9d2ce; color-scheme:dark; } }
-body { background:var(--bg); color:var(--fg); font:14px/1.5 system-ui, sans-serif; margin:0; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); padding-block:20px; }
+:root { --bg:#f7f7f4; --fg:#1d2422; --muted:#62706b; --line:#d8dbd5; --same-f:#c9a58c; --same-b:#9fb3cf; --same-i:#b9c4bf;
+        --add:#1f9d55; --del:#d23c3c; --edge:#1d2422; }
+@media (prefers-color-scheme: dark) { :root { --bg:#141918; --fg:#e4eae7; --muted:#9aa8a3; --line:#2c3735;
+        --same-f:#6e5646; --same-b:#475a75; --same-i:#4a5450; --add:#4fd389; --del:#ff6b6b; --edge:#c9d2ce; color-scheme:dark; } }
+body { background:var(--bg); color:var(--fg); font:14px/1.5 system-ui, sans-serif; margin:0;
+        padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); padding-block:20px; }
 h1 { font-size:20px; margin:0 0 4px; } .muted { color:var(--muted); }
 .wrap { max-width:1100px; margin:0 auto; display:grid; gap:14px; }
 .board { width:100%; height:auto; background:var(--bg); border:1px solid var(--line); border-radius:6px; }
-${DRAWING_CSS({ bg: "var(--bg)", fg: "var(--fg)", sameF: "var(--same-f)", sameB: "var(--same-b)", sameI: "var(--same-i)", add: "var(--add)", del: "var(--del)", edge: "var(--edge)" })}
+.edge { fill:none; stroke:var(--edge); stroke-width:0.15; }
+line.same { stroke-linecap:round; opacity:.55; } line.same.f { stroke:var(--same-f); } line.same.b { stroke:var(--same-b); } line.same.i { stroke:var(--same-i); }
+line.add { stroke:var(--add); stroke-linecap:round; } line.del { stroke:var(--del); stroke-linecap:round; stroke-dasharray:.3 .2; }
+.vadd { fill:var(--add); } .vdel { fill:none; stroke:var(--del); stroke-width:.08; }
+.padd { fill:none; stroke:var(--add); stroke-width:.12; } .pdel { fill:none; stroke:var(--del); stroke-width:.12; stroke-dasharray:.4 .25; }
+.arrow { stroke:var(--fg); stroke-width:.1; } .ahead { fill:var(--fg); } .lbl { font-size:1.1px; fill:var(--fg); }
 table { border-collapse:collapse; font-size:13px; } td, th { padding:4px 10px; border-bottom:1px solid var(--line); text-align:left; }
 .k-add { color:var(--add); font-weight:600; } .k-del { color:var(--del); font-weight:600; }
-.scroll { overflow-x:auto; }`;
+.scroll { overflow-x:auto; }
+`;
 
 export function changePage(d: BoardDiff, layers?: ReadonlySet<string>): string {
   const by = new Map<string, [number, number]>();
@@ -182,7 +200,7 @@ export function changePage(d: BoardDiff, layers?: ReadonlySet<string>): string {
   for (const s of d.seg_del) (by.get(s.layer) ?? by.set(s.layer, [0, 0]).get(s.layer)!)[1]++;
   const rows = [...by].sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, [a, r]]) => `<tr><td>tracks on ${esc(k)}</td><td><span class='k-add'>+${a}</span> / <span class='k-del'>-${r}</span></td><td></td></tr>`);
   rows.push(`<tr><td>vias</td><td><span class='k-add'>+${d.via_add.length}</span> / <span class='k-del'>-${d.via_del.length}</span></td><td></td></tr>`);
-  rows.push(`<tr><td>parts moved</td><td>${d.moved.length}</td><td>${esc(d.moved.slice(0, 40).map((m) => `${m.ref} ${m.mm} mm`).join(", "))}</td></tr>`);
+  rows.push(`<tr><td>parts moved</td><td>${d.moved.length}</td><td>${esc(d.moved.slice(0, 40).map((m) => `${m.ref} ${Number.isInteger(m.mm) ? m.mm.toFixed(1) : m.mm} mm`).join(", "))}</td></tr>`);
   rows.push(`<tr><td>parts added / removed</td><td>${d.added.length} / ${d.removed.length}</td><td>${esc([...d.added, ...d.removed].join(", "))}</td></tr>`);
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Board change</title>

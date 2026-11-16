@@ -1,7 +1,8 @@
+import { createHash } from "node:crypto";
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createEditCandidateBuilder,
@@ -19,14 +20,16 @@ import {
   topLevelSpans,
 } from "../src/index";
 import { EditStop, SheetSet, diffBoards, judge, parsePlan, revertNets, runEdit, type EditRunners } from "../src/edit/index";
+import { directLink, segSegDist } from "../src/edit/link";
 import { g } from "../src/edit/fmt";
 import { planMoves } from "../src/edit/move";
+import { legalisePoses, pySum } from "../src/edit/legalise";
 import { pruneDangling } from "../src/edit/prune";
 
 const dirs: string[] = [];
 afterAll(() => Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true }))));
 
-import { BOARD, PRO, SHEET, seg } from "./edit-fixture";
+import { BOARD, PRO, SHEET, fpT, seg } from "./edit-fixture";
 
 async function project(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "edit-"));
@@ -161,6 +164,33 @@ describe("apply, proof and the candidate", () => {
     expect(text).toContain("(rotate 90)");
   });
 
+  // a repair that also changes a net the plan never touched (SIG2): the churn guard puts SIG2's copper back
+  const strayRepair = (): NonNullable<EditRunners["repair"]> => async ({ pcb }) => {
+    const t = await readFile(pcb, "utf8");
+    const end = t.trimEnd().lastIndexOf(")");
+    await writeFile(pcb, `${t.slice(0, end)}  ${seg(20.5, 10, 25, 10, "SIG2")}\n)\n`);
+    return { note: "stray" };
+  };
+  test("churn guard: a collateral net gets its source copper back when the board scores no worse", async () => {
+    const dir = await project();
+    const r = await runEdit({ projectDir: dir, plan: { id: "mv", move: [{ ref: "C3", to: [50, 30, 90] }], displace: { radius: 3 } }, mode: "full", runners: runners({ repair: strayRepair() }) });
+    expect(r.guard).toEqual({ nets: ["SIG2"], kept: true });
+    expect(r.churn?.collateral_nets).toBe(0);
+    expect(await readFile(r.candidate!.pcb, "utf8")).not.toContain("(end 25 10)");
+    const index = JSON.parse(await readFile(join(r.candidate!.dir, ".fabdesk/board/accept/index.json"), "utf8")) as Array<{ file: string; sha256: string }>;
+    expect(await readFile(join(r.candidate!.dir, index.at(-1)!.file), "utf8")).toContain('"summary"'); // the guard's record moved in
+    expect(existsSync(join(dir, ".fabdesk/board/edits", `.${r.candidate!.dir.split("/").pop()}.guard`))).toBe(false);
+  });
+  test("churn guard: the candidate is kept as repaired when putting the copper back scores worse", async () => {
+    const dir = await project();
+    const err = { violations: [{ rule: "clearance", severity: "error", description: "x" }], unconnected: 0, parity: 0 };
+    const accept: EditRunners["accept"] = (d, pcb) => runAcceptance(d, { pcb, drc: async () => (d.endsWith(".guard") ? err : clean) });
+    const r = await runEdit({ projectDir: dir, plan: { id: "mv", move: [{ ref: "C3", to: [50, 30, 90] }], displace: { radius: 3 } }, mode: "full", runners: runners({ accept, repair: strayRepair() }) });
+    expect(r.guard).toMatchObject({ nets: ["SIG2"], kept: false, why: "worse on A2 0->1" });
+    expect(r.churn?.collateral_nets).toBe(1);
+    expect(await readFile(r.candidate!.pcb, "utf8")).toContain("(end 25 10)");
+  });
+
   test("add copies a template symbol with one label per pin; net moves a pin and its label; swap changes value and field", async () => {
     const dir = await project();
     const r = await runEdit({
@@ -207,6 +237,60 @@ describe("apply, proof and the candidate", () => {
   });
 });
 
+describe("DRC exclusions follow an edit", () => {
+  const UC = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  // C1 and C3 overlap on purpose (an owner's exclusion at (41, 10)); the plan swaps C1 and C2 (same footprint id)
+  const KEY = (a: string, b: string) => `courtyards_overlap|41000000|10000000|${a}|${b}`;
+  async function swapProject(): Promise<string> {
+    const dir = await project();
+    const board = (await readFile(join(dir, "board.kicad_pcb"), "utf8")).replace('(uuid "fp-C1")', `(uuid "${UC(1)}")`).replace('(uuid "fp-C2")', `(uuid "${UC(2)}")`).replace('(uuid "fp-C3")', `(uuid "${UC(3)}")`);
+    await writeFile(join(dir, "board.kicad_pcb"), board);
+    const pro = JSON.parse(await readFile(join(dir, "board.kicad_pro"), "utf8"));
+    pro.board.design_settings.drc_exclusions = [[KEY(UC(1), UC(3)), "Intentional Overlap"]];
+    await writeFile(join(dir, "board.kicad_pro"), JSON.stringify(pro, null, 2));
+    return dir;
+  }
+  /** A KiCad stand-in: whatever sits at (40, 10) overlaps C3; the marker is excluded when the project holds its exact key (`matches` decides). */
+  const fakeDrc = (matches: (key: string, at: string) => boolean): EditRunners["accept"] => (d, pcb) =>
+    runAcceptance(d, {
+      pcb,
+      drc: async ({ board, outFile }) => {
+        const text = await readFile(board, "utf8");
+        const at = /\(uuid "([^"]+)"\)\s*\(transform\s*\(translate 40(?:\.0+)? 10(?:\.0+)?\)/.exec(text)?.[1] ?? "none";
+        const keys = (JSON.parse(await readFile(board.replace(/\.kicad_pcb$/, ".kicad_pro"), "utf8")).board?.design_settings?.drc_exclusions ?? []).map((e: string[]) => e[0]);
+        const v = { type: "courtyards_overlap", severity: "error", description: "Courtyards overlap", items: [{ uuid: at, description: "Footprint" }, { uuid: UC(3), description: "Footprint C3" }] };
+        const raw = { violations: keys.some((k: string) => k === KEY(at, UC(3)) && matches(k, at)) ? [] : [v] };
+        await writeFile(outFile, JSON.stringify(raw));
+        return { ...drcInputFromRaw(raw), unconnected: 0 };
+      },
+    });
+  const plan = { id: "swap-c", move: [{ ref: "C1", to: [40, 14, 0] }, { ref: "C2", to: [40, 10, 0] }] };
+
+  test("a swap carries the owner's exclusion to the part now in its place; the proof does not regress and adopt is told", async () => {
+    const dir = await swapProject();
+    const r = await runEdit({ projectDir: dir, plan, mode: "full", runners: runners({ accept: fakeDrc(() => true) }) });
+    expect(r.exclusions?.carried.map((c) => c.line)).toEqual(["courtyards_overlap C1 + C3 at (41, 10) -> C2 + C3 at (41, 10) (C2 took C1's place)"]);
+    expect(r.proof?.figures.drc).toEqual({});
+    expect(r.verdict).toStartWith("PASS");
+    const pro = JSON.parse(await readFile(join(r.candidate!.dir, "board.kicad_pro"), "utf8"));
+    expect(pro.board.design_settings.drc_exclusions).toEqual([[KEY(UC(2), UC(3)), "Intentional Overlap [carried by edit swap-c]"]]);
+    // the project's own file is untouched; origin.json records its exclusions so adopt can tell if they moved on
+    expect(JSON.parse(await readFile(join(dir, "board.kicad_pro"), "utf8")).board.design_settings.drc_exclusions).toEqual([[KEY(UC(1), UC(3)), "Intentional Overlap"]]);
+    expect(JSON.parse(await readFile(r.candidate!.origin, "utf8")).exclusions).toMatchObject({ file: "board.kicad_pro" });
+    expect(JSON.parse(await readFile(join(r.candidate!.dir, "drc-exclusions.json"), "utf8")).carried).toHaveLength(1);
+  });
+
+  test("a re-keyed exclusion KiCad does not match is put back, said so, and the violation counts", async () => {
+    const dir = await swapProject();
+    const r = await runEdit({ projectDir: dir, plan, mode: "full", runners: runners({ accept: fakeDrc((_k, at) => at !== UC(2)) }) });
+    expect(r.exclusions?.carried).toEqual([]);
+    expect(r.exclusions?.notes[0]).toContain("KiCad did not match the re-keyed exclusion");
+    expect(r.verdict).toBe("FAIL A2_drc"); // strict: the source passed every check
+    const pro = JSON.parse(await readFile(join(r.candidate!.dir, "board.kicad_pro"), "utf8"));
+    expect(pro.board.design_settings.drc_exclusions).toEqual([[KEY(UC(1), UC(3)), "Intentional Overlap"]]);
+  });
+});
+
 describe("judging", () => {
   const res = (over: Record<string, unknown> = {}) => ({
     A1_connectivity: { pass: true, unconnected: 0 },
@@ -229,6 +313,14 @@ describe("judging", () => {
     expect(judge(J(b), J(res({ ...b, A2_drc: { pass: false, errors: { courtyards_overlap: 4 } } }))).verdict).toBe("FAIL regress ['A2 errors 3->4']");
     expect(judge(J(b), J(res({ ...b, A8_pairs: { pass: false, nets_failing: 3 } }))).verdict).toBe("FAIL regress ['A8 2->3']");
     expect(judge(J(b), J(res({ ...b, A6_stack: { pass: false } }))).verdict).toBe("FAIL regress ['A6_stack']");
+  });
+  test("a source that already had opens (placed, unrouted): A1 judged by count, not required to pass", () => {
+    const b = res({ A1_connectivity: { pass: false, unconnected: 208 }, A2_drc: { pass: false, errors: { courtyards_overlap: 7 } } });
+    expect(judge(J(b), J(b)).verdict).toBe("PASS (no regression)");
+    expect(judge(J(b), J(res({ ...b, A1_connectivity: { pass: false, unconnected: 209 } }))).verdict).toBe("FAIL regress ['A1 opens 208->209']");
+    // a connected source must stay connected (unchanged)
+    const c = res({ A2_drc: { pass: false, errors: { courtyards_overlap: 3 } } });
+    expect(judge(J(c), J(res({ ...c, A1_connectivity: { pass: false, unconnected: 1 } }))).verdict).toBe("FAIL regress ['A1_connectivity']");
   });
 });
 
@@ -257,6 +349,14 @@ describe("collateral, drc input and the helpers", () => {
     expect(d).toMatchObject({ unconnected: 0, parity: 1 });
     expect(d.violations).toHaveLength(1);
   });
+  test("parsePlan: carry_auto true means this part; a wrong type is refused by name, not a crash", () => {
+    expect(parsePlan({ id: "m", move: [{ ref: "R1", to: [20, 30, 0], carry_auto: true }] }).move![0]!.carry_auto).toEqual(["R1"]);
+    expect(parsePlan({ id: "m", move: [{ ref: "R1", to: [20, 30, 0], carry_auto: false }] }).move![0]!.carry_auto).toBeUndefined();
+    expect(() => parsePlan({ id: "m", move: [{ ref: "R1", to: [20, 30, 0], carry_auto: "R2" }] })).toThrow(/carry_auto" is a list/);
+    expect(() => parsePlan({ id: "m", move: [{ ref: "R1", to: [20, 30, 0], carry: true }] })).toThrow(/carry" is a list/);
+    const auto = planMoves(BOARD, (r) => r === "J1", parsePlan({ id: "m", move: [{ ref: "R1", to: [20, 30, 0], carry_auto: true }] }).move!, { radius: 4 }, []);
+    expect(auto.led.carry_auto).toEqual({ R1: ["R2"] });
+  });
   test("planMoves: a swap of two parts' poses is two moves and re-seats nothing", () => {
     const { led } = planMoves(BOARD, (r) => r === "J1", [{ ref: "C1", to: [40, 14, 0] }, { ref: "C2", to: [40, 10, 0] }], undefined, []);
     expect(led.moved.map((m) => m.ref)).toEqual(["C1", "C2"]);
@@ -276,6 +376,68 @@ describe("collateral, drc input and the helpers", () => {
     const auto = planMoves(BOARD, (r) => r === "J1", [{ ref: "R1", to: [20, 30, 0], carry_auto: ["R1"] }], { radius: 4 }, []);
     expect(auto.led.carry_auto).toEqual({ R1: ["R2"] });
     expect(auto.led.carried.map((c) => c.ref)).toEqual(["R2"]);
+  });
+  test("near on copper: impact names the nearest pose that cuts no other net; clear: true takes it, or stops saying why", () => {
+    let band = "";
+    for (let y = 13; y <= 27; y += 0.5) band += seg(21, y, 38, y, "OTHER");
+    const b2 = BOARD.replace(/\n\)$/, `${band}\n)`);
+    const r = planMoves(b2, (r_) => r_ === "J1", [{ ref: "C3", near: "U1", radius: 6 }], { radius: 6 }, []);
+    expect(r.led.landing_removed_nets).toEqual(["OTHER"]); // the toolkit's order: a pose on copper when nothing near is clear
+    const nc = r.led.near_clear![0]!;
+    expect(nc).toMatchObject({ ref: "C3", chosen_cuts: 4, target: [30, 20] });
+    expect(nc.clear_mm!).toBeGreaterThan(6);
+    const c = planMoves(b2, (r_) => r_ === "J1", [{ ref: "C3", near: "U1", radius: Math.ceil(nc.clear_mm!), clear: true }], { radius: 6 }, []);
+    expect(c.led.near[0]!.to).toEqual(nc.clear!);
+    expect(c.led.landing_removed_nets).toEqual([]);
+    expect(c.led.near_clear).toBeUndefined();
+    expect(() => planMoves(b2, (r_) => r_ === "J1", [{ ref: "C3", near: "U1", radius: 6, clear: true }], { radius: 6 }, [])).toThrow(/clear of other nets' copper \(clear: true\)/);
+  });
+  test("legalise (tp_legalise): test points go to the nearest free spot to their net's other pads, many in one plan, rotation kept", () => {
+    const tps = fpT("TP1", 55, 35, [["1", "SIG2", 0, 0]], { box: [-0.5, -0.5, 0.5, 0.5], value: "TP" }) + fpT("TP2", 5, 35, [["1", "SIG", 0, 0]], { box: [-0.5, -0.5, 0.5, 0.5], value: "TP", rot: 90 });
+    const board = BOARD.replace(/\n\)$/, `${tps}\n)`);
+    const plan = parsePlan({ id: "tp", legalise: ["TP1", "TP2"] });
+    expect(plan.move?.map((m) => [m.ref, m.legalise])).toEqual([["TP1", { clearance: 0.15, edge: 0.5, radius: 40 }], ["TP2", { clearance: 0.15, edge: 0.5, radius: 40 }]]);
+    // SIG2's other pads: R1.2 (20.5, 10) and R2.1 (19.5, 14): centroid (20, 12) is free (0.15 mm from R1 and R2 courtyards);
+    // SIG: R1.1 (19.5, 10) and U1.2 (31, 20): centroid (25.25, 15). Both poses as the toolkit's tp_legalise.py on this board.
+    expect([...legalisePoses(board, ["TP1", "TP2"])]).toEqual([["TP1", [20, 12, 0]], ["TP2", [25.25, 15, 90]]]);
+    // the edit applies them as plain moves; R1/R2 at 0.15-0.2 mm are not "in the way" (the legalise clearance is the gap)
+    const { led, text } = planMoves(board, (r) => r === "J1", plan.move!, plan.displace, []);
+    expect(led.moved.map((m) => [m.ref, m.to])).toEqual([["TP1", [20, 12, 0]], ["TP2", [25.25, 15, 90]]]);
+    expect(led.displaced).toEqual([]);
+    expect(text).toContain("(translate 20.0000 12.0000)");
+    // each placed part is an obstacle for the next: TP3 on SIG2 too (the centroids of TP1 and TP3 nearly coincide) lands
+    // clear of where TP1 was just placed (1 mm boxes, 0.15 mm apart at least)
+    const tp3 = fpT("TP3", 54, 35, [["1", "SIG2", 0, 0]], { box: [-0.5, -0.5, 0.5, 0.5], value: "TP" });
+    const three = legalisePoses(BOARD.replace(/\n\)$/, `${tps}${tp3}\n)`), ["TP1", "TP3"]);
+    const [a, b] = [three.get("TP1")!, three.get("TP3")!];
+    expect(Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]))).toBeGreaterThanOrEqual(1.15 - 1e-9);
+    expect(Math.hypot(a[0] - b[0], a[1] - b[1])).toBeLessThan(3);
+    // a move near a net still works for any part; a ref the plan already moves keeps its own move
+    expect(() => planMoves(board, () => false, [{ ref: "R1", near: "net" }], undefined, [])).toThrow(/R1 has pads on 2 nets/);
+    expect(parsePlan({ id: "tp", move: [{ ref: "TP1", to: [1, 2, 0] }], legalise: { refs: ["TP1", "TP2"], clearance: 0.3 } }).move?.map((m) => [m.ref, m.legalise?.clearance])).toEqual([["TP1", undefined], ["TP2", 0.3]]);
+    expect(() => parsePlan({ id: "tp", legalise: [] })).toThrow(/plan.legalise/);
+  });
+
+  test("the legalise centroid sums as Python's sum() (jetson TP45's net: a plain sum rounds the tie the other way)", () => {
+    const xs = [151.82500000000002, 215.64499999999998, 227.2, 226];
+    expect(xs.reduce((t, x) => t + x, 0) / 4).toBe(205.16750000000002);
+    expect(pySum(xs) / 4).toBe(205.1675); // python3 -c "print(sum([151.82500000000002, 215.64499999999998, 227.2, 226.0]) / 4)"
+    expect(pySum([0.1, 0.2, 0.3])).toBe(0.6);
+    expect(pySum([])).toBe(0);
+  });
+
+  // the toolkit's tp_legalise.py --refs TP101,...,TP106 on cm5_minima (2026-11-13): every pose equal
+  const cm5Board = join(homedir(), "pcb-cmp/cm5_minima/proj2/board.kicad_pcb");
+  test.skipIf(!existsSync(cm5Board))("legalise on cm5_minima: the six test points land where tp_legalise.py puts them", async () => {
+    const poses = legalisePoses(await readFile(cm5Board, "utf8"), ["TP101", "TP102", "TP103", "TP104", "TP105", "TP106"]);
+    expect(Object.fromEntries(poses)).toEqual({
+      TP101: [108.257, 60.371, 0],
+      TP102: [106.901, 62.537, 0],
+      TP103: [98.429, 64.835, 0],
+      TP104: [105.126, 55.754, 0],
+      TP105: [107.361, 55.605, 0],
+      TP106: [105.085, 53.599, 0],
+    });
   });
   test("a fit/do-not-fit swap sets the footprint attribute and the symbol flags together", async () => {
     const dir = await project();
@@ -337,5 +499,83 @@ describe("review -> edit bridge (EditCandidateBuilder)", () => {
     const res = await b.build({ id: "bad", remove: ["R2"] } as never, finding);
     expect(res.ready).toBe(false);
     expect(res.notes.join(" ")).toContain("STOP");
+  });
+});
+
+describe("an added part placed next to a pad gets a direct track to it", () => {
+  test("add near U1.1 (VIN): a clear straight or one-bend VIN track from the new part's VIN pad to U1.1", async () => {
+    const dir = await project();
+    const r = await runEdit({ projectDir: dir, mode: "apply", plan: { id: "dec", add: [{ ref: "C9", like: "C1", pins: { "1": "VIN", "2": "GND" }, near: "U1.1", height_mm: 1 }], displace: { radius: 6 } }, runners: runners() });
+    expect(r.verdict).toBe("PASS apply");
+    const link = (r.applied as { adds: Array<{ link?: Record<string, unknown> }> }).adds[0]!.link!;
+    expect(link).toMatchObject({ from: "C9.1", to: "U1.1", layer: "F.Cu" });
+    expect(link["skipped"]).toBeUndefined();
+    const text = await readFile(r.candidate!.pcb, "utf8");
+    const pts = link["points"] as Array<[number, number]>;
+    expect(text).toContain(`(start ${pts[0]![0].toFixed(4)} ${pts[0]![1].toFixed(4)})`);
+    expect(r.repair?.routeAgain).toEqual(["GND", "VIN"]); // an add's nets go to the repair
+  });
+  test("the candidate's origin.json names the requirements the add changed (circuit.json), with the project's hash, so adopt carries them", async () => {
+    const dir = await project();
+    const r = await runEdit({ projectDir: dir, mode: "apply", plan: { id: "dec", add: [{ ref: "C9", like: "C1", pins: { "1": "VIN", "2": "GND" }, near: "U1.1", height_mm: 1 }], displace: { radius: 6 } }, runners: runners() });
+    const cand = join(r.candidate!.pcb, "..");
+    const origin = JSON.parse(await readFile(join(cand, "origin.json"), "utf8")) as { extra?: Record<string, string | null> };
+    const rel = ".fabdesk/board/requirements/circuit.json";
+    const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
+    expect(origin.extra?.[rel]).toBe(sha(await readFile(join(dir, rel))));
+    expect(await readFile(join(cand, rel), "utf8")).toContain('"C9"');
+  });
+  test("link: false leaves it to the pours / last mile; a pad of no shared net is reported, not linked", async () => {
+    const dir = await project();
+    const off = await runEdit({ projectDir: dir, mode: "apply", plan: { id: "dec", add: [{ ref: "C9", like: "C1", pins: { "1": "VIN", "2": "GND" }, near: "U1.1", link: false, height_mm: 1 }], displace: { radius: 6 } }, runners: runners() });
+    expect((off.applied as { adds: Array<{ link?: unknown }> }).adds[0]!.link).toBeUndefined();
+    const t = directLink(BOARD, "C1", "U1.2", 0.2); // C1 has no SIG pad
+    expect(t.log).toEqual({ from: "C1.?", to: "U1.2", skipped: "C1 has no pad on SIG" });
+    expect(t.text).toBe(BOARD);
+  });
+  test("segment distance: crossing 0, parallel the gap", () => {
+    expect(segSegDist([0, 0], [2, 0], [1, -1], [1, 1])).toBe(0);
+    expect(segSegDist([0, 0], [2, 0], [0, 1], [2, 1])).toBe(1);
+  });
+});
+
+
+describe("editbench run (bench.ts edit-run)", () => {
+  test("verdict strings as the toolkit writes them", async () => {
+    const { editBenchVerdict } = await import("../src/bench/editrun");
+    const all = { A1_connectivity: true, A2_drc: true, A3_parity: true, A7_widths: true, A8_pairs: true };
+    expect(editBenchVerdict(all, 0, { summary: all }, false)).toBe("PASS all A1-A9 with parity");
+    expect(editBenchVerdict({ ...all, A2_drc: false, A7_widths: false }, 0, { summary: all }, false)).toBe("FAIL A2_drc,A7_widths");
+    const before = { summary: { ...all, A8_pairs: false }, results: { A8_pairs: { nets_failing: 2 } } };
+    expect(editBenchVerdict({ ...all, A8_pairs: false }, 2, before, true)).toBe("PASS (no regression)");
+    expect(editBenchVerdict({ ...all, A8_pairs: false, A7_widths: false }, 4, before, true)).toBe("FAIL regress ['A7_widths', 'A8 2->4']");
+  });
+  test("one plan through the edit stage on a copy of its project: the toolkit's result.json, read by edit-table", async () => {
+    const { bench } = await import("../src/index");
+    const dir = await project();
+    const out = await mkdtemp(join(tmpdir(), "erun-"));
+    dirs.push(out);
+    const planPath = join(out, "move.json");
+    await writeFile(planPath, JSON.stringify({ id: "bench-t-move", project: dir, move: [{ ref: "C3", to: [50, 30, 90] }], displace: { radius: 3 } }));
+    const res = await bench.runEditBench({
+      planPath,
+      out: join(out, "run"),
+      toolVersion: "abc",
+      accept: (d, pcb) => runAcceptance(d, { pcb, drc: async () => clean }),
+      repair: async () => ({ note: "fake", start: { line: "ws: open 1  drc 0  a7 0  a8 0  pairs-todo 0", wall_s: 0.5 }, steps: [{ try: ["finish"], accepted: "c1", open: 0, wall_s: 1.25, out: ["now   step 1: open 0"] }] }),
+      now: () => new Date(2026, 10, 13, 9, 5, 7),
+    });
+    expect(Object.keys(res)).toEqual(["plan", "id", "tool_version", "phases", "started", "agent_coordinates", "interventions", "impact_verdict", "after_edit", "repair_steps", "final", "final_detail", "verdict", "churn", "candidate", "total_s"]);
+    expect(Object.keys(res["phases"] as object)).toEqual(["impact", "apply", "bench_new", "repair", "proof", "guard", "diff"]);
+    expect(res["started"]).toBe("2026-11-13T09:05:07");
+    expect(res["after_edit"]).toBe("ws: open 1  drc 0  a7 0  a8 0  pairs-todo 0");
+    expect(res["repair_steps"]).toEqual([{ try: ["finish"], wall_s: 1.25, out: ["now   step 1: open 0"] }]);
+    expect(String(res["verdict"])).toMatch(/^(PASS all A1-A9 with parity|FAIL )/);
+    expect(Object.keys(res["churn"] as object)).toEqual(["unplanned_moved", "collateral_nets", "collateral_mm", "planned_nets", "collateral_top"]);
+    // the source project is untouched: the candidate lives in the run's copy
+    expect(String(res["candidate"]).startsWith(join(out, "run", "project"))).toBe(true);
+    expect(existsSync(join(dir, ".fabdesk", "board", "edits"))).toBe(false);
+    const t = bench.editTable(await bench.readEditResults([join(out, "run")]));
+    expect(t.json[0]).toMatchObject({ board: "t", task: "move", tool: "abc", verdict: res["verdict"] });
   });
 });

@@ -138,7 +138,7 @@ export function RoutersSection() {
                   size="sm"
                   disabled={busy || !routerUsable(router) || preferredHere}
                   onClick={() => {
-                    if (router.id !== "krt") void patch.mutateAsync({ preferredRouter: router.id });
+                    if (router.id !== "krt" && router.id !== "atlc") void patch.mutateAsync({ preferredRouter: router.id });
                   }}
                 >
                   {preferredHere ? "Default" : "Set default"}

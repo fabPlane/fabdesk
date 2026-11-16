@@ -16,3 +16,6 @@ export * from "./sweep";
 export * from "./rip";
 export * from "./nudge";
 export * from "./engine";
+export * from "./power";
+export * from "./netpath";
+export * from "./pours";

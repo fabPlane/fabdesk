@@ -59,6 +59,11 @@ export interface FabInput {
     interconnect?: () => Promise<{ pass: boolean; text: string }>;
     review: () => Promise<ReviewGateInfo>;
     acceptance: () => Promise<{ summary: Record<string, boolean>; designHash?: string; record?: string }>;
+    /**
+     * The acceptance's net classes and rules applied to the project before A1-A9 (toolkit fab.py: apply_netclasses);
+     * null when there is nothing to apply. A change is a STOP: the design the review saw changed.
+     */
+    rules?: () => Promise<{ changed: boolean; text: string } | null>;
   };
   /** Owner-accepted exceptions to failing acceptance checks: named, evidenced, never silent. */
   accept?: AcceptException[];
@@ -253,7 +258,17 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
   const rg = await inp.gates.review();
   const rstop = reviewStop(rg);
   if (rstop) throw new ReleaseStop("review", `STOP review gate: ${rstop}`, rg);
-  // 3. acceptance, with parity
+  // 3. acceptance, with parity, on the acceptance's rules (a no-op for a board that keeps its native rules)
+  if (inp.gates.rules) {
+    note("acceptance rules on the project");
+    const r = await inp.gates.rules();
+    if (r?.changed)
+      throw new ReleaseStop(
+        "acceptance",
+        `STOP acceptance rules: the project's net classes and rules did not follow the acceptance (it does not keep native rules), now applied (${r.text}); the design changed, so run board_review again, then release`,
+        r,
+      );
+  }
   note("acceptance A1-A9 with schematic parity");
   const acc = await inp.gates.acceptance();
   const exceptions = new Map((inp.accept ?? []).map((e) => [e.check, e]));
@@ -265,7 +280,7 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
   note("via process bindings");
   const { record: viaRec, missing } = viaBindings(inp.pcb, classifyVias(pcbText));
   if (missing.length)
-    throw new ReleaseStop("vias", `STOP via bindings: ${missing.length} via(s) in pads or microvias lack (filling yes) (capping yes): ${missing.slice(0, 6).map((v) => `${v.net}@${v.xy.join(",")}`).join("; ")}`, viaRec.counts);
+    throw new ReleaseStop("vias", `STOP via bindings: ${missing.length} via(s) in pads or microvias lack (filling yes) (capping yes): ${missing.slice(0, 6).map((v) => `${v.net}@${v.xy.join(",")}`).join("; ")}. Set them with board_release {"action": "vias", "apply": true} (the order must then ask for filled and capped vias), or move the vias out of the pads`, viaRec.counts);
   // a BOM check of another board is refused before anything is exported
   const hasCplJlc = !!inp.bomDir && (await stat(join(inp.bomDir, "cpl-jlc.csv")).then(() => true, () => false));
   if (hasCplJlc && inp.bomBoardSha !== undefined && inp.bomBoardSha !== sha256(await readFile(inp.pcb)))
