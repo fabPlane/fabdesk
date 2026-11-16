@@ -242,9 +242,13 @@ export const project_import_kicad = defineTool({
     // Resolve the complete plan before writing: an adjacent board.kicad_sch must
     // never overwrite the imported root after product.kicad_sch was renamed.
     const plan = new Map<string, string>();
+    const destinations = new Map<string, string>();
     const add = (source: string, destination: string) => {
-      if (plan.has(destination) && plan.get(destination) !== source)
+      // Imported projects must also be safe on case-insensitive macOS/Windows volumes.
+      const key = destination.toLowerCase();
+      if (destinations.has(key) && destinations.get(key) !== source)
         throw new ToolError(`multiple source files map to ${destination}; resolve the conflicting sheet names before importing`, "precondition");
+      destinations.set(key, source);
       plan.set(destination, source);
     };
     add(abs, PROJECT_FILES.boardPcb);

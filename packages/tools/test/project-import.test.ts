@@ -24,8 +24,8 @@ async function fixture(run: (source: string, target: Awaited<ReturnType<typeof t
   } finally { await rm(source, { recursive: true, force: true }); await rm(project.dir, { recursive: true, force: true }); }
 }
 
-test("an adjacent canonical sheet cannot silently replace a renamed imported root sheet", () => fixture(async (source, target, call) => {
-  await writeFile(join(source, "board.kicad_sch"), "unrelated adjacent sheet");
+test.each(["board.kicad_sch", "BOARD.kicad_sch"])("an adjacent %s cannot silently replace a renamed imported root sheet", name => fixture(async (source, target, call) => {
+  await writeFile(join(source, name), "unrelated adjacent sheet");
   await expect(call()).rejects.toThrow("multiple source files");
   expect(await readFile(join(target.dir, "board.kicad_pcb"), "utf8")).toBe("saved target board");
   expect(await readFile(join(target.dir, "board.kicad_sch"), "utf8")).toBe("saved target schematic");
