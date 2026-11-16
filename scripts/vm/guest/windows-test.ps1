@@ -145,7 +145,7 @@ if ($exe -and (Test-Path $exe)) {
       $pcbHealth = $pcb | ConvertTo-Json -Compress -Depth 4
       if ($pcb.name -ne "@fp-pcb/bridge" -or $pcb.kicadCliExists -ne $true) { Err "PCB bridge health is incomplete (KiCad unavailable)" }
       $coreHealth = $health | ConvertFrom-Json
-      if ($coreHealth.channel -eq "internal" -and $pcb.jsAutorouter.ok -ne $true) { Err "internal PCB router is unavailable" }
+      if ($coreHealth.channel -eq "internal" -and ($pcb.capacityRouter.name -ne "fab-router" -or $pcb.capacityRouter.ok -ne $true)) { Err "internal PCB router is unavailable" }
     }
     $launchMs = [int]((Get-Date) - $t0).TotalMilliseconds
     Start-Sleep 5
