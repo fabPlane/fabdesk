@@ -31,13 +31,13 @@
     "esbuild"
   ],
   "overrides": {
+    "@modelcontextprotocol/server": "2.4.0",
+    "@modelcontextprotocol/core": "2.4.0",
     "hono": "4.13.7",
     "fast-xml-parser": "5.11.1",
     "nanoid": "3.3.19",
     "lodash-es": "4.18.1",
-    "proxy-addr": "2.0.8",
-    "@modelcontextprotocol/server": "2.3.0",
-    "@modelcontextprotocol/core": "2.3.0"
+    "proxy-addr": "2.0.8"
   },
   "scripts": {
     "dev": "bun run --cwd apps/desktop dev",
@@ -83,6 +83,7 @@
     "typescript": "5.9.2"
   },
   "patchedDependencies": {
-    "app-builder-lib@26.15.3": "patches/app-builder-lib@26.15.3.patch"
+    "app-builder-lib@26.15.3": "patches/app-builder-lib@26.15.3.patch",
+    "@mcp-b/global@5.1.0": "patches/@mcp-b%2Fglobal@5.1.0.patch"
   }
 }
