@@ -22,3 +22,7 @@ apps/mobile/android/
 apps/mobile/modules/*/android/build/
 apps/mobile/modules/*/android/.cxx/
 *.keystore
+
+# Generated Python bytecode from packaging and installer checks
+__pycache__/
+*.py[cod]

@@ -40,7 +40,22 @@ jobs:
           TM_REQUIRE_CMAKE: "1"
         run: bash scripts/tracemaker/test-scripts.sh
 
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: false
+          persist-credentials: false
+      - name: Scan Git history with redacted output
+        run: bash scripts/ci/scan-git-secrets.sh
+
   verify:
+    name: Core verification
     needs: select-linux-runner
     runs-on: ${{ fromJSON(needs.select-linux-runner.outputs.runner) }}
     steps:
@@ -50,7 +65,7 @@ jobs:
 
       # Reuse the existing owned-first allocation for the short routing/control
       # tests. Fork PRs keep the shared selector's GitHub-hosted isolation.
-      # Run these before private submodules so control regressions fail early.
+      # Run these before public submodules so control regressions fail early.
       - name: Exercise Linux runner selector
         run: python3 scripts/test-runner-selection.py
       - uses: actions/setup-node@v5
@@ -62,14 +77,9 @@ jobs:
       - name: Test shared Mac runner job hooks
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/ci/macos/tests -p 'test_*.py'
 
-      # The deploy key still provides read-only access to fabplane.com. The public
-      # fab_pcb checkout below uses this job's token without persisting credentials.
-      - uses: webfactory/ssh-agent@v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
-
-      - name: Init the fabplane, fabplane-cli and fab_cad submodules
-        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli vendor/fab_cad
+      # All source dependencies are public; contributor CI needs no deploy key.
+      - name: Initialize public CLI and CAD submodules
+        run: git submodule update --init --depth 1 vendor/fabplane-cli vendor/fab_cad
 
       - name: Resolve the fab_pcb pin
         id: fab-pcb

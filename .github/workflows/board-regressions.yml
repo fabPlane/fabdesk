@@ -44,12 +44,8 @@ jobs:
         with:
           submodules: false
 
-      - uses: webfactory/ssh-agent@v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
-
-      - name: Initialize the fabplane submodule
-        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli vendor/fab_cad
+      - name: Initialize public CLI and CAD submodules
+        run: git submodule update --init --depth 1 vendor/fabplane-cli vendor/fab_cad
 
       - name: Resolve the fab_pcb pin
         id: fab-pcb
