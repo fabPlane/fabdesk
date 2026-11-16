@@ -74,6 +74,15 @@ test("missing metadata is distinct from unavailable storage", async () => {
   await expect(loadBoardArtwork(f.client, "one")).rejects.toThrow();
 });
 
+test("malformed saved settings give a recovery message without overwriting draft or circuit files", async () => {
+  const f = fixture();
+  f.files.set(`one/${BOARD_ARTWORK_PATH}`, new Blob(["{broken"]));
+  f.files.set("one/board-art/draft.json", new Blob(["retained working draft"]));
+  await expect(loadBoardArtwork(f.client, "one")).rejects.toThrow("Keep your draft and retry");
+  expect(await f.files.get("one/board-art/draft.json")?.text()).toBe("retained working draft");
+  expect(f.writes).toEqual([]);
+});
+
 test("unsafe paths and invalid dimensions are rejected before writing", async () => {
   const f = fixture(); f.args.settings.widthMm = NaN;
   await expect(saveBoardArtwork(f.args)).rejects.toThrow(); expect(f.writes).toEqual([]);

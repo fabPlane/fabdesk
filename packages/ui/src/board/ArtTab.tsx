@@ -233,29 +233,37 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
     };
     void (async () => {
       setLoading(true); setHydrated(false); setRestoreFailed(false);
+      let retained = false;
       try {
-        const working = await drafts.load();
-        const saved = projectId ? await loadBoardArtwork(client, projectId) : null;
-        if (cancelled || loadId.current !== id) return;
-        baseText.current = saved?.text ?? null;
+        // Show the recoverable local image before reading saved metadata. A failed
+        // server read must not turn a retained draft into an empty upload screen.
         const session = initial.current;
         if (session) {
           baseText.current = session.baseText;
           const image = await loadBytes(new Uint8Array(await session.image.arrayBuffer()), session.name, null, id, false);
           if (cancelled || !image) return;
+          retained = true;
           if (session.savedImage === session.image) setSavedImage(image);
-        } else if (working) {
+        }
+        const working = await drafts.load();
+        if (cancelled || loadId.current !== id) return;
+        if (!session && working) {
           const o = working.options;
-          apply({ style:o.style, color:o.color, crop:o.crop ?? "none", outline:o.outline, widthMm:o.widthMm, heightMm:o.heightMm, invert:o.invert ?? false, threshold:o.threshold ?? .5, layers:[...(o.layers ?? ["silk"])], placement:o.placement ?? null, lockProportions:working.lockProportions ?? true, colorMode:o.colorMode ?? "monotone", printedBackground:o.printedBackground ?? null, inkColor:o.inkColor ?? BOARD_FINISH[o.color].silk }, working.view ?? saved?.record.view ?? {zoom:1, placing:true});
-          if (working.source) await loadBytes(base64ToBytes(working.source), working.sourceName ?? "art.png", null, id, false);
-        } else if (saved) {
+          apply({ style:o.style, color:o.color, crop:o.crop ?? "none", outline:o.outline, widthMm:o.widthMm, heightMm:o.heightMm, invert:o.invert ?? false, threshold:o.threshold ?? .5, layers:[...(o.layers ?? ["silk"])], placement:o.placement ?? null, lockProportions:working.lockProportions ?? true, colorMode:o.colorMode ?? "monotone", printedBackground:o.printedBackground ?? null, inkColor:o.inkColor ?? BOARD_FINISH[o.color].silk }, working.view ?? {zoom:1, placing:true});
+          if (working.source) retained = !!await loadBytes(base64ToBytes(working.source), working.sourceName ?? "art.png", null, id, false);
+        }
+        const saved = projectId ? await loadBoardArtwork(client, projectId) : null;
+        if (cancelled || loadId.current !== id) return;
+        if (!session) baseText.current = saved?.text ?? null;
+        if (!session && working && !working.view && saved) { setZoom(saved.record.view.zoom); setPlacing(saved.record.view.placing); }
+        if (!session && !working && saved) {
             apply(saved.record.settings, saved.record.view); baseText.current = saved.text;
             const image = await loadBytes(new Uint8Array(await saved.image.arrayBuffer()), saved.record.source.name, null, id, false);
             if (cancelled || !image) return;
             setSavedImage(image); setSavedSettings(JSON.stringify({ settings: saved.record.settings, view: saved.record.view }));
         }
         if (!cancelled) { setHydrated(true); setSaveStatus(working || saved || session ? "Saved artwork restored" : "Ready"); }
-      } catch (failure) { if (!cancelled) { setRestoreFailed(true); setError(failure instanceof Error ? failure.message : String(failure)); } }
+      } catch (failure) { if (!cancelled) { setRestoreFailed(true); setSaveStatus(retained ? "Draft kept · saved artwork could not be checked" : "Saved artwork could not be restored"); setError(failure instanceof Error ? failure.message : String(failure)); } }
       finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; loadId.current++; };
@@ -264,7 +272,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
   const draftSettings: BoardArtworkSettings = { style, color, crop, outline, widthMm, heightMm, invert, threshold, layers, placement, lockProportions, colorMode, printedBackground, inkColor };
   const draftView: BoardArtworkView = { zoom, placing };
   const draftSignature = JSON.stringify({ settings: draftSettings, view: draftView });
-  const draftSaved = !!sourceImage && sourceImage === savedImage && draftSignature === savedSettings;
+  const draftSaved = !restoreFailed && !!sourceImage && sourceImage === savedImage && draftSignature === savedSettings;
   useEffect(() => {
     if (!sourceImage || !sourceImageName || !gray || loading) return;
     artworkSessions.set(client.baseUrl, projectId, { image: sourceImage, name: sourceImageName, settings: draftSettings, view: draftView, baseText: baseText.current, savedImage, savedSettings, boardPreview: savedBoardPreview, ...(draftDestination.current ? { pendingProjectId: draftDestination.current } : {}) });
@@ -297,7 +305,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
   };
 
   const onFile = async (file: File | undefined) => {
-    if (!file || busyRef.current || loading) return;
+    if (!file || busyRef.current || loading || !hydrated || restoreFailed) return;
     const id = ++loadId.current;
     setError(null);
     setLoading(true);
@@ -314,7 +322,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
   };
 
   const onSketch = async (path: string) => {
-    if (!projectId || busyRef.current || loading) return;
+    if (!projectId || busyRef.current || loading || !hydrated || restoreFailed) return;
     const id = ++loadId.current;
     setError(null);
     setLoading(true);
@@ -476,7 +484,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
     await client.writeFile(target, "board-art/preview.svg", job.previewSvg);
   };
   const saveExport = async () => {
-    if (!projectId || !gray || busyRef.current) return;
+    if (!projectId || !gray || busyRef.current || !hydrated || restoreFailed) return;
     busyRef.current = true;
     setBusy(true);
     setError(null);
@@ -584,7 +592,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
           {projectId ? `Project artwork · ${project.data?.name ?? "this project"}` : "Unassigned artwork draft"}
         </p>
         <p className="mt-1 text-[11px] text-muted" role="status">{draftSaved ? "Artwork saved to project" : saveStatus}</p>
-        {error && <FeedbackNotice className="fd-art-error" tone="error" title="Artwork needs attention">{error}</FeedbackNotice>}
+        {error && <FeedbackNotice className="fd-art-error" tone="error" title="Artwork needs attention">{error}{restoreFailed && <><p>The draft stays visible. Retry before changing or saving it.</p><Button onClick={() => { setError(null); setRestoreNonce(value => value + 1); }}>Retry saved artwork</Button></>}</FeedbackNotice>}
         <div className={`fd-art-upload ${dragging ? "is-dragging" : ""}`}>
           <Icon name="image" width={26} height={26} aria-hidden="true" />
           <Button variant="primary" disabled={busy || loading || !hydrated} onClick={choose}>
@@ -609,7 +617,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
             </>
           )}
         </div>
-        <fieldset disabled={busy || loading} className="min-w-0 space-y-4 border-0 p-0">
+        <fieldset disabled={busy || loading || restoreFailed} className="min-w-0 space-y-4 border-0 p-0">
           {sketches.length > 0 && <details className="fd-art-advanced"><summary>Use another project sketch</summary>
             <Select
               className="w-full"
@@ -793,8 +801,8 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
           <Button disabled={unavailable} onClick={downloadLocal} data-testid="board-art-download">
             {colorMode === "multicolor" ? "Download color reference ZIP" : "Download standalone art Gerbers"}
           </Button>
-          <Button disabled={unavailable} onClick={() => void newProject()}>Generate standalone art project</Button>
-          <Button disabled={unavailable || !projectId} onClick={() => void saveExport()}>Save export in project</Button>
+          <Button disabled={unavailable || !hydrated} onClick={() => void newProject()}>Generate standalone art project</Button>
+          <Button disabled={unavailable || !projectId || !hydrated} onClick={() => void saveExport()}>Save export in project</Button>
           {projectId && <button onClick={() => useUiStore.getState().openProjectFile(BOARD_ARTWORK_PATH)}>Show saved artwork settings</button>}
           <div className="fd-menu-caption">Applying artwork to an existing circuit is not available yet. Standalone generation creates PCB and fabrication files.</div>
           </WorkspaceMenu>
@@ -863,7 +871,7 @@ function ProjectArtTab({ projectId }: { projectId: string | null }) {
             {...(restoreFailed ? { onRetry: () => { setError(null); setRestoreNonce(value => value + 1); } } : {})} />
           </>
         )}
-        {svg && showPcbPreview && projectId ? <ArtSavedBoardPreview projectId={projectId} enabled={sources.data?.mode === "single" && !sources.isFetching && !sources.isError} {...(sources.isError ? { onRetrySource: () => void sources.refetch() } : {})} overlayUrl={overlaySvg} widthMm={widthMm} heightMm={heightMm} crop={crop} placement={resolvedPlacement} lock={lockProportions} placing={placing} busy={busy || loading || converting} silkOnly={layers.length === 1 && layers[0] === "silk"} marks={marks} onPlace={setPlacement} onFit={(width, height) => { setWidthMm(width); setHeightMm(height); setOutline("rectangle"); if (gray) setPlacement(fitArtPlacement(gray, width, height, resolvedPlacement?.rotationDeg ?? 0, 2, crop)); }} /> : svg && (
+        {svg && showPcbPreview && projectId ? <ArtSavedBoardPreview projectId={projectId} enabled={sources.data?.mode === "single" && !sources.isFetching && !sources.isError} {...(sources.isError ? { onRetrySource: () => void sources.refetch() } : {})} overlayUrl={overlaySvg} widthMm={widthMm} heightMm={heightMm} crop={crop} placement={resolvedPlacement} lock={lockProportions} placing={placing} busy={busy || loading || converting || !hydrated} silkOnly={layers.length === 1 && layers[0] === "silk"} marks={marks} onPlace={setPlacement} onFit={(width, height) => { setWidthMm(width); setHeightMm(height); setOutline("rectangle"); if (gray) setPlacement(fitArtPlacement(gray, width, height, resolvedPlacement?.rotationDeg ?? 0, 2, crop)); }} /> : svg && (
           <div className="fd-art-comparison">
             {sourceUrl && (
               <details className="fd-art-source"><summary>Source image</summary>
