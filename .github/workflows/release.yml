@@ -347,7 +347,12 @@ jobs:
         env:
           FABDESK_CHANNEL: ${{ env.CHANNEL }}
           FABDESK_REQUIRE_KICAD_BUNDLE: "true"
-        run: cd apps/desktop && bunx electron-builder ${{ matrix.eb }} --publish never
+        run: |
+          # osx-sign probes the bundled KiCad libraries concurrently. Hosted Macs
+          # need a larger process-local file limit before that scan.
+          if [ "$RUNNER_OS" = macOS ]; then ulimit -Sn 65536; fi
+          cd apps/desktop
+          bunx electron-builder ${{ matrix.eb }} --publish never
 
       - name: Collect installers
         shell: bash

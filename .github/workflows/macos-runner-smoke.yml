@@ -18,6 +18,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$(uname -m)" = arm64
+          # Check that the hosted image supports the release signing file limit.
+          ulimit -Sn 65536
+          printf 'Signing file limit: %s\n' "$(ulimit -Sn)"
           xcodebuild -version
           printf '#include <stdio.h>\nint main(void) { puts("shared-mac-smoke-ok"); return 0; }\n' > "$RUNNER_TEMP/shared-mac-smoke.c"
           xcrun clang "$RUNNER_TEMP/shared-mac-smoke.c" -o "$RUNNER_TEMP/shared-mac-smoke"
