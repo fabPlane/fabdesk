@@ -7,6 +7,9 @@ import { pcbSvgHasNativeCoordinates } from "@fabdesk/client-core";
 
 export function SelectableSvgViewer({ selectionSource, selectionView, sheetPath, onSelectionSheet, onPartSelected, drawingHeader, ...props }: ComponentProps<typeof SvgViewer> & { drawingHeader?: ReactNode; selectionSource: PartSelectionSource; selectionView: "pcb" | "schematic"; sheetPath?: string | undefined; onSelectionSheet?: ((path: string) => void) | undefined; onPartSelected?: (() => void) | undefined }) {
   const selected = useBoardPartSelection(selectionSource), [hash, setHash] = useState<{ svg: string; hash: string } | null>(null);
+  const container = useRef<HTMLDivElement>(null);
+  const currentDrawing = useRef({ scope: selected.scope, svg: props.svg });
+  currentDrawing.current = { scope: selected.scope, svg: props.svg };
   const [focus, setFocus] = useState<(PartBox & { key: string; animate?: boolean; reference: string | null }) | undefined>();
   useEffect(() => { let current = true; void crypto.subtle.digest("SHA-256", new TextEncoder().encode(props.svg)).then(bytes => { if (current) setHash({ svg: props.svg, hash: Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, "0")).join("") }); }); return () => { current = false; }; }, [props.svg]);
   const entry = selectionView === "pcb" ? selected.index.data?.pcb : selected.index.data?.sheets.find(s => s.path === sheetPath);
@@ -25,7 +28,21 @@ export function SelectableSvgViewer({ selectionSource, selectionView, sheetPath,
     const sheets = selected.index.data!.sheets.filter(s => s.parts.some(p => p.ref === selected.ref));
     if (!sheets.some(s => s.path === sheetPath) && sheets.length === 1) onSelectionSheet(sheets[0]!.path);
   }, [selectionView, selected.ready, selected.scope, selected.ref, selected.index.data, sheetPath, onSelectionSheet]);
-  const notice = !valid ? selected.index.isError ? "Component selection unavailable · reopen this view to retry" : selected.index.isFetching ? "Loading components…" : "Update the preview to select components" : selected.ref && !targets.length ? `${selected.ref} ${selectionView === "schematic" && otherSheet ? `is on sheet ${otherSheet.name}` : "is not present in this view"}` : undefined;
+  const notice = !valid ? selected.index.isFetching ? "Loading components…" : selected.index.isError ? "Could not load components · retry inspection" : "Update the preview to select components" : selected.ref && !targets.length ? `${selected.ref} ${selectionView === "schematic" && otherSheet ? `is on sheet ${otherSheet.name}` : "is not present in this view"}` : undefined;
+  const retryInspection = async () => {
+    const trigger = document.activeElement;
+    const drawing = currentDrawing.current;
+    const result = await selected.index.refetch();
+    if (!result.isSuccess) return;
+    requestAnimationFrame(() => {
+      if (currentDrawing.current.scope !== drawing.scope || currentDrawing.current.svg !== drawing.svg) return;
+      // Successful retry removes its button. Keep keyboard users in this drawing,
+      // but do not steal focus if they moved to another control during the read.
+      if (document.activeElement === trigger || trigger && !trigger.isConnected && document.activeElement === document.body) {
+        container.current?.querySelector<HTMLElement>(".fd-svg-viewport")?.focus({ preventScroll: true });
+      }
+    });
+  };
   useEffect(() => setFocus(undefined), [props.svg, selected.scope]);
   const selectPart = (ref: string) => { onPartSelected?.(); selected.select(ref); };
   const focusSelected = () => { if (!targets.length) return; const x = Math.min(...targets.map(p => p.box.x)), y = Math.min(...targets.map(p => p.box.y)); setFocus({ x: x - 3, y: y - 3, width: Math.max(...targets.map(p => p.box.x + p.box.width)) - x + 6, height: Math.max(...targets.map(p => p.box.y + p.box.height)) - y + 6, key: `${selected.scope}/${selected.ref}/${performance.now()}`, animate: true, reference: selected.ref }); };
@@ -35,8 +52,8 @@ export function SelectableSvgViewer({ selectionSource, selectionView, sheetPath,
     lastLinkedFocus.current = selected.linkedFocus;
     focusSelected();
   }, [selected.linkedFocus, valid, props.svg]);
-  return <div className="fd-selectable-drawing" data-selected-component={selected.ref ?? ""} onKeyDown={event => { if (!event.defaultPrevented && event.key === "Escape" && selected.ref && !props.commentMode && !(event.target instanceof Element && event.target.closest("input, textarea, select, [role=dialog]"))) { if (!props.onDrawingEscape?.()) selected.clear(); event.preventDefault(); event.stopPropagation(); } }}>
-    <PartSelectionBar reference={selected.ref} references={references} onSelect={selectPart} onClear={selected.clear} onFocus={targets.length ? focusSelected : undefined} notice={notice} onActions={targets.length && props.onDrawingClick ? () => { const b = targets[0]!.box; props.onDrawingClick?.({ x: b.x + b.width / 2, y: b.y + b.height / 2 }); } : undefined} />
+  return <div ref={container} className="fd-selectable-drawing" data-selected-component={selected.ref ?? ""} onKeyDown={event => { if (!event.defaultPrevented && event.key === "Escape" && selected.ref && !props.commentMode && !(event.target instanceof Element && event.target.closest("input, textarea, select, [role=dialog]"))) { if (!props.onDrawingEscape?.()) selected.clear(); event.preventDefault(); event.stopPropagation(); } }}>
+    <PartSelectionBar reference={selected.ref} references={references} onSelect={selectPart} onClear={selected.clear} onFocus={targets.length ? focusSelected : undefined} notice={notice} onRetry={selected.index.isError ? () => void retryInspection() : undefined} retrying={selected.index.isFetching} onActions={targets.length && props.onDrawingClick ? () => { const b = targets[0]!.box; props.onDrawingClick?.({ x: b.x + b.width / 2, y: b.y + b.height / 2 }); } : undefined} />
     {drawingHeader}
     <div className="min-h-0 flex-1"><SvgViewer {...props} focusMotionEnabled={!!selected.ref && valid && focus?.reference === selected.ref} {...(focus && valid ? { focusRegion: focus } : {})}
       onDrawingClick={(point, event) => { if (!props.commentMode && valid) { const hit = hitSelectionPart(parts, point); if (hit) { selectPart(hit.ref); return; } } props.onDrawingClick?.(point, event); }}
