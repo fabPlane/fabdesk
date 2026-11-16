@@ -2,7 +2,7 @@
 # Download distro-authenticated packaging/test tools into job temp; no root or system writes.
 set -euo pipefail
 packages=()
-command -v ar >/dev/null || packages+=(binutils)
+command -v ar >/dev/null || packages+=(binutils binutils-x86-64-linux-gnu)
 # atlc's pinned source and its installer tests use tar.bz2 archives.
 command -v bzip2 >/dev/null || packages+=(bzip2)
 if [ "${#packages[@]}" -eq 0 ]; then
@@ -20,7 +20,9 @@ apt_options=(
   -o "APT::Sandbox::User=$(id -un)"
 )
 apt-get "${apt_options[@]}" update -qq
-apt-get "${apt_options[@]}" install -y -qq --download-only --no-install-recommends "${packages[@]}"
+# Reinstall also handles a package recorded as installed while its executable is
+# absent from this job's PATH (minimal runner images and isolated tool paths).
+apt-get "${apt_options[@]}" install -y -qq --reinstall --download-only --no-install-recommends "${packages[@]}"
 for package in "$tools/cache/archives/"*.deb; do
   dpkg-deb -x "$package" "$tools/root"
 done
