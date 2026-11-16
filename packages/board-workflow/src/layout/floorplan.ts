@@ -415,4 +415,3 @@ export async function floorplanRun(host: LayoutHost, o: FloorplanRunOptions): Pr
   log.push({ native_courtyard_check: bad });
   return done(Object.keys(bad).length ? `native courtyard check failed: ${JSON.stringify(bad)}` : undefined);
 }
-

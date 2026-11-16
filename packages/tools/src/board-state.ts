@@ -46,7 +46,8 @@ export async function readAcceptanceState(projectDir: string, pcb?: string): Pro
 
 /** The saved board already has placed parts (it is an existing board, not a blank): looks only at its first 4 MB. */
 export async function projectHasPlacedBoard(projectDir: string): Promise<boolean> {
-  const fh = await open(join(projectDir, "board.kicad_pcb"), "r").catch(() => null);
+  const files = await locateProject(projectDir).catch(() => null);
+  const fh = files ? await open(files.pcb, "r").catch(() => null) : null;
   if (!fh) return false;
   try {
     const buf = Buffer.alloc(4 * 1024 * 1024);
@@ -104,11 +105,6 @@ export async function initDoneMode(projectDir: string, boardAlreadyPlaced: boole
  */
 export type ReviewGate = { state: "none" | "stale" | "open" | "errors" | "pass"; open?: number; mustFix?: number; at?: string; pcb?: string };
 const gateFile = (dir: string) => join(dir, ".fabdesk", "board", "review-gate.json");
-
-const boardSha = async (dir: string) => {
-  const b = await readFile(join(dir, "board.kicad_pcb")).catch(() => null);
-  return b ? createHash("sha256").update(b).digest("hex") : null;
-};
 
 export async function recordReviewGate(projectDir: string, r: { current: boolean; open: number; mustFix: number; errors?: boolean }): Promise<void> {
   const state: ReviewGate["state"] = r.errors ? "errors" : !r.current ? "stale" : r.open > 0 ? "open" : "pass";
@@ -177,11 +173,11 @@ export type BoardOverview = {
 
 /** What the Status page shows beyond the current A1-A9 line: recent results, edit candidates, review gate, onboarding. */
 export async function readBoardOverview(projectDir: string, limit = 8): Promise<BoardOverview> {
-  const sha = await boardSha(projectDir);
+  const now = await savedBoard(projectDir);
   const index = JSON.parse((await readFile(join(projectDir, ".fabdesk", "board", "accept", "index.json"), "utf8").catch(() => "")) || "[]") as Entry[];
   const history = (Array.isArray(index) ? index : []).slice(-limit).reverse().map((e) => {
-    const failing = Object.entries(e.summary ?? {}).filter(([, ok]) => !ok).map(([k]) => k);
-    return { at: e.at ?? "", failing, pass: failing.length === 0, current: !!e.sha256 && e.sha256 === sha };
+    const failing = Object.entries(countedSummary(e)).filter(([, ok]) => !ok).map(([k]) => k);
+    return { at: e.at ?? "", failing, pass: failing.length === 0, current: matchesSavedBoard(e, now) };
   });
   const editsDir = join(projectDir, ".fabdesk", "board", "edits");
   const names = await readdir(editsDir).catch(() => [] as string[]);

@@ -1325,4 +1325,3 @@ export const REGISTRY: Array<[string, (ctx: ReviewCtx) => Promise<CheckResult>]>
   ["custom", checkCustom],
   ["pack", checkPack],
 ];
-

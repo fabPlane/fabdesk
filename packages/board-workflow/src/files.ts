@@ -54,7 +54,7 @@ export async function locateProject(projectDir: string, pcb?: string): Promise<P
       throw new Error(
         names.length ? `several boards in ${projectDir} (${names.join(", ")}); name one` : `no .kicad_pcb in ${projectDir}`,
       );
-    file = join(projectDir, pick);
+    file = await confineToProject(projectDir, pick, "board");
   }
   if (!(await exists(file))) throw new Error(`${file} not found`);
   const stem = basename(file, ".kicad_pcb");

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { designHash, onboard } from "@fabdesk/board-workflow";
@@ -66,6 +66,11 @@ describe("readAcceptanceState: the board measured, the full design, parity", () 
 });
 
 describe("projectHasPlacedBoard", () => {
+  test("recognizes a project's sole board with a custom name", async () => {
+    const dir = await project(BOARD);
+    await rename(join(dir, "board.kicad_pcb"), join(dir, "panel.kicad_pcb"));
+    expect(await projectHasPlacedBoard(dir)).toBe(true);
+  });
   test("a blank board is not an existing board, one with a footprint is", async () => {
     expect(await projectHasPlacedBoard(await project("(kicad_pcb (version 1))"))).toBe(false);
     expect(await projectHasPlacedBoard(await project('(kicad_pcb\n  (footprint "R:0603"\n))'))).toBe(true);
@@ -213,6 +218,18 @@ describe("onboarding check", () => {
 });
 
 describe("board overview", () => {
+  test("history follows the full design and custom board name, and counts skipped parity as failing", async () => {
+    const dir = await project(BOARD);
+    await rename(join(dir, "board.kicad_pcb"), join(dir, "panel.kicad_pcb"));
+    const design = (await designHash(dir)).design;
+    await mkdir(join(dir, ".fabdesk/board/accept"), { recursive: true });
+    await writeFile(join(dir, ".fabdesk/board/accept/index.json"), JSON.stringify([
+      { at: "t", sha256: sha(BOARD), designHash: design, pcb: "panel.kicad_pcb", parityChecked: false, summary: { A1: true, A3: true } },
+    ]));
+    expect((await readBoardOverview(dir)).history).toEqual([{ at: "t", failing: ["A3"], pass: false, current: true }]);
+    await writeFile(join(dir, "panel.kicad_sch"), "(kicad_sch changed)");
+    expect((await readBoardOverview(dir)).history[0]?.current).toBe(false);
+  });
   test("recent results (newest first, which one is the saved board), edit candidates, review gate, onboarding", async () => {
     const dir = await project("b", [
       { at: "2026-11-12T01:00:00Z", sha256: sha("old"), summary: { A1: true, A8: false } },

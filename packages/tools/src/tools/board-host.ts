@@ -91,4 +91,3 @@ export function layoutHost(ctx: ToolContext, kicadCli: string | null, env: NodeJ
     signal: ctx.signal,
   };
 }
-

@@ -295,4 +295,17 @@ describe("design hash and project confinement", () => {
     await symlink(join(root, "other.kicad_pcb"), join(dir, "link.kicad_pcb"));
     await expect(locateProject(dir, "link.kicad_pcb")).rejects.toThrow(/outside the project/);
   });
+  test("automatic discovery confines both the default name and the only board", async () => {
+    const root = await mkdtemp(join(tmpdir(), "lp-auto-"));
+    const dir = join(root, "proj");
+    await mkdir(dir);
+    const outside = join(root, "other.kicad_pcb");
+    await writeFile(outside, "(kicad_pcb)");
+    for (const name of ["board.kicad_pcb", "panel.kicad_pcb"]) {
+      const link = join(dir, name);
+      await symlink(outside, link);
+      await expect(locateProject(dir)).rejects.toThrow(/outside the project/);
+      await rm(link);
+    }
+  });
 });

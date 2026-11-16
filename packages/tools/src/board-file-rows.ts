@@ -377,4 +377,3 @@ function shapeGeometry(
   const mid = kind === "arc" ? at("mid") : undefined;
   return { kind: shape, start, end, ...(mid ? { mid } : {}) };
 }
-

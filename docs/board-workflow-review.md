@@ -9,7 +9,7 @@ The PCB method refined on real boards (the vaio I/O board C6 and carrier R1N) in
 into Fabdesk as TypeScript. The question for review: **is the toolkit's workflow properly integrated into Fabdesk, and does the
 evidence show it works well there?** Scope is placed board → fab-ready; the text → placed board handoff is a known, separate gap.
 
-Size: about 36k added lines in 270 files, 52 commits plus merges of `main`.
+Scope: about 60k added lines across 388 files, including tests, parity harnesses and evidence. Use `git diff --stat origin/main...HEAD` for the current size.
 
 | Area | Lines | Review depth |
 | --- | --- | --- |
@@ -124,10 +124,11 @@ committed evidence file. The other stages: `parity-stage1.ts`, `parity-edit.ts`,
 
 ## Known gaps — do not flag these as new findings
 
-Listed in the design doc → Known gaps, notably: the text → placed board handoff; layout plans with `planes` / `escape`;
-`add_courtyards`; the edit churn guard; intent drafting / `pcb run` autopilot and the combined READY candidate; candidate
-adopt/undo/diff in the UI; the ARM KRT source build (unit-tested only); macOS x86_64 not in CI; jobs not persisted across a
-daemon restart. Flag them only if the code claims otherwise.
+Use the current [design doc → Known gaps](board-workflow-design.md#known-gaps) as the source of truth. In particular:
+text → placed board handoff; unpublished TraceMaker placer binaries (an explicit `TRACEMAKER_PLACE_BIN` works);
+ARM KRT source builds and macOS x86_64; candidate adopt/undo/diff in the UI; jobs not persisted across a daemon restart.
+Courtyard refit, planes/escape steps, edit repair/churn guard, intent and review autopilot are implemented and should be reviewed.
+Flag a documented gap if the code or agent text claims otherwise.
 
 ## Reporting
 

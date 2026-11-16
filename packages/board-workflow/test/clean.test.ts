@@ -91,7 +91,7 @@ describe("clean", () => {
     expect((await readdir(b("edits"))).sort()).toEqual([".before", "keep-1"]);
     expect(await readdir(b("lastmile", "main", "t1"))).toEqual(["c0"]);
     expect((await readdir(b("layout", "ws"))).sort()).toEqual(["base", "flow.json", "place", "rank", "route"]);
-    expect(await readdir(b("release"))).toEqual(["bom", "vias"]);
+    expect((await readdir(b("release"))).sort()).toEqual(["bom", "vias"]);
     expect((await cleanPlan(dir, { keep: 3 })).remove).toEqual([]);
   });
 });

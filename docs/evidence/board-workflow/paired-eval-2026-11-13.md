@@ -41,4 +41,4 @@ fixed on this branch before the next run:
 
 ## Reading the results
 
-_To be completed when the jetson-usbswap run ends._
+Both arms passed three of four tasks and left the USB-C swap board unchanged. Fabdesk took longer on each task in this slice; the reroute runs also needed agent-written routing or copper edits. This slice does not establish an advantage over stock Claude Code. It exposed the integration and resource defects listed above. Later Codex held-out results are recorded separately in PR #448; these measurements used earlier commits and should not be read as a repeat of those runs.

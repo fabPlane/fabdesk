@@ -72,4 +72,3 @@ export const SHEET = `(kicad_sch (version 20250114) (generator "eeschema")
 	)${sym("C1", "100n", 50, 50, ["VIN", "GND"])}${sym("C2", "100n", 70, 50, ["VIN", "GND"])}${sym("C3", "100n", 90, 50, ["VIN", "GND"])}${sym("R1", "10k", 110, 50, ["SIG", "SIG2"], "Device:R")}${sym("R2", "1k", 130, 50, ["SIG2", "GND"], "Device:R")}
 )
 `;
-
