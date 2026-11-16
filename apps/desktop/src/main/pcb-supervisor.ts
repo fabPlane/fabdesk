@@ -3,7 +3,7 @@ import { type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { homedir } from "node:os";
+import { resolveProjectsDirectory } from "@fabdesk/auth-client";
 import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
 import { spawnSidecar } from "./child-process-env";
 
@@ -106,7 +106,7 @@ export function resolvePcbBackend(opts: {
   const port = new URL(url).port || "4020";
   const runtimeId = env["FABDESK_RUNTIME_ID"]?.trim() || randomUUID();
   const desktopPid = env["FABDESK_DESKTOP_PID"]?.trim() || String(process.pid);
-  const workspace = env["FABDESK_PROJECTS_DIR"] ?? join(homedir(), "fabdesk");
+  const workspace = resolveProjectsDirectory(env);
   const workspaceRoot =
     isAbsolute(workspace) || win32.isAbsolute(workspace) ? workspace : resolve(workspace);
   return {

@@ -1,7 +1,6 @@
 /** Daemon configuration from env + compile-time defines. */
-import { homedir } from "node:os";
 import { join } from "node:path";
-import { fabdeskHome as authHome } from "@fabdesk/auth-client";
+import { fabdeskHome as authHome, resolveProjectsDirectory } from "@fabdesk/auth-client";
 import pkg from "../package.json" with { type: "json" };
 
 declare const FABDESK_CHANNEL: string | undefined;
@@ -23,7 +22,7 @@ export function fabdeskHome(): string {
 }
 
 export function projectsDir(): string {
-  return process.env["FABDESK_PROJECTS_DIR"] ?? join(homedir(), "fabdesk");
+  return resolveProjectsDirectory();
 }
 
 export function apiOrigin(): string {

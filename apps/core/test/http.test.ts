@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -819,6 +819,30 @@ describe("http daemon", () => {
     await c.client.close();
     await new Promise((r) => setTimeout(r, 20));
     expect(daemon.mcp.activeCount()).toBe(3);
+  });
+
+  test("ordering rejects export-only projects and a deleted or changed verified board (#116)", async () => {
+    const created = await (await api("/projects", { method: "POST", body: JSON.stringify({ name: "Order source evidence" }) })).json() as { id: string; path: string };
+    await Bun.write(join(created.path, "exports/fabrication.zip"), "synthetic export");
+    await Bun.write(join(created.path, "circuit.routed.json"), "{}");
+    const board = "(kicad_pcb)\n";
+    const cleanReport = { violations: [], unconnected: [], schematicParity: [], counts: { errors: 0, warnings: 0, unconnected: 0 }, raw: {}, pcbRevision: { sha256: new Bun.CryptoHasher("sha256").update(board).digest("hex") } };
+    const order = `/projects/${created.id}/order`;
+    const assertBlocked = async () => {
+      expect(await (await api(order)).json()).toMatchObject({ ready: false });
+      expect((await api(order, { method: "POST", body: JSON.stringify({ vendor: "jlcpcb" }) })).status).toBe(412);
+    };
+    // Neither old failing evidence nor an orphaned passing report proves export readiness.
+    await Bun.write(join(created.path, "reports/drc.json"), JSON.stringify({ ...cleanReport, counts: { errors: 25, warnings: 0, unconnected: 0 } }));
+    await assertBlocked();
+    await Bun.write(join(created.path, "reports/drc.json"), JSON.stringify(cleanReport));
+    await assertBlocked();
+    await Bun.write(join(created.path, "board.kicad_pcb"), board);
+    expect(await (await api(order)).json()).toMatchObject({ ready: true });
+    await Bun.write(join(created.path, "board.kicad_pcb"), "(kicad_pcb (changed))\n");
+    await assertBlocked();
+    await unlink(join(created.path, "board.kicad_pcb"));
+    await assertBlocked();
   });
 
   test("opensource catalog, remix, and order readiness", async () => {

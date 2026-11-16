@@ -47,7 +47,7 @@ export type OrderCheckEvidence = {
 };
 
 function drcStatus(evidence: OrderCheckEvidence): OrderCheckStatus {
-  if (!evidence.hasBoardPcb) return "not_required";
+  if (!evidence.hasBoardPcb) return "missing";
   if (!evidence.drc) return "missing";
   if (evidence.drc.inputsChanged) return "stale";
   try {
@@ -99,6 +99,8 @@ export function assessOrderReadiness(
   const checks: OrderReadiness["checks"] = { drc: drcStatus(evidence), erc: ercStatus(evidence) };
   const reasons: string[] = [];
   const warnings: string[] = [];
+  if (hasOrderArtifact && !evidence.hasBoardPcb)
+    reasons.push("Open or import the source board as board.kicad_pcb and run DRC before ordering. Export files and legacy routing artifacts alone cannot establish readiness.");
   if (assemblyDeclared) reasons.push("Ordering is not available for multi-board projects. Review each board’s checks; assembly fabrication exports are not yet supported.");
   if (!hasOrderArtifact) {
     reasons.push("Add a routed board or KiCad PCB, then export gerbers before ordering.");
