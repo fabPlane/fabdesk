@@ -443,3 +443,28 @@ test("an auth event supersedes an older in-flight status snapshot", async () => 
   expect(qc.getQueryData<import('@fabdesk/protocol').AuthState>(['auth'])).toEqual(next);
   qc.clear();
 });
+
+describe("routing ownership refresh", () => {
+  test("metadata refreshes durable run lists without treating each frame as a history refresh", () => {
+    const qc = new QueryClient();
+    const ctx = { qc, client: {} as CoreClient, route: { ingest() {}, setDone() {} } };
+    qc.setQueryData(["route-runs", "A"], []); qc.setQueryData(["route-runs", "B"], []);
+    handleCoreEvent({ topic: "route.meta", ts: 1, meta: { kind: "meta", runId: "run-B", router: "fab_router", bounds: { x1: 0, y1: 0, x2: 1, y2: 1 }, layers: ["F.Cu"], unitsPerMm: 1 } }, ctx);
+    expect(qc.getQueryState(["route-runs", "A"])?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(["route-runs", "B"])?.isInvalidated).toBe(true);
+    qc.setQueryData(["route-runs", "A"], []);
+    handleCoreEvent({ topic: "route.frame", ts: 2, frame: { kind: "frame", runId: "run-B", seq: 1, event: { kind: "attempt" }, elapsedMs: 1, shapes: [] } }, ctx);
+    expect(qc.getQueryState(["route-runs", "A"])?.isInvalidated).toBe(false);
+    qc.clear();
+  });
+  test("completion refreshes the matching record without invalidating a different run record", () => {
+    const qc = new QueryClient(), ctx = { qc, client: {} as CoreClient };
+    qc.setQueryData(["route-run", "run-A"], {}); qc.setQueryData(["route-run", "run-B"], {});
+    qc.setQueryData(["route-runs", "A"], []);
+    handleCoreEvent({ topic: "route.done", ts: 1, result: { runId: "run-A", router: "fab_router", complete: [], open: [], timedOut: false, stats: { vias: 0, segments: 0, wallMs: 1, frames: 0 } } }, ctx);
+    expect(qc.getQueryState(["route-run", "run-A"])?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(["route-run", "run-B"])?.isInvalidated).toBe(false);
+    expect(qc.getQueryState(["route-runs", "A"])?.isInvalidated).toBe(true);
+    qc.clear();
+  });
+});
