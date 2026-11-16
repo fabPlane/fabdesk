@@ -8,7 +8,7 @@
 - `vendor/fabplane-cli` (public, fabPlane/fabplane-cli) is the fabplane.com API client/CLI/MCP package; the daemon's carts + inventory go through it (`docs/fabplane-cli.md`). Add new fabplane.com calls there, not ad hoc in fabdesk.
 - FreeCAD (the `cad` toolset, the desktop's CAD tab) goes through the FabPlane CAD bridge from `vendor/fab_cad` (fabPlane/fab_cad, over the fabPlane/FreeCAD fork's API); see `docs/fab-cad.md`. `vendor/fab_cad/packages/{protocol,client,mock-server,bridge}` are root workspaces; `bun run fab-cad:types` (part of `typecheck`) emits the client's declarations for `tsc`, like `fp-pcb:types`. Never `bun install` inside `vendor/fab_cad`.
 - Import fabplane's KiCad CLI helpers via the `@pcb/pcb/kicad-cli` subpath only. The package root pulls in sharp and the AWS SDK.
-- fabPlane code imports `zod/v4` (root pins zod 3.25.x).
+- fabPlane code imports `zod/v4` (root and mobile pin zod 4.6.7; keep the subpath imports).
 - MCP tool names use underscores (`circuit_build`), never dots.
 - `export_stencil` builds a 3D-printed solder stencil STL from `F.Paste` / `B.Paste` (pure TypeScript in `@fabdesk/kicad`, no kicad-cli).
 - `export_laser_stencil` writes a LightBurn `.lbrn2` job plus layered SVG/DXF of the paste layer. Default preset is 0.1 mm Mylar (PET) for a ComMarker Omni X 355 nm UV; Kapton and stainless are secondary. Power/speed/frequency/passes are editable starting points.
