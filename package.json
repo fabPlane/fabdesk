@@ -31,13 +31,13 @@
     "esbuild"
   ],
   "overrides": {
+    "@modelcontextprotocol/server": "2.4.0",
+    "@modelcontextprotocol/core": "2.4.0",
     "hono": "4.13.7",
     "fast-xml-parser": "5.11.1",
     "nanoid": "3.3.19",
     "lodash-es": "4.18.1",
-    "proxy-addr": "2.0.8",
-    "@modelcontextprotocol/server": "2.3.0",
-    "@modelcontextprotocol/core": "2.3.0"
+    "proxy-addr": "2.0.8"
   },
   "scripts": {
     "dev": "bun run --cwd apps/desktop dev",
