@@ -87,5 +87,6 @@
   "patchedDependencies": {
     "app-builder-lib@26.15.3": "patches/app-builder-lib@26.15.3.patch",
     "@mcp-b/global@5.1.0": "patches/@mcp-b%2Fglobal@5.1.0.patch"
-  }
+  },
+  "license": "Apache-2.0"
 }

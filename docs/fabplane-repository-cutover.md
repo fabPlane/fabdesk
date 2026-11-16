@@ -18,10 +18,10 @@ The private TensorFleet repository remains available until cutover is verified.
   service must target this repository before enabling owned-runner routing.
 - Configure the required Actions credentials through GitHub Secrets. Never put
   their values in Git, issue bodies, command arguments or logs.
-- The website workspace remains private at `TensorFleet/fabplane.com`; its URL
-  is absolute so moving this repository does not change its resolution. Full
-  CI still needs `FABDESK_SUBMODULE_SSH_KEY`. Public fork builds require a
-  separate dependency extraction; no private credential is exposed to forks.
+- Contributor builds use public submodules only. The private website workspace has
+  been removed, TypeScript settings are local, and no submodule deploy key is needed.
+- CI runs uniquely named Core verification, Secret scan and TraceMaker checks.
+  Forks use hosted runners without signing or deployment credentials.
 
 The core and desktop release base is `0.4.0`. A new Actions run counter must not
 produce versions below the existing `0.3.x` releases.
@@ -49,5 +49,45 @@ Before enabling public releases:
    validate a signed release, website handoff and installer download.
 6. Archive `TensorFleet/fabdesk` after the handoff is verified.
 
-The retained private workspace and historical commit contents still need an
-open-source review before changing the new repository's visibility to public.
+## Public switch and main protection
+
+Keep the repository private until the owner chooses to publish. The current
+organization plan rejects private branch protection with HTTP403. The owner chose
+to defer enforcement until the public switch rather than upgrade the plan.
+Immediately after making the repository public, run from this checkout:
+
+```sh
+bash scripts/protect-main.sh
+```
+
+This applies the reviewed `.github/main-protection.json`: PRs, up-to-date passing
+Core verification / Secret scan / TraceMaker checks, resolved conversations,
+administrator enforcement, and no force pushes or main deletion. Approving-review
+count starts at zero so a sole maintainer can use PRs; increase it once independent
+reviewers are available. The API command never changes visibility or billing.
+Verify the returned checks and the rule in GitHub Settings before accepting code.
+
+## Source preparation
+
+Original FabDesk code uses Apache-2.0 as the proposed release default. Review
+`LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `CONTRIBUTING.md` and `SECURITY.md`
+before public switch. Separately licensed source/assets keep their original terms.
+The FabPlane PCB/CAD submodules are public but have no root license at the pinned
+revisions; this repository's license does not relicense them. Owners should settle
+those upstream license declarations before redistributing their source or binaries
+outside existing grants. Bundled engine and router notices/source obligations
+remain independent.
+
+The full imported history/tags were scanned with Gitleaks8.30.1. Five findings were
+reviewed as an RFC WebSocket test key, two documented development-token examples,
+and two Firebase Android client configuration entries. `.gitleaksignore` records
+only those exact historical fingerprints; new occurrences still fail. The scanner
+redacts output. Historical internal staging hostnames and deliberately public
+seed-account examples are context, not credentials for production. Production
+password login remains blocked and covered by client request-boundary tests.
+Firebase service restrictions/security rules remain the cloud owner's responsibility;
+this source audit does not prove cloud-console configuration.
+
+Experimental iOS/EAS acceptance is not required for desktop publication and remains
+deferred when its external credentials or provisioning are unavailable. Do not
+claim App Store, notarization or Windows SmartScreen acceptance from source tests.

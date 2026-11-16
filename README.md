@@ -26,7 +26,7 @@ fabPlane runs standalone or as an MCP server inside Claude Code / Codex / Cursor
 
 ## Setup
 
-Requires Bun 1.4.x and Node 20+ (Electron tooling). Desktop installers bundle the FabPlane KiCad
+Requires Bun 1.4.x and Node 22 (Electron tooling). Desktop installers bundle the FabPlane KiCad
 fork from the rolling [`nightly` release](https://github.com/TensorFleet/kicad/releases/tag/nightly)
 on [`TensorFleet/kicad`](https://github.com/TensorFleet/kicad) (`Resources/kicad/`). Leave Settings →
 kicad-cli blank to use it, or set `Settings.kicadCliPath` / `KICAD_CLI` to override. Dev builds
@@ -100,3 +100,8 @@ routers, libraries and artwork keep their own licenses; see
 The mobile app is experimental. Signed installers, Apple notarization and hosted
 sharing are separate from building the source. Current migration/release limits
 are recorded in [docs/fabplane-repository-cutover.md](docs/fabplane-repository-cutover.md).
+
+## License
+
+Original FabDesk source is licensed under [Apache-2.0](LICENSE). Third-party
+components retain their own terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
