@@ -49,6 +49,36 @@ describe("withInstallLock", () => {
     expect(existsSync(path)).toBe(false);
   });
 
+  test("many waiters breaking one stale lock still admit one holder at a time", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "install-lock-stale-race-"));
+    try {
+      let active = 0;
+      let max = 0;
+      for (let round = 0; round < 20; round++) {
+        const path = join(dir, `lock-${round}`);
+        // an unreadable lock last written a minute ago: every waiter judges it stale at once
+        await writeFile(path, "");
+        const old = new Date(Date.now() - 60_000);
+        await utimes(path, old, old);
+        await Promise.all(
+          Array.from({ length: 12 }, () =>
+            withInstallLock(path, async () => {
+              active++;
+              max = Math.max(max, active);
+              await Bun.sleep(5);
+              active--;
+            }, { pollMs: 1, waitMs: 10_000 }),
+          ),
+        );
+      }
+      expect(max).toBe(1);
+      // breaking leaves nothing behind
+      expect(existsSync(join(dir, "lock-0.break"))).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("released when the work throws", async () => {
     const path = await lockPath();
     await expect(withInstallLock(path, async () => { throw new Error("boom"); }, fast)).rejects.toThrow("boom");

@@ -6,10 +6,11 @@
  * The lock is a file created exclusively (`wx`, atomic on POSIX and Windows) holding the owner's pid, host, start
  * time and a random token. A waiter polls until it is gone, and takes over a stale one: its pid is dead (same
  * host), or it is older than `staleMs`, or it is an unreadable file that has not changed for a while (a holder that
- * died between create and write). The waiter is bounded by `waitMs` and aborted by `signal`.
+ * died between create and write). Breaking a stale lock is serialized (`takeOver`), so concurrent waiters cannot
+ * remove a lock another waiter has just taken. The waiter is bounded by `waitMs` and aborted by `signal`.
  */
 import { randomUUID } from "node:crypto";
-import { link, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
+import { mkdir, open, readFile, rm, stat } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname } from "node:path";
 
@@ -84,20 +85,46 @@ async function isStale(path: string, holder: InstallLockHolder | null, opts: Ins
   return holder.host === hostname() && !(opts.isAlive ?? pidAlive)(holder.pid);
 }
 
+/** What identifies the lock judged stale: its holder's token, or for an unreadable file its inode, mtime and size. */
+type Judged = { token: string } | { ino: number; mtimeMs: number; size: number };
+
+async function judgedIdentity(path: string, holder: InstallLockHolder | null): Promise<Judged | null> {
+  if (holder) return { token: holder.token };
+  const st = await stat(path).catch(() => null);
+  return st ? { ino: st.ino, mtimeMs: st.mtimeMs, size: st.size } : null;
+}
+
+/** A breaker left by a process that died while breaking is cleared after this long (breaking takes milliseconds). */
+const BREAKER_STALE_MS = 60_000;
+
 /**
- * Move a stale lock aside, then check it is the one judged stale: if another waiter already replaced it with its
- * own live lock in between, put that one back (`link` fails if a third lock appeared meanwhile, which then wins).
+ * Remove the stale lock, but only the very one judged stale. Breaking is serialized by a second exclusive file
+ * (`<lock>.break`): only its holder may remove the lock, after checking under it that the lock is still the one judged
+ * stale. A new lock can only be created once the lock file is gone, and only its owner or the breaker removes a lock,
+ * so a waiter that judged an older lock stale can no longer delete a newer live one. Returns without breaking when
+ * another waiter holds the breaker (the caller polls again).
  */
-async function takeOver(path: string, judged: InstallLockHolder | null): Promise<void> {
-  const aside = `${path}.stale-${process.pid}-${randomUUID().slice(0, 8)}`;
-  try {
-    await rename(path, aside);
-  } catch {
-    return; // someone else moved or released it
+async function takeOver(path: string, judged: Judged, now: () => number): Promise<void> {
+  const breaker = `${path}.break`;
+  const me: InstallLockHolder = { pid: process.pid, host: hostname(), at: now(), token: randomUUID() };
+  if (!(await tryCreate(breaker, me))) {
+    const st = await stat(breaker).catch(() => null);
+    if (st && now() - st.mtimeMs > BREAKER_STALE_MS) await rm(breaker, { force: true }).catch(() => undefined);
+    return;
   }
-  const moved = await readHolder(aside);
-  if (judged && moved && moved.token !== judged.token) await link(aside, path).catch(() => undefined);
-  await rm(aside, { force: true }).catch(() => undefined);
+  try {
+    const st = await stat(path).catch(() => null);
+    if (!st) return; // released or broken already
+    const holder = await readHolder(path);
+    const same =
+      "token" in judged
+        ? holder?.token === judged.token
+        : !holder && st.ino === judged.ino && st.mtimeMs === judged.mtimeMs && st.size === judged.size;
+    if (same) await rm(path, { force: true });
+  } finally {
+    const mine = await readHolder(breaker);
+    if (mine?.token === me.token) await rm(breaker, { force: true }).catch(() => undefined);
+  }
 }
 
 function abortError(signal: AbortSignal): Error {
@@ -134,7 +161,10 @@ export async function withInstallLock<T>(path: string, run: () => Promise<T>, op
     if (await tryCreate(path, mine)) break;
     const holder = await readHolder(path);
     if (await isStale(path, holder, opts)) {
-      await takeOver(path, holder);
+      const judged = await judgedIdentity(path, holder);
+      if (judged) await takeOver(path, judged, now);
+      // breaking is someone else's right now, or it is done: poll briefly before trying to create again
+      await pause(Math.min(opts.pollMs ?? 500, 50), opts.signal);
       continue;
     }
     if (!announced) {
