@@ -164,6 +164,22 @@ describe("adoptCandidate", () => {
     expect(existsSync(join(project.dir, "panel.kicad_sch"))).toBe(false);
   });
 
+  test("a board two folders deep in a mirrored candidate: origin.json at its root still guards adoption", async () => {
+    const { project, ctx } = await setup();
+    await mkdir(join(project.dir, "hw", "a"), { recursive: true });
+    await writeFile(join(project.dir, "hw", "a", "panel.kicad_pcb"), "(kicad_pcb)");
+    await writeFile(join(project.dir, "hw", "a", "panel.kicad_sch"), "original sheet");
+    const root = await mkdtemp(join(tmpdir(), "cand-"));
+    await mkdir(join(root, "hw", "a"), { recursive: true });
+    const candidate = join(root, "hw", "a", "panel.kicad_pcb");
+    await writeFile(candidate, "(kicad_pcb edited)");
+    await writeFile(join(root, "hw", "a", "panel.kicad_sch"), "edited sheet");
+    await writeFile(join(root, "origin.json"), JSON.stringify({ project: project.dir, files: await designFileHashes(project.dir, { pcb: "hw/a/panel.kicad_pcb" }) }));
+    // the project's sheet moved on since the candidate was computed: refused
+    await writeFile(join(project.dir, "hw", "a", "panel.kicad_sch"), "someone else's sheet");
+    await expect(adoptCandidate(await ctx(), { candidate, board: "hw/a/panel.kicad_pcb", reason: "edit" })).rejects.toThrow(/changed in the project since/);
+  });
+
   test("carries changed schematic sheets, keeps the previous copy, and refuses when the project moved on", async () => {
     const { project, ctx } = await setup();
     await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb)");

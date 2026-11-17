@@ -107,7 +107,9 @@ export function projectLibraryPaths(table: string, root: string): string[] {
       continue;
     }
     if (/\$[({]/.test(uri) || /^[a-z][a-z0-9+.-]*:\/\//i.test(uri)) continue; // another variable, or a URL
-    out.push(isAbsolute(uri) || /^[a-z]:[\\/]/i.test(uri) ? resolve(uri) : resolve(root, uri.replaceAll("\\", "/")));
+    const drive = /^[a-z]:[\\/]/i.test(uri);
+    if (drive && process.platform !== "win32") continue; // a Windows path in a table read on another OS: not here
+    out.push(isAbsolute(uri) || drive ? resolve(uri) : resolve(root, uri.replaceAll("\\", "/")));
   }
   return out;
 }

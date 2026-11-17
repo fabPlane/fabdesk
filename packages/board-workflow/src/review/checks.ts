@@ -1096,8 +1096,12 @@ export async function checkCoverage(ctx: ReviewCtx): Promise<CheckResult> {
     // copper only as the release decides it: the BOM check's own decisions (they read the ordering file and overrides),
     // else from the part alone
     const bom = ctx.bom ?? (ctx.env?.bom ? await ctx.env.bom(ctx).catch(() => null) : null);
-    const decided = bom && !bom.stale ? new Set(bom.records.filter((rec) => rec.copper_only).flatMap((rec) => (Array.isArray(rec.refs) ? rec.refs : [rec.refs]))) : null;
-    const isCopper = (p: Part) => (decided ? decided.has(p.ref) : copperOnly(p));
+    const refsOf = (rec: { refs: string[] | string }) => (Array.isArray(rec.refs) ? rec.refs : [rec.refs]);
+    const records = bom && !bom.stale ? bom.records : [];
+    const decided = new Set(records.filter((rec) => rec.copper_only).flatMap(refsOf));
+    const known = new Set(records.flatMap(refsOf));
+    // a part the BOM check never saw (one an edit candidate adds) is judged from the part alone
+    const isCopper = (p: Part) => (known.has(p.ref) ? decided.has(p.ref) : copperOnly(p));
     const rows = parseCsv(await readFile(cpl, "utf8"));
     const key = rows.length ? Object.keys(rows[0]!).find((k) => ["designator", "ref", "reference"].includes(k.toLowerCase())) : undefined;
     const have = new Set(key ? rows.map((row) => row[key]!) : []);

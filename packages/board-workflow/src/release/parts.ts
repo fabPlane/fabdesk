@@ -104,18 +104,22 @@ export interface FitPart {
   lib?: string;
   flags: readonly string[];
   pads: ReadonlyArray<{ net: string }>;
-  /** Footprint properties: a part number there makes it a bought part even on a board-feature footprint name. */
+  /** Footprint properties: an LCSC/JLC code there makes it a bought part even on a board-feature footprint name. */
   props?: Readonly<Record<string, string>>;
+  /** The Value field (bomcheck also reads a `C123456` code written there). */
+  value?: string | null;
 }
 
-/** Fields that carry an LCSC/JLC code (bomcheck's CODE_KEYS) and the MPN fields bomcheck reads. */
+/** Fields that carry an LCSC/JLC code (bomcheck's CODE_KEYS). */
 export const LCSC_FIELDS = ["LCSC", "LCSC Part", "LCSC_Part", "JLC", "JLCPCB", "JLC Part", "LCSC Part #"] as const;
-const MPN_FIELDS = ["MPN", "Manufacturer_Part_Number", "MPN_ID"] as const;
 
-/** The footprint names a part number (an LCSC code or an MPN): someone means to buy it. */
-export function hasPartNumber(props: Readonly<Record<string, string>> | undefined): boolean {
-  if (!props) return false;
-  return LCSC_FIELDS.some((k) => /^C\d{3,}$/.test((props[k] ?? "").trim())) || MPN_FIELDS.some((k) => (props[k] ?? "").trim().length > 0);
+/**
+ * The part names an assembler (LCSC/JLC) code, in a code field or the Value: someone means the assembler to place it.
+ * An MPN alone does not count: a mounting hole often carries the screw's MPN, and a placeholder (`~`) means nothing.
+ * (Codes only in the ordering file or an agent override are not visible here; write them into the footprint.)
+ */
+export function hasAssemblerCode(p: { props?: Readonly<Record<string, string>>; value?: string | null }): boolean {
+  return LCSC_FIELDS.some((k) => /^C\d{3,}$/.test((p.props?.[k] ?? "").trim())) || /\bC\d{4,}\b/.test(p.value ?? "");
 }
 
 export type NotFitted = "dnp" | "exclude_from_bom" | "board_only" | "board_feature" | "no_pads" | "not_netted";
@@ -123,9 +127,9 @@ export type NotFitted = "dnp" | "exclude_from_bom" | "board_only" | "board_featu
 /** Why a part is not bought and fitted, or null when it is. */
 export function notFittedReason(p: FitPart): NotFitted | null {
   for (const flag of ["dnp", "exclude_from_bom", "board_only"] as const) if (p.flags.includes(flag)) return flag;
-  // a board-feature footprint name (mounting hole, solder jumper) is copper, unless the part names a part number
-  // (an SMT standoff on a "MountingHole_..." footprint is still bought and placed)
-  if (!isFittedPurchasedPart({ footprint: p.footprint ?? p.lib ?? "", flags: p.flags }) && !hasPartNumber(p.props)) return "board_feature";
+  // a board-feature footprint name (mounting hole, solder jumper) is copper, unless the part names an assembler code
+  // (an SMT standoff on a "MountingHole_..." footprint with an LCSC code is still bought and placed)
+  if (!isFittedPurchasedPart({ footprint: p.footprint ?? p.lib ?? "", flags: p.flags }) && !hasAssemblerCode(p)) return "board_feature";
   if (!p.pads.length) return "no_pads";
   if (!p.pads.some((q) => q.net && !q.net.startsWith("unconnected-")) && !/^(J|SW|U|IC)/.test(p.ref.split("_").pop() ?? "")) return "not_netted";
   return null;

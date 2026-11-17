@@ -29,8 +29,11 @@ describe("one fitted-part definition for review and release", () => {
     expect(notFittedReason({ ...base, footprint: "Jumper:SolderJumper_Open" })).toBe("board_feature");
     // a part number makes it bought, whatever the footprint is called (an SMT standoff on a MountingHole_ footprint)
     expect(notFittedReason({ ...base, ref: "H1", lib: "MyLib:MountingHole_M3_SMT_Standoff", props: { LCSC: "C2916300" } })).toBeNull();
-    expect(notFittedReason({ ...base, ref: "H1", lib: "MyLib:MountingHole_M3_SMT_Standoff", props: { MPN: "SMTSO3080CTJ" } })).toBeNull();
+    expect(notFittedReason({ ...base, ref: "H1", lib: "MyLib:MountingHole_M3_SMT_Standoff", value: "SMTSO C123456" })).toBeNull();
     expect(notFittedReason({ ...base, ref: "H1", lib: "MyLib:MountingHole_M3_SMT_Standoff", props: { LCSC: "" } })).toBe("board_feature");
+    // an MPN alone (the screw for a mounting hole) or a placeholder does not make a board feature bought
+    expect(notFittedReason({ ...base, ref: "H1", lib: "MountingHole:MountingHole_3.2mm_M3_Pad_Via", props: { MPN: "ISO7380-M3x6" } })).toBe("board_feature");
+    expect(notFittedReason({ ...base, ref: "H1", lib: "MountingHole:MountingHole_3.2mm_M3_Pad_Via", props: { LCSC: "~" } })).toBe("board_feature");
     expect(notFittedReason({ ...base, pads: [] })).toBe("no_pads");
     expect(notFittedReason({ ...base, pads: [{ net: "unconnected-(R1-Pad1)" }] })).toBe("not_netted");
     expect(assembled({ ...base, ref: "J1", pads: [{ net: "" }] })).toBe(true); // a mechanical-only connector is still bought
@@ -86,6 +89,9 @@ describe("one fitted-part definition for review and release", () => {
       const ctx = { project: { cfg: { assembly: { cpl, sides: ["F"] } } }, parts: () => reviewParts(parseSexpr(board)), bom };
       const r = await checkCoverage(ctx as never);
       expect(r.findings.map((f) => `${f.rule} ${f.severity} ${f.claim}`)).toContain("CPL must-fix TP1 must be assembled but is missing from cpl.csv");
+      // a part the BOM check never saw (an edit candidate added TP1) is judged from the part alone: copper only, no row
+      const other = { ...ctx, bom: { records: [{ line: "R1", refs: ["R1"], status: "RESOLVED" }] } };
+      expect((await checkCoverage(other as never)).findings.map((f) => f.claim)).not.toContain("TP1 must be assembled but is missing from cpl.csv");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

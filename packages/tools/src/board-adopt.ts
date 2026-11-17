@@ -206,13 +206,16 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
   const route = ctx.services.routeRuns.latest(project.id);
   if (route && ["queued", "running", "cancel_requested", "cancelling"].includes(route.state))
     throw new ToolError("adopt refused: routing is active; wait for it to finish", "precondition");
-  const origin = await candidateOrigin(candidate);
   const pcbRel = relative(project.dir, target);
   // Where a project file lives in the candidate: a candidate that mirrors the project layout (its path ends with the
   // board's project-relative path) keeps the same relative paths; a flat candidate holds the board folder's files.
   const boardDirRel = dirname(pcbRel);
-  const mirrored = boardDirRel !== "." && candidate.endsWith(`${sep}${pcbRel}`);
-  const candRoot = mirrored ? candidate.slice(0, -(pcbRel.length + 1)) : dirname(candidate);
+  const candAbs = resolve(candidate);
+  const mirrored = boardDirRel !== "." && candAbs.endsWith(`${sep}${pcbRel}`);
+  const candRoot = mirrored ? candAbs.slice(0, -(pcbRel.length + 1)) : dirname(candAbs);
+  // origin.json sits beside the candidate or one folder up, or at the root of a mirrored candidate (a board two folders
+  // deep would otherwise skip the stale check)
+  const origin = (await candidateOrigin(candidate)) ?? (mirrored ? await candidateOrigin(join(candRoot, basename(pcbRel))) : null);
   const candPath = (rel: string) => (mirrored || boardDirRel === "." ? join(candRoot, rel) : join(candRoot, relative(boardDirRel, rel)));
   const candidateHashes = async (): Promise<Record<string, string>> => {
     if (mirrored || boardDirRel === ".") return designFileHashes(candRoot, { pcb: pcbRel });
