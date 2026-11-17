@@ -315,6 +315,7 @@ describe("registry", () => {
       "render_pcb_display",
       "render_schematic_svg",
       "render_pcb_svg",
+      "render_board_layers",
       "render_view",
       "render_glb",
       "render_product_video",

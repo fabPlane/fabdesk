@@ -13,6 +13,7 @@ export {
   type RunOptions,
   type RunResult,
 } from "./cli";
+export { boardPreviewLayers } from "./board-features";
 export {
   placeFootprints,
   readFootprintPlacements,

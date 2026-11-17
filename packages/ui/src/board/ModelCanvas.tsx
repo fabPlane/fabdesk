@@ -1,4 +1,9 @@
 import { fitModelCamera } from "@fabdesk/client-core";
+import { alignBoardCamera, type BoardCameraMode } from "./board-camera-mode";
+import { boardPreviewMaterial } from "./board-preview-material";
+import { batchPreviewMeshes } from "./preview-mesh-batching";
+import { previewFrame } from "./preview-frame";
+import { previewInteraction } from "./preview-interaction";
 import { useBoardPartSelection, type PartSelectionSource } from "./usePartSelection";
 import { PartSelectionBar } from "./PartSelectionBar";
 import { nativeModelParts, modelPartReference, ModelPartTint } from "./model-part-selection";
@@ -8,6 +13,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { useProjectBlobUrl } from "../hooks/queries";
 import { Button, Spinner } from "../components/ui";
 
@@ -48,17 +54,37 @@ async function loadModel(bytes: ArrayBuffer, path: string): Promise<THREE.Object
     return url;
   });
   const model = await new GLTFLoader(manager).parseAsync(bytes, "");
+  const replaced = new Set<THREE.Material>();
+  const inkMaterials = new Map<THREE.Material, THREE.Material>();
   // GLTFLoader sanitizes Object3D.name (e.g. brackets). Retain exact native references.
   model.scene.traverse(object => {
     const node = model.parser.associations.get(object)?.nodes;
     const name = node === undefined ? undefined : model.parser.json.nodes?.[node]?.name;
     object.userData["nativeComponentName"] = typeof name === "string" ? name : null;
+    const meshIndex = model.parser.associations.get(object)?.meshes;
+    const meshName = meshIndex === undefined ? "" : model.parser.json.meshes?.[meshIndex]?.name;
+    if (object instanceof THREE.Mesh && meshName === "board_silkscreen") {
+      const prepare = (material: THREE.Material) => {
+        const ink = inkMaterials.get(material) ?? boardPreviewMaterial(material, meshName);
+        inkMaterials.set(material, ink);
+        if (ink !== material) replaced.add(material);
+        return ink;
+      };
+      object.material = Array.isArray(object.material) ? object.material.map(prepare) : prepare(object.material);
+    }
   });
+  // Only dispose replaced materials no longer referenced by another mesh.
+  model.scene.traverse(object => { if (object instanceof THREE.Mesh) for (const material of Array.isArray(object.material) ? object.material : [object.material]) replaced.delete(material); });
+  for (const material of replaced) material.dispose();
+  if (!model.animations.length) batchPreviewMeshes(model.scene);
   return model.scene;
 }
 
 /** View transforms affect only the camera. Model bytes and physical placement stay untouched. */
-export default function ModelCanvas({ projectId, path, blob, selectionSource }: { projectId: string; path: string; blob?: Blob; selectionSource?: PartSelectionSource }) {
+export default function ModelCanvas({ projectId, path, blob, selectionSource, selectionToolbar, viewMode, side = "top", viewRevision = 0 }: { projectId: string; path: string; blob?: Blob; selectionSource?: PartSelectionSource; selectionToolbar?: HTMLElement | null; viewMode?: "2d" | "3d"; side?: "top" | "bottom"; viewRevision?: number }) {
+  const requestedView = useRef({ viewMode, side, viewRevision }); requestedView.current = { viewMode, side, viewRevision };
+  const changeView = useRef<(() => void) | null>(null);
+  useEffect(() => { changeView.current?.(); }, [viewMode, side, viewRevision]);
   const selection = useBoardPartSelection(selectionSource);
   const currentSelection = useRef(selection); currentSelection.current = selection;
   const updateSelection = useRef<(() => void) | null>(null), focusSelection = useRef<((animate?: boolean) => void) | null>(null);
@@ -91,10 +117,13 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
     let controls: OrbitControls | null = null;
     let model: THREE.Object3D | null = null;
     let observer: ResizeObserver | null = null;
-    let camera: THREE.PerspectiveCamera | null = null;
+    let camera: THREE.PerspectiveCamera | THREE.OrthographicCamera | null = null;
     let cleanupContext: (() => void) | null = null;
     let stopMotion = () => {};
     let cleanupSelection: (() => void) | null = null;
+    let environment: THREE.WebGLRenderTarget | null = null;
+    let stopRendering = () => {};
+    let stopInput = () => {};
     setError(null); setLoading(true);
     void (async () => {
       try {
@@ -110,13 +139,21 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
         const center = bounds.getCenter(new THREE.Vector3());
         const root = new THREE.Group(); root.add(model); root.position.copy(center).multiplyScalar(-1);
         const scene = new THREE.Scene(); scene.add(root);
-        scene.add(new THREE.HemisphereLight(0xffffff, 0x77948a, 2.5));
-        const light = new THREE.DirectionalLight(0xffffff, 3); light.position.set(span, span * 2, span); scene.add(light);
-        const fill = new THREE.DirectionalLight(0xc2d6ff, 1.8); fill.position.set(-span, span, -span); scene.add(fill);
+        scene.add(new THREE.HemisphereLight(0xffffff, 0xffffff, .6));
+        const studio = new THREE.Group(); studio.scale.setScalar(span); scene.add(studio);
+        const light = new THREE.DirectionalLight(0xffffff, 2); light.position.set(-1, 1.5, 2); studio.add(light, light.target);
+        const fill = new THREE.DirectionalLight(0xffffff, .8); fill.position.set(1, -.5, 1); studio.add(fill, fill.target);
         camera = new THREE.PerspectiveCamera(38, 1, span / 1000, span * 1000);
+        // OrbitControls captures the up axis at construction. Match the shared
+        // board camera so top/bottom views can orbit immediately in 3D.
+        if (requestedView.current.viewMode) camera.up.set(0, 0, -1);
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setClearColor(0x000000, 0);
         renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.NeutralToneMapping;
+        const room = new RoomEnvironment(), pmrem = new THREE.PMREMGenerator(renderer);
+        try { environment = pmrem.fromScene(room, .04); scene.environment = environment.texture; scene.environmentIntensity = .7; }
+        finally { room.dispose(); pmrem.dispose(); }
         renderer.domElement.tabIndex = 0;
         renderer.domElement.setAttribute("aria-label", "3D model. Drag to orbit, scroll to zoom, right-drag to pan. Use Fit view to reset.");
         target.append(renderer.domElement);
@@ -125,7 +162,14 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
         controls.enableDamping = false; controls.minDistance = span * .08; controls.maxDistance = span * 60;
         let measureSelection = () => {};
         const selectionIsFramed = () => framedSelection.current !== null && framedSelection.current.scope === currentSelection.current.scope && framedSelection.current.ref === currentSelection.current.ref;
-        const render = () => { if (!disposed && renderer && camera) { renderer.render(scene, camera); measureSelection(); } };
+        const frames = previewFrame(() => { if (!disposed && renderer && camera) {
+          // Soft light from the viewer's upper left, on both sides of the board.
+          studio.position.copy(controls?.target ?? root.position); studio.quaternion.copy(camera.quaternion);
+          renderer.render(scene, camera); measureSelection();
+        } });
+        const render = frames.render;
+        stopRendering = frames.dispose;
+        stopInput = previewInteraction(renderer.domElement, render);
         let motionFrame = 0;
         stopMotion = () => { cancelAnimationFrame(motionFrame); motionFrame = 0; if (renderer) renderer.domElement.dataset["focusMotion"] = "idle"; };
         const reset = () => {
@@ -134,8 +178,16 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
           framedSelection.current = null;
           controls.minDistance = span * .08;
           controls.target.set(0, 0, 0);
+          if (camera instanceof THREE.OrthographicCamera) {
+            const aspect = Math.max(.1, target.clientWidth / Math.max(1, target.clientHeight));
+            const half = Math.max(size.z, size.x / aspect) * .6;
+            camera.left = -half * aspect; camera.right = half * aspect; camera.top = half; camera.bottom = -half;
+            camera.zoom = 1; camera.up.set(0, 0, -1);
+            camera.position.set(0, requestedView.current.side === "bottom" ? -span * 3 : span * 3, 0);
+            camera.updateProjectionMatrix(); controls.update(); render(); return;
+          }
           camera.up.set(0, 1, 0);
-          const { distance, direction } = fitModelCamera(size, camera.fov, camera.aspect);
+          const { distance, direction } = fitModelCamera(size, 38, target.clientWidth / Math.max(1, target.clientHeight));
           camera.position.set(distance * direction.x, distance * direction.y, distance * direction.z);
           controls.update(); render();
         };
@@ -143,17 +195,23 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
         zoom.current = (factor) => {
           framedSelection.current = null; stopMotion();
           if (!camera || !controls) return;
-          camera.position.sub(controls.target).multiplyScalar(factor).add(controls.target);
+          if (camera instanceof THREE.OrthographicCamera) { camera.zoom /= factor; camera.updateProjectionMatrix(); }
+          else camera.position.sub(controls.target).multiplyScalar(factor).add(controls.target);
           controls.update(); render();
         };
-        const resize = () => {
+        let renderedWidth = 0, renderedHeight = 0;
+        const resize = () => frames.renderWith(() => {
           if (!renderer || !camera) return;
           const w = target.clientWidth, h = target.clientHeight;
           if (w < 1 || h < 1) return;
-          renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+          // CSS stretches the previous image during layout; the buffer changes
+          // only when its replacement is ready to draw in this same frame.
+          if (w !== renderedWidth || h !== renderedHeight) { renderer.setSize(w, h, false); renderedWidth = w; renderedHeight = h; }
+          if (camera instanceof THREE.PerspectiveCamera) camera.aspect = w / h;
+          else { const half = (camera.top - camera.bottom) / 2; camera.left = -half * w / h; camera.right = half * w / h; }
+          camera.updateProjectionMatrix();
           if (selectionIsFramed()) focusSelection.current?.(false);
-          render();
-        };
+        });
         resize();
         if (savedCamera.current) {
           controls.minDistance = savedCamera.current.minDistance;
@@ -198,10 +256,14 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
             if (highlightBox.isEmpty() || !camera || !controls) return;
             framedSelection.current = { scope: currentSelection.current.scope, ref: currentSelection.current.ref };
             const center = highlightBox.getCenter(new THREE.Vector3()), size = highlightBox.getSize(new THREE.Vector3());
+            if (camera instanceof THREE.OrthographicCamera) {
+              camera.zoom = Math.min((camera.right - camera.left) / Math.max(.1, size.x * 1.3), (camera.top - camera.bottom) / Math.max(.1, size.z * 1.3));
+              camera.updateProjectionMatrix();
+            }
             const direction = camera.position.clone().sub(controls.target).normalize();
             // Fit the selected component in the current camera orientation, not the
             // board's default angle. Tiny parts must not inherit a board-sized zoom floor.
-            const distance = fitModelCamera(size, camera.fov, camera.aspect, .8, direction).distance;
+            const distance = fitModelCamera(size, 38, target.clientWidth / Math.max(1, target.clientHeight), .8, direction).distance;
             controls.minDistance = Math.max(camera.near * 4, Math.min(span * .08, distance * .1));
             stopMotion();
             const startTarget = controls.target.clone(), startPosition = camera.position.clone();
@@ -239,6 +301,34 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
           cleanupSelection = () => { canvas.removeEventListener("keydown", keyDown); canvas.removeEventListener("pointerdown", pointerDown); canvas.removeEventListener("pointerup", pointerUp); canvas.removeEventListener("pointercancel", cancel); tint.clear(); };
           sync();
         }
+        const perspective = camera;
+        let flat: THREE.OrthographicCamera | null = null;
+        let previousView: BoardCameraMode | null = null;
+        const setView = () => {
+          if (!controls || !renderer || !perspective) return;
+          stopMotion();
+          const isFlat = requestedView.current.viewMode === "2d";
+          if (requestedView.current.viewMode) {
+            if (!flat) {
+              const aspect = Math.max(.1, target.clientWidth / Math.max(1, target.clientHeight));
+              const half = Math.max(size.z, size.x / aspect) * .6;
+              flat = new THREE.OrthographicCamera(-half * aspect, half * aspect, half, -half, span / 1000, span * 1000);
+              flat.up.set(0, 0, -1); flat.position.set(0, span * 3, 0);
+            }
+            const next = { mode: requestedView.current.viewMode, side: requestedView.current.side, revision: requestedView.current.viewRevision };
+            alignBoardCamera(flat, controls.target, next, previousView);
+            previousView = next;
+            camera = flat;
+          } else camera = perspective;
+          controls.object = camera;
+          controls.enableRotate = !isFlat;
+          controls.mouseButtons.LEFT = isFlat ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+          renderer.domElement.setAttribute("aria-label", isFlat ? `${requestedView.current.side} board view. Drag to pan, scroll to zoom.` : "3D model. Drag to orbit, scroll to zoom, right-drag to pan.");
+          renderer.domElement.dataset["viewMode"] = isFlat ? "2d" : "3d";
+          controls.update(); resize(); render();
+        };
+        changeView.current = setView;
+        if (requestedView.current.viewMode) setView();
         controls.addEventListener("start", () => { framedSelection.current = null; stopMotion(); });
         controls.addEventListener("change", render);
         observer = new ResizeObserver(resize); observer.observe(target);
@@ -251,19 +341,20 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
       }
     })();
     return () => {
-      disposed = true; stopMotion(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
+      disposed = true; changeView.current = null; stopMotion(); stopInput(); stopRendering(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
       if (camera && controls) savedCamera.current = { position: camera.position.clone(), target: controls.target.clone(), up: camera.up.clone(), minDistance: controls.minDistance };
       observer?.disconnect(); cleanupContext?.(); controls?.dispose();
       if (model) disposeModel(model);
+      environment?.dispose();
       renderer?.dispose(); renderer?.domElement.remove();
     };
   }, [data, path, retry]);
 
   return <div className="fd-model-canvas" data-testid="model-canvas" onKeyDown={event => { if (event.key === "Escape" && selectionSource && selection.ref && !(event.target instanceof Element && event.target.closest("input, textarea, select, [role=dialog]"))) { selection.clear(); event.preventDefault(); event.stopPropagation(); } }}>
-    {selectionSource && <PartSelectionBar reference={selection.ref} references={selectableRefs} onSelect={selection.select} onClear={selection.clear} onFocus={selectableRefs.includes(selection.ref ?? "") ? () => focusSelection.current?.() : undefined} notice={selectionNotice} />}
+    {selectionSource && <PartSelectionBar target={selectionToolbar} reference={selection.ref} references={selectableRefs} onSelect={selection.select} onClear={selection.clear} onFocus={selectableRefs.includes(selection.ref ?? "") ? () => focusSelection.current?.() : undefined} notice={selectionNotice} />}
     <div ref={host} className="fd-model-viewport" />
     {(isPending || (loading && data !== null)) && !error && !isError && <div className="fd-model-message" role="status"><Spinner /><span>Opening model…</span></div>}
     {(error || isError || data === null) && <div className="fd-model-message" role="alert"><p>{error ?? (isError ? "Could not load the saved model." : "Model file not found.")}</p><Button onClick={() => { savedCamera.current = null; setRetry((n) => n + 1); if (!blob) void refetch(); }}>Retry preview</Button></div>}
-    <div className="fd-model-view-tools"><Button size="sm" title="Zoom out" aria-label="Zoom out" disabled={viewUnavailable} onClick={() => zoom.current?.(1.25)}>−</Button><Button size="sm" title="Zoom in" aria-label="Zoom in" disabled={viewUnavailable} onClick={() => zoom.current?.(.8)}>+</Button><Button size="sm" disabled={viewUnavailable} onClick={() => fit.current?.()}>Fit view</Button><span>Drag to orbit · Arrow keys pan</span></div>
+    <div className="fd-model-view-tools"><Button size="sm" title="Zoom out" aria-label="Zoom out" disabled={viewUnavailable} onClick={() => zoom.current?.(1.25)}>−</Button><Button size="sm" title="Zoom in" aria-label="Zoom in" disabled={viewUnavailable} onClick={() => zoom.current?.(.8)}>+</Button><Button size="sm" disabled={viewUnavailable} onClick={() => fit.current?.()}>Fit view</Button><span>{viewMode === "2d" ? "Drag to pan · Scroll to zoom" : "Drag to orbit · Arrow keys pan"}</span></div>
   </div>;
 }
