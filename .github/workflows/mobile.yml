@@ -113,6 +113,11 @@ jobs:
         run: bun install --frozen-lockfile
         working-directory: source/apps/mobile
 
+      # The standalone app lockfile is excluded from the root dependency audit.
+      - name: Audit mobile dependencies
+        run: bun audit
+        working-directory: source/apps/mobile
+
       - name: Typecheck
         run: bun run typecheck
         working-directory: source/apps/mobile
