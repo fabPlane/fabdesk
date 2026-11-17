@@ -122,6 +122,8 @@ describe("review gate record", () => {
   test("none before any review; pass / open / stale / errors as recorded for the saved board", async () => {
     const dir = await project("board-1");
     expect(await readReviewGate(dir)).toEqual({ state: "none" });
+    await mkdir(join(dir, ".fabdesk/board/review"), { recursive: true });
+    await writeFile(join(dir, ".fabdesk/board/review/dispositions.json"), JSON.stringify({ "L8:EXPERT:-:-:pending": { state: "defer", by: "owner", reason: "Fixture owner deferral" } }));
     await recordReviewGate(dir, { current: true, open: 0, mustFix: 0 });
     expect(await readReviewGate(dir)).toMatchObject({ state: "pass", open: 0 });
     await recordReviewGate(dir, { current: true, open: 4, mustFix: 1 });
@@ -133,6 +135,8 @@ describe("review gate record", () => {
   });
   test("a board change after the review makes a pass stale", async () => {
     const dir = await project("board-1");
+    await mkdir(join(dir, ".fabdesk/board/review"), { recursive: true });
+    await writeFile(join(dir, ".fabdesk/board/review/dispositions.json"), JSON.stringify({ "L8:EXPERT:-:-:pending": { state: "defer", by: "owner", reason: "Fixture owner deferral" } }));
     await recordReviewGate(dir, { current: true, open: 0, mustFix: 0 });
     await writeFile(join(dir, "board.kicad_pcb"), "board-2");
     expect((await readReviewGate(dir)).state).toBe("stale");
@@ -143,7 +147,9 @@ describe("review gate record", () => {
       await writeFile(join(dir, "board.kicad_sch"), "(kicad_sch a)");
       await mkdir(join(dir, ".fabdesk/board/requirements"), { recursive: true });
       await writeFile(join(dir, ".fabdesk/board/requirements/requirements.json"), "{\"a\":1}");
-      await recordReviewGate(dir, { current: true, open: 0, mustFix: 0 });
+      await mkdir(join(dir, ".fabdesk/board/review"), { recursive: true });
+    await writeFile(join(dir, ".fabdesk/board/review/dispositions.json"), JSON.stringify({ "L8:EXPERT:-:-:pending": { state: "defer", by: "owner", reason: "Fixture owner deferral" } }));
+    await recordReviewGate(dir, { current: true, open: 0, mustFix: 0 });
       expect((await readReviewGate(dir)).state).toBe("pass");
       return dir;
     };
@@ -289,7 +295,7 @@ test("stage readers agree after schematic-only and board-only changes", async ()
   const hash = await currentReviewHash(dir);
   await writeFile(join(home, "review/latest.json"), JSON.stringify({ run: "first" }));
   await writeFile(join(home, "review/runs/first/review.json"), JSON.stringify({ hash, pcb: "board.kicad_pcb", checks: [], findings: [] }));
-  await writeFile(join(home, "release/last-fab.json"), JSON.stringify({ out: "exports/release-first", designHash: hash }));
+  await (await import("./release-package-fixture")).packageFixture(dir);
   await recordReviewGate(dir, { current: true, open: 0, mustFix: 0 });
   expect((await stageState(dir)).review.state).toBe("current");
   expect((await stageState(dir)).release.state).toBe("current");
@@ -310,7 +316,7 @@ test("Amendment 1 separates request completion from board completion", async () 
   const pcb = join(dir, "board.kicad_pcb");
   const { readFile } = await import("node:fs/promises");
   const summary = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`A${i + 1}`, true]));
-  const entry = { sha256: createHash("sha256").update(await readFile(pcb)).digest("hex"), designHash: (await designHash(dir)).design, summary, figures: { A1: 3 } };
+  const entry = { parityChecked: true, sha256: createHash("sha256").update(await readFile(pcb)).digest("hex"), designHash: (await designHash(dir)).design, summary, figures: { A1: 3 } };
   await writeFile(join(home, "index.json"), JSON.stringify([{ ...entry, summary: { ...summary, A1: false } }]));
   let line = await savedStageLine(dir);
   expect(line).toContain("Board: 3 opens remain");
@@ -330,6 +336,7 @@ test("Amendment 1 separates request completion from board completion", async () 
   for (const invalid of [
     { ...entry, summary: { ...summary, A7: false } },
     { ...entry, parityChecked: false },
+    { ...entry, parityChecked: undefined },
     { ...entry, summary: { A1: true } },
   ]) {
     await writeFile(join(home, "index.json"), JSON.stringify([invalid]));

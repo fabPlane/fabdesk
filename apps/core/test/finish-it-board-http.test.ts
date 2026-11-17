@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, AgentRun, AgentSession } from "@fabdesk/agents";
 import type { FinishItSession } from "@fabdesk/protocol";
 import { recordReviewGate, writeDoneMode, type CoreServices } from "@fabdesk/tools";
+import { packageFixture } from "../../../packages/tools/test/release-package-fixture";
 import { serve, type Daemon } from "../src/serve";
 import { mockServices } from "../../../packages/tools/test/mock-services";
 
@@ -140,10 +141,13 @@ describe("Finish it with the board workflow on", () => {
       }
   });
 
-  test("passing A1-A9 plus a passing review gate on the saved board complete it without an agent", async () => {
+  test("passing acceptance, review and a valid current fabrication package complete without an agent", async () => {
     const pcb = "(kicad_pcb (footprint \"R\") board-done)\n";
     const project = await cleanProject("Accepted Board", pcb);
+    await packageFixture(project.path);
     await accept(project.path, pcb, { A1_connectivity: true, A2_drc: true });
+    await mkdir(join(project.path, ".fabdesk/board/review"), { recursive: true });
+    await writeFile(join(project.path, ".fabdesk/board/review/dispositions.json"), JSON.stringify({ "L8:EXPERT:-:-:pending": { state: "defer", by: "owner", reason: "Owner defers independent review for this fixture" } }));
     await recordReviewGate(project.path, { current: true, open: 0, mustFix: 0 });
     const session = await finish(project.id);
     expect(session.status).toBe("completed");
@@ -155,6 +159,7 @@ describe("Finish it with the board workflow on", () => {
   test("a board that came in with opens and DRC findings completes on no new failure, without an agent", async () => {
     const pcb = "(kicad_pcb (footprint \"R\") board-inherited-failures)\n";
     const project = await cleanProject("Inherited Failures", pcb);
+    await packageFixture(project.path, "exports/release-test", true, { A1_connectivity: "Owner accepts inherited opens for this bare board", A2_drc: "Owner accepts inherited DRC", A3_parity: "Owner accepts inherited parity" });
     // DRC says 3 errors and 9 unconnected: the board's own state from before the work
     await writeFile(join(project.path, "reports/drc.json"), JSON.stringify({ counts: { errors: 3, warnings: 0, unconnected: 9 }, pcbRevision: { sha256: createHash("sha256").update(pcb).digest("hex") }, schematicParityChecked: true }));
     await mkdir(join(project.path, ".fabdesk/board/accept"), { recursive: true });
@@ -162,16 +167,43 @@ describe("Finish it with the board workflow on", () => {
     const failing = { A1_connectivity: false, A2_drc: false, A3_parity: false, A5_anchors: true };
     await writeFile(join(project.path, ".fabdesk/board/accept/index.json"), JSON.stringify([{ at: "t0", sha256: "first-board", summary: failing }, { at: "t1", sha256: sha, summary: failing }]));
     await writeDoneMode(project.path, "no-regression");
+    await mkdir(join(project.path, ".fabdesk/board/review"), { recursive: true });
+    await writeFile(join(project.path, ".fabdesk/board/review/dispositions.json"), JSON.stringify({ "L8:EXPERT:-:-:pending": { state: "defer", by: "owner", reason: "Owner defers independent review for this fixture" } }));
     await recordReviewGate(project.path, { current: true, open: 0, mustFix: 0 });
     const session = await finish(project.id);
     expect(session.status).toBe("completed");
     expect(runsIn(project.path)).toBe(0);
+    expect(JSON.parse(await Bun.file(join(project.path, ".fabdesk/board/done-mode.json")).text()).mode).toBe("no-regression");
+    for (const id of ["route", "verify", "release"]) expect(session.milestones.find(m => m.id === id)?.status).toBe("done");
+  });
+
+  for (const state of ["gate-only", "deleted", "mutated", "stale"]) test(`a ${state} package leaves release pending and starts work`, async () => {
+    const pcb = "(kicad_pcb (footprint \"R\") (segment (start 0 0) (end 1 0)))\n";
+    const project = await cleanProject(`Pending release ${state}`, pcb);
+    await accept(project.path, pcb, { A1_connectivity: true, A2_drc: true });
+    await mkdir(join(project.path, ".fabdesk/board/review"), { recursive: true });
+    await writeFile(join(project.path, ".fabdesk/board/review/dispositions.json"), JSON.stringify({ "L8:EXPERT:-:-:pending": { state: "defer", by: "owner", reason: "Owner defers independent review" } }));
+    await recordReviewGate(project.path, { current: true, open: 0, mustFix: 0 });
+    if (state !== "gate-only") {
+      const out = await packageFixture(project.path);
+      if (state === "deleted") await rm(out, { recursive: true });
+      if (state === "mutated") await writeFile(join(out, "evidence.txt"), "changed");
+      if (state === "stale") await writeFile(join(project.path, "board.kicad_sch"), "(kicad_sch changed)");
+    }
+    const session = await finish(project.id);
+    expect(session.status).not.toBe("completed");
+    expect(session.milestones.find(m => m.id === "release")?.status).not.toBe("done");
+    for (let i = 0; i < 100 && runsIn(project.path) === 0; i++) await Bun.sleep(25);
+    expect(runsIn(project.path)).toBeGreaterThan(0);
+    await api(`/projects/${project.id}/finish-it/stop`, { method: "POST" });
   });
 
   test("a review gate recorded for an earlier board does not count", async () => {
     const pcb = "(kicad_pcb (footprint \"R\") board-stale-review)\n";
     const project = await cleanProject("Stale Review", pcb);
     await accept(project.path, pcb, { A1_connectivity: true, A2_drc: true });
+    await mkdir(join(project.path, ".fabdesk/board/review"), { recursive: true });
+    await writeFile(join(project.path, ".fabdesk/board/review/dispositions.json"), JSON.stringify({ "L8:EXPERT:-:-:pending": { state: "defer", by: "owner", reason: "Owner defers independent review for this fixture" } }));
     await recordReviewGate(project.path, { current: true, open: 0, mustFix: 0 });
     await writeFile(join(project.path, "board.kicad_pcb"), `${pcb};; edited after the review\n`);
     const session = await finish(project.id);

@@ -91,6 +91,8 @@ describe("board_release", () => {
     expect(r.text).toContain("3 acceptance: not measured");
     expect(r.text).toContain("1 need fill+cap, 1 missing natively");
     const sha = (await import("node:crypto")).createHash("sha256").update(await readFile(join(project.dir, "board.kicad_pcb"))).digest("hex");
+    await mkdir(join(project.dir, ".fabdesk/board/review"), { recursive: true });
+    await writeFile(join(project.dir, ".fabdesk/board/review/dispositions.json"), JSON.stringify({ "L8:EXPERT:-:-:pending": { state: "defer", by: "owner", reason: "Fixture owner deferral" } }));
     await recordReviewGate(project.dir, { current: true, open: 0, mustFix: 0 });
     await recordAcceptance(project.dir, { at: new Date().toISOString(), sha256: sha, results: ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9"].map((code) => ({ code, status: "pass", figures: {}, evidence: [] })) as never });
     r = await call("board_release", { action: "check" });
@@ -99,6 +101,8 @@ describe("board_release", () => {
     expect(r.json.ready).toBe(false); // the microvia is still unfilled
     await writeFile(join(project.dir, "board.kicad_pcb"), BOARD());
     const sha2 = (await import("node:crypto")).createHash("sha256").update(await readFile(join(project.dir, "board.kicad_pcb"))).digest("hex");
+    await mkdir(join(project.dir, ".fabdesk/board/review"), { recursive: true });
+    await writeFile(join(project.dir, ".fabdesk/board/review/dispositions.json"), JSON.stringify({ "L8:EXPERT:-:-:pending": { state: "defer", by: "owner", reason: "Fixture owner deferral" } }));
     await recordReviewGate(project.dir, { current: true, open: 0, mustFix: 0 });
     await recordAcceptance(project.dir, { at: new Date().toISOString(), sha256: sha2, results: ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9"].map((code) => ({ code, status: "pass", figures: {}, evidence: [] })) as never });
     r = await call("board_release", { action: "check" });
@@ -171,6 +175,8 @@ describe("board_release", () => {
     expect(r.json).toMatchObject({ released: false, gate: "acceptance" });
     expect(await stat(join(project.dir, ".fabdesk", "board", "release", "jlc-footprint-proxies.json")).catch(() => null)).toBeNull();
     // a saved pass is not what fab trusts: it computes the review gate from the review records
+    await mkdir(join(project.dir, ".fabdesk/board/review"), { recursive: true });
+    await writeFile(join(project.dir, ".fabdesk/board/review/dispositions.json"), JSON.stringify({ "L8:EXPERT:-:-:pending": { state: "defer", by: "owner", reason: "Fixture owner deferral" } }));
     await recordReviewGate(project.dir, { current: true, open: 0, mustFix: 0 });
     r = await call("board_release", { action: "fab" });
     expect(r.json).toMatchObject({ released: false, gate: "review" });

@@ -5,7 +5,7 @@ import type { FindingRecord, ReviewRecord } from "./review/types";
  * BOM evidence covers PCB bytes only: placements and fitted parts are board-derived.
  * A saved gate additionally covers dispositions, intent and the imported review record.
  */
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join, relative, sep, isAbsolute } from "node:path";
 import { readJsonOrNull, locateProject } from "./files";
 import { savedBoard, matchesSavedBoard, countedSummary } from "./history";
@@ -30,15 +30,68 @@ export async function stageReviewGate(dir: string, pcb?: string): Promise<SavedG
   let stale = !d.basis?.design || keys.some(k => (d.basis?.[k] ?? null) !== now[k]);
   const want = pcb ? relative(dir, isAbsolute(pcb) ? pcb : join(dir, pcb)).split(sep).join("/") : await locateProject(dir).then(f => relative(dir, f.pcb).split(sep).join("/"), () => null);
   if (d.basis?.pcb && want && d.basis.pcb !== want) stale = true;
+  const coverage = await independentState(dir, now.design, want ?? "");
+  if (!stale && d.state === "pass" && !["current", "deferred"].includes(coverage.state))
+    return { ...d, state: "open", open: Math.max(1, d.open ?? 0) };
   return { ...d, state: stale ? "stale" : d.state };
 }
-export async function readIndependentReview(dir: string): Promise<{ hash: string; files?: Record<string, string>; findings: FindingRecord[] } | null> {
-  const saved = await readJsonOrNull<{ hash: string; files?: Record<string, string>; findings: FindingRecord[] }>(join(dir, ".fabdesk/board/review/independent.json"));
-  if (saved) return saved;
-  // Older imports lived only in their run. Preserve that provenance when the next review carries it forward.
-  const latest = await readJsonOrNull<{ run: string }>(join(dir, ".fabdesk/board/review/latest.json"));
-  const r = latest ? await readJsonOrNull<ReviewRecord>(join(dir, ".fabdesk/board/review/runs", latest.run, "review.json")) : null;
-  return r?.checks.some(c => c.name === "expert" && c.status === "ok") ? { hash: r.hash, files: r.files, findings: r.findings.filter(f => f.check === "expert") } : null;
+export interface IndependentReview {
+  hash: string;
+  pcb?: string;
+  files?: Record<string, string>;
+  findings: FindingRecord[];
+}
+export async function readIndependentReview(dir: string): Promise<IndependentReview | null> {
+  const home = join(dir, ".fabdesk/board/review");
+  const saved = await readJsonOrNull<IndependentReview>(join(home, "independent.json"));
+  if (saved?.pcb) return saved;
+  const latest = await readJsonOrNull<{ run: string }>(join(home, "latest.json"));
+  // Recover old imports from the run that actually imported them, never the current design.
+  const names = (await readdir(join(home, "runs")).catch(() => [] as string[])).sort();
+  const candidates = latest ? [latest.run, ...names.filter(n => n !== latest.run)] : names;
+  for (const name of candidates) {
+    const r = await readJsonOrNull<ReviewRecord>(join(home, "runs", name, "review.json"));
+    if (!r?.pcb || !r.checks.some(c => c.name === "expert" && c.status === "ok") || (saved && r.hash !== saved.hash)) continue;
+    const record: IndependentReview = saved ? { ...saved, pcb: r.pcb } : { hash: r.hash, pcb: r.pcb, files: r.files, findings: r.findings.filter(f => f.check === "expert") };
+    await writeFile(join(home, "independent.json"), JSON.stringify(record, null, 1) + "\n");
+    return record;
+  }
+  return saved; // Unrecoverable provenance remains unverified.
+}
+export async function independentState(dir: string, hash: string | null, pcb: string) {
+  const expert = await readIndependentReview(dir);
+  const dispositions = await readJsonOrNull<Record<string, { by?: string; state?: string; reason?: string }>>(join(dir, ".fabdesk/board/review/dispositions.json"));
+  const deferred = Object.entries(dispositions ?? {}).some(([id, d]) => ["L8:EXPERT:-:-:pending", "L8:EXPERT:-:-:earlier"].includes(id) && d.by === "owner" && d.state === "defer" && !!d.reason?.trim());
+  return { state: deferred ? "deferred" : !expert ? "missing" : expert.hash === hash && expert.pcb === pcb ? "current" : "covers an earlier design", expert };
+}
+
+/** The receipt identifies exactly one package; every recorded artifact must still match. */
+async function releaseState(dir: string, hash: string | null) {
+  const last = await readJsonOrNull<{ designHash?: string; out: string; manifestSha256?: string }>(join(dir, ".fabdesk/board/release/last-fab.json"));
+  if (!last) {
+    // Legacy packages remain visible, but without a receipt their currency is unverified.
+    const names = (await readdir(join(dir, "exports")).catch(() => [] as string[])).filter(n => n.startsWith("release-")).sort();
+    const pkg = names.at(-1);
+    return pkg ? { state: "stale" as Currency, package: `exports/${pkg}` } : { state: "none" as Currency, package: null };
+  }
+  const stale = { state: "stale" as Currency, package: last.out };
+  if (last.designHash !== hash || !last.out || !last.manifestSha256) return stale;
+  const out = isAbsolute(last.out) ? last.out : join(dir, last.out);
+  const bytes = await readFile(join(out, "manifest.json")).catch(() => null);
+  const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
+  if (!bytes || sha(bytes) !== last.manifestSha256) return stale;
+  try {
+    const manifest = JSON.parse(bytes.toString()) as { files?: Record<string, string> };
+    if (!manifest.files || !manifest.files["acceptance-gate.json"]) return stale;
+    for (const [path, expected] of Object.entries(manifest.files)) {
+      if (isAbsolute(path) || path.split(/[\\/]/).includes("..")) return stale;
+      const evidence = await readFile(join(out, path)).catch(() => null);
+      if (!evidence || sha(evidence) !== expected) return stale;
+    }
+    const acceptance = await readJsonOrNull<{ reviewDesignHash?: string }>(join(out, "acceptance-gate.json"));
+    if (acceptance?.reviewDesignHash !== hash) return stale;
+    return { state: "current" as Currency, package: last.out };
+  } catch { return stale; }
 }
 
 export async function stageState(dir: string, pcb?: string) {
@@ -47,13 +100,7 @@ export async function stageState(dir: string, pcb?: string) {
   const latest = await readJsonOrNull<{ run: string }>(join(dir, ".fabdesk/board/review/latest.json"));
   const review = latest ? await readJsonOrNull<{ hash: string; files?: Record<string, string>; pcb?: string }>(join(dir, ".fabdesk/board/review/runs", latest.run, "review.json")) : null;
   const reviewedBoard = await locateProject(dir, pcb).then(f => relative(dir, f.pcb).split(sep).join("/"), () => "");
-  const names = (await readdir(join(dir, "exports")).catch(() => [] as string[])).filter(n => n.startsWith("release-")).sort();
-  const pkg = names.at(-1);
-  const rel = pkg ? await readJsonOrNull<{ reviewDesignHash?: string; designHash?: string }>(join(dir, "exports", pkg, "acceptance-gate.json")) : null;
-  const last = await readJsonOrNull<{ designHash?: string; out: string }>(join(dir, ".fabdesk/board/release/last-fab.json"));
-  const expert = await readIndependentReview(dir);
-  const dispositions = await readJsonOrNull<Record<string, { by?: string; state?: string; reason?: string }>>(join(dir, ".fabdesk/board/review/dispositions.json"));
-  const deferred = Object.entries(dispositions ?? {}).some(([id, d]) => ["L8:EXPERT:-:-:pending", "L8:EXPERT:-:-:earlier"].includes(id) && d.by === "owner" && d.state === "defer" && !!d.reason?.trim());
+  const { state: independent, expert } = await independentState(dir, hash, reviewedBoard);
   const cfg = await readJsonOrNull<Record<string, never>>(join(dir, ".fabdesk/board/review/config.json")) ?? {};
   const currentFiles = await reviewHash({ dir, cfg }).then(r => r.files, () => ({} as Record<string, string>));
   const changed = (files?: Record<string, string>) => [...new Set([...Object.keys(files ?? {}), ...Object.keys(currentFiles)])].filter(k => files?.[k] !== currentFiles[k]);
@@ -61,7 +108,8 @@ export async function stageState(dir: string, pcb?: string) {
   const saved = await savedBoard(dir, pcb);
   const checks = [...entries].reverse().find(e => matchesSavedBoard(e, saved));
   const summary = checks ? countedSummary(checks) : {};
-  const acceptancePass = Array.from({ length: 9 }, (_, i) => `A${i + 1}`).every(k => summary[k] === true);
+  const verifiedChecks = checks?.designHash === saved.design && !!checks?.designHash && checks.parityChecked === true;
+  const acceptancePass = verifiedChecks && Array.from({ length: 9 }, (_, i) => `A${i + 1}`).every(k => summary[k] === true);
   const openFigure = checks?.figures?.A1 ?? checks?.results?.find(r => r.code === "A1")?.figures.unconnected;
   const opens = typeof openFigure === "number" && Number.isFinite(openFigure) && openFigure >= 0 ? openFigure : null;
   const placed = reviewedBoard ? await readFile(join(dir, reviewedBoard), "utf8").then(t => parseBoard(t).footprints.size > 0, () => false).catch(() => false) : false;
@@ -78,16 +126,16 @@ export async function stageState(dir: string, pcb?: string) {
     }
   }
   const boardStatus = !checks ? "checks missing or stale" : opens !== null && opens > 0 ? `${opens} opens remain`
-    : !placed ? "placement missing or unverified" : !acceptancePass ? "acceptance checks failing"
+    : !verifiedChecks ? "acceptance evidence unverified" : !placed ? "placement missing or unverified" : !acceptancePass ? "acceptance checks failing"
     : !previewsCurrent ? "previews missing or stale" : "complete";
   return {
     designHash: hash,
     // Tool evidence cannot establish that the owner's requested scope has been met.
-    task: { state: "change saved; request scope determines task completion", checks: checks ? acceptancePass ? "pass" : "failing" : "missing or stale" },
+    task: { state: "change saved; request scope determines task completion", checks: checks ? !verifiedChecks ? "unverified" : acceptancePass ? "pass" : "failing" : "missing or stale" },
     board: { complete: boardStatus === "complete", status: boardStatus, opens },
     review: { state: !review ? "none" as const : reviewCurrency(review.hash, hash ?? "", review.pcb, reviewedBoard) === "current" && gate.state !== "stale" ? "current" as const : "stale" as const, coveredDesign: review?.hash ?? null, changedSince: changed(review?.files), gate },
-    release: { state: (last || pkg) ? designCurrency(last?.designHash ?? rel?.reviewDesignHash ?? "legacy-unverified", hash) : "none" as Currency, package: last?.out ?? (pkg ? `exports/${pkg}` : null) },
-    independent: { state: deferred ? "deferred" : !expert ? "missing" : expert.hash === hash ? "current" : "covers an earlier design", coveredDesign: expert?.hash ?? null, changedSince: changed(expert?.files) },
+    release: await releaseState(dir, hash),
+    independent: { state: independent, coveredDesign: expert?.hash ?? null, coveredBoard: expert?.pcb ?? null, changedSince: changed(expert?.files) },
   };
 }
 export async function savedStageLine(dir: string, pcb?: string): Promise<string> {

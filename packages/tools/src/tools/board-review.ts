@@ -122,7 +122,7 @@ export const board_review = defineTool({
     by: z.enum(["agent", "owner"]).optional().describe("dispose: who decided. Record the owner only when the owner said so."),
     reason: z.string().max(2000).optional().describe("dispose: why, with the evidence."),
     thirdSource: z.string().max(1000).optional().describe("dispose: a source that is neither the design nor the check (datasheet page, measurement); false-positive needs it."),
-    file: z.string().max(500).optional().describe("import_expert: the expert's JSON file ({reviewer, findings[]}), relative to the project."),
+    file: z.string().max(500).optional().describe("import_expert: the expert's JSON file ({designHash, pcb, reviewer, findings[]}); copy designHash and project-relative pcb from its evidence pack, relative to the project."),
     apply: z.boolean().default(false).describe("fix: record the workflow's dispositions and build the edit candidates (otherwise only list the proposals)."),
     plan: z.union([z.record(z.string(), z.unknown()), z.string().max(200_000)]).optional().describe("try: a board_edit plan (id, move, add, swap, remove, net, displace ...): an object, inline JSON text, or a project-relative JSON file."),
     ids: z.array(z.string().max(300)).max(50).optional().describe("try: the finding ids the plan should fix (each must be in the current review; every one must be gone for READY)."),

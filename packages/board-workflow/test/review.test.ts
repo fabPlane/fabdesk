@@ -17,6 +17,7 @@ import {
   findingId,
   impedance,
   importExpert,
+  currentReviewHash,
   judge,
   loadNetlist,
   modelOf,
@@ -351,7 +352,7 @@ describe("a review run, the gate and dispositions", () => {
     const dir = await project();
     const p = await openReviewProject(dir);
     await runReview(p, fakeEnv(), { offline: true });
-    const r = await importExpert(p, { reviewer: "fresh", findings: [{ severity: "PROBLEM", ref: "U1", claim: "no reset pull-up", evidence: "" }, { severity: "PROBLEM", ref: "J1", claim: "wrong keying", evidence: "datasheet 4.2" }, { severity: "NOTE", claim: "fine" }] });
+    const r = await importExpert(p, { designHash: await currentReviewHash(dir), pcb: "board.kicad_pcb", reviewer: "fresh", findings: [{ severity: "PROBLEM", ref: "U1", claim: "no reset pull-up", evidence: "" }, { severity: "PROBLEM", ref: "J1", claim: "wrong keying", evidence: "datasheet 4.2" }, { severity: "NOTE", claim: "fine" }] });
     expect(r.imported).toBe(3);
     const cur = JSON.parse(await readFile(join(r.run, "review.json"), "utf8")) as ReviewRecord;
     const ex = cur.findings.filter((f) => f.check === "expert");
@@ -477,7 +478,7 @@ test("independent import carries across runs and reports earlier coverage after 
   const dir = await project();
   const p = await openReviewProject(dir);
   await runReview(p, fakeEnv(), { offline: true });
-  await importExpert(p, { reviewer: "Independent", findings: [] });
+  await importExpert(p, { designHash: await currentReviewHash(dir), pcb: "board.kicad_pcb", reviewer: "Independent", findings: [] });
   await runReview(p, fakeEnv(), { offline: true });
   const { stageState } = await import("../src/index");
   expect((await stageState(dir)).independent.state).toBe("current");

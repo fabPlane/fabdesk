@@ -10,7 +10,7 @@ export async function fabricationGate(dir: string, tool: string, waiver?: string
   if (!await readFile(join(dir, ".fabdesk/board/onboard.json")).then(() => true, () => false)) return null;
   const g = await reviewGate(await openReviewProject(dir, pcb));
   const s = await stageState(dir, pcb);
-  if (g.state === "pass" && ["current", "deferred"].includes(s.independent.state)) return null;
+  if (g.state === "pass") return null;
   if (!waiver?.trim()) throw new ToolError(`Review stage ${g.state}; independent review ${s.independent.state}: fabrication refused. Run board_review run for this design, settle its findings and current independent review (or owner's recorded deferral), then retry. Only an explicit user-authorized waiver reason bypasses this review gate.`, "precondition");
   const record = { designHash: s.designHash, tool, reason: waiver.trim(), at: new Date().toISOString() };
   const home = join(dir, ".fabdesk/board/release");
@@ -25,8 +25,9 @@ export async function fabricationGate(dir: string, tool: string, waiver?: string
 }
 export async function packageWaivers(dir: string, out: string) {
   const records = JSON.parse(await readFile(join(dir, ".fabdesk/board/release/waivers.json"), "utf8").catch(() => "[]")) as unknown[];
-  if (!records.length) return;
   const file = join(out, "manifest.json");
   const manifest = JSON.parse(await readFile(file, "utf8").catch(() => "{}")) as Record<string, unknown>;
-  await writeFile(file, JSON.stringify({ ...manifest, reviewWaivers: records }, null, 2) + "\n");
+  const final = records.length ? { ...manifest, reviewWaivers: records } : manifest;
+  if (records.length) await writeFile(file, JSON.stringify(final, null, 2) + "\n");
+  return final;
 }

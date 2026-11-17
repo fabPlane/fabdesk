@@ -306,8 +306,8 @@ async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
     });
     // saved with the project only once the release went through (a refused release writes nothing)
     if (a.proxies) await writeProxies(project.dir, proxies);
-    const man = r.manifest as { jlc?: { bom_lines?: number; placements?: number; placement_check?: { pass: number; fail: number; placements: number; no_jlc_footprint: string[] }; no_lcsc_code?: string[]; rotation_differs_from_kicad?: unknown[]; skipped?: string }; reproducible: { files: number }; gerbcheck: { pass: boolean }; files: Record<string, string> };
-    await packageWaivers(project.dir, out);
+    const manifest = await packageWaivers(project.dir, out);
+    const man = manifest as { jlc?: { bom_lines?: number; placements?: number; placement_check?: { pass: number; fail: number; placements: number; no_jlc_footprint: string[] }; no_lcsc_code?: string[]; rotation_differs_from_kicad?: unknown[]; skipped?: string }; reproducible: { files: number }; gerbcheck: { pass: boolean }; files: Record<string, string> };
     await writeLastFab(project.dir, { designHash: await currentReviewHash(project.dir), at: new Date().toISOString(), out, boardSha256: (await sha256Of(files.pcb)) ?? "", manifestSha256: (await sha256Of(join(out, "manifest.json"))) ?? "" });
     const j = man.jlc;
     const text = [
@@ -317,7 +317,7 @@ async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
       j?.skipped ? `JLC files: ${j.skipped}` : `JLC BOM ${j?.bom_lines} lines / CPL ${j?.placements} placements; rotation differs from KiCad on ${j?.rotation_differs_from_kicad?.length ?? 0}; placement check ${j?.placement_check?.pass}/${j?.placement_check?.placements} pass (${j?.placement_check?.no_jlc_footprint.length ?? 0} without JLC footprint); no LCSC code: ${j?.no_lcsc_code?.join(", ") || "none"}`,
       `manifest.json holds the hashes of every file, the board and schematic hashes and the gate records.`,
     ].join("\n");
-    return ok(text, { released: true, out, manifest: r.manifest });
+    return ok(text, { released: true, out, manifest });
   } catch (e) {
     if (e instanceof release.ReleaseStop) return ok(`NOT RELEASED (${e.gate}): ${e.message}`, { released: false, gate: e.gate, reason: e.message, ...(e.detail !== undefined ? { detail: e.detail } : {}) });
     throw e;

@@ -11,7 +11,7 @@ import { isFittedPurchasedPart } from "@fabdesk/protocol";
  */
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { basename, isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join, relative, sep } from "node:path";
 import { checkAcceptance, courtyardException, profile, PWR_PROXY, pyRound, type DrcInput } from "../accept";
 import { kids, type SNode } from "../sexpr";
 import { BUILTIN_CARDS, INTERFACE_PROFILES } from "./data";
@@ -1234,7 +1234,7 @@ export async function checkCustom(ctx: ReviewCtx): Promise<CheckResult> {
 
 // ---------------------------------------------------------------- L8 expert pack
 
-const EXPERT_BRIEF = (o: { name: string; hash: string; project: string; nparts: number; nnets: number; manual: string }) => `# Expert review brief: ${o.name}
+const EXPERT_BRIEF = (o: { name: string; hash: string; pcb: string; project: string; nparts: number; nnets: number; manual: string }) => `# Expert review brief: ${o.name}
 
 You are an independent senior PCB/electronics reviewer. You did not design this board. Review the evidence in this
 folder like a design review before ordering. Look for what the tools cannot see: wrong part choices, missing
@@ -1251,7 +1251,7 @@ Rules:
 
 Write \`expert.json\` as:
 \`\`\`json
-{"reviewer": "<model/session>", "findings": [
+{"designHash": "${o.hash}", "pcb": "${o.pcb}", "reviewer": "<model/session>", "findings": [
   {"severity": "PROBLEM|QUESTION|NOTE", "ref": "U5", "pad": "", "net": "", "claim": "one line",
     "evidence": "datasheet section / measurement / render file", "suggest": "what would fix or settle it"}]}
 \`\`\`
@@ -1293,12 +1293,12 @@ export async function checkPack(ctx: ReviewCtx): Promise<CheckResult> {
   }
   const manual = ((ctx.acceptance as { manual_review?: string[] } | null)?.manual_review) ?? [];
   const nets = new Set([...(ctx.comps ?? new Map<string, Comp>()).values()].flatMap((c) => [...c.pins.values()].map((v) => v.net)));
-  await writeFile(join(pack, "EXPERT-BRIEF.md"), EXPERT_BRIEF({ name: ctx.project.name, hash: ctx.hash, project: ctx.project.dir, nparts: parts.length, nnets: nets.size, manual: manual.length ? "\n## Manual review items the owner tracks\n" + manual.map((m) => `- ${m}`).join("\n") : "" }));
+  await writeFile(join(pack, "EXPERT-BRIEF.md"), EXPERT_BRIEF({ name: ctx.project.name, hash: ctx.hash, pcb: relative(ctx.project.dir, ctx.project.pcb).split(sep).join("/"), project: ctx.project.dir, nparts: parts.length, nnets: nets.size, manual: manual.length ? "\n## Manual review items the owner tracks\n" + manual.map((m) => `- ${m}`).join("\n") : "" }));
   const independent = await readIndependentReview(ctx.project.dir);
   if (independent) await writeFile(join(reviewHome(ctx.project.dir), "independent.json"), JSON.stringify(independent, null, 1) + "\n");
   const independentState = (await stageState(ctx.project.dir, ctx.project.pcb)).independent;
-  if (independentState.state === "deferred") r.findings.push(FIND({ layer: "L8", rule: "EXPERT", severity: "note", claim: "independent review deferred by the owner", key: "deferred" }));
-  else if (independent?.hash === ctx.hash) r.findings.push(...independent.findings);
+  if (independent?.hash === ctx.hash && independent.pcb === relative(ctx.project.dir, ctx.project.pcb).split(sep).join("/")) { /* Findings are carried centrally, including when pack is skipped. */ }
+  else if (independentState.state === "deferred") r.findings.push(FIND({ layer: "L8", rule: "EXPERT", severity: "note", claim: "independent review deferred by the owner", key: "deferred" }));
   else if (independent) r.findings.push(FIND({ layer: "L8", rule: "EXPERT", severity: "note", claim: `independent review covers an earlier design (${(await stageState(ctx.project.dir, ctx.project.pcb)).independent.changedSince.length} changes since)`, key: "earlier" }));
   else r.findings.push(FIND({ layer: "L8", rule: "EXPERT", severity: "question", claim: "independent expert review not imported yet", key: "pending", suggest: `have a fresh-context reviewer (the owner's call) work from ${pack}/EXPERT-BRIEF.md, then board_review import_expert` }));
   r.artifacts["pack"] = pack;

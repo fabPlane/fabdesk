@@ -108,11 +108,13 @@ export type ReviewGate = { state: "none" | "stale" | "open" | "errors" | "pass";
 const gateFile = (dir: string) => join(dir, ".fabdesk", "board", "review-gate.json");
 
 export async function recordReviewGate(projectDir: string, r: { current: boolean; open: number; mustFix: number; errors?: boolean }): Promise<void> {
-  const state: ReviewGate["state"] = r.errors ? "errors" : !r.current ? "stale" : r.open > 0 ? "open" : "pass";
+  let state: ReviewGate["state"] = r.errors ? "errors" : !r.current ? "stale" : r.open > 0 ? "open" : "pass";
   const basis = await reviewBasis(projectDir);
-  const independentReview = (await stageState(projectDir)).independent;
+  const independentReview = (await stageState(projectDir, basis.pcb ?? undefined)).independent;
+  const coverageMissing = !["current", "deferred"].includes(independentReview.state);
+  if (state === "pass" && coverageMissing) state = "open";
   await mkdir(join(projectDir, ".fabdesk", "board"), { recursive: true });
-  await writeFile(gateFile(projectDir), JSON.stringify({ state, open: r.open, mustFix: r.mustFix, designHash: basis.design, independentReview, basis, at: new Date().toISOString() }) + "\n");
+  await writeFile(gateFile(projectDir), JSON.stringify({ state, open: state === "open" && r.open === 0 && coverageMissing ? 1 : r.open, mustFix: r.mustFix, designHash: basis.design, independentReview, basis, at: new Date().toISOString() }) + "\n");
 }
 
 /** Forget the saved gate (the review has no current record: never run, or its runs were removed). */

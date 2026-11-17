@@ -89,6 +89,8 @@ describe("board_review", () => {
     await expect(call({ action: "dispose", id: "L*" })).rejects.toThrow(/needs state/);
     const d = await call({ action: "dispose", id: "*", state: "accept", by: "owner", reason: "looked at each on the bench", thirdSource: "bench log" });
     expect((d.json?.["disposed"] as string[]).length).toBeGreaterThan(1);
+    expect((await readReviewGate(project.dir)).state).toBe("open");
+    await call({ action: "dispose", id: "L8:EXPERT:-:-:pending", state: "defer", by: "owner", reason: "Owner defers independent coverage" });
     expect((await readReviewGate(project.dir)).state).toBe("pass");
     await writeFile(join(project.dir, "board.kicad_pcb"), PCB + "\n");
     expect((await readReviewGate(project.dir)).state).toBe("stale");
@@ -102,7 +104,7 @@ describe("board_review", () => {
     expect(fix.text).toContain("open:");
     expect(fix.text).toContain("NEEDS OWNER");
     const file = join(project.dir, "expert.json");
-    await writeFile(file, JSON.stringify({ reviewer: "fresh", findings: [{ severity: "QUESTION", ref: "U1", claim: "no reset circuit" }] }));
+    await writeFile(file, JSON.stringify({ designHash: await (await import("@fabdesk/board-workflow")).currentReviewHash(project.dir), pcb: "board.kicad_pcb", reviewer: "fresh", findings: [{ severity: "QUESTION", ref: "U1", claim: "no reset circuit" }] }));
     const imp = await call({ action: "import_expert", file: "expert.json" });
     expect(imp.text).toContain("imported 1 expert findings");
     expect(JSON.parse(await readFile(join(project.dir, ".fabdesk", "board", "review-gate.json"), "utf8")).state).toBe("open");
@@ -135,6 +137,7 @@ describe("board_review", () => {
     await writeFile(join(project.dir, "b.kicad_pcb"), PCB);
     await call({ action: "run", offline: true });
     await call({ action: "dispose", id: "*", state: "accept", by: "owner", reason: "bench", thirdSource: "bench log" });
+    await call({ action: "dispose", id: "L8:EXPERT:-:-:pending", state: "defer", by: "owner", reason: "Owner defers independent coverage" });
     expect((await readReviewGate(project.dir)).state).toBe("pass");
     // a review of board.kicad_pcb never passes b.kicad_pcb, saved or live
     expect((await readReviewGate(project.dir, "b.kicad_pcb")).state).toBe("stale");
