@@ -33,6 +33,8 @@ type PersistedRouter = {
   notice?: string;
   path?: string;
   sha256?: string;
+  /** When this process recorded it (ms; strictly increasing per process): across processes the newest entry wins. */
+  updatedAt?: number;
 };
 
 type InstallJob = {
@@ -837,10 +839,10 @@ class FileRouterRegistry implements RouterRegistry {
   }
 
   /**
-   * state.json as it is on disk: `missing` (none yet), `corrupt` (it parsed to nothing usable: never recoverable),
-   * `unreadable` (a read error, possibly transient: keep what is known) or the state.
+   * state.json as it is on disk: `missing` (none yet), `corrupt` (it parsed to nothing usable), `unreadable` (a read
+   * error, possibly transient) or the state.
    */
-  private readStateFile(): { kind: "ok"; state: PersistedState } | { kind: "missing" | "corrupt" | "unreadable" } {
+  private readStateFile(): { kind: "ok"; state: PersistedState } | { kind: "missing" | "unreadable" } | { kind: "corrupt"; text: string } {
     let text: string;
     try {
       text = readFileSync(join(this.root, STATE_FILE), "utf8");
@@ -849,63 +851,85 @@ class FileRouterRegistry implements RouterRegistry {
     }
     try {
       const raw = JSON.parse(text) as PersistedState | null;
-      return raw && typeof raw === "object" && raw.routers && typeof raw.routers === "object" ? { kind: "ok", state: raw } : { kind: "corrupt" };
+      return raw && typeof raw === "object" && raw.routers && typeof raw.routers === "object" ? { kind: "ok", state: raw } : { kind: "corrupt", text };
     } catch {
-      return { kind: "corrupt" };
+      return { kind: "corrupt", text };
     }
+  }
+
+  /**
+   * state.json read until it gives a usable answer: an unreadable file, or a corrupt one that is still changing (a
+   * process writing it in place, as older versions do), is read again; a corrupt file only counts as corrupt when two
+   * reads in a row see the same text.
+   */
+  private async readStateSettled(): Promise<ReturnType<FileRouterRegistry["readStateFile"]>> {
+    let last = this.readStateFile();
+    for (let attempt = 0; attempt < 10; attempt++) {
+      if (last.kind === "ok" || last.kind === "missing") return last;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const next = this.readStateFile();
+      if (last.kind === "corrupt" && next.kind === "corrupt" && next.text === last.text) return next;
+      last = next;
+    }
+    return last.kind === "corrupt" ? { kind: "unreadable" } : last; // still changing: do not move it aside
   }
 
   /** Take this engine's entry from state.json: another process may have installed or removed it. */
   private refreshState(id: RouterCatalogId): void {
     const disk = this.readStateFile();
-    if (disk.kind === "unreadable" || this.unsaved.has(id)) return; // keep what this process knows (and has not saved)
+    if (disk.kind === "unreadable" || disk.kind === "corrupt" || this.pending.has(id)) return; // keep what is known
     const saved = disk.kind === "ok" ? disk.state.routers[id] : undefined;
     if (saved) this.persisted.routers[id] = saved;
     else delete this.persisted.routers[id];
   }
 
-  /** Engines whose entry this process changed but could not write yet: written with the next write that succeeds. */
-  private readonly unsaved = new Set<RouterCatalogId>();
+  /** Entries this process recorded but has not written yet (the exact stamped entry): retried with the next write. */
+  private readonly pending = new Map<RouterCatalogId, PersistedRouter | null>();
+  private lastStamp = 0;
 
   /**
-   * Record this engine's entry (and any earlier ones that could not be written). Other engines' entries come from the
-   * file, so a write never reverts what another process recorded for them; the read-modify-replace runs under a short
-   * cross-process lock (`.lock-state`, held for milliseconds, so a leftover is taken over after 30 s), and the file is
-   * replaced by rename so a reader never sees half of it. A file that cannot be read right now is never written over
-   * (that would drop entries this process has not seen); a corrupt one is kept aside as `state.json.corrupt-<time>` and
-   * replaced. Never throws: an install that finished is never rolled back because its state could not be recorded.
+   * Record this engine's entry, stamped `updatedAt`, together with any earlier entries that could not be written yet.
+   * Per engine the newest stamp wins, so an older pending entry never reverts what another process recorded since, and
+   * other engines' entries are taken from the file. The read-modify-replace runs under a cross-process lock
+   * (`.lock-state`) and the file is replaced by rename. A file that cannot be read now is never written over; a corrupt
+   * one (the same text on two reads) is kept aside as `state.json.corrupt-<time>` and replaced. Never throws: a finished
+   * install is never rolled back because its state could not be recorded; the entry stays pending for the next write.
    */
   private async writeState(id: RouterCatalogId): Promise<void> {
-    this.unsaved.add(id);
+    const current = this.persisted.routers[id];
+    this.lastStamp = Math.max(Date.now(), this.lastStamp + 1);
+    const stamped = current ? { ...current, updatedAt: this.lastStamp } : null;
+    if (stamped) this.persisted.routers[id] = stamped;
+    this.pending.set(id, stamped);
     try {
       await mkdir(this.root, { recursive: true, mode: 0o700 });
       await withInstallLock(
         join(this.root, ".lock-state"),
         async () => {
-          let disk = this.readStateFile();
-          for (let attempt = 0; disk.kind === "unreadable" && attempt < 10; attempt++) {
-            await new Promise((resolve) => setTimeout(resolve, 20));
-            disk = this.readStateFile();
-          }
-          if (disk.kind === "unreadable") return; // kept in `unsaved` for the next write
+          const disk = await this.readStateSettled();
+          if (disk.kind === "unreadable") return; // pending, for the next write
           const file = join(this.root, STATE_FILE);
           if (disk.kind === "corrupt") await renameRetrying(file, `${file}.corrupt-${Date.now()}`).catch(() => undefined);
           const merged: PersistedState = { routers: { ...(disk.kind === "ok" ? disk.state.routers : {}) } };
-          for (const each of this.unsaved) {
-            const mine = this.persisted.routers[each];
+          const batch = new Map(this.pending);
+          for (const [each, mine] of batch) {
+            const theirs = merged.routers[each];
+            if (theirs && (theirs.updatedAt ?? 0) > (mine?.updatedAt ?? 0)) continue; // recorded more recently elsewhere
             if (mine) merged.routers[each] = mine;
             else delete merged.routers[each];
           }
           const tmp = `${file}.${process.pid}.tmp`;
           writeFileSync(tmp, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });
           await renameRetrying(tmp, file);
-          this.unsaved.clear();
-          this.persisted = { routers: { ...this.persisted.routers, ...merged.routers } };
+          // written (or superseded): done, unless this process recorded something newer meanwhile
+          for (const [each, mine] of batch) if (this.pending.get(each) === mine) this.pending.delete(each);
+          for (const [each, entry] of Object.entries(merged.routers) as Array<[RouterCatalogId, PersistedRouter]>)
+            if (!this.pending.has(each)) this.persisted.routers[each] = entry;
         },
-        { waitMs: 60_000, pollMs: 10, staleMs: 30_000 },
+        { waitMs: 60_000, pollMs: 10 },
       );
     } catch {
-      /* the entry stays in `unsaved` and goes out with the next write */
+      /* pending: written with the next write */
     }
   }
 }

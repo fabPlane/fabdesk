@@ -194,6 +194,40 @@ describe("registry install across processes", () => {
     expect(Object.keys(JSON.parse(await readFile(file, "utf8")).routers).sort()).toEqual(["atlc", "krt", "tracemaker"]);
   });
 
+  test.skipIf(process.platform === "win32" || process.getuid?.() === 0)("an older pending entry never reverts what another process recorded since", async () => {
+    const home = await mkdtemp(join(tmpdir(), "fabdesk-lockreg-"));
+    type Reg = { persisted: { routers: Record<string, unknown> }; writeState(id: string): Promise<void> };
+    const a = createRouterRegistry({ home, catalog: catalog("http://127.0.0.1:1/x") }) as unknown as Reg;
+    const b = createRouterRegistry({ home, catalog: catalog("http://127.0.0.1:1/x") }) as unknown as Reg;
+    const file = join(home, "routers", "state.json");
+    await mkdir(join(home, "routers"), { recursive: true });
+    await writeFile(file, JSON.stringify({ routers: {} }));
+    // A records an uninstall while the file is unreadable: pending
+    await chmod(file, 0o000);
+    a.persisted.routers["tracemaker"] = { state: "not_installed" };
+    await a.writeState("tracemaker");
+    await chmod(file, 0o600);
+    // B installs it afterwards
+    b.persisted.routers["tracemaker"] = { state: "installed", version: "2", path: "/new" };
+    await b.writeState("tracemaker");
+    // A's next write (another engine) must not put its older uninstall back
+    a.persisted.routers["atlc"] = { state: "installed", version: "4.6.1", path: "/atlc" };
+    await a.writeState("atlc");
+    const disk = JSON.parse(await readFile(file, "utf8")).routers;
+    expect(disk.tracemaker).toMatchObject({ state: "installed", path: "/new" });
+    expect(disk.atlc).toMatchObject({ state: "installed" });
+    expect(a.persisted.routers["tracemaker"]).toMatchObject({ state: "installed", path: "/new" }); // A learns the newer one
+  });
+
+  test("two writes in one process at once both reach the file", async () => {
+    const home = await mkdtemp(join(tmpdir(), "fabdesk-lockreg-"));
+    const registry = createRouterRegistry({ home, catalog: catalog("http://127.0.0.1:1/x") }) as unknown as { persisted: { routers: Record<string, unknown> }; writeState(id: string): Promise<void> };
+    registry.persisted.routers["krt"] = { state: "installed", version: "0.23.8", path: "/krt" };
+    registry.persisted.routers["tracemaker"] = { state: "installed", version: "0.12.1", path: "/tm" };
+    await Promise.all([registry.writeState("krt"), registry.writeState("tracemaker")]);
+    expect(Object.keys(JSON.parse(await readFile(join(home, "routers", "state.json"), "utf8")).routers).sort()).toEqual(["krt", "tracemaker"]);
+  });
+
   test("a corrupt state.json is kept aside and replaced, not a reason to stop recording", async () => {
     const home = await mkdtemp(join(tmpdir(), "fabdesk-lockreg-"));
     const registry = createRouterRegistry({ home, catalog: catalog("http://127.0.0.1:1/x") }) as unknown as { persisted: { routers: Record<string, unknown> }; writeState(id: string): Promise<void> };

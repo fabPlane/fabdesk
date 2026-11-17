@@ -70,7 +70,8 @@ async function tryCreate(path: string, holder: InstallLockHolder): Promise<boole
     // Windows: a lock file being deleted, or opened by another process, reports these instead; poll again. With no
     // lock file there at all it is a real permission problem: fail after a few tries instead of waiting it out.
     if (process.platform === "win32" && (code === "EPERM" || code === "EACCES" || code === "EBUSY")) {
-      const exists = await stat(path).then(() => true, () => false);
+      // a lock file being deleted makes stat fail with EPERM too: only ENOENT means there is none
+      const exists = await stat(path).then(() => true, (e: NodeJS.ErrnoException) => e.code !== "ENOENT");
       const tries = (permissionTries.get(path) ?? 0) + 1;
       permissionTries.set(path, exists ? 0 : tries);
       if (!exists && tries > 20) {
