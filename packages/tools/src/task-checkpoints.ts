@@ -230,7 +230,44 @@ export async function retainTaskCheckpoint(
   },
   runtimeId: string | null,
 ) {
-  return withCheckpointLock(project, () => retainUnlocked(project, input, runtimeId));
+  return withCheckpointLock(project, async () => {
+    try {
+      return await retainUnlocked(project, input, runtimeId);
+    } finally {
+      // A retain that failed after writing a blob (files changed before publication) leaves it unreferenced.
+      await pruneUnlocked(project).catch(() => undefined);
+    }
+  });
+}
+
+/**
+ * Delete blobs no retained checkpoint references, and `.part-*` leftovers of interrupted writes. Each checkpoint
+ * keeps its own `files/<path>` (a hardlink to its blob, or a copy), so a blob is only the dedup seed for later
+ * checkpoints; an unreferenced one is dead weight. Returns the removed blob names.
+ */
+export async function pruneTaskCheckpointBlobs(project: ProjectHandle): Promise<string[]> {
+  return withCheckpointLock(project, () => pruneUnlocked(project));
+}
+
+/** Caller holds the checkpoint lock, so no retain is writing a blob meanwhile. */
+async function pruneUnlocked(project: ProjectHandle): Promise<string[]> {
+  // Throws on any unreadable or mismatched manifest: then nothing is deleted, since its references are unknown.
+  const referenced = new Set<string>();
+  for (const checkpoint of await listTaskCheckpoints(project))
+    for (const file of checkpoint.files) if (file.sha256) referenced.add(file.sha256);
+  const directory = await jailPath(project.dir, BLOBS);
+  const names = await readdir(directory).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  });
+  const removed: string[] = [];
+  for (const name of names) {
+    const blob = /^[0-9a-f]{64}$/.test(name);
+    if (blob ? referenced.has(name) : !/^[0-9a-f]{64}\.part-/.test(name)) continue;
+    await rm(join(directory, name), { force: true });
+    if (blob) removed.push(name);
+  }
+  return removed;
 }
 
 async function retainUnlocked(

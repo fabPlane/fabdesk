@@ -7,6 +7,7 @@ import {
   compareTaskCheckpoint,
   compareTaskPcb,
   listTaskCheckpoints,
+  pruneTaskCheckpointBlobs,
   restoreTaskCheckpoint,
   retainTaskCheckpoint,
 } from "../src/task-checkpoints";
@@ -515,6 +516,36 @@ test("checkpoints store unchanged content once and still restore each file on it
   expect(sa.nlink).toBe(3); // blob + two checkpoints
   expect(await readFile(join(root, a.id, "files/board.kicad_sch"), "utf8")).toBe("sheet");
   expect(await readFile(join(root, b.id, "files/board.kicad_sch"), "utf8")).toBe("sheet v2");
+});
+
+test("blob prune keeps every blob a retained checkpoint references and drops the rest", async () => {
+  const project = await tempProject("task-prune");
+  await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb a)");
+  await writeFile(join(project.dir, "board.kicad_sch"), "sheet");
+  const a = await retainTaskCheckpoint(project, { name: "a", reason: "first", role: "checkpoint" }, null);
+  await writeFile(join(project.dir, "board.kicad_sch"), "sheet v2");
+  const b = await retainTaskCheckpoint(project, { name: "b", reason: "second", role: "checkpoint" }, null);
+  const blobs = join(project.dir, ".fabdesk/task-checkpoints/blobs");
+  const referenced = [...a.files, ...b.files].map((file) => file.sha256).filter((sha): sha is string => sha !== null);
+  const orphan = "f".repeat(64);
+  await writeFile(join(blobs, orphan), "left by a failed retain");
+  await writeFile(join(blobs, `${"e".repeat(64)}.part-task-x`), "interrupted write");
+  await writeFile(join(blobs, "notes.txt"), "not ours to judge");
+  expect(await pruneTaskCheckpointBlobs(project)).toEqual([orphan]);
+  const left = (await fs.readdir(blobs)).sort();
+  expect(left).toEqual([...new Set(referenced)].concat("notes.txt").sort());
+  // Both checkpoints still restore their own bytes, and a later retain reuses the kept blobs.
+  expect(await readFile(join(project.dir, ".fabdesk/task-checkpoints", a.id, "files/board.kicad_sch"), "utf8")).toBe("sheet");
+  expect(await readFile(join(project.dir, ".fabdesk/task-checkpoints", b.id, "files/board.kicad_sch"), "utf8")).toBe("sheet v2");
+  // A retain prunes too.
+  await writeFile(join(blobs, orphan), "again");
+  await retainTaskCheckpoint(project, { name: "c", reason: "third", role: "checkpoint" }, null);
+  expect(await fs.readdir(blobs)).not.toContain(orphan);
+  // A manifest that cannot be read leaves its references unknown: nothing is deleted.
+  await writeFile(join(blobs, orphan), "again");
+  await writeFile(join(project.dir, ".fabdesk/task-checkpoints", a.id, "manifest.json"), "{ not json");
+  await expect(pruneTaskCheckpointBlobs(project)).rejects.toThrow();
+  expect(await fs.readdir(blobs)).toContain(orphan);
 });
 
 test("KiCad strings with raw tabs (part fields) parse: JSON.parse would fail with 'Unterminated string'", async () => {
