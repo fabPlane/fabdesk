@@ -207,6 +207,7 @@ class FileRouterRegistry implements RouterRegistry {
     this.bundled = { fab_router: { version: "bundled" }, ...deps.bundled };
     this.env = deps.env ?? process.env;
     this.persisted = this.readState();
+    this.observe(this.persisted);
   }
 
   list(preferredRouter?: RouterCatalogId): RouterList {
@@ -349,6 +350,9 @@ class FileRouterRegistry implements RouterRegistry {
     job?.abort.abort();
     if (job) {
       await job.promise.catch(() => undefined);
+    } else {
+      // nothing installing here: another process may have installed it since this one last looked
+      this.refreshState(id);
     }
     const current = this.persisted.routers[id];
     if (current?.state === "failed" && current.error) {
@@ -877,14 +881,25 @@ class FileRouterRegistry implements RouterRegistry {
   /** Take this engine's entry from state.json: another process may have installed or removed it. */
   private refreshState(id: RouterCatalogId): void {
     const disk = this.readStateFile();
-    if (disk.kind === "unreadable" || disk.kind === "corrupt" || this.pending.has(id)) return; // keep what is known
+    if (disk.kind === "unreadable" || disk.kind === "corrupt") return; // keep what is known
+    this.observe(disk.kind === "ok" ? disk.state : undefined);
     const saved = disk.kind === "ok" ? disk.state.routers[id] : undefined;
+    if (this.pending.has(id)) {
+      // a pending entry stands only while it is the newest: another process may have recorded something since
+      if (!saved || (saved.updatedAt ?? 0) <= (this.pending.get(id)?.updatedAt ?? 0)) return;
+      this.pending.delete(id);
+    }
     if (saved) this.persisted.routers[id] = saved;
     else delete this.persisted.routers[id];
   }
 
+  /** Keep the logical clock ahead of every stamp seen (a clock that steps back cannot lose a later write). */
+  private observe(state: PersistedState | undefined): void {
+    for (const entry of Object.values(state?.routers ?? {})) if (entry?.updatedAt && entry.updatedAt > this.lastStamp) this.lastStamp = entry.updatedAt;
+  }
+
   /** Entries this process recorded but has not written yet (the exact stamped entry): retried with the next write. */
-  private readonly pending = new Map<RouterCatalogId, PersistedRouter | null>();
+  private readonly pending = new Map<RouterCatalogId, PersistedRouter>();
   private lastStamp = 0;
 
   /**
@@ -896,10 +911,11 @@ class FileRouterRegistry implements RouterRegistry {
    * install is never rolled back because its state could not be recorded; the entry stays pending for the next write.
    */
   private async writeState(id: RouterCatalogId): Promise<void> {
-    const current = this.persisted.routers[id];
+    // a removed entry is written as a stamped not_installed, so it can win over an older one like any other
+    const current: PersistedRouter = this.persisted.routers[id] ?? { state: "not_installed" };
     this.lastStamp = Math.max(Date.now(), this.lastStamp + 1);
-    const stamped = current ? { ...current, updatedAt: this.lastStamp } : null;
-    if (stamped) this.persisted.routers[id] = stamped;
+    const stamped: PersistedRouter = { ...current, updatedAt: this.lastStamp };
+    this.persisted.routers[id] = stamped;
     this.pending.set(id, stamped);
     try {
       await mkdir(this.root, { recursive: true, mode: 0o700 });
@@ -910,13 +926,13 @@ class FileRouterRegistry implements RouterRegistry {
           if (disk.kind === "unreadable") return; // pending, for the next write
           const file = join(this.root, STATE_FILE);
           if (disk.kind === "corrupt") await renameRetrying(file, `${file}.corrupt-${Date.now()}`).catch(() => undefined);
+          if (disk.kind === "ok") this.observe(disk.state);
           const merged: PersistedState = { routers: { ...(disk.kind === "ok" ? disk.state.routers : {}) } };
           const batch = new Map(this.pending);
           for (const [each, mine] of batch) {
             const theirs = merged.routers[each];
-            if (theirs && (theirs.updatedAt ?? 0) > (mine?.updatedAt ?? 0)) continue; // recorded more recently elsewhere
-            if (mine) merged.routers[each] = mine;
-            else delete merged.routers[each];
+            if (theirs && (theirs.updatedAt ?? 0) > (mine.updatedAt ?? 0)) continue; // recorded more recently elsewhere
+            merged.routers[each] = mine;
           }
           const tmp = `${file}.${process.pid}.tmp`;
           writeFileSync(tmp, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });

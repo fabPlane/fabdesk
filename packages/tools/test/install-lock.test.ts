@@ -219,6 +219,30 @@ describe("registry install across processes", () => {
     expect(a.persisted.routers["tracemaker"]).toMatchObject({ state: "installed", path: "/new" }); // A learns the newer one
   });
 
+  test("a stamp from a clock that ran ahead does not freeze later writes", async () => {
+    const home = await mkdtemp(join(tmpdir(), "fabdesk-lockreg-"));
+    type Reg = { persisted: { routers: Record<string, unknown> }; writeState(id: string): Promise<void> };
+    const file = join(home, "routers", "state.json");
+    await mkdir(join(home, "routers"), { recursive: true });
+    // another process, its clock an hour ahead, recorded an install
+    await writeFile(file, JSON.stringify({ routers: { tracemaker: { state: "installed", version: "0.8.0", path: "/tm", updatedAt: Date.now() + 3_600_000 } } }));
+    const a = createRouterRegistry({ home, catalog: catalog("http://127.0.0.1:1/x") }) as unknown as Reg;
+    a.persisted.routers["tracemaker"] = { state: "not_installed" };
+    await a.writeState("tracemaker");
+    expect(JSON.parse(await readFile(file, "utf8")).routers.tracemaker.state).toBe("not_installed");
+  });
+
+  test("cancel with nothing installing here keeps another process's install", async () => {
+    const home = await mkdtemp(join(tmpdir(), "fabdesk-lockreg-"));
+    const a = createRouterRegistry({ home, catalog: catalog("http://127.0.0.1:1/x") });
+    const file = join(home, "routers", "state.json");
+    await mkdir(join(home, "routers", "tracemaker"), { recursive: true });
+    await writeFile(join(home, "routers", "tracemaker", "tracemaker"), "#!/bin/sh\n");
+    await writeFile(file, JSON.stringify({ routers: { tracemaker: { state: "installed", version: "0.8.0", path: join(home, "routers", "tracemaker", "tracemaker"), updatedAt: Date.now() } } }));
+    await a.cancel("tracemaker");
+    expect(JSON.parse(await readFile(file, "utf8")).routers.tracemaker.state).toBe("installed");
+  });
+
   test("two writes in one process at once both reach the file", async () => {
     const home = await mkdtemp(join(tmpdir(), "fabdesk-lockreg-"));
     const registry = createRouterRegistry({ home, catalog: catalog("http://127.0.0.1:1/x") }) as unknown as { persisted: { routers: Record<string, unknown> }; writeState(id: string): Promise<void> };
