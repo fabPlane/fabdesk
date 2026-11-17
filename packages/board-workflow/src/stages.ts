@@ -65,9 +65,11 @@ export async function independentState(dir: string, hash: string | null, pcb: st
   return { state: deferred ? "deferred" : !expert ? "missing" : expert.hash === hash && expert.pcb === pcb ? "current" : "covers an earlier design", expert };
 }
 
-/** The receipt identifies exactly one package; every recorded artifact must still match. */
-async function releaseState(dir: string, hash: string | null) {
-  const last = await readJsonOrNull<{ designHash?: string; out: string; manifestSha256?: string }>(join(dir, ".fabdesk/board/release/last-fab.json"));
+/** The receipt identifies one package for one PCB; every recorded identity/hash must still match.
+ * Legacy manifests can recover the board path from gerbcheck, but a hash alone cannot name a board.
+ */
+async function releaseState(dir: string, hash: string | null, pcb: string) {
+  const last = await readJsonOrNull<{ designHash?: string; pcb?: string; boardSha256?: string; out: string; manifestSha256?: string }>(join(dir, ".fabdesk/board/release/last-fab.json"));
   if (!last) {
     // Legacy packages remain visible, but without a receipt their currency is unverified.
     const names = (await readdir(join(dir, "exports")).catch(() => [] as string[])).filter(n => n.startsWith("release-")).sort();
@@ -75,13 +77,18 @@ async function releaseState(dir: string, hash: string | null) {
     return pkg ? { state: "stale" as Currency, package: `exports/${pkg}` } : { state: "none" as Currency, package: null };
   }
   const stale = { state: "stale" as Currency, package: last.out };
-  if (last.designHash !== hash || !last.out || !last.manifestSha256) return stale;
+  if (!pcb || !hash || last.designHash !== hash || !last.out || !last.manifestSha256) return stale;
   const out = isAbsolute(last.out) ? last.out : join(dir, last.out);
   const bytes = await readFile(join(out, "manifest.json")).catch(() => null);
   const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
   if (!bytes || sha(bytes) !== last.manifestSha256) return stale;
   try {
-    const manifest = JSON.parse(bytes.toString()) as { files?: Record<string, string> };
+    const manifest = JSON.parse(bytes.toString()) as { sources?: { pcb?: string; pcb_path?: string }; gerbcheck?: { pcb?: string }; files?: Record<string, string> };
+    const boards = [last.pcb, manifest.sources?.pcb_path, manifest.gerbcheck?.pcb].filter((p): p is string => p !== undefined);
+    if (!boards.length || boards.some(p => typeof p !== "string" || !p || relative(dir, isAbsolute(p) ? p : join(dir, p)).split(sep).join("/") !== pcb)) return stale;
+    const board = await readFile(join(dir, pcb)).catch(() => null);
+    const hashes = [last.boardSha256, manifest.sources?.pcb].filter(h => h !== undefined);
+    if (!board || !hashes.length || hashes.some(h => h !== sha(board))) return stale;
     if (!manifest.files || !manifest.files["acceptance-gate.json"]) return stale;
     for (const [path, expected] of Object.entries(manifest.files)) {
       if (isAbsolute(path) || path.split(/[\\/]/).includes("..")) return stale;
@@ -134,7 +141,7 @@ export async function stageState(dir: string, pcb?: string) {
     task: { state: "change saved; request scope determines task completion", checks: checks ? !verifiedChecks ? "unverified" : acceptancePass ? "pass" : "failing" : "missing or stale" },
     board: { complete: boardStatus === "complete", status: boardStatus, opens },
     review: { state: !review ? "none" as const : reviewCurrency(review.hash, hash ?? "", review.pcb, reviewedBoard) === "current" && gate.state !== "stale" ? "current" as const : "stale" as const, coveredDesign: review?.hash ?? null, changedSince: changed(review?.files), gate },
-    release: await releaseState(dir, hash),
+    release: await releaseState(dir, hash, reviewedBoard),
     independent: { state: independent, coveredDesign: expert?.hash ?? null, coveredBoard: expert?.pcb ?? null, changedSince: changed(expert?.files) },
   };
 }

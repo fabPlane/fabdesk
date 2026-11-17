@@ -16,7 +16,7 @@ import { currentReviewHash } from "../review/store";
  */
 import { readFileSync } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import { runKicadCli, type KicadCli } from "@fabdesk/kicad";
 import { CHECK_KEYS } from "../accept";
 import { parseSexpr } from "../sexpr";
@@ -388,7 +388,7 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
       accepted_exceptions: Object.fromEntries(failing.map((k) => [k, exceptions.get(k) ?? exceptions.get(k.slice(0, 2))])),
       reproducible: rep,
       gerbcheck: { gerbers: join(final, "gerbers"), pcb: gc.pcb, dpi: gc.dpi, drill: gc.drill, pass: gc.pass },
-      sources: { pcb: sha256(await readFile(inp.pcb)), ...(inp.schematic ? { schematic_root: sha256(await readFile(inp.schematic)) } : {}) },
+      sources: { pcb: sha256(await readFile(inp.pcb)), pcb_path: relative(inp.project, inp.pcb).split(sep).join("/"), ...(inp.schematic ? { schematic_root: sha256(await readFile(inp.schematic)) } : {}) },
       review: { gate: rg.state, open: rg.open ?? 0, mustFix: rg.mustFix ?? 0, ...(rg.at ? { at: rg.at } : {}) },
       files: {} as Record<string, string>,
     };

@@ -30,7 +30,7 @@ export async function readBomState(projectDir: string, pcbPath: string): Promise
   return { state: bomCurrency(meta.boardSha256, await sha256Of(pcbPath)), meta, dir };
 }
 
-export type LastFab = { designHash?: string; at: string; out: string; boardSha256: string; manifestSha256: string };
+export type LastFab = { designHash?: string; pcb?: string; at: string; out: string; boardSha256: string; manifestSha256: string };
 
 export async function writeLastFab(projectDir: string, rec: LastFab): Promise<void> {
   await mkdir(releaseHome(projectDir), { recursive: true });

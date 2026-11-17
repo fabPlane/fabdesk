@@ -174,7 +174,7 @@ describe("Finish it with the board workflow on", () => {
     expect(session.status).toBe("completed");
     expect(runsIn(project.path)).toBe(0);
     expect(JSON.parse(await Bun.file(join(project.path, ".fabdesk/board/done-mode.json")).text()).mode).toBe("no-regression");
-    for (const id of ["route", "verify", "release"]) expect(session.milestones.find(m => m.id === id)?.status).toBe("done");
+    for (const id of ["route", "verify", "release"]) expect(session.milestones.find(m => m.id === id)?.status).toBe("skipped");
   });
 
   for (const state of ["gate-only", "deleted", "mutated", "stale"]) test(`a ${state} package leaves release pending and starts work`, async () => {

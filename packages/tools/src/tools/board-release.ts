@@ -15,7 +15,7 @@ import { currentReviewHash, stageState } from "@fabdesk/board-workflow";
  * export (that one stays a non-blocking record; this is the hard gate). Nothing here shells out to a toolkit.
  */
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { z } from "zod/v4";
 import { applyProjectRules, CHECK_KEYS, locateProject, openReviewProject, readRequirements, release, reviewGate, runAcceptance, type AcceptRun } from "@fabdesk/board-workflow";
 import { runDurable } from "../durable";
@@ -308,7 +308,7 @@ async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
     if (a.proxies) await writeProxies(project.dir, proxies);
     const manifest = await packageWaivers(project.dir, out);
     const man = manifest as { jlc?: { bom_lines?: number; placements?: number; placement_check?: { pass: number; fail: number; placements: number; no_jlc_footprint: string[] }; no_lcsc_code?: string[]; rotation_differs_from_kicad?: unknown[]; skipped?: string }; reproducible: { files: number }; gerbcheck: { pass: boolean }; files: Record<string, string> };
-    await writeLastFab(project.dir, { designHash: await currentReviewHash(project.dir), at: new Date().toISOString(), out, boardSha256: (await sha256Of(files.pcb)) ?? "", manifestSha256: (await sha256Of(join(out, "manifest.json"))) ?? "" });
+    await writeLastFab(project.dir, { pcb: relative(project.dir, files.pcb).split(sep).join("/"), designHash: await currentReviewHash(project.dir), at: new Date().toISOString(), out, boardSha256: (await sha256Of(files.pcb)) ?? "", manifestSha256: (await sha256Of(join(out, "manifest.json"))) ?? "" });
     const j = man.jlc;
     const text = [
       `RELEASED: fabrication package ${relative(project.dir, out)} (${Object.keys(man.files).length} files)`,
