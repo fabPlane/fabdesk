@@ -10,7 +10,7 @@ import { contextFactory, mockServices, tempProject } from "./mock-services";
 const empty = { removed: {}, added: {}, changed: {} };
 const result = (over: Partial<BoardAdoptResult> = {}): BoardAdoptResult => ({
   delta: { removed: { KOT_PCB_TRACE: 10 }, added: { KOT_PCB_TRACE: 14 }, changed: { KOT_PCB_FOOTPRINT: 1 } },
-  residual: empty, targetSha256Before: "a".repeat(64), targetSha256After: "b".repeat(64), timingsMs: { commit: 89 }, kicadCli: "kicad-cli", ...over,
+  zoneRefill: { refilled: true }, residual: empty, targetSha256Before: "a".repeat(64), targetSha256After: "b".repeat(64), timingsMs: { commit: 89 }, kicadCli: "kicad-cli", ...over,
 });
 
 async function setup(adopt?: (i: { target: string; candidate: string }) => Promise<BoardAdoptResult>, recovery?: <T>(dir: string, replace: () => Promise<T>) => Promise<T>) {
@@ -41,6 +41,36 @@ describe("adoptCandidate", () => {
     expect(r.text).toContain("residual none");
     expect(r.clean).toBe(true);
     expect(r.data.checkpointId).toMatch(/^task-/);
+  });
+
+  test("reports the saved board's DRC errors instead of the candidate score", async () => {
+    const { project, ctx, services } = await setup();
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb saved)");
+    const candidate = join(await mkdtemp(join(tmpdir(), "cand-")), "c.kicad_pcb");
+    await writeFile(candidate, "(kicad_pcb candidate)");
+    let options: any;
+    services.kicad.runDrc = async (_cli, opts) => { options = opts; return { violations: [], unconnected: [], schematicParity: [], raw: {}, counts: { errors: 85, warnings: 1, unconnected: 2 } }; };
+    const r = await adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "test" });
+    expect(options.board).toBe(join(project.dir, "board.kicad_pcb"));
+    expect(options.refillZones).toBe(false); expect(options.schematicParity).toBe(false); expect(options.severity).toBe("project");
+    expect(r.text).toContain("Adopted with DRC errors on the saved board");
+    expect(r.text).toContain("85 errors, 2 open"); expect(r.text).toContain("Zone refill before save: completed");
+    expect(r.data.canonicalDrc).toMatchObject({ status: "measured", pass: false, counts: { errors: 85, unconnected: 2 } });
+    expect(JSON.parse(await readFile(join(project.dir, "reports/drc.json"), "utf8")).pcbRevision.sha256).toBe(await sha("(kicad_pcb saved)"));
+  });
+
+  test("a failed saved-board check cannot borrow a passing score or replace earlier evidence", async () => {
+    const { project, ctx, services } = await setup();
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb)");
+    await mkdir(join(project.dir, "reports"), { recursive: true });
+    await writeFile(join(project.dir, "reports/drc.json"), "previous measurement");
+    const candidate = join(await mkdtemp(join(tmpdir(), "cand-")), "c.kicad_pcb");
+    await writeFile(candidate, "(kicad_pcb)");
+    services.kicad.runDrc = async () => { throw Error("native check unavailable"); };
+    const r = await adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "test" });
+    expect(r.data.canonicalDrc).toMatchObject({ status: "unavailable", pass: false });
+    expect(r.text).toContain("Adoption is unverified");
+    expect(await readFile(join(project.dir, "reports/drc.json"), "utf8")).toBe("previous measurement");
   });
 
   test("applies onto the board it is given, never board.kicad_pcb by default", async () => {

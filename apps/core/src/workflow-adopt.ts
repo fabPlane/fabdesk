@@ -34,6 +34,7 @@ export function normalisedItemJson(item: AnyItem): string {
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(value)) {
         if (k === "parent" || (k === "id" && !top)) continue;
+        if (top && item.typeName === "KOT_PCB_ZONE" && ["filled", "filledPolygons", "filled_polygons"].includes(k)) continue;
         out[k] = strip(v, false);
       }
       return out;
@@ -236,6 +237,18 @@ export async function adoptBoard(input: {
         if (d.changed.length) await tx.update(d.changed as never[]);
       });
       lap("commit", t0);
+    }
+    // Candidate scoring may have filled only its in-memory copy. Refill the target's new
+    // copper before saving, even when the item delta is empty and only fills are stale.
+    const hasZones = (await target.doc.getZones()).length > 0;
+    const zoneRefill = { refilled: false };
+    if (hasZones) {
+      t0 = performance.now();
+      await target.doc.refillZones();
+      zoneRefill.refilled = true;
+      lap("refill", t0);
+    }
+    if (hasZones || d.removed.length || d.added.length || d.changed.length) {
       t0 = performance.now();
       await target.doc.save();
       lap("save", t0);
@@ -244,6 +257,7 @@ export async function adoptBoard(input: {
     return {
       delta: d.summary,
       residual,
+      zoneRefill,
       targetSha256Before: before,
       targetSha256After: await sha256(input.target),
       timingsMs: timings,

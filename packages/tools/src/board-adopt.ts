@@ -6,10 +6,13 @@
  * A board saved by a newer KiCad than the PCB bridge's and the selected kicad-cli's is written as a file instead (see
  * `formatTooNew`), with the same checkpoint, copy-aside and restore.
  */
-import { copyFile, mkdir, readFile, rm, stat } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { jailPath } from "./fs";
+import { jailPath, writeJson } from "./fs";
+import { tmpdir } from "node:os";
+import { runLiveDrc } from "./tools/common";
+import type { KicadCli, DrcReport } from "./services";
 import { saveBoardPoint } from "./board-history";
 import { governor } from "./resources";
 import { ToolError, type ToolContext } from "./registry";
@@ -117,6 +120,8 @@ async function writeBoardFile(target: string, candidate: string, cli: { path: st
   const t0 = performance.now();
   const was = await readFile(target, "utf8");
   const text = await readFile(candidate, "utf8");
+  if (childLists(text, listSpanAt(text, text.indexOf("("))).some(span => /^\(zone\b/.test(text.slice(span.start, span.end))))
+    throw new ToolError("This board has zones but no available KiCad can refill and save this format. Configure a compatible KiCad before adoption; the target was kept.", "precondition");
   await writeFile(target, text);
   const back = await readFile(target);
   const want = createHash("sha256").update(text).digest("hex");
@@ -130,6 +135,7 @@ async function writeBoardFile(target: string, candidate: string, cli: { path: st
   }
   if (head !== "kicad_pcb") throw new ToolError(`the written board is not a kicad_pcb (root ${String(head)})`, "internal");
   return {
+    zoneRefill: { refilled: false },
     delta: itemDelta(was, text),
     residual: { removed: {}, added: {}, changed: {} },
     targetSha256Before: createHash("sha256").update(was).digest("hex"),
@@ -139,9 +145,33 @@ async function writeBoardFile(target: string, candidate: string, cli: { path: st
   };
 }
 
+export type CanonicalAdoptionDrc = {
+  status: "measured" | "unavailable" | "stale";
+  pcbSha256: string;
+  pass: boolean;
+  counts?: DrcReport["counts"];
+  reason?: string;
+};
+
+/** Check the persisted target without refilling or borrowing a candidate's score. */
+export async function checkCanonicalAdoption(ctx: ToolContext, target: string, cli: KicadCli): Promise<CanonicalAdoptionDrc> {
+  const before = (await sha256File(target))!;
+  const scratch = await mkdtemp(join(tmpdir(), "fabdesk-adopt-drc-"));
+  try {
+    const report = await runLiveDrc(ctx, cli, { board: target, outFile: join(scratch, "drc.json"), parity: false, refill: false, signal: ctx.signal });
+    if (await sha256File(target) !== before) return { status: "stale", pcbSha256: before, pass: false, reason: "Saved target changed during post-adoption DRC" };
+    const path = basename(target) === "board.kicad_pcb" ? "reports/drc.json" : `reports/${basename(target, ".kicad_pcb")}-drc.json`;
+    await writeJson(await jailPath(ctx.requireProject().dir, path), { ...report, schematicParityChecked: false, pcbRevision: { sha256: before }, checkBasis: "canonical saved board after adoption; no refill" });
+    return { status: "measured", pcbSha256: before, pass: report.counts.errors === 0 && report.counts.unconnected === 0, counts: report.counts };
+  } catch (error) {
+    return { status: "unavailable", pcbSha256: before, pass: false, reason: error instanceof Error ? error.message : String(error) };
+  } finally { await rm(scratch, { recursive: true, force: true }); }
+}
+
 export type AdoptOutcome = {
   text: string;
   data: BoardAdoptResult & {
+    canonicalDrc: CanonicalAdoptionDrc;
     checkpointId: string;
     target: string;
     clean: boolean;
@@ -300,18 +330,22 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
       bridgeWhy = `the PCB bridge's KiCad cannot open this board (${why}), so no live KiCad session holds it`;
       result = await run();
     }
+    const canonicalDrc = await checkCanonicalAdoption(ctx, target, cli);
+    result.targetSha256After = (await sha256File(target))!;
     const viaNote = [bridgeWhy, fileWhy].filter(Boolean).join("; ") || null;
     const clean = !Object.values(result.residual).some((m) => Object.keys(m).length);
     const point = await saveBoardPoint(project, pcbRel, `Adopted: ${input.reason}`.slice(0, 120)).catch(() => null);
     const fmt = (m: Record<string, number>) =>
       Object.entries(m).map(([k, n]) => `${k.replace("KOT_PCB_", "").toLowerCase()} ${n}`).join(", ") || "none";
     const text = [
-      `${clean ? "Adopted" : "Adopted with residual differences"}: ${relative(project.dir, target)} ← ${candidate}`,
+      `${canonicalDrc.status === "measured" && !canonicalDrc.pass ? "Adopted with DRC errors on the saved board" : clean ? "Adopted" : "Adopted with residual differences"}: ${relative(project.dir, target)} ← ${candidate}`,
       ...(fileWhy
         ? [`written as a file, not as a KiCad commit: ${viaNote}. Read back: sha256 equal to the candidate's and it parses as a kicad_pcb; no KiCad load check is possible here (configure a kicad-cli that opens this format in Settings → KiCad CLI for one)`]
         : bridgeWhy
           ? [`${bridgeWhy}; applied as one KiCad commit with kicad-cli ${cli.path}`]
           : []),
+      `Zone refill before save: ${result.zoneRefill?.refilled ? "completed" : result.zoneRefill ? "no zones refilled" : "unverified by adapter"}.`,
+      canonicalDrc.counts ? `Saved-board DRC: ${canonicalDrc.counts.errors} errors, ${canonicalDrc.counts.unconnected} open, ${canonicalDrc.counts.warnings} warnings (no refill; PCB ${canonicalDrc.pcbSha256.slice(0, 12)}).` : `Saved-board DRC ${canonicalDrc.status}: ${canonicalDrc.reason}. Adoption is unverified.`,
       `removed ${fmt(result.delta.removed)}; added ${fmt(result.delta.added)}; changed ${fmt(result.delta.changed)}`,
       ...(sheets.length ? [`design files written: ${sheets.join(", ")} (previous copies: ${relative(project.dir, keep)})`] : [`previous board: ${relative(project.dir, keep)}`]),
       ...(stackupWritten ? ["stackup written from the candidate (board setup; the KiCad commit carries items only)"] : []),
@@ -320,7 +354,7 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
     ].join("\n");
     return {
       text,
-      data: { ...result, checkpointId: checkpoint.id, target, clean, designFiles: sheets, timelinePoint: point?.ref ?? null, via: fileWhy ? "file" : "ipc", viaNote, drcExclusions: exclusions ? exclusions.entries.length : null },
+      data: { ...result, canonicalDrc, checkpointId: checkpoint.id, target, clean, designFiles: sheets, timelinePoint: point?.ref ?? null, via: fileWhy ? "file" : "ipc", viaNote, drcExclusions: exclusions ? exclusions.entries.length : null },
       clean,
     };
   } finally {

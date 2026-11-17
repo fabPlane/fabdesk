@@ -54,7 +54,7 @@ async function run(a: Args, ctx: ToolContext): Promise<ToolOutput> {
   const project = ctx.requireProject();
   const files = await locateProject(project.dir, a.pcb);
   const cli = await requireKicad(ctx);
-  const plan = silk.planOf(a.plan as Partial<silk.Plan> | undefined);
+  const { plan, provenance } = await silk.projectSilkPlan(files.pro, a.plan as Partial<silk.Plan> | undefined);
   const work = join(silkHome(project.dir), `${a.action}-${stamp()}`);
   const job = await admit(ctx, `board_silk ${a.action}`, files.pcb);
   try {
@@ -63,7 +63,7 @@ async function run(a: Args, ctx: ToolContext): Promise<ToolOutput> {
       const v = silk.judge(m, plan);
       await mkdir(work, { recursive: true });
       await writeFile(join(work, "silk-check.json"), JSON.stringify(v, null, 1) + "\n");
-      return ok(verdictText(v, files.stem).join("\n"), { labels: v.labels, wanted: v.wanted, clean: v.clean, bad: v.bad, counts: v.counts, texts: v.texts, textsBad: v.texts_bad, textCounts: v.text_counts, rows: v.rows, textRows: v.text_rows, record: relative(project.dir, join(work, "silk-check.json")) });
+      return ok(verdictText(v, files.stem).join("\n"), { rules: provenance, labels: v.labels, wanted: v.wanted, clean: v.clean, bad: v.bad, counts: v.counts, texts: v.texts, textsBad: v.texts_bad, textCounts: v.text_counts, rows: v.rows, textRows: v.text_rows, record: relative(project.dir, join(work, "silk-check.json")) });
     }
     if (a.action === "show") {
       const out = await silk.showSilk(cli, files.pcb, join(work, "silk"), a.side === "both" ? ["F", "B"] : [a.side], a.dpi, 1, ctx.signal);
@@ -85,16 +85,18 @@ async function run(a: Args, ctx: ToolContext): Promise<ToolOutput> {
       ...(r.fit_nowhere.length > 25 ? [`... ${r.fit_nowhere.length - 25} more in silk.json`] : []),
       `Candidate: ${relative(project.dir, r.board)}${r.pictures ? `; pictures ${relative(project.dir, join(out, "silk-pictures"))}` : ""}`,
     ];
+    let adoption: Awaited<ReturnType<typeof adoptCandidate>> | undefined;
     if (a.adopt) {
       if (!r.only_labels_changed || r.after.bad > r.before.bad) {
         text.push(`Not adopted: ${r.only_labels_changed ? "the candidate has more labels with problems than the board" : "something other than labels changed"}.`);
       } else {
         // onto the board this run placed labels on (a named `pcb`, or the project's only board), never a default
         const ad = await adoptCandidate(ctx, { candidate: r.board, board: relative(project.dir, files.pcb), reason: a.reason });
+        adoption = ad;
         text.push(ad.text);
       }
     } else text.push("Not adopted; run again with adopt, or adopt the candidate board yourself.");
-    return ok(text.join("\n"), { candidate: relative(project.dir, r.board), placed: r.placed, kept: r.kept, wanted: r.wanted, fitNowhere: r.fit_nowhere, why: r.why, before: r.before, after: r.after, onlyLabelsChanged: r.only_labels_changed, hiddenExisting: r.hidden_existing, textsMoved: r.texts_moved });
+    return ok(text.join("\n"), { ...(adoption ? { adoption: adoption.data } : {}), candidate: relative(project.dir, r.board), placed: r.placed, kept: r.kept, wanted: r.wanted, fitNowhere: r.fit_nowhere, why: r.why, before: r.before, after: r.after, onlyLabelsChanged: r.only_labels_changed, hiddenExisting: r.hidden_existing, textsMoved: r.texts_moved });
   } finally {
     job.release();
   }

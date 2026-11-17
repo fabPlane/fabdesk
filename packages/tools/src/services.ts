@@ -1223,6 +1223,8 @@ export interface CadService {
 
 /** One board-level change applied to a saved native board through KiCad IPC. */
 export type BoardAdoptResult = {
+  /** The target was refilled before its native save; absent only in older service adapters. */
+  zoneRefill?: { refilled: boolean; error?: string };
   /** Items the candidate changes relative to the target, by KiCad object type. */
   delta: { removed: Record<string, number>; added: Record<string, number>; changed: Record<string, number> };
   /** Differences left after the commit (normalised); empty when the target now equals the candidate. */

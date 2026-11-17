@@ -12,7 +12,7 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { edit, lastmile as L, layout, locateProject, onboard, parseBoard, profile, readRequirements, type Requirements } from "@fabdesk/board-workflow";
-import { adoptCandidate, designFileHashes } from "../board-adopt";
+import { adoptCandidate, designFileHashes, type CanonicalAdoptionDrc } from "../board-adopt";
 import { jailPath, PROJECT_FILES } from "../fs";
 import { runTraceMaker } from "../routers";
 import { ToolError, type ToolContext, type ToolOutput } from "../registry";
@@ -209,7 +209,7 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
           await writeFile(join(bench.dir, "origin.json"), JSON.stringify({ project: project.dir, files: origin }, null, 1) + "\n");
           // onto the board the bench started from (`new` records its file name in the project folder as state.pcb), never a default
           const r = await adoptCandidate(ctx, { candidate: bench.candidateBoard(), board: bench.state.pcb, reason: a.reason ?? `last mile: ${bench.state.history.slice(1, bench.pointer + 1).map((h) => h.action).join(", ")}`.slice(0, 190) });
-          const standing = await adoptedStanding(bench).catch(() => null);
+          const standing = await adoptedStanding(bench, r.data.canonicalDrc).catch(() => null);
           return ok([r.text, ...(standing?.lines ?? [])].join("\n"), { ...(r.data as object), ...(standing ? { standing: standing.json } : {}) });
         }
         case "undo":
@@ -324,7 +324,7 @@ export async function repairEditCandidate(
  * nets whose copper changed (split into the ones that were open and the others) and parts moved, so the agent does not
  * have to re-derive it with its own DRC run and diff.
  */
-async function adoptedStanding(bench: L.Bench): Promise<{ lines: string[]; json: Record<string, unknown> }> {
+async function adoptedStanding(bench: L.Bench, canonical: CanonicalAdoptionDrc): Promise<{ lines: string[]; json: Record<string, unknown> }> {
   const s0 = bench.state.history[0]!;
   const startText = await readFile(join(s0.dir, bench.state.pcb), "utf8");
   const nowText = await readFile(bench.candidateBoard(), "utf8");
@@ -336,9 +336,9 @@ async function adoptedStanding(bench: L.Bench): Promise<{ lines: string[]; json:
   const list = (xs: string[]) => (xs.length ? `${xs.length} (${xs.slice(0, 8).join(", ")}${xs.length > 8 ? ", ..." : ""})` : "none");
   return {
     lines: [
-      `Board now: ${L.figureLine(bench.figures)}   (start: ${L.figureLine(s0.figures)})`,
+      `Saved board now: ${canonical.counts ? `open ${canonical.counts.unconnected} drc ${canonical.counts.errors}` : `DRC ${canonical.status}`}. Candidate score before adoption: ${L.figureLine(bench.figures)} (start: ${L.figureLine(s0.figures)}).`,
       `Copper changed on nets that were open: ${list(routed)}; on other nets: ${list(others)}; parts moved: ${list(moved)}.`,
     ],
-    json: { figures: bench.figures, start: s0.figures, routedNets: routed, otherNetsChanged: others, partsMoved: moved },
+    json: { canonicalDrc: canonical, candidateFigures: bench.figures, start: s0.figures, routedNets: routed, otherNetsChanged: others, partsMoved: moved },
   };
 }
