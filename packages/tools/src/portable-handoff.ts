@@ -39,7 +39,7 @@ export async function portableHandoff(ctx: ToolContext, filename: string, zip: (
     }
   };
   try {
-    for (const path of ["fabdesk.json", "board.kicad_pcb", ...hierarchy.referencedFiles, ...(hierarchy.projectFile ? [hierarchy.projectFile] : []), ...dependencies.files.filter(f => f.sha256 !== null).map(f => f.path)]) await add(path);
+    for (const path of ["fabdesk.json", "board.kicad_pcb", ...hierarchy.referencedFiles, ...(hierarchy.projectFile ? [hierarchy.projectFile] : []), ...dependencies.files.filter(f => f.sha256 !== null && (/(?:^|\/)(?:fp|sym)-lib-table$/.test(f.path) || /\.(?:kicad_(?:pro|dru|sch|pcb|mod|sym)|step|stp|wrl|vrml|iges|igs)$/i.test(f.path))).map(f => f.path)]) await add(path);
     for (const path of ["renders", "reports/drc.json", "reports/erc.json"]) await add(path);
     for (const path of ["bom.csv", "bom.coverage.json", "pcb-features.json", "positions.csv", "positions.csv.revision.json", "positions.contract.json", "placement-features.csv", "schematic.pdf", "schematic.pdf.revision.json"]) await add(`exports/${path}`, false);
     for (const name of ["gerbers.inventory.json", "drills.inventory.json"]) {

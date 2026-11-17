@@ -222,7 +222,7 @@ export const export_bom = defineTool({
     const csv = projectBomCsv(lines);
     await writeAtomic(receipt, `${JSON.stringify({ ...snapshot, export: { mode, artifactSha256: createHash("sha256").update(csv).digest("hex") } }, null, 2)}\n`);
     await writeAtomic(output, csv);
-    return ok(`Exported exports/bom.csv (${lines.length} lines${snapshot.complete ? "" : "; partial source coverage"}). Coverage receipt: exports/bom.coverage.json. Electrical checks remain separate.`, { path: output, receiptPath: receipt, lines: lines.length, mode, features, orderingWarnings, complete: snapshot.complete, revision: snapshot.revision });
+    return ok(`Exported exports/bom.csv (${lines.length} lines${snapshot.complete ? "" : "; partial source coverage"}). Coverage receipt: exports/bom.coverage.json. Electrical checks remain separate.${orderingWarnings.length ? `\nOrdering warnings:\n${orderingWarnings.map(warning => `- ${warning}`).join("\n")}` : ""}`, { path: output, receiptPath: receipt, lines: lines.length, mode, features, orderingWarnings, complete: snapshot.complete, revision: snapshot.revision });
   },
 });
 

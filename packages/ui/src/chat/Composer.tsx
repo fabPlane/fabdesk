@@ -29,6 +29,7 @@ import { finishItActive } from "./finish-it-view";
 /** Bridge for the global shortcut hook (mod+Enter send, mod+. abort) and for app automation. */
 export const composerHandlers: {
   send: (() => void) | null;
+  canSend: (() => boolean) | null;
   abort: (() => void) | null;
   finishIt: (() => void) | null;
   /**
@@ -39,6 +40,7 @@ export const composerHandlers: {
   voiceToggle: (() => void) | null;
 } = {
   send: null,
+  canSend: null,
   abort: null,
   finishIt: null,
   setAgent: null,
@@ -318,6 +320,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
 
   useEffect(() => {
     composerHandlers.send = () => void send();
+    composerHandlers.canSend = () => !!draft.trim() && !sending && !saveEffort.isPending && !loadingThread && !!settings.data && !savePreference.isPending && !savingEffort.current && !!(thread || projectId || startMode);
     composerHandlers.abort = run ? () => void stop() : null;
     composerHandlers.voiceToggle = () => voice.toggle();
     composerHandlers.finishIt = () => void beginFinishIt();
@@ -331,12 +334,13 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
     };
     return () => {
       composerHandlers.send = null;
+      composerHandlers.canSend = null;
       composerHandlers.abort = null;
       composerHandlers.finishIt = null;
       composerHandlers.setAgent = null;
       composerHandlers.voiceToggle = null;
     };
-  }, [send, stop, run, doctor.data, settings.data, loadingThread, voice.toggle, beginFinishIt, selectAgent, savePreference.isPending, queued.length]);
+  }, [send, stop, run, doctor.data, settings.data, loadingThread, voice.toggle, beginFinishIt, selectAgent, savePreference.isPending, queued.length, draft, sending, saveEffort.isPending, thread, projectId, startMode]);
 
   const showStop = !!run && !draft.trim() && !sending;
 
