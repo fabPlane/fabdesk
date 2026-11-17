@@ -17,6 +17,24 @@ const ReviewRecord = z.object({
 export function routeRunMatchesSource(run: { projectId: string; board?: BoardSourceSelection | undefined }, projectId: string, board?: BoardSourceSelection): boolean {
   return run.projectId === projectId && (!!run.board === !!board) && (!board || run.board?.sourceId === board.sourceId && run.board.manifestSha256 === board.manifestSha256);
 }
+
+type RouteSelectionRecord = { id: string; projectId: string; status: string; board?: BoardSourceSelection | undefined };
+
+/** Choose only recorded runs owned by this view; unrelated frames cannot choose a run. */
+export function selectOwnedRouteRun(history: readonly RouteSelectionRecord[],
+  scope: { projectId: string; board?: BoardSourceSelection | undefined },
+  selection: { currentId: string | null; current?: RouteSelectionRecord | undefined; seen: ReadonlySet<string> | null; followNew: boolean }) {
+  const owned = history.filter(row => routeRunMatchesSource(row, scope.projectId, scope.board));
+  const currentOwned = selection.currentId && (owned.some(row => row.id === selection.currentId) ||
+    selection.current?.id === selection.currentId && routeRunMatchesSource(selection.current, scope.projectId, scope.board));
+  if (!currentOwned) return owned[0]?.id ?? null;
+  if (selection.followNew && selection.seen) {
+    // History is newest first. A short run may already have finished by refresh.
+    const newest = owned[0];
+    if (newest && !selection.seen.has(newest.id)) return newest.id;
+  }
+  return selection.currentId;
+}
 export function parseRouteReview(value: unknown, projectId: string, runId: string, board?: BoardSourceSelection) {
   const run = ReviewRecord.parse(pcbToolJsonForSource(value, projectId, board).run);
   if (run.id !== runId || run.projectId !== projectId) throw new Error("This routing run belongs to another project. Select the run again.");
