@@ -24,6 +24,7 @@ import {
   ErcErrorType,
   BoardGraphicShapeSchema,
   BoardLayer,
+  HorizontalAlignment,
   PadType,
   PadstackPresence,
   GlobalLabelSchema,
@@ -141,6 +142,12 @@ const STAGE_FRACTION: Record<string, number> = {
 // Nanometres are integral. Preserve enough decimal places for exact pad/track joins instead of
 // rounding inspected coordinates to 1 um and creating tiny disconnected gaps on re-use.
 const mm = (nm: number) => Math.round(toMm(nm) * 1_000_000) / 1_000_000;
+
+const HORIZONTAL_ALIGN = {
+  left: HorizontalAlignment.HA_LEFT,
+  center: HorizontalAlignment.HA_CENTER,
+  right: HorizontalAlignment.HA_RIGHT,
+} as const;
 
 function copperLayersOf(layers: readonly BoardLayer[]): BoardLayer[] {
   return [
@@ -1935,8 +1942,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           ...(item.footprints !== undefined ? { footprints: item.footprints } : {}),
         }),
       ),
-      ...(edit.texts ?? []).map((item) =>
-        createBoardText({
+      ...(edit.texts ?? []).map((item) => {
+        const text = createBoardText({
           text: item.text,
           position: point(item.position),
           layer: item.layer as BoardLayer,
@@ -1944,8 +1951,12 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           ...(item.thickness !== undefined ? { thickness: toNm(item.thickness) } : {}),
           ...(item.angle !== undefined ? { angle: item.angle } : {}),
           ...(item.knockout !== undefined ? { knockout: item.knockout } : {}),
-        }),
-      ),
+        });
+        // createBoardText always centres; otherwise `position` is the left/right end of each line.
+        const attributes = text.attributes;
+        if (item.align && attributes) attributes.horizontalAlignment = HORIZONTAL_ALIGN[item.align];
+        return text;
+      }),
       ...(edit.graphics ?? []).map((item) => {
         const geometry =
           item.kind === "segment" && item.start && item.end

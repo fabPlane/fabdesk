@@ -483,6 +483,8 @@ export type PcbGeometryEdit = {
     thickness?: number;
     angle?: number;
     knockout?: boolean;
+    /** Horizontal justification about `position`; absent means KiCad's centre. */
+    align?: "left" | "center" | "right";
   }>;
   graphics?: Array<{
     kind: "segment" | "rectangle" | "arc" | "circle" | "polygon";

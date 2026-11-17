@@ -24,7 +24,7 @@ import {
   type ToolContext,
 } from "../registry";
 import type { NativeSchematicEdit, PcbFootprintEdit, PcbGeometryEdit } from "../services";
-import { inspectSavedHierarchy, ok, p, requireKicad } from "./common";
+import { inspectSavedHierarchy, ok, p, requireKicad, runLiveDrc } from "./common";
 
 const Point = mutationInputObject({ x: z.number().finite(), y: z.number().finite() });
 const PadEndpoint = mutationInputObject({ reference: z.string().min(1), pad: z.string().min(1) });
@@ -446,16 +446,54 @@ const PcbGeometry = mutationInputObject({
     )
     .max(200)
     .optional(),
+  mountingHoleKeepouts: z
+    .array(
+      mutationInputObject({
+        reference: z.string().min(1).describe("Mounting-hole footprint reference, e.g. H1"),
+        clearance: z
+          .number()
+          .nonnegative()
+          .describe("Millimetres of keepout beyond the outermost edge of the footprint's own pads"),
+        layers: z
+          .array(Layer)
+          .min(1)
+          .optional()
+          .describe("Defaults to the copper layers of the footprint's pads (F.Cu and B.Cu when unknown)"),
+        name: z.string().optional(),
+        tracks: z.boolean().default(true),
+        vias: z.boolean().default(true),
+        copper: z
+          .boolean()
+          .default(true)
+          .describe("Block copper pours; set false for a plated hole that must join a pour"),
+        segments: z.number().int().min(8).max(128).default(32),
+      }),
+    )
+    .max(100)
+    .optional()
+    .describe(
+      "Preset keepout for a mounting hole: a circle around the footprint (its own pads plus clearance) blocking tracks, vias and copper pours, but never its own pads or footprint, so the hole's NPTH pad does not violate its own keepout",
+    ),
   texts: z
     .array(
       mutationInputObject({
-        text: z.string(),
+        text: z
+          .string()
+          .describe(
+            "Board note text. A newline character (or the two characters \\n) starts a new line",
+          ),
         position: Point,
         layer: Layer,
         size: Point.optional(),
         thickness: z.number().positive().optional(),
         angle: z.number().finite().optional(),
         knockout: z.boolean().optional(),
+        align: z
+          .enum(["left", "center", "right"])
+          .optional()
+          .describe(
+            "Horizontal justification: position is the left end, centre (default) or right end of each line; lines are stacked vertically centred on position",
+          ),
       }),
     )
     .max(1000)
@@ -480,6 +518,171 @@ const PcbGeometry = mutationInputObject({
     .optional(),
   deleteItemIds: z.array(z.string().min(1)).max(5000).optional(),
 });
+
+type GeometryInput = z.infer<typeof PcbGeometry>;
+type TextInput = NonNullable<GeometryInput["texts"]>[number];
+type KeepoutInput = NonNullable<GeometryInput["keepouts"]>[number];
+type HoleKeepoutInput = NonNullable<GeometryInput["mountingHoleKeepouts"]>[number];
+type Box = { minX: number; minY: number; maxX: number; maxY: number };
+
+/** Agents often send the two characters `\n` meaning a line break; KiCad wants a real newline. */
+export function normalizeNoteText(text: string): string {
+  return text.replace(/\r\n?/g, "\n").replace(/\\n/g, "\n");
+}
+
+/** KiCad stroke font interline pitch, as a multiple of the glyph height. */
+const INTERLINE_PITCH = 1.62;
+/** Generous average stroke-font advance, as a multiple of the glyph width. */
+const CHAR_ADVANCE = 0.9;
+
+/**
+ * Estimated extent of a board note in millimetres, from KiCad's stroke-font proportions: `align` picks
+ * which end of each line sits on `position`, lines are centred vertically on it, and the box is
+ * rotated by `angle` (degrees, counter-clockwise as KiCad shows it). An estimate, not KiCad's metric.
+ */
+export function estimateNoteBox(note: Pick<TextInput, "text" | "position" | "size" | "thickness" | "angle" | "align">): Box {
+  const lines = note.text.split("\n");
+  const size = note.size ?? { x: 1, y: 1 };
+  const stroke = note.thickness ?? Math.min(size.x, size.y) * 0.15;
+  const width = Math.max(...lines.map((line) => line.length)) * size.x * CHAR_ADVANCE + stroke;
+  const height = size.y + (lines.length - 1) * size.y * INTERLINE_PITCH + stroke;
+  const left = note.align === "left" ? -stroke / 2 : note.align === "right" ? -width + stroke / 2 : -width / 2;
+  const theta = ((note.angle ?? 0) * Math.PI) / 180;
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+  const corners = [
+    [left, -height / 2],
+    [left + width, -height / 2],
+    [left, height / 2],
+    [left + width, height / 2],
+  ].map(([x = 0, y = 0]) => ({
+    // KiCad's Y axis points down, so a counter-clockwise rotation on screen is this one.
+    x: note.position.x + x * cos + y * sin,
+    y: note.position.y - x * sin + y * cos,
+  }));
+  return {
+    minX: Math.min(...corners.map((c) => c.x)),
+    minY: Math.min(...corners.map((c) => c.y)),
+    maxX: Math.max(...corners.map((c) => c.x)),
+    maxY: Math.max(...corners.map((c) => c.y)),
+  };
+}
+
+const round3 = (value: number) => Math.round(value * 1000) / 1000;
+
+/** One warning per note whose estimated box leaves the board outline's bounding box. */
+async function noteBoundsWarnings(
+  ctx: ToolContext,
+  project: ProjectHandle,
+  texts: TextInput[],
+): Promise<string[]> {
+  if (!texts.length) return [];
+  const rows = await ctx.services.design.query(project.dir, "outline").catch(() => []);
+  const row = rows[0];
+  if (!row) return ["Board notes were not bounds-checked: the board has no Edge.Cuts outline."];
+  const outline = {
+    minX: Number(row["minX"]),
+    minY: Number(row["minY"]),
+    maxX: Number(row["maxX"]),
+    maxY: Number(row["maxY"]),
+  };
+  if (![outline.minX, outline.minY, outline.maxX, outline.maxY].every(Number.isFinite)) return [];
+  return notesOutside(texts, outline);
+}
+
+/** The same check against an outline replaced in this transaction. */
+function noteWarningsAgainst(texts: TextInput[], points: Array<{ x: number; y: number }>): string[] {
+  if (!texts.length) return [];
+  return notesOutside(texts, {
+    minX: Math.min(...points.map((point) => point.x)),
+    minY: Math.min(...points.map((point) => point.y)),
+    maxX: Math.max(...points.map((point) => point.x)),
+    maxY: Math.max(...points.map((point) => point.y)),
+  });
+}
+
+function notesOutside(texts: TextInput[], outline: Box): string[] {
+  const warnings: string[] = [];
+  texts.forEach((note, index) => {
+    const box = estimateNoteBox(note);
+    const outside =
+      box.minX < outline.minX || box.minY < outline.minY || box.maxX > outline.maxX || box.maxY > outline.maxY;
+    if (!outside) return;
+    const label = JSON.stringify(note.text.length > 24 ? `${note.text.slice(0, 24)}…` : note.text);
+    warnings.push(
+      `Board note ${index + 1} ${label} extends outside the board outline: estimated box ` +
+        `(${round3(box.minX)}, ${round3(box.minY)})–(${round3(box.maxX)}, ${round3(box.maxY)}) mm vs outline ` +
+        `(${round3(outline.minX)}, ${round3(outline.minY)})–(${round3(outline.maxX)}, ${round3(outline.maxY)}) mm; ` +
+        "move it, shrink it, change align, or break it into lines.",
+    );
+  });
+  return warnings;
+}
+
+/**
+ * A mounting-hole keepout as a plain keepout polygon: a circle about the footprint origin that covers its
+ * own pads plus `clearance` (the polygon circumscribes the circle), blocking tracks, vias and pours. Pads
+ * and footprints are never kept out, so the hole's own NPTH pad cannot violate it.
+ */
+export function mountingHoleKeepout(
+  hole: HoleKeepoutInput,
+  footprint: { x: number; y: number },
+  pads: Array<{ x: number; y: number; width: number; height: number; layerNames?: string[] }>,
+): KeepoutInput {
+  if (!pads.length)
+    throw new ToolError(
+      `mounting hole ${hole.reference} has no pads to size its keepout from; give an explicit keepout polygon`,
+      "invalid_args",
+    );
+  const reach = Math.max(
+    ...pads.map((pad) => Math.hypot(pad.x - footprint.x, pad.y - footprint.y) + Math.max(pad.width, pad.height) / 2),
+  );
+  const radius = (reach + hole.clearance) / Math.cos(Math.PI / hole.segments);
+  const points = Array.from({ length: hole.segments }, (_, index) => {
+    const theta = (2 * Math.PI * index) / hole.segments;
+    return {
+      x: Math.round((footprint.x + radius * Math.cos(theta)) * 1e6) / 1e6,
+      y: Math.round((footprint.y + radius * Math.sin(theta)) * 1e6) / 1e6,
+    };
+  });
+  const padLayers = [...new Set(pads.flatMap((pad) => pad.layerNames ?? []))].filter((name) => name.endsWith(".Cu"));
+  return {
+    points,
+    layers: hole.layers ?? (padLayers.length ? padLayers : ["F.Cu", "B.Cu"]),
+    name: hole.name ?? `${hole.reference} mounting-hole keepout`,
+    tracks: hole.tracks,
+    vias: hole.vias,
+    copper: hole.copper,
+    pads: false,
+    footprints: false,
+  };
+}
+
+async function resolveMountingHoleKeepouts(
+  ctx: ToolContext,
+  project: ProjectHandle,
+  holes: HoleKeepoutInput[],
+): Promise<KeepoutInput[]> {
+  if (!holes.length) return [];
+  const [components, pads] = await Promise.all([
+    ctx.services.design.query(project.dir, "components"),
+    ctx.services.design.query(project.dir, "pads"),
+  ]);
+  return holes.map((hole) => {
+    const footprint = components.find((row) => String(row["ref"]) === hole.reference);
+    if (!footprint) throw new ToolError(`unknown PCB footprint ${hole.reference}`, "invalid_args");
+    const own = pads
+      .filter((row) => String(row["component"]) === hole.reference)
+      .map((row) => ({
+        x: Number(row["x"]),
+        y: Number(row["y"]),
+        width: Number(row["width"] ?? 0),
+        height: Number(row["height"] ?? 0),
+        ...(Array.isArray(row["layerNames"]) ? { layerNames: (row["layerNames"] as unknown[]).map(String) } : {}),
+      }));
+    return mountingHoleKeepout(hole, { x: Number(footprint["x"]), y: Number(footprint["y"]) }, own);
+  });
+}
 
 export const native_edit_transaction = defineTool({
   name: "native_edit_transaction",
@@ -514,7 +717,7 @@ export const native_edit_transaction = defineTool({
       schematic,
       outline,
       footprints,
-      geometry,
+      geometry: geometryInput,
       removeCopperNets,
     },
     ctx,
@@ -531,6 +734,27 @@ export const native_edit_transaction = defineTool({
         `stale PCB revision: expected ${expectedPcbRevision}, actual ${before.pcb}`,
         "precondition",
       );
+    const holes = geometryInput?.mountingHoleKeepouts ?? [];
+    const moved = holes.filter((hole) => footprints?.some((edit) => edit.reference === hole.reference));
+    if (moved.length)
+      throw new ToolError(
+        `mounting-hole keepouts for ${moved.map((hole) => hole.reference).join(", ")} cannot be combined with moving the same footprint; place it first, then add the keepout`,
+        "invalid_args",
+      );
+    const holeKeepouts = await resolveMountingHoleKeepouts(ctx, project, holes);
+    let geometry: Omit<GeometryInput, "mountingHoleKeepouts"> | undefined;
+    if (geometryInput) {
+      const { mountingHoleKeepouts: _presets, ...rest } = geometryInput;
+      geometry = {
+        ...rest,
+        ...(rest.keepouts || holeKeepouts.length ? { keepouts: [...(rest.keepouts ?? []), ...holeKeepouts] } : {}),
+        ...(rest.texts ? { texts: rest.texts.map((note) => ({ ...note, text: normalizeNoteText(note.text) })) } : {}),
+      };
+    }
+    const warnings = outline
+      ? noteWarningsAgainst(geometry?.texts ?? [], outline.points)
+      : await noteBoundsWarnings(ctx, project, geometry?.texts ?? []);
+    const warningText = warnings.length ? `\n${warnings.map((line) => `Warning: ${line}`).join("\n")}` : "";
     const plan = {
       schematic: schematic ? "edit native schematic" : null,
       outline: outline ? `${outline.points.length}-segment outline` : null,
@@ -544,18 +768,20 @@ export const native_edit_transaction = defineTool({
             texts: geometry.texts?.length ?? 0,
             graphics: geometry.graphics?.length ?? 0,
             deleteItemIds: geometry.deleteItemIds ?? [],
+            ...(holeKeepouts.length ? { mountingHoleKeepouts: holeKeepouts } : {}),
           }
         : null,
       removeCopperNets: removeCopperNets ?? [],
     };
     if (mode === "preview")
       return ok(
-        "Native edit is structurally valid; canonical files were not changed. ERC, DRC, connectivity, and presentation were not evaluated.",
+        `Native edit is structurally valid; canonical files were not changed. ERC, DRC, connectivity, and presentation were not evaluated.${warningText}`,
         {
           status: "preview",
           before,
           after: before,
           plan,
+          ...(warnings.length ? { warnings } : {}),
           validation: { structural: true, designChecksRun: false },
         },
       );
@@ -677,7 +903,7 @@ export const native_edit_transaction = defineTool({
       const after = await boundRevisions(ctx, project);
       await writeJson(join(root, "last-accepted.json"), { transactionId, before, after });
       return ok(
-        `Atomic native edit ${transactionId} accepted; design checks were not run.${removedCopperFacts ? `\n${qualityText({ nets: removedCopperFacts.nets, pairs: [], reference: [], lengthConvention: "chord" })}` : ""}`,
+        `Atomic native edit ${transactionId} accepted; design checks were not run.${removedCopperFacts ? `\n${qualityText({ nets: removedCopperFacts.nets, pairs: [], reference: [], lengthConvention: "chord" })}` : ""}${warningText}`,
         {
           ...(removedCopperFacts ? { removedCopperFacts } : {}),
           status: "accepted",
@@ -686,6 +912,7 @@ export const native_edit_transaction = defineTool({
           after,
           plan,
           changes,
+          ...(warnings.length ? { warnings } : {}),
           validation: { structural: true, designChecksRun: false },
         },
       );
@@ -789,7 +1016,12 @@ export const pcb_edit_copper = defineTool({
   inputSchema: {
     mode: z.enum(["preview", "apply"]).default("apply"),
     expectedPcbRevision: z.string().length(64).optional(),
-    checkDrc: z.boolean().default(false).describe("After applying, run a saved-board PCB-only DRC and return its actual counts; errors leave the requested edit saved for repair."),
+    checkDrc: z
+      .boolean()
+      .default(false)
+      .describe(
+        "After applying, run a saved-board PCB-only DRC at the project's own rule severities (owner-excluded items dropped) and report errors, warnings and unconnected items separately. Only DRC errors make the result an error; opens are reported as intermediate (expected mid-route) and the edit stays saved either way for repair.",
+      ),
     tracks: PcbGeometry.shape.tracks,
     vias: PcbGeometry.shape.vias,
     candidateFile: z
@@ -894,16 +1126,59 @@ export const pcb_edit_copper = defineTool({
       ctx,
     );
     if (checkDrc && !result.isError) {
-      const project = ctx.requireProject(), cli = await requireKicad(ctx), board = p(project, PROJECT_FILES.boardPcb), revision = await sha(board);
+      const project = ctx.requireProject();
+      const cli = await requireKicad(ctx);
+      const board = p(project, PROJECT_FILES.boardPcb);
+      const revision = await sha(board);
       const temporary = await jailPath(project.dir, `.fabdesk/native-checks/${randomUUID()}.json`);
       await mkdir(dirname(temporary), { recursive: true });
       try {
-        const report = await ctx.services.kicad.runDrc(cli, { board, outFile: temporary, severity: "all", schematicParity: false, signal: ctx.signal });
-        if (await sha(board) !== revision) throw new ToolError("Saved PCB changed during the post-edit DRC; inspect the current board before checking again", "precondition");
-        const receipt = { ...report, pcbRevision: { sha256: revision }, schematicParityChecked: false };
-        const path = await jailPath(project.dir, "reports/copper-drc.json"); await writeJson(path, receipt);
-        return { ...result, text: `${result.text}\nSaved-board PCB-only DRC: ${report.counts.errors} errors, ${report.counts.unconnected} opens.`, json: { ...(result.json as Record<string, unknown>), ...(candidateFile ? { candidateFile } : {}), drc: { ...receipt, path } }, isError: report.counts.errors > 0 || report.counts.unconnected > 0 };
-      } finally { await rm(temporary, { force: true }); }
+        // Project severity, like the board tools: `severity: "all"` would also report what the owner
+        // marked ignored or excluded as ordinary errors.
+        const report = await runLiveDrc(ctx, cli, {
+          board,
+          outFile: temporary,
+          parity: false,
+          refill: false,
+          signal: ctx.signal,
+        });
+        if ((await sha(board)) !== revision)
+          throw new ToolError(
+            "Saved PCB changed during the post-edit DRC; inspect the current board before checking again",
+            "precondition",
+          );
+        const { raw: _raw, ...facts } = report;
+        const receipt = {
+          ...facts,
+          severity: "project" as const,
+          pcbRevision: { sha256: revision },
+          schematicParityChecked: false,
+        };
+        const path = await jailPath(project.dir, "reports/copper-drc.json");
+        await writeJson(path, receipt);
+        const { errors, warnings, unconnected } = report.counts;
+        const opens =
+          unconnected > 0
+            ? ` ${unconnected} unconnected item(s) remain; these are opens, not DRC errors (expected while a route is in progress; run connectivity or board_route last mile to close them).`
+            : "";
+        return {
+          ...result,
+          text: `${result.text}\nSaved-board PCB-only DRC (project severity): ${errors} error(s), ${warnings} warning(s).${opens}`,
+          json: {
+            ...(result.json as Record<string, unknown>),
+            ...(candidateFile ? { candidateFile } : {}),
+            drc: {
+              ...receipt,
+              path: projectRelative(project.dir, path),
+              errors: facts.violations.filter((v) => v.severity === "error"),
+              opens: facts.unconnected,
+            },
+          },
+          isError: errors > 0,
+        };
+      } finally {
+        await rm(temporary, { force: true });
+      }
     }
     if (candidateFile && result.json && typeof result.json === "object")
       return { ...result, json: { ...(result.json as Record<string, unknown>), candidateFile } };
@@ -916,7 +1191,7 @@ export const pcb_edit_graphics = defineTool({
   toolset: "circuit",
   title: "Atomically edit PCB outline and graphics",
   description:
-    "Atomically validate and apply a native board outline, zones, keepouts, text, graphics, or deletion by inspected ID in one recoverable transaction. The normal mode=apply path validates before saving and restores prior files if rejected; use mode=preview only when a non-mutating forecast is specifically needed. Uses millimetres and rejects stale PCB revisions.",
+    "Atomically validate and apply a native board outline, zones, keepouts, text, graphics, or deletion by inspected ID in one recoverable transaction. The normal mode=apply path validates before saving and restores prior files if rejected; use mode=preview only when a non-mutating forecast is specifically needed. Uses millimetres and rejects stale PCB revisions. For a mounting hole use mountingHoleKeepouts ({reference, clearance}): a circular keepout around the footprint that blocks tracks, vias and pours but never its own pads or footprint, so the hole's NPTH pad does not violate it (a hand-drawn keepout with pads or footprints set would). Board notes (texts): align left|center|right picks which end of each line sits on position (default center); a newline (or the characters \\n) starts a new line, stacked vertically centred on position; a note whose estimated box leaves the board outline's bounding box is applied with a warning.",
   inputSchema: {
     mode: z.enum(["preview", "apply"]).default("apply"),
     expectedPcbRevision: z.string().length(64).optional(),
@@ -926,6 +1201,7 @@ export const pcb_edit_graphics = defineTool({
     }).optional(),
     zones: PcbGeometry.shape.zones,
     keepouts: PcbGeometry.shape.keepouts,
+    mountingHoleKeepouts: PcbGeometry.shape.mountingHoleKeepouts,
     texts: PcbGeometry.shape.texts,
     graphics: PcbGeometry.shape.graphics,
     deleteItemIds: PcbGeometry.shape.deleteItemIds,
@@ -937,7 +1213,17 @@ export const pcb_edit_graphics = defineTool({
     idempotentHint: false,
   },
   handler: (
-    { mode, expectedPcbRevision, outline, zones, keepouts, texts, graphics, deleteItemIds },
+    {
+      mode,
+      expectedPcbRevision,
+      outline,
+      zones,
+      keepouts,
+      mountingHoleKeepouts,
+      texts,
+      graphics,
+      deleteItemIds,
+    },
     ctx,
   ) =>
     native_edit_transaction.handler(
@@ -945,11 +1231,12 @@ export const pcb_edit_graphics = defineTool({
         mode,
         ...(expectedPcbRevision ? { expectedPcbRevision } : {}),
         ...(outline ? { outline } : {}),
-        ...(zones || keepouts || texts || graphics || deleteItemIds
+        ...(zones || keepouts || mountingHoleKeepouts || texts || graphics || deleteItemIds
           ? {
               geometry: {
                 ...(zones ? { zones } : {}),
                 ...(keepouts ? { keepouts } : {}),
+                ...(mountingHoleKeepouts ? { mountingHoleKeepouts } : {}),
                 ...(texts ? { texts } : {}),
                 ...(graphics ? { graphics } : {}),
                 ...(deleteItemIds ? { deleteItemIds } : {}),

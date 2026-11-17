@@ -5,6 +5,7 @@ import { create } from "@bufbuild/protobuf";
 import {
   BoardLayer,
   FootprintInstanceSchema,
+  HorizontalAlignment,
   PadSchema,
   PadStackShape,
   packAny,
@@ -12,7 +13,13 @@ import {
   SheetPathSchema,
   SchematicSymbolInstanceSchema,
 } from "@fp-pcb/proto";
-import { Footprint, SchematicSymbol, createBoardGraphic, createTrack } from "@fp-pcb/client";
+import {
+  BoardText,
+  Footprint,
+  SchematicSymbol,
+  createBoardGraphic,
+  createTrack,
+} from "@fp-pcb/client";
 import {
   createFpPcbDesign,
   evaluatePartCompatibility,
@@ -541,13 +548,21 @@ describe("copper edits refill pours before saving", () => {
   // else did.
   const fakeBoard = (opts: { refill?: () => Promise<void> } = {}) => {
     const calls: string[] = [];
+    const created: unknown[] = [];
     return {
       calls,
+      created,
       board: {
         nets: async () => [{ name: "GND", code: { value: 1 } }],
         commit: async (_msg: string, run: (tx: unknown) => Promise<unknown> | unknown) => {
           calls.push("commit");
-          await run({ create: async () => [], delete: async () => undefined });
+          await run({
+            create: async (items: unknown[]) => {
+              created.push(...items);
+              return [];
+            },
+            delete: async () => undefined,
+          });
           return { created: [], deleted: [] };
         },
         revision: async () => 4n,
@@ -582,6 +597,28 @@ describe("copper edits refill pours before saving", () => {
     } as never);
     expect(calls).toEqual(["commit", "refillZones", "save"]);
     expect(result.zoneRefill).toEqual({ refilled: true });
+  });
+
+  test("board notes keep their newlines and take the requested horizontal alignment", async () => {
+    const { created, board } = fakeBoard();
+    const design = createFpPcbDesign({
+      bridge: () => ({}) as never,
+      sessions: { board: async () => board } as unknown as FpPcbSessions,
+    });
+    await design.editBoardGeometry("/workspace/project", {
+      texts: [
+        { text: "REV A\nfabPlane", position: { x: 2, y: 3 }, layer: BoardLayer.BL_F_SilkS, align: "left" },
+        { text: "right", position: { x: 2, y: 6 }, layer: BoardLayer.BL_F_SilkS, align: "right" },
+        { text: "centre", position: { x: 2, y: 9 }, layer: BoardLayer.BL_F_SilkS },
+      ],
+    });
+    const notes = created as BoardText[];
+    expect(notes.map((note) => note.text)).toEqual(["REV A\nfabPlane", "right", "centre"]);
+    expect(notes.map((note) => note.attributes?.horizontalAlignment)).toEqual([
+      HorizontalAlignment.HA_LEFT,
+      HorizontalAlignment.HA_RIGHT,
+      HorizontalAlignment.HA_CENTER,
+    ]);
   });
 
   test("a board that cannot refill still saves the copper, and says the pours are stale", async () => {
