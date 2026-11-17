@@ -1,6 +1,6 @@
 # fabPlane — agent notes
 
-- Bun 1.4.x monorepo. Run everything from the repo root: `bun install`, `bun run typecheck`, `bun run test` (not bare `bun test`, which recurses into `vendor/`).
+- Bun 1.4.x monorepo. Run everything from the repo root: `bun install`, `bun run typecheck`, `bun run test` (not bare `bun test`, which recurses into `vendor/`). The runner uses one fresh OS temp folder and removes it afterwards (`FABDESK_KEEP_TEST_TMP=1` retains it); tests must use `tmpdir()`, never a literal `/tmp`.
 - Build on a branch and open a PR **against `main`**; do not commit directly to `main`. The only exception is a small fix that cleans up a mistake already on `main`.
 - Do not use a `dev` (or any other long-lived integration) branch, in this repo or in `vendor/fab_pcb`: target `main` and stack short-lived feature branches instead. The old `dev` branches were folded into `main` on 2026-10-02. `vendor/fab_pcb` must always pin a commit on fab_pcb's `main`.
 - Never run `bun install` inside `vendor/fab_pcb`. `vendor/fab_pcb/packages/{proto,client,kicad-wasm}` are root workspaces (the client's tests import kicad-wasm); `bun run fp-pcb:types` (part of `typecheck`) emits their declarations; `apps/core/tsconfig.typecheck.json` maps the imports to them for `tsc` only (Bun honours tsconfig `paths` at runtime, so the mapping must stay out of the config chain Bun reads).
