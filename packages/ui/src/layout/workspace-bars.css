@@ -249,5 +249,8 @@
   .fd-canvas-header .fd-activity-label { display:none; }
 }
 @media(max-width:780px) {
-  .fd-canvas-workspace .fd-project-status { padding:134px 20px 90px; }
+  .fd-canvas-workspace .fd-project-status { padding:86px 20px 90px; }
+  /* These pages only have the destination picker, not a second tool row. */
+  .fd-canvas-main[data-task-toolbar=true]:is([data-area=overview],[data-area=status])::before { height:64px; }
+  .fd-canvas-workspace .fd-project-overview { padding-top:86px; }
 }
