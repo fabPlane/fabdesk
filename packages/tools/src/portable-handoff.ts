@@ -1,4 +1,5 @@
 import { parseLibraryTable, readSavedBoardModels } from "@fabdesk/kicad";
+import { BoardModelRevision, PcbPreviewRevision, RootSchematicPreviewRevision } from "@fabdesk/protocol";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, readdir, rm, stat, realpath } from "node:fs/promises";
 import { join } from "node:path";
@@ -55,7 +56,18 @@ export async function portableHandoff(ctx: ToolContext, filename: string, zip: (
     for (const path of ["renders/pcb.svg", "renders/pcb.svg.revision.json", "renders/board.glb", "renders/board.glb.revision.json", "renders/schematic.revision.json", "exports/schematic.pdf", "exports/schematic.pdf.revision.json", "exports/positions.csv", "exports/positions.csv.revision.json", "exports/positions.contract.json", "exports/bom.csv", "exports/bom.coverage.json", "exports/gerbers/gerbers.inventory.json", "exports/gerbers/drills.inventory.json"]) if (!bytes.has(path)) throw new ToolError(`Handoff input missing: ${path}; export current views, PDF, placements and production CAM first`, "precondition");
     const pcbHash = hash(bytes.get("board.kicad_pcb")!);
     for (const path of ["exports/gerbers/gerbers.inventory.json", "exports/gerbers/drills.inventory.json"]) if (JSON.parse(bytes.get(path)!.toString()).pcbSha256 !== pcbHash) throw new ToolError("CAM inventory is stale; regenerate exports", "precondition");
-    for (const path of ["renders/pcb.svg.revision.json", "renders/board.glb.revision.json"]) if (JSON.parse(bytes.get(path)!.toString()).sourceSha256 !== pcbHash || JSON.parse(bytes.get(path)!.toString()).artifactSha256 !== hash(bytes.get(path.replace(".revision.json", ""))!)) throw new ToolError("Handoff view is stale; run render_publish", "precondition");
+    const pcbReceipt = PcbPreviewRevision.safeParse(JSON.parse(bytes.get("renders/pcb.svg.revision.json")!.toString()));
+    const modelReceipt = BoardModelRevision.safeParse(JSON.parse(bytes.get("renders/board.glb.revision.json")!.toString()));
+    const schematicPreview = RootSchematicPreviewRevision.safeParse(JSON.parse(bytes.get("renders/schematic.revision.json")!.toString()));
+    if (!pcbReceipt.success || !modelReceipt.success || !schematicPreview.success) throw new ToolError("Handoff view receipt is unverified; run render_publish", "precondition");
+    for (const receipt of [pcbReceipt.data, modelReceipt.data, schematicPreview.data])
+      if (receipt.dependencySnapshot?.revision !== dependencies.revision) throw new ToolError("Handoff view dependencies are stale or unverified; run render_publish", "precondition");
+    for (const receipt of [pcbReceipt.data, modelReceipt.data])
+      if (receipt.sourceSha256 !== pcbHash || receipt.artifactSha256 !== hash(bytes.get(receipt.artifact)!)) throw new ToolError("Handoff view is stale; run render_publish", "precondition");
+    const schematicReceipt = schematicPreview.data;
+    if (schematicReceipt.projectId !== project.id || schematicReceipt.sourceRevision !== hierarchy.aggregateRevision) throw new ToolError("Handoff schematic view is stale; run render_publish", "precondition");
+    for (const sheet of schematicReceipt.sheets)
+      if (!bytes.has(sheet.path) || hash(bytes.get(sheet.path)!) !== sheet.sha256) throw new ToolError(`Handoff schematic view is missing or altered: ${sheet.path}; run render_publish`, "precondition");
     const camFiles = ["gerbers.inventory.json", "drills.inventory.json"].flatMap(name => JSON.parse(bytes.get(`exports/gerbers/${name}`)!.toString()).files);
     if (!camFiles.length) throw new ToolError("Handoff has no production CAM payloads", "precondition");
     for (const path of ["exports/positions.csv", ...camFiles.map((file: string) => `exports/gerbers/${file}`)]) {
@@ -66,7 +78,6 @@ export async function portableHandoff(ctx: ToolContext, filename: string, zip: (
     if (!Array.isArray(bom.inputs) || !Array.isArray(bom.absentInputs) || bom.complete !== true) throw new ToolError("Handoff BOM source coverage is incomplete or unverified; export_bom after reviewing sources", "precondition");
     await assertProjectBomInputs(project.dir, bom);
     if (bom.export?.artifactSha256 !== hash(bytes.get("exports/bom.csv")!)) throw new ToolError("BOM payload is altered or lacks export provenance; regenerate export_bom", "precondition");
-    const schematicReceipt = JSON.parse(bytes.get("renders/schematic.revision.json")!.toString());
     const pdfReceipt = JSON.parse(bytes.get("exports/schematic.pdf.revision.json")!.toString());
     for (const receipt of [schematicReceipt, pdfReceipt]) {
       const inputs = receipt.sourceFiles ?? receipt.inputs;
