@@ -70,9 +70,10 @@ Verify the returned checks and the rule in GitHub Settings before accepting code
 
 ## Source preparation
 
-Original FabDesk code uses Apache-2.0 as the proposed release default. Review
-`LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `CONTRIBUTING.md` and `SECURITY.md`
-before public switch. Separately licensed source/assets keep their original terms.
+Original FabDesk source in this repository is licensed under Apache-2.0. See
+`LICENSE` and `NOTICE` for the license and attribution, and review
+`THIRD_PARTY_NOTICES.md`, `CONTRIBUTING.md` and `SECURITY.md` before public switch.
+Separately licensed source/assets keep their original terms.
 The FabPlane PCB/CAD submodules are public but have no root license at the pinned
 revisions; this repository's license does not relicense them. Owners should settle
 those upstream license declarations before redistributing their source or binaries
