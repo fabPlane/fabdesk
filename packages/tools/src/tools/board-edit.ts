@@ -67,6 +67,7 @@ const PLAN = z
         radius: z.number().optional(),
         clearance: z.number().optional(),
         pad_clearance: z.number().optional(),
+        edge: z.number().optional().describe("Margin from the board outline for re-seated parts, mm."),
         rotations: z.enum(["keep", "any"]).optional(),
         near: z.record(z.string(), nums(2)).optional(),
         fixed_allowed: z.record(z.string(), z.string()).optional().describe("Fixed parts the plan lets move, each with the reason."),
@@ -201,7 +202,9 @@ async function readPlan(ctx: ToolContext, plan: unknown): Promise<unknown> {
   }
   const checked = PLAN.safeParse(parsed);
   if (!checked.success) throw new ToolError(planIssueText(checked.error.issues), "invalid_args");
-  return checked.data;
+  // checked, but the plan as written goes to the edit: the schema strips keys it does not list, and the edit library
+  // reads some it may not (a JSON or file plan reached it whole before the check was added)
+  return parsed;
 }
 
 const py = (n: number) => String(n);
