@@ -92,7 +92,20 @@
 .fd-fresh-art-link:focus-visible { outline:2px solid var(--fd-accent); outline-offset:5px; border-radius:3px; }
 .fd-fresh-actions { display:flex; flex-wrap:wrap; align-items:start; justify-content:center; gap:10px; margin:28px auto 0; }
 .fd-fresh-actions > button { height:52px; padding:0 20px; display:flex; gap:10px; align-items:center; border:1px solid var(--fd-border); border-radius:13px; background:var(--fd-panel); box-shadow:none; font-size:13px; font-weight:450; }
-.fd-project-overview { height:100%; overflow:auto; display:grid; grid-template-rows:auto minmax(180px,1fr) auto; gap:18px; padding:22px 40px 90px; text-align:center; }
+.fd-project-overview { height:100%; overflow:auto; display:grid; grid-template-rows:auto auto minmax(260px,1fr) auto; gap:24px; padding:22px 40px 90px; text-align:center; }
+.fd-project-overview > .fd-project-status-nav { margin:0; padding-top:0; }
+.fd-overview-source-boards { align-self:start; text-align:left; min-width:0; }
+.fd-overview-source-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
+.fd-overview-source-heading h2 { margin:0; font-size:16px; font-weight:600; }
+.fd-overview-source-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); gap:12px; }
+.fd-overview-source-card { display:flex; align-items:flex-start; gap:14px; min-width:0; padding:18px; text-align:left; background:var(--fd-panel); border:1px solid var(--fd-border); border-radius:12px; }
+.fd-overview-source-card:hover { border-color:var(--fd-accent); background:var(--fd-panel-2); }
+.fd-overview-source-card:focus-visible { outline:2px solid var(--fd-accent); outline-offset:3px; }
+.fd-overview-source-card > svg { flex:none; color:var(--fd-accent); }
+.fd-overview-source-card > span { min-width:0; display:grid; gap:8px; }
+.fd-overview-source-card strong { font-size:14px; font-weight:600; overflow-wrap:anywhere; }
+.fd-overview-source-card small { color:var(--fd-muted); font-size:11px; overflow-wrap:anywhere; }
+.fd-overview-source-action { font-size:12px; color:var(--fd-accent); }
 .fd-overview-heading { margin:0 auto; }
 .fd-overview-heading h1 { font-size:21px; font-weight:550; letter-spacing:-.45px; margin:4px 0 7px; }
 .fd-overview-heading p { color:var(--fd-muted); font-size:13px; }
