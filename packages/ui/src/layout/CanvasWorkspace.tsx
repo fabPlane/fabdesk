@@ -123,7 +123,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       <button className="fd-canvas-brand" title="Project overview" onClick={() => { if (projectId) openArea("overview"); else { ui().setActiveThread(null); setShowProjects(false); } }}>
         <FabPlaneLogo /><span>fabPlane</span>
       </button>
-      {projectId ? <><WorkspaceBackButton /><strong className="fd-project-identity" title={name}>{name}</strong><Button size="sm" variant="ghost" onClick={() => ui().requestProjectClose(true)} title="Close project and return to Home">Home</Button></> : <span className="fd-home-header-label">{showProjects ? "Projects" : "Home"}</span>}
+      {projectId ? <><WorkspaceBackButton /><strong className="fd-project-identity" title={name}>{name}</strong><Button className="fd-header-home" size="sm" variant="ghost" onClick={() => ui().requestProjectClose(true)} title="Close project and return to Home">Home</Button></> : <span className="fd-home-header-label">{showProjects ? "Projects" : "Home"}</span>}
       {isDraft && <span className="fd-idea-badge">Draft</span>}
       {referenceStart && <span className="fd-canvas-breadcrumb"><span>/</span><strong>Start with sketch</strong></span>}
       <div className="fd-canvas-header-actions">
