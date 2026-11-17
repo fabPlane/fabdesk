@@ -732,7 +732,7 @@ export interface KicadService {
   ): Promise<Record<string, unknown>>;
   exportGerbers(
     cli: KicadCli,
-    opts: { board: string; outDir: string; signal?: AbortSignal },
+    opts: { board: string; outDir: string; preset?: "production" | "all"; signal?: AbortSignal },
   ): Promise<{ paths: string[] }>;
   exportDrill(
     cli: KicadCli,
@@ -1043,6 +1043,7 @@ export type RouteRunRecord = {
     expectedPcbRevision: string;
     resultingPcbRevision: string | null;
     appliedAt: string | null;
+    nativeConnectivity?: { status: "measured" | "unavailable" | "stale"; pcbSha256: string; open: number | null; reason?: string };
     reason: string | null;
   };
   startedAt: string;

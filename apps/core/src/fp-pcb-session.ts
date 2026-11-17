@@ -25,6 +25,7 @@ import {
   isManagedLibraryRow,
   rowsToRestore,
   type ProjectLibrarySnapshot,
+  type ProjectLibraryRow,
 } from "./project-library-tables";
 
 export const BOARD_PRO = "board.kicad_pro";
@@ -47,6 +48,7 @@ export class FpPcbSessions {
   private readonly recovering = new Set<string>();
   private readonly reconciliation = new Map<string, Promise<void>>();
   private readonly libraryRevisions = new WeakMap<ProjectSession, string>();
+  private readonly libraryWrites = new WeakMap<ProjectSession, Promise<void>>();
   private readonly libraryRegistration = new WeakMap<ProjectSession, Promise<void>>();
 
   constructor(
@@ -207,8 +209,21 @@ export class FpPcbSessions {
     write: () => Promise<T>,
     replacing?: { kind: "footprint" | "symbol"; nickname: string },
   ): Promise<T> {
-    const before = await captureProjectLibraryRows(projectDir);
+    const previous = this.libraryWrites.get(session) ?? Promise.resolve();
+    let unlock!: () => void;
+    const held = new Promise<void>(resolve => { unlock = resolve; });
+    const queued = previous.then(() => held);
+    this.libraryWrites.set(session, queued);
+    await previous;
+    try { return await this.writePreservingProjectLibraries(projectDir, session, write, replacing); }
+    finally {
+      unlock();
+      if (this.libraryWrites.get(session) === queued) this.libraryWrites.delete(session);
+    }
+  }
 
+  private async writePreservingProjectLibraries<T>(projectDir: string, session: ProjectSession, write: () => Promise<T>, replacing?: { kind: "footprint" | "symbol"; nickname: string }): Promise<T> {
+    const before = await captureProjectLibraryRows(projectDir);
     let result: T;
     try {
       result = await write();
@@ -235,6 +250,15 @@ export class FpPcbSessions {
     const restored: string[] = [];
     for (const kind of ["footprint", "symbol"] as const) {
       for (const row of rowsToRestore(before[kind], after[kind], (row) => isManagedLibraryRow(kind, row))) {
+        // A native save and an external editor are independent writers. If disk differs from
+        // KiCad's current table, it contains a newer external edit: refuse instead of replaying
+        // our older snapshot over it. Recheck before every restorative RPC.
+        const native = await session.kicad.libraries.tables(kind, "project");
+        const memory: ProjectLibraryRow[] = native.map(entry => ({ name: entry.nickname, uri: entry.uri, type: entry.type || "KiCad", options: entry.options, descr: entry.description, disabled: !entry.enabled, hidden: entry.hidden }));
+        const disk = (await captureProjectLibraryRows(projectDir))[kind];
+        const identity = (rows: ProjectLibraryRow[] | null) => JSON.stringify(rows?.slice().sort((a, b) => a.name.localeCompare(b.name)).map(r => [r.name, r.type, r.uri, r.options, r.descr, r.disabled, r.hidden]));
+        if (identity(disk) !== identity(memory))
+          throw new NativeRevisionConflict(`The ${kind} library table was edited outside KiCad during registration; the newer saved table was kept. Reopen the project before retrying.`);
         await session.kicad.libraries.addTableRow(
           kind,
           "project",

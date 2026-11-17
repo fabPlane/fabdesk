@@ -11,11 +11,12 @@ export const pcb_define_outline = defineTool({
   toolset: "circuit",
   title: "Define PCB outline",
   description:
-    "Create a native board.kicad_pcb outer Edge.Cuts boundary. Give widthMm/heightMm for a rectangle at (0,0), or at least three polygon points in mm. Re-running accepts an exact match. replace=true updates only an outline previously created by this tool; a different existing outline fails closed.",
+    "Create a native board.kicad_pcb outer Edge.Cuts boundary. Give widthMm/heightMm for a rectangle at (0,0), or at least three polygon points in mm. Re-running accepts an exact match. replace=true updates a compiler/tool outline. A human outline also needs expectedSourceSha256 from inspection; locked or curved boundaries fail closed.",
   inputSchema: {
     widthMm: z.number().positive().optional(),
     heightMm: z.number().positive().optional(),
     points: z.array(Point).min(3).max(100).optional(),
+    origin: Point.optional().describe("Rectangle origin in absolute PCB millimetres; defaults to (0,0). Supply points for an arbitrary polygon."),
     replace: z.boolean().default(false),
     expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Saved PCB hash from pcb_inspect. Reject outline changes when the source has changed."),
   },
@@ -25,14 +26,16 @@ export const pcb_define_outline = defineTool({
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async ({ widthMm, heightMm, points, replace, expectedSourceSha256 }, ctx) => {
+  handler: async ({ widthMm, heightMm, points, origin, replace, expectedSourceSha256 }, ctx) => {
     if (!points && !(widthMm && heightMm))
       throw new ToolError("provide points or both widthMm and heightMm", "invalid_args");
+    if (points && origin) throw new ToolError("origin applies only to widthMm/heightMm rectangles", "invalid_args");
+    const x = origin?.x ?? 0, y = origin?.y ?? 0;
     const outline = points ?? [
-      { x: 0, y: 0 },
-      { x: widthMm!, y: 0 },
-      { x: widthMm!, y: heightMm! },
-      { x: 0, y: heightMm! },
+      { x, y },
+      { x: x + widthMm!, y },
+      { x: x + widthMm!, y: y + heightMm! },
+      { x, y: y + heightMm! },
     ];
     const project = ctx.requireProject();
     const result = await ctx.services.design.defineBoardOutline(project.dir, outline, replace, expectedSourceSha256 ? { expectedSourceSha256 } : undefined);

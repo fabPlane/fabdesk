@@ -138,6 +138,7 @@ export const render_publish = defineTool({
                     ? dirname(await jailPath(project.dir, project.manifest().importedBoard!.path))
                     : project.dir,
                 }),
+              measureMechanical: (binary, options) => kicad.measureMechanical(binary, { ...options, board: originalPath(options.board), projectDir: project.manifest().importedBoard ? dirname(join(project.dir, project.manifest().importedBoard!.path)) : project.dir }),
               runDrc: (binary, options) =>
                 kicad.runDrc(binary, { ...options, board: originalPath(options.board) }),
               runErc: (binary, options) =>

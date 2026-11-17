@@ -120,7 +120,7 @@ export const pcb_environment = defineTool({
       mcp: "Structured KiCad, FabPCB, project, render, verification, and export operations.",
       cli: "Bundled kicad-cli path and version.",
       script:
-        "fabpcb tool exposes the same registry as JSON/JSONL for programmable calls and batches.",
+        "Shell registry access has not been preflighted in this session; use MCP tools.",
       ui: "Desktop application automation status.",
       files: "Project-local files are directly accessible.",
     };
@@ -130,12 +130,7 @@ export const pcb_environment = defineTool({
       bridge,
       desktopUi: app,
       interfaces,
-      scriptCli: {
-        search: 'fabpcb tool search "inspect board region"',
-        describe: "fabpcb tool describe pcb_inspect",
-        call: "fabpcb tool call pcb_inspect --request @request.json",
-        batch: "fabpcb tool batch --input @calls.jsonl",
-      },
+      scriptCli: { status: "unverified", reason: "The shell executable and authenticated core endpoint have not been preflighted in this session." },
       uiConventions: {
         canonicalFiles: files,
         renders: p(project, PROJECT_FILES.renders),
@@ -150,7 +145,7 @@ export const pcb_environment = defineTool({
         `PCB workbench for ${project.name} at ${project.dir}`,
         `KiCad CLI: ${cli ? `${cli.path} (${cli.version})` : "not found"}`,
         `FabPCB bridge: ${bridge.ok ? "ready" : "unavailable"} at ${bridge.url}${bridge.reason ? ` — ${bridge.reason}` : ""}`,
-        "Scriptable registry: fabpcb tool search <words>; describe <name>; call <name> --request <json|@file>; batch --input @calls.jsonl.",
+        "Shell registry: unverified in this session; use structured tools until its endpoint is preflighted.",
         `Routers (default freerouting → fab_router fallback): fab_router=${bridge.routers?.fab_router?.ok ? "ready" : `unavailable${bridge.routers?.fab_router?.reason ? ` — ${bridge.routers.fab_router.reason}` : ""}`}; freerouting=${bridge.routers?.freerouting?.ok ? "ready" : `unavailable${bridge.routers?.freerouting?.reason ? ` — ${bridge.routers.freerouting.reason}` : ""}`}; tracemaker=${ctx.services.routers?.get("tracemaker").ready ? "ready" : "not installed — Settings → Routers or TRACEMAKER_BIN"}`,
         `Desktop UI automation: ${app.running ? "available" : `unavailable${app.reason ? ` — ${app.reason}` : ""}`}`,
         `Project files: ${Object.entries(files)

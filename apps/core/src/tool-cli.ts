@@ -1,3 +1,4 @@
+import { capabilityScore } from "@fabdesk/tools";
 /** Script-friendly search/describe/call access to the live Fabdesk tool registry. */
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -48,16 +49,7 @@ export async function runToolCli(options: ToolCliOptions, deps: ToolCliDeps = {}
     const matches = manifest
       .map((tool) => ({
         tool,
-        score: terms.reduce(
-          (sum, term) =>
-            sum +
-            (`${tool.name} ${tool.title} ${tool.description} ${tool.toolset}`
-              .toLowerCase()
-              .includes(term)
-              ? 1
-              : 0),
-          0,
-        ),
+        score: capabilityScore(query, tool),
       }))
       .filter(({ score }) => score > 0)
       .sort((a, b) => b.score - a.score || a.tool.name.localeCompare(b.tool.name))

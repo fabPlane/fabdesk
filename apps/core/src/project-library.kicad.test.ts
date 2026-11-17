@@ -51,5 +51,10 @@ test.skipIf(!url)("compile uses project symbol and footprint overrides of bundle
     await sessions.release(dir);
     expect((await design.describePart("footprint", "Resistor_SMD:R_0603_1608Metric", dir)).pads?.map(pad => pad.size.x)).toEqual([1.73, 1.73]);
     expect(await readFile(join(dir, "circuit.netlist.json"), "utf8")).toBe(text);
+    await design.schematicEdit(dir, { symbolUpdates: [{ reference: "R1", fields: { Manufacturer: "AUDIT_FIELD", MPN: "AUDIT-ORDER-CODE" } }] });
+    expect(await readFile(join(dir, "board.kicad_sch"), "utf8")).toContain("AUDIT_FIELD");
+    await design.syncSchematicToPcb(dir, false);
+    expect(await readFile(join(dir, "board.kicad_pcb"), "utf8")).toContain("AUDIT-ORDER-CODE");
+
   } finally { await sessions.dispose(); await rm(dir, { recursive: true, force: true }); }
 }, 120_000);

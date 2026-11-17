@@ -1,3 +1,4 @@
+import { parseLibraryTable } from "./project-library-tables";
 import { describe, expect, test } from "bun:test";
 import { DocumentType } from "@fp-pcb/proto";
 import { inspectProjectBoardSources } from "@fabdesk/tools";
@@ -419,6 +420,7 @@ test("bundled library setup re-adds project rows KiCad's in-memory table save dr
     let memory = [bundled];
     const added: unknown[] = [];
     (session.kicad as any).libraries = {
+      tables: async () => parseLibraryTable(tableOf(memory)).map(row => ({ nickname: row.name, uri: row.uri, type: row.type, options: row.options, description: row.descr, enabled: !row.disabled, hidden: row.hidden })),
       addTableRow: async (kind: string, scope: string, row: { nickname: string; uri: string; description: string }, replace: boolean) => {
         added.push({ kind, scope, nickname: row.nickname, uri: row.uri, replace });
         memory = [...memory.filter(r => !r.includes(`"${row.nickname}"`)), `\t(lib (name "${row.nickname}") (type "KiCad") (uri "${row.uri}") (options "") (descr "${row.description}"))`];
@@ -439,3 +441,27 @@ test("bundled library setup re-adds project rows KiCad's in-memory table save dr
     expect(added.length).toBe(1);
   });
 });
+
+test("library restoration preserves a newer external table edit instead of replaying an old snapshot", async () => fixture(async f => {
+  const session = await f.sessions.session(f.dir), path = join(f.dir, "fp-lib-table");
+  const table = (uri: string) => `(fp_lib_table (lib (name "Pilot") (type "KiCad") (uri "${uri}") (options "") (descr "project")))`;
+  await writeFile(path, table("old.pretty"));
+  let adds = 0;
+  (session.kicad as any).libraries = { tables: async () => [], addTableRow: async () => { adds++; throw Error("must not overwrite newer disk edit"); } };
+  await expect(f.sessions.preservingProjectLibraries(f.dir, session, async () => {
+    await writeFile(path, table("newer-external.pretty"));
+  })).rejects.toThrow("newer saved table was kept");
+  expect(await readFile(path, "utf8")).toContain("newer-external.pretty");
+  expect(adds).toBe(0);
+}));
+
+test("library writes on the same native session capture snapshots serially", async () => fixture(async f => {
+  const session = await f.sessions.session(f.dir), events: string[] = [];
+  let unlock!: () => void;
+  const blocked = new Promise<void>(resolve => { unlock = resolve; });
+  const first = f.sessions.preservingProjectLibraries(f.dir, session, async () => { events.push("first"); await blocked; events.push("first done"); });
+  const second = f.sessions.preservingProjectLibraries(f.dir, session, async () => { events.push("second"); });
+  await new Promise(resolve => setTimeout(resolve, 10)); expect(events).toEqual(["first"]);
+  unlock(); await Promise.all([first, second]);
+  expect(events).toEqual(["first", "first done", "second"]);
+}));

@@ -38,6 +38,7 @@ import {
   SchematicSymbolType,
   SchematicTextSchema,
   TextSchema,
+  SchematicFieldSchema,
   type PolyLine,
   type PolygonWithHoles,
 } from "@fp-pcb/proto";
@@ -1012,12 +1013,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       for (const [name, value] of Object.entries(input.fields ?? {})) {
         assertEditableSymbolField(name);
         const field = symbol.field(name);
-        if (!field)
-          throw new ToolError(
-            `cannot add new field ${name} while updating ${input.reference}; provide it when creating the symbol`,
-            "invalid_args",
-          );
-        field.text = value;
+        if (field) field.text = value;
+        else symbol.proto.userFields.push(create(SchematicFieldSchema, {
+          name, visible: false, allowAutoPlace: true,
+          text: { text: value, ...(symbol.proto.position ? { position: symbol.proto.position } : {}) },
+        }));
       }
       updatedSymbols.push(symbol);
     }
@@ -1508,7 +1508,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     // Curved boundaries and cutouts cannot be compared or replaced by the segment-only tool.
     if (existing.some((edge) => edge.proto.shape?.geometry.case !== "segment"))
       throw new ToolError("This board has curved or non-segment Edge.Cuts geometry. Review and edit its boundary in KiCad.", "precondition");
-    const generated = existing.filter((edge) => edge.customProperties[property] === value);
+    const generated = existing.filter((edge) => edge.customProperties[property] === value || edge.customProperties["fp-pcb.generated-outline"] === "circuit.netlist.json");
     const segmentKey = (a: { x: number; y: number }, b: { x: number; y: number }) => {
       const first = `${a.x},${a.y}`;
       const second = `${b.x},${b.y}`;
@@ -1549,7 +1549,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         saved: true,
       };
     }
-    if (existing.length && (generated.length !== existing.length || !replace))
+    if (existing.length && (!replace || generated.length !== existing.length && !options.expectedSourceSha256))
       throw new ToolError(
         generated.length === existing.length
           ? "the requested outline differs from the fabPlane-owned outline; review the board and pass replace=true to update it"
@@ -1560,14 +1560,14 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       throw new ToolError("The board outline contains locked edges. Unlock them in KiCad before resizing.", "precondition");
     await assertExpectedSource();
     await board.commit("fabPlane: define native PCB outline", async (tx) => {
-      if (generated.length) await tx.delete(generated);
+      if (existing.length) await tx.delete(existing);
       await tx.create(newEdges);
     });
     await board.save();
     await keepNetClass(projectDir);
     return {
       created: newEdges.length,
-      replaced: generated.length,
+      replaced: existing.length,
       revision: Number((await board.revision()) ?? 0n),
       saved: true,
     };
@@ -2302,7 +2302,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           id: shape.id,
           owner,
           locked: shape.locked,
-          toolOwnedOutline: shape.proto.layer === BoardLayer.BL_Edge_Cuts && shape.customProperties["fabdesk.generated-outline"] === "native-atomic-edit",
+          toolOwnedOutline: shape.proto.layer === BoardLayer.BL_Edge_Cuts && (shape.customProperties["fabdesk.generated-outline"] === "native-atomic-edit" || shape.customProperties["fp-pcb.generated-outline"] === "circuit.netlist.json"),
           kind: shape.kind,
           layer: shape.layerId,
           start: { x: mm(shape.start.x), y: mm(shape.start.y) },

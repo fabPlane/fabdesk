@@ -192,6 +192,7 @@ export const render_glb = defineTool({
     const modelProjectDirectory = relative(project.dir, modelProjectDir).split(sep).join("/");
     const scratch = await mkdtemp(join(tmpdir(), "fabplane-board-model-"));
     let res: { fused: boolean; warnings: string[] };
+    let measured: { loaded: number; unavailable: Array<{ ref: string; status: string }>; loadVerification: "measured" } | undefined;
     try {
       // Keep the source in its real project so relative component models/project variables
       // resolve normally. Only publish a newly written export, after rechecking saved PCB bytes.
@@ -199,6 +200,19 @@ export const render_glb = defineTool({
       res = await ctx.services.kicad.exportGlb(cli, { board, output: temporary, ...(modelProjectDirectory ? { modelProjectDir } : {}), signal: ctx.signal });
       if (await pcbPreviewFileHash(board) !== sourceSha256)
         throw new ToolError("PCB changed while exporting the model. The previous model was kept; review the saved PCB and try again.", "precondition");
+      try {
+        const mechanical = await ctx.services.kicad.measureMechanical(cli, { board, projectDir: modelProjectDir, scratchDir: scratch, signal: ctx.signal });
+        if (mechanical.source.pcbRevision !== sourceSha256) throw new ToolError("Mechanical coverage does not match the saved PCB", "precondition");
+        const entries = mechanical["footprints"];
+        if (!Array.isArray(entries)) throw new Error("Mechanical report has no per-footprint geometry");
+        const fitted = (entries as Array<{ ref: string | null; dnp: boolean; status: string; models: Array<{ load: { status: string } }> }>).filter(entry => !entry.dnp);
+        const loaded = fitted.filter(entry => entry.models.some(model => model.load.status === "loaded"));
+        measured = { loaded: loaded.length, unavailable: fitted.filter(entry => !loaded.includes(entry)).map(entry => ({ ref: entry.ref ?? "(unreferenced)", status: entry.status })), loadVerification: "measured" };
+      } catch (error) {
+        if (ctx.signal.aborted || error instanceof ToolError) throw error;
+        res.warnings.push(`Component geometry coverage unavailable: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      if (await pcbPreviewFileHash(board) !== sourceSha256) throw new ToolError("PCB changed during model coverage measurement", "precondition");
       const bytes = await readFile(temporary);
       const receipt = (ctx.board ? AssemblyBoardModelRevision : BoardModelRevision).parse({ contract: "fabplane.board-model-revision.v1", source: "board.kicad_pcb", artifact: "renders/board.glb", sourceSha256, artifactSha256: createHash("sha256").update(bytes).digest("hex"), generatedAt: new Date().toISOString(), dependencies: "unverified", warnings: res.warnings, ...(modelProjectDirectory ? { modelProjectDirectory } : {}), ...(ctx.board ? { boardSource: { projectId: project.id, ...ctx.board } } : {}) });
       await jailPath(project.dir, `${PROJECT_FILES.renders}/board.glb`);
@@ -209,13 +223,13 @@ export const render_glb = defineTool({
       await writeJson(receiptPath, receipt);
     } finally { await rm(scratch, { recursive: true, force: true }); }
     ctx.progress(1, "done");
-    let modelCoverage: { total: number; declared: number; missing: string[]; loadVerification: "unverified"; warnings: string[] } | { status: "unavailable"; reason: string };
+    let modelCoverage: { total: number; declared: number; missing: string[]; loadVerification: "unverified" | "measured"; loaded?: number; unavailable?: Array<{ ref: string; status: string }>; warnings: string[] } | { status: "unavailable"; reason: string };
     try {
       const footprints = readSavedBoardModels(await readFile(board, "utf8")).filter(fp => !fp.dnp);
       const missing = footprints.filter(fp => !fp.models.length).map(fp => fp.ref ?? "(unreferenced)");
-      modelCoverage = { total: footprints.length, declared: footprints.length - missing.length, missing, loadVerification: "unverified", warnings: res.warnings };
+      modelCoverage = { total: footprints.length, declared: footprints.length - missing.length, missing, loadVerification: "unverified", ...(measured ?? {}), warnings: res.warnings };
     } catch (error) { modelCoverage = { status: "unavailable", reason: error instanceof Error ? error.message : String(error) }; }
-    const coverageText = "total" in modelCoverage ? `Declared models: ${modelCoverage.declared}/${modelCoverage.total} footprints; missing: ${modelCoverage.missing.join(", ") || "none"}. Model loading is unverified; review exporter warnings.` : `Model coverage unavailable: ${modelCoverage.reason}`;
+    const coverageText = "total" in modelCoverage ? `Declared models: ${modelCoverage.declared}/${modelCoverage.total} footprints; missing: ${modelCoverage.missing.join(", ") || "none"}. ${modelCoverage.loadVerification === "measured" ? `Loaded component geometry: ${modelCoverage.loaded}/${modelCoverage.total}. Unavailable: ${modelCoverage.unavailable?.map(entry => `${entry.ref} (${entry.status})`).join(", ") || "none"}.` : "Model loading is unverified; review exporter warnings."}` : `Model coverage unavailable: ${modelCoverage.reason}`;
     const url = fileUrl(output);
     return ok(
       `Exported ${PROJECT_FILES.renders}/board.glb. ${coverageText}${res.fused ? " (fused shapes)" : ""}. Browser URL: ${url}${res.warnings.length ? `\nWarnings:\n${res.warnings.map((w) => `- ${w}`).join("\n")}` : ""}`,

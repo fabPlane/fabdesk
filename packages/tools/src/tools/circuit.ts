@@ -1,3 +1,6 @@
+import { NetlistFile } from "@fabdesk/protocol";
+import { readFile } from "node:fs/promises";
+import { jailPath } from "../fs";
 /** Circuit toolset: inspect the board KiCad holds and search the footprint libraries. */
 import { z } from "zod/v4";
 import { defineTool } from "../registry";
@@ -175,7 +178,35 @@ export const circuit_library = defineTool({
   },
 });
 
+export const circuit_source = defineTool({
+  name: "circuit_source", toolset: "circuit", title: "Inspect or validate compiler source",
+  description: "Read the compiler source schema/example or validate saved source without starting KiCad or modifying files. Validation is structural and checks references/nets; native library compatibility, ERC and DRC remain separate.",
+  inputSchema: { action: z.enum(["schema", "validate"]), path: z.string().default("circuit.netlist.json") },
+  annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  handler: async ({ action, path }, ctx) => {
+    if (action === "schema") return ok("Compiler source schema and example; validate before circuit_build.", { schema: z.toJSONSchema(NetlistFile), example: { netlist: { components: [{ ref: "R1", value: "1k", footprint: "Resistor_SMD:R_0603_1608Metric", libSource: { lib: "Device", part: "R" } }], nets: [{ name: "TEST", nodes: [{ ref: "R1", pin: "1" }, { ref: "R1", pin: "2" }] }] }, board: { widthMm: 30, heightMm: 20 } } });
+    const project = ctx.requireProject();
+    let data: unknown;
+    try { data = JSON.parse(await readFile(await jailPath(project.dir, path), "utf8")); }
+    catch (error) { throw new ToolError(`Cannot read source ${path}: ${error instanceof Error ? error.message : String(error)}`, "invalid_args"); }
+    const parsed = NetlistFile.safeParse(data);
+    if (!parsed.success) return { ...ok("Compiler source is invalid.", { valid: false, issues: parsed.error.issues }), isError: true };
+    const errors: string[] = [], refs = new Set<string>(), nets = new Set<string>();
+    for (const component of parsed.data.netlist.components) { if (refs.has(component.ref)) errors.push(`duplicate component ${component.ref}`); refs.add(component.ref); }
+    const pins = new Set<string>();
+    for (const net of parsed.data.netlist.nets) {
+      if (nets.has(net.name)) errors.push(`duplicate net ${net.name}`); nets.add(net.name);
+      for (const node of net.nodes) {
+        if (!refs.has(node.ref)) errors.push(`${net.name} references missing component ${node.ref}`);
+        const pin = `${node.ref}:${node.pin}`; if (pins.has(pin)) errors.push(`pin ${pin} appears more than once`); pins.add(pin);
+      }
+    }
+    return { ...ok(errors.length ? "Compiler source validation failed." : "Compiler source is structurally valid; library compatibility and native checks remain unverified.", { valid: !errors.length, errors, components: refs.size, nets: nets.size, nativeChecks: "not_run" }), isError: !!errors.length };
+  },
+});
+
 export const circuitTools = [
+  circuit_source,
   circuit_library,
   circuit_query,
   circuit_search_parts,
