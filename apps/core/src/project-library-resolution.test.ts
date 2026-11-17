@@ -46,3 +46,19 @@ test("registration uses portable project URI and refuses traversal, external sym
   await expect(f.design.registerLibrary!(f.dir, "footprint", "../bad", "SHT31Pilot.pretty")).rejects.toThrow("nickname");
   expect(f.calls).toEqual(["${KIPRJMOD}/SHT31Pilot.pretty"]);
 });
+
+for (const kind of ["footprint", "symbol"] as const) test(`bundled ${kind} discovery stays available in an empty selected project without the bridge`, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "empty-project-library-")); dirs.push(dir);
+  const hit = { libId: "Bundled:Part", nickname: "Bundled", name: "Part", description: "bundled part" };
+  const part = { kind, libId: hit.libId, description: hit.description };
+  const unavailable = () => { throw Error("native bridge must not be used for bundled catalog discovery"); };
+  const design = createFpPcbDesign({
+    bridge: unavailable,
+    sessions: { refreshProjectLibraries: unavailable, withRetry: unavailable } as never,
+    catalog: { has: () => true, search: async () => [hit], describe: async (_kind: string, id: string) => id === hit.libId ? part : null } as never,
+  });
+  const search = kind === "footprint" ? design.searchFootprints : design.searchSymbols;
+  expect(await search("Part", 5, dir)).toEqual([hit]);
+  expect(await design.describePart(kind, hit.libId, dir)).toEqual(part);
+  await expect(design.describePart(kind, "Bundled:Missing", dir)).rejects.toThrow("not found in the bundled");
+});

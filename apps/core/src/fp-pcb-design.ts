@@ -2632,10 +2632,12 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     limit: number,
     projectDir?: string,
   ): Promise<FootprintHit[]> => {
-    if (projectDir) await deps.sessions.refreshProjectLibraries(projectDir);
     const rows = projectDir ? await projectRows(projectDir, kind) : [];
     const overridden = new Set(rows.map((row) => row.name));
     const enabled = rows.filter(row => !row.disabled);
+    // Bundled discovery is project-independent, including before native files exist or while
+    // the bridge is unavailable. Only project overrides need the live table refreshed.
+    if (projectDir && enabled.length) await deps.sessions.refreshProjectLibraries(projectDir);
     const projectLocal = enabled.filter(row => row.uri.includes("${KIPRJMOD}"));
     const remaining = enabled.filter(row => !projectLocal.includes(row));
     const local = projectDir && enabled.length
@@ -2660,7 +2662,6 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     libId: string,
     projectDir?: string,
   ): Promise<PartDescription> => {
-    if (projectDir) await deps.sessions.refreshProjectLibraries(projectDir);
     const nickname = libId.split(":")[0];
     const row = projectDir ? (await projectRows(projectDir, kind)).find((row) => row.name === nickname) : undefined;
     if (row?.disabled) throw new ToolError(`${kind} library ${nickname} is disabled in this project`, "not_found");
@@ -2669,6 +2670,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       if (item) return item;
       throw new ToolError(`${kind} ${libId} was not found in the bundled KiCad libraries`, "not_found");
     }
+    if (row) await deps.sessions.refreshProjectLibraries(projectDir!);
     // Keep lookup and conversion inside the retry boundary, including project overrides.
     return deps.sessions.withRetry(row ? projectDir! : "", async (session) => {
       const kicad = await anyKicad(session.kicad);
