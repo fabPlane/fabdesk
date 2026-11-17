@@ -4,13 +4,14 @@ import { Tabs } from "../components/ui";
 export function BoardViewTabs({ value, disabled = false, onChange }: {
   value: string;
   disabled?: boolean;
-  onChange: (value: "pcb" | "schematic" | "3d") => void;
+  onChange: (value: "pcb" | "schematic" | "3d" | "layers") => void;
 }) {
   return <div className="fd-board-view-tabs" inert={disabled || undefined}>
     <Tabs tabs={[
-      { id: "pcb" as const, label: "PCB", icon: "pcb" as const },
-      { id: "schematic" as const, label: "Schematic", icon: "schematic" as const },
+      { id: "pcb" as const, label: "2D", icon: "pcb" as const },
       { id: "3d" as const, label: "3D", icon: "cube" as const },
-    ]} value={value} onChange={next => { if (next === "pcb" || next === "schematic" || next === "3d") onChange(next); }} />
+      { id: "layers" as const, label: "Layers", icon: "pcb" as const },
+      { id: "schematic" as const, label: "Schematic", icon: "schematic" as const },
+    ]} value={value} onChange={next => { if (next === "pcb" || next === "schematic" || next === "3d" || next === "layers") onChange(next); }} />
   </div>;
 }

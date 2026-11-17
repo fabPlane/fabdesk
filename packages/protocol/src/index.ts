@@ -47,3 +47,4 @@ export * from "./board-checks";
 export { sanitizeSharedGlb } from "./shared-glb";
 
 export * from "./board-contributions";
+export * from "./board-layers";

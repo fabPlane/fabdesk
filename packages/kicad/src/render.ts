@@ -115,7 +115,7 @@ export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promi
   if (fused.ok) return { fused: !options.mechanical, warnings: fused.warnings };
   const plain = await attempt(false);
   if (plain.ok) return { fused: false, warnings: [...plain.warnings, "The first 3D export was incomplete; a fresh retry succeeded."] };
-  throw new Error(`pcb export glb failed (${plain.exitCode}): ${plain.invalid ?? lastLines(plain.stderr)}`);
+  throw new Error(`pcb export glb failed (${plain.exitCode}): ${lastLines(plain.stderr).trim() || plain.invalid || "KiCad did not produce a model"}`);
 }
 
 export interface BoardStats {

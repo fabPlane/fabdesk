@@ -254,3 +254,28 @@
   .fd-canvas-main[data-task-toolbar=true]:is([data-area=overview],[data-area=status])::before { height:64px; }
   .fd-canvas-workspace .fd-project-overview { padding-top:86px; }
 }
+
+/* Board tools share the navigation rhythm; secondary view controls live below. */
+.fd-assembly-detail-heading > .fd-board-tools > summary {
+  width:36px;
+  padding:0;
+  justify-content:center;
+}
+.fd-assembly-detail-heading > .fd-canvas-tool > .fd-canvas-tool-button {
+  width:36px;
+  height:36px;
+  min-height:36px;
+  padding:0;
+}
+.fd-assembly-detail-heading .fd-board-view-tabs {
+  padding-left:10px;
+}
+.fd-assembly-detail-heading .fd-board-task-actions {
+  gap:8px;
+}
+
+.fd-assembly-detail-heading > .fd-canvas-tool {
+  padding:0;
+  border:0;
+  background:transparent;
+}
