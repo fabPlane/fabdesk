@@ -33,6 +33,7 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
   const previews = useAutomaticBoardViews({ projectId, directory, sourceStamp, enabled, ...(board ? { board } : {}) });
   const [side, setSide] = useState<"top" | "bottom">("top");
   const [viewRevision, setViewRevision] = useState(0);
+  const [selectionToolbar, setSelectionToolbar] = useState<HTMLDivElement | null>(null);
   const modelView = useRef<"2d" | "3d">("2d");
   if (mode !== "layers") modelView.current = mode === "pcb" ? "2d" : "3d";
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
@@ -42,14 +43,15 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
   const error = previews.source.error ?? current.error;
   return <div className="fd-board-preview" data-testid="automatic-board-preview" data-mode={mode}>
     <div className="fd-preview-topbar">
-      <div className="fd-preview-side" aria-label="Board side" style={{ visibility: mode !== "layers" ? "visible" : "hidden" }}>
+      <div className="fd-preview-side" aria-label="Board side" hidden={layerView}>
         {(["top", "bottom"] as const).map(value => <Button key={value} size="sm" variant={side === value ? "primary" : "ghost"} aria-pressed={side === value} onClick={() => { setSide(value); setViewRevision(revision => revision + 1); }}>{value === "top" ? "Top" : "Bottom"}</Button>)}
       </div>
-      <span role="status">{!enabled ? "Checking board source…" : previews.model.isFetching || previews.layers.isFetching || previews.source.isFetching ? "Preparing board views…" : error ? "Preview needs attention" : "Saved board · previews ready"}</span>
+      <div className="fd-preview-selection" ref={setSelectionToolbar} hidden={layerView} />
+      <span className="fd-board-preview-status" role="status">{!enabled ? "Checking board source…" : previews.model.isFetching || previews.layers.isFetching || previews.source.isFetching ? "Preparing board views…" : error ? "Preview needs attention" : "Saved board · previews ready"}</span>
     </div>
     <div className="fd-preview-stage">
       <div className="fd-preview-surface" style={{ visibility: layerView ? "hidden" : "visible" }} inert={layerView || undefined} aria-hidden={layerView}>
-        {previews.model.data && <Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={previews.path} blob={previews.model.data.blob} viewMode={modelView.current} side={side} viewRevision={viewRevision} selectionSource={{ projectId, ...(board ? { board } : {}), enabled }} /></Suspense>}
+        {previews.model.data && <Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={previews.path} blob={previews.model.data.blob} viewMode={modelView.current} side={side} viewRevision={viewRevision} selectionToolbar={selectionToolbar} selectionSource={{ projectId, ...(board ? { board } : {}), enabled }} /></Suspense>}
       </div>
       <div className="fd-preview-surface fd-preview-layers" style={{ visibility: layerView ? "visible" : "hidden" }} inert={!layerView || undefined} aria-hidden={!layerView}>
         {previews.layers.data && <><aside aria-label="PCB layers"><header><strong>Layers</strong><Button size="sm" variant="ghost" onClick={() => setHidden(new Set())}>Show all</Button></header>{previews.layers.data.layers.map(layer => <label key={layer.name}><input type="checkbox" checked={!hidden.has(layer.name)} onChange={event => setHidden(previous => { const next = new Set(previous); if (event.target.checked) next.delete(layer.name); else next.add(layer.name); return next; })} /><span className="fd-layer-swatch" style={{ background: layerColors.get(layer.name) }} /><span>{names[layer.name] ?? layer.name.replace(/^In(\d+)\.Cu$/, "Inner $1 copper")}<small>{layer.name}</small></span></label>)}</aside><div className="fd-layer-drawing"><SvgViewer svg={drawing} viewKey={`${projectId}:${directory}:layers`} fitLabel="Fit board" />{hidden.size >= previews.layers.data.layers.length && <div className="fd-preview-notice">All layers hidden. Select a layer to show it.</div>}</div></>}

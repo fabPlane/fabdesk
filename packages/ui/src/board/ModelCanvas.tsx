@@ -81,7 +81,7 @@ async function loadModel(bytes: ArrayBuffer, path: string): Promise<THREE.Object
 }
 
 /** View transforms affect only the camera. Model bytes and physical placement stay untouched. */
-export default function ModelCanvas({ projectId, path, blob, selectionSource, viewMode, side = "top", viewRevision = 0 }: { projectId: string; path: string; blob?: Blob; selectionSource?: PartSelectionSource; viewMode?: "2d" | "3d"; side?: "top" | "bottom"; viewRevision?: number }) {
+export default function ModelCanvas({ projectId, path, blob, selectionSource, selectionToolbar, viewMode, side = "top", viewRevision = 0 }: { projectId: string; path: string; blob?: Blob; selectionSource?: PartSelectionSource; selectionToolbar?: HTMLElement | null; viewMode?: "2d" | "3d"; side?: "top" | "bottom"; viewRevision?: number }) {
   const requestedView = useRef({ viewMode, side, viewRevision }); requestedView.current = { viewMode, side, viewRevision };
   const changeView = useRef<(() => void) | null>(null);
   useEffect(() => { changeView.current?.(); }, [viewMode, side, viewRevision]);
@@ -350,7 +350,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, vi
   }, [data, path, retry]);
 
   return <div className="fd-model-canvas" data-testid="model-canvas" onKeyDown={event => { if (event.key === "Escape" && selectionSource && selection.ref && !(event.target instanceof Element && event.target.closest("input, textarea, select, [role=dialog]"))) { selection.clear(); event.preventDefault(); event.stopPropagation(); } }}>
-    {selectionSource && <PartSelectionBar reference={selection.ref} references={selectableRefs} onSelect={selection.select} onClear={selection.clear} onFocus={selectableRefs.includes(selection.ref ?? "") ? () => focusSelection.current?.() : undefined} notice={selectionNotice} />}
+    {selectionSource && <PartSelectionBar target={selectionToolbar} reference={selection.ref} references={selectableRefs} onSelect={selection.select} onClear={selection.clear} onFocus={selectableRefs.includes(selection.ref ?? "") ? () => focusSelection.current?.() : undefined} notice={selectionNotice} />}
     <div ref={host} className="fd-model-viewport" />
     {(isPending || (loading && data !== null)) && !error && !isError && <div className="fd-model-message" role="status"><Spinner /><span>Opening model…</span></div>}
     {(error || isError || data === null) && <div className="fd-model-message" role="alert"><p>{error ?? (isError ? "Could not load the saved model." : "Model file not found.")}</p><Button onClick={() => { savedCamera.current = null; setRetry((n) => n + 1); if (!blob) void refetch(); }}>Retry preview</Button></div>}

@@ -23,3 +23,5 @@ The existing schematic, routing, placement and checks remain available. The sour
 - Broader Windows tools/KiCad suites are not fully green. Their existing failures were reproduced in a separate checkout of `main` (`b7bc58cb`), including symlink privileges, shell-based CLI fixtures, stencil and other platform-sensitive checks. The two changed inventory assertions (tab/tool additions) were updated and passed on rerun.
 
 Screenshots in `screenshots/automatic-board-views/` show the actual app using the VAIO peripheral source, not mockups.
+
+Toolbar spacing: Top/Bottom and part selection now share one compact row. Main actions have consistent 36px targets; secondary board tools use a named overflow menu. Selection warnings and focus/clear remain available. The live desktop was checked at 1636x920, 1024x920 and maximized: no clipped controls at the tested sizes, selection highlighted U1, Focus/Clear worked, and Top/Bottom plus 2D/3D/Layers remained usable. The wide toolbar reserves 48px less height than before. UI typecheck, all 409 UI tests and desktop build passed after the change.
