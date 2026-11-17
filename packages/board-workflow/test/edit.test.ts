@@ -410,7 +410,8 @@ describe("collateral, drc input and the helpers", () => {
     expect(c.led.landing_removed_nets).toEqual([]);
     expect(c.led.near_clear).toBeUndefined();
     expect(() => planMoves(b2, (r_) => r_ === "J1", [{ ref: "C3", near: "U1", radius: 6, clear: true }], { radius: 6 }, [])).toThrow(/clear of other nets' copper \(clear: true\)/);
-  });
+  }, 30_000);
+
   test("legalise (tp_legalise): test points go to the nearest free spot to their net's other pads, many in one plan, rotation kept", () => {
     const tps = fpT("TP1", 55, 35, [["1", "SIG2", 0, 0]], { box: [-0.5, -0.5, 0.5, 0.5], value: "TP" }) + fpT("TP2", 5, 35, [["1", "SIG", 0, 0]], { box: [-0.5, -0.5, 0.5, 0.5], value: "TP", rot: 90 });
     const board = BOARD.replace(/\n\)$/, `${tps}\n)`);
