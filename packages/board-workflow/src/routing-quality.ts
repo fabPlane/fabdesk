@@ -595,10 +595,16 @@ export function krtWidthArgs(args: string[], floors: Record<string, number>, rul
   for (const [net, floor] of entries) {
     const match = patterns.findIndex(p => krtPatternMatches(p, net));
     const existing = Number(widths[match] ?? 0);
-    exactPatterns.push(exact(net)); exactWidths.push(String(Math.max(floor, rules[net] ?? 0, global, existing)));
+    exactPatterns.push(exact(net)); exactWidths.push(String(Math.max(floor, rules[net] ?? 0, Number.isNaN(global) ? 0 : global, Number.isNaN(existing) ? 0 : existing)));
   }
   const end = out.indexOf("--");
-  const overlay = ["--power-nets", ...exactPatterns, ...patterns, "--power-nets-widths", ...exactWidths, ...widths];
+  // argparse nargs='*' consumes exactly ONE value in --flag=value form, so
+  // a combined selector array cannot use equals for a dash-leading member.
+  // Escape the leading dash as a literal fnmatch class instead. Widths can
+  // use leading whitespace (accepted by Python float) for the same reason.
+  const selectors = [...exactPatterns, ...patterns].map(p => p.startsWith("-") ? "[-]" + p.slice(1) : p);
+  const values = [...exactWidths, ...widths].map(w => w.startsWith("-") ? " " + w : w);
+  const overlay = ["--power-nets", ...selectors, "--power-nets-widths", ...values];
   out.splice(end < 0 ? out.length : end, 0, ...overlay);
   return out;
 }
@@ -611,7 +617,21 @@ export function krtWidthArgs(args: string[], floors: Record<string, number>, rul
 function parseKrtWidths(args: string[]) {
   const rest: string[] = [];
   let global = 0, hasGlobal = false, patterns: string[] = [], widths: string[] = [];
-  const isOption = (s: string) => s !== "-" && s.startsWith("-") && !/^-(?:\d+|\d*\.\d+)$/.test(s);
+  // cli_nets.pin_dash_digit_values replaces argparse's negative-number
+  // matcher with ^-\d, including rail names such as -12V (but not -.5).
+  // argparse also treats unknown option words containing a space as values;
+  // known short options are recognized before that fallback.
+  const isOption = (s: string) => s !== "-" && s.startsWith("-") && !/^-\p{Decimal_Number}/u.test(s)
+    && (!s.includes(" ") || /^-[hlnOCodv]/.test(s));
+  // Python float accepts digit separators and signed inf/nan, unlike Number.
+  const numericWidth = (value: string, flag: string) => {
+    const raw = value.trim();
+    if (/^[+-]?(?:inf(?:inity)?|nan)$/i.test(raw))
+      return /nan/i.test(raw) ? NaN : raw.startsWith("-") ? -Infinity : Infinity;
+    if (!/^[+-]?(?:[0-9](?:_?[0-9])*(?:\.(?:[0-9](?:_?[0-9])*)?)?|\.[0-9](?:_?[0-9])*)(?:[eE][+-]?[0-9](?:_?[0-9])*)?$/.test(raw))
+      throw new Error(`${flag} requires numeric widths`);
+    return Number(raw.replaceAll("_", ""));
+  };
   for (let i = 0; i < args.length; i++) {
     const token = args[i]!;
     if (token === "--") { rest.push(...args.slice(i)); break; }
@@ -629,15 +649,17 @@ function parseKrtWidths(args: string[]) {
     } else {
       while (i + 1 < args.length && !isOption(args[i + 1]!)) values.push(args[++i]!);
     }
-    if (kind !== "patterns" && values.some(v => !v.trim() || !Number.isFinite(Number(v))))
-      throw new Error(`${flag} requires numeric widths`);
-    if (kind === "global") { global = Number(values[0]); hasGlobal = true; }
+    if (kind === "global") { global = numericWidth(values[0]!, flag); hasGlobal = true; }
     else if (kind === "patterns") patterns = values;
-    else widths = values;
+    else widths = values.map(v => String(numericWidth(v, flag)));
   }
-  if (patterns.length !== widths.length) throw new Error("--power-nets and --power-nets-widths must have equal lengths");
+  if (patterns.length && widths.length && patterns.length !== widths.length)
+    throw new Error("--power-nets and --power-nets-widths must have equal lengths");
+  // KRT only applies overrides when BOTH optional arrays are nonempty.
+  // Do not pair an ignored list with the preservation entries we add below.
+  if (!patterns.length || !widths.length) { patterns = []; widths = []; }
   // Re-emit the effective global setting once; do not leave aliases that can override it.
-  if (hasGlobal) rest.splice(rest.indexOf("--") < 0 ? rest.length : rest.indexOf("--"), 0, "--track-width", String(global));
+  if (hasGlobal) rest.splice(rest.indexOf("--") < 0 ? rest.length : rest.indexOf("--"), 0, ...(String(global).startsWith("-") ? [`--track-width=${global}`] : ["--track-width", String(global)]));
   return { rest, global, patterns, widths };
 }
 

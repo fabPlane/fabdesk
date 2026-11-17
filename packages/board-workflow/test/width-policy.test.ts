@@ -160,6 +160,8 @@ for (const [label, input, expected] of [
   ["first matching override", ["--power-nets", "OUT", "*", "--power-nets-widths", ".4", ".9"], [.4, .9]],
   ["explicit zero global", ["--track-width=0"], [.3, 0]],
   ["separate lists", ["--power-nets", "*", "--power-nets-widths", ".2"], [.3, .2]],
+  ["dash-leading float spelling", ["--track-width=-inf", "--power-nets=*", "--power-nets-widths=.6"], [.6, .6]],
+  ["Python float separators", ["--track-width=-1_0", "--power-nets=*", "--power-nets-widths=.6"], [.6, .6]],
 ] as const) (python ? test : test.skip)(`KRT argparse effective widths: ${label}`, () => {
   const output = krtWidthArgs([...input], { OUT: .3 }, {});
   const result = Bun.spawnSync([python!, join(import.meta.dir, "fixtures/krt-width-args.py")], {
@@ -185,4 +187,59 @@ test("Default pair preference and actual minima apply without a single-ended pre
     await writeFile(join(dir, "board.kicad_dru"), `(version 1) (rule "minimum" (constraint track_width (min 0.3mm)))`);
     expect(await classWidthFloors(dir, "board", ["USB_DP", "USB_DN"])).toEqual({ USB_DP: .3, USB_DN: .3 });
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+for (const input of [
+  ["--power-nets", "-12V", "--power-nets-widths", "0.6"],
+  ["--power-nets=-VREF", "--power-nets-widths=0.6"],
+  ["--power-nets", "OUT"],
+  ["--power-nets", "OUT", "--power-nets-widths"],
+  ["--power-nets-widths", ".6"],
+]) (python ? test : test.skip)(`KRT review 3 accepted input: ${input.join(" ")}`, () => {
+  const output = krtWidthArgs(input, { OUT: .3, "-SAVED[*]": .4 }, {});
+  const result = Bun.spawnSync([python!, join(import.meta.dir, "fixtures/krt-width-args.py")], {
+    stdin: Buffer.from(JSON.stringify(output)), stdout: "pipe", stderr: "pipe",
+  });
+  expect(result.exitCode).toBe(0);
+  expect(JSON.parse(result.stdout.toString())).toEqual([.3, null]);
+});
+
+(python ? test : test.skip)("KRT-valid argument lists round-trip with only preservation floors changed", () => {
+  const nets = ["OUT", "UNRELATED", "-12V", "-3V3", "-VREF", "--rail", "-", "-.5", "-has space", "-x space", "-SAVED[*]", "OUT NET"];
+  const floors = { OUT: .3, "-SAVED[*]": .4 };
+  const oracle = (cases: string[][]) => {
+    const result = Bun.spawnSync([python!, join(import.meta.dir, "fixtures/krt-width-args.py")], {
+      stdin: Buffer.from(JSON.stringify({ cases, nets })), stdout: "pipe", stderr: "pipe",
+    });
+    expect(result.exitCode).toBe(0);
+    return JSON.parse(result.stdout.toString()).rows as Array<null | { parsed: Record<string, unknown>; widths: Array<number | null> }>;
+  };
+  // Cartesian generation covers spelling, value classification, store replacement,
+  // independently optional arrays, boundaries, first-match order and exact escaping.
+  const cases: string[][] = [];
+  for (const pattern of ["*", "OUT", "OUT NET", "-12V", "-3V3", "-VREF", "--rail", "-", "-.5", "-has space", "-x space", "-SAVED[*]"])
+    for (const equals of [false, true])
+      for (const width of [[], ["--power-nets-widths"], ["--power-nets-widths", ".6"], ["--power-nets-w=.6"], ["--power-nets-widths=-.5"]])
+        for (const prefix of [[], ["--track-w=.2"], ["--power-nets=*", "--power-nets-widths=.9", "--track-width", "-1"]]) {
+          cases.push([...prefix, ...(equals ? [`--power-nets=${pattern}`] : ["--power-nets", pattern]), ...width, "-v", "-l", "F.Cu"]);
+        }
+  cases.push(["--power-nets", "-12V", "-3V3", "*", "--power-nets-widths", ".6", ".7", ".2"]);
+  cases.push(["--power-nets-widths=.9", "--power-nets", "--power-nets-widths"]);
+  cases.push(["--power-nets", "-12V", "*", "--power-nets-widths", "-0.5", "-1"]);
+  cases.push(["--power-nets=--", "--power-nets-widths=.6", "--"]);
+  cases.push(["--track-width=-.5", "--"]);
+  const before = oracle(cases);
+  const valid = cases.filter((_, i) => before[i] !== null);
+  expect(valid.length).toBeGreaterThan(200);
+  const originals = before.filter(row => row !== null);
+  const emitted = valid.map(input => krtWidthArgs(input, floors, {}));
+  const after = oracle(emitted);
+  for (let i = 0; i < valid.length; i++) {
+    const input = originals[i]!, output = after[i];
+    expect(output, JSON.stringify(valid[i])).not.toBeNull();
+    expect(output!.widths).toEqual(input.widths.map((w, n) => nets[n]! in floors
+      ? Math.max(floors[nets[n] as keyof typeof floors], w ?? 0, Number(input.parsed.track_width ?? 0)) : w));
+    for (const key of Object.keys(input.parsed).filter(k => !["power_nets", "power_nets_widths"].includes(k)))
+      expect(output!.parsed[key]).toEqual(input.parsed[key]);
+  }
 });
