@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { gate, type DrcReport, type ErcReport } from "@fabdesk/kicad";
-import { ASSEMBLY_MANIFEST_PATH } from "@fabdesk/protocol";
+import { ASSEMBLY_MANIFEST_PATH, ProjectDependencySnapshot } from "@fabdesk/protocol";
 import type {
   FileEntry,
   OrderCheckStatus,
@@ -10,7 +10,7 @@ import type {
   OrderSession,
   OrderVendorId,
 } from "@fabdesk/protocol";
-import { savedHierarchyRevision, type SavedSheetRef } from "@fabdesk/tools";
+import { publicationInProgress, savedHierarchyRevision, snapshotProjectDependencies, type SavedSheetRef } from "@fabdesk/tools";
 
 /** The board and schematic verify_drc / verify_erc check (packages/tools PROJECT_FILES). */
 const BOARD_PCB = "board.kicad_pcb";
@@ -18,8 +18,9 @@ const BOARD_SCH = "board.kicad_sch";
 const DRC_REPORT = "reports/drc.json";
 const ERC_REPORT = "reports/erc.json";
 
-type DrcEvidenceReport = DrcReport & { pcbRevision?: { sha256?: unknown } };
+type DrcEvidenceReport = DrcReport & { pcbRevision?: { sha256?: unknown }; projectDependencies?: unknown; schematicHierarchy?: { aggregateRevision?: unknown; sheets?: unknown } };
 type ErcEvidenceReport = ErcReport & {
+  projectDependencies?: unknown;
   measurement?: {
     evidenceLevel?: unknown;
     applicability?: unknown;
@@ -37,6 +38,7 @@ export type OrderCheckEvidence = {
   allowedDrcWarnings: readonly string[];
   /** A declared assembly cannot use the root-only fabrication/order flow. */
   assemblyDeclared?: boolean;
+  publicationInProgress?: boolean;
   /** `board.kicad_pcb` exists, so verify_drc can run. */
   hasBoardPcb: boolean;
   /** `board.kicad_sch` exists, so verify_erc can run. */
@@ -49,6 +51,7 @@ export type OrderCheckEvidence = {
 function drcStatus(evidence: OrderCheckEvidence): OrderCheckStatus {
   if (!evidence.hasBoardPcb) return "missing";
   if (!evidence.drc) return "missing";
+  if (!ProjectDependencySnapshot.safeParse(evidence.drc.report.projectDependencies).success) return "missing";
   if (typeof evidence.drc.report.pcbRevision?.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(evidence.drc.report.pcbRevision.sha256)) return "missing";
   if (evidence.drc.inputsChanged) return "stale";
   try {
@@ -69,6 +72,7 @@ function ercStatus(evidence: OrderCheckEvidence): OrderCheckStatus {
   if (report.measurement?.applicability === false || report.measurement?.evidenceLevel === "missing")
     return "not_applicable";
   if (report.measurement?.evidenceLevel !== "measured" || typeof report.measurement.checkedRevision !== "string" || report.measurement.revisionStable !== true) return "missing";
+  if (!ProjectDependencySnapshot.safeParse(report.projectDependencies).success) return "missing";
   if (inputsChanged) return "stale";
   const errors: unknown = report.counts?.errors;
   if (typeof errors !== "number") return "missing";
@@ -78,12 +82,12 @@ function ercStatus(evidence: OrderCheckEvidence): OrderCheckStatus {
 const CHECK_REASONS: Record<"drc" | "erc", Partial<Record<OrderCheckStatus, string>>> = {
   drc: {
     missing: "Run DRC on the current board before ordering.",
-    stale: "The board changed after the last DRC report. Run DRC again.",
+    stale: "The board, parity sources, rules, libraries or model dependencies changed after the last DRC report. Run DRC again.",
     fail: "The current board fails the DRC release gate. Open DRC/ERC, fix the violations, and run DRC again.",
   },
   erc: {
     missing: "Run ERC on the current schematic before ordering.",
-    stale: "The schematic changed after the last ERC report. Run ERC again.",
+    stale: "The schematic or its rules, libraries or model dependencies changed after the last ERC report. Run ERC again.",
     fail: "The current schematic has ERC errors. Open DRC/ERC, fix them, and run ERC again.",
   },
 };
@@ -101,6 +105,7 @@ export function assessOrderReadiness(
   const checks: OrderReadiness["checks"] = { drc: drcStatus(evidence), erc: ercStatus(evidence) };
   const reasons: string[] = [];
   const warnings: string[] = [];
+  if (evidence.publicationInProgress) reasons.push("Board views and checks are being published. Wait for publication to complete before ordering.");
   if (hasOrderArtifact && !evidence.hasBoardPcb)
     reasons.push("Open or import the source board as board.kicad_pcb and run DRC before ordering. Export files and legacy routing artifacts alone cannot establish readiness.");
   if (assemblyDeclared) reasons.push("Ordering is not available for multi-board projects. Review each board’s checks; assembly fabrication exports are not yet supported.");
@@ -119,7 +124,7 @@ export function assessOrderReadiness(
     );
   const blocking = (s: OrderCheckStatus) => s === "missing" || s === "stale" || s === "fail";
   return {
-    ready: !assemblyDeclared && hasOrderArtifact && !blocking(checks.drc) && !blocking(checks.erc),
+    ready: !evidence.publicationInProgress && !assemblyDeclared && hasOrderArtifact && !blocking(checks.drc) && !blocking(checks.erc),
     hasGerbers,
     hasFabricationZip,
     hasRouted,
@@ -164,6 +169,7 @@ export async function loadOrderCheckEvidence(
   projectDir: string,
   allowedDrcWarnings: readonly string[],
 ): Promise<OrderCheckEvidence> {
+  const publishingBefore = await publicationInProgress(projectDir);
   const [board, boardMtime, schMtime, drc, erc, assemblyMtime] = await Promise.all([
     readFile(join(projectDir, BOARD_PCB)).catch(() => null),
     mtimeMs(join(projectDir, BOARD_PCB)),
@@ -172,22 +178,33 @@ export async function loadOrderCheckEvidence(
     readJson<ErcEvidenceReport>(join(projectDir, ERC_REPORT)),
     mtimeMs(join(projectDir, ASSEMBLY_MANIFEST_PATH)),
   ]);
+  const dependencies = await snapshotProjectDependencies(projectDir).catch(() => null);
+  const dependenciesChanged = (report: { projectDependencies?: unknown }) => {
+    const expected = ProjectDependencySnapshot.safeParse(report.projectDependencies);
+    return !expected.success || !dependencies || dependencies.unresolved.length > 0 || expected.data.revision !== dependencies.revision;
+  };
   let drcEvidence: OrderCheckEvidence["drc"] = null;
   if (drc && board) {
     const checked = drc.value.pcbRevision?.sha256;
-    const inputsChanged =
+    let inputsChanged =
       typeof checked === "string"
         ? checked !== createHash("sha256").update(board).digest("hex")
         : true;
+    inputsChanged ||= dependenciesChanged(drc.value);
+    if (typeof drc.value.schematicHierarchy?.aggregateRevision === "string") {
+      const sheets = drc.value.schematicHierarchy.sheets ?? erc?.value.measurement?.hierarchy?.sheets;
+      inputsChanged ||= !Array.isArray(sheets) || !sheets.length || await savedHierarchyRevision(projectDir, sheets as SavedSheetRef[]) !== drc.value.schematicHierarchy.aggregateRevision;
+    }
     drcEvidence = { report: drc.value, inputsChanged };
   }
   return {
     allowedDrcWarnings,
+    publicationInProgress: publishingBefore || await publicationInProgress(projectDir),
     assemblyDeclared: assemblyMtime !== null,
     hasBoardPcb: board !== null,
     hasBoardSch: schMtime !== null,
     drc: drcEvidence,
-    erc: erc ? { report: erc.value, inputsChanged: await ercInputsChanged(projectDir, erc) } : null,
+    erc: erc ? { report: erc.value, inputsChanged: dependenciesChanged(erc.value) || await ercInputsChanged(projectDir, erc) } : null,
   };
 }
 

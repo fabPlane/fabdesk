@@ -32,6 +32,6 @@ export { setInterconnectGate } from "./tools/board-release";
 export * from "./release-state";
 export * from "./child-tasks";
 
-export { visiblePublishedFile } from "./publication-visibility";
+export { visiblePublishedFile, publicationInProgress } from "./publication-visibility";
 
 export { snapshotProjectDependencies } from "./project-dependencies";
