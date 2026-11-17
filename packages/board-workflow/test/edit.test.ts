@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -189,6 +189,25 @@ describe("apply, proof and the candidate", () => {
     expect(r.guard).toMatchObject({ nets: ["SIG2"], kept: false, why: "worse on A2 0->1" });
     expect(r.churn?.collateral_nets).toBe(1);
     expect(await readFile(r.candidate!.pcb, "utf8")).toContain("(end 25 10)");
+  });
+
+  test("a mask-only library swap preserves every track/via and skips routing", async () => {
+    const dir = await project();
+    await mkdir(join(dir, "Parts.pretty"));
+    const block = fpT("R1", 20, 10, [["1", "SIG", -0.5, 0], ["2", "SIG2", 0.5, 0]], { value: "10k" });
+    const lib = block.replace(/\(transform[\s\S]*?\(scale 1 1\)\s*\)/, "").replace(/\s*\(net "[^"]*"\)/g, "").replace('(layers "F.Cu" "F.Paste")', '(layers "F.Cu" "F.Paste" "F.Mask")');
+    await writeFile(join(dir, "Parts.pretty/Mask.kicad_mod"), lib);
+    await writeFile(join(dir, "fp-lib-table"), `(fp_lib_table (lib (name "Parts") (type "KiCad") (uri "${dir}/Parts.pretty")))`);
+    let repaired = false;
+    const r = await runEdit({ projectDir: dir, mode: "full", plan: { id: "mask", swap: [{ ref: "R1", footprint: "Parts:Mask", height_mm: 1 }] }, runners: runners({ repair: async () => { repaired = true; return { note: "unexpected reroute" }; } }) });
+    expect(r.applied?.swaps[0]?.copper_preserved).toBe(true);
+    expect(repaired).toBe(false); expect(r.repair?.routeAgain).toEqual([]);
+    expect(r.applied?.pad_cut).toBeUndefined(); expect(r.applied?.landing).toBeUndefined();
+    expect(r.diff?.copper_changed_nets).toEqual({});
+    await writeFile(join(dir, "Parts.pretty/Mask.kicad_mod"), lib.replaceAll("(size 0.6 0.6)", "(size 0.9 0.9)"));
+    const changed = await runEdit({ projectDir: dir, mode: "full", plan: { id: "copper", swap: [{ ref: "R1", footprint: "Parts:Mask", height_mm: 1 }] }, runners: runners({ repair: async () => { repaired = true; return { note: "copper changed" }; } }) });
+    expect(changed.applied?.swaps[0]?.copper_preserved).toBe(false);
+    expect(repaired).toBe(true); expect(changed.repair?.routeAgain.length).toBeGreaterThan(0);
   });
 
   test("add copies a template symbol with one label per pin; net moves a pin and its label; swap changes value and field", async () => {

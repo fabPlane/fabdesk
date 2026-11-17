@@ -19,7 +19,7 @@ import { ToolError, type ToolContext, type ToolOutput } from "../registry";
 import { ok, requireKicad, runLiveDrc } from "./common";
 import { layoutHost } from "./board-host";
 
-export const LASTMILE_ACTIONS = ["new", "try", "loop", "sweep", "why", "crossings", "fit", "pairs", "validate", "accept", "undo", "view", "info", "prune"] as const;
+export const LASTMILE_ACTIONS = ["new", "try", "loop", "sweep", "why", "crossings", "fit", "pairs", "validate", "revalidate", "accept", "undo", "view", "info", "prune"] as const;
 
 export const LASTMILE_DEFAULT_WORKSPACE = ".fabdesk/board/lastmile/main";
 
@@ -186,6 +186,17 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
           log(`sweep: ${acts.length} candidates`);
           const r = await bench.try(acts, { noAccept: a.noAccept, slackA8: 0, jobs: a.jobs ?? 6, budget: a.budget ?? 900 });
           return ok([...lines, ...r.lines].join("\n"), { accepted: r.accepted, step: r.pointer, figures: r.figures, candidates: r.candidates.length });
+        }
+        case "revalidate": {
+          const original = bench.state.meta?.["originFiles"] as Record<string, string> | undefined;
+          if (!original) throw new ToolError("Workspace has no source receipt; start a new workspace", "precondition");
+          const current = await designFileHashes(project.dir);
+          const requirements = (path: string) => path.replaceAll("\\", "/").startsWith(".fabdesk/board/requirements/");
+          for (const path of new Set([...Object.keys(original), ...Object.keys(current)]))
+            if (!requirements(path) && original[path] !== current[path]) throw new ToolError(`Revalidation refused: native design input changed: ${path}. Start a new workspace.`, "precondition");
+          const proof = await bench.revalidate({ originFiles: current, revalidatedAt: new Date().toISOString() });
+          if (proof.all_pass !== true) throw new ToolError("Candidate does not pass the current requirements; geometry kept for further repair. See revalidate.json.", "precondition");
+          return ok("Candidate revalidated with current requirements and full schematic parity. Geometry retained; adoption remains a separate action.", proof);
         }
         case "validate": {
           const rec = await bench.validate();

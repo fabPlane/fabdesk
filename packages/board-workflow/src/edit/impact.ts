@@ -199,7 +199,9 @@ export function impact(plan: EditPlan, env: EditEnv): ImpactReport {
       ent["library_file"] = lib.src;
       ent["pads_lost"] = lost;
       if (lost.length) rep.review.push(`FAIL swap ${r}: new footprint has no pad for [${lost.map((p) => `'${p}'`).join(", ")}] (nets would be lost)`);
-      for (const n of [...new Set(Object.values(f.pins).filter(Boolean))].sort())
+      const copperPreserved = swapFootprint(env.pcbText, env.projectDir, r, sw.footprint, sw.side).log.copper_preserved;
+      ent["copper_preserved"] = copperPreserved;
+      for (const n of copperPreserved ? [] : [...new Set(Object.values(f.pins).filter(Boolean))].sort())
         rep.nets[n] = { status: "reconnect (swap)", pads_before: (byNet.get(n) ?? []).length, pads_after: (byNet.get(n) ?? []).length, copper_mm: 0, vias: 0 };
       if (sw.height_mm === undefined) rep.review.push(`swap ${r}: give height_mm (datasheet/3D model) for the height screen, or it is reported unscreened`);
     }

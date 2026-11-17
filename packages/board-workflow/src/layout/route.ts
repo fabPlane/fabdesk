@@ -151,7 +151,16 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
       break;
     }
     const ov = overrides[i]!;
-    const r = await host.spawn(krtStageCommand(k.python, krtRouterScript(k, st.tool), [cur, nxt, ...args, ...(plan.common ?? [])], hasKrtOverrides(ov) ? { wrapper, overrides: ov } : undefined), {
+    const permission = acc.manufacturing_rules.via_in_pad;
+    const allowed = permission?.allow === true && permission.basis.trim().length > 0;
+    const viaClearance = allowed ? -1 : Math.max(0.15, acc.manufacturing_rules.adopted.min_clearance);
+    const stageArgs = [...args, ...(plan.common ?? [])];
+    if (["route", "route_diff", "route_planes"].includes(st.tool)) {
+      if (stageArgs.some(arg => arg === "--same-net-pad-clearance" || arg.startsWith("--same-net-pad-clearance=")))
+        throw new FlowError("Set the via-in-pad policy in acceptance.manufacturing_rules; do not override it in router arguments");
+      stageArgs.push("--same-net-pad-clearance", String(viaClearance));
+    }
+    const r = await host.spawn(krtStageCommand(k.python, krtRouterScript(k, st.tool), [cur, nxt, ...stageArgs], hasKrtOverrides(ov) ? { wrapper, overrides: ov } : undefined), {
       cwd: k.plugins,
       env: { ...plan.env, ...st.env },
       log,
@@ -160,7 +169,7 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
       ...(host.onPid ? { onPid: host.onPid } : {}),
     });
     const logText = await readFile(log, "utf8").catch(() => "");
-    const rec = { name: st.name, tool: st.tool, exit: r.code, wall_s: r.wallS, ...(hasKrtOverrides(ov) ? { krt_overrides: ov } : {}), ...routeSummaries(logText) };
+    const rec = { name: st.name, tool: st.tool, viaInPadPolicy: { allowed, clearanceMm: viaClearance, basis: permission?.basis ?? "default: avoid solder pads" }, exit: r.code, wall_s: r.wallS, ...(hasKrtOverrides(ov) ? { krt_overrides: ov } : {}), ...routeSummaries(logText) };
     record.stages.push(rec);
     host.log?.(JSON.stringify({ name: rec.name, exit: rec.exit, wall_s: rec.wall_s }));
     const overrideError = /^KRT_OVERRIDE_ERROR: (.*)$/m.exec(logText);

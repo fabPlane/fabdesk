@@ -18,7 +18,7 @@ import { governor } from "./resources";
 import { ToolError, type ToolContext } from "./registry";
 import type { BoardAdoptResult } from "./services";
 import { retainTaskCheckpoint } from "./task-checkpoints";
-import { childLists, edit, listSpanAt, parseSexpr } from "@fabdesk/board-workflow";
+import { childLists, edit, release, listSpanAt, parseSexpr } from "@fabdesk/board-workflow";
 import { writeFile } from "node:fs/promises";
 
 const sha256File = async (path: string) => {
@@ -236,6 +236,19 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
   };
   await checkSourceBoard();
   await checkDesign();
+  // Attribute stamps from an engine are process changes, not manufacturing authorization.
+  const previousVias = release.classifyVias(await readFile(target, "utf8"));
+  const candidateVias = release.classifyVias(await readFile(candidate, "utf8"));
+  const identity = (v: typeof candidateVias[number]) => v.uuid ?? `${v.net}@${v.xy.join(",")}`;
+  const old = new Map(previousVias.map(v => [identity(v), v]));
+  const newInPad = candidateVias.filter(v => v.in_component_lands.length && !(old.get(identity(v))?.in_component_lands.length));
+  const newProcess = candidateVias.filter(v => (v.native_filling || v.native_capping) && !(old.get(identity(v))?.native_filling || old.get(identity(v))?.native_capping));
+  const acceptance = JSON.parse(await readFile(join(project.dir, ".fabdesk/board/requirements/acceptance.json"), "utf8").catch(() => "{}"));
+  const allowed = (value: unknown) => typeof value === "object" && value !== null && (value as { allow?: boolean }).allow === true && typeof (value as { basis?: string }).basis === "string" && Boolean((value as { basis: string }).basis.trim());
+  if (newInPad.length && !allowed(acceptance.manufacturing_rules?.via_in_pad))
+    throw new ToolError(`Adoption refused: ${newInPad.length} new via(s) in solder pads. Move them out, or record a justified manufacturing_rules.via_in_pad {allow:true,basis} requirement before adoption.`, "precondition");
+  if (newProcess.length && !allowed(acceptance.manufacturing_rules?.filled_capped_vias))
+    throw new ToolError(`Adoption refused: ${newProcess.length} via(s) add filled/capped fabrication attributes. Record a justified manufacturing_rules.filled_capped_vias {allow:true,basis} requirement first.`, "precondition");
   // the candidate's DRC exclusions (an edit re-keys the ones it made stale): only that key of the project file, and only
   // while the project's exclusions are still the ones the candidate started from
   let exclusions: { path: string; rel: string; from: edit.Exclusion[]; entries: edit.Exclusion[] } | null = null;

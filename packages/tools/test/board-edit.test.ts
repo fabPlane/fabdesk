@@ -70,7 +70,8 @@ describe("board_edit", () => {
     expect(r.json["stage"]).toBe("proof");
     expect(r.text).toMatch(/Proof \((strict|no new failure)/);
     expect(r.text).toContain("Planned vs collateral: 1 removed, 0 added");
-    expect(drcRuns).toHaveLength(2); // before (in the candidate copy), after
+    expect(drcRuns).toHaveLength(3); // baseline, candidate proof, persisted target check
+    expect(drcRuns.at(-1)).toBe(join(project.dir, "board.kicad_pcb"));
     expect(adopted).toHaveLength(1);
     expect(adopted[0]!.target).toBe(join(project.dir, "board.kicad_pcb"));
     expect(adopted[0]!.candidate).toContain(".fabdesk/board/edits/rm-");

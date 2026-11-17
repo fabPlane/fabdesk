@@ -51,6 +51,9 @@ export interface Acceptance {
   authority: { circuit: string; mechanical: string; heights: string };
   heights: { F_max_mm: number; B_max_mm: number; basis?: string };
   manufacturing_rules: {
+    /** Explicit manufacturing decision; omitted means avoid via-in-pad and fill/cap. */
+    via_in_pad?: { allow: boolean; basis: string };
+    filled_capped_vias?: { allow: boolean; basis: string };
     adopted: {
       min_track_width: number;
       min_clearance: number;

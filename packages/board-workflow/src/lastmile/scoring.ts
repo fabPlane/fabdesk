@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * The bench's scorer: the acceptance rules applied to the folder's project file, then A1-A9 on a native DRC (refilled
  * zones) for one board folder, plus the open connections.
@@ -35,6 +36,7 @@ export function opensOf(unconnected: DrcRun["unconnected"]): OpenItem[] {
 export function createScorer(req: Requirements, drc: DrcFn): Scorer {
   const nets = boardNets(req);
   return {
+    cacheKey: createHash("sha256").update(JSON.stringify(req)).digest("hex"),
     async score(dir, pcb, o) {
       await mkdir(join(dir, ".lastmile"), { recursive: true });
       const board = join(dir, pcb);

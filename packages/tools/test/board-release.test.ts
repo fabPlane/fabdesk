@@ -123,6 +123,9 @@ describe("board_release", () => {
     expect(r.text).toContain("through via A @ 10,9.5 drill 0.2 in R1.2");
     expect(r.json.missing).toHaveLength(1);
     expect(adopted).toHaveLength(0); // listing writes nothing
+    await expect(call("board_release", { action: "vias", apply: true })).rejects.toThrow("filled/capped fabrication attributes");
+    await mkdir(join(project.dir, ".fabdesk/board/requirements"), { recursive: true });
+    await writeFile(join(project.dir, ".fabdesk/board/requirements/acceptance.json"), JSON.stringify({ manufacturing_rules: { filled_capped_vias: { allow: true, basis: "specified Type VII supplier process" } } }));
     r = await call("board_release", { action: "vias", apply: true });
     expect(adopted).toHaveLength(1);
     expect(r.json.applied).toBe(1);
@@ -221,6 +224,6 @@ M02*
     expect(r.text).toContain("evidence cache (no current BOM check)");
     const b = await mk("(kicad_pcb (version 20241229))");
     const r2 = await b.call("export_pos");
-    expect(r2.text).toBe("Exported exports/positions.csv.");
+    expect(r2.text).toContain("Exported exports/positions.csv (physical_purchase)");
   });
 });

@@ -403,6 +403,9 @@ describe("layout flow", () => {
     expect(reqs[1].args.nets).toEqual(["USB_DP", "USB_DN"]);
     // a board with no plane layers has no --no-tracks-on (TraceMaker rejects an empty layer list)
     expect(calls.spawns.find((c) => c[1] === "route")).not.toContain("--no-tracks-on");
+    const krtCommands = calls.spawns.filter(c => c.some(arg => /route(?:_diff|_planes)?\.py$/.test(arg)));
+    expect(krtCommands.length).toBeGreaterThan(0);
+    for (const cmd of krtCommands) expect(cmd).toContain("--same-net-pad-clearance");
     // the finished flow hands the board to the last mile
     const flow = await loadFlow(st.ws);
     expect(flow.best_board?.open).toBe(3);

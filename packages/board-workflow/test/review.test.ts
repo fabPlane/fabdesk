@@ -200,9 +200,11 @@ describe("a review run, the gate and dispositions", () => {
     expect(open).toBeGreaterThan(3);
     const d = await dispose(p, { id: "L*", state: "accept", by: "owner", reason: "reviewed on the bench", third_source: "bench log" });
     expect(d.disposed.length).toBeGreaterThan(3);
-    await dispose(p, { id: "L8:EXPERT:-:-:pending", state: "accept", by: "owner", reason: "owner declines a second reviewer" });
+    await dispose(p, { id: "L8:EXPERT:-:-:pending", state: "defer", by: "agent", reason: "Independent reviewer unavailable for this session" });
     const g = await reviewGate(p);
     expect(g.exit).toBe(0);
+    expect(g.evidence?.independentReview).toBe("deferred");
+    expect(g.lines.join("\n")).toContain("defer by agent: Independent reviewer unavailable");
     expect(g.state).toBe("pass");
     // disposition carries by id into the next run and is marked carried
     await writeFile(join(dir, "board.kicad_pcb"), PCB + "\n");

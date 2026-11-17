@@ -6,7 +6,7 @@
  * by the StepEngine the host supplies; scoring (A1-A9 plus native DRC) by the Scorer.
  */
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile, copyFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { isInside } from "../files";
 import { runsKrtPlan, stepsFor, type Step } from "./actions";
@@ -29,7 +29,16 @@ export interface Scored {
   a8: { toReroute: Array<[string, string]>; failing: string[] };
 }
 
+const scorerIds = new WeakMap<object, string>();
+function scorerKey(scorer: Scorer): string {
+  if (scorer.cacheKey) return scorer.cacheKey;
+  let key = scorerIds.get(scorer); if (!key) { key = randomUUID(); scorerIds.set(scorer, key); }
+  return key;
+}
+
 export interface Scorer {
+  /** Rules/model context controlling score reuse; absent means no persistent reuse. */
+  cacheKey?: string;
   /** Score the board folder `dir` (its board file `pcb`): A1-A9 on a native DRC with refilled zones. `parity` adds schematic parity. */
   score(dir: string, pcb: string, o: { parity: boolean; signal?: AbortSignal }): Promise<Scored>;
 }
@@ -193,7 +202,7 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Prom
 const sha = async (p: string) => createHash("sha256").update(await readFile(p)).digest("hex");
 
 /** A folder's cached score: the scored board's sha256 with it, so a cache never answers for another board. */
-type ScoreCache = Scored & { board_sha256: string };
+type ScoreCache = Scored & { board_sha256: string; scorer_key: string };
 const SCORE_CACHE = "lastmile.score.json";
 
 export class Bench {
@@ -217,7 +226,7 @@ export class Bench {
     await copyBoardFolder(srcDir, s0);
     if (board && resolve(board) !== resolve(srcDir, pcb)) await copyFile(resolve(board), join(s0, pcb));
     const sc = await deps.scorer.score(s0, pcb, { parity: false, ...(deps.signal ? { signal: deps.signal } : {}) });
-    await writeJson(join(s0, SCORE_CACHE), { ...sc, board_sha256: await sha(join(s0, pcb)) } satisfies ScoreCache);
+    await writeJson(join(s0, SCORE_CACHE), { ...sc, board_sha256: await sha(join(s0, pcb)), scorer_key: scorerKey(deps.scorer) } satisfies ScoreCache);
     const st: BenchState = {
       src: resolve(srcDir),
       pcb,
@@ -268,15 +277,16 @@ export class Bench {
   async scoreDir(dir: string, parity = false): Promise<Scored> {
     const f = join(dir, SCORE_CACHE);
     const boardSha = await sha(join(dir, this.st.pcb));
+    const contextKey = scorerKey(this.deps.scorer);
     if (!parity) {
       const cached = await readFile(f, "utf8").then((t) => JSON.parse(t) as Partial<ScoreCache>, () => null);
-      if (cached?.board_sha256 === boardSha) {
-        const { board_sha256: _h, ...sc } = cached as ScoreCache;
+      if (cached?.board_sha256 === boardSha && (cached as ScoreCache & { scorer_key?: string }).scorer_key === contextKey) {
+        const { board_sha256: _h, scorer_key: _key, ...sc } = cached as ScoreCache & { scorer_key?: string };
         return sc;
       }
     }
     const sc = await this.deps.scorer.score(dir, this.st.pcb, { parity, ...(this.deps.signal ? { signal: this.deps.signal } : {}) });
-    if (!parity) await writeJson(f, { ...sc, board_sha256: boardSha } satisfies ScoreCache);
+    if (!parity) await writeJson(f, { ...sc, board_sha256: boardSha, scorer_key: contextKey });
     return sc;
   }
 
@@ -580,6 +590,20 @@ export class Bench {
     }
     for (const x of ["cache", "views"]) await rm(join(this.ws, x), { recursive: true, force: true });
     return `pruned ${gone} candidate dirs; kept ${keep.length} accepted steps`;
+  }
+
+  /** Explicit requalification under new requirements; never borrows an earlier score. */
+  async revalidate(meta: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const sc = await this.deps.scorer.score(this.dir, this.st.pcb, { parity: true, ...(this.deps.signal ? { signal: this.deps.signal } : {}) });
+    const allPass = sc.parityChecked && Object.values(sc.summary).every(Boolean);
+    const record = { all_pass: allPass, parity_checked: sc.parityChecked, summary: sc.summary, figures: sc.figures };
+    await writeJson(join(this.ws, "revalidate.json"), record);
+    if (!allPass) return record;
+    this.st.meta = { ...this.st.meta, ...meta };
+    this.st.history[this.st.pointer]!.figures = sc.figures;
+    await rm(join(this.dir, SCORE_CACHE), { force: true });
+    await this.save();
+    return record;
   }
 
   /** Full proof of the current board: A1-A9 with schematic parity, written to validate.json. */

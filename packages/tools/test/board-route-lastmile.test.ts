@@ -98,8 +98,9 @@ describe("board_route last-mile actions", () => {
     expect(seen.map((s) => s.target)).toEqual([join(project.dir, "foo.kicad_pcb")]);
     expect(r.text).toContain("foo.kicad_pcb");
     // where the adopted board stands against the workspace's start, so no hand DRC/diff is needed
-    expect(r.text).toMatch(/Board now: open \d+ .*\(start: open \d+/);
+    expect(r.text).toMatch(/Saved board now: open \d+ drc \d+.*Candidate score before adoption: open \d+/);
     expect(r.text).toContain("parts moved: none");
+    expect((r.json as any).canonicalDrc.status).toBe("measured");
   });
 
   test("accept candidate: relative to the workspace, refused outside it (also through a symlink)", async () => {
@@ -137,4 +138,18 @@ describe("board_route last-mile actions", () => {
     await expect(call({ action: "check", spec: "../../etc/spec.json" })).rejects.toThrow(/escapes the project/);
     expect((await call({ action: "new", workspace: ".fabdesk/board/lastmile/alt" })).text).toContain("open 0");
   });
+});
+
+test("explicit revalidation keeps geometry across requirement refresh and refuses changed native inputs", async () => {
+  const { project, call } = await setup();
+  await call({ action: "new" });
+  await call({ action: "try", actions: ["tighten"] });
+  const path = join(project.dir, ".fabdesk/board/requirements/acceptance.json");
+  const acceptance = JSON.parse(await readFile(path,"utf8")); acceptance.purpose = "rechecked requirements";
+  await writeFile(path,JSON.stringify(acceptance));
+  const validated = await call({ action: "revalidate" });
+  expect(validated.text).toContain("revalidated");
+  expect((validated.json as any).parity_checked).toBe(true);
+  await writeFile(join(project.dir,"board.kicad_pcb"),BOARD + "\n");
+  await expect(call({ action: "revalidate" })).rejects.toThrow("native design input changed");
 });

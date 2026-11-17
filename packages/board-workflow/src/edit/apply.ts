@@ -153,7 +153,8 @@ export async function applyEdit(
   // copper first, on the old geometry: pads whose net changes and every pad of a swapped footprint
   const fps0 = boardModel(text, env.pcbName).board.footprints;
   const targets: Array<[string, string]> = (plan.net ?? []).map((nc) => splitPin(nc.pin));
-  for (const sw of plan.swap ?? []) if (sw.footprint) for (const p of Object.keys(fps0.get(sw.ref)!.pins)) targets.push([sw.ref, p]);
+  const copperPreserving = new Set((plan.swap ?? []).filter(sw => sw.footprint && swapFootprint(text, out, sw.ref, sw.footprint, sw.side).log.copper_preserved).map(sw => sw.ref));
+  for (const sw of plan.swap ?? []) if (sw.footprint && !copperPreserving.has(sw.ref)) for (const p of Object.keys(fps0.get(sw.ref)!.pins)) targets.push([sw.ref, p]);
   if (targets.length) {
     const r = cutPads(text, targets, pairs0);
     text = r.text;
@@ -198,7 +199,7 @@ export async function applyEdit(
     log.net_change_padless_nets = dp.nets;
   }
   type Landing = import("./move").MoveSpec;
-  const landing: Landing[] = (plan.swap ?? []).filter((sw) => sw.footprint).map((sw) => ({ ref: sw.ref, to: [fps0.get(sw.ref)!.x, fps0.get(sw.ref)!.y, fps0.get(sw.ref)!.rot] as [number, number, number] }));
+  const landing: Landing[] = (plan.swap ?? []).filter((sw) => sw.footprint && !copperPreserving.has(sw.ref)).map((sw) => ({ ref: sw.ref, to: [fps0.get(sw.ref)!.x, fps0.get(sw.ref)!.y, fps0.get(sw.ref)!.rot] as [number, number, number] }));
   for (const ad of plan.add ?? []) {
     const fpsNow = boardModel(text, env.pcbName).board;
     const likeFp = fpsNow.footprints.has(ad.like) ? fpInfo(text, ad.like) : null;

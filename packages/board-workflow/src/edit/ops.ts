@@ -1,4 +1,5 @@
 /** Board-side swap, add and change-net edits for the edit stage (the toolkit's `edit_ops`, board half). */
+import { footprintCopperSignature } from "./footprint-copper";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -168,6 +169,7 @@ export interface SwapLog {
   library_file: string;
   pads_without_place: string[];
   sym_flags: { in_bom: string; dnp: string };
+  copper_preserved: boolean;
 }
 
 /** Rebuild footprint `ref` from `libId`, keeping pose, pad-number -> net map and sheet path. `side` flips it. */
@@ -182,9 +184,11 @@ export function swapFootprint(text: string, projectDir: string, ref: string, lib
   const fresh = boardFootprint(lib.text, libId, x, y, rot, info.side, props, info.nets, keep, info.uuid);
   const padNames = new Set([...fresh.matchAll(/\(pad "([^"]*)"/g)].map((m) => m[1]!));
   const missing = Object.keys(info.nets).filter((p) => !padNames.has(p)).sort();
+  const next = text.slice(0, info.span.start) + fresh + text.slice(info.span.end);
+  const preserved = footprintCopperSignature(text, ref) === footprintCopperSignature(next, ref);
   return {
-    text: text.slice(0, info.span.start) + fresh + text.slice(info.span.end),
-    log: { ref, from: info.lib, to: libId, library_file: lib.src, pads_without_place: missing, sym_flags: fpAttrFlags(fresh) },
+    text: next,
+    log: { ref, from: info.lib, to: libId, library_file: lib.src, pads_without_place: missing, sym_flags: fpAttrFlags(fresh), copper_preserved: preserved },
   };
 }
 

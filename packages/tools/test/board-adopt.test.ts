@@ -59,6 +59,23 @@ describe("adoptCandidate", () => {
     expect(JSON.parse(await readFile(join(project.dir, "reports/drc.json"), "utf8")).pcbRevision.sha256).toBe(await sha("(kicad_pcb saved)"));
   });
 
+  test("new via-in-pad and engine fill/cap stamps require recorded manufacturing decisions", async () => {
+    const { project, ctx, seen } = await setup();
+    const base = `(kicad_pcb (footprint "Pkg:X" (at 1 1) (property "Reference" "U1") (pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu") (net "GND"))))`;
+    await writeFile(join(project.dir, "board.kicad_pcb"), base);
+    const dir = await mkdtemp(join(tmpdir(), "cand-")), candidate = join(dir, "c.kicad_pcb");
+    await writeFile(candidate, base.slice(0, -1) + `(via (at 1 1) (size 0.6) (drill 0.3) (layers "F.Cu" "B.Cu") (net "GND") (uuid "new-via") (filling yes) (capping yes)))`);
+    await expect(adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "router" })).rejects.toThrow("new via(s) in solder pads");
+    expect(seen).toHaveLength(0);
+    await mkdir(join(project.dir, ".fabdesk/board/requirements"), { recursive: true });
+    await writeFile(join(project.dir, ".fabdesk/board/requirements/acceptance.json"), JSON.stringify({ manufacturing_rules: { via_in_pad: { allow: true, basis: "approved dense BGA process" } } }));
+    await expect(adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "router" })).rejects.toThrow("filled/capped fabrication attributes");
+    expect(seen).toHaveLength(0);
+    await writeFile(join(project.dir, ".fabdesk/board/requirements/acceptance.json"), JSON.stringify({ manufacturing_rules: { via_in_pad: { allow: true, basis: "approved dense BGA process" }, filled_capped_vias: { allow: true, basis: "specified in supplier order" } } }));
+    await adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "explicit process" });
+    expect(seen).toHaveLength(1);
+  });
+
   test("a failed saved-board check cannot borrow a passing score or replace earlier evidence", async () => {
     const { project, ctx, services } = await setup();
     await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb)");
