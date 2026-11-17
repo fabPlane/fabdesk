@@ -36,7 +36,9 @@ export async function runToolCli(options: ToolCliOptions, deps: ToolCliDeps = {}
     return writeJson({ ok: false, error: "FABDESK_CORE_URL and FABDESK_TOKEN are required" }, 2);
   const fetchImpl = deps.fetch ?? fetch;
   const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
-  const manifestResponse = await fetchImpl(new URL("/tools/manifest", baseUrl), { headers });
+  const unavailable = { ok: false, code: "endpoint_unavailable", error: "Cannot reach the active desktop tool endpoint. A network-isolated shell can block loopback access; use MCP capability_search/capability_call or direct MCP tools instead of retrying the same endpoint." };
+  const manifestResponse = await fetchImpl(new URL("/tools/manifest", baseUrl), { headers }).catch(() => null);
+  if (!manifestResponse) return writeJson(unavailable, 1);
   if (!manifestResponse.ok)
     return writeJson({ ok: false, error: `tool manifest HTTP ${manifestResponse.status}` }, 1);
   const manifest = (await manifestResponse.json()) as ToolManifestEntry[];
@@ -83,7 +85,8 @@ export async function runToolCli(options: ToolCliOptions, deps: ToolCliDeps = {}
     const response = await fetchImpl(
       new URL(`/tools/${encodeURIComponent(name)}?sync=1`, baseUrl),
       { method: "POST", headers, body: JSON.stringify(body) },
-    );
+    ).catch(() => null);
+    if (!response) return { name, ...unavailable };
     const value = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
     return { name, status: response.status, ...(value as Record<string, unknown>) };
   };
