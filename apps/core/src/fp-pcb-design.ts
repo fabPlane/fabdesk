@@ -4,6 +4,9 @@
  * through the typed client on the project's session. Positions come back in millimetres; the
  * client speaks nanometres.
  */
+import { captureProjectLibraryRows } from "./project-library-tables";
+import { jailPath, projectRelative } from "@fabdesk/tools";
+import { stat } from "node:fs/promises";
 import { assertNativeBoardOwnership } from "./assembly-board-binding";
 import { resizeNativeOutlineShapes, nativeGroupLocksAny } from "./pcb-outline-resize";
 import { createHash } from "node:crypto";
@@ -2549,10 +2552,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     kind: "footprint" | "symbol",
     query: string,
     limit: number,
+    projectNicknames?: string[],
   ): Promise<FootprintHit[]> => {
     const kicad = await anyKicad(sessionKicad);
     const tokens = [...new Set(partSearchTokens(query))];
-    const nicknames = await kicad.libraries.nicknames(kind);
+    const nicknames = projectNicknames ?? await kicad.libraries.nicknames(kind);
     const scored = nicknames
       .map((n) => {
         const libraryTokens = new Set(partSearchTokens(n));
@@ -2571,11 +2575,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       const libraryTokens = new Set(partSearchTokens(n));
       const rest = tokens.filter((token) => !libraryTokens.has(token));
       const numeric = rest.find((token) => /^\d/.test(token));
-      const primary = !/\s/.test(query.trim())
-        ? query.trim().toLocaleLowerCase("en-US")
-        : (numeric ??
-          [...rest].sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0))[0] ??
-          query.trim());
+      const primary = numeric ??
+        [...rest].sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0))[0] ?? "";
       const entries = await kicad.libraries.entries(kind, n, primary);
       for (const e of entries) {
         candidates.push({
@@ -2599,40 +2600,52 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         description: description ?? "",
       }));
   };
-  const searchLibraries = (
+  const projectRows = async (projectDir: string, kind: "footprint" | "symbol") =>
+    (await captureProjectLibraryRows(projectDir))[kind]?.filter(
+      (row) => !/^Bundled KiCad (footprint|symbol) library$/.test(row.descr),
+    ) ?? [];
+
+  const searchLibraries = async (
     kind: "footprint" | "symbol",
     query: string,
     limit: number,
+    projectDir?: string,
   ): Promise<FootprintHit[]> => {
-    if (deps.catalog?.has(kind)) return deps.catalog.search(kind, query, limit);
-    // Keep the entire remote search inside the retry boundary. If the bridge disappears during an
-    // entries call, retry from nicknames rather than returning a silently truncated result set.
-    return deps.sessions.withRetry("", (session) =>
-      searchLibrariesOnce(session.kicad, kind, query, limit),
-    );
+    const rows = projectDir ? await projectRows(projectDir, kind) : [];
+    const overridden = new Set(rows.map((row) => row.name));
+    const local = projectDir && rows.some((row) => !row.disabled)
+      ? await deps.sessions.withRetry(projectDir, (session) =>
+          searchLibrariesOnce(session.kicad, kind, query, limit,
+            rows.filter((row) => !row.disabled).map((row) => row.name)))
+      : [];
+    const bundled = deps.catalog?.has(kind)
+      ? await deps.catalog.search(kind, query, limit + overridden.size)
+      : await deps.sessions.withRetry("", (session) =>
+          searchLibrariesOnce(session.kicad, kind, query, limit + overridden.size));
+    return [...local, ...bundled.filter((hit) => !overridden.has(hit.nickname))].slice(0, limit);
   };
-  const searchFootprints = (query: string, limit: number) =>
-    searchLibraries("footprint", query, limit);
-  const searchSymbols = (query: string, limit: number) => searchLibraries("symbol", query, limit);
+  const searchFootprints = (query: string, limit: number, projectDir?: string) =>
+    searchLibraries("footprint", query, limit, projectDir);
+  const searchSymbols = (query: string, limit: number, projectDir?: string) =>
+    searchLibraries("symbol", query, limit, projectDir);
   const describePart = async (
     kind: "footprint" | "symbol",
     libId: string,
+    projectDir?: string,
   ): Promise<PartDescription> => {
-    if (deps.catalog?.has(kind)) {
+    const nickname = libId.split(":")[0];
+    const row = projectDir ? (await projectRows(projectDir, kind)).find((row) => row.name === nickname) : undefined;
+    if (row?.disabled) throw new ToolError(`${kind} library ${nickname} is disabled in this project`, "not_found");
+    if (!row && deps.catalog?.has(kind)) {
       const item = await deps.catalog.describe(kind, libId);
       if (item) return item;
-      throw new ToolError(
-        `${kind} ${libId} was not found in the bundled KiCad libraries`,
-        "not_found",
-      );
+      throw new ToolError(`${kind} ${libId} was not found in the bundled KiCad libraries`, "not_found");
     }
-    const kicad = await anyKicad();
-    const item = await kicad.libraries.get(kind, libId);
-    if (!item)
-      throw new ToolError(
-        `${kind} ${libId} was not found in the design server libraries`,
-        "not_found",
-      );
+    // Keep lookup and conversion inside the retry boundary, including project overrides.
+    return deps.sessions.withRetry(row ? projectDir! : "", async (session) => {
+      const kicad = await anyKicad(session.kicad);
+      const item = await kicad.libraries.get(kind, libId);
+      if (!item) throw new ToolError(`${kind} ${libId} was not found in the design server libraries`, "not_found");
     if (kind === "symbol" && item instanceof LibSymbol) {
       const pins = item.items.filter(
         (child): child is SchematicPin => child instanceof SchematicPin,
@@ -2683,17 +2696,36 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       };
     }
     throw new ToolError(`${libId} did not resolve as a ${kind}`, "invalid_args");
+    });
   };
   const checkPartCompatibility = async (
     symbolLibId: string,
     footprintLibId: string,
     role?: "power-only-usb-c",
+    projectDir?: string,
   ): Promise<PartCompatibility> => {
     const [symbol, footprint] = await Promise.all([
-      describePart("symbol", symbolLibId),
-      describePart("footprint", footprintLibId),
+      describePart("symbol", symbolLibId, projectDir),
+      describePart("footprint", footprintLibId, projectDir),
     ]);
     return evaluatePartCompatibility(symbol, footprint, role);
+  };
+
+  const registerLibrary = async (projectDir: string, kind: "footprint" | "symbol", nickname: string, path: string) => {
+    if (!/^[A-Za-z0-9_.-]+$/.test(nickname))
+      throw new ToolError("library nickname must contain only letters, numbers, underscores, dots or hyphens", "invalid_args");
+    const absolute = await jailPath(projectDir, path);
+    const info = await stat(absolute).catch(() => null);
+    if (!info || (kind === "footprint" ? !info.isDirectory() || !absolute.endsWith(".pretty") : !info.isFile() || !absolute.endsWith(".kicad_sym")))
+      throw new ToolError("library must be an existing .pretty directory or .kicad_sym file inside the project", "invalid_args");
+    const uri = "${KIPRJMOD}/" + projectRelative(projectDir, absolute);
+    await deps.sessions.ensureProject(projectDir);
+    await deps.sessions.withRetry(projectDir, (session) =>
+      deps.sessions.preservingProjectLibraries(projectDir, session, () =>
+        session.kicad.libraries.addTableRow(kind, "project", {
+          nickname, uri, type: "KiCad", description: "Project library", enabled: true,
+        }, true), { kind, nickname }));
+    return { nickname, uri };
   };
 
   /**
@@ -2809,6 +2841,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     cancelRoute,
     unroute: nativeOperation(unroute),
     scope: nativeOperation(scope),
+    registerLibrary,
     searchFootprints,
     searchSymbols,
     describePart,

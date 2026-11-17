@@ -1,6 +1,7 @@
 /** Circuit toolset: inspect the board KiCad holds and search the footprint libraries. */
 import { z } from "zod/v4";
 import { defineTool } from "../registry";
+import { ToolError } from "../registry";
 import { ok, table } from "./common";
 
 export const circuit_query = defineTool({
@@ -59,8 +60,8 @@ export const circuit_search_parts = defineTool({
   handler: async ({ query, kind, role, limit }, ctx) => {
     const searchQuery = role ? `${query} power-only USB-C` : query;
     const matches = await (kind === "symbol"
-      ? ctx.services.design.searchSymbols(searchQuery, limit)
-      : ctx.services.design.searchFootprints(searchQuery, limit));
+      ? ctx.services.design.searchSymbols(searchQuery, limit, ctx.project?.dir)
+      : ctx.services.design.searchFootprints(searchQuery, limit, ctx.project?.dir));
     // Search is for discovery, so do not echo embedded pin/pad geometry for every candidate.
     // Exact details remain available through circuit_describe_part.
     const hits = matches.map(({ libId, description, part }) => ({
@@ -105,7 +106,7 @@ export const circuit_describe_part = defineTool({
   },
   scope: "global",
   handler: async ({ kind, libId }, ctx) => {
-    const part = await ctx.services.design.describePart(kind, libId);
+    const part = await ctx.services.design.describePart(kind, libId, ctx.project?.dir);
     const rows = kind === "symbol" ? (part.pins ?? []) : (part.pads ?? []);
     const facts =
       kind === "footprint"
@@ -141,6 +142,7 @@ export const circuit_check_part_compatibility = defineTool({
       symbolLibId,
       footprintLibId,
       role,
+      ctx.project?.dir,
     );
     const state = result.compatible ? "compatible" : "incompatible";
     return ok(
@@ -152,7 +154,29 @@ export const circuit_check_part_compatibility = defineTool({
   },
 });
 
+/** Library management has no existing mutation tool; keep registration in one project-scoped action. */
+export const circuit_library = defineTool({
+  name: "circuit_library",
+  toolset: "circuit",
+  title: "Manage a project library",
+  description: "Register an existing project-local KiCad library for search, description and native edits. Paths must stay inside the project; saved table URIs use ${KIPRJMOD}.",
+  inputSchema: {
+    action: z.literal("register"),
+    kind: z.enum(["footprint", "symbol"]),
+    nickname: z.string().min(1).max(200),
+    path: z.string().min(1).describe("Project-relative .pretty directory or .kicad_sym file"),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  handler: async ({ kind, nickname, path }, ctx) => {
+    const project = ctx.requireProject();
+    if (!ctx.services.design.registerLibrary) throw new ToolError("project library registration is unavailable", "precondition");
+    const result = await ctx.services.design.registerLibrary(project.dir, kind, nickname, path);
+    return ok(`Registered ${kind} library ${nickname}: ${result.uri}`, result);
+  },
+});
+
 export const circuitTools = [
+  circuit_library,
   circuit_query,
   circuit_search_parts,
   circuit_describe_part,

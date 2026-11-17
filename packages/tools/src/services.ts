@@ -580,17 +580,20 @@ export interface DesignService {
     opts?: { excludePlaneNets?: boolean; excludeNets?: string[] },
   ): Promise<ComponentScope>;
   /** Footprints in the KiCad libraries the bridge's server can see. */
-  searchFootprints(query: string, limit: number): Promise<FootprintHit[]>;
+  searchFootprints(query: string, limit: number, projectDir?: string): Promise<FootprintHit[]>;
   /** Symbols in the KiCad libraries the bridge's server can see. */
-  searchSymbols(query: string, limit: number): Promise<FootprintHit[]>;
+  searchSymbols(query: string, limit: number, projectDir?: string): Promise<FootprintHit[]>;
   /** Pin/pad geometry needed to connect and place one exact library id safely. */
-  describePart(kind: "footprint" | "symbol", libId: string): Promise<PartDescription>;
+  describePart(kind: "footprint" | "symbol", libId: string, projectDir?: string): Promise<PartDescription>;
   /** Validate a symbol/footprint pair without placing or changing either one. */
   checkPartCompatibility(
     symbolLibId: string,
     footprintLibId: string,
     role?: "power-only-usb-c",
+    projectDir?: string,
   ): Promise<PartCompatibility>;
+  /** Register an existing project-contained library, saved through the live KiCad table. */
+  registerLibrary?(projectDir: string, kind: "footprint" | "symbol", nickname: string, path: string): Promise<{ nickname: string; uri: string }>;
   /** Move footprints (mm, degrees) on the built board; returns what moved and the references it could not find. */
   place(
     projectDir: string,

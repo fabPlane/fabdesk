@@ -204,8 +204,10 @@ export class FpPcbSessions {
     projectDir: string,
     session: ProjectSession,
     write: () => Promise<T>,
+    replacing?: { kind: "footprint" | "symbol"; nickname: string },
   ): Promise<T> {
     const before = await captureProjectLibraryRows(projectDir);
+
     let result: T;
     try {
       result = await write();
@@ -217,6 +219,8 @@ export class FpPcbSessions {
       );
       throw error;
     }
+    if (replacing && before[replacing.kind])
+      before[replacing.kind] = before[replacing.kind]!.filter((row) => row.name !== replacing.nickname);
     await this.restoreProjectLibraries(projectDir, session, before);
     return result;
   }
