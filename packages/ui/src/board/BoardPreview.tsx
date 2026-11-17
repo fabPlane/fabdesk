@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useRef, useState } from "react";
 import type { BoardSourceSelection, BoardLayers } from "@fabdesk/protocol";
 import { useAutomaticBoardViews, useBoardSources, useProject } from "@fabdesk/client-core";
 import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
@@ -32,6 +32,8 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
 }) {
   const previews = useAutomaticBoardViews({ projectId, directory, sourceStamp, enabled, ...(board ? { board } : {}) });
   const [side, setSide] = useState<"top" | "bottom">("top");
+  const modelView = useRef<"2d" | "3d">("2d");
+  if (mode !== "layers") modelView.current = mode === "pcb" ? "2d" : "3d";
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   const drawing = useMemo(() => combineBoardLayers(previews.layers.data?.layers ?? [], hidden), [previews.layers.data, hidden]);
   const layerColors = useMemo(() => new Map(previews.layers.data?.layers.map(layer => [layer.name, boardLayerColor(layer.svg)]) ?? []), [previews.layers.data]);
@@ -46,7 +48,7 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
     </div>
     <div className="fd-preview-stage">
       <div className="fd-preview-surface" style={{ visibility: layerView ? "hidden" : "visible" }} inert={layerView || undefined} aria-hidden={layerView}>
-        {previews.model.data && <Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={previews.path} blob={previews.model.data.blob} viewMode={mode === "pcb" ? "2d" : "3d"} side={side} selectionSource={{ projectId, ...(board ? { board } : {}), enabled }} /></Suspense>}
+        {previews.model.data && <Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={previews.path} blob={previews.model.data.blob} viewMode={modelView.current} side={side} selectionSource={{ projectId, ...(board ? { board } : {}), enabled }} /></Suspense>}
       </div>
       <div className="fd-preview-surface fd-preview-layers" style={{ visibility: layerView ? "visible" : "hidden" }} inert={!layerView || undefined} aria-hidden={!layerView}>
         {previews.layers.data && <><aside aria-label="PCB layers"><header><strong>Layers</strong><Button size="sm" variant="ghost" onClick={() => setHidden(new Set())}>Show all</Button></header>{previews.layers.data.layers.map(layer => <label key={layer.name}><input type="checkbox" checked={!hidden.has(layer.name)} onChange={event => setHidden(previous => { const next = new Set(previous); if (event.target.checked) next.delete(layer.name); else next.add(layer.name); return next; })} /><span className="fd-layer-swatch" style={{ background: layerColors.get(layer.name) }} /><span>{names[layer.name] ?? layer.name.replace(/^In(\d+)\.Cu$/, "Inner $1 copper")}<small>{layer.name}</small></span></label>)}</aside><div className="fd-layer-drawing"><SvgViewer svg={drawing} viewKey={`${projectId}:${directory}:layers`} fitLabel="Fit board" />{hidden.size >= previews.layers.data.layers.length && <div className="fd-preview-notice">All layers hidden. Select a layer to show it.</div>}</div></>}

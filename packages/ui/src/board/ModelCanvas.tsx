@@ -1,4 +1,5 @@
 import { fitModelCamera } from "@fabdesk/client-core";
+import { alignBoardCamera, type BoardCameraMode } from "./board-camera-mode";
 import { useBoardPartSelection, type PartSelectionSource } from "./usePartSelection";
 import { PartSelectionBar } from "./PartSelectionBar";
 import { nativeModelParts, modelPartReference, ModelPartTint } from "./model-part-selection";
@@ -117,6 +118,9 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, vi
         const light = new THREE.DirectionalLight(0xffffff, 3); light.position.set(span, span * 2, span); scene.add(light);
         const fill = new THREE.DirectionalLight(0xc2d6ff, 1.8); fill.position.set(-span, span, -span); scene.add(fill);
         camera = new THREE.PerspectiveCamera(38, 1, span / 1000, span * 1000);
+        // OrbitControls captures the up axis at construction. Match the shared
+        // board camera so top/bottom views can orbit immediately in 3D.
+        if (requestedView.current.viewMode) camera.up.set(0, 0, -1);
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setClearColor(0x000000, 0);
         renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -260,27 +264,27 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, vi
         }
         const perspective = camera;
         let flat: THREE.OrthographicCamera | null = null;
-        let lastSide = requestedView.current.side;
+        let previousView: BoardCameraMode | null = null;
         const setView = () => {
           if (!controls || !renderer || !perspective) return;
           stopMotion();
           const isFlat = requestedView.current.viewMode === "2d";
-          if (isFlat) {
+          if (requestedView.current.viewMode) {
             if (!flat) {
               const aspect = Math.max(.1, target.clientWidth / Math.max(1, target.clientHeight));
               const half = Math.max(size.z, size.x / aspect) * .6;
               flat = new THREE.OrthographicCamera(-half * aspect, half * aspect, half, -half, span / 1000, span * 1000);
               flat.up.set(0, 0, -1); flat.position.set(0, span * 3, 0);
             }
-            const distance = Math.max(span, flat.position.distanceTo(controls.target));
-            flat.position.copy(controls.target).add(new THREE.Vector3(0, requestedView.current.side === "bottom" ? -distance : distance, 0));
+            const next = { mode: requestedView.current.viewMode, side: requestedView.current.side };
+            alignBoardCamera(flat, controls.target, next, previousView);
+            previousView = next;
             camera = flat;
           } else camera = perspective;
-          lastSide = requestedView.current.side;
           controls.object = camera;
           controls.enableRotate = !isFlat;
           controls.mouseButtons.LEFT = isFlat ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
-          renderer.domElement.setAttribute("aria-label", isFlat ? `${lastSide} board view. Drag to pan, scroll to zoom.` : "3D model. Drag to orbit, scroll to zoom, right-drag to pan.");
+          renderer.domElement.setAttribute("aria-label", isFlat ? `${requestedView.current.side} board view. Drag to pan, scroll to zoom.` : "3D model. Drag to orbit, scroll to zoom, right-drag to pan.");
           renderer.domElement.dataset["viewMode"] = isFlat ? "2d" : "3d";
           controls.update(); resize(); render();
         };
