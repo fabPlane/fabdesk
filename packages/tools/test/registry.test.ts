@@ -277,6 +277,7 @@ describe("registry", () => {
       "connection_review",
       "connection_set_pins",
       "connection_suggest",
+      "circuit_library",
       "circuit_query",
       "circuit_search_parts",
       "circuit_describe_part",
