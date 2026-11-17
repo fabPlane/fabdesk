@@ -49,6 +49,7 @@ export type OrderCheckEvidence = {
 function drcStatus(evidence: OrderCheckEvidence): OrderCheckStatus {
   if (!evidence.hasBoardPcb) return "missing";
   if (!evidence.drc) return "missing";
+  if (typeof evidence.drc.report.pcbRevision?.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(evidence.drc.report.pcbRevision.sha256)) return "missing";
   if (evidence.drc.inputsChanged) return "stale";
   try {
     return gate(evidence.drc.report, undefined, [...evidence.allowedDrcWarnings]).pass
@@ -67,7 +68,8 @@ function ercStatus(evidence: OrderCheckEvidence): OrderCheckStatus {
   // remixed boards). Nothing the user can run clears that, so it is a warning, not a block.
   if (report.measurement?.applicability === false || report.measurement?.evidenceLevel === "missing")
     return "not_applicable";
-  if (inputsChanged || report.measurement?.revisionStable === false) return "stale";
+  if (report.measurement?.evidenceLevel !== "measured" || typeof report.measurement.checkedRevision !== "string" || report.measurement.revisionStable !== true) return "missing";
+  if (inputsChanged) return "stale";
   const errors: unknown = report.counts?.errors;
   if (typeof errors !== "number") return "missing";
   return errors === 0 ? "pass" : "fail";
@@ -153,18 +155,8 @@ async function ercInputsChanged(projectDir: string, erc: { value: ErcEvidenceRep
     // Content, as the release gate does: recompute the aggregate revision from current bytes.
     return (await savedHierarchyRevision(projectDir, sheets as SavedSheetRef[])) !== m.checkedRevision;
   }
-  // Older reports carry no sheet identities; fall back to the times of the sheets they measured.
-  const referenced = m?.hierarchy?.referencedFiles;
-  const inputs = (
-    Array.isArray(referenced) && referenced.every((f) => typeof f === "string")
-      ? (referenced as string[])
-      : [BOARD_SCH]
-  ).filter(isNativeSheet);
-  for (const input of inputs) {
-    const t = await mtimeMs(join(projectDir, input));
-    if (t === null || t > erc.mtimeMs) return true;
-  }
-  return false;
+  // Older reports cannot establish content freshness from timestamps alone.
+  return true;
 }
 
 /** Loads the release gate's saved DRC/ERC evidence for `assessOrderReadiness`. */
@@ -186,7 +178,7 @@ export async function loadOrderCheckEvidence(
     const inputsChanged =
       typeof checked === "string"
         ? checked !== createHash("sha256").update(board).digest("hex")
-        : (boardMtime ?? 0) > drc.mtimeMs;
+        : true;
     drcEvidence = { report: drc.value, inputsChanged };
   }
   return {
