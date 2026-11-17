@@ -249,6 +249,7 @@ describe("registry", () => {
       "route_run",
       "verify_drc",
       "render_board",
+      "render_publish",
       "project_checkpoint",
       "project_read_file",
       "project_write_file",
@@ -368,7 +369,7 @@ describe("registry", () => {
       "cad_fit",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
-    expect(reg.byToolset("core").length).toBe(10);
+    expect(reg.byToolset("core").length).toBe(11);
     expect(() =>
       defineTool({
         name: "bad.name",
@@ -1138,6 +1139,8 @@ describe("registry", () => {
         progress: () => {},
       }),
     );
+    expect((autoFitted.json as any).canonicalPreview).toMatchObject({ sourceSha256: (autoFitted.json as any).pcbRevision.sha256 });
+    expect(await readFile(join(project.dir, "renders/pcb.svg"), "utf8")).toBe(await readFile(join(project.dir, "renders/pcb-view.svg"), "utf8"));
     expect((autoFitted.json as any).region).toEqual({ minX: -7, minY: -8, maxX: 17, maxY: 18 });
     expect(await Bun.file(join(project.dir, "renders/pcb-view.svg")).text()).toContain(
       'viewBox="-7 -8 24 26"',
@@ -1431,15 +1434,12 @@ describe("registry", () => {
     const services = mockServices([project], {
       kicad: {
         ...base.kicad,
-        exportSchematicSvg: async (_cli, { outDir }) => {
-          await mkdir(outDir, { recursive: true });
-          const path = join(outDir, "board.svg");
-          await writeFile(
-            path,
-            '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="white"/><text x="2" y="12">R1</text></svg>',
-          );
-          return { paths: [path] };
-        },
+        inspectSchematicHierarchy: async (...args) => { const h = await base.kicad.inspectSchematicHierarchy(...args); h.projectFile = null; h.sheets[0]!.pageNumber = 1; return h; },
+        exportOwnedSchematicSvg: async (_cli, { hierarchy }) => ({
+          sourceRevision: hierarchy.aggregateRevision,
+          sourceFiles: [{ path: "board.kicad_sch", sha256: createHash("sha256").update(await readFile(schematic)).digest("hex") }],
+          sheets: hierarchy.sheets.map(sheet => ({ name: "board.svg", svg: new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="white"/></svg>'), nativeSheet: { identity: sheet.identity, nativePath: sheet.nativePath, hierarchyPath: sheet.hierarchyPath, pageNumber: sheet.pageNumber! } })),
+        }),
       },
     });
     const output = await reg.invoke("render_schematic_svg", {}, (ref) =>
@@ -1492,12 +1492,11 @@ describe("registry", () => {
     const services = mockServices([project], {
       kicad: {
         ...base.kicad,
-        exportSchematicSvg: async (_cli, { outDir }) => {
-          await mkdir(outDir, { recursive: true });
-          const path = join(outDir, "board.svg");
-          await writeFile(path, '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"/>');
+        inspectSchematicHierarchy: async (...args) => { const h = await base.kicad.inspectSchematicHierarchy(...args); h.projectFile = null; h.sheets[0]!.pageNumber = 1; return h; },
+        exportOwnedSchematicSvg: async (_cli, { hierarchy }) => {
+          const hash = createHash("sha256").update(await readFile(schematic)).digest("hex");
           await writeFile(schematic, "after");
-          return { paths: [path] };
+          return { sourceRevision: hierarchy.aggregateRevision, sourceFiles: [{ path: "board.kicad_sch", sha256: hash }], sheets: hierarchy.sheets.map(sheet => ({ name: "board.svg", svg: new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"/>'), nativeSheet: { identity: sheet.identity, nativePath: sheet.nativePath, hierarchyPath: sheet.hierarchyPath, pageNumber: sheet.pageNumber! } })) };
         },
       },
     });
@@ -1513,7 +1512,7 @@ describe("registry", () => {
           progress: () => {},
         }),
       ),
-    ).rejects.toThrow(/schematic changed during rendering/);
+    ).rejects.toThrow(/native sheet changed/);
   });
 
   test("revision-bound native inspection separates session diagnostics from saved-file checks", async () => {
