@@ -38,7 +38,7 @@ const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+
 const Proxies = z.record(z.string(), z.object({ proxy: z.string(), why: z.string().optional() }));
 
 const Input = {
-  action: z.enum(["bom", "gerb", "check", "fab", "cam", "vias"]).describe("vias: every via whose drill meets SMD pad copper (via-in-pad) and every microvia needs (filling yes) (capping yes) (IPC-4761 Type VII) for the fab gate: lists them, which lack the attributes, and the pads they sit in; with apply: true, writes the two attributes on the missing ones (an attribute only, no geometry) into the project board through adopt (one KiCad commit, checkpointed) and checks the board again. Fill and cap is a fab process the order must name (costlier); moving a via out of the pad (board_edit / last mile) is the alternative. cam: the CAM set in `out` (default fab/) without the release gates, for a board the owner approved as it is or to look at the outputs: Gerbers plotted from a fresh zone fill, PTH/NPTH drill with maps, BOM (one row per value+footprint with its references), placement CSV, the Gerber render check and a README saying it is not a gated release. bom: part identity, stock, lifecycle, JLC footprint fit and CPL rotation per line. gerb: render check of Gerbers against KiCad's plot. check: release readiness (or JLC placement simulation of an existing package). fab: the fabrication package; refuses unless every gate passes."),
+  action: z.enum(["bom", "gerb", "check", "fab", "cam", "vias"]).describe("vias: every via whose drill meets SMD pad copper (via-in-pad) and every microvia needs (filling yes) (capping yes) (IPC-4761 Type VII) for the fab gate: lists them, which lack the attributes, and the pads they sit in; with apply: true, writes the two attributes on the missing ones (an attribute only, no geometry) into the project board through adopt (one KiCad commit, checkpointed) and checks the board again. Fill and cap is a fab process the order must name (costlier); moving a via out of the pad (board_edit / last mile) is the alternative. cam: the CAM set in `out` (default fab/) without the release gates, for a board the owner approved as it is or to look at the outputs: Gerbers plotted from a fresh zone fill, PTH/NPTH drill with maps, BOM (one row per value+footprint with its references), placement CSV, the Gerber render check and a README saying it is not a gated release. bom: part identity, stock, lifecycle, JLC footprint fit and CPL rotation per line. gerb: render check of Gerbers against KiCad's plot. check: release readiness (or JLC placement simulation of an existing package). fab: the fabrication package; refuses unless every gate passes (an assembly order also needs a current, complete BOM check; assembly: false for a bare-board order)."),
   pcb: z.string().optional().describe("Board file, relative to the project; default board.kicad_pcb or the project's only .kicad_pcb."),
   boards: z.number().int().min(1).max(10000).default(5).describe("bom: boards to cover with stock (+10 % and 2 spare)."),
   fMax: z.number().positive().optional().describe("bom: height limit above the top surface in mm (from the board's own limit)."),
@@ -55,6 +55,7 @@ const Input = {
   accept: z.array(z.string()).default([]).describe('fab: owner-accepted exceptions "CHECK=FILE#ID" (e.g. A8_pairs=notes/decisions.json#pair-spacing): a failing acceptance check passes only with an owner decision of that id in the file; recorded in the manifest.'),
   cpl: z.string().optional().describe("fab: a reviewed placement CSV in the project (KiCad pos format with hand corrections) used for the JLC CPL; refs must match the JLC BOM."),
   step: z.boolean().default(true).describe("fab: include the STEP model."),
+  assembly: z.boolean().default(true).describe("check/fab: false for a bare-board order: the gate then needs no BOM check (no JLC BOM/CPL or placement check; the manifest says so). Default true: an assembly order, where every fitted part needs a settled BOM choice."),
   apply: z.boolean().default(false).describe("vias: write (filling yes) (capping yes) on the vias that need them and lack them, into the project board (adopt); default only lists them."),
 };
 
@@ -237,10 +238,10 @@ async function checkAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
     `2 review gate: ${gateText}`,
     `3 acceptance: ${accText}`,
     `4 via-in-pad / microvia bindings: ${vias.record.counts.require_fill_cap} need fill+cap, ${vias.missing.length} missing natively`,
-    `BOM / JLC rotations: ${bomText}`,
+    a.assembly ? `BOM / JLC rotations: ${bomText}` : `BOM / JLC rotations: not required (bare-board order, assembly: false)`,
     last ? `Last package: ${relative(project.dir, last.out)} (${last.boardSha256 === (await sha256Of(files.pcb)) ? "of this board" : "of an earlier board"})` : "No package built yet.",
   ].join("\n");
-  const ready = ic.pass && gate.state === "pass" && acc.pass && !vias.missing.length && bomReady;
+  const ready = ic.pass && gate.state === "pass" && acc.pass && !vias.missing.length && (bomReady || !a.assembly);
   return ok(text, { ready, interconnect: ic, review: gate, acceptance: { state: acc.state, failing: acc.failing, pass: acc.pass }, vias: { ...vias.record.counts }, bom: { state: bom.state, ...(bom.meta ? { summary: bom.meta.summary } : {}) } });
 }
 
@@ -291,6 +292,7 @@ async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
       ...(cpl ? { cpl } : {}),
       ...(Object.keys(proxies).length ? { proxies } : {}),
       step: a.step,
+      assembly: a.assembly,
       gerbDpi: a.dpi,
       signal: ctx.signal,
       progress: (n) => ctx.progress(0.5, n),

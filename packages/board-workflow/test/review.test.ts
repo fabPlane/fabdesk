@@ -67,7 +67,11 @@ describe("finding ids and judgement", () => {
     expect(judge({ severity: "question" }, null)).toEqual([true, "no disposition"]);
     expect(judge({ severity: "question" }, { state: "accept", by: "agent", reason: "" })).toEqual([true, "disposition has no reason"]);
     expect(judge({ severity: "question" }, { state: "fix", by: "agent", reason: "r" })[0]).toBe(true);
-    expect(judge({ severity: "question" }, { state: "accept", by: "agent", reason: "r" })[0]).toBe(false);
+    // the agent's word alone does not waive a question: a third source, the owner, or the owner's delegation does
+    expect(judge({ severity: "question" }, { state: "accept", by: "agent", reason: "r" })[1]).toContain("needs evidence (third_source) or the owner");
+    expect(judge({ severity: "question" }, { state: "accept", by: "agent", reason: "r", third_source: "datasheet p4" })[0]).toBe(false);
+    expect(judge({ severity: "question" }, { state: "accept", by: "agent", reason: "r" }, { preferences: { workflow_decides: ["questions"] } })[0]).toBe(false);
+    expect(judge({ severity: "question" }, { state: "accept", by: "owner", reason: "r" })[0]).toBe(false);
   });
   test("false-positive needs a third source; an agent's must-fix accept needs the owner's leave and evidence", () => {
     expect(judge({ severity: "question" }, { state: "false-positive", by: "agent", reason: "r" })[1]).toBe("false-positive needs a third source");
@@ -77,8 +81,9 @@ describe("finding ids and judgement", () => {
     expect(judge({ severity: "must-fix" }, { ...d, third_source: "" }, { preferences: { ask_owner_for: [] } })[1]).toContain("needs evidence");
     expect(judge({ severity: "must-fix" }, { ...d, by: "owner" })[0]).toBe(false);
   });
-  test("agent deferral of an owner question records a reason without establishing a measured pass", () => {
-    expect(judge({ severity: "question" }, { state: "defer", by: "agent", reason: "Independent reviewer unavailable in this session" })).toEqual([false, "defer"]);
+  test("only the owner defers a question, and a deferral is not a measured pass", () => {
+    expect(judge({ severity: "question" }, { state: "defer", by: "agent", reason: "Independent reviewer unavailable in this session" })).toEqual([true, "question deferred by agent: the owner decides"]);
+    expect(judge({ severity: "question" }, { state: "defer", by: "owner", reason: "Independent reviewer unavailable in this session" })).toEqual([false, "defer"]);
     expect(judge({ severity: "question" }, { state: "defer", by: "agent", reason: "  " })[0]).toBe(true);
     expect(judge({ severity: "must-fix" }, { state: "defer", by: "agent", reason: "later" })[0]).toBe(true);
   });
@@ -200,11 +205,14 @@ describe("a review run, the gate and dispositions", () => {
     expect(open).toBeGreaterThan(3);
     const d = await dispose(p, { id: "L*", state: "accept", by: "owner", reason: "reviewed on the bench", third_source: "bench log" });
     expect(d.disposed.length).toBeGreaterThan(3);
+    // the pilot case: the agent deferring the independent review itself must not pass the gate
     await dispose(p, { id: "L8:EXPERT:-:-:pending", state: "defer", by: "agent", reason: "Independent reviewer unavailable for this session" });
+    expect((await reviewGate(p)).exit).toBe(2);
+    await dispose(p, { id: "L8:EXPERT:-:-:pending", state: "defer", by: "owner", reason: "Independent reviewer unavailable for this session" });
     const g = await reviewGate(p);
     expect(g.exit).toBe(0);
     expect(g.evidence?.independentReview).toBe("deferred");
-    expect(g.lines.join("\n")).toContain("defer by agent: Independent reviewer unavailable");
+    expect(g.lines.join("\n")).toContain("defer by owner: Independent reviewer unavailable");
     expect(g.state).toBe("pass");
     // disposition carries by id into the next run and is marked carried
     await writeFile(join(dir, "board.kicad_pcb"), PCB + "\n");

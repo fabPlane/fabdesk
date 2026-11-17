@@ -11,7 +11,8 @@
  *   (candidates.ts) tryPlan: the agent's own plan through the same proof; (autopilot.ts) review -> fixes -> owner only;
  *   (intent.ts)    the owner's intent file: init, decide, show
  *
- * Findings: must-fix | question | note. Notes never block. A question is closed by any disposition with a reason; a
+ * Findings: must-fix | question | note. Notes never block. A question is closed by an owner disposition, or by an
+ * agent 'accept' that cites a third source (or that the owner's intent delegates); a
  * must-fix only by fixing it (it disappears) or by an owner 'accept'. 'false-positive' needs a third source. A
  * disposition is keyed by finding id and carries to later runs; the report marks it as carried. The reviewer never
  * edits a design.
@@ -65,7 +66,18 @@ export function judge(finding: { severity: string }, disp: Disposition | null | 
     if (!agentMayAcceptMustFix(intent)) return [true, "must-fix accepted by agent: the owner's intent asks to be asked"];
     if (!(disp.third_source || disp.evidence)) return [true, "must-fix accepted by agent needs evidence (third_source)"];
   }
+  // The agent cannot waive a question on its own say-so: deferring one is the owner's call, and accepting one needs a
+  // source beyond the design and the check, unless the owner's intent hands questions to the workflow.
+  if (finding.severity === "question" && disp.by !== "owner") {
+    if (st === "defer") return [true, "question deferred by agent: the owner decides"];
+    if (st === "accept" && !(disp.third_source || disp.evidence) && !agentMayAcceptQuestion(intent)) return [true, "question accepted by agent needs evidence (third_source) or the owner"];
+  }
   return [false, st];
+}
+
+/** The owner's intent may hand questions to the workflow (`workflow_decides` naming "question"). */
+export function agentMayAcceptQuestion(intent: Intent | null): boolean {
+  return (intent?.preferences?.workflow_decides ?? []).join(" ").toLowerCase().includes("question");
 }
 
 export interface Row extends FindingRecord {

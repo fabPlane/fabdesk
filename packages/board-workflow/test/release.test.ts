@@ -508,6 +508,14 @@ describe("gated BOM completeness", () => {
     expect(await stat(out).catch(() => null)).toBeNull();
     expect((await readdir(dir)).sort()).toEqual(["b.kicad_pcb", "bom"]);
   });
+  for (const assembly of [true, false]) test(`no BOM check ${assembly ? "stops an assembly order" : "is not required for a bare-board order"}`, async () => {
+    const dir = await mkdtemp(join(tmpdir(), "fab-bare-"));
+    const pcb = join(dir, "b.kicad_pcb"), out = join(dir, "package");
+    await writeFile(pcb, board());
+    const result = await release.releaseFab({ project: dir, stem: "b", pcb, schematic: null, out, assembly, cli: { path: "must-not-export", version: "" }, gates: { review: async () => ({ state: "pass" }), acceptance: async () => ({ summary: Object.fromEntries(["A1_connectivity", "A2_drc", "A3_parity", "A4_circuit", "A5_anchors", "A6_stack", "A7_widths", "A8_pairs", "A9_heights"].map(key => [key, true])) }) } }).catch(error => error as Error);
+    // a bare-board order goes past the BOM gate to CAM (which this fake kicad-cli cannot export)
+    expect(result instanceof release.ReleaseStop && result.gate === "bom").toBe(assembly);
+  });
   test("complete choices include copper-only exceptions, but missing fitted references refuse", async () => {
     const dir = await mkdtemp(join(tmpdir(), "fab-bom-coverage-"));
     await writeFile(join(dir, "b.kicad_pcb"), board());

@@ -6,7 +6,8 @@
  *   2. the review gate: a current review of this exact board, every finding settled;
  *   3. the board's acceptance checks A1-A9 with schematic parity (an exception only with an owner decision, recorded);
  *   4. via-in-pad and microvia fill/cap bindings set natively.
- *   5. a current BOM check covers every fitted part with a resolved choice (or named risk).
+ *   5. for an assembly order (the default), a current BOM check covers every fitted part with a resolved choice (or
+ *      named risk); a bare-board order (assembly: false) skips the BOM, CPL and placement check and says so.
  * Then CAM is exported twice and the files must match after the date lines; the Gerbers are drawn by an independent
  * reader and compared with KiCad's plot (gerbcheck); JLC BOM/CPL are written from the BOM check's decisions and rotation
  * predictions, with every CPL row simulated against JLC's own footprint on our copper (jlcsim).
@@ -79,6 +80,8 @@ export interface FabInput {
   /** {LCSC: {proxy, why}}: same-package stand-ins where JLC has no footprint. */
   proxies?: Record<string, { proxy: string; why?: string | undefined }>;
   step?: boolean;
+  /** false: a bare-board order. No BOM check is required and no JLC BOM/CPL is written (recorded in the manifest). */
+  assembly?: boolean;
   gerbDpi?: number;
   signal?: AbortSignal;
   progress?: (note: string) => void;
@@ -304,15 +307,20 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
   const { record: viaRec, missing } = viaBindings(inp.pcb, classifyVias(pcbText));
   if (missing.length)
     throw new ReleaseStop("vias", `STOP via bindings: ${missing.length} via(s) in pads or microvias lack (filling yes) (capping yes): ${missing.slice(0, 6).map((v) => `${v.net}@${v.xy.join(",")}`).join("; ")}. Set them with board_release {"action": "vias", "apply": true} (the order must then ask for filled and capped vias), or move the vias out of the pads`, viaRec.counts);
-  // A missing, stale or incomplete BOM refuses before anything is exported. Ungated CAM is a separate action.
-  const hasCplJlc = !!inp.bomDir && (await stat(join(inp.bomDir, "cpl-jlc.csv")).then(() => true, () => false));
-  if (!inp.bomDir || !hasCplJlc) throw new ReleaseStop("bom", "STOP no current BOM check: run board_release bom first (use board_release cam for ungated CAM only)");
-  if (inp.bomBoardSha !== sha256(await readFile(inp.pcb)))
-    throw new ReleaseStop("bom", "STOP BOM check is of an earlier board (the board changed since): run board_release bom again");
-  const bomDecisions = await readFile(join(inp.bomDir, "bom-decisions.json"), "utf8")
-    .then(text => JSON.parse(text) as BomResult)
-    .catch(() => { throw new ReleaseStop("bom", "STOP BOM decisions are missing or malformed: run board_release bom again"); });
-  assertReleaseBom(bomDecisions, pcbText);
+  // An assembly order: a missing, stale or incomplete BOM refuses before anything is exported. A bare-board order
+  // needs no BOM. Ungated CAM is a separate action.
+  const assembly = inp.assembly !== false;
+  const hasCplJlc = assembly && !!inp.bomDir && (await stat(join(inp.bomDir, "cpl-jlc.csv")).then(() => true, () => false));
+  let bomDecisions: BomResult | null = null;
+  if (assembly) {
+    if (!inp.bomDir || !hasCplJlc) throw new ReleaseStop("bom", "STOP no current BOM check: run board_release bom first (assembly: false for a bare-board order; board_release cam for ungated CAM only)");
+    if (inp.bomBoardSha !== sha256(await readFile(inp.pcb)))
+      throw new ReleaseStop("bom", "STOP BOM check is of an earlier board (the board changed since): run board_release bom again");
+    bomDecisions = await readFile(join(inp.bomDir, "bom-decisions.json"), "utf8")
+      .then(text => JSON.parse(text) as BomResult)
+      .catch(() => { throw new ReleaseStop("bom", "STOP BOM decisions are missing or malformed: run board_release bom again"); });
+    assertReleaseBom(bomDecisions, pcbText);
+  }
   // CAM: built in a temporary folder beside the destination, renamed into place only when every check passed
   const final = inp.out;
   const parent = dirname(final);
@@ -341,10 +349,10 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
     const names = (await readdir(g)).sort();
     await writeFile(join(work, `${inp.stem}-gerbers.zip`), zipFiles(await Promise.all(names.map(async (n) => ({ name: n, data: new Uint8Array(await readFile(join(g, n))) })))));
     // JLC files
-    let jlc: JlcFiles | { skipped: string } = { skipped: "no BOM check for this board (board_release bom): no JLC BOM/CPL" };
+    let jlc: JlcFiles | { skipped: string } = { skipped: assembly ? "no BOM check for this board (board_release bom): no JLC BOM/CPL" : "bare-board order (assembly: false): no BOM, CPL or placement check" };
     const sheets: string[] = [];
     for (const n of (await readdir(inp.project)).filter((x) => x.endsWith(".kicad_sch")).sort()) sheets.push(await readFile(join(inp.project, n), "utf8"));
-    if (inp.bomDir && hasCplJlc) {
+    if (inp.bomDir && hasCplJlc && bomDecisions) {
       note("JLC BOM and CPL");
       const j = await jlcFiles(work, inp.bomDir, inp.stem, g);
       const placedRefs = new Set(parseCsv(await readFile(join(work, `${inp.stem}-jlc-cpl.csv`), "utf8")).map(row => row["Designator"]));

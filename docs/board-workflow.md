@@ -117,7 +117,8 @@ and basis); `inner_neck_allowance_mm: 0` on a power class makes every inner segm
   requirements (anchors, circuit) and works when the board was saved by a newer KiCad than the app's (it writes the file and says so).
 - **Review.** One design hash covers board, schematics, project files and requirements; any change makes the review stale. Settle each finding with
   evidence: a must-fix is fixed, or accepted by the owner (or by you with evidence when intent allows); a false-positive needs a third source
-  (neither the design nor the check); a question closes with any disposition that has a reason. A fix candidate is READY only when the proof
+  (neither the design nor the check); a question closes when the owner settles it, or when you accept it citing a third source (or intent
+  delegates questions); only the owner defers one. A fix candidate is READY only when the proof
   passes, the finding is gone, no new finding appears and 0 nets are collateral. `fix` with `apply` also proves every READY edit applied together
   (the combined candidate: one change per board) and writes a change picture beside each READY candidate; `try` puts your own plan
   through the same proof for the finding ids it should fix; `autopilot` is review if stale, then `fix` with `apply`, then only what needs
@@ -126,8 +127,9 @@ and basis); `inner_neck_allowance_mm: 0` on a power class makes every inner segm
   by pin type, track and via resistance with no pour credit, the supplier's etch taken off every width, IPC-2221 heat on every inner
   segment and a 2 % drop; a missing or disconnected terminal is a must-fix, not a pass.
 - **Release.** `board_release fab` refuses, writing nothing, unless in order: the interconnect gate (none for a standalone project), the review
-  gate for this exact board, A1-A9 with parity (an exception only with an owner decision), via-in-pad and microvia fill and cap bindings, and a current
-  BOM check covering every fitted part with a resolved choice or named risk. Missing, proposed and unresolved choices stop release; copper-only features
+  gate for this exact board, A1-A9 with parity (an exception only with an owner decision), via-in-pad and microvia fill and cap bindings, and, for
+  an assembly order (the default), a current BOM check covering every fitted part with a resolved choice or named risk; a bare-board order passes
+  `assembly: false` and needs no BOM. Missing, proposed and unresolved choices stop an assembly release; copper-only features
   are explicitly excluded from purchasing and placement. CAM is exported twice with identical hashes and the Gerbers are rendered and compared with KiCad's
   plot. JLC placements must cover fitted parts and pass simulation; missing footprint evidence stops release. Package only the exact reviewed version.
   A via STOP: `board_release vias` names the vias in pads and the microvias; `apply: true` sets fill and cap on them (the order must then ask
