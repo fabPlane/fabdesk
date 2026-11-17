@@ -28,6 +28,7 @@ import {
 } from "./LaserStencilPresetPanel";
 
 const ProjectPdf = lazy(() => import("./ProjectPdf"));
+const ModelCanvas = lazy(() => import("./ModelCanvas"));
 
 const MAX_TEXT_BYTES = 1_000_000;
 
@@ -110,6 +111,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const file = files.find((f) => f.path === selected);
   const appearance = file ? fileAppearance(file.path) : null;
   const canPreviewModel = !!file && /\.(glb|stl|obj)$/i.test(file.path);
+  const inlineModel = !!file && /\.stl$/i.test(file.path);
   const modelPreview = canPreviewModel && modelPreviewPath === file?.path ? {
     ...savedOutputs(files, assembly ? sources.data?.sources : []).find(output => output.path === modelPreviewPath),
     path: modelPreviewPath!, kind: "models" as const,
@@ -273,12 +275,18 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
               }}><Icon name="sparkles" width={14} height={14} />Use in conversation</Button>}
               </div>
             </div>
-            <div className={cn("min-h-0 flex-1", appearance.preview === "pdf" ? "fd-file-pdf-preview" : "overflow-auto p-4")}>
+            <div className={cn("min-h-0 flex-1", inlineModel ? "fd-file-model-preview" : appearance.preview === "pdf" ? "fd-file-pdf-preview" : "overflow-auto p-4")}>
               {downloadError?.path === file.path && <p role="alert" className="mb-3 text-xs text-danger">{downloadError.message}</p>}
+              {inlineModel && <>
+                <p className="fd-file-model-status">Saved model · Source freshness and physical fit not checked</p>
+                <Suspense fallback={<div role="status" className="flex items-center justify-center gap-2 p-4"><Spinner />Opening model…</div>}>
+                  <ModelCanvas key={`${projectId}:${file.path}:${file.mtime}:${file.size}`} projectId={projectId} path={file.path} />
+                </Suspense>
+              </>}
               {appearance.preview === "pdf" && <Suspense fallback={<div className="fd-pdf-loading" role="status"><Spinner />Loading PDF reader…</div>}><ProjectPdf key={file.path} projectId={projectId} path={file.path} toolbarHost={pdfToolbarHost} /></Suspense>}
               {appearance.preview === "image" && <ProjectImage retryable projectId={projectId} path={file.path} className="fd-file-image max-h-none max-w-full" />}
               {appearance.preview === "video" && <ProjectVideo projectId={projectId} path={file.path} className="fd-file-video max-w-full" />}
-              {appearance.preview === "none" && <EmptyState title={`${appearance.label} file`} icon={<FileGlyph kind={appearance.kind} className="!h-10 !w-10" />} {...(canPreviewModel ? { action: <Button onClick={() => setModelPreviewPath(file.path)}><Icon name="cube" width={16} height={16} />Preview model</Button> } : {})}>
+              {appearance.preview === "none" && !inlineModel && <EmptyState title={`${appearance.label} file`} icon={<FileGlyph kind={appearance.kind} className="!h-10 !w-10" />} {...(canPreviewModel ? { action: <Button onClick={() => setModelPreviewPath(file.path)}><Icon name="cube" width={16} height={16} />Preview model</Button> } : {})}>
                 {canPreviewModel ? "Inspect this saved model in fabPlane, or download it for your viewer or slicer." : appearance.kind === "model" ? "Open this file in a compatible 3D viewer or slicer." : "A preview for this format is not available here."}
                 <p className="mt-2 break-all font-mono text-xs">{file.path}</p>
               </EmptyState>}

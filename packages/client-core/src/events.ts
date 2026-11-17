@@ -336,6 +336,9 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       break;
     case "route.meta":
       ctx.route?.ingest(event.meta as RouteFrameLine);
+      // Frames do not identify their project. Refresh durable owner records once
+      // at the start of a run, rather than letting metadata steal the selection.
+      void qc.invalidateQueries({ queryKey: ["route-runs"] });
       break;
     case "route.static":
       ctx.route?.ingest(event.static as RouteFrameLine);
@@ -345,6 +348,8 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       break;
     case "route.done":
       ctx.route?.setDone(event.result);
+      void qc.invalidateQueries({ queryKey: ["route-runs"] });
+      void qc.invalidateQueries({ queryKey: ["route-run", event.result.runId] });
       break;
     case "project.changed":
       if (event.paths.some(path => BOARD_WORKSPACE_PATHS.test(path))) void qc.invalidateQueries({ queryKey: [BOARD_WORKSPACE_QUERY_KEY, event.projectId] });

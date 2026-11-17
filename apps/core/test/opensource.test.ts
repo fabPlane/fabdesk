@@ -378,18 +378,21 @@ describe("order readiness", () => {
   const board = { ...none, hasBoardPcb: true };
   const cleanDrc = { report: drcReport(), inputsChanged: false };
 
-  test("gerbers or a zip without board.kicad_pcb need no checks; board.kicad_pcb needs DRC", () => {
+  test("export-only and legacy artifacts require a canonical board and fresh DRC", () => {
     expect(assessOrderReadiness([], none).ready).toBe(false);
-    expect(assessOrderReadiness([{ path: "circuit.tsx" }], none).ready).toBe(false);
-    expect(assessOrderReadiness([{ path: "exports/gerbers/F_Cu.gbr" }], none).ready).toBe(true);
-    expect(assessOrderReadiness([{ path: "exports/fabrication.zip" }], none).ready).toBe(true);
-    // A board verify_drc cannot check (other name, legacy routed json) does not block.
-    expect(assessOrderReadiness([{ path: "hw/other.kicad_pcb" }], none).checks.drc).toBe("not_required");
-    expect(assessOrderReadiness([{ path: "circuit.routed.json" }], none).ready).toBe(true);
+    for (const path of ["exports/gerbers/F_Cu.gbr", "exports/fabrication.zip", "hw/other.kicad_pcb", "circuit.routed.json"]) {
+      const result = assessOrderReadiness([{ path }], none);
+      expect(result.ready).toBe(false);
+      expect(result.checks.drc).toBe("missing");
+      expect(result.reasons.join(" ")).toContain("source board");
+      // A leftover passing report cannot substitute for the missing board it measured.
+      expect(assessOrderReadiness([{ path }], { ...none, drc: cleanDrc }).ready).toBe(false);
+      const failed = { report: drcReport({ counts: { errors: 25, warnings: 0, unconnected: 0 } }), inputsChanged: false };
+      expect(assessOrderReadiness([{ path }], { ...none, drc: failed }).ready).toBe(false);
+    }
     const blocked = assessOrderReadiness([{ path: "board.kicad_pcb" }], board);
     expect(blocked.ready).toBe(false);
     expect(blocked.checks).toEqual({ drc: "missing", erc: "not_required" });
-    expect(blocked.reasons.join(" ")).toContain("Run DRC");
   });
 
   test("assembly artifacts never establish root-only order readiness", () => {

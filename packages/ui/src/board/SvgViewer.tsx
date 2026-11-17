@@ -4,7 +4,7 @@ import { DrawingViewportMemory, type DrawingViewport } from "@fabdesk/client-cor
 import { Button, Spinner } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { cn } from "../util";
-import { clientPointToSvg, parseSvgViewBox, resolveSvgBox, type SvgBox, type SvgPoint } from "./svg-coords";
+import { clientPointToSvg, parseSvgViewBox, resolveSvgBox, visibleSvgCenter, type SvgBox, type SvgPoint } from "./svg-coords";
 import { svgImageCache } from "./svg-image-cache";
 import { SvgCanvas } from "./SvgCanvas";
 import { useSvgNavigation } from "./useSvgNavigation";
@@ -160,6 +160,9 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
   const lastDrawingRect = useRef<DOMRect | null>(null);
   const focusStart = useRef<{ key: string; rect: DOMRect | null } | null>(null);
   const manualFocusKey = useRef<string | null>(null);
+  const [beforeFocus, setBeforeFocus] = useState<{ svg: string; viewKey: string | undefined; zoom: number; centerX: number; centerY: number } | null>(null);
+  const canReturn = beforeFocus?.svg === svg && beforeFocus.viewKey === viewKey;
+  useEffect(() => setBeforeFocus(null), [svg, viewKey]);
   const stopFocusMotion = () => { cancelAnimationFrame(motionFrame.current); focusMotion.current?.cancel(); focusMotion.current = null; if (drawing.current) drawing.current.dataset["focusMotion"] = "idle"; };
   // Keep the padded drawing area, but stop re-framing this selection after the
   // user takes control. A new selection or explicit Focus has a fresh key.
@@ -195,6 +198,10 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
     const geometryKey = `${focusRegion?.key}/${fitSize.width}/${fitSize.height}`;
     if (!focusMotionEnabled || !focusActive || !focusRegion || manualFocusKey.current === focusRegion.key || focusedRegion.current === geometryKey || !frame || !host || !box || !size || !current || loaded?.url !== current.url || fitSize.width <= 1 || fitSize.height <= 1) return;
     if (focusStart.current?.key !== geometryKey) {
+      const before = lastDrawingRect.current, visible = frame.getBoundingClientRect();
+      if (!canReturn && before?.width && before.height) setBeforeFocus({ svg, viewKey, zoom,
+        centerX: (visible.left + frame.clientWidth / 2 - before.left) / before.width,
+        centerY: (visible.top + frame.clientHeight / 2 - before.top) / before.height });
       focusStart.current = { key: geometryKey, rect: lastDrawingRect.current };
       stopFocusMotion();
     }
@@ -226,6 +233,18 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
     const point = clientPointToSvg(box, host.getBoundingClientRect(), event.clientX, event.clientY);
     if (point) onDrawingClick(point, event);
   };
+  const returnBeforeFocus = () => {
+    if (!canReturn || !beforeFocus) return;
+    stopFocusMotion();
+    const saved = beforeFocus;
+    flushSync(() => { setDismissedFocus(focusRegion?.key ?? null); setZoom(saved.zoom); setBeforeFocus(null); });
+    const frame = viewport.current, host = drawing.current;
+    if (frame && host) {
+      const visible = frame.getBoundingClientRect(), rect = host.getBoundingClientRect();
+      frame.scrollBy(rect.left + saved.centerX * rect.width - visible.left - frame.clientWidth / 2, rect.top + saved.centerY * rect.height - visible.top - frame.clientHeight / 2);
+      frame.focus({ preventScroll: true });
+    }
+  };
   return (
     <div className="fd-svg-viewer relative flex h-full flex-col" onPointerDownCapture={takeCameraControl} onWheelCapture={takeCameraControl} onKeyDownCapture={event => { if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "+", "=", "-", "Enter", " "].includes(event.key)) takeCameraControl(); }} onKeyDown={event => { if (event.key === "Escape" && onDrawingEscape?.()) { event.preventDefault(); event.stopPropagation(); requestAnimationFrame(() => drawing.current?.focus({ preventScroll: true })); } }}>
       <div className="fd-svg-tools flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-3 py-2">
@@ -242,6 +261,7 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
           {circuitView ? "Fit circuit" : fitLabel}
         </Button>
         <Button size="sm" className="fd-svg-fit-button" title="Fill the available width; scroll to see the rest" onClick={() => { setDismissedFocus(focusRegion?.key ?? null); if (viewport.current) { zoomAt((viewport.current.clientWidth - 24) / fitSize.width); requestAnimationFrame(() => viewport.current?.scrollTo(0, 0)); } }}>Fit width</Button>
+        {canReturn && <Button size="sm" onClick={returnBeforeFocus} title="Restore zoom and position from before focusing a component">Return to previous view</Button>}
         {toolbar && <div className="fd-svg-context ml-auto flex items-center gap-1">{toolbar}</div>}
       </div>
       <div ref={viewport} tabIndex={0} aria-label="Drawing viewport. Drag to pan; scroll to zoom. Plus and minus zoom; arrow keys pan." className={cn("fd-svg-viewport min-h-0 flex-1 select-none overflow-auto overscroll-contain bg-panel-2/40 p-3", dragging ? "cursor-grabbing" : commentMode ? "cursor-crosshair" : "cursor-grab")}
@@ -256,12 +276,14 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
           role={onDrawingClick ? "group" : undefined}
           aria-busy={!!viewBox && !showingCurrent}
           tabIndex={onDrawingClick ? 0 : undefined}
-          aria-label={onDrawingClick ? "Drawing canvas. Click a location, or press Enter to select the center." : undefined}
+          aria-label={onDrawingClick ? "Drawing canvas. Click a location, or press Enter to select the visible center." : undefined}
           onKeyDown={(event) => {
             if (event.target !== event.currentTarget || !box || !onDrawingClick || (viewBox && !showingCurrent)) return;
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
-              onDrawingClick({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+              const frame = viewport.current;
+              const point = frame && visibleSvgCenter(box, event.currentTarget.getBoundingClientRect(), frame.getBoundingClientRect());
+              if (point) onDrawingClick(point);
             }
           }}
           className={cn("fd-svg-host relative mx-auto origin-top-left bg-panel", dragging ? "cursor-grabbing" : commentMode && "cursor-crosshair")}

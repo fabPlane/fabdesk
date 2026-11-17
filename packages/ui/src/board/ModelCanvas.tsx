@@ -29,7 +29,13 @@ function disposeModel(root: THREE.Object3D) {
 /** Standalone files only. Referenced remote resources are never requested by model previews. */
 async function loadModel(bytes: ArrayBuffer, path: string): Promise<THREE.Object3D> {
   if (/\.stl$/i.test(path)) {
-    const geometry = new STLLoader().parse(bytes);
+    let geometry: THREE.BufferGeometry;
+    try { geometry = new STLLoader().parse(bytes); }
+    catch { throw new Error("This STL is empty or invalid. Choose another file, or replace it with a valid ASCII or binary STL and retry."); }
+    if (!geometry.getAttribute("position")?.count) {
+      geometry.dispose();
+      throw new Error("This STL contains no triangles to display. Choose another file, or replace it and retry.");
+    }
     geometry.computeVertexNormals();
     const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0x76b6a1, roughness: .65, metalness: .05, side: THREE.DoubleSide }));
     mesh.rotation.x = -Math.PI / 2; // STL convention: Z up; display only, never rewrite the source.
@@ -75,6 +81,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
     focusSelection.current?.();
   }, [selection.linkedFocus, selection.ref, loading, selectableRefs]);
   const [retry, setRetry] = useState(0);
+  const viewUnavailable = loading || !!error || isPending || isError || !data;
 
   useEffect(() => {
     const target = host.current;
@@ -255,8 +262,8 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
   return <div className="fd-model-canvas" data-testid="model-canvas" onKeyDown={event => { if (event.key === "Escape" && selectionSource && selection.ref && !(event.target instanceof Element && event.target.closest("input, textarea, select, [role=dialog]"))) { selection.clear(); event.preventDefault(); event.stopPropagation(); } }}>
     {selectionSource && <PartSelectionBar reference={selection.ref} references={selectableRefs} onSelect={selection.select} onClear={selection.clear} onFocus={selectableRefs.includes(selection.ref ?? "") ? () => focusSelection.current?.() : undefined} notice={selectionNotice} />}
     <div ref={host} className="fd-model-viewport" />
-    {(isPending || (loading && data !== null)) && !error && !isError && <div className="fd-model-message"><Spinner /><span>Opening model…</span></div>}
+    {(isPending || (loading && data !== null)) && !error && !isError && <div className="fd-model-message" role="status"><Spinner /><span>Opening model…</span></div>}
     {(error || isError || data === null) && <div className="fd-model-message" role="alert"><p>{error ?? (isError ? "Could not load the saved model." : "Model file not found.")}</p><Button onClick={() => { savedCamera.current = null; setRetry((n) => n + 1); if (!blob) void refetch(); }}>Retry preview</Button></div>}
-    <div className="fd-model-view-tools"><Button size="sm" title="Zoom out" aria-label="Zoom out" onClick={() => zoom.current?.(1.25)}>−</Button><Button size="sm" title="Zoom in" aria-label="Zoom in" onClick={() => zoom.current?.(.8)}>+</Button><Button size="sm" onClick={() => fit.current?.()}>Fit view</Button><span>Drag to orbit · Arrow keys pan</span></div>
+    <div className="fd-model-view-tools"><Button size="sm" title="Zoom out" aria-label="Zoom out" disabled={viewUnavailable} onClick={() => zoom.current?.(1.25)}>−</Button><Button size="sm" title="Zoom in" aria-label="Zoom in" disabled={viewUnavailable} onClick={() => zoom.current?.(.8)}>+</Button><Button size="sm" disabled={viewUnavailable} onClick={() => fit.current?.()}>Fit view</Button><span>Drag to orbit · Arrow keys pan</span></div>
   </div>;
 }

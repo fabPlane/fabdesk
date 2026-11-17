@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { activityArtifacts, activityGroups, activityOutcome, useProject, captureAssemblySourceSelection, jobIsActive, projectJobs, projectJobBoard, useBoardSources, useCancelJob, useCoreClient, useJobs, useProjectAssistantRuns, useRunsStore, useToolManifest, type ProjectJob } from "@fabdesk/client-core";
+import { activityArtifacts, activityGroups, activityNeedsAttention, activityOutcome, useProject, captureAssemblySourceSelection, jobIsActive, projectJobs, projectJobBoard, useBoardSources, useCancelJob, useCoreClient, useJobs, useProjectAssistantRuns, useRunsStore, useToolManifest, type ProjectJob } from "@fabdesk/client-core";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { Button, EmptyState, IconButton, LoadError, Spinner, Tabs } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -17,13 +17,14 @@ export function ProjectActivity({ projectId }: { projectId: string }) {
   const assistants = useProjectAssistantRuns(projectId), project = useProject(projectId);
   const panelId = useId(), headingId = useId(), trigger = useRef<HTMLButtonElement>(null), panel = useRef<HTMLElement>(null);
   const [limit, setLimit] = useState(20);
-  const [open, setOpen] = useState(false), [filter, setFilter] = useState<"active" | "recent">("active");
+  const [open, setOpen] = useState(false), [filter, setFilter] = useState<"active" | "attention" | "recent">("active");
   const filterChosen = useRef(false);
   const [error, setError] = useState<unknown>(null), [requested, setRequested] = useState<string | null>(null);
   const rows = useMemo(() => projectJobs(projectId, jobs.data ?? [], live, client.baseUrl), [projectId, jobs.data, live, client.baseUrl]);
   const active = rows.filter(jobIsActive), recent = rows.filter(row => !jobIsActive(row));
   const activityCount = active.length + assistants.runs.length;
-  const groups = activityGroups(filter === "active" ? active : recent, manifest.data ?? []);
+  const attention = recent.filter(activityNeedsAttention);
+  const groups = activityGroups(filter === "active" ? active : filter === "attention" ? attention : recent, manifest.data ?? []);
   const visibleGroups = groups.slice(0, limit), visible = visibleGroups.flat();
   useEffect(() => {
     if (!open) return;
@@ -31,7 +32,9 @@ export function ProjectActivity({ projectId }: { projectId: string }) {
 
   }, [open]);
   useEffect(() => { setOpen(false); setLimit(20); }, [projectId]);
-  useEffect(() => { if (open && !filterChosen.current && active.length) setFilter("active"); }, [open, active.length]);
+  useEffect(() => {
+    if (open && !filterChosen.current) setFilter(activityCount ? "active" : attention.length ? "attention" : "recent");
+  }, [open, activityCount, attention.length]);
   const title = (job: ProjectJob) => {
     const name = job.kind.replace(/^tool:/, "");
     return manifest.data?.find(tool => tool.name === name)?.title ?? name.replaceAll("_", " ");
@@ -93,14 +96,14 @@ export function ProjectActivity({ projectId }: { projectId: string }) {
     </article>;
   };
   return <>
-    <Button ref={trigger} size="sm" className="fd-activity-trigger" aria-expanded={open} aria-controls={panelId} aria-haspopup="dialog" onClick={() => { if (open) { setOpen(false); return; } filterChosen.current = false; setError(null); setLimit(20); setFilter(active.length ? "active" : "recent"); setOpen(true); void jobs.refetch(); void project.refetch(); }}><Icon name="activity" />Activity{activityCount > 0 && <span className="fd-activity-count" aria-live="polite">{activityCount}</span>}</Button>
+    <Button ref={trigger} size="sm" className="fd-activity-trigger" title={`Project activity: ${activityCount} active, ${attention.length} need attention`} aria-label={`Project activity: ${activityCount} active, ${attention.length} need attention`} aria-expanded={open} aria-controls={panelId} aria-haspopup="dialog" onClick={() => { if (open) { setOpen(false); return; } filterChosen.current = false; setError(null); setLimit(20); setFilter(activityCount ? "active" : attention.length ? "attention" : "recent"); setOpen(true); void jobs.refetch(); void project.refetch(); }}><Icon name="activity" />Activity{activityCount > 0 && <span className="fd-activity-count" aria-live="polite">{activityCount}</span>}{attention.length > 0 && <Icon name="warning" className="fd-activity-attention-icon" aria-hidden="true" />}</Button>
     {open && <aside ref={panel} id={panelId} role="dialog" aria-modal={false} aria-labelledby={headingId} tabIndex={-1} className="fd-activity-panel" onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) { event.stopPropagation(); closePanel(); } }}>
       <header><div><h2 id={headingId}><Icon name="activity" />Project activity</h2><p>Follow work while using the canvas.</p></div><IconButton title="Close Project activity" onClick={closePanel}><Icon name="close" /></IconButton></header>
       <div className="fd-activity-scroll">
         {assistants.runs.length > 0 && <section aria-label="Working conversations" className="fd-activity-assistants"><h3>Working conversations</h3>{assistants.runs.map(({ thread }) => <div key={thread.id}><span><Spinner />{thread.title || "Conversation"}</span><Button size="sm" onClick={() => { if (!current()) return; const ui = useUiStore.getState(); ui.setActiveThread(thread.id); ui.focusComposer(); setOpen(false); }}>Open chat</Button></div>)}</section>}
-        <div className="fd-activity-toolbar"><Tabs value={filter} onChange={next => { filterChosen.current = true; setLimit(20); setFilter(next); }} tabs={[{ id: "active", label: `Active · ${active.length}` }, { id: "recent", label: `Recent · ${recent.length}` }]} /><IconButton title="Refresh activity" disabled={jobs.isFetching} onClick={() => { void jobs.refetch(); void project.refetch(); }}><Icon name="refresh" /></IconButton></div>
+        <div className="fd-activity-toolbar"><Tabs value={filter} onChange={next => { filterChosen.current = true; setLimit(20); setFilter(next); }} tabs={[{ id: "active", label: `Active · ${active.length}` }, { id: "attention", label: `Needs attention · ${attention.length}` }, { id: "recent", label: `Recent · ${recent.length}` }]} /><IconButton title="Refresh activity" disabled={jobs.isFetching} onClick={() => { void jobs.refetch(); void project.refetch(); }}><Icon name="refresh" /></IconButton></div>
         {jobs.isError && <LoadError title="Could not refresh task history" onRetry={() => void jobs.refetch()} />}
-        {jobs.isPending && !rows.length ? <p role="status"><Spinner />Loading tasks…</p> : !visible.length ? <EmptyState title={filter === "active" ? "No background tasks running" : "No recent tasks"}>{filter === "active" ? "Renders, exports and checks will appear here. You can keep working on another page." : "Finished, cancelled and failed tasks appear here."}</EmptyState> : <ul className="fd-activity-tasks">{visibleGroups.map(group => {
+        {jobs.isPending && !rows.length ? <p role="status"><Spinner />Loading tasks…</p> : !visible.length ? <EmptyState title={filter === "active" ? "No background tasks running" : filter === "attention" ? "No recorded concerns" : "No recent tasks"}>{filter === "active" ? "Renders, exports and checks will appear here. You can keep working on another page." : filter === "attention" ? "Failed tasks, incomplete parts lists and reported check findings appear here. This is not a design-readiness check." : "Finished, cancelled and failed tasks appear here."}</EmptyState> : <ul className="fd-activity-tasks">{visibleGroups.map(group => {
           const first = group[0]!;
           return <li key={first.id}>{group.length === 1 ? renderJob(first) : <details className="fd-activity-read-group"><summary><Icon name="fileLayers" /><span><strong>{title(first)}</strong><small>{group.length} consecutive reads · expand to inspect each result</small></span><Icon name="chevronDown" /></summary>{group.map(renderJob)}</details>}</li>;
         })}</ul>}

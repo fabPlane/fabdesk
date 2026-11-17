@@ -1,6 +1,6 @@
 {
   "name": "fabdesk",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "packageManager": "bun@1.4.0",
   "engines": {
@@ -12,11 +12,6 @@
     "apps/relay",
     "packages/*",
     "vendor/fabplane-cli",
-    "vendor/fabplane/packages/shared",
-    "vendor/fabplane/packages/config",
-    "vendor/fabplane/packages/auth",
-    "vendor/fabplane/packages/storage",
-    "vendor/fabplane/packages/pcb",
     "vendor/fab_pcb/packages/proto",
     "vendor/fab_pcb/packages/client",
     "vendor/fab_pcb/packages/kicad-wasm",
@@ -31,13 +26,23 @@
     "esbuild"
   ],
   "overrides": {
-    "hono": "4.13.7",
-    "fast-xml-parser": "5.11.1",
+    "body-parser": "2.4.0",
+    "hono": "4.13.19",
+    "@hono/node-server": "2.1.8",
+    "fast-xml-parser": "5.12.1",
+    "ip-address": "10.7.6",
+    "katex": "0.18.2",
+    "minimatch@>=7.0.0 <11.0.9": "11.0.9",
+    "qs": "6.17.1",
     "nanoid": "3.3.19",
     "lodash-es": "4.18.1",
     "proxy-addr": "2.0.8",
-    "@modelcontextprotocol/server": "2.3.0",
-    "@modelcontextprotocol/core": "2.3.0"
+    "@modelcontextprotocol/server": "2.4.0",
+    "@modelcontextprotocol/core": "2.4.0",
+    "undici@^7": "7.30.2",
+    "undici@^6": "6.29.1",
+    "zod": "4.6.7",
+    "dompurify": "3.4.18"
   },
   "scripts": {
     "dev": "bun run --cwd apps/desktop dev",
@@ -56,7 +61,7 @@
     "cad:smoke": "bun run scripts/smoke-cad-bundle.ts",
     "kicad:stage": "bun run scripts/stage-kicad-bundle.ts",
     "doctor": "bun run --cwd apps/core doctor",
-    "submodules:update": "git submodule update --remote --merge vendor/fabplane vendor/fab_pcb vendor/fabplane-cli",
+    "submodules:update": "git submodule update --remote --merge vendor/fab_pcb vendor/fabplane-cli vendor/fab_cad",
     "format": "bunx prettier --write .",
     "format:check": "bunx prettier --check .",
     "security:scan": "bun run scripts/security-scan.ts",
@@ -79,11 +84,15 @@
     "usage:restore": "bun run scripts/restore-usage-record.ts"
   },
   "devDependencies": {
+    "dompurify": "3.4.18",
+    "jsdom": "31.0.1",
     "@types/bun": "1.2.21",
     "prettier": "3.6.2",
     "typescript": "5.9.2"
   },
   "patchedDependencies": {
-    "app-builder-lib@26.15.3": "patches/app-builder-lib@26.15.3.patch"
-  }
+    "app-builder-lib@26.15.3": "patches/app-builder-lib@26.15.3.patch",
+    "@mcp-b/global@5.1.0": "patches/@mcp-b%2Fglobal@5.1.0.patch"
+  },
+  "license": "Apache-2.0"
 }

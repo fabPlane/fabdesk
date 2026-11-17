@@ -6,7 +6,7 @@
  * (which republishes it as `desktop/latest.json`) and the desktop app's update checker.
  *
  *   bun run scripts/release-manifest.ts --dir artifacts --version 0.1.42 --tag v0.1.42 \
- *     --repo TensorFleet/fabdesk --commit <sha> --out artifacts/manifest.json --sums artifacts/SHA256SUMS \
+ *     --repo fabPlane/fabdesk --commit <sha> --out artifacts/manifest.json --sums artifacts/SHA256SUMS \
  *     [--notes-file artifacts/NOTES.md]
  */
 import { createHash } from "node:crypto";
@@ -115,7 +115,7 @@ if (import.meta.main) {
     dir: arg("dir"),
     version: arg("version"),
     tag: arg("tag"),
-    repo: arg("repo", "TensorFleet/fabdesk"),
+    repo: arg("repo", process.env.GITHUB_REPOSITORY || "fabPlane/fabdesk"),
     commit: arg("commit", "unknown"),
     ...(process.argv.includes("--base-url") ? { baseUrl: arg("base-url") } : {}),
     ...(process.argv.includes("--notes-file") ? { notes: readFileSync(arg("notes-file"), "utf8") } : {}),

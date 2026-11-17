@@ -26,6 +26,7 @@ function emptyParts(): ProjectPartsFile {
 }
 
 export type BomPartsState =
+  | { status: "loading"; parts: ProjectPartsFile }
   | { status: "ok"; parts: ProjectPartsFile; exists: boolean }
   | { status: "error"; parts: ProjectPartsFile; message: string };
 
@@ -45,7 +46,8 @@ export function bomPartsState(q: {
   }
   if (q.parseError)
     return { status: "error", parts: emptyParts(), message: `${PROJECT_PARTS_FILE} is not valid JSON: ${q.parseError}` };
-  if (q.data === null || q.data === undefined) return { status: "ok", parts: emptyParts(), exists: false };
+  if (q.data === undefined) return { status: "loading", parts: emptyParts() };
+  if (q.data === null) return { status: "ok", parts: emptyParts(), exists: false };
   const parsed = ProjectPartsFileSchema.safeParse(q.data);
   if (!parsed.success) {
     const schema = (q.data as { schema?: unknown }).schema;
@@ -365,7 +367,7 @@ export function ProjectBomPanel() {
           </Button>
         </div>
       </div>
-      {bom.data && <BomOrigins snapshot={bom.data} hardwareError={!editable} open={view.sourcesOpen} onOpenChange={sourcesOpen => rememberView({ sourcesOpen })} />}
+      {bom.data && <BomOrigins snapshot={bom.data} hardwareState={partsState.status} refreshFailed={bom.isError} open={view.sourcesOpen} onOpenChange={sourcesOpen => rememberView({ sourcesOpen })} />}
       {lines.length > 0 && <div className="fd-bom-batch shrink-0">
         <label className="flex items-center gap-2 text-sm">Build quantity<Input type="number" min={1} max={10000} step={1} value={buildQuantity} onChange={event => setBuildQuantity(event.target.value)} aria-label="Build quantity" className="w-24" /></label>
         <span className="text-sm" role="status">{validBatch ? `${(partsPerBuild * batchCount).toLocaleString()} parts for ${batchCount.toLocaleString()} ${batchCount === 1 ? "build" : "builds"}` : "Enter a whole quantity from 1 to 10,000."}</span>
