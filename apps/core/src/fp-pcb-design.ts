@@ -575,9 +575,29 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         durationMs: 0,
       };
     }
+    let sourceText = await readText(entryPath);
+    const registered = (await Promise.all((["footprint", "symbol"] as const).map(async kind =>
+      (await projectRows(opts.projectDir, kind)).map(row => ({ kind, row }))))).flat();
+    if (registered.length) {
+      let parsed: Record<string, unknown> | null = null;
+      try { const value: unknown = JSON.parse(sourceText); if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>; } catch { /* Let the compiler diagnose malformed sources. */ }
+      if (parsed && (parsed["libraries"] === undefined || Array.isArray(parsed["libraries"]))) {
+        // The bridge already supports frontend libraries after its bundled defaults. Supply
+        // project table overrides there so symbol generation/import use them, not just final tables.
+        const libraries = [...(parsed["libraries"] as unknown[] ?? []), ...registered.filter(({ row }) => !row.disabled).map(({ kind, row }) => {
+          if (row.type !== "KiCad" || row.options) throw new ToolError(`compile cannot represent project library ${row.name} (${row.type}, options=${row.options}); use native editing`, "precondition");
+          return { kind, nickname: row.name, uri: row.uri, description: row.descr };
+        })];
+        const components = (parsed["netlist"] as { components?: Array<{ footprint?: string; libSource?: { lib?: string } }> } | undefined)?.components ?? [];
+        for (const { kind, row } of registered.filter(({ row }) => row.disabled))
+          if (components.some(component => kind === "footprint" ? component.footprint?.split(":")[0] === row.name : component.libSource?.lib === row.name))
+            throw new ToolError(`project library ${row.name} is disabled; compile refused`, "precondition");
+        sourceText = JSON.stringify({ ...parsed, libraries });
+      }
+    }
     const source = {
       kind: NETLIST_JSON_KIND,
-      files: { [entrypoint]: await readText(entryPath) },
+      files: { [entrypoint]: sourceText },
       entrypoint,
     };
     if (opts.fresh) {
@@ -2603,7 +2623,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   };
   const projectRows = async (projectDir: string, kind: "footprint" | "symbol") =>
     (await captureProjectLibraryRows(projectDir))[kind]?.filter(
-      (row) => !/^Bundled KiCad (footprint|symbol) library$/.test(row.descr),
+      (row) => !deps.catalog?.isBundledRow?.(kind, row),
     ) ?? [];
 
   const searchLibraries = async (
@@ -2614,10 +2634,15 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   ): Promise<FootprintHit[]> => {
     const rows = projectDir ? await projectRows(projectDir, kind) : [];
     const overridden = new Set(rows.map((row) => row.name));
-    const local = projectDir && rows.some((row) => !row.disabled)
-      ? await deps.sessions.withRetry(projectDir, (session) =>
-          searchLibrariesOnce(session.kicad, kind, query, limit,
-            rows.filter((row) => !row.disabled).map((row) => row.name)))
+    const enabled = rows.filter(row => !row.disabled);
+    const projectLocal = enabled.filter(row => row.uri.includes("${KIPRJMOD}"));
+    const remaining = enabled.filter(row => !projectLocal.includes(row));
+    const local = projectDir && enabled.length
+      ? await deps.sessions.withRetry(projectDir, async session => {
+          const preferred = projectLocal.length ? await searchLibrariesOnce(session.kicad, kind, query, limit, projectLocal.map(row => row.name)) : [];
+          const other = preferred.length < limit && remaining.length ? await searchLibrariesOnce(session.kicad, kind, query, limit - preferred.length, remaining.map(row => row.name)) : [];
+          return [...preferred, ...other];
+        })
       : [];
     const bundled = deps.catalog?.has(kind)
       ? await deps.catalog.search(kind, query, limit + overridden.size)

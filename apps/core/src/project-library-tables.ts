@@ -10,7 +10,7 @@
  * the same live session (keeping KiCad's in-memory table and the saved file in agreement).
  */
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 export type ProjectLibraryKind = "footprint" | "symbol";
 
@@ -29,8 +29,17 @@ export const LIBRARY_TABLE_FILES: Record<ProjectLibraryKind, string> = {
   symbol: "sym-lib-table",
 };
 
-/** Bundled rows fabdesk writes itself (`@fp-pcb/compile` `discoverLibraries`); never restored. */
-const BUNDLED_DESCR = /^Bundled KiCad (footprint|symbol) library$/;
+export type BundledLibraryRoots = { footprints?: string | undefined; symbols?: string | undefined };
+
+/** A description is user-editable metadata. Only the exact configured bundle URI and managed
+ * metadata identify a row we may replace without restoring it. Unknown roots preserve rows. */
+export function isManagedLibraryRow(kind: ProjectLibraryKind, row: ProjectLibraryRow, roots: BundledLibraryRoots = {
+  footprints: process.env["KICAD_FOOTPRINT_DIR"], symbols: process.env["KICAD_SYMBOL_DIR"],
+}): boolean {
+  const root = kind === "footprint" ? roots.footprints : roots.symbols;
+  return Boolean(root && isAbsolute(row.uri) && resolve(row.uri) === resolve(root, row.name + (kind === "footprint" ? ".pretty" : ".kicad_sym")) &&
+    row.descr === `Bundled KiCad ${kind} library` && row.type === "KiCad" && row.options === "" && !row.disabled && !row.hidden);
+}
 
 type Node = string | Node[];
 
@@ -118,11 +127,12 @@ export async function captureProjectLibraryRows(projectDir: string): Promise<Pro
 export function rowsToRestore(
   before: ProjectLibraryRow[] | null,
   after: ProjectLibraryRow[] | null,
+  managed: (row: ProjectLibraryRow) => boolean = () => false,
 ): ProjectLibraryRow[] {
   if (!before) return [];
   const current = new Map((after ?? []).map((row) => [row.name, row]));
   return before.filter((row) => {
-    if (BUNDLED_DESCR.test(row.descr)) return false;
+    if (managed(row)) return false;
     const now = current.get(row.name);
     return (
       !now ||
