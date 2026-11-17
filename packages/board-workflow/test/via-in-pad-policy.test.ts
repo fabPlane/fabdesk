@@ -29,6 +29,16 @@ describe("via-in-pad policy", () => {
     expect(newViasInPads(before, after).map((v) => [v.net, v.in_component_lands])).toEqual([["GND", ["R1.2"]]]);
   });
 
+  test("a via moved to other pads keeps no allowance, so it cannot hide a new via in the pads it left", () => {
+    const before = classifyVias(board(via(9, 10, "SIG", "a")));
+    // via a moves from R1.1 to R1.2 keeping its uuid (now on R1.2's net); a new via b goes into R1.1
+    const after = classifyVias(board(via(11, 10, "GND", "a") + via(9.1, 10, "SIG", "b")));
+    expect(newViasInPads(before, after).map((v) => [v.uuid, v.in_component_lands])).toEqual([["a", ["R1.2"]]]);
+    // the same via left in place is not new; one allowance covers one via
+    expect(newViasInPads(before, classifyVias(board(via(9, 10, "SIG", "a"))))).toEqual([]);
+    expect(newViasInPads(before, classifyVias(board(via(9, 10, "SIG", "a") + via(9.1, 10, "SIG", "b")))).map((v) => v.uuid)).toEqual(["b"]);
+  });
+
   test("the report names each new via in a pad and what to do, by policy", () => {
     const before = board("");
     const after = board(via(11, 10, "GND", "d"));

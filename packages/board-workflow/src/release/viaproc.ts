@@ -295,23 +295,30 @@ export function viaInPadPolicy(value: unknown): ViaInPadPolicy {
  * manufacturing process.
  */
 export function newViasInPads(before: ViaClass[], after: ViaClass[]): ViaClass[] {
-  const identity = (v: ViaClass) => v.uuid ?? `${v.net}@${v.xy.join(",")}`;
-  const old = new Map(before.map((v) => [identity(v), v]));
-  const landsKey = (v: ViaClass) => `${v.net}|${v.in_component_lands.join(",")}`;
-  const left = new Map<string, number>();
-  for (const v of before) if (v.in_component_lands.length) left.set(landsKey(v), (left.get(landsKey(v)) ?? 0) + 1);
-  const inPad = after.filter((v) => v.in_component_lands.length);
-  const kept = new Set(inPad.filter((v) => old.get(identity(v))?.in_component_lands.length));
-  for (const v of kept) left.set(landsKey(v), Math.max(0, (left.get(landsKey(v)) ?? 0) - 1));
-  return inPad.filter((v) => {
-    if (kept.has(v)) return false;
-    const n = left.get(landsKey(v)) ?? 0;
-    if (n > 0) {
-      left.set(landsKey(v), n - 1);
-      return false;
-    }
+  // Each via already in pads is one allowance for its net and pad set, used at most once. A via keeps its allowance by
+  // uuid only while it still sits in the same pads on the same net; a via moved to other pads is judged like a new one,
+  // so it cannot hide a second via added in the pads it left.
+  const lands = (v: ViaClass) => `${v.net}|${[...v.in_component_lands].sort().join(",")}`;
+  const allowance = new Map<string, number>();
+  const priorByUuid = new Map<string, ViaClass>();
+  for (const v of before) {
+    if (!v.in_component_lands.length) continue;
+    allowance.set(lands(v), (allowance.get(lands(v)) ?? 0) + 1);
+    if (v.uuid) priorByUuid.set(v.uuid, v);
+  }
+  const take = (key: string): boolean => {
+    const n = allowance.get(key) ?? 0;
+    if (n <= 0) return false;
+    allowance.set(key, n - 1);
     return true;
+  };
+  const inPad = after.filter((v) => v.in_component_lands.length);
+  // the same via, unmoved out of its pads, first; then any other via in pads that had one before (a reroute's new uuid)
+  const pending = inPad.filter((v) => {
+    const prior = v.uuid ? priorByUuid.get(v.uuid) : undefined;
+    return !(prior && lands(prior) === lands(v) && take(lands(v)));
   });
+  return pending.filter((v) => !take(lands(v)));
 }
 
 /** A router run's via-in-pad result: the policy, the new vias in pads, and one line for the agent. */
