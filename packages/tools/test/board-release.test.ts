@@ -199,6 +199,7 @@ M02*
 `;
   test("pad-centre position from our copper, the rotation JLC's footprint needs, and a placement check", async () => {
     const base = mockServices([]);
+    const gerberDirs: string[] = [];
     const { project, call } = await setup(BOARD(), {
       kicad: {
         ...base.kicad,
@@ -207,6 +208,7 @@ M02*
           return { paths: [o.output] };
         },
         exportGerbers: async (_cli, o) => {
+          gerberDirs.push(o.outDir);
           await mkdir(o.outDir, { recursive: true });
           await writeFile(join(o.outDir, "board-F_Cu.gbr"), gerber);
           return { paths: [] };
@@ -223,6 +225,10 @@ M02*
     expect(cpl.trim().split(/\r?\n/)).toEqual(["Designator,Mid X,Mid Y,Layer,Rotation", "R1,10.000000,-10.100000,Top,90"]);
     expect(r.json.jlc).toMatchObject({ placements: 1, pass: 1, fail: 0, source: "current BOM check" });
     expect(await readFile(join(project.dir, "exports", "bom-jlc.csv"), "utf8")).toContain("R1,0402,C25744");
+    // the JLC working files (copper Gerbers) are written outside the project and removed afterwards
+    expect(gerberDirs).toHaveLength(1);
+    expect(gerberDirs[0]!.startsWith(project.dir)).toBe(false);
+    expect(await stat(gerberDirs[0]!).catch(() => null)).toBeNull();
   });
 
   test("without a current BOM check it uses the evidence cache and says so; a blank board gets no JLC file", async () => {
