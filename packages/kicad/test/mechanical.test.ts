@@ -390,8 +390,17 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     expect(fp(first, "U4").models.map((m) => m.load.status)).toEqual(["loaded", "loaded"]);
     // KiCad model offset +Y moves the body towards board -Y.
     expect(bounds(first, "U12")).toEqual([134, 136, 92, 96, 1.615, 2.745]);
-    // VRML is read natively at 2.54 mm per unit.
-    expect(bounds(first, "U13")).toEqual([152.46, 157.54, 102.46, 107.54, 1.615, 6.695]);
+    // KiCad readVRML is compiled only for OCC_VERSION_HEX >= 0x070700:
+    // https://docs.kicad.org/doxygen/step__pcb__model_8cpp_source.html
+    // Older OCCT must expose the missing geometry honestly; no fixture is skipped.
+    const occ = /Open CASCADE Technology (\d+)\.(\d+)/.exec(first.source.toolchain.glbGenerator ?? "");
+    expect(occ).not.toBeNull();
+    const nativeVrml = Number(occ![1]) > 7 || Number(occ![1]) === 7 && Number(occ![2]) >= 7;
+    if (nativeVrml) expect(bounds(first, "U13")).toEqual([152.46, 157.54, 102.46, 107.54, 1.615, 6.695]);
+    else {
+      expect(fp(first, "U13").models[0]!.load).toMatchObject({ status: "unloadable", formatRecognized: true });
+      expect(fp(first, "U13").bounds).toMatchObject({ status: "missing" });
+    }
 
     expect(first.board.mountPlanes).toMatchObject({ top: { zMm: 1.615 }, bottom: { zMm: -0.085 } });
     expect(first.board.body).toMatchObject({
@@ -427,27 +436,28 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
       declaredModels: 13,
       hiddenModels: 1,
       resolvedModels: 12,
-      loadedModels: 9,
+      loadedModels: nativeVrml ? 9 : 8,
       missingModels: 1,
       unresolvedModels: 0,
-      unloadableModels: 1,
+      unloadableModels: nativeVrml ? 1 : 2,
       unsupportedModels: 1,
       indeterminateModels: 0,
-      footprintsWithBounds: 8,
-      footprintsWithHeight: 8,
+      footprintsWithBounds: nativeVrml ? 8 : 7,
+      footprintsWithHeight: nativeVrml ? 8 : 7,
     });
     expect(first.status).toBe("partial");
     expect(first.issues.map((i) => `${i.code}:${i.ref}`).sort()).toEqual([
       "missing-model-file:U7",
       "no-model-declared:U8",
+      ...(!nativeVrml ? ["unloadable-model:U13"] : []),
       "unloadable-model:U9",
       "unsupported-model-format:U10",
     ]);
     expect(first.runtimeDiagnostics.join("\n")).toContain("Could not add 3D model for U7.");
     expect(first.assembly).toMatchObject({
-      maxHeightAboveTopMm: { value: 5.08, ref: "U13" },
+      maxHeightAboveTopMm: nativeVrml ? { value: 5.08, ref: "U13" } : { value: 3.46, ref: "U4" },
       maxDepthBelowBottomMm: { value: 1.13, ref: "U3" },
-      footprintsIncluded: 8,
+      footprintsIncluded: nativeVrml ? 8 : 7,
     });
     // Only the intentionally overlapping pair; separated bodies and the board are not candidates.
     expect(first.interference.broadPhaseOverlapCandidates).toMatchObject({
