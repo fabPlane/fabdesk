@@ -1,3 +1,5 @@
+import { publicationInProgress } from "../publication-visibility";
+import { snapshotProjectDependencies, assertProjectDependencies, type ProjectDependencies } from "../project-dependencies";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 /** Verify toolset: ERC and the release gate (kicad-automation semantics). */
@@ -41,6 +43,7 @@ export const verify_erc = defineTool({
   longRunning: true,
   handler: async ({ severity, limit }, ctx) => {
     const project = ctx.requireProject();
+    const dependencies = await snapshotProjectDependencies(project.dir);
     const cli = await requireKicad(ctx);
     const schematic = await requireSchematic(project);
     const outFile = p(project, PROJECT_FILES.reports, "erc.json");
@@ -86,8 +89,10 @@ export const verify_erc = defineTool({
     const currentHierarchy = await inspectSavedHierarchy(ctx, project, cli);
     const checkedRevision = checkedHierarchy.aggregateRevision;
     const currentRevision = currentHierarchy.aggregateRevision;
+    await assertProjectDependencies(project.dir, dependencies);
     const result = {
       ...report,
+      projectDependencies: dependencies,
       measurement: {
         evidenceLevel: "measured" as const,
         source: "packaged-kicad-cli" as const,
@@ -144,12 +149,13 @@ export const verify_gate = defineTool({
   },
   handler: async ({ acceptWarnings, requireErc }, ctx) => {
     const project = ctx.requireProject();
+    if (await publicationInProgress(project.dir)) throw new ToolError("A handoff publication is in progress; retry the gate after publication completes", "precondition");
     const drc = await readJsonOrNull<
-      DrcReport & { pcbRevision?: { sha256?: string }; schematicHierarchy?: { aggregateRevision?: string } }
+      DrcReport & { projectDependencies?: ProjectDependencies; pcbRevision?: { sha256?: string }; schematicHierarchy?: { aggregateRevision?: string } }
     >(p(project, PROJECT_FILES.reports, "drc.json"));
     if (!drc) throw new ToolError("reports/drc.json missing", "precondition");
     const erc = await readJsonOrNull<
-      ErcReport & { measurement?: { checkedRevision?: string; scope?: string; evidenceLevel?: string; revisionStable?: boolean } }
+      ErcReport & { projectDependencies?: ProjectDependencies; measurement?: { checkedRevision?: string; scope?: string; evidenceLevel?: string; revisionStable?: boolean } }
     >(p(project, PROJECT_FILES.reports, "erc.json"));
     if (!erc && requireErc) throw new ToolError("reports/erc.json missing", "precondition");
     const hierarchyClaimed =
@@ -159,7 +165,9 @@ export const verify_gate = defineTool({
     const checkedPcb = drc.pcbRevision?.sha256;
     const pcbBytes = await readFile(p(project, PROJECT_FILES.boardPcb)).catch(() => null);
     const currentPcb = pcbBytes ? createHash("sha256").update(pcbBytes).digest("hex") : null;
+    const currentDependencies = await snapshotProjectDependencies(project.dir);
     const staleEvidence = [
+      ...([drc.projectDependencies, erc?.projectDependencies].some(d => d && d.revision !== currentDependencies.revision) ? ["project rules, library or model dependencies changed; rerun saved-file checks"] : []),
       ...(!checkedPcb || !/^[a-f0-9]{64}$/.test(checkedPcb)
         ? ["saved-file DRC evidence is unverified: missing or unsupported PCB revision; run verify_drc"]
         : currentPcb !== checkedPcb ? ["saved-file DRC evidence is stale relative to the current saved PCB; run verify_drc"] : []),

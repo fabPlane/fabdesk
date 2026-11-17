@@ -38,6 +38,7 @@ export interface PcbBackendCommand {
 /** Environment the core needs for CLI-based DRC/render/export, not only the bridge process. */
 export function corePcbEnvironment(command: PcbBackendCommand): Record<string, string> {
   return {
+    ...Object.fromEntries(Object.entries(command.env).filter(([key]) => key === "FABDESK_KICAD_MODELS" || /^KICAD\d+_3DMODEL_DIR$/.test(key))),
     FABDESK_FP_PCB_BRIDGE_URL: command.url,
     KICAD_CLI: command.env.KICAD_CLI!,
     KICAD_STOCK_DATA_HOME: command.env.KICAD_STOCK_DATA_HOME!,

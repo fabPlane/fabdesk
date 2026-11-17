@@ -22,7 +22,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { runKicadCli, type KicadCli } from "./cli";
+import { componentModelEnvironment, runKicadCli, type KicadCli } from "./cli";
 import { parseGlbContainer } from "./glb-container";
 
 export const MECHANICAL_COLLECTOR = { name: "fabdesk.mechanical-glb", version: "1.0.0" } as const;
@@ -217,7 +217,7 @@ export type ModelResolution = {
 export function resolveModelPath(
   declared: string,
   projectDir: string,
-  env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv = componentModelEnvironment(),
 ): ModelResolution {
   if (!declared.trim())
     return {

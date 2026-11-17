@@ -1,3 +1,4 @@
+import { snapshotProjectDependencies, assertProjectDependencies } from "./project-dependencies";
 import { RootSchematicPreviewRevision, SCHEMATIC_PREVIEW_REVISION_PATH } from "@fabdesk/protocol";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
@@ -11,6 +12,7 @@ export async function renderRootCircuitPreview(ctx: ToolContext, maxWidth: numbe
   const project = ctx.requireProject(), cli = await requireKicad(ctx);
   const schematic = await jailPath(project.dir, "board.kicad_sch"), metadata = await jailPath(project.dir, "board.kicad_pro");
   const inspect = async () => ctx.services.kicad.inspectSchematicHierarchy(cli, { projectDir: project.dir, rootSchematic: schematic, ...(await exists(metadata) ? { projectFile: metadata } : {}), ownedFilesOnly: true, signal: ctx.signal });
+  const dependencies = await snapshotProjectDependencies(project.dir);
   const hierarchy = await inspect();
   if (!hierarchy.complete || expectedHierarchyRevision && expectedHierarchyRevision !== hierarchy.aggregateRevision) throw new ToolError("Schematic preview needs the current complete native hierarchy. Resolve missing or changed sheets first.", "precondition");
   ctx.progress(.2, "rendering captured native circuitry");
@@ -37,7 +39,8 @@ export async function renderRootCircuitPreview(ctx: ToolContext, maxWidth: numbe
     if (!hierarchy.projectFile && await exists(metadata)) throw new ToolError("Native project metadata appeared during circuit rendering. Reinspect this design.", "precondition");
     ctx.signal.throwIfAborted();
     if (!sheets[0] || !images[0]) throw new ToolError("Circuit export produced no sheets.", "internal");
-    const receipt = RootSchematicPreviewRevision.parse({ contract: "fabplane.schematic-preview-revision.v1", projectId: project.id, sourceRevision: hierarchy.aggregateRevision, sourceFiles: captured.sourceFiles, sheets: artifacts, generatedAt: new Date().toISOString(), dependencies: "unverified" });
+    await assertProjectDependencies(project.dir, dependencies);
+    const receipt = RootSchematicPreviewRevision.parse({ contract: "fabplane.schematic-preview-revision.v1", projectId: project.id, sourceRevision: hierarchy.aggregateRevision, sourceFiles: captured.sourceFiles, sheets: artifacts, generatedAt: new Date().toISOString(), dependencies: "unverified", dependencySnapshot: dependencies });
     const output = await jailPath(project.dir, "renders/schematic.svg"), pngOutput = await jailPath(project.dir, "renders/schematic.png");
     await writeAtomic(pngOutput, await readFile(images[0].path)); await writeAtomic(output, await readFile(sheets[0]));
     await writeJson(await jailPath(project.dir, SCHEMATIC_PREVIEW_REVISION_PATH), receipt);

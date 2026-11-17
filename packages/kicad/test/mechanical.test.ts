@@ -563,6 +563,27 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     }
   });
 
+  test.skipIf(!process.env["FABDESK_STOCK_MODEL_TEST_ROOT"])("versioned stock model variables load actual passive and connector bodies", async () => {
+    const root = process.env["FABDESK_STOCK_MODEL_TEST_ROOT"]!;
+    const stock = ["Resistor_SMD.3dshapes/R_0603_1608Metric.step", "Connector_JST.3dshapes/JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical.step"];
+    // Explicit opt-in stock asset qualification; the native fixture above remains mandatory.
+    for (const model of stock) {
+      expect(await Bun.file(join(root, model)).exists()).toBe(true);
+      const local = await fixtureCopy(), board = join(local, "board.kicad_pcb");
+      const saved = process.env["KICAD9_3DMODEL_DIR"];
+      try {
+        process.env["KICAD9_3DMODEL_DIR"] = root;
+        await writeFile(board, (await readFile(board, "utf8")).replaceAll("${KIPRJMOD}/models/box.step", "${KICAD9_3DMODEL_DIR}/" + model));
+        const section = await collectMechanical(cli!, { projectDir: local, board, scratchDir: join(local, ".scratch") });
+        expect(fp(section, "U1").models[0]!.load.status).toBe("loaded");
+        expect(fp(section, "U1").status).toBe("measured");
+        expect(fp(section, "U1").height.aboveTopMm).toBeGreaterThan(0);
+      } finally {
+        if (saved === undefined) delete process.env["KICAD9_3DMODEL_DIR"]; else process.env["KICAD9_3DMODEL_DIR"] = saved;
+      }
+    }
+  }, 30_000);
+
   nativeTest("placement-only and model-file-only changes miss", async () => {
     dir = await fixtureCopy(); first = await collect();
     const boardPath = join(dir, "board.kicad_pcb");

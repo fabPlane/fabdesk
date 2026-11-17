@@ -1,3 +1,4 @@
+import { dependenciesMatch } from "./dependency-revision";
 import { RootSchematicPreviewRevision, AssemblySchematicPreviewRevision, BoardSourceSelection, ProjectBoardSources, SCHEMATIC_PREVIEW_REVISION_PATH } from "@fabdesk/protocol";
 import { CoreHttpError, type CoreClient } from "./CoreClient";
 import { sha256Blob } from "./pcb-preview-revision";
@@ -31,6 +32,7 @@ async function inspectSchematicPreview(client: Pick<CoreClient, "inspectBoardSou
   let sourceChanged = false, artifactChanged = false, svg: string | null = null, next = 0, stopped = false;
   const checkSources = async () => {
     if (!receipt) return; next = 0; stopped = false;
+    if (!await dependenciesMatch(client, projectId, receipt.dependencySnapshot, prefix)) sourceChanged = true;
     const reads = await Promise.allSettled(Array.from({ length: Math.min(4, receipt.sourceFiles.length) }, async () => {
       for (;;) {
         if (stopped) return; const file = receipt.sourceFiles[next++]; if (!file) return;

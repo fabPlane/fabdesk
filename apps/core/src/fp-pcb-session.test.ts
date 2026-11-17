@@ -465,3 +465,26 @@ test("library writes on the same native session capture snapshots serially", asy
   unlock(); await Promise.all([first, second]);
   expect(events).toEqual(["first", "first done", "second"]);
 }));
+
+for (const kind of ["footprint", "symbol"] as const) for (const failure of ["failure", "cancellation"] as const) {
+  test(`${kind} table survives ${failure} after native registration drops a project row`, async () => fixture(async f => {
+    const session = await f.sessions.session(f.dir);
+    const filename = kind === "footprint" ? "fp-lib-table" : "sym-lib-table";
+    const path = join(f.dir, filename), table = kind === "footprint" ? "fp_lib_table" : "sym_lib_table";
+    await writeFile(path, `(${table} (lib (name "Pilot") (type "KiCad") (uri "project-local") (options "") (descr "Bundled KiCad ${kind} library") (hidden)))`);
+    let restored = false;
+    (session.kicad as any).libraries = {
+      tables: async () => [],
+      addTableRow: async (actualKind: string, _scope: string, row: { nickname: string; uri: string; description: string; hidden: boolean }) => {
+        expect(actualKind).toBe(kind); expect(row.hidden).toBe(true);
+        expect(row.description).toBe(`Bundled KiCad ${kind} library`);
+        await writeFile(path, `(${table} (lib (name "${row.nickname}") (uri "${row.uri}") (hidden)))`); restored = true;
+      },
+    };
+    const error = failure === "cancellation" ? new DOMException("cancelled", "AbortError") : Error("registration failed");
+    await expect(f.sessions.preservingProjectLibraries(f.dir, session, async () => {
+      await writeFile(path, `(${table})`); throw error;
+    })).rejects.toBe(error);
+    expect(restored).toBe(true); expect(await readFile(path, "utf8")).toContain("project-local");
+  }));
+}
