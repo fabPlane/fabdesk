@@ -13,5 +13,8 @@
   "devDependencies": {
     "typescript": "5.9.2",
     "@types/bun": "1.2.21"
+  },
+  "dependencies": {
+    "@fabdesk/protocol": "workspace:*"
   }
 }

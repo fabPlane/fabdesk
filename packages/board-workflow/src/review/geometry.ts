@@ -11,6 +11,7 @@ export interface PartPad {
 export interface Part {
   ref: string;
   value: string;
+  footprint?: string;
   /** `F` or `B`. */
   side: string;
   x: number;
@@ -42,7 +43,7 @@ export function boardParts(root: SNode): Part[] {
     const attr = kid(fp, "attr") ?? [];
     const flags = new Set(attr.slice(1).filter((x): x is string => typeof x === "string"));
     const dnp = kid(fp, "dnp");
-    if (dnp || flags.has("dnp")) flags.add("dnp");
+    if (dnp && dnp[1] !== "no" || flags.has("dnp")) flags.add("dnp");
     const { x, y, rot } = footprintPose(fp);
     const c = Math.cos((rot * Math.PI) / 180), s = Math.sin((rot * Math.PI) / 180);
     const pads: PartPad[] = [];
@@ -52,7 +53,7 @@ export function boardParts(root: SNode): Part[] {
       const net = kid(pad, "net");
       pads.push({ n: String(pad[1]), net: net ? String(net[net.length - 1] ?? "") : "", x: x + px * c + py * s, y: y - px * s + py * c });
     }
-    out.push({ ref: props["Reference"] ?? "", value: props["Value"] ?? "", side: String(kid(fp, "layer")?.[1] ?? "F")[0]!, x, y, rot: mod360(rot), flags: [...flags].sort(), pads, props });
+    out.push({ footprint: String(fp[1] ?? ""), ref: props["Reference"] ?? "", value: props["Value"] ?? "", side: String(kid(fp, "layer")?.[1] ?? "F")[0]!, x, y, rot: mod360(rot), flags: [...flags].sort(), pads, props });
   }
   return out;
 }

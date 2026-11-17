@@ -118,7 +118,7 @@ export const board_review = defineTool({
     offline: z.boolean().default(false).describe("run: never fetch from the network (JLC/EasyEDA symbols); cached records are still read."),
     trustCustom: z.boolean().default(false).describe("run: execute the project's custom check commands (review/checks.d, review.custom). They are shell commands from the project's files, so they run only when you say so."),
     id: z.string().max(300).optional().describe("dispose: finding id; a trailing * matches a prefix. intent_decide: the decision's id (D1, usb-orientation ...)."),
-    state: z.enum(["accept", "fix", "false-positive"]).optional().describe("dispose: the disposition."),
+    state: z.enum(["accept", "fix", "false-positive", "defer"]).optional().describe("dispose: defer an owner-review question with a recorded reason; deferral settles the disposition but is not a measured pass."),
     by: z.enum(["agent", "owner"]).optional().describe("dispose: who decided. Record the owner only when the owner said so."),
     reason: z.string().max(2000).optional().describe("dispose: why, with the evidence."),
     thirdSource: z.string().max(1000).optional().describe("dispose: a source that is neither the design nor the check (datasheet page, measurement); false-positive needs it."),

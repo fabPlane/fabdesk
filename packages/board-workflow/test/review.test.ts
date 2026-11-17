@@ -77,6 +77,11 @@ describe("finding ids and judgement", () => {
     expect(judge({ severity: "must-fix" }, { ...d, third_source: "" }, { preferences: { ask_owner_for: [] } })[1]).toContain("needs evidence");
     expect(judge({ severity: "must-fix" }, { ...d, by: "owner" })[0]).toBe(false);
   });
+  test("agent deferral of an owner question records a reason without establishing a measured pass", () => {
+    expect(judge({ severity: "question" }, { state: "defer", by: "agent", reason: "Independent reviewer unavailable in this session" })).toEqual([false, "defer"]);
+    expect(judge({ severity: "question" }, { state: "defer", by: "agent", reason: "  " })[0]).toBe(true);
+    expect(judge({ severity: "must-fix" }, { state: "defer", by: "agent", reason: "later" })[0]).toBe(true);
+  });
   test("fnmatch matches whole names", () => {
     expect(fnmatch("L2:O:C18_U1:3", "L2:O:C18_U1:*")).toBe(true);
     expect(fnmatch("L2:O:C18_U1:3", "L2:O:C18_U?:3")).toBe(true);

@@ -11,7 +11,8 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { buildSilkModel } from "../silk/model";
-import { judge, planOf, type Plan, type Verdict } from "../silk/engine";
+import { judge, type Plan, type Verdict } from "../silk/engine";
+import { projectSilkPlan } from "../silk/project-plan";
 import type { ReviewCtx } from "./context";
 import { makeFinding, newResult, type CheckResult } from "./types";
 
@@ -81,7 +82,8 @@ export function silkFindings(v: Verdict, plan: { heights: number[]; stroke: numb
 
 export async function checkSilk(ctx: ReviewCtx): Promise<CheckResult> {
   const r = newResult("silk", "L6");
-  const plan = planOf((ctx.project.cfg.silk ?? null) as Partial<Plan> | null);
+  const { plan, provenance } = await projectSilkPlan(ctx.project.files.pro, (ctx.project.cfg.silk ?? null) as Partial<Plan> | null);
+  r.artifacts["silkRules"] = provenance;
   const run = async (args: string[]) => {
     const res = await ctx.env.kicad(args);
     // a plot that failed would leave no mask or silk shapes: every label would look clean
@@ -91,6 +93,10 @@ export async function checkSilk(ctx: ReviewCtx): Promise<CheckResult> {
   try {
     const m = await buildSilkModel(ctx.pcbText, { run, workDir: join(ctx.out, "silk"), ...(ctx.env.signal ? { signal: ctx.env.signal } : {}) });
     v = judge(m, plan);
+    const overlap = v.rows.map(row => ({ ref: row.ref, labelBox: m.parts[row.ref]?.label.box, issues: row.issues, plottedCopper: m.copper[row.side as "F" | "B"], plottedSilk: m.silk[row.side as "F" | "B"] }));
+    const path = join(ctx.out, "silk-geometry.json");
+    await writeFile(path, JSON.stringify({ basis: "plotted polygons and label bounding boxes", rules: provenance, overlaps: overlap }) + "\n");
+    r.artifacts["silkGeometry"] = path;
   } catch (e) {
     r.status = "error";
     r.detail = (e instanceof Error ? e.message : String(e)).slice(0, 200);

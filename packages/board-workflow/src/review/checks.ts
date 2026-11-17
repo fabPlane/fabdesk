@@ -1,3 +1,4 @@
+import { isFittedPurchasedPart } from "@fabdesk/protocol";
 /**
  * Review checks, one function per check. Each takes the run context and returns a CheckResult.
  *
@@ -1032,8 +1033,8 @@ export async function checkBom(ctx: ReviewCtx): Promise<CheckResult> {
 }
 
 /** A part the assembler places: not DNP/excluded, netted (or a connector/switch/IC), with pads. */
-export function assembled(p: { ref: string; flags: string[]; pads: Array<{ net: string }> }): boolean {
-  if (["dnp", "exclude_from_bom", "board_only"].some((x) => p.flags.includes(x))) return false;
+export function assembled(p: { ref: string; footprint?: string; flags: string[]; pads: Array<{ net: string }> }): boolean {
+  if (!isFittedPurchasedPart({ footprint: p.footprint ?? "", flags: p.flags })) return false;
   if (!p.pads.some((q) => q.net && !q.net.startsWith("unconnected-")) && !/^(J|SW|U|IC)/.test(p.ref.split("_").pop() ?? "")) return false;
   return p.pads.length > 0;
 }
@@ -1096,7 +1097,7 @@ export async function checkCoverage(ctx: ReviewCtx): Promise<CheckResult> {
     for (const ref of sorted(want)) if (!have.has(ref)) r.findings.push(FIND({ layer: "L6", rule: "CPL", severity: "must-fix", claim: `${ref} must be assembled but is missing from ${basename(cpl)}`, ref }));
     for (const ref of sorted(have)) if (!want.has(ref)) r.findings.push(FIND({ layer: "L6", rule: "CPL", severity: "question", claim: `${ref} is in ${basename(cpl)} but not an assembled part on the board`, ref }));
   }
-  r.detail = `${need.length} assembled parts, sides ${pyList(sorted(sides))}, ${post.size} hand-assembly, ${unfitted.length} unfitted`;
+  r.detail = `${need.length} assembled parts, fitted sides ${pyList(sorted(new Set(need.map(p => p.side))))}, ordered sides ${pyList(sorted(sides))}, ${post.size} hand-assembly, ${unfitted.length} unfitted`;
   return r;
 }
 

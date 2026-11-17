@@ -6,3 +6,5 @@ export * from "./gerber-shapes";
 export * from "./model";
 export * from "./engine";
 export * from "./place";
+
+export * from "./project-plan";

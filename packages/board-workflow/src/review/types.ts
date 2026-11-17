@@ -6,7 +6,7 @@
 
 export const SEVERITIES = ["must-fix", "question", "note"] as const;
 export type Severity = (typeof SEVERITIES)[number];
-export const STATES = ["fix", "accept", "false-positive"] as const;
+export const STATES = ["fix", "accept", "false-positive", "defer"] as const;
 export type DispositionState = (typeof STATES)[number];
 
 export interface Evidence {

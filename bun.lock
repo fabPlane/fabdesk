@@ -129,6 +129,9 @@
     "packages/board-workflow": {
       "name": "@fabdesk/board-workflow",
       "version": "0.1.0",
+      "dependencies": {
+        "@fabdesk/protocol": "workspace:*",
+      },
       "devDependencies": {
         "@types/bun": "1.2.21",
         "typescript": "5.9.2",

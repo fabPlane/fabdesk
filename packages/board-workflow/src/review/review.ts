@@ -57,7 +57,8 @@ export function judge(finding: { severity: string }, disp: Disposition | null | 
   if (finding.severity === "note") return [false, "note"];
   if (!disp) return [true, "no disposition"];
   const st = disp.state;
-  if (!disp.reason) return [true, "disposition has no reason"];
+  if (!disp.reason.trim()) return [true, "disposition has no reason"];
+  if (st === "defer" && finding.severity === "must-fix") return [true, "must-fix deferred, not resolved"];
   if (st === "fix") return [true, "marked fix but still present"];
   if (st === "false-positive" && !disp.third_source) return [true, "false-positive needs a third source"];
   if (finding.severity === "must-fix" && st === "accept" && disp.by !== "owner") {
@@ -306,6 +307,7 @@ export interface GateResult {
   classified?: { auto: string[]; candidate: string[]; task: string[]; owner: string[] };
   /** The project's own (custom) checks the review did not run because they were not trusted. */
   notRun?: number;
+  evidence?: { checks: Array<{ name: string; status: string }>; dispositions: Array<{ id: string; state: string; by: string; reason: string }>; independentReview: "completed" | "deferred" | "missing" };
 }
 
 /** Owner checks a review skipped for want of `trustCustom`: said in the gate output, never silent. */
@@ -323,8 +325,12 @@ export async function reviewGate(project: ReviewProject): Promise<GateResult> {
     return { exit: GATE_STALE, state: cur.state === "no review" ? "none" : "stale", current: false, open: 0, mustFix: 0, errors: false, lines: [`REVIEW GATE: BLOCKED (${cur.state}). Run: board_review {"action": "run"}`] };
   const ev = evaluate(cur.review, await readDispositions(project.dir), await readIntent(project.dir));
   const notRun = notRunOf(cur.review);
-  const nr = notRun ? { notRun } : {};
-  const nrLines = notRun ? [notRunLine(notRun)] : [];
+  const dispositions = ev.rows.filter(r => r.disposition).map(r => ({ id: r.id, state: r.disposition!.state, by: r.disposition!.by, reason: r.disposition!.reason }));
+  const independentRows = ev.rows.filter(r => r.layer === "L8");
+  const independentReview = cur.review.checks.some(c => c.name === "expert" && c.status === "ok") ? "completed" as const : independentRows.some(r => r.disposition?.state === "defer") ? "deferred" as const : "missing" as const;
+  const evidence = { checks: cur.review.checks.map(c => ({ name: c.name, status: c.status })), dispositions, independentReview };
+  const nr = { ...(notRun ? { notRun } : {}), evidence };
+  const nrLines = [...(notRun ? [notRunLine(notRun)] : []), `Independent review: ${independentReview}.`, ...dispositions.map(d => `${d.id}: ${d.state} by ${d.by}: ${d.reason}`)];
   if (ev.errors.length)
     return { ...nr, exit: GATE_ERROR, state: "errors", current: true, open: ev.open.length, mustFix: ev.open.filter((r) => r.severity === "must-fix").length, errors: true, lines: ["REVIEW GATE: BLOCKED (check errors)", ...ev.errors.map((c) => `- ${c.name}: ${c.detail}`), ...nrLines] };
   if (ev.open.length) {
@@ -338,7 +344,7 @@ export async function reviewGate(project: ReviewProject): Promise<GateResult> {
     const ids = (rs: Row[]) => rs.map((r) => r.id);
     return { ...nr, exit: GATE_OPEN, state: "open", current: true, open: ev.open.length, mustFix: ev.open.filter((r) => r.severity === "must-fix").length, errors: false, lines, classified: { auto: ids(k.auto), candidate: ids(k.candidate), task: ids(k.task), owner: ids(k.owner) } };
   }
-  return { ...nr, exit: GATE_PASS, state: "pass", current: true, open: 0, mustFix: 0, errors: false, lines: [`REVIEW GATE: PASS (${project.name}, hash ${cur.review.hash.slice(0, 12)}, ${cur.review.findings.length} findings dispositioned)`, ...nrLines] };
+  return { ...nr, exit: GATE_PASS, state: "pass", current: true, open: 0, mustFix: 0, errors: false, lines: [`REVIEW GATE: PASS (${project.name}, hash ${cur.review.hash.slice(0, 12)}, ${cur.review.findings.length} findings dispositioned; disposition gate only)`, ...nrLines] };
 }
 
 export interface DisposeInput {
@@ -356,6 +362,7 @@ export async function dispose(project: ReviewProject, input: DisposeInput): Prom
   const targets = [...ids.keys()].filter((i) => i === input.id || (input.id.endsWith("*") && i.startsWith(input.id.slice(0, -1))));
   if (!targets.length) throw new Error(`no finding ${input.id} in the latest review`);
   if (!(STATES as readonly string[]).includes(input.state)) throw new Error(`state must be one of ${STATES.join(", ")}`);
+  if (!input.reason.trim()) throw new Error("a recorded reason is required for a disposition");
   const d = await readDispositions(project.dir);
   for (const i of targets)
     d[i] = { state: input.state as Disposition["state"], by: input.by, reason: input.reason, third_source: input.third_source ?? "", date: new Date().toISOString(), hash: cur.review.hash, claim: ids.get(i)!.claim.slice(0, 200) };
