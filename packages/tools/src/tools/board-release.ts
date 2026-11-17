@@ -221,7 +221,16 @@ async function checkAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
   const ic = interconnectGate ? await interconnectGate({ projectDir: project.dir }) : { pass: true, text: "none (standalone project)" };
   const accText = acc.state === "none" ? "not measured: board_check" : acc.state === "stale" ? "measured on an earlier board: board_check" : acc.pass ? "A1-A9 pass" : `failing ${acc.failing.join(", ")}`;
   const gateText = gate.state === "pass" ? "passes" : gate.state === "none" ? "not run" : gate.state === "stale" ? "stale (the design changed since: board_review run)" : gate.state === "errors" ? "check errors" : `${gate.open ?? "?"} findings open (${gate.mustFix ?? 0} must-fix)`;
-  const bomText = bom.state === "none" ? "no BOM check: action bom" : bom.state === "stale" ? "BOM check is of an earlier board: action bom" : `current (${bom.meta!.lines} lines, ${Object.entries(bom.meta!.summary).map(([k, v]) => `${k} ${v}`).join(", ")})`;
+  let bomReady = false;
+  let bomProblem = "";
+  if (bom.state === "current") {
+    try {
+      release.assertReleaseBom(JSON.parse(await readFile(join(bom.dir, "bom-decisions.json"), "utf8")), await readFile(files.pcb, "utf8"));
+      if (!await sha256Of(join(bom.dir, "cpl-jlc.csv"))) throw new Error("BOM placement predictions missing: action bom");
+      bomReady = true;
+    } catch (error) { bomProblem = String(error); }
+  }
+  const bomText = bom.state === "none" ? "no BOM check: action bom" : bom.state === "stale" ? "BOM check is of an earlier board: action bom" : !bomReady ? bomProblem : `current (${bom.meta!.lines} lines, ${Object.entries(bom.meta!.summary).map(([k, v]) => `${k} ${v}`).join(", ")})`;
   const text = [
     `Release readiness for ${files.stem}:`,
     `1 interconnect gate: ${ic.pass ? "passes" : "STOP"} (${ic.text})`,
@@ -231,7 +240,7 @@ async function checkAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
     `BOM / JLC rotations: ${bomText}`,
     last ? `Last package: ${relative(project.dir, last.out)} (${last.boardSha256 === (await sha256Of(files.pcb)) ? "of this board" : "of an earlier board"})` : "No package built yet.",
   ].join("\n");
-  const ready = ic.pass && gate.state === "pass" && acc.pass && !vias.missing.length;
+  const ready = ic.pass && gate.state === "pass" && acc.pass && !vias.missing.length && bomReady;
   return ok(text, { ready, interconnect: ic, review: gate, acceptance: { state: acc.state, failing: acc.failing, pass: acc.pass }, vias: { ...vias.record.counts }, bom: { state: bom.state, ...(bom.meta ? { summary: bom.meta.summary } : {}) } });
 }
 

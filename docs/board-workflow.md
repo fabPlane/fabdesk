@@ -126,8 +126,10 @@ and basis); `inner_neck_allowance_mm: 0` on a power class makes every inner segm
   by pin type, track and via resistance with no pour credit, the supplier's etch taken off every width, IPC-2221 heat on every inner
   segment and a 2 % drop; a missing or disconnected terminal is a must-fix, not a pass.
 - **Release.** `board_release fab` refuses, writing nothing, unless in order: the interconnect gate (none for a standalone project), the review
-  gate for this exact board, A1-A9 with parity (an exception only with an owner decision), via-in-pad and microvia fill and cap bindings; then CAM is
-  exported twice with identical hashes and the Gerbers are rendered and compared with KiCad's plot. Package only a board whose review covers that exact version.
+  gate for this exact board, A1-A9 with parity (an exception only with an owner decision), via-in-pad and microvia fill and cap bindings, and a current
+  BOM check covering every fitted part with a resolved choice or named risk. Missing, proposed and unresolved choices stop release; copper-only features
+  are explicitly excluded from purchasing and placement. CAM is exported twice with identical hashes and the Gerbers are rendered and compared with KiCad's
+  plot. JLC placements must cover fitted parts and pass simulation; missing footprint evidence stops release. Package only the exact reviewed version.
   A via STOP: `board_release vias` names the vias in pads and the microvias; `apply: true` sets fill and cap on them (the order must then ask
   for filled, capped vias), or move the vias out of the pads.
 - **Look at the board** (`render_view`, `board_route view` / `info`) rather than parsing it ad hoc. Let the tools author tracks and vias; hand

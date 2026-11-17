@@ -243,7 +243,9 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
   const identity = (v: typeof candidateVias[number]) => v.uuid ?? `${v.net}@${v.xy.join(",")}`;
   const old = new Map(previousVias.map(v => [identity(v), v]));
   const newInPad = candidateVias.filter(v => v.in_component_lands.length && !(old.get(identity(v))?.in_component_lands.length));
-  const newProcess = candidateVias.filter(v => (v.native_filling || v.native_capping) && !(old.get(identity(v))?.native_filling || old.get(identity(v))?.native_capping));
+  const newProcess = candidateVias.filter(v =>
+    v.native_filling && !old.get(identity(v))?.native_filling ||
+    v.native_capping && !old.get(identity(v))?.native_capping);
   const acceptance = JSON.parse(await readFile(join(project.dir, ".fabdesk/board/requirements/acceptance.json"), "utf8").catch(() => "{}"));
   const allowed = (value: unknown) => typeof value === "object" && value !== null && (value as { allow?: boolean }).allow === true && typeof (value as { basis?: string }).basis === "string" && Boolean((value as { basis: string }).basis.trim());
   if (newInPad.length && !allowed(acceptance.manufacturing_rules?.via_in_pad))

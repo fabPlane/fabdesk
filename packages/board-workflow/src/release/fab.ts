@@ -6,6 +6,7 @@
  *   2. the review gate: a current review of this exact board, every finding settled;
  *   3. the board's acceptance checks A1-A9 with schematic parity (an exception only with an owner decision, recorded);
  *   4. via-in-pad and microvia fill/cap bindings set natively.
+ *   5. a current BOM check covers every fitted part with a resolved choice (or named risk).
  * Then CAM is exported twice and the files must match after the date lines; the Gerbers are drawn by an independent
  * reader and compared with KiCad's plot (gerbcheck); JLC BOM/CPL are written from the BOM check's decisions and rotation
  * predictions, with every CPL row simulated against JLC's own footprint on our copper (jlcsim).
@@ -15,8 +16,10 @@ import { copyFile, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile 
 import { basename, dirname, join, relative } from "node:path";
 import { runKicadCli, type KicadCli } from "@fabdesk/kicad";
 import { CHECK_KEYS } from "../accept";
+import { parseSexpr } from "../sexpr";
 import { confineToProject } from "../files";
 import { boardPinNames, readCplJlc, type BomResult } from "./bomcheck";
+import { assembled, boardParts } from "./parts";
 import { exportCam, requiredLayers, reproducible, sha256, type Reproducibility } from "./cam";
 import { parseCsv, toCsv } from "./csv";
 import { gerbCheck, type GerbCheckResult } from "./gerbcheck";
@@ -175,6 +178,7 @@ export function jlcRows(dec: Pick<BomResult, "records">, cpl: ReturnType<typeof 
   const diffs: JlcFiles["rotation_differs_from_kicad"] = [];
   const moved: JlcFiles["moved_to_pad_centre"] = [];
   for (const r of dec.records) {
+    if (r.copper_only) continue;
     const refs = r.refs.filter((x) => pos.has(x));
     if (!refs.length) continue;
     const code = r.lcsc;
@@ -222,6 +226,25 @@ export async function jlcFiles(out: string, bomDir: string, stem: string, gerber
 }
 
 export { padMaps };
+
+/** Missing/unsettled choices cannot disappear from a gated assembly handoff. */
+export function assertReleaseBom(decisions: Pick<BomResult, "records">, pcbText: string): void {
+  if (!Array.isArray(decisions?.records)) throw new ReleaseStop("bom", "STOP BOM decisions are missing or malformed: run board_release bom again");
+  const byRef = new Map<string, BomResult["records"][number]>();
+  for (const record of decisions.records) {
+    if (!record || !Array.isArray(record.refs) || !record.refs.length || record.refs.some(ref => typeof ref !== "string" || !ref)) throw new ReleaseStop("bom", "STOP BOM decisions contain malformed references: run board_release bom again");
+    for (const ref of record.refs) {
+      if (byRef.has(ref)) throw new ReleaseStop("bom", `STOP BOM decisions duplicate ${ref}: run board_release bom again`);
+      byRef.set(ref, record);
+    }
+  }
+  const blocked = boardParts(parseSexpr(pcbText)).filter(assembled).filter(part => {
+    const record = byRef.get(part.ref);
+    return !record || (record.status !== "RESOLVED" && record.status !== "RISK") ||
+      (record.copper_only ? record.status !== "RESOLVED" : typeof record.lcsc !== "string" || !/^C\d+$/.test(record.lcsc));
+  });
+  if (blocked.length) throw new ReleaseStop("bom", `STOP BOM check has missing or unsettled fitted parts: ${blocked.map(part => `${part.ref} (${byRef.get(part.ref)?.status ?? "missing"})`).join(", ")}. Resolve choices and run board_release bom again`);
+}
 
 /** Every CPL row simulated against JLC's own footprint on our copper. */
 export async function placementCheck(out: string, bomDir: string, stem: string, sheets: string[], proxies?: FabInput["proxies"]): Promise<SimResult> {
@@ -281,10 +304,15 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
   const { record: viaRec, missing } = viaBindings(inp.pcb, classifyVias(pcbText));
   if (missing.length)
     throw new ReleaseStop("vias", `STOP via bindings: ${missing.length} via(s) in pads or microvias lack (filling yes) (capping yes): ${missing.slice(0, 6).map((v) => `${v.net}@${v.xy.join(",")}`).join("; ")}. Set them with board_release {"action": "vias", "apply": true} (the order must then ask for filled and capped vias), or move the vias out of the pads`, viaRec.counts);
-  // a BOM check of another board is refused before anything is exported
+  // A missing, stale or incomplete BOM refuses before anything is exported. Ungated CAM is a separate action.
   const hasCplJlc = !!inp.bomDir && (await stat(join(inp.bomDir, "cpl-jlc.csv")).then(() => true, () => false));
-  if (hasCplJlc && inp.bomBoardSha !== undefined && inp.bomBoardSha !== sha256(await readFile(inp.pcb)))
+  if (!inp.bomDir || !hasCplJlc) throw new ReleaseStop("bom", "STOP no current BOM check: run board_release bom first (use board_release cam for ungated CAM only)");
+  if (inp.bomBoardSha !== sha256(await readFile(inp.pcb)))
     throw new ReleaseStop("bom", "STOP BOM check is of an earlier board (the board changed since): run board_release bom again");
+  const bomDecisions = await readFile(join(inp.bomDir, "bom-decisions.json"), "utf8")
+    .then(text => JSON.parse(text) as BomResult)
+    .catch(() => { throw new ReleaseStop("bom", "STOP BOM decisions are missing or malformed: run board_release bom again"); });
+  assertReleaseBom(bomDecisions, pcbText);
   // CAM: built in a temporary folder beside the destination, renamed into place only when every check passed
   const final = inp.out;
   const parent = dirname(final);
@@ -319,6 +347,10 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
     if (inp.bomDir && hasCplJlc) {
       note("JLC BOM and CPL");
       const j = await jlcFiles(work, inp.bomDir, inp.stem, g);
+      const placedRefs = new Set(parseCsv(await readFile(join(work, `${inp.stem}-jlc-cpl.csv`), "utf8")).map(row => row["Designator"]));
+      const copperOnly = new Set(bomDecisions.records.filter(record => record.copper_only).flatMap(record => record.refs));
+      const missingPlacements = boardParts(parseSexpr(pcbText)).filter(assembled).filter(part => !part.flags.includes("exclude_from_pos_files") && !copperOnly.has(part.ref) && !placedRefs.has(part.ref));
+      if (j.no_lcsc_code.length || missingPlacements.length) throw new ReleaseStop("bom", `STOP JLC handoff omits fitted parts: ${[...new Set([...j.no_lcsc_code, ...missingPlacements.map(part => part.ref)])].join(", ")}`);
       if (inp.cpl) {
         const rows = parseCsv(await readFile(inp.cpl, "utf8"));
         const bomRefs = new Set<string>();
@@ -333,9 +365,9 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
       const sim = await placementCheck(work, inp.bomDir, inp.stem, sheets, inp.proxies);
       await writeFile(join(work, "placement-check.json"), JSON.stringify({ summary: sim.summary, convention: sim.convention, cpl: join(final, `${inp.stem}-jlc-cpl.csv`), parts: sim.parts }, null, 1) + "\n");
       j.placement_check = sim.summary;
-      const bad = sim.parts.filter((p) => p.verdict === "FAIL");
+      const bad = sim.parts.filter((p) => p.verdict !== "PASS");
       if (bad.length)
-        throw new ReleaseStop("placement", "STOP placement check (JLC footprint simulated on our copper): " + bad.map((p) => `${p.ref} (rot ${p.cpl_rot}: land ${p.land_rms} same-pin ${p.same_pin}; fits at ${p.solved?.rot} moved ${p.solved?.moved_mm} mm)`).join(", "), sim.summary);
+        throw new ReleaseStop("placement", "STOP placement check (JLC footprint simulated on our copper): " + bad.map((p) => `${p.ref} ${p.verdict} (rot ${p.cpl_rot}: land ${p.land_rms} same-pin ${p.same_pin}${p.solved ? `; fits at ${p.solved.rot} moved ${p.solved.moved_mm} mm` : ""})`).join(", "), sim.summary);
       jlc = j;
     }
     const man = {

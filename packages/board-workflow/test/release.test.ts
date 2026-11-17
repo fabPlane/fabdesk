@@ -465,6 +465,10 @@ describe("release gates", () => {
   });
   test.skipIf(process.platform === "win32")("a refusal after CAM started leaves no package, zip or temporary folder", async () => {
     const { s, inp } = await input();
+    const bom = join(s.dir, "bom");
+    await release.bomCheck({ project: s.dir, stem: "b", out: bom, fetch: { transport: transport([]), shared: null, paceMs: 0 } });
+    inp.bomDir = bom;
+    inp.bomBoardSha = release.sha256(await readFile(s.pcb));
     // a kicad-cli whose exports differ every time: the reproducibility check refuses after files were written
     const fake = join(await mkdtemp(join(tmpdir(), "fakecli-")), "kicad-cli");
     await writeFile(fake, `#!/bin/sh\nout=""; prev=""\nfor a in "$@"; do if [ "$prev" = "--output" ]; then out="$a"; fi; prev="$a"; done\ncase "$out" in */) mkdir -p "$out"; echo "$$ $(date +%N)" > "$out/b-F_Cu.gbr" ;; *) echo x > "$out" ;; esac\nexit 0\n`);
@@ -474,6 +478,31 @@ describe("release gates", () => {
     expect(e.gate).toBe("cam");
     expect(await stat(out).catch(() => null)).toBeNull();
     expect(await stat(join(s.dir, "exports")).catch(() => null)).toBeNull();
-    expect((await readdir(s.dir)).sort()).toEqual(["b.kicad_pcb"]);
+    expect((await readdir(s.dir)).sort()).toEqual(["b.kicad_pcb", "bom"]);
+  });
+});
+
+describe("gated BOM completeness", () => {
+  for (const status of ["UNRESOLVED", "PROPOSED", "OWNER"]) test(`${status} fitted choices refuse before export`, async () => {
+    const dir = await mkdtemp(join(tmpdir(), "fab-bom-gate-"));
+    const pcb = join(dir, "b.kicad_pcb"), bomDir = join(dir, "bom"), out = join(dir, "package");
+    await writeFile(pcb, board());
+    const bom = await release.bomCheck({ project: dir, stem: "b", out: bomDir, fetch: { transport: transport([]), shared: null, paceMs: 0 } });
+    bom.records.find(record => record.refs.includes("R1"))!.status = status;
+    await writeFile(join(bomDir, "bom-decisions.json"), JSON.stringify(bom));
+    const result = await release.releaseFab({ project: dir, stem: "b", pcb, schematic: null, out, cli: { path: "must-not-export", version: "" }, bomDir, bomBoardSha: release.sha256(await readFile(pcb)), gates: { review: async () => ({ state: "pass" }), acceptance: async () => ({ summary: Object.fromEntries(["A1_connectivity", "A2_drc", "A3_parity", "A4_circuit", "A5_anchors", "A6_stack", "A7_widths", "A8_pairs", "A9_heights"].map(key => [key, true])) }) } }).catch(error => error as release.ReleaseStop);
+    expect(result).toBeInstanceOf(release.ReleaseStop);
+    expect((result as release.ReleaseStop).gate).toBe("bom");
+    expect((result as release.ReleaseStop).message).toContain("R1");
+    expect(await stat(out).catch(() => null)).toBeNull();
+    expect((await readdir(dir)).sort()).toEqual(["b.kicad_pcb", "bom"]);
+  });
+  test("complete choices include copper-only exceptions, but missing fitted references refuse", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "fab-bom-coverage-"));
+    await writeFile(join(dir, "b.kicad_pcb"), board());
+    const bom = await release.bomCheck({ project: dir, stem: "b", out: join(dir, "bom"), fetch: { transport: transport([]), shared: null, paceMs: 0 } });
+    expect(() => release.assertReleaseBom(bom, board())).not.toThrow();
+    bom.records = bom.records.filter(record => !record.refs.includes("R2"));
+    expect(() => release.assertReleaseBom(bom, board())).toThrow("R2 (missing)");
   });
 });

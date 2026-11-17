@@ -101,7 +101,16 @@ describe("board_release", () => {
     await recordReviewGate(project.dir, { current: true, open: 0, mustFix: 0 });
     await recordAcceptance(project.dir, { at: new Date().toISOString(), sha256: sha2, results: ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9"].map((code) => ({ code, status: "pass", figures: {}, evidence: [] })) as never });
     r = await call("board_release", { action: "check" });
+    expect(r.json.ready).toBe(false); // a current BOM is still required
+    await seedCache(project);
+    await call("board_release", { action: "bom", offline: true });
+    r = await call("board_release", { action: "check" });
     expect(r.json.ready).toBe(true);
+    const decisionsPath = join(bomDirOf(project.dir), "bom-decisions.json");
+    const decisions = JSON.parse(await readFile(decisionsPath, "utf8"));
+    decisions.records[0].status = "UNRESOLVED";
+    await writeFile(decisionsPath, JSON.stringify(decisions));
+    expect((await call("board_release", { action: "check" })).json.ready).toBe(false);
   });
 
   test("vias lists the vias that need fill+cap; apply writes the attributes through adopt and checks again", async () => {

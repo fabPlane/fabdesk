@@ -346,3 +346,19 @@ test("via policy refuses unsupported chamfered pads without changing the canonic
   expect(seen).toHaveLength(0);
   expect(await readFile(target, "utf8")).toBe(board);
 });
+
+for (const added of ["filling", "capping"]) test(`adding ${added} to a partly processed via requires a new process decision`, async () => {
+  const { project, ctx, seen } = await setup();
+  const other = added === "filling" ? "capping" : "filling";
+  const board = `(kicad_pcb (via (at 5 5) (size 0.6) (drill 0.3) (layers "F.Cu" "B.Cu") (net "GND") (uuid "same") (${other} yes) (${added} no)))`;
+  await writeFile(join(project.dir, "board.kicad_pcb"), board);
+  const candidate = join(await mkdtemp(join(tmpdir(), "via-process-")), "board.kicad_pcb");
+  await writeFile(candidate, board.replace(`(${added} no)`, `(${added} yes)`));
+  await expect(adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "additional process" })).rejects.toThrow("filled/capped fabrication attributes");
+  expect(seen).toHaveLength(0);
+  expect(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")).toBe(board);
+  await mkdir(join(project.dir, ".fabdesk/board/requirements"), { recursive: true });
+  await writeFile(join(project.dir, ".fabdesk/board/requirements/acceptance.json"), JSON.stringify({ manufacturing_rules: { filled_capped_vias: { allow: true, basis: "specified in supplier order" } } }));
+  await adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "recorded additional process" });
+  expect(seen).toHaveLength(1);
+});
