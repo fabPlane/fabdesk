@@ -14,9 +14,22 @@ export type CopperGeometry = { path: ContactPoint[]; width: number } | { polygon
 export type ExactCopperKind = "straight-track" | "circle-pad" | "rect-pad" | "oval-pad" | "roundrect-pad" | "current-fill";
 export type CopperShape = CopperGeometry & {
   exact?: ExactCopperKind;
+  /** Original stroke used for endpoint incidence; the outer circle is not a centreline. */
+  centerline?: { path: ContactPoint[]; width: number };
   /** Legacy inner bounds cannot authorize proofs; null also vetoes a certificate. */
   inner?: CopperGeometry | null;
 };
+
+/** One deliberately blunt retention envelope. Symmetrize the box about the
+ * source anchor: half a diagonal of an off-centre box alone would miss copper.
+ * padding and margin use the caller's coordinate unit; neither proves contact. */
+export function copperOuterCircle(points: ContactPoint[], padding = 0, margin = .000001, anchor?: ContactPoint): CopperShape {
+  const xs = points.map(p => p.x), ys = points.map(p => p.y);
+  const center = anchor ?? { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
+  const hx = Math.max(0, ...points.map(p => Math.abs(p.x - center.x))) + padding;
+  const hy = Math.max(0, ...points.map(p => Math.abs(p.y - center.y))) + padding;
+  return { path: [center], width: 2 * (Math.hypot(hx, hy) + margin), inner: null };
+}
 
 function exactGeometry(shape: CopperShape): CopperGeometry | null {
   if (shape.inner === null || ("polygon" in shape && shape.polygon.padding)) return null;

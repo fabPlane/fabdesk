@@ -1,5 +1,5 @@
 import { buildCopperGraph, pruneCopperLeaves, type CopperNode } from "@fabdesk/board-workflow/copper-graph";
-import { copperShapesTouch, type ContactPoint, type ContactPolygon, type CopperGeometry } from "@fabdesk/board-workflow/copper-contact";
+import { copperOuterCircle, copperShapesTouch, type ContactPoint, type ContactPolygon, type CopperGeometry } from "@fabdesk/board-workflow/copper-contact";
 import { BoardLayer } from "@fp-pcb/proto";
 import type {
   PcbShortedCopperItem,
@@ -15,6 +15,7 @@ export type CopperPad = {
   parent: string;
   reference: string;
   number: string;
+  anchor?: CopperPoint;
   net: string;
   shapes: Array<{ layer: BoardLayer; polygon: CopperPolygon; /** Caller-certified undrilled rectangle; bridge polygons omit this. */ exact?: "rect-pad"; inner?: CopperGeometry | null }>;
 };
@@ -83,9 +84,9 @@ export function analyzeStaleCopper(input: {
   const staleIds = new Set<string>();
   const allNets = new Set<string>();
   const nodes: CopperNode<BoardLayer>[] = input.routes.map(route => ({ id: route.id, net: route.net, kind: route.kind,
-    copper: [{ shape: { ...route, ...(route.kind === "track" ? { exact: "straight-track" as const } : { inner: null }) }, layers: route.layers }] }));
+    copper: [{ shape: route.kind === "track" ? { ...route, exact: "straight-track" as const } : { ...copperOuterCircle(route.path, route.width / 2), ...(route.kind === "arc" ? { centerline: { path: route.path, width: route.width } } : {}) }, layers: route.layers }] }));
   for (const pad of input.allPadsAfter) nodes.push({ id: `pad:${pad.id}`, net: pad.net, kind: "pad",
-    copper: pad.shapes.map(({ layer, polygon, inner, exact }) => ({ shape: { polygon, ...(exact ? { exact } : {}), ...(inner !== undefined ? { inner } : {}) }, layers: [layer] })) });
+    copper: pad.shapes.map(({ layer, polygon, inner, exact }) => ({ shape: exact && inner !== null && !polygon.padding ? { polygon, exact } : copperOuterCircle(polygon.outline, polygon.padding ?? 0, .000001, pad.anchor), layers: [layer] })) });
   // Native placement supplies conservative outlines at the post-move revision.
   // Older callers without net labels retain conservative support on every net.
   for (const net of new Set(input.routes.map(route => route.net))) for (const [i, zone] of input.zones.entries()) {

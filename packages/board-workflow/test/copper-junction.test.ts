@@ -111,7 +111,7 @@ for (const alternate of ["none", "rect", "custom", "via", "drilled-pad", "zone"]
   });
 }
 
-test("inflated arc chords cannot replace the cap bridge after its tail via prunes", () => {
+test("unknown arc circle cannot replace the cap bridge", () => {
   const land = (ref: string, y: number) => fpT(ref,99.99995,y,[["1","A",0,0]])
     .replace('(size 0.6 0.6)', '(size 0.000002 0.2)');
   const bridge = seg(99.99995,0,110,0,"A").replace('(width 0.2)', '(width 2.5)');
@@ -121,7 +121,8 @@ test("inflated arc chords cannot replace the cap bridge after its tail via prune
   const text = `(kicad_pcb ${bridge} (via (at 110 0) (size .8) (drill .4) (layers "F.Cu" "B.Cu") (net "A")) ${land("U2",1.25)} ${land("U3",-1.25)} ${arc})`;
   const result = pruneDangling(text,new Set(["A"]));
   expect(result.text).toContain(bridge);
-  expect(result.pruned).toBe(1);
+  // The blunt circle also retains the tail via.
+  expect(result.pruned).toBe(0);
 });
 
 test("terminal proof cannot forget remote terminals behind uncertain contacts", () => {

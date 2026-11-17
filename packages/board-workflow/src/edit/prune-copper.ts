@@ -2,7 +2,7 @@
 import { kid, kids, keepoutBlocks, num, parseSexpr, type SNode } from "../sexpr";
 import { footprintPose } from "../review/geometry";
 import { arcPoints, toBoard } from "../silk/shapes";
-import { subtractCopperKeepouts, type CopperShape } from "../copper-contact";
+import { copperOuterCircle, subtractCopperKeepouts, type CopperShape } from "../copper-contact";
 
 export type LayerCopper = { shape: CopperShape; layers: string[]; net: string };
 const point = (n: SNode | undefined): [number, number] => [num(n?.[1]), num(n?.[2])];
@@ -34,8 +34,7 @@ export function routeCopper(node: SNode, stack: string[]): LayerCopper {
   }
   const width = num(kid(node, via ? "size" : "width")?.[1], via ? .5 : .15);
   const points = path.map(object);
-  return { net: netOf(node), layers, shape: { path: points, width: width + 2 * arcPadding,
-    ...(node[0] === "segment" ? { exact: "straight-track" as const } : { inner: null }) } };
+  return { net: netOf(node), layers, shape: node[0] === "segment" ? { path: points, width, exact: "straight-track" } : { ...copperOuterCircle(points, width / 2 + arcPadding), ...(via ? {} : { centerline: { path: points, width: width + 2 * arcPadding } }) } };
 }
 
 export function padCopper(text: string, stack: string[]): LayerCopper[] {
@@ -50,12 +49,49 @@ export function padCopper(text: string, stack: string[]): LayerCopper[] {
       const [x, y] = toBoard(pose, num(at?.[1]), num(at?.[2]));
       const rot = num(at?.[3]), w = num(size?.[1], .6), h = num(size?.[2], .6);
       const shape = String(pad[3]);
-      const add = (s: CopperShape) => {
-        const { exact, ...outer } = s;
-        const unknown = kid(pad, "drill") || kid(pad, "chamfer") || kid(pad, "chamfer_ratio");
-        out.push({ net: netOf(pad), layers, shape: unknown ? { ...outer, inner: null } : { ...outer, ...(exact ? { exact } : {}) } });
-      };
       const transform = (px: number, py: number) => object(toBoard({ x, y, rot }, px, py));
+      const unknown = kid(pad, "drill") || kid(pad, "chamfer") || kid(pad, "chamfer_ratio") || kid(pad, "offset") ||
+        !["circle", "oval", "rect", "roundrect"].includes(shape);
+      const add = (s: CopperShape) => out.push({ net: netOf(pad), layers, shape: s });
+      if (unknown) {
+        // Bound the full rectangle, ignoring rounding/chamfer cuts. Include both
+        // offset directions and trapezoid deltas before rotating into board space.
+        const offset = kid(kid(pad, "drill") ?? [], "offset") ?? kid(pad, "offset");
+        const delta = kid(pad, "rect_delta");
+        let hx = Math.abs(w) / 2 + Math.abs(num(delta?.[2])) / 2;
+        let hy = Math.abs(h) / 2 + Math.abs(num(delta?.[1])) / 2;
+        for (const primitive of (kid(pad, "primitives") ?? []).slice(1)) {
+          if (!Array.isArray(primitive)) continue;
+          const coords: Array<[number, number]> = [];
+          let stroke = 0;
+          const visit = (n: SNode) => {
+            if (["xy", "start", "mid", "end", "center"].includes(String(n[0]))) coords.push(point(n));
+            if (n[0] === "width") stroke = Math.max(stroke, Math.abs(num(n[1])) / 2);
+            for (const c of n) if (Array.isArray(c)) visit(c);
+          };
+          visit(primitive);
+          if (primitive[0] === "gr_circle") {
+            const c = point(kid(primitive, "center")), e = point(kid(primitive, "end"));
+            const r = Math.hypot(e[0]-c[0],e[1]-c[1]);
+            coords.push([c[0]-r,c[1]-r],[c[0]+r,c[1]+r]);
+          } else if (primitive[0] === "gr_arc") {
+            // Full circumcircle encloses every sweep, including major arcs.
+            const [a,b,c] = [point(kid(primitive,"start")),point(kid(primitive,"mid")),point(kid(primitive,"end"))];
+            const d = 2*(a![0]*(b![1]-c![1])+b![0]*(c![1]-a![1])+c![0]*(a![1]-b![1]));
+            if (Math.abs(d) > 1e-12) {
+              const q = (p: [number,number]) => p[0]**2+p[1]**2;
+              const cx=(q(a!)*(b![1]-c![1])+q(b!)*(c![1]-a![1])+q(c!)*(a![1]-b![1]))/d;
+              const cy=(q(a!)*(c![0]-b![0])+q(b!)*(a![0]-c![0])+q(c!)*(b![0]-a![0]))/d;
+              const r=Math.hypot(a![0]-cx,a![1]-cy);
+              coords.push([cx-r,cy-r],[cx+r,cy+r]);
+            }
+          }
+          for (const [px,py] of coords) { hx=Math.max(hx,Math.abs(px)+stroke); hy=Math.max(hy,Math.abs(py)+stroke); }
+        }
+        hx += Math.abs(num(offset?.[1])); hy += Math.abs(num(offset?.[2]));
+        add(copperOuterCircle([transform(-hx,-hy),transform(hx,-hy),transform(hx,hy),transform(-hx,hy)],0,.000001,{x,y}));
+        continue;
+      }
       if (shape === "circle" || shape === "oval") {
         const r = shape === "circle" ? w / 2 : Math.min(w, h) / 2;
         const dx = shape === "oval" ? w / 2 - r : 0, dy = shape === "oval" ? h / 2 - r : 0;
@@ -65,20 +101,6 @@ export function padCopper(text: string, stack: string[]): LayerCopper[] {
         const r = shape === "roundrect" ? Math.min(w, h) * Math.max(0, Math.min(.5, num(kid(pad, "roundrect_rratio")?.[1], .25))) : 0;
         const hw = w / 2 - r, hh = h / 2 - r;
         add({ polygon: { outline: [transform(-hw, -hh), transform(hw, -hh), transform(hw, hh), transform(-hw, hh)] }, radius: r, exact: shape === "rect" ? "rect-pad" : "roundrect-pad" });
-      } else {
-        // Unmodelled/custom lands conservatively retain copper within their full primitive reach.
-        // Never delete a connection on the strength of a missing primitive model.
-        let reach = Math.hypot(w, h);
-        const visit = (n: SNode) => {
-          if (["xy", "start", "mid", "end", "center"].includes(String(n[0]))) reach += 2 * Math.hypot(num(n[1]), num(n[2]));
-          if (n[0] === "gr_arc") {
-            for (const [px, py] of arcPoints(point(kid(n, "start")), point(kid(n, "mid")), point(kid(n, "end")))) reach = Math.max(reach, 2 * Math.hypot(px, py));
-          }
-          if (n[0] === "width") reach += Math.abs(num(n[1]));
-          for (const c of n) if (Array.isArray(c)) visit(c);
-        };
-        visit(kid(pad, "primitives") ?? []);
-        add({ path: [{ x, y }], width: reach * 2, inner: null });
       }
     }
   }

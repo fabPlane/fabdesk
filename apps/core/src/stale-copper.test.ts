@@ -212,7 +212,7 @@ describe("via copper contacts across its spanned layers", () => {
       const result = analyzeStaleCopper({ beforePads: [before], afterPads: [after],
         allPadsBefore: [before, ...otherPads], allPadsAfter: [after, ...otherPads],
         routes: [stem, via, route("continuation", [5, 0], [10, 0]), route("live-right", [10, 0], [15, 0]), unsplit], zones: [] });
-      expect(result.staleIds).toEqual(["continuation", "old-fanout", "via"]);
+      expect(result.staleIds).toEqual(kind === "arc" ? ["old-fanout"] : ["continuation", "old-fanout", "via"]);
     }
   });
   for (const interior of ["pad", "unsplit branch"] as const) {
@@ -241,7 +241,8 @@ describe("via copper contacts across its spanned layers", () => {
     });
     test(`${kind} hole protects the via only until its continuation reaches solid copper`, () => {
       const outline = square(5 * mm, 0, 2 * mm).outline;
-      expect(run([], { outline, holes: [square(5 * mm, 0, .6 * mm).outline] }, zone)).toEqual(["old-fanout", "via"]);
+      // Unknown pad circles include the hole; zone outlines still preserve it.
+      expect(run([], { outline, holes: [square(5 * mm, 0, .6 * mm).outline] }, zone)).toEqual(zone ? ["old-fanout", "via"] : ["old-fanout"]);
       expect(run([], { outline, holes: [square(5 * mm, 0, .3 * mm).outline] }, zone)).toEqual(["old-fanout"]);
     });
     test(`${kind} on an unspanned layer does not stop traversal`, () => {
@@ -291,4 +292,13 @@ test("native unknown pad polygon cannot prove a replacement for a seeded cap bri
   const result = analyzeStaleCopper({beforePads:[moving],afterPads:[after],allPadsBefore:[moving,upper,lower,unknown],
     allPadsAfter:[after,upper,lower,unknown],routes:[bridge],zones:[]});
   expect(result.staleIds).toEqual([]);
+});
+
+test("uncertified native pad box uses a circular retention envelope", () => {
+  const moving = pad("moving","1","A",0);
+  const route = track("tail","A",0,20);
+  // The native polygon is an uncertain approximation. The circular box envelope
+  // reaches this route even though its polygon corners do not.
+  const other: CopperPad = { ...pad("other","1","A",10), shapes:[{layer:F,polygon:square(10,.75,.5)}] };
+  expect(analyzeStaleCopper({beforePads:[moving],afterPads:[{...moving,shapes:[]}],allPadsBefore:[moving,other],allPadsAfter:[other],routes:[route],zones:[]}).staleIds).toEqual([]);
 });

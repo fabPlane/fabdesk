@@ -34,8 +34,9 @@ export function buildCopperGraph<L>(allItems: CopperNode<L>[], tolerance = 0): C
   const ports: Port<L>[] = [], contacts: Array<[number, number]> = [], ends = new Map<string, number[]>();
   for (const n of items) {
     const part = n.copper[0];
-    const caps = (n.kind === "track" || n.kind === "arc") && part && "path" in part.shape
-      ? [part.shape.path[0], part.shape.path.at(-1)].flatMap(p => p ? [[{ shape: { path: [p], width: (part.shape as {width: number}).width }, layers: part.layers }]] : [])
+    const geometry = part?.shape.centerline ?? part?.shape;
+    const caps = (n.kind === "track" || n.kind === "arc") && part && geometry && "path" in geometry
+      ? [geometry.path[0], geometry.path.at(-1)].flatMap(p => p ? [[{ shape: { path: [p], width: (geometry as {width: number}).width }, layers: part.layers }]] : [])
       : [n.copper];
     ends.set(n.id, caps.map(copper => { ports.push({ owner: n.id, copper }); return ports.length - 1; }));
   }
@@ -80,10 +81,11 @@ export function buildCopperGraph<L>(allItems: CopperNode<L>[], tolerance = 0): C
   const coverage = new Map<string, Set<number>[]>();
   for (const n of items) {
     const part = n.copper[0];
-    if (!part || !("path" in part.shape) || n.kind === "via" || terminal(n)) continue;
+    const geometry = part?.shape.centerline ?? part?.shape;
+    if (!part || !geometry || !("path" in geometry) || n.kind === "via" || terminal(n)) continue;
     const endPorts = ends.get(n.id)!;
     if (!endPorts.every(i => initialRoot(i) === initialRoot(endPorts[0]!))) continue;
-    const { path, width } = part.shape;
+    const { path, width } = geometry;
     const samples = path.flatMap((p, i) => {
       if (!i) return [p];
       const a = path[i - 1]!;

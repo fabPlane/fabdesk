@@ -265,6 +265,7 @@ async function copperPads(board: Board): Promise<CopperPad[]> {
         parent,
         reference,
         number: pad.number,
+        anchor: pad.position,
         net: pad.net ?? "",
         shapes: layers
           .filter((layer) => hasCopper(pad, layer))
@@ -397,10 +398,13 @@ function transformedCopperPads(
     };
     return {
       ...pad,
+      ...(pad.anchor ? { anchor: point(pad.anchor) } : {}),
       shapes: pad.shapes.map(({ layer, polygon }) => ({
         layer: transform.flip ? flipLayer(layer) : layer,
         polygon: {
           outline: polygon.outline.map(point),
+          // Coordinate rounding after a transform can move a chord inward.
+          padding: (polygon.padding ?? 0) + 1,
           ...(polygon.holes ? { holes: polygon.holes.map((hole) => hole.map(point)) } : {}),
         },
       })),
