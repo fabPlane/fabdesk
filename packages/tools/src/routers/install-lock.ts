@@ -20,7 +20,7 @@ export type InstallLockOptions = {
   signal?: AbortSignal;
   /** A lock older than this is taken over even when its pid looks alive (default 2 h; a cold KRT build is minutes). */
   staleMs?: number;
-  /** How long to wait for a live holder before giving up (default 45 min). */
+  /** How long to wait for a live holder before giving up (default 100 min: a cold arm64 KRT build can take 45). */
   waitMs?: number;
   /** Poll interval while waiting (default 500 ms). */
   pollMs?: number;
@@ -33,6 +33,9 @@ export type InstallLockOptions = {
 };
 
 const UNREADABLE_GRACE_MS = 30_000;
+
+/** Tokens of the locks this process holds now: a lock with this pid and another token is a leftover (a reused pid). */
+const heldTokens = new Set<string>();
 
 export function pidAlive(pid: number): boolean {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -60,7 +63,10 @@ async function tryCreate(path: string, holder: InstallLockHolder): Promise<boole
   try {
     handle = await open(path, "wx", 0o600);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EEXIST") return false;
+    // Windows: a lock file being deleted, or opened by another process, reports these instead; poll again
+    if (process.platform === "win32" && (code === "EPERM" || code === "EACCES" || code === "EBUSY")) return false;
     throw error;
   }
   try {
@@ -82,7 +88,10 @@ async function isStale(path: string, holder: InstallLockHolder | null, opts: Ins
     }
   }
   if (now - holder.at > (opts.staleMs ?? 2 * 60 * 60_000)) return true;
-  return holder.host === hostname() && !(opts.isAlive ?? pidAlive)(holder.pid);
+  if (holder.host !== hostname()) return false;
+  // our own pid on a lock we do not hold: left by an earlier process that had the same pid (a restarted container)
+  if (holder.pid === process.pid) return !heldTokens.has(holder.token);
+  return !(opts.isAlive ?? pidAlive)(holder.pid);
 }
 
 /** What identifies the lock judged stale: its holder's token, or for an unreadable file its inode, mtime and size. */
@@ -153,12 +162,15 @@ export async function withInstallLock<T>(path: string, run: () => Promise<T>, op
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const now = opts.now ?? Date.now;
   const mine: InstallLockHolder = { pid: process.pid, host: hostname(), at: now(), token: randomUUID() };
-  const deadline = now() + (opts.waitMs ?? 45 * 60_000);
+  const deadline = now() + (opts.waitMs ?? 100 * 60_000);
   let announced = false;
   for (;;) {
     opts.signal?.throwIfAborted();
     mine.at = now();
+    // known as held before the file exists, so a waiter in this process never mistakes it for a leftover
+    heldTokens.add(mine.token);
     if (await tryCreate(path, mine)) break;
+    heldTokens.delete(mine.token);
     const holder = await readHolder(path);
     if (await isStale(path, holder, opts)) {
       const judged = await judgedIdentity(path, holder);
@@ -180,6 +192,7 @@ export async function withInstallLock<T>(path: string, run: () => Promise<T>, op
   try {
     return await run();
   } finally {
+    heldTokens.delete(mine.token);
     const current = await readHolder(path);
     if (current?.token === mine.token) await rm(path, { force: true }).catch(() => undefined);
   }

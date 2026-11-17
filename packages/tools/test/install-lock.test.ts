@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RouterCatalogEntry } from "../src/routers/catalog";
@@ -109,6 +109,22 @@ describe("withInstallLock", () => {
     expect(await withInstallLock(path, async () => "ran", fast)).toBe("ran");
   });
 
+  test("a lock with this process's pid but a token it does not hold is a leftover (a reused pid)", async () => {
+    const path = await lockPath();
+    await foreignLock(path, { pid: process.pid });
+    expect(await withInstallLock(path, async () => "ran", { pollMs: 10, waitMs: 200 })).toBe("ran");
+    // while this process holds it, a second caller here still waits (its own live lock is not a leftover)
+    let second = false;
+    await withInstallLock(path, async () => {
+      const waiting = withInstallLock(path, async () => (second = true), fast);
+      await sleep(60);
+      expect(second).toBe(false);
+      void waiting;
+    }, fast);
+    await sleep(60);
+    expect(second).toBe(true);
+  });
+
   test("a live holder on another host is waited for, bounded, and the wait is abortable", async () => {
     const path = await lockPath();
     await foreignLock(path, { pid: 1, host: "elsewhere" });
@@ -139,6 +155,34 @@ describe("registry install across processes", () => {
       },
     ];
   }
+
+  test.skipIf(process.platform === "win32" || process.getuid?.() === 0)("a state.json that cannot be read is never written over", async () => {
+    const home = await mkdtemp(join(tmpdir(), "fabdesk-lockreg-"));
+    const registry = createRouterRegistry({ home, catalog: catalog("http://127.0.0.1:1/x") }) as unknown as { persisted: { routers: Record<string, unknown> }; writeState(id: string): Promise<void> };
+    const file = join(home, "routers", "state.json");
+    await mkdir(join(home, "routers"), { recursive: true });
+    // another process recorded krt after this registry started; then the file becomes unreadable for a moment
+    await writeFile(file, JSON.stringify({ routers: { krt: { state: "installed", version: "0.23.8", path: "/krt" } } }));
+    await chmod(file, 0o000);
+    registry.persisted.routers["tracemaker"] = { state: "installed", version: "0.9.0", path: "/tm" };
+    await registry.writeState("tracemaker");
+    await chmod(file, 0o600);
+    expect(Object.keys(JSON.parse(await readFile(file, "utf8")).routers)).toEqual(["krt"]);
+  });
+
+  test("uninstall waits for another process's install of the same engine", async () => {
+    const home = await mkdtemp(join(tmpdir(), "fabdesk-lockreg-"));
+    const registry = createRouterRegistry({ home, catalog: catalog("http://127.0.0.1:1/x"), installLock: fast });
+    let installing = true;
+    const other = withInstallLock(join(home, "routers", ".lock-tracemaker"), async () => {
+      await sleep(150);
+      installing = false;
+    }, fast);
+    await sleep(20);
+    await registry.uninstall("tracemaker");
+    expect(installing).toBe(false);
+    await other;
+  });
 
   test("two registries on one data dir (two processes) download once; the second reuses the first's install", async () => {
     let downloads = 0;
@@ -188,7 +232,7 @@ describe("bootstrapUv across processes", () => {
     const root = await mkdtemp(join(tmpdir(), "fabdesk-uvlock-"));
     const lock = `${uvHome(root, "linux")}.lock`;
     await mkdir(join(root, "uv"), { recursive: true });
-    await foreignLock(lock, { pid: process.pid });
+    await foreignLock(lock, { pid: process.ppid }); // a live process other than this one
     const exe = bootstrappedUvPath(root, "linux");
     setTimeout(async () => {
       await mkdir(uvHome(root, "linux"), { recursive: true });

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { chmod, mkdir, rename, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type {
@@ -365,9 +365,16 @@ class FileRouterRegistry implements RouterRegistry {
       throw new Error(`${entry.displayName} is bundled and cannot be uninstalled.`);
     }
     await this.cancel(id);
-    await rm(this.installDir(id), { recursive: true, force: true });
-    this.persisted.routers[id] = { state: "not_installed" };
-    await this.writeState(id);
+    // under the engine's install lock: never delete a tree another process is installing into
+    await withInstallLock(
+      join(this.root, `.lock-${id}`),
+      async () => {
+        await rm(this.installDir(id), { recursive: true, force: true });
+        this.persisted.routers[id] = { state: "not_installed" };
+        await this.writeState(id);
+      },
+      { ...this.deps.installLock },
+    );
     return this.snapshot(entry);
   }
 
@@ -825,40 +832,72 @@ class FileRouterRegistry implements RouterRegistry {
   }
 
   private readState(): PersistedState {
+    return this.readStateFile() ?? { routers: {} };
+  }
+
+  /** state.json as it is on disk: empty when there is none, null when it could not be read (keep what is known). */
+  private readStateFile(): PersistedState | null {
     try {
       const raw = JSON.parse(readFileSync(join(this.root, STATE_FILE), "utf8")) as PersistedState;
-      return raw?.routers ? raw : { routers: {} };
+      return raw?.routers ? raw : null;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        /* corrupt state: start empty */
-      }
-      return { routers: {} };
+      return (error as NodeJS.ErrnoException).code === "ENOENT" ? { routers: {} } : null;
     }
   }
 
   /** Take this engine's entry from state.json: another process may have installed or removed it. */
   private refreshState(id: RouterCatalogId): void {
-    const saved = this.readState().routers[id];
+    const disk = this.readStateFile();
+    if (!disk) return; // unreadable right now: keep what this process knows
+    const saved = disk.routers[id];
     if (saved) this.persisted.routers[id] = saved;
     else delete this.persisted.routers[id];
   }
 
   /**
    * Record one engine's entry. Other engines' entries come from the file, so a write never reverts what another
-   * process recorded for them. Synchronous read-modify-write so two writes in this process cannot interleave; the
-   * file is replaced by rename so a reader never sees half of it.
+   * process recorded for them; the read-modify-replace runs under a short cross-process lock (`.lock-state`), and the
+   * file is replaced by rename so a reader never sees half of it. A file that exists but cannot be read is never
+   * written over (that would drop entries this process has not seen): the read is retried briefly, then the change
+   * stays in memory and goes out with the next write.
    */
   private async writeState(id: RouterCatalogId): Promise<void> {
-    mkdirSync(this.root, { recursive: true, mode: 0o700 });
-    const mine = this.persisted.routers[id];
-    const merged: PersistedState = { routers: { ...this.readState().routers } };
-    if (mine) merged.routers[id] = mine;
-    else delete merged.routers[id];
-    const file = join(this.root, STATE_FILE);
-    const tmp = `${file}.${process.pid}.tmp`;
-    writeFileSync(tmp, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });
-    renameSync(tmp, file);
-    this.persisted = { routers: { ...this.persisted.routers, ...merged.routers } };
+    await mkdir(this.root, { recursive: true, mode: 0o700 });
+    await withInstallLock(
+      join(this.root, ".lock-state"),
+      async () => {
+        const mine = this.persisted.routers[id];
+        let base = this.readStateFile();
+        for (let attempt = 0; !base && attempt < 10; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          base = this.readStateFile();
+        }
+        if (!base) return; // unreadable: keep this change in memory rather than overwrite what others recorded
+        const merged: PersistedState = { routers: { ...base.routers } };
+        if (mine) merged.routers[id] = mine;
+        else delete merged.routers[id];
+        const file = join(this.root, STATE_FILE);
+        const tmp = `${file}.${process.pid}.tmp`;
+        writeFileSync(tmp, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });
+        await renameRetrying(tmp, file);
+        this.persisted = { routers: { ...this.persisted.routers, ...merged.routers } };
+      },
+      { waitMs: 60_000, pollMs: 10 },
+    );
+  }
+}
+
+/** rename, retried briefly on Windows, where another process reading the target makes it fail with EPERM/EACCES/EBUSY. */
+async function renameRetrying(from: string, to: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      renameSync(from, to);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform !== "win32" || attempt >= 20 || !(code === "EPERM" || code === "EACCES" || code === "EBUSY")) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
   }
 }
 
