@@ -25,6 +25,6 @@ export { prepareEditableBoard } from "./board-contributions";
 
 export { capabilityScore } from "./capability-ranking";
 
-export { visiblePublishedFile } from "./publication-visibility";
+export { visiblePublishedFile, publicationInProgress } from "./publication-visibility";
 
 export { snapshotProjectDependencies } from "./project-dependencies";
