@@ -1,11 +1,13 @@
 import { Icon } from "../components/Icon";
 import type { Run } from "@fabdesk/protocol";
 import { useEffect, useState, type ReactNode } from "react";
-import { useCore, type LiveRun } from "@fabdesk/client-core";
+import { useCore, useMessages, summarizeRunWork, type LiveRun } from "@fabdesk/client-core";
 
 /** Only this small status line ticks; the message tree and header do not. */
 export function RunActivity({ run, waiting = false }: { run: LiveRun; waiting?: boolean }) {
   const { client } = useCore();
+  const messages = useMessages(run.threadId);
+  const work = summarizeRunWork(messages.data ?? [], run.startedAt);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState(false);
   useEffect(() => { setError(false); setStopping(false); }, [run.runId]);
@@ -26,7 +28,8 @@ export function RunActivity({ run, waiting = false }: { run: LiveRun; waiting?: 
   const elapsed = seconds < 60 ? seconds + "s" : Math.floor(seconds / 60) + "m " + (seconds % 60) + "s";
   const usage = run.usage ? (run.usage.inputTokens ?? 0) + " input tokens / " + (run.usage.outputTokens ?? 0) + " output tokens" : undefined;
   return <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-border pb-3 text-xs text-muted" data-testid="run-activity" title={usage}>
-    <span>{waiting ? "Waiting" : "Working"} for {elapsed}</span>
+    <span>{waiting ? "Waiting for your response" : work?.stage ?? "Working"} · {elapsed}</span>
+    {work && <span className="basis-full" role="status">{work.completed}{work.attempts > 1 ? ` · ${work.attempts} consecutive attempts (history in details)` : ""}{work.state === "blocked" ? ` · ${work.next}` : ""}</span>}
     {run.usage?.costUsd !== undefined && <span>· {"$" + run.usage.costUsd.toFixed(3)}</span>}
     <button type="button" className="rounded px-1 hover:text-fg focus-visible:text-fg" disabled={stopping} onClick={() => void stop()} aria-label="Stop current run; queued messages stay scheduled" title="Stop current run. Queued messages stay scheduled.">{stopping ? "Stopping…" : "Stop"}</button>
     {error && <span role="alert" className="text-danger">Could not stop. Try again.</span>}

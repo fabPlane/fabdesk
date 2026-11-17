@@ -1,3 +1,4 @@
+import { portableHandoff } from "../portable-handoff";
 import { canonicalReportStatus } from "../canonical-report-status";
 /** Export toolset: manufacturing outputs via kicad-cli. */
 import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
@@ -46,7 +47,7 @@ export const export_gerbers = defineTool({
       preset: args.preset,
       signal: ctx.signal,
     });
-    await writeJson(join(outDir, "gerbers.inventory.json"), { contract: "fabplane.cam-inventory.v1", pcbSha256: createHash("sha256").update(await readFile(board)).digest("hex"), preset: args.preset, files: files.map(file => basename(file)) });
+    await writeJson(join(outDir, "gerbers.inventory.json"), { contract: "fabplane.cam-inventory.v1", pcbSha256: createHash("sha256").update(await readFile(board)).digest("hex"), preset: args.preset, options: { layers: args.preset === "all" ? "all enabled" : "*.Cu,F.Mask,B.Mask,F.Paste,B.Paste,F.Silkscreen,B.Silkscreen,Edge.Cuts" }, files: files.map(file => basename(file)) });
     ctx.progress(1, "done");
     return ok(
       `Exported ${files.length} gerber file(s) to exports/gerbers/:\n${files.map((f) => `- ${rel(project, f)}`).join("\n")}`,
@@ -136,7 +137,7 @@ export const export_drill = defineTool({
       outDir,
       signal: ctx.signal,
     });
-    await writeJson(join(outDir, "drills.inventory.json"), { contract: "fabplane.cam-inventory.v1", pcbSha256: createHash("sha256").update(await readFile(board)).digest("hex"), files: files.map(file => basename(file)) });
+    await writeJson(join(outDir, "drills.inventory.json"), { contract: "fabplane.cam-inventory.v1", pcbSha256: createHash("sha256").update(await readFile(board)).digest("hex"), options: { format: "excellon", separatePthNpth: true, mapFormat: "svg", report: true }, files: files.map(file => basename(file)) });
     ctx.progress(1, "done");
     return ok(
       `Exported ${files.length} drill file(s):\n${files.map((f) => `- ${rel(project, f)}`).join("\n")}`,
@@ -288,6 +289,7 @@ export const export_zip = defineTool({
     "Bundle the files currently present in exports/gerbers plus positions.csv and bom.csv into exports/fabrication.zip or a named filename under exports/. Missing optional entries are reported.",
   inputSchema: {
     expectedSourceSha256: expectedPcbSource,
+    package: z.enum(["fabrication", "handoff"]).default("fabrication").describe("handoff includes editable native sources, project dependencies, views, reports and a source-bound inventory; requires current exports"),
     gerberFiles: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/).max(240)).min(1).max(512).optional()
       .describe("Exact basenames in exports/gerbers/ to package from a completed Gerber/drill export. Omitting this retains saved-file packaging."),
     filename: z
@@ -303,7 +305,7 @@ export const export_zip = defineTool({
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async ({ filename, expectedSourceSha256, gerberFiles }, sourceCtx) => withPcbOutput(sourceCtx, expectedSourceSha256, async (ctx) => {
+  handler: async ({ filename, expectedSourceSha256, gerberFiles, package: kind }, sourceCtx) => kind === "handoff" ? portableHandoff(sourceCtx, filename === "fabrication.zip" ? "handoff.zip" : filename, zipFiles) : withPcbOutput(sourceCtx, expectedSourceSha256, async (ctx) => {
     const project = ctx.requireProject();
     if (!sourceCtx.board) {
       const reports = await canonicalReportStatus(sourceCtx);

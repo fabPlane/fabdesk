@@ -266,3 +266,4 @@ export { DrawingViewportMemory, type DrawingViewport } from "./drawing-viewport"
 export { acknowledgeComposerDraft } from "./composer-acknowledgement";
 export { partScopeKey, usePartSelection, pcbSelectionParts, schematicSelectionParts, hitSelectionPart, type PartScope, type SelectablePart, type PartBox } from "./part-selection";
 export { inspectSelectionIndex, type SelectionIndex } from "./part-selection-source";
+export { summarizeRunWork } from "./run-work-summary";

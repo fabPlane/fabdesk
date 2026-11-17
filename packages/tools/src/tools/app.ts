@@ -159,6 +159,7 @@ export const app_screenshot = defineTool({
       .enum(["png", "jpeg"])
       .optional()
       .describe("Image format; default jpeg for full window, png for regions"),
+    presentation: z.enum(["inspection", "deliverable"]).default("inspection").describe("Use deliverable only when deliberately presenting a screenshot requested by the user"),
     annotate: z.boolean().optional().describe("Reserved: overlay element refs (currently a no-op)"),
   },
   annotations: {
@@ -167,7 +168,7 @@ export const app_screenshot = defineTool({
     openWorldHint: false,
     idempotentHint: false,
   },
-  handler: async ({ windowId, region, scale, format }, ctx) => {
+  handler: async ({ windowId, region, scale, format, presentation }, ctx) => {
     const fmt = format ?? (region ? "png" : "jpeg");
     const body = {
       ...(windowId !== undefined ? { windowId } : {}),
@@ -193,7 +194,7 @@ export const app_screenshot = defineTool({
         windowId: shot.windowId,
         scale: body.scale,
       },
-      { images: [{ path, mime: shot.mime }] },
+      { images: [{ path, mime: shot.mime }], imagePresentation: presentation },
     );
   },
 });

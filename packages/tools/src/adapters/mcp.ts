@@ -381,7 +381,8 @@ export async function toCallToolResult(output: ToolOutput): Promise<CallToolResu
       : undefined;
   return {
     content,
-    ...(structured ? { structuredContent: structured } : {}),
+    ...(output.imagePresentation ? { _meta: { "fabplane/imagePresentation": output.imagePresentation } } : {}),
+    ...(structured ? { structuredContent: { ...structured, ...(output.imagePresentation ? { _imagePresentation: output.imagePresentation } : {}) } } : {}),
     ...(output.isError ? { isError: true } : {}),
   };
 }
