@@ -34,6 +34,8 @@ import {
   type EditCandidateBuilder,
   type EditPlan,
   importExpert,
+  informational,
+  informationalLines,
   openReviewProject,
   reviewGate,
   reviewStatus,
@@ -172,7 +174,7 @@ export const board_review = defineTool({
         return runDurable(ctx, "board_review", (c) => run(c, project, input));
       case "status": {
         const s = await reviewStatus(project);
-        return ok(`${project.name}: ${s.state}${s.run ? ` (${s.run})` : ""}${s.findings ? `\n${s.findings} findings, ${s.open} open (${s.mustFix} must-fix), ${s.errors} check errors` : ""}`, s);
+        return ok([`${project.name}: ${s.state}${s.run ? ` (${s.run})` : ""}${s.findings ? `\n${s.findings} findings, ${s.open} open (${s.mustFix} must-fix), ${s.errors} check errors` : ""}`, ...informationalLines(s.informational)].join("\n"), s);
       }
       case "gate": {
         const g = await reviewGate(project);
@@ -306,10 +308,12 @@ async function run(ctx: ToolContext, project: ReviewProject, input: { checks?: s
       await recordGate(project, g);
     }
     const mustFix = ev.open.filter((r) => r.severity === "must-fix").length;
+    const info = informational(ev);
     const lines = [
       `Review ${project.name}: ${res.review.findings.length} findings, ${ev.open.length} open (${mustFix} must-fix), ${ev.errors.length} check errors; design ${res.review.hash.slice(0, 12)}; ${res.review.seconds.toFixed(0)} s${partial ? " (partial run: not the project's review, gate unchanged)" : ""}`,
       ...res.review.checks.map((c) => `  ${c.name.padEnd(13)} ${c.layer.padEnd(3)} ${c.status.padEnd(7)} ${c.detail.slice(0, 90)}`),
-      ...(g ? ["", ...g.lines] : []),
+      // the gate itemizes the informational findings; a partial run (no gate) lists them here
+      ...(g ? ["", ...g.lines] : info.length ? ["", ...informationalLines(info)] : []),
       "",
       `Report: ${join(res.dir, "review.md")}`,
     ];
@@ -321,6 +325,7 @@ async function run(ctx: ToolContext, project: ReviewProject, input: { checks?: s
       findings: res.review.findings.length,
       open: ev.open.map((r) => ({ id: r.id, severity: r.severity, claim: r.claim, proposal: r.proposal ? { by: r.proposal.by, action: r.proposal.action, effect: r.proposal.effect } : null })),
       errors: ev.errors.map((c) => ({ name: c.name, detail: c.detail })),
+      informational: info,
       gate: g ?? null,
     });
   } finally {

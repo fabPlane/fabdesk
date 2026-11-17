@@ -17,6 +17,8 @@ import {
   findingId,
   impedance,
   importExpert,
+  informational,
+  informationalLines,
   judge,
   loadNetlist,
   modelOf,
@@ -169,6 +171,24 @@ describe("closed-form figures", () => {
   });
 });
 
+describe("informational findings in summaries", () => {
+  const row = (i: number, severity = "note") => ({ id: `L1:DRC:R${i}:-`, check: "drc", rule: "DRC", severity, claim: `silk ${i}`, ref: i % 2 ? `R${i}` : "", pad: i % 4 === 1 ? "2" : "", net: i % 3 ? "" : "GND" });
+  test("each note with rule, message and location; capped text, full list", () => {
+    const items = informational({ rows: [row(1), row(2, "question"), ...Array.from({ length: 23 }, (_, i) => row(i + 3))] as never });
+    expect(items).toHaveLength(24);
+    expect(items[0]).toEqual({ id: "L1:DRC:R1:-", check: "drc", rule: "DRC", claim: "silk 1", location: "R1 pad 2" });
+    expect(items[1]!.location).toBe("R3, net GND");
+    expect(items[2]!.location).toBeNull();
+    const lines = informationalLines(items);
+    expect(lines[0]).toBe("Informational, not blocking (24):");
+    expect(lines[1]).toBe("  - DRC: silk 1 (R1 pad 2) [L1:DRC:R1:-]");
+    expect(lines).toHaveLength(1 + 20 + 1);
+    expect(lines.at(-1)).toBe("  ... 4 more (full list in the structured result and review.md)");
+    expect(informationalLines([])).toEqual([]);
+    expect(informationalLines(items.slice(0, 2), 20, "  ")[0]).toBe("  Informational, not blocking (2):");
+  });
+});
+
 describe("a review run, the gate and dispositions", () => {
   test("every check runs; findings carry proposals; the gate leads with them", async () => {
     const dir = await project();
@@ -189,6 +209,13 @@ describe("a review run, the gate and dispositions", () => {
     expect(g.exit).toBe(2);
     expect(g.lines[0]).toMatch(/^REVIEW GATE: \d+ open/);
     expect(g.lines.some((l) => l.includes("NEEDS OWNER") || l.startsWith("- auto") || l.startsWith("- task"))).toBe(true);
+    // informational findings are listed one by one, not only counted
+    const notes = r.review.findings.filter((f) => f.severity === "note");
+    expect(notes.length).toBeGreaterThan(0);
+    expect(g.informational!.map((i) => i.id)).toEqual(notes.map((f) => f.id));
+    expect(g.lines).toContain(`Informational, not blocking (${notes.length}):`);
+    expect(g.lines.some((l) => l.includes(`[${notes[0]!.id}]`) && l.includes(notes[0]!.claim))).toBe(true);
+    expect((await reviewStatus(project_)).informational).toHaveLength(notes.length);
     // the report is a page: verdict, checks table, to-settle list with the proposal under each rule once
     const md = await readFile(join(r.dir, "review.md"), "utf8");
     expect(md).toContain("# Review");
