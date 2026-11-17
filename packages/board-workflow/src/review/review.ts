@@ -22,6 +22,7 @@ import { basename, join, resolve } from "node:path";
 import { REGISTRY } from "./checks";
 import { ReviewCtx, reviewHash, reviewHome, type ReviewEnv, type ReviewProject } from "./context";
 import { propose, coveringDecision } from "./proposals";
+import { ownerConfirmed, preferencesConfirmed } from "./owner";
 import { loadCurrent, readDispositions, readIntent, reviewedPcb, runsDir, setLatest, writeDispositions } from "./store";
 import {
   STATES,
@@ -35,6 +36,7 @@ import {
   type EditPlan,
   type FindingRecord,
   type Intent,
+  type OwnerApproval,
   type ReviewRecord,
 } from "./types";
 import { readJsonOrNull } from "../files";
@@ -46,9 +48,10 @@ export const GATE_PASS = 0, GATE_STALE = 1, GATE_OPEN = 2, GATE_ERROR = 3;
 
 /** The owner's intent decides how far the agent's judgement goes, not the tool. Default: accepting a must-fix is the owner's. */
 export function agentMayAcceptMustFix(intent: Intent | null): boolean {
-  const pref = intent?.preferences ?? {};
-  const intentGiven = !!intent && Object.keys(intent).length > 0;
-  const ask = (pref.ask_owner_for ?? (intentGiven ? [] : ["accepting a must-fix"])).join(" ").toLowerCase();
+  // preferences count only as the owner confirmed them; otherwise accepting a must-fix stays the owner's
+  if (!preferencesConfirmed(intent)) return false;
+  const pref = intent!.preferences ?? {};
+  const ask = (pref.ask_owner_for ?? []).join(" ").toLowerCase();
   const allow = (pref.workflow_decides ?? []).join(" ").toLowerCase();
   return allow.includes("must-fix") || !ask.includes("must-fix");
 }
@@ -58,26 +61,29 @@ export function judge(finding: { severity: string }, disp: Disposition | null | 
   if (finding.severity === "note") return [false, "note"];
   if (!disp) return [true, "no disposition"];
   const st = disp.state;
+  // "by owner" counts only with the approval card that confirmed it; otherwise it is the agent's claim
+  const owner = disp.by === "owner" && ownerConfirmed(disp.approval);
+  const unconfirmed = disp.by === "owner" && !owner ? " (owner not confirmed at the desktop)" : "";
   if (!disp.reason.trim()) return [true, "disposition has no reason"];
   if (st === "defer" && finding.severity === "must-fix") return [true, "must-fix deferred, not resolved"];
   if (st === "fix") return [true, "marked fix but still present"];
   if (st === "false-positive" && !disp.third_source) return [true, "false-positive needs a third source"];
-  if (finding.severity === "must-fix" && st === "accept" && disp.by !== "owner") {
-    if (!agentMayAcceptMustFix(intent)) return [true, "must-fix accepted by agent: the owner's intent asks to be asked"];
-    if (!(disp.third_source || disp.evidence)) return [true, "must-fix accepted by agent needs evidence (third_source)"];
+  if (finding.severity === "must-fix" && st === "accept" && !owner) {
+    if (!agentMayAcceptMustFix(intent)) return [true, `must-fix accepted by agent: the owner's intent asks to be asked${unconfirmed}`];
+    if (!(disp.third_source || disp.evidence)) return [true, `must-fix accepted by agent needs evidence (third_source)${unconfirmed}`];
   }
   // The agent cannot waive a question on its own say-so: deferring one is the owner's call, and accepting one needs a
   // source beyond the design and the check, unless the owner's intent hands questions to the workflow.
-  if (finding.severity === "question" && disp.by !== "owner") {
-    if (st === "defer") return [true, "question deferred by agent: the owner decides"];
-    if (st === "accept" && !(disp.third_source || disp.evidence) && !agentMayAcceptQuestion(intent)) return [true, "question accepted by agent needs evidence (third_source) or the owner"];
+  if (finding.severity === "question" && !owner) {
+    if (st === "defer") return [true, `question deferred by agent: the owner decides${unconfirmed}`];
+    if (st === "accept" && !(disp.third_source || disp.evidence) && !agentMayAcceptQuestion(intent)) return [true, `question accepted by agent needs evidence (third_source) or the owner${unconfirmed}`];
   }
   return [false, st];
 }
 
 /** The owner's intent may hand questions to the workflow (`workflow_decides` naming "question"). */
 export function agentMayAcceptQuestion(intent: Intent | null): boolean {
-  return (intent?.preferences?.workflow_decides ?? []).join(" ").toLowerCase().includes("question");
+  return preferencesConfirmed(intent) && (intent!.preferences?.workflow_decides ?? []).join(" ").toLowerCase().includes("question");
 }
 
 export interface Row extends FindingRecord {
@@ -99,7 +105,7 @@ export function evaluate(review: ReviewRecord, disps: Dispositions, intent: Inte
     let d: Disposition | null = disps[f.id] ?? null;
     const dec = !d ? coveringDecision(f, intent ?? {}) : null;
     if (dec) // the owner already decided this (intent file): settled, cited
-      d = { state: "accept", by: "owner", reason: `intent decision ${dec.id}: ${dec.decision.slice(0, 160)}`, third_source: dec.source ?? "", hash: review.hash };
+      d = { state: "accept", by: "owner", ...(dec.approval ? { approval: dec.approval } : {}), reason: `intent decision ${dec.id}: ${dec.decision.slice(0, 160)}`, third_source: dec.source ?? "", hash: review.hash };
     const [isOpen, why] = judge(f, d, intent);
     rows.push({ ...f, open: isOpen, why, disposition: d, carried: !!(d?.hash && d.hash !== review.hash) });
   }
@@ -191,7 +197,7 @@ export function reportMd(review: ReviewRecord, ev: Evaluation): string {
     L.push("## Settled", "");
     for (const r of settled) {
       const d = r.disposition!;
-      L.push(`- \`${r.id}\` ${d.state} by ${d.by}${r.carried ? " (carried)" : ""}: ${d.reason ?? ""}` + (d.third_source ? ` [third source: ${d.third_source}]` : ""));
+      L.push(`- \`${r.id}\` ${d.state} by ${settledBy(d)}${r.carried ? " (carried)" : ""}: ${d.reason ?? ""}` + (d.third_source ? ` [third source: ${d.third_source}]` : ""));
     }
     L.push("");
   }
@@ -337,7 +343,7 @@ export async function reviewGate(project: ReviewProject): Promise<GateResult> {
     return { exit: GATE_STALE, state: cur.state === "no review" ? "none" : "stale", current: false, open: 0, mustFix: 0, errors: false, lines: [`REVIEW GATE: BLOCKED (${cur.state}). Run: board_review {"action": "run"}`] };
   const ev = evaluate(cur.review, await readDispositions(project.dir), await readIntent(project.dir));
   const notRun = notRunOf(cur.review);
-  const dispositions = ev.rows.filter(r => r.disposition).map(r => ({ id: r.id, state: r.disposition!.state, by: r.disposition!.by, reason: r.disposition!.reason }));
+  const dispositions = ev.rows.filter(r => r.disposition).map(r => ({ id: r.id, state: r.disposition!.state, by: settledBy(r.disposition!), reason: r.disposition!.reason }));
   const independentRows = ev.rows.filter(r => r.layer === "L8");
   const independentReview = cur.review.checks.some(c => c.name === "expert" && c.status === "ok") ? "completed" as const : independentRows.some(r => r.disposition?.state === "defer") ? "deferred" as const : "missing" as const;
   const evidence = { checks: cur.review.checks.map(c => ({ name: c.name, status: c.status })), dispositions, independentReview };
@@ -365,7 +371,13 @@ export interface DisposeInput {
   by: "agent" | "owner";
   reason: string;
   third_source?: string;
+  /** For by: "owner": the approval card that confirmed it (without one the disposition is judged as the agent's). */
+  approval?: OwnerApproval;
 }
+
+/** Who settled it, as the report shows it: an owner disposition without its approval card is marked unconfirmed. */
+export const settledBy = (d: Pick<Disposition, "by" | "approval">): string =>
+  d.by === "owner" ? (ownerConfirmed(d.approval) ? `owner (confirmed at the ${d.approval!.by})` : "owner (unconfirmed)") : d.by;
 
 export async function dispose(project: ReviewProject, input: DisposeInput): Promise<{ disposed: string[]; lines: string[] }> {
   const cur = await loadCurrent(project);
@@ -377,10 +389,10 @@ export async function dispose(project: ReviewProject, input: DisposeInput): Prom
   if (!input.reason.trim()) throw new Error("a recorded reason is required for a disposition");
   const d = await readDispositions(project.dir);
   for (const i of targets)
-    d[i] = { state: input.state as Disposition["state"], by: input.by, reason: input.reason, third_source: input.third_source ?? "", date: new Date().toISOString(), hash: cur.review.hash, claim: ids.get(i)!.claim.slice(0, 200) };
+    d[i] = { state: input.state as Disposition["state"], by: input.by, ...(input.by === "owner" && input.approval ? { approval: input.approval } : {}), reason: input.reason, third_source: input.third_source ?? "", date: new Date().toISOString(), hash: cur.review.hash, claim: ids.get(i)!.claim.slice(0, 200) };
   await writeDispositions(project.dir, d);
   if (cur.state === "current" && cur.run) await writeFile(join(cur.run, "review.md"), reportMd(cur.review, evaluate(cur.review, d, await readIntent(project.dir))));
-  return { disposed: targets, lines: targets.map((i) => `${i}: ${input.state} by ${input.by}`) };
+  return { disposed: targets, lines: targets.map((i) => `${i}: ${input.state} by ${settledBy(d[i]!)}`) };
 }
 
 export interface ExpertFile {
@@ -488,7 +500,7 @@ export async function fixProposals(project: ReviewProject, opts: FixOptions = {}
       continue;
     }
     if (ap.kind === "disposition") {
-      d[r.id] = { state: ap.state, by: ap.as === "owner" ? "owner" : "agent", reason: ap.reason, third_source: ap.third_source ?? "", date: new Date().toISOString(), hash: review.hash, claim: r.claim.slice(0, 200), via: "board_review fix" };
+      d[r.id] = { state: ap.state, by: ap.as === "owner" ? "owner" : "agent", ...(ap.as === "owner" && ap.approval ? { approval: ap.approval } : {}), reason: ap.reason, third_source: ap.third_source ?? "", date: new Date().toISOString(), hash: review.hash, claim: r.claim.slice(0, 200), via: "board_review fix" };
       res.settled.push(r.id);
     } else if (ap.kind === "edit" && opts.builder && !build) res.tasks.push({ id: r.id, steps: ["candidate not built: disk low (free space, then fix again)"] });
     else if (ap.kind === "edit") {

@@ -3,7 +3,7 @@ import { lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { ASSEMBLY_MANIFEST_PATH, BoardSourceSelection } from "@fabdesk/protocol";
 import { resolveNativeBoardBinding, withNativeBoardBinding, withNativeRoutingSnapshot } from "./assembly-board-binding";
-import { ToolError, makeContext, type ContextFactory, type CoreServices, type ProjectHandle, type ToolTelemetry, type ToolDef } from "@fabdesk/tools";
+import { ToolError, makeContext, type ContextFactory, type CoreServices, type OwnerApproval, type ProjectHandle, type ToolTelemetry, type ToolDef } from "@fabdesk/tools";
 import type { TokenSet } from "./auth";
 import type { ProjectStore } from "./projects";
 
@@ -26,6 +26,8 @@ export type ContextDeps = {
   /** Fallback when neither args nor token name a project (e.g. `mcp --project <dir>`). */
   defaultProject?: () => Promise<ProjectHandle | null>;
   telemetry?: { forToolCall(runId: string): ToolTelemetry | undefined };
+  /** The run's approval card for owner decisions; null when the token is not an active desktop-launched run. */
+  ownerApproval?: (token: string, req: { tool: string; summary: string; detail: unknown }) => Promise<OwnerApproval> | null;
 };
 
 export function createContextFactory(deps: ContextDeps): ContextFactory {
@@ -104,6 +106,15 @@ export function createContextFactory(deps: ContextDeps): ContextFactory {
       ...(runInScope ? { runInScope } : {}),
       ...(boardRoot ? { boardRoot } : {}),
       ...(runWithRoutingSnapshot ? { runWithRoutingSnapshot } : {}),
+      ...(info?.kind === "run" && req.token && deps.ownerApproval
+        ? {
+            requestOwnerApproval: async (ask: { summary: string; detail: unknown }) => {
+              const pending = deps.ownerApproval!(req.token!, { tool: req.def.name, ...ask });
+              if (!pending) throw new ToolError("This agent run has ended; the owner cannot be asked.", "precondition");
+              return pending;
+            },
+          }
+        : {}),
     });
   };
 }

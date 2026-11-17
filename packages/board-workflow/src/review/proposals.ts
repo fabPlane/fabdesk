@@ -13,6 +13,7 @@
  */
 import type { Comp } from "./netlist";
 import type { EditPlan, Finding, FindingRecord, Intent, Proposal } from "./types";
+import { ownerConfirmed } from "./owner";
 
 type Decision = NonNullable<Intent["decisions"]>[number];
 
@@ -37,8 +38,9 @@ export function fnmatch(name: string, pat: string): boolean {
   return new RegExp(`^${rx}$`, "s").test(name);
 }
 
+/** The owner decision that settles a finding. Only a decision confirmed at the desktop (`ownerConfirmed`) counts. */
 export function coveringDecision(f: Pick<Finding, "rule" | "ref"> & { id: string }, intent: Intent): Decision | null {
-  for (const d of intent.decisions ?? [])
+  for (const d of (intent.decisions ?? []).filter(d => ownerConfirmed(d.approval)))
     for (const c of d.covers ?? []) {
       if (c.id && fnmatch(f.id, c.id)) return d;
       if (c.rule && c.rule === f.rule && (!c.refs?.length || c.refs.includes(f.ref))) return d;
@@ -106,7 +108,7 @@ export function propose(f: FindingRecord | (Finding & { id: string }), board: Pr
       by: "workflow",
       action: `settle by owner decision '${d.id}' (${d.date ?? ""}): ${d.decision.slice(0, 140)}`,
       effect: d.effect ?? "already decided by the owner",
-      apply: { kind: "disposition", state: "accept", as: "owner", reason: `owner decision ${d.id} (${d.date ?? ""}): ${d.decision.slice(0, 200)}`, third_source: d.source ?? "" },
+      apply: { kind: "disposition", state: "accept", as: "owner", reason: `owner decision ${d.id} (${d.date ?? ""}): ${d.decision.slice(0, 200)}`, third_source: d.source ?? "", ...(d.approval ? { approval: d.approval } : {}) },
     };
   const r = f.rule, claim = f.claim;
   if (r === "DECAP" && board.hasRequirements) {

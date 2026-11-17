@@ -35,6 +35,11 @@ import { applyCards } from "../src/review/rulecards";
 import { checkDivider, checkDrc, customCheckArgv, customCommand, ipc2221ExternalAmps, signalWidthSupplies } from "../src/review/checks";
 import { writeJsonFile } from "../src/files";
 import { NETLIST, PCB, comp, fakeEnv, fp, node } from "./review-fixture";
+import { preferencesSha } from "../src/review/owner";
+
+/** What the desktop approval card returns when the owner approves. */
+const OK = { approved: true, requestId: "apr_test", by: "desktop", at: "2026-11-17T00:00:00Z" };
+const confirmedPrefs = (preferences: { ask_owner_for?: string[]; workflow_decides?: string[] }) => ({ preferences, preferences_approval: { ...OK, sha256: preferencesSha(preferences) } });
 
 const dirs: string[] = [];
 const tmp = async () => {
@@ -70,20 +75,30 @@ describe("finding ids and judgement", () => {
     // the agent's word alone does not waive a question: a third source, the owner, or the owner's delegation does
     expect(judge({ severity: "question" }, { state: "accept", by: "agent", reason: "r" })[1]).toContain("needs evidence (third_source) or the owner");
     expect(judge({ severity: "question" }, { state: "accept", by: "agent", reason: "r", third_source: "datasheet p4" })[0]).toBe(false);
-    expect(judge({ severity: "question" }, { state: "accept", by: "agent", reason: "r" }, { preferences: { workflow_decides: ["questions"] } })[0]).toBe(false);
-    expect(judge({ severity: "question" }, { state: "accept", by: "owner", reason: "r" })[0]).toBe(false);
+    expect(judge({ severity: "question" }, { state: "accept", by: "agent", reason: "r" }, confirmedPrefs({ workflow_decides: ["questions"] }))[0]).toBe(false);
+    // a delegation the owner did not confirm (an agent can write the intent file) is ignored
+    expect(judge({ severity: "question" }, { state: "accept", by: "agent", reason: "r" }, { preferences: { workflow_decides: ["questions"] } })[0]).toBe(true);
+    expect(judge({ severity: "question" }, { state: "accept", by: "owner", reason: "r", approval: OK })[0]).toBe(false);
+    // "by owner" without the approval card is the agent's claim
+    expect(judge({ severity: "question" }, { state: "accept", by: "owner", reason: "r" })[1]).toContain("owner not confirmed at the desktop");
+    expect(judge({ severity: "question" }, { state: "accept", by: "owner", reason: "r", approval: { ...OK, by: "timeout" } })[0]).toBe(true);
+    expect(judge({ severity: "question" }, { state: "accept", by: "owner", reason: "r", approval: { ...OK, approved: false } })[0]).toBe(true);
   });
   test("false-positive needs a third source; an agent's must-fix accept needs the owner's leave and evidence", () => {
     expect(judge({ severity: "question" }, { state: "false-positive", by: "agent", reason: "r" })[1]).toBe("false-positive needs a third source");
     const d = { state: "accept" as const, by: "agent", reason: "r", third_source: "datasheet p4" };
     expect(judge({ severity: "must-fix" }, d)[1]).toContain("asks to be asked");
-    expect(judge({ severity: "must-fix" }, d, { preferences: { ask_owner_for: [] } })[0]).toBe(false);
-    expect(judge({ severity: "must-fix" }, { ...d, third_source: "" }, { preferences: { ask_owner_for: [] } })[1]).toContain("needs evidence");
-    expect(judge({ severity: "must-fix" }, { ...d, by: "owner" })[0]).toBe(false);
+    expect(judge({ severity: "must-fix" }, d, confirmedPrefs({ ask_owner_for: [] }))[0]).toBe(false);
+    expect(judge({ severity: "must-fix" }, d, { preferences: { ask_owner_for: [] } })[1]).toContain("asks to be asked"); // unconfirmed delegation
+    const edited = confirmedPrefs({ ask_owner_for: ["accepting a must-fix"] });
+    expect(judge({ severity: "must-fix" }, d, { ...edited, preferences: { ask_owner_for: [] } })[1]).toContain("asks to be asked"); // edited after approval
+    expect(judge({ severity: "must-fix" }, { ...d, third_source: "" }, confirmedPrefs({ ask_owner_for: [] }))[1]).toContain("needs evidence");
+    expect(judge({ severity: "must-fix" }, { ...d, by: "owner", approval: OK })[0]).toBe(false);
+    expect(judge({ severity: "must-fix" }, { ...d, by: "owner" })[0]).toBe(true);
   });
   test("only the owner defers a question, and a deferral is not a measured pass", () => {
     expect(judge({ severity: "question" }, { state: "defer", by: "agent", reason: "Independent reviewer unavailable in this session" })).toEqual([true, "question deferred by agent: the owner decides"]);
-    expect(judge({ severity: "question" }, { state: "defer", by: "owner", reason: "Independent reviewer unavailable in this session" })).toEqual([false, "defer"]);
+    expect(judge({ severity: "question" }, { state: "defer", by: "owner", approval: OK, reason: "Independent reviewer unavailable in this session" })).toEqual([false, "defer"]);
     expect(judge({ severity: "question" }, { state: "defer", by: "agent", reason: "  " })[0]).toBe(true);
     expect(judge({ severity: "must-fix" }, { state: "defer", by: "agent", reason: "later" })[0]).toBe(true);
   });
@@ -203,16 +218,16 @@ describe("a review run, the gate and dispositions", () => {
     await expect(dispose(p, { id: "L3:DECAP:U1:-", state: "maybe", by: "agent", reason: "r" })).rejects.toThrow("state must be one of");
     const open = (await reviewStatus(p)).open;
     expect(open).toBeGreaterThan(3);
-    const d = await dispose(p, { id: "L*", state: "accept", by: "owner", reason: "reviewed on the bench", third_source: "bench log" });
+    const d = await dispose(p, { id: "L*", state: "accept", by: "owner", approval: OK, reason: "reviewed on the bench", third_source: "bench log" });
     expect(d.disposed.length).toBeGreaterThan(3);
     // the pilot case: the agent deferring the independent review itself must not pass the gate
     await dispose(p, { id: "L8:EXPERT:-:-:pending", state: "defer", by: "agent", reason: "Independent reviewer unavailable for this session" });
     expect((await reviewGate(p)).exit).toBe(2);
-    await dispose(p, { id: "L8:EXPERT:-:-:pending", state: "defer", by: "owner", reason: "Independent reviewer unavailable for this session" });
+    await dispose(p, { id: "L8:EXPERT:-:-:pending", state: "defer", by: "owner", approval: OK, reason: "Independent reviewer unavailable for this session" });
     const g = await reviewGate(p);
     expect(g.exit).toBe(0);
     expect(g.evidence?.independentReview).toBe("deferred");
-    expect(g.lines.join("\n")).toContain("defer by owner: Independent reviewer unavailable");
+    expect(g.lines.join("\n")).toContain("defer by owner (confirmed at the desktop): Independent reviewer unavailable");
     expect(g.state).toBe("pass");
     // disposition carries by id into the next run and is marked carried
     await writeFile(join(dir, "board.kicad_pcb"), PCB + "\n");
@@ -228,7 +243,7 @@ describe("a review run, the gate and dispositions", () => {
     const dir = await project();
     const p = await openReviewProject(dir);
     await runReview(p, fakeEnv({ drcFails: true, calls: [] }), { offline: true });
-    await dispose(p, { id: "*", state: "accept", by: "owner", reason: "r", third_source: "s" });
+    await dispose(p, { id: "*", state: "accept", by: "owner", approval: OK, reason: "r", third_source: "s" });
     const g = await reviewGate(p);
     expect(g.exit).toBe(3);
     expect(g.errors).toBe(true);
@@ -253,7 +268,7 @@ describe("a review run, the gate and dispositions", () => {
 
   test("an owner decision in the intent file settles what it covers, cited, in every later run", async () => {
     const dir = await project();
-    await writeJsonFile(join(dir, ".fabdesk", "board", "review", "intent.json"), { decisions: [{ id: "D1", decision: "the USB-C faces in on purpose", date: "2026-11-12", covers: [{ rule: "MOUTH", refs: ["J1"] }] }] });
+    await writeJsonFile(join(dir, ".fabdesk", "board", "review", "intent.json"), { decisions: [{ id: "D1", decision: "the USB-C faces in on purpose", date: "2026-11-12", covers: [{ rule: "MOUTH", refs: ["J1"] }], approval: OK }] });
     const p = await openReviewProject(dir);
     const r = await runReview(p, fakeEnv(), { offline: true });
     const row = r.evaluation.rows.find((x) => x.rule === "MOUTH")!;

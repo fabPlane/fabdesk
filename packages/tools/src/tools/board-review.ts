@@ -28,6 +28,7 @@ import {
   fixProposals,
   intentDecide,
   intentInit,
+  intentPreferences,
   intentShow,
   lowDisk,
   tryPlan,
@@ -47,10 +48,19 @@ import {
 } from "@fabdesk/board-workflow";
 import { runKicadCli, type KicadCli } from "@fabdesk/kicad";
 import { clearReviewGate, recordReviewGate } from "../board-state";
+
+/** The owner's confirmation on the desktop's approval card; refuses where no card can be shown or when declined. */
+async function askOwner(ctx: ToolContext, summary: string, detail: unknown): Promise<OwnerApproval> {
+  if (!ctx.requestOwnerApproval)
+    throw new ToolError("Owner decisions are confirmed by the owner on an approval card in the fabdesk desktop, and this session cannot show one. Ask the owner to make this decision in a fabdesk desktop agent session, or settle it yourself with evidence (thirdSource).", "precondition");
+  const approval = await ctx.requestOwnerApproval({ summary: summary.slice(0, 400), detail });
+  if (!approval.approved) throw new ToolError(approval.by === "timeout" ? "The owner did not answer the approval card; nothing was recorded." : "The owner declined; nothing was recorded.", "precondition");
+  return approval;
+}
 import { bomDirOf, readBomState } from "../release-state";
 import { runDurable } from "../durable";
 import { boardMemGiB, governor } from "../resources";
-import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
+import { ToolError, defineTool, type OwnerApproval, type ToolContext, type ToolOutput } from "../registry";
 import { ok, requireKicad } from "./common";
 import { editRunners } from "./board-edit";
 import { cableAction, diffAction, pageAction } from "./board-review-views";
@@ -110,16 +120,16 @@ export const board_review = defineTool({
   toolset: "board",
   title: "Review the whole board against one design hash",
   description:
-    "Whole-board design review: the first call when asked to review a board or find its faults before ordering (then read for what the checks cannot judge). run: the checks (L0 identity/netlist, L1 ERC/DRC grouped + acceptance A1-A9 on the same DRC, L2 pin semantics + datasheet rule cards + evidence, L3 decoupling/current/divider/impedance/ratings/manual items, L4 connector mouths, L5 interconnect gate, L6 BOM/coverage/silk labels, L8 expert pack, custom checks) as findings (must-fix | question | note), each with a proposal; the record is bound to the design hash (board, schematics, project files, requirements) and goes stale when any of them changes. gate: 0 pass | 1 none/stale | 2 open | 3 check errors, open items lead with their proposal. dispose: settle a finding (state accept | fix | false-positive, by agent | owner, reason; false-positive needs thirdSource; an agent accepting a must-fix or a question needs evidence (thirdSource) unless the owner's intent allows it, and only the owner defers a question; id may end in *). fix: every open finding's proposal; apply settles what the owner's intent or evidence decides (edit proposals are built as candidate boards by the edit stage and reported READY only when the finding is gone, no new finding appears and nothing outside the plan changed). With apply, two or more READY candidates are also applied together as one combined candidate and proven (fixes/combined.json), and every READY candidate gets a change picture (change.html beside its board). try: your own board_edit plan (plan) proven exactly like the workflow's for the finding ids it should fix (ids): READY only when the proof passes, every one of them is gone, no new finding appears and nothing outside the plan changed. autopilot: review if stale, then fix with apply (settle, build and prove candidates, the combined candidate, pictures), then only what needs the owner; on a low disk it settles only. intent / intent_init / intent_decide: the owner's intent file (.fabdesk/board/review/intent.json): show it; write a skeleton (constraints from the requirements, the goal left to the owner, what the owner wants to be asked); record an owner decision (id, decision, covers: finding-id patterns it settles in every later review, effect). Record a decision only when the owner gave it. import_expert: add an independent reviewer's findings (file) to the current review. status: current or stale, open counts. cable: does a catalog cable reach between two boards' connectors in the case, in each stated frame (chassis JSON: frames of boards with origin, yaw, mirror, face_z; cables with a/b [board, ref], length_mm, tolerance_mm, lead_mm, bend_mm, basis): mouths from the footprints, shortest orthogonal path with leads, turns and bends, slack, PASS/FAIL, flags for a mouth inside its board or a cable needing a fold store; seconds, no KiCad; for multi-board products, after moving a connector, or with sweep to find where on an edge a connector gives the most slack. page: one interactive HTML page comparing boards (compare: LABEL=PATH) from KiCad's own layer plots, with opens and DRC errors from the DRC report beside each board (acceptance.drc.json, or drc to run one) and 3D renders. diff: the change picture old -> new (tracks and vias added/removed, parts moved with arrows) as HTML + SVG. section: finite-difference cross-section impedance through atlc (spec: a pair's geometry or a full section; pixelMm sizes): Zdiff, Zo, Zodd/Zeven per pixel size, the field-solver check behind a pair class's width/gap on a supplier stack (installs atlc on first use). short_section: the lossless reflection at the edge knee of short off-impedance stretches (spec cases), to bound an escape or fan-out. The reviewer never edits the design; the gate result is kept for the project's status.",
+    "Whole-board design review: the first call when asked to review a board or find its faults before ordering (then read for what the checks cannot judge). run: the checks (L0 identity/netlist, L1 ERC/DRC grouped + acceptance A1-A9 on the same DRC, L2 pin semantics + datasheet rule cards + evidence, L3 decoupling/current/divider/impedance/ratings/manual items, L4 connector mouths, L5 interconnect gate, L6 BOM/coverage/silk labels, L8 expert pack, custom checks) as findings (must-fix | question | note), each with a proposal; the record is bound to the design hash (board, schematics, project files, requirements) and goes stale when any of them changes. gate: 0 pass | 1 none/stale | 2 open | 3 check errors, open items lead with their proposal. dispose: settle a finding (state accept | fix | false-positive, by agent | owner, reason; false-positive needs thirdSource; an agent accepting a must-fix or a question needs evidence (thirdSource) unless the owner's intent allows it, and only the owner defers a question; id may end in *). fix: every open finding's proposal; apply settles what the owner's intent or evidence decides (edit proposals are built as candidate boards by the edit stage and reported READY only when the finding is gone, no new finding appears and nothing outside the plan changed). With apply, two or more READY candidates are also applied together as one combined candidate and proven (fixes/combined.json), and every READY candidate gets a change picture (change.html beside its board). try: your own board_edit plan (plan) proven exactly like the workflow's for the finding ids it should fix (ids): READY only when the proof passes, every one of them is gone, no new finding appears and nothing outside the plan changed. autopilot: review if stale, then fix with apply (settle, build and prove candidates, the combined candidate, pictures), then only what needs the owner; on a low disk it settles only. intent / intent_init / intent_decide: the owner's intent file (.fabdesk/board/review/intent.json): show it; write a skeleton (constraints from the requirements, the goal left to the owner, what the owner wants to be asked); record an owner decision (id, decision, covers: finding-id patterns it settles in every later review, effect); intent_delegate: what you may settle without the owner (delegate) and what the owner wants to be asked (askOwnerFor). Owner decisions, owner dispositions and delegations are confirmed by the owner on an approval card in the fabdesk desktop; without that confirmation they count as yours. import_expert: add an independent reviewer's findings (file) to the current review. status: current or stale, open counts. cable: does a catalog cable reach between two boards' connectors in the case, in each stated frame (chassis JSON: frames of boards with origin, yaw, mirror, face_z; cables with a/b [board, ref], length_mm, tolerance_mm, lead_mm, bend_mm, basis): mouths from the footprints, shortest orthogonal path with leads, turns and bends, slack, PASS/FAIL, flags for a mouth inside its board or a cable needing a fold store; seconds, no KiCad; for multi-board products, after moving a connector, or with sweep to find where on an edge a connector gives the most slack. page: one interactive HTML page comparing boards (compare: LABEL=PATH) from KiCad's own layer plots, with opens and DRC errors from the DRC report beside each board (acceptance.drc.json, or drc to run one) and 3D renders. diff: the change picture old -> new (tracks and vias added/removed, parts moved with arrows) as HTML + SVG. section: finite-difference cross-section impedance through atlc (spec: a pair's geometry or a full section; pixelMm sizes): Zdiff, Zo, Zodd/Zeven per pixel size, the field-solver check behind a pair class's width/gap on a supplier stack (installs atlc on first use). short_section: the lossless reflection at the edge knee of short off-impedance stretches (spec cases), to bound an escape or fan-out. The reviewer never edits the design; the gate result is kept for the project's status.",
   inputSchema: {
-    action: z.enum(["run", "gate", "dispose", "fix", "try", "autopilot", "intent", "intent_init", "intent_decide", "import_expert", "status", "cable", "page", "diff", "section", "short_section"]).default("run"),
+    action: z.enum(["run", "gate", "dispose", "fix", "try", "autopilot", "intent", "intent_init", "intent_decide", "intent_delegate", "import_expert", "status", "cable", "page", "diff", "section", "short_section"]).default("run"),
     pcb: z.string().optional().describe("Board file, relative to the project; default board.kicad_pcb or the project's only .kicad_pcb."),
     checks: z.array(z.string().max(40)).max(30).optional().describe("run: only these checks (a partial run is not the project's review and does not set the gate)."),
     offline: z.boolean().default(false).describe("run: never fetch from the network (JLC/EasyEDA symbols); cached records are still read."),
     trustCustom: z.boolean().default(false).describe("run: execute the project's custom check commands (review/checks.d, review.custom). They are shell commands from the project's files, so they run only when you say so."),
     id: z.string().max(300).optional().describe("dispose: finding id; a trailing * matches a prefix. intent_decide: the decision's id (D1, usb-orientation ...)."),
     state: z.enum(["accept", "fix", "false-positive", "defer"]).optional().describe("dispose: defer an owner-review question with a recorded reason; deferral settles the disposition but is not a measured pass."),
-    by: z.enum(["agent", "owner"]).optional().describe("dispose: who decided. Record the owner only when the owner said so."),
+    by: z.enum(["agent", "owner"]).optional().describe("dispose: who decided. owner shows the owner an approval card in the fabdesk desktop and records the disposition only when they approve; a session without that card (an external agent) cannot record owner decisions."),
     reason: z.string().max(2000).optional().describe("dispose: why, with the evidence."),
     thirdSource: z.string().max(1000).optional().describe("dispose: a source that is neither the design nor the check (datasheet page, measurement); false-positive needs it."),
     file: z.string().max(500).optional().describe("import_expert: the expert's JSON file ({reviewer, findings[]}), relative to the project."),
@@ -129,6 +139,8 @@ export const board_review = defineTool({
     decision: z.string().max(2000).optional().describe("intent_decide: the owner's answer, in their words."),
     covers: z.array(z.string().max(300)).max(50).optional().describe("intent_decide: finding-id patterns the decision settles (* ? [seq]), e.g. L4:MOUTH:J1:*."),
     effect: z.string().max(1000).optional().describe("intent_decide: what the decision changes in practice."),
+    delegate: z.array(z.string().max(200)).max(20).optional().describe('intent_delegate: what you may settle without the owner, e.g. ["questions", "accepting a must-fix with evidence"].'),
+    askOwnerFor: z.array(z.string().max(200)).max(20).optional().describe("intent_delegate: what the owner wants to be asked about."),
     chassis: z.string().max(500).optional().describe("cable: the chassis JSON file, relative to the project."),
     root: z.string().max(500).optional().describe("cable: folder the chassis's relative board paths resolve against, relative to the project (default the project; the mating board may live beside it)."),
     frame: z.string().max(200).optional().describe("cable: only this frame."),
@@ -185,11 +197,13 @@ export const board_review = defineTool({
         needs(input.by, "by");
         needs(input.reason, "reason");
         try {
-          const d = await dispose(project, { id: input.id!, state: input.state!, by: input.by!, reason: input.reason!, ...(input.thirdSource ? { third_source: input.thirdSource } : {}) });
+          const approval = input.by === "owner" ? await askOwner(ctx, `${input.state} review finding ${input.id}: ${input.reason}`, { finding: input.id, state: input.state, reason: input.reason, thirdSource: input.thirdSource ?? null }) : undefined;
+          const d = await dispose(project, { id: input.id!, state: input.state!, by: input.by!, reason: input.reason!, ...(input.thirdSource ? { third_source: input.thirdSource } : {}), ...(approval ? { approval } : {}) });
           const g = await reviewGate(project);
           await recordGate(project, g);
           return ok(`${d.lines.join("\n")}\n${g.lines[0]}`, { disposed: d.disposed, gate: g });
         } catch (e) {
+          if (e instanceof ToolError) throw e;
           throw new ToolError(e instanceof Error ? e.message : String(e), "invalid_args");
         }
       }
@@ -250,11 +264,26 @@ export const board_review = defineTool({
         needs(input.id, "id");
         needs(input.decision, "decision");
         try {
-          const r = await intentDecide(project, { id: input.id!, decision: input.decision!, covers: input.covers ?? [], ...(input.effect ? { effect: input.effect } : {}) });
+          const approval = await askOwner(ctx, `record decision ${input.id}: ${input.decision}${input.covers?.length ? ` (settles ${input.covers.join(", ")})` : ""}`, { decision: input.id, text: input.decision, covers: input.covers ?? [], effect: input.effect ?? null });
+          const r = await intentDecide(project, { id: input.id!, decision: input.decision!, covers: input.covers ?? [], ...(input.effect ? { effect: input.effect } : {}), approval });
           const g = await reviewGate(project);
           await recordGate(project, g);
           return ok(`${r.lines.join("\n")}\n${g.lines[0]}`, { ...r, gate: g });
         } catch (e) {
+          if (e instanceof ToolError) throw e;
+          throw new ToolError(e instanceof Error ? e.message : String(e), "precondition");
+        }
+      }
+      case "intent_delegate": {
+        if (!input.delegate && !input.askOwnerFor) throw new ToolError("intent_delegate needs delegate and/or askOwnerFor", "invalid_args");
+        try {
+          const approval = await askOwner(ctx, `the agent may decide: ${(input.delegate ?? []).join("; ") || "(unchanged)"}; ask the owner for: ${(input.askOwnerFor ?? []).join("; ") || "(unchanged)"}`, { delegate: input.delegate ?? null, askOwnerFor: input.askOwnerFor ?? null });
+          const r = await intentPreferences(project, { ...(input.delegate ? { workflow_decides: input.delegate } : {}), ...(input.askOwnerFor ? { ask_owner_for: input.askOwnerFor } : {}), approval });
+          const g = await reviewGate(project);
+          await recordGate(project, g);
+          return ok(`${r.lines.join("\n")}\n${g.lines[0]}`, { ...r, gate: g });
+        } catch (e) {
+          if (e instanceof ToolError) throw e;
           throw new ToolError(e instanceof Error ? e.message : String(e), "precondition");
         }
       }

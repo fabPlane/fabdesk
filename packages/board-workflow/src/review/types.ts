@@ -63,7 +63,7 @@ export function newResult(name: string, layer: string): CheckResult {
 }
 
 export type ProposalApply =
-  | { kind: "disposition"; state: DispositionState; as?: "owner" | "agent"; reason: string; third_source?: string }
+  | { kind: "disposition"; state: DispositionState; as?: "owner" | "agent"; reason: string; third_source?: string; approval?: OwnerApproval }
   | { kind: "edit"; plan: EditPlan }
   | { kind: "command"; cmd: string }
   | { kind: "task"; steps: string[] };
@@ -130,9 +130,22 @@ export interface ReviewRecord {
   findings: FindingRecord[];
 }
 
+/**
+ * The person at the desktop (or a paired device) approved an owner decision through the run's approval card. An owner
+ * disposition, decision or delegation counts as the owner's only with one of these (`ownerConfirmed`).
+ */
+export interface OwnerApproval {
+  approved: boolean;
+  requestId: string;
+  by: string;
+  at: string;
+}
+
 export interface Disposition {
   state: DispositionState;
   by: string;
+  /** For by: "owner": the approval card that confirmed it. */
+  approval?: OwnerApproval;
   reason: string;
   third_source?: string;
   evidence?: string;
@@ -160,8 +173,12 @@ export interface Intent {
     source?: string;
     /** Findings it settles: an id pattern (fnmatch), or a rule with optional refs. */
     covers?: Array<{ id?: string; rule?: string; refs?: string[] }>;
+    /** The approval card that confirmed it; a decision without one settles nothing. */
+    approval?: OwnerApproval;
   }>;
   preferences?: { ask_owner_for?: string[]; workflow_decides?: string[] };
+  /** The approval card that confirmed these exact preferences (`sha256` of their JSON); without it the defaults apply. */
+  preferences_approval?: OwnerApproval & { sha256: string };
 }
 
 /** Review settings of the project (`.fabdesk/board/review/config.json`). Every key is optional. */

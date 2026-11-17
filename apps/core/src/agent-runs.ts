@@ -375,6 +375,32 @@ export class AgentRunManager {
     run: ActiveRun,
     req: { tool: string; input: unknown; summary: string },
   ): Promise<ApprovalDecision> {
+    return this.requestApprovalResolved(run, req).then((r) => r.decision);
+  }
+
+  /**
+   * An owner decision a tool asks for (e.g. waiving a review finding): the same approval card, whatever the run's
+   * runtime mode. Null when `token` is not an active run fabdesk launched (an external session has no card to show).
+   */
+  requestOwnerApproval(
+    token: string | null,
+    req: { tool: string; summary: string; detail: unknown },
+  ): Promise<{ approved: boolean; requestId: string; by: ApprovalResolvedBy; at: string }> | null {
+    const info = this.deps.tokens.lookup(token);
+    const run = info?.kind === "run" && info.runId ? this.active.get(info.runId) : undefined;
+    if (!run || run.stopping) return null;
+    return this.requestApprovalResolved(run, { tool: req.tool, input: req.detail, summary: `Owner decision: ${req.summary}` }).then((r) => ({
+      approved: r.decision === "approve",
+      requestId: r.requestId,
+      by: r.by,
+      at: new Date().toISOString(),
+    }));
+  }
+
+  private requestApprovalResolved(
+    run: ActiveRun,
+    req: { tool: string; input: unknown; summary: string },
+  ): Promise<{ decision: ApprovalDecision; by: ApprovalResolvedBy; requestId: string }> {
     const requestId = newId("apr");
     const event: ApprovalRequestedEvent = {
       ts: Date.now(),
@@ -395,7 +421,7 @@ export class AgentRunManager {
       decision: "pending",
     };
     run.addPart(part);
-    return new Promise<ApprovalDecision>((resolve) => {
+    return new Promise<{ decision: ApprovalDecision; by: ApprovalResolvedBy; requestId: string }>((resolve) => {
       const settle = (decision: ApprovalDecision, by: ApprovalResolvedBy) => {
         const entry = run.pending.get(requestId);
         if (!entry) return;
@@ -412,7 +438,7 @@ export class AgentRunManager {
           by,
         });
         this.deps.emit({ ts: Date.now(), topic: "thread.updated", threadId: run.threadId });
-        resolve(decision);
+        resolve({ decision, by, requestId });
       };
       const timer = setTimeout(
         () => settle("deny", "timeout"),

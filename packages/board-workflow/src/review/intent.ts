@@ -14,7 +14,8 @@ import { readRequirements, requirementsDir } from "../onboard";
 import { coveringDecision } from "./proposals";
 import { intentPath, loadCurrent } from "./store";
 import type { ReviewProject } from "./context";
-import type { Intent } from "./types";
+import type { Intent, OwnerApproval } from "./types";
+import { ownerConfirmed, preferencesSha } from "./owner";
 
 type Decision = NonNullable<Intent["decisions"]>[number];
 
@@ -58,6 +59,8 @@ export interface DecideInput {
   covers?: string[];
   effect?: string;
   date?: string;
+  /** The approval card that confirmed the decision; a decision without one is stored but settles nothing. */
+  approval?: OwnerApproval;
 }
 
 /** Record one owner decision; it settles every matching finding in this and every later review. */
@@ -78,6 +81,7 @@ export async function intentDecide(project: ReviewProject, input: DecideInput): 
     covers: covers.map((c) => ({ id: c })),
     effect: input.effect ?? "",
     source: `board_review intent_decide ${project.name}`,
+    ...(input.approval ? { approval: input.approval } : {}),
   };
   decisions.push(d);
   await writeJsonFile(path, it);
@@ -89,6 +93,25 @@ export async function intentDecide(project: ReviewProject, input: DecideInput): 
     ...(cur.review ? [`  in the latest review: ${settles.length ? settles.join(", ") : "no finding matches"}`] : []),
   ];
   return { path, decision: d, settles, lines };
+}
+
+/**
+ * Set how far the agent's own judgement goes (`workflow_decides`, `ask_owner_for`), bound to the approval card that
+ * confirmed these exact values; an unconfirmed or edited set falls back to the defaults (ask the owner).
+ */
+export async function intentPreferences(project: ReviewProject, input: { workflow_decides?: string[]; ask_owner_for?: string[]; approval: OwnerApproval }): Promise<{ path: string; preferences: NonNullable<Intent["preferences"]>; lines: string[] }> {
+  const path = intentPath(project.dir);
+  const it = await readJsonOrNull<Intent>(path);
+  if (!it) throw new Error(`no intent for ${project.name}: board_review {"action": "intent_init"} first`);
+  const preferences: NonNullable<Intent["preferences"]> = {
+    ask_owner_for: input.ask_owner_for ?? it.preferences?.ask_owner_for ?? [...DEFAULT_ASK],
+    workflow_decides: input.workflow_decides ?? it.preferences?.workflow_decides ?? [],
+  };
+  it.preferences = preferences;
+  if (ownerConfirmed(input.approval)) it.preferences_approval = { ...input.approval, sha256: preferencesSha(preferences) };
+  else delete it.preferences_approval;
+  await writeJsonFile(path, it);
+  return { path, preferences, lines: [`preferences ${ownerConfirmed(input.approval) ? "confirmed by the owner" : "NOT confirmed (defaults apply)"}: ask the owner for ${preferences.ask_owner_for!.join("; ") || "nothing"}; the workflow decides ${preferences.workflow_decides!.join("; ") || "nothing"}`] };
 }
 
 export function showLines(name: string, it: Intent): string[] {

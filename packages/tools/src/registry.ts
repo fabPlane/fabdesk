@@ -101,7 +101,15 @@ export interface ToolContext {
   runInScope?: <T>(operation: () => Promise<T>) => Promise<T>;
   /** Host-approved private routing snapshot; never broadens the canonical editable source. */
   runWithRoutingSnapshot?: <T>(directory: string, operation: () => Promise<T>) => Promise<T>;
+  /**
+   * Ask the person at the desktop (or a paired device) to approve an owner decision, through the run's approval card.
+   * Present only for calls made by an agent run fabdesk launched; an external session cannot ask the owner.
+   */
+  requestOwnerApproval?: (req: { summary: string; detail: unknown }) => Promise<OwnerApproval>;
 }
+
+/** The outcome of an owner approval card: who resolved it, and when. */
+export type OwnerApproval = { approved: boolean; requestId: string; by: "desktop" | "device" | "timeout"; at: string };
 
 /** A host must bind an explicit selector; ignoring it must never become a root operation. */
 export function assertBoardExecutionContext(ctx: ToolContext, board: BoardSourceSelection | undefined): void {
@@ -421,6 +429,7 @@ export function makeContext(opts: {
   runInScope?: <T>(operation: () => Promise<T>) => Promise<T>;
   runWithRoutingSnapshot?: <T>(directory: string, operation: () => Promise<T>) => Promise<T>;
   boardRoot?: Readonly<{ id: string; dir: string }>;
+  requestOwnerApproval?: ToolContext["requestOwnerApproval"];
 }): ToolContext {
   const project = opts.project;
   return {
@@ -439,6 +448,7 @@ export function makeContext(opts: {
     ...(opts.boardRoot ? { boardRoot: opts.boardRoot } : {}),
     ...(opts.runInScope ? { runInScope: opts.runInScope } : {}),
     ...(opts.runWithRoutingSnapshot ? { runWithRoutingSnapshot: opts.runWithRoutingSnapshot } : {}),
+    ...(opts.requestOwnerApproval ? { requestOwnerApproval: opts.requestOwnerApproval } : {}),
   };
 }
 

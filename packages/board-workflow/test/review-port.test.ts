@@ -333,8 +333,12 @@ describe("the owner's intent file", () => {
     const run = await runReview(p, fakeEnv(), { offline: true });
     const mouth = run.review.findings.find((f) => f.rule === "MOUTH")!;
     expect(run.evaluation.open.some((x) => x.id === mouth.id)).toBe(true);
-    const d = await intentDecide(p, { id: "usb-in", decision: "the USB-C faces in on purpose (cable inside the case)", covers: ["L4:MOUTH:J1*"], effect: "the connector stays", date: "2026-11-13" });
-    expect(d.decision).toEqual({ id: "usb-in", date: "2026-11-13", by: "owner", decision: "the USB-C faces in on purpose (cable inside the case)", covers: [{ id: "L4:MOUTH:J1*" }], effect: "the connector stays", source: `board_review intent_decide ${p.name}` });
+    // a decision without the owner's approval card is stored but settles nothing
+    const unconfirmed = await intentDecide(p, { id: "unconfirmed", decision: "agent says the owner agreed", covers: ["L4:MOUTH:J1*"] });
+    expect(unconfirmed.settles).toEqual([]);
+    const approval = { approved: true, requestId: "apr_test", by: "desktop", at: "2026-11-17T00:00:00Z" };
+    const d = await intentDecide(p, { id: "usb-in", decision: "the USB-C faces in on purpose (cable inside the case)", covers: ["L4:MOUTH:J1*"], effect: "the connector stays", date: "2026-11-13", approval });
+    expect(d.decision).toEqual({ id: "usb-in", date: "2026-11-13", by: "owner", decision: "the USB-C faces in on purpose (cable inside the case)", covers: [{ id: "L4:MOUTH:J1*" }], effect: "the connector stays", source: `board_review intent_decide ${p.name}`, approval });
     expect(d.settles).toEqual([mouth.id]);
     expect(d.lines[0]).toBe("recorded usb-in; it settles L4:MOUTH:J1* in every later review");
     await expect(intentDecide(p, { id: "usb-in", decision: "again" })).rejects.toThrow("decision usb-in exists");

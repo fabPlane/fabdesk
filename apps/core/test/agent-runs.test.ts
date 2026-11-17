@@ -167,6 +167,24 @@ describe("AgentRunManager project lease", () => {
     await settle();
   });
 
+  test("an owner approval shows the run's approval card and reports who decided; only an active run can ask", async () => {
+    const h = await harness();
+    const a = h.thread();
+    await h.start(a.id, null);
+    const token = h.runs[0]!.session.mcp.token;
+    expect(h.manager.requestOwnerApproval("not-a-run-token", { tool: "board_review", summary: "x", detail: {} })).toBeNull();
+    for (const decision of ["approve", "deny"] as const) {
+      const asked = h.manager.requestOwnerApproval(token, { tool: "board_review", summary: "accept review finding L8", detail: { finding: "L8" } })!;
+      const card = h.manager.pending(a.id).approvals.at(-1)!;
+      expect(card.summary).toBe("Owner decision: accept review finding L8");
+      expect(h.manager.resolveApproval(a.id, card.requestId, decision, "device")).toBe("ok");
+      expect(await asked).toMatchObject({ approved: decision === "approve", requestId: card.requestId, by: "device" });
+    }
+    h.runs[0]!.finish();
+    await settle();
+    expect(h.manager.requestOwnerApproval(token, { tool: "board_review", summary: "x", detail: {} })).toBeNull();
+  });
+
   test("released when the run fails", async () => {
     const h = await harness();
     const p = h.project("proj-err");

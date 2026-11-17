@@ -61,9 +61,18 @@ async function setup() {
   const base = mockServices([project]);
   const services: CoreServices = { ...base, kicad: { ...base.kicad, resolveCli: async () => ({ path: cli, version: "fake" }) } };
   const def = createRegistry().get("board_review")!;
-  const ctx = () => contextFactory(services, project)({ def, projectRef: undefined, signal: new AbortController().signal, progress: () => {} } as never);
+  // the desktop's approval card: what the owner answers (owner.answer) and what was asked (owner.asked)
+  const owner: { answer: "approve" | "deny" | "timeout" | "no-card"; asked: string[] } = { answer: "approve", asked: [] };
+  const ctx = async () => {
+    const c = await contextFactory(services, project)({ def, projectRef: undefined, signal: new AbortController().signal, progress: () => {} } as never);
+    if (owner.answer === "no-card") return c;
+    return { ...c, requestOwnerApproval: async ({ summary }: { summary: string }) => {
+      owner.asked.push(summary);
+      return { approved: owner.answer === "approve", requestId: `apr_${owner.asked.length}`, by: owner.answer === "timeout" ? "timeout" as const : "desktop" as const, at: new Date().toISOString() };
+    } };
+  };
   const call = async (args: object) => (def.handler as unknown as (a: object, c: unknown) => Promise<{ text: string; json?: Record<string, unknown> }>)(args, await ctx());
-  return { project, call };
+  return { project, call, owner };
 }
 
 describe("board_review", () => {
@@ -169,6 +178,28 @@ describe("board_review", () => {
     expect((await call({ action: "intent" })).text).toContain("dec   D1");
     const g = (await readReviewGate(project.dir)) as { state: string };
     expect(g.state).toBe("open");
+  });
+
+  test("owner decisions need the owner's approval card: declined, unanswered or unavailable records nothing", async () => {
+    const { call, owner } = await setup();
+    await call({ action: "run", offline: true });
+    for (const answer of ["deny", "timeout", "no-card"] as const) {
+      owner.answer = answer;
+      await expect(call({ action: "dispose", id: "*", state: "accept", by: "owner", reason: "bench", thirdSource: "bench log" })).rejects.toThrow(answer === "deny" ? /declined/ : answer === "timeout" ? /did not answer/ : /cannot show one/);
+    }
+    expect((await call({ action: "gate" })).json?.["state"]).toBe("open");
+    owner.answer = "approve";
+    const d = await call({ action: "dispose", id: "*", state: "accept", by: "owner", reason: "bench", thirdSource: "bench log" });
+    expect(d.text).toContain("by owner (confirmed at the desktop)");
+    expect(owner.asked.at(-1)).toContain("accept review finding *: bench");
+    // an agent's own disposition never asks the owner
+    const asked = owner.asked.length;
+    await call({ action: "dispose", id: "*", state: "accept", by: "agent", reason: "datasheet", thirdSource: "datasheet p4" });
+    expect(owner.asked).toHaveLength(asked);
+    // preferences: confirmed on the card, then they delegate
+    await call({ action: "intent_init" });
+    const pref = await call({ action: "intent_delegate", delegate: ["questions"] });
+    expect(pref.text).toContain("confirmed by the owner");
   });
 
   test("autopilot reviews, applies the fixes and ends with the owner's questions; try checks its inputs", async () => {

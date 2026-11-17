@@ -424,7 +424,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const registry = createRegistry({ channel: config.channel });
   /** The board workflow stage tools are registered (board_check is the first of them). */
   const boardWorkflowReady = () => registry.get("board_check") !== undefined;
-  const ctxFactory = createContextFactory({ services, projects, tokens, telemetry });
+  const ctxFactory = createContextFactory({
+    services, projects, tokens, telemetry,
+    // `runs` is created below; a tool call only arrives once the daemon is serving
+    ownerApproval: (token, req) => runs.requestOwnerApproval(token, req),
+  });
   const mcp = new McpSessionManager({
     registry,
     ctxFactory,
