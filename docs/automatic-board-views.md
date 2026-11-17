@@ -9,12 +9,13 @@ The existing schematic, routing, placement and checks remain available. The sour
 ## Validation
 
 - Root typecheck and desktop production build passed.
-- UI: 399 tests passed. Client core: 616 tests passed.
+- UI: 401 tests passed. Client core: 616 tests passed.
 - Focused registry/preview tests: 77 passed. GLB integrity and preview publication tests: 14 passed.
 - New tests cover actual layer enumeration, immutable source export, preservation of previous output after an edit, revision matching, failed queued jobs and layer visibility.
 - Live desktop: a real four-layer VAIO peripheral board and two-layer microSD board, both as separate assembly sources with no pre-existing previews. Automatic preparation produced 11 and 9 layer images respectively; both bundles matched their source SHA-256 and models were independently saved (6.9 MB and 1.2 MB).
 - Six successive view switches retained the same WebGL canvas. Two-frame observations took 7–31 ms on the tested machine, after initial preparation. Top/Bottom and layer toggles passed. This is an interaction smoke check, not a cross-device performance guarantee.
 - Camera correction: pixel comparisons of the rendered board viewport matched exactly between 2D and 3D for both top and bottom, including pan/zoom (excluding the interaction-hint text). Native mouse-drag rotation and keyboard orbit were verified in 3D. Four regression tests cover camera preservation and returning from an orbit to 2D.
+- Lighting: neutral tone mapping, a locally generated studio reflection map, and camera-relative key/fill lights reveal metallic contacts on both sides without adding a continuous render loop. Known native KiCad silkscreen uses opaque depth-tested ink so transparent soldermask cannot fade individual letters when rotating. Component/enclosure glass and textured alpha artwork remain unchanged. Two material regression tests and live top/bottom/oblique checks passed; 2D/3D matching was rechecked. Overlapping source artwork and unavailable component models are not repaired by lighting.
 - Broader Windows tools/KiCad suites are not fully green. Their existing failures were reproduced in a separate checkout of `main` (`b7bc58cb`), including symlink privileges, shell-based CLI fixtures, stencil and other platform-sensitive checks. The two changed inventory assertions (tab/tool additions) were updated and passed on rerun.
 
 Screenshots in `screenshots/automatic-board-views/` show the actual app using the VAIO peripheral source, not mockups.
