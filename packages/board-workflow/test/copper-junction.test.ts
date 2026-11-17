@@ -139,14 +139,78 @@ test("terminal proof cannot forget remote terminals behind uncertain contacts", 
 test("contact bounds separate growth, unknown geometry, holes and exact contacts", async () => {
   const { copperContact } = await import("../src/copper-contact");
   const layers = ["F.Cu"];
-  const a = {path:[{x:0,y:0}],width:1};
-  const b = {path:[{x:1.01,y:0}],width:1};
+  const a = {path:[{x:0,y:0}],width:1,exact:"circle-pad" as const};
+  const b = {path:[{x:1.01,y:0}],width:1,exact:"circle-pad" as const};
   expect(copperContact(a,layers,b,layers,"F.Cu",.02)).toEqual({mayTouch:true,surelyTouches:false});
   expect(copperContact(a,layers,{...a,inner:null},layers,"F.Cu")).toEqual({mayTouch:true,surelyTouches:false});
+  expect(copperContact({path:a.path,width:a.width},layers,a,layers,"F.Cu").surelyTouches).toBe(false);
   expect(copperContact(a,layers,a,layers,"F.Cu")).toEqual({mayTouch:true,surelyTouches:true});
   expect(copperContact(a,layers,a,layers,"B.Cu")).toEqual({mayTouch:false,surelyTouches:false});
   const ring = (r: number) => [{x:-r,y:-r},{x:r,y:-r},{x:r,y:r},{x:-r,y:r}];
   const polygon = {outline:ring(2),holes:[ring(.6)],padding:.2};
   expect(copperContact(a,layers,{polygon},layers,"F.Cu")).toEqual({mayTouch:true,surelyTouches:false});
   expect(copperContact(a,layers,{polygon:{...polygon,padding:0}},layers,"F.Cu")).toEqual({mayTouch:false,surelyTouches:false});
+});
+
+// Review 7: a chamfer removes the apparent alternate path through the envelope.
+test("chamfered roundrect cannot replace the sole cap bridge", () => {
+  const land = (ref: string, x: number, y: number) => fpT(ref,x,y,[["1","A",0,0]])
+    .replace('(size 0.6 0.6)', '(size 0.2 0.2)');
+  const bridge = seg(.9,0,5,0,"A");
+  const chamfer = fpT("U4",0,.7,[["1","A",0,0]]).replace('smd rect','smd roundrect')
+    .replace('(size 0.6 0.6)', '(size 2 2) (roundrect_rratio 0) (chamfer_ratio .5) (chamfer top_right)');
+  const result = pruneDangling(`(kicad_pcb ${bridge} ${via} ${land("U2",.9,.15)} ${land("U3",.9,-.15)} ${chamfer})`,new Set(["A"]));
+  expect(result.pruned).toBe(1);
+  expect(result.text).toContain(bridge);
+});
+
+for (const kind of ["circle", "rect", "oval", "roundrect", "chamfered", "trapezoid", "custom", "future-pad"] as const) {
+  test(`${kind} pad has an outer envelope and only allow-listed pads prove contacts`, async () => {
+    const { padCopper } = await import("../src/edit/prune-copper");
+    const { copperContact, copperShapesTouch } = await import("../src/copper-contact");
+    const spelling = kind === "chamfered" ? "roundrect" : kind;
+    const extras = kind === "custom" ? '(options (anchor rect)) (primitives (gr_poly (pts (xy 3 0) (xy 4 0) (xy 4 1) (xy 3 1)) (width 0) (fill yes)))' : kind === "chamfered" ? '(chamfer_ratio .5) (chamfer top_right)' : kind === "trapezoid" ? '(rect_delta .5 0)' : '';
+    const text = fpT("U1",0,0,[["1","A",0,0]]).replace('smd rect',`smd ${spelling}`)
+      .replace('(size 0.6 0.6)', `(size 2 2) (roundrect_rratio .25) ${extras}`);
+    const shape = padCopper(`(kicad_pcb ${text})`,["F.Cu"])[0]!.shape;
+    const exact = ["circle","rect","oval","roundrect"].includes(kind);
+    expect(copperContact(shape,["F.Cu"],shape,["F.Cu"],"F.Cu").surelyTouches).toBe(exact);
+    // Independent boundary witnesses of these KiCad lands (and their interior).
+    const witnesses = kind === "circle" || kind === "oval" ? [[1,0],[0,1],[-1,0]] : kind === "roundrect" ? [[1,.5],[.5,1],[0,0]] :
+      kind === "trapezoid" ? [[1,1.25],[-1,.75],[0,0]] : kind === "chamfered" ? [[-1,-.5],[-1,.5],[.5,-1]] :
+      kind === "custom" ? [[0,0],[3,0],[4,1]] : kind === "future-pad" ? [[0,0]] : [[1,1],[-1,-1],[0,0]];
+    for (const [x,y] of witnesses) expect(copperShapesTouch(shape,["F.Cu"],{path:[{x:x!,y:y!}],width:0},["F.Cu"],"F.Cu")).toBe(true);
+  });
+}
+
+
+test("route and polygon outer bounds contain analytic copper witnesses", async () => {
+  const { routeCopper, zoneCopper } = await import("../src/edit/prune-copper");
+  const { parseSexpr } = await import("../src/sexpr");
+  const { copperContact, copperShapesTouch } = await import("../src/copper-contact");
+  const layers = ["F.Cu","B.Cu"];
+  const arc = routeCopper(parseSexpr('(arc (start 0 -100) (mid 100 0) (end 0 100) (width .2) (layer "F.Cu"))'),layers).shape;
+  const straight = routeCopper(parseSexpr(seg(0,0,5,0,"A")),layers).shape;
+  const disk = routeCopper(parseSexpr(via),layers).shape;
+  const outline = '(zone (net "A") (layer "F.Cu") (polygon (pts (xy 0 0) (xy 2 0) (xy 2 2) (xy 0 2))))';
+  for (const current of [false,true]) {
+    const shape = zoneCopper(`(kicad_pcb ${outline.replace('polygon',current ? 'filled_polygon' : 'polygon')})`,current)[0]!.shape;
+    expect(copperContact(shape,layers,shape,layers,"F.Cu").surelyTouches).toBe(current);
+    for (const x of [0,1,2]) for (const y of [0,1,2])
+      expect(copperShapesTouch(shape,layers,{path:[{x,y}],width:0},layers,"F.Cu")).toBe(true);
+  }
+  for (let i=0;i<=360;i++) {
+    const angle = -Math.PI/2 + i*Math.PI/360;
+    // Test both stroke boundaries, between tessellation samples as well as on them.
+    for (const radius of [99.900000001,100.099999999])
+      expect(copperShapesTouch(arc,layers,{path:[{x:radius*Math.cos(angle),y:radius*Math.sin(angle)}],width:0},layers,"F.Cu")).toBe(true);
+    const full = i*Math.PI/180;
+    expect(copperShapesTouch(disk,layers,{path:[{x:5+.399999999*Math.cos(full),y:.399999999*Math.sin(full)}],width:0},layers,"F.Cu")).toBe(true);
+  }
+  for (const x of [0,2.5,5]) for (const y of [-.1,0,.1])
+    expect(copperShapesTouch(straight,layers,{path:[{x,y}],width:0},layers,"F.Cu")).toBe(true);
+  expect(copperContact(arc,layers,arc,layers,"F.Cu").surelyTouches).toBe(false);
+  expect(copperContact(disk,layers,disk,layers,"F.Cu").surelyTouches).toBe(false);
+  const unclassified = {path:[{x:0,y:0}],width:1,inner:{path:[{x:0,y:0}],width:.5}};
+  expect(copperContact(unclassified,layers,unclassified,layers,"F.Cu").surelyTouches).toBe(false);
 });

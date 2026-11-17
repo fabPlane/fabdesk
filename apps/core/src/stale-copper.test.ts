@@ -28,7 +28,7 @@ function pad(id: string, number: string, net: string, x: number, layers = [F]): 
     reference: "J1",
     number,
     net,
-    shapes: layers.map((layer) => ({ layer, polygon: square(x) })),
+    shapes: layers.map((layer) => ({ layer, exact: "rect-pad", polygon: square(x) })),
   };
 }
 
@@ -113,7 +113,7 @@ describe("stale footprint fan-out copper", () => {
     const branch2 = track("b2", "A", 5, 10);
     branch2.path[1]!.y = -5;
     const otherPads = [5, -5].map((y, i): CopperPad => ({ ...pad(`other${i}`, "1", "A", 10), parent: `other${i}`,
-      shapes: [{ layer: F, polygon: square(10, y) }] }));
+      shapes: [{ layer: F, exact: "rect-pad", polygon: square(10, y) }] }));
     const result = analyze(before, after, [track("stem", "A", 0, 5), branch1, branch2], otherPads);
     expect(result.staleIds).toEqual(["stem"]);
   });
@@ -186,8 +186,8 @@ test("a via meeting a zone on its other layer stops traversal", () => {
 describe("via copper contacts across its spanned layers", () => {
   const mm = 1e6;
   const p = (x: number, y: number) => ({ x: x * mm, y: y * mm });
-  const before: CopperPad = { ...pad("moving", "1", "A", 0), shapes: [{ layer: F, polygon: square(0, 0, .4 * mm) }] };
-  const after: CopperPad = { ...before, shapes: [{ layer: F, polygon: square(-10 * mm, 0, .4 * mm) }] };
+  const before: CopperPad = { ...pad("moving", "1", "A", 0), shapes: [{ layer: F, exact: "rect-pad", polygon: square(0, 0, .4 * mm) }] };
+  const after: CopperPad = { ...before, shapes: [{ layer: F, exact: "rect-pad", polygon: square(-10 * mm, 0, .4 * mm) }] };
   const route = (id: string, a: [number, number], b: [number, number], layer = B): CopperRoute =>
     ({ ...track(id, "A", 0, 0, layer), path: [p(...a), p(...b)], width: .2 * mm });
   const via: CopperRoute = { id: "via", kind: "via", net: "A", layers: [F, B], path: [p(5, 0)], width: .8 * mm, locked: false };
@@ -204,7 +204,7 @@ describe("via copper contacts across its spanned layers", () => {
   test("an unsplit T downstream of a traversed via preserves the onward branch", () => {
     const otherPads = [[15, 0], [10, 5], [10, -5]].map(([x, y], i): CopperPad => ({
       ...before, id: `U${i}`, parent: `U${i}`, reference: `U${i}`,
-      shapes: [{ layer: B, polygon: square(x! * mm, y! * mm, .4 * mm) }],
+      shapes: [{ layer: B, exact: "rect-pad", polygon: square(x! * mm, y! * mm, .4 * mm) }],
     }));
     for (const kind of ["track", "arc"] as const) {
       const unsplit = { ...route("live-unsplit", [10, -5], [10, 5]), kind,
@@ -219,7 +219,7 @@ describe("via copper contacts across its spanned layers", () => {
     test(`a ${interior} inside the traversed continuation preserves live copper`, () => {
       const positions = interior === "pad" ? [[7, 0], [15, 0]] : [[15, 0], [7, -5], [7, 5]];
       const others = positions.map(([x, y], i): CopperPad => ({ ...before, id: `U${i}`, parent: `U${i}`, reference: `U${i}`,
-        shapes: [{ layer: B, polygon: square(x! * mm, y! * mm, .3 * mm) }] }));
+        shapes: [{ layer: B, exact: "rect-pad", polygon: square(x! * mm, y! * mm, .3 * mm) }] }));
       const result = analyzeStaleCopper({ beforePads: [before], afterPads: [after], allPadsBefore: [before, ...others], allPadsAfter: [after, ...others],
         routes: [stem, via, route("continuation", [5, 0], [10, 0]), route("live-right", [10, 0], [15, 0]),
           ...(interior === "unsplit branch" ? [route("live-unsplit", [7, -5], [7, 5])] : [])], zones: [] });
@@ -258,7 +258,7 @@ test("native endpoint cap preserves the only bridge between two stationary pads"
   const mm = 1e6;
   const before = pad("moving", "1", "A", 0), after = pad("moving", "1", "A", -10 * mm);
   const others = [.15, -.15].map((y, i): CopperPad => ({ ...pad(`U${i}`, "1", "A", 0),
-    shapes: [{ layer: B, polygon: square(5.53 * mm, y * mm, .1 * mm) }] }));
+    shapes: [{ layer: B, exact: "rect-pad", polygon: square(5.53 * mm, y * mm, .1 * mm) }] }));
   const via: CopperRoute = { id: "via", kind: "via", net: "A", layers: [F,B], path: [{x:5*mm,y:0}], width:.8*mm, locked:false };
   const stem = { ...track("old-fanout","A",0,5*mm), width:.2*mm };
   const bridge = { ...track("bridge","A",5.48*mm,10*mm,B), width:.2*mm };
@@ -269,7 +269,7 @@ test("native outline cannot replace a seeded cap bridge between stationary pads"
   const mm = 1e6;
   const before = pad("moving", "1", "A", 10 * mm, [B]), after = pad("moving", "1", "A", 20 * mm, [B]);
   const others = [.15, -.15].map((y, i): CopperPad => ({ ...pad(`U${i}`, "1", "A", 0),
-    shapes: [{ layer: B, polygon: square(5.53 * mm, y * mm, .1 * mm) }] }));
+    shapes: [{ layer: B, exact: "rect-pad", polygon: square(5.53 * mm, y * mm, .1 * mm) }] }));
   const bridge = { ...track("bridge", "A", 5.48 * mm, 10 * mm, B), width: .2 * mm };
   const polygon = { outline: [[5.35, -.4], [5.9, -.4], [5.9, .4], [5.35, .4]].map(([x, y]) => ({ x: x! * mm, y: y! * mm })) };
   const result = analyzeStaleCopper({ beforePads: [before], afterPads: [after],
@@ -281,7 +281,7 @@ test("native outline cannot replace a seeded cap bridge between stationary pads"
 test("native unknown pad polygon cannot prove a replacement for a seeded cap bridge", () => {
   const land = (id: string, y: number): CopperPad => ({
     id, parent:id, reference:id, number:"1", net:"A",
-    shapes:[{layer:F, polygon:square(0,y,.1)}],
+    shapes:[{layer:F, exact:"rect-pad", polygon:square(0,y,.1)}],
   });
   const upper = land("upper",.15), lower = land("lower",-.15);
   const unknown: CopperPad = {...land("unknown",0), shapes:[{layer:F,polygon:square(0,0,.4),inner:null}]};

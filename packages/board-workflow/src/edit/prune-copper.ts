@@ -35,7 +35,7 @@ export function routeCopper(node: SNode, stack: string[]): LayerCopper {
   const width = num(kid(node, via ? "size" : "width")?.[1], via ? .5 : .15);
   const points = path.map(object);
   return { net: netOf(node), layers, shape: { path: points, width: width + 2 * arcPadding,
-    ...(via ? { inner: null } : node[0] === "arc" ? { inner: width > 2 * arcPadding ? { path: points, width: width - 2 * arcPadding } : null } : {}) } };
+    ...(node[0] === "segment" ? { exact: "straight-track" as const } : { inner: null }) } };
 }
 
 export function padCopper(text: string, stack: string[]): LayerCopper[] {
@@ -50,17 +50,21 @@ export function padCopper(text: string, stack: string[]): LayerCopper[] {
       const [x, y] = toBoard(pose, num(at?.[1]), num(at?.[2]));
       const rot = num(at?.[3]), w = num(size?.[1], .6), h = num(size?.[2], .6);
       const shape = String(pad[3]);
-      const add = (s: CopperShape) => out.push({ net: netOf(pad), layers, shape: kid(pad, "drill") ? { ...s, inner: null } : s });
+      const add = (s: CopperShape) => {
+        const { exact, ...outer } = s;
+        const unknown = kid(pad, "drill") || kid(pad, "chamfer") || kid(pad, "chamfer_ratio");
+        out.push({ net: netOf(pad), layers, shape: unknown ? { ...outer, inner: null } : { ...outer, ...(exact ? { exact } : {}) } });
+      };
       const transform = (px: number, py: number) => object(toBoard({ x, y, rot }, px, py));
       if (shape === "circle" || shape === "oval") {
         const r = shape === "circle" ? w / 2 : Math.min(w, h) / 2;
         const dx = shape === "oval" ? w / 2 - r : 0, dy = shape === "oval" ? h / 2 - r : 0;
-        add({ path: [transform(-dx, -dy), transform(dx, dy)], width: 2 * r });
+        add({ path: [transform(-dx, -dy), transform(dx, dy)], width: 2 * r, exact: shape === "circle" ? "circle-pad" : "oval-pad" });
       } else if (shape === "rect" || shape === "roundrect") {
         // A rounded rectangle is exactly its inset rectangle buffered by the corner radius.
         const r = shape === "roundrect" ? Math.min(w, h) * Math.max(0, Math.min(.5, num(kid(pad, "roundrect_rratio")?.[1], .25))) : 0;
         const hw = w / 2 - r, hh = h / 2 - r;
-        add({ polygon: { outline: [transform(-hw, -hh), transform(hw, -hh), transform(hw, hh), transform(-hw, hh)] }, radius: r });
+        add({ polygon: { outline: [transform(-hw, -hh), transform(hw, -hh), transform(hw, hh), transform(-hw, hh)] }, radius: r, exact: shape === "rect" ? "rect-pad" : "roundrect-pad" });
       } else {
         // Unmodelled/custom lands conservatively retain copper within their full primitive reach.
         // Never delete a connection on the strength of a missing primitive model.
@@ -103,7 +107,7 @@ export function zoneCopper(text: string, fillsCurrent = false): LayerCopper[] {
         holes: kids(fill, "hole").map(hole => kids(kid(hole, "pts") ?? hole, "xy").map(n => object(point(n)))) };
       const exclusions = fillsCurrent ? [] : keepouts.filter(k => zoneLayers(k).includes(layer) || zoneLayers(k).includes("*.Cu"))
         .flatMap(k => kids(k, "polygon").map(p => ({ outline: kids(kid(p, "pts") ?? [], "xy").map(n => object(point(n))) })));
-      return subtractCopperKeepouts(polygon, exclusions).map(polygon => ({ net, layers: [layer], shape: { polygon, ...(!fillsCurrent ? { inner: null } : {}) } }));
+      return subtractCopperKeepouts(polygon, exclusions).map(polygon => ({ net, layers: [layer], shape: { polygon, ...(fillsCurrent ? { exact: "current-fill" as const } : { inner: null }) } }));
     }));
   });
 }

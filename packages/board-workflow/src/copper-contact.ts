@@ -8,9 +8,32 @@ export type ContactPolygon = { outline: ContactPoint[]; holes?: ContactPoint[][]
   padding?: number;
 };
 export type CopperGeometry = { path: ContactPoint[]; width: number } | { polygon: ContactPolygon; radius?: number };
-/** Geometry is an outer bound. Omitted inner means exact; null means no known
- * connected inner bound. An inner bound must itself be connected copper. */
-export type CopperShape = CopperGeometry & { inner?: CopperGeometry | null };
+/** Explicit proof allow-list. Adapters must certify the source kind, not infer
+ * exactness from the envelope's representation. New/unknown kinds default false.
+ * Via disks include drill voids and are deliberately absent, as are all arcs. */
+export type ExactCopperKind = "straight-track" | "circle-pad" | "rect-pad" | "oval-pad" | "roundrect-pad" | "current-fill";
+export type CopperShape = CopperGeometry & {
+  exact?: ExactCopperKind;
+  /** Legacy inner bounds cannot authorize proofs; null also vetoes a certificate. */
+  inner?: CopperGeometry | null;
+};
+
+function exactGeometry(shape: CopperShape): CopperGeometry | null {
+  if (shape.inner === null || ("polygon" in shape && shape.polygon.padding)) return null;
+  switch (shape.exact) {
+    case "straight-track":
+      return "path" in shape && shape.path.length === 2 ? shape : null;
+    case "circle-pad":
+    case "oval-pad":
+      return "path" in shape && shape.path.length <= 2 ? shape : null;
+    case "rect-pad":
+    case "roundrect-pad":
+    case "current-fill":
+      return "polygon" in shape ? shape : null;
+    default:
+      return null;
+  }
+}
 // No positive epsilon here: growth belongs only to the outer contact query.
 const GEOMETRY_EPSILON = 0;
 
@@ -132,18 +155,21 @@ export function copperShapesTouch<L>(a: CopperShape, aLayers: readonly L[], b: C
   return segments(a.path).some(([p, q]) => segments(b.path).some(([r, s]) => segmentDistance(p, q, r, s) <= reach));
 }
 
-/** Outer contacts retain copper; only inner contacts can prove an alternate path.
+/** Outer contacts retain copper; only certified exact contacts can prove an alternate path.
  * Numerical/board tolerance expands mayTouch only, never surelyTouches. */
 export function copperContact<L>(a: CopperShape, aLayers: readonly L[], b: CopperShape, bLayers: readonly L[], layer: L, tolerance = 0): { mayTouch: boolean; surelyTouches: boolean } {
   const mayTouch = copperShapesTouch(a, aLayers, b, bLayers, layer, tolerance);
-  const ai = a.inner === undefined ? ("polygon" in a && a.polygon.padding ? null : a) : a.inner;
-  const bi = b.inner === undefined ? ("polygon" in b && b.polygon.padding ? null : b) : b.inner;
+  const ai = exactGeometry(a);
+  const bi = exactGeometry(b);
   return { mayTouch, surelyTouches: mayTouch && ai !== null && bi !== null && copperShapesTouch(ai, aLayers, bi, bLayers, layer) };
 }
 
-/** Boolean subtraction also handles keepouts crossing or enclosing an outline. */
+/** Exact straight-boundary subtraction handles crossing/enclosing keepouts.
+ * Chord rings with padding are outer bounds, not valid exclusion interiors.
+ * Decline the entire operation if either side is uncertain: clipping the raw
+ * rings then forwarding padding can lose the uncertainty band at new edges. */
 export function subtractCopperKeepouts(polygon: ContactPolygon, keepouts: ContactPolygon[]): ContactPolygon[] {
-  if (!keepouts.length) return [polygon];
+  if (!keepouts.length || polygon.padding || keepouts.some(p => p.padding)) return [polygon];
   const rings = (p: ContactPolygon): Polygon => [p.outline, ...(p.holes ?? [])].map(r => r.map(({ x, y }) => [x, y]));
   const result = polygonClipping.difference(rings(polygon), ...keepouts.map(rings));
   return result.map(([outline, ...holes]) => ({

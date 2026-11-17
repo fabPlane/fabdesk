@@ -16,7 +16,7 @@ export type CopperPad = {
   reference: string;
   number: string;
   net: string;
-  shapes: Array<{ layer: BoardLayer; polygon: CopperPolygon; inner?: CopperGeometry | null }>;
+  shapes: Array<{ layer: BoardLayer; polygon: CopperPolygon; /** Caller-certified undrilled rectangle; bridge polygons omit this. */ exact?: "rect-pad"; inner?: CopperGeometry | null }>;
 };
 
 export type CopperRoute = {
@@ -83,9 +83,9 @@ export function analyzeStaleCopper(input: {
   const staleIds = new Set<string>();
   const allNets = new Set<string>();
   const nodes: CopperNode<BoardLayer>[] = input.routes.map(route => ({ id: route.id, net: route.net, kind: route.kind,
-    copper: [{ shape: { ...route, ...((route.kind === "via" || route.kind === "arc") && route.inner === undefined ? { inner: null } : {}) }, layers: route.layers }] }));
+    copper: [{ shape: { ...route, ...(route.kind === "track" ? { exact: "straight-track" as const } : { inner: null }) }, layers: route.layers }] }));
   for (const pad of input.allPadsAfter) nodes.push({ id: `pad:${pad.id}`, net: pad.net, kind: "pad",
-    copper: pad.shapes.map(({ layer, polygon, inner }) => ({ shape: { polygon, ...(inner !== undefined ? { inner } : {}) }, layers: [layer] })) });
+    copper: pad.shapes.map(({ layer, polygon, inner, exact }) => ({ shape: { polygon, ...(exact ? { exact } : {}), ...(inner !== undefined ? { inner } : {}) }, layers: [layer] })) });
   // Native placement supplies conservative outlines at the post-move revision.
   // Older callers without net labels retain conservative support on every net.
   for (const net of new Set(input.routes.map(route => route.net))) for (const [i, zone] of input.zones.entries()) {
