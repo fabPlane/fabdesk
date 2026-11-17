@@ -465,6 +465,8 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
   };
 
   nativeTest("unchanged content hits the process-local cache; hits cannot be poisoned", async () => {
+    // Cache integrity must run even when a separate runtime-geometry assertion fails.
+    dir = await fixtureCopy(); first = await collect();
     expect(await readdir(scratch())).toEqual([]); // temporary GLB removed after success
     const pristine = structuredClone(first);
     // Mutating the object a miss returned must not reach the cache.
@@ -485,13 +487,14 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     const again = await collect();
     expect(again.source.cache.status).toBe("hit");
     expect(bounds(again, "U1")).toEqual([109, 111, 98, 102, 1.615, 2.745]);
-    expect(again.coverage.loadedModels).toBe(9);
+    expect(again.coverage.loadedModels).toBe(pristine.coverage.loadedModels);
     expect(again.status).toBe("partial");
     expect(await readdir(scratch())).toEqual([]);
     first = pristine;
   });
 
   nativeTest("project-local result JSON never influences returned evidence", async () => {
+    dir = await fixtureCopy(); first = await collect();
     const key = first.source.cache.key!;
     const real = () => JSON.parse(JSON.stringify(first));
     const fabricated = real();
@@ -551,6 +554,7 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
   });
 
   nativeTest("placement-only and model-file-only changes miss", async () => {
+    dir = await fixtureCopy(); first = await collect();
     const boardPath = join(dir, "board.kicad_pcb");
     const moved = placeFootprints(await readFile(boardPath, "utf8"), [
       { ref: "U1", x: 112, y: 100 },
