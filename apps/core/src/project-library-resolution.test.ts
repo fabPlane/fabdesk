@@ -19,7 +19,7 @@ async function fixture() {
     addTableRow: async (_kind: string, _scope: string, row: { uri: string }) => { calls.push(row.uri); },
   } } };
   const design = createFpPcbDesign({ bridge: () => ({}) as never,
-    sessions: { withRetry: async (project: string, fn: (s: typeof session) => unknown) => { expect(project).toBe(dir); return fn(session); }, ensureProject: async () => ({}), preservingProjectLibraries: async (_dir: string, _session: unknown, fn: () => unknown) => fn() } as never,
+    sessions: { refreshProjectLibraries: async () => {}, withRetry: async (project: string, fn: (s: typeof session) => unknown) => { expect(project).toBe(dir); return fn(session); }, ensureProject: async () => ({}), preservingProjectLibraries: async (_dir: string, _session: unknown, fn: () => unknown) => fn() } as never,
     catalog: { has: () => true, search: async () => [
       { libId: "SHT31Pilot:Sensor", nickname: "SHT31Pilot", name: "Sensor", description: "wrong bundled copy" },
       { libId: "Bundled:Sensor", nickname: "Bundled", name: "Sensor", description: "bundled sensor" },

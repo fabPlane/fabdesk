@@ -26,6 +26,7 @@ export async function portableHandoff(ctx: ToolContext, filename: string, zip: (
   const directories = new Set<string>();
   let total = 0, visited = 0;
   const add = async (path: string, required = true) => {
+    if (path.split("/").some(part => part.startsWith(".") || part.startsWith("~")) || /\.(bak|zip|kicad_prl|map)$/.test(path)) return;
     const abs = await jailPath(project.dir, path), info = await stat(abs).catch(() => null);
     if (!info) { if (required) throw new ToolError(`Handoff input missing: ${path}`, "precondition"); return; }
     if (++visited > 8192) throw new ToolError("Handoff exceeds entry limit", "precondition");
@@ -45,19 +46,26 @@ export async function portableHandoff(ctx: ToolContext, filename: string, zip: (
       const path = `exports/gerbers/${name}`; await add(path);
       const inventory = JSON.parse(bytes.get(path)!.toString());
       if (!Array.isArray(inventory.files) || inventory.files.some((file: unknown) => typeof file !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(file))) throw new ToolError("Invalid CAM inventory", "precondition");
-      for (const file of inventory.files) { await add(`exports/gerbers/${file}`); await add(`exports/gerbers/${file}.revision.json`,false); }
+      for (const file of inventory.files) { await add(`exports/gerbers/${file}`); await add(`exports/gerbers/${file}.revision.json`); }
     }
     for (const path of ["fp-lib-table", "sym-lib-table"]) for (const row of parseLibraryTable(bytes.get(path)?.toString() ?? ""))
       if (/^(?:\/|[A-Za-z]:[\\/])/.test(row.uri)) throw new ToolError("Portable handoff refuses host-absolute library references; register project-contained libraries", "precondition");
     for (const fp of readSavedBoardModels(bytes.get("board.kicad_pcb")!.toString())) for (const model of fp.models)
       if (/^(?:\/|[A-Za-z]:[\\/])/.test(model.declared)) throw new ToolError("Portable handoff refuses host-absolute model references; use project-contained models", "precondition");
-    for (const path of ["renders/pcb.svg", "renders/pcb.svg.revision.json", "renders/board.glb", "renders/board.glb.revision.json", "renders/schematic.revision.json", "exports/schematic.pdf", "exports/schematic.pdf.revision.json", "exports/positions.contract.json", "exports/bom.csv", "exports/bom.coverage.json", "exports/gerbers/gerbers.inventory.json", "exports/gerbers/drills.inventory.json"]) if (!bytes.has(path)) throw new ToolError(`Handoff input missing: ${path}; export current views, PDF, placements and production CAM first`, "precondition");
+    for (const path of ["renders/pcb.svg", "renders/pcb.svg.revision.json", "renders/board.glb", "renders/board.glb.revision.json", "renders/schematic.revision.json", "exports/schematic.pdf", "exports/schematic.pdf.revision.json", "exports/positions.csv", "exports/positions.csv.revision.json", "exports/positions.contract.json", "exports/bom.csv", "exports/bom.coverage.json", "exports/gerbers/gerbers.inventory.json", "exports/gerbers/drills.inventory.json"]) if (!bytes.has(path)) throw new ToolError(`Handoff input missing: ${path}; export current views, PDF, placements and production CAM first`, "precondition");
     const pcbHash = hash(bytes.get("board.kicad_pcb")!);
     for (const path of ["exports/gerbers/gerbers.inventory.json", "exports/gerbers/drills.inventory.json"]) if (JSON.parse(bytes.get(path)!.toString()).pcbSha256 !== pcbHash) throw new ToolError("CAM inventory is stale; regenerate exports", "precondition");
     for (const path of ["renders/pcb.svg.revision.json", "renders/board.glb.revision.json"]) if (JSON.parse(bytes.get(path)!.toString()).sourceSha256 !== pcbHash || JSON.parse(bytes.get(path)!.toString()).artifactSha256 !== hash(bytes.get(path.replace(".revision.json", ""))!)) throw new ToolError("Handoff view is stale; run render_publish", "precondition");
+    const camFiles = ["gerbers.inventory.json", "drills.inventory.json"].flatMap(name => JSON.parse(bytes.get(`exports/gerbers/${name}`)!.toString()).files);
+    if (!camFiles.length) throw new ToolError("Handoff has no production CAM payloads", "precondition");
+    for (const path of ["exports/positions.csv", ...camFiles.map((file: string) => `exports/gerbers/${file}`)]) {
+      const receipt = JSON.parse(bytes.get(`${path}.revision.json`)!.toString());
+      if (receipt.artifactSha256 !== hash(bytes.get(path)!) || receipt.basis !== "pcb" || receipt.inputs?.length !== 1 || receipt.inputs[0]?.path !== "board.kicad_pcb" || receipt.inputs[0]?.sha256 !== pcbHash) throw new ToolError(`Manufacturing payload is stale or altered: ${path}; regenerate exports`, "precondition");
+    }
     const bom = JSON.parse(bytes.get("exports/bom.coverage.json")!.toString());
     if (!Array.isArray(bom.inputs) || !Array.isArray(bom.absentInputs) || bom.complete !== true) throw new ToolError("Handoff BOM source coverage is incomplete or unverified; export_bom after reviewing sources", "precondition");
     await assertProjectBomInputs(project.dir, bom);
+    if (bom.export?.artifactSha256 !== hash(bytes.get("exports/bom.csv")!)) throw new ToolError("BOM payload is altered or lacks export provenance; regenerate export_bom", "precondition");
     const schematicReceipt = JSON.parse(bytes.get("renders/schematic.revision.json")!.toString());
     const pdfReceipt = JSON.parse(bytes.get("exports/schematic.pdf.revision.json")!.toString());
     for (const receipt of [schematicReceipt, pdfReceipt]) {

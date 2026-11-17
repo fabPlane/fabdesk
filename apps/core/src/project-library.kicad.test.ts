@@ -21,6 +21,13 @@ test.skipIf(!url)("real project library registration survives bundled table rewr
     expect(await readFile(join(dir, "fp-lib-table"), "utf8")).toContain("SHT31Pilot");
     expect(await design.describePart("footprint", "SHT31Pilot:Sensor", dir)).toMatchObject({ pads: [{ number: "1" }] });
     expect((await design.searchFootprints("Sensor", 10, dir)).some(hit => hit.libId === "SHT31Pilot:Sensor")).toBe(true);
+    await mkdir(join(dir,"Updated.pretty"));
+    await writeFile(join(dir,"Updated.pretty/Sensor.kicad_mod"), '(footprint "Sensor" (version 20241229) (generator "pcbnew") (layer "F.Cu") (attr smd) (pad "1" smd rect (at 0 0) (size 3 1) (layers "F.Cu" "F.Paste" "F.Mask")))');
+    const tablePath=join(dir,"fp-lib-table");await writeFile(tablePath,(await readFile(tablePath,"utf8")).replaceAll("SHT31Pilot.pretty","Updated.pretty"));
+    expect((await design.describePart("footprint","SHT31Pilot:Sensor",dir)).pads?.[0]?.size.x).toBe(3);
+    const updated = join(dir,"Updated.pretty/Sensor.kicad_mod"); await writeFile(updated,(await readFile(updated,"utf8")).replace("(size 3 1)","(size 4 1)"));
+    expect((await design.describePart("footprint","SHT31Pilot:Sensor",dir)).pads?.[0]?.size.x).toBe(4);
+
   } finally { await sessions.dispose(); await rm(dir, { recursive: true, force: true }); }
 }, 120_000);
 

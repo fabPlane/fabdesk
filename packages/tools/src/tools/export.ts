@@ -235,8 +235,9 @@ export const export_bom = defineTool({
     const lines = mode === "physical_purchase" ? snapshot.lines.filter(line => !features.includes(line)) : snapshot.lines;
     const orderingWarnings = lines.flatMap(line => !line.mpn ? [`${line.refs.join(" ")}: no manufacturer ordering code recorded`] : /^SHT3[015]-DIS-B$/i.test(line.mpn) ? [`${line.refs.join(" ")}: ${line.mpn} is a device/family code; verify a complete manufacturer packaging/order variant against the datasheet ordering table`] : []);
     await writeJson(p(project, "exports/pcb-features.json"), { features, mode });
-    await writeAtomic(receipt, `${JSON.stringify(snapshot, null, 2)}\n`);
-    await writeAtomic(output, projectBomCsv(lines));
+    const csv = projectBomCsv(lines);
+    await writeAtomic(receipt, `${JSON.stringify({ ...snapshot, export: { mode, artifactSha256: createHash("sha256").update(csv).digest("hex") } }, null, 2)}\n`);
+    await writeAtomic(output, csv);
     return ok(`Exported exports/bom.csv (${lines.length} lines${snapshot.complete ? "" : "; partial source coverage"}). Coverage receipt: exports/bom.coverage.json. Electrical checks remain separate.`, { path: output, receiptPath: receipt, lines: lines.length, mode, features, orderingWarnings, complete: snapshot.complete, revision: snapshot.revision });
   },
 });

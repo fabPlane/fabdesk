@@ -12,12 +12,12 @@
  */
 import { join } from "node:path";
 import { assertNativeBoardOwnership } from "./assembly-board-binding";
-import { readFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { readFile, mkdir, writeFile, rm, readdir, stat } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
 import { KiCad, type Board, type Schematic } from "@fp-pcb/client";
 import { DocumentType } from "@fp-pcb/proto";
 import { WebSocketTransport, bridgeWsUrl } from "@fp-pcb/client/transport";
-import { ToolError, NativeRevisionConflict } from "@fabdesk/tools";
+import { ToolError, NativeRevisionConflict, jailPath } from "@fabdesk/tools";
 export { NativeRevisionConflict } from "@fabdesk/tools";
 import type { FpPcbBridgeClient } from "./fp-pcb-bridge";
 import {
@@ -224,21 +224,57 @@ export class FpPcbSessions {
 
   private async writePreservingProjectLibraries<T>(projectDir: string, session: ProjectSession, write: () => Promise<T>, replacing?: { kind: "footprint" | "symbol"; nickname: string }): Promise<T> {
     const before = await captureProjectLibraryRows(projectDir);
-    let result: T;
+    const recovery = projectDir ? join(projectDir, ".fabdesk", "library-recovery", `${randomUUID()}.json`) : null;
+    if (recovery) { await mkdir(join(recovery,".."), { recursive: true }); await writeFile(recovery, JSON.stringify({ before }), { mode: 0o600 }); }
+    let expected = JSON.stringify(before);
+    const libraries = session.kicad.libraries;
+    const originalAdd = libraries?.addTableRow;
+    if (originalAdd) libraries.addTableRow = async (...args: Parameters<typeof originalAdd>) => {
+      if (JSON.stringify(await captureProjectLibraryRows(projectDir)) !== expected)
+        throw new NativeRevisionConflict("Library table changed outside the native writer before a table save; the newer saved version was kept. Reopen before retrying.");
+      const result = await originalAdd.apply(libraries, args);
+      expected = JSON.stringify(await captureProjectLibraryRows(projectDir));
+      return result;
+    };
+    let result!: T, operationError: unknown, operationFailed = false;
+    try { result = await write(); }
+    catch (error) { operationError = error; operationFailed = true; }
+    finally { if (originalAdd) libraries.addTableRow = originalAdd; }
+    if (!operationFailed && replacing && before[replacing.kind])
+      before[replacing.kind] = before[replacing.kind]!.filter(row => row.name !== replacing.nickname);
     try {
-      result = await write();
+      try { await this.restoreProjectLibraries(projectDir, session, before); }
+      catch (error) {
+        if (!isGone(error)) throw error;
+        await this.release(projectDir);
+        const replacement = await this.session(projectDir);
+        await this.restoreProjectLibraries(projectDir, replacement, before);
+      }
+      if (recovery) await rm(recovery, { force: true });
     } catch (error) {
-      await this.restoreProjectLibraries(projectDir, session, before).catch((restoreError) =>
-        this.opts.log?.(
-          `could not restore project library rows after a failed table write: ${restoreError instanceof Error ? restoreError.message : String(restoreError)}`,
-        ),
-      );
-      throw error;
+      if (recovery) await writeFile(recovery, JSON.stringify({ before, after: await captureProjectLibraryRows(projectDir), error: String(error) }), { mode: 0o600 });
+      throw new NativeRevisionConflict(`Project library recovery could not finish; saved table versions were preserved${recovery ? ` in ${recovery}` : ""}. Reopen before retrying. ${String(error)}`);
     }
-    if (replacing && before[replacing.kind])
-      before[replacing.kind] = before[replacing.kind]!.filter((row) => row.name !== replacing.nickname);
-    await this.restoreProjectLibraries(projectDir, session, before);
+    if (operationFailed) throw operationError;
     return result;
+  }
+
+  /** Refresh native library tables after a saved override changes, before returning geometry. */
+  async refreshProjectLibraries(projectDir: string): Promise<void> {
+    await this.withRetry(projectDir, async session => {
+      const previous = this.libraryRevisions.get(session), current = await this.libraryRevision(projectDir);
+      await this.ensureBundledLibraries(projectDir, session);
+      if (previous !== undefined && previous !== current) {
+        const rows = await captureProjectLibraryRows(projectDir);
+        await this.preservingProjectLibraries(projectDir, session, async () => {
+          for (const kind of ["footprint", "symbol"] as const) for (const row of rows[kind] ?? []) {
+            if (isManagedLibraryRow(kind,row)) continue;
+            await session.kicad.libraries.addTableRow(kind,"project",{nickname:row.name,uri:row.uri,type:row.type,options:row.options,description:row.descr,enabled:!row.disabled,hidden:row.hidden},true);
+          }
+        });
+        this.libraryRevisions.set(session,await this.libraryRevision(projectDir));
+      }
+    });
   }
 
   private async restoreProjectLibraries(
@@ -282,7 +318,19 @@ export class FpPcbSessions {
   }
 
   private async libraryRevision(projectDir: string): Promise<string> {
-    return JSON.stringify(await Promise.all([BOARD_PRO, "sym-lib-table", "fp-lib-table"].map(filename => this.diskRevision(join(projectDir, filename)))));
+    const revisions: unknown[] = await Promise.all([BOARD_PRO, "sym-lib-table", "fp-lib-table"].map(filename => this.diskRevision(join(projectDir, filename))));
+    const rows = await captureProjectLibraryRows(projectDir);
+    for (const kind of ["footprint", "symbol"] as const) for (const row of rows[kind] ?? []) {
+      const uri = row.uri.replaceAll("${KIPRJMOD}", projectDir);
+      let path: string; try { path = await jailPath(projectDir, uri); } catch { continue; }
+      const info = await stat(path).catch(() => null);
+      if (info?.isDirectory()) {
+        for (const name of (await readdir(path)).filter(name => name.endsWith(".kicad_mod")).sort()) {
+          const file = await jailPath(projectDir, join(path,name)); revisions.push([kind,row.name,name,await this.diskRevision(file)]);
+        }
+      } else revisions.push([kind,row.name,await this.diskRevision(path)]);
+    }
+    return JSON.stringify(revisions);
   }
 
   /** Runs `fn` on the session, reconnecting once when the bridge no longer knows it. */

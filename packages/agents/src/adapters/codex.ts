@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, statSync, symlinkSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, statSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { detectBinary, resolveFirst } from "../detect";
@@ -167,6 +167,10 @@ export function codexEnv(
     env["CODEX_HOME"] ?? join(env["HOME"] ?? env["USERPROFILE"] ?? homedir(), ".codex"),
   );
   const id = createHash("sha256").update(session.cwd).digest("hex");
+  // A legacy private credential snapshot may contain a newer refresh token: never
+  // bypass that rejection when changing the overlay layout.
+  const legacyAuth = join(source, "fabdesk-agents", id, "auth.json");
+  if (lstatSync(legacyAuth, { throwIfNoEntry: false })) linkSharedAuth(legacyAuth, join(source, "auth.json"));
   const isolated = join(source, "fabdesk-agents", "v2", id);
   mkdirSync(isolated, { recursive: true, mode: 0o700 });
   const raw = readFileIfExists(join(source, "config.toml"));

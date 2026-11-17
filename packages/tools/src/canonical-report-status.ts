@@ -39,6 +39,7 @@ export async function canonicalReportStatus(
   return {
     drc: !drc
       ? { status: "missing" }
+      : !drc.projectDependencies ? { status: "unverified", reason: "report has no measured dependency snapshot; run verify_drc" }
       : staleDependencies(drc.projectDependencies) ? { status: "stale", reason: "project rules, libraries or models changed; run verify_drc" }
       : !drc.pcbRevision?.sha256
         ? { status: "unverified", reason: "report has no saved PCB revision" }
@@ -52,6 +53,7 @@ export async function canonicalReportStatus(
               : { status: "current" },
     erc: !erc
       ? { status: "missing" }
+      : !erc.projectDependencies ? { status: "unverified", reason: "report has no measured dependency snapshot; run verify_erc" }
       : staleDependencies(erc.projectDependencies) ? { status: "stale", reason: "project rules, libraries or models changed; run verify_erc" }
       : !erc.measurement?.checkedRevision || erc.measurement.evidenceLevel !== "measured"
         ? { status: "unverified", reason: "report has no measured schematic revision" }

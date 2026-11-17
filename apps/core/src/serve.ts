@@ -1,7 +1,9 @@
+import { prepareAgentCli } from "./agent-cli";
 /** `fabdesk-core serve`: bind, write the handshake, print the ReadyLine, run until told to stop. */
 import { AGENT_OWNER_DIR, recoverAgentProcesses, stopAgentProcess } from "@fabdesk/agents";
 import { chmod, mkdir, rename, writeFile, unlink } from "node:fs/promises";
-import { join } from "node:path";
+import { join, basename } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { DaemonHandshake, DoctorReport, ReadyLine, Settings } from "@fabdesk/protocol";
 import { usageArchiveAllowed } from "@fabdesk/protocol";
 import {
@@ -444,6 +446,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const adapters = opts.adapters ?? (await loadAdapters());
   const agentInterface = configuredAgentInterface();
   let mcpUrl = "";
+  let cliPath: Promise<string> | undefined;
+  const activeCli = () => cliPath ??= prepareAgentCli(config.home, /^(bun|bun-debug)(\.exe)?$/i.test(basename(process.execPath)) ? [process.execPath, fileURLToPath(new URL("./main.ts", import.meta.url))] : [process.execPath]).catch(error => { cliPath = undefined; throw error; });
   const runs = new AgentRunManager({
     store,
     emit: (e) => bus.emit(e),
@@ -468,6 +472,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       return {
         [AGENT_OWNER_DIR]: ownerDir,
         FABDESK_PROJECT_DIR: cwd,
+        FABDESK_CLI: await activeCli(),
         ...(mcpUrl ? { FABDESK_CORE_URL: new URL(mcpUrl).origin } : {}),
         ...(project
           ? {
@@ -500,6 +505,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         projectName: project.name,
         toolsMarkdown: toolsMarkdown(registry),
         boardWorkflow: boardWorkflowReady(),
+        fabdeskCli: await activeCli(),
         ...(cli ? { kicadCli: cli.path } : {}),
         shellExecutables: Object.fromEntries(
           ["python3", "rg", "bun"].flatMap((name) => {

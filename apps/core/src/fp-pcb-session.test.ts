@@ -488,3 +488,21 @@ for (const kind of ["footprint", "symbol"] as const) for (const failure of ["fai
     expect(restored).toBe(true); expect(await readFile(path, "utf8")).toContain("project-local");
   }));
 }
+
+for (const kind of ["footprint","symbol"] as const) test(`${kind} preservation survives native session loss and reconnect`,async()=>fixture(async f=>{
+ const session=await f.sessions.session(f.dir),file=join(f.dir,kind==="footprint"?"fp-lib-table":"sym-lib-table"),root=kind==="footprint"?"fp_lib_table":"sym_lib_table";
+ const table=(uri:string)=>`(${root} (lib (name "Pilot") (type "KiCad") (uri "${uri}")))`;
+ await writeFile(file,table("original-project-library"));let gone=false,reconnected=false;
+ (session.kicad as any).libraries={tables:async()=>{if(gone)throw Error("connection closed");return [];},addTableRow:async(_kind:string,_scope:string,row:{uri:string})=>{await writeFile(file,table(row.uri));}};
+ const originalRelease=f.sessions.release.bind(f.sessions);f.sessions.release=async()=>{gone=false;reconnected=true;};f.sessions.session=async()=>session;
+ await expect(f.sessions.preservingProjectLibraries(f.dir,session,async()=>{await writeFile(file,`(${root})`);gone=true;throw Error("connection closed");})).rejects.toThrow("connection closed");
+ expect(reconnected).toBe(true);expect(await readFile(file,"utf8")).toContain("original-project-library");f.sessions.release=originalRelease;
+}));
+test("an external edit before a client native table save is refused and both versions are retained",async()=>fixture(async f=>{
+ const session=await f.sessions.session(f.dir),file=join(f.dir,"fp-lib-table"),table=(uri:string)=>`(fp_lib_table (lib (name "Pilot") (uri "${uri}")))`;
+ await writeFile(file,table("old.pretty"));let nativeWrites=0;
+ (session.kicad as any).libraries={tables:async()=>[],addTableRow:async()=>{nativeWrites++;await writeFile(file,"(fp_lib_table)");}};
+ await expect(f.sessions.preservingProjectLibraries(f.dir,session,async()=>{await writeFile(file,table("newer.pretty"));await (session.kicad as any).libraries.addTableRow("footprint","project",{},true);})).rejects.toThrow("recovery could not finish");
+ expect(nativeWrites).toBe(0);expect(await readFile(file,"utf8")).toContain("newer.pretty");
+ const {readdir}=await import("node:fs/promises"),dir=join(f.dir,".fabdesk/library-recovery"),names=await readdir(dir);const retained=await readFile(join(dir,names[0]!),"utf8");expect(retained).toContain("old.pretty");expect(retained).toContain("newer.pretty");
+}));

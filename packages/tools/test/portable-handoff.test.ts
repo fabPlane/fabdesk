@@ -1,3 +1,4 @@
+import { snapshotProjectDependencies } from "../src/project-dependencies";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -13,13 +14,16 @@ async function fixture() {
   for (const path of ["exports/gerbers", "renders", "reports", "Parts.pretty"]) await mkdir(join(project.dir, path), { recursive: true });
   const files: Record<string,string> = {
     "board.kicad_pcb": "(kicad_pcb)", "board.kicad_sch": "schematic", "board.kicad_pro": "{}", "Parts.pretty/X.kicad_mod": "footprint", "fp-lib-table": '(fp_lib_table (lib (name "Parts") (uri "${KIPRJMOD}/Parts.pretty")))',
-    "renders/pcb.svg": "svg", "renders/board.glb": "glb", "exports/schematic.pdf": "pdf", "exports/positions.contract.json": "{}", "exports/bom.csv": "bom", "exports/bom.coverage.json": JSON.stringify({ complete:true, inputs:[{path:"board.kicad_sch",sha256:hash("schematic")}],absentInputs:[] }),
+    "renders/pcb.svg": "svg", "renders/board.glb": "glb", "exports/schematic.pdf": "pdf", "exports/positions.contract.json": "{}", "exports/bom.csv": "bom", "exports/positions.csv": "positions", "exports/positions.csv.revision.json": JSON.stringify({basis:"pcb",artifactSha256:hash("positions"),inputs:[{path:"board.kicad_pcb",sha256:hash("(kicad_pcb)")}]}), "exports/bom.coverage.json": JSON.stringify({ complete:true, export:{artifactSha256:hash("bom")}, inputs:[{path:"board.kicad_sch",sha256:hash("schematic")}],absentInputs:[] }),
     "reports/drc.json": JSON.stringify({ pcbRevision: { sha256: hash("(kicad_pcb)") } }), "reports/erc.json": JSON.stringify({ measurement: { checkedRevision: "a".repeat(64), evidenceLevel: "measured", revisionStable: true } }),
     "renders/pcb.svg.revision.json": JSON.stringify({ sourceSha256: hash("(kicad_pcb)"), artifactSha256: hash("svg") }), "renders/board.glb.revision.json": JSON.stringify({ sourceSha256: hash("(kicad_pcb)"), artifactSha256: hash("glb") }),
     "renders/schematic.revision.json": JSON.stringify({ sourceFiles: [{ path: "board.kicad_sch", sha256: hash("schematic") }] }), "exports/schematic.pdf.revision.json": JSON.stringify({ artifactSha256: hash("pdf"), inputs: [{ path: "board.kicad_sch", sha256: hash("schematic") }] }),
-    "exports/gerbers/gerbers.inventory.json": JSON.stringify({ pcbSha256: hash("(kicad_pcb)"), files: [] }), "exports/gerbers/drills.inventory.json": JSON.stringify({ pcbSha256: hash("(kicad_pcb)"), files: [] }),
+    "exports/gerbers/gerbers.inventory.json": JSON.stringify({ pcbSha256: hash("(kicad_pcb)"), files: ["board-F_Cu.gtl"] }), "exports/gerbers/drills.inventory.json": JSON.stringify({ pcbSha256: hash("(kicad_pcb)"), files: ["board-PTH.drl"] }),
   };
+  for (const name of ["board-F_Cu.gtl","board-PTH.drl"]) { files[`exports/gerbers/${name}`]="native CAM";files[`exports/gerbers/${name}.revision.json`]=JSON.stringify({basis:"pcb",artifactSha256:hash("native CAM"),inputs:[{path:"board.kicad_pcb",sha256:hash("(kicad_pcb)")}]}); }
   for (const [path,value] of Object.entries(files)) await writeFile(join(project.dir,path),value);
+  const projectDependencies = await snapshotProjectDependencies(project.dir);
+  for (const name of ["drc","erc"]) { const path=join(project.dir,`reports/${name}.json`);await writeFile(path,JSON.stringify({...JSON.parse(await readFile(path,"utf8")),projectDependencies})); }
   return {project,ctx};
 }
 test("product handoff ZIP includes native/library dependencies and source inventory, excluding backups", async () => {
@@ -38,4 +42,16 @@ test("changed source during archive assembly preserves the previous archive", as
 test("stale views and changed PDF payload cannot enter an editable handoff", async () => {
   const {project,ctx} = await fixture(); await writeFile(join(project.dir,"exports/schematic.pdf"),"tampered");
   await expect(portableHandoff(ctx,"handoff.zip",zipFiles)).rejects.toThrow("PDF artifact");
+});
+
+for (const file of ["exports/positions.csv","exports/gerbers/board-F_Cu.gtl"]) test(`handoff rejects altered or stale production payload: ${file}`,async()=>{
+ const {project,ctx}=await fixture();await writeFile(join(project.dir,file),"altered payload");
+ await expect(portableHandoff(ctx,"handoff.zip",zipFiles)).rejects.toThrow("stale or altered");
+});
+test("handoff requires the actual placement CSV and excludes internal library files",async()=>{
+ const {rm}=await import("node:fs/promises"),{project,ctx}=await fixture();
+ await mkdir(join(project.dir,"Parts.pretty/.git"));await writeFile(join(project.dir,"Parts.pretty/.git/config"),"dummy secret");await writeFile(join(project.dir,"Parts.pretty/.env"),"dummy secret");await writeFile(join(project.dir,"Parts.pretty/old.bak"),"dummy backup");
+ const output=await portableHandoff(ctx,"handoff.zip",zipFiles),files=(output.json as {files:string[]}).files;
+ expect(files.some(path=>path.includes(".env")||path.includes(".git/")||path.endsWith(".bak"))).toBe(false);
+ await rm(join(project.dir,"exports/positions.csv"));await expect(portableHandoff(ctx,"handoff.zip",zipFiles)).rejects.toThrow("exports/positions.csv");
 });
