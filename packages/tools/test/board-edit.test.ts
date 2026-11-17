@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { z } from "zod/v4";
 import { onboard, runAcceptance } from "@fabdesk/board-workflow";
 import { createRegistry, type BoardAdoptResult, type CoreServices } from "../src";
 import { BOARD, PRO, SHEET } from "../../board-workflow/test/edit-fixture";
@@ -48,6 +49,18 @@ describe("board_edit", () => {
     const def = createRegistry().get("board_edit")!;
     expect(def.toolset).toBe("board");
     expect(Object.keys(def.inputSchema)).toEqual(["plan", "mode", "adopt", "candidate", "pcb"]);
+  });
+
+  test("a bad nested plan field is named on every entry path, not \"Invalid input at plan\"", async () => {
+    const def = createRegistry().get("board_edit")!;
+    const plan = { id: "via", stack: { remove_vias: [{ uuid: "80bbae6c", reason: "via in U1 pad 9" }] } };
+    const parsed = z.object(def.inputSchema as z.ZodRawShape).safeParse({ plan });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error!.issues.map((i) => i.message).join("\n")).toContain("plan.stack.remove_vias[0].net: expected string, received undefined");
+    const { project, run } = await setup();
+    await expect(run({ mode: "impact", plan: JSON.stringify(plan) })).rejects.toThrow("plan.stack.remove_vias[0].net: expected string");
+    await writeFile(join(project.dir, "via-plan.json"), JSON.stringify(plan));
+    await expect(run({ mode: "impact", plan: "via-plan.json" })).rejects.toThrow("plan.stack.remove_vias[0].net: expected string");
   });
 
   test("impact needs no KiCad run and writes nothing", async () => {

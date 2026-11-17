@@ -111,7 +111,7 @@ and basis); \`inner_neck_allowance_mm: 0\` on a power class makes every inner se
   with \`prune_signal_leaves\` / \`prune_track_leaves\`, copper removed by uuid with \`remove_items\`, \`source_sha256\` pins the board you read);
   \`hole\` (resize an NPTH locating hole to \`size_mm\`, round or oval, with its courtyards, keep-out and library footprint); \`stack\` (a
   supplier stack-up and rule plan: class updates and \`split_classes\`, an \`acceptance\` merge, \`dielectrics\` epsilon_r, \`remove_vias\` each
-  with a reason, or \`copper_source\` to take a bench result's board). Each is proved like any other edit; repair what a tighter rule fails
+  with a reason (each removed via's net goes to the repair), or \`copper_source\` to take a bench result's board). Each is proved like any other edit; repair what a tighter rule fails
   with the last mile, not with coordinates in the plan.
   When an edit displaces a dense region, stop editing and re-place with the moved parts as anchors.
   The owner's DRC exclusions follow the edit: when a part the owner had excluded moves with its partner, or an identical part takes its

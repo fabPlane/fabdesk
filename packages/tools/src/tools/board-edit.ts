@@ -159,22 +159,49 @@ const PLAN = z
   })
   .passthrough();
 
+type PlanIssue = { path: readonly PropertyKey[]; message: string };
+
+/** `plan.stack.remove_vias[0].net: expected string, received undefined; ...`: the nested field, not "Invalid input at plan". */
+export function planIssueText(issues: readonly PlanIssue[]): string {
+  const at = (path: readonly PropertyKey[]) => path.map((k) => (typeof k === "number" ? `[${k}]` : `.${String(k)}`)).join("");
+  const shown = issues.slice(0, 5).map((i) => `plan${at(i.path)}: ${i.message.replace(/^Invalid input: /, "")}`);
+  return shown.join("; ") + (issues.length > 5 ? ` (+${issues.length - 5} more)` : "");
+}
+
+/**
+ * The plan argument. A plain union reports a bad nested field as "Invalid input at plan" (the MCP SDK prints only the
+ * union's own issue); this one names the object branch's fields, and readPlan checks a JSON text or file the same way.
+ */
+const PLAN_ARG = z.union([PLAN, z.string()], {
+  error: (iss) => {
+    const branch = (iss as { errors?: PlanIssue[][] }).errors?.[0];
+    return typeof iss.input === "object" && iss.input !== null && branch?.length
+      ? planIssueText(branch)
+      : "plan must be an object, inline JSON text, or a project-relative path to a JSON file";
+  },
+});
+
 async function readPlan(ctx: ToolContext, plan: unknown): Promise<unknown> {
   if (typeof plan !== "string") return plan;
   const t = plan.trim();
+  let parsed: unknown;
   if (t.startsWith("{")) {
     try {
-      return JSON.parse(t);
+      parsed = JSON.parse(t);
     } catch (e) {
       throw new ToolError(`plan is not valid JSON: ${e instanceof Error ? e.message : String(e)}`, "invalid_args");
     }
+  } else {
+    const file = await jailPath(ctx.requireProject().dir, t);
+    try {
+      parsed = JSON.parse(await readFile(file, "utf8"));
+    } catch (e) {
+      throw new ToolError(`cannot read the plan ${t}: ${e instanceof Error ? e.message : String(e)}`, "not_found");
+    }
   }
-  const file = await jailPath(ctx.requireProject().dir, t);
-  try {
-    return JSON.parse(await readFile(file, "utf8"));
-  } catch (e) {
-    throw new ToolError(`cannot read the plan ${t}: ${e instanceof Error ? e.message : String(e)}`, "not_found");
-  }
+  const checked = PLAN.safeParse(parsed);
+  if (!checked.success) throw new ToolError(planIssueText(checked.error.issues), "invalid_args");
+  return checked.data;
 }
 
 const py = (n: number) => String(n);
@@ -333,7 +360,7 @@ export const board_edit = defineTool({
   description:
     "An ECO on a routed board as a plan, not as hand edits. Plan keys: remove [refs]; move [{ref, to:[x,y,rot] | near:REF|REF.PAD|[x,y], carry, carry_auto, anchor, basis}] with displace {radius, ...} (parts in the way are re-seated nearby, fixed parts stop it); near: net:NAME seats a part at the free spot nearest the centroid of that net's other pads; legalise [refs] or {refs, clearance, edge, radius} does that for many test points at once (each at its own net's centroid, rotation kept); swap [{ref, value, fields, footprint:LIB:NAME, side, dnp}] (a position swap of two parts is two moves); add [{ref, like, pins:{pad:net}, near, value, footprint}] (copies the template symbol and footprint, one label per pin); net [{pin:REF.PAD, to:NET}] (pad, schematic label and dangling copper); copper {via_at_pad [{ref, pad, diameter, drill}], prune_signal_leaves, prune_track_leaves, remove_items [uuid], source_sha256} (the toolkit's copper_plan: a filled/capped via at a pad, dead-end pruning, named copper removal; never routes); hole {ref, size_mm:[x,y], clearance_mm} (mechanical_hole: resize an NPTH locating hole with its courtyards, keep-out and library footprint); stack {classes, split_classes, acceptance, remove_acceptance_paths, dielectrics, remove_vias, copper_source} (stack_plan: supplier stack-up and class plan). mode impact: what it touches (parts, nets, copper, requirement entries, contracts, schematic symbols) and a verdict; STOP means a decision (pins left alone, fixed part in the way, anchor) and writes nothing. mode apply: scores the unedited project, makes the change on board AND schematic sheets in a candidate folder (.fabdesk/board/edits/<id>-<time>) with edited requirements and an origin.json, and lists the nets to route again. mode proof: A1-A9 on the candidate against the project before the edit (strict if it passed, no new failure if it already failed) and the planned-versus-collateral diff. full (default) = impact, apply, proof. adopt: true writes a PASSING candidate into the project (sheets, the board as one KiCad commit, the DRC exclusions the proof re-keyed). In full/apply, nets the edit cut are reconnected in the candidate by board_route's last-mile steps in order (finish; pairs if a pair got worse; then while opens remain taps, a7, leg, rip+blockers:1.0; each kept only if the whole board improves under its gate) before the proof; the candidate's last-mile workspace stays at <candidate>/.lastmile for board_route info/view/why/try (pass it as workspace). After the proof a churn guard gives nets the plan did not touch their original copper back when the board scores no worse. A candidate that still has opens is not adopted. A completed measurement is a result, not a tool failure.",
   inputSchema: {
-    plan: z.union([PLAN, z.string()]).describe("The plan: an object, inline JSON text, or a project-relative path to a JSON file."),
+    plan: PLAN_ARG.describe("The plan: an object, inline JSON text, or a project-relative path to a JSON file."),
     mode: z.enum(["impact", "apply", "proof", "full"]).default("full"),
     adopt: z.boolean().default(false).describe("After a passing proof, write the candidate into the project."),
     candidate: z.string().optional().describe("mode proof: the candidate folder (default: the newest of this plan id)."),

@@ -84,6 +84,9 @@ describe("board_route last-mile actions", () => {
     expect((t.json as { accepted: string | null }).accepted).toBeNull();
     const v = await call({ action: "view", box: [0, 0, 40, 30] });
     expect(String(v.text)).toMatch(/\.(svg|png)$/);
+    // no box: the whole board, not "view needs box"
+    const whole = await call({ action: "view" });
+    expect(String(whole.text)).toMatch(/-board-[a-z]+\.(svg|png)$/);
     await expect(call({ action: "try", actions: ["bogus"] })).rejects.toThrow(/unknown action 'bogus'/);
     const i = await call({ action: "info", items: ["J1", "^USB_DP$"] });
     expect(i.text).toContain("J1  x  at 5.00,5.00");
