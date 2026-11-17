@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copperBoard, netFacts, widthFloors, widthCheck, krtPatternMatches, saveWidthBaseline, referenceFacts, krtWidthArgs, allowWidthChange, classWidthFloors, compareQuality, quality } from "../src/routing-quality";
+import { copperBoard, netFacts, widthFloors, widthCheck, krtPatternMatches, saveWidthBaseline, referenceFacts, krtWidthArgs, allowWidthChange, classWidthFloors, projectPairs, compareQuality, quality } from "../src/routing-quality";
 import { lastmile as L } from "../src/index";
 const track = (net: string, width: number, id = net) => `(segment (start 0 0) (end 1 0) (width ${width}) (layer "F.Cu") (net "${net}") (uuid "${id}"))`;
 const pcb = (s: string) => copperBoard(`(kicad_pcb ${s})`);
@@ -143,4 +143,46 @@ test("KRT fnmatch selectors support ranges, negation and literal metacharacters"
   const patterns = args.slice(args.indexOf("--power-nets") + 1, args.indexOf("--power-nets-widths"));
   const widths = args.slice(args.indexOf("--power-nets-widths") + 1).map(Number);
   expect(widths[patterns.findIndex(p => krtPatternMatches(p, "UNRELATED"))]).toBe(.2);
+});
+
+// Python argparse and fnmatch are the effective parser/matcher used by KRT. This
+// fixture uses its store actions (last occurrence wins) and first matching pattern.
+const python = Bun.which("python3");
+for (const [label, input, expected] of [
+  ["equals lists", ["--power-nets=*", "--power-nets-widths=0.6"], [.6, .6]],
+  ["equals global", ["--track-width=0.6"], [.6, .6]],
+  ["abbreviations", ["--track-w=.6", "--power-nets-w=.7", "--power-nets", "*"], [.7, .7]],
+  ["repeated lists", ["--power-nets", "OUT", "--power-nets-widths", ".9", "--power-nets=*", "--power-nets-widths=.6"], [.6, .6]],
+  ["repeated global", ["--track-width=.8", "--track-w", ".6"], [.6, .6]],
+  ["short option boundary", ["--power-nets", "*", "-v", "--power-nets-widths", ".6"], [.6, .6]],
+  ["independently repeated arrays", ["--power-nets", "OTHER", "--power-nets-widths=.9", "--power-nets", "OUT", "*", "--power-nets-widths", ".6", ".4"], [.6, .4]],
+  ["empty repeated arrays", ["--power-nets=*", "--power-nets-widths=.9", "--power-nets", "--power-nets-widths"], [.3, null]],
+  ["first matching override", ["--power-nets", "OUT", "*", "--power-nets-widths", ".4", ".9"], [.4, .9]],
+  ["explicit zero global", ["--track-width=0"], [.3, 0]],
+  ["separate lists", ["--power-nets", "*", "--power-nets-widths", ".2"], [.3, .2]],
+] as const) (python ? test : test.skip)(`KRT argparse effective widths: ${label}`, () => {
+  const output = krtWidthArgs([...input], { OUT: .3 }, {});
+  const result = Bun.spawnSync([python!, join(import.meta.dir, "fixtures/krt-width-args.py")], {
+    stdin: Buffer.from(JSON.stringify(output)), stdout: "pipe", stderr: "pipe",
+  });
+  expect(result.exitCode).toBe(0);
+  expect(JSON.parse(result.stdout.toString())).toEqual(expected);
+});
+
+test("Default pair preference and actual minima apply without a single-ended preference", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "default-pair-floor-"));
+  try {
+    await writeFile(join(dir, "board.kicad_pcb"), `(kicad_pcb (net "USB_DP") (net "USB_DN") ${track("USB_DP", .2)} ${track("USB_DN", .2)})`);
+    await writeFile(join(dir, "board.kicad_pro"), JSON.stringify({
+      board: { design_settings: { rules: { min_track_width: .1 } } },
+      net_settings: { classes: [{ name: "Default", track_width: .5, diff_pair_width: .25, diff_pair_gap: .15 }] },
+    }));
+    expect(await classWidthFloors(dir, "board", ["USB_DP", "USB_DN"])).toEqual({ USB_DP: .25, USB_DN: .25 });
+    const declared = [{ p: "USB_DP", n: "USB_DN" }];
+    const board = copperBoard(await readFile(join(dir, "board.kicad_pcb"), "utf8"));
+    expect(await projectPairs(dir, board, declared)).toEqual([{ ...declared[0]!, widthMm: .25, gapMm: .15 }]);
+    expect(await classWidthFloors(dir, "board", ["USB_DP", "USB_DN"], declared)).toEqual({ USB_DP: .25, USB_DN: .25 });
+    await writeFile(join(dir, "board.kicad_dru"), `(version 1) (rule "minimum" (constraint track_width (min 0.3mm)))`);
+    expect(await classWidthFloors(dir, "board", ["USB_DP", "USB_DN"])).toEqual({ USB_DP: .3, USB_DN: .3 });
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });

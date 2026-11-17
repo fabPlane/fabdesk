@@ -87,7 +87,7 @@ for (const assigned of [true, false])
     expect(run.application.state).toBe("applied");
   });
 
-test("VBAT+/- names are measured without inheriting Default differential-pair dimensions", async () => {
+test("VBAT+/- name identification uses Default pair dimensions without single-ended widths", async () => {
   const project = await tempProject("battery-pair");
   await writeFile(join(project.dir, "board.kicad_pcb"), '(kicad_pcb (net "VBAT+") (net "VBAT-"))');
   await writeFile(
@@ -102,7 +102,7 @@ test("VBAT+/- names are measured without inheriting Default differential-pair di
     project.dir,
     copperBoard(await readFile(join(project.dir, "board.kicad_pcb"), "utf8")),
   );
-  expect(definitions).toEqual([{ p: "VBAT+", n: "VBAT-", source: "identified by name" }]);
+  expect(definitions).toEqual([{ p: "VBAT+", n: "VBAT-", source: "identified by name", widthMm: .2, gapMm: .15 }]);
   const base = mockServices([project]);
   let options: any;
   const services = mockServices([project], {
@@ -117,8 +117,8 @@ test("VBAT+/- names are measured without inheriting Default differential-pair di
   });
   const run = await invoke(project, services, {});
   expect(run.state).toBe("completed");
-  expect(options.settings.differentialPairs).toEqual([{ p: "VBAT+", n: "VBAT-" }]);
-  expect(options.settings.perNet).toBeUndefined();
+  expect(options.settings.differentialPairs).toEqual([{ p: "VBAT+", n: "VBAT-", widthMm: .2, gapMm: .15 }]);
+  expect(options.settings.perNet.map((r: any) => r.widthMm)).toEqual([.2, .2]);
 });
 
 for (const mode of ["onOpen", "always"])

@@ -76,7 +76,7 @@ for (const missing of [false, true])
     expect(run.candidate.available).toBe(false);
     expect(run.application.state).toBe("not_available");
   });
-test("#2 Power assignments with KiCad default pair fields do not constrain VBAT rails", async () => {
+test("#2 broad Power dimensions apply without changing name-based pair identification", async () => {
   const project = await fixture("review-power", pcb(1, 1, "VBAT+", "VBAT-"), {
     net_settings: {
       classes: [{ name: "Power", track_width: 0.5, diff_pair_width: 0.2, diff_pair_gap: 0.15 }],
@@ -85,7 +85,7 @@ test("#2 Power assignments with KiCad default pair fields do not constrain VBAT 
     },
   });
   const pairs = await projectPairs(project.dir, copperBoard(pcb(1, 1, "VBAT+", "VBAT-")));
-  expect(pairs).toEqual([{ p: "VBAT+", n: "VBAT-", source: "identified by name" }]);
+  expect(pairs).toEqual([{ p: "VBAT+", n: "VBAT-", source: "identified by name", widthMm: .2, gapMm: .15 }]);
 });
 test("#3 automatic whole-board fallback must not erase first-pass copper in a pair retry", async () => {
   const project = await fixture("review-fallback-pair"),
@@ -446,4 +446,25 @@ test("fresh review follow-up: explicit per-net widths outrank the global width",
   await invoke(project, services);
   expect(received.settings.differentialPairs[0]).toMatchObject({ widthMm: .2, gapMm: .15 });
   expect(received.settings.perNet.map((r: any) => r.widthMm)).toEqual([.2, .2]);
+ });
+
+for (const assignment of ["default", "broad", "copper-only"] as const)
+ test(`name-detected pair keeps dimensions with ${assignment} rules`, async () => {
+  const project = await fixture(`pair-name-${assignment}`, `(kicad_pcb (net "USB_DP") (net "USB_DN") ${seg("USB_DP", 1, .2)} ${seg("USB_DN", 1, .2)})`, {
+    net_settings: {
+      classes: [{ name: assignment === "broad" ? "Signals" : "Default", track_width: .5,
+        ...(assignment === "copper-only" ? {} : { diff_pair_width: .2, diff_pair_gap: .15 }) }],
+      netclass_patterns: assignment === "broad" ? [{ pattern: "*", netclass: "Signals" }] : [],
+    }
+  });
+  const base = mockServices([project]);
+  let received: any;
+  const services = mockServices([project], { design: { ...base.design,
+    query: async (dir, select) => select === "unrouted" ? [] : base.design.query(dir, select),
+    route: async (_dir, opts) => { received = opts; return summary(); }
+  } });
+  await invoke(project, services);
+  expect(received.settings.perNet.map((r: any) => r.widthMm)).toEqual([.2, .2]);
+  if (assignment !== "copper-only")
+    expect(received.settings.differentialPairs[0]).toMatchObject({ widthMm: .2, gapMm: .15 });
  });

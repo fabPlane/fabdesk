@@ -738,7 +738,7 @@ async function executeRoute(
       pair.widthMm ??
       0;
     for (const pair of detectedPairs) {
-      if (pair.source === "identified by name") continue;
+      if (pair.source === "identified by name" && pair.widthMm === undefined) continue;
       const width = Math.max(
         Math.max(requestedPairWidth(pair, pair.p), perNet.get(pair.p)?.widthMm ?? 0),
         Math.max(requestedPairWidth(pair, pair.n), perNet.get(pair.n)?.widthMm ?? 0),

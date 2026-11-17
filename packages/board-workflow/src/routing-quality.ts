@@ -387,7 +387,7 @@ function pairClassName(name: string, pair: PairDefinition) {
     stem.includes(key)
   );
 }
-/** Only explicit pair intent supplies dimensions; fields saved on every KiCad class do not. */
+/** Pair identification and applicable native dimensions are independent. */
 export async function projectPairs(
   dir: string,
   board: CopperBoard,
@@ -416,7 +416,7 @@ export async function projectPairs(
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
   }
-  const forNet = (net: string, pair: PairDefinition) => {
+  const forNet = (net: string, pair: PairDefinition, requireIntent = true) => {
     const exact = settings?.netclass_assignments?.[net];
     const assignments: string[] = exact ? (Array.isArray(exact) ? exact : [exact]) : [];
     const targeted = new Set<string>();
@@ -441,21 +441,27 @@ export async function projectPairs(
       )
         targeted.add(p.netclass);
     }
-    // Require pair intent in addition to assignment; KiCad writes pair dimensions on Power too.
+    if (!assignments.length) assignments.push("Default");
+    // Broad class dimensions apply to a named pair without establishing explicit pair intent.
     return classes
       .filter(
         (c) =>
-          assignments.includes(c.name) && (pairClassName(c.name, pair) || targeted.has(c.name)),
+          assignments.includes(c.name) && (!requireIntent || pairClassName(c.name, pair) || targeted.has(c.name)),
       )
       .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))[0];
   };
   return named.map((pair) => {
     const explicit = declared.find((p) => p.p === pair.p && p.n === pair.n);
-    if (explicit) return explicit;
-    const pc = forNet(pair.p, pair),
-      nc = forNet(pair.n, pair),
+    const explicitClass = forNet(pair.p, pair) ?? forNet(pair.n, pair);
+    const pc = forNet(pair.p, pair, false),
+      nc = forNet(pair.n, pair, false),
       width = pc?.diff_pair_width ?? nc?.diff_pair_width,
       gap = pc?.diff_pair_gap ?? nc?.diff_pair_gap;
+    if (explicit) return {
+      ...explicit,
+      ...(explicit.widthMm === undefined && width !== undefined && width > 0 ? { widthMm: width } : {}),
+      ...(explicit.gapMm === undefined && gap !== undefined ? { gapMm: gap } : {}),
+    };
     // Recognize unconditioned rules and simple KiCad net-name/class selectors. Complex
     // expressions remain KiCad's responsibility; never guess that they apply to a pair.
     const nativeRule = children(rules, "rule").some((rule) => {
@@ -480,7 +486,7 @@ export async function projectPairs(
       p: pair.p,
       n: pair.n,
       source:
-        width !== undefined || gap !== undefined
+        explicitClass && (width !== undefined || gap !== undefined)
           ? ("native netclass" as const)
           : nativeRule
             ? ("native diff-pair rule" as const)
@@ -556,7 +562,7 @@ export async function classWidthFloors(dir: string, stem: string, nets: string[]
   try { board = copperBoard(await readFile(join(dir, `${stem}.kicad_pcb`), "utf8")); }
   catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
   const pairs = board ? await projectPairs(dir, board, declaredPairs, stem) : declaredPairs;
-  const pairWidths = new Map(pairs.filter(p => p.source !== "identified by name").flatMap(p => [[p.p, p.widthMm ?? 0], [p.n, p.widthMm ?? 0]] as const));
+  const pairWidths = new Map(pairs.flatMap(p => [[p.p, p.widthMm ?? 0], [p.n, p.widthMm ?? 0]] as const));
   let rules: Node[] = [];
   try { rules = sexpressions((await readFile(join(dir, `${stem}.kicad_dru`), "utf8")).replace(/"(?:[^"\\]|\\.)*"|#[^\n]*/g, token => token.startsWith("#") ? "" : token)); }
   catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
@@ -582,25 +588,57 @@ export async function classWidthFloors(dir: string, stem: string, nets: string[]
 export function krtWidthArgs(args: string[], floors: Record<string, number>, rules: Record<string, number>): string[] {
   const entries = Object.entries(floors);
   if (!entries.length) return args;
-  const out = [...args];
-  const at = args.indexOf("--track-width");
-  const global = at < 0 ? 0 : Number(args[at + 1]);
+  const { rest: out, global, patterns, widths } = parseKrtWidths(args);
   // KRT interprets these names as fnmatch patterns. Escape metacharacters for an exact net selector.
   const exact = (net: string) => net.replace(/[\[?*]/g, c => c === "[" ? "[[]" : `[${c}]`);
-  const take = (flag: string) => {
-    const i = out.indexOf(flag);
-    if (i < 0) return [];
-    let end = i + 1;
-    while (end < out.length && !out[end]!.startsWith("--")) end++;
-    return out.splice(i, end - i).slice(1);
-  };
-  const patterns = take("--power-nets"), widths = take("--power-nets-widths");
   const exactPatterns: string[] = [], exactWidths: string[] = [];
   for (const [net, floor] of entries) {
-    const existing = Math.max(0, ...patterns.flatMap((p, i) => krtPatternMatches(p, net) ? [Number(widths[i] ?? 0)] : []));
+    const match = patterns.findIndex(p => krtPatternMatches(p, net));
+    const existing = Number(widths[match] ?? 0);
     exactPatterns.push(exact(net)); exactWidths.push(String(Math.max(floor, rules[net] ?? 0, global, existing)));
   }
-  return [...out, "--power-nets", ...exactPatterns, ...patterns, "--power-nets-widths", ...exactWidths, ...widths];
+  const end = out.indexOf("--");
+  const overlay = ["--power-nets", ...exactPatterns, ...patterns, "--power-nets-widths", ...exactWidths, ...widths];
+  out.splice(end < 0 ? out.length : end, 0, ...overlay);
+  return out;
+}
+
+/** Parse KRT argparse store options: equals takes one value; repeated occurrences replace.
+ * Unique long-option abbreviations are accepted by argparse. --track-w and
+ * --power-nets- are the shortest unambiguous prefixes in KRT's option inventory.
+ * Other options remain in order for KRT to parse, including its positional terminator.
+ */
+function parseKrtWidths(args: string[]) {
+  const rest: string[] = [];
+  let global = 0, hasGlobal = false, patterns: string[] = [], widths: string[] = [];
+  const isOption = (s: string) => s !== "-" && s.startsWith("-") && !/^-(?:\d+|\d*\.\d+)$/.test(s);
+  for (let i = 0; i < args.length; i++) {
+    const token = args[i]!;
+    if (token === "--") { rest.push(...args.slice(i)); break; }
+    const eq = token.indexOf("=");
+    const flag = eq < 0 ? token : token.slice(0, eq);
+    const kind = flag.startsWith("--track-w") && "--track-width".startsWith(flag) ? "global"
+      : flag === "--power-nets" ? "patterns"
+      : flag.startsWith("--power-nets-") && "--power-nets-widths".startsWith(flag) ? "widths" : null;
+    if (!kind) { rest.push(token); continue; }
+    const values: string[] = [];
+    if (eq >= 0) values.push(token.slice(eq + 1));
+    else if (kind === "global") {
+      if (args[i + 1] === undefined || isOption(args[i + 1]!)) throw new Error(`${flag} requires a width`);
+      values.push(args[++i]!);
+    } else {
+      while (i + 1 < args.length && !isOption(args[i + 1]!)) values.push(args[++i]!);
+    }
+    if (kind !== "patterns" && values.some(v => !v.trim() || !Number.isFinite(Number(v))))
+      throw new Error(`${flag} requires numeric widths`);
+    if (kind === "global") { global = Number(values[0]); hasGlobal = true; }
+    else if (kind === "patterns") patterns = values;
+    else widths = values;
+  }
+  if (patterns.length !== widths.length) throw new Error("--power-nets and --power-nets-widths must have equal lengths");
+  // Re-emit the effective global setting once; do not leave aliases that can override it.
+  if (hasGlobal) rest.splice(rest.indexOf("--") < 0 ? rest.length : rest.indexOf("--"), 0, "--track-width", String(global));
+  return { rest, global, patterns, widths };
 }
 
 /** Transient native constraints for engines which read KiCad rules instead of request overlays. */
