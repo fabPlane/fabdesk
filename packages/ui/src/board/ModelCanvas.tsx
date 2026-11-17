@@ -3,6 +3,7 @@ import { alignBoardCamera, type BoardCameraMode } from "./board-camera-mode";
 import { boardPreviewMaterial } from "./board-preview-material";
 import { batchPreviewMeshes } from "./preview-mesh-batching";
 import { previewFrame } from "./preview-frame";
+import { previewInteraction } from "./preview-interaction";
 import { useBoardPartSelection, type PartSelectionSource } from "./usePartSelection";
 import { PartSelectionBar } from "./PartSelectionBar";
 import { nativeModelParts, modelPartReference, ModelPartTint } from "./model-part-selection";
@@ -122,6 +123,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, vi
     let cleanupSelection: (() => void) | null = null;
     let environment: THREE.WebGLRenderTarget | null = null;
     let stopRendering = () => {};
+    let stopInput = () => {};
     setError(null); setLoading(true);
     void (async () => {
       try {
@@ -167,6 +169,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, vi
         } });
         const render = frames.render;
         stopRendering = frames.dispose;
+        stopInput = previewInteraction(renderer.domElement, render);
         let motionFrame = 0;
         stopMotion = () => { cancelAnimationFrame(motionFrame); motionFrame = 0; if (renderer) renderer.domElement.dataset["focusMotion"] = "idle"; };
         const reset = () => {
@@ -337,7 +340,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, vi
       }
     })();
     return () => {
-      disposed = true; changeView.current = null; stopMotion(); stopRendering(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
+      disposed = true; changeView.current = null; stopMotion(); stopInput(); stopRendering(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
       if (camera && controls) savedCamera.current = { position: camera.position.clone(), target: controls.target.clone(), up: camera.up.clone(), minDistance: controls.minDistance };
       observer?.disconnect(); cleanupContext?.(); controls?.dispose();
       if (model) disposeModel(model);

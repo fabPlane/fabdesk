@@ -9,7 +9,7 @@ The existing schematic, routing, placement and checks remain available. The sour
 ## Validation
 
 - Root typecheck and desktop production build passed.
-- UI: 407 tests passed. Client core: 616 tests passed.
+- UI: 409 tests passed. Client core: 616 tests passed.
 - Focused registry/preview tests: 77 passed. GLB integrity and preview publication tests: 14 passed.
 - New tests cover actual layer enumeration, immutable source export, preservation of previous output after an edit, revision matching, failed queued jobs and layer visibility.
 - Live desktop: a real four-layer VAIO peripheral board and two-layer microSD board, both as separate assembly sources with no pre-existing previews. Automatic preparation produced 11 and 9 layer images respectively; both bundles matched their source SHA-256 and models were independently saved (6.9 MB and 1.2 MB).
@@ -19,6 +19,7 @@ The existing schematic, routing, placement and checks remain available. The sour
 - Performance: static opaque primitives are batched only inside their original component, retaining picking, highlighting, materials and every triangle. Transparent, animated, mirrored, partial-range and individually identified meshes stay separate. Input/resize/focus redraws coalesce to one animation frame; idle views do not continuously render.
 - Real asset counts: VAIO peripheral 9,961 → 159 meshes, unchanged 117,198 triangles; microSD 1,778 → 42 meshes, unchanged 18,310 triangles. The peripheral's top-view board image was pixel-identical before/after batching. Live U1 selection, 3D Top/Bottom and repeated Top reset passed.
 - Same-computer peripheral orbit benchmark (90 animation-frame keyboard steps through OrbitControls, 1440×920 app): median frame interval 55.6 → 5.6 ms, p95 61.3 → 5.6 ms. This includes removing duplicate draws; results depend on hardware, display refresh rate and board complexity, and are not a JLCPCB benchmark or a universal frame-rate guarantee.
+- 2D pan follow-up: OrbitControls suppresses change events below its world-space movement threshold. An actual 8-pixel mouse drag on the microSD board previously produced no changed board pixels; after invalidating active pointer moves it produces the exact 8-pixel translation. Input invalidation still coalesces with normal change events into one render per frame. Hover stays idle and handlers are removed on teardown. Regression coverage uses real OrbitControls at PCB scale, plus mouse/touch/wheel and cleanup cases.
 - Broader Windows tools/KiCad suites are not fully green. Their existing failures were reproduced in a separate checkout of `main` (`b7bc58cb`), including symlink privileges, shell-based CLI fixtures, stencil and other platform-sensitive checks. The two changed inventory assertions (tab/tool additions) were updated and passed on rerun.
 
 Screenshots in `screenshots/automatic-board-views/` show the actual app using the VAIO peripheral source, not mockups.
