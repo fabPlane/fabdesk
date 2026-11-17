@@ -1,4 +1,6 @@
 import { renderRootCircuitPreview } from "../schematic-circuit-preview";
+import { boardPreviewLayers } from "@fabdesk/kicad";
+import { BOARD_LAYERS_PATH, BoardLayers } from "@fabdesk/protocol";
 import { expectedPcbSource } from "../pcb-output";
 import { renderMemberSchematicPreview } from "../member-schematic-preview";
 /** Render toolset: schematic/PCB images, GLB, and product videos. */
@@ -22,7 +24,7 @@ import { ToolError, defineTool } from "../registry";
 import { fileUrl, loadNetlist, ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
 import { pcbPreviewFileHash, recordPcbPreviewRevision } from "../pcb-preview-revision";
 import { rowPoints } from "./spatial";
-import { pcbModelReadiness, renderPcbDisplay } from "./pcb-display";
+import { boardPreviewCli, pcbModelReadiness, renderPcbDisplay } from "./pcb-display";
 
 export const render_pcb_readiness = defineTool({
   name: "render_pcb_readiness",
@@ -222,6 +224,42 @@ export const render_pcb_svg = defineTool({
   },
 });
 
+export const render_board_layers = defineTool({
+  name: "render_board_layers", boardScoped: true, toolset: "render",
+  title: "Prepare board layers",
+  description: "Prepare all enabled copper, mask, paste, silkscreen and outline layers for the board viewer.",
+  inputSchema: { expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/) },
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  longRunning: true,
+  handler: async ({ expectedSourceSha256 }, ctx) => {
+    const project = ctx.requireProject(), board = await requireBoard(project);
+    const bytes = await readFile(board), hash = createHash("sha256").update(bytes).digest("hex");
+    const cli = await boardPreviewCli(ctx, bytes.toString("utf8"));
+    if (hash !== expectedSourceSha256) throw new ToolError("PCB changed before preparing layers.", "precondition");
+    const names = boardPreviewLayers(bytes.toString("utf8"));
+    if (!names.length || names.length > 64) throw new ToolError("PCB has no supported layer stack.", "precondition");
+    const scratch = await mkdtemp(join(tmpdir(), "fabplane-board-layers-"));
+    try {
+      const snapshot = join(scratch, "board.kicad_pcb");
+      await writeFile(snapshot, bytes);
+      const layers = [];
+      for (const [index, name] of names.entries()) {
+        ctx.signal.throwIfAborted();
+        ctx.progress(index / names.length, `Preparing ${name}`);
+        const output = join(scratch, `${index}.svg`);
+        await ctx.services.kicad.exportPcbSvg(cli, { board: snapshot, output, layers: [name], signal: ctx.signal });
+        layers.push({ name, svg: await readFile(output, "utf8") });
+      }
+      if (await pcbPreviewFileHash(board) !== hash) throw new ToolError("PCB changed while preparing layers. Previous preview kept.", "precondition");
+      await ctx.runInScope?.(async () => {});
+      const output = await jailPath(project.dir, BOARD_LAYERS_PATH);
+      ctx.signal.throwIfAborted();
+      await writeAtomic(output, JSON.stringify(BoardLayers.parse({ version: 1, sourceSha256: hash, layers })));
+      return ok("Board layers ready", { path: output });
+    } finally { await rm(scratch, { recursive: true, force: true }); }
+  },
+});
+
 export const render_glb = defineTool({
   name: "render_glb",
   boardScoped: true,
@@ -250,8 +288,8 @@ export const render_glb = defineTool({
     }
     const project = ctx.requireProject();
     if (ctx.board && !expectedSourceSha256) throw new ToolError("Inspect the selected member PCB and provide expectedSourceSha256 before exporting its model.", "precondition");
-    const cli = await requireKicad(ctx);
     const board = await requireBoard(project);
+    const cli = await boardPreviewCli(ctx, await readFile(board, "utf8"));
     const output = await jailPath(project.dir, `${PROJECT_FILES.renders}/board.glb`);
     const receiptPath = await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
     ctx.progress(0.2, "exporting glb");
@@ -611,6 +649,7 @@ export const renderTools = [
   render_pcb_display,
   render_schematic_svg,
   render_pcb_svg,
+  render_board_layers,
   render_view,
   render_glb,
   render_product_video,

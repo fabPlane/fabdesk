@@ -17,6 +17,15 @@ export function pcbCreatorVersion(text: string): string | null {
   );
 }
 
+/** Use a compatible installed exporter for previews without changing the user's settings. */
+export async function boardPreviewCli(ctx: ToolContext, text: string) {
+  const configured = await requireKicad(ctx), version = pcbCreatorVersion(text);
+  if (!version || kicadVersionAtLeast(configured.version, version)) return configured;
+  const compatible = await findKicadCli(undefined, { minimumVersion: version, ...(configured.trace ? { trace: configured.trace } : {}) });
+  if (compatible) return compatible;
+  throw new ToolError(`This board was saved with KiCad ${version}. Install that version or newer to prepare its views. Your PCB has not been changed.`, "precondition");
+}
+
 /** Advisory only: the saving application version is not a file-format compatibility guarantee. */
 export async function pcbModelReadiness(ctx: ToolContext, paths: string[]) {
   const project = ctx.requireProject();
