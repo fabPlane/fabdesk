@@ -245,16 +245,26 @@ describe.skipIf(!cli)("with kicad-cli", () => {
   test("fab: with every gate passing, writes a package whose CAM is reproducible and whose Gerbers check out", async () => {
     const dir = await project();
     const out = join(dir, "pkg");
+    const pcb = join(dir, "fx.kicad_pcb");
+    await writeFile(pcb, FIXTURE_BOARD.replaceAll('(footprint "R_0603_1608Metric"', '(footprint "R_0603_1608Metric" (property "LCSC" "C12345" (at 0 0) (layer "F.Fab") (effects (font (size 1 1))))'));
+    const bomDir = join(dir, "bom");
+    // Deterministic supplier evidence for the fixture's actual 0603 copper, never a network lookup.
+    await release.bomCheck({ project: dir, stem: "fx", out: bomDir, fetch: { shared: null, paceMs: 0, transport: async (url) => {
+      if (url.includes("productCode=")) return { result: { productModel: "0603-10k", encapStandard: "0603", productCycle: "normal", smtLabel: "BASE", stockNumber: 90000 } };
+      if (url.includes("jlcpcb")) return { data: { componentPageInfo: { list: [{ componentCode: "C12345", stockCount: 80000, componentLibraryType: "base" }] } } };
+      return { result: { packageDetail: { title: "R0603", dataStr: { head: { x: 0, y: 0 }, shape: ["PAD~RECT~-3.2480315~0~3.1496063~3.7401575~1~~1~0", "PAD~RECT~3.2480315~0~3.1496063~3.7401575~1~~2~0"] } }, dataStr: { shape: [] } } };
+    } } });
     const allPass = Object.fromEntries(["A1_connectivity", "A2_drc", "A3_parity", "A4_circuit", "A5_anchors", "A6_stack", "A7_widths", "A8_pairs", "A9_heights"].map((k) => [k, true]));
     const r = await release.releaseFab({
-      project: dir, stem: "fx", pcb: join(dir, "fx.kicad_pcb"), schematic: null, out, cli: cli!, step: false,
+      project: dir, stem: "fx", pcb, schematic: null, out, cli: cli!, step: false, bomDir, bomBoardSha: release.sha256(await readFile(pcb)),
       gates: { review: async () => ({ state: "pass" }), acceptance: async () => ({ summary: allPass }) },
     });
-    const man = r.manifest as { reproducible: { pass: boolean; files: number }; gerbcheck: { pass: boolean }; release_gate: string; jlc: { skipped?: string }; files: Record<string, string> };
+    const man = r.manifest as { reproducible: { pass: boolean; files: number }; gerbcheck: { pass: boolean }; release_gate: string; jlc: { placements: number; no_lcsc_code: string[] }; files: Record<string, string> };
     expect(man.release_gate).toContain("interconnect: none");
     expect(man.reproducible.pass).toBe(true);
     expect(man.gerbcheck.pass).toBe(true);
-    expect(man.jlc.skipped).toContain("no BOM check");
+    expect(man.jlc.placements).toBe(3);
+    expect(man.jlc.no_lcsc_code).toEqual([]);
     expect(Object.keys(man.files)).toEqual(expect.arrayContaining(["fx-gerbers.zip", "via-process-bindings.json", "acceptance-gate.json", "fx-pos.csv"]));
     expect(Object.keys(man.files).some((f) => f.startsWith("repro"))).toBe(false);
     expect((await readdir(join(out, "gerbers"))).some((n) => n.includes("F_Cu"))).toBe(true);
