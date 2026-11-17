@@ -82,13 +82,14 @@ async function fixture(change = false) {
   });
   const registry = createRegistry(),
     factory = contextFactory(services, project);
+  const controller = new AbortController();
   const ctx = await factory({
     def: registry.get("render_publish")!,
-    signal: new AbortController().signal,
+    signal: controller.signal,
     progress() {},
   });
   const run = () => registry.invoke("render_publish", {}, () => ctx);
-  return { project, run, ctx };
+  return { project, run, ctx, controller };
 }
 test("handoff publishes source-bound views and canonical reports, disclosing declared model coverage", async () => {
   const f = await fixture();
@@ -156,4 +157,50 @@ test("a stable failing measurement is published as a failing handoff, never a cl
   expect(
     JSON.parse(await readFile(join(f.project.dir, "reports/erc.json"), "utf8")).counts.errors,
   ).toBe(2);
+});
+
+const previousFiles = ["renders/pcb.svg", "renders/pcb.svg.revision.json", "renders/schematic.svg", "renders/schematic.png", "renders/schematic.revision.json", "renders/board.glb", "renders/board.glb.revision.json", "reports/drc.json", "reports/erc.json"];
+async function seedPrevious(f: Awaited<ReturnType<typeof fixture>>) {
+  await mkdir(join(f.project.dir, "renders"), { recursive: true });
+  await mkdir(join(f.project.dir, "reports"), { recursive: true });
+  for (const path of previousFiles) await writeFile(join(f.project.dir, path), `previous ${path}`);
+}
+async function expectPrevious(f: Awaited<ReturnType<typeof fixture>>) {
+  for (const path of previousFiles) expect(await readFile(join(f.project.dir, path), "utf8")).toBe(`previous ${path}`);
+}
+for (const stage of ["exportPcbSvg", "exportOwnedSchematicSvg", "exportGlb", "runDrc", "runErc"] as const)
+  test(`failed ${stage} preserves the entire earlier artifact/receipt set`, async () => {
+    const f = await fixture(); await seedPrevious(f);
+    f.ctx.services.kicad[stage] = async () => { throw Error("injected stage failure"); };
+    await expect(f.run()).rejects.toThrow("injected stage failure");
+    await expectPrevious(f);
+  });
+test("cancellation during model export preserves the earlier complete handoff", async () => {
+  const f = await fixture(); await seedPrevious(f);
+  const exporter = f.ctx.services.kicad.exportGlb;
+  f.ctx.services.kicad.exportGlb = async (...args) => { const result = await exporter(...args); f.controller.abort(); return result; };
+  await expect(f.run()).rejects.toThrow(); await expectPrevious(f);
+});
+test("a source edit detected after publication rolls back every canonical artifact and receipt", async () => {
+  const f = await fixture(); await seedPrevious(f);
+  const inspect = f.ctx.services.kicad.inspectSchematicHierarchy;
+  f.ctx.services.kicad.inspectSchematicHierarchy = async (...args) => {
+    if (await readFile(join(f.project.dir, "renders/board.glb"), "utf8") === "new model")
+      await writeFile(join(f.project.dir, "child.kicad_sch"), "edit while publishing");
+    return inspect(...args);
+  };
+  await expect(f.run()).rejects.toThrow("changed"); await expectPrevious(f);
+});
+test("concurrent publication on the same project is refused while the first run completes", async () => {
+  const f = await fixture();
+  let entered!: () => void, release!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const exporter = f.ctx.services.kicad.exportGlb;
+  f.ctx.services.kicad.exportGlb = async (...args) => { entered(); await blocked; return exporter(...args); };
+  const first = f.run();
+  await started;
+  try { await expect(f.run()).rejects.toThrow("already being prepared"); }
+  finally { release(); }
+  expect((await first).isError).toBe(false);
 });
