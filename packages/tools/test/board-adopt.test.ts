@@ -334,3 +334,15 @@ for (const custom of [false,true]) test(`via policy uses exact ${custom ? "custo
  if(custom) {await expect(adoptCandidate(await ctx(),{candidate,board:"board.kicad_pcb",reason:"exact custom geometry"})).rejects.toThrow("new via(s) in solder pads");expect(seen).toHaveLength(0);}
  else {await adoptCandidate(await ctx(),{candidate,board:"board.kicad_pcb",reason:"clear roundrect corner"});expect(seen).toHaveLength(1);}
 });
+
+test("via policy refuses unsupported chamfered pads without changing the canonical board", async () => {
+  const { project, ctx, seen } = await setup();
+  const board = '(kicad_pcb (footprint "X" (at 0 0) (property "Reference" "U1") (pad "1" smd roundrect (at 0 0) (size 2 2) (roundrect_rratio 0) (chamfer_ratio 0.4) (chamfer bottom_right) (layers "F.Cu") (net "GND"))))';
+  const target = join(project.dir, "board.kicad_pcb");
+  await writeFile(target, board);
+  const dir = await mkdtemp(join(tmpdir(), "via-chamfer-")), candidate = join(dir, "candidate.kicad_pcb");
+  await writeFile(candidate, board.slice(0, -1) + ' (via (at 0.95 0.95) (size 0.2) (drill 0.1) (layers "F.Cu" "B.Cu") (net "GND") (uuid "new")))');
+  await expect(adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "verify unsupported chamfer" })).rejects.toThrow("Unsupported chamfered pad");
+  expect(seen).toHaveLength(0);
+  expect(await readFile(target, "utf8")).toBe(board);
+});

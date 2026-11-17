@@ -3,7 +3,10 @@
  *
  * A via whose drill hole meets the copper of an SMD pad (any net) is via-in-pad: solder wicks through an open hole, so it
  * must be filled and copper-capped (IPC-4761 Type VII). Laser microvias always need fill + cap. Other through vias need
- * nothing. Pad copper is exact for rect / roundrect / oval / circle (absolute pad angles, KiCad 9+); custom pads use supported exact circle/line/polygon/rectangle primitives; unsupported primitives refuse classification. `applyViaBindings` writes `(capping yes) (filling yes)` on every via that needs them (an attribute
+ * nothing. Pad copper is exact for supported rect / roundrect / oval / circle shapes (absolute pad angles, KiCad 9+);
+ * chamfered pads refuse classification until their native geometry can be verified. Custom pads use supported exact
+ * circle/line/polygon/rectangle primitives; unsupported primitives refuse classification. `applyViaBindings` writes
+ * `(capping yes) (filling yes)` on every via that needs them (an attribute
  * only: no geometry changes).
  */
 import { kid, kids, num, parseSexpr, topLevelSpans as sexprTopLevelSpans, type SNode } from "../sexpr";
@@ -22,6 +25,7 @@ interface SmdPad {
   radiusRatio?: number;
   primitives?: SNode[];
   anchor?: string;
+  chamfered?: boolean;
 }
 
 export interface ViaClass {
@@ -78,16 +82,18 @@ function smdPads(root: SNode): SmdPad[] {
       const primitives = kid(pad, "primitives");
       const ratio = kid(pad,"roundrect_rratio");
       const anchor = kid(kid(pad,"options") ?? [],"anchor");
+      const chamfered = num(kid(pad, "chamfer_ratio")?.[1]) > 0 && (kid(pad, "chamfer")?.length ?? 0) > 1;
       const layers = new Set((kid(pad, "layers") ?? []).slice(1).filter((l): l is string => typeof l === "string" && l.endsWith(".Cu")));
       const net = kid(pad, "net");
-      out.push({ ref: String(ref ?? ""), pad: String(pad[1]), net: net ? String(net[net.length - 1]) : "", x: x + px * c + py * s, y: y - px * s + py * c, ang: pang, w, h, shape, layers, ...(ratio ? { radiusRatio: num(ratio[1]) } : {}), ...(primitives ? { primitives: primitives.slice(1).filter(Array.isArray) as SNode[] } : {}), ...(anchor ? { anchor: String(anchor[1]) } : {}) });
+      out.push({ ref: String(ref ?? ""), pad: String(pad[1]), net: net ? String(net[net.length - 1]) : "", x: x + px * c + py * s, y: y - px * s + py * c, ang: pang, w, h, shape, layers, ...(ratio ? { radiusRatio: num(ratio[1]) } : {}), ...(primitives ? { primitives: primitives.slice(1).filter(Array.isArray) as SNode[] } : {}), ...(anchor ? { anchor: String(anchor[1]) } : {}), ...(chamfered ? { chamfered: true } : {}) });
     }
   }
   return out;
 }
 
 /** Distance test of a circle (via hole) against exact pad copper. */
-export function holeMeetsPad(vx: number, vy: number, rad: number, p: Pick<SmdPad, "x" | "y" | "ang" | "w" | "h" | "shape"> & Partial<Pick<SmdPad,"radiusRatio"|"primitives"|"anchor">>): boolean {
+export function holeMeetsPad(vx: number, vy: number, rad: number, p: Pick<SmdPad, "x" | "y" | "ang" | "w" | "h" | "shape"> & Partial<Pick<SmdPad,"radiusRatio"|"primitives"|"anchor"|"chamfered">>): boolean {
+  if (p.chamfered) throw Error("Unsupported chamfered pad; via policy requires native geometry verification");
   const a = p.ang * (Math.PI / 180);
   const dx = vx - p.x;
   const dy = vy - p.y;
