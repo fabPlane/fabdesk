@@ -90,7 +90,7 @@ export function analyzeStaleCopper(input: {
   for (const net of new Set(input.routes.map(route => route.net))) for (const [i, zone] of input.zones.entries()) {
     if (zone.net !== undefined && zone.net !== net) continue;
     for (const [region, polygon] of zone.polygons.entries())
-      nodes.push({ id: `zone:${net}:${i}:${region}`, net, kind: "zone", copper: [{ shape: { polygon }, layers: [zone.layer] }] });
+      nodes.push({ id: `zone:${net}:${i}:${region}`, net, kind: "support", copper: [{ shape: { polygon }, layers: [zone.layer] }] });
   }
   const graph = buildCopperGraph(nodes, .000001);
   const startsFor = (beforePad: CopperPad) => {

@@ -264,3 +264,16 @@ test("native endpoint cap preserves the only bridge between two stationary pads"
   const bridge = { ...track("bridge","A",5.48*mm,10*mm,B), width:.2*mm };
   expect(analyze([before],[after],[stem,via,bridge],others).staleIds).toEqual(["old-fanout"]);
 });
+
+test("native outline cannot replace a seeded cap bridge between stationary pads", () => {
+  const mm = 1e6;
+  const before = pad("moving", "1", "A", 10 * mm, [B]), after = pad("moving", "1", "A", 20 * mm, [B]);
+  const others = [.15, -.15].map((y, i): CopperPad => ({ ...pad(`U${i}`, "1", "A", 0),
+    shapes: [{ layer: B, polygon: square(5.53 * mm, y * mm, .1 * mm) }] }));
+  const bridge = { ...track("bridge", "A", 5.48 * mm, 10 * mm, B), width: .2 * mm };
+  const polygon = { outline: [[5.35, -.4], [5.9, -.4], [5.9, .4], [5.35, .4]].map(([x, y]) => ({ x: x! * mm, y: y! * mm })) };
+  const result = analyzeStaleCopper({ beforePads: [before], afterPads: [after],
+    allPadsBefore: [before, ...others], allPadsAfter: [after, ...others], routes: [bridge],
+    zones: [{ net: "A", layer: B, polygons: [polygon] }] });
+  expect(result.staleIds).toEqual([]);
+});

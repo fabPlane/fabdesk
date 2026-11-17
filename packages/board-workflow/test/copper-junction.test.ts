@@ -1,8 +1,35 @@
 import { expect, test } from "bun:test";
 import { pruneDangling } from "../src/edit/prune";
 import { fpT, seg } from "./edit-fixture";
+import { buildCopperGraph, pruneCopperLeaves } from "../src/copper-graph";
 const via = '(via (at 5 0) (size .8) (drill .4) (layers "F.Cu" "B.Cu") (net "A"))';
 const front = fpT("U1",0,0,[["1","A",0,0]]) + seg(0,0,5,0,"A");
+test("outline support anchors separate contacts without edges or junction unions", () => {
+  const graph = buildCopperGraph([
+    ...[0, 8].map(x => ({ id: `track:${x}`, net: "A", kind: "track" as const,
+      copper: [{ layers: ["F.Cu"], shape: { path: [{ x, y: 0 }, { x: x + 2, y: 0 }], width: .2 } }] })),
+    { id: "outline", net: "A", kind: "support", copper: [{ layers: ["F.Cu"], shape: { polygon: {
+      outline: [{ x: -1, y: -1 }, { x: 11, y: -1 }, { x: 11, y: 1 }, { x: -1, y: 1 }],
+    } } }] },
+  ]);
+  expect([...graph.edges.values()].every(edges => edges.size === 0)).toBe(true);
+  expect(graph.ports.some(port => port.owner === "outline")).toBe(false);
+  expect(graph.contacts).toEqual([]);
+  expect([...pruneCopperLeaves(graph)]).toEqual([]);
+});
+for (const cache of ["missing", "unverified", "current"] as const) {
+  test(`${cache} split fill preserves the sole endpoint-cap bridge`, () => {
+    const land = (ref: string, y: number) => fpT(ref,5.53,y,[["1","A",0,0]])
+      .replace('(size 0.6 0.6)', '(size 0.2 0.2)').replace('(layers "F.Cu" "F.Paste")', '(layers "B.Cu")');
+    const polygon = '(polygon (pts (xy 5.35 -.4) (xy 5.9 -.4) (xy 5.9 .4) (xy 5.35 .4)))';
+    const island = (a: number, b: number) => `(filled_polygon (layer "B.Cu") (pts (xy 5.42 ${a}) (xy 5.64 ${a}) (xy 5.64 ${b}) (xy 5.42 ${b})))`;
+    const bridge = seg(5.48,0,10,0,"A","B.Cu");
+    const text = `(kicad_pcb ${bridge} ${land("U2",.15)} ${land("U3",-.15)} (zone (net "A") (layer "B.Cu") ${polygon} ${cache === "missing" ? "" : island(.05,.25) + island(-.25,-.05)}))`;
+    const result = pruneDangling(text,new Set(["A"]),cache === "current" ? { currentFillBoard: text } : undefined);
+    expect(result.pruned).toBe(0);
+    expect(result.text).toContain(bridge);
+  });
+}
 test("endpoint cap is the sole bridge between separate terminals", () => {
   const land = (ref: string, y: number) => fpT(ref,5.53,y,[["1","A",0,0]])
     .replace('(size 0.6 0.6)', '(size 0.2 0.2)').replace('(layers "F.Cu" "F.Paste")', '(layers "B.Cu")');

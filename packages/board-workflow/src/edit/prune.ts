@@ -23,7 +23,8 @@ export function pruneDangling(text: string, only?: Set<string>, options?: { curr
     spans.set(id, span);
   }
   for (const [i, copper] of padCopper(text, stack).entries()) nodes.push({ id: `pad:${i}`, net: netName(copper.net), kind: "pad", copper: [copper] });
-  for (const [i, copper] of zoneCopper(text, options?.currentFillBoard === text).entries()) nodes.push({ id: `zone:${i}`, net: copper.net, kind: "zone", copper: [copper] });
+  const fillsCurrent = options?.currentFillBoard === text;
+  for (const [i, copper] of zoneCopper(text, fillsCurrent).entries()) nodes.push({ id: `zone:${i}`, net: copper.net, kind: fillsCurrent ? "zone" : "support", copper: [copper] });
   const removed = pruneCopperLeaves(buildCopperGraph(nodes, .000001));
   const drop = [...removed].flatMap(id => spans.has(id) ? [spans.get(id)!] : []);
   return { text: removeSpans(text, drop), pruned: drop.length };

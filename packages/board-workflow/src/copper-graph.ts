@@ -4,7 +4,8 @@ import { copperShapesTouch, type CopperShape } from "./copper-contact";
 export type CopperNode<L> = {
   id: string;
   net: string;
-  kind: "track" | "arc" | "via" | "pad" | "zone";
+  /** Support is unverified zone geometry: it anchors contacts but never conducts. */
+  kind: "track" | "arc" | "via" | "pad" | "zone" | "support";
   copper: Array<{ shape: CopperShape; layers: readonly L[] }>;
 };
 type Port<L> = { owner: string; copper: CopperNode<L>["copper"] };
@@ -19,10 +20,13 @@ export type CopperGraph<L> = {
   coverage: Map<string, Set<number>[]>;
 };
 const terminal = <L>(n: CopperNode<L>) => n.kind === "pad" || n.kind === "zone";
+const anchor = <L>(n: CopperNode<L>) => terminal(n) || n.kind === "support";
 
-export function buildCopperGraph<L>(items: CopperNode<L>[], tolerance = 0): CopperGraph<L> {
-  const nodes = new Map(items.map(n => [n.id, n]));
-  const edges = new Map(items.map(n => [n.id, new Set<string>()]));
+export function buildCopperGraph<L>(allItems: CopperNode<L>[], tolerance = 0): CopperGraph<L> {
+  const nodes = new Map(allItems.map(n => [n.id, n]));
+  const edges = new Map(allItems.map(n => [n.id, new Set<string>()]));
+  const items = allItems.filter(n => n.kind !== "support");
+  const supports = allItems.filter(n => n.kind === "support");
   const touches = (a: CopperNode<L>["copper"], b: CopperNode<L>["copper"]) => a.some(x => b.some(y =>
     x.layers.some(layer => copperShapesTouch(x.shape, x.layers, y.shape, y.layers, layer, tolerance))));
   const ports: Port<L>[] = [], contacts: Array<[number, number]> = [], ends = new Map<string, number[]>();
@@ -47,6 +51,20 @@ export function buildCopperGraph<L>(items: CopperNode<L>[], tolerance = 0): Copp
     // as an extra junction; both unsplit items continue through it.
     if (!incidence.some(ids => ids.has(a.id) && ids.has(b.id))) {
       ports.push({ owner: a.id, copper: [] }); incidence.push(new Set([a.id, b.id]));
+    }
+  }
+  // Attach support to each touched contact region independently. Giving an
+  // outline its own port would union distant contacts through unknown copper.
+  // Support has no physical edges, including in terminal-preservation walks.
+  for (const support of supports) {
+    ports.forEach((port, i) => {
+      if (nodes.get(port.owner)!.net === support.net && touches(port.copper, support.copper)) incidence[i]!.add(support.id);
+    });
+    for (const n of items) {
+      if (n.net !== support.net || !touches(n.copper, support.copper)) continue;
+      if (!incidence.some(ids => ids.has(n.id) && ids.has(support.id))) {
+        ports.push({ owner: n.id, copper: [] }); incidence.push(new Set([n.id, support.id]));
+      }
     }
   }
   // Coincident end junctions can also describe a real loop. Absorb an item
@@ -112,18 +130,18 @@ export function pruneCopperLeaves<L>(graph: CopperGraph<L>, seeds?: Iterable<str
       junctions.set(key, ids);
     });
     const endpoints = (id: string) => (graph.ends.get(id) ?? []).map(root);
-    const anchored = (ids: Set<string>) => [...ids].some(id => terminal(graph.nodes.get(id)!));
+    const anchored = (ids: Set<string>) => [...ids].some(id => anchor(graph.nodes.get(id)!));
     const absorbed = (id: string, j: number) => endpoints(id).every(e => e === j) &&
       (graph.coverage.get(id) ?? []).every(hits => [...hits].some(i => !removed.has(graph.ports[i]!.owner) && root(i) === j));
     const exits = (j: number, ids: Set<string>, omit: string) => [...ids].reduce((count, id) => {
       const n = graph.nodes.get(id)!;
-      if (id === omit || n.kind === "via" || terminal(n)) return count;
+      if (id === omit || n.kind === "via" || anchor(n)) return count;
       const ends = endpoints(id);
       return count + (absorbed(id, j) ? 0 : ends.every(e => e === j) ? 2 : ends.includes(j) ? 1 : 2);
     }, 0);
     for (const id of candidates) {
       const n = graph.nodes.get(id);
-      if (!n || removed.has(id) || terminal(n)) continue;
+      if (!n || removed.has(id) || anchor(n)) continue;
       const ends = endpoints(id), at = ends[0];
       if (at === undefined) continue;
       let leaf: boolean;
