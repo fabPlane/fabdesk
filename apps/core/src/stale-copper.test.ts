@@ -253,3 +253,14 @@ describe("via copper contacts across its spanned layers", () => {
     expect(run([], spoke, true)).toEqual(["old-fanout"]);
   });
 });
+
+test("native endpoint cap preserves the only bridge between two stationary pads", () => {
+  const mm = 1e6;
+  const before = pad("moving", "1", "A", 0), after = pad("moving", "1", "A", -10 * mm);
+  const others = [.15, -.15].map((y, i): CopperPad => ({ ...pad(`U${i}`, "1", "A", 0),
+    shapes: [{ layer: B, polygon: square(5.53 * mm, y * mm, .1 * mm) }] }));
+  const via: CopperRoute = { id: "via", kind: "via", net: "A", layers: [F,B], path: [{x:5*mm,y:0}], width:.8*mm, locked:false };
+  const stem = { ...track("old-fanout","A",0,5*mm), width:.2*mm };
+  const bridge = { ...track("bridge","A",5.48*mm,10*mm,B), width:.2*mm };
+  expect(analyze([before],[after],[stem,via,bridge],others).staleIds).toEqual(["old-fanout"]);
+});

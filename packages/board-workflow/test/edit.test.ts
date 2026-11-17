@@ -749,8 +749,8 @@ for (const numeric of [false, true]) test(`filled zones support only real copper
     (via (at 5 0) (size .8) (drill .4) (layers "F.Cu" "B.Cu") (net "A")) ${zone})`;
   if (numeric) text = text.replaceAll('(net "A")', '(net 1)').replace('(kicad_pcb', '(kicad_pcb (net 1 "A")');
   expect(pruneDangling(text, new Set(["A"])).pruned).toBe(0);
-  // A zone's unfilled outline must not exempt every item on its net.
-  expect(pruneDangling(text.replace('filled_polygon', 'polygon'), new Set(["A"])).pruned).toBe(2);
+  // Unknown fills conservatively anchor only copper touching the outline.
+  expect(pruneDangling(text.replace('filled_polygon', 'polygon'), new Set(["A"])).pruned).toBe(0);
 });
 
 test("track-end support respects copper layers", () => {

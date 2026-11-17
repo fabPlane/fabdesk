@@ -1,3 +1,4 @@
+import polygonClipping, { type Polygon } from "polygon-clipping";
 /** Layer-local copper geometry. Callers use one coordinate unit throughout (mm or nm).
  * Arcs are supplied as tessellated centrelines; stroke width supplies their copper extent.
  */
@@ -122,4 +123,15 @@ export function copperShapesTouch<L>(a: CopperShape, aLayers: readonly L[], b: C
   const reach = (a.width + b.width) / 2 + tolerance;
   const segments = (path: ContactPoint[]): Array<[ContactPoint, ContactPoint]> => path.length === 1 ? [[path[0]!, path[0]!]] : path.slice(1).map((p, i) => [path[i]!, p]);
   return segments(a.path).some(([p, q]) => segments(b.path).some(([r, s]) => segmentDistance(p, q, r, s) <= reach));
+}
+
+/** Boolean subtraction also handles keepouts crossing or enclosing an outline. */
+export function subtractCopperKeepouts(polygon: ContactPolygon, keepouts: ContactPolygon[]): ContactPolygon[] {
+  if (!keepouts.length) return [polygon];
+  const rings = (p: ContactPolygon): Polygon => [p.outline, ...(p.holes ?? [])].map(r => r.map(({ x, y }) => [x, y]));
+  const result = polygonClipping.difference(rings(polygon), ...keepouts.map(rings));
+  return result.map(([outline, ...holes]) => ({
+    outline: (outline ?? []).map(([x, y]) => ({ x, y })),
+    holes: holes.map(r => r.map(([x, y]) => ({ x, y }))),
+  }));
 }

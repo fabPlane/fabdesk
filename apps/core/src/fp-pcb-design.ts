@@ -4,6 +4,7 @@
  * through the typed client on the project's session. Positions come back in millimetres; the
  * client speaks nanometres.
  */
+import { subtractCopperKeepouts } from "@fabdesk/board-workflow/copper-contact";
 import { captureProjectLibraryRows } from "./project-library-tables";
 import { jailPath, projectRelative } from "@fabdesk/tools";
 import { stat } from "node:fs/promises";
@@ -318,13 +319,17 @@ function copperRoutes(
   });
 }
 
-function copperZones(zones: Zone[]): CopperZone[] {
-  return zones.flatMap((zone) =>
-    zone.filledPolygons.flatMap((filled) =>
-      filled.shapes
-        ? [{ layer: filled.layer, polygons: filled.shapes.polygons.map(copperPolygon) }]
-        : [],
-    ),
+export function copperZones(zones: Zone[]): CopperZone[] {
+  // Placement changes the board revision. The bridge refill is a separate
+  // operation, not part of this transaction, so pre-move caches are not current.
+  return zones.filter(zone => !zone.isRuleArea).flatMap(zone =>
+    zone.layers.map(layer => ({ layer, ...(zone.net ? { net: zone.net } : {}),
+      polygons: (zone.outline?.polygons ?? []).flatMap(polygon => {
+        const shape = copperPolygon(polygon);
+        return subtractCopperKeepouts(shape, zones.filter(k => k.isRuleArea && k.proto.settings.case === "ruleAreaSettings" && k.proto.settings.value.keepoutCopper && k.layers.includes(layer))
+          .flatMap(k => (k.outline?.polygons ?? []).map(copperPolygon)));
+      }),
+    })),
   );
 }
 

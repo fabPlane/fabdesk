@@ -17,6 +17,7 @@
     "@types/bun": "1.2.21"
   },
   "dependencies": {
-    "@fabdesk/protocol": "workspace:*"
+    "@fabdesk/protocol": "workspace:*",
+    "polygon-clipping": "^0.15.7"
   }
 }

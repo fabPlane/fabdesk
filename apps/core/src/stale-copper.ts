@@ -29,7 +29,7 @@ export type CopperRoute = {
   locked: boolean;
 };
 
-export type CopperZone = { layer: BoardLayer; polygons: CopperPolygon[] };
+export type CopperZone = { layer: BoardLayer; polygons: CopperPolygon[]; net?: string };
 
 export type StaleCopperAnalysis = {
   reports: Record<string, PcbStaleCopperReport>;
@@ -85,12 +85,22 @@ export function analyzeStaleCopper(input: {
     copper: [{ shape: route, layers: route.layers }] }));
   for (const pad of input.allPadsAfter) nodes.push({ id: `pad:${pad.id}`, net: pad.net, kind: "pad",
     copper: pad.shapes.map(({ layer, polygon }) => ({ shape: { polygon }, layers: [layer] })) });
-  // The native snapshot contains filled polygons without net labels. Retain its
-  // conservative zone-contact policy on each route net until the bridge supplies them.
+  // Native placement supplies conservative outlines at the post-move revision.
+  // Older callers without net labels retain conservative support on every net.
   for (const net of new Set(input.routes.map(route => route.net))) for (const [i, zone] of input.zones.entries()) {
-    nodes.push({ id: `zone:${net}:${i}`, net, kind: "zone", copper: zone.polygons.map(polygon => ({ shape: { polygon }, layers: [zone.layer] })) });
+    if (zone.net !== undefined && zone.net !== net) continue;
+    for (const [region, polygon] of zone.polygons.entries())
+      nodes.push({ id: `zone:${net}:${i}:${region}`, net, kind: "zone", copper: [{ shape: { polygon }, layers: [zone.layer] }] });
   }
   const graph = buildCopperGraph(nodes, .000001);
+  const startsFor = (beforePad: CopperPad) => {
+    const afterPad = afterById.get(beforePad.id);
+    return afterPad ? input.routes.filter(route => route.net === beforePad.net &&
+      routeTouchesPad(route, beforePad) && !routeTouchesPad(route, afterPad)) : [];
+  };
+  // Authorize the union in one pruning run, so independent seeds cannot each
+  // delete a redundant path while relying on the other path's survival.
+  const removed = pruneCopperLeaves(graph, input.beforePads.flatMap(p => startsFor(p).map(r => r.id)));
   for (const beforePad of input.beforePads) {
     const afterPad = afterById.get(beforePad.id);
     if (!afterPad) continue;
@@ -101,14 +111,13 @@ export function analyzeStaleCopper(input: {
       shortedCount: 0,
       nets: [],
     };
-    for (const start of input.routes.filter(
-      (route) =>
-        route.net === beforePad.net &&
-        routeTouchesPad(route, beforePad),
-    )) {
-      if (routeTouchesPad(start, afterPad)) continue;
-      const removed = pruneCopperLeaves(graph, [start.id]);
-      for (const route of input.routes.filter(route => removed.has(route.id))) {
+    for (const start of startsFor(beforePad)) {
+      if (!removed.has(start.id)) continue;
+      const reached = new Set([start.id]), queue = [start.id];
+      for (const id of queue) for (const other of graph.edges.get(id)!) {
+        if (removed.has(other) && !reached.has(other)) { reached.add(other); queue.push(other); }
+      }
+      for (const route of input.routes.filter(route => reached.has(route.id))) {
         const item = reported(route, beforePad);
         if (!report.stale.some((existing) => existing.id === item.id && existing.pad === item.pad))
           report.stale.push(item);

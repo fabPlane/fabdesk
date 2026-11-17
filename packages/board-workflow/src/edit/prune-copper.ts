@@ -1,8 +1,8 @@
 /** Saved-board copper shapes used by destructive pruning (board millimetres). */
-import { kid, kids, num, parseSexpr, type SNode } from "../sexpr";
+import { kid, kids, keepoutBlocks, num, parseSexpr, type SNode } from "../sexpr";
 import { footprintPose } from "../review/geometry";
 import { arcPoints, toBoard } from "../silk/shapes";
-import type { CopperShape } from "../copper-contact";
+import { subtractCopperKeepouts, type CopperShape } from "../copper-contact";
 
 export type LayerCopper = { shape: CopperShape; layers: string[]; net: string };
 const point = (n: SNode | undefined): [number, number] => [num(n?.[1]), num(n?.[2])];
@@ -79,17 +79,28 @@ export function padCopper(text: string, stack: string[]): LayerCopper[] {
 }
 
 
-/** Only filled copper is a terminal; an unfilled zone outline cannot support a route. */
-export function zoneCopper(text: string): LayerCopper[] {
+/** Unknown/stale fills use zone outlines. Only an explicitly verified board uses fills. */
+export function zoneCopper(text: string, fillsCurrent = false): LayerCopper[] {
   const root = parseSexpr(text);
   const netNames = new Map(kids(root, "net").map(n => [String(n[1]), String(n.at(-1))]));
-  return kids(root, "zone").flatMap(zone => {
+  const zones = kids(root, "zone");
+  const keepouts = zones.filter(zone => keepoutBlocks(zone, "copperpour"));
+  const zoneLayers = (zone: SNode) => (kid(zone, "layers")?.slice(1) ?? [kid(zone, "layer")?.[1] ?? ""]).map(String);
+  return zones.flatMap(zone => {
+    if (kid(zone, "keepout")) return [];
     const raw = netOf(zone);
     const net = String(kid(zone, "net_name")?.[1] ?? netNames.get(raw) ?? raw);
-    return kids(zone, "filled_polygon").map(fill => ({ net,
-      layers: [String(kid(fill, "layer")?.[1] ?? kid(zone, "layer")?.[1] ?? "")],
-      shape: { polygon: { outline: kids(kid(fill, "pts") ?? [], "xy").map(n => object(point(n))),
-        holes: kids(fill, "hole").map(hole => kids(kid(hole, "pts") ?? hole, "xy").map(n => object(point(n)))) } },
+    const polygons = fillsCurrent ? kids(zone, "filled_polygon") : kids(zone, "polygon");
+    // Some minimal/legacy snapshots supply filled geometry only. It is still a
+    // conservative terminal when no definition geometry is available.
+    if (!fillsCurrent && !polygons.length) polygons.push(...kids(zone, "filled_polygon"));
+    const layers = zoneLayers(zone);
+    return polygons.flatMap(fill => (fillsCurrent ? [String(kid(fill, "layer")?.[1] ?? layers[0])] : layers).flatMap(layer => {
+      const polygon = { outline: kids(kid(fill, "pts") ?? [], "xy").map(n => object(point(n))),
+        holes: kids(fill, "hole").map(hole => kids(kid(hole, "pts") ?? hole, "xy").map(n => object(point(n)))) };
+      const exclusions = fillsCurrent ? [] : keepouts.filter(k => zoneLayers(k).includes(layer) || zoneLayers(k).includes("*.Cu"))
+        .flatMap(k => kids(k, "polygon").map(p => ({ outline: kids(kid(p, "pts") ?? [], "xy").map(n => object(point(n))) })));
+      return subtractCopperKeepouts(polygon, exclusions).map(polygon => ({ net, layers: [layer], shape: { polygon } }));
     }));
   });
 }
