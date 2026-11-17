@@ -200,17 +200,18 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
           controls.update(); render();
         };
         let renderedWidth = 0, renderedHeight = 0;
-        const resize = () => {
+        const resize = () => frames.renderWith(() => {
           if (!renderer || !camera) return;
           const w = target.clientWidth, h = target.clientHeight;
           if (w < 1 || h < 1) return;
-          if (w !== renderedWidth || h !== renderedHeight) { renderer.setSize(w, h); renderedWidth = w; renderedHeight = h; }
+          // CSS stretches the previous image during layout; the buffer changes
+          // only when its replacement is ready to draw in this same frame.
+          if (w !== renderedWidth || h !== renderedHeight) { renderer.setSize(w, h, false); renderedWidth = w; renderedHeight = h; }
           if (camera instanceof THREE.PerspectiveCamera) camera.aspect = w / h;
           else { const half = (camera.top - camera.bottom) / 2; camera.left = -half * w / h; camera.right = half * w / h; }
           camera.updateProjectionMatrix();
           if (selectionIsFramed()) focusSelection.current?.(false);
-          render();
-        };
+        });
         resize();
         if (savedCamera.current) {
           controls.minDistance = savedCamera.current.minDistance;
