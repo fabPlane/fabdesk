@@ -73,6 +73,8 @@ export function legaliseMoves(spec: string[] | LegaliseSpec, already: ReadonlySe
 }
 
 export interface EditPlan {
+  /** Explicit permission to deliver tracks narrower than the pre-edit baseline. */
+  allow_narrowing?: boolean;
   id: string;
   authority?: string;
   reason?: string;
@@ -117,6 +119,7 @@ export function parsePlan(raw: unknown): EditPlan {
   if (!isObj(raw)) throw new Error("plan must be a JSON object");
   const plan = JSON.parse(JSON.stringify(raw)) as EditPlan;
   if (typeof plan.id !== "string" || !/^[\w.-]+$/.test(plan.id)) throw new Error("plan.id is required (letters, digits, - _ .)");
+  if (plan.allow_narrowing !== undefined && typeof plan.allow_narrowing !== "boolean") throw new Error("plan.allow_narrowing must be boolean");
   strList(plan.remove, "remove");
   strList(plan.accept_unconnected, "accept_unconnected");
   if (plan.legalise !== undefined) {

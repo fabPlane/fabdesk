@@ -248,7 +248,7 @@ test("#8 public quality text stays within 1800 UTF-8 bytes on 300 nets", async (
   );
   expect(q.nets).toHaveLength(300);
 });
-test("#9 benchmarked widest retained width remains the per-net floor", async () => {
+test("#9 narrowest retained width is the shared per-net floor", async () => {
   const project = await fixture(
       "review-width-floor",
       `(kicad_pcb (net "GND") ${seg("GND", 2, 0.2)} ${seg("GND", 1, 1.5)})`,
@@ -266,7 +266,7 @@ test("#9 benchmarked widest retained width remains the per-net floor", async () 
     },
   });
   await invoke(project, services);
-  expect(width).toBe(1.5);
+  expect(width).toBe(0.2);
 });
 test("#10 KiCad net patterns match hierarchical USB members", async () => {
   const text = pcb(1, 1, "/usb/USB_DP", "/usb/USB_DN");

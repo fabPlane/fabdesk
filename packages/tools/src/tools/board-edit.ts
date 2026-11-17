@@ -57,6 +57,7 @@ const MOVE = z.object({
 
 const PLAN = z
   .object({
+    allow_narrowing: z.boolean().optional().describe("Explicitly allow narrower delivered copper; width-proof.json records each change."),
     id: z.string().describe("Letters, digits, - _ . (names the candidate folder)."),
     authority: z.string().optional().describe("Whose direction this is (the owner's decision)."),
     reason: z.string().optional(),

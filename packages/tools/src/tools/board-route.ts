@@ -100,6 +100,7 @@ const ROUTE_INPUT = {
   rotations: z.enum(["keep", "flip", "all"]).default("flip").describe("Last-mile sweep: rotations tried at each pose."),
   then: z.string().max(300).optional().describe("Last-mile sweep: repair chain after each pose, e.g. 'blockers:1.0'."),
   noAccept: z.boolean().default(false).describe("Last-mile try: score the candidates but do not accept."),
+  allowNarrowing: z.boolean().optional().describe("Last-mile: explicitly permit narrower new copper and record the change in width proof."),
   slackA8: z.number().int().min(0).default(0).describe("Last-mile try/accept: A8 nets the gate may let get worse."),
   budget: z.number().positive().optional().describe("Last-mile: seconds per action; default max(180, 6 per open, up to 1800)."),
   maxRounds: z.number().int().min(1).max(20).default(6).describe("Last-mile loop: rounds."),

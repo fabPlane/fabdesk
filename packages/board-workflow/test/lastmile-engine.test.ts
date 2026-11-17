@@ -514,3 +514,24 @@ describe("net_forensics", () => {
     expect(out).toEqual(["USB_DP", "    end (10.0, 20.0): GND track F.Cu 0.2mm; VBUS via", "  GAP 3.2 mm between islands"]);
   });
 });
+
+test("KRT and host fallback receive the same pre-removal width intent", async () => {
+  const { dir, req } = await c6();
+  const { copperBoard, saveWidthBaseline } = await import("../src/routing-quality");
+  const before = BOARD.replace(/\)\s*$/, '\n(segment (start 0 0) (end 1 1) (width 0.35) (layer "F.Cu") (net "REMOVED") (uuid "gone")))');
+  await saveWidthBaseline(dir, copperBoard(before), copperBoard(BOARD));
+  const krt = await tmp();
+  await mkdir(join(krt, "src", "plugins", "py_router"), { recursive: true });
+  const spawns: string[][] = [];
+  await engine(req, krt, spawns, []).run(L.stepsFor("finish")[0]!, input(dir, join(await tmp(), "krt")));
+  const cmd = spawns.find(c => c.some(x => x.endsWith("route.py")))!;
+  expect(cmd).toContain("--power-nets");
+  expect(cmd).toContain("REMOVED");
+  const widths = cmd.slice(cmd.indexOf("--power-nets-widths") + 1);
+  expect(widths).toContain("0.35");
+  let perNet: unknown;
+  const fallback = L.createStepEngine({ req, drc: async () => ({ violations: [], unconnected: [], parity: 0 }), scorer,
+    layout: fakeLayout(null, []), fallbackRouter: "fab_router", fill: async (_r, _d, o) => { perNet = o.perNet; return {}; } });
+  await fallback.run(L.stepsFor("finish")[0]!, input(dir, join(await tmp(), "fallback")));
+  expect(perNet).toEqual(expect.arrayContaining([{ net: "REMOVED", widthMm: .35 }]));
+});

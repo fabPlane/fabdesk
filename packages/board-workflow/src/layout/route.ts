@@ -3,6 +3,7 @@
  * TraceMaker session + CLI pipeline (`routePipeline`, port of `route_pipeline.py`). Each ends with `scoreRoute`.
  * The engines are programs run through `host.spawn`; this file owns the plan, the working copies and the merge.
  */
+import { copperBoard, widthFloors, referenceFacts, widthChangeAllowed, classWidthFloors, krtWidthArgs } from "../routing-quality";
 import { randomUUID } from "node:crypto";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -88,6 +89,9 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
 
   // KRT input: (at ...) poses, aliased net names, project files beside every stage board.
   let text = applyAliases(convertTransforms(await readFile(native, "utf8")).text, plan.aliases);
+  const widthBoard = copperBoard(await readFile(native, "utf8"));
+  const floors = await widthChangeAllowed(o.placed, widthBoard.revision) ? {} : widthFloors(widthBoard, await referenceFacts(o.placed, widthBoard.revision));
+  const widthRules = await classWidthFloors(o.placed, o.stem, Object.keys(floors));
   let fenceRules = "";
   for (const [i, fe] of (plan.fences ?? []).entries()) {
     const name = fe.name ?? `fence${i}`;
@@ -154,7 +158,12 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
     const permission = acc.manufacturing_rules.via_in_pad;
     const allowed = permission?.allow === true && typeof permission.basis === "string" && permission.basis.trim().length > 0;
     const viaClearance = allowed ? -1 : Math.max(0.15, acc.manufacturing_rules.adopted.min_clearance);
-    const stageArgs = [...args, ...(plan.common ?? [])];
+    const originalArgs = [...args, ...(plan.common ?? [])];
+    const aliasWidths = (widths: Record<string, number>) => Object.fromEntries(Object.entries(widths).map(([net, width]) => {
+      const named = applyAliases(`(kicad_pcb (net ${JSON.stringify(net)}))`, plan.aliases);
+      return [copperBoard(named).nets[0] ?? net, width];
+    }));
+    const stageArgs = st.tool === "route" ? krtWidthArgs(originalArgs, aliasWidths(floors), aliasWidths(widthRules)) : originalArgs;
     if (["route", "route_diff", "route_planes"].includes(st.tool)) {
       if (stageArgs.some(arg => arg === "--same-net-pad-clearance" || arg.startsWith("--same-net-pad-clearance=")))
         throw new FlowError("Set the via-in-pad policy in acceptance.manufacturing_rules; do not override it in router arguments");

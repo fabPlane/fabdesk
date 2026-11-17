@@ -5,6 +5,7 @@
  * The candidate is a folder with `origin.json` ({ project, files: {name: sha256} }) beside its board, which
  * `adoptCandidate` reads to write it into the project.
  */
+import { copperBoard, saveWidthBaseline, referenceFacts, widthCheck, allowWidthChange } from "../routing-quality";
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -239,6 +240,8 @@ export async function runEdit(input0: EditRunInput): Promise<EditRunResult> {
   await writeJsonFile(join(out, "origin.json"), { project: env.projectDir, files: projectHashes, ...(Object.keys(extra).length ? { extra } : {}), ...(exclusions ? { exclusions } : {}) });
   await mkdir(dirname(join(out, "before", env.pcbName)), { recursive: true });
   await writeFile(join(out, "before", env.pcbName), env.pcbText);
+  await saveWidthBaseline(out, copperBoard(env.pcbText), copperBoard(applied.pcbText), env.projectDir);
+  if (plan.allow_narrowing) await allowWidthChange(out);
   const ledger = { plan, impact: rep, applied: applied.log };
   const routeAgain = routeAgainOf(applied.log, plan);
   const candidate = { dir: out, pcb, origin: join(out, "origin.json") };
@@ -274,6 +277,10 @@ async function finish(
 ): Promise<EditRunResult> {
   void t0;
   const dir = base.candidate.dir;
+  const widthSource = copperBoard(await readFile(base.candidate.pcb, "utf8"));
+  const widthReference = await referenceFacts(dir, widthSource.revision);
+  const allowNarrowing = plan.allow_narrowing ?? ledger.plan.allow_narrowing ?? false;
+  if (allowNarrowing) await allowWidthChange(dir);
   const say = (p: number, note: string) => input.runners.progress?.(p, note);
   let repair: EditRunResult["repair"] = { available: false, routeAgain };
   let t = Date.now();
@@ -317,6 +324,12 @@ async function finish(
   }
   const exclusions = ex && (ex.carried.length || ex.notes.length) ? { carried: ex.carried, notes: ex.notes } : undefined;
   const j = judge(beforeRec, run.result);
+  const widths = widthCheck(copperBoard(source), copperBoard(await readFile(base.candidate.pcb, "utf8")), allowNarrowing, widthReference);
+  await writeJsonFile(join(dir, "width-proof.json"), widths);
+  if (widths.rejected.length) { j.pass = false; j.failing.push(...widths.rejected); j.verdict = `FAIL narrowing: ${widths.rejected.join("; ")}`; }
+  else if (widths.text) j.verdict += `; ${widths.text}`;
+  await saveWidthBaseline(dir, widthSource, copperBoard(await readFile(base.candidate.pcb, "utf8")));
+  if (allowNarrowing) await allowWidthChange(dir);
   await writeJsonFile(join(dir, "diff.json"), { ...d, churn: ch, ...(guard ? { guard } : {}) });
   const proof = { ...j, id: run.entry.id, record: run.recordPath, comparison: view(run.baseline ?? run.previous), before: beforeRec.summary as Record<string, boolean>, after: run.result.summary as Record<string, boolean> };
   await writeJsonFile(join(dir, "proof.json"), proof);

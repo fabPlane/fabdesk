@@ -21,6 +21,8 @@ import { rowPoints } from "./spatial";
 import {
   readCopper,
   copperBoard,
+  widthFloors,
+  classWidthFloors,
   netFacts,
   quality,
   qualityText,
@@ -715,14 +717,10 @@ async function executeRoute(
     });
     const perNet = new Map((args.rules?.perNet ?? []).map((r) => [r.net, { ...r }]));
     if (!args.allowQualityRegression?.includes("narrowing")) {
-      for (const n of [
-        ...netFacts(startingCopper, requestedNets.length ? requestedNets : startingCopper.nets),
-        ...reference,
-      ]) {
+      const nativeFloors = await classWidthFloors(snapshotDir, "board", startingCopper.nets);
+      for (const [net, floor] of Object.entries(widthFloors(startingCopper, reference))) {
+        const n = { net };
         if (requestedNets.length && !requestedNets.includes(n.net)) continue;
-        // Keep the widest retained/reference copper as the floor: this policy was benchmarked
-        // with the routing harness. A minimum-width floor needs its own quality measurement.
-        const floor = Math.max(0, ...n.widthsMm);
         if (!floor) continue;
         const own = perNet.get(n.net);
         const requested =
@@ -730,7 +728,7 @@ async function executeRoute(
           args.rules?.pairs?.find((p) => p.p === n.net || p.n === n.net)?.widthMm ??
           args.rules?.widthMm ??
           0;
-        perNet.set(n.net, { ...own, net: n.net, widthMm: Math.max(floor, requested) });
+        perNet.set(n.net, { ...own, net: n.net, widthMm: Math.max(floor, requested, nativeFloors[n.net] ?? 0) });
       }
     }
     const requestedPairWidth = (pair: PairDefinition, net: string) =>
@@ -868,6 +866,7 @@ async function executeRoute(
           return await runTraceMaker({
             binary,
             snapshotDir,
+            perNet: [...perNet.values()].filter((n): n is typeof n & { widthMm: number } => n.widthMm !== undefined),
             timeoutMs: args.timeoutMs,
             signal,
             onProgress: (value) => {

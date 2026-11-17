@@ -17,6 +17,7 @@
  * means "route the opens; nothing is ripped", which any router can do); every other KRT step fails by name, so a step
  * never silently becomes a different one.
  */
+import { copperBoard, widthFloors, referenceFacts, widthChangeAllowed, classWidthFloors, saveWidthBaseline } from "../routing-quality";
 import { copyFile, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parseBoard } from "../board";
@@ -38,7 +39,7 @@ import { readFloorplan, type Blocks } from "../layout/floorplan";
 import { fixedRegex } from "../layout/spec";
 
 /** Fill the opens of `dir/board.kicad_pcb` in place with `router` (the host's routers); the board file name is fixed. */
-export type FillFn = (router: string, dir: string, o: { signal: AbortSignal; timeoutMs: number }) => Promise<{ message?: string }>;
+export type FillFn = (router: string, dir: string, o: { signal: AbortSignal; timeoutMs: number; perNet?: Array<{ net: string; widthMm: number }> }) => Promise<{ message?: string }>;
 
 export interface StepEngineHost {
   req: Requirements;
@@ -155,7 +156,11 @@ async function fillRoute(h: StepEngineHost, router: string, src: string, out: st
   const admission = h.layout.admit ? await h.layout.admit(cls, `lastmile fill ${router}`, [src], engine ? { engine } : {}) : { release() {} };
   let s;
   try {
-    s = await h.fill(router, scratch, { signal, timeoutMs: h.routerTimeoutMs ?? 600_000 });
+    const board = copperBoard(await readFile(join(src, pcb), "utf8"));
+    const floors = await widthChangeAllowed(src, board.revision) ? {} : widthFloors(board, await referenceFacts(src, board.revision));
+    const rules = await classWidthFloors(src, stem, Object.keys(floors));
+    const perNet = Object.entries(floors).map(([net, floor]) => ({ net, widthMm: Math.max(floor, rules[net] ?? 0) }));
+    s = await h.fill(router, scratch, { signal, timeoutMs: h.routerTimeoutMs ?? 600_000, perNet });
   } finally {
     admission.release();
   }
@@ -205,6 +210,7 @@ export function createStepEngine(h: StepEngineHost): StepEngine {
   return {
     async run(step: Step, input: StepInput): Promise<StepOutcome> {
       const { cur, out, pcb, signal } = input;
+      const carryWidths = async (changed: string) => saveWidthBaseline(changed, copperBoard(await readFile(join(cur, pcb), "utf8")), copperBoard(await readFile(join(changed, pcb), "utf8")), cur);
       signal.throwIfAborted(); // between the steps of a chain and inside a step, nothing starts once the budget is spent
       switch (step.type) {
         case "pairfix":
@@ -266,6 +272,7 @@ export function createStepEngine(h: StepEngineHost): StepEngine {
           const rip = await ripStep({ cur, out: ripped, pcb, args, req: h.req });
           if (!rip.removed) return { dir: cur, skipped: true, info: { rip } }; // nothing to repair: the board is unchanged
           signal.throwIfAborted();
+          await carryWidths(ripped);
           const routed = join(out, "route");
           return { dir: routed, info: { rip, ...(await krtRoute(h, ripped, routed, pcb, plan, signal, undefined, krtStepOptions(step))) } };
         }
@@ -278,6 +285,7 @@ export function createStepEngine(h: StepEngineHost): StepEngine {
           const fixed = await fixedParts(h.req, join(cur, pcb));
           const nudge = await nudgeStep({ cur, out: nudged, pcb, moves: step.moves, req: h.req, courtyardDrc: h.layout.courtyardDrc, fixed: (r) => fixed.has(r) });
           signal.throwIfAborted();
+          await carryWidths(nudged);
           const routed = join(out, "route");
           return { dir: routed, info: { nudge, ...(await krtRoute(h, nudged, routed, pcb, plan, signal, undefined, krtStepOptions(step))) } };
         }
@@ -305,6 +313,7 @@ export function createStepEngine(h: StepEngineHost): StepEngine {
           if (!rec.placement.ok) return { error: `replace: block placement failed: ${rec.placement.groups.filter((g) => !g.ok).map((g) => `${g.group} placed ${g.placed} of ${g.parts}`).join("; ")}` };
           if (Object.keys(rec.placement.native_courtyard ?? {}).length) return { error: `replace: native courtyard check failed ${JSON.stringify(rec.placement.native_courtyard)}` };
           signal.throwIfAborted();
+          await carryWidths(replaced);
           const routed = join(out, "route");
           return { dir: routed, info: { replace: summary, ...(await krtRoute(h, replaced, routed, pcb, plan, signal, undefined, krtStepOptions(step))) } };
         }

@@ -5,6 +5,7 @@
  * that passes the gate and leaves the board unchanged otherwise. Routers and other engines are not here: a Step is run
  * by the StepEngine the host supplies; scoring (A1-A9 plus native DRC) by the Scorer.
  */
+import { copperBoard, saveWidthBaseline, referenceFacts, widthCheck, widthChangeAllowed, allowWidthChange } from "../routing-quality";
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile, copyFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -139,6 +140,11 @@ export async function copyBoardFolder(src: string, dst: string): Promise<void> {
   await mkdir(dst, { recursive: true });
   for (const e of await readdir(src, { withFileTypes: true }))
     if (!COPY_SKIP.test(e.name)) await cp(join(src, e.name), join(dst, e.name), { recursive: true, filter: (p) => !COPY_SKIP.test(basename(p)) });
+  const ref = join(src, ".fabdesk", "removed-copper.json");
+  if (await stat(ref).catch(() => null)) {
+    await mkdir(join(dst, ".fabdesk"), { recursive: true });
+    await copyFile(ref, join(dst, ".fabdesk", "removed-copper.json"));
+  }
 }
 
 /**
@@ -231,7 +237,10 @@ export class Bench {
     const s0 = join(ws, "s0");
     await copyBoardFolder(srcDir, s0);
     if (board && resolve(board) !== resolve(srcDir, pcb)) await copyFile(resolve(board), join(s0, pcb));
+    const initial = copperBoard(await readFile(join(s0, pcb), "utf8"));
+    await saveWidthBaseline(s0, initial, initial, board ? dirname(resolve(board)) : s0);
     const sc = await deps.scorer.score(s0, pcb, { parity: false, ...(deps.signal ? { signal: deps.signal } : {}) });
+    await saveWidthBaseline(s0, initial, copperBoard(await readFile(join(s0, pcb), "utf8")));
     await writeJson(join(s0, SCORE_CACHE), { ...sc, board_sha256: await sha(join(s0, pcb)), scorer_key: await scoreContextKey(s0,deps.scorer) } satisfies ScoreCache);
     const st: BenchState = {
       src: resolve(srcDir),
@@ -322,6 +331,7 @@ export class Bench {
         break;
       }
       rec.steps.push({ type: st.type, ...(r.skipped ? { skipped: true } : {}), ...(r.info ?? {}) });
+      await saveWidthBaseline(r.dir, copperBoard(await readFile(join(dir, this.st.pcb), "utf8")), copperBoard(await readFile(join(r.dir, this.st.pcb), "utf8")), dir);
       dir = r.dir;
     }
     rec.wall_s = Math.round((Date.now() - t0) / 100) / 10;
@@ -452,7 +462,10 @@ export class Bench {
       recs.push(r);
     }
     this.say(`from  ${figureLine(f0)}`, lines);
-    for (const r of recs) r.rejected = r.error ? [r.error.slice(-160).replaceAll("\n", " ")] : gate(r.figures!, f0, slack);
+    for (const r of recs) {
+      r.rejected = r.error ? [r.error.slice(-160).replaceAll("\n", " ")] : gate(r.figures!, f0, slack);
+      if (r.dir) { const w = await this.checkWidths(r.dir); r.rejected.push(...w.rejected); if (w.text) this.say(w.text, lines); }
+    }
     // fabdesk: among passing candidates, one that split a pour ranks after every one that split none (the toolkit's key
     // alone took open 40 -> 1 with a power pad newly islanded over a retry that kept every pour whole); it is still
     // accepted when it is the only one that passes, as the toolkit's gate would
@@ -486,6 +499,7 @@ export class Bench {
     });
     const best = ok[0];
     if (best && !o.noAccept) {
+      await saveWidthBaseline(best.dir!, copperBoard(startText), copperBoard(await readFile(join(best.dir!, this.st.pcb), "utf8")), start);
       this.st.history = [...this.st.history.slice(0, this.st.pointer + 1), { action: best.name, dir: best.dir!, figures: best.figures!, wall_s: best.wall_s }];
       this.st.pointer++;
       this.say(`now   step ${this.st.pointer}: ${figureLine(best.figures!)}   (${Math.round((Date.now() - t0) / 1000)}s)`, lines);
@@ -569,9 +583,10 @@ export class Bench {
     const lines: string[] = [];
     const f0 = this.figures;
     const f1 = (await this.scoreDir(d)).figures;
-    const why = gate(f1, f0, { a8_slack: o.slackA8 ?? 0 });
+    const why = [...gate(f1, f0, { a8_slack: o.slackA8 ?? 0 }), ...(await this.checkWidths(d)).rejected];
     this.say(`from  ${figureLine(f0)}\nthis  ${figureLine(f1)}  -> ${why.length ? why.join("; ") : "ACCEPT"}`, lines);
     if (why.length) return { ok: false, lines };
+    await saveWidthBaseline(d, copperBoard(await readFile(this.board, "utf8")), copperBoard(await readFile(join(d, this.st.pcb), "utf8")), this.dir);
     const rel = relative(this.ws, d);
     this.st.history = [...this.st.history.slice(0, this.st.pointer + 1), { action: `accept ${rel.startsWith("..") ? d : rel}`, dir: d, figures: f1, wall_s: 0 }];
     this.st.pointer++;
@@ -601,8 +616,9 @@ export class Bench {
   /** Explicit requalification under new requirements; never borrows an earlier score. */
   async revalidate(meta: Record<string, unknown>): Promise<Record<string, unknown>> {
     const sc = await this.deps.scorer.score(this.dir, this.st.pcb, { parity: true, ...(this.deps.signal ? { signal: this.deps.signal } : {}) });
-    const allPass = sc.parityChecked && Object.values(sc.summary).every(Boolean);
-    const record = { all_pass: allPass, parity_checked: sc.parityChecked, summary: sc.summary, figures: sc.figures };
+    const widths = await this.checkWidths();
+    const allPass = sc.parityChecked && Object.values(sc.summary).every(Boolean) && !widths.rejected.length;
+    const record = { widths, all_pass: allPass, parity_checked: sc.parityChecked, summary: sc.summary, figures: sc.figures };
     await writeJson(join(this.ws, "revalidate.json"), record);
     if (!allPass) return record;
     this.st.meta = { ...this.st.meta, ...meta };
@@ -619,11 +635,13 @@ export class Bench {
     await copyBoardFolder(this.dir, v);
     await rm(join(v, "lastmile.score.json"), { force: true });
     const sc = await this.deps.scorer.score(v, this.st.pcb, { parity: true, ...(this.deps.signal ? { signal: this.deps.signal } : {}) });
+    const widths = await this.checkWidths(v);
     const rec = {
+      widths,
       board: join(v, this.st.pcb),
       sha256: await sha(join(v, this.st.pcb)),
       summary: sc.summary,
-      all_pass: Object.values(sc.summary).every(Boolean),
+      all_pass: Object.values(sc.summary).every(Boolean) && !widths.rejected.length,
       parity_checked: sc.parityChecked,
       pairs_over_length_limit: sc.pairsOverSkewLimit,
       figures: sc.figures,
@@ -640,6 +658,18 @@ export class Bench {
       `${basename(this.ws)}  step ${st.pointer} of ${st.history.length - 1}  tries ${st.tries}  board ${this.dir}`,
       ...st.history.map((h, i) => `  ${i === st.pointer ? ">" : " "} ${String(i).padStart(2)} ${h.action.padEnd(26)} ${h.wall_s.toFixed(0).padStart(5)}s  ${figureLine(h.figures)}`),
     ];
+  }
+
+  async allowNarrowing() {
+    await allowWidthChange(this.st.history[0]!.dir);
+    await allowWidthChange(this.dir);
+    await this.setMeta({ allowNarrowing: true });
+  }
+
+  async checkWidths(dir = this.dir) {
+    const start = copperBoard(await readFile(join(this.st.history[0]!.dir, this.st.pcb), "utf8"));
+    const after = copperBoard(await readFile(join(dir, this.st.pcb), "utf8"));
+    return widthCheck(start, after, await widthChangeAllowed(this.st.history[0]!.dir, start.revision), await referenceFacts(this.st.history[0]!.dir, start.revision));
   }
 
   /** Where the accepted board lives, for a host that hands it to adoption. */

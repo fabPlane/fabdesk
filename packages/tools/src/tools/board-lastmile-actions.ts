@@ -36,18 +36,18 @@ async function requirementsFor(ctx: ToolContext, pcb?: string): Promise<Requirem
 
 /** The host's routers for `fill` steps (and `finish` when KiCadRoutingTools is missing), on `dir/board.kicad_pcb` in place. */
 function hostFill(ctx: ToolContext, host: layout.LayoutHost): L.FillFn {
-  return async (router, dir, { signal, timeoutMs }) => {
+  return async (router, dir, { signal, timeoutMs, perNet }) => {
     if (router === "tracemaker") {
       // installed on first use when it is missing (one TraceMaker install even when parallel candidates ask)
       const tm = await layout.engineReady(host, "tracemaker");
       const binary = tm.path;
       if (!binary) throw new Error(tm.why ?? "TraceMaker is not installed (board_engines install tracemaker, or TRACEMAKER_BIN)");
-      const s = await runTraceMaker({ binary, snapshotDir: dir, timeoutMs, signal });
+      const s = await runTraceMaker({ binary, snapshotDir: dir, timeoutMs, signal, ...(perNet ? { perNet } : {}) });
       await copyFile(join(dir, "tracemaker", "routed.kicad_pcb"), join(dir, PROJECT_FILES.boardPcb));
       return { message: s.message };
     }
     if (router !== "fab_router" && router !== "freerouting") throw new Error(`router ${router} is not available here (fab_router, freerouting, tracemaker)`);
-    const s = await ctx.services.design.route(dir, { router, maxTimeMs: timeoutMs }, { signal });
+    const s = await ctx.services.design.route(dir, { router, maxTimeMs: timeoutMs, ...(perNet?.length ? { settings: { perNet } } : {}) }, { signal });
     return { message: s.message };
   };
 }
@@ -94,9 +94,11 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
         const own = (await locateProject(project.dir)).pcb;
         const from = a.pcb && resolve(files.pcb) !== resolve(own) ? files.pcb : undefined;
         const { bench, line } = await L.Bench.create(ws, project.dir, basename(own), mk(), { project: project.dir, originFiles: origin, ...(from ? { from: relative(project.dir, from).split("\\").join("/") } : {}) }, from);
+        if (a.allowNarrowing) await bench.allowNarrowing();
         return ok(line + `\nworkspace ${bench.ws}`, { ws: bench.ws, figures: bench.figures });
       }
       const bench = await L.Bench.open(ws, mk());
+      if (a.allowNarrowing) await bench.allowNarrowing();
       /**
        * An earlier try's folder: relative to the workspace (`t3/c1`) or to the project (the `dir` a try reports,
        * `.fabdesk/board/lastmile/main/t3/c1`), and by real path inside the workspace.
@@ -216,12 +218,15 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
           }
           if (!a.adopt) return ok(lines.concat(`step ${bench.pointer}: ${L.figureLine(bench.figures)}`).join("\n"), { step: bench.pointer });
           if (bench.pointer === 0) throw new ToolError("nothing accepted yet: the bench is at the start board", "precondition");
+          const widths = await bench.checkWidths();
+          if (widths.rejected.length) throw new ToolError(`Refused narrowing: ${widths.rejected.join("; ")}`, "precondition");
+          if (widths.text) lines.push(widths.text);
           const origin = (bench.state.meta?.["originFiles"] ?? {}) as Record<string, string>;
           await writeFile(join(bench.dir, "origin.json"), JSON.stringify({ project: project.dir, files: origin }, null, 1) + "\n");
           // onto the board the bench started from (`new` records its file name in the project folder as state.pcb), never a default
           const r = await adoptCandidate(ctx, { candidate: bench.candidateBoard(), board: bench.state.pcb, reason: a.reason ?? `last mile: ${bench.state.history.slice(1, bench.pointer + 1).map((h) => h.action).join(", ")}`.slice(0, 190) });
           const standing = await adoptedStanding(bench, r.data.canonicalDrc).catch(() => null);
-          return ok([r.text, ...(standing?.lines ?? [])].join("\n"), { ...(r.data as object), ...(standing ? { standing: standing.json } : {}) });
+          return ok([r.text, widths.text, ...(standing?.lines ?? [])].join("\n"), { ...(r.data as object), ...(standing ? { standing: standing.json } : {}) });
         }
         case "undo":
           return ok(await bench.undo(), { step: bench.pointer });
@@ -300,6 +305,7 @@ export interface LastmileArgs {
   then?: string | undefined;
   noAccept: boolean;
   slackA8: number;
+  allowNarrowing?: boolean | undefined;
   jobs?: number | undefined;
   budget?: number | undefined;
   maxRounds: number;

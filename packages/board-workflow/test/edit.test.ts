@@ -599,3 +599,23 @@ describe("editbench run (bench.ts edit-run)", () => {
     expect(t.json[0]).toMatchObject({ board: "t", task: "move", tool: "abc", verdict: res["verdict"] });
   });
 });
+
+for (const allow of [false, true]) test(`edit proof gates saved replacement widths, allow=${allow}`, async () => {
+  const dir = await project();
+  const r = await runEdit({ projectDir: dir, plan: { id: "width-proof", allow_narrowing: allow, move: [{ ref: "C3", to: [50, 30, 0] }], displace: { radius: 3 } }, mode: "full", runners: runners({
+    repair: async ({ pcb }) => {
+      // Write narrow replacement copper on an existing net, even if the router claims success.
+      const s = await readFile(pcb, "utf8");
+      await writeFile(pcb, s.replace(/\)\s*$/, '\n(segment (start 1 1) (end 2 2) (width 0.01) (layer "F.Cu") (net "VIN") (uuid "narrow-new")))'));
+      return { note: "routed" };
+    },
+  }) });
+  const widths = JSON.parse(await readFile(join(r.candidate!.dir, "width-proof.json"), "utf8"));
+  if (!allow) {
+    expect(r.proof!.pass).toBe(false);
+    expect(r.verdict).toContain("FAIL narrowing: VIN: 0.01 mm below");
+  } else {
+    expect(widths.rejected).toEqual([]);
+    expect(widths.text).toContain("allowed narrowing");
+  }
+});
