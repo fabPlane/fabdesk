@@ -4,7 +4,10 @@
   "private": true,
   "overrides": {
     "undici@^6": "6.29.1",
-    "minimatch@>=7.0.0 <11.0.9": "11.0.9"
+    "minimatch@>=7.0.0 <11.0.9": "11.0.9",
+    "shell-quote": "1.12.0",
+    "node-forge": "1.4.3",
+    "postcss": "8.5.33"
   },
   "main": "expo-router/entry",
   "scripts": {
