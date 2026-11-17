@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseLibraryTable, rowsToRestore } from "./project-library-tables";
+import { parseLibraryTable, rowsToRestore, isManagedLibraryRow } from "./project-library-tables";
 
 const bundled = (name: string, uri = `/opt/libs/${name}.pretty`) =>
   `\t(lib (name "${name}") (type "KiCad") (uri "${uri}") (options "") (descr "Bundled KiCad footprint library"))`;
@@ -25,10 +25,23 @@ describe("project library tables", () => {
     const before = parseLibraryTable(table(bundled("Resistor_SMD", "/old/Resistor_SMD.pretty"), custom, override));
     // KiCad rewrote the table from memory: the custom row is gone, the override replaced, and the
     // bundled row re-pointed at the current install.
+    const managed = (row: (typeof before)[number]) => isManagedLibraryRow("footprint", row, { footprints: "/old" });
     const after = parseLibraryTable(table(bundled("Resistor_SMD"), bundled("Sensor_Humidity")));
-    expect(rowsToRestore(before, after).map((r) => r.name)).toEqual(["Pilot", "Sensor_Humidity"]);
+    expect(rowsToRestore(before, after, managed).map((r) => r.name)).toEqual(["Pilot", "Sensor_Humidity"]);
     expect(rowsToRestore(before, before)).toEqual([]);
-    expect(rowsToRestore(before, null).map((r) => r.name)).toEqual(["Pilot", "Sensor_Humidity"]);
+    expect(rowsToRestore(before, null, managed).map((r) => r.name)).toEqual(["Pilot", "Sensor_Humidity"]);
     expect(rowsToRestore(null, after)).toEqual([]);
   });
+});
+
+for (const kind of ["footprint", "symbol"] as const) test(`${kind}: bundled description never discards a project override or metadata edit`, () => {
+  const extension = kind === "footprint" ? ".pretty" : ".kicad_sym";
+  const row = { name: "Device", type: "KiCad", uri: `/bundle/Device${extension}`, options: "", descr: `Bundled KiCad ${kind} library`, disabled: false, hidden: false };
+  const managed = (r: typeof row) => isManagedLibraryRow(kind, r, { footprints: "/bundle", symbols: "/bundle" });
+  expect(managed(row)).toBe(true);
+  for (const changed of [{ ...row, uri: "${KIPRJMOD}/Device" + extension }, { ...row, hidden: true }, { ...row, descr: "Project note" }, { ...row, options: "custom" }, { ...row, disabled: true }]) {
+    expect(managed(changed)).toBe(false);
+    expect(rowsToRestore([changed], [row], managed)).toEqual([changed]);
+  }
+  expect(rowsToRestore([row], null)).toEqual([row]); // Unknown bundle roots never discard rows.
 });

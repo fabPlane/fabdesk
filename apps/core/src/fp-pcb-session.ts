@@ -22,6 +22,7 @@ export { NativeRevisionConflict } from "@fabdesk/tools";
 import type { FpPcbBridgeClient } from "./fp-pcb-bridge";
 import {
   captureProjectLibraryRows,
+  isManagedLibraryRow,
   rowsToRestore,
   type ProjectLibrarySnapshot,
 } from "./project-library-tables";
@@ -233,7 +234,7 @@ export class FpPcbSessions {
     const after = await captureProjectLibraryRows(projectDir);
     const restored: string[] = [];
     for (const kind of ["footprint", "symbol"] as const) {
-      for (const row of rowsToRestore(before[kind], after[kind])) {
+      for (const row of rowsToRestore(before[kind], after[kind], (row) => isManagedLibraryRow(kind, row))) {
         await session.kicad.libraries.addTableRow(
           kind,
           "project",
