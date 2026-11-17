@@ -145,6 +145,8 @@ export const RouteResult = z.object({
         z.object({ net: z.string(), x: z.number(), y: z.number(), lands: z.array(z.string()) }),
       ),
       text: z.string(),
+      /** The check could not run on the candidate: held in a project that records the policy, never passed unchecked. */
+      failed: z.boolean().optional(),
     })
     .optional(),
   nextActions: z.array(z.string()).optional(),

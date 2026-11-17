@@ -39,6 +39,13 @@ describe("via-in-pad policy", () => {
     expect(newViasInPads(before, classifyVias(board(via(9, 10, "SIG", "a") + via(9.1, 10, "SIG", "b")))).map((v) => v.uuid)).toEqual(["b"]);
   });
 
+  test("a via that stayed in its pad is not new when only its net's name changed", () => {
+    const before = classifyVias(board(via(11, 10, "Net-(R1-Pad2)", "a")));
+    expect(newViasInPads(before, classifyVias(board(via(11, 10, "GND", "a"))))).toEqual([]);
+    // the same with a new uuid (a reroute) and a renamed net
+    expect(newViasInPads(before, classifyVias(board(via(11.05, 10, "GND", "z"))))).toEqual([]);
+  });
+
   test("the report names each new via in a pad and what to do, by policy", () => {
     const before = board("");
     const after = board(via(11, 10, "GND", "d"));

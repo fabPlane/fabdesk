@@ -290,15 +290,16 @@ export function viaInPadPolicy(value: unknown): ViaInPadPolicy {
 }
 
 /**
- * Vias of `after` in solder pads that `before` did not already have. A via in the same pads on the same net counts as
+ * Vias of `after` in solder pads that `before` did not already have. A via in the same pads counts as
  * the one that was already there: a reroute that rips and recreates it gives it a new uuid but adds nothing to the
  * manufacturing process.
  */
 export function newViasInPads(before: ViaClass[], after: ViaClass[]): ViaClass[] {
-  // Each via already in pads is one allowance for its net and pad set, used at most once. A via keeps its allowance by
-  // uuid only while it still sits in the same pads on the same net; a via moved to other pads is judged like a new one,
-  // so it cannot hide a second via added in the pads it left.
-  const lands = (v: ViaClass) => `${v.net}|${[...v.in_component_lands].sort().join(",")}`;
+  // Each via already in pads is one allowance for its pad set, used at most once. A via keeps its allowance by uuid only
+  // while it still sits in the same pads; a via moved to other pads is judged like a new one, so it cannot hide a second
+  // via added in the pads it left. The net is not part of it: a renamed net (or one named by number on one side) does
+  // not make a via new, and a via that changed nets inside the same pad is a short that DRC reports.
+  const lands = (v: ViaClass) => [...v.in_component_lands].sort().join(",");
   const allowance = new Map<string, number>();
   const priorByUuid = new Map<string, ViaClass>();
   for (const v of before) {

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { copyFile, mkdir } from "node:fs/promises";
+import { copyFile, mkdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { layout } from "@fabdesk/board-workflow";
 import { PROJECT_FILES } from "../fs";
@@ -34,17 +34,28 @@ function run(binary: string, args: string[], signal?: AbortSignal): Promise<{ co
 }
 
 const keepOffSupport = new Map<string, Promise<boolean>>();
-/** Whether this TraceMaker's `route` offers `--keep-vias-off-pads` (asked once per binary; older builds do not). */
-export function traceMakerKeepsViasOffPads(binary: string): Promise<boolean> {
-  let known = keepOffSupport.get(binary);
-  if (!known) {
-    known = run(binary, ["route", "--help"]).then(
-      (r) => layout.tracemakerKeepsViasOffPads(r.stdout + r.stderr),
-      () => false,
-    );
-    keepOffSupport.set(binary, known);
-  }
-  return known;
+/**
+ * Whether this TraceMaker's `route` offers `--keep-vias-off-pads` (older builds do not). The answer is cached per binary
+ * and version of the file (path, size, mtime), so an updated install is asked again; a probe that fails or times out
+ * (10 s) answers no and is not cached. The caller's abort stops it.
+ */
+export async function traceMakerKeepsViasOffPads(binary: string, signal?: AbortSignal): Promise<boolean> {
+  const st = await stat(binary).catch(() => null);
+  const key = `${binary}|${st?.size ?? "?"}|${st?.mtimeMs ?? "?"}`;
+  const cached = keepOffSupport.get(key);
+  if (cached) return cached;
+  const timeout = AbortSignal.timeout(10_000);
+  const probe = run(binary, ["route", "--help"], signal ? AbortSignal.any([signal, timeout]) : timeout).then(
+    (r) => (timeout.aborted || signal?.aborted ? null : layout.tracemakerKeepsViasOffPads(r.stdout + r.stderr)),
+    () => null,
+  );
+  const answer = probe.then((v) => v ?? false);
+  keepOffSupport.set(key, answer);
+  // a failed or interrupted probe is not an answer: ask again next time
+  void probe.then((v) => {
+    if (v === null && keepOffSupport.get(key) === answer) keepOffSupport.delete(key);
+  });
+  return answer;
 }
 
 /** TraceMaker's own count from its `routed N/M connections` summary line; null when it printed none. */
@@ -73,7 +84,7 @@ export async function runTraceMaker(opts: {
   const output = join(work, "routed.kicad_pcb");
   const started = Date.now();
   const seconds = Math.max(1, Math.ceil(opts.timeoutMs / 1000));
-  const keepOff = opts.keepViasOffPads ? await traceMakerKeepsViasOffPads(opts.binary) : false;
+  const keepOff = opts.keepViasOffPads ? await traceMakerKeepsViasOffPads(opts.binary, opts.signal) : false;
   opts.onProgress?.({
     state: "routing",
     phase: "tracemaker",

@@ -469,12 +469,21 @@ export async function stageRoute(host: LayoutHost, st: FlowState): Promise<Stage
   const policy = viaInPadPolicy(req.acceptance.manufacturing_rules.via_in_pad);
   const placedText = await readFile(boardFile(best.placed, st), "utf8").catch(() => null);
   const viaInPad: Record<string, ViaInPadReport> = {};
+  // a result the check cannot read is left out too (unless the policy allows vias in pads anyway): never passed unchecked
+  const unchecked = new Set<string>();
   for (const [k, v] of Object.entries(results)) {
-    if (!v || typeof v !== "object" || placedText === null) continue;
+    if (!v || typeof v !== "object") continue;
     const routed = await readFile(join(v.dir, `${sp.stem}.kicad_pcb`), "utf8").catch(() => null);
-    const r = routed === null ? null : viaInPadReport(placedText, routed, policy);
-    if (r?.vias.length) viaInPad[k] = r;
+    let r: ViaInPadReport | null = null;
+    try {
+      r = placedText === null || routed === null ? null : viaInPadReport(placedText, routed, policy);
+    } catch {
+      r = null;
+    }
+    if (r === null) unchecked.add(k);
+    else if (r.vias.length) viaInPad[k] = r;
   }
+  if (unchecked.size && !policy.allowed) lines.push(`via-in-pad check could not run on ${[...unchecked].join(", ")}: left out`);
   for (const [k, v] of Object.entries(results)) {
     if (v && typeof v === "object") lines.push(`${k.padEnd(10)} open ${v.open}  A8 ${v.A8}  A7 ${v.A7}  drc ${JSON.stringify(v.drc)}${claimNote(claims[k])}${viaInPad[k] ? `  [${viaInPad[k].vias.length} new via(s) in pads${policy.allowed ? "" : ", not allowed: left out"}]` : ""}`);
     else if (v !== null) lines.push(`${k.padEnd(10)} ${v}`);
@@ -482,7 +491,7 @@ export async function stageRoute(host: LayoutHost, st: FlowState): Promise<Stage
   for (const [k, r] of Object.entries(viaInPad)) lines.push(`${k}: ${r.text}`);
   const record = { ...results, claims, ...(Object.keys(viaInPad).length ? { via_in_pad: viaInPad } : {}) };
   const routedResults = Object.entries(results).filter((e): e is [string, ScoreFigures] => !!e[1] && typeof e[1] === "object");
-  const cands = routedResults.filter(([k]) => policy.allowed || !viaInPad[k]).map(([, v]) => v);
+  const cands = routedResults.filter(([k]) => policy.allowed || (!viaInPad[k] && !unchecked.has(k))).map(([, v]) => v);
   if (!routedResults.length) return stageEnd(host, st, "route", "FAIL no routed result: see route/*/ logs", record, lines);
   if (!cands.length)
     return stageEnd(host, st, "route", "STOP every routed result adds vias in solder pads and manufacturing_rules.via_in_pad does not allow them: record a justified {allow:true,basis} in the board's acceptance, or change the route plans, then run route again", record, lines);

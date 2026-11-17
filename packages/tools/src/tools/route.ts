@@ -475,6 +475,8 @@ async function applyCandidate(
       "precondition",
     );
   // new vias in solder pads need the requirements' decision, read now (it may have been recorded since the run)
+  if (rec.result?.viaInPad?.failed && (await projectHasAcceptance(project.dir)))
+    throw new ToolError(`The via-in-pad check could not run on this candidate (${rec.result.viaInPad.text}); route again or inspect the candidate.`, "precondition");
   if (rec.result?.viaInPad?.vias.length && (await projectHasAcceptance(project.dir)) && !(await projectViaInPadPolicy(project.dir)).allowed)
     throw new ToolError(
       `Candidate adds ${rec.result.viaInPad.vias.length} via(s) in solder pads (${rec.result.viaInPad.vias.slice(0, 4).map((v) => `${v.net} in ${v.lands.join(",")}`).join("; ")}) and manufacturing_rules.via_in_pad does not allow them: move them out, or record a justified {allow:true,basis} before applying it.`,
@@ -1206,11 +1208,14 @@ async function executeRoute(
         viaPolicy,
       );
     } catch (error) {
-      rec.progress.diagnostics.push(`Via-in-pad check failed: ${error instanceof Error ? error.message : String(error)}`);
+      const why = error instanceof Error ? error.message : String(error);
+      rec.progress.diagnostics.push(`Via-in-pad check failed: ${why}`);
+      // where the policy is enforced, a candidate it could not check is held, never applied unchecked
+      if (viaEnforced) viaInPad = { allowed: false, basis: viaPolicy.basis, vias: [], text: `Via-in-pad check failed (${why}); the candidate is held: inspect it before applying.`, failed: true };
     }
     if (viaInPad && viaInPad.vias.length && !viaInPad.allowed && !viaEnforced)
       viaInPad = { ...viaInPad, text: `Via-in-pad: ${viaInPad.vias.length} new via(s) in solder pads (reported only; this project records no via-in-pad decision): ${viaInPad.vias.slice(0, 6).map((v) => `${v.net || "(no net)"} in ${v.lands.join(", ")}`).join("; ")}. They need filled and capped vias when ordered, or move them out of the pads.` };
-    const viaHeld = viaEnforced && !!viaInPad && viaInPad.vias.length > 0 && !viaInPad.allowed;
+    const viaHeld = viaEnforced && !!viaInPad && (viaInPad.failed === true || (viaInPad.vias.length > 0 && !viaInPad.allowed));
     const touchedNets = [
       ...new Set([
         ...endpoints.map((row) => String(row["net"] ?? "")),

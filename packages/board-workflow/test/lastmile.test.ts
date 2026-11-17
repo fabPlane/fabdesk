@@ -334,13 +334,18 @@ describe("bench", () => {
       await writeFile(join(d, "board.kicad_pcb"), pcb(3));
       await writeFile(join(d, "board.kicad_pro"), "{}");
       const { bench } = await L.Bench.create(join(await mk(), "ws"), d, "board.kicad_pcb", { scorer, engine: eng, availableGiB: async () => 30, viaInPad });
-      return bench.try(["fill:freerouting", "fill:fab_router"]);
+      return { ...(await bench.try(["fill:freerouting", "fill:fab_router"])), bench };
     };
     const avoid = await run({ allowed: false, basis: "default" });
     const byName = Object.fromEntries(avoid.candidates.map((c) => [c.name, c]));
     expect(byName["fill:freerouting"]!.rejected).toEqual(["1 new via(s) in solder pads, not allowed by manufacturing_rules.via_in_pad"]);
     expect(byName["fill:freerouting"]!.viaInPad?.vias[0]?.lands).toEqual(["R1.2"]);
     expect(avoid.accepted).toBe("fill:fab_router"); // fewer open, but its via sits in R1.2
+    // accepting the rejected candidate's folder directly applies the same via-in-pad rule (it moved on: fab_router's step)
+    await avoid.bench.undo();
+    const forced = await avoid.bench.acceptDir(byName["fill:freerouting"]!.dir!);
+    expect(forced.ok).toBe(false);
+    expect(forced.lines.join("\n")).toContain("1 new via(s) in solder pads, not allowed by manufacturing_rules.via_in_pad");
     const text = avoid.lines.join("\n");
     expect(text).toContain("1 new via(s) in pads: N1 in R1.2");
     // the router said 5/5; the native score says 1 or 2 open: both shown, the native figures first

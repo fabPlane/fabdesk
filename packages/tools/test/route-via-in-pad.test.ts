@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRegistry } from "../src";
-import { runTraceMaker, traceMakerRouted } from "../src/routers/tracemaker";
+import { runTraceMaker, traceMakerKeepsViasOffPads, traceMakerRouted } from "../src/routers/tracemaker";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
 const board = (vias: string) => `(kicad_pcb (version 20250114) (net "N1") (net "N2")
@@ -112,4 +112,21 @@ test.skipIf(process.platform === "win32")("runTraceMaker keeps vias off pads onl
   expect(await readFile(argsFile, "utf8")).not.toContain("--keep-vias-off-pads");
   expect(r.viasOffPads).toBe("not supported");
   expect(r.log.join("\n")).toContain("vias in pads are checked after routing");
+});
+
+test.skipIf(process.platform === "win32")("the TraceMaker help probe stops on abort, and an answer is not kept for an updated binary", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tm-probe-"));
+  const bin = join(dir, "tracemaker");
+  // a build whose --help hangs
+  await writeFile(bin, "#!/bin/sh\nsleep 30\n");
+  await chmod(bin, 0o755);
+  const abort = new AbortController();
+  setTimeout(() => abort.abort(), 50);
+  const started = Date.now();
+  expect(await traceMakerKeepsViasOffPads(bin, abort.signal)).toBe(false);
+  expect(Date.now() - started).toBeLessThan(5_000);
+  // the interrupted probe was not cached: a build that answers is asked again and believed
+  await writeFile(bin, "#!/bin/sh\necho '--keep-vias-off-pads --vias-off-pads-below'\n");
+  await chmod(bin, 0o755);
+  expect(await traceMakerKeepsViasOffPads(bin)).toBe(true);
 });

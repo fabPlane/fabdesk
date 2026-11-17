@@ -284,7 +284,7 @@ export async function routePipeline(host: LayoutHost, o: RoutePipelineOptions): 
     throw new FlowError("a session stage asks for via_in_pad: set the via-in-pad policy in acceptance.manufacturing_rules (allow with a basis), not in router options");
   let keepOff = false;
   if (!policy.allowed) {
-    await host.spawn([tmBin, "route", "--help"], { log: join(tm, "route-help.txt"), ...spawnOpts }).catch(() => null);
+    await host.spawn([tmBin, "route", "--help"], { log: join(tm, "route-help.txt"), timeoutMs: 10_000, ...spawnOpts }).catch(() => null);
     keepOff = tracemakerKeepsViasOffPads(await readFile(join(tm, "route-help.txt"), "utf8").catch(() => ""));
   }
   log["via_in_pad_policy"] = {
