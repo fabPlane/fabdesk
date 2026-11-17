@@ -20,7 +20,8 @@ describe("Windows title bar overlay", () => {
     const dark = titleBarOverlayFor("fabplane-dark");
     const light = titleBarOverlayFor("fabplane-light");
     expect(light.height).toBe(dark.height);
-    expect(light.color).not.toBe(dark.color);
+    expect(light.color).toBe("#00000000");
+    expect(dark.color).toBe("#00000000");
     expect(light.symbolColor).not.toBe(dark.symbolColor);
   });
 });
