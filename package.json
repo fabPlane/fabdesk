@@ -52,7 +52,8 @@
     "check:board-workspace": "bun run scripts/check-board-workspace-app.ts",
     "relay": "bun run --cwd apps/relay start",
     "typecheck": "bun run fp-pcb:types && bun run fab-cad:types && bun run --filter './apps/core' --filter './apps/desktop' --filter './apps/relay' --filter './packages/*' typecheck",
-    "test": "bun run --filter './apps/core' --filter './apps/desktop' --filter './apps/relay' --filter './packages/*' test && bun test ./scripts/test",
+    "test": "bun scripts/with-test-tmp.ts bun run test:all",
+    "test:all": "bun run --filter './apps/core' --filter './apps/desktop' --filter './apps/relay' --filter './packages/*' test && bun test ./scripts/test",
     "build:core": "bun run --cwd apps/core build",
     "build:desktop": "bun run --cwd apps/desktop build",
     "package": "bun run build:core && bun run --cwd apps/desktop package",
@@ -80,7 +81,9 @@
     "mobile:typecheck": "bun run --cwd apps/mobile typecheck",
     "mobile:test": "bun run --cwd apps/mobile test",
     "mobile": "bun run --cwd apps/mobile start",
-    "usage:restore": "bun run scripts/restore-usage-record.ts"
+    "usage:restore": "bun run scripts/restore-usage-record.ts",
+    "desktop:install": "bun scripts/ensure-electron.ts",
+    "postinstall": "bun run desktop:install"
   },
   "devDependencies": {
     "dompurify": "3.4.18",

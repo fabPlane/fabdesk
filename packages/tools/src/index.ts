@@ -22,3 +22,9 @@ export * from "./project-bom";
 export { prepareProjectShare, inspectProjectStatus } from "./project-share";
 
 export { prepareEditableBoard } from "./board-contributions";
+
+export { capabilityScore } from "./capability-ranking";
+
+export { visiblePublishedFile, publicationInProgress } from "./publication-visibility";
+
+export { snapshotProjectDependencies } from "./project-dependencies";

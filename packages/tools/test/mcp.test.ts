@@ -177,6 +177,7 @@ describe("mcp adapter", () => {
       "pcb_environment",
       "project_status",
       "render_board",
+      "render_publish",
       "request_project_creation",
       "route_run",
       "verify_drc",
@@ -197,7 +198,7 @@ describe("mcp adapter", () => {
     expect(after.tools.map((t) => t.name)).toEqual(
       expect.arrayContaining(["export_gerbers", "silk_art", "export_stencil", "export_laser_stencil"]),
     );
-    expect(after.tools.length).toBe(initial.tools.length + 10);
+    expect(after.tools.length).toBe(initial.tools.length + 11);
     expect(attachment.session.enabledToolsets()).toEqual(["core", "export"]);
     await new Promise((r) => setTimeout(r, 10));
     expect(listChanged).toBeGreaterThan(0);
@@ -326,4 +327,25 @@ test("direct MCP rejects unknown top-level mutation fields", async () => {
     await client.close();
     await server.close();
   }
+});
+
+test("image presentation metadata survives MCP conversion with the image payload intact", async () => {
+  const { toCallToolResult } = await import("../src/adapters/mcp");
+  const { writeFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const p = await tempProject("image-presentation"), path = join(p.dir,"shot.png");
+  await writeFile(path,Buffer.from("image bytes"));
+  const result = await toCallToolResult({ json:{path}, images:[{path,mime:"image/png"}], imagePresentation:"inspection" });
+  expect(result._meta?.["fabplane/imagePresentation"]).toBe("inspection");
+  expect(result.structuredContent?.["_imagePresentation"]).toBe("inspection");
+  expect(result.content.some(item => item.type === "image" && item.data === Buffer.from("image bytes").toString("base64"))).toBe(true);
+});
+
+test("inspection markers survive the actual Messages-stream content-only boundary",async()=>{
+ const {toCallToolResult}=await import("../src/adapters/mcp"),{MessagesStreamParser}=await import("../../agents/src/parsers/messages");
+ const {writeFile}=await import("node:fs/promises"),{join}=await import("node:path"),p=await tempProject("messages-image"),path=join(p.dir,"image.png");await writeFile(path,"pixel bytes");
+ const mcp=await toCallToolResult({images:[{path,mime:"image/png"}],imagePresentation:"inspection"});
+ const events=new MessagesStreamParser().feed({type:"user",message:{content:[{type:"tool_result",tool_use_id:"wrapped",content:mcp.content}]}});
+ const result=events.find(e=>e.type==="tool_result");expect(result?.type).toBe("tool_result");
+ const image=(result as {output:Array<{type:string;_meta?:Record<string,unknown>}>}).output.find(block=>block.type==="image");expect(image?._meta?.["fabplane/imagePresentation"]).toBe("inspection");
 });

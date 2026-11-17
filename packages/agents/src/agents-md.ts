@@ -12,6 +12,8 @@ export interface AgentDocsContext {
   /** Resolved executable verified by the core; no guessed runtime paths. */
   kicadCli?: string | undefined;
   shellExecutables?: Record<string, string> | undefined;
+  fabdeskCli?: string | undefined;
+  fabdeskCliUnavailableReason?: string | undefined;
   /** Experimental interfaces without Fabdesk MCP tools. */
   interfaceMode?: "substrate" | "programmable";
 }
@@ -57,8 +59,10 @@ When asked to identify a component while viewing a schematic, inspect the real s
 | Saved DRC/ERC results by item | \`verify_drc\` (responseMode=full for all geometry); \`verify_erc\` |
 | Router progress and terminal result | \`route_status\` (latest or runId); returns final state and application outcome |
 | Fabrication files and named archive | \`export_gerbers\`, \`export_drill\`, \`export_pos\`, \`export_bom\`, \`export_zip\` (filename), \`export_stencil\`, \`export_laser_stencil\`; \`release_build\` checks and packages a release |
-| Board/schematic images | \`render_view\`, \`render_schematic_svg\` |
-| Symbols, footprints and pins | \`circuit_describe_part\`, \`circuit_search_parts\` |
+| Board/schematic images | \`render_view\`, \`render_pcb_svg\`, \`render_schematic_svg\` |
+| Interactive desktop 3D | \`render_glb\` writes renders/board.glb; \`render_board\` produces an image only. Disclose model coverage and warnings |
+| Final saved-file handoff | \`render_publish\` publishes current PCB, schematic, interactive 3D and canonical DRC/ERC together. Run after the last edit and disclose check failures |
+| Symbols, footprints and pins | \`circuit_describe_part\`, \`circuit_search_parts\`; register project libraries with \`circuit_library\` action=register |
 
 Shell file reads and scripts are available too. The agent environment exposes the resolved CLI as \`$KICAD_CLI\`: \`"$KICAD_CLI" version\`, \`"$KICAD_CLI" --help\`.
 Shell executables and Python modules come from the host. A host \`pcbnew\` may use a different KiCad format; native tools use the packaged KiCad API. No Python/pcbnew runtime is supplied by the PCB bundle.`;
@@ -103,6 +107,7 @@ export function renderAgentsMd(
 
 ${interfaceNote}
 ${ipcNote}
+${ctx.fabdeskCliUnavailableReason ?? (ctx.fabdeskCli ? `Active desktop CLI: \`${ctx.fabdeskCli}\`. For authenticated shell tool access use \`"$FABDESK_CLI" tool describe <name>\` or \`"$FABDESK_CLI" tool call <name> --request '<json>'\` (PowerShell: \`& $env:FABDESK_CLI tool describe <name>\`). This executable and the inherited endpoint/token belong to this running desktop. Keep credentials out of output.` : "")}
 
 ## Board constraints
 - Copper layers: ${ctx.board.layers}

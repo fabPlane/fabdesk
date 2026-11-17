@@ -2,7 +2,7 @@ import type { NetlistComponent } from "@fabdesk/protocol";
 import { ToolError } from "./registry";
 
 /** Bounded CSV from native KiCad, including quoted commas, quotes and line breaks. */
-function csvRows(csv: string): string[][] {
+export function csvRows(csv: string): string[][] {
   if (csv.length > 10 * 1024 * 1024) throw new ToolError("Native BOM exceeds 10 MB", "precondition");
   const rows: string[][] = []; let row: string[] = [], cell = "", quoted = false, closed = false;
   const finishCell = () => { row.push(cell); cell = ""; closed = false; if (row.length > 32) throw new ToolError("Native BOM has too many columns", "precondition"); };

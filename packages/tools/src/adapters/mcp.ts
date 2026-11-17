@@ -1,3 +1,4 @@
+import { capabilityScore } from "../capability-ranking";
 /**
  * MCP adapter: registers the registry on an `McpServer`. The core toolset is enabled; other
  * toolsets are registered disabled and switched on by `load_toolset` (list_changed fires).
@@ -253,9 +254,7 @@ function registerCapabilityTools(
         .list()
         .filter((def) => !initialTools?.has(def.name) && !excluded.has(def.name))
         .map((def) => {
-          const haystack =
-            `${def.name} ${def.title} ${def.description} ${def.toolset}`.toLowerCase();
-          const score = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
+          const score = capabilityScore(query, def);
           return { def, score };
         })
         .filter(({ score }) => score > 0)
@@ -287,7 +286,7 @@ function registerCapabilityTools(
     {
       title: "Call an additional Fabdesk capability",
       description:
-        "Invoke an operation returned by capability_search with its documented arguments.",
+        'Invoke a discovered operation with {"name":"render_glb","arguments":{}}. Use its returned schema; project arguments go inside arguments.',
       inputSchema: {
         name: z.string().min(1).describe("Exact operation name returned by capability_search"),
         arguments: z.record(z.string(), z.unknown()).default({}),
@@ -370,6 +369,7 @@ export async function toCallToolResult(output: ToolOutput): Promise<CallToolResu
         type: "image",
         data: Buffer.from(await readFile(img.path)).toString("base64"),
         mimeType: img.mime,
+        ...(output.imagePresentation ? { _meta: { "fabplane/imagePresentation": output.imagePresentation } } : {}),
       });
     }
   }
@@ -382,7 +382,8 @@ export async function toCallToolResult(output: ToolOutput): Promise<CallToolResu
       : undefined;
   return {
     content,
-    ...(structured ? { structuredContent: structured } : {}),
+    ...(output.imagePresentation ? { _meta: { "fabplane/imagePresentation": output.imagePresentation } } : {}),
+    ...(structured ? { structuredContent: { ...structured, ...(output.imagePresentation ? { _imagePresentation: output.imagePresentation } : {}) } } : {}),
     ...(output.isError ? { isError: true } : {}),
   };
 }

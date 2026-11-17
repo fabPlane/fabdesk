@@ -90,6 +90,11 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
   const [canvasPoint, setCanvasPoint] = useState<SvgPoint | null>(null);
   const [nativeEditBusy, setNativeEditBusy] = useState(false);
   const projectId = useUiStore((s) => s.activeProjectId);
+  useEffect(() => {
+    const clear = (event: Event) => { if ((event as CustomEvent).detail?.projectId === projectId) setCanvasPoint(null); };
+    window.addEventListener("fabdesk-clear-selection", clear);
+    return () => window.removeEventListener("fabdesk-clear-selection", clear);
+  }, [projectId]);
   const project = useProject(projectId);
   const threads = useThreads(projectId ? { projectId } : {});
   const projectWorking = useRunsStore(state => Object.keys(state.runsByThread).some(id => threads.data?.some(thread => thread.id === id)) || Object.values(state.jobs).some(job => job.projectId === projectId && (job.status === "running" || job.status === "queued")));

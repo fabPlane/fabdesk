@@ -649,7 +649,7 @@ export class AgentRunManager {
     });
     emit({ ts: Date.now(), topic: "thread.updated", threadId: input.threadId });
 
-    const workbenchEnv = await this.deps
+    const workbenchEnv: Record<string, string> | undefined = await this.deps
       .agentEnvironment?.({ cwd, project: input.project })
       .catch((e) => {
         logger.warn("agent PCB environment could not be resolved", { error: errMsg(e) });
@@ -797,11 +797,17 @@ export class AgentRunManager {
               });
               persist(true);
               break;
-            case "tool_result":
+            case "tool_result": {
+              // Persist source classification for native image inspection, including providers that
+              // do not return MCP metadata. The original model-facing payload is unchanged.
+              const use = parts.find(part => part.type === "tool_use" && part.id === ev.id);
+              const name = use?.type === "tool_use" ? use.name.replace(/^mcp__.+?__/, "").replace(/^functions\./, "") : "";
+              const inspection = ["view_image", "image_view", "open_image"].includes(name);
+              const output = inspection ? { _imagePresentation: "inspection", result: ev.output } : ev.output;
               parts.push({
                 type: "tool_result",
                 id: ev.id,
-                output: ev.output,
+                output,
                 ...(ev.isError !== undefined ? { isError: ev.isError } : {}),
               });
               emit({
@@ -810,11 +816,12 @@ export class AgentRunManager {
                 runId: run.id,
                 messageId: message.id,
                 id: ev.id,
-                output: ev.output,
+                output,
                 ...(ev.isError !== undefined ? { isError: ev.isError } : {}),
               });
               persist(true);
               break;
+            }
             case "usage":
               if (ev.inputTokens !== undefined)
                 cost["inputTokens"] = (cost["inputTokens"] ?? 0) + ev.inputTokens;

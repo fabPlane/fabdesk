@@ -1,7 +1,9 @@
+import { prepareAgentCli } from "./agent-cli";
 /** `fabdesk-core serve`: bind, write the handshake, print the ReadyLine, run until told to stop. */
 import { AGENT_OWNER_DIR, recoverAgentProcesses, stopAgentProcess } from "@fabdesk/agents";
 import { chmod, mkdir, rename, writeFile, unlink } from "node:fs/promises";
-import { join } from "node:path";
+import { join, basename } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { DaemonHandshake, DoctorReport, ReadyLine, Settings } from "@fabdesk/protocol";
 import { usageArchiveAllowed } from "@fabdesk/protocol";
 import {
@@ -432,6 +434,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   const adapters = opts.adapters ?? (await loadAdapters());
   const agentInterface = configuredAgentInterface();
   let mcpUrl = "";
+  let cliPath: Promise<string> | undefined;
+  const activeCli = () => cliPath ??= prepareAgentCli(config.home, /^(bun|bun-debug)(\.exe)?$/i.test(basename(process.execPath)) ? [process.execPath, fileURLToPath(new URL("./main.ts", import.meta.url))] : [process.execPath]).catch(error => { cliPath = undefined; throw error; });
   const runs = new AgentRunManager({
     store,
     emit: (e) => bus.emit(e),
@@ -452,6 +456,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       return {
         [AGENT_OWNER_DIR]: ownerDir,
         FABDESK_PROJECT_DIR: cwd,
+        FABDESK_CLI: await activeCli(),
         ...(mcpUrl ? { FABDESK_CORE_URL: new URL(mcpUrl).origin } : {}),
         ...(project
           ? {
@@ -473,7 +478,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     ...(opts.abortSettleTimeoutMs !== undefined
       ? { abortSettleTimeoutMs: opts.abortSettleTimeoutMs }
       : {}),
-    prepareProject: async (project: ProjectHandle) => {
+    prepareProject: async (project: ProjectHandle, agentId) => {
       const agents = await import("@fabdesk/agents");
       const sketches = (await projects.listFiles(join(project.dir, "sketches")))
         .filter((f) => /\.(png|jpe?g)$/i.test(f.path))
@@ -483,6 +488,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       await agents.writeAgentDocs(project.dir, {
         projectName: project.name,
         toolsMarkdown: toolsMarkdown(registry),
+        ...(agentId === "codex" && store.settings.get().agents.codex?.permissionMode !== "bypass"
+          ? { fabdeskCliUnavailableReason: "Codex workspace shell networking does not reach the desktop loopback endpoint. Use MCP capability_search/capability_call or direct MCP tools for tool discovery and execution; do not retry fabpcb tool requests from the shell." }
+          : { fabdeskCli: await activeCli() }),
         ...(cli ? { kicadCli: cli.path } : {}),
         shellExecutables: Object.fromEntries(
           ["python3", "rg", "bun"].flatMap((name) => {

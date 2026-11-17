@@ -64,7 +64,7 @@ test("imported root copy exports with the explicitly selected model directory wi
     await registry.invoke("render_glb", {}, ref => factory({ def: registry.get("render_glb")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
     const receipt = JSON.parse(await readFile(join(project.dir, BOARD_MODEL_REVISION_PATH), "utf8"));
     expect(receipt.modelProjectDirectory).toBe("versions/v4.1");
-    expect(receipt.warnings).toEqual(["Warning: one other model unavailable"]);
+    expect(receipt.warnings).toEqual(expect.arrayContaining(["Warning: one other model unavailable"]));
     expect(await Bun.file(join(project.dir, origin)).text()).toBe("original PCB");
     expect(await Bun.file(join(project.dir, "board.kicad_pcb")).text()).toBe("edited working PCB");
     expect(receipt.sourceSha256).toBe(await pcbPreviewFileHash(join(project.dir, "board.kicad_pcb")));

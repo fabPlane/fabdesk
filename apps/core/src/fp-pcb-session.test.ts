@@ -1,3 +1,4 @@
+import { parseLibraryTable } from "./project-library-tables";
 import { describe, expect, test } from "bun:test";
 import { DocumentType } from "@fp-pcb/proto";
 import { inspectProjectBoardSources } from "@fabdesk/tools";
@@ -403,3 +404,105 @@ test("bundled library setup is shared, reused only for unchanged tables, and ret
     expect(registrations).toBe(5);
   });
 });
+
+test("bundled library setup re-adds project rows KiCad's in-memory table save dropped", async () => {
+  await fixture(async f => {
+    const session = await f.sessions.session(f.dir);
+    f.sessions.session = async () => session;
+    await writeFile(join(f.dir, "board.kicad_pro"), "project");
+    await writeFile(join(f.dir, "board.kicad_sch"), "schematic");
+    session.kicad.currentSchematic = async () => ({ modified: async () => false, close: async () => {}, save: async () => {} }) as never;
+    session.kicad.openSchematic = session.kicad.currentSchematic as never;
+    const fp = join(f.dir, "fp-lib-table");
+    const bundled = `\t(lib (name "Device") (type "KiCad") (uri "/opt/Device.pretty") (options "") (descr "Bundled KiCad footprint library"))`;
+    const custom = `\t(lib (name "Pilot") (type "KiCad") (uri "\${KIPRJMOD}/Pilot.pretty") (options "") (descr "project"))`;
+    const tableOf = (rows: string[]) => `(fp_lib_table\n\t(version 7)\n${rows.join("\n")}\n)\n`;
+    let memory = [bundled];
+    const added: unknown[] = [];
+    (session.kicad as any).libraries = {
+      tables: async () => parseLibraryTable(tableOf(memory)).map(row => ({ nickname: row.name, uri: row.uri, type: row.type, options: row.options, description: row.descr, enabled: !row.disabled, hidden: row.hidden })),
+      addTableRow: async (kind: string, scope: string, row: { nickname: string; uri: string; description: string }, replace: boolean) => {
+        added.push({ kind, scope, nickname: row.nickname, uri: row.uri, replace });
+        memory = [...memory.filter(r => !r.includes(`"${row.nickname}"`)), `\t(lib (name "${row.nickname}") (type "KiCad") (uri "${row.uri}") (options "") (descr "${row.description}"))`];
+        await writeFile(fp, tableOf(memory));
+      },
+    };
+    // Registration rewrites the saved table from KiCad's memory, like the real bridge does.
+    (f.sessions as any).bridge = () => ({ registerBundledLibraries: async () => { await writeFile(fp, tableOf(memory)); } });
+    await writeFile(fp, tableOf([bundled]));
+    await f.sessions.ensureProject(f.dir);
+    expect(added).toEqual([]);
+    await writeFile(fp, tableOf([bundled, custom]));
+    await f.sessions.ensureProject(f.dir);
+    expect(added).toEqual([{ kind: "footprint", scope: "project", nickname: "Pilot", uri: "${KIPRJMOD}/Pilot.pretty", replace: true }]);
+    expect(await readFile(fp, "utf8")).toContain('"Pilot"');
+    // The restored table is the new baseline: an unchanged table does not register again.
+    await f.sessions.ensureProject(f.dir);
+    expect(added.length).toBe(1);
+  });
+});
+
+test("library restoration preserves a newer external table edit instead of replaying an old snapshot", async () => fixture(async f => {
+  const session = await f.sessions.session(f.dir), path = join(f.dir, "fp-lib-table");
+  const table = (uri: string) => `(fp_lib_table (lib (name "Pilot") (type "KiCad") (uri "${uri}") (options "") (descr "project")))`;
+  await writeFile(path, table("old.pretty"));
+  let adds = 0;
+  (session.kicad as any).libraries = { tables: async () => [], addTableRow: async () => { adds++; throw Error("must not overwrite newer disk edit"); } };
+  await expect(f.sessions.preservingProjectLibraries(f.dir, session, async () => {
+    await writeFile(path, table("newer-external.pretty"));
+  })).rejects.toThrow("newer saved table was kept");
+  expect(await readFile(path, "utf8")).toContain("newer-external.pretty");
+  expect(adds).toBe(0);
+}));
+
+test("library writes on the same native session capture snapshots serially", async () => fixture(async f => {
+  const session = await f.sessions.session(f.dir), events: string[] = [];
+  let unlock!: () => void;
+  const blocked = new Promise<void>(resolve => { unlock = resolve; });
+  const first = f.sessions.preservingProjectLibraries(f.dir, session, async () => { events.push("first"); await blocked; events.push("first done"); });
+  const second = f.sessions.preservingProjectLibraries(f.dir, session, async () => { events.push("second"); });
+  await new Promise(resolve => setTimeout(resolve, 10)); expect(events).toEqual(["first"]);
+  unlock(); await Promise.all([first, second]);
+  expect(events).toEqual(["first", "first done", "second"]);
+}));
+
+for (const kind of ["footprint", "symbol"] as const) for (const failure of ["failure", "cancellation"] as const) {
+  test(`${kind} table survives ${failure} after native registration drops a project row`, async () => fixture(async f => {
+    const session = await f.sessions.session(f.dir);
+    const filename = kind === "footprint" ? "fp-lib-table" : "sym-lib-table";
+    const path = join(f.dir, filename), table = kind === "footprint" ? "fp_lib_table" : "sym_lib_table";
+    await writeFile(path, `(${table} (lib (name "Pilot") (type "KiCad") (uri "project-local") (options "") (descr "Bundled KiCad ${kind} library") (hidden)))`);
+    let restored = false;
+    (session.kicad as any).libraries = {
+      tables: async () => [],
+      addTableRow: async (actualKind: string, _scope: string, row: { nickname: string; uri: string; description: string; hidden: boolean }) => {
+        expect(actualKind).toBe(kind); expect(row.hidden).toBe(true);
+        expect(row.description).toBe(`Bundled KiCad ${kind} library`);
+        await writeFile(path, `(${table} (lib (name "${row.nickname}") (uri "${row.uri}") (hidden)))`); restored = true;
+      },
+    };
+    const error = failure === "cancellation" ? new DOMException("cancelled", "AbortError") : Error("registration failed");
+    await expect(f.sessions.preservingProjectLibraries(f.dir, session, async () => {
+      await writeFile(path, `(${table})`); throw error;
+    })).rejects.toBe(error);
+    expect(restored).toBe(true); expect(await readFile(path, "utf8")).toContain("project-local");
+  }));
+}
+
+for (const kind of ["footprint","symbol"] as const) test(`${kind} preservation survives native session loss and reconnect`,async()=>fixture(async f=>{
+ const session=await f.sessions.session(f.dir),file=join(f.dir,kind==="footprint"?"fp-lib-table":"sym-lib-table"),root=kind==="footprint"?"fp_lib_table":"sym_lib_table";
+ const table=(uri:string)=>`(${root} (lib (name "Pilot") (type "KiCad") (uri "${uri}")))`;
+ await writeFile(file,table("original-project-library"));let gone=false,reconnected=false;
+ (session.kicad as any).libraries={tables:async()=>{if(gone)throw Error("connection closed");return [];},addTableRow:async(_kind:string,_scope:string,row:{uri:string})=>{await writeFile(file,table(row.uri));}};
+ const originalRelease=f.sessions.release.bind(f.sessions);f.sessions.release=async()=>{gone=false;reconnected=true;};f.sessions.session=async()=>session;
+ await expect(f.sessions.preservingProjectLibraries(f.dir,session,async()=>{await writeFile(file,`(${root})`);gone=true;throw Error("connection closed");})).rejects.toThrow("connection closed");
+ expect(reconnected).toBe(true);expect(await readFile(file,"utf8")).toContain("original-project-library");f.sessions.release=originalRelease;
+}));
+test("an external edit before a client native table save is refused and both versions are retained",async()=>fixture(async f=>{
+ const session=await f.sessions.session(f.dir),file=join(f.dir,"fp-lib-table"),table=(uri:string)=>`(fp_lib_table (lib (name "Pilot") (uri "${uri}")))`;
+ await writeFile(file,table("old.pretty"));let nativeWrites=0;
+ (session.kicad as any).libraries={tables:async()=>[],addTableRow:async()=>{nativeWrites++;await writeFile(file,"(fp_lib_table)");}};
+ await expect(f.sessions.preservingProjectLibraries(f.dir,session,async()=>{await writeFile(file,table("newer.pretty"));await (session.kicad as any).libraries.addTableRow("footprint","project",{},true);})).rejects.toThrow("recovery could not finish");
+ expect(nativeWrites).toBe(0);expect(await readFile(file,"utf8")).toContain("newer.pretty");
+ const {readdir}=await import("node:fs/promises"),dir=join(f.dir,".fabdesk/library-recovery"),names=await readdir(dir);const retained=await readFile(join(dir,names[0]!),"utf8");expect(retained).toContain("old.pretty");expect(retained).toContain("newer.pretty");
+}));

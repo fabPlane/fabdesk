@@ -532,6 +532,14 @@ async function applyCandidate(
         facts.nets.map((n) => n.net).filter((net) => !rec.result!.open.includes(net)),
       );
     }
+    let nativeConnectivity: NonNullable<RouteRunRecord["application"]["nativeConnectivity"]>;
+    try {
+      const rows = await ctx.services.design.query(project.dir, "unrouted");
+      const stable = sha256(await readFile(boardPath)) === resulting;
+      nativeConnectivity = { status: stable ? "measured" : "stale", pcbSha256: resulting, open: stable ? rows.length : null };
+    } catch (error) {
+      nativeConnectivity = { status: "unavailable", pcbSha256: resulting, open: null, reason: error instanceof Error ? error.message : String(error) };
+    }
     next = {
       ...next,
       currentPcbRevision: resulting,
@@ -541,6 +549,7 @@ async function applyCandidate(
         state: "applied",
         resultingPcbRevision: resulting,
         appliedAt: iso(),
+        nativeConnectivity,
         reason: null,
       },
     };
@@ -1575,9 +1584,15 @@ async function routeStatusOutput(
     heartbeatFreshnessMs: Date.now() - Date.parse(rec.progress.heartbeatAt),
   };
   ctx.services.routeRuns.update(rec.id, run);
+  const native = rec.application.nativeConnectivity;
+  const nativeCurrent = native?.pcbSha256 === current && native.status === "measured";
+  const connectivity = rec.application.state === "applied"
+    ? nativeCurrent ? `Saved-board native connectivity: ${native.open} open connection(s). Router counts may differ because zone/island models differ.`
+      : "Saved-board native connectivity is unverified or stale; router-reported completion is not a saved-board connectivity check."
+    : "Canonical connectivity has not been verified for this candidate; it has not been applied.";
   return ok(
-    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.application.reason ? ` ${rec.application.reason}` : ""}${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${rec.result?.diagnostics ? `\n${rec.result.diagnostics.text}` : rec.error ? `\n${rec.error}` : ""}${rec.result?.endpointCollisions ? `\n${rec.result.endpointCollisions.text}` : ""}${outsideScopeText(rec.result?.outsideScopeChanges)}${rec.result?.quality ? `\n${rec.result.quality.text}` : "\nQuality pending; no candidate applied."}`,
-    { run },
+    `${connectivity}\nRun ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.application.reason ? ` ${rec.application.reason}` : ""}${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${rec.result?.diagnostics ? `\n${rec.result.diagnostics.text}` : rec.error ? `\n${rec.error}` : ""}${rec.result?.endpointCollisions ? `\n${rec.result.endpointCollisions.text}` : ""}${outsideScopeText(rec.result?.outsideScopeChanges)}${rec.result?.quality ? `\n${rec.result.quality.text}` : "\nQuality pending; no candidate applied."}`,
+    { run, connectivity: { native: nativeCurrent ? native : null, routerReported: { routed: rec.progress.routed, total: rec.progress.total, remaining: rec.progress.remaining } } },
   );
 }
 
