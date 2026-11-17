@@ -589,7 +589,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     let sessionWasBare = false;
     const job = await deps.sessions.withRetry(opts.projectDir, (s) => {
       sessionWasBare = !s.path;
-      return deps.bridge().compile(
+      // The compile registers libraries, which saves KiCad's in-memory tables over the saved ones.
+      return deps.sessions.preservingProjectLibraries(opts.projectDir, s, () => deps.bridge().compile(
         s.id,
         {
           source,
@@ -605,7 +606,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           onProgress: (j: FpPcbCompileJob) =>
             opts.progress?.(STAGE_FRACTION[j.state] ?? 0.5, j.state),
         },
-      );
+      ));
     });
     // The project may have been created by this job: the session now has a board and a path.
     if (job.state === "cancelled") throw new ToolError("compile cancelled", "cancelled");

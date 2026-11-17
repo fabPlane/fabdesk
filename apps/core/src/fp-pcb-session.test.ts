@@ -403,3 +403,39 @@ test("bundled library setup is shared, reused only for unchanged tables, and ret
     expect(registrations).toBe(5);
   });
 });
+
+test("bundled library setup re-adds project rows KiCad's in-memory table save dropped", async () => {
+  await fixture(async f => {
+    const session = await f.sessions.session(f.dir);
+    f.sessions.session = async () => session;
+    await writeFile(join(f.dir, "board.kicad_pro"), "project");
+    await writeFile(join(f.dir, "board.kicad_sch"), "schematic");
+    session.kicad.currentSchematic = async () => ({ modified: async () => false, close: async () => {}, save: async () => {} }) as never;
+    session.kicad.openSchematic = session.kicad.currentSchematic as never;
+    const fp = join(f.dir, "fp-lib-table");
+    const bundled = `\t(lib (name "Device") (type "KiCad") (uri "/opt/Device.pretty") (options "") (descr "Bundled KiCad footprint library"))`;
+    const custom = `\t(lib (name "Pilot") (type "KiCad") (uri "\${KIPRJMOD}/Pilot.pretty") (options "") (descr "project"))`;
+    const tableOf = (rows: string[]) => `(fp_lib_table\n\t(version 7)\n${rows.join("\n")}\n)\n`;
+    let memory = [bundled];
+    const added: unknown[] = [];
+    (session.kicad as any).libraries = {
+      addTableRow: async (kind: string, scope: string, row: { nickname: string; uri: string; description: string }, replace: boolean) => {
+        added.push({ kind, scope, nickname: row.nickname, uri: row.uri, replace });
+        memory = [...memory.filter(r => !r.includes(`"${row.nickname}"`)), `\t(lib (name "${row.nickname}") (type "KiCad") (uri "${row.uri}") (options "") (descr "${row.description}"))`];
+        await writeFile(fp, tableOf(memory));
+      },
+    };
+    // Registration rewrites the saved table from KiCad's memory, like the real bridge does.
+    (f.sessions as any).bridge = () => ({ registerBundledLibraries: async () => { await writeFile(fp, tableOf(memory)); } });
+    await writeFile(fp, tableOf([bundled]));
+    await f.sessions.ensureProject(f.dir);
+    expect(added).toEqual([]);
+    await writeFile(fp, tableOf([bundled, custom]));
+    await f.sessions.ensureProject(f.dir);
+    expect(added).toEqual([{ kind: "footprint", scope: "project", nickname: "Pilot", uri: "${KIPRJMOD}/Pilot.pretty", replace: true }]);
+    expect(await readFile(fp, "utf8")).toContain('"Pilot"');
+    // The restored table is the new baseline: an unchanged table does not register again.
+    await f.sessions.ensureProject(f.dir);
+    expect(added.length).toBe(1);
+  });
+});

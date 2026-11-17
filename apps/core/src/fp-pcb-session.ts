@@ -20,6 +20,11 @@ import { WebSocketTransport, bridgeWsUrl } from "@fp-pcb/client/transport";
 import { ToolError, NativeRevisionConflict } from "@fabdesk/tools";
 export { NativeRevisionConflict } from "@fabdesk/tools";
 import type { FpPcbBridgeClient } from "./fp-pcb-bridge";
+import {
+  captureProjectLibraryRows,
+  rowsToRestore,
+  type ProjectLibrarySnapshot,
+} from "./project-library-tables";
 
 export const BOARD_PRO = "board.kicad_pro";
 export const BOARD_PCB = "board.kicad_pcb";
@@ -177,7 +182,9 @@ export class FpPcbSessions {
     if (this.libraryRegistration.has(session)) return this.ensureBundledLibraries(projectDir, session);
     this.libraryRevisions.delete(session);
     const registration = (async () => {
-      await this.bridge().registerBundledLibraries(session.id);
+      await this.preservingProjectLibraries(projectDir, session, () =>
+        this.bridge().registerBundledLibraries(session.id),
+      );
       this.libraryRevisions.set(session, await this.libraryRevision(projectDir));
     })();
     this.libraryRegistration.set(session, registration);
@@ -185,6 +192,64 @@ export class FpPcbSessions {
     finally {
       if (this.libraryRegistration.get(session) === registration) this.libraryRegistration.delete(session);
     }
+  }
+
+  /**
+   * Run `write`, which may make KiCad save its in-memory project library tables (bundled
+   * registration, a compile job), then re-add through the same session every project row the saved
+   * tables had before it and lost. KiCad loads the tables once when the project opens, so a row
+   * added to `fp-lib-table` afterwards would otherwise vanish on the next table save.
+   */
+  async preservingProjectLibraries<T>(
+    projectDir: string,
+    session: ProjectSession,
+    write: () => Promise<T>,
+  ): Promise<T> {
+    const before = await captureProjectLibraryRows(projectDir);
+    let result: T;
+    try {
+      result = await write();
+    } catch (error) {
+      await this.restoreProjectLibraries(projectDir, session, before).catch((restoreError) =>
+        this.opts.log?.(
+          `could not restore project library rows after a failed table write: ${restoreError instanceof Error ? restoreError.message : String(restoreError)}`,
+        ),
+      );
+      throw error;
+    }
+    await this.restoreProjectLibraries(projectDir, session, before);
+    return result;
+  }
+
+  private async restoreProjectLibraries(
+    projectDir: string,
+    session: ProjectSession,
+    before: ProjectLibrarySnapshot,
+  ): Promise<string[]> {
+    const after = await captureProjectLibraryRows(projectDir);
+    const restored: string[] = [];
+    for (const kind of ["footprint", "symbol"] as const) {
+      for (const row of rowsToRestore(before[kind], after[kind])) {
+        await session.kicad.libraries.addTableRow(
+          kind,
+          "project",
+          {
+            nickname: row.name,
+            uri: row.uri,
+            type: row.type,
+            options: row.options,
+            description: row.descr,
+            enabled: !row.disabled,
+            hidden: row.hidden,
+          },
+          true,
+        );
+        restored.push(`${kind}:${row.name}`);
+      }
+    }
+    if (restored.length)
+      this.opts.log?.(`restored project library rows KiCad dropped on save: ${restored.join(", ")}`);
+    return restored;
   }
 
   private async libraryRevision(projectDir: string): Promise<string> {
