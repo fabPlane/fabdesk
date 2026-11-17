@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { ProjectBoardSources, type SharedBoard } from "@fabdesk/protocol";
 import { captureAssemblySelection } from "./assembly-scene";
-import { projectStatusTarget } from "./project-status-navigation";
+import { projectStatusIsEmpty, projectStatusTarget } from "./project-status-navigation";
 
 const source = { id: "io", name: "I/O", location: "project", directory: "." };
 const board: SharedBoard = { id: "io", name: "I/O", sourceAvailable: true, sourceState: "pcb", checks: { state: "no-report", findingCount: null }, preview: null };
@@ -35,4 +35,29 @@ test("unavailable or unrelated sources cannot be opened from stale status rows",
   sources.sources[0]!.status = "blocked";
   expect(projectStatusTarget("project", board, sources, "design")).toBeNull();
   expect(projectStatusTarget("project", { ...board, sourceAvailable: false, sourceState: "schematic-only" }, sources, "design")).toBeNull();
+});
+
+test("only fresh single-board projects use the empty status", () => {
+  const fresh = [{ path: "project.json" }, { path: "notes.md" }, { path: "sketches/idea.png" }];
+  expect(projectStatusIsEmpty(fresh, "single")).toBe(true);
+  expect(projectStatusIsEmpty(fresh, "assembly")).toBe(false);
+  expect(projectStatusIsEmpty([...fresh, { path: "board.kicad_sch" }], "single")).toBe(false);
+  expect(projectStatusIsEmpty([...fresh, { path: "hardware/io/board.kicad_pcb" }], "single")).toBe(false);
+});
+
+test("removing a board source preserves missing-source status while evidence remains", () => {
+  for (const artifact of ["renders/board.glb", "renders/board.glb.revision.json", "renders/pcb.svg", "renders/schematic.svg", "reports/drc.json", "reports/erc.rpt", "hardware\\io\\renders\\board.glb"]) {
+    const source = { path: "board.kicad_pcb" };
+    const files = [source, { path: artifact }];
+    expect(projectStatusIsEmpty(files, "single")).toBe(false);
+    expect(projectStatusIsEmpty(files.filter(file => file !== source), "single")).toBe(false);
+  }
+});
+
+test("refreshed file metadata determines whether a project is still empty", () => {
+  const files = [{ path: "project.json" }];
+  expect(projectStatusIsEmpty(files, "single")).toBe(true);
+  const withReport = [...files, { path: "reports/drc.json" }];
+  expect(projectStatusIsEmpty(withReport, "single")).toBe(false);
+  expect(projectStatusIsEmpty(files, "single")).toBe(true);
 });

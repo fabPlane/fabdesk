@@ -229,3 +229,28 @@
   left: var(--fd-canvas-gutter);
   max-width: calc(100% - 48px);
 }
+
+/* Keep project views in the same place instead of swapping rows on navigation. */
+.fd-canvas-workspace .fd-project-status { padding:86px 40px 90px; }
+.fd-canvas-workspace .fd-project-status > .fd-project-status-nav { margin:0 0 24px; padding:0; }
+.fd-project-status-heading { flex-wrap:wrap; }
+.fd-project-status-heading > div { min-width:0; overflow-wrap:anywhere; }
+.fd-workspace-menu-content { max-width:calc(100vw - 40px); }
+
+/* Caption controls stay native-sized when page zoom reduces available CSS width. */
+@media(max-width:1100px) {
+  .fd-canvas-header .fd-canvas-brand > span:last-child { display:none; }
+  .fd-canvas-header .fd-project-identity { min-width:0; flex:1 1 auto; }
+  .fd-canvas-header-actions { flex:none; }
+}
+@media(max-width:900px) {
+  .fd-canvas-header .fd-workspace-back > span { display:none; }
+  .fd-canvas-header .fd-header-home { display:none; }
+  .fd-canvas-header .fd-activity-label { display:none; }
+}
+@media(max-width:780px) {
+  .fd-canvas-workspace .fd-project-status { padding:86px 20px 90px; }
+  /* These pages only have the destination picker, not a second tool row. */
+  .fd-canvas-main[data-task-toolbar=true]:is([data-area=overview],[data-area=status])::before { height:64px; }
+  .fd-canvas-workspace .fd-project-overview { padding-top:86px; }
+}
