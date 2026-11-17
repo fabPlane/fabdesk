@@ -392,11 +392,12 @@ export async function projectPairs(
   dir: string,
   board: CopperBoard,
   declared: PairDefinition[] = [],
+  stem = "board",
 ): Promise<PairDefinition[]> {
   const named = quality(board, board.nets, declared).pairs;
   let settings: any;
   try {
-    settings = JSON.parse(await readFile(join(dir, PROJECT_FILES.boardPro), "utf8"))?.net_settings;
+    settings = JSON.parse(await readFile(join(dir, `${stem}.kicad_pro`), "utf8"))?.net_settings;
   } catch {
     /* Older native boards may have no project sidecar; names remain measurable. */
   }
@@ -408,7 +409,7 @@ export async function projectPairs(
   }> = settings?.classes ?? [];
   let rules: Node[] = [];
   try {
-    const text = await readFile(join(dir, "board.kicad_dru"), "utf8");
+    const text = await readFile(join(dir, `${stem}.kicad_dru`), "utf8");
     rules = sexpressions(
       text.replace(/"(?:[^"\\]|\\.)*"|#[^\n]*/g, (token) => (token.startsWith("#") ? "" : token)),
     );
@@ -544,12 +545,18 @@ export function widthCheck(before: CopperBoard, after: CopperBoard, allow = fals
   return { rejected: allow ? [] : changes, changes, text };
 }
 
-/** Existing class width is a lower bound too; the router remains responsible for custom/geometry rules. */
-export async function classWidthFloors(dir: string, stem: string, nets: string[]): Promise<Record<string, number>> {
+/** Native preferred widths are floors, using pair dimensions for pairs; actual minimum constraints still win. */
+export async function classWidthFloors(dir: string, stem: string, nets: string[], declaredPairs: PairDefinition[] = []): Promise<Record<string, number>> {
   let settings: any;
   try { settings = JSON.parse(await readFile(join(dir, `${stem}.kicad_pro`), "utf8")); }
-  catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") settings = {}; else throw e; }
-  const ns = settings.net_settings ?? {};
+  // Match projectPairs: older/missing project metadata must not stop the native router.
+  catch (e) { if (e instanceof SyntaxError || (e as NodeJS.ErrnoException).code === "ENOENT") settings = {}; else throw e; }
+  const ns = settings?.net_settings ?? {};
+  let board: CopperBoard | undefined;
+  try { board = copperBoard(await readFile(join(dir, `${stem}.kicad_pcb`), "utf8")); }
+  catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
+  const pairs = board ? await projectPairs(dir, board, declaredPairs, stem) : declaredPairs;
+  const pairWidths = new Map(pairs.filter(p => p.source !== "identified by name").flatMap(p => [[p.p, p.widthMm ?? 0], [p.n, p.widthMm ?? 0]] as const));
   let rules: Node[] = [];
   try { rules = sexpressions((await readFile(join(dir, `${stem}.kicad_dru`), "utf8")).replace(/"(?:[^"\\]|\\.)*"|#[^\n]*/g, token => token.startsWith("#") ? "" : token)); }
   catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
@@ -567,7 +574,7 @@ export async function classWidthFloors(dir: string, stem: string, nets: string[]
         return value ? Number(value[1]) * (value[2] === "mil" ? .0254 : value[2] === "in" ? 25.4 : 1) : 0;
       });
     });
-    return [net, Math.max(settings.board?.design_settings?.rules?.min_track_width ?? 0, ...classes.map((c: any) => c.track_width ?? 0), ...custom)];
+    return [net, Math.max(settings?.board?.design_settings?.rules?.min_track_width ?? 0, ...(pairWidths.has(net) ? [pairWidths.get(net)!] : classes.map((c: any) => c.track_width ?? 0)), ...custom)];
   }));
 }
 
@@ -588,11 +595,12 @@ export function krtWidthArgs(args: string[], floors: Record<string, number>, rul
     return out.splice(i, end - i).slice(1);
   };
   const patterns = take("--power-nets"), widths = take("--power-nets-widths");
+  const exactPatterns: string[] = [], exactWidths: string[] = [];
   for (const [net, floor] of entries) {
-    const existing = Math.max(0, ...patterns.flatMap((p, i) => netPatternMatches(p, net) ? [Number(widths[i] ?? 0)] : []));
-    patterns.push(exact(net)); widths.push(String(Math.max(floor, rules[net] ?? 0, global, existing)));
+    const existing = Math.max(0, ...patterns.flatMap((p, i) => krtPatternMatches(p, net) ? [Number(widths[i] ?? 0)] : []));
+    exactPatterns.push(exact(net)); exactWidths.push(String(Math.max(floor, rules[net] ?? 0, global, existing)));
   }
-  return [...out, "--power-nets", ...patterns, "--power-nets-widths", ...widths];
+  return [...out, "--power-nets", ...exactPatterns, ...patterns, "--power-nets-widths", ...exactWidths, ...widths];
 }
 
 /** Transient native constraints for engines which read KiCad rules instead of request overlays. */
@@ -601,4 +609,63 @@ export function widthRuleOverlay(perNet: Array<{ net: string; widthMm: number }>
     const escaped = net.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
     return `(rule "fabdesk saved width ${i}" (condition ${JSON.stringify(`A.NetName == '${escaped}'`)}) (constraint track_width (min ${widthMm}mm) (opt ${widthMm}mm)))\n`;
   }).join("");
+}
+
+/** Python fnmatchcase semantics used by KRT: *, ?, ranges, [!...] and literal brackets. */
+export function krtPatternMatches(pattern: string, net: string): boolean {
+  let re = "";
+  const literal = (c: string) => c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i]!;
+    if (c === "*") { re += "[\\s\\S]*"; continue; }
+    if (c === "?") { re += "[\\s\\S]"; continue; }
+    if (c !== "[") { re += literal(c); continue; }
+    let j = i + 1;
+    if (pattern[j] === "!") j++;
+    if (pattern[j] === "]") j++;
+    while (j < pattern.length && pattern[j] !== "]") j++;
+    if (j === pattern.length) { re += "\\["; continue; }
+    let stuff = pattern.slice(i + 1, j);
+    i = j;
+    // Remove descending ranges as Python does, instead of throwing a RegExp syntax error.
+    if (stuff.includes("-")) {
+      const chunks: string[] = [];
+      let start = 0, k = stuff[0] === "!" ? 2 : 1;
+      while (true) {
+        k = stuff.indexOf("-", k);
+        if (k < 0) break;
+        chunks.push(stuff.slice(start, k)); start = k + 1; k += 3;
+      }
+      const chunk = stuff.slice(start);
+      if (chunk) chunks.push(chunk);
+      else chunks[chunks.length - 1] += "-";
+      for (let k = chunks.length - 1; k > 0; k--) {
+        if (chunks[k - 1]!.at(-1)! > chunks[k]![0]!) {
+          chunks[k - 1] = chunks[k - 1]!.slice(0, -1) + chunks[k]!.slice(1);
+          chunks.splice(k, 1);
+        }
+      }
+      stuff = chunks.map(c => c.replace(/\\/g, "\\\\").replace(/-/g, "\\-")).join("-");
+    } else stuff = stuff.replace(/\\/g, "\\\\");
+    if (!stuff) re += "(?!)";
+    else if (stuff === "!") re += "[\\s\\S]";
+    else {
+      if (stuff[0] === "!") stuff = "^" + stuff.slice(1);
+      else if (stuff[0] === "^" || stuff[0] === "[") stuff = "\\" + stuff;
+      // JS needs a literal leading ] escaped inside character classes.
+      stuff = stuff.replace(/]/g, "\\]");
+      re += `[${stuff}]`;
+    }
+  }
+  return new RegExp(`^(?:${re})$(?![\\s\\S])`, "u").test(net);
+}
+
+/** Adoption may serialize/refill the board: bind the merged source intent to its actual saved revision. */
+export async function saveAdoptedWidthBaseline(dir: string, before: CopperBoard, candidate: CopperBoard, saved: CopperBoard, from: string) {
+  const projectReference = await referenceFacts(dir, before.revision);
+  const candidateReference = await referenceFacts(from, candidate.revision);
+  const nets = [...new Map([...netFacts(before), ...netFacts(candidate), ...projectReference, ...candidateReference].map(n => [n.net, n])).values()];
+  const candidateRecord = await readReference(from), projectRecord = await readReference(dir);
+  const source = candidateRecord?.revision === candidate.revision ? candidateRecord : projectRecord?.revision === before.revision ? projectRecord : null;
+  await writeJson(referencePath(dir), { version: 1, revision: saved.revision, sourceRevision: source?.sourceRevision ?? before.revision, nets, ...(source?.allowNarrowing ? { allowNarrowing: true } : {}) });
 }

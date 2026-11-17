@@ -119,6 +119,7 @@ async function routeCase(
         progress: () => {},
       }),
   );
+  expect(output.text).not.toContain("JSON Parse error");
   const record = (output.json as { run: RouteRunRecord }).run;
   return { calls, record, output, project };
 }

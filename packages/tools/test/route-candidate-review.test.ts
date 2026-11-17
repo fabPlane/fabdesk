@@ -432,3 +432,18 @@ test("fresh review follow-up: explicit per-net widths outrank the global width",
   expect(options.settings.perNet.map((p: any) => p.widthMm)).toEqual([0.25, 0.25]);
   expect(options.settings.differentialPairs[0].widthMm).toBe(0.25);
 });
+
+ test("native pair dimensions ignore a conflicting single-ended class preference", async () => {
+  const project = await fixture("pair-native-width", `(kicad_pcb (net "USB_DP") (net "USB_DN") ${seg("USB_DP", 1, .2)} ${seg("USB_DN", 1, .2)})`, {
+    net_settings: { classes: [{ name: "USB", track_width: .5, diff_pair_width: .2, diff_pair_gap: .15 }], netclass_patterns: [{ pattern: "USB_D*", netclass: "USB" }] }
+  });
+  const base = mockServices([project]);
+  let received: any;
+  const services = mockServices([project], { design: { ...base.design,
+    query: async (dir, select) => select === "unrouted" ? [] : base.design.query(dir, select),
+    route: async (_dir, opts) => { received = opts; return summary(); }
+  } });
+  await invoke(project, services);
+  expect(received.settings.differentialPairs[0]).toMatchObject({ widthMm: .2, gapMm: .15 });
+  expect(received.settings.perNet.map((r: any) => r.widthMm)).toEqual([.2, .2]);
+ });

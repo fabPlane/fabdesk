@@ -717,7 +717,7 @@ async function executeRoute(
     });
     const perNet = new Map((args.rules?.perNet ?? []).map((r) => [r.net, { ...r }]));
     if (!args.allowQualityRegression?.includes("narrowing")) {
-      const nativeFloors = await classWidthFloors(snapshotDir, "board", startingCopper.nets);
+      const nativeFloors = await classWidthFloors(snapshotDir, "board", startingCopper.nets, detectedPairs);
       for (const [net, floor] of Object.entries(widthFloors(startingCopper, reference))) {
         const n = { net };
         if (requestedNets.length && !requestedNets.includes(n.net)) continue;

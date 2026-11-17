@@ -18,7 +18,7 @@ import { governor } from "./resources";
 import { ToolError, type ToolContext } from "./registry";
 import type { BoardAdoptResult } from "./services";
 import { retainTaskCheckpoint } from "./task-checkpoints";
-import { childLists, edit, release, listSpanAt, parseSexpr } from "@fabdesk/board-workflow";
+import { copperBoard, saveAdoptedWidthBaseline, childLists, edit, release, listSpanAt, parseSexpr } from "@fabdesk/board-workflow";
 
 const sha256File = async (path: string) => {
   const b = await readFile(path).catch(() => null);
@@ -301,6 +301,10 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
       await checkDesign();
       await mkdir(keep, { recursive: true });
       const before: Array<{ name: string; dst: string; sha: string | null }> = [{ name: pcbRel, dst: target, sha: await sha256File(target) }];
+      const widthRef = ".fabdesk/removed-copper.json";
+      before.push({ name: widthRef, dst: join(project.dir, widthRef), sha: await sha256File(join(project.dir, widthRef)) });
+      const widthBefore = copperBoard(await readFile(target, "utf8"));
+      const widthCandidate = copperBoard(await readFile(candidate, "utf8"));
       for (const n of sheets) before.push({ name: n, dst: join(project.dir, n), sha: await sha256File(join(project.dir, n)) });
       if (exclusions) before.push({ name: exclusions.rel, dst: exclusions.path, sha: await sha256File(exclusions.path) });
       for (const b of before) if (b.sha) {
@@ -338,6 +342,7 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
         // after the commit and save: KiCad's save may write the project file too (KiCad 10.99 re-stores every exclusion in
         // its v3 form), so the edit's change is applied to the file as it is now, in the form it now uses
         if (exclusions) await writeAtomic(exclusions.path, edit.withExclusionChanges(await readFile(exclusions.path, "utf8"), exclusions.from, exclusions.entries));
+        await saveAdoptedWidthBaseline(project.dir, widthBefore, widthCandidate, copperBoard(await readFile(target, "utf8")), dirname(candidate));
         return res;
       } catch (e) {
         throw await rolledBack(e, boardStarted ? before : before.filter((b) => b.dst !== target), keep, project.dir);
@@ -410,13 +415,19 @@ export async function replaceBoardFile(ctx: ToolContext, input: { candidate: str
   try {
     const keep = join(project.dir, ".fabdesk", "board", "adopt", stamp(), "before");
     const apply = async () => {
-      await mkdir(dirname(join(keep, pcbRel)), { recursive: true });
-      await copyFile(target, join(keep, pcbRel));
+      const widthRef = ".fabdesk/removed-copper.json";
+      const before = await Promise.all([pcbRel, widthRef].map(async name => ({ name, dst: join(project.dir, name), sha: await sha256File(join(project.dir, name)) })));
+      for (const b of before) if (b.sha) {
+        await mkdir(dirname(join(keep, b.name)), { recursive: true });
+        await copyFile(b.dst, join(keep, b.name));
+      }
+      const widthBefore = copperBoard(await readFile(target, "utf8"));
+      const candidateText = await readFile(input.candidate, "utf8");
       try {
-        await writeAtomic(target, await readFile(input.candidate));
+        await writeAtomic(target, candidateText);
+        await saveAdoptedWidthBaseline(project.dir, widthBefore, copperBoard(candidateText), copperBoard(await readFile(target, "utf8")), dirname(input.candidate));
       } catch (e) {
-        await copyFile(join(keep, pcbRel), target).catch(() => null);
-        throw e;
+        throw await rolledBack(e, before, keep, project.dir);
       }
     };
     const recovery = ctx.services.design.withSavedFilesRecovery;

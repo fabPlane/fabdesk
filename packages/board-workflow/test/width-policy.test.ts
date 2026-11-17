@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copperBoard, netFacts, widthFloors, widthCheck, saveWidthBaseline, referenceFacts, krtWidthArgs, allowWidthChange, classWidthFloors, compareQuality, quality } from "../src/routing-quality";
+import { copperBoard, netFacts, widthFloors, widthCheck, krtPatternMatches, saveWidthBaseline, referenceFacts, krtWidthArgs, allowWidthChange, classWidthFloors, compareQuality, quality } from "../src/routing-quality";
 import { lastmile as L } from "../src/index";
 const track = (net: string, width: number, id = net) => `(segment (start 0 0) (end 1 0) (width ${width}) (layer "F.Cu") (net "${net}") (uuid "${id}"))`;
 const pcb = (s: string) => copperBoard(`(kicad_pcb ${s})`);
@@ -105,4 +105,42 @@ test("route_run quality uses the pre-removal minimum even when only the wide tru
   const check = compareQuality(quality(retained, ["VBUS"], [], netFacts(original)), quality(repaired, ["VBUS"]), { before: 1, after: 0 }, 0);
   expect(check.warnings).toEqual([]);
   expect(check.text).toContain("kept 0.3 mm");
+});
+
+test("KRT first matching selector receives the floor and stronger fnmatch overrides", () => {
+  // Expected effective match from Python fnmatch (KRT identify_power_nets).
+  for (const [pattern, net, existing] of [["*", "OUT", .2], ["OUT[0-9]", "OUT2", .6], ["OUT[!A-Z]", "OUT2", .7], ["OUT[[]2]", "OUT[2]", .8]] as const) {
+    const args = krtWidthArgs(["--power-nets", pattern, "--power-nets-widths", String(existing)], { [net]: .3 }, {});
+    const patterns = args.slice(args.indexOf("--power-nets") + 1, args.indexOf("--power-nets-widths"));
+    const widths = args.slice(args.indexOf("--power-nets-widths") + 1).map(Number);
+    // First selector must be the escaped exact net, ahead of any broad existing selector.
+    expect(patterns[0]).toBe(net.replace(/[\[?*]/g, c => c === "[" ? "[[]" : `[${c}]`));
+    const matched = patterns.findIndex(p => krtPatternMatches(p, net));
+    expect(matched).toBe(0);
+    expect(widths[matched]).toBe(Math.max(.3, existing));
+  }
+});
+test("pair native floor keeps pair preference while global/custom minima still apply", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pair-floor-"));
+  try {
+    await writeFile(join(dir, "board.kicad_pcb"), `(kicad_pcb (net "USB_DP") (net "USB_DN") ${track("USB_DP", .2)} ${track("USB_DN", .2)})`);
+    await writeFile(join(dir, "board.kicad_pro"), JSON.stringify({ board: { design_settings: { rules: { min_track_width: .1 } } }, net_settings: { classes: [{ name: "USB", track_width: .5, diff_pair_width: .2, diff_pair_gap: .15 }], netclass_patterns: [{ pattern: "USB_D*", netclass: "USB" }] } }));
+    expect(await classWidthFloors(dir, "board", ["USB_DP", "USB_DN"])).toEqual({ USB_DP: .2, USB_DN: .2 });
+    await writeFile(join(dir, "board.kicad_dru"), `(version 1) (rule "minimum" (condition "A.NetName == 'USB_D*'") (constraint track_width (min 0.3mm)))`);
+    expect(await classWidthFloors(dir, "board", ["USB_DP", "USB_DN"])).toEqual({ USB_DP: .3, USB_DN: .3 });
+  } finally { await rm(dir, {recursive: true, force: true}); }
+});
+
+test("KRT fnmatch selectors support ranges, negation and literal metacharacters", () => {
+  for (const [pattern, net, matches] of [
+    ["OUT[0-9]", "OUT2", true], ["OUT[!A-Z]", "OUTQ", false],
+    ["OUT[!A-Z]", "OUT2", true], ["OUT[[]2]", "OUT[2]", true],
+    ["[]]", "]", true], ["[!]]", "A", true], ["[z-a]", "z", false],
+    ["[*][?]", "*?", true], ["OUT?", "OUT/", true], ["OUT*", "OUT/branch", true],
+    ["[", "[", true], ["*", "OUT\n", true], ["OUT", "OUT\n", false],
+  ] as const) expect(krtPatternMatches(pattern, net)).toBe(matches);
+  const args = krtWidthArgs(["--power-nets", "*", "--power-nets-widths", "0.2"], {OUT: .3}, {});
+  const patterns = args.slice(args.indexOf("--power-nets") + 1, args.indexOf("--power-nets-widths"));
+  const widths = args.slice(args.indexOf("--power-nets-widths") + 1).map(Number);
+  expect(widths[patterns.findIndex(p => krtPatternMatches(p, "UNRELATED"))]).toBe(.2);
 });

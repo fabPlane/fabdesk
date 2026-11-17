@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRegistry, ToolError, type BoardAdoptResult, type CoreServices } from "../src";
-import { edit } from "@fabdesk/board-workflow";
+import { copperBoard, saveWidthBaseline, referenceFacts, widthFloors, lastmile as L, edit } from "@fabdesk/board-workflow";
 import { adoptCandidate, designFileHashes } from "../src/board-adopt";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
@@ -397,4 +397,45 @@ for (const added of ["filling", "capping"]) test(`adding ${added} to a partly pr
   await writeFile(join(project.dir, ".fabdesk/board/requirements/acceptance.json"), JSON.stringify({ manufacturing_rules: { filled_capped_vias: { allow: true, basis: "specified in supplier order" } } }));
   await adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "recorded additional process" });
   expect(seen).toHaveLength(1);
+});
+
+for (const replace of [false, true]) test(`adoption carries removed-net floor into a second workspace; file replace=${replace}`, async () => {
+  const cut = '(kicad_pcb (net "OPEN") (net "OTHER"))';
+  const partial = cut.slice(0, -1) + '(segment (start 0 0) (end 1 0) (width .2) (layer "F.Cu") (net "OTHER") (uuid "other")))';
+  // IPC serialization differs from the candidate; bind to this read-back revision.
+  const saved = partial + '\n';
+  const { project, ctx } = await setup(async ({target}) => { await writeFile(target, saved); return result(); });
+  const candidateDir = await mkdtemp(join(tmpdir(), "width-adopt-"));
+  const candidate = join(candidateDir, "board.kicad_pcb");
+  await writeFile(join(project.dir, "board.kicad_pcb"), cut);
+  await writeFile(candidate, partial);
+  const seed = copperBoard(cut.slice(0, -1) + '(segment (start 0 0) (end 1 0) (width .25) (layer "F.Cu") (net "OPEN") (uuid "open")))');
+  await saveWidthBaseline(candidateDir, seed, copperBoard(partial));
+  const figures: L.Figures = {open: 1, drc: {}, a7: 0, a7_mm: 0, a8: 0, pairs_todo: 0, pairs: {}};
+  const deps: L.BenchDeps = {availableGiB: async () => 20, engine: {run: async () => {throw Error("unused");}}, scorer: {score: async () => ({figures, opens: [], summary: {}, parityChecked: true, pairsOverSkewLimit: 0, a8: {toReroute: [], failing: []}})}};
+  // Workspace one starts with OPEN already removed and closes only OTHER.
+  const first = await L.Bench.create(join(candidateDir, ".lastmile"), candidateDir, "board.kicad_pcb", deps);
+  if (replace) {
+    const {replaceBoardFile} = await import("../src/board-adopt");
+    await replaceBoardFile(await ctx(), {candidate: first.bench.candidateBoard(), board: "board.kicad_pcb", reason: "partial"});
+  } else await adoptCandidate(await ctx(), {candidate: first.bench.candidateBoard(), board: "board.kicad_pcb", reason: "partial"});
+  const canonical = copperBoard(await readFile(join(project.dir, "board.kicad_pcb"), "utf8"));
+  expect(widthFloors(canonical, await referenceFacts(project.dir, canonical.revision)).OPEN).toBe(.25);
+  const second = await L.Bench.create(join(candidateDir, ".second-lastmile"), project.dir, "board.kicad_pcb", deps);
+  const next = copperBoard(await readFile(second.bench.candidateBoard(), "utf8"));
+  expect(widthFloors(next, await referenceFacts(join(second.bench.candidateBoard(), ".."), next.revision)).OPEN).toBe(.25);
+});
+test("failed adoption restores the previous baseline with the board", async () => {
+  const { project, ctx } = await setup(async ({target}) => {
+    await writeFile(target, '(kicad_pcb changed)');
+    await writeFile(join(project.dir, '.fabdesk/removed-copper.json'), 'changed');
+    throw Error('save failed');
+  });
+  await writeFile(join(project.dir, "board.kicad_pcb"), '(kicad_pcb)');
+  await mkdir(join(project.dir, '.fabdesk'), {recursive: true});
+  await writeFile(join(project.dir, '.fabdesk/removed-copper.json'), 'original');
+  const candidate = join(await mkdtemp(join(tmpdir(), "rollback-width-")), 'board.kicad_pcb');
+  await writeFile(candidate, '(kicad_pcb candidate)');
+  await expect(adoptCandidate(await ctx(), {candidate, board: "board.kicad_pcb", reason: "rollback"})).rejects.toThrow('project was restored');
+  expect(await readFile(join(project.dir, '.fabdesk/removed-copper.json'), 'utf8')).toBe('original');
 });
