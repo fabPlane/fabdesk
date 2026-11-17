@@ -342,6 +342,15 @@ export const app_key = defineTool({
   },
 });
 
+export const app_clear_selection = defineTool({
+  name: "app_clear_selection",
+  toolset: "app", scope: "global", title: "Clear desktop selection",
+  description: "Clear the active project's component highlight and drawing-location popover explicitly, independent of keyboard focus. Does not edit native files or navigate tabs.",
+  inputSchema: {},
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  handler: async (_args, ctx) => ok("Cleared the active project's drawing and component selection.", await ui(ctx, "clearSelection")),
+});
+
 export const app_select_project = defineTool({
   name: "app_select_project",
   toolset: "app",
@@ -608,6 +617,7 @@ export const appTools = [
   app_type,
   app_key,
   app_select_project,
+  app_clear_selection,
   app_open_tab,
   app_open_thread,
   app_new_chat,
