@@ -19,22 +19,19 @@
 #           HEAD matches v0.9.0 (M_PI, filesystem::path::string()).
 #           Git for Windows checkouts force core.autocrlf=false / core.eol=lf
 #           (run 38082482176: LF patch vs CRLF sources).
-#           continue-on-error so a Windows failure
-#           leaves linux/macos published and the workflow green. After
-#           TRACEMAKER_OPTIONAL_FAIL_LIMIT consecutive failures the platform
-#           is waived (platform-status.json) so the weekly run can skip.
+#           continue-on-error so a Windows failure leaves linux/macos
+#           publishable. Missing platforms trigger a fresh build next week.
 # Each archive ships tracemaker and its placer tracemaker-place (board_route's
 # floorplan path; built, linkage-probed, smoked, stripped and signed alike),
 # plus LICENSE, NOTICE, SOURCE.txt, DEPENDENCIES.txt. asset.json names the
 # placer; a published asset without that key predates it and resolve rebuilds it.
 #
-# Public downloads: TensorFleet/fabdesk is private, so GitHub release URLs
-# 404 for real users. mirror-public.sh copies archives + a rewritten manifest
-# to downloads.fabplane.com/tracemaker (same R2 bucket as desktop installers)
-# when the owner has configured secrets. Unset credentials skip with a notice
-# and exit 0. A configured upload or sha256 failure exits non-zero. The mirror
-# still runs when the immutable tag already exists (skip=true): it re-uploads
-# tracemaker-latest/manifest.json instead of skipping the whole workflow.
+# Weekly discovery builds the newest upstream release when the shipped pin is
+# older/incomplete. Each run uses a fresh -b<run_id>-<attempt> version. Smoke
+# tests cover both programs; publication never replaces versioned objects.
+# After public hash verification, one main-targeted PR updates the exact pin.
+# The default GITHUB_TOKEN needs repository permission to create pull requests.
+# Nothing merges automatically.
 #
 # Not built (marked, not blocking):
 #   - macos-x86_64: GitHub Intel macOS runners are deprecated and expensive;
@@ -50,11 +47,11 @@ on:
   workflow_dispatch:
     inputs:
       upstream_ref:
-        description: "Upstream tag, branch, or commit (empty = latest DingoOz/TraceMaker release tag, else default-branch HEAD)"
+        description: "Upstream ref (empty = latest published DingoOz/TraceMaker release tag)"
         required: false
         type: string
       force:
-        description: "Rebuild every expected platform even if the immutable tag already has them"
+        description: "Build a fresh immutable version of every platform"
         required: false
         type: boolean
         default: false
@@ -65,6 +62,7 @@ concurrency:
 
 permissions:
   contents: write
+  pull-requests: write
 
 env:
   TRACEMAKER_UPSTREAM_REPO: DingoOz/TraceMaker
@@ -369,10 +367,7 @@ jobs:
           persist-credentials: false
           submodules: false
 
-      # tracemaker-* also matches the failure-only build-log artifact; publish.sh
-      # only reads */asset.json, then merges with the existing immutable tag
-      # after checksum-verifying kept archives. Uploads use --clobber; both
-      # tags use --latest=false.
+      # Failure-only debug artifacts have no asset.json and are ignored.
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: tracemaker-*
@@ -392,14 +387,12 @@ jobs:
   mirror:
     name: Mirror to public downloads
     needs: [resolve, publish]
-    # Run after a successful publish, and also when the immutable tag already
-    # exists (skip=true, or publish skipped/failed). A cancelled publish does
-    # not mirror. Unset credentials still exit 0 inside the script; a
-    # configured upload or sha256 failure fails this job.
-    if: always() && !cancelled() && needs.resolve.result == 'success' && (needs.publish.result == 'success' || (needs.resolve.outputs.release_exists == 'true' && needs.publish.result != 'cancelled'))
+    # Only complete, successfully published runs can advance to a pin PR.
+    if: always() && !cancelled() && needs.resolve.result == 'success' && needs.publish.result == 'success'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -435,6 +428,14 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/mirror-public.sh" "${GITHUB_WORKSPACE}/artifacts"
 
+      - name: Open or update the reviewed pin PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # mirror-public.sh leaves only the successfully verified public manifest here.
+          test -f artifacts/public-manifest.json
+          bash scripts/tracemaker/open-pin-pr.sh "$GITHUB_WORKSPACE/artifacts/public-manifest.json"
+
   summarize:
     name: Summarize platform status
     needs: [resolve, build-linux, build-macos, build-windows, publish]
@@ -448,7 +449,7 @@ jobs:
           persist-credentials: false
           submodules: false
 
-      - name: Record Windows waiver / job summary
+      - name: Record platform job summary
         env:
           GH_TOKEN: ${{ github.token }}
           TRACEMAKER_RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}

@@ -10,7 +10,7 @@ until you pick a router in Settings, pin `fabdesk.json`, or pass `route_run.rout
 |---|---|---|
 | `fab_router` | Bundled on the PCB bridge | Fast iteration, automatic selective reroutes, Freerouting fallback |
 | `freerouting` | Bundled in packaged desktop builds; otherwise downloaded (GPL-3.0 JAR) | Best simple-board routing quality |
-| `tracemaker` | Weekly TensorFleet binary (source tarball fallback) | Best whole-board routing and dense pads |
+| `tracemaker` | Weekly fabPlane binary (source tarball fallback) | Best whole-board routing and dense pads |
 | `krt` | Pinned upstream release + a private Python venv (see below) | Engine, not a `route_run` router: the board workflow's placer and KRT router |
 
 ## KiCadRoutingTools (engine)
@@ -147,10 +147,12 @@ KiCad plugin; `v0.9.0` has no assets). fabdesk therefore builds our own binaries
 
 **The build fabdesk installs is pinned** in `packages/tools/src/routers/tracemaker-pin.json`: a copy of one
 immutable release's `manifest.json` (upstream tag and commit, and each platform archive's URL and sha256). The weekly
-workflow rebuilds only that pinned tag (a missing platform), never upstream's newest release, and a versioned release
-already on downloads.fabplane.com is never overwritten (a rebuild is not byte-identical; its archives keep the pinned
-hashes). To upgrade TraceMaker: run the workflow by hand with `upstream_ref` set to the new tag, check the build, then
-copy `https://downloads.fabplane.com/tracemaker/<release>/manifest.json` into `tracemaker-pin.json` in a PR.
+workflow discovers the newest upstream release tag. If the pin is older or lacks the placer or an expected platform,
+it builds and smoke-tests both programs, publishes a fresh immutable version, verifies public archive hashes, then
+opens or updates one PR against `main` containing exactly the new manifest. Nothing merges automatically.
+There is no manual manifest-copy step. Versions use `tracemaker-<tag>-<commit7>-b<GitHub run ID>-<attempt>`;
+retries and rebuilds get distinct names. The mirror preflights all versioned keys in authenticated storage and uses
+conditional create-only uploads. Lookup errors stop publication; existing objects are never overwritten.
 
 **Install** (Settings → Routers) does this:
 
@@ -185,14 +187,16 @@ archive that predates the placer (no `placer` key) is replaced once from the cur
 manifest shows that release carries it, so nothing is re-downloaded for nothing; automatic upgrades honour
 `autoInstallEngines` and are not retried after a failure (`board_engines install tracemaker` retries). A
 `TRACEMAKER_BIN` or source-package install is never replaced; the reason says what to build or set. `resolve-upstream.sh`
-counts a published platform only when its asset names the placer, so the first weekly run after this change rebuilds the
-existing `tracemaker-v0.12.1-db5950f` release's linux and macOS archives instead of skipping them.
+counts a platform only when its asset names the placer. An incomplete pin triggers a new build version,
+including the first placer-capable build; old archive URLs remain byte-identical.
 
-Each published archive contains the upstream `LICENSE` (and `NOTICE` when present) plus
-`SOURCE.txt` with the pinned upstream tag and commit. That is the GPL-3.0 §6 source offer
-for the binary. Linux builds are unmodified upstream. macOS builds of the pinned `v0.9.0`
-commit also apply `scripts/tracemaker/patches/24c847772e57ea8888e2cfe4bbf1aa00666390a4.patch`
-(Apple libc++ `from_chars(double)` plus `#include <cstdlib>` for `std::atof`); that patch is named in `SOURCE.txt` when used.
+Each binary archive contains upstream `LICENSE`, `NOTICE`, `SOURCE.txt`, dependency license texts in `licenses/`,
+and `corresponding-source/` with pristine upstream commit source, the exact build patch, and build scripts.
+The same source bundle is retained beside the binary archives on our immutable release. `SOURCE.txt` points to
+that copy first and upstream second, and records its SHA-256. Missing dependency notices stop packaging.
+Linux copies installed package copyright files plus the full common-license texts they reference; Windows copies
+MSYS2 package license directories; macOS extracts notices from Homebrew's verified matching-version sources.
+The macOS static LLVM variant includes LLVM notices; a bundled static SQLite includes SQLite notices.
 
 Measured 2026-10-09 (source fallback, still used when no binary exists for the platform):
 
@@ -215,18 +219,12 @@ Measured 2026-10-09 (source fallback, still used when no binary exists for the p
 Users do not need CMake or a C++ toolchain to *install* a published binary. They still need
 a matching OS/arch (glibc x86_64 Linux, Apple silicon macOS 15+, or 64-bit Windows).
 
-Release tags: immutable `tracemaker-<upstream-tag>-<shortsha>`, plus a rolling
-`tracemaker-latest` pointer whose `manifest.json` lists checksums and points at the
-immutable asset URLs. Both use `--latest=false` so they do not become the repo's GitHub
-"Latest release" (that stays the desktop installer). The workflow skips rebuilds
-when that immutable tag already lists every **required** platform and any missing
-**optional** platform (Windows) has been waived after
-`TRACEMAKER_OPTIONAL_FAIL_LIMIT` (default 3) consecutive failures. A missing Windows
-entry still triggers a Windows-only rebuild next week until it is published or waived.
-The public mirror still runs in that case and re-uploads
-`https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json`.
-`workflow_dispatch` input `force` (boolean `true`, or the string `true` from the CLI)
-rebuilds every expected platform and clears the waiver. A scheduled run never sets force.
+Release tags are immutable `tracemaker-<upstream-tag>-<shortsha>-b<run-id>-<attempt>`.
+The rolling `tracemaker-latest` manifest points at immutable asset URLs. Both GitHub
+releases use `--latest=false` so the desktop installer remains the repo's “Latest”.
+A complete pin of the latest upstream commit skips rebuilding. A missing placer or
+expected platform triggers a new build of all platforms. Dispatch `force` also creates
+a new version; it never replaces the previous build.
 
 The team’s comparison is not checked into this repo. TraceMaker’s own harness is
 `bench/compare.py` / `bench/run.py` in that project (PCBench + Freerouting baselines).
@@ -266,7 +264,7 @@ Desktop installers already use `https://downloads.fabplane.com/desktop/<tag>/…
 | Shipped default manifest | the pinned copy in `packages/tools/src/routers/tracemaker-pin.json` (not fetched) |
 | Rolling pointer (not used by default) | `https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json` |
 | Versioned archive | `https://downloads.fabplane.com/tracemaker/<immutable-tag>/tracemaker-<platform>.tar.gz` (or `.zip` on Windows) |
-| Private GitHub copy (CI merge only) | `https://github.com/TensorFleet/fabdesk/releases/download/<tag>/…` (404 for anonymous users) |
+| Private GitHub build copy | `https://github.com/TensorFleet/fabdesk/releases/download/<tag>/…` (404 for anonymous users) |
 
 The weekly `publish` job still writes the private GitHub release (so the next run can
 merge checksums). `scripts/tracemaker/mirror-public.sh` then rewrites asset URLs onto the
@@ -357,25 +355,20 @@ Settings `tracemakerManifestUrl` /
 `FABDESK_TRACEMAKER_RELEASE_TAG` / `FABDESK_TRACEMAKER_RELEASE_REPO`. Setting
 `FABDESK_TRACEMAKER_URL` disables the binary lookup and uses the source artifact.
 
-The weekly workflow publishes `linux-x86_64` and `macos-arm64`, and best-effort
-`windows-x86_64`. A partial immutable tag is completed on the next run: missing platforms
-are built, uploaded with `--clobber`, and merged into `manifest.json` after the existing
-archives are checksum-verified. Windows failures increment `platform-status.json` on the
-tag; after three consecutive failures Windows is waived so the weekly run can stay green
-and skip the rebuild. The public mirror still runs and uploads
-`tracemaker-latest/manifest.json`. `workflow_dispatch` input `force` rebuilds every
-expected platform. A configured mirror that fails its upload or sha256 re-check fails
-the mirror job.
-`tracemaker-latest` is never GitHub’s “Latest” release.
+The weekly workflow builds `linux-x86_64`, `macos-arm64`, and best-effort `windows-x86_64`.
+A pin PR requires both required platforms; each included asset must carry the placer.
+Missing platforms trigger a whole new version on the next run. `force` also creates a new version.
+A configured mirror that fails an upload or hash check fails its job and prevents the pin PR.
+`tracemaker-latest` is a rolling discovery pointer, never the shipped default or GitHub's “Latest” release.
 
 ### Dispatch (owner)
 
 ```bash
-gh workflow run tracemaker-binaries.yml --repo TensorFleet/fabdesk --ref <this-branch>
+gh workflow run tracemaker-binaries.yml --repo fabPlane/fabdesk --ref <this-branch>
 # after a known-good Windows + public-mirror run, the same on main
 ```
 
-Check: linux/macos/windows job results, the run summary (Windows pending/failed/waived),
+Check: linux/macos/windows job results and the run summary,
 the private `tracemaker-*` GitHub release, then anonymous
 `curl -fsSI https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json`
 and sha256 of each rewritten archive URL. This agent cannot dispatch Actions.

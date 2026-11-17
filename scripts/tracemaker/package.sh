@@ -138,21 +138,26 @@ $(cat "$src_tree/.fabdesk-windows-patch")"
   fi
 fi
 
-source_body="This archive is a binary built by ${repo} from the pinned upstream commit."
-if [ -n "$patch_note" ]; then
-  source_body="${source_body}
+# Retain pristine upstream source plus the exact tracked changes applied by the
+# build (including platform patches). Source is both in the binary archive and
+# beside it on the immutable public release, so upstream availability is irrelevant.
+[ -n "$src_tree" ] || { echo "TRACEMAKER_SRC is required for corresponding source" >&2; exit 1; }
+source_name="tracemaker-source-${platform}.tar.gz"
+source_dir="$work/corresponding-source"
+mkdir -p "$source_dir"
+git -C "$src_tree" archive --format=tar.gz "$upstream_commit" > "$source_dir/upstream.tar.gz"
+git -C "$src_tree" diff --binary "$upstream_commit" > "$source_dir/build.patch"
+cp -R "$SCRIPT_DIR" "$source_dir/build-scripts"
+tar -czf "$dest_dir/$source_name" -C "$source_dir" .
+source_sha="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$dest_dir/$source_name")"
+runtime=system
+if [ -f "$src_tree/.fabdesk-macos-libcxx" ]; then runtime="$(cat "$src_tree/.fabdesk-macos-libcxx")"; fi
+TRACEMAKER_LINK_NOTE="$link_note" bash "$SCRIPT_DIR/collect-licenses.sh" "$platform" "$work/licenses" "$runtime"
+source_body="Unofficial binary built by ${repo}. The corresponding source is included in
+corresponding-source/ (upstream.tar.gz, build.patch and build-scripts/).
+Apply build.patch to the extracted upstream tree before building.
 ${patch_note}
-The patch is part of the corresponding source (GPL-3.0 §6)."
-else
-  source_body="${source_body}
-TensorFleet did not patch the C++ tree for this build. Corresponding complete
-source is the exact commit below (GPL-3.0 §6 network source offer)."
-fi
-if [ -n "$link_note" ]; then
-  source_body="${source_body}
-
 ${link_note}"
-fi
 
 cat > "$work/SOURCE.txt" <<EOF
 TraceMaker
@@ -164,7 +169,9 @@ The workflow is .github/workflows/tracemaker-binaries.yml in ${repo}.
 Upstream repository: https://github.com/${upstream_repo}
 Upstream tag: ${upstream_tag}
 Upstream commit: ${upstream_commit}
-Source tarball (commit): ${source_url}
+Our corresponding-source copy: https://downloads.fabplane.com/tracemaker/${release_tag}/${source_name}
+Source copy sha256: ${source_sha}
+Upstream source tarball (commit): ${source_url}
 Source tarball (tag): https://github.com/${upstream_repo}/archive/refs/tags/${upstream_tag}.tar.gz
 
 Platform: ${platform}

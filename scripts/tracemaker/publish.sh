@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# Create or complete the immutable fabdesk release and refresh tracemaker-latest.
-# A partial release (e.g. Linux only) is completed by uploading missing platforms
-# with --clobber and merging them into manifest.json after checksum-verifying
-# the already-published archives.
+# Create a new immutable build release and refresh tracemaker-latest.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,6 +25,8 @@ if [ ${#assets[@]} -eq 0 ]; then
   exit 1
 fi
 
+python3 "$SCRIPT_DIR/check-archive.py" "$artifacts_dir"
+
 merge_dir="$(mktemp -d "${TMPDIR:-/tmp}/tm-publish.XXXXXX")"
 trap 'rm -rf "$merge_dir"' EXIT
 
@@ -49,65 +48,9 @@ for path in sorted(root.glob("*/asset.json")):
 print("local platforms:", " ".join(sorted(a["platform"] for a in local)))
 PY
 
-existing_manifest=""
-if gh release view "$release_tag" --repo "$repo" >/dev/null 2>&1; then
-  if gh release download "$release_tag" --repo "$repo" --pattern manifest.json --dir "$merge_dir" 2>/dev/null \
-    && [ -f "$merge_dir/manifest.json" ]; then
-    existing_manifest="$merge_dir/manifest.json"
-    echo "Loaded existing manifest from ${release_tag}"
-  else
-    echo "Existing ${release_tag} has no manifest.json; publishing only this run's assets."
-  fi
-fi
-
-if [ -n "$existing_manifest" ]; then
-  EXISTING="$existing_manifest" MERGE_DIR="$merge_dir" REPO="$repo" TAG="$release_tag" \
-  ARTIFACTS_DIR="$artifacts_dir" python3 - <<'PY'
-import json, os, pathlib, subprocess, sys, hashlib
-
-def sha256(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-merge = pathlib.Path(os.environ["MERGE_DIR"])
-local = {a["platform"]: a for a in json.loads((merge / "local.json").read_text(encoding="utf-8"))}
-existing = json.loads(pathlib.Path(os.environ["EXISTING"]).read_text(encoding="utf-8"))
-kept = []
-for asset in existing.get("assets", []):
-    plat = asset.get("platform")
-    if plat in local:
-        print(f"this run replaces {plat}")
-        continue
-    filename = asset.get("filename")
-    want = asset.get("sha256")
-    if not filename or not want:
-        print(f"::error::existing asset for {plat} is missing filename/sha256", file=sys.stderr)
-        raise SystemExit(1)
-    dest = merge / "kept"
-    dest.mkdir(exist_ok=True)
-    subprocess.run(
-        ["gh", "release", "download", os.environ["TAG"], "--repo", os.environ["REPO"],
-         "--pattern", filename, "--dir", str(dest)],
-        check=True,
-    )
-    archive = dest / filename
-    if not archive.is_file():
-        print(f"::error::failed to download existing {filename} from {os.environ['TAG']}", file=sys.stderr)
-        raise SystemExit(1)
-    got = sha256(archive)
-    if got != want:
-        print(f"::error::checksum mismatch for existing {filename}: manifest {want} downloaded {got}", file=sys.stderr)
-        raise SystemExit(1)
-    print(f"verified existing {filename} ({plat})")
-    kept.append(asset)
-(merge / "kept.json").write_text(json.dumps(kept, indent=2) + "\n", encoding="utf-8")
-PY
-else
-  echo '[]' > "$merge_dir/kept.json"
-fi
+# This run has a unique build tag. Creation below is atomic at GitHub: an
+# existing release is an error, never a reason to upload replacement assets.
+echo '[]' > "$merge_dir/kept.json"
 
 ARTIFACTS_DIR="$artifacts_dir" MERGE_DIR="$merge_dir" BUILT_AT="$built_at" \
 UPSTREAM_REPO="$upstream_repo" UPSTREAM_TAG="$upstream_tag" \
@@ -162,7 +105,7 @@ notes="$artifacts_dir/NOTES.md"
 cat > "$notes" <<EOF
 # TraceMaker ${upstream_tag} (${upstream_commit:0:7})
 
-Weekly TensorFleet build of [DingoOz/TraceMaker](https://github.com/${upstream_repo}) for fabdesk Settings → Routers.
+Unofficial fabPlane/fabdesk build of [DingoOz/TraceMaker](https://github.com/${upstream_repo}) for fabdesk Settings → Routers.
 
 ## GPL-3.0-or-later
 
@@ -196,16 +139,9 @@ uploads+=("$artifacts_dir/manifest.json" "$artifacts_dir/SHA256SUMS" "$artifacts
 [ -f "$artifacts_dir/LICENSE" ] && uploads+=("$artifacts_dir/LICENSE")
 [ -f "$artifacts_dir/SOURCE.txt" ] && uploads+=("$artifacts_dir/SOURCE.txt")
 
-if gh release view "$release_tag" --repo "$repo" >/dev/null 2>&1; then
-  echo "Completing existing ${release_tag} (clobber uploaded names)."
-  gh release upload "$release_tag" "${uploads[@]}" --repo "$repo" --clobber
-else
-  gh release create "$release_tag" "${uploads[@]}" \
-    --repo "$repo" \
-    --title "TraceMaker ${upstream_tag} (${upstream_commit:0:7})" \
-    --notes-file "$notes" \
-    --latest=false
-fi
+gh release create "$release_tag" "${uploads[@]}" \
+  --repo "$repo" --title "TraceMaker ${upstream_tag} (${upstream_commit:0:7})" \
+  --notes-file "$notes" --latest=false
 
 # Rolling pointer: manifest (+ license/source offer) only, URLs already point at the immutable tag.
 if gh release view tracemaker-latest --repo "$repo" >/dev/null 2>&1; then

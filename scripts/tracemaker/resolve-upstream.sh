@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# Resolve DingoOz/TraceMaker to a commit. Skip only when the immutable fabdesk
-# release already lists every expected platform that is still scheduled to
-# build (unless TRACEMAKER_FORCE=1). Optional platforms (windows-x86_64) that
-# have failed TRACEMAKER_OPTIONAL_FAIL_LIMIT times are waived so the weekly
-# run does not loop red forever; force rebuilds them again.
+# Resolve the newest stable upstream release, or an explicit dispatch ref.
+# A complete pin skips; every actual build gets a new immutable run/attempt tag.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,18 +26,26 @@ github_json() {
   fi
 }
 
-# The build fabdesk ships is pinned in packages/tools/src/routers/tracemaker-pin.json; scheduled runs rebuild only
-# that tag, never upstream's newest release (an upgrade is a reviewed change to the pin). A manual run may name
-# another ref to build a candidate for the next pin.
+# Scheduled runs follow upstream's newest published release, never a branch HEAD.
 PIN_FILE="${TRACEMAKER_PIN_FILE:-$SCRIPT_DIR/../../packages/tools/src/routers/tracemaker-pin.json}"
 if [ -n "$INPUT_REF" ]; then
   UPSTREAM_REF="$INPUT_REF"
 else
-  UPSTREAM_REF="$(jq -r '.upstream.tag // empty' "$PIN_FILE")"
-  if [ -z "$UPSTREAM_REF" ]; then
-    echo "::error::no upstream.tag in ${PIN_FILE}" >&2
-    exit 1
-  fi
+  UPSTREAM_REF="$(github_json "${API}/releases/latest" | jq -er '.tag_name')"
+  # Never downgrade a newer reviewed pin when upstream's latest pointer moves
+  # backwards. An incomplete newer pin rebuilds its own upstream tag.
+  UPSTREAM_REF="$(python3 - "$PIN_FILE" "$UPSTREAM_REF" <<'PYVERSION'
+import json, re, sys
+pin = json.load(open(sys.argv[1]))['upstream']['tag']
+latest = sys.argv[2]
+def version(tag):
+    match = re.fullmatch(r'v?(\d+)\.(\d+)\.(\d+)', tag)
+    if not match:
+        raise ValueError(f'Expected stable release version: {tag}')
+    return tuple(map(int, match.groups()))
+print(pin if version(pin) > version(latest) else latest)
+PYVERSION
+)"
 fi
 
 COMMIT_JSON="$(github_json "${API}/commits/$(printf '%s' "$UPSTREAM_REF" | jq -sRr @uri)")"
@@ -75,50 +80,16 @@ WAIVED=""
 SKIP=false
 RELEASE_EXISTS=false
 
-if [ "$FORCE" = true ]; then
-  echo "Force rebuild requested; ignoring any existing ${RELEASE_TAG} assets and Windows waivers."
+# Skip only a complete pin of this commit. Missing placer/platform triggers a
+# whole new build; a versioned manifest is never extended in place.
+PIN_COMMIT="$(jq -er '.upstream.commit' "$PIN_FILE")"
+if [ "$FORCE" != true ] && [ "$PIN_COMMIT" = "$UPSTREAM_COMMIT" ] && [ -z "$(missing_expected_platforms "$PIN_FILE")" ]; then
+  SKIP=true
+  MISSING=""
 fi
-
-# Record whether the immutable tag exists even when force skips the
-# missing-platform calculation. The public mirror job still runs for an
-# existing release (including when this run rebuilds nothing).
-if command -v gh >/dev/null && [ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
-  if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-    RELEASE_EXISTS=true
-  fi
-fi
-
-if [ "$FORCE" != true ] && [ "$RELEASE_EXISTS" = true ]; then
-  work="$(mktemp -d "${TMPDIR:-/tmp}/tm-resolve.XXXXXX")"
-  trap 'rm -rf "$work"' EXIT
-  status_file=""
-  if gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern platform-status.json --dir "$work" 2>/dev/null \
-    && [ -f "$work/platform-status.json" ]; then
-    status_file="$work/platform-status.json"
-    WAIVED="$(waived_optional_platforms "$status_file")"
-  fi
-  if gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern manifest.json --dir "$work" 2>/dev/null \
-    && [ -f "$work/manifest.json" ]; then
-    PUBLISHED="$(published_platforms_from_manifest "$work/manifest.json")"
-    if [ -n "$status_file" ]; then
-      MISSING="$(missing_build_platforms "$work/manifest.json" "$status_file")"
-    else
-      MISSING="$(missing_expected_platforms "$work/manifest.json")"
-    fi
-    if [ -z "$MISSING" ]; then
-      SKIP=true
-      if [ -n "$WAIVED" ]; then
-        echo "Immutable release ${RELEASE_TAG} is complete for required platforms (have: ${PUBLISHED:-none}); waived optional: ${WAIVED}. Public mirror still runs."
-      else
-        echo "Immutable release ${RELEASE_TAG} already has every expected platform. Skipping rebuilds; public mirror still runs."
-      fi
-    else
-      echo "Immutable release ${RELEASE_TAG} is incomplete (have: ${PUBLISHED:-none}; missing: ${MISSING}${WAIVED:+; waived: ${WAIVED}})."
-    fi
-  else
-    echo "Immutable release ${RELEASE_TAG} exists but has no manifest.json; treating every expected platform as missing."
-  fi
-fi
+# run_id + attempt distinguishes retries/rebuilds of the same upstream commit.
+BUILD_ID="${GITHUB_RUN_ID:-$(date -u +%Y%m%d%H%M%S)}-${GITHUB_RUN_ATTEMPT:-1}"
+RELEASE_TAG="${RELEASE_TAG}-b${BUILD_ID}"
 
 MISSING_CSV="$(printf '%s' "$MISSING" | tr ' ' ',')"
 PUBLISHED_CSV="$(printf '%s' "$PUBLISHED" | tr ' ' ',')"

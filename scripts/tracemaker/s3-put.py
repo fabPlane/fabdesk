@@ -44,7 +44,10 @@ def content_type_for(path: str, explicit: str | None) -> str:
 
 
 def put_object(opts: argparse.Namespace) -> None:
-    body = open(opts.file, "rb").read()
+    with open(opts.file, "rb") as source:
+        body = source.read()
+    if opts.check_absent:
+        body = b""
     payload_hash = sha256_hex(body)
     now = dt.datetime.now(dt.timezone.utc)
     amz_date = now.strftime("%Y%m%dT%H%M%SZ")
@@ -71,11 +74,14 @@ def put_object(opts: argparse.Namespace) -> None:
     }
     if cache:
         headers["cache-control"] = cache
+    if opts.create_only:
+        headers["if-none-match"] = "*"
+    method = "HEAD" if opts.check_absent else "PUT"
     signed_header_names = ";".join(sorted(headers))
     canonical_headers = "".join(f"{k}:{headers[k]}\n" for k in sorted(headers))
     canonical_request = "\n".join(
         [
-            "PUT",
+            method,
             canonical_uri,
             "",
             canonical_headers,
@@ -111,19 +117,25 @@ def put_object(opts: argparse.Namespace) -> None:
     }
     if cache:
         req_headers["Cache-Control"] = cache
-    request = urllib.request.Request(url, data=body, method="PUT", headers=req_headers)
+    if opts.create_only:
+        req_headers["If-None-Match"] = "*"
+    request = urllib.request.Request(url, data=None if opts.check_absent else body, method=method, headers=req_headers)
     try:
         with urllib.request.urlopen(request, timeout=opts.timeout) as resp:
             status = getattr(resp, "status", 200)
             if status >= 400:
                 raise SystemExit(f"S3 PUT {opts.key} failed: HTTP {status}")
     except urllib.error.HTTPError as err:
+        if opts.check_absent and err.code == 404:
+            return
         detail = err.read().decode("utf-8", "replace")[:500]
         raise SystemExit(f"S3 PUT {opts.key} failed: HTTP {err.code} {detail}") from err
+    if opts.check_absent:
+        raise SystemExit(f"Refusing to replace existing s3://{opts.bucket}/{key}")
     print(f"uploaded s3://{opts.bucket}/{key} ({len(body)} bytes)")
 
 
-def main() -> None:
+def main_args(args=None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--file", required=True)
     parser.add_argument("--bucket", required=True)
@@ -137,7 +149,9 @@ def main() -> None:
     parser.add_argument("--path-style", action="store_true", default=True)
     parser.add_argument("--virtual-hosted", action="store_true")
     parser.add_argument("--timeout", type=int, default=120)
-    opts = parser.parse_args()
+    parser.add_argument("--create-only", action="store_true")
+    parser.add_argument("--check-absent", action="store_true")
+    opts = parser.parse_args(args)
     if opts.virtual_hosted:
         opts.path_style = False
     if not opts.access_key or not opts.secret_key:
@@ -147,4 +161,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main_args()

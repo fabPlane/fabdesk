@@ -6,9 +6,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=paths.sh
 source "$SCRIPT_DIR/paths.sh"
+python3 "$SCRIPT_DIR/test-automatic-pin.py"
 ROOT="$(mktemp -d "${TMPDIR:-/tmp}/tm-script-test.XXXXXX")"
 trap 'rm -rf "$ROOT"' EXIT
 fail=0
+# Use a private script copy so dependency/toolchain fixtures never alter source.
+cp -R "$SCRIPT_DIR" "$ROOT/scripts"
+SCRIPT_DIR="$ROOT/scripts"
+cat > "$SCRIPT_DIR/collect-licenses.sh" <<'EOF'
+#!/usr/bin/env bash
+mkdir -p "$2"
+for lib in zstd sqlite gcc boost eigen cli11 nlohmann-json; do
+  echo "fixture license for $lib" > "$2/$lib.txt"
+done
+mkdir -p "$2/llvm"
+echo "fixture LLVM license" > "$2/llvm/LICENSE.txt"
+EOF
 
 assert_eq() {
   local got="$1" want="$2" msg="$3"
@@ -243,6 +256,22 @@ export TRACEMAKER_UPSTREAM_COMMIT=24c847772e57ea8888e2cfe4bbf1aa00666390a4
 export TRACEMAKER_SOURCE_URL=https://github.com/DingoOz/TraceMaker/archive/24c847772e57ea8888e2cfe4bbf1aa00666390a4.tar.gz
 export TRACEMAKER_RELEASE_TAG=tracemaker-v0.9.0-24c8477
 export TRACEMAKER_SRC="$src_tree"
+git -C "$src_tree" init -q
+git -C "$src_tree" add LICENSE NOTICE
+git -C "$src_tree" -c user.name=Fixture -c user.email=fixture@example.test commit -qm source
+real_git="$(command -v git)"
+mkdir -p "$ROOT/gitbin"
+cat > "$ROOT/gitbin/git" <<EOF
+#!/usr/bin/env bash
+if [ "\${1:-}" = -C ] && [ "\${2:-}" = "$src_tree" ]; then
+  if [ "\${3:-}" = archive ]; then exec "$real_git" -C "$src_tree" archive --format=tar.gz HEAD; fi
+  if [ "\${3:-}" = diff ]; then exec "$real_git" -C "$src_tree" diff --binary HEAD; fi
+fi
+exec "$real_git" "\$@"
+EOF
+chmod +x "$ROOT/gitbin/git"
+export PATH="$ROOT/gitbin:$PATH"
+
 export TRACEMAKER_BUILT_AT=2026-10-09T22:00:00Z
 export GITHUB_REPOSITORY=TensorFleet/fabdesk
 
@@ -452,6 +481,7 @@ if [ "$cmd" = release ] && [ "$sub" = view ]; then
 fi
 if [ "$cmd" = release ] && [ "$sub" = create ]; then
   tag="$1"
+  if grep -qx "$tag" "$GH_RELEASES"; then exit 1; fi
   latest=true
   dest="$GH_STORE/$tag"
   mkdir -p "$dest"
@@ -527,83 +557,13 @@ PY
 assert_contains "$ROOT/gh.log.meta" "tracemaker-v0.9.0-24c8477 latest=false"
 assert_contains "$ROOT/gh.log.meta" "tracemaker-latest latest=false"
 
-# second publish of a complete set uploads into the existing tag (force/rebuild) and does not
-# recreate it with `release create` / --latest=true
-: > "$GH_LOG"
-: > "$ROOT/gh.log.meta"
-PATH="$ROOT/ghbin:$PATH" bash "$SCRIPT_DIR/publish.sh" "$ROOT/pack" > "$ROOT/publish-complete.log"
-assert_contains "$ROOT/publish-complete.log" "Completing existing"
-if grep -q "release create tracemaker-v0.9.0-24c8477" "$GH_LOG"; then
-  echo "FAIL recreated immutable tag instead of uploading"
-  fail=1
-else
-  echo "ok   completed existing immutable tag via upload --clobber"
+# A second publish must fail, preserving existing bytes exactly.
+before="$(sha256sum "$GH_STORE/$TRACEMAKER_RELEASE_TAG/tracemaker-linux-x86_64.tar.gz")"
+if PATH="$ROOT/ghbin:$PATH" bash "$SCRIPT_DIR/publish.sh" "$ROOT/pack" > "$ROOT/publish-complete.log" 2>&1; then
+  echo "FAIL replaced existing release"; fail=1
 fi
-assert_contains "$ROOT/gh.log.meta" "tracemaker-latest latest=false"
-
-# GNU cp (ubuntu-latest) errors when src and dest are the same file. After the
-# first publish, find $artifacts_dir -name LICENSE can return the root copy
-# (CI run 38015352358). publish.sh must not cp that onto itself.
-same_dir="$ROOT/same-file"
-mkdir -p "$same_dir"
-printf 'x\n' > "$same_dir/LICENSE"
-if cp "$same_dir/LICENSE" "$same_dir/LICENSE" 2>"$ROOT/same-file.err"; then
-  echo "ok   this cp allows same-file (not GNU); publish.sh still skips via -ef"
-else
-  assert_contains "$ROOT/same-file.err" "same file"
-  echo "ok   GNU cp rejects same-file (the publish.sh second-run bug)"
-fi
-
-# partial release: only macos is new; linux is already published and must be merged
-partial_pack="$ROOT/pack-macos-only"
-mkdir -p "$partial_pack"
-cp -a "$ROOT/pack/macos-arm64" "$partial_pack/"
-rm -rf "$ROOT/pack"   # isolate
-# Seed a linux-only immutable release (the state after run 37999311656).
-linux_only="$ROOT/linux-only"
-mkdir -p "$linux_only/linux-x86_64"
-# Re-pack linux so we have a known archive + asset.json to seed the store.
-bash "$SCRIPT_DIR/package.sh" "$fake_bin" linux-x86_64 "$linux_only/linux-x86_64" >/dev/null
-: > "$GH_RELEASES"
-: > "$GH_LOG"
-: > "$ROOT/gh.log.meta"
-rm -rf "$GH_STORE"
-mkdir -p "$GH_STORE/tracemaker-v0.9.0-24c8477"
-python3 - <<PY
-import json, pathlib, shutil
-src = pathlib.Path("$linux_only/linux-x86_64")
-asset = json.loads((src / "asset.json").read_text())
-store = pathlib.Path("$GH_STORE/tracemaker-v0.9.0-24c8477")
-shutil.copy(src / asset["filename"], store / asset["filename"])
-manifest = {
-  "name": "tracemaker",
-  "builtAt": "2026-10-09T21:00:00Z",
-  "upstream": {
-    "repository": "https://github.com/DingoOz/TraceMaker",
-    "tag": "v0.9.0",
-    "commit": "24c847772e57ea8888e2cfe4bbf1aa00666390a4",
-    "license": "GPL-3.0-or-later",
-    "sourceUrl": "https://github.com/DingoOz/TraceMaker/archive/24c847772e57ea8888e2cfe4bbf1aa00666390a4.tar.gz",
-  },
-  "assets": [asset],
-}
-(store / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-print("seeded linux-only release", asset["filename"], asset["sha256"][:12])
-PY
-echo "tracemaker-v0.9.0-24c8477" >> "$GH_RELEASES"
-PATH="$ROOT/ghbin:$PATH" bash "$SCRIPT_DIR/publish.sh" "$partial_pack" > "$ROOT/publish-partial.log"
-python3 - <<PY
-import json, pathlib
-m = json.loads(pathlib.Path("$partial_pack/manifest.json").read_text())
-plats = sorted(a["platform"] for a in m["assets"])
-assert plats == ["linux-x86_64", "macos-arm64"], plats
-print("ok   partial publish merged", plats)
-PY
-assert_contains "$ROOT/publish-partial.log" "verified existing"
-assert_contains "$ROOT/gh.log.meta" "tracemaker-v0.9.0-24c8477 upload"
-assert_contains "$ROOT/gh.log.meta" "tracemaker-latest latest=false"
-assert_eq "$(missing_expected_platforms "$partial_pack/manifest.json")" "windows-x86_64" "linux+macos merge is still missing windows"
-assert_eq "$(missing_build_platforms "$partial_pack/manifest.json" "$ROOT/waived-status.json")" "" "waived windows lets the weekly run skip"
+assert_eq "$(sha256sum "$GH_STORE/$TRACEMAKER_RELEASE_TAG/tracemaker-linux-x86_64.tar.gz")" "$before" "repeat publish preserves bytes"
+partial_pack="$ROOT/pack"
 TRACEMAKER_FORCE=1
 if force_rebuild_requested; then
   echo "ok   TRACEMAKER_FORCE=1 is a rebuild"
@@ -888,27 +848,27 @@ else
 fi
 assert_contains "$SCRIPT_DIR/macos-variants.sh" "for variant in system llvm-static"
 assert_contains "$SCRIPT_DIR/macos-variants.sh" "diagnose-macos.sh"
-assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "tracemaker-macos-arm64-debug"
-assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "tracemaker-windows-x86_64-debug"
-assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "continue-on-error: true"
-assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "windows-x86_64"
-assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "core.autocrlf false"
-assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "core.eol lf"
-assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "GIT_CONFIG_KEY_0: core.autocrlf"
-assert_contains "$SCRIPT_DIR/../../.gitattributes" "-text eol=lf"
-if grep -F -q 'scripts/tracemaker/patches/* -text eol=lf' "$SCRIPT_DIR/../../.gitattributes"; then
+assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "tracemaker-macos-arm64-debug"
+assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "tracemaker-windows-x86_64-debug"
+assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "continue-on-error: true"
+assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "windows-x86_64"
+assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "core.autocrlf false"
+assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "core.eol lf"
+assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "GIT_CONFIG_KEY_0: core.autocrlf"
+assert_contains "${BASH_SOURCE[0]%/*}/../../.gitattributes" "-text eol=lf"
+if grep -F -q 'scripts/tracemaker/patches/* -text eol=lf' "${BASH_SOURCE[0]%/*}/../../.gitattributes"; then
   echo "ok   .gitattributes keeps patch files unconverted (-text)"
 else
   echo "FAIL .gitattributes does not pin scripts/tracemaker/patches/* -text eol=lf"
   fail=1
 fi
-assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "mirror-public.sh"
-assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "github.event_name == 'workflow_dispatch' && (inputs.force == true || inputs.force == 'true')"
-assert_contains "$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml" "release_exists"
+assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "mirror-public.sh"
+assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "github.event_name == 'workflow_dispatch' && (inputs.force == true || inputs.force == 'true')"
+assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "release_exists"
 assert_contains "$SCRIPT_DIR/package.sh" "python3 -m zipfile"
 python3 - <<PY
 from pathlib import Path
-text = Path("$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml").read_text()
+text = Path("${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml").read_text()
 needle = 'bash "\${GITHUB_WORKSPACE}/scripts/tracemaker/mirror-public.sh"'
 idx = text.find(needle)
 if idx < 0:
@@ -916,9 +876,9 @@ if idx < 0:
 window = text[max(0, idx - 1200):idx]
 if "continue-on-error" in window:
     raise SystemExit("FAIL mirror-public.sh step is continue-on-error")
-if "needs.resolve.outputs.release_exists == 'true'" not in text:
-    raise SystemExit("FAIL mirror job does not run when the release already exists")
-print("ok   mirror job fails loudly and still runs when the release exists")
+if "needs.publish.result == 'success'" not in text:
+    raise SystemExit("FAIL mirror job does not require publication success")
+print("ok   mirror job requires successful publication")
 PY
 
 # --- verify-macos.sh: allow system+sqlite+frameworks; reject brew / libc++ dylib ---
@@ -1369,8 +1329,10 @@ env -u TRACEMAKER_S3_ACCESS_KEY_ID -u TRACEMAKER_S3_SECRET_ACCESS_KEY \
   bash "$SCRIPT_DIR/mirror-public.sh" "$partial_pack" > "$ROOT/mirror-skip.out"
 assert_contains "$ROOT/mirror-skip.out" "Public TraceMaker mirror skipped"
 
-# Credentials configured, but the merged manifest names an archive that is not
-# on disk (linux was kept on the private release, not copied into this folder).
+# Credentials configured, but one named archive is missing on disk.
+missing_pack="$ROOT/missing-pack"
+mkdir -p "$missing_pack"
+cp "$partial_pack/manifest.json" "$missing_pack/manifest.json"
 set +e
 env -u TRACEMAKER_PUBLIC_RELEASE_REPO -u TRACEMAKER_PUBLIC_RELEASE_TOKEN \
   -u DESKTOP_R2_ACCESS_KEY_ID -u CLOUDFLARE_ACCOUNT_ID -u CLOUDFLARE_API_TOKEN \
@@ -1381,7 +1343,7 @@ env -u TRACEMAKER_PUBLIC_RELEASE_REPO -u TRACEMAKER_PUBLIC_RELEASE_TOKEN \
   TRACEMAKER_PUBLIC_BASE_URL=http://127.0.0.1:9 \
   TRACEMAKER_S3_PREFIX=tracemaker \
   TRACEMAKER_RELEASE_TAG=tracemaker-v0.9.0-24c8477 \
-  bash "$SCRIPT_DIR/mirror-public.sh" "$partial_pack" >"$ROOT/mirror-missing.out" 2>&1
+  bash "$SCRIPT_DIR/mirror-public.sh" "$missing_pack" >"$ROOT/mirror-missing.out" 2>&1
 mirror_missing_rc=$?
 set -e
 if [ "$mirror_missing_rc" -eq 0 ]; then
@@ -1404,7 +1366,7 @@ python3 - <<PY
 import json, pathlib, shutil
 manifest = json.loads(pathlib.Path("$partial_pack/manifest.json").read_text())
 dest = pathlib.Path("$mirror_flat")
-roots = [pathlib.Path("$partial_pack"), pathlib.Path("$linux_only"), pathlib.Path("$ROOT/pack")]
+roots = [pathlib.Path("$partial_pack")]
 for asset in manifest["assets"]:
     name = asset["filename"]
     found = None
@@ -1440,6 +1402,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
+
+    def do_HEAD(self):
+        self._send(200 if self.path in store else 404, b"")
 
     def do_PUT(self) -> None:  # noqa: N802
         length = int(self.headers.get("Content-Length", "0"))
@@ -1536,6 +1501,8 @@ if grep -q "dummy-secret" "$ROOT/mirror-ok.out"; then
   echo "FAIL mirror success log printed the dummy secret"
   fail=1
 fi
+# Existing authoritative keys cause a preflight failure; bytes stay untouched.
+set +e
 # a second run of the same release (a rebuild is not byte-identical) must not replace what is published: fabdesk pins
 # those archives by sha256
 set +e
@@ -1549,9 +1516,11 @@ env -u TRACEMAKER_PUBLIC_RELEASE_REPO -u TRACEMAKER_PUBLIC_RELEASE_TOKEN \
   TRACEMAKER_S3_PREFIX=tracemaker \
   TRACEMAKER_RELEASE_TAG=tracemaker-v0.9.0-24c8477 \
   bash "$SCRIPT_DIR/mirror-public.sh" "$mirror_flat" >"$ROOT/mirror-again.out" 2>&1
+mirror_again_rc=$?
 set -e
-assert_contains "$ROOT/mirror-again.out" "is already published; keeping its archives"
-assert_contains "$ROOT/mirror-again.out" "already published; not replaced"
+if [ "$mirror_again_rc" -eq 0 ]; then echo "FAIL repeated mirror succeeded"; fail=1; fi
+assert_contains "$ROOT/mirror-again.out" "Refusing to replace existing"
+
 stop_mirror_http
 
 start_mirror_http --corrupt
@@ -1601,7 +1570,7 @@ if [ "$mirror_upload_rc" -eq 0 ]; then
 else
   echo "ok   mirror exits non-zero when the upload fails"
 fi
-assert_contains "$ROOT/mirror-upload-fail.out" "S3 upload failed"
+assert_contains "$ROOT/mirror-upload-fail.out" "Connection refused"
 if grep -q "Public TraceMaker mirror skipped" "$ROOT/mirror-upload-fail.out"; then
   echo "FAIL upload failure was reported as a credential skip"
   fail=1
@@ -1611,7 +1580,7 @@ fi
 if command -v bun >/dev/null; then
   # JS, not a shell snippet — $MANIFEST is passed via the environment.
   # shellcheck disable=SC2016
-  MANIFEST="$partial_pack/manifest.json" bun --cwd "$SCRIPT_DIR/../../packages/tools" -e '
+  MANIFEST="$partial_pack/manifest.json" bun --cwd "${BASH_SOURCE[0]%/*}/../../packages/tools" -e '
     import { parseTraceMakerManifest } from "./src/routers/tracemaker-release";
     const raw = JSON.parse(await Bun.file(process.env.MANIFEST!).text());
     const m = parseTraceMakerManifest(raw);
