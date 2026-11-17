@@ -16,6 +16,8 @@ import { ToolError, defineTool } from "../registry";
 import { ok, p, requireBoard, requireKicad, requireSchematic, inspectSavedHierarchy } from "./common";
 import { expectedPcbSource, withPcbOutput } from "../pcb-output";
 import { silk_art } from "./silk-art";
+import { projectHasPlacedBoard } from "../board-state";
+import { writeJlcExports } from "../release-jlc";
 
 const rel = (project: { dir: string }, abs: string) =>
   abs.startsWith(project.dir) ? abs.slice(project.dir.length + 1) : abs;
@@ -117,7 +119,7 @@ export const export_drill = defineTool({
   toolset: "export",
   title: "Export drill files",
   description:
-    "Export Excellon drill files (plated/non-plated, with map) to exports/gerbers/. Requires kicad-cli and board.kicad_pcb.",
+    "Export Excellon drill files (plated/non-plated, with map) to exports/gerbers/. Requires kicad-cli and board.kicad_pcb. For a package you will order, board_release fab supersedes this (drill files are part of its gated package).",
   inputSchema: { expectedSourceSha256: expectedPcbSource },
   annotations: {
     readOnlyHint: false,
@@ -161,8 +163,9 @@ export const export_pos = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async (args, ctx) => withPcbOutput(ctx, args.expectedSourceSha256, async (ctx) => {
+  handler: async (args, outer) => withPcbOutput(outer, args.expectedSourceSha256, async (ctx) => {
     const project = ctx.requireProject();
+    const real = outer.requireProject(); // the exporter runs on a staged copy; the BOM check lives with the real project
     const cli = await requireKicad(ctx);
     const board = await requireBoard(project);
     await ensureDir(p(project, PROJECT_FILES.exports));
@@ -188,8 +191,21 @@ export const export_pos = defineTool({
     }
     const coordinateContract = { units: "mm", origin: "absolute PCB origin", x: "PCB +X", y: "negative PCB Y (up in exported top view)", side: "native CSV top/bottom", rotation: "native KiCad CSV degrees; preserve and compare with a fresh native export" };
     await writeJson(p(project, "exports/positions.contract.json"), coordinateContract);
+    // a placed board also gets JLC's placement file: pad-centre positions from our copper, the rotation JLC's own
+    // footprint needs (see board_release bom), every row simulated on our copper
+    let jlc: Awaited<ReturnType<typeof writeJlcExports>> | undefined;
+    let jlcNote = "";
+    if (await projectHasPlacedBoard(project.dir)) {
+      ctx.progress(0.6, "JLC placement file");
+      try {
+        jlc = await writeJlcExports({ exportGerbers: (outDir) => ctx.services.kicad.exportGerbers(cli, { board, outDir, signal: ctx.signal }), projectDir: real.dir, pcb: board, stem: basename(board, ".kicad_pcb"), posCsv: output, outDir: p(project, PROJECT_FILES.exports), signal: ctx.signal });
+        jlcNote = `\nJLC placement exports/positions-jlc.csv (+ bom-jlc.csv): ${jlc.summary.placements} parts at pad-centre positions with JLC-simulated rotations (${jlc.summary.rotationDiffers} differ from KiCad), source ${jlc.source}; placement check ${jlc.summary.pass} pass, ${jlc.summary.fail} fail${jlc.failing.length ? ` (${jlc.failing.slice(0, 8).join(", ")})` : ""}, ${jlc.summary.noFootprint.length} without a JLC footprint; no LCSC code: ${jlc.summary.noLcscCode.join(", ") || "none"}.${jlc.source.startsWith("evidence") ? " Run board_release bom for JLC data on every part." : ""}`;
+      } catch (e) {
+        jlcNote = `\nJLC placement file not written: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    }
     ctx.progress(1, "done");
-    return ok(`Exported exports/positions.csv (${args.mode}); ${features.length} board feature(s) listed separately.`, { path: output, mode: args.mode, features: features.length, coordinateContract });
+    return ok(`Exported exports/positions.csv (${args.mode}); ${features.length} PCB feature(s) listed separately.${jlcNote}`, { path: output, mode: args.mode, features: features.length, coordinateContract, ...(jlc ? { jlc: { cpl: jlc.cpl, bom: jlc.bom, ...jlc.summary, source: jlc.source, failing: jlc.failing } } : {}) });
   }),
 });
 
@@ -287,7 +303,7 @@ export const export_zip = defineTool({
   toolset: "export",
   title: "Zip fabrication outputs",
   description:
-    "Bundle the files currently present in exports/gerbers plus positions.csv and bom.csv into exports/fabrication.zip or a named filename under exports/. Missing optional entries are reported.",
+    "Bundle the files currently present in exports/gerbers plus positions.csv and bom.csv into exports/fabrication.zip or a named filename under exports/. Missing optional entries are reported. For a package you will order, board_release fab supersedes this: its archive is gated on the interconnect, review, A1-A9 and via checks.",
   inputSchema: {
     expectedSourceSha256: expectedPcbSource,
     package: z.enum(["fabrication", "handoff"]).default("fabrication").describe("handoff includes editable native sources, project dependencies, views, reports and a source-bound inventory; requires current exports"),

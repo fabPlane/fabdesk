@@ -158,5 +158,11 @@ describe("Viagrid 9055 template", () => {
     const cleared = await call("project_set_board", { template: "none" });
     expect(cleared.isError ?? false).toBe(false);
     expect(project.manifest().board.template).toBeUndefined();
+
+    // real boards beyond 8 copper layers (vme-wren 12, jetson 10) are recorded as they are
+    const twelve = await call("project_set_board", { layers: 12 });
+    expect(twelve.isError ?? false).toBe(false);
+    expect(project.manifest().board.layers).toBe(12);
+    await expect(call("project_set_board", { layers: 33 })).rejects.toThrow(/<=32/);
   });
 });

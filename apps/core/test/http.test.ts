@@ -604,7 +604,12 @@ describe("http daemon", () => {
     // AGENTS.md / CLAUDE.md regenerated before the run.
     const agentInstructions = await Bun.file(join(created.path, "AGENTS.md")).text();
     expect(agentInstructions).toContain("Canonical KiCad PCB");
-    expect(agentInstructions).not.toMatch(/workflow|prefer|retry|repeat until|run .* first/i);
+    // the board workflow section is the one place that prescribes a method; it is present because the board toolset is registered
+    expect(agentInstructions).toContain("## Board workflow");
+    expect(agentInstructions).toContain("board_check");
+    expect(agentInstructions).not.toMatch(/~\/pcb|FABDESK_PCB_BIN|\bpcb (run|review|flow|lastmile|edit)\b/);
+    const neutral = agentInstructions.replace(/## Board workflow[\s\S]*?(?=## Off-board parts)/, "");
+    expect(neutral).not.toMatch(/workflow|prefer|retry|repeat until|run .* first/i);
     // Neutral discovery must give both authoring paths equal visibility.
     expect(/circuit_build/i.test(agentInstructions)).toBe(
       /schematic_edit/i.test(agentInstructions),

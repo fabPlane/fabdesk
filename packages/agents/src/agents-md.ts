@@ -1,5 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { BOARD_WORKFLOW_MD } from "./board-workflow-md";
+export { BOARD_WORKFLOW_MD };
 
 export interface AgentDocsContext {
   projectName: string;
@@ -12,6 +14,8 @@ export interface AgentDocsContext {
   /** Resolved executable verified by the core; no guessed runtime paths. */
   kicadCli?: string | undefined;
   shellExecutables?: Record<string, string> | undefined;
+  /** The `board` toolset (board_check and the other stage tools) is registered: include the board workflow section. */
+  boardWorkflow?: boolean | undefined;
   fabdeskCli?: string | undefined;
   fabdeskCliUnavailableReason?: string | undefined;
   /** Experimental interfaces without Fabdesk MCP tools. */
@@ -138,7 +142,7 @@ ${
               .map(([name, path]) => `\`${name}\` = \`${path}\``)
               .join("; ")}.\n`
           : ""
-      }\n${OFFBOARD_SECTION}\n\n${SHOPPING_SECTION}\n\n`
+      }\n${ctx.boardWorkflow ? `${BOARD_WORKFLOW_MD}\n` : ""}${OFFBOARD_SECTION}\n\n${SHOPPING_SECTION}\n\n`
 }${USER_START}
 ${userSection.trim() === "" ? DEFAULT_USER_SECTION : userSection.trim()}
 ${USER_END}

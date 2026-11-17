@@ -144,7 +144,7 @@ export const project_set_board = defineTool({
   description:
     'Update fabdesk.json board settings: layer count, outline dimensions, router, and optional prefab blank template. template="viagrid-9055" represents the Opulo 90 x 55 mm blank with its factory vias, mounting holes, and 0.2 mm track and clearance rules; template="none" removes the template.',
   inputSchema: {
-    layers: z.number().int().min(1).max(8).optional(),
+    layers: z.number().int().min(1).max(32).optional(),
     widthMm: z.number().positive().optional(),
     heightMm: z.number().positive().optional(),
     router: z

@@ -134,10 +134,13 @@ jobs:
           # GITHUB_PATH is applied in the next step; use its final entry here.
           tools_path=$(tail -n 1 "$GITHUB_PATH")
           if [ -x "$tools_path/ar" ]; then export PATH="$tools_path:$PATH"; fi
+          if [ -x "$tools_path/bzip2" ]; then export PATH="$tools_path:$PATH"; fi
           fixture=$(mktemp -d "$RUNNER_TEMP/ar-smoke.XXXXXX")
           printf 'packaging smoke\n' > "$fixture/member"
           ar rcs "$fixture/test.a" "$fixture/member"
           test "$(ar p "$fixture/test.a" member)" = 'packaging smoke'
+          tar -cjf "$fixture/test.tar.bz2" -C "$fixture" member
+          test "$(tar -xOf "$fixture/test.tar.bz2" member)" = 'packaging smoke'
 
       - run: bun install --frozen-lockfile
 

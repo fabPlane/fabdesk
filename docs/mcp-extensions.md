@@ -67,6 +67,48 @@ The stdio proxy (`fabdesk-core mcp` while the app runs) reads the host's `initia
 its daemon session with `?apps=on` when the host supports MCP Apps, so `auto` works through the
 proxy too.
 
+## A board project from an external agent
+
+What Codex, Claude Code (with or without the plugin) and other MCP clients see for a project with a
+placed board (`board.kicad_pcb` with footprints), as fabPlane's own agent runs see it:
+
+- **Start set.** `fabdesk mcp` started in the project folder (it holds `fabdesk.json`) or with
+  `--project <dir>` opens its daemon session with `/mcp?project=<dir>`. The daemon applies the same
+  decision as a desktop run (`projectStartToolsets` in `apps/core/src/mcp-sessions.ts`): with a placed
+  board and the board workflow registered, the session starts with `toolsets=board&start=board`, the
+  board start set (`board_check`, `board_route`, `board_edit`, `board_review`, `board_silk`,
+  `board_release`, `board_job` plus board reading, render and the core tools; `verify_drc` and the
+  schematic-authoring tools stay a `load_toolset` away). No `load_toolset` round trip, which also
+  matters because Codex ignores `tools/list_changed`. Without a placed board, the defaults (core,
+  circuit, verify, render). An HTTP client gets the same with `?project=<id|name|dir>`; a URL that
+  already names `toolsets`, `start` or `profile` (fabPlane's runs) is left as it is.
+- **Instructions.** The server instructions add a short board-workflow pointer: the stages and their
+  tools (read from the workflow text's stage table), A1-A9 as the definition of done, engines that
+  install on demand, long calls → `board_job`, and where the full text is.
+- **Full text.** Resource `fabdesk://docs/board-workflow` (Markdown) and prompt `board_workflow`
+  (`project`, `request` arguments; `/mcp__fabdesk__board_workflow` in Claude Code), both
+  `BOARD_WORKFLOW_MD`, the section fabPlane writes into its runs' AGENTS.md (= `docs/board-workflow.md`).
+- **Plugin.** `skills/fabplane/SKILL.md` carries the same stages and rules in short.
+
+**Long calls and client timeouts.** Board tools run as durable jobs (`runDurable`): a call waits, then
+returns a job id while the job continues, and `board_job` waits for it, reports it or cancels it. The
+wait is chosen per session from its client (`durableWaitForClient`):
+
+| Client | Wait before the job id |
+| --- | --- |
+| fabPlane's own Codex and Claude runs (it raises their tool timeout: Codex `tool_timeout_sec=1830`, Claude `timeout`) | 25 min |
+| fabPlane's own Cursor and Grok runs (no known tool-timeout key, so it is not raised) | 50 s |
+| Claude Code (`clientInfo.name` `claude-code`; its deadline resets on the progress heartbeat) | 25 min |
+| a declared timeout: `fabdesk mcp --tool-timeout <sec>` or `/mcp?toolTimeoutSec=<sec>` | just under it (max 25 min) |
+| anything else, external Codex included (60 s default as far as fabdesk can tell) | 50 s |
+
+The stdio proxy names the host it serves (its `initialize` clientInfo and `--tool-timeout`) in each
+`tools/call`'s `_meta["fabdesk/client"]`, since the daemon otherwise sees only the proxy. The plugin's
+Codex server entry sets `tool_timeout_sec = 1830` and `startup_timeout_sec = 30`, but it does not pass
+`--tool-timeout`, because fabdesk cannot confirm the host applied the setting. Board calls from external
+Codex therefore return a job id after 50 s, and `board_job` continues the job. A user who sets
+`tool_timeout_sec` in `~/.codex/config.toml` can add `"--tool-timeout", "1830"` to that server's `args`.
+
 ## OpenAI extensions used
 
 - **Entrypoints** (`_meta["openai/ui"].entrypoints`): `global` and `thread` open with `{}`; the view

@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Pack the binary + GPL license + pinned source offer for one platform.
+# Pack the binaries (tracemaker + its placer tracemaker-place) + GPL license +
+# pinned source offer for one platform. Placer: 4th argument, else beside the
+# binary / in its build tree (src/place). Both get the same strip, library
+# bundling, Windows DLL probe and macOS ad-hoc signature.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,6 +12,13 @@ source "$SCRIPT_DIR/paths.sh"
 binary="$(abs_existing_file "${1:?built tracemaker binary}")"
 platform="${2:?platform id}"
 dest_dir="$(abs_path "${3:?output directory}")"
+placer="${4:-}"
+if [ -n "$placer" ]; then
+  placer="$(abs_existing_file "$placer")"
+elif ! placer="$(find_placer "$binary" "$platform")"; then
+  echo "::error::no tracemaker-place beside $binary or in its build tree: board_route's floorplan path needs it in the archive" >&2
+  exit 1
+fi
 upstream_repo="${TRACEMAKER_UPSTREAM_REPO:-DingoOz/TraceMaker}"
 upstream_tag="${TRACEMAKER_UPSTREAM_TAG:?}"
 upstream_commit="${TRACEMAKER_UPSTREAM_COMMIT:?}"
@@ -27,14 +37,19 @@ work="$(mktemp -d "${TMPDIR:-/tmp}/tm-pack.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
 exe_name="tracemaker"
+placer_name="tracemaker-place"
 if [[ "$platform" == windows-* ]]; then
   exe_name="tracemaker.exe"
+  placer_name="tracemaker-place.exe"
 fi
 cp "$binary" "$work/$exe_name"
-chmod 755 "$work/$exe_name" || true
-if command -v strip >/dev/null; then
-  strip "$work/$exe_name" || true
-fi
+cp "$placer" "$work/$placer_name"
+for exe in "$exe_name" "$placer_name"; do
+  chmod 755 "$work/$exe" || true
+  if command -v strip >/dev/null; then
+    strip "$work/$exe" || true
+  fi
+done
 
 if [ -n "$src_tree" ] && [ -f "$src_tree/LICENSE" ]; then
   cp "$src_tree/LICENSE" "$work/LICENSE"
@@ -56,6 +71,7 @@ notes="$work/DEPENDENCIES.txt"
   echo "TraceMaker ${upstream_tag} (${upstream_commit})"
   echo "Built by ${repo} for ${platform} at ${built_at}."
   echo
+  echo "Programs: ${exe_name} (router) and ${placer_name} (placer, used by board_route's floorplan path)."
   echo "This is a cpu-only / Metal build. CUDA is not included; users do not need nvcc or a GPU."
   echo "Boost, Eigen, CLI11 and nlohmann_json are header-only at link time."
   if [[ "$platform" == macos-* ]]; then
@@ -75,22 +91,26 @@ notes="$work/DEPENDENCIES.txt"
   if [[ "$platform" == windows-* ]]; then
     echo "Windows best-effort: MSYS2 UCRT64 MinGW, static libgcc/libstdc++,"
     echo "static libzstd.a, static libsqlite3.a when present. Remaining"
-    echo "non-system DLLs are copied next to tracemaker.exe (Windows loads"
+    echo "non-system DLLs are copied next to the .exe files (Windows loads"
     echo "the executable directory). CUDA is not included."
   fi
   echo
 } > "$notes"
-if [[ "$platform" == windows-* ]]; then
-  bash "$SCRIPT_DIR/bundle-libs.sh" "$work/$exe_name" "$work" "$notes"
-else
-  bash "$SCRIPT_DIR/bundle-libs.sh" "$work/$exe_name" "$work/lib" "$notes"
-fi
+for exe in "$exe_name" "$placer_name"; do
+  if [[ "$platform" == windows-* ]]; then
+    bash "$SCRIPT_DIR/bundle-libs.sh" "$work/$exe" "$work" "$notes"
+  else
+    bash "$SCRIPT_DIR/bundle-libs.sh" "$work/$exe" "$work/lib" "$notes"
+  fi
+done
 
 # strip + install_name_tool invalidate any signature. Ad-hoc sign so the
 # arm64 binary is runnable on Gatekeeper-ish CI and owner Macs (no identity).
 if [[ "$platform" == macos-* ]] && command -v codesign >/dev/null; then
-  codesign --force -s - "$work/$exe_name"
-  echo "ad-hoc codesign -s - $exe_name" | tee -a "$notes"
+  for exe in "$exe_name" "$placer_name"; do
+    codesign --force -s - "$work/$exe"
+    echo "ad-hoc codesign -s - $exe" | tee -a "$notes"
+  done
 fi
 
 patch_note=""
@@ -178,6 +198,7 @@ pack_windows_zip() {
 archive_name="tracemaker-${platform}"
 if [[ "$platform" == windows-* ]]; then
   bash "$SCRIPT_DIR/verify-windows.sh" "$work/$exe_name"
+  bash "$SCRIPT_DIR/verify-windows.sh" "$work/$placer_name"
   archive="${dest_dir}/${archive_name}.zip"
   pack_windows_zip "$archive" "$work"
   format="zip"
@@ -207,7 +228,7 @@ if [[ "$platform" == macos-* ]]; then
 fi
 
 PLATFORM="$platform" FILENAME="$filename" ASSET_URL="$asset_url" SHA="$sha" \
-BYTES="$bytes" FORMAT="$format" EXE_NAME="$exe_name" NOTES="$notes" DEST_DIR="$dest_dir" \
+BYTES="$bytes" FORMAT="$format" EXE_NAME="$exe_name" PLACER_NAME="$placer_name" NOTES="$notes" DEST_DIR="$dest_dir" \
 CXX_RUNTIME="$cxx_runtime" MACOS_VARIANT="$macos_variant" \
 python3 - <<'PY'
 import json, os, pathlib
@@ -219,6 +240,9 @@ asset = {
   "bytes": int(os.environ["BYTES"]),
   "format": os.environ["FORMAT"],
   "executable": os.environ["EXE_NAME"],
+  # The placer sits beside the executable; the installer and resolve-upstream.sh
+  # read this key (an asset without it predates the placer and is rebuilt).
+  "placer": os.environ["PLACER_NAME"],
 }
 notes = pathlib.Path(os.environ["NOTES"]).read_text(encoding="utf-8")
 asset["linkage"] = (

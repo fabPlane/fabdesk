@@ -29,3 +29,12 @@
  .fd-project-status-row [data-label]::before { content:attr(data-label); display:block; color:var(--fd-muted); font-size:11px; margin-bottom:3px; }
  .fd-project-status-nav { flex-wrap:wrap; margin-left:0; padding-top:48px; }
 }
+.fd-project-status-board { margin-top:14px; padding:16px 20px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); }
+.fd-project-status-board h2 { margin:0 0 6px; font-size:12px; font-weight:650; color:var(--fd-muted); }
+.fd-project-status-board p { margin:0; font-size:13px; line-height:1.6; }
+.fd-project-status-board p[data-warning=true] { color:var(--fd-warning, #a65f13); }
+.fd-project-status-board small { display:block; margin-top:6px; font-size:11px; color:var(--fd-muted); }
+.fd-project-status-board h3 { margin:14px 0 6px; font-size:11px; font-weight:650; color:var(--fd-muted); }
+.fd-project-status-board-list { list-style:none; margin:0; padding:0; font-size:12px; }
+.fd-project-status-board-list li { display:grid; grid-template-columns:minmax(120px,1.2fr) minmax(120px,1fr) minmax(90px,.8fr); gap:12px; padding:5px 0; border-top:1px solid var(--fd-border); }
+.fd-project-status-board-list [data-warning=true] { color:var(--fd-warning, #a65f13); }

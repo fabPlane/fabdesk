@@ -14,6 +14,7 @@ coverage/
 # submodules manage their own ignores; never run `bun install` inside vendor/
 vendor/fabplane/node_modules/
 release/
+!packages/board-workflow/src/release/
 
 # apps/mobile: Expo caches and the native projects `expo prebuild` generates
 .expo/
