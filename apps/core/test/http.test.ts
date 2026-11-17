@@ -88,6 +88,15 @@ const api = (path: string, init: RequestInit = {}) =>
   });
 
 describe("http daemon", () => {
+  test.each(["%0A", "%0D", "%E2%80%A8", "%E2%80%A9"])("encoded line terminators %s cannot bypass origin or bearer middleware", async encoded => {
+    const url = `${daemon.url}/projects/missing${encoded}project`;
+    expect((await fetch(url)).status).toBe(401);
+    expect((await fetch(url, { headers: { authorization: "Bearer wrong" } })).status).toBe(401);
+    expect((await fetch(url, { headers: { ...H(), origin: "https://evil.example" } })).status).toBe(403);
+    // An authenticated, allowed-origin request still reaches the normal not-found response.
+    expect((await fetch(url, { headers: H() })).status).toBe(404);
+  });
+
   test("effort saves preserve concurrent model choices and unrelated agent settings", async () => {
     const before = daemon.store.settings.get();
     try {
