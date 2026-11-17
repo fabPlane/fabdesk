@@ -177,6 +177,7 @@ describe("mcp adapter", () => {
       "pcb_environment",
       "project_status",
       "render_board",
+      "render_publish",
       "request_project_creation",
       "route_run",
       "verify_drc",

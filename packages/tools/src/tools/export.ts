@@ -1,3 +1,4 @@
+import { canonicalReportStatus } from "../canonical-report-status";
 /** Export toolset: manufacturing outputs via kicad-cli. */
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -247,8 +248,13 @@ export const export_zip = defineTool({
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async ({ filename, expectedSourceSha256, gerberFiles }, ctx) => withPcbOutput(ctx, expectedSourceSha256, async (ctx) => {
+  handler: async ({ filename, expectedSourceSha256, gerberFiles }, sourceCtx) => withPcbOutput(sourceCtx, expectedSourceSha256, async (ctx) => {
     const project = ctx.requireProject();
+    if (!sourceCtx.board) {
+      const reports = await canonicalReportStatus(sourceCtx);
+      if (reports.drc.status === "stale" || reports.erc.status === "stale")
+        throw new ToolError("Canonical DRC/ERC reports are stale. Run render_publish (or verify_drc and verify_erc) after the last edit before packaging.", "precondition");
+    }
     const exportsDir = p(project, PROJECT_FILES.exports);
     const gerbersDir = join(exportsDir, "gerbers");
     const entries: Array<{ name: string; path: string }> = [];
