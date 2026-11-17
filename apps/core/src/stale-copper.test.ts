@@ -277,3 +277,18 @@ test("native outline cannot replace a seeded cap bridge between stationary pads"
     zones: [{ net: "A", layer: B, polygons: [polygon] }] });
   expect(result.staleIds).toEqual([]);
 });
+
+test("native unknown pad polygon cannot prove a replacement for a seeded cap bridge", () => {
+  const land = (id: string, y: number): CopperPad => ({
+    id, parent:id, reference:id, number:"1", net:"A",
+    shapes:[{layer:F, polygon:square(0,y,.1)}],
+  });
+  const upper = land("upper",.15), lower = land("lower",-.15);
+  const unknown: CopperPad = {...land("unknown",0), shapes:[{layer:F,polygon:square(0,0,.4),inner:null}]};
+  const moving: CopperPad = {...land("moving",0), shapes:[{layer:F,polygon:square(5,0,.2)}]};
+  const bridge = {...track("bridge","A",0,5),width:.2};
+  const after = {...moving,shapes:[]};
+  const result = analyzeStaleCopper({beforePads:[moving],afterPads:[after],allPadsBefore:[moving,upper,lower,unknown],
+    allPadsAfter:[after,upper,lower,unknown],routes:[bridge],zones:[]});
+  expect(result.staleIds).toEqual([]);
+});

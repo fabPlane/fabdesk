@@ -91,3 +91,62 @@ test("an unsplit closed arc is a loop, not an absorbed short item", async () => 
   const graph = buildCopperGraph([{id:"loop",kind:"arc",net:"A",copper:[{layers:["F.Cu"],shape:{width:.2,path:[{x:0,y:0},{x:5,y:0},{x:5,y:5},{x:0,y:5},{x:0,y:0}]}}]}]);
   expect([...pruneCopperLeaves(graph)]).toEqual([]);
 });
+
+for (const alternate of ["none", "rect", "custom", "via", "drilled-pad", "zone"] as const) {
+  test(`${alternate} alternate envelope cannot replace an endpoint-cap bridge`, () => {
+    const land = (ref: string, y: number) => fpT(ref,5.53,y,[["1","A",0,0]])
+      .replace('(size 0.6 0.6)', '(size 0.2 0.2)');
+    const custom = land("U4",.6).replace('smd rect','smd custom').replace('(size 0.2 0.2)',
+      '(size 0.2 0.2) (options (clearance outline) (anchor rect)) (primitives (gr_poly (pts (xy -.1 -.1) (xy .1 -.1) (xy .1 .1) (xy -.1 .1)) (width 0) (fill yes)))');
+    const extra = alternate === "custom" ? custom : alternate === "rect" ? land("U4",.6) :
+      alternate === "via" ? '(via (at 5.53 0) (size 1) (drill .8) (layers "F.Cu" "B.Cu") (net "A"))' :
+      alternate === "drilled-pad" ? land("U4",0).replace('smd rect','thru_hole circle')
+        .replace('(size 0.2 0.2)', '(size 1 1) (drill .8)') :
+      alternate === "zone" ? '(zone (net "A") (layer "F.Cu") (polygon (pts (xy 5 -.4) (xy 6 -.4) (xy 6 .4) (xy 5 .4))))' : '';
+    const bridge = seg(5.53,0,10,0,"A");
+    const text = `(kicad_pcb ${bridge} (via (at 10 0) (size .8) (drill .4) (layers "F.Cu" "B.Cu") (net "A")) ${land("U2",.15)} ${land("U3",-.15)} ${extra})`;
+    const result = pruneDangling(text,new Set(["A"]));
+    expect(result.text).toContain(bridge);
+    expect(result.pruned).toBe(1);
+  });
+}
+
+test("inflated arc chords cannot replace the cap bridge after its tail via prunes", () => {
+  const land = (ref: string, y: number) => fpT(ref,99.99995,y,[["1","A",0,0]])
+    .replace('(size 0.6 0.6)', '(size 0.000002 0.2)');
+  const bridge = seg(99.99995,0,110,0,"A").replace('(width 0.2)', '(width 2.5)');
+  // The actual radius-100 arc never reaches either narrow pad (|y| >= 1.15).
+  // Its deliberately conservative chord envelope does reach both.
+  const arc = '(arc (start 0 -100) (mid 100 0) (end 0 100) (width .000001) (layer "F.Cu") (net "A"))';
+  const text = `(kicad_pcb ${bridge} (via (at 110 0) (size .8) (drill .4) (layers "F.Cu" "B.Cu") (net "A")) ${land("U2",1.25)} ${land("U3",-1.25)} ${arc})`;
+  const result = pruneDangling(text,new Set(["A"]));
+  expect(result.text).toContain(bridge);
+  expect(result.pruned).toBe(1);
+});
+
+test("terminal proof cannot forget remote terminals behind uncertain contacts", () => {
+  const copper = (x: number, y: number, inner?: null) => [{ layers: ["F.Cu"], shape: { path: [{x,y}], width: .2, ...(inner === null ? {inner} : {}) } }];
+  const graph = buildCopperGraph([
+    { id: "bridge", net: "A", kind: "track", copper: [{ layers: ["F.Cu"], shape: { path: [{x:0,y:0},{x:5,y:0}], width:.2 } }] },
+    ...[-.15,.15].flatMap((y, i) => [
+      { id: `unknown:${i}`, net: "A", kind: "via" as const, copper: copper(0,y,null) },
+      { id: `terminal:${i}`, net: "A", kind: "pad" as const, copper: copper(0,2*y) },
+    ]),
+  ]);
+  expect(pruneCopperLeaves(graph).has("bridge")).toBe(false);
+});
+
+test("contact bounds separate growth, unknown geometry, holes and exact contacts", async () => {
+  const { copperContact } = await import("../src/copper-contact");
+  const layers = ["F.Cu"];
+  const a = {path:[{x:0,y:0}],width:1};
+  const b = {path:[{x:1.01,y:0}],width:1};
+  expect(copperContact(a,layers,b,layers,"F.Cu",.02)).toEqual({mayTouch:true,surelyTouches:false});
+  expect(copperContact(a,layers,{...a,inner:null},layers,"F.Cu")).toEqual({mayTouch:true,surelyTouches:false});
+  expect(copperContact(a,layers,a,layers,"F.Cu")).toEqual({mayTouch:true,surelyTouches:true});
+  expect(copperContact(a,layers,a,layers,"B.Cu")).toEqual({mayTouch:false,surelyTouches:false});
+  const ring = (r: number) => [{x:-r,y:-r},{x:r,y:-r},{x:r,y:r},{x:-r,y:r}];
+  const polygon = {outline:ring(2),holes:[ring(.6)],padding:.2};
+  expect(copperContact(a,layers,{polygon},layers,"F.Cu")).toEqual({mayTouch:true,surelyTouches:false});
+  expect(copperContact(a,layers,{polygon:{...polygon,padding:0}},layers,"F.Cu")).toEqual({mayTouch:false,surelyTouches:false});
+});

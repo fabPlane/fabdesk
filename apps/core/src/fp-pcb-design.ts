@@ -187,6 +187,14 @@ function arcPoints(start: CopperPoint, mid: CopperPoint, end: CopperPoint): Copp
   });
 }
 
+function nativeArcPadding(a: CopperPoint, m: CopperPoint, b: CopperPoint): number {
+  const cross = Math.abs((m.x-a.x)*(b.y-a.y)-(m.y-a.y)*(b.x-a.x));
+  if (cross < .5) return 0; // same straight-line degeneracy as arcPoints
+  const distance = (p: CopperPoint, q: CopperPoint) => Math.hypot(p.x-q.x,p.y-q.y);
+  const radius = distance(a,m)*distance(m,b)*distance(b,a)/(2*cross);
+  return radius * (1-Math.cos(Math.PI/360));
+}
+
 function polyLinePoints(line: PolyLine | undefined): CopperPoint[] {
   const points: CopperPoint[] = [];
   for (const node of line?.nodes ?? []) {
@@ -209,6 +217,11 @@ function polyLinePoints(line: PolyLine | undefined): CopperPoint[] {
 
 function copperPolygon(polygon: PolygonWithHoles): CopperPolygon {
   return {
+    // Grow chord boundaries on both outlines and holes; the contact helper
+    // treats this growth as outer-only geometry.
+    padding: Math.max(0, ...[polygon.outline, ...polygon.holes].flatMap(line =>
+      (line?.nodes ?? []).flatMap(node => node.geometry.case === "arc" ? [nativeArcPadding(
+        vec2(node.geometry.value.start), vec2(node.geometry.value.mid), vec2(node.geometry.value.end))] : []))),
     outline: polyLinePoints(polygon.outline),
     holes: polygon.holes.map(polyLinePoints),
   };
@@ -257,7 +270,10 @@ async function copperPads(board: Board): Promise<CopperPad[]> {
           .filter((layer) => hasCopper(pad, layer))
           .flatMap((layer) => {
             const polygon = shapes.get(layer)?.get(pad.id);
-            return polygon ? [{ layer, polygon: copperPolygon(polygon) }] : [];
+            // The bridge supplies polygonized pad copper without an inner-error
+            // certificate (including drill/custom-pad treatment). Retain its
+            // contacts, but never use them to prove an alternate path.
+            return polygon ? [{ layer, polygon: copperPolygon(polygon), inner: null }] : [];
           }),
       },
     ];
@@ -289,7 +305,9 @@ function copperRoutes(
           net: item.net ?? "",
           layers: [item.layerId],
           path: arcPoints(item.start, item.mid, item.end),
-          width: item.width,
+          // One-degree chords: enlarge by a safe radius-based sagitta bound.
+          width: item.width + 2 * nativeArcPadding(item.start, item.mid, item.end),
+          inner: null,
           locked: item.locked,
         },
       ];

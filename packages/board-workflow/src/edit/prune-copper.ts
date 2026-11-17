@@ -32,7 +32,10 @@ export function routeCopper(node: SNode, stack: string[]): LayerCopper {
       arcPadding = halfChord2 / (radius + Math.sqrt(Math.max(0, radius * radius - halfChord2)));
     }
   }
-  return { net: netOf(node), layers, shape: { path: path.map(object), width: num(kid(node, via ? "size" : "width")?.[1], via ? .5 : .15) + 2 * arcPadding } };
+  const width = num(kid(node, via ? "size" : "width")?.[1], via ? .5 : .15);
+  const points = path.map(object);
+  return { net: netOf(node), layers, shape: { path: points, width: width + 2 * arcPadding,
+    ...(via ? { inner: null } : node[0] === "arc" ? { inner: width > 2 * arcPadding ? { path: points, width: width - 2 * arcPadding } : null } : {}) } };
 }
 
 export function padCopper(text: string, stack: string[]): LayerCopper[] {
@@ -47,7 +50,7 @@ export function padCopper(text: string, stack: string[]): LayerCopper[] {
       const [x, y] = toBoard(pose, num(at?.[1]), num(at?.[2]));
       const rot = num(at?.[3]), w = num(size?.[1], .6), h = num(size?.[2], .6);
       const shape = String(pad[3]);
-      const add = (s: CopperShape) => out.push({ net: netOf(pad), layers, shape: s });
+      const add = (s: CopperShape) => out.push({ net: netOf(pad), layers, shape: kid(pad, "drill") ? { ...s, inner: null } : s });
       const transform = (px: number, py: number) => object(toBoard({ x, y, rot }, px, py));
       if (shape === "circle" || shape === "oval") {
         const r = shape === "circle" ? w / 2 : Math.min(w, h) / 2;
@@ -71,7 +74,7 @@ export function padCopper(text: string, stack: string[]): LayerCopper[] {
           for (const c of n) if (Array.isArray(c)) visit(c);
         };
         visit(kid(pad, "primitives") ?? []);
-        add({ path: [{ x, y }], width: reach * 2 });
+        add({ path: [{ x, y }], width: reach * 2, inner: null });
       }
     }
   }
@@ -100,7 +103,7 @@ export function zoneCopper(text: string, fillsCurrent = false): LayerCopper[] {
         holes: kids(fill, "hole").map(hole => kids(kid(hole, "pts") ?? hole, "xy").map(n => object(point(n)))) };
       const exclusions = fillsCurrent ? [] : keepouts.filter(k => zoneLayers(k).includes(layer) || zoneLayers(k).includes("*.Cu"))
         .flatMap(k => kids(k, "polygon").map(p => ({ outline: kids(kid(p, "pts") ?? [], "xy").map(n => object(point(n))) })));
-      return subtractCopperKeepouts(polygon, exclusions).map(polygon => ({ net, layers: [layer], shape: { polygon } }));
+      return subtractCopperKeepouts(polygon, exclusions).map(polygon => ({ net, layers: [layer], shape: { polygon, ...(!fillsCurrent ? { inner: null } : {}) } }));
     }));
   });
 }

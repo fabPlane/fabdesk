@@ -3,9 +3,16 @@ import polygonClipping, { type Polygon } from "polygon-clipping";
  * Arcs are supplied as tessellated centrelines; stroke width supplies their copper extent.
  */
 export type ContactPoint = { x: number; y: number };
-export type ContactPolygon = { outline: ContactPoint[]; holes?: ContactPoint[][] };
-export type CopperShape = { path: ContactPoint[]; width: number } | { polygon: ContactPolygon; radius?: number };
-const GEOMETRY_EPSILON = 1e-9;
+export type ContactPolygon = { outline: ContactPoint[]; holes?: ContactPoint[][];
+  /** Outer-only growth for tessellated curved polygon boundaries. */
+  padding?: number;
+};
+export type CopperGeometry = { path: ContactPoint[]; width: number } | { polygon: ContactPolygon; radius?: number };
+/** Geometry is an outer bound. Omitted inner means exact; null means no known
+ * connected inner bound. An inner bound must itself be connected copper. */
+export type CopperShape = CopperGeometry & { inner?: CopperGeometry | null };
+// No positive epsilon here: growth belongs only to the outer contact query.
+const GEOMETRY_EPSILON = 0;
 
 export function contactDistance(a: ContactPoint, b: ContactPoint): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -109,20 +116,29 @@ function edges(p: ContactPolygon): Array<[ContactPoint, ContactPoint]> {
 export function copperShapesTouch<L>(a: CopperShape, aLayers: readonly L[], b: CopperShape, bLayers: readonly L[], layer: L, tolerance = 0): boolean {
   if (!aLayers.includes(layer) || !bLayers.includes(layer)) return false;
   if ("polygon" in a && "polygon" in b) {
-    const reach = (a.radius ?? 0) + (b.radius ?? 0) + tolerance;
+    const reach = (a.radius ?? 0) + (a.polygon.padding ?? 0) + (b.radius ?? 0) + (b.polygon.padding ?? 0) + tolerance;
     return a.polygon.outline.some(p => pointPolygonDistance(p, b.polygon) <= reach) ||
       b.polygon.outline.some(p => pointPolygonDistance(p, a.polygon) <= reach) ||
       edges(a.polygon).some(([p, q]) => edges(b.polygon).some(([r, s]) => segmentDistance(p, q, r, s) <= reach));
   }
   if ("polygon" in a) return copperShapesTouch(b, bLayers, a, aLayers, layer, tolerance);
   if ("polygon" in b) {
-    const reach = a.width / 2 + (b.radius ?? 0) + tolerance;
+    const reach = a.width / 2 + (b.radius ?? 0) + (b.polygon.padding ?? 0) + tolerance;
     return a.path.length === 1 ? pointPolygonDistance(a.path[0]!, b.polygon) <= reach :
       a.path.some((p, i) => i > 0 && segmentPolygonDistance(a.path[i - 1]!, p, b.polygon) <= reach);
   }
   const reach = (a.width + b.width) / 2 + tolerance;
   const segments = (path: ContactPoint[]): Array<[ContactPoint, ContactPoint]> => path.length === 1 ? [[path[0]!, path[0]!]] : path.slice(1).map((p, i) => [path[i]!, p]);
   return segments(a.path).some(([p, q]) => segments(b.path).some(([r, s]) => segmentDistance(p, q, r, s) <= reach));
+}
+
+/** Outer contacts retain copper; only inner contacts can prove an alternate path.
+ * Numerical/board tolerance expands mayTouch only, never surelyTouches. */
+export function copperContact<L>(a: CopperShape, aLayers: readonly L[], b: CopperShape, bLayers: readonly L[], layer: L, tolerance = 0): { mayTouch: boolean; surelyTouches: boolean } {
+  const mayTouch = copperShapesTouch(a, aLayers, b, bLayers, layer, tolerance);
+  const ai = a.inner === undefined ? ("polygon" in a && a.polygon.padding ? null : a) : a.inner;
+  const bi = b.inner === undefined ? ("polygon" in b && b.polygon.padding ? null : b) : b.inner;
+  return { mayTouch, surelyTouches: mayTouch && ai !== null && bi !== null && copperShapesTouch(ai, aLayers, bi, bLayers, layer) };
 }
 
 /** Boolean subtraction also handles keepouts crossing or enclosing an outline. */

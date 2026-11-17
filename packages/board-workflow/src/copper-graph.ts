@@ -1,5 +1,5 @@
 /** Shape-aware junction graph shared by both destructive copper cleanup paths. */
-import { copperShapesTouch, type CopperShape } from "./copper-contact";
+import { copperContact, type CopperShape } from "./copper-contact";
 
 export type CopperNode<L> = {
   id: string;
@@ -11,8 +11,9 @@ export type CopperNode<L> = {
 type Port<L> = { owner: string; copper: CopperNode<L>["copper"] };
 export type CopperGraph<L> = {
   nodes: Map<string, CopperNode<L>>;
-  /** Physical item contacts, retained separately for terminal-connectivity verification. */
+  /** Outer contacts for retention and candidate propagation. */
   edges: Map<string, Set<string>>;
+  sureEdges: Map<string, Set<string>>;
   ports: Port<L>[];
   contacts: Array<[number, number]>;
   ends: Map<string, number[]>;
@@ -25,10 +26,11 @@ const anchor = <L>(n: CopperNode<L>) => terminal(n) || n.kind === "support";
 export function buildCopperGraph<L>(allItems: CopperNode<L>[], tolerance = 0): CopperGraph<L> {
   const nodes = new Map(allItems.map(n => [n.id, n]));
   const edges = new Map(allItems.map(n => [n.id, new Set<string>()]));
+  const sureEdges = new Map(allItems.map(n => [n.id, new Set<string>()]));
   const items = allItems.filter(n => n.kind !== "support");
   const supports = allItems.filter(n => n.kind === "support");
-  const touches = (a: CopperNode<L>["copper"], b: CopperNode<L>["copper"]) => a.some(x => b.some(y =>
-    x.layers.some(layer => copperShapesTouch(x.shape, x.layers, y.shape, y.layers, layer, tolerance))));
+  const touches = (a: CopperNode<L>["copper"], b: CopperNode<L>["copper"], sure = false) => a.some(x => b.some(y =>
+    x.layers.some(layer => copperContact(x.shape, x.layers, y.shape, y.layers, layer, tolerance)[sure ? "surelyTouches" : "mayTouch"])));
   const ports: Port<L>[] = [], contacts: Array<[number, number]> = [], ends = new Map<string, number[]>();
   for (const n of items) {
     const part = n.copper[0];
@@ -47,6 +49,9 @@ export function buildCopperGraph<L>(allItems: CopperNode<L>[], tolerance = 0): C
     const a = items[i]!, b = items[j]!;
     if (a.net !== b.net || !touches(a.copper, b.copper)) continue;
     edges.get(a.id)!.add(b.id); edges.get(b.id)!.add(a.id);
+    if (touches(a.copper, b.copper, true)) {
+      sureEdges.get(a.id)!.add(b.id); sureEdges.get(b.id)!.add(a.id);
+    }
     // Interior/interior crossings have no endpoint region. Record their incidence
     // as an extra junction; both unsplit items continue through it.
     if (!incidence.some(ids => ids.has(a.id) && ids.has(b.id))) {
@@ -88,33 +93,33 @@ export function buildCopperGraph<L>(allItems: CopperNode<L>[], tolerance = 0): C
     coverage.set(n.id, samples.map(p => new Set(ports.flatMap((port, i) =>
       nodes.get(port.owner)!.net === n.net && touches([{ shape: { path: [p], width: 0 }, layers: part.layers }], port.copper) ? [i] : []))));
   }
-  return { nodes, edges, ports, contacts, ends, incidence, coverage };
+  return { nodes, edges, sureEdges, ports, contacts, ends, incidence, coverage };
 
 }
 
 /** Sequential removals are single-item batches. Rebuild junction unions after each
  * removal: a deleted end cap or via must not keep two surviving regions merged.
- * Independently verify connectivity using full copper, including cap-only bridges.
+ * Verify alternate connectivity using inner copper, including cap-only bridges.
  */
 export function pruneCopperLeaves<L>(graph: CopperGraph<L>, seeds?: Iterable<string>): Set<string> {
   const removed = new Set<string>(), candidates = new Set(seeds ?? graph.nodes.keys());
   const preservesTerminals = (id: string) => {
-    const neighbours = [...graph.edges.get(id)!].filter(n => !removed.has(n));
-    if (neighbours.length < 2) return true;
-    const connected = (omit: boolean) => {
-      const seen = new Set<string>(), groups: string[][] = [];
-      for (const start of neighbours) {
-        if (seen.has(start)) continue;
-        const queue = [start], terminals: string[] = []; seen.add(start);
-        for (const n of queue) {
-          if (terminal(graph.nodes.get(n)!)) terminals.push(n);
-          for (const next of graph.edges.get(n)!) if (!removed.has(next) && !(omit && next === id) && !seen.has(next)) { seen.add(next); queue.push(next); }
-        }
-        groups.push(terminals);
-      }
-      return groups.filter(g => g.length);
-    };
-    return connected(true).length <= connected(false).length;
+    // A degree-zero/one nonterminal cannot join two surviving items.
+    if ([...graph.edges.get(id)!].filter(n => !removed.has(n)).length < 2) return true;
+    // Collect every possibly connected terminal before deletion. Starting the
+    // after-walk at neighbours could silently lose terminals behind an unknown
+    // contact; start at a terminal and require all of them to remain reachable.
+    const before = new Set([id]), queue = [id], terminals: string[] = [];
+    for (const n of queue) {
+      if (terminal(graph.nodes.get(n)!)) terminals.push(n);
+      for (const next of graph.edges.get(n)!) if (!removed.has(next) && !before.has(next)) { before.add(next); queue.push(next); }
+    }
+    if (terminals.length < 2) return true;
+    const seen = new Set([terminals[0]!]), after = [terminals[0]!];
+    for (const n of after) for (const next of graph.sureEdges.get(n)!) {
+      if (next !== id && !removed.has(next) && !seen.has(next)) { seen.add(next); after.push(next); }
+    }
+    return terminals.every(n => seen.has(n));
   };
   let changed = true;
   while (changed) {
