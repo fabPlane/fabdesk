@@ -23,7 +23,7 @@ import { basename, join, resolve } from "node:path";
 import { REGISTRY } from "./checks";
 import { ReviewCtx, reviewHash, reviewHome, type ReviewEnv, type ReviewProject } from "./context";
 import { propose, coveringDecision } from "./proposals";
-import { loadCurrent, readDispositions, readIntent, reviewedPcb, runsDir, setLatest, writeDispositions } from "./store";
+import { loadCurrent, readDispositions, readIntent, reviewedPcb, runsDir, setLatest, writeDispositions, type Current } from "./store";
 import {
   STATES,
   findingId,
@@ -306,11 +306,10 @@ export interface StatusResult {
 }
 
 export async function reviewStatus(project: ReviewProject): Promise<StatusResult> {
-  const cur = await loadCurrent(project);
+  const { cur, ev } = await loadGateEvaluation(project);
   if (!cur.review) return { state: cur.state, run: cur.run, findings: 0, open: 0, errors: 0, mustFix: 0 };
-  const ev = evaluate(cur.review, await readDispositions(project.dir), await readIntent(project.dir));
-  const gate = await reviewGate(project);
-  return { state: cur.state, run: cur.run, findings: cur.review.findings.length, open: gate.open, errors: ev.errors.length, mustFix: ev.open.filter((r) => r.severity === "must-fix").length };
+  const gate = await gateFromEvaluation(project, cur, ev);
+  return { state: cur.state, run: cur.run, findings: ev.rows.length, open: gate.open, errors: ev.errors.length, mustFix: ev.open.filter((r) => r.severity === "must-fix").length };
 }
 
 export interface GateResult {
@@ -339,14 +338,26 @@ const notRunLine = (n: number) => `NOTE: ${n} owner check(s) not run (trustCusto
 const ownerLine = (r: Row) => `- NEEDS OWNER [${r.severity}] ${r.id}: ${r.proposal?.action ?? r.claim.slice(0, 160)}${r.proposal?.effect ? ` — ${r.proposal.effect}` : ""}`;
 
 export async function reviewGate(project: ReviewProject): Promise<GateResult> {
+  const { cur, ev } = await loadGateEvaluation(project);
+  return gateFromEvaluation(project, cur, ev);
+}
+
+/** Status and gate evaluate the same authoritative findings, including recovered legacy imports. */
+async function loadGateEvaluation(project: ReviewProject): Promise<{ cur: Current; ev: Evaluation }> {
   const cur = await loadCurrent(project);
+  // Legacy ordinary runs may omit an imported review; use the authoritative current import.
+  if (cur.state === "current" && cur.review) {
+    const independent = await readIndependentReview(project.dir);
+    if (independent?.hash === cur.review.hash && independent.pcb === reviewedPcb(project))
+      cur.review = { ...cur.review, findings: [...cur.review.findings.filter(f => f.check !== "expert"), ...independent.findings] };
+  }
+  const ev = cur.review ? evaluate(cur.review, await readDispositions(project.dir), await readIntent(project.dir)) : { rows: [], errors: [], open: [] };
+  return { cur, ev };
+}
+
+async function gateFromEvaluation(project: ReviewProject, cur: Current, ev: Evaluation): Promise<GateResult> {
   if (cur.state !== "current" || !cur.review)
     return { exit: GATE_STALE, state: cur.state === "no review" ? "none" : "stale", current: false, open: 0, mustFix: 0, errors: false, lines: [`REVIEW GATE: BLOCKED (${cur.state}). Run: board_review {"action": "run"}`] };
-  // Legacy ordinary runs may omit an imported review; use the authoritative current import.
-  const independent = await readIndependentReview(project.dir);
-  if (independent?.hash === cur.review.hash && independent.pcb === reviewedPcb(project))
-    cur.review = { ...cur.review, findings: [...cur.review.findings.filter(f => f.check !== "expert"), ...independent.findings] };
-  const ev = evaluate(cur.review, await readDispositions(project.dir), await readIntent(project.dir));
   const stages = await stageState(project.dir, project.pcb);
   const coverageMissing = !["current", "deferred"].includes(stages.independent.state);
   const coverageLine = `independent review ${stages.independent.state} (${stages.independent.changedSince.length} changes since). Import a current independent review, or record the owner's deferral.`;

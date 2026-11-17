@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { openReviewProject, runReview, importExpert, reviewGate, stageState, currentReviewHash, dispose, designHash } from "@fabdesk/board-workflow";
+import { openReviewProject, runReview, importExpert, reviewGate, reviewStatus, stageState, currentReviewHash, dispose, designHash } from "@fabdesk/board-workflow";
 import { fakeEnv, PCB } from "../../board-workflow/test/review-fixture";
 import { recordReviewGate, readReviewGate } from "../src/board-state";
 import { fabricationGate, packageWaivers } from "../src/fabrication-gate";
@@ -139,7 +139,13 @@ for (const [changed, problem] of [[false, true], [true, true], [true, false]]) t
   expect(migrated.findings.map((f: { claim: string }) => f.claim)).toEqual(problem ? ["Later unsafe clearance"] : []);
   // The live gate must consume recovered findings even before the next run carries them.
   const check = async () => {
-    expect((await reviewGate(p)).state).toBe(problem ? "open" : "pass");
+    const status = await reviewStatus(p);
+    const gate = await reviewGate(p);
+    expect(gate.state).toBe(problem ? "open" : "pass");
+    expect(status.findings).toBe(problem ? 1 : 0);
+    expect(status.open).toBe(gate.open);
+    expect(status.mustFix).toBe(gate.mustFix);
+    expect(status.mustFix).toBe(problem ? 1 : 0);
     if (problem) await expect(fabricationGate(p.dir, "export_gerbers")).rejects.toThrow("fabrication refused");
     else expect(await fabricationGate(p.dir, "export_gerbers")).toBeNull();
   };
