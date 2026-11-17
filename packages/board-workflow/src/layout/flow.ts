@@ -21,7 +21,8 @@ import { facing } from "./facing";
 import { pathExists } from "./fsx";
 import { placeKrt, type PlaceRecord } from "./place";
 import { boardPlan, globRe, applyAliases } from "./plan";
-import { loadPlan, routeKrt, routePipeline } from "./route";
+import { krtClaim, loadPlan, routeKrt, routePipeline, tmClaim, type RouterClaim } from "./route";
+import { viaInPadPolicy, viaInPadReport, type ViaInPadReport } from "../release/viaproc";
 import { cmpScore, copyDir, readRequirementsDir, scoreOf, type ScoreFigures } from "./score";
 import type { LayoutSpec } from "./spec";
 import { copperItems, footprintSpans } from "./text";
@@ -55,6 +56,8 @@ export interface RankedSeed {
   score: ScoreFigures | null;
   placed: string;
   kept: boolean;
+  /** What the router reported (its own model); `score.open` is the native count on the scored board. */
+  claim?: RouterClaim | null;
 }
 export interface FlowState {
   ws: string;
@@ -375,15 +378,16 @@ export async function stageRank(host: LayoutHost, st: FlowState, opts: RankOpts 
       await mkdir(out, { recursive: true });
       await writeFile(join(d, `s${s.seed}.log`), `${e.message}\n`);
     }
-    return { seed: s.seed, wall_s: round1((Date.now() - t0) / 1000), score: await scoreOf(join(out, "score")), placed: s.placed, kept: s.kept ?? false };
+    return { seed: s.seed, wall_s: round1((Date.now() - t0) / 1000), score: await scoreOf(join(out, "score")), placed: s.placed, kept: s.kept ?? false, claim: krtClaim(await readJsonOrNull(join(out, "krt.json"))) };
   };
+  lines.push(NATIVE_NOTE);
   const res: RankedSeed[] = [];
   const queue = [...pool];
   const workers = Array.from({ length: Math.max(1, opts.jobs ?? 4) }, async () => {
     for (let s = queue.shift(); s; s = queue.shift()) {
       const r = await one(s);
       res.push(r);
-      const line = `seed ${String(r.seed).padStart(2)}  ${String(Math.round(r.wall_s)).padStart(6)}s  ` + (r.score ? `open ${r.score.open}  A8 ${r.score.A8}  A7 ${r.score.A7}` : "no score (timeout or router failure)");
+      const line = `seed ${String(r.seed).padStart(2)}  ${String(Math.round(r.wall_s)).padStart(6)}s  ` + (r.score ? `open ${r.score.open}  A8 ${r.score.A8}  A7 ${r.score.A7}` : "no score (timeout or router failure)") + claimNote(r.claim);
       lines.push(line);
       host.log?.(line);
     }
@@ -407,7 +411,8 @@ export async function stageRoute(host: LayoutHost, st: FlowState): Promise<Stage
   const req = await readRequirementsDir(rel(sp, sp.requirements));
   const B = sp.budgets_min ?? {};
   const results: Record<string, ScoreFigures | string | number | null> = {};
-  const lines: string[] = [];
+  const claims: Record<string, RouterClaim | null> = {};
+  const lines: string[] = [NATIVE_NOTE];
 
   const krtFinish = async (src: string, name: string): Promise<ScoreFigures | null> => {
     const f1 = join(d, name);
@@ -419,11 +424,13 @@ export async function stageRoute(host: LayoutHost, st: FlowState): Promise<Stage
     await run(src, f1, sp.plans.finish, `route ${name}`);
     const s1 = await scoreOf(join(f1, "score"));
     results[name] = s1;
+    claims[name] = krtClaim(await readJsonOrNull(join(f1, "krt.json")));
     if (!s1) return null;
     const f2 = join(d, `${name}-g`);
     await rm(f2, { recursive: true, force: true });
     await run(join(f1, "score"), f2, sp.plans.finish_fine, `route ${name}-g`);
     results[`${name}-g`] = await scoreOf(join(f2, "score"));
+    claims[`${name}-g`] = krtClaim(await readJsonOrNull(join(f2, "krt.json")));
     return (results[`${name}-g`] as ScoreFigures | null) ?? s1;
   };
 
@@ -451,24 +458,45 @@ export async function stageRoute(host: LayoutHost, st: FlowState): Promise<Stage
       });
     });
     results["tm"] = await scoreOf(join(tm, "score"));
+    claims["tm"] = tmClaim(await readJsonOrNull(join(tm, "pipeline.json")));
     return results["tm"] ? krtFinish(join(tm, "score"), "tm-f") : null;
   };
 
   // Hedge: a KRT finish of the rank route runs beside the TraceMaker branch; the better result is kept.
   await Promise.all([tmBranch(), krtFinish(best.score.dir, "rank-f")]);
+  // Via-in-pad policy on every routed result, against the placed board it started from: a result that adds vias in solder
+  // pads the requirements do not allow is reported and left out (adoption would refuse it).
+  const policy = viaInPadPolicy(req.acceptance.manufacturing_rules.via_in_pad);
+  const placedText = await readFile(boardFile(best.placed, st), "utf8").catch(() => null);
+  const viaInPad: Record<string, ViaInPadReport> = {};
   for (const [k, v] of Object.entries(results)) {
-    if (v && typeof v === "object") lines.push(`${k.padEnd(10)} open ${v.open}  A8 ${v.A8}  A7 ${v.A7}  drc ${JSON.stringify(v.drc)}`);
+    if (!v || typeof v !== "object" || placedText === null) continue;
+    const routed = await readFile(join(v.dir, `${sp.stem}.kicad_pcb`), "utf8").catch(() => null);
+    const r = routed === null ? null : viaInPadReport(placedText, routed, policy);
+    if (r?.vias.length) viaInPad[k] = r;
+  }
+  for (const [k, v] of Object.entries(results)) {
+    if (v && typeof v === "object") lines.push(`${k.padEnd(10)} open ${v.open}  A8 ${v.A8}  A7 ${v.A7}  drc ${JSON.stringify(v.drc)}${claimNote(claims[k])}${viaInPad[k] ? `  [${viaInPad[k].vias.length} new via(s) in pads${policy.allowed ? "" : ", not allowed: left out"}]` : ""}`);
     else if (v !== null) lines.push(`${k.padEnd(10)} ${v}`);
   }
-  const cands = Object.values(results).filter((v): v is ScoreFigures => !!v && typeof v === "object");
-  if (!cands.length) return stageEnd(host, st, "route", "FAIL no routed result: see route/*/ logs", results, lines);
+  for (const [k, r] of Object.entries(viaInPad)) lines.push(`${k}: ${r.text}`);
+  const record = { ...results, claims, ...(Object.keys(viaInPad).length ? { via_in_pad: viaInPad } : {}) };
+  const routedResults = Object.entries(results).filter((e): e is [string, ScoreFigures] => !!e[1] && typeof e[1] === "object");
+  const cands = routedResults.filter(([k]) => policy.allowed || !viaInPad[k]).map(([, v]) => v);
+  if (!routedResults.length) return stageEnd(host, st, "route", "FAIL no routed result: see route/*/ logs", record, lines);
+  if (!cands.length)
+    return stageEnd(host, st, "route", "STOP every routed result adds vias in solder pads and manufacturing_rules.via_in_pad does not allow them: record a justified {allow:true,basis} in the board's acceptance, or change the route plans, then run route again", record, lines);
   const win = [...cands].sort(cmpScore)[0]!;
   st.best_board = win;
   const lim = sp.lastmile_max_open ?? 25;
   if (win.open! > lim)
-    return stageEnd(host, st, "route", `STOP best open ${win.open} > ${lim}: placement problem, not a last-mile job. Look at the board (${win.dir}), change groups or templates for the cluster, run place again with new seeds`, results, lines, join(win.dir, `${sp.stem}.kicad_pcb`));
-  return stageEnd(host, st, "route", `PASS route best open ${win.open} A8 ${win.A8} A7 ${win.A7} (${win.dir})`, results, lines, join(win.dir, `${sp.stem}.kicad_pcb`));
+    return stageEnd(host, st, "route", `STOP best open ${win.open} > ${lim}: placement problem, not a last-mile job. Look at the board (${win.dir}), change groups or templates for the cluster, run place again with new seeds`, record, lines, join(win.dir, `${sp.stem}.kicad_pcb`));
+  return stageEnd(host, st, "route", `PASS route best open ${win.open} A8 ${win.A8} A7 ${win.A7} (${win.dir})`, record, lines, join(win.dir, `${sp.stem}.kicad_pcb`));
 }
+
+/** How the stage lines read their figures: `open` is the saved board's native count, a router's own claim follows it. */
+const NATIVE_NOTE = "open = KiCad DRC unconnected items on the scored board (native, authoritative); a router's own claim follows in brackets";
+const claimNote = (c: RouterClaim | null | undefined) => (c ? `  [router: ${c.text}]` : "");
 
 // ---------------------------------------------------------------- status, next, finish, auto
 

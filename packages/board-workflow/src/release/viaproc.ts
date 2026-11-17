@@ -272,3 +272,69 @@ export function applyViaBindings(text: string, missing: ViaClass[]): string {
   }
   return t;
 }
+
+/** What `acceptance.manufacturing_rules.via_in_pad` decides: vias in solder pads only with `allow: true` and a basis. */
+export interface ViaInPadPolicy {
+  allowed: boolean;
+  /** The recorded basis, or what the default means when nothing is recorded. */
+  basis: string;
+}
+
+/** The policy from a `manufacturing_rules.via_in_pad` value (anything else, or nothing, means avoid via-in-pad). */
+export function viaInPadPolicy(value: unknown): ViaInPadPolicy {
+  const v = typeof value === "object" && value !== null ? (value as { allow?: unknown; basis?: unknown }) : {};
+  const basis = typeof v.basis === "string" ? v.basis.trim() : "";
+  return v.allow === true && basis
+    ? { allowed: true, basis }
+    : { allowed: false, basis: "default: avoid solder pads (manufacturing_rules.via_in_pad has no allow:true with a basis)" };
+}
+
+/**
+ * Vias of `after` in solder pads that `before` did not already have. A via in the same pads on the same net counts as
+ * the one that was already there: a reroute that rips and recreates it gives it a new uuid but adds nothing to the
+ * manufacturing process.
+ */
+export function newViasInPads(before: ViaClass[], after: ViaClass[]): ViaClass[] {
+  const identity = (v: ViaClass) => v.uuid ?? `${v.net}@${v.xy.join(",")}`;
+  const old = new Map(before.map((v) => [identity(v), v]));
+  const landsKey = (v: ViaClass) => `${v.net}|${v.in_component_lands.join(",")}`;
+  const left = new Map<string, number>();
+  for (const v of before) if (v.in_component_lands.length) left.set(landsKey(v), (left.get(landsKey(v)) ?? 0) + 1);
+  const inPad = after.filter((v) => v.in_component_lands.length);
+  const kept = new Set(inPad.filter((v) => old.get(identity(v))?.in_component_lands.length));
+  for (const v of kept) left.set(landsKey(v), Math.max(0, (left.get(landsKey(v)) ?? 0) - 1));
+  return inPad.filter((v) => {
+    if (kept.has(v)) return false;
+    const n = left.get(landsKey(v)) ?? 0;
+    if (n > 0) {
+      left.set(landsKey(v), n - 1);
+      return false;
+    }
+    return true;
+  });
+}
+
+/** A router run's via-in-pad result: the policy, the new vias in pads, and one line for the agent. */
+export interface ViaInPadReport {
+  allowed: boolean;
+  basis: string;
+  vias: Array<{ net: string; x: number; y: number; lands: string[] }>;
+  text: string;
+}
+
+/** Classify both boards and report the vias the routed board adds in solder pads, against the policy. */
+export function viaInPadReport(beforeText: string, afterText: string, policy: ViaInPadPolicy): ViaInPadReport {
+  const fresh = newViasInPads(classifyVias(beforeText), classifyVias(afterText));
+  const vias = fresh.map((v) => ({ net: v.net, x: v.xy[0], y: v.xy[1], lands: v.in_component_lands }));
+  const list =
+    vias
+      .slice(0, 6)
+      .map((v) => `${v.net || "(no net)"} at (${v.x}, ${v.y}) in ${v.lands.join(", ")}`)
+      .join("; ") + (vias.length > 6 ? `; ... ${vias.length - 6} more` : "");
+  const text = !vias.length
+    ? "Via-in-pad: no new vias in solder pads."
+    : policy.allowed
+      ? `Via-in-pad: ${vias.length} new via(s) in solder pads, allowed by manufacturing_rules.via_in_pad (${policy.basis}); they need fill and cap: ${list}.`
+      : `Via-in-pad: ${vias.length} new via(s) in solder pads, not allowed (${policy.basis}): ${list}. Move them out of the pads, or record a justified manufacturing_rules.via_in_pad {allow:true,basis} first.`;
+  return { allowed: policy.allowed, basis: policy.basis, vias, text };
+}

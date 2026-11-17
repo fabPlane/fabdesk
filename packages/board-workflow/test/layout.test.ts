@@ -21,7 +21,9 @@ import {
   parseSeeds,
   prepareLayout,
   pyReEscape,
+  readRequirementsDir,
   replaceCopper,
+  routePipeline,
   runAuto,
   setPose,
   sesImport,
@@ -227,7 +229,7 @@ describe("groups and keep-outs", () => {
 type Calls = { admits: Array<{ kind: ResourceKind; label: string }>; spawns: string[][] };
 
 /** Fake KRT/TraceMaker/KiCad: the stage logic runs for real, the engines write plausible files. */
-function fakeHost(krt: string, opts: { tm?: boolean; courtyard?: (board: string) => Record<string, number>; open?: (board: string) => number; calls?: Calls } = {}): LayoutHost {
+function fakeHost(krt: string, opts: { tm?: boolean; courtyard?: (board: string) => Record<string, number>; open?: (board: string) => number; calls?: Calls; tmCopper?: string } = {}): LayoutHost {
   const calls = opts.calls ?? { admits: [], spawns: [] };
   const openOf = opts.open ?? ((b) => ({ s0: 9, s1: 5, s2: 7, s3: 12 })[/s(\d)\//.exec(b)?.[0].slice(0, 2) ?? ""] ?? 20);
   return {
@@ -256,9 +258,10 @@ function fakeHost(krt: string, opts: { tm?: boolean; courtyard?: (board: string)
         const t = await Bun.file(cur).text();
         await Bun.write(nxt, t.replace(/\)\s*$/, `\n\t(segment (start 1 1) (end 2 ${script.length}) (width 0.15) (layer "F.Cu") (net "SIG") (uuid "r${Math.random()}"))\n)`));
       } else if (cmd[0]!.endsWith("/tracemaker")) {
-        if (cmd[1] === "session") {
+        if (cmd.includes("--help")) log = "  --via-in-pad\n  --keep-vias-off-pads\n  --vias-off-pads-below FLOAT\n";
+        else if (cmd[1] === "session") {
           const out = cmd[cmd.indexOf("--out") + 1]!;
-          await Bun.write(out, (await Bun.file(cmd[2]!).text()).replace(/\)\s*$/, `\n\t(segment (start 3 3) (end 4 4) (width 0.15) (layer "F.Cu") (net "USB_DP") (uuid "tm1"))\n)`));
+          await Bun.write(out, (await Bun.file(cmd[2]!).text()).replace(/\)\s*$/, `\n\t(segment (start 3 3) (end 4 4) (width 0.15) (layer "F.Cu") (net "USB_DP") (uuid "tm1"))${opts.tmCopper ?? ""}\n)`));
           await Bun.write(o.stdout!, [{ ok: true }, { routed: 2, open_after: 3 }, { ok: true }, { ok: true }].map((x) => JSON.stringify(x)).join("\n") + "\n");
         } else {
           await Bun.write(cmd[cmd.indexOf("-o") + 1]!, await Bun.file(cmd[2]!).text());
@@ -402,14 +405,65 @@ describe("layout flow", () => {
     expect(reqs.map((x) => x.tool)).toEqual(["board_info", "route", "check", "save"]);
     expect(reqs[1].args.nets).toEqual(["USB_DP", "USB_DN"]);
     // a board with no plane layers has no --no-tracks-on (TraceMaker rejects an empty layer list)
-    expect(calls.spawns.find((c) => c[1] === "route")).not.toContain("--no-tracks-on");
+    const tmCli = calls.spawns.find((c) => c[1] === "route" && c.includes("-o"))!;
+    expect(tmCli).not.toContain("--no-tracks-on");
     const krtCommands = calls.spawns.filter(c => c.some(arg => /route(?:_diff|_planes)?\.py$/.test(arg)));
     expect(krtCommands.length).toBeGreaterThan(0);
     for (const cmd of krtCommands) expect(cmd).toContain("--same-net-pad-clearance");
+    // via-in-pad not allowed (no decision recorded): TraceMaker keeps vias off every SMD pad, in the CLI and the session
+    expect(tmCli.join(" ")).toContain("--keep-vias-off-pads --vias-off-pads-below 1000");
+    expect(reqs[1].args.options).toMatchObject({ soft_zones: true, vias_off_pads: true });
+    const pipeline = JSON.parse(await readFile(join(st.ws, "route/tm/pipeline.json"), "utf8"));
+    expect(pipeline.via_in_pad_policy.allowed).toBe(false);
+    expect(pipeline.via_in_pad.vias).toEqual([]);
+    // native open counts headline the lines; the routers' own claims follow them
+    expect(route.lines[0]).toContain("native");
+    expect(route.lines.find((l) => l.startsWith("tm ") && l.includes("open 4"))).toContain("[router: TraceMaker claimed 4/5 routed]");
     // the finished flow hands the board to the last mile
     const flow = await loadFlow(st.ws);
     expect(flow.best_board?.open).toBe(3);
     expect(nextStep(flow).text).toContain("layout done");
+  });
+
+  test("route leaves out results that add vias in solder pads unless the acceptance allows via-in-pad", async () => {
+    const opens = (b: string) => (b.includes("tm-f") ? 3 : b.includes("/route/tm/") ? 4 : b.includes("/rank/") ? 5 : 6);
+    // TraceMaker drops a via into J2's pad 1 (USB_DP at 50,30); the KRT finish of the rank route adds none
+    const tmCopper = `\n\t(via (at 50 30) (size 0.5) (drill 0.3) (layers "F.Cu" "B.Cu") (net "USB_DP") (uuid "vip1"))`;
+    const avoid = await project();
+    const host = fakeHost(avoid.krt, { tm: true, open: opens, tmCopper });
+    await stageCheck(host, avoid.st);
+    await stagePlace(host, avoid.st, { seeds: "0-1" });
+    await stageRank(host, avoid.st, {});
+    const route = await stageRoute(host, avoid.st);
+    const res = route.result as Record<string, unknown> & { via_in_pad: Record<string, { vias: Array<{ lands: string[] }> }> };
+    expect(Object.keys(res.via_in_pad).sort()).toEqual(["tm", "tm-f", "tm-f-g"]);
+    expect(res.via_in_pad["tm"]!.vias[0]!.lands).toEqual(["J2.1"]);
+    expect(route.lines.join("\n")).toContain("1 new via(s) in pads, not allowed: left out");
+    expect(route.verdict).toStartWith("PASS route best open 6"); // rank-f: the TraceMaker branch's 3 open is not adoptable
+    expect(route.board).toContain("/route/rank-f");
+
+    const allow = await project();
+    const accPath = join(allow.st.spec.requirements, "acceptance.json");
+    const acc = JSON.parse(await readFile(accPath, "utf8"));
+    acc.manufacturing_rules.via_in_pad = { allow: true, basis: "filled and capped, quoted by the fab" };
+    await writeFile(accPath, JSON.stringify(acc));
+    const calls: Calls = { admits: [], spawns: [] };
+    const host2 = fakeHost(allow.krt, { tm: true, open: opens, tmCopper, calls });
+    await stageCheck(host2, allow.st);
+    await stagePlace(host2, allow.st, { seeds: "0-1" });
+    await stageRank(host2, allow.st, {});
+    const ok = await stageRoute(host2, allow.st);
+    expect(ok.verdict).toStartWith("PASS route best open 3");
+    expect(ok.lines.join("\n")).toContain("allowed by manufacturing_rules.via_in_pad (filled and capped, quoted by the fab)");
+    expect(calls.spawns.some((c) => c.includes("--keep-vias-off-pads") || c.includes("--help"))).toBe(false);
+  });
+
+  test("a TraceMaker plan cannot ask for via-in-pad the acceptance does not allow", async () => {
+    const { dir, krt, st } = await project();
+    const plan = join(dir, "tm-plan.json");
+    await writeFile(plan, JSON.stringify({ cli: { extra: ["--via-in-pad"] } }));
+    const req = await readRequirementsDir(st.spec.requirements);
+    await expect(routePipeline(fakeHost(krt, { tm: true }), { placed: join(st.ws, "base"), out: join(dir, "tm-out"), plan, stem: st.spec.stem, req })).rejects.toThrow("set the via-in-pad policy in acceptance.manufacturing_rules");
   });
 
   test("route STOPs when too many connections stay open, and skips TraceMaker when it is not installed", async () => {

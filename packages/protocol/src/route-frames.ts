@@ -133,6 +133,20 @@ export const RouteResult = z.object({
       }),
     )
     .optional(),
+  /**
+   * Vias the candidate adds in solder pads (drill meets SMD pad copper), against the board workflow's
+   * `manufacturing_rules.via_in_pad` policy. A candidate whose new vias the policy does not allow is held.
+   */
+  viaInPad: z
+    .object({
+      allowed: z.boolean(),
+      basis: z.string(),
+      vias: z.array(
+        z.object({ net: z.string(), x: z.number(), y: z.number(), lands: z.array(z.string()) }),
+      ),
+      text: z.string(),
+    })
+    .optional(),
   nextActions: z.array(z.string()).optional(),
   stats: z.object({
     vias: z.number().int(),

@@ -311,6 +311,45 @@ describe("bench", () => {
     expect(bench.statusLines()[0]).toContain("step 0 of 1");
   });
 
+  test("the gate rejects a candidate adding vias in solder pads the policy does not allow; router claims sit beside the native figures", async () => {
+    const pcb = (open: number, vias = "") => `(kicad_pcb (version 20250114) (comment "opens=${open}")
+	(footprint "Lib:R" (layer "F.Cu") (at 10 10 0) (property "Reference" "R1" (at 0 0))
+		(pad "1" smd rect (at -1 0) (size 0.8 0.8) (layers "F.Cu" "F.Paste") (net "N0"))
+		(pad "2" smd rect (at 1 0) (size 0.8 0.8) (layers "F.Cu" "F.Paste") (net "N1")))
+	${vias}
+)`;
+    const inPad = `(via (at 11 10) (size 0.5) (drill 0.3) (layers "F.Cu" "B.Cu") (net "N1") (uuid "v1"))`;
+    const clear = `(via (at 20 20) (size 0.5) (drill 0.3) (layers "F.Cu" "B.Cu") (net "N1") (uuid "v2"))`;
+    const boards: Record<string, string> = { "fill:freerouting": pcb(1, inPad), "fill:fab_router": pcb(2, clear) };
+    const eng: L.StepEngine = {
+      async run(step, input) {
+        const name = `fill:${step.router}`;
+        await mkdir(input.out, { recursive: true });
+        await writeFile(join(input.out, input.pcb), boards[name]!);
+        return { dir: input.out, info: { engine: step.router, claim: { router: step.router!, routed: 5, total: 5, failed: 0, text: `${step.router} claimed 5/5 routed` } } };
+      },
+    };
+    const run = async (viaInPad: { allowed: boolean; basis: string }) => {
+      const d = await mk();
+      await writeFile(join(d, "board.kicad_pcb"), pcb(3));
+      await writeFile(join(d, "board.kicad_pro"), "{}");
+      const { bench } = await L.Bench.create(join(await mk(), "ws"), d, "board.kicad_pcb", { scorer, engine: eng, availableGiB: async () => 30, viaInPad });
+      return bench.try(["fill:freerouting", "fill:fab_router"]);
+    };
+    const avoid = await run({ allowed: false, basis: "default" });
+    const byName = Object.fromEntries(avoid.candidates.map((c) => [c.name, c]));
+    expect(byName["fill:freerouting"]!.rejected).toEqual(["1 new via(s) in solder pads, not allowed by manufacturing_rules.via_in_pad"]);
+    expect(byName["fill:freerouting"]!.viaInPad?.vias[0]?.lands).toEqual(["R1.2"]);
+    expect(avoid.accepted).toBe("fill:fab_router"); // fewer open, but its via sits in R1.2
+    const text = avoid.lines.join("\n");
+    expect(text).toContain("1 new via(s) in pads: N1 in R1.2");
+    // the router said 5/5; the native score says 1 or 2 open: both shown, the native figures first
+    expect(text).toMatch(/open 2 .*router claimed: fab_router claimed 5\/5 routed \(the open count before it is native\)/);
+    const allowed = await run({ allowed: true, basis: "filled and capped" });
+    expect(allowed.accepted).toBe("fill:freerouting");
+    expect(allowed.lines.join("\n")).toContain("1 new via(s) in pads (allowed; need fill and cap)");
+  });
+
   test("accepting an earlier candidate re-runs the gate; prune deletes unused candidates", async () => {
     const src = await project(5);
     const ws = join(await mk(), "ws");

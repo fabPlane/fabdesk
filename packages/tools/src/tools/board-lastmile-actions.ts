@@ -11,7 +11,7 @@
  */
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { edit, lastmile as L, layout, locateProject, onboard, parseBoard, profile, readRequirements, type Requirements } from "@fabdesk/board-workflow";
+import { edit, lastmile as L, layout, locateProject, onboard, parseBoard, profile, readRequirements, release, type Requirements } from "@fabdesk/board-workflow";
 import { adoptCandidate, designFileHashes, type CanonicalAdoptionDrc } from "../board-adopt";
 import { jailPath, PROJECT_FILES } from "../fs";
 import { runTraceMaker } from "../routers";
@@ -34,21 +34,25 @@ async function requirementsFor(ctx: ToolContext, pcb?: string): Promise<Requirem
   return req;
 }
 
-/** The host's routers for `fill` steps (and `finish` when KiCadRoutingTools is missing), on `dir/board.kicad_pcb` in place. */
-function hostFill(ctx: ToolContext, host: layout.LayoutHost): L.FillFn {
+/**
+ * The host's routers for `fill` steps (and `finish` when KiCadRoutingTools is missing), on `dir/board.kicad_pcb` in place.
+ * TraceMaker keeps vias off SMD pads unless the requirements allow via-in-pad; fab_router and Freerouting run on the PCB
+ * bridge, which takes no via-in-pad option, so the bench's gate checks every candidate's vias against the policy.
+ */
+function hostFill(ctx: ToolContext, host: layout.LayoutHost, viaInPad: release.ViaInPadPolicy): L.FillFn {
   return async (router, dir, { signal, timeoutMs }) => {
     if (router === "tracemaker") {
       // installed on first use when it is missing (one TraceMaker install even when parallel candidates ask)
       const tm = await layout.engineReady(host, "tracemaker");
       const binary = tm.path;
       if (!binary) throw new Error(tm.why ?? "TraceMaker is not installed (board_engines install tracemaker, or TRACEMAKER_BIN)");
-      const s = await runTraceMaker({ binary, snapshotDir: dir, timeoutMs, signal });
+      const s = await runTraceMaker({ binary, snapshotDir: dir, timeoutMs, signal, keepViasOffPads: !viaInPad.allowed });
       await copyFile(join(dir, "tracemaker", "routed.kicad_pcb"), join(dir, PROJECT_FILES.boardPcb));
-      return { message: s.message };
+      return { message: s.message, ...(s.total ? { claim: { router, routed: s.routed, total: s.total, failed: s.total - s.routed, text: `TraceMaker claimed ${s.routed}/${s.total} routed` } } : {}) };
     }
     if (router !== "fab_router" && router !== "freerouting") throw new Error(`router ${router} is not available here (fab_router, freerouting, tracemaker)`);
     const s = await ctx.services.design.route(dir, { router, maxTimeMs: timeoutMs }, { signal });
-    return { message: s.message };
+    return { message: s.message, ...(s.total ? { claim: { router, routed: s.routed, total: s.total, failed: s.total - s.routed, text: `${router} claimed ${s.routed}/${s.total} routed` } } : {}) };
   };
 }
 
@@ -59,6 +63,7 @@ export async function openBench(ctx: ToolContext, ws: string, req: Requirements)
     return { violations: r.violations, unconnected: r.unconnected, parity: r.schematicParity.length };
   };
   const host = layoutHost(ctx, cli.path);
+  const viaInPad = release.viaInPadPolicy(req.acceptance.manufacturing_rules.via_in_pad);
   return {
     ws,
     host,
@@ -67,7 +72,9 @@ export async function openBench(ctx: ToolContext, ws: string, req: Requirements)
       return {
         scorer,
         // plan:FILE is project-relative, like every board_route path
-        engine: L.createStepEngine({ req, drc, scorer, layout: host, fill: hostFill(ctx, host), fallbackRouter: router, planRoot: ctx.requireProject().dir }),
+        engine: L.createStepEngine({ req, drc, scorer, layout: host, fill: hostFill(ctx, host, viaInPad), fallbackRouter: router, planRoot: ctx.requireProject().dir }),
+        // a candidate adding vias in solder pads the requirements do not allow is rejected before it can reach adoption
+        viaInPad,
         // what `@layers` routes on: a `~avoid` retry names only these
         routingLayers: layout.signalLayers(req.acceptance),
         signal: ctx.signal,

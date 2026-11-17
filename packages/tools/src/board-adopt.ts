@@ -29,6 +29,21 @@ const stamp = () => new Date().toISOString().replace(/[:.]/g, "-");
 /** Source revision plus the design and requirement files a candidate may carry. */
 export const designFileHashes = edit.designFileHashes;
 
+/** The project's board acceptance as stored (`{}` when the board workflow has not onboarded it). */
+export async function readAcceptanceRaw(projectDir: string): Promise<{ manufacturing_rules?: { via_in_pad?: unknown; filled_capped_vias?: unknown } }> {
+  try {
+    const value: unknown = JSON.parse(await readFile(join(projectDir, ".fabdesk/board/requirements/acceptance.json"), "utf8"));
+    return typeof value === "object" && value !== null ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The project's via-in-pad policy (avoid unless the acceptance records allow:true with a basis). */
+export async function projectViaInPadPolicy(projectDir: string): Promise<ReturnType<typeof release.viaInPadPolicy>> {
+  return release.viaInPadPolicy((await readAcceptanceRaw(projectDir)).manufacturing_rules?.via_in_pad);
+}
+
 /**
  * Where a stage recorded the project's design files when it computed the candidate: `origin.json`
  * (`{ project, files: {name: sha256} }`) beside or one folder above the candidate board. Absent = PCB only.
@@ -241,25 +256,13 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
   catch (error) { throw new ToolError(`Via manufacturing policy could not be verified: ${String(error)}. The canonical board was kept.`,"precondition"); }
   const identity = (v: typeof candidateVias[number]) => v.uuid ?? `${v.net}@${v.xy.join(",")}`;
   const old = new Map(previousVias.map(v => [identity(v), v]));
-  // A via in the same pads on the same net counts as the one that was already there: a reroute that rips and recreates
-  // it gives it a new uuid but adds nothing to the manufacturing process.
-  const landsKey = (v: typeof candidateVias[number]) => `${v.net}|${v.in_component_lands.join(",")}`;
-  const before = new Map<string, number>();
-  for (const v of previousVias) if (v.in_component_lands.length) before.set(landsKey(v), (before.get(landsKey(v)) ?? 0) + 1);
-  const inPad = candidateVias.filter(v => v.in_component_lands.length);
-  const kept = new Set(inPad.filter(v => old.get(identity(v))?.in_component_lands.length));
-  for (const v of kept) before.set(landsKey(v), Math.max(0, (before.get(landsKey(v)) ?? 0) - 1));
-  const newInPad = inPad.filter(v => {
-    if (kept.has(v)) return false;
-    const left = before.get(landsKey(v)) ?? 0;
-    if (left > 0) { before.set(landsKey(v), left - 1); return false; }
-    return true;
-  });
+  // a via in the same pads on the same net counts as the one that was already there (a reroute re-creates it)
+  const newInPad = release.newViasInPads(previousVias, candidateVias);
   const newProcess = candidateVias.filter(v =>
     v.native_filling && !old.get(identity(v))?.native_filling ||
     v.native_capping && !old.get(identity(v))?.native_capping);
-  const acceptance = JSON.parse(await readFile(join(project.dir, ".fabdesk/board/requirements/acceptance.json"), "utf8").catch(() => "{}"));
-  const allowed = (value: unknown) => typeof value === "object" && value !== null && (value as { allow?: boolean }).allow === true && typeof (value as { basis?: string }).basis === "string" && Boolean((value as { basis: string }).basis.trim());
+  const acceptance = await readAcceptanceRaw(project.dir);
+  const allowed = (value: unknown) => release.viaInPadPolicy(value).allowed;
   if (newInPad.length && !allowed(acceptance.manufacturing_rules?.via_in_pad))
     throw new ToolError(`Adoption refused: ${newInPad.length} new via(s) in solder pads. Move them out, or record a justified manufacturing_rules.via_in_pad {allow:true,basis} requirement before adoption.`, "precondition");
   if (newProcess.length && !allowed(acceptance.manufacturing_rules?.filled_capped_vias))

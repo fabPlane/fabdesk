@@ -23,7 +23,7 @@ import { parseBoard } from "../board";
 import type { Requirements } from "../requirements";
 import { engineReady, type LayoutHost } from "../layout/ctx";
 import type { KrtPlan } from "../layout/plan";
-import { routeKrt, type RouteKrtOptions } from "../layout/route";
+import { krtClaim, routeKrt, type RouteKrtOptions, type RouterClaim } from "../layout/route";
 import { hasPairStageOptions } from "../layout/krt-override";
 import { addNewCopper, changedCopperNets, convertTransforms, keepCopperOfNets, nameCopperNets, numericNetCopper, replaceCopper } from "../layout/text";
 import { FILL_ROUTERS, type Step } from "./actions";
@@ -38,7 +38,11 @@ import { readFloorplan, type Blocks } from "../layout/floorplan";
 import { fixedRegex } from "../layout/spec";
 
 /** Fill the opens of `dir/board.kicad_pcb` in place with `router` (the host's routers); the board file name is fixed. */
-export type FillFn = (router: string, dir: string, o: { signal: AbortSignal; timeoutMs: number }) => Promise<{ message?: string }>;
+export type FillFn = (
+  router: string,
+  dir: string,
+  o: { signal: AbortSignal; timeoutMs: number },
+) => Promise<{ message?: string; /** What the router reported routed (its own model; the bench scores the board natively). */ claim?: RouterClaim }>;
 
 export interface StepEngineHost {
   req: Requirements;
@@ -131,7 +135,8 @@ async function krtRoute(h: StepEngineHost, src: string, out: string, pcb: string
   if (numeric) throw new Error(`${numeric} copper items name their net by number after the merge`);
   await writeFile(join(out, pcb), merged.text);
   const stages = record.stages.map((s) => ({ name: s["name"], ...(s["skipped"] ? { skipped: s["skipped"] } : { exit: s["exit"], wall_s: s["wall_s"] }) }));
-  return { engine: "krt", wall_s: record.wall_s, stages, merge: merged.stats, ...(restricted ? { restricted } : {}), ...(record.avoided ? { avoided: record.avoided } : {}), ...(record.pair_options ? { pair_options: record.pair_options } : {}) };
+  const claim = krtClaim(record);
+  return { engine: "krt", wall_s: record.wall_s, stages, merge: merged.stats, ...(claim ? { claim } : {}), ...(restricted ? { restricted } : {}), ...(record.avoided ? { avoided: record.avoided } : {}), ...(record.pair_options ? { pair_options: record.pair_options } : {}) };
 }
 
 /**
@@ -161,7 +166,7 @@ async function fillRoute(h: StepEngineHost, router: string, src: string, out: st
   }
   await copyFile(join(scratch, "board.kicad_pcb"), join(out, pcb));
   await rm(scratch, { recursive: true, force: true });
-  return { engine: router, ...(s.message ? { message: s.message } : {}) };
+  return { engine: router, ...(s.message ? { message: s.message } : {}), ...(s.claim ? { claim: s.claim } : {}) };
 }
 
 /** `plan:FILE` resolved inside `root` (symlinks followed); refused by name when missing or outside it. */

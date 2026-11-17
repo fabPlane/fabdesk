@@ -16,6 +16,7 @@ import { applyAliases, avoidLayersInPlan, boardPlan, expandArgs, pairClasses, si
 import { applyNetclasses, copyDir, scoreRoute } from "./score";
 import { checkKrtOverrides, hasKrtOverrides, hasPairStageOptions, krtStageCommand, pairOptionsInPlan, KRT_OVERRIDE_FILE, KRT_OVERRIDE_SCRIPT, type PairOptionsRecord, type PairStageOptions } from "./krt-override";
 import { appendBeforeClose, convertTransforms } from "./text";
+import { viaInPadPolicy, viaInPadReport, type ViaInPadPolicy } from "../release/viaproc";
 
 /** A plan by reference: a JSON file, or `builtin:<role>`. */
 export async function loadPlan(ref: string): Promise<KrtPlan> {
@@ -151,8 +152,7 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
       break;
     }
     const ov = overrides[i]!;
-    const permission = acc.manufacturing_rules.via_in_pad;
-    const allowed = permission?.allow === true && typeof permission.basis === "string" && permission.basis.trim().length > 0;
+    const { allowed, basis } = viaInPadPolicy(acc.manufacturing_rules.via_in_pad);
     const viaClearance = allowed ? -1 : Math.max(0.15, acc.manufacturing_rules.adopted.min_clearance);
     const stageArgs = [...args, ...(plan.common ?? [])];
     if (["route", "route_diff", "route_planes"].includes(st.tool)) {
@@ -169,7 +169,7 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
       ...(host.onPid ? { onPid: host.onPid } : {}),
     });
     const logText = await readFile(log, "utf8").catch(() => "");
-    const rec = { name: st.name, tool: st.tool, viaInPadPolicy: { allowed, clearanceMm: viaClearance, basis: permission?.basis ?? "default: avoid solder pads" }, exit: r.code, wall_s: r.wallS, ...(hasKrtOverrides(ov) ? { krt_overrides: ov } : {}), ...routeSummaries(logText) };
+    const rec = { name: st.name, tool: st.tool, viaInPadPolicy: { allowed, clearanceMm: viaClearance, basis }, exit: r.code, wall_s: r.wallS, ...(hasKrtOverrides(ov) ? { krt_overrides: ov } : {}), ...routeSummaries(logText) };
     record.stages.push(rec);
     host.log?.(JSON.stringify({ name: rec.name, exit: rec.exit, wall_s: rec.wall_s }));
     const overrideError = /^KRT_OVERRIDE_ERROR: (.*)$/m.exec(logText);
@@ -274,8 +274,28 @@ export async function routePipeline(host: LayoutHost, o: RoutePipelineOptions): 
     for (const ext of ["kicad_pro", "kicad_dru"]) if (await pathExists(join(base, `${o.stem}.${ext}`))) await copyFile(join(base, `${o.stem}.${ext}`), join(dir, `${o.stem}.${ext}`));
   };
   await proj(tm);
-  const t0 = Date.now();
   const spawnOpts = { ...(host.signal ? { signal: host.signal } : {}), ...(host.onPid ? { onPid: host.onPid } : {}) };
+  // via-in-pad policy (acceptance.manufacturing_rules.via_in_pad): TraceMaker's own options keep vias off the pads, and
+  // a plan cannot ask for via-in-pad the requirements do not allow; the routed board is checked afterwards either way
+  const policy = viaInPadPolicy(acc.manufacturing_rules.via_in_pad);
+  if (!policy.allowed && (plan.cli?.extra ?? []).some((a) => a === "--via-in-pad"))
+    throw new FlowError("plan.cli.extra asks for --via-in-pad: set the via-in-pad policy in acceptance.manufacturing_rules (allow with a basis), not in router arguments");
+  if (!policy.allowed && plan.session?.some((st) => st.options?.["via_in_pad"] === true))
+    throw new FlowError("a session stage asks for via_in_pad: set the via-in-pad policy in acceptance.manufacturing_rules (allow with a basis), not in router options");
+  let keepOff = false;
+  if (!policy.allowed) {
+    await host.spawn([tmBin, "route", "--help"], { log: join(tm, "route-help.txt"), ...spawnOpts }).catch(() => null);
+    keepOff = tracemakerKeepsViasOffPads(await readFile(join(tm, "route-help.txt"), "utf8").catch(() => ""));
+  }
+  log["via_in_pad_policy"] = {
+    ...policy,
+    native: policy.allowed
+      ? "allowed: TraceMaker's defaults"
+      : keepOff
+        ? `${TM_KEEP_VIAS_OFF_PADS.join(" ")} (CLI); vias_off_pads (session: pads under 2 mm)`
+        : "this TraceMaker has no --keep-vias-off-pads: post-route check only",
+  };
+  const t0 = Date.now();
   let current = board;
   if (plan.session?.length) {
     host.signal?.throwIfAborted();
@@ -287,7 +307,7 @@ export async function routePipeline(host: LayoutHost, o: RoutePipelineOptions): 
         variants: st.variants ?? 8,
         verify: "report",
         hints: { version: 1, ...st.hints },
-        options: st.options ?? { soft_zones: true },
+        options: { ...(st.options ?? { soft_zones: true }), ...(keepOff ? { vias_off_pads: true } : {}) },
       };
       const lay = (args["hints"].layers ??= {});
       lay.no_tracks = [...new Set([...(lay.no_tracks ?? []), ...noTrack])].sort();
@@ -324,7 +344,7 @@ export async function routePipeline(host: LayoutHost, o: RoutePipelineOptions): 
     const r = join(tm, "cli");
     await mkdir(r, { recursive: true });
     await proj(r);
-    const cmd = [tmBin, "route", current, "-o", join(r, `${o.stem}.kicad_pcb`), "--soft-zones", ...(noTrack.length ? ["--no-tracks-on", noTrack.join(",")] : []), "--work", String(plan.cli.work ?? 50000000), "--threads", "8", ...(plan.cli.extra ?? [])];
+    const cmd = [tmBin, "route", current, "-o", join(r, `${o.stem}.kicad_pcb`), "--soft-zones", ...(noTrack.length ? ["--no-tracks-on", noTrack.join(",")] : []), "--work", String(plan.cli.work ?? 50000000), "--threads", "8", ...(keepOff ? TM_KEEP_VIAS_OFF_PADS : []), ...(plan.cli.extra ?? [])];
     const nn = plan.cli.no_neck ? tmNets(plan.cli.no_neck, acc) : [];
     if (nn.length) cmd.push("--no-neck-nets", nn.join(","));
     const t1 = Date.now();
@@ -338,6 +358,49 @@ export async function routePipeline(host: LayoutHost, o: RoutePipelineOptions): 
   if (!(await pathExists(current))) throw new FlowError("TraceMaker wrote no board");
   const score = await scoreRoute({ drc: host.scoreDrc }, o.req, o.stem, base, join(o.out, "score"), { kind: "tm", source: board, routed: current, replace: false });
   log["score"] = score;
+  log["via_in_pad"] = viaInPadReport(await readFile(join(base, `${o.stem}.kicad_pcb`), "utf8"), await readFile(join(o.out, "score", `${o.stem}.kicad_pcb`), "utf8"), policy);
   await writeFile(join(o.out, "pipeline.json"), JSON.stringify(log, null, 1) + "\n");
   return log;
+}
+
+/**
+ * TraceMaker's options that keep vias off SMD pads: `--keep-vias-off-pads` applies to pads narrower than
+ * `--vias-off-pads-below` (default 2 mm), so a width no pad reaches keeps vias off every SMD pad, as the policy means.
+ */
+export const TM_KEEP_VIAS_OFF_PADS: readonly string[] = ["--keep-vias-off-pads", "--vias-off-pads-below", "1000"];
+
+/** Whether a TraceMaker's `route --help` text offers the keep-off options (older builds do not; passing them would fail). */
+export const tracemakerKeepsViasOffPads = (help: string) => help.includes("--keep-vias-off-pads") && help.includes("--vias-off-pads-below");
+
+/** What a router said it routed, beside the saved board's native count (the workflow headlines the native one). */
+export interface RouterClaim {
+  router: string;
+  /** Connections (TraceMaker) or nets (KRT) the router reported routed / failed, in its own model. */
+  routed?: number;
+  failed?: number;
+  total?: number;
+  text: string;
+}
+
+/** KRT's claim: the last stage that printed its compact tally (`JSON_SUMMARY_MIN`: successful / failed nets). */
+export function krtClaim(rec: { stages?: Array<Record<string, unknown>> } | null): RouterClaim | null {
+  for (const st of [...(rec?.stages ?? [])].reverse()) {
+    const m = st["JSON_SUMMARY_MIN"] as { successful?: unknown; failed?: unknown } | undefined;
+    if (!m || typeof m.successful !== "number" || typeof m.failed !== "number") continue;
+    return { router: "krt", routed: m.successful, failed: m.failed, text: `KRT claimed ${m.successful} routed, ${m.failed} failed (stage ${String(st["name"])})` };
+  }
+  return null;
+}
+
+/** TraceMaker's claim: the CLI's `routed N/M connections` line, else the last session stage's `open_after`. */
+export function tmClaim(log: { stages?: Array<Record<string, unknown>> } | null): RouterClaim | null {
+  const stages = log?.stages ?? [];
+  const cli = stages.find((s) => s["stage"] === "cli");
+  const m = typeof cli?.["summary"] === "string" ? /routed (\d+)\/(\d+)/.exec(cli["summary"]) : null;
+  if (m) {
+    const [routed, total] = [Number(m[1]), Number(m[2])];
+    return { router: "tracemaker", routed, total, failed: total - routed, text: `TraceMaker claimed ${routed}/${total} routed` };
+  }
+  const last = [...stages].reverse().find((s) => typeof s["open_after"] === "number");
+  return last ? { router: "tracemaker", failed: last["open_after"] as number, text: `TraceMaker claimed ${String(last["open_after"])} open after session stage ${String(last["stage"])}` } : null;
 }

@@ -13,6 +13,23 @@ until you pick a router in Settings, pin `fabdesk.json`, or pass `route_run.rout
 | `tracemaker` | Weekly TensorFleet binary (source tarball fallback) | Best whole-board routing and dense pads |
 | `krt` | Pinned upstream release + a private Python venv (see below) | Engine, not a `route_run` router: the board workflow's placer and KRT router |
 
+## Via-in-pad policy
+
+Vias whose drill meets SMD pad copper (`classifyVias` in `@fabdesk/board-workflow`'s `release/viaproc.ts`) are avoided
+unless the board's `acceptance.manufacturing_rules.via_in_pad` records `{allow: true, basis}` (a project without board
+requirements avoids them too). Per router:
+
+| Router | How the policy is applied |
+|---|---|
+| KRT | `--same-net-pad-clearance` on every route stage (native) |
+| TraceMaker | `--keep-vias-off-pads --vias-off-pads-below 1000` on `route` and `vias_off_pads` on session stages (native; session stages cover pads under 2 mm), used when `route --help` offers them; a plan asking for `--via-in-pad` / `via_in_pad` is refused |
+| Freerouting, fab_router | none: the PCB bridge writes the DSN and takes no such option (a native one needs a fab_pcb change), so the routed board is checked |
+
+Every routed board is then checked against the board it started from (`viaInPadReport`): `route_run` reports the new vias
+in pads in `result.viaInPad` and holds a candidate the policy does not allow (`route_apply` refuses it until the policy is
+recorded); the last-mile gate rejects such a candidate; the layout route stage leaves such a result out; adoption still
+refuses them as the last line.
+
 ## KiCadRoutingTools (engine)
 
 [KiCadRoutingTools](https://github.com/drandyhaas/KiCadRoutingTools) (KRT, **MIT**, Python + a Rust core) is what

@@ -8,7 +8,7 @@ export * from "./score";
 export * from "./ses";
 export * from "./facing";
 export { parseSeeds, nativeCourtyard, placeKrt, type PlaceRecord, type SeedRecord } from "./place";
-export { loadPlan, prepareRouteBase, routeKrt, routePipeline, type RouteKrtOptions, type RouteKrtRecord } from "./route";
+export { krtClaim, loadPlan, prepareRouteBase, routeKrt, routePipeline, tmClaim, tracemakerKeepsViasOffPads, TM_KEEP_VIAS_OFF_PADS, type RouteKrtOptions, type RouteKrtRecord, type RouterClaim } from "./route";
 export * from "./krt-override";
 export * from "./flow";
 export * from "./courtyards";

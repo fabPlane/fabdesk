@@ -33,6 +33,8 @@ import {
   type PairDefinition,
 } from "../routing-quality";
 import { installHintFor, runTraceMaker } from "../routers";
+import { release } from "@fabdesk/board-workflow";
+import { projectViaInPadPolicy } from "../board-adopt";
 import { inspectOwnedProjectFile } from "../assembly";
 import { expectedPcbSource } from "../pcb-output";
 import { preferCandidate, type CandidateScore } from "../routing-choice";
@@ -472,6 +474,12 @@ async function applyCandidate(
       `quality warning requires allowQualityRegression: ${blocked.map((w) => w.text).join("; ")}`,
       "precondition",
     );
+  // new vias in solder pads need the requirements' decision, read now (it may have been recorded since the run)
+  if (rec.result?.viaInPad?.vias.length && !(await projectViaInPadPolicy(project.dir)).allowed)
+    throw new ToolError(
+      `Candidate adds ${rec.result.viaInPad.vias.length} via(s) in solder pads (${rec.result.viaInPad.vias.slice(0, 4).map((v) => `${v.net} in ${v.lands.join(",")}`).join("; ")}) and manufacturing_rules.via_in_pad does not allow them: move them out, or record a justified {allow:true,basis} before applying it.`,
+      "precondition",
+    );
   const boardPath = p(project, PROJECT_FILES.boardPcb);
   const before = await readFile(boardPath);
   const current = sha256(before);
@@ -613,6 +621,8 @@ async function executeRoute(
   const runDir = p(project, initial.artifacts.runDir);
   const framesPath = p(project, initial.artifacts.frames);
   const started = Date.now();
+  // the board workflow's via-in-pad decision (avoid unless the acceptance records allow:true with a basis)
+  const viaPolicy = await projectViaInPadPolicy(project.dir);
   let rec: RouteRunRecord = {
     ...initial,
     state: "running",
@@ -870,6 +880,7 @@ async function executeRoute(
             snapshotDir,
             timeoutMs: args.timeoutMs,
             signal,
+            keepViasOffPads: !viaPolicy.allowed,
             onProgress: (value) => {
               frames.onProgress(value);
             },
@@ -1182,6 +1193,20 @@ async function executeRoute(
       ),
     ].slice(0, 20);
     const candidateBoard = await readCopper(snapshotDir);
+    // Via-in-pad policy for every router: KRT is not a route_run router; TraceMaker keeps vias off pads itself; fab_router
+    // and Freerouting run on the PCB bridge, which has no such option. New vias in solder pads are reported, and a
+    // candidate the policy does not allow is held (route_apply refuses it until the policy allows them).
+    let viaInPad: RouteResult["viaInPad"];
+    try {
+      viaInPad = release.viaInPadReport(
+        await readFile(join(runDir, "starting.kicad_pcb"), "utf8"),
+        await readFile(join(snapshotDir, PROJECT_FILES.boardPcb), "utf8"),
+        viaPolicy,
+      );
+    } catch (error) {
+      rec.progress.diagnostics.push(`Via-in-pad check failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    const viaHeld = !!viaInPad && viaInPad.vias.length > 0 && !viaInPad.allowed;
     const touchedNets = [
       ...new Set([
         ...endpoints.map((row) => String(row["net"] ?? "")),
@@ -1288,8 +1313,10 @@ async function executeRoute(
       obstacles,
       changedGeometry: namedGeometry,
       ...(outsideScopeChanges.length ? { outsideScopeChanges } : {}),
-      nextActions:
-        resultState === "complete"
+      ...(viaInPad ? { viaInPad } : {}),
+      nextActions: viaHeld
+        ? ["move the new vias out of the solder pads (route_unroute the nets, route again), or record a justified manufacturing_rules.via_in_pad {allow:true,basis} and route_apply"]
+        : resultState === "complete"
           ? []
           : summary.diagnostics
             ? ["try Freerouting for these nets", "check remaining native opens"]
@@ -1444,7 +1471,7 @@ async function executeRoute(
           ? "rejected"
           : !usableCandidate
             ? "not_available"
-            : args.applyPolicy === "manual" || heldWarnings.length > 0
+            : args.applyPolicy === "manual" || heldWarnings.length > 0 || viaHeld
               ? "manual"
               : "pending",
         reason: forbidden.length
@@ -1452,13 +1479,16 @@ async function executeRoute(
           : !usableCandidate
             ? summary.message ||
               "no usable route progress; inspect the run diagnostics and remaining endpoints"
-            : heldWarnings.length
-              ? `Candidate held: ${heldWarnings.map((w) => w.text).join("; ")}. Set allowQualityRegression to explicitly allow these costs.`
+            : viaHeld || heldWarnings.length
+              ? [
+                  viaHeld ? `Candidate held: ${viaInPad!.text}` : "",
+                  heldWarnings.length ? `Candidate held: ${heldWarnings.map((w) => w.text).join("; ")}. Set allowQualityRegression to explicitly allow these costs.` : "",
+                ].filter(Boolean).join(" ")
               : null,
       },
     };
     const willApply =
-      !forbidden.length && !heldWarnings.length && usableCandidate && args.applyPolicy === "auto";
+      !forbidden.length && !heldWarnings.length && !viaHeld && usableCandidate && args.applyPolicy === "auto";
     // A terminal run must include the final application outcome, not an in-flight replace.
     if (willApply) rec = { ...rec, state: "running", status: "running" };
     await persistProgress(ctx, rec, runDir);
@@ -1597,7 +1627,7 @@ async function routeStatusOutput(
       : "Saved-board native connectivity is unverified or stale; router-reported completion is not a saved-board connectivity check."
     : "Canonical connectivity has not been verified for this candidate; it has not been applied.";
   return ok(
-    `${connectivity}\nRun ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.application.reason ? ` ${rec.application.reason}` : ""}${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${rec.result?.diagnostics ? `\n${rec.result.diagnostics.text}` : rec.error ? `\n${rec.error}` : ""}${rec.result?.endpointCollisions ? `\n${rec.result.endpointCollisions.text}` : ""}${outsideScopeText(rec.result?.outsideScopeChanges)}${rec.result?.quality ? `\n${rec.result.quality.text}` : "\nQuality pending; no candidate applied."}`,
+    `${connectivity}\nRun ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.application.reason ? ` ${rec.application.reason}` : ""}${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${rec.result?.diagnostics ? `\n${rec.result.diagnostics.text}` : rec.error ? `\n${rec.error}` : ""}${rec.result?.endpointCollisions ? `\n${rec.result.endpointCollisions.text}` : ""}${outsideScopeText(rec.result?.outsideScopeChanges)}${rec.result?.viaInPad?.vias.length ? `\n${rec.result.viaInPad.text}` : ""}${rec.result?.quality ? `\n${rec.result.quality.text}` : "\nQuality pending; no candidate applied."}`,
     { run, connectivity: { native: nativeCurrent ? native : null, routerReported: { routed: rec.progress.routed, total: rec.progress.total, remaining: rec.progress.remaining } } },
   );
 }

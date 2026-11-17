@@ -17,6 +17,8 @@ import { changedCopperNets, copperItems, newCopperItems } from "../layout/text";
 import { AVOID_LAYER_COST } from "../layout/plan";
 import { avoidLayersFor, boardPours, pourSplits, splitLine, trackLengthByLayer, tracksOf, type Pour, type PourSplit, type Track } from "./pours";
 import { revertNets } from "../edit/diff";
+import { viaInPadReport, type ViaInPadPolicy, type ViaInPadReport } from "../release/viaproc";
+import type { RouterClaim } from "../layout/route";
 
 export interface Scored {
   figures: Figures;
@@ -78,6 +80,11 @@ export interface BenchDeps {
    * retry names only those (without it, every copper layer that qualifies, plane layers included, where it is a no-op).
    */
   routingLayers?: readonly string[];
+  /**
+   * The requirements' via-in-pad policy (`manufacturing_rules.via_in_pad`): a candidate that adds vias in solder pads it
+   * does not allow is rejected by the gate (adoption would refuse it). Absent: vias in pads are not checked.
+   */
+  viaInPad?: ViaInPadPolicy;
 }
 
 export interface HistoryEntry {
@@ -108,6 +115,8 @@ export interface CandidateRecord {
   pourSplits?: PourSplit[];
   /** For a `~avoid` record: the candidate it retries, with these layers kept out of reach of its KRT plans. */
   avoidFrom?: { name: string; layers: string[] };
+  /** New vias in solder pads against the start board (set by `try` when the bench has a via-in-pad policy). */
+  viaInPad?: ViaInPadReport;
   wall_s: number;
   figures?: Figures;
   rejected: string[];
@@ -175,6 +184,12 @@ const memAvailableGiB = async (): Promise<number> => (await hostMemory()).availa
 const slug = (s: string) => s.replace(/[^\w.+-]+/g, "_");
 /** Stack order of a copper layer name: F.Cu, In1.Cu ... InN.Cu, B.Cu. */
 const layerRank = (l: string) => (l === "F.Cu" ? 0 : l === "B.Cu" ? 1e6 : Number(/^In(\d+)\.Cu$/.exec(l)?.[1] ?? 5e5));
+
+/** The routers' own claims in a candidate's steps; the figures beside them are the native score of the whole board. */
+export function claimsOf(r: Pick<CandidateRecord, "steps">): string {
+  const cs = r.steps.map((s) => s["claim"] as RouterClaim | undefined).filter((c): c is RouterClaim => typeof c?.text === "string");
+  return cs.length ? `router claimed: ${cs.map((c) => c.text).join(", ")} (the open count before it is native)` : "";
+}
 
 /**
  * One folder name per candidate of a try: actions that slug alike (`finish` twice, two regexes) or differ only in case
@@ -453,6 +468,17 @@ export class Bench {
     }
     this.say(`from  ${figureLine(f0)}`, lines);
     for (const r of recs) r.rejected = r.error ? [r.error.slice(-160).replaceAll("\n", " ")] : gate(r.figures!, f0, slack);
+    // via-in-pad policy on every candidate's whole board (any router: KRT honours it natively, a fill router may not)
+    const viaPolicy = this.deps.viaInPad;
+    if (viaPolicy && startText)
+      for (const r of recs) {
+        if (!r.dir || r.error) continue;
+        const text = await readFile(join(r.dir, this.st.pcb), "utf8").catch(() => null);
+        const rep = text === null ? null : viaInPadReport(startText, text, viaPolicy);
+        if (!rep?.vias.length) continue;
+        r.viaInPad = rep;
+        if (!rep.allowed) r.rejected.push(`${rep.vias.length} new via(s) in solder pads, not allowed by manufacturing_rules.via_in_pad`);
+      }
     // fabdesk: among passing candidates, one that split a pour ranks after every one that split none (the toolkit's key
     // alone took open 40 -> 1 with a power pad newly islanded over a retry that kept every pour whole); it is still
     // accepted when it is the only one that passes, as the toolkit's gate would
@@ -474,7 +500,10 @@ export class Bench {
         : r.otherNetsChanged.length
         ? `also changed ${r.otherNetsChanged.length} other net(s): ${r.otherNetsChanged.slice(0, 6).join(", ")}${r.otherNetsChanged.length > 6 ? ", ..." : ""}`
         : "";
-      const delta = [closed.length ? `closed ${closed.join(", ")}` : "", fresh.length ? `NEW open ${fresh.join(", ")}` : "", splitLine(r.pourSplits ?? []), others].filter(Boolean).join("; ");
+      const vip = r.viaInPad?.vias.length
+        ? `${r.viaInPad.vias.length} new via(s) in pads${r.viaInPad.allowed ? " (allowed; need fill and cap)" : ""}: ${r.viaInPad.vias.slice(0, 4).map((v) => `${v.net} in ${v.lands.join(",")}`).join(", ")}${r.viaInPad.vias.length > 4 ? ", ..." : ""}`
+        : "";
+      const delta = [closed.length ? `closed ${closed.join(", ")}` : "", fresh.length ? `NEW open ${fresh.join(", ")}` : "", splitLine(r.pourSplits ?? []), vip, claimsOf(r), others].filter(Boolean).join("; ");
       const verdict = ok[0] === r && !o.noAccept ? "ACCEPT" : r.rejected.length ? r.rejected.join("; ") : splitRank(r) && ok.some((x) => !splitRank(x)) ? "passes gate (ranked after those that split no pour)" : "passes gate";
       this.say(`  ${r.name.padEnd(28)} ${r.wall_s.toFixed(0).padStart(5)}s  ${figureLine(r.figures)}  -> ${verdict}${delta ? `  [${delta}]` : ""}`, lines);
     }
@@ -482,7 +511,7 @@ export class Bench {
       try: this.st.tries,
       from: this.st.pointer,
       wall_s: Math.round((Date.now() - t0) / 100) / 10,
-      results: recs.map((r) => ({ name: r.name, wall_s: r.wall_s, ...(r.figures ? { figures: r.figures } : {}), rejected: r.rejected, ...(r.dir ? { dir: r.dir } : {}), ...(r.otherNetsChanged ? { other_nets_changed: r.otherNetsChanged } : {}), ...(r.pourSplits?.length ? { pour_splits: r.pourSplits } : {}), ...(r.avoidFrom ? { avoid_from: r.avoidFrom } : {}) })),
+      results: recs.map((r) => ({ name: r.name, wall_s: r.wall_s, ...(r.figures ? { figures: r.figures } : {}), rejected: r.rejected, ...(r.dir ? { dir: r.dir } : {}), ...(r.otherNetsChanged ? { other_nets_changed: r.otherNetsChanged } : {}), ...(r.pourSplits?.length ? { pour_splits: r.pourSplits } : {}), ...(r.avoidFrom ? { avoid_from: r.avoidFrom } : {}), ...(r.viaInPad ? { via_in_pad: r.viaInPad } : {}), ...(claimsOf(r) ? { router_claims: claimsOf(r) } : {}) })),
     });
     const best = ok[0];
     if (best && !o.noAccept) {
