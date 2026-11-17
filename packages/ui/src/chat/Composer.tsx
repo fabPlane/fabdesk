@@ -30,6 +30,7 @@ import { finishItActive } from "./finish-it-view";
 export const composerHandlers: {
   send: (() => void) | null;
   canSend: (() => boolean) | null;
+  canSelectAgent: (() => boolean) | null;
   abort: (() => void) | null;
   finishIt: (() => void) | null;
   /**
@@ -41,6 +42,7 @@ export const composerHandlers: {
 } = {
   send: null,
   canSend: null,
+  canSelectAgent: null,
   abort: null,
   finishIt: null,
   setAgent: null,
@@ -321,6 +323,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
   useEffect(() => {
     composerHandlers.send = () => void send();
     composerHandlers.canSend = () => !!draft.trim() && !sending && !saveEffort.isPending && !loadingThread && !!settings.data && !savePreference.isPending && !savingEffort.current && !!(thread || projectId || startMode);
+    composerHandlers.canSelectAgent = () => !!settings.data && !loadingThread && !savePreference.isPending && !savingEffort.current && !run && queued.length === 0;
     composerHandlers.abort = run ? () => void stop() : null;
     composerHandlers.voiceToggle = () => voice.toggle();
     composerHandlers.finishIt = () => void beginFinishIt();
@@ -335,6 +338,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
     return () => {
       composerHandlers.send = null;
       composerHandlers.canSend = null;
+      composerHandlers.canSelectAgent = null;
       composerHandlers.abort = null;
       composerHandlers.finishIt = null;
       composerHandlers.setAgent = null;

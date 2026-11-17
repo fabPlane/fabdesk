@@ -494,7 +494,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     ...(opts.abortSettleTimeoutMs !== undefined
       ? { abortSettleTimeoutMs: opts.abortSettleTimeoutMs }
       : {}),
-    prepareProject: async (project: ProjectHandle) => {
+    prepareProject: async (project: ProjectHandle, agentId) => {
       const agents = await import("@fabdesk/agents");
       const sketches = (await projects.listFiles(join(project.dir, "sketches")))
         .filter((f) => /\.(png|jpe?g)$/i.test(f.path))
@@ -505,7 +505,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         projectName: project.name,
         toolsMarkdown: toolsMarkdown(registry),
         boardWorkflow: boardWorkflowReady(),
-        fabdeskCli: await activeCli(),
+        ...(agentId === "codex" && store.settings.get().agents.codex?.permissionMode !== "bypass"
+          ? { fabdeskCliUnavailableReason: "Codex workspace shell networking does not reach the desktop loopback endpoint. Use MCP capability_search/capability_call or direct MCP tools for tool discovery and execution; do not retry fabpcb tool requests from the shell." }
+          : { fabdeskCli: await activeCli() }),
         ...(cli ? { kicadCli: cli.path } : {}),
         shellExecutables: Object.fromEntries(
           ["python3", "rg", "bun"].flatMap((name) => {

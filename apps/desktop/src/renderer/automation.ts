@@ -215,6 +215,9 @@ async function send(): Promise<{ sent: boolean; reason?: string; threadId: strin
 
 async function sendMessage(text: string, agent?: string | null) {
   if (agent) {
+    const deadline = performance.now() + 20_000;
+    while (composerHandlers.canSelectAgent && !composerHandlers.canSelectAgent() && performance.now() < deadline) await sleep(50);
+    if (composerHandlers.canSelectAgent && !composerHandlers.canSelectAgent()) return { sent: false, reason: "agent selection is busy or chat settings are still loading", threadId: useUiStore.getState().activeThreadId, elapsedMs: 20_000 };
     const ok = setAgent(agent);
     if (!ok) return { sent: false, reason: `agent "${agent}" is not offered by the composer`, threadId: useUiStore.getState().activeThreadId, elapsedMs: 0 };
     await settle();

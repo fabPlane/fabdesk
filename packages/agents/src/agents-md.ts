@@ -17,6 +17,7 @@ export interface AgentDocsContext {
   /** The `board` toolset (board_check and the other stage tools) is registered: include the board workflow section. */
   boardWorkflow?: boolean | undefined;
   fabdeskCli?: string | undefined;
+  fabdeskCliUnavailableReason?: string | undefined;
   /** Experimental interfaces without Fabdesk MCP tools. */
   interfaceMode?: "substrate" | "programmable";
 }
@@ -110,7 +111,7 @@ export function renderAgentsMd(
 
 ${interfaceNote}
 ${ipcNote}
-${ctx.fabdeskCli ? `Active desktop CLI: \`${ctx.fabdeskCli}\`. For authenticated shell tool access use \`"$FABDESK_CLI" tool describe <name>\` or \`"$FABDESK_CLI" tool call <name> --request '<json>'\` (PowerShell: \`& $env:FABDESK_CLI tool describe <name>\`). This executable and the inherited endpoint/token belong to this running desktop. Keep credentials out of output.` : ""}
+${ctx.fabdeskCliUnavailableReason ?? (ctx.fabdeskCli ? `Active desktop CLI: \`${ctx.fabdeskCli}\`. For authenticated shell tool access use \`"$FABDESK_CLI" tool describe <name>\` or \`"$FABDESK_CLI" tool call <name> --request '<json>'\` (PowerShell: \`& $env:FABDESK_CLI tool describe <name>\`). This executable and the inherited endpoint/token belong to this running desktop. Keep credentials out of output.` : "")}
 
 ## Board constraints
 - Copper layers: ${ctx.board.layers}
