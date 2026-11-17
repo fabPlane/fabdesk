@@ -36,6 +36,8 @@ const UNREADABLE_GRACE_MS = 30_000;
 
 /** Tokens of the locks this process holds now: a lock with this pid and another token is a leftover (a reused pid). */
 const heldTokens = new Set<string>();
+/** Windows: consecutive permission errors creating a lock that is not there (a folder we cannot write). */
+const permissionTries = new Map<string, number>();
 
 export function pidAlive(pid: number): boolean {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -65,8 +67,18 @@ async function tryCreate(path: string, holder: InstallLockHolder): Promise<boole
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "EEXIST") return false;
-    // Windows: a lock file being deleted, or opened by another process, reports these instead; poll again
-    if (process.platform === "win32" && (code === "EPERM" || code === "EACCES" || code === "EBUSY")) return false;
+    // Windows: a lock file being deleted, or opened by another process, reports these instead; poll again. With no
+    // lock file there at all it is a real permission problem: fail after a few tries instead of waiting it out.
+    if (process.platform === "win32" && (code === "EPERM" || code === "EACCES" || code === "EBUSY")) {
+      const exists = await stat(path).then(() => true, () => false);
+      const tries = (permissionTries.get(path) ?? 0) + 1;
+      permissionTries.set(path, exists ? 0 : tries);
+      if (!exists && tries > 20) {
+        permissionTries.delete(path);
+        throw error;
+      }
+      return false;
+    }
     throw error;
   }
   try {
@@ -118,7 +130,13 @@ async function takeOver(path: string, judged: Judged, now: () => number): Promis
   const me: InstallLockHolder = { pid: process.pid, host: hostname(), at: now(), token: randomUUID() };
   if (!(await tryCreate(breaker, me))) {
     const st = await stat(breaker).catch(() => null);
-    if (st && now() - st.mtimeMs > BREAKER_STALE_MS) await rm(breaker, { force: true }).catch(() => undefined);
+    if (st && now() - st.mtimeMs > BREAKER_STALE_MS) {
+      // remove only the very breaker judged stale (not a fresh one another waiter just made)
+      const first = await readHolder(breaker);
+      const again = await stat(breaker).catch(() => null);
+      const same = again && again.ino === st.ino && again.mtimeMs === st.mtimeMs && (await readHolder(breaker))?.token === first?.token;
+      if (same) await rm(breaker, { force: true }).catch(() => undefined);
+    }
     return;
   }
   try {
@@ -192,8 +210,9 @@ export async function withInstallLock<T>(path: string, run: () => Promise<T>, op
   try {
     return await run();
   } finally {
-    heldTokens.delete(mine.token);
     const current = await readHolder(path);
     if (current?.token === mine.token) await rm(path, { force: true }).catch(() => undefined);
+    // only once the file is gone: until then a waiter here must still see it as this process's live lock
+    heldTokens.delete(mine.token);
   }
 }

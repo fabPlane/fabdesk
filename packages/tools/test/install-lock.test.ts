@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RouterCatalogEntry } from "../src/routers/catalog";
@@ -74,6 +74,26 @@ describe("withInstallLock", () => {
       expect(max).toBe(1);
       // breaking leaves nothing behind
       expect(existsSync(join(dir, "lock-0.break"))).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("callers in one process never overlap, even as a holder releases", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "install-lock-inproc-"));
+    try {
+      let active = 0;
+      let max = 0;
+      for (let round = 0; round < 100; round++) {
+        const path = join(dir, `lock-${round}`);
+        await Promise.all(Array.from({ length: 12 }, () => withInstallLock(path, async () => {
+          active++;
+          max = Math.max(max, active);
+          await Bun.sleep(1);
+          active--;
+        }, { pollMs: 1, waitMs: 10_000 })));
+      }
+      expect(max).toBe(1);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -168,6 +188,22 @@ describe("registry install across processes", () => {
     await registry.writeState("tracemaker");
     await chmod(file, 0o600);
     expect(Object.keys(JSON.parse(await readFile(file, "utf8")).routers)).toEqual(["krt"]);
+    // the change was kept, not lost: the next write (for any engine) records it too
+    registry.persisted.routers["atlc"] = { state: "installed", version: "4.6.1", path: "/atlc" };
+    await registry.writeState("atlc");
+    expect(Object.keys(JSON.parse(await readFile(file, "utf8")).routers).sort()).toEqual(["atlc", "krt", "tracemaker"]);
+  });
+
+  test("a corrupt state.json is kept aside and replaced, not a reason to stop recording", async () => {
+    const home = await mkdtemp(join(tmpdir(), "fabdesk-lockreg-"));
+    const registry = createRouterRegistry({ home, catalog: catalog("http://127.0.0.1:1/x") }) as unknown as { persisted: { routers: Record<string, unknown> }; writeState(id: string): Promise<void> };
+    const file = join(home, "routers", "state.json");
+    await mkdir(join(home, "routers"), { recursive: true });
+    await writeFile(file, "");
+    registry.persisted.routers["tracemaker"] = { state: "installed", version: "0.9.0", path: "/tm" };
+    await registry.writeState("tracemaker");
+    expect(Object.keys(JSON.parse(await readFile(file, "utf8")).routers)).toEqual(["tracemaker"]);
+    expect((await readdir(join(home, "routers"))).some((name) => name.startsWith("state.json.corrupt-"))).toBe(true);
   });
 
   test("uninstall waits for another process's install of the same engine", async () => {

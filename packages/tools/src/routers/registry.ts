@@ -832,58 +832,81 @@ class FileRouterRegistry implements RouterRegistry {
   }
 
   private readState(): PersistedState {
-    return this.readStateFile() ?? { routers: {} };
+    const r = this.readStateFile();
+    return r.kind === "ok" ? r.state : { routers: {} };
   }
 
-  /** state.json as it is on disk: empty when there is none, null when it could not be read (keep what is known). */
-  private readStateFile(): PersistedState | null {
+  /**
+   * state.json as it is on disk: `missing` (none yet), `corrupt` (it parsed to nothing usable: never recoverable),
+   * `unreadable` (a read error, possibly transient: keep what is known) or the state.
+   */
+  private readStateFile(): { kind: "ok"; state: PersistedState } | { kind: "missing" | "corrupt" | "unreadable" } {
+    let text: string;
     try {
-      const raw = JSON.parse(readFileSync(join(this.root, STATE_FILE), "utf8")) as PersistedState;
-      return raw?.routers ? raw : null;
+      text = readFileSync(join(this.root, STATE_FILE), "utf8");
     } catch (error) {
-      return (error as NodeJS.ErrnoException).code === "ENOENT" ? { routers: {} } : null;
+      return { kind: (error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "unreadable" };
+    }
+    try {
+      const raw = JSON.parse(text) as PersistedState | null;
+      return raw && typeof raw === "object" && raw.routers && typeof raw.routers === "object" ? { kind: "ok", state: raw } : { kind: "corrupt" };
+    } catch {
+      return { kind: "corrupt" };
     }
   }
 
   /** Take this engine's entry from state.json: another process may have installed or removed it. */
   private refreshState(id: RouterCatalogId): void {
     const disk = this.readStateFile();
-    if (!disk) return; // unreadable right now: keep what this process knows
-    const saved = disk.routers[id];
+    if (disk.kind === "unreadable" || this.unsaved.has(id)) return; // keep what this process knows (and has not saved)
+    const saved = disk.kind === "ok" ? disk.state.routers[id] : undefined;
     if (saved) this.persisted.routers[id] = saved;
     else delete this.persisted.routers[id];
   }
 
+  /** Engines whose entry this process changed but could not write yet: written with the next write that succeeds. */
+  private readonly unsaved = new Set<RouterCatalogId>();
+
   /**
-   * Record one engine's entry. Other engines' entries come from the file, so a write never reverts what another
-   * process recorded for them; the read-modify-replace runs under a short cross-process lock (`.lock-state`), and the
-   * file is replaced by rename so a reader never sees half of it. A file that exists but cannot be read is never
-   * written over (that would drop entries this process has not seen): the read is retried briefly, then the change
-   * stays in memory and goes out with the next write.
+   * Record this engine's entry (and any earlier ones that could not be written). Other engines' entries come from the
+   * file, so a write never reverts what another process recorded for them; the read-modify-replace runs under a short
+   * cross-process lock (`.lock-state`, held for milliseconds, so a leftover is taken over after 30 s), and the file is
+   * replaced by rename so a reader never sees half of it. A file that cannot be read right now is never written over
+   * (that would drop entries this process has not seen); a corrupt one is kept aside as `state.json.corrupt-<time>` and
+   * replaced. Never throws: an install that finished is never rolled back because its state could not be recorded.
    */
   private async writeState(id: RouterCatalogId): Promise<void> {
-    await mkdir(this.root, { recursive: true, mode: 0o700 });
-    await withInstallLock(
-      join(this.root, ".lock-state"),
-      async () => {
-        const mine = this.persisted.routers[id];
-        let base = this.readStateFile();
-        for (let attempt = 0; !base && attempt < 10; attempt++) {
-          await new Promise((resolve) => setTimeout(resolve, 20));
-          base = this.readStateFile();
-        }
-        if (!base) return; // unreadable: keep this change in memory rather than overwrite what others recorded
-        const merged: PersistedState = { routers: { ...base.routers } };
-        if (mine) merged.routers[id] = mine;
-        else delete merged.routers[id];
-        const file = join(this.root, STATE_FILE);
-        const tmp = `${file}.${process.pid}.tmp`;
-        writeFileSync(tmp, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });
-        await renameRetrying(tmp, file);
-        this.persisted = { routers: { ...this.persisted.routers, ...merged.routers } };
-      },
-      { waitMs: 60_000, pollMs: 10 },
-    );
+    this.unsaved.add(id);
+    try {
+      await mkdir(this.root, { recursive: true, mode: 0o700 });
+      await withInstallLock(
+        join(this.root, ".lock-state"),
+        async () => {
+          let disk = this.readStateFile();
+          for (let attempt = 0; disk.kind === "unreadable" && attempt < 10; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            disk = this.readStateFile();
+          }
+          if (disk.kind === "unreadable") return; // kept in `unsaved` for the next write
+          const file = join(this.root, STATE_FILE);
+          if (disk.kind === "corrupt") await renameRetrying(file, `${file}.corrupt-${Date.now()}`).catch(() => undefined);
+          const merged: PersistedState = { routers: { ...(disk.kind === "ok" ? disk.state.routers : {}) } };
+          for (const each of this.unsaved) {
+            const mine = this.persisted.routers[each];
+            if (mine) merged.routers[each] = mine;
+            else delete merged.routers[each];
+          }
+          const tmp = `${file}.${process.pid}.tmp`;
+          writeFileSync(tmp, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });
+          await renameRetrying(tmp, file);
+          this.unsaved.clear();
+          this.persisted = { routers: { ...this.persisted.routers, ...merged.routers } };
+        },
+        { waitMs: 60_000, pollMs: 10, staleMs: 30_000 },
+      );
+    } catch {
+      /* the entry stays in `unsaved` and goes out with the next write */
+    }
   }
 }
 
