@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, writeFile, realpath, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, writeFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProjectManifest } from "@fabdesk/protocol";
@@ -47,7 +48,7 @@ async function fixture(overrides: Partial<CloudApi> = {}, token: string | null =
     },
     rasterizeSharePreview: async () => ({ png: new Uint8Array() }),
   });
-  return { app, tokens };
+  return { app, tokens, dir };
 }
 
 test("saved Status is local and remains available without cloud sign-in", async () => {
@@ -61,6 +62,26 @@ test("saved Status is local and remains available without cloud sign-in", async 
   expect(status.boards[0].preview).toBeNull();
   expect(tokens).toEqual([]);
   expect((await app.request("/projects/not-owned/status")).status).toBe(404);
+});
+test("board checks are local, additive and match the saved board", async () => {
+  const { app, dir } = await fixture({}, null);
+  const none = await (await app.request("/projects/local/board-checks")).json();
+  expect(none).toMatchObject({ used: false, state: "none", mode: "strict", failing: [] });
+  const sha = createHash("sha256").update("native board").digest("hex");
+  await mkdir(join(dir, ".fabdesk/board/accept"), { recursive: true });
+  await writeFile(join(dir, ".fabdesk/board/accept/index.json"), JSON.stringify([
+    { at: "t0", sha256: "x", summary: { A1: true, A8: false } },
+    { at: "t1", sha256: sha, summary: { A1: true, A8: false } },
+  ]));
+  await writeFile(join(dir, ".fabdesk/board/done-mode.json"), JSON.stringify({ mode: "no-regression" }));
+  expect(await (await app.request("/projects/local/board-checks")).json()).toMatchObject({
+    used: true, state: "current", failing: ["A8"], baselineFailing: ["A8"], regressions: [], mode: "no-regression", at: "t1",
+  });
+  const withOverview = await (await app.request("/projects/local/board-checks")).json();
+  expect(withOverview.history).toHaveLength(2);
+  expect(withOverview.review).toEqual({ state: "none" });
+  expect(withOverview.candidates).toEqual([]);
+  expect((await app.request("/projects/not-owned/board-checks")).status).toBe(404);
 });
 const published = {
   visibility: "unlisted",

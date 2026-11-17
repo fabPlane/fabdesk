@@ -6,6 +6,7 @@ import {
   extractUserSection,
   renderAgentsMd,
   USER_END,
+  BOARD_WORKFLOW_MD,
   USER_START,
   writeAgentDocs,
   type AgentDocsContext,
@@ -45,6 +46,26 @@ describe("renderAgentsMd", () => {
       /workflow|must use|should use|prefer|retry|repeat until|run .* first|stopping policy/i,
     );
     expect(md.indexOf(USER_START)).toBeLessThan(md.indexOf(USER_END));
+  });
+
+  test("the board workflow section appears only when asked, names the single tool per stage and no outside toolkit", () => {
+    expect(renderAgentsMd(ctx)).not.toContain("## Board workflow");
+    const md = renderAgentsMd({ ...ctx, boardWorkflow: true });
+    expect(md).toContain("## Board workflow");
+    for (const t of ["board_check", "board_route", "board_edit", "board_review", "board_silk", "board_release", "board_job"]) expect(md).toContain(`\`${t}\``);
+    for (const code of ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9"]) expect(md).toContain(code);
+    expect(md).toContain("Defaults you may depart from");
+    expect(md).toContain("intent.json");
+    expect(md).not.toMatch(/~\/pcb|FABDESK_PCB_BIN|\bpcb (run|review|flow|lastmile|edit|onboard)\b|toolkit_|board_lastmile/);
+    // outside the board section the neutral wording guard still holds
+    const neutral = md.replace(/## Board workflow[\s\S]*?(?=## Off-board parts)/, "");
+    expect(neutral).not.toMatch(/workflow|must use|should use|prefer|retry|repeat until|run .* first|stopping policy/i);
+    expect(md.indexOf(USER_START)).toBeLessThan(md.indexOf(USER_END));
+  });
+
+  test("docs/board-workflow.md is the same text as the agent section", () => {
+    const doc = readFileSync(new URL("../../../docs/board-workflow.md", import.meta.url), "utf8");
+    expect(doc.replace(/^# /, "## ")).toBe(BOARD_WORKFLOW_MD);
   });
 
   test("renders neutral direct-IPC discovery only for the programmable interface", () => {

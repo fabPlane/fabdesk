@@ -310,6 +310,13 @@ describe("registry", () => {
       "verify_erc",
       "verify_gate",
       "verify_viagrid",
+      "board_check",
+      "board_review",
+      "board_edit",
+      "board_release",
+      "board_silk",
+      "board_route",
+      "board_engines",
       "release_build",
       "render_pcb_readiness",
       "render_pcb_display",
@@ -369,6 +376,7 @@ describe("registry", () => {
       "cad_combine_parts",
       "cad_enclosure",
       "cad_fit",
+      "board_job",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
     expect(reg.byToolset("core").length).toBe(11);

@@ -11,10 +11,11 @@ import {
   type CoreServices,
   type ProjectHandle,
   type ToolRegistry,
+  projectHasPlacedBoard,
 } from "@fabdesk/tools";
 import type { AgentId } from "@fabdesk/protocol";
 import { AgentRunManager, type AgentAdapterLike } from "./agent-runs";
-import { FinishItManager } from "./finish-it";
+import { boardChecksApply, FinishItManager } from "./finish-it";
 import { resolvePrivacyStatus } from "./privacy-gate";
 import { TokenSet } from "./auth";
 import { DeviceStore } from "./devices";
@@ -38,7 +39,7 @@ import type { Hono } from "hono";
 import { createApp, type Env } from "./http/app";
 import { JobRunner } from "./jobs";
 import { logger, errMsg } from "./log";
-import { McpSessionManager } from "./mcp-sessions";
+import { McpSessionManager, projectStartToolsets, RAISED_TOOL_TIMEOUT_AGENTS } from "./mcp-sessions";
 import { machineName } from "./net";
 import { Notifier } from "./notifier";
 import { ProjectStore } from "./projects";
@@ -84,6 +85,11 @@ export function agentMcpProfile(
 }
 
 export type ServeOptions = {
+  /**
+   * Tests: override whether Finish it uses the board workflow's A1-A9 and review gate for a project (default: the
+   * project has a placed board, board_check is registered and the `boardChecksInFinishIt` setting is not off).
+   */
+  boardChecks?: (project: ProjectHandle) => boolean | Promise<boolean>;
   /** Tests: simulate an orphan that cannot be stopped. */
   recoveryStop?: (pid: number) => void | Promise<void>;
   recoveryWaitMs?: number;
@@ -414,6 +420,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   }
 
   const registry = createRegistry({ channel: config.channel });
+  /** The board workflow stage tools are registered (board_check is the first of them). */
+  const boardWorkflowReady = () => registry.get("board_check") !== undefined;
   const ctxFactory = createContextFactory({ services, projects, tokens, telemetry });
   const mcp = new McpSessionManager({
     registry,
@@ -427,6 +435,10 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       enabledFor: (token) => runs.isSupervisedRunToken(token),
       handle: (token, req) => runs.permissionPrompt(token, req),
     },
+    // an external session (stdio proxy, `?project=`) starts with the toolsets a desktop run on that project gets
+    startToolsets: async (ref) => projectStartToolsets(registry, await projects.resolve(ref)),
+    // only agents whose tool timeout fabdesk raised wait the full durable wait (Cursor and Grok keep their default)
+    ownRun: (token) => RAISED_TOOL_TIMEOUT_AGENTS.has(runs.activeRunAgent(token) ?? ""),
   });
 
   const adapters = opts.adapters ?? (await loadAdapters());
@@ -442,6 +454,10 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     ...(agentMcpProfile(agentInterface) ? { mcpProfile: agentMcpProfile(agentInterface)! } : {}),
     adapters,
     settings: () => store.settings.get(),
+    // a project that already has a placed board starts with the board toolset loaded, not behind load_toolset;
+    // only once the board workflow's check stage is registered (the set is board_job alone before that)
+    // (projectStartToolsets: the same decision external MCP sessions get through `startToolsets` below)
+    extraToolsets: (project) => projectStartToolsets(registry, project),
     workspaceDir: join(config.home, "workspace"),
     telemetry,
     agentEnvironment: async ({ cwd, project }) => {
@@ -483,6 +499,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       await agents.writeAgentDocs(project.dir, {
         projectName: project.name,
         toolsMarkdown: toolsMarkdown(registry),
+        boardWorkflow: boardWorkflowReady(),
         ...(cli ? { kicadCli: cli.path } : {}),
         shellExecutables: Object.fromEntries(
           ["python3", "rg", "bun"].flatMap((name) => {
@@ -508,6 +525,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     runs,
     projects,
     settings: () => store.settings.get(),
+    // the board's A1-A9 and review gate decide "verified" for a project with a placed board (a fresh circuit design keeps
+    // the DRC/ERC plan until its board exists), while the board workflow is registered and the setting is not off
+    boardChecks:
+      opts.boardChecks ??
+      ((project) => boardChecksApply(project.dir, { workflowReady: boardWorkflowReady(), settings: store.settings.get() })),
   });
 
   let resolveClosed!: (reason: string) => void;

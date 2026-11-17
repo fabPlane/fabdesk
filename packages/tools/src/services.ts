@@ -7,6 +7,7 @@
  * api-server` per project) for building, querying, routing and library search; `KicadService`
  * runs the fork `kicad-cli` for DRC, renders and exports; `SimService` reads the netlist source.
  */
+import type { RunChild } from "./child-tasks";
 import type { CloudService } from "./cloud/service";
 import type { RouterRegistry } from "./routers/registry";
 import type {
@@ -682,7 +683,8 @@ export interface KicadService {
     opts: {
       board: string;
       outFile: string;
-      severity?: "error" | "all";
+      /** "project": the project's own rule severities decide what is reported (the toolkit's last-mile scoring). */
+      severity?: "error" | "all" | "project";
       schematicParity?: boolean;
       refillZones?: boolean;
       signal?: AbortSignal;
@@ -1219,6 +1221,29 @@ export interface CadService {
   release(projectDir: string): Promise<void>;
 }
 
+/** One board-level change applied to a saved native board through KiCad IPC. */
+export type BoardAdoptResult = {
+  /** Items the candidate changes relative to the target, by KiCad object type. */
+  delta: { removed: Record<string, number>; added: Record<string, number>; changed: Record<string, number> };
+  /** Differences left after the commit (normalised); empty when the target now equals the candidate. */
+  residual: { removed: Record<string, number>; added: Record<string, number>; changed: Record<string, number> };
+  targetSha256Before: string;
+  targetSha256After: string;
+  timingsMs: Record<string, number>;
+  kicadCli: string;
+};
+
+/** Adopting a candidate board writes it into the project's saved board as one KiCad commit (see `adoptCandidate`). */
+export interface BoardAdoptService {
+  /** Apply the candidate board's items to the target board file in one IPC commit, then save. */
+  adopt(input: {
+    target: string;
+    candidate: string;
+    cli: KicadCli;
+    signal?: AbortSignal;
+  }): Promise<BoardAdoptResult>;
+}
+
 export interface CoreServices {
   version: string;
   /** Attested packaged runtime identity; null only for un-packaged development. */
@@ -1245,4 +1270,11 @@ export interface CoreServices {
   cadKernels?: import("./cad-kernel").CadKernelHost;
   /** Install-on-demand autorouter catalog (Settings → Routers). */
   routers?: RouterRegistry;
+  /**
+   * Run a heavy board computation in a child process of the core (its own heap, killable, the event loop stays free).
+   * Absent (tests, embedded hosts), tools run the computation in-process.
+   */
+  runChild?: RunChild;
+  /** Optional: adopt a candidate board into the saved board over KiCad IPC (board workflow edits). */
+  boardAdopt?: BoardAdoptService;
 }

@@ -9,6 +9,13 @@ import { coreTools } from "./core";
 import { exportTools } from "./export";
 import { boardDiffTools } from "./board-diff";
 import { boardWorkspaceTools } from "./board-workspace";
+import { boardCheckTools } from "./board-check";
+import { boardReviewTools } from "./board-review";
+import { boardEditTools } from "./board-edit";
+import { boardReleaseTools } from "./board-release";
+import { boardSilkTools } from "./board-silk";
+import { boardRouteTools } from "./board-route";
+import { boardEngineTools } from "./board-engines";
 import { kicadTools } from "./kicad";
 import { inspectionTools } from "./inspection";
 import { nativeEditTools } from "./native-edit";
@@ -22,6 +29,8 @@ import { simTools } from "./sim";
 import { shoppingTools } from "./shopping";
 import { spatialTools } from "./spatial";
 import { verifyTools } from "./verify";
+import { boardTools } from "./board";
+import { withBoardHandoff } from "./board-handoff";
 
 export const allTools: ReadonlyArray<ToolDef> = [
   ...coreTools,
@@ -40,6 +49,13 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...kicadTools,
   ...boardDiffTools,
   ...verifyTools,
+  ...boardCheckTools,
+  ...boardReviewTools,
+  ...boardEditTools,
+  ...boardReleaseTools,
+  ...boardSilkTools,
+  ...boardRouteTools,
+  ...boardEngineTools,
   ...releaseTools,
   ...renderTools,
   ...exportTools,
@@ -47,7 +63,8 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...appTools,
   ...shoppingTools,
   ...cadTools,
-] as unknown as ReadonlyArray<ToolDef>;
+  ...boardTools,
+].map((tool) => withBoardHandoff(tool as unknown as ToolDef)) as unknown as ReadonlyArray<ToolDef>;
 
 /** The v1 registry exposes both routers on every channel. */
 export function createRegistry(opts: { channel?: "public" | "internal" } = {}): ToolRegistry {
@@ -71,6 +88,10 @@ export * from "./inspection";
 export * from "./native-edit";
 export * from "./release";
 export * from "./verify";
+export * from "./board-check";
+export * from "./board-review";
+export * from "./board-route";
+export * from "./board-engines";
 export * from "./render";
 export * from "./export";
 export * from "./silk-art";

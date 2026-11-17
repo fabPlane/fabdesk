@@ -34,6 +34,7 @@ export {
 } from "./adapters/grok";
 export { cursorAdapter, cursorArgs, writeCursorMcp, cursorMcpPath } from "./adapters/cursor";
 export {
+  BOARD_WORKFLOW_MD,
   renderAgentsMd,
   writeAgentDocs,
   extractUserSection,

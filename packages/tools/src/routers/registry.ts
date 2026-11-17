@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { chmod, mkdir, rename, rm, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type {
   RouterCatalogId,
   RouterInstallPhase,
@@ -15,7 +15,11 @@ import {
   type RouterCatalogEntry,
 } from "./catalog";
 import { bundledHint, installHintFor } from "./hints";
+import { krtRootProblem, krtVersionAt, setupKrt, type KrtSetupDeps, type KrtSetupResult } from "./krt";
 import { parseTraceMakerVersion, resolveTraceMakerInstallArtifact } from "./tracemaker-release";
+import { extractZipArchive } from "./zip";
+
+export { extractZipArchive };
 
 const STATE_FILE = "state.json";
 const MAX_ARTIFACT_BYTES = 200 * 1024 * 1024;
@@ -37,6 +41,10 @@ type InstallJob = {
   total: number;
   phase: RouterInstallPhase;
   done: boolean;
+  /** Progress lines to every caller sharing this install (the first one and any that joined it). */
+  listeners: Set<(line: string) => void>;
+  /** Replacing a ready install: a TraceMaker source fallback is refused so the working binary is kept. */
+  replace: boolean;
 };
 
 type PersistedState = { routers: Partial<Record<RouterCatalogId, PersistedRouter>> };
@@ -45,6 +53,35 @@ export type BundledRouter = { version?: string; path?: string };
 
 export type RouterRegistrySettings = {
   tracemakerManifestUrl?: string | null;
+  /** A KiCadRoutingTools build that wins over FABDESK_KRT_DIR and the installed copy. */
+  krtDir?: string | null;
+  /** Board tools install a missing engine on first use (default true); false makes them report it instead. */
+  autoInstallEngines?: boolean;
+};
+
+export type RouterInstallOptions = {
+  /** Progress lines while it runs (phases, download share, the engine's own setup steps). */
+  onLine?: (line: string) => void;
+  /** Download and swap in a fresh copy even when a ready one is installed (TraceMaker's placer upgrade). */
+  replace?: boolean;
+};
+
+/** TraceMaker's placer, which board_route's floorplan path runs. */
+export const TRACEMAKER_PLACER = "tracemaker-place";
+/** Points at a tracemaker-place to use instead of the one beside TraceMaker. */
+export const TRACEMAKER_PLACE_ENV = "TRACEMAKER_PLACE_BIN";
+
+export type TraceMakerPlacerState = NonNullable<RouterSnapshot["placer"]>;
+
+/** What `ensurePlacer` found or did: the placer to run, or why there is none (phrased for the agent). */
+export type PlacerEnsureResult = { path: string | null; why?: string; installed?: boolean };
+
+/** What `ensure` found or did: the path to run, or why there is none (already phrased for the agent). */
+export type EngineEnsureResult = { id: RouterCatalogId; path: string | null; why?: string; installed?: boolean };
+
+export type EngineEnsureOptions = RouterInstallOptions & {
+  /** An explicit request (the `board_engines` tool, Settings): ignores `autoInstallEngines` and retries a failure. */
+  explicit?: boolean;
 };
 
 export type RouterRegistryDeps = {
@@ -56,12 +93,51 @@ export type RouterRegistryDeps = {
   /** Live settings (re-read on each install). Env FABDESK_TRACEMAKER_MANIFEST_URL still wins. */
   settings?: () => RouterRegistrySettings;
   spawn?: (cmd: string, args: string[]) => Promise<number>;
+  /** KRT's post-extract step (venv + packages); injectable so tests need no Python or network. */
+  krtSetup?: (root: string, deps: KrtSetupDeps) => Promise<KrtSetupResult>;
+  /** atlc's post-extract build (configure + make); injectable so tests need no C compiler. */
+  atlcBuild?: (srcDir: string, log: (line: string) => void, signal: AbortSignal) => Promise<void>;
 };
+
+/** The source tree inside atlc's install. */
+const ATLC_SRC = "atlc-4.6.1";
+const PATH_ATLC = "atlc on PATH";
+
+/**
+ * Build atlc from its source tree: `sh configure` then `make -C src atlc` (single-threaded, as Debian builds it;
+ * `-fcommon` for GCC 10+, which upstream predates). Needs sh, a C compiler and make.
+ */
+export async function buildAtlc(srcDir: string, log: (line: string) => void, signal: AbortSignal): Promise<void> {
+  if (process.platform === "win32") throw new Error("atlc builds with sh, a C compiler and make, which Windows lacks; install an atlc build and set ATLC_BIN");
+  for (const [what, cmd] of [
+    ["configure", ["sh", "./configure", "CFLAGS=-O2 -fcommon"]],
+    ["make", ["make", "-C", "src", "atlc"]],
+  ] as const) {
+    log(`atlc: ${what}`);
+    const p = Bun.spawn([...cmd], { cwd: srcDir, stdout: "pipe", stderr: "pipe", signal });
+    const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+    if (code !== 0) throw new Error(`atlc ${what} failed (exit ${code}; a C compiler and make are needed): ${`${out}\n${err}`.trim().slice(-400)}`);
+  }
+}
 
 export interface RouterRegistry {
   list(preferredRouter?: RouterCatalogId): RouterList;
   get(id: RouterCatalogId): RouterSnapshot;
-  install(id: RouterCatalogId): Promise<RouterSnapshot>;
+  install(id: RouterCatalogId, opts?: RouterInstallOptions): Promise<RouterSnapshot>;
+  /**
+   * The engine's runnable path, installing it first when it is missing and installable (one shared install for
+   * concurrent callers). Never installs over an override that is set but broken (Settings `krtDir`,
+   * FABDESK_KRT_DIR, TRACEMAKER_BIN, FREEROUTING_JAR): that is reported instead. Automatic calls honour
+   * `autoInstallEngines` and do not retry an install that already failed in this process.
+   */
+  ensure(id: RouterCatalogId, opts?: EngineEnsureOptions): Promise<EngineEnsureResult>;
+  /**
+   * TraceMaker's placer (`tracemaker-place`): TRACEMAKER_PLACE_BIN when set (never installed over when broken), else
+   * the one beside TraceMaker, which is installed first like `ensure`. A managed install from an archive that predates
+   * the placer is replaced once from the current release when that release carries it (same opt-out and no automatic
+   * retry as `ensure`).
+   */
+  ensurePlacer(opts?: EngineEnsureOptions): Promise<PlacerEnsureResult>;
   cancel(id: RouterCatalogId): Promise<RouterSnapshot>;
   uninstall(id: RouterCatalogId): Promise<RouterSnapshot>;
   executable(id: RouterCatalogId): string | null;
@@ -73,6 +149,24 @@ export function routersRoot(home: string): string {
 
 export function createRouterRegistry(deps: RouterRegistryDeps): RouterRegistry {
   return new FileRouterRegistry(deps);
+}
+
+/**
+ * tracemaker-place for a tracemaker binary: beside it (fabdesk's archives, an upstream install's bin/), or in a CMake
+ * build tree's src/place next to src/app; then anywhere under `root` (a source package built in place). Runnable files
+ * only.
+ */
+export function traceMakerPlacerNear(tracemaker: string, root?: string | null): string | null {
+  const names = /\.exe$/i.test(tracemaker) || process.platform === "win32" ? [`${TRACEMAKER_PLACER}.exe`, TRACEMAKER_PLACER] : [TRACEMAKER_PLACER];
+  const dir = dirname(tracemaker);
+  for (const name of names)
+    for (const candidate of [join(dir, name), join(dir, "..", "place", name)]) if (isRunnableFile(candidate)) return candidate;
+  if (root && isDirectory(root))
+    for (const name of names) {
+      const hit = findNamedFile(root, name, isRunnableFile);
+      if (hit) return hit;
+    }
+  return null;
 }
 
 /** TraceMaker prints `tracemaker 0.9.0` on `version`; `--version` is not a flag. */
@@ -96,6 +190,10 @@ class FileRouterRegistry implements RouterRegistry {
   private readonly env: NodeJS.ProcessEnv;
   private readonly inflight = new Map<RouterCatalogId, InstallJob>();
   private readonly versionProbes = new Map<string, string | null>();
+  /** Automatic installs that failed in this process: not retried until an explicit install. */
+  private readonly autoFailed = new Map<RouterCatalogId, string>();
+  /** Why the last placer upgrade (TraceMaker reinstall for tracemaker-place) did not add it; not retried automatically. */
+  private placerUpgradeFailed: string | null = null;
   private persisted: PersistedState = { routers: {} };
 
   constructor(private readonly deps: RouterRegistryDeps) {
@@ -121,13 +219,90 @@ class FileRouterRegistry implements RouterRegistry {
     return snap.ready && snap.path ? snap.path : null;
   }
 
-  async install(id: RouterCatalogId): Promise<RouterSnapshot> {
+  async ensure(id: RouterCatalogId, opts: EngineEnsureOptions = {}): Promise<EngineEnsureResult> {
+    const entry = this.entry(id);
+    const snap = this.snapshot(entry);
+    if (snap.ready && snap.path) return { id, path: snap.path };
+    if (snap.ready && entry.install === "bundled") return { id, path: null, why: `${entry.displayName} is bundled; it has no separate path` };
+    const problem = this.overrideProblem(id);
+    if (problem) return { id, path: null, why: `${problem} Fix or clear it; an installed copy is not used while it is set.` };
+    if (!opts.explicit) {
+      if (this.deps.settings?.().autoInstallEngines === false)
+        return { id, path: null, why: `${entry.displayName} is not installed and automatic installs are off (Settings autoInstallEngines). board_engines {"action":"install","engine":"${id}"} installs it.` };
+      const failed = this.autoFailed.get(id);
+      if (failed) return { id, path: null, why: `${failed} (not retried automatically; board_engines {"action":"install","engine":"${id}"} retries)` };
+    }
+    this.autoFailed.delete(id);
+    opts.onLine?.(`${entry.displayName} is not installed: installing it now (one time${entry.id === "krt" ? ", a few minutes cold" : ""})`);
+    const done = await this.install(id, opts.onLine ? { onLine: opts.onLine } : {});
+    if (done.ready && done.path) {
+      opts.onLine?.(`${entry.displayName} ${done.versionInstalled ?? ""} installed at ${done.path}`.replace(/\s+/g, " "));
+      return { id, path: done.path, installed: true };
+    }
+    let why = `${entry.displayName} did not install: ${done.error ?? done.notice ?? done.installHint}`;
+    if (id === "tracemaker" && !/TRACEMAKER_BIN/.test(why))
+      why += " If its binary manifest is unreachable (the GitHub release 404s while TensorFleet/fabdesk is private), set FABDESK_TRACEMAKER_MANIFEST_URL or Settings tracemakerManifestUrl to a public manifest, or TRACEMAKER_BIN.";
+    if (!/Installation cancelled/.test(why)) this.autoFailed.set(id, why);
+    return { id, path: null, why };
+  }
+
+  async ensurePlacer(opts: EngineEnsureOptions = {}): Promise<PlacerEnsureResult> {
+    const placer = (): TraceMakerPlacerState => this.get("tracemaker").placer ?? { ready: false };
+    const first = placer();
+    if (first.overriddenBy || this.env[TRACEMAKER_PLACE_ENV]?.trim())
+      return first.ready && first.path ? { path: first.path } : { path: null, why: `${first.why ?? `${TRACEMAKER_PLACE_ENV} is not usable.`} Fix or clear it.` };
+    const tm = await this.ensure("tracemaker", opts);
+    if (!tm.path) return { path: null, why: tm.why ?? "TraceMaker is not installed (the placer ships with it)." };
+    const now = placer();
+    if (now.ready && now.path) return { path: now.path };
+    const snap = this.get("tracemaker");
+    const saved = this.persisted.routers.tracemaker;
+    // Only a managed binary install (not an override, not a source package built in place) can be replaced.
+    if (snap.overriddenBy || saved?.state !== "installed" || !saved.path || !isFile(saved.path)) return { path: null, why: now.why ?? "tracemaker-place was not found" };
+    if (!opts.explicit) {
+      if (this.deps.settings?.().autoInstallEngines === false)
+        return { path: null, why: `${now.why} Automatic installs are off (Settings autoInstallEngines); board_engines {"action":"install","engine":"tracemaker"} reinstalls it.` };
+      if (this.placerUpgradeFailed) return { path: null, why: `${this.placerUpgradeFailed} (not retried automatically; board_engines {"action":"install","engine":"tracemaker"} retries)` };
+    }
+    const entry = this.entry("tracemaker");
+    const artifact = entry.artifact;
+    const failed = (why: string): PlacerEnsureResult => {
+      this.placerUpgradeFailed = why;
+      return { path: null, why };
+    };
+    if (!artifact) return failed(`${now.why} TraceMaker has no downloadable artifact to reinstall from.`);
+    // Look before downloading: a release whose archive has no placer would replace TraceMaker with the same thing.
+    const resolved = await resolveTraceMakerInstallArtifact(this.traceMakerResolveArgs(entry, artifact)).catch((error: unknown) => ({
+      origin: "source" as const,
+      warning: error instanceof Error ? error.message : String(error),
+      placer: undefined,
+    }));
+    if (resolved.origin !== "binary") return failed(`tracemaker-place is not beside ${tm.path}, and no TraceMaker binary release is reachable to reinstall from (${(resolved.warning ?? "source-only fallback").replace(/[.\s]*$/, "")}). Set ${TRACEMAKER_PLACE_ENV} to a tracemaker-place.`);
+    if (!resolved.placer) return failed(`tracemaker-place is not beside ${tm.path}, and the published TraceMaker release has none yet (its archives predate it; the weekly TraceMaker binaries job adds it). Set ${TRACEMAKER_PLACE_ENV} to a tracemaker-place meanwhile.`);
+    opts.onLine?.(`TraceMaker at ${tm.path} has no tracemaker-place (an older archive): reinstalling it from the current release`);
+    const done = await this.install("tracemaker", { replace: true, ...(opts.onLine ? { onLine: opts.onLine } : {}) });
+    const after = placer();
+    if (after.ready && after.path) {
+      this.placerUpgradeFailed = null;
+      opts.onLine?.(`tracemaker-place installed at ${after.path}`);
+      return { path: after.path, installed: true };
+    }
+    return failed(done.error ? `TraceMaker reinstall (for tracemaker-place) failed: ${done.error}` : `${after.why ?? "tracemaker-place was not found"} (after reinstalling TraceMaker)`);
+  }
+
+  async install(id: RouterCatalogId, opts: RouterInstallOptions = {}): Promise<RouterSnapshot> {
     const existing = this.inflight.get(id);
-    if (existing) return existing.promise;
+    if (existing) {
+      if (opts.onLine) {
+        existing.listeners.add(opts.onLine);
+        opts.onLine(`joining the ${id} install already running (${existing.phase})`);
+      }
+      return existing.promise;
+    }
     const entry = this.entry(id);
     if (entry.install === "bundled" || this.bundled[id]) return this.snapshot(entry);
     const current = this.snapshot(entry);
-    if (current.state === "installed" && current.ready) return current;
+    if (current.state === "installed" && current.ready && !opts.replace) return current;
     const local = this.localOverride(id);
     if (local) {
       this.persisted.routers[id] = { state: "installed", version: entry.version, path: local };
@@ -151,6 +326,8 @@ class FileRouterRegistry implements RouterRegistry {
       total: artifact.bytes ?? 0,
       phase: "resolving",
       done: false,
+      listeners: new Set(opts.onLine ? [opts.onLine] : []),
+      replace: opts.replace === true,
     };
     const promise = this.runInstall(entry, artifact, abort, job);
     job.promise = promise;
@@ -198,6 +375,35 @@ class FileRouterRegistry implements RouterRegistry {
   }
 
   private snapshot(entry: RouterCatalogEntry): RouterSnapshot {
+    const snap = this.engineSnapshot(entry);
+    return entry.id === "tracemaker" ? { ...snap, placer: this.placerState(snap) } : snap;
+  }
+
+  /** Where tracemaker-place is for this TraceMaker snapshot (TRACEMAKER_PLACE_BIN first), or why it is not there. */
+  private placerState(snap: RouterSnapshot): TraceMakerPlacerState {
+    const set = this.env[TRACEMAKER_PLACE_ENV]?.trim();
+    if (set)
+      return isRunnableFile(set)
+        ? { ready: true, path: set, overriddenBy: TRACEMAKER_PLACE_ENV }
+        : { ready: false, why: `${TRACEMAKER_PLACE_ENV} is set to ${set}, which ${existsSync(set) ? "is not a runnable executable file" : "does not exist"}.` };
+    if (!snap.ready || !snap.path) return { ready: false, why: "TraceMaker is not installed (tracemaker-place ships with it)." };
+    const saved = this.persisted.routers.tracemaker;
+    const managed = !snap.overriddenBy;
+    const path = traceMakerPlacerNear(snap.path, managed ? this.installDir("tracemaker") : null);
+    if (path) return { ready: true, path };
+    if (!managed)
+      return { ready: false, why: `tracemaker-place is not beside ${snap.overriddenBy}=${snap.path} (nor in its build tree's src/place). Put it there or set ${TRACEMAKER_PLACE_ENV}.` };
+    if (saved?.path && isDirectory(saved.path))
+      return { ready: false, why: `TraceMaker was built from source in ${saved.path} without tracemaker-place: build that target too (cmake --build <build dir> --target tracemaker-place), or set ${TRACEMAKER_PLACE_ENV}.` };
+    return {
+      ready: false,
+      why:
+        this.placerUpgradeFailed ??
+        `The installed TraceMaker ${snap.versionInstalled ?? ""} at ${snap.path} has no tracemaker-place beside it (its archive predates it). board_engines {"action":"install","engine":"tracemaker"} reinstalls it from the current release, or set ${TRACEMAKER_PLACE_ENV}.`.replace(/\s+/g, " "),
+    };
+  }
+
+  private engineSnapshot(entry: RouterCatalogEntry): RouterSnapshot {
     const bundled = this.bundled[entry.id];
     const local = this.localOverride(entry.id);
     const job = this.inflight.get(entry.id);
@@ -230,13 +436,14 @@ class FileRouterRegistry implements RouterRegistry {
       };
     }
     if (local) {
-      const envName = this.overrideEnv(entry.id);
+      const envName = this.overrideSource(entry.id)?.name ?? this.overrideEnv(entry.id);
       const probed = this.probeVersion(entry.id, local);
+      const clear = envName.startsWith("Settings") ? "Clear that setting" : `Unset ${envName}`;
       return {
         ...this.base(entry),
         state: "installed",
         ready: true,
-        installHint: `Using ${envName}=${local}. Unset ${envName} to manage ${entry.displayName} from Settings.`,
+        installHint: envName === PATH_ATLC ? `Using the atlc on PATH at ${local}.` : `Using ${envName}=${local}. ${clear} to manage ${entry.displayName} from Settings.`,
         versionInstalled: probed ?? entry.version,
         path: local,
         overriddenBy: envName,
@@ -253,7 +460,9 @@ class FileRouterRegistry implements RouterRegistry {
         sourceOnly: !ready,
         installHint: ready
           ? `${entry.displayName} ${saved.version ?? entry.version} is installed.`
-          : `${entry.displayName} ${saved.version ?? entry.version} source package is installed, but there is no runnable binary yet. Build it in ${saved.path}, or set ${envName} to a built binary.`,
+          : entry.id === "krt"
+            ? `${entry.displayName} ${saved.version ?? entry.version} at ${saved.path} is incomplete (${krtRootProblem(saved.path) ?? "not runnable"}). Reinstall it, or set FABDESK_KRT_DIR to a build.`
+            : `${entry.displayName} ${saved.version ?? entry.version} source package is installed, but there is no runnable binary yet. Build it in ${saved.path}, or set ${envName} to a built binary.`,
         ...(saved.version ? { versionInstalled: saved.version } : {}),
         ...(saved.error ? { error: saved.error } : {}),
         ...(saved.notice ? { notice: saved.notice } : {}),
@@ -290,31 +499,48 @@ class FileRouterRegistry implements RouterRegistry {
       version: entry.version,
       homepage: entry.homepage,
       install: entry.install,
+      ...(entry.kind ? { kind: entry.kind } : {}),
     };
   }
 
   private overrideEnv(id: RouterCatalogId): string {
-    return id === "tracemaker" ? "TRACEMAKER_BIN" : id === "freerouting" ? "FREEROUTING_JAR" : "";
+    return id === "tracemaker" ? "TRACEMAKER_BIN" : id === "freerouting" ? "FREEROUTING_JAR" : id === "krt" ? "FABDESK_KRT_DIR" : id === "atlc" ? "ATLC_BIN" : "";
+  }
+
+  /** The override that is set, if any: Settings `krtDir` (KRT only), then the env var. */
+  private overrideSource(id: RouterCatalogId): { name: string; value: string } | null {
+    if (id === "krt") {
+      const fromSettings = this.deps.settings?.().krtDir?.trim();
+      if (fromSettings) return { name: "Settings krtDir", value: fromSettings };
+    }
+    const key = this.overrideEnv(id);
+    const value = key ? this.env[key]?.trim() : undefined;
+    if (key && value) return { name: key, value };
+    if (id === "atlc") {
+      // a system package (Debian/Ubuntu `atlc`) is used as it is
+      const onPath = Bun.which("atlc", { PATH: this.env["PATH"] ?? "" });
+      if (onPath) return { name: PATH_ATLC, value: onPath };
+    }
+    return null;
   }
 
   private localOverride(id: RouterCatalogId): string | null {
-    const key = this.overrideEnv(id);
-    if (!key) return null;
-    const value = this.env[key]?.trim();
+    const value = this.overrideSource(id)?.value;
     if (!value) return null;
-    if (id === "tracemaker") return isRunnableFile(value) ? value : null;
+    if (id === "tracemaker" || id === "atlc") return isRunnableFile(value) ? value : null;
     if (id === "freerouting") return isFile(value) ? value : null;
+    if (id === "krt") return krtRootProblem(value) === null ? value : null;
     return existsSync(value) ? value : null;
   }
 
-  /** Why an env override that is set cannot be used (so the card can say so instead of ignoring it). */
+  /** Why an override that is set cannot be used (so the card can say so instead of ignoring it). */
   private overrideProblem(id: RouterCatalogId): string | undefined {
-    const key = this.overrideEnv(id);
-    const value = key ? this.env[key]?.trim() : undefined;
-    if (!key || !value || this.localOverride(id)) return undefined;
-    return !existsSync(value)
-      ? `${key} is set to ${value}, which does not exist.`
-      : `${key} is set to ${value}, which is not a runnable ${id === "freerouting" ? "jar" : "executable file"}.`;
+    const source = this.overrideSource(id);
+    if (!source || this.localOverride(id)) return undefined;
+    const { name: key, value } = source;
+    if (!existsSync(value)) return `${key} is set to ${value}, which does not exist.`;
+    if (id === "krt") return `${key} is set to ${value}, which is not a KiCadRoutingTools build (${krtRootProblem(value)}).`;
+    return `${key} is set to ${value}, which is not a runnable ${id === "freerouting" ? "jar" : "executable file"}.`;
   }
 
   /**
@@ -331,6 +557,8 @@ class FileRouterRegistry implements RouterRegistry {
       if (isDirectory(path)) return findNamedFile(path, "tracemaker", isRunnableFile);
       return null;
     }
+    if (entry.id === "krt") return krtRootProblem(path) === null ? path : null;
+    if (entry.id === "atlc") return isRunnableFile(path) ? path : isDirectory(path) ? findNamedFile(path, "atlc", isRunnableFile) : null;
     return existsSync(path) ? path : null;
   }
 
@@ -340,6 +568,7 @@ class FileRouterRegistry implements RouterRegistry {
 
   /** `tracemaker version`, then `--version`. Cached per path + mtime. */
   private probeVersion(id: RouterCatalogId, path: string): string | null {
+    if (id === "krt") return krtVersionAt(path);
     if (id !== "tracemaker") return null;
     let key = path;
     try {
@@ -351,6 +580,16 @@ class FileRouterRegistry implements RouterRegistry {
     const version = probeTraceMakerCliVersion(path);
     this.versionProbes.set(key, version);
     return version;
+  }
+
+  private traceMakerResolveArgs(entry: RouterCatalogEntry, source: RouterArtifact): Parameters<typeof resolveTraceMakerInstallArtifact>[0] {
+    return {
+      source,
+      ...(entry.binaryRelease ? { binaryRelease: entry.binaryRelease } : {}),
+      env: this.env,
+      ...(this.deps.settings ? { settings: this.deps.settings() } : {}),
+      ...(this.deps.fetch ? { fetchImpl: this.deps.fetch } : {}),
+    };
   }
 
   private installDir(id: RouterCatalogId): string {
@@ -370,17 +609,26 @@ class FileRouterRegistry implements RouterRegistry {
     let versionOverride: string | undefined;
     let resolveWarning: string | undefined;
     let swapped = false;
+    const emit = (line: string) => {
+      for (const listener of job.listeners) {
+        try {
+          listener(line);
+        } catch {
+          /* a caller that went away */
+        }
+      }
+    };
+    const phase = (next: RouterInstallPhase, line: string) => {
+      job.phase = next;
+      emit(line);
+    };
+    let shownShare = -1;
     try {
       if (entry.id === "tracemaker") {
-        job.phase = "resolving";
-        const resolved = await resolveTraceMakerInstallArtifact({
-          source: artifact,
-          ...(entry.binaryRelease ? { binaryRelease: entry.binaryRelease } : {}),
-          env: this.env,
-          ...(this.deps.settings ? { settings: this.deps.settings() } : {}),
-          ...(this.deps.fetch ? { fetchImpl: this.deps.fetch } : {}),
-          signal: abort.signal,
-        });
+        phase("resolving", `${entry.displayName}: resolving the download for this platform`);
+        const resolved = await resolveTraceMakerInstallArtifact({ ...this.traceMakerResolveArgs(entry, artifact), signal: abort.signal });
+        if (job.replace && resolved.origin !== "binary")
+          throw new Error(`no TraceMaker binary release is reachable (${(resolved.warning ?? "source fallback").replace(/[.\s]*$/, "")}); kept the installed copy`);
         artifact = resolved.artifact;
         versionOverride = resolved.version;
         resolveWarning = resolved.warning;
@@ -390,7 +638,7 @@ class FileRouterRegistry implements RouterRegistry {
       await rm(work, { recursive: true, force: true });
       await mkdir(work, { recursive: true, mode: 0o700 });
       const destFile = join(work, artifact.filename);
-      job.phase = "downloading";
+      phase("downloading", `${entry.displayName}: downloading ${artifact.filename}${artifact.bytes ? ` (${Math.round(artifact.bytes / 1e6)} MB)` : ""}`);
       const downloaded = await downloadAndVerify({
         url: artifact.url,
         dest: destFile,
@@ -402,15 +650,20 @@ class FileRouterRegistry implements RouterRegistry {
         onProgress: (received, total) => {
           job.received = received;
           job.total = total;
+          const share = total > 0 ? Math.floor((received / total) * 4) : -1;
+          if (share > shownShare && share < 4) {
+            shownShare = share;
+            if (share > 0) emit(`${entry.displayName}: ${share * 25}% of ${Math.round(total / 1e6)} MB`);
+          }
         },
       });
       abort.signal.throwIfAborted();
-      job.phase = "verifying";
+      phase("verifying", `${entry.displayName}: verifying sha256`);
       await verifyFileSha256(destFile, artifact.sha256);
-      job.phase = "extracting";
+      phase("extracting", `${entry.displayName}: extracting`);
       const extracted = join(work, "extracted");
-      await mkdir(extracted, { recursive: true });
-      await this.materialize(artifact, destFile, extracted);
+      await mkdir(join(extracted, artifact.subdir ?? ""), { recursive: true });
+      await this.materialize(artifact, destFile, join(extracted, artifact.subdir ?? ""));
       abort.signal.throwIfAborted();
       // Swap the finished tree in only now, keeping the previous install until the new one is recorded,
       // so a failure at any step never leaves a half-installed directory behind.
@@ -418,12 +671,31 @@ class FileRouterRegistry implements RouterRegistry {
       if (existsSync(final)) await rename(final, backup);
       swapped = true;
       await rename(extracted, final);
-      const readyPath = this.findReadyPath(final, artifact) ?? final;
+      let setupNotice: string | undefined;
+      if (entry.id === "atlc") {
+        phase("setup", `${entry.displayName}: building from source`);
+        await (this.deps.atlcBuild ?? buildAtlc)(join(final, ATLC_SRC), emit, abort.signal);
+        abort.signal.throwIfAborted();
+      }
+      if (entry.id === "krt") {
+        // The venv is made in place (its paths are absolute), after the swap; a failure restores the backup.
+        phase("setup", `${entry.displayName}: setting up Python and the router core`);
+        const setup = await (this.deps.krtSetup ?? setupKrt)(final, {
+          env: this.env,
+          signal: abort.signal,
+          log: emit,
+          routersRoot: this.root,
+          ...(this.deps.fetch ? { fetch: this.deps.fetch } : {}),
+        });
+        abort.signal.throwIfAborted();
+        setupNotice = setup.notice;
+      }
+      const readyPath = artifact.subdir ? final : (this.findReadyPath(final, artifact) ?? final);
       const binaryReady = this.binaryReady(entry, readyPath);
       if (binaryReady) await chmod(readyPath, 0o755).catch(() => undefined);
-      const notice = !binaryReady
+      const notice = setupNotice ?? (!binaryReady
         ? `${(resolveWarning ?? `No runnable ${entry.displayName} binary was in the downloaded archive.`).replace(/[.\s]*$/, "")}. Only the source package was downloaded, so ${entry.displayName} is not usable until you build it or set ${this.overrideEnv(entry.id)}.`
-        : undefined;
+        : undefined);
       this.persisted.routers[entry.id] = {
         state: "installed",
         version: versionOverride ?? entry.version,
@@ -482,9 +754,9 @@ class FileRouterRegistry implements RouterRegistry {
       return target;
     }
     const spawn = this.deps.spawn ?? defaultSpawn;
-    if (artifact.format === "tar.gz") {
-      const code = await spawn("tar", ["-xzf", archive, "-C", dest]);
-      if (code !== 0) throw new Error("failed to extract tar.gz artifact");
+    if (artifact.format === "tar.gz" || artifact.format === "tar.bz2") {
+      const code = await spawn("tar", [artifact.format === "tar.gz" ? "-xzf" : "-xjf", archive, "-C", dest]);
+      if (code !== 0) throw new Error(`failed to extract ${artifact.format} artifact`);
     } else {
       await extractZipArchive(archive, dest, spawn);
     }
@@ -571,42 +843,6 @@ function findNamedFile(
     return null;
   };
   return walk(root, 0);
-}
-
-export async function extractZipArchive(
-  archive: string,
-  dest: string,
-  spawn: (cmd: string, args: string[]) => Promise<number>,
-  platform: string = process.platform,
-): Promise<void> {
-  const attempts: Array<{ cmd: string; args: string[] }> = [
-    { cmd: "unzip", args: ["-o", archive, "-d", dest] },
-  ];
-  if (platform === "win32" || platform === "windows") {
-    // Windows 10+ ships bsdtar, which extracts zip. PowerShell is the fallback
-    // when neither unzip nor tar is on PATH (typical Electron desktop).
-    attempts.push({ cmd: "tar", args: ["-xf", archive, "-C", dest] });
-    attempts.push({
-      cmd: "powershell",
-      args: [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        `Expand-Archive -Force -LiteralPath '${archive.replace(/'/g, "''")}' -DestinationPath '${dest.replace(/'/g, "''")}'`,
-      ],
-    });
-  }
-  const errors: string[] = [];
-  for (const attempt of attempts) {
-    try {
-      const code = await spawn(attempt.cmd, attempt.args);
-      if (code === 0) return;
-      errors.push(`${attempt.cmd} exited ${code}`);
-    } catch (error) {
-      errors.push(`${attempt.cmd}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  throw new Error(`failed to extract zip artifact (${errors.join("; ")})`);
 }
 
 async function defaultSpawn(cmd: string, args: string[]): Promise<number> {

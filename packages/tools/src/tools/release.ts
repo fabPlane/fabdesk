@@ -4,6 +4,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { z } from "zod/v4";
 import { PROJECT_FILES, ensureDir, exists, projectRelative, writeAtomic, writeJson } from "../fs";
+import { releaseAdvisories } from "../board-state";
 import { ToolError, defineTool } from "../registry";
 import { inspectSavedHierarchy, p, requireKicad } from "./common";
 import { zipFiles } from "./export";
@@ -596,6 +597,7 @@ export const release_build = defineTool({
       pcbPresentation.status === "pass" &&
       failedCircuitChecks.length === 0 &&
       missing.length === 0;
+    const boardChecks = await releaseAdvisories(project.dir);
     const result = {
       contract: { name: "fabdesk.native-release", version: "2.0.0" },
       capturedAt: new Date().toISOString(),
@@ -624,6 +626,9 @@ export const release_build = defineTool({
       checks,
       inventory,
       missing,
+      // what the board workflow knows about the saved board (A1-A9, review, onboarding); never blocking here:
+      // board_release is the hard gate for the fabrication package
+      ...(boardChecks.length ? { boardChecks: { status: "advisory" as const, lines: boardChecks } } : {}),
     };
     await writeJson(join(reportsDir, "release.json"), result);
     ctx.progress(1, pass ? "release passed" : "release failed");
@@ -642,6 +647,7 @@ export const release_build = defineTool({
             ...presentationAdvisories.map((message) => `- ${message}`),
           ]
         : []),
+      ...(boardChecks.length ? ["Board checks (non-blocking; board_release is the gate):", ...boardChecks.map((line) => `- ${line}`)] : []),
       ...(gate.newWarningSignatures.length
         ? [
             "Unapproved warning signatures:",

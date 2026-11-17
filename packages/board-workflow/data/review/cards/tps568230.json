@@ -1,0 +1,8 @@
+{"part": "TI TPS568230 (8 A synchronous buck)", "match": "TPS568230",
+ "checked_against_datasheet": false,
+ "source": "standard synchronous-buck application circuit; to be confirmed against the TPS568230 datasheet (BST capacitor, FB divider)",
+ "rules": [
+  {"pin": "BST", "path": ["C"], "arrives_pin": "SW", "why": "bootstrap capacitor between BST and SW"},
+  {"pin": "FB", "path": ["R"], "arrives_ground": true, "why": "lower feedback resistor to ground"},
+  {"pin": "FB", "path": ["R", "L"], "arrives_pin": "SW", "why": "upper feedback resistor to the output node behind the inductor"}
+ ]}

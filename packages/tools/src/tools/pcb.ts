@@ -71,7 +71,7 @@ export const pcb_place = defineTool({
   toolset: "circuit",
   title: "Place PCB footprints",
   description:
-    "Place native PCB footprints and adjust their silkscreen reference fields at explicit millimetre coordinates. Reports routed copper made stale or shorted by a transform. Locked groups block geometry edits; locked footprints require an explicit lock=false to unlock. Existing embedded geometry is preserved; the source footprint library is not required. Unknown references fail without a partial placement. Save any open PCB and schematic first: placement recovery may restart KiCad.",
+    "Place native PCB footprints and adjust their silkscreen reference fields at explicit millimetre coordinates. Reports routed copper made stale or shorted by a transform. Locked groups block geometry edits; locked footprints require an explicit lock=false to unlock. Existing embedded geometry is preserved; the source footprint library is not required. Unknown references fail without a partial placement. Save any open PCB and schematic first: placement recovery may restart KiCad. On a routed board, board_edit supersedes this for moving and re-seating parts: it cuts and re-lands the copper, updates the schematic and requirements, and proves A1-A9 on a candidate.",
   inputSchema: {
     placements: z
       .array(

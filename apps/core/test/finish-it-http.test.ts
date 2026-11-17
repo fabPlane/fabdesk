@@ -81,6 +81,8 @@ beforeAll(async () => {
     quiet: true,
     watchProjects: false,
     abortSettleTimeoutMs: 200,
+    // these tests cover the DRC/route-report definition of done; the board-checks path has its own file
+    boardChecks: () => false,
     services: async ({ projects, bus, store }) =>
       mockServices([], {
         projects,

@@ -2343,7 +2343,15 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           .filter((row) => keep(row.text));
       }
       case "unrouted": {
-        return (await board.ratsnest()).edges
+        // KiCad builds without the GetRatsnest handler answer AS_UNHANDLED; name the tools that report open connections
+        const rats = await board.ratsnest().catch((e: unknown) => {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (!/AS_UNHANDLED/.test(msg)) throw e;
+          throw new Error(
+            'unrouted edges need KiCad\'s ratsnest (GetRatsnest), which this KiCad build does not serve. Open connections: board_check (A1 connectivity, from KiCad DRC) or, on a last-mile workspace, board_route {"action":"why"} (each open end and what walls it).',
+          );
+        });
+        return rats.edges
           .map((e) => ({
             net: e.net,
             from: { x: mm(e.sourcePosition.x), y: mm(e.sourcePosition.y) },
