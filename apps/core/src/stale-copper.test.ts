@@ -179,3 +179,50 @@ test("a via meeting a zone on its other layer stops traversal", () => {
     routes: [track("s", "A", 0, 5), via, track("next", "A", 5, 10, B)], zones: [{ layer: B, polygons: [square(5)] }] });
   expect(r.staleIds).toEqual(["s"]);
 });
+
+// Real nanometre coordinates keep the 1 nm connectivity tolerance out of these cases.
+describe("via copper contacts across its spanned layers", () => {
+  const mm = 1e6;
+  const p = (x: number, y: number) => ({ x: x * mm, y: y * mm });
+  const before: CopperPad = { ...pad("moving", "1", "A", 0), shapes: [{ layer: F, polygon: square(0, 0, .4 * mm) }] };
+  const after: CopperPad = { ...before, shapes: [{ layer: F, polygon: square(-10 * mm, 0, .4 * mm) }] };
+  const route = (id: string, a: [number, number], b: [number, number], layer = B): CopperRoute =>
+    ({ ...track(id, "A", 0, 0, layer), path: [p(...a), p(...b)], width: .2 * mm });
+  const via: CopperRoute = { id: "via", kind: "via", net: "A", layers: [F, B], path: [p(5, 0)], width: .8 * mm, locked: false };
+  const stem = route("old-fanout", [0, 0], [5, 0], F);
+  const next = route("live-next", [5, 0], [10, 0]);
+  const run = (extra: CopperRoute[] = [], polygon?: CopperPolygon, zone = false, layer = B) => {
+    const other: CopperPad = { ...before, id: "other", parent: "other", reference: "U2", shapes: polygon && !zone ? [{ layer, polygon }] : [] };
+    return analyzeStaleCopper({ beforePads: [before], afterPads: [after], allPadsBefore: [before, other], allPadsAfter: [after, other],
+      routes: [stem, via, next, ...extra], zones: polygon && zone ? [{ layer, polygons: [polygon] }] : [] }).staleIds;
+  };
+  test("an unsplit track interior is a junction", () => {
+    expect(run([route("live-unsplit", [5, -5], [5, 5])])).toEqual(["old-fanout"]);
+  });
+  test("one unsplit track alone supplies two continuing branches", () => {
+    const unsplit = route("live-unsplit", [5, -5], [5, 5]);
+    const result = analyzeStaleCopper({ beforePads: [before], afterPads: [after], allPadsBefore: [before], allPadsAfter: [after], routes: [stem, via, unsplit], zones: [] });
+    expect(result.staleIds).toEqual(["old-fanout"]);
+  });
+  test("an arc interior contacting the annulus is a junction", () => {
+    expect(run([{ ...route("arc", [4, -2], [4, 2]), kind: "arc", path: [p(4, -2), p(5.35, 0), p(4, 2)] }])).toEqual(["old-fanout"]);
+  });
+  for (const zone of [false, true]) {
+    const kind = zone ? "filled zone" : "pad";
+    test(`off-centre ${kind} touches the annulus`, () => {
+      expect(run([], square(5 * mm, .6 * mm, .3 * mm), zone)).toEqual(["old-fanout"]);
+    });
+    test(`${kind} hole with clearance allows traversal; hole edge contact stops it`, () => {
+      const outline = square(5 * mm, 0, 2 * mm).outline;
+      expect(run([], { outline, holes: [square(5 * mm, 0, .6 * mm).outline] }, zone)).toEqual(["live-next", "old-fanout", "via"]);
+      expect(run([], { outline, holes: [square(5 * mm, 0, .3 * mm).outline] }, zone)).toEqual(["old-fanout"]);
+    });
+    test(`${kind} on an unspanned layer does not stop traversal`, () => {
+      expect(run([], square(5 * mm, .6 * mm, .3 * mm), zone, BoardLayer.BL_In1_Cu)).toEqual(["live-next", "old-fanout", "via"]);
+    });
+  }
+  test("a narrow filled thermal spoke contacting only the annulus stops traversal", () => {
+    const spoke = { outline: [p(5.3, -.05), p(6, -.05), p(6, .05), p(5.3, .05)] };
+    expect(run([], spoke, true)).toEqual(["old-fanout"]);
+  });
+});

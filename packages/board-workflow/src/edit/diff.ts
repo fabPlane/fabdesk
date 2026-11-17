@@ -1,5 +1,5 @@
 /** Planned vs collateral change: proves the edit changed what the plan said and nothing else (parts, poses, pin nets, copper). */
-import { parseSexpr, removeSpans, topLevelSpans, type Span } from "../sexpr";
+import { parseSexpr, removeSpans, topLevelSpans, type Span, type SNode } from "../sexpr";
 import type { Segment } from "../board";
 import { boardModel } from "./impact";
 import { round } from "./fmt";
@@ -48,6 +48,33 @@ export function diffBoards(beforeText: string, afterText: string): BoardDiff {
   return out;
 }
 
+// Normalize numeric fields only: a numeric-looking net name is still a name.
+const numericCopperFields = new Set(["start", "mid", "end", "at", "width", "size", "drill"]);
+function copperSignature(node: SNode): string {
+  const properties = node.slice(1).filter((n) => !Array.isArray(n) || !["uuid", "tstamp"].includes(String(n[0])));
+  const start = properties.find((n) => Array.isArray(n) && n[0] === "start");
+  const end = properties.find((n) => Array.isArray(n) && n[0] === "end");
+  const normalize = (property: SNode): unknown[] => {
+    const [key, ...values] = property;
+    const atoms = values.map((value) => {
+      if (Array.isArray(value)) return normalize(value);
+      return numericCopperFields.has(String(key)) && value.trim() !== "" && Number.isFinite(Number(value)) ? Number(value) : value;
+    });
+    if (key === "layers") atoms.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+    return [key, ...atoms];
+  };
+  // Tracks are undirected. Keep arc start/mid/end roles intact.
+  const reverse = node[0] === "segment" && Array.isArray(start) && Array.isArray(end) &&
+    JSON.stringify(normalize(start).slice(1)) > JSON.stringify(normalize(end).slice(1));
+  return JSON.stringify([node[0], ...properties.map((property) => {
+    if (!Array.isArray(property)) return property;
+    const normalized = normalize(property);
+    if (reverse && property[0] === "start") normalized[0] = "end";
+    if (reverse && property[0] === "end") normalized[0] = "start";
+    return normalized;
+  }).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))]);
+}
+
 /** Geometry and properties, excluding item identity and formatting. Include vias and arcs even at equal total length. */
 function copperSignatures(text: string): Map<string, string> {
   const out = new Map<string, string[]>();
@@ -56,7 +83,7 @@ function copperSignatures(text: string): Map<string, string> {
     const net = node.find((n) => Array.isArray(n) && n[0] === "net");
     if (!Array.isArray(net) || !net[1]) continue;
     const name = String(net[1]);
-    const signature = JSON.stringify(node.filter((n) => !Array.isArray(n) || !["uuid", "tstamp"].includes(String(n[0]))));
+    const signature = copperSignature(node);
     (out.get(name) ?? out.set(name, []).get(name)!).push(signature);
   }
   return new Map([...out].map(([net, items]) => [net, items.sort().join(";")]));

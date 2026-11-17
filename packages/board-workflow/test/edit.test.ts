@@ -662,3 +662,21 @@ test("an unchanged target reports no move and cuts no copper", () => {
   expect(carried.text).toBe(BOARD);
   expect(carried.led.copper_moved).toBe(0);
 });
+
+describe("semantic copper signatures", () => {
+  const board = (items: string) => `(kicad_pcb ${items})`;
+  const segment = '(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (net "SIG") (uuid "old"))';
+  for (const [name, rewritten] of [
+    ["numeric formatting", segment.replace('(start 1 2)', '(start 1.0000 2.0000)').replace('0.2', '2e-1')],
+    ["property ordering", '(segment (net "SIG") (layer "F.Cu") (width 0.2) (end 3 4) (start 1 2) (uuid "new"))'],
+    ["undirected endpoints", segment.replace('(start 1 2) (end 3 4)', '(start 3 4) (end 1 2)')],
+  ]) test(`${name} does not change copper`, () => {
+    expect(diffBoards(board(segment), board(rewritten!)).copper_changed_nets).toEqual({});
+  });
+  test("via and arc properties normalize while numeric-looking net names stay distinct", () => {
+    const before = '(via (at 1 2) (size 0.8) (drill 0.4) (layers "F.Cu" "B.Cu") (net "01")) (arc (start 1 2) (mid 2 3) (end 3 2) (width 0.2) (layer "F.Cu") (net "SIG"))';
+    const after = '(arc (net "SIG") (layer "F.Cu") (width 0.2000) (end 3.0 2.0) (start 1.0 2.0) (mid 2.0 3.0)) (via (net "01") (layers "B.Cu" "F.Cu") (drill 0.400) (size 0.800) (at 1.000 2.000))';
+    expect(diffBoards(board(before), board(after)).copper_changed_nets).toEqual({});
+    expect(Object.keys(diffBoards(board(before), board(after.replace('"01"', '"1"'))).copper_changed_nets).sort()).toEqual(["01", "1"]);
+  });
+});
