@@ -38,6 +38,13 @@ async function requirementsFor(ctx: ToolContext, pcb?: string): Promise<Requirem
 function hostFill(ctx: ToolContext, host: layout.LayoutHost): L.FillFn {
   return async (router, dir, { signal, timeoutMs }) => {
     if (router === "tracemaker") {
+      // a fill step that names TraceMaker chooses it, so install it here (the host's ensurer never installs TraceMaker)
+      if (!host.tools.tracemaker && ctx.services.routers) {
+        const got = await ctx.services.routers.ensure("tracemaker", { onLine: (line) => ctx.progress(0, line) });
+        if (got.path) host.tools.tracemaker = got.path;
+        else throw new Error(got.why ?? "TraceMaker could not be installed (board_engines install tracemaker, or TRACEMAKER_BIN)");
+      }
+
       // installed on first use when it is missing (one TraceMaker install even when parallel candidates ask)
       const tm = await layout.engineReady(host, "tracemaker");
       const binary = tm.path;
@@ -133,7 +140,7 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
           const out = krt ?? L.whyLines(L.whyOpen(parseBoard(await readFile(bench.board, "utf8")), sc.opens, nets)).slice(0, -1);
           if (!krt) out.unshift("(KiCadRoutingTools not configured: walls from the board model, not KRT's net_forensics)");
           if (!a.nets?.length) {
-            await layout.engineReady(host, "tracemaker"); // installs it on first use unless automatic installs are off
+            await layout.engineReady(host, "tracemaker"); // used when installed; never installed for this
             const causes = await L.tmCauses(host, rb);
             out.push(...(causes ? ["TraceMaker causes:", ...causes.map((l) => "  " + l)] : ["(TraceMaker not available: no cause classes)"]));
           }

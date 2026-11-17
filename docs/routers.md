@@ -95,9 +95,12 @@ build time (not reproducible; not verified on real ARM hardware).
 
 **Install on first use.** The board tools call the registry's `ensure` (`packages/tools/src/routers/registry.ts`) through
 the layout host (`engineEnsurer` in `board-host.ts`, `engineReady` in `@fabdesk/board-workflow`'s `layout/ctx.ts`) at the
-point a step needs an engine: the layout `check` (KRT and TraceMaker), `place` / `rank` / `route` (KRT; TraceMaker for
-the route stage's TraceMaker branch), the last-mile router, rip and nudge steps and `why` (KRT), and `fill:tracemaker`.
-The missing engine is installed inline with progress lines and the step continues. Rules:
+point a step needs an engine: the layout `check`, `place` / `rank` / `route`, the last-mile router, rip and nudge steps
+and `why` (KRT). The missing engine is installed inline with progress lines and the step continues. **TraceMaker is the
+exception**: it is a third-party router, so it is installed only when chosen (Settings → Install, `board_engines` with
+`engine: "tracemaker"`, `route_run router=tracemaker`, or a last-mile `fill:tracemaker` step). Steps that merely could use
+it (the layout route stage's TraceMaker branch, `why`'s cause classes, `validate`'s pair audit) use it when it is
+installed and go without it otherwise; the floorplan path stops with an install hint. Rules:
 
 - concurrent requests share one install (one download), whether they come from parallel candidates, two tools or
   Settings;
@@ -107,7 +110,6 @@ The missing engine is installed inline with progress lines and the step continue
   steps then report the missing engine;
 - an automatic install that failed is not retried automatically in the same core process; `board_engines install`
   (or Settings → Install) retries;
-- `route_run router=tracemaker`, `why`'s cause classes and `validate`'s pair audit install TraceMaker on first use as well;
 - the floorplan path (`board_route action=floorplan`, `block_eval`, last-mile `replace:`) runs TraceMaker's placer
   `tracemaker-place` through `ensurePlacer` (`placerEnsurer` in `board-host.ts`, `tracemakerPlacer` in
   `layout/floorplan.ts`); see [TraceMaker's placer](#tracemakers-placer-tracemaker-place).
@@ -175,7 +177,7 @@ The registry resolves it (`traceMakerPlacerNear`, the snapshot's `placer` field,
 3. the CMake build tree's `src/place` next to `src/app` (a source build, including `TRACEMAKER_BIN` pointing into one),
    then anywhere in a source package built in place.
 
-`ensurePlacer` installs TraceMaker first when it is missing (the same rules as `ensure`). A managed install from an
+`ensurePlacer` does not install TraceMaker: the floorplan path stops with an install hint when it is missing. A managed install from an
 archive that predates the placer (no `placer` key) is replaced once from the current release, but only after the
 manifest shows that release carries it, so nothing is re-downloaded for nothing; automatic upgrades honour
 `autoInstallEngines` and are not retried after a failure (`board_engines install tracemaker` retries). A

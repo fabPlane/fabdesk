@@ -31,6 +31,9 @@ export function engineEnsurer(ctx: ToolContext, note: (line: string) => void): N
     let p = once.get(engine);
     if (!p) {
       const routers = ctx.services.routers;
+      // TraceMaker is a third-party router installed only when someone chooses it; a stage that merely could use it
+      // goes without (an explicit `fill:tracemaker` or `route_run router=tracemaker` installs it)
+      if (engine === "tracemaker") return Promise.resolve({ path: null, why: TRACEMAKER_NOT_CHOSEN });
       p = routers
         ? routers.ensure(engine, { onLine: note }).then((r) => (r.path ? { path: r.path } : { path: null, ...(r.why ? { why: r.why } : {}) }))
         : Promise.resolve({ path: null, why: "this host has no router registry to install engines from" });
@@ -40,11 +43,17 @@ export function engineEnsurer(ctx: ToolContext, note: (line: string) => void): N
   };
 }
 
-/** TraceMaker's placer through the router registry (installing or upgrading TraceMaker first); once per host. */
+/** Why a stage went without TraceMaker: it is installed only when chosen. */
+export const TRACEMAKER_NOT_CHOSEN =
+  'TraceMaker is installed only when chosen: Settings → Routers → TraceMaker → Install, board_engines {"action": "install", "engine": "tracemaker"}, or TRACEMAKER_BIN';
+
+/** TraceMaker's placer through the router registry, when TraceMaker was installed (by choice); once per host. */
 export function placerEnsurer(ctx: ToolContext, note: (line: string) => void): NonNullable<LayoutHost["ensurePlacer"]> {
   let p: Promise<layout.EngineReady> | undefined;
   return () =>
-    (p ??= ctx.services.routers
+    (p ??= !ctx.services.routers?.executable("tracemaker") && !process.env["TRACEMAKER_BIN"] && !process.env["TRACEMAKER_PLACE_BIN"]
+      ? Promise.resolve({ path: null, why: `the floorplan placer ships with TraceMaker. ${TRACEMAKER_NOT_CHOSEN}` })
+      : ctx.services.routers
       ? ctx.services.routers.ensurePlacer({ onLine: note }).then((r) => (r.path ? { path: r.path } : { path: null, ...(r.why ? { why: r.why } : {}) }))
       : Promise.resolve({ path: null, why: "this host has no router registry to install engines from" }));
 }

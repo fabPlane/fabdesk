@@ -14,7 +14,8 @@ import { ok } from "./common";
 
 const ENGINES = ["krt", "tracemaker", "freerouting", "atlc"] as const satisfies readonly RouterCatalogId[];
 /** What `all` installs: the engines board_route runs (Freerouting is bundled or a `route_run` choice). */
-const WORKFLOW_ENGINES = ["krt", "tracemaker"] as const;
+// what `install` without an engine installs: the workflow's own engine. TraceMaker (third-party) only when named.
+const WORKFLOW_ENGINES = ["krt"] as const;
 
 function row(s: RouterSnapshot): string {
   const head = `${s.id}: ${s.ready ? "ready" : s.state.replace("_", " ")}${s.versionInstalled ? ` ${s.versionInstalled}` : ""}${s.path ? ` at ${s.path}` : ""}`;
@@ -47,10 +48,10 @@ export const board_engines = defineTool({
   toolset: "board",
   title: "Board engines: status and install",
   description:
-    "The engines the board tools run: KiCadRoutingTools (krt: layout check/place/rank/route, last-mile router, rip and nudge steps, why), TraceMaker (layout route, fill:tracemaker; its placer tracemaker-place runs the floorplan path), Freerouting and atlc (board_review section's finite-difference impedance solver; built from source, or the system's atlc), plus the KiCad CLI. status (default): each one's state, version, path, override and last error, and whether TraceMaker's placer is there. install: install `engine` (krt, tracemaker, freerouting, atlc, or all = krt + tracemaker) now; downloads are sha256-checked, KRT gets a private hash-locked Python (uv and CPython are fetched when the machine has neither; nothing needs to be preinstalled). Board tools also install a missing engine on first use, so this is for installing ahead of a long run or installing again after a failure. install tracemaker also reinstalls a TraceMaker whose archive predates the placer. A set override (Settings krtDir, FABDESK_KRT_DIR, TRACEMAKER_BIN, TRACEMAKER_PLACE_BIN, FREEROUTING_JAR, ATLC_BIN) that is broken is reported, not installed over. Installs take seconds to a few minutes and run as a board job (board_job).",
+    "The engines the board tools run: KiCadRoutingTools (krt: layout check/place/rank/route, last-mile router, rip and nudge steps, why), TraceMaker (layout route, fill:tracemaker; its placer tracemaker-place runs the floorplan path), Freerouting and atlc (board_review section's finite-difference impedance solver; built from source, or the system's atlc), plus the KiCad CLI. status (default): each one's state, version, path, override and last error, and whether TraceMaker's placer is there. install: install `engine` (krt, tracemaker, freerouting, atlc, or all = krt) now; TraceMaker is third-party and installs only when named here, chosen in Settings, or named by route_run router=tracemaker / a fill:tracemaker step; downloads are sha256-checked, KRT gets a private hash-locked Python (uv and CPython are fetched when the machine has neither; nothing needs to be preinstalled). Board tools also install a missing engine on first use, so this is for installing ahead of a long run or installing again after a failure. install tracemaker also reinstalls a TraceMaker whose archive predates the placer. A set override (Settings krtDir, FABDESK_KRT_DIR, TRACEMAKER_BIN, TRACEMAKER_PLACE_BIN, FREEROUTING_JAR, ATLC_BIN) that is broken is reported, not installed over. Installs take seconds to a few minutes and run as a board job (board_job).",
   inputSchema: {
     action: z.enum(["status", "install"]).default("status"),
-    engine: z.enum([...ENGINES, "all"]).optional().describe("install: which engine; default all (krt + tracemaker)."),
+    engine: z.enum([...ENGINES, "all"]).optional().describe("install: which engine; default all (krt)."),
   },
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: true },
   scope: "global",

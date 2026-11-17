@@ -189,3 +189,49 @@ describe("board_engines tool", () => {
     expect(inst.json).toMatchObject({ engines: [{ id: "krt", ready: true, installed: true }] });
   });
 });
+
+describe("TraceMaker installs only when chosen", () => {
+  // a router registry that records what it was asked to install; nothing is installed
+  const fakeRouters = () => {
+    const asked: string[] = [];
+    const routers = {
+      executable: () => null,
+      get: () => ({ placer: null }),
+      ensure: async (id: string) => (asked.push(id), { path: `/engines/${id}` }),
+      ensurePlacer: async () => (asked.push("placer"), { path: "/engines/tracemaker-place" }),
+      cancel: async () => ({}),
+    };
+    return { asked, routers };
+  };
+
+  test("a step that could use TraceMaker goes without it; KRT still installs on first use", async () => {
+    const { engineEnsurer, placerEnsurer } = await import("../src/tools/board-host");
+    const { asked, routers } = fakeRouters();
+    const ctx = { services: { routers }, progress: () => undefined } as never;
+    const ensure = engineEnsurer(ctx, () => undefined);
+    expect(await ensure("tracemaker")).toMatchObject({ path: null, why: expect.stringContaining("installed only when chosen") });
+    expect(await ensure("krt")).toEqual({ path: "/engines/krt" });
+    const saved = { bin: process.env["TRACEMAKER_BIN"], place: process.env["TRACEMAKER_PLACE_BIN"] };
+    delete process.env["TRACEMAKER_BIN"];
+    delete process.env["TRACEMAKER_PLACE_BIN"];
+    try {
+      expect(await placerEnsurer(ctx, () => undefined)()).toMatchObject({ path: null, why: expect.stringContaining("installed only when chosen") });
+    } finally {
+      if (saved.bin !== undefined) process.env["TRACEMAKER_BIN"] = saved.bin;
+      if (saved.place !== undefined) process.env["TRACEMAKER_PLACE_BIN"] = saved.place;
+    }
+    expect(asked).toEqual(["krt"]);
+  });
+
+  test("board_engines install without an engine installs KRT only; naming TraceMaker installs it", async () => {
+    const { asked, routers } = fakeRouters();
+    const services = mockServices([]);
+    services.routers = routers as never;
+    const reg = createRegistry();
+    const ctx = { services, progress: () => undefined, signal: new AbortController().signal } as never;
+    await reg.invoke("board_engines", { action: "install" }, async () => ctx);
+    expect(asked).toEqual(["krt"]);
+    await reg.invoke("board_engines", { action: "install", engine: "tracemaker" }, async () => ctx);
+    expect(asked).toEqual(["krt", "tracemaker", "placer"]);
+  });
+});

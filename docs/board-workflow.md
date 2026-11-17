@@ -42,9 +42,10 @@ Where a request starts (then follow the stages from there):
 | produce the fab package | `board_release fab` for a release (its gates: settled review, A1-A9 or owner exceptions, BOM); for a board the owner approved as it is, `board_release cam` (Gerbers from a fresh zone fill, drill, BOM, placement, render check; one call) |
 
 Long jobs return a job id: `board_job` waits for, reports or cancels them. One heavy job runs at a time; the resource governor queues the rest.
-Engines (KiCadRoutingTools, TraceMaker, atlc for `section`) install themselves the first time a step needs them (minutes, with progress lines;
+Engines (KiCadRoutingTools, atlc for `section`) install themselves the first time a step needs them (minutes, with progress lines;
 nothing to preinstall; atlc is built from source and needs a C compiler unless the system has one); `board_engines` shows their state or installs
-ahead. A set override (`FABDESK_KRT_DIR`, `TRACEMAKER_BIN`, `ATLC_BIN`) is used as given.
+ahead. TraceMaker (third-party) installs only when chosen: `board_engines` with `engine: "tracemaker"`, a `fill:tracemaker` step,
+`route_run router=tracemaker` or Settings; steps that could use it go without it otherwise, and the floorplan path stops and says so. A set override (`FABDESK_KRT_DIR`, `TRACEMAKER_BIN`, `ATLC_BIN`) is used as given.
 
 **The board's acceptance checks (A1-A9).** Each board carries its own definition of done, written at onboarding into
 `.fabdesk/board/requirements/` (you own the numbers). The same nine questions apply to any board, each judged against that board's data:
