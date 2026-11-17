@@ -96,6 +96,8 @@ test("handoff publishes source-bound views and canonical reports, disclosing dec
   const result = await f.run();
   const completion = JSON.parse(await readFile(join(f.project.dir, "reports/board-completion.json"), "utf8"));
   expect(completion.checksPass).toBe(true);
+  expect(completion.pcb).toBe("board.kicad_pcb");
+  expect(completion.boardSha256).toBe(createHash("sha256").update(await readFile(join(f.project.dir, "board.kicad_pcb"))).digest("hex"));
   expect(completion.designHash).toMatch(/^[a-f0-9]{64}$/);
   expect(completion.artifacts.some((a: { path: string }) => a.path === "renders/board.glb")).toBe(true);
   expect(result.json).toMatchObject({

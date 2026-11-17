@@ -207,7 +207,7 @@ export const render_publish = defineTool({
           erc.measurement?.revisionStable === true;
         // Publish completion evidence in the same rollback-protected generation as its views/reports.
         outputs.push({ path: "reports/board-completion.json", bytes: Buffer.from(JSON.stringify({
-          designHash: completionDesignHash, checksPass,
+          pcb: "board.kicad_pcb", boardSha256: pcbRevision, designHash: completionDesignHash, checksPass,
           artifacts: outputs.map(o => ({ path: o.path, sha256: sha(o.bytes) })),
         }) + "\n") });
         // Validate every output jail before replacing any canonical artifact.

@@ -107,9 +107,9 @@ for (const change of ["board.kicad_sch", ".fabdesk/board/requirements/board.json
   await json(p.dir, change, { changed: true });
   const paths = ["renders/pcb.svg", "renders/board.glb", "renders/schematic.svg", "reports/drc.json", "reports/erc.json"];
   for (const path of paths) { await mkdir(join(p.dir, path, ".."), { recursive: true }); await writeFile(join(p.dir, path), "fixture"); }
-  await json(p.dir, "reports/board-completion.json", { designHash: await currentReviewHash(p.dir), checksPass: true, artifacts: paths.map(path => ({ path, sha256: sha("fixture") })) });
+  await json(p.dir, "reports/board-completion.json", { pcb: "board.kicad_pcb", boardSha256: sha(PCB), designHash: await currentReviewHash(p.dir), checksPass: true, artifacts: paths.map(path => ({ path, sha256: sha("fixture") })) });
   expect((await stageState(p.dir)).board.complete).toBe(false);
-  await json(p.dir, ".fabdesk/board/accept/index.json", [{ sha256: sha(PCB), designHash: (await designHash(p.dir)).design, summary, parityChecked: true }]);
+  await json(p.dir, ".fabdesk/board/accept/index.json", [{ pcb: "board.kicad_pcb", sha256: sha(PCB), designHash: (await designHash(p.dir)).design, summary, parityChecked: true }]);
   expect((await stageState(p.dir)).board.complete).toBe(true);
 });
 test("package waiver helper returns the final saved manifest", async () => {
@@ -118,4 +118,112 @@ test("package waiver helper returns the final saved manifest", async () => {
   const result = await packageWaivers(p.dir, out);
   expect(result).toEqual(JSON.parse(await readFile(join(out, "manifest.json"), "utf8")));
   expect(result?.reviewWaivers).toHaveLength(1);
+});
+
+for (const [changed, problem] of [[false, true], [true, true], [true, false]]) test(`latest legacy import wins, changed design=${changed}, problem=${problem}`, async () => {
+  const p = await project(["identity"]);
+  const run = (second: number) => runReview(p, fakeEnv(), { offline: true, now: () => new Date(`2026-11-18T00:00:0${second}Z`) });
+  await run(1); await importExpert(p, { ...await provenance(p), findings: [] });
+  if (changed) await writeFile(p.pcb, PCB + "\n");
+  await run(2);
+  await importExpert(p, { ...await provenance(p), findings: problem ? [{ severity: "PROBLEM", claim: "Later unsafe clearance", evidence: "Measured violation" }] : [] });
+  const hash = await currentReviewHash(p.dir);
+  const ordinary = await run(3);
+  const legacy = ordinary.review;
+  legacy.checks = legacy.checks.filter(c => c.name !== "expert");
+  legacy.findings = legacy.findings.filter(f => f.check !== "expert");
+  await writeFile(join(ordinary.dir, "review.json"), JSON.stringify(legacy));
+  await rm(join(p.dir, ".fabdesk/board/review/independent.json"));
+  expect((await stageState(p.dir)).independent.coveredDesign).toBe(hash);
+  const migrated = JSON.parse(await readFile(join(p.dir, ".fabdesk/board/review/independent.json"), "utf8"));
+  expect(migrated.findings.map((f: { claim: string }) => f.claim)).toEqual(problem ? ["Later unsafe clearance"] : []);
+  // The live gate must consume recovered findings even before the next run carries them.
+  const check = async () => {
+    expect((await reviewGate(p)).state).toBe(problem ? "open" : "pass");
+    if (problem) await expect(fabricationGate(p.dir, "export_gerbers")).rejects.toThrow("fabrication refused");
+    else expect(await fabricationGate(p.dir, "export_gerbers")).toBeNull();
+  };
+  await check();
+  const again = await run(4);
+  expect(again.review.findings.some(f => f.claim === "Later unsafe clearance")).toBe(!!problem);
+  await check();
+});
+
+const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+async function publishFixture(dir: string, pcb = "board.kicad_pcb") {
+  const paths = ["renders/pcb.svg", "renders/board.glb", "renders/schematic.svg", "reports/drc.json", "reports/erc.json"];
+  for (const path of paths) { await mkdir(join(dir, path, ".."), { recursive: true }); await writeFile(join(dir, path), "published"); }
+  await json(dir, "reports/board-completion.json", { pcb, boardSha256: sha(await readFile(join(dir, pcb), "utf8")), designHash: await currentReviewHash(dir), checksPass: true, artifacts: paths.map(path => ({ path, sha256: sha("published") })) });
+}
+async function acceptFixture(dir: string, pcb: string, named = true) {
+  await json(dir, ".fabdesk/board/accept/index.json", [{ ...(named ? { pcb } : {}), sha256: sha(await readFile(join(dir, pcb), "utf8")), designHash: (await designHash(dir)).design, parityChecked: true, summary: Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`A${i + 1}`, true])) }]);
+}
+for (const identical of [false, true]) test(`publication covers only its named board, identical bytes=${identical}`, async () => {
+  const p = await project();
+  await writeFile(join(p.dir, "other.kicad_pcb"), identical ? PCB : PCB + "\n");
+  await acceptFixture(p.dir, "other.kicad_pcb"); await publishFixture(p.dir);
+  expect((await stageState(p.dir, "other.kicad_pcb")).board.status).toContain("previews missing");
+  await acceptFixture(p.dir, "board.kicad_pcb");
+  expect((await stageState(p.dir)).board.complete).toBe(true);
+  const file = join(p.dir, "reports/board-completion.json");
+  const receipt = JSON.parse(await readFile(file, "utf8")); receipt.boardSha256 = sha("wrong"); await writeFile(file, JSON.stringify(receipt));
+  expect((await stageState(p.dir)).board.complete).toBe(false);
+  delete receipt.pcb; delete receipt.boardSha256; await writeFile(file, JSON.stringify(receipt));
+  expect((await stageState(p.dir)).board.complete).toBe(false);
+});
+test("unnamed acceptance cannot establish completion for an ambiguous board", async () => {
+  const p = await project(); await writeFile(join(p.dir, "other.kicad_pcb"), PCB);
+  await publishFixture(p.dir, "other.kicad_pcb"); await acceptFixture(p.dir, "other.kicad_pcb", false);
+  expect((await stageState(p.dir, "other.kicad_pcb")).board.complete).toBe(false);
+});
+test("saved gate expires when independent evidence changes without a run rewrite", async () => {
+  const p = await project(["identity"]); await runReview(p, fakeEnv(), { offline: true });
+  await importExpert(p, { ...await provenance(p), findings: [] });
+  await recordReviewGate(p.dir, await reviewGate(p));
+  expect((await readReviewGate(p.dir)).state).toBe("pass");
+  const latest = JSON.parse(await readFile(join(p.dir, ".fabdesk/board/review/latest.json"), "utf8"));
+  const runFile = join(p.dir, ".fabdesk/board/review/runs", latest.run, "review.json");
+  const previous = await readFile(runFile);
+  await importExpert(p, { ...await provenance(p), findings: [{ severity: "PROBLEM", claim: "New problem", evidence: "Measured violation" }] });
+  await writeFile(runFile, previous);
+  expect((await readReviewGate(p.dir)).state).toBe("stale");
+  expect((await reviewGate(p)).state).toBe("open");
+});
+test("legacy import without a board cannot borrow another import's provenance", async () => {
+  const p = await project(["identity"]);
+  await writeFile(join(p.dir, "other.kicad_pcb"), PCB);
+  const other = await openReviewProject(p.dir, "other.kicad_pcb");
+  await runReview(other, fakeEnv(), { offline: true, now: () => new Date("2026-11-18T00:00:01Z") });
+  await importExpert(other, { ...await provenance(other), findings: [{ severity: "PROBLEM", claim: "Board B problem", evidence: "Measured" }] });
+  const file = join(p.dir, ".fabdesk/board/review/independent.json");
+  const saved = JSON.parse(await readFile(file, "utf8")); delete saved.pcb;
+  await runReview(p, fakeEnv(), { offline: true, now: () => new Date("2026-11-18T00:00:02Z") });
+  await importExpert(p, { ...await provenance(p), findings: [] });
+  // Persisted legacy evidence belongs to B; the newer A run shares its design hash.
+  await writeFile(file, JSON.stringify(saved));
+  const stages = await stageState(p.dir);
+  expect(stages.independent.coveredBoard).toBe("other.kicad_pcb");
+  expect(stages.independent.state).toBe("covers an earlier design");
+});
+test("saved gate detects legacy evidence migration on its first read", async () => {
+  const p = await project(["identity"]); await runReview(p, fakeEnv(), { offline: true });
+  await importExpert(p, { ...await provenance(p), findings: [] });
+  await recordReviewGate(p.dir, await reviewGate(p));
+  await rm(join(p.dir, ".fabdesk/board/review/independent.json"));
+  const file = join(p.dir, ".fabdesk/board/review-gate.json");
+  const gate = JSON.parse(await readFile(file, "utf8")); delete gate.basis.independent;
+  await writeFile(file, JSON.stringify(gate));
+  expect((await readReviewGate(p.dir)).state).toBe("stale");
+});
+test("ambiguous legacy imports remain unverified", async () => {
+  const p = await project(["identity"]); await writeFile(join(p.dir, "other.kicad_pcb"), PCB);
+  await runReview(p, fakeEnv(), { offline: true, now: () => new Date("2026-11-18T00:00:01Z") });
+  await importExpert(p, { ...await provenance(p), findings: [] });
+  const other = await openReviewProject(p.dir, "other.kicad_pcb");
+  await runReview(other, fakeEnv(), { offline: true, now: () => new Date("2026-11-18T00:00:02Z") });
+  await importExpert(other, { ...await provenance(other), findings: [] });
+  const file = join(p.dir, ".fabdesk/board/review/independent.json");
+  const saved = JSON.parse(await readFile(file, "utf8")); delete saved.pcb; await writeFile(file, JSON.stringify(saved));
+  expect((await stageState(p.dir, other.pcb)).independent.coveredBoard).toBeNull();
+  expect((await reviewGate(other)).state).not.toBe("pass");
 });

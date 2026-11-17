@@ -66,7 +66,8 @@ export async function latestRunName(dir: string): Promise<string | null> {
 
 /**
  * Everything a review gate result was computed from: the design hash, the dispositions, the owner's intent, the latest
- * run (its record's hash, so an imported expert or a rewritten record counts) and the board it covered. A saved gate
+ * run (its record's hash, so an imported expert or a rewritten record counts), the board it covered, and the
+ * independent evidence file (including imports recovered from legacy runs). A saved gate
  * is only as good as this: any difference means it must be computed again.
  */
 export interface ReviewBasis {
@@ -75,6 +76,7 @@ export interface ReviewBasis {
   intent: string | null;
   run: string | null;
   pcb: string | null;
+  independent?: string | null;
 }
 
 const fileSha = async (path: string): Promise<string | null> => {
@@ -85,13 +87,14 @@ const fileSha = async (path: string): Promise<string | null> => {
 export async function reviewBasis(dir: string): Promise<ReviewBasis> {
   const run = await latestRunName(dir);
   const rec = run ? await readJsonOrNull<ReviewRecord>(join(runsDir(dir), run, "review.json")) : null;
-  const [design, dispositions, intent, runSha] = await Promise.all([
+  const [design, dispositions, intent, runSha, independent] = await Promise.all([
     currentReviewHash(dir).catch(() => null),
     fileSha(dispositionsPath(dir)),
     fileSha(intentPath(dir)),
     run ? fileSha(join(runsDir(dir), run, "review.json")) : Promise.resolve(null),
+    fileSha(join(reviewHome(dir), "independent.json")),
   ]);
-  return { design, dispositions, intent, run: run ? `${run}#${runSha}` : null, pcb: rec?.pcb ?? null };
+  return { design, dispositions, intent, run: run ? `${run}#${runSha}` : null, pcb: rec?.pcb ?? null, independent };
 }
 
 export async function listRuns(dir: string): Promise<string[]> {

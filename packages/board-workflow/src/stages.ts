@@ -25,8 +25,10 @@ export type SavedGate = { state: "none" | "stale" | "open" | "errors" | "pass"; 
 export async function stageReviewGate(dir: string, pcb?: string): Promise<SavedGate> {
   const d = await readJsonOrNull<SavedGate>(join(dir, ".fabdesk/board/review-gate.json"));
   if (!d?.state) return { state: "none" };
+  // Migration can create independent.json: include that evidence in this very read.
+  await readIndependentReview(dir);
   const now = await reviewBasis(dir);
-  const keys = ["design", "dispositions", "intent", "run", "pcb"] as const;
+  const keys = ["design", "dispositions", "intent", "run", "pcb", "independent"] as const;
   let stale = !d.basis?.design || keys.some(k => (d.basis?.[k] ?? null) !== now[k]);
   const want = pcb ? relative(dir, isAbsolute(pcb) ? pcb : join(dir, pcb)).split(sep).join("/") : await locateProject(dir).then(f => relative(dir, f.pcb).split(sep).join("/"), () => null);
   if (d.basis?.pcb && want && d.basis.pcb !== want) stale = true;
@@ -47,12 +49,22 @@ export async function readIndependentReview(dir: string): Promise<IndependentRev
   if (saved?.pcb) return saved;
   const latest = await readJsonOrNull<{ run: string }>(join(home, "latest.json"));
   // Recover old imports from the run that actually imported them, never the current design.
-  const names = (await readdir(join(home, "runs")).catch(() => [] as string[])).sort();
+  const names = (await readdir(join(home, "runs")).catch(() => [] as string[])).sort().reverse();
   const candidates = latest ? [latest.run, ...names.filter(n => n !== latest.run)] : names;
+  const recoveries: IndependentReview[] = [];
   for (const name of candidates) {
     const r = await readJsonOrNull<ReviewRecord>(join(home, "runs", name, "review.json"));
     if (!r?.pcb || !r.checks.some(c => c.name === "expert" && c.status === "ok") || (saved && r.hash !== saved.hash)) continue;
+    // A shared project hash cannot identify which board an old persisted import covered.
+    // Match its own findings/files before recovering provenance; ambiguous matches stay unverified.
+    if (saved && (JSON.stringify(saved.findings) !== JSON.stringify(r.findings.filter(f => f.check === "expert"))
+      || (saved.files && JSON.stringify(saved.files) !== JSON.stringify(r.files)))) continue;
     const record: IndependentReview = saved ? { ...saved, pcb: r.pcb } : { hash: r.hash, pcb: r.pcb, files: r.files, findings: r.findings.filter(f => f.check === "expert") };
+    recoveries.push(record);
+    if (!saved) break; // Newest actual import wins when migrating run-only evidence.
+  }
+  const record = recoveries[0];
+  if (record && recoveries.every(r => r.pcb === record.pcb)) {
     await writeFile(join(home, "independent.json"), JSON.stringify(record, null, 1) + "\n");
     return record;
   }
@@ -111,17 +123,17 @@ export async function stageState(dir: string, pcb?: string) {
   const cfg = await readJsonOrNull<Record<string, never>>(join(dir, ".fabdesk/board/review/config.json")) ?? {};
   const currentFiles = await reviewHash({ dir, cfg }).then(r => r.files, () => ({} as Record<string, string>));
   const changed = (files?: Record<string, string>) => [...new Set([...Object.keys(files ?? {}), ...Object.keys(currentFiles)])].filter(k => files?.[k] !== currentFiles[k]);
-  const entries = await readJsonOrNull<Array<{ sha256?: string; designHash?: string; summary?: Record<string, boolean>; parityChecked?: boolean; figures?: Record<string, number>; results?: Array<{ code: string; figures: Record<string, unknown> }> }>>(join(dir, ".fabdesk/board/accept/index.json")) ?? [];
+  const entries = await readJsonOrNull<Array<{ pcb?: string; sha256?: string; designHash?: string; summary?: Record<string, boolean>; parityChecked?: boolean; figures?: Record<string, number>; results?: Array<{ code: string; figures: Record<string, unknown> }> }>>(join(dir, ".fabdesk/board/accept/index.json")) ?? [];
   const saved = await savedBoard(dir, pcb);
   const checks = [...entries].reverse().find(e => matchesSavedBoard(e, saved));
   const summary = checks ? countedSummary(checks) : {};
-  const verifiedChecks = checks?.designHash === saved.design && !!checks?.designHash && checks.parityChecked === true;
+  const verifiedChecks = checks?.pcb === saved.pcb && checks?.designHash === saved.design && !!checks?.designHash && checks.parityChecked === true;
   const acceptancePass = verifiedChecks && Array.from({ length: 9 }, (_, i) => `A${i + 1}`).every(k => summary[k] === true);
   const openFigure = checks?.figures?.A1 ?? checks?.results?.find(r => r.code === "A1")?.figures.unconnected;
   const opens = typeof openFigure === "number" && Number.isFinite(openFigure) && openFigure >= 0 ? openFigure : null;
   const placed = reviewedBoard ? await readFile(join(dir, reviewedBoard), "utf8").then(t => parseBoard(t).footprints.size > 0, () => false).catch(() => false) : false;
-  const published = await readJsonOrNull<{ designHash: string; checksPass: boolean; artifacts: Array<{ path: string; sha256: string }> }>(join(dir, "reports/board-completion.json"));
-  let previewsCurrent = published?.designHash === hash && published.checksPass === true && Array.isArray(published.artifacts);
+  const published = await readJsonOrNull<{ pcb?: string; boardSha256?: string; designHash: string; checksPass: boolean; artifacts: Array<{ path: string; sha256: string }> }>(join(dir, "reports/board-completion.json"));
+  let previewsCurrent = !!saved.sha256 && published?.pcb === reviewedBoard && published.boardSha256 === saved.sha256 && published.designHash === hash && published.checksPass === true && Array.isArray(published.artifacts);
   if (previewsCurrent && published) {
     const paths = published.artifacts.map(a => a.path);
     previewsCurrent = ["renders/pcb.svg", "renders/board.glb", "reports/drc.json", "reports/erc.json"].every(p => paths.includes(p))

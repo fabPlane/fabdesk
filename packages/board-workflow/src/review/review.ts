@@ -342,6 +342,10 @@ export async function reviewGate(project: ReviewProject): Promise<GateResult> {
   const cur = await loadCurrent(project);
   if (cur.state !== "current" || !cur.review)
     return { exit: GATE_STALE, state: cur.state === "no review" ? "none" : "stale", current: false, open: 0, mustFix: 0, errors: false, lines: [`REVIEW GATE: BLOCKED (${cur.state}). Run: board_review {"action": "run"}`] };
+  // Legacy ordinary runs may omit an imported review; use the authoritative current import.
+  const independent = await readIndependentReview(project.dir);
+  if (independent?.hash === cur.review.hash && independent.pcb === reviewedPcb(project))
+    cur.review = { ...cur.review, findings: [...cur.review.findings.filter(f => f.check !== "expert"), ...independent.findings] };
   const ev = evaluate(cur.review, await readDispositions(project.dir), await readIntent(project.dir));
   const stages = await stageState(project.dir, project.pcb);
   const coverageMissing = !["current", "deferred"].includes(stages.independent.state);
