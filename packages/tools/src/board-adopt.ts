@@ -220,7 +220,7 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
     if (!matchingOrigin) return;
     const now = await designFileHashes(project.dir);
     const cand = await designFileHashes(dirname(candidate));
-    const names = Object.keys(cand).filter((n) => !n.endsWith(".kicad_pcb"));
+    const names = Object.keys(cand).filter((n) => !n.endsWith(".kicad_pcb") && !n.endsWith(".kicad_pro"));
     const stale = [...new Set([...Object.keys(matchingOrigin.files), ...names])]
       .filter((n) => !n.endsWith(".kicad_pcb") && now[n] !== matchingOrigin.files[n] && cand[n] !== now[n]);
     if (stale.length)
@@ -237,8 +237,9 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
   await checkSourceBoard();
   await checkDesign();
   // Attribute stamps from an engine are process changes, not manufacturing authorization.
-  const previousVias = release.classifyVias(await readFile(target, "utf8"));
-  const candidateVias = release.classifyVias(await readFile(candidate, "utf8"));
+  let previousVias: ReturnType<typeof release.classifyVias>, candidateVias: ReturnType<typeof release.classifyVias>;
+  try { previousVias = release.classifyVias(await readFile(target,"utf8")); candidateVias = release.classifyVias(await readFile(candidate,"utf8")); }
+  catch (error) { throw new ToolError(`Via manufacturing policy could not be verified: ${String(error)}. The canonical board was kept.`,"precondition"); }
   const identity = (v: typeof candidateVias[number]) => v.uuid ?? `${v.net}@${v.xy.join(",")}`;
   const old = new Map(previousVias.map(v => [identity(v), v]));
   const newInPad = candidateVias.filter(v => v.in_component_lands.length && !(old.get(identity(v))?.in_component_lands.length));

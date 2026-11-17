@@ -36,6 +36,12 @@ function scorerKey(scorer: Scorer): string {
   return key;
 }
 
+async function scoreContextKey(dir: string, scorer: Scorer): Promise<string> {
+  const names = (await readdir(dir)).filter(name => /\.kicad_(pro|dru)$/.test(name)).sort();
+  const rules = await Promise.all(names.map(async name => [name, await sha(join(dir,name))]));
+  return createHash("sha256").update(JSON.stringify([scorerKey(scorer),rules])).digest("hex");
+}
+
 export interface Scorer {
   /** Rules/model context controlling score reuse; absent means no persistent reuse. */
   cacheKey?: string;
@@ -226,7 +232,7 @@ export class Bench {
     await copyBoardFolder(srcDir, s0);
     if (board && resolve(board) !== resolve(srcDir, pcb)) await copyFile(resolve(board), join(s0, pcb));
     const sc = await deps.scorer.score(s0, pcb, { parity: false, ...(deps.signal ? { signal: deps.signal } : {}) });
-    await writeJson(join(s0, SCORE_CACHE), { ...sc, board_sha256: await sha(join(s0, pcb)), scorer_key: scorerKey(deps.scorer) } satisfies ScoreCache);
+    await writeJson(join(s0, SCORE_CACHE), { ...sc, board_sha256: await sha(join(s0, pcb)), scorer_key: await scoreContextKey(s0,deps.scorer) } satisfies ScoreCache);
     const st: BenchState = {
       src: resolve(srcDir),
       pcb,
@@ -277,7 +283,7 @@ export class Bench {
   async scoreDir(dir: string, parity = false): Promise<Scored> {
     const f = join(dir, SCORE_CACHE);
     const boardSha = await sha(join(dir, this.st.pcb));
-    const contextKey = scorerKey(this.deps.scorer);
+    const contextKey = await scoreContextKey(dir,this.deps.scorer);
     if (!parity) {
       const cached = await readFile(f, "utf8").then((t) => JSON.parse(t) as Partial<ScoreCache>, () => null);
       if (cached?.board_sha256 === boardSha && (cached as ScoreCache & { scorer_key?: string }).scorer_key === contextKey) {
@@ -286,7 +292,7 @@ export class Bench {
       }
     }
     const sc = await this.deps.scorer.score(dir, this.st.pcb, { parity, ...(this.deps.signal ? { signal: this.deps.signal } : {}) });
-    if (!parity) await writeJson(f, { ...sc, board_sha256: boardSha, scorer_key: contextKey });
+    if (!parity) await writeJson(f, { ...sc, board_sha256: boardSha, scorer_key: await scoreContextKey(dir,this.deps.scorer) });
     return sc;
   }
 

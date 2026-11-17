@@ -87,13 +87,20 @@ export interface ComparisonView {
   changes: Array<{ code: string; name: string; before: string; now: string; change: string }>;
 }
 
-const DESIGN_FILE = /\.(kicad_pcb|kicad_sch|kicad_sym)$|^(sym|fp)-lib-table$/;
+const DESIGN_FILE = /\.(kicad_pcb|kicad_sch|kicad_sym|kicad_mod|kicad_pro|kicad_dru)$|^(sym|fp)-lib-table$/;
 
 /** Source revision and adoptable design/requirement files (project-relative paths). */
 export async function designFileHashes(dir: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
-  for (const name of (await readdir(dir).catch(() => [] as string[])).sort())
-    if (DESIGN_FILE.test(name)) out[name] = createHash("sha256").update(await readFile(join(dir, name))).digest("hex");
+  const native = async (rel = ""): Promise<void> => {
+    for (const entry of await readdir(join(dir,rel), { withFileTypes: true }).catch(() => [])) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      const name = join(rel,entry.name);
+      if (entry.isDirectory()) await native(name);
+      else if (entry.isFile() && DESIGN_FILE.test(entry.name)) out[name] = createHash("sha256").update(await readFile(join(dir,name))).digest("hex");
+    }
+  };
+  await native();
   const requirements = async (rel: string): Promise<void> => {
     for (const entry of await readdir(join(dir, rel), { withFileTypes: true }).catch(() => [])) {
       const name = join(rel, entry.name);

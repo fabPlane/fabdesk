@@ -3,8 +3,7 @@
  *
  * A via whose drill hole meets the copper of an SMD pad (any net) is via-in-pad: solder wicks through an open hole, so it
  * must be filled and copper-capped (IPC-4761 Type VII). Laser microvias always need fill + cap. Other through vias need
- * nothing. Pad copper is exact for rect / roundrect / oval / circle (absolute pad angles, KiCad 9+); custom pads use their
- * primitive extent. `applyViaBindings` writes `(capping yes) (filling yes)` on every via that needs them (an attribute
+ * nothing. Pad copper is exact for rect / roundrect / oval / circle (absolute pad angles, KiCad 9+); custom pads use supported exact circle/line/polygon/rectangle primitives; unsupported primitives refuse classification. `applyViaBindings` writes `(capping yes) (filling yes)` on every via that needs them (an attribute
  * only: no geometry changes).
  */
 import { kid, kids, num, parseSexpr, topLevelSpans as sexprTopLevelSpans, type SNode } from "../sexpr";
@@ -20,6 +19,9 @@ interface SmdPad {
   h: number;
   shape: string;
   layers: Set<string>;
+  radiusRatio?: number;
+  primitives?: SNode[];
+  anchor?: string;
 }
 
 export interface ViaClass {
@@ -73,22 +75,19 @@ function smdPads(root: SNode): SmdPad[] {
       let w = num(size?.[1]);
       let h = num(size?.[2]);
       const shape = String(pad[3] ?? "rect");
-      const prim = kid(pad, "primitives");
-      if (prim) {
-        const ext: number[] = [];
-        for (const g of prim.slice(1)) if (Array.isArray(g)) for (const pts of kids(g, "pts")) for (const q of kids(pts, "xy")) ext.push(Math.abs(num(q[1])), Math.abs(num(q[2])));
-        if (ext.length) w = h = Math.max(w, h, 2 * Math.max(...ext));
-      }
+      const primitives = kid(pad, "primitives");
+      const ratio = kid(pad,"roundrect_rratio");
+      const anchor = kid(kid(pad,"options") ?? [],"anchor");
       const layers = new Set((kid(pad, "layers") ?? []).slice(1).filter((l): l is string => typeof l === "string" && l.endsWith(".Cu")));
       const net = kid(pad, "net");
-      out.push({ ref: String(ref ?? ""), pad: String(pad[1]), net: net ? String(net[net.length - 1]) : "", x: x + px * c + py * s, y: y - px * s + py * c, ang: pang, w, h, shape, layers });
+      out.push({ ref: String(ref ?? ""), pad: String(pad[1]), net: net ? String(net[net.length - 1]) : "", x: x + px * c + py * s, y: y - px * s + py * c, ang: pang, w, h, shape, layers, ...(ratio ? { radiusRatio: num(ratio[1]) } : {}), ...(primitives ? { primitives: primitives.slice(1).filter(Array.isArray) as SNode[] } : {}), ...(anchor ? { anchor: String(anchor[1]) } : {}) });
     }
   }
   return out;
 }
 
 /** Distance test of a circle (via hole) against exact pad copper. */
-export function holeMeetsPad(vx: number, vy: number, rad: number, p: Pick<SmdPad, "x" | "y" | "ang" | "w" | "h" | "shape">): boolean {
+export function holeMeetsPad(vx: number, vy: number, rad: number, p: Pick<SmdPad, "x" | "y" | "ang" | "w" | "h" | "shape"> & Partial<Pick<SmdPad,"radiusRatio"|"primitives"|"anchor">>): boolean {
   const a = p.ang * (Math.PI / 180);
   const dx = vx - p.x;
   const dy = vy - p.y;
@@ -97,11 +96,43 @@ export function holeMeetsPad(vx: number, vy: number, rad: number, p: Pick<SmdPad
   const hw = p.w / 2;
   const hh = p.h / 2;
   if (p.shape === "circle") return Math.hypot(u, v) <= hw + rad;
+  if (p.shape === "custom") {
+    const anchor = p.anchor === "rect" ? "rect" : "circle";
+    if (holeMeetsPad(u,v,rad,{x:0,y:0,ang:0,w:p.w,h:p.h,shape:anchor})) return true;
+    return (p.primitives ?? []).some(primitive => meetsPrimitive(u,v,rad,primitive));
+  }
+  if (p.shape === "roundrect") {
+    // KiCad PAD constructor defaults to 0.25: https://docs.kicad.org/doxygen/pad_8cpp_source.html
+    const ratio = p.radiusRatio ?? 0.25;
+    if (ratio < 0 || ratio > 0.5) throw Error("Unsupported roundrect radius; via policy requires exact geometry");
+    const radius = Math.min(p.w,p.h)*ratio;
+    return Math.hypot(Math.max(0,Math.abs(u)-(hw-radius)),Math.max(0,Math.abs(v)-(hh-radius))) <= radius+rad;
+  }
   if (p.shape === "oval") {
     const r = Math.min(hw, hh);
     return Math.hypot(Math.max(0, Math.abs(u) - (hw - r)), Math.max(0, Math.abs(v) - (hh - r))) <= r + rad;
   }
+  if (p.shape !== "rect") throw Error(`Unsupported pad shape ${p.shape}; via policy cannot infer copper from bounds`);
   return Math.hypot(Math.max(0, Math.abs(u) - hw), Math.max(0, Math.abs(v) - hh)) <= rad;
+}
+
+function distanceSegment(x:number,y:number,ax:number,ay:number,bx:number,by:number):number {
+  const length=(bx-ax)**2+(by-ay)**2,t=length ? Math.max(0,Math.min(1,((x-ax)*(bx-ax)+(y-ay)*(by-ay))/length)) : 0;
+  return Math.hypot(x-ax-t*(bx-ax),y-ay-t*(by-ay));
+}
+function meetsPrimitive(x:number,y:number,radius:number,node:SNode):boolean {
+  const width=num(kid(node,"width")?.[1]), filled=kid(node,"fill")?.[1] === "yes";
+  const point=(key:string):[number,number]=>{const n=kid(node,key);return [num(n?.[1]),num(n?.[2])];};
+  if(node[0]==="gr_circle") {const [cx,cy]=point("center"),[ex,ey]=point("end"),r=Math.hypot(ex-cx,ey-cy),d=Math.hypot(x-cx,y-cy);return filled ? d<=r+width/2+radius : width>0 && Math.abs(d-r)<=width/2+radius;}
+  if(node[0]==="gr_line") {const [ax,ay]=point("start"),[bx,by]=point("end");return width>0 && distanceSegment(x,y,ax,ay,bx,by)<=radius+width/2;}
+  let polygon:Array<[number,number]>;
+  if(node[0]==="gr_poly") polygon=kids(kid(node,"pts")??[],"xy").map(q=>[num(q[1]),num(q[2])]);
+  else if(node[0]==="gr_rect") {const [ax,ay]=point("start"),[bx,by]=point("end");polygon=[[ax,ay],[bx,ay],[bx,by],[ax,by]];}
+  else throw Error(`Unsupported custom pad primitive ${String(node[0])}; via policy requires native geometry verification`);
+  if(polygon.length<3) throw Error("Invalid custom pad polygon");
+  let inside=false,edge=false;
+  for(let i=0,j=polygon.length-1;i<polygon.length;j=i++) {const [ax,ay]=polygon[j]!,[bx,by]=polygon[i]!;if((ay>y)!==(by>y) && x<(bx-ax)*(y-ay)/(by-ay)+ax)inside=!inside;if(distanceSegment(x,y,ax,ay,bx,by)<=radius+width/2)edge=true;}
+  return filled && inside || (filled || width>0) && edge;
 }
 
 /** Spans of depth-1 s-expressions starting with `key` (any whitespace after the keyword, so CRLF boards read the same). */
@@ -125,7 +156,7 @@ export function classifyVias(text: string): ViaClass[] {
     const net = /\(net "([^"]*)"\)/.exec(b)?.[1] ?? "";
     const uuid = /\(uuid "([^"]+)"\)/.exec(b)?.[1] ?? null;
     const lset = new Set(layers);
-    const hit = pads.filter((p) => [...p.layers].some((l) => lset.has(l)) && holeMeetsPad(x, y, Number(drill[1]) / 2, p));
+    const hit = pads.filter((p) => (p.layers.has("*.Cu") || [...p.layers].some((l) => lset.has(l))) && holeMeetsPad(x, y, Number(drill[1]) / 2, p));
     const need = type === "micro" || hit.length > 0;
     out.push({
       uuid,

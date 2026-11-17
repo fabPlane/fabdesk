@@ -153,3 +153,9 @@ test("explicit revalidation keeps geometry across requirement refresh and refuse
   await writeFile(join(project.dir,"board.kicad_pcb"),BOARD + "\n");
   await expect(call({ action: "revalidate" })).rejects.toThrow("native design input changed");
 });
+
+for (const file of ["board.kicad_pro", "board.kicad_dru"]) test(`revalidation refuses changed live native rules: ${file}`, async () => {
+ const {project,call}=await setup(); await call({action:"new"}); await call({action:"try",actions:["tighten"]});
+ await writeFile(join(project.dir,file),file.endsWith(".kicad_pro") ? PRO.replace('0.1','0.9') : '(version 1) (rule "new" (constraint track_width (min 0.9)))');
+ await expect(call({action:"revalidate"})).rejects.toThrow("native design input changed");
+});

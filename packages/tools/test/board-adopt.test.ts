@@ -321,6 +321,16 @@ describe("adoptCandidate", () => {
     expect(now).toBe(projPro.replace("old|1|2|a|b", "new|1|2|c|b"));
     // a project whose exclusions moved on since the candidate was computed is refused
     await writeFile(join(project.dir, "board.kicad_pro"), `${JSON.stringify(ex("someone|else|a|b"), null, 2)}\n`);
-    await expect(adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "edit" })).rejects.toThrow(/DRC exclusions in board.kicad_pro changed in the project since/);
+    await expect(adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "edit" })).rejects.toThrow(/board.kicad_pro changed in the project since/);
   });
+});
+
+for (const custom of [false,true]) test(`via policy uses exact ${custom ? "custom circular" : "roundrect corner"} copper`,async()=>{
+ const {project,ctx,seen}=await setup();
+ const shape=custom ? '(pad "1" smd custom (at 0 0) (size 0.2 0.2) (layers "F.Cu") (net "GND") (options (anchor circle)) (primitives (gr_circle (center 0 0) (end 1 0) (width 0) (fill yes))))' : '(pad "1" smd roundrect (at 0 0) (size 2 2) (roundrect_rratio 0.25) (layers "F.Cu") (net "GND"))';
+ const board=`(kicad_pcb (footprint "X" (at 0 0) (property "Reference" "U1") ${shape}))`;
+ await writeFile(join(project.dir,"board.kicad_pcb"),board);const dir=await mkdtemp(join(tmpdir(),"via-exact-")),candidate=join(dir,"candidate.kicad_pcb");
+ await writeFile(candidate,board.slice(0,-1)+` (via (at ${custom ? "0.7 0" : "0.95 0.95"}) (size 0.6) (drill ${custom ? "0.3" : "0.1"}) (layers "F.Cu" "B.Cu") (net "GND") (uuid "new")))`);
+ if(custom) {await expect(adoptCandidate(await ctx(),{candidate,board:"board.kicad_pcb",reason:"exact custom geometry"})).rejects.toThrow("new via(s) in solder pads");expect(seen).toHaveLength(0);}
+ else {await adoptCandidate(await ctx(),{candidate,board:"board.kicad_pcb",reason:"clear roundrect corner"});expect(seen).toHaveLength(1);}
 });
