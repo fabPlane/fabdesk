@@ -12,7 +12,8 @@ function run(binary: string, args: string[], signal?: AbortSignal): Promise<{ co
     const onAbort = () => {
       child.kill("SIGTERM");
     };
-    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener("abort", onAbort, { once: true });
     let stdout = "";
     let stderr = "";
     child.stdout?.on("data", (chunk: Buffer) => {
@@ -40,22 +41,31 @@ const keepOffSupport = new Map<string, Promise<boolean>>();
  * (10 s) answers no and is not cached. The caller's abort stops it.
  */
 export async function traceMakerKeepsViasOffPads(binary: string, signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted();
   const st = await stat(binary).catch(() => null);
   const key = `${binary}|${st?.size ?? "?"}|${st?.mtimeMs ?? "?"}`;
-  const cached = keepOffSupport.get(key);
-  if (cached) return cached;
-  const timeout = AbortSignal.timeout(10_000);
-  const probe = run(binary, ["route", "--help"], signal ? AbortSignal.any([signal, timeout]) : timeout).then(
-    (r) => (timeout.aborted || signal?.aborted ? null : layout.tracemakerKeepsViasOffPads(r.stdout + r.stderr)),
-    () => null,
-  );
-  const answer = probe.then((v) => v ?? false);
-  keepOffSupport.set(key, answer);
-  // a failed or interrupted probe is not an answer: ask again next time
-  void probe.then((v) => {
-    if (v === null && keepOffSupport.get(key) === answer) keepOffSupport.delete(key);
-  });
-  return answer;
+  let answer = keepOffSupport.get(key);
+  if (!answer) {
+    // the shared probe is bounded by its own timeout only: one caller's cancel must not answer for another
+    const timeout = AbortSignal.timeout(10_000);
+    const probe = run(binary, ["route", "--help"], timeout).then(
+      (r) => (timeout.aborted ? null : layout.tracemakerKeepsViasOffPads(r.stdout + r.stderr)),
+      () => null,
+    );
+    const shared = probe.then((v) => v ?? false);
+    answer = shared;
+    keepOffSupport.set(key, shared);
+    // a failed or timed-out probe is not an answer: ask again next time
+    void probe.then((v) => {
+      if (v === null && keepOffSupport.get(key) === shared) keepOffSupport.delete(key);
+    });
+  }
+  if (!signal) return answer;
+  // this caller's cancel ends its own wait
+  return Promise.race([
+    answer,
+    new Promise<boolean>((_, reject) => signal.addEventListener("abort", () => reject(signal.reason ?? new Error("cancelled")), { once: true })),
+  ]);
 }
 
 /** TraceMaker's own count from its `routed N/M connections` summary line; null when it printed none. */

@@ -475,7 +475,7 @@ async function applyCandidate(
       "precondition",
     );
   // new vias in solder pads need the requirements' decision, read now (it may have been recorded since the run)
-  if (rec.result?.viaInPad?.failed && (await projectHasAcceptance(project.dir)))
+  if (rec.result?.viaInPad?.failed && (await projectHasAcceptance(project.dir)) && !(await projectViaInPadPolicy(project.dir)).allowed)
     throw new ToolError(`The via-in-pad check could not run on this candidate (${rec.result.viaInPad.text}); route again or inspect the candidate.`, "precondition");
   if (rec.result?.viaInPad?.vias.length && (await projectHasAcceptance(project.dir)) && !(await projectViaInPadPolicy(project.dir)).allowed)
     throw new ToolError(
@@ -1211,7 +1211,7 @@ async function executeRoute(
       const why = error instanceof Error ? error.message : String(error);
       rec.progress.diagnostics.push(`Via-in-pad check failed: ${why}`);
       // where the policy is enforced, a candidate it could not check is held, never applied unchecked
-      if (viaEnforced) viaInPad = { allowed: false, basis: viaPolicy.basis, vias: [], text: `Via-in-pad check failed (${why}); the candidate is held: inspect it before applying.`, failed: true };
+      if (viaEnforced && !viaPolicy.allowed) viaInPad = { allowed: false, basis: viaPolicy.basis, vias: [], text: `Via-in-pad check failed (${why}); the candidate is held: inspect it before applying.`, failed: true };
     }
     if (viaInPad && viaInPad.vias.length && !viaInPad.allowed && !viaEnforced)
       viaInPad = { ...viaInPad, text: `Via-in-pad: ${viaInPad.vias.length} new via(s) in solder pads (reported only; this project records no via-in-pad decision): ${viaInPad.vias.slice(0, 6).map((v) => `${v.net || "(no net)"} in ${v.lands.join(", ")}`).join("; ")}. They need filled and capped vias when ordered, or move them out of the pads.` };

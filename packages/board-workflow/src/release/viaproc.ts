@@ -14,6 +14,8 @@ import { kid, kids, num, parseSexpr, topLevelSpans as sexprTopLevelSpans, type S
 interface SmdPad {
   ref: string;
   pad: string;
+  /** The physical pad: its uuid, else its footprint's uuid (or tstamp) and pad index, else its label. */
+  id: string;
   net: string;
   x: number;
   y: number;
@@ -43,6 +45,8 @@ export interface ViaClass {
   native_capping: boolean;
   /** Offsets of the via's block in the file text (not part of the bindings file). */
   span_: [number, number];
+  /** The physical pads it sits in (`SmdPad.id`), sorted: pad labels such as "MP" or an unannotated "REF**" repeat (not part of the bindings file). */
+  pad_ids_: string[];
 }
 
 export interface ViaBindings {
@@ -50,12 +54,13 @@ export interface ViaBindings {
   board: string;
   rule: string;
   counts: { vias: number; through: number; micro: number; via_in_pad: number; require_fill_cap: number; missing_native_before: number; filled_not_required: number };
-  bindings: Array<Omit<ViaClass, "span_">>;
+  bindings: Array<Omit<ViaClass, "span_" | "pad_ids_">>;
 }
 
 function smdPads(root: SNode): SmdPad[] {
   const out: SmdPad[] = [];
   for (const fp of kids(root, "footprint")) {
+    const fpUuid = kid(fp, "uuid")?.[1] ?? kid(fp, "tstamp")?.[1];
     const tr = kid(fp, "transform");
     let x: number, y: number, rot: number;
     if (tr) {
@@ -69,8 +74,13 @@ function smdPads(root: SNode): SmdPad[] {
     const ref = kids(fp, "property").find((p) => p[1] === "Reference")?.[2];
     const c = Math.cos(rot * (Math.PI / 180));
     const s = Math.sin(rot * (Math.PI / 180));
+    let padIndex = -1;
     for (const pad of kids(fp, "pad")) {
+      padIndex++;
       if (pad.length < 3 || pad[2] !== "smd") continue;
+      const padUuid = kid(pad, "uuid")?.[1];
+      // without a uuid the label is the identity (a position in the file shifts when an edit adds a footprint)
+      const id = padUuid ? `pad:${String(padUuid)}` : fpUuid ? `fp:${String(fpUuid)}#${padIndex}` : `ref:${String(ref ?? "")}.${String(pad[1])}`;
       const at = kid(pad, "at");
       const px = num(at?.[1]);
       const py = num(at?.[2]);
@@ -85,7 +95,7 @@ function smdPads(root: SNode): SmdPad[] {
       const chamfered = num(kid(pad, "chamfer_ratio")?.[1]) > 0 && (kid(pad, "chamfer")?.length ?? 0) > 1;
       const layers = new Set((kid(pad, "layers") ?? []).slice(1).filter((l): l is string => typeof l === "string" && l.endsWith(".Cu")));
       const net = kid(pad, "net");
-      out.push({ ref: String(ref ?? ""), pad: String(pad[1]), net: net ? String(net[net.length - 1]) : "", x: x + px * c + py * s, y: y - px * s + py * c, ang: pang, w, h, shape, layers, ...(ratio ? { radiusRatio: num(ratio[1]) } : {}), ...(primitives ? { primitives: primitives.slice(1).filter(Array.isArray) as SNode[] } : {}), ...(anchor ? { anchor: String(anchor[1]) } : {}), ...(chamfered ? { chamfered: true } : {}) });
+      out.push({ ref: String(ref ?? ""), pad: String(pad[1]), id, net: net ? String(net[net.length - 1]) : "", x: x + px * c + py * s, y: y - px * s + py * c, ang: pang, w, h, shape, layers, ...(ratio ? { radiusRatio: num(ratio[1]) } : {}), ...(primitives ? { primitives: primitives.slice(1).filter(Array.isArray) as SNode[] } : {}), ...(anchor ? { anchor: String(anchor[1]) } : {}), ...(chamfered ? { chamfered: true } : {}) });
     }
   }
   return out;
@@ -229,6 +239,7 @@ export function classifyVias(text: string): ViaClass[] {
       native_filling: b.includes("(filling yes)"),
       native_capping: b.includes("(capping yes)"),
       span_: [s, e],
+      pad_ids_: hit.map((p) => p.id).sort(),
     });
   }
   return out;
@@ -254,7 +265,7 @@ export function viaBindings(boardPath: string, vias: ViaClass[]): { record: ViaB
         missing_native_before: missing.length,
         filled_not_required: extra.length,
       },
-      bindings: need.map(({ span_: _s, ...rest }) => rest),
+      bindings: need.map(({ span_: _s, pad_ids_: _p, ...rest }) => rest),
     },
   };
 }
@@ -299,7 +310,8 @@ export function newViasInPads(before: ViaClass[], after: ViaClass[]): ViaClass[]
   // while it still sits in the same pads; a via moved to other pads is judged like a new one, so it cannot hide a second
   // via added in the pads it left. The net is not part of it: a renamed net (or one named by number on one side) does
   // not make a via new, and a via that changed nets inside the same pad is a short that DRC reports.
-  const lands = (v: ViaClass) => [...v.in_component_lands].sort().join(",");
+  // the physical pads (labels repeat: two "MP" pads of one connector, unannotated "REF**" parts)
+  const lands = (v: ViaClass) => (v.pad_ids_?.length ? v.pad_ids_ : [...v.in_component_lands].sort()).join(",");
   const allowance = new Map<string, number>();
   const priorByUuid = new Map<string, ViaClass>();
   for (const v of before) {

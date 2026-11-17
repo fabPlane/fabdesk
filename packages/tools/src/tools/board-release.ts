@@ -338,7 +338,7 @@ async function viasAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
   if (!a.apply)
     return ok([head, "Missing (filling yes) (capping yes):", ...list, rule, 'board_release {"action": "vias", "apply": true} writes them into the board (the fab order must then ask for filled and capped vias); or move the vias out of the pads.'].join("\n"), {
       counts: c,
-      missing: missing.map(({ span_: _s, ...v }) => v),
+      missing: missing.map(({ span_: _s, pad_ids_: _p, ...v }) => v),
       bindings: record.bindings,
     });
   const dir = join(releaseHome(project.dir), "vias");

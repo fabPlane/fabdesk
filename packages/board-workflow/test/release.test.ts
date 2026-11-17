@@ -315,7 +315,7 @@ describe("via bindings", () => {
     const a = release.classifyVias(lf);
     const b = release.classifyVias(crlf);
     expect(a).toHaveLength(3);
-    expect(b.map(({ span_: _s, ...v }) => v)).toEqual(a.map(({ span_: _s, ...v }) => v));
+    expect(b.map(({ span_: _s, pad_ids_: _p, ...v }) => v)).toEqual(a.map(({ span_: _s, pad_ids_: _p, ...v }) => v));
     const vip = release.viaBindings("b.kicad_pcb", b).record.counts;
     expect(vip.via_in_pad).toBe(1);
     expect(vip.require_fill_cap).toBe(2);

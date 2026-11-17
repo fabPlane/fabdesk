@@ -121,10 +121,16 @@ test.skipIf(process.platform === "win32")("the TraceMaker help probe stops on ab
   await writeFile(bin, "#!/bin/sh\nsleep 30\n");
   await chmod(bin, 0o755);
   const abort = new AbortController();
-  setTimeout(() => abort.abort(), 50);
+  setTimeout(() => abort.abort(new Error("cancelled")), 50);
   const started = Date.now();
-  expect(await traceMakerKeepsViasOffPads(bin, abort.signal)).toBe(false);
+  // the cancelled caller stops waiting at once; another caller of the same probe is not answered "no" by that cancel
+  const other = traceMakerKeepsViasOffPads(bin);
+  await expect(traceMakerKeepsViasOffPads(bin, abort.signal)).rejects.toThrow("cancelled");
   expect(Date.now() - started).toBeLessThan(5_000);
+  let otherDone = false;
+  void other.then(() => (otherDone = true));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(otherDone).toBe(false); // still waiting on the probe (its own 10 s bound)
   // the interrupted probe was not cached: a build that answers is asked again and believed
   await writeFile(bin, "#!/bin/sh\necho '--keep-vias-off-pads --vias-off-pads-below'\n");
   await chmod(bin, 0o755);

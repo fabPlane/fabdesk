@@ -469,10 +469,10 @@ export class Bench {
     this.say(`from  ${figureLine(f0)}`, lines);
     for (const r of recs) r.rejected = r.error ? [r.error.slice(-160).replaceAll("\n", " ")] : gate(r.figures!, f0, slack);
     // via-in-pad policy on every candidate's whole board (any router: KRT honours it natively, a fill router may not)
-    if (this.deps.viaInPad && startText)
+    if (this.deps.viaInPad)
       for (const r of recs) {
         if (!r.dir || r.error) continue;
-        const v = await this.viaCheck(startText, join(r.dir, this.st.pcb));
+        const v = await this.viaCheck(startText || null, join(r.dir, this.st.pcb));
         if (v.report?.vias.length) r.viaInPad = v.report;
         if (v.reject) r.rejected.push(v.reject);
       }
@@ -593,16 +593,19 @@ export class Bench {
    * The via-in-pad policy on a candidate board against `beforeText`: its new vias in pads, and why it is rejected (new
    * vias the policy does not allow, or a board the check cannot read: never passed unchecked).
    */
-  private async viaCheck(beforeText: string, candidatePcb: string): Promise<{ report?: ViaInPadReport; reject?: string }> {
+  private async viaCheck(beforeText: string | null, candidatePcb: string): Promise<{ report?: ViaInPadReport; reject?: string }> {
     const policy = this.deps.viaInPad;
     if (!policy) return {};
+    // a check that cannot run only matters when vias in pads are not allowed
+    const cannot = (why: string) => (policy.allowed ? {} : { reject: `via-in-pad check ${why}` });
+    if (beforeText === null) return cannot("could not read the board it starts from");
     const text = await readFile(candidatePcb, "utf8").catch(() => null);
-    if (text === null) return { reject: "via-in-pad check could not read the candidate board" };
+    if (text === null) return cannot("could not read the candidate board");
     let report: ViaInPadReport;
     try {
       report = viaInPadReport(beforeText, text, policy);
     } catch (error) {
-      return { reject: `via-in-pad check failed: ${error instanceof Error ? error.message : String(error)}` };
+      return cannot(`failed: ${error instanceof Error ? error.message : String(error)}`);
     }
     return report.vias.length && !report.allowed
       ? { report, reject: `${report.vias.length} new via(s) in solder pads, not allowed by manufacturing_rules.via_in_pad` }
@@ -617,8 +620,8 @@ export class Bench {
     const f1 = (await this.scoreDir(d)).figures;
     const why = gate(f1, f0, { a8_slack: o.slackA8 ?? 0 });
     // the same via-in-pad rule as a try: a candidate a try rejected for vias in pads cannot come in this way
-    const current = await readFile(this.board, "utf8").catch(() => "");
-    const via = current ? await this.viaCheck(current, join(d, this.st.pcb)) : {};
+    const current = await readFile(this.board, "utf8").catch(() => null);
+    const via = await this.viaCheck(current, join(d, this.st.pcb));
     if (via.reject) why.push(via.reject);
     this.say(`from  ${figureLine(f0)}\nthis  ${figureLine(f1)}  -> ${why.length ? why.join("; ") : "ACCEPT"}`, lines);
     if (why.length) return { ok: false, lines };

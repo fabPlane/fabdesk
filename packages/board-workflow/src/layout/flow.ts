@@ -494,7 +494,13 @@ export async function stageRoute(host: LayoutHost, st: FlowState): Promise<Stage
   const cands = routedResults.filter(([k]) => policy.allowed || (!viaInPad[k] && !unchecked.has(k))).map(([, v]) => v);
   if (!routedResults.length) return stageEnd(host, st, "route", "FAIL no routed result: see route/*/ logs", record, lines);
   if (!cands.length)
-    return stageEnd(host, st, "route", "STOP every routed result adds vias in solder pads and manufacturing_rules.via_in_pad does not allow them: record a justified {allow:true,basis} in the board's acceptance, or change the route plans, then run route again", record, lines);
+    return stageEnd(
+      host, st, "route",
+      routedResults.every(([k]) => unchecked.has(k))
+        ? "STOP the via-in-pad check could not run on any routed result (unreadable placed or routed board): see route/*/ and run route again"
+        : "STOP every routed result adds vias in solder pads (or could not be checked) and manufacturing_rules.via_in_pad does not allow them: record a justified {allow:true,basis} in the board's acceptance, or change the route plans, then run route again",
+      record, lines,
+    );
   const win = [...cands].sort(cmpScore)[0]!;
   st.best_board = win;
   const lim = sp.lastmile_max_open ?? 25;

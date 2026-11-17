@@ -46,6 +46,25 @@ describe("via-in-pad policy", () => {
     expect(newViasInPads(before, classifyVias(board(via(11.05, 10, "GND", "z"))))).toEqual([]);
   });
 
+  test("pads that share a label are told apart: a via moving between them is new", () => {
+    const twoMp = (vias: string) => `(kicad_pcb (version 20250114)
+	(layers (0 "F.Cu" signal) (2 "B.Cu" signal))
+	(footprint "Conn:USB" (layer "F.Cu") (at 10 10 0) (uuid "fp-j1")
+		(property "Reference" "J1" (at 0 0))
+		(pad "MP" smd rect (at -3 0) (size 1 1) (layers "F.Cu") (net "GND"))
+		(pad "MP" smd rect (at 3 0) (size 1 1) (layers "F.Cu") (net "GND")))
+	(footprint "R:R" (layer "F.Cu") (at 30 10 0) (uuid "fp-a") (property "Reference" "REF**" (at 0 0)) (pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu") (net "N")))
+	(footprint "R:R" (layer "F.Cu") (at 40 10 0) (uuid "fp-b") (property "Reference" "REF**" (at 0 0)) (pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu") (net "N")))
+	${vias}
+)`;
+    // the via moves from J1's left MP pad to its right one (same uuid, same label "J1.MP")
+    expect(newViasInPads(classifyVias(twoMp(via(7, 10, "GND", "a"))), classifyVias(twoMp(via(13, 10, "GND", "a")))).map((v) => v.uuid)).toEqual(["a"]);
+    // a via in one unannotated REF** part replaced by one in the other
+    expect(newViasInPads(classifyVias(twoMp(via(30, 10, "N", "b"))), classifyVias(twoMp(via(40, 10, "N", "c")))).map((v) => v.uuid)).toEqual(["c"]);
+    // unchanged: nothing new
+    expect(newViasInPads(classifyVias(twoMp(via(7, 10, "GND", "a"))), classifyVias(twoMp(via(7, 10, "GND", "a"))))).toEqual([]);
+  });
+
   test("the report names each new via in a pad and what to do, by policy", () => {
     const before = board("");
     const after = board(via(11, 10, "GND", "d"));
