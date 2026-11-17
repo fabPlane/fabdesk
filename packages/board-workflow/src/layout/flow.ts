@@ -148,7 +148,10 @@ export async function stageCheck(host: LayoutHost, st: FlowState, opts: LayoutCh
   const krt = await engineReady(host, "krt");
   const tm = await engineReady(host, "tracemaker");
   need(krt.path && (await pathExists(join(krt.path, "src/plugins"))), `krt missing at ${krt.path ?? "(not installed)"}${krt.why ? ` (${krt.why})` : ""}`, "board_engines install krt, Settings → Routers, or set FABDESK_KRT_DIR");
-  need(tm.path && (await pathExists(tm.path)), `tracemaker missing at ${tm.path ?? "(not installed)"}${tm.why ? ` (${tm.why})` : ""}`, "board_engines install tracemaker, Settings → Routers, or set TRACEMAKER_BIN");
+  // TraceMaker is optional (third-party, installed only when chosen): without it the route stage runs without its
+  // branch; a TraceMaker path that is set but missing is still a misconfiguration
+  if (tm.path) need(await pathExists(tm.path), `tracemaker missing at ${tm.path}`, "board_engines install tracemaker, Settings → Routers, or fix TRACEMAKER_BIN");
+  else warns.push(`TraceMaker not installed: the route stage runs without its branch${tm.why ? ` (${tm.why})` : ""}`);
   need(host.tools.kicadCli, "no KiCad CLI", "install KiCad or set KICAD_CLI");
   info["disk_gib"] = round1(await host.diskFreeGiB(st.ws));
   info["mem_avail_gib"] = round1(await host.memAvailableGiB());

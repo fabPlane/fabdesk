@@ -326,9 +326,15 @@ describe("layout flow", () => {
     expect((ok.result as { info: Record<string, unknown> }).info).toMatchObject({ footprints: 6, fixed: 2, segments: 0, pairs: 1 });
     const bad = await stageCheck({ ...fakeHost(krt), tools: { krt: "/nonexistent", tracemaker: null, kicadCli: null } }, st);
     expect(bad.verdict).toStartWith("FAIL krt missing at /nonexistent");
-    expect(bad.verdict).toContain("tracemaker missing");
+    expect(bad.verdict).not.toContain("tracemaker"); // optional: installed only when chosen
     expect(bad.verdict).toContain("no KiCad CLI");
     expect((await loadFlow(st.ws)).stages.check?.status).toBe("fail");
+    // KRT only (TraceMaker never chosen): the check passes and says the route stage goes without TraceMaker
+    const krtOnly = await stageCheck({ ...fakeHost(krt), tools: { krt, tracemaker: null, kicadCli: "x" } }, st);
+    expect(krtOnly.verdict).toBe("PASS check");
+    expect(krtOnly.lines.join("\n")).toContain("WARN TraceMaker not installed: the route stage runs without its branch");
+    // a TraceMaker path that is set but missing is still a failure
+    expect((await stageCheck({ ...fakeHost(krt), tools: { krt, tracemaker: "/nonexistent/tracemaker", kicadCli: "x" } }, st)).verdict).toContain("tracemaker missing at /nonexistent/tracemaker");
     // an unlisted movable part and a part without a courtyard
     const prev = await readFile(join(st.ws, "base/board.kicad_pcb"), "utf8");
     await writeFile(join(st.ws, "base/board.kicad_pcb"), prev.replace('(fp_rect (start -1 -1) (end 1 1) (layer "F.CrtYd"))', ""));
