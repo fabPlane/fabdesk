@@ -199,6 +199,20 @@ describe("via copper contacts across its spanned layers", () => {
   test("an unsplit track interior is a junction", () => {
     expect(run([route("live-unsplit", [5, -5], [5, 5])])).toEqual(["old-fanout"]);
   });
+  test("an unsplit T downstream of a traversed via preserves the onward branch", () => {
+    const otherPads = [[15, 0], [10, 5], [10, -5]].map(([x, y], i): CopperPad => ({
+      ...before, id: `U${i}`, parent: `U${i}`, reference: `U${i}`,
+      shapes: [{ layer: B, polygon: square(x! * mm, y! * mm, .4 * mm) }],
+    }));
+    for (const kind of ["track", "arc"] as const) {
+      const unsplit = { ...route("live-unsplit", [10, -5], [10, 5]), kind,
+        path: kind === "arc" ? [p(11, -5), p(10, 0), p(11, 5)] : [p(10, -5), p(10, 5)] };
+      const result = analyzeStaleCopper({ beforePads: [before], afterPads: [after],
+        allPadsBefore: [before, ...otherPads], allPadsAfter: [after, ...otherPads],
+        routes: [stem, via, route("continuation", [5, 0], [10, 0]), route("live-right", [10, 0], [15, 0]), unsplit], zones: [] });
+      expect(result.staleIds).toEqual(["continuation", "old-fanout", "via"]);
+    }
+  });
   test("one unsplit track alone supplies two continuing branches", () => {
     const unsplit = route("live-unsplit", [5, -5], [5, 5]);
     const result = analyzeStaleCopper({ beforePads: [before], afterPads: [after], allPadsBefore: [before], allPadsAfter: [after], routes: [stem, via, unsplit], zones: [] });

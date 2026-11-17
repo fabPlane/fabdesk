@@ -17,6 +17,7 @@
   "dependencies": {
     "@fabdesk/agents": "workspace:*",
     "@fabdesk/auth-client": "workspace:*",
+    "@fabdesk/board-workflow": "workspace:*",
     "@fabdesk/kicad": "workspace:*",
     "@fabdesk/protocol": "workspace:*",
     "@fabdesk/qr": "workspace:*",

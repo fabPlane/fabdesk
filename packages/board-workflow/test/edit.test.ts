@@ -680,3 +680,36 @@ describe("semantic copper signatures", () => {
     expect(Object.keys(diffBoards(board(before), board(after.replace('"01"', '"1"'))).copper_changed_nets).sort()).toEqual(["01", "1"]);
   });
 });
+
+
+test("pruning repeatedly preserves an off-centre annulus-to-pad connection", () => {
+  let text = `(kicad_pcb ${fpT("U1",0,0,[["1","A",0,0]])} ${fpT("U2",5,.6,[["1","A",0,0]])}
+    ${seg(0,0,5,0,"A")} (via (at 5 0) (size 0.8) (drill 0.4) (layers "F.Cu" "B.Cu") (net "A")))`;
+  for (let i = 0; i < 3; i++) {
+    const result = pruneDangling(text, new Set(["A"]));
+    expect(result.pruned).toBe(0);
+    expect(parseBoard(result.text).vias).toHaveLength(1);
+    expect(parseBoard(result.text).segments).toHaveLength(1);
+    text = result.text;
+  }
+});
+
+test("via pad support uses the pad outline and the via's spanned layers", () => {
+  const board = (land: string) => `(kicad_pcb ${fpT("U1",0,0,[["1","A",0,0]])} ${land}
+    ${seg(0,0,5,0,"A")} (via (at 5 0) (size 0.8) (drill 0.4) (layers "F.Cu" "B.Cu") (net "A")))`;
+  const land = fpT("U2",5,.6,[["1","A",0,0]]);
+  // Copper outside a blind via's span cannot support it.
+  expect(pruneDangling(board(land.replace('(layers "F.Cu" "F.Paste")', '(layers "B.Cu")')).replace('(layers "F.Cu" "B.Cu")', '(layers "F.Cu" "In1.Cu")'), new Set(["A"])).pruned).toBe(2);
+  // Long, narrow rectangle: the annulus reaches its actual edge, far from the pad centre.
+  expect(pruneDangling(board(land.replace('(size 0.6 0.6)', '(size 2 0.2)').replace('(translate 5 0.6)', '(translate 6.3 0)')), new Set(["A"])).pruned).toBe(0);
+  // Same centre and extent, rotated away: no copper contact.
+  expect(pruneDangling(board(land.replace('(size 0.6 0.6)', '(size 2 0.2)').replace('(translate 5 0.6)', '(translate 6.3 0)').replace('(at 0 0 0)', '(at 0 0 90)')), new Set(["A"])).pruned).toBe(2);
+});
+
+test("a via contacting an unsplit live arc interior survives pruning", () => {
+  const backPad = (ref: string, x: number) => fpT(ref,x,0,[["1","A",0,0]]).replace('(layers "F.Cu" "F.Paste")', '(layers "B.Cu")');
+  const text = `(kicad_pcb ${fpT("U1",5,10,[["1","A",0,0]])} ${backPad("U2",0)} ${backPad("U3",10)}
+    ${seg(5,10,5,5,"A")} (via (at 5 5) (size 0.8) (drill 0.4) (layers "F.Cu" "B.Cu") (net "A"))
+    (arc (start 0 0) (mid 5 5) (end 10 0) (width 0.2) (layer "B.Cu") (net "A")))`;
+  expect(pruneDangling(text, new Set(["A"])).pruned).toBe(0);
+});

@@ -1,7 +1,8 @@
 /** Copper left hanging by an edit: dangling tracks and vias, and routes of nets that lost every pad (the toolkit's `route_region`). */
-import { pyRound } from "../accept";
+import { copperShapesTouch, type CopperShape } from "../copper-contact";
+import { padCopper, routeCopper, type LayerCopper } from "./prune-copper";
 import { parseBoard } from "../board";
-import { removeSpans, topLevelSpans, type Span } from "../sexpr";
+import { parseSexpr, removeSpans, topLevelSpans, type Span } from "../sexpr";
 
 type Pt = [number, number];
 
@@ -11,52 +12,42 @@ type Pt = [number, number];
  */
 export function pruneDangling(text: string, only?: Set<string>): { text: string; pruned: number } {
   const board = parseBoard(text);
-  const padAt = new Map<string, Array<[number, number, number]>>();
-  for (const p of board.pads) (padAt.get(p.net) ?? padAt.set(p.net, []).get(p.net)!).push([p.x, p.y, Math.max(p.r, 0.15)]);
+  const stack = board.copperLayers.length ? board.copperLayers : ["F.Cu", ...Array.from({ length: 30 }, (_, i) => `In${i + 1}.Cu`), "B.Cu"];
+  const pads = padCopper(text, stack);
+  const touches = (a: LayerCopper, b: LayerCopper) => a.net === b.net &&
+    a.layers.some(layer => copperShapesTouch(a.shape, a.layers, b.shape, b.layers, layer, .000001));
   const zoneNets = new Set([...text.matchAll(/\(zone\s+\(net "([^"]+)"\)/g)].map((m) => m[1]!));
   let total = 0;
   for (;;) {
-    const items: Array<{ kind: string; span: Span; net: string; pts: Pt[] }> = [];
+    const items: Array<{ kind: string; span: Span; net: string; pts: Pt[]; copper: LayerCopper }> = [];
     for (const kind of ["segment", "via", "arc"]) {
       for (const span of topLevelSpans(text, kind)) {
         const it = text.slice(span.start, span.end);
         const net = /\(net "([^"]*)"\)/.exec(it)?.[1] ?? "";
         const pts: Pt[] = [...it.matchAll(/\((?:start|end|at) ([-\d.]+) ([-\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
-        items.push({ kind, span, net, pts });
+        items.push({ kind, span, net, pts, copper: routeCopper(parseSexpr(it), stack) });
       }
     }
-    // Python round(x, 3) (half to even on the binary value), as route_region.prune_dangling keys track ends
-    const key = (net: string, x: number, y: number) => `${net}|${pyRound(x, 3).toFixed(3)}|${pyRound(y, 3).toFixed(3)}`;
-    const ends = new Map<string, number>();
-    for (const it of items) for (const [x, y] of it.pts) ends.set(key(it.net, x, y), (ends.get(key(it.net, x, y)) ?? 0) + 1);
-    const segsByNet = new Map<string, Array<[Pt, Pt, number, number]>>();
-    for (const it of items) {
-      if (it.kind !== "via" && it.pts.length >= 2) {
-        const w = /\(width ([-\d.]+)\)/.exec(text.slice(it.span.start, it.span.end));
-        (segsByNet.get(it.net) ?? segsByNet.set(it.net, []).get(it.net)!).push([it.pts[0]!, it.pts[it.pts.length - 1]!, w ? Number(w[1]) : 0.15, it.span.start]);
-      }
-    }
-    const onPad = (net: string, x: number, y: number, own?: number, interiorOnly = false): boolean => {
-      for (const [px, py, r] of padAt.get(net) ?? []) if ((x - px) ** 2 + (y - py) ** 2 <= r * r) return true;
-      for (const [[ax, ay], [bx, by], w, s] of segsByNet.get(net) ?? []) {
-        if (s === own) continue;
-        const L2 = (bx - ax) ** 2 + (by - ay) ** 2;
-        const u = L2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / L2));
-        if (interiorOnly && (u <= 0 || u >= 1)) continue;
-        if ((x - ax - u * (bx - ax)) ** 2 + (y - ay - u * (by - ay)) ** 2 <= (w / 2) ** 2) return true;
-      }
-      return false;
-    };
     const drop: Span[] = [];
     for (const it of items) {
       if (zoneNets.has(it.net) || (only && !only.has(it.net))) continue;
       if (it.kind === "via") {
-        const [x, y] = it.pts[0]!;
-        // the via counts itself: itself + one segment = a dead end
-        if ((ends.get(key(it.net, x, y)) ?? 0) <= 2 && !onPad(it.net, x, y, undefined, true)) drop.push(it.span);
+        const supportedByPad = pads.some(pad => touches(it.copper, pad));
+        const segments = items.filter(other => other.kind !== "via" && touches(it.copper, other.copper));
+        // An unsplit live segment has two exits; a sole endpoint stub has only one.
+        const branches = segments.reduce((sum, other) => sum + Math.max(1, [other.pts[0]!, other.pts.at(-1)!].filter(([x, y]) => {
+          const end: LayerCopper = { ...other.copper, shape: { path: [{ x, y }], width: "width" in other.copper.shape ? other.copper.shape.width : 0 } };
+          return !touches(it.copper, end);
+        }).length), 0);
+        if (!supportedByPad && branches < 2) drop.push(it.span);
       } else {
         for (const [x, y] of [it.pts[0]!, it.pts[it.pts.length - 1]!]) {
-          if ((ends.get(key(it.net, x, y)) ?? 0) <= 1 && !onPad(it.net, x, y, it.span.start)) {
+          const shape: CopperShape = { path: [{ x, y }], width: "width" in it.copper.shape ? it.copper.shape.width : 0 };
+          const end = { ...it.copper, shape };
+          // Preserve the pre-existing track-end pad policy; the via deletion rule above
+          // requires real pad copper and spanned layers rather than this legacy radius.
+          const onLegacyPad = board.pads.some(pad => pad.net === it.net && Math.hypot(x - pad.x, y - pad.y) <= Math.max(pad.r, .15));
+          if (!onLegacyPad && !items.some(other => other !== it && touches(end, other.copper))) {
             drop.push(it.span);
             break;
           }
