@@ -52,7 +52,7 @@ export interface StackLog {
   removed_vias: Array<{ uuid: string; net: string; reason: string }>;
   copper_source: string | null;
   changed_copper: boolean;
-  /** Nets whose copper the plan changes on purpose (the removed vias' nets; with copper_source every net it changes). */
+  /** Nets whose copper the plan changes on purpose (the removed vias' nets; copper_source changes are collateral unless named elsewhere). */
   nets: string[];
 }
 export interface CopperLog {
@@ -200,10 +200,9 @@ export function keysImpactLines(k: KeysImpact): string[] {
 export function applyStackBoard(text: string, plan: EditPlan, env: EditEnv): { text: string; log: Omit<StackLog, "classes_updated" | "classes_split" | "removed_paths"> } {
   const s = plan.stack!;
   let board = text;
-  let nets = stackViaNets(s);
+  const nets = stackViaNets(s);
   if (s.copper_source) {
     board = readFileSync(projectFile(env.projectDir, s.copper_source, "stack copper_source"), "utf8");
-    nets = [...new Set([...nets, ...changedNets(text, board)])].sort();
   }
   const r = stackBoard(board, s);
   return {

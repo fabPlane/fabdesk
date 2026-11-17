@@ -1,8 +1,9 @@
 /** Planned vs collateral change: proves the edit changed what the plan said and nothing else (parts, poses, pin nets, copper). */
-import { removeSpans, topLevelSpans, type Span } from "../sexpr";
+import { parseSexpr, removeSpans, topLevelSpans, type Span } from "../sexpr";
 import type { Segment } from "../board";
 import { boardModel } from "./impact";
 import { round } from "./fmt";
+import type { EditPlan } from "./plan";
 import type { ApplyLog } from "./apply";
 import type { ImpactReport } from "./impact";
 
@@ -42,8 +43,23 @@ export function diffBoards(beforeText: string, afterText: string): BoardDiff {
   const cb = new Map<string, number>(), ca = new Map<string, number>();
   for (const s of b.segments) cb.set(s.net, (cb.get(s.net) ?? 0) + length(s));
   for (const s of a.segments) ca.set(s.net, (ca.get(s.net) ?? 0) + length(s));
-  for (const n of new Set([...cb.keys(), ...ca.keys()])) if (Math.abs((cb.get(n) ?? 0) - (ca.get(n) ?? 0)) > 1e-3) out.copper_changed_nets[n] = [round(cb.get(n) ?? 0, 2), round(ca.get(n) ?? 0, 2)];
+  const sb = copperSignatures(beforeText), sa = copperSignatures(afterText);
+  for (const n of new Set([...sb.keys(), ...sa.keys()])) if (sb.get(n) !== sa.get(n)) out.copper_changed_nets[n] = [round(cb.get(n) ?? 0, 2), round(ca.get(n) ?? 0, 2)];
   return out;
+}
+
+/** Geometry and properties, excluding item identity and formatting. Include vias and arcs even at equal total length. */
+function copperSignatures(text: string): Map<string, string> {
+  const out = new Map<string, string[]>();
+  for (const kind of ["segment", "via", "arc"]) for (const sp of topLevelSpans(text, kind)) {
+    const node = parseSexpr(text.slice(sp.start, sp.end));
+    const net = node.find((n) => Array.isArray(n) && n[0] === "net");
+    if (!Array.isArray(net) || !net[1]) continue;
+    const name = String(net[1]);
+    const signature = JSON.stringify(node.filter((n) => !Array.isArray(n) || !["uuid", "tstamp"].includes(String(n[0]))));
+    (out.get(name) ?? out.set(name, []).get(name)!).push(signature);
+  }
+  return new Map([...out].map(([net, items]) => [net, items.sort().join(";")]));
 }
 
 export interface Churn {
@@ -56,14 +72,14 @@ export interface Churn {
 }
 
 /** Split a diff into planned and collateral change, from an apply ledger (`edit.json`). */
-export function churn(d: BoardDiff, ledger: { applied: ApplyLog; impact: ImpactReport }): Churn {
+export function churn(d: BoardDiff, ledger: { applied: ApplyLog; impact: ImpactReport; plan?: EditPlan }): Churn {
   const ap = ledger.applied;
   const mv = ap.moves;
   const imp = ledger.impact;
   const parts = new Set<string>();
   const kinds = ["moved", "carried", "near", "displaced"] as const;
   for (const k of kinds) for (const m of mv?.[k] ?? []) parts.add(m.ref);
-  const nets = new Set<string>([...(mv?.cut_nets ?? []), ...(mv?.internal_nets_moved ?? []), ...imp.copper.delete_on_nets, ...imp.copper.prune_on_nets]);
+  const nets = new Set<string>([...(ledger.plan?.routeAgain ?? []), ...(mv?.cut_nets ?? []), ...(mv?.internal_nets_moved ?? []), ...imp.copper.delete_on_nets, ...imp.copper.prune_on_nets]);
   for (const n of [...(ap.pad_cut?.cut_nets ?? []), ...(ap.landing?.cut_nets ?? []), ...(ap.copper?.nets ?? []), ...(ap.stack?.nets ?? [])]) nets.add(n);
   for (const c of ap.net_changes) {
     nets.add(c.from);

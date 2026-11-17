@@ -72,3 +72,7 @@ export const SHEET = `(kicad_sch (version 20250114) (generator "eeschema")
 	)${sym("C1", "100n", 50, 50, ["VIN", "GND"])}${sym("C2", "100n", 70, 50, ["VIN", "GND"])}${sym("C3", "100n", 90, 50, ["VIN", "GND"])}${sym("R1", "10k", 110, 50, ["SIG", "SIG2"], "Device:R")}${sym("R2", "1k", 130, 50, ["SIG2", "GND"], "Device:R")}
 )
 `;
+
+/** The same fixtures in KiCad's footprint-at spelling, including implicit zero rotations. */
+export const atVariant = (text: string) => text.replace(/\(transform\s+\(translate ([-\d.]+) ([-\d.]+)\)\s+\(rotate ([-\d.]+)\)\s+\(scale 1 1\)\s*\)/g,
+  (_m, x: string, y: string, r: string) => `(at ${x} ${y}${Number(r) ? " " + r : ""})`);

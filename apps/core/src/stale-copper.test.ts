@@ -84,7 +84,7 @@ describe("stale footprint fan-out copper", () => {
     expect(result.reports.J1?.shortedCount).toBe(1);
   });
 
-  test("a pad-to-segment-to-segment chain stops before its first via", () => {
+  test("a two-track chain continues through its via across layers", () => {
     const before = [pad("p1", "1", "A", 0)];
     const after = [pad("p1", "1", "A", -10)];
     const via: CopperRoute = {
@@ -102,7 +102,7 @@ describe("stale footprint fan-out copper", () => {
       via,
       track("past", "A", 10, 15, B),
     ]);
-    expect(result.staleIds).toEqual(["s1", "s2"]);
+    expect(result.staleIds).toEqual(["past", "s1", "s2", "via"]);
   });
 
   test("a three-way junction preserves both branches", () => {
@@ -155,4 +155,27 @@ describe("stale footprint fan-out copper", () => {
     expect(result.staleIds).toEqual(["via-in-pad"]);
     expect(result.reports.J1?.stale[0]?.locked).toBe(true);
   });
+});
+
+test("a dangling via with one track is removable; other parts' pads stop the chain", () => {
+  const before = [pad("p1", "1", "A", 0)], after = [pad("p1", "1", "A", -10)];
+  const via: CopperRoute = { id: "v", kind: "via", net: "A", layers: [F, B], path: [{ x: 5, y: 0 }], width: 1, locked: false };
+  expect(analyze(before, after, [track("s", "A", 0, 5), via]).staleIds).toEqual(["s", "v"]);
+  const other = { ...pad("other", "1", "A", 5), parent: "other", reference: "U2" };
+  expect(analyze(before, after, [track("s", "A", 0, 5), via], [other]).staleIds).toEqual(["s"]);
+});
+
+test("a via at a T across layers preserves the branch and via", () => {
+  const before = [pad("p1", "1", "A", 0)], after = [pad("p1", "1", "A", -10)];
+  const via: CopperRoute = { id: "v", kind: "via", net: "A", layers: [F, B], path: [{ x: 5, y: 0 }], width: 1, locked: false };
+  const branch = track("branch", "A", 5, 10, B); branch.path[1]!.y = 5;
+  expect(analyze(before, after, [track("s", "A", 0, 5), via, track("next", "A", 5, 10, B), branch]).staleIds).toEqual(["s"]);
+});
+
+test("a via meeting a zone on its other layer stops traversal", () => {
+  const before = [pad("p1", "1", "A", 0)], after = [pad("p1", "1", "A", -10)];
+  const via: CopperRoute = { id: "v", kind: "via", net: "A", layers: [F, B], path: [{ x: 5, y: 0 }], width: 1, locked: false };
+  const r = analyzeStaleCopper({ beforePads: before, afterPads: after, allPadsBefore: before, allPadsAfter: after,
+    routes: [track("s", "A", 0, 5), via, track("next", "A", 5, 10, B)], zones: [{ layer: B, polygons: [square(5)] }] });
+  expect(r.staleIds).toEqual(["s"]);
 });

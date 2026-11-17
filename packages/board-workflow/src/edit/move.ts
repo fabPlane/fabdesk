@@ -15,6 +15,7 @@
  *   the move stops (a STOP is a decision for the owner, not an error).
  * - A differential pair that loses any copper loses all of it so it is routed again as a pair.
  */
+import { verifyMovePoses, stayingBehind } from "./move-effects";
 import { readBoard } from "../board";
 import { keepoutBlocks, kid, kids, num, parseSexpr, removeSpans, type SNode } from "../sexpr";
 import {
@@ -75,6 +76,7 @@ export interface MoveLedger {
   landing_removed_nets: string[];
   review: string[];
   carry_auto?: Record<string, string[]>;
+  staying_behind?: Array<{ ref: string; moved: string; nets: Array<{ net: string; lengthening_mm: number }> }>;
   inherited_overlaps?: string[];
   fixed_displaced_with_reason: Record<string, string>;
   in_way: Record<string, string[]>;
@@ -493,8 +495,35 @@ export function planMoves(
     }
     (nearRefs.has(o) ? led.near : led.displaced).push({ ref: o, from: [round(f.x, 4), round(f.y, 4), f.rot], to: [x, y, rot], shift_mm: round(Math.hypot(x - f.x, y - f.y), 2), why: whyO });
   }
-  const seated = [...newPose.keys()].sort();
+  const seated = [...newPose.keys()].filter((r) => {
+    const f = fps.get(r)!, p = newPose.get(r)!;
+    return round(f.x, 4) !== round(p[0], 4) || round(f.y, 4) !== round(p[1], 4) || mod(f.rot, 360) !== mod(p[2], 360);
+  }).sort();
   const seatedSet = new Set(seated);
+  for (const r of groupFx.keys()) if (!seatedSet.has(r)) groupFx.delete(r);
+  // Verify all target poses on a footprint-only preview before cutting any copper.
+  let placed = text;
+  const poseSpans = footprintSpans(placed);
+  for (const r of [...seated].sort((a, b) => poseSpans.get(b)!.start - poseSpans.get(a)!.start)) {
+    const sp = poseSpans.get(r);
+    if (!sp) return stop(`FAIL ${r}: cannot write planned pose: footprint text not found`);
+    try {
+      placed = placed.slice(0, sp.start) + setPose(placed.slice(sp.start, sp.end), ...newPose.get(r)!) + placed.slice(sp.end);
+    } catch (e) {
+      return stop(`FAIL ${r}: cannot write planned pose: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  const placedBoard = readBoard(parseSexpr(placed));
+  const realMoves = verifyMovePoses(text, placed, newPose);
+  led.moved = led.moved.filter((m) => realMoves.has(m.ref));
+  led.carried = led.carried.filter((m) => realMoves.has(m.ref));
+  led.near = led.near.filter((m) => realMoves.has(m.ref));
+  led.displaced = led.displaced.filter((m) => realMoves.has(m.ref));
+  for (const m of [...led.moved, ...led.carried, ...led.near, ...led.displaced]) {
+    const f = placedBoard.footprints.get(m.ref)!;
+    m.to = [f.x, f.y, f.rot];
+  }
+  led.staying_behind = stayingBehind(board, placedBoard, seated.filter((r) => realMoves.has(r)), seatedSet);
   // ---- 4. copper: carried internal copper moves; fan-out of every re-seated part is cut; landings cleared
   const blockNets = new Map<string, Set<string>>();
   for (const [r, [anchor]] of groupFx) for (const net of Object.values(fps.get(r)!.pins)) if (net) (blockNets.get(net) ?? blockNets.set(net, new Set()).get(net)!).add(anchor);

@@ -21,6 +21,7 @@ import { coordinatesInPlan, parsePlan, type EditPlan } from "./plan";
 import { judge, type Judgement } from "./proof";
 import { carryExclusions, exclusionsText, readDrcExclusions, violationId, withDrcExclusions, type CarriedExclusion, type DrcViolation } from "./exclusions";
 import { EditStop } from "./sch";
+import { verifyMovePoses } from "./move-effects";
 import { applyProjectRules } from "../rules";
 import { REQUIREMENT_FILES } from "../requirements";
 
@@ -209,6 +210,9 @@ export async function runEdit(input0: EditRunInput): Promise<EditRunResult> {
   projectHashes[env.pcbName] = createHash("sha256").update(env.pcbText).digest("hex");
   try {
     applied = await applyEdit(plan, env, out, { score: async (d) => (await input.runners.accept(d, env.pcbName)).result, beforeScored: async (d) => (await applyProjectRules(d, env.pcbName), beforeScore(env, d, input.runners)) });
+    const mv = applied.log.moves;
+    if (mv) verifyMovePoses(env.pcbText, await readFile(join(out, env.pcbName), "utf8"),
+      new Map([...mv.moved, ...mv.carried, ...mv.near, ...mv.displaced].map((m) => [m.ref, m.to])));
   } catch (e) {
     if (!(e instanceof EditStop)) throw e;
     return { ...common, stage: "apply", verdict: e.message, stop: /^STOP/.test(e.message) };
@@ -252,7 +256,7 @@ export async function runEdit(input0: EditRunInput): Promise<EditRunResult> {
  */
 export function routeAgainOf(applied: ApplyLog, plan: EditPlan): string[] {
   const added = (plan.add ?? []).flatMap((ad) => Object.values(ad.pins));
-  return [...new Set([...(applied.moves?.cut_nets ?? []), ...(applied.landing?.cut_nets ?? []), ...(applied.pad_cut?.cut_nets ?? []), ...added])].filter(Boolean).sort();
+  return [...new Set([...(plan.routeAgain ?? []), ...(applied.moves?.cut_nets ?? []), ...(applied.landing?.cut_nets ?? []), ...(applied.pad_cut?.cut_nets ?? []), ...added])].filter(Boolean).sort();
 }
 
 async function diffOnly(before: string, after: string, ledger: { plan: EditPlan; impact: ImpactReport; applied: ApplyLog }) {

@@ -350,11 +350,16 @@ export async function applyEdit(
   const finalBoard = readBoard(parseSexpr(text));
   const m = jsonIn<MechanicalRequirement>(join(rq, REQUIREMENT_FILES.mechanical));
   m.anchors = m.anchors.filter((a) => !gone.has(a.reference));
-  for (const mv of (plan.move ?? []).filter((x) => x.to)) {
-    const to = mv.to!;
-    const ent = { reference: mv.ref, at: [String(Number(to[0].toFixed(6))), String(Number(to[1].toFixed(6)))] as [string, string], rotation: [String(Number((((to[2] % 360) + 360) % 360).toFixed(6)))] as [string], layer: finalBoard.footprints.get(mv.ref)?.layer ?? "F.Cu", basis: mv.basis ?? plan.authority ?? null };
-    const had = m.anchors.some((a) => a.reference === mv.ref);
-    if (had || mv.anchor) m.anchors = [...m.anchors.filter((a) => a.reference !== mv.ref), ent];
+  const moves = log.moves;
+  const movedRefs = new Set(moves ? [...moves.moved, ...moves.carried, ...moves.near, ...moves.displaced].map((x) => x.ref) : []);
+  for (const ref of new Set([...(plan.move ?? []).map((x) => x.ref), ...m.anchors.filter((a) => movedRefs.has(a.reference)).map((a) => a.reference)])) {
+    const mv = plan.move?.find((x) => x.ref === ref);
+    const f = finalBoard.footprints.get(ref);
+    if (!f) continue;
+    const to: [number, number, number] = [f.x, f.y, f.rot];
+    const ent = { reference: ref, at: [String(Number(to[0].toFixed(6))), String(Number(to[1].toFixed(6)))] as [string, string], rotation: [String(Number((((to[2] % 360) + 360) % 360).toFixed(6)))] as [string], layer: f.layer, basis: mv?.basis ?? plan.authority ?? null };
+    const had = m.anchors.some((a) => a.reference === ref);
+    if (had || mv?.anchor) m.anchors = [...m.anchors.filter((a) => a.reference !== ref), ent];
   }
   jsonOut(join(rq, REQUIREMENT_FILES.mechanical), m);
   const acc = jsonIn<Acceptance>(join(rq, REQUIREMENT_FILES.acceptance));

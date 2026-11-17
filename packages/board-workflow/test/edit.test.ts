@@ -22,6 +22,7 @@ import {
 import { EditStop, SheetSet, diffBoards, judge, parsePlan, revertNets, runEdit, type EditRunners } from "../src/edit/index";
 import { directLink, segSegDist } from "../src/edit/link";
 import { g } from "../src/edit/fmt";
+import { parseBoard } from "../src/board";
 import { planMoves } from "../src/edit/move";
 import { legalisePoses, pySum } from "../src/edit/legalise";
 import { pruneDangling } from "../src/edit/prune";
@@ -29,12 +30,14 @@ import { pruneDangling } from "../src/edit/prune";
 const dirs: string[] = [];
 afterAll(() => Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true }))));
 
-import { BOARD, PRO, SHEET, fpT, seg } from "./edit-fixture";
+import { BOARD as BASE_BOARD, PRO, SHEET, fpT, seg, atVariant } from "./edit-fixture";
 
-async function project(): Promise<string> {
+const BOARD = BASE_BOARD;
+
+async function project(board = BOARD): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "edit-"));
   dirs.push(dir);
-  await writeFile(join(dir, "board.kicad_pcb"), BOARD);
+  await writeFile(join(dir, "board.kicad_pcb"), board);
   await writeFile(join(dir, "board.kicad_pro"), PRO);
   await writeFile(join(dir, "board.kicad_sch"), SHEET);
   await onboard(dir, { name: "t" });
@@ -343,9 +346,10 @@ describe("judging", () => {
   });
 });
 
-describe("collateral, drc input and the helpers", () => {
+for (const [format, board] of [["transform", BASE_BOARD], ["at", atVariant(BASE_BOARD)]] as const) describe(`collateral, drc input and the helpers (${format})`, () => {
+  const BOARD = board;
   test("a diff names removed, moved and changed copper; revertNets puts a net's copper back", () => {
-    const moved = BOARD.replace("(translate 40 10)", "(translate 41 10)");
+    const moved = BOARD.replace(format === "at" ? "(at 40 10)" : "(translate 40 10)", format === "at" ? "(at 41 10)" : "(translate 41 10)");
     const d = diffBoards(BOARD, moved);
     expect(d.moved).toEqual(["C1"]);
     const cut = BOARD.replace(seg(20.5, 10, 19.5, 14, "SIG2"), "");
@@ -598,4 +602,63 @@ describe("editbench run (bench.ts edit-run)", () => {
     const t = bench.editTable(await bench.readEditResults([join(out, "run")]));
     expect(t.json[0]).toMatchObject({ board: "t", task: "move", tool: "abc", verdict: res["verdict"] });
   });
+});
+
+describe("moves written to the board", () => {
+  for (const [format, board] of [["transform", BOARD], ["at", atVariant(BOARD)]] as const) {
+    test(`${format}: translation, rotation and swap write real poses`, () => {
+      const rotated = board.replace(format === "at" ? "(at 40 10)" : "(rotate 0)", format === "at" ? "(at 40 10 30)" : "(rotate 30)");
+      const r = planMoves(rotated, () => false, [{ ref: "C1", to: [50, 30, 90] }], undefined, []);
+      expect(diffBoards(rotated, r.text).moved).toEqual(["C1"]);
+      expect(parseBoard(r.text).footprints.get("C1")).toMatchObject({ x: 50, y: 30, rot: 90 });
+      const f = parseBoard(r.text);
+      expect(f.pads.find((p) => p.ref === "C1" && p.pad === "1")).toMatchObject({ x: 50, y: 30.5 });
+      const swap = planMoves(board, () => false, [{ ref: "C1", to: [40, 14, 0] }, { ref: "C2", to: [40, 10, 0] }], undefined, []);
+      expect(diffBoards(board, swap.text).moved).toEqual(["C1", "C2"]);
+    });
+    test(`${format}: anchors match actual written poses`, async () => {
+      const dir = await project(board);
+      const r = await runEdit({ projectDir: dir, plan: { id: "anchors", move: [{ ref: "C3", to: [50, 30, 90], anchor: true }] }, mode: "apply", runners: runners() });
+      const text = await readFile(r.candidate!.pcb, "utf8");
+      const f = parseBoard(text).footprints.get("C3")!;
+      const mech = JSON.parse(await readFile(join(r.candidate!.dir, ".fabdesk/board/requirements/mechanical.json"), "utf8"));
+      expect(mech.anchors.find((a: { reference: string }) => a.reference === "C3")).toMatchObject({ at: [String(f.x), String(f.y)], rotation: [String(f.rot)] });
+    });
+  }
+  test("an unwritable pose stops before repair and copper changes", async () => {
+    // readBoard understands numeric atoms; the text writer cannot rewrite exponent notation.
+    const board = BOARD.replace("(translate 40 18)", "(translate 4e1 18)");
+    const dir = await project(board);
+    let repaired = false;
+    const r = await runEdit({ projectDir: dir, plan: { id: "unwritable", move: [{ ref: "C3", to: [50, 30, 0] }] }, mode: "full", runners: runners({ repair: async () => { repaired = true; return { note: "unexpected" }; } }) });
+    expect(r.verdict).toMatch(/FAIL.*C3.*pose/);
+    expect(repaired).toBe(false);
+    expect(r.candidate).toBeUndefined();
+    expect(await readFile(join(dir, "board.kicad_pcb"), "utf8")).toBe(board);
+  });
+  test("impact and result recommend carry for lengthened non-ground connections", async () => {
+    const board = BOARD.replace(fpT("R2", 20, 14, [["1", "SIG2", -0.5, 0], ["2", "GND", 0.5, 0]], { value: "1k" }),
+      fpT("R2", 20, 14, [["1", "SIG2", -0.5, 0], ["2", "SIG", 0.5, 0]], { value: "1k" }));
+    const dir = await project(board);
+    const r = await runEdit({ projectDir: dir, plan: { id: "stay", move: [{ ref: "R1", to: [50, 30, 0] }] }, mode: "apply", runners: runners() });
+    expect(r.impactLines.join("\n")).toMatch(/R2.*stay.*SIG.*mm.*carry/);
+    expect(r.applied?.moves?.staying_behind?.find((s) => s.ref === "R2")?.nets).toHaveLength(2);
+  });
+  test("a dangling via and stub prune; a via connecting live segments stays", () => {
+    const via = '(via (at 25 14) (size 0.5) (drill 0.3) (layers "F.Cu" "B.Cu") (net "SIG") (uuid "dead-via"))';
+    const base = `(kicad_pcb ${fpT("A1", 20, 14, [["1", "SIG", 0, 0]])} ${seg(20,14,25,14,"SIG")} ${via})`;
+    expect(pruneDangling(base, new Set(["SIG"])).pruned).toBe(2);
+    const live = base.slice(0,-1) + fpT("A2",30,14,[["1","SIG",0,0]]) + seg(25,14,30,14,"SIG","B.Cu") + ")";
+    expect(pruneDangling(live, new Set(["SIG"])).pruned).toBe(0);
+  });
+});
+
+test("an unchanged target reports no move and cuts no copper", () => {
+  const r = planMoves(BOARD, () => false, [{ ref: "C3", to: [40,18,0] }], undefined, []);
+  expect(r.led.moved).toEqual([]);
+  expect(r.led.copper_removed).toBe(0);
+  expect(r.text).toBe(BOARD);
+  const carried = planMoves(BOARD, () => false, [{ ref: "R1", to: [20,10,0], carry: ["R2"] }], undefined, []);
+  expect(carried.text).toBe(BOARD);
+  expect(carried.led.copper_moved).toBe(0);
 });

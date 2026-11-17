@@ -258,8 +258,14 @@ export function impact(plan: EditPlan, env: EditEnv): ImpactReport {
       for (const sw of plan.swap ?? []) if (sw.side && sw.footprint) mtext = swapFootprint(mtext, env.projectDir, sw.ref, sw.footprint, sw.side).text;
       const { led } = planMoves(mtext, (r) => env.fixed.has(r), plan.move, plan.displace, pairs);
       rep.moves = led;
+      for (const m of [...led.moved, ...led.carried, ...led.near, ...led.displaced])
+        for (const n of Object.values(fps.get(m.ref)!.pins).filter(Boolean))
+          rep.nets[n] ??= { status: "reconnect (move)", pads_before: (byNet.get(n) ?? []).length, pads_after: (byNet.get(n) ?? []).length, copper_mm: round(segByNet.get(n) ?? 0, 1), vias: viaByNet.get(n) ?? 0 };
       for (const m of led.moved) if (m.fixed && !m.anchor) rep.review.push(`${m.ref} is a fixed part: say anchor true (its new pose becomes the anchor) or why not`);
       rep.review.push(...led.review);
+      for (const stay of led.staying_behind ?? [])
+        rep.review.push(`${stay.ref} stays behind when ${stay.moved} moves: ${stay.nets.map((n) => `${n.net} +${n.lengthening_mm} mm`).join(", ")} nearest pad span; consider carry for ${stay.ref}`);
+
       if (led.displaced.length) {
         rep.review.push("displaced parts re-seated nearby: " + led.displaced.map((d) => `${d.ref} ${d.shift_mm} mm`).join(", "));
         const disp = new Set(led.displaced.map((d) => d.ref));

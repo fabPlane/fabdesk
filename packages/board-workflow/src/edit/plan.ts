@@ -78,6 +78,8 @@ export interface EditPlan {
   reason?: string;
   /** Parts to delete (with their symbols and copper). */
   remove?: string[];
+  /** Explicit nets authorized for rerouting, including copper-source adoption. */
+  routeAgain?: string[];
   move?: MoveSpec[];
   displace?: DisplaceSpec;
   /**
@@ -118,6 +120,7 @@ export function parsePlan(raw: unknown): EditPlan {
   const plan = JSON.parse(JSON.stringify(raw)) as EditPlan;
   if (typeof plan.id !== "string" || !/^[\w.-]+$/.test(plan.id)) throw new Error("plan.id is required (letters, digits, - _ .)");
   strList(plan.remove, "remove");
+  strList(plan.routeAgain, "routeAgain");
   strList(plan.accept_unconnected, "accept_unconnected");
   if (plan.legalise !== undefined) {
     const l = plan.legalise;

@@ -238,24 +238,27 @@ function fanoutChain(
       const key = `${route.id}|${layer}|${point.x}|${point.y}`;
       if (visited.has(key)) continue;
       visited.add(key);
+      const vias = routes.filter((candidate) => candidate.kind === "via" && candidate.net === route.net && routeAtPoint(candidate, point, layer));
+      const layers = [...new Set([layer, ...vias.flatMap((v) => v.layers)])];
       const connected = routes.filter(
-        (candidate) => candidate.net === route.net && routeAtPoint(candidate, point, layer),
+        (candidate) => candidate.net === route.net && layers.some((l) => routeAtPoint(candidate, point, l)),
       );
-      if (connected.some((candidate) => candidate.kind === "via")) continue;
-      if (connected.length >= 3) continue;
+      // A via continues the chain across layers. Three tracks are a branch; a lone track plus via is a dead stub.
+      if (connected.filter((candidate) => candidate.kind !== "via").length >= 3 || vias.length > 1) continue;
       if (
         pads.some(
           (other) =>
             other.parent !== pad.parent &&
             other.shapes.some(
               (shape) =>
-                shape.layer === layer &&
+                layers.includes(shape.layer) &&
                 pointPolygonDistance(point, shape.polygon) <= route.width / 2,
             ),
         )
       )
         continue;
-      if (pointTouchesZone(point, layer, zones)) continue;
+      if (layers.some((l) => pointTouchesZone(point, l, zones))) continue;
+      for (const via of vias) chain.set(via.id, via);
       const next = connected.find(
         (candidate) => candidate.id !== route.id && candidate.kind !== "via",
       );

@@ -153,6 +153,7 @@ const PLAN = z
       })
       .optional()
       .describe("A supplier-stack / rule plan (flow/stack_plan.py) proved like any edit; adopt carries acceptance.json and the stackup."),
+    routeAgain: z.array(z.string()).optional().describe("Nets explicitly authorized for rerouting, including copper-source adoption."),
     accept_unconnected: z.array(z.string()).optional().describe("REF.PAD left alone on a single-pad net, reviewed (impact lists them)."),
     accept_before: z.record(z.string(), z.string()).optional().describe("Parity/circuit/anchor/height checks (A3_parity ...) that already fail on the source, each with the reason."),
     notes: z.record(z.string(), z.string()).optional(),
@@ -251,7 +252,7 @@ export function describeEdit(r: EditRunResult, adopted: string | null): string {
     lines.push(
       r.guard.kept
         ? `Churn guard: ${r.guard.nets.length} net(s) the plan did not touch got their original copper back (${r.guard.nets.slice(0, 8).join(", ")}${r.guard.nets.length > 8 ? " ..." : ""}); the board scored no worse.`
-        : `Churn guard: putting the original copper back on ${r.guard.nets.length} untouched net(s) scored ${r.guard.why ?? "worse"}, so the repaired copper stays.`,
+        : `Churn guard: putting the original copper back on ${r.guard.nets.length} untouched net(s) scored ${r.guard.why ?? "worse"}, so the repaired copper stays (${r.guard.nets.join(", ")}).`,
     );
   lines.push(adopted ?? (p.pass ? "Passes: board_edit with adopt true writes it into the project." : "Not adoptable as it stands: the proof does not pass."));
   return lines.join("\n");

@@ -36,12 +36,13 @@ export function pruneDangling(text: string, only?: Set<string>): { text: string;
         (segsByNet.get(it.net) ?? segsByNet.set(it.net, []).get(it.net)!).push([it.pts[0]!, it.pts[it.pts.length - 1]!, w ? Number(w[1]) : 0.15, it.span.start]);
       }
     }
-    const onPad = (net: string, x: number, y: number, own?: number): boolean => {
+    const onPad = (net: string, x: number, y: number, own?: number, interiorOnly = false): boolean => {
       for (const [px, py, r] of padAt.get(net) ?? []) if ((x - px) ** 2 + (y - py) ** 2 <= r * r) return true;
       for (const [[ax, ay], [bx, by], w, s] of segsByNet.get(net) ?? []) {
         if (s === own) continue;
         const L2 = (bx - ax) ** 2 + (by - ay) ** 2;
         const u = L2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / L2));
+        if (interiorOnly && (u <= 0 || u >= 1)) continue;
         if ((x - ax - u * (bx - ax)) ** 2 + (y - ay - u * (by - ay)) ** 2 <= (w / 2) ** 2) return true;
       }
       return false;
@@ -52,7 +53,7 @@ export function pruneDangling(text: string, only?: Set<string>): { text: string;
       if (it.kind === "via") {
         const [x, y] = it.pts[0]!;
         // the via counts itself: itself + one segment = a dead end
-        if ((ends.get(key(it.net, x, y)) ?? 0) <= 2 && !onPad(it.net, x, y)) drop.push(it.span);
+        if ((ends.get(key(it.net, x, y)) ?? 0) <= 2 && !onPad(it.net, x, y, undefined, true)) drop.push(it.span);
       } else {
         for (const [x, y] of [it.pts[0]!, it.pts[it.pts.length - 1]!]) {
           if ((ends.get(key(it.net, x, y)) ?? 0) <= 1 && !onPad(it.net, x, y, it.span.start)) {

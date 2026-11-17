@@ -289,3 +289,32 @@ describe("the keys through impact, apply, proof", () => {
     expect(JSON.parse(await readFile(join(cand, "stack-plan.json"), "utf8"))).toMatchObject({ changed_copper: true, copper_source: null });
   });
 });
+
+test("copper_source changes remain collateral and invoke the churn guard", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "source-churn-"));
+  dirs.push(dir);
+  await writeFile(join(dir, "board.kicad_pcb"), BOARD);
+  await writeFile(join(dir, "board.kicad_pro"), PRO);
+  await writeFile(join(dir, "board.kicad_sch"), SHEET);
+  await writeFile(join(dir, "source.kicad_pcb"), BOARD.replace("(end 19.5 14)", "(end 18.5 14)"));
+  await onboard(dir, { name: "source" });
+  const plan = { id: "source", stack: { copper_source: "source.kicad_pcb" } };
+  const preview = await runEdit({ projectDir: dir, plan, mode: "apply", runners: runners() });
+  expect(preview.churn?.collateral_detail).toHaveProperty("SIG2");
+  const r = await runEdit({ projectDir: dir, plan, mode: "full", runners: runners() });
+  expect(r.guard?.nets).toEqual(["SIG2"]);
+});
+
+test("copper-source equal-length changes and via-only changes are collateral; explicit rerouting is planned", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "source-via-")); dirs.push(dir);
+  await writeFile(join(dir, "board.kicad_pcb"), BOARD);
+  await writeFile(join(dir, "board.kicad_pro"), PRO);
+  await writeFile(join(dir, "board.kicad_sch"), SHEET);
+  await writeFile(join(dir, "source.kicad_pcb"), BOARD.replace("(at 40.5 25)", "(at 40.5 26)").replace("(start 20.5 10) (end 19.5 14)", "(start 20.5 11) (end 19.5 15)"));
+  await onboard(dir, { name: "via" });
+  const plan = { id: "via", stack: { copper_source: "source.kicad_pcb" } };
+  const r = await runEdit({ projectDir: dir, plan, mode: "apply", runners: runners() });
+  expect(Object.keys(r.churn!.collateral_detail).sort()).toEqual(["GND", "SIG2"]);
+  const named = await runEdit({ projectDir: dir, plan: { ...plan, routeAgain: ["GND", "SIG2"] }, mode: "apply", runners: runners() });
+  expect(named.churn?.collateral_nets).toBe(0);
+});
