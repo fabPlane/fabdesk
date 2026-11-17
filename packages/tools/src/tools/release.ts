@@ -1,3 +1,4 @@
+import { fabricationGate, fabricationWaiver } from "../fabrication-gate";
 /** SHARED-005: one revision-bound verification and complete native/fabrication handoff. */
 import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
@@ -214,7 +215,7 @@ export const release_build = defineTool({
   title: "Verify and build the complete release",
   description:
     "Run full-severity complete-hierarchy ERC, parity-enabled DRC, unconnected/library checks, design-rule floor, advisory root-sheet presentation metrics, PCB-reference visibility, automatic saved-design LED direction (proven reversal blocks; undecided topology warns), task-derived circuit checks (pass led and driveNet for design-bound LED current; omitted led uses declared arithmetic), renders, and native/document/fabrication export for one aggregate saved revision. Missing hierarchy members or outputs fail the release; any referenced-sheet edit makes the evidence stale.",
-  inputSchema: {
+  inputSchema: { waiver: fabricationWaiver,
     circuitChecks: z
       .array(CircuitCheck)
       .min(1)
@@ -233,8 +234,9 @@ export const release_build = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async ({ circuitChecks, buildNotes }, ctx) => {
+  handler: async ({ waiver, circuitChecks, buildNotes }, ctx) => {
     const project = ctx.requireProject();
+    const reviewWaiver = await fabricationGate(project.dir, "release_build", waiver);
     const schematic = p(project, PROJECT_FILES.boardSch);
     const board = p(project, PROJECT_FILES.boardPcb);
     const pro = p(project, PROJECT_FILES.boardPro);
@@ -600,6 +602,7 @@ export const release_build = defineTool({
     const boardChecks = await releaseAdvisories(project.dir);
     const result = {
       contract: { name: "fabdesk.native-release", version: "2.0.0" },
+      ...(reviewWaiver ? { reviewWaivers: [reviewWaiver] } : {}),
       capturedAt: new Date().toISOString(),
       runtime: {
         runtimeId: ctx.services.runtimeId,

@@ -247,7 +247,7 @@ export const project_status = defineTool({
         .join(", ")}`,
       `Sketches: ${sketches.length ? sketches.join(", ") : "none"}`,
       `Last source/compiler build: ${lastSourceBuild ? `${lastSourceBuild.ok ? "ok" : "FAILED"} (${lastSourceBuild.errors} errors, ${lastSourceBuild.warnings} warnings, captured ${lastSourceBuild.at})` : "never"}`,
-      ...(canonicalReports ? [`Canonical reports: DRC ${canonicalReports.drc.status}; ERC ${canonicalReports.erc.status}. Run render_publish after the last edit for a current handoff.`] : []),
+      ...(canonicalReports ? [`Canonical reports: DRC ${canonicalReports.drc.status}; ERC ${canonicalReports.erc.status}. Run render_publish once when the task is done, before handing back.`] : []),
       `${assembly ? "Root last release" : "Last release"}: ${formatLastRelease(lastRelease)}`,
       taskComparisonError
         ? `Task baseline comparison unavailable: ${taskComparisonError}`

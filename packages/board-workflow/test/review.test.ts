@@ -176,7 +176,7 @@ describe("a review run, the gate and dispositions", () => {
     expect((await reviewGate(project_)).exit).toBe(1);
     const r = await runReview(project_, fakeEnv(), { offline: true });
     const names = r.review.checks.map((c) => c.name);
-    expect(names).toEqual(["identity", "netlist", "erc", "drc", "acceptance", "pinsense", "cards", "decoupling", "current", "inner_power", "divider", "impedance", "manual", "mouth", "interconnect", "bom", "ratings", "coverage", "silk", "evidence", "custom", "pack"]);
+    expect(names).toEqual(["identity", "netlist", "erc", "drc", "acceptance", "pinsense", "cards", "decoupling", "current", "inner_power", "divider", "impedance", "manual", "mouth", "interconnect", "bom", "manufacturing", "ratings", "coverage", "silk", "evidence", "custom", "pack"]);
     const by = (rule: string) => r.review.findings.filter((f) => f.rule === rule);
     expect(by("MOUTH")[0]!.severity).toBe("must-fix");
     expect(by("MOUTH")[0]!.ref).toBe("J1");
@@ -471,4 +471,31 @@ describe("the review's drc check and the board's acceptance", () => {
     const bare = await checkDrc(ctx({}));
     expect(bare.findings.map((f) => f.claim)).toContain("DRC error courtyards_overlap: 2 item(s) - Courtyards overlap");
   });
+});
+
+test("independent import carries across runs and reports earlier coverage after an edit", async () => {
+  const dir = await project();
+  const p = await openReviewProject(dir);
+  await runReview(p, fakeEnv(), { offline: true });
+  await importExpert(p, { reviewer: "Independent", findings: [] });
+  await runReview(p, fakeEnv(), { offline: true });
+  const { stageState } = await import("../src/index");
+  expect((await stageState(dir)).independent.state).toBe("current");
+  await writeFile(p.pcb, (await readFile(p.pcb, "utf8")) + "\n");
+  const r = await runReview(p, fakeEnv(), { offline: true });
+  expect(r.review.findings.some(f => f.id === "L8:EXPERT:-:-:pending")).toBe(false);
+  expect(r.review.findings.some(f => f.claim.includes("covers an earlier design"))).toBe(true);
+  expect((await reviewGate(p)).state).toBe("open");
+  expect((await reviewGate(p)).lines.join("\n")).toContain("earlier design");
+});
+
+test("manufacturing review uses release's via detector", async () => {
+  const dir = await project();
+  const p = await openReviewProject(dir);
+  await writeFile(p.pcb, '(kicad_pcb (layers (0 "F.Cu" signal) (2 "B.Cu" signal)) (footprint "R" (layer "F.Cu") (at 10 10) (property "Reference" "R1") (pad "1" smd rect (at 0 0) (size 2 2) (layers "F.Cu") (net 1 "GND"))) (via (at 10 10) (size 0.6) (drill 0.3) (layers "F.Cu" "B.Cu") (net 1 "GND")))');
+  const { release } = await import("../src/index");
+  expect(release.viaBindings(p.pcb, release.classifyVias(await readFile(p.pcb, "utf8"))).missing).toHaveLength(1);
+  const r = await runReview(p, fakeEnv(), { offline: true, checks: ["manufacturing"] });
+  expect(r.review.findings.some(f => f.rule === "VIAS")).toBe(true);
+  expect(r.review.findings.find(f => f.rule === "VIAS")?.suggest).toContain("manufacturing_rules.filled_capped_vias");
 });

@@ -1,3 +1,7 @@
+import { readIndependentReview, stageState } from "../stages";
+import { classifyVias, viaBindings } from "../release/viaproc";
+import { applyProjectRules } from "../rules";
+import { readJsonOrNull } from "../files";
 import { isFittedPurchasedPart } from "@fabdesk/protocol";
 /**
  * Review checks, one function per check. Each takes the run context and returns a CheckResult.
@@ -1003,9 +1007,7 @@ export async function checkBom(ctx: ReviewCtx): Promise<CheckResult> {
     return r;
   }
   if (d.stale) {
-    // decisions of another board are not evidence for this one: one must-fix, none of its lines trusted
-    r.findings.push(FIND({ layer: "L6", rule: "BOM", severity: "must-fix", claim: `BOM decisions are stale: ${d.stale}; their lines were not checked`, key: "stale", suggest: "run board_release bom again on this board" }));
-    r.detail = `BOM decisions stale: ${d.stale}`;
+    r.detail = "BOM evidence is from an earlier board; currency is checked in release";
     return r;
   }
   ctx.bom = d;
@@ -1292,13 +1294,30 @@ export async function checkPack(ctx: ReviewCtx): Promise<CheckResult> {
   const manual = ((ctx.acceptance as { manual_review?: string[] } | null)?.manual_review) ?? [];
   const nets = new Set([...(ctx.comps ?? new Map<string, Comp>()).values()].flatMap((c) => [...c.pins.values()].map((v) => v.net)));
   await writeFile(join(pack, "EXPERT-BRIEF.md"), EXPERT_BRIEF({ name: ctx.project.name, hash: ctx.hash, project: ctx.project.dir, nparts: parts.length, nnets: nets.size, manual: manual.length ? "\n## Manual review items the owner tracks\n" + manual.map((m) => `- ${m}`).join("\n") : "" }));
-  r.findings.push(FIND({ layer: "L8", rule: "EXPERT", severity: "question", claim: "independent expert review not imported yet", key: "pending", suggest: `have a fresh-context reviewer (the owner's call) work from ${pack}/EXPERT-BRIEF.md, then board_review import_expert` }));
+  const independent = await readIndependentReview(ctx.project.dir);
+  if (independent) await writeFile(join(reviewHome(ctx.project.dir), "independent.json"), JSON.stringify(independent, null, 1) + "\n");
+  const independentState = (await stageState(ctx.project.dir, ctx.project.pcb)).independent;
+  if (independentState.state === "deferred") r.findings.push(FIND({ layer: "L8", rule: "EXPERT", severity: "note", claim: "independent review deferred by the owner", key: "deferred" }));
+  else if (independent?.hash === ctx.hash) r.findings.push(...independent.findings);
+  else if (independent) r.findings.push(FIND({ layer: "L8", rule: "EXPERT", severity: "note", claim: `independent review covers an earlier design (${(await stageState(ctx.project.dir, ctx.project.pcb)).independent.changedSince.length} changes since)`, key: "earlier" }));
+  else r.findings.push(FIND({ layer: "L8", rule: "EXPERT", severity: "question", claim: "independent expert review not imported yet", key: "pending", suggest: `have a fresh-context reviewer (the owner's call) work from ${pack}/EXPERT-BRIEF.md, then board_review import_expert` }));
   r.artifacts["pack"] = pack;
   r.detail = `renders ${pyList(rendered)}, ${parts.length} parts, ${[...ds.values()].filter(Boolean).length} datasheets`;
   if (rendered.length < Object.keys(views).length) {
     r.status = "error";
     r.detail += " (render failed)";
   }
+  return r;
+}
+
+export async function checkManufacturing(ctx: ReviewCtx): Promise<CheckResult> {
+  const r = newResult("manufacturing", "L6");
+  const { missing } = viaBindings(ctx.project.pcb, classifyVias(ctx.pcbText));
+  if (missing.length) r.findings.push(FIND({ layer: "L6", rule: "VIAS", severity: "question", key: "bindings",
+    claim: `${missing.length} via(s) in pads or microvias require fill and cap`,
+    suggest: "Owner chooses filled/capped fabrication: record manufacturing_rules.filled_capped_vias with a reason, then board_release vias apply:true; or stop release for a separate named edit moving vias, then checks and review again." }));
+  const rules = await applyProjectRules(ctx.project.dir, ctx.project.pcb, undefined, true);
+  if (rules?.changed) r.findings.push(FIND({ layer: "L6", rule: "RULES", severity: "must-fix", key: "classes", claim: "Project net classes out of date", suggest: "board_check {applyRules:true}, then review again" }));
   return r;
 }
 
@@ -1319,6 +1338,7 @@ export const REGISTRY: Array<[string, (ctx: ReviewCtx) => Promise<CheckResult>]>
   ["mouth", checkMouth],
   ["interconnect", checkInterconnect],
   ["bom", checkBom],
+  ["manufacturing", checkManufacturing],
   ["ratings", checkRatings],
   ["coverage", checkCoverage],
   ["silk", checkSilk],

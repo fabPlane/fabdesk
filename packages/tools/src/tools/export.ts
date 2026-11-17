@@ -1,3 +1,6 @@
+import type { ToolContext, ToolOutput } from "../registry";
+import { mkdir, writeFile } from "node:fs/promises";
+import { fabricationGate, fabricationWaiver } from "../fabrication-gate";
 import { portableHandoff } from "../portable-handoff";
 import { canonicalReportStatus } from "../canonical-report-status";
 /** Export toolset: manufacturing outputs via kicad-cli. */
@@ -22,6 +25,19 @@ import { writeJlcExports } from "../release-jlc";
 const rel = (project: { dir: string }, abs: string) =>
   abs.startsWith(project.dir) ? abs.slice(project.dir.length + 1) : abs;
 
+async function withFabricationOutput(tool: string, waiver: string | undefined, ctx: ToolContext, expected: string | undefined, operation: (staged: ToolContext) => Promise<ToolOutput>, existing = false) {
+  const original = ctx.requireProject().dir;
+  await fabricationGate(original, tool, waiver);
+  return withPcbOutput(ctx, expected, async staged => {
+    const manifest = await readFile(join(original, "exports/fabrication-manifest.json")).catch(() => null);
+    if (manifest) {
+      await mkdir(join(staged.requireProject().dir, "exports"), { recursive: true });
+      await writeFile(join(staged.requireProject().dir, "exports/fabrication-manifest.json"), manifest);
+    }
+    return operation(staged);
+  }, existing);
+}
+
 export const export_gerbers = defineTool({
   name: "export_gerbers",
   boardScoped: true,
@@ -29,7 +45,7 @@ export const export_gerbers = defineTool({
   title: "Export Gerbers",
   description:
     "Export production Gerbers for copper, mask, paste, silkscreen and edge layers (preset=all includes auxiliary layers) to exports/gerbers/. Requires kicad-cli and board.kicad_pcb.",
-  inputSchema: { expectedSourceSha256: expectedPcbSource, preset: z.enum(["production", "all"]).default("production") },
+  inputSchema: { waiver: fabricationWaiver, expectedSourceSha256: expectedPcbSource, preset: z.enum(["production", "all"]).default("production") },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
@@ -37,7 +53,7 @@ export const export_gerbers = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async (args, ctx) => withPcbOutput(ctx, args.expectedSourceSha256, async (ctx) => {
+  handler: async (args, ctx) => withFabricationOutput("export_gerbers", args.waiver, ctx, args.expectedSourceSha256, async (ctx) => {
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const board = await requireBoard(project);
@@ -67,7 +83,7 @@ export const export_dxf = defineTool({
   title: "Export DXF artwork",
   description:
     "Export one millimetre-unit DXF per selected layer to exports/dxf/. Defaults to F.Cu, B.Cu, and Edge.Cuts. Bottom-layer output uses a top-view orientation.",
-  inputSchema: {
+  inputSchema: { waiver: fabricationWaiver,
     expectedSourceSha256: expectedPcbSource,
     layers: z
       .array(z.string().min(1))
@@ -82,7 +98,7 @@ export const export_dxf = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async ({ layers, expectedSourceSha256 }, ctx) => withPcbOutput(ctx, expectedSourceSha256, async (ctx) => {
+  handler: async ({ waiver, layers, expectedSourceSha256 }, ctx) => withFabricationOutput("export_dxf", waiver, ctx, expectedSourceSha256, async (ctx) => {
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const board = await requireBoard(project);
@@ -120,7 +136,7 @@ export const export_drill = defineTool({
   title: "Export drill files",
   description:
     "Export Excellon drill files (plated/non-plated, with map) to exports/gerbers/. Requires kicad-cli and board.kicad_pcb. For a package you will order, board_release fab supersedes this (drill files are part of its gated package).",
-  inputSchema: { expectedSourceSha256: expectedPcbSource },
+  inputSchema: { waiver: fabricationWaiver, expectedSourceSha256: expectedPcbSource },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
@@ -128,7 +144,7 @@ export const export_drill = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async (args, ctx) => withPcbOutput(ctx, args.expectedSourceSha256, async (ctx) => {
+  handler: async (args, ctx) => withFabricationOutput("export_drill", args.waiver, ctx, args.expectedSourceSha256, async (ctx) => {
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const board = await requireBoard(project);
@@ -155,7 +171,7 @@ export const export_pos = defineTool({
   title: "Export pick-and-place",
   description:
     "Export the component placement (pick-and-place) CSV to exports/positions.csv. Requires kicad-cli and board.kicad_pcb.",
-  inputSchema: { expectedSourceSha256: expectedPcbSource, mode: z.enum(["physical_purchase", "engineering"]).default("physical_purchase") },
+  inputSchema: { waiver: fabricationWaiver, expectedSourceSha256: expectedPcbSource, mode: z.enum(["physical_purchase", "engineering"]).default("physical_purchase") },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
@@ -163,7 +179,7 @@ export const export_pos = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async (args, outer) => withPcbOutput(outer, args.expectedSourceSha256, async (ctx) => {
+  handler: async (args, outer) => withFabricationOutput("export_pos", args.waiver, outer, args.expectedSourceSha256, async (ctx) => {
     const project = ctx.requireProject();
     const real = outer.requireProject(); // the exporter runs on a staged copy; the BOM check lives with the real project
     const cli = await requireKicad(ctx);
@@ -215,7 +231,7 @@ export const export_bom = defineTool({
   title: "Export BOM",
   description:
     "Export the project BOM from captured native schematic sources, explicit physical instances and project hardware. Writes exports/bom.csv and its coverage receipt. Incomplete or netlist-only coverage requires explicit allowPartial; pass expectedRevision from bom_read to refuse changed inputs.",
-  inputSchema: { expectedRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(), allowPartial: z.boolean().default(false), mode: z.enum(["physical_purchase", "engineering"]).default("physical_purchase") },
+  inputSchema: { waiver: fabricationWaiver, expectedRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(), allowPartial: z.boolean().default(false), mode: z.enum(["physical_purchase", "engineering"]).default("physical_purchase") },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
@@ -223,8 +239,9 @@ export const export_bom = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async ({ expectedRevision, allowPartial, mode }, ctx) => {
+  handler: async ({ waiver, expectedRevision, allowPartial, mode }, ctx) => {
     const project = ctx.requireProject();
+    await fabricationGate(project.dir, "export_bom", waiver);
     const snapshot = await readProjectBom(ctx);
     if (expectedRevision && snapshot.revision !== expectedRevision) throw new ToolError("BOM inputs changed; refresh and review the parts list before exporting.", "precondition");
     if (!snapshot.complete && !allowPartial) throw new ToolError("BOM source coverage is incomplete or netlist-only. Review bom_read coverage and explicitly choose allowPartial to export only listed parts.", "precondition");
@@ -304,7 +321,7 @@ export const export_zip = defineTool({
   title: "Zip fabrication outputs",
   description:
     "Bundle the files currently present in exports/gerbers plus positions.csv and bom.csv into exports/fabrication.zip or a named filename under exports/. Missing optional entries are reported. For a package you will order, board_release fab supersedes this: its archive is gated on the interconnect, review, A1-A9 and via checks.",
-  inputSchema: {
+  inputSchema: { waiver: fabricationWaiver,
     expectedSourceSha256: expectedPcbSource,
     package: z.enum(["fabrication", "handoff"]).default("fabrication").describe("handoff includes editable native sources, project dependencies, views, reports and a source-bound inventory; requires current exports"),
     gerberFiles: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/).max(240)).min(1).max(512).optional()
@@ -322,7 +339,7 @@ export const export_zip = defineTool({
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async ({ filename, expectedSourceSha256, gerberFiles, package: kind }, sourceCtx) => kind === "handoff" ? portableHandoff(sourceCtx, filename === "fabrication.zip" ? "handoff.zip" : filename, zipFiles) : withPcbOutput(sourceCtx, expectedSourceSha256, async (ctx) => {
+  handler: async ({ waiver, filename, expectedSourceSha256, gerberFiles, package: kind }, sourceCtx) => kind === "handoff" ? portableHandoff(sourceCtx, filename === "fabrication.zip" ? "handoff.zip" : filename, zipFiles) : withFabricationOutput("export_zip", waiver, sourceCtx, expectedSourceSha256, async (ctx) => {
     const project = ctx.requireProject();
     if (!sourceCtx.board) {
       const reports = await canonicalReportStatus(sourceCtx);
@@ -345,6 +362,8 @@ export const export_zip = defineTool({
     }
     const selectedFiles = gerberFiles ?? (hasInventory ? [...new Set(inventories)] : undefined);
     const entries: Array<{ name: string; path: string }> = [];
+    const waiverManifest = join(project.dir, "exports/fabrication-manifest.json");
+    if (await stat(waiverManifest).catch(() => null)) entries.push({ name: "fabrication-manifest.json", path: waiverManifest });
     for (const f of selectedFiles ? [...new Set(selectedFiles)] : await readdir(gerbersDir).catch(() => [])) {
       const abs = join(gerbersDir, f);
       const info = await stat(abs).catch(() => null);

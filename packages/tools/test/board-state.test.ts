@@ -276,3 +276,28 @@ describe("recordAcceptance", () => {
     expect(await readAcceptanceState(dir)).toMatchObject({ state: "current", pass: true, baselineFailing: ["A8"], regressions: [] });
   });
 });
+
+test("stage readers agree after schematic-only and board-only changes", async () => {
+  const { stageState, currentReviewHash, openReviewProject, loadCurrent, reviewBasis } = await import("@fabdesk/board-workflow");
+  const dir = await mkdtemp(join(tmpdir(), "stages-agree-"));
+  const pcb = join(dir, "board.kicad_pcb");
+  await writeFile(pcb, "(kicad_pcb)");
+  await writeFile(join(dir, "board.kicad_sch"), "(kicad_sch)");
+  const home = join(dir, ".fabdesk/board");
+  await mkdir(join(home, "review/runs/first"), { recursive: true });
+  await mkdir(join(home, "release"), { recursive: true });
+  const hash = await currentReviewHash(dir);
+  await writeFile(join(home, "review/latest.json"), JSON.stringify({ run: "first" }));
+  await writeFile(join(home, "review/runs/first/review.json"), JSON.stringify({ hash, pcb: "board.kicad_pcb", checks: [], findings: [] }));
+  await writeFile(join(home, "release/last-fab.json"), JSON.stringify({ out: "exports/release-first", designHash: hash }));
+  await recordReviewGate(dir, { current: true, open: 0, mustFix: 0 });
+  expect((await stageState(dir)).review.state).toBe("current");
+  expect((await stageState(dir)).release.state).toBe("current");
+  for (const [name, text] of [["board.kicad_sch", "(kicad_sch (version 1))"], ["board.kicad_pcb", "(kicad_pcb (version 2))"]]) {
+    await writeFile(join(dir, name!), text!);
+    expect((await stageState(dir)).review.state).toBe("stale");
+    expect((await stageState(dir)).release.state).toBe("stale");
+    expect((await readReviewGate(dir)).state).toBe("stale");
+    expect((await loadCurrent(await openReviewProject(dir))).state).toContain("stale");
+  }
+});

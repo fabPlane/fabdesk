@@ -1,3 +1,5 @@
+import { FINISH_BOARD_PROMPT } from "@fabdesk/agents";
+import { stageState } from "@fabdesk/board-workflow";
 /**
  * Pure planner for Finish it: inspect a project directory, decide remaining milestones,
  * write the autonomous agent prompt, and map MCP tools onto those milestones.
@@ -35,6 +37,7 @@ export type FinishItSnapshot = {
   doneMode?: DoneMode;
   /** The board workflow's review gate for the saved board (present when the board workflow is in use). */
   review?: ReviewGate;
+  release?: { state: string };
 };
 
 export type FinishItRouteHint = {
@@ -197,7 +200,7 @@ export async function inspectProject(
     drcUnconnected: drc?.unconnected ?? null,
     ercErrors: erc?.errors ?? null,
     spiceOk: spice,
-    ...(extras.boardChecks ? { acceptance: await readAcceptanceState(dir), doneMode: await readDoneMode(dir), review: await readReviewGate(dir) } : {}),
+    ...(extras.boardChecks ? { acceptance: await readAcceptanceState(dir), doneMode: await readDoneMode(dir), review: await readReviewGate(dir), release: (await stageState(dir)).release } : {}),
   };
 }
 
@@ -256,6 +259,8 @@ export function milestoneDone(id: FinishItMilestoneId, snap: FinishItSnapshot): 
       if (a?.state === "current" && hasCheck(a.failing, "A1")) return snap.doneMode === "no-regression" && !hasCheck(a.regressions, "A1");
       return snap.routed && (snap.routeOpen === null || snap.routeOpen === 0);
     }
+    case "release":
+      return snap.release?.state === "current";
     case "review":
       // every finding settled on the saved board; a board change since the last review makes it stale
       return snap.review?.state === "pass";
@@ -274,7 +279,7 @@ export function milestoneDone(id: FinishItMilestoneId, snap: FinishItSnapshot): 
 
 export function planMilestones(snap: FinishItSnapshot): FinishItMilestone[] {
   // the review milestone exists only where the board workflow can run one
-  return FINISH_IT_MILESTONES.filter((id) => id !== "review" || snap.review !== undefined).map((id) => {
+  return FINISH_IT_MILESTONES.filter((id) => !["review", "release"].includes(id) || snap.review !== undefined).map((id) => {
     const done = milestoneDone(id, snap);
     const status: FinishItMilestoneState = done ? "skipped" : "pending";
     return {
@@ -309,8 +314,9 @@ export function milestoneForTool(name: string): FinishItMilestoneId | null {
     case "board_edit":
       return "route";
     case "board_check":
-    case "board_release":
       return "verify";
+    case "board_release":
+      return "release";
     case "board_review":
       return "review";
     case "verify_drc":
@@ -336,6 +342,8 @@ export function snapshotNote(id: FinishItMilestoneId, snap: FinishItSnapshot): s
       if (snap.routed && (snap.routeOpen === null || snap.routeOpen === 0)) return "Routing closed";
       if (snap.routeOpen !== null) return `${snap.routeOpen} open connection${snap.routeOpen === 1 ? "" : "s"}`;
       return "Not routed";
+    case "release":
+      return snap.release?.state === "current" ? "Fabrication package covers this design" : "Fabrication release missing or stale";
     case "review": {
       const r = snap.review;
       if (!r || r.state === "none") return "Review not run";
@@ -407,8 +415,8 @@ export function finishItPrompt(input: {
     `Verify: ${snapshotNote("verify", input.snapshot)}`,
   ].join("\n");
   const header = input.followUp
-    ? "Continue the Finish it run. Do not stop to ask questions. Finish the remaining work."
-    : "Finish it mode: take this partially done fabPlane project all the way to a manufacturable board. Do not ask the user step-by-step questions. Work autonomously with the fabPlane MCP tools.";
+    ? "Continue the Finish it run. Use recorded owner answers and finish the remaining work."
+    : "Finish it mode: take this partially done fabPlane project all the way to a manufacturable board. Gather owner-only questions at the start, then work autonomously with the fabPlane MCP tools.";
   return `${header}
 
 Project: ${input.projectName}
@@ -424,8 +432,8 @@ How to finish each milestone:
 2. build — run circuit_build so board.kicad_pcb exists with placed footprints.
 ${opts.boardChecks ? "3. route — run board_route: the layout stages (check, place, rank, route) when the board is not routed yet, then the last mile (new, try, validate, accept) until A1 (connectivity) passes; board_route status says the next step. Use board_edit for a targeted change." : "3. route — run route_run and keep going until open connections are 0. Unroute and retry a net if needed."}
 4. verify — ${opts.boardChecks ? "run board_check: done means A1-A9 pass on the saved board with schematic parity (DRC is part of it; a board that came in already failing checks is judged by no new failure against its first result; name each pre-existing failure). Also run " : "run "}verify_erc (if a schematic exists), ${opts.boardChecks ? "" : "verify_drc, "}and sim_run when the design can be simulated. Fix violations and re-run until DRC errors and unconnected items are 0 (and ERC errors are 0 when a schematic exists). SPICE is best-effort: run it, but a missing simulator is not a reason to stop.
-${opts.boardChecks ? "5. review — run board_review (action run), then settle what it leaves: board_review fix lists each finding's proposal (apply settles what intent or evidence decides), dispose each remaining finding with evidence or fix the design, and re-run after a fix. Done when board_review gate passes. A finding only the owner can decide (spending money, changing a hard constraint) is reported, not decided: stop and list it.\n" : ""}
-${opts.boardChecks ? BOARD_METHOD + "\n\n" : ""}Rules:
+${opts.boardChecks ? "5. review — run board_review (action run), then settle what it leaves: board_review fix lists each finding's proposal (apply settles what intent or evidence decides), dispose each remaining finding with evidence or fix the design, and re-run after a fix. Review is complete when board_review gate passes; finish still requires release. A finding only the owner can decide (spending money, changing a hard constraint) is reported, not decided: stop and list it.\n" : ""}
+${opts.boardChecks ? FINISH_BOARD_PROMPT + "\n\n" + BOARD_METHOD + "\n\n" : ""}Rules:
 - Use the fabPlane MCP tools. Do not invent a parallel workflow.
 - Do not wait for another user message. Keep going until the remaining milestones are done or you are blocked by a missing tool/runtime.
 - Prefer fixing the design over declaring victory with open DRC/ERC errors.

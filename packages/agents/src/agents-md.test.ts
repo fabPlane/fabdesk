@@ -140,3 +140,10 @@ describe("writeAgentDocs", () => {
     expect(extractUserSection(`${USER_START}\nno end`)).toBeUndefined();
   });
 });
+
+test("task handback ends without a blocking next-step question", () => {
+  expect(BOARD_WORKFLOW_MD).toContain("ends the turn in plain text");
+  expect(BOARD_WORKFLOW_MD).not.toContain("costs an agent run: ask first");
+  expect(renderAgentsMd(ctx)).not.toContain("Run after the last edit");
+  expect(BOARD_WORKFLOW_MD).toContain("manufacturing_rules.filled_capped_vias");
+});

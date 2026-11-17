@@ -1,3 +1,4 @@
+import { stageState } from "../stages";
 /**
  * Whole-board review bound to one design hash, with dispositions and a gate.
  *
@@ -336,10 +337,14 @@ export async function reviewGate(project: ReviewProject): Promise<GateResult> {
   if (cur.state !== "current" || !cur.review)
     return { exit: GATE_STALE, state: cur.state === "no review" ? "none" : "stale", current: false, open: 0, mustFix: 0, errors: false, lines: [`REVIEW GATE: BLOCKED (${cur.state}). Run: board_review {"action": "run"}`] };
   const ev = evaluate(cur.review, await readDispositions(project.dir), await readIntent(project.dir));
+  const stages = await stageState(project.dir, project.pcb);
+  if (stages.independent.state === "covers an earlier design")
+    return { exit: GATE_OPEN, state: "open", current: true, open: ev.open.length + 1, mustFix: ev.open.filter(r => r.severity === "must-fix").length, errors: !!ev.errors.length, lines: [`Independent review covers an earlier design (${stages.independent.changedSince.length} changes since). Import a current independent review, or record the owner's deferral.`] };
+
   const notRun = notRunOf(cur.review);
   const dispositions = ev.rows.filter(r => r.disposition).map(r => ({ id: r.id, state: r.disposition!.state, by: r.disposition!.by, reason: r.disposition!.reason }));
   const independentRows = ev.rows.filter(r => r.layer === "L8");
-  const independentReview = cur.review.checks.some(c => c.name === "expert" && c.status === "ok") ? "completed" as const : independentRows.some(r => r.disposition?.state === "defer") ? "deferred" as const : "missing" as const;
+  const independentReview = stages.independent.state === "current" || cur.review.checks.some(c => c.name === "expert" && c.status === "ok") ? "completed" as const : stages.independent.state === "deferred" || independentRows.some(r => r.disposition?.state === "defer") ? "deferred" as const : "missing" as const;
   const evidence = { checks: cur.review.checks.map(c => ({ name: c.name, status: c.status })), dispositions, independentReview };
   const nr = { ...(notRun ? { notRun } : {}), evidence };
   const nrLines = [...(notRun ? [notRunLine(notRun)] : []), `Independent review: ${independentReview}.`, ...dispositions.map(d => `${d.id}: ${d.state} by ${d.by}: ${d.reason}`)];
@@ -407,6 +412,7 @@ export async function importExpert(project: ReviewProject, ex: ExpertFile, sourc
   const intent = await readIntent(project.dir);
   for (const f of review.findings) if (f.check === "expert") f.proposal = propose(f, { dir: project.dir, hasRequirements: false }, intent, info, project.name);
   review.checks = [...review.checks.filter((c) => c.name !== "expert"), { name: "expert", layer: "L8", status: "ok", seconds: 0, detail: `${n} findings from ${ex.reviewer ?? "?"}`, artifacts: source ? { expert: resolve(source) } : {} }];
+  await writeFile(join(reviewHome(project.dir), "independent.json"), JSON.stringify({ hash: review.hash, files: review.files, at: new Date().toISOString(), findings: review.findings.filter(f => f.check === "expert") }, null, 1) + "\n");
   await writeFile(join(cur.run, "review.json"), JSON.stringify(review, null, 1) + "\n");
   await writeFile(join(cur.run, "review.md"), reportMd(review, evaluate(review, await readDispositions(project.dir), intent)));
   return { imported: n, run: cur.run };

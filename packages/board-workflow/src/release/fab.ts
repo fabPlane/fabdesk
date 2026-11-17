@@ -1,3 +1,5 @@
+import { bomCurrency } from "../stages";
+import { currentReviewHash } from "../review/store";
 /**
  * Fabrication package for a released board. Refuses, writing nothing (no package folder, no zip), unless every gate
  * passes in order (the package is built in a temporary folder beside the destination and renamed into place only when
@@ -291,7 +293,7 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
     if (r?.changed)
       throw new ReleaseStop(
         "acceptance",
-        `STOP acceptance rules: the project's net classes and rules did not follow the acceptance (it does not keep native rules), now applied (${r.text}); the design changed, so run board_review again, then release`,
+        `STOP acceptance rules: the project's net classes and rules did not follow the acceptance (it does not keep native rules), not applied (${r.text}); run board_check {applyRules:true}, then board_review run, then release`,
         r,
       );
   }
@@ -306,7 +308,7 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
   note("via process bindings");
   const { record: viaRec, missing } = viaBindings(inp.pcb, classifyVias(pcbText));
   if (missing.length)
-    throw new ReleaseStop("vias", `STOP via bindings: ${missing.length} via(s) in pads or microvias lack (filling yes) (capping yes): ${missing.slice(0, 6).map((v) => `${v.net}@${v.xy.join(",")}`).join("; ")}. Set them with board_release {"action": "vias", "apply": true} (the order must then ask for filled and capped vias), or move the vias out of the pads`, viaRec.counts);
+    throw new ReleaseStop("vias", `STOP via bindings: ${missing.length} via(s) in pads or microvias lack (filling yes) (capping yes): ${missing.slice(0, 6).map((v) => `${v.net}@${v.xy.join(",")}`).join("; ")}. First record the owner decision manufacturing_rules.filled_capped_vias with a reason. Set fabrication attributes with board_release {"action": "vias", "apply": true} (the order must then ask for filled and capped vias), release stops for any geometry change: make it a separate named edit task, then run checks and review again`, viaRec.counts);
   // An assembly order: a missing, stale or incomplete BOM refuses before anything is exported. A bare-board order
   // needs no BOM. Ungated CAM is a separate action.
   const assembly = inp.assembly !== false;
@@ -314,7 +316,7 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
   let bomDecisions: BomResult | null = null;
   if (assembly) {
     if (!inp.bomDir || !hasCplJlc) throw new ReleaseStop("bom", "STOP no current BOM check: run board_release bom first (assembly: false for a bare-board order; board_release cam for ungated CAM only)");
-    if (inp.bomBoardSha !== sha256(await readFile(inp.pcb)))
+    if (bomCurrency(inp.bomBoardSha ?? null, sha256(await readFile(inp.pcb))) !== "current")
       throw new ReleaseStop("bom", "STOP BOM check is of an earlier board (the board changed since): run board_release bom again");
     bomDecisions = await readFile(join(inp.bomDir, "bom-decisions.json"), "utf8")
       .then(text => JSON.parse(text) as BomResult)
@@ -328,7 +330,7 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
   const work = join(parent, `.${basename(final)}.partial-${process.pid}-${Date.now()}`);
   await mkdir(work, { recursive: true });
   try {
-    await writeFile(join(work, "acceptance-gate.json"), JSON.stringify({ summary: acc.summary, ...(acc.designHash ? { designHash: acc.designHash } : {}), ...(acc.record ? { record: acc.record } : {}) }, null, 1) + "\n");
+    await writeFile(join(work, "acceptance-gate.json"), JSON.stringify({ reviewDesignHash: await currentReviewHash(inp.project), summary: acc.summary, ...(acc.designHash ? { designHash: acc.designHash } : {}), ...(acc.record ? { record: acc.record } : {}) }, null, 1) + "\n");
     await writeFile(join(work, "via-process-bindings.json"), JSON.stringify(viaRec, null, 1) + "\n");
     const layers = requiredLayers(pcbText);
     note("CAM export, twice");

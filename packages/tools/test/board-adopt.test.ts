@@ -39,6 +39,10 @@ describe("adoptCandidate", () => {
     expect(seen[0]!.target).toBe(join(project.dir, "board.kicad_pcb"));
     expect(r.text).toContain("removed trace 10; added trace 14; changed footprint 1");
     expect(r.text).toContain("residual none");
+    expect(r.text).toContain("Task: change saved");
+    expect(r.text).toContain("Review: stale");
+    expect(r.text).toContain("Release: stale");
+    expect(r.text.match(/Recommended next:/g)).toHaveLength(1);
     expect(r.clean).toBe(true);
     expect(r.data.checkpointId).toMatch(/^task-/);
   });

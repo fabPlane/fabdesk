@@ -16,11 +16,11 @@ import type { Requirements } from "./requirements";
  * own (`.fabdesk/board/requirements`) unless given. Returns what was done and whether a file changed, or null when there is
  * no project file or no requirements to apply.
  */
-export async function applyProjectRules(dir: string, pcb: string, req?: Requirements | null): Promise<{ changed: boolean; text: string } | null> {
+export async function applyProjectRules(dir: string, pcb: string, req?: Requirements | null, dryRun = false): Promise<{ changed: boolean; text: string } | null> {
   const board = resolve(dir, pcb);
   const pro = join(dirname(board), `${basename(board).replace(/\.kicad_pcb$/, "")}.kicad_pro`);
   if (!(await stat(pro).then((s) => s.isFile(), () => false))) return null;
   const r = req ?? (await readRequirements(dir));
   if (!r) return null;
-  return writeNetclasses(pro, r.acceptance);
+  return writeNetclasses(pro, r.acceptance, dryRun);
 }

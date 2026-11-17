@@ -78,6 +78,9 @@ describe("board_edit", () => {
     // the sheets the candidate changed were written (the PCB goes over IPC, mocked here)
     expect(await readFile(join(project.dir, "board.kicad_sch"), "utf8")).not.toContain('"C3"');
     expect(r.text).toMatch(/Adopted/);
+    expect(r.text).toContain("Review: stale");
+    expect(r.text).toContain("Release: stale");
+    expect(r.text.match(/Recommended next:/g)).toHaveLength(1);
     // a second edit of the same source reuses the before-score: one DRC run, not two
     const project2 = await setup();
     await project2.run({ plan: { id: "one", remove: ["C3"] } });

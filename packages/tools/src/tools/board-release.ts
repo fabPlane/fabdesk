@@ -1,3 +1,5 @@
+import { fabricationGate, fabricationWaiver, packageWaivers } from "../fabrication-gate";
+import { currentReviewHash, stageState } from "@fabdesk/board-workflow";
 /**
  * board_release: the release stage. One tool, six actions:
  *   bom    every BOM line to a manufacturable part with evidence, and the CPL rotation JLC's own footprint needs
@@ -38,7 +40,8 @@ const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+
 const Proxies = z.record(z.string(), z.object({ proxy: z.string(), why: z.string().optional() }));
 
 const Input = {
-  action: z.enum(["bom", "gerb", "check", "fab", "cam", "vias"]).describe("vias: every via whose drill meets SMD pad copper (via-in-pad) and every microvia needs (filling yes) (capping yes) (IPC-4761 Type VII) for the fab gate: lists them, which lack the attributes, and the pads they sit in; with apply: true, writes the two attributes on the missing ones (an attribute only, no geometry) into the project board through adopt (one KiCad commit, checkpointed) and checks the board again. Fill and cap is a fab process the order must name (costlier); moving a via out of the pad (board_edit / last mile) is the alternative. cam: the CAM set in `out` (default fab/) without the release gates, for a board the owner approved as it is or to look at the outputs: Gerbers plotted from a fresh zone fill, PTH/NPTH drill with maps, BOM (one row per value+footprint with its references), placement CSV, the Gerber render check and a README saying it is not a gated release. bom: part identity, stock, lifecycle, JLC footprint fit and CPL rotation per line. gerb: render check of Gerbers against KiCad's plot. check: release readiness (or JLC placement simulation of an existing package). fab: the fabrication package; refuses unless every gate passes (an assembly order also needs a current, complete BOM check; assembly: false for a bare-board order)."),
+  waiver: fabricationWaiver,
+  action: z.enum(["bom", "gerb", "check", "fab", "cam", "vias"]).describe("vias: every via whose drill meets SMD pad copper (via-in-pad) and every microvia needs (filling yes) (capping yes) (IPC-4761 Type VII) for the fab gate: lists them, which lack the attributes, and the pads they sit in; with apply: true, writes the two attributes on the missing ones (an attribute only, no geometry) into the project board through adopt (one KiCad commit, checkpointed) and checks the board again. Fill and cap is a fab process the order must name (costlier); record the owner decision manufacturing_rules.filled_capped_vias with a reason before apply:true. Moving a via is a separate named design edit: stop release, then checks and review again. cam: the CAM set in `out` (default fab/) with a current settled review or explicit user waiver, for a board the owner approved as it is or to look at the outputs: Gerbers plotted from a fresh zone fill, PTH/NPTH drill with maps, BOM (one row per value+footprint with its references), placement CSV, the Gerber render check and a README saying it is not a full gated release. bom: part identity, stock, lifecycle, JLC footprint fit and CPL rotation per line. gerb: render check of Gerbers against KiCad's plot. check: release readiness (or JLC placement simulation of an existing package). fab: the fabrication package; refuses unless every gate passes (an assembly order also needs a current, complete BOM check; assembly: false for a bare-board order)."),
   pcb: z.string().optional().describe("Board file, relative to the project; default board.kicad_pcb or the project's only .kicad_pcb."),
   boards: z.number().int().min(1).max(10000).default(5).describe("bom: boards to cover with stock (+10 % and 2 spare)."),
   fMax: z.number().positive().optional().describe("bom: height limit above the top surface in mm (from the board's own limit)."),
@@ -146,6 +149,7 @@ async function gerbAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
  */
 async function camAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
   const project = ctx.requireProject();
+  const reviewWaiver = await fabricationGate(project.dir, "board_release cam", a.waiver, a.pcb);
   const files = await locateProject(project.dir, a.pcb);
   const cli = await requireKicad(ctx);
   const outRel = a.out ?? "fab";
@@ -186,6 +190,7 @@ async function camAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
     ].join("\n");
     await writeFile(join(out, "README.md"), readme);
     const list = [...(await readdir(gerbers)).map((n) => `gerbers/${n}`), ...(await readdir(drill)).map((n) => `drill/${n}`), `assembly/${files.stem}-bom.csv`, `assembly/${files.stem}-pos.csv`, "README.md"];
+    await packageWaivers(project.dir, out);
     return ok([`CAM set in ${outRel} (not a gated release; board_release fab is the release):`, ...list.map((n) => `  ${n}`), readme.split("\n").slice(-4, -1).join("\n")].join("\n"), { out: outRel, files: list, render: { pass: chk.pass, failing: failed }, drill: chk.drill });
   } finally {
     job.release();
@@ -239,7 +244,7 @@ async function checkAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
     `3 acceptance: ${accText}`,
     `4 via-in-pad / microvia bindings: ${vias.record.counts.require_fill_cap} need fill+cap, ${vias.missing.length} missing natively`,
     a.assembly ? `BOM / JLC rotations: ${bomText}` : `BOM / JLC rotations: not required (bare-board order, assembly: false)`,
-    last ? `Last package: ${relative(project.dir, last.out)} (${last.boardSha256 === (await sha256Of(files.pcb)) ? "of this board" : "of an earlier board"})` : "No package built yet.",
+    last ? `Last package: ${relative(project.dir, last.out)} (${(await stageState(project.dir, files.pcb)).release.state === "current" ? "of this board" : "of an earlier board"})` : "No package built yet.",
   ].join("\n");
   const ready = ic.pass && gate.state === "pass" && acc.pass && !vias.missing.length && (bomReady || !a.assembly);
   return ok(text, { ready, interconnect: ic, review: gate, acceptance: { state: acc.state, failing: acc.failing, pass: acc.pass }, vias: { ...vias.record.counts }, bom: { state: bom.state, ...(bom.meta ? { summary: bom.meta.summary } : {}) } });
@@ -247,6 +252,7 @@ async function checkAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
 
 async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
   const project = ctx.requireProject();
+  const reviewWaiver = await fabricationGate(project.dir, "board_release fab", a.waiver, a.pcb);
   const files = await locateProject(project.dir, a.pcb);
   const cli = await requireKicad(ctx);
   const out = a.out ? await jailPath(project.dir, a.out) : join(project.dir, "exports", `release-${stamp()}`);
@@ -268,11 +274,12 @@ async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
         ...(interconnectGate ? { interconnect: () => interconnectGate!({ projectDir: project.dir }) } : {}),
         // computed live from the review records of this board (never the saved status reading)
         review: async () => {
+          if (reviewWaiver) return { state: "pass", open: 0, mustFix: 0 };
           const g = await reviewGate(await openReviewProject(project.dir, files.pcb));
           return { state: g.state, open: g.open, mustFix: g.mustFix };
         },
         // the acceptance's net classes and rules on the project file before A1-A9 (no-op when the board keeps its native rules)
-        rules: () => applyProjectRules(project.dir, files.pcb),
+        rules: () => applyProjectRules(project.dir, files.pcb, undefined, true),
         acceptance: async () => {
           if (!(await readRequirements(project.dir))) throw new release.ReleaseStop("acceptance", "STOP acceptance: no requirements for this board: run board_check first");
           const run: AcceptRun = await runAcceptance(project.dir, {
@@ -300,7 +307,8 @@ async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
     // saved with the project only once the release went through (a refused release writes nothing)
     if (a.proxies) await writeProxies(project.dir, proxies);
     const man = r.manifest as { jlc?: { bom_lines?: number; placements?: number; placement_check?: { pass: number; fail: number; placements: number; no_jlc_footprint: string[] }; no_lcsc_code?: string[]; rotation_differs_from_kicad?: unknown[]; skipped?: string }; reproducible: { files: number }; gerbcheck: { pass: boolean }; files: Record<string, string> };
-    await writeLastFab(project.dir, { at: new Date().toISOString(), out, boardSha256: (await sha256Of(files.pcb)) ?? "", manifestSha256: (await sha256Of(join(out, "manifest.json"))) ?? "" });
+    await packageWaivers(project.dir, out);
+    await writeLastFab(project.dir, { designHash: await currentReviewHash(project.dir), at: new Date().toISOString(), out, boardSha256: (await sha256Of(files.pcb)) ?? "", manifestSha256: (await sha256Of(join(out, "manifest.json"))) ?? "" });
     const j = man.jlc;
     const text = [
       `RELEASED: fabrication package ${relative(project.dir, out)} (${Object.keys(man.files).length} files)`,
@@ -336,7 +344,7 @@ async function viasAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
     return ok([head, record.bindings.length ? "Every via that needs fill+cap has it: the fab gate's via step passes." : "No via needs fill+cap.", rule].join("\n"), { counts: c, missing: [], bindings: record.bindings });
   const list = lines(missing.map((v) => `- ${viaLine(v)}`), 30);
   if (!a.apply)
-    return ok([head, "Missing (filling yes) (capping yes):", ...list, rule, 'board_release {"action": "vias", "apply": true} writes them into the board (the fab order must then ask for filled and capped vias); or move the vias out of the pads.'].join("\n"), {
+    return ok([head, "Missing (filling yes) (capping yes):", ...list, rule, 'board_release {"action": "vias", "apply": true} requires manufacturing_rules.filled_capped_vias with a reason recorded by the owner; writes attributes into the board (the fab order must then ask for filled and capped vias); release stops for any geometry change: make it a separate named edit task, then run checks and review again.'].join("\n"), {
       counts: c,
       missing: missing.map(({ span_: _s, ...v }) => v),
       bindings: record.bindings,

@@ -1,5 +1,6 @@
+import { tmpdir } from "node:os";
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createRegistry, setInterconnectGate, type CoreServices, type ProjectHandle } from "../src";
 import { recordAcceptance, recordReviewGate } from "../src/board-state";
@@ -235,4 +236,32 @@ M02*
     const r2 = await b.call("export_pos");
     expect(r2.text).toContain("Exported exports/positions.csv (physical_purchase)");
   });
+});
+
+test("fabrication gate preserves legacy exports and records explicit waivers", async () => {
+  const { fabricationGate, packageWaivers } = await import("../src/fabrication-gate");
+  const dir = await mkdtemp(join(tmpdir(), "fabrication-waiver-"));
+  await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb)");
+  expect(await fabricationGate(dir, "export_gerbers")).toBeNull();
+  await mkdir(join(dir, ".fabdesk/board"), { recursive: true });
+  await writeFile(join(dir, ".fabdesk/board/onboard.json"), "{}");
+  for (const tool of ["export_gerbers", "board_release cam"]) {
+    await expect(fabricationGate(dir, tool)).rejects.toThrow("Review stage none");
+    const w = await fabricationGate(dir, tool, "Owner authorized a prototype without review");
+    expect(w?.tool).toBe(tool);
+    expect(w?.designHash).toMatch(/^[a-f0-9]{64}$/);
+  }
+  const out = join(dir, "exports/package");
+  await mkdir(out, { recursive: true });
+  await packageWaivers(dir, out);
+  const manifest = JSON.parse(await readFile(join(out, "manifest.json"), "utf8"));
+  expect(manifest.reviewWaivers).toHaveLength(2);
+});
+
+test("actual Gerber and CAM entry points refuse an onboarded design with no review", async () => {
+  const { project, call } = await setup();
+  await mkdir(join(project.dir, ".fabdesk/board"), { recursive: true });
+  await writeFile(join(project.dir, ".fabdesk/board/onboard.json"), "{}");
+  await expect(call("export_gerbers")).rejects.toThrow("fabrication refused");
+  await expect(call("board_release", { action: "cam" })).rejects.toThrow("fabrication refused");
 });

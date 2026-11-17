@@ -20,3 +20,4 @@ export * as sysinfo from "./sysinfo";
 export * from "./rules";
 export * as power from "./power/index";
 export * as bench from "./bench/index";
+export * from "./stages";

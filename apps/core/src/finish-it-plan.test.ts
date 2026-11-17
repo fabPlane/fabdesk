@@ -233,7 +233,7 @@ describe("milestoneForTool", () => {
 });
 
 describe("finishItPrompt", () => {
-  test("lists remaining work and forbids step-by-step prompting", () => {
+  test("lists remaining work and collects owner questions at the start", () => {
     const snap = {
       hasNetlist: true,
       netlistComponents: 1,
@@ -252,7 +252,7 @@ describe("finishItPrompt", () => {
       remaining: ["build", "route", "verify"],
     });
     expect(prompt).toContain("Finish it mode");
-    expect(prompt).toContain("Do not ask the user step-by-step");
+    expect(prompt).toContain("Gather owner-only questions at the start");
     expect(prompt).toContain("circuit_build");
     expect(prompt).toContain("route_run");
     expect(prompt).toContain("verify_drc");
@@ -315,7 +315,7 @@ describe("Finish it review milestone", () => {
   test("planned only where the board workflow can review; done only when the gate passes on the saved board", () => {
     expect(planMilestones(clean).map((m) => m.id)).toEqual(["schematic", "build", "route", "verify"]);
     const withReview = planMilestones({ ...clean, review: { state: "open", open: 3, mustFix: 1 } });
-    expect(withReview.map((m) => m.id)).toEqual(["schematic", "build", "route", "verify", "review"]);
+    expect(withReview.map((m) => m.id)).toEqual(["schematic", "build", "route", "verify", "review", "release"]);
     expect(withReview.find((m) => m.id === "review")?.status).toBe("pending");
     expect(milestoneDone("review", { ...clean, review: { state: "pass" } })).toBe(true);
     for (const state of ["none", "stale", "open", "errors"] as const)
@@ -327,7 +327,7 @@ describe("Finish it review milestone", () => {
     expect(snapshotNote("review", { ...clean, review: { state: "stale" } })).toContain("stale");
     expect(milestoneForTool("mcp__fabdesk__board_review")).toBe("review");
     expect(milestoneForTool("board_review")).toBe("review");
-    expect(milestoneForTool("board_release")).toBe("verify");
+    expect(milestoneForTool("board_release")).toBe("release");
   });
   test("the prompt carries the review step only with the board workflow", () => {
     const input = { projectName: "p", snapshot: clean, remaining: ["review" as const] };
@@ -371,7 +371,7 @@ describe("Finish it board checks follow the project", () => {
   test("(b) a placed board gets A1-A9 and the review milestone", async () => {
     const dir = await project("(kicad_pcb (footprint \"R\"))\n");
     const r = await plan(dir, ready);
-    expect(r).toEqual({ boardChecks: true, ids: ["schematic", "build", "route", "verify", "review"] });
+    expect(r).toEqual({ boardChecks: true, ids: ["schematic", "build", "route", "verify", "review", "release"] });
     expect((await inspectProject(dir, { boardChecks: true })).acceptance?.state).toBe("none");
     // without the board workflow registered, the placed board keeps the old plan too
     expect((await plan(dir, { workflowReady: false, settings: {} })).boardChecks).toBe(false);
@@ -446,4 +446,12 @@ describe("which board Finish it judges by no new failure", () => {
     // a failed build or an unsaved preview did not produce the board
     expect(await boardPlacedByOwner(await board(routed, { build: { ok: false }, "schematic-sync": { saved: false } }))).toBe(true);
   });
+});
+
+test("finish includes fabrication as its terminal milestone", async () => {
+  const { FINISH_IT_MILESTONES } = await import("@fabdesk/protocol");
+  const { FINISH_BOARD_PROMPT } = await import("@fabdesk/agents");
+  expect(FINISH_IT_MILESTONES.at(-1)).toBe("release");
+  expect(FINISH_BOARD_PROMPT).toContain("before any work".replace("before", "Before"));
+  expect(FINISH_BOARD_PROMPT).toContain("board_release fab");
 });

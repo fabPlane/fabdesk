@@ -77,3 +77,5 @@ export async function detectAgents(settings?: Settings): Promise<AgentInfo[]> {
 }
 
 export { AGENT_OWNER_DIR, recoverAgentProcesses, stopAgentProcess } from "./process-ownership";
+
+export { FINISH_BOARD_PROMPT } from "./finish-board";

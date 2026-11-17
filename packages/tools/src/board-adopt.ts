@@ -1,3 +1,4 @@
+import { savedStageLine } from "@fabdesk/board-workflow";
 /**
  * Adopt a board candidate (made by an edit, last-mile or review stage in a scratch folder) into the project.
  * Checkpoint, then the schematic sheets, project libraries and requirements the candidate changed (only while the project's copy is
@@ -381,7 +382,7 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
       `residual ${clean ? "none" : JSON.stringify(result.residual)}; checkpoint ${checkpoint.id}${point ? `; board timeline point ${point.ref.slice(0, 12)}` : ""}`,
     ].join("\n");
     return {
-      text,
+      text: text + "\n" + await savedStageLine(project.dir, target),
       data: { ...result, canonicalDrc, checkpointId: checkpoint.id, target, clean, designFiles: sheets, timelinePoint: point?.ref ?? null, via: fileWhy ? "file" : "ipc", viaNote, drcExclusions: exclusions ? exclusions.entries.length : null },
       clean,
     };

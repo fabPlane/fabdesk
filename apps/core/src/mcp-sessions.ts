@@ -196,8 +196,8 @@ export function boardWorkflowInstructions(opts: { listed?: boolean } = {}): stri
     .map((r) => `${r.stage} \`${r.tool}\``)
     .join(" · ");
   return [
-    ` Board workflow (a placed board to a releasable one): ${stages}.`,
-    "Done is the board's own acceptance checks A1-A9 passing, as board_check measures them against the requirements written at onboarding.",
+    ` Board workflow (separate task, review and release stages): ${stages}.`,
+    "Task done is the saved requested change, its checks passing and previews published once. Report stale review/release once and end the turn in plain text; do not start those stages or ask what next unless requested. Done is the board's own acceptance checks A1-A9 passing, as board_check measures them against the requirements written at onboarding.",
     "Engines a stage needs (routers, KiCadRoutingTools) install on demand; a call that cannot get one names it.",
     "A long call returns a job id; board_job waits for it, reports it or cancels it.",
     opts.listed
@@ -209,7 +209,7 @@ export function boardWorkflowInstructions(opts: { listed?: boolean } = {}): stri
 
 export function boardWorkflowPromptText(project?: string, request?: string): string {
   return [
-    "Take this project's placed board to a releasable one with the fabdesk board tools, by the method below.",
+    "Handle the requested task, review or release stage with the fabdesk board tools, by the method below. Stop at the requested stage; finishing the board explicitly requests all stages.",
     project ? `Project: ${project} (pass project="${project}" to the board_* tools).` : "Use the session's project.",
     ...(request?.trim() ? [`Request: ${request.trim()}`] : []),
     "",

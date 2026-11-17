@@ -114,7 +114,7 @@ describe("board_review", () => {
     expect((await readReviewGate(project.dir)).state).toBe("none");
   });
 
-  test("the BOM check reads board_release bom's decisions; a BOM of an earlier board is a must-fix, not trusted", async () => {
+  test("the BOM check reads board_release bom's decisions; a BOM of an earlier board is untrusted release evidence, not a review blocker", async () => {
     const { project, call } = await setup();
     await mkdir(bomDirOf(project.dir), { recursive: true });
     await writeFile(join(bomDirOf(project.dir), "bom-decisions.json"), JSON.stringify({ lines: 1, placements: 1, summary: { UNRESOLVED: 1 }, records: [{ line: "L1", refs: ["U1"], value: "MCU", status: "UNRESOLVED", reason: "no LCSC" }] }));
@@ -127,7 +127,7 @@ describe("board_review", () => {
     run = await call({ action: "run", offline: true });
     open = run.json?.["open"] as Array<{ id: string; severity: string; claim: string }>;
     expect(open.some((o) => o.claim.startsWith("UNRESOLVED L1"))).toBe(false);
-    expect(open.find((o) => o.id === "L6:BOM:-:-:stale")?.severity).toBe("must-fix");
+    expect(open.some((o) => o.id === "L6:BOM:-:-:stale")).toBe(false);
   });
 
   test("the saved gate covers dispositions, the run and the board; removing the runs clears it", async () => {

@@ -1,3 +1,4 @@
+import { reviewCurrency } from "../stages";
 /** Where the review keeps its records: `<project>/.fabdesk/board/review/`. */
 import { createHash } from "node:crypto";
 import { basename, join, relative, sep } from "node:path";
@@ -50,10 +51,7 @@ export async function loadCurrent(project: ReviewProject): Promise<Current> {
   const review = run ? await readJsonOrNull<ReviewRecord>(join(run, "review.json")) : null;
   if (!run || !review) return { review: null, run: null, state: "no review" };
   const { hash } = await reviewHash(project);
-  if (hash !== review.hash) return { review, run, state: `stale: design ${hash.slice(0, 8)} != reviewed ${review.hash.slice(0, 8)}` };
-  const pcb = reviewedPcb(project);
-  if (review.pcb !== pcb) return { review, run, state: review.pcb ? `stale: reviewed board ${review.pcb}, not ${pcb}` : `stale: the review does not name its board (run it again for ${pcb})` };
-  return { review, run, state: "current" };
+  return { review, run, state: reviewCurrency(review.hash, hash, review.pcb, reviewedPcb(project)) };
 }
 
 /** The board a review project covers, project-relative with "/" (what a review record's `pcb` names). */

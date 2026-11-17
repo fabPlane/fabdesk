@@ -41,7 +41,7 @@ export async function applyNetclasses(proPath: string, acc: Acceptance): Promise
 }
 
 /** `applyNetclasses`, also saying whether a file changed. */
-export async function writeNetclasses(proPath: string, acc: Acceptance): Promise<{ changed: boolean; text: string }> {
+export async function writeNetclasses(proPath: string, acc: Acceptance, dryRun = false): Promise<{ changed: boolean; text: string }> {
   const mr = acc.manufacturing_rules;
   if (mr.native_project_rules) return { changed: false, text: `native project rules kept (${basename(proPath)})` };
   const raw = await readFile(proPath, "utf8");
@@ -62,7 +62,7 @@ export async function writeNetclasses(proPath: string, acc: Acceptance): Promise
   (pro["net_settings"] ??= {}).classes = classes;
   pro["net_settings"].netclass_patterns = patterns;
   const proChanged = JSON.stringify(pro) !== was;
-  if (proChanged) await writeFile(proPath, JSON.stringify(pro, null, 2) + "\n");
+  if (proChanged && !dryRun) await writeFile(proPath, JSON.stringify(pro, null, 2) + "\n");
 
   const wr = acc.net_classes.router_width_rules;
   const text = ["(version 1)"];
@@ -83,7 +83,7 @@ export async function writeNetclasses(proPath: string, acc: Acceptance): Promise
   const druPath = proPath.replace(/\.kicad_pro$/, ".kicad_dru");
   const dru = text.join("\n") + "\n";
   const druChanged = (await readFile(druPath, "utf8").catch(() => null)) !== dru;
-  if (druChanged) await writeFile(druPath, dru);
+  if (druChanged && !dryRun) await writeFile(druPath, dru);
   const changed = proChanged || druChanged;
   return { changed, text: `${classes.length} classes, ${patterns.length} net patterns; ${text.length - 1} rules${changed ? "" : " (already applied)"}` };
 }

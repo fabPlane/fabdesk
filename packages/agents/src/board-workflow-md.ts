@@ -1,10 +1,13 @@
+import { FINISH_BOARD_PROMPT } from "./finish-board";
 /**
  * The board workflow as the agent reads it (AGENTS.md section) and as docs/board-workflow.md (same text; a test keeps them
  * equal). Adapted from the toolkit's WORKFLOW.md to the tools of the `board` toolset.
  */
 export const BOARD_WORKFLOW_MD = `## Board workflow
 
-The board toolset (\`load_toolset {"toolset":"board"}\`) is the method for taking a placed board to a releasable one. **The owner gives
+${FINISH_BOARD_PROMPT}
+
+The board toolset (\`load_toolset {"toolset":"board"}\`) is the method for separate task, review and release stages. **The owner gives
 intent; the tools handle the rest.** Intent is goals, constraints, preferences and decisions, kept in
 \`.fabdesk/board/review/intent.json\` (\`goal\`, \`constraints\`, \`decisions\` with \`covers\` patterns that settle matching findings in every
 later run, \`preferences.ask_owner_for\` / \`workflow_decides\`; \`board_review intent_init\` writes the skeleton, \`intent_decide\` records an
@@ -16,10 +19,22 @@ practice); ask the owner only for what intent does not decide, recommended optio
 fixed is the evidence: every change goes through the same proof, and every departure from a default is recorded with its reason.
 
 \`\`\`
-onboard ─► layout (place · rank · route) ─► last mile ─► review ─► release
-                       ▲                                    │
-                       └──────── edit (ECO) ◄───────────────┘   every edit makes the review stale
+Task: onboard · layout · last mile · named edit → checks → publish once → hand back
+Review (when requested): review · fixes · independent review or owner deferral
+Release (when requested): release checks · fabrication package
+Every design change makes review and release stale.
 \`\`\`
+
+A task ends when its change is saved, its checks pass and previews are published once. The agent reports the task,
+says once what review and release state is stale and what it recommends, and ends the turn in plain text.
+Do not start review or release, or ask "what next" in a blocking card, unless the owner requested review, release or
+finishing the board. Later status lines keep reporting stale stages. Run render_publish once when the task is done,
+before handing back. Existing export_zip and portable handoff receipts still apply.
+
+Before filled/capped via attributes are applied, the owner's decision must record
+manufacturing_rules.filled_capped_vias with a reason. Release changes fabrication attributes only.
+Fabrication exports on onboarded projects require a current settled review. Pass a waiver reason only when the user
+explicitly authorized that waiver; the waiver is recorded with the design and in the package manifest.
 
 | Stage | Tool | What it does in one line | Gate before the next stage |
 | --- | --- | --- | --- |
@@ -31,7 +46,7 @@ onboard ─► layout (place · rank · route) ─► last mile ─► review �
 | 5b silkscreen | \`board_silk\` | judges every label from KiCad's exact shapes, places the ones that fail, shows silk over copper | no label problems |
 | 6 release | \`board_release\` | BOM and JLC rotations, Gerber render check, release readiness, via fill and cap (\`vias\`), the fabrication package behind its gates | the gates below |
 
-Where a request starts (then follow the stages from there):
+Where a request starts (continue only through the stage the owner requested):
 
 | Asked to ... | Start with |
 | --- | --- |
@@ -126,7 +141,7 @@ and basis); \`inner_neck_allowance_mm: 0\` on a power class makes every inner se
   passes, the finding is gone, no new finding appears and 0 nets are collateral. \`fix\` with \`apply\` also proves every READY edit applied together
   (the combined candidate: one change per board) and writes a change picture beside each READY candidate; \`try\` puts your own plan
   through the same proof for the finding ids it should fix; \`autopilot\` is review if stale, then \`fix\` with \`apply\`, then only what needs
-  the owner. Starting an independent reviewer on the expert pack costs an agent run: ask first. On a board whose acceptance records a
+  the owner. Outside a finish request, recommend independent review once; do not start it or ask for it in a blocking card. On a board whose acceptance records a
   \`supplier_stack\` (or with \`review.inner_power\`), the \`inner_power\` check audits every current-declared inner net completely: terminals
   by pin type, track and via resistance with no pour credit, the supplier's etch taken off every width, IPC-2221 heat on every inner
   segment and a 2 % drop; a missing or disconnected terminal is a must-fix, not a pass.
@@ -137,7 +152,7 @@ and basis); \`inner_neck_allowance_mm: 0\` on a power class makes every inner se
   are explicitly excluded from purchasing and placement. CAM is exported twice with identical hashes and the Gerbers are rendered and compared with KiCad's
   plot. JLC placements must cover fitted parts and pass simulation; missing footprint evidence stops release. Package only the exact reviewed version.
   A via STOP: \`board_release vias\` names the vias in pads and the microvias; \`apply: true\` sets fill and cap on them (the order must then ask
-  for filled, capped vias), or move the vias out of the pads.
+  for filled, capped vias), Moving vias is a design change: stop release, make it a separate named edit task, then run checks and review again.
 - **Look at the board** (\`render_view\`, \`board_route view\` / \`info\`) rather than parsing it ad hoc. Let the tools author tracks and vias; hand
   coordinates are fine when they are the better path.
 - **Hard limits** come only from the owner's intent and project policy: hard constraints, interconnect contracts, no powered work, purchases or supplier messages.

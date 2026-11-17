@@ -36,6 +36,10 @@ describe("acceptance rules before judging (apply_netclasses)", () => {
   }
   test("a bare board's project gets the classes and rules once; a second run writes nothing", async () => {
     const dir = await project(false);
+    const before = await readFile(join(dir, "b.kicad_pro"), "utf8");
+    expect((await applyProjectRules(dir, "b.kicad_pcb", undefined, true))?.changed).toBe(true);
+    expect(await readFile(join(dir, "b.kicad_pro"), "utf8")).toBe(before);
+    expect(await stat(join(dir, "b.kicad_dru")).catch(() => null)).toBeNull();
     const r1 = await applyProjectRules(dir, "b.kicad_pcb");
     expect(r1?.changed).toBe(true);
     const pro = JSON.parse(await readFile(join(dir, "b.kicad_pro"), "utf8"));
@@ -61,7 +65,7 @@ describe("acceptance rules before judging (apply_netclasses)", () => {
     await runners.accept(dir, "b.kicad_pcb");
     expect(seen).toContain("PWR_600");
   });
-  test("a release STOPs when applying the rules changed the project (the design the review saw)", async () => {
+  test("a release STOPs when rules need application in the task stage", async () => {
     const dir = await mkdtemp(join(tmpdir(), "fab-rules-"));
     await writeFile(join(dir, "b.kicad_pcb"), board(""));
     const calls: string[] = [];
@@ -75,7 +79,8 @@ describe("acceptance rules before judging (apply_netclasses)", () => {
     } as Parameters<typeof release.releaseFab>[0];
     const e = (await release.releaseFab(inp).catch((x) => x)) as release.ReleaseStop;
     expect(e.gate).toBe("acceptance");
-    expect(e.message).toContain("run board_review again");
+    expect(e.message).toContain("board_check {applyRules:true}");
+    expect(e.message).toContain("board_review run");
     expect(calls).toEqual(["review", "rules"]);
   });
 });

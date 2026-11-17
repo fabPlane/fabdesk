@@ -1,3 +1,4 @@
+import { applyProjectRules } from "@fabdesk/board-workflow";
 /**
  * board_check: the board's definition of done. Onboards the project's board (requirements derived from it, kept in
  * `.fabdesk/board/`), then measures A1-A9 against them with refilled-zone DRC and schematic parity, keeps every
@@ -98,6 +99,7 @@ export const board_check = defineTool({
   description:
     "The board's definition of done. Derives the board's requirements on first use (fixed parts as anchors, plane layers, power/pair/impedance classes, circuit snapshot; stored in .fabdesk/board/requirements, you own the numbers) and measures nine checks: A1 connectivity, A2 drc, A3 schematic parity (one kicad-cli DRC run, zones refilled), A4 circuit unchanged, A5 anchors in place, A6 stack and via spans, A7 power widths for their current, A8 differential pairs coupled, A9 heights. A board in the pre-10 file format is refused until upgrade: true (a checked copy written over it, the previous board kept). Every result is kept by design hash and compared with the board as onboarded (per check before -> now, new failures named) and with the previous run. A completed measurement is a result, not a tool failure. confirm: true records (who, when, note) that the onboarding proposals were checked against the circuit, which clears the 'not yet confirmed' warning on the Status page and in release_build; it measures nothing, and onboarding again (refresh) needs a new confirmation.",
   inputSchema: {
+    applyRules: z.boolean().default(false).describe("Apply requirement net classes and design rules before checks; changes invalidate review."),
     onboard: z
       .enum(["auto", "refresh"])
       .default("auto")
@@ -122,7 +124,7 @@ export const board_check = defineTool({
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   longRunning: true,
   // onboarding plus a DRC with refilled zones and parity can outlast a client's tool timeout: a board job past the wait
-  handler: durable("board_check", async ({ onboard: mode, pcb, candidate, parity, currents, fixed, confirm, by, note, upgrade }, ctx) => {
+  handler: durable("board_check", async ({ applyRules, onboard: mode, pcb, candidate, parity, currents, fixed, confirm, by, note, upgrade }, ctx) => {
     const project = ctx.requireProject();
     if (candidate && !confirm) {
       const dir = await boardWorkspace(project.dir, candidate);
@@ -183,6 +185,9 @@ export const board_check = defineTool({
           ...(fixed ? { fixed } : {}),
           name: project.name,
         });
+    const ruleFiles = await locateProject(project.dir, pcb);
+    const ruleState = await applyProjectRules(project.dir, ruleFiles.pcb, undefined, !applyRules);
+    if (ruleState?.changed && !applyRules) throw new ToolError("Task checks: net classes out of date. Apply with board_check {applyRules:true}, then run review again.", "precondition");
       ctx.progress(0.2, "running DRC with refilled zones");
       const run = await runAcceptance(project.dir, {
         ...(pcb ? { pcb } : {}),

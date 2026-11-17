@@ -75,3 +75,5 @@ hosts that do not refresh the tool list).
   need a fabplane sign-in (fabPlane app: Settings -> Account).
 
 Pass `project` (id, name or absolute path) unless the session was started inside a project folder.
+
+A task ends when the requested change is saved, checks pass and previews are published once. Report stale review and release and recommend once, then end the turn in plain text. Do not start review or release or ask a blocking what-next question unless requested.

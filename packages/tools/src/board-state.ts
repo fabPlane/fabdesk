@@ -1,3 +1,4 @@
+import { stageState, stageReviewGate } from "@fabdesk/board-workflow";
 /**
  * The project's definition of done as `board_check` recorded it: the acceptance results (A1-A9) that
  * `board_check` keeps under `<project>/.fabdesk/board/accept/index.json`, matched to the saved board.
@@ -109,8 +110,9 @@ const gateFile = (dir: string) => join(dir, ".fabdesk", "board", "review-gate.js
 export async function recordReviewGate(projectDir: string, r: { current: boolean; open: number; mustFix: number; errors?: boolean }): Promise<void> {
   const state: ReviewGate["state"] = r.errors ? "errors" : !r.current ? "stale" : r.open > 0 ? "open" : "pass";
   const basis = await reviewBasis(projectDir);
+  const independentReview = (await stageState(projectDir)).independent;
   await mkdir(join(projectDir, ".fabdesk", "board"), { recursive: true });
-  await writeFile(gateFile(projectDir), JSON.stringify({ state, open: r.open, mustFix: r.mustFix, designHash: basis.design, basis, at: new Date().toISOString() }) + "\n");
+  await writeFile(gateFile(projectDir), JSON.stringify({ state, open: r.open, mustFix: r.mustFix, designHash: basis.design, independentReview, basis, at: new Date().toISOString() }) + "\n");
 }
 
 /** Forget the saved gate (the review has no current record: never run, or its runs were removed). */
@@ -122,15 +124,7 @@ const BASIS_KEYS = ["design", "dispositions", "intent", "run", "pcb"] as const s
 
 /** The saved gate, stale when anything it was computed from changed; with `pcb`, stale unless the review covered that board. */
 export async function readReviewGate(projectDir: string, pcb?: string): Promise<ReviewGate> {
-  const d = JSON.parse((await readFile(gateFile(projectDir), "utf8").catch(() => "")) || "null") as (ReviewGate & { designHash?: string | null; basis?: ReviewBasis }) | null;
-  if (!d?.state) return { state: "none" };
-  const now = await reviewBasis(projectDir);
-  // a record without its basis (older records) cannot prove the design, dispositions and run are unchanged: stale
-  let stale = !d.basis || !d.basis.design || BASIS_KEYS.some((k) => (d.basis![k] ?? null) !== (now[k] ?? null));
-  const want = pcb ? (isAbsolute(pcb) ? relative(projectDir, pcb) : pcb).split(sep).join("/").replace(/^\.\//, "") : await locateProject(projectDir).then((f) => relative(projectDir, f.pcb).split(sep).join("/"), () => null);
-  const covered = d.basis?.pcb ?? null;
-  if (covered && want && covered !== want) stale = true;
-  return { state: stale ? "stale" : d.state, ...(d.open !== undefined ? { open: d.open } : {}), ...(d.mustFix !== undefined ? { mustFix: d.mustFix } : {}), ...(d.at ? { at: d.at } : {}), ...(covered ? { pcb: covered } : {}) };
+  return stageReviewGate(projectDir, pcb);
 }
 
 /**

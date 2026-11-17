@@ -1,3 +1,4 @@
+import { bomCurrency } from "@fabdesk/board-workflow";
 /**
  * What the release stage keeps under `<project>/.fabdesk/board/release/`: the latest BOM check (decisions, JLC rotation
  * predictions, evidence cache), tied to the board it was made on, and the last fabrication package built.
@@ -26,10 +27,10 @@ export async function readBomState(projectDir: string, pcbPath: string): Promise
   const dir = bomDirOf(projectDir);
   const meta = JSON.parse((await readFile(join(dir, "bom-meta.json"), "utf8").catch(() => "")) || "null") as BomMeta | null;
   if (!meta) return { state: "none", dir };
-  return { state: meta.boardSha256 === (await sha256Of(pcbPath)) ? "current" : "stale", meta, dir };
+  return { state: bomCurrency(meta.boardSha256, await sha256Of(pcbPath)), meta, dir };
 }
 
-export type LastFab = { at: string; out: string; boardSha256: string; manifestSha256: string };
+export type LastFab = { designHash?: string; at: string; out: string; boardSha256: string; manifestSha256: string };
 
 export async function writeLastFab(projectDir: string, rec: LastFab): Promise<void> {
   await mkdir(releaseHome(projectDir), { recursive: true });

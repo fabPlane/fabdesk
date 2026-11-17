@@ -1,3 +1,4 @@
+import { stageState } from "@fabdesk/board-workflow";
 /**
  * Where the board stands in the workflow and the one next step, after a `board_check` run (the toolkit's `pcb status`:
  * onboarding, review, release in one view plus the next command). Read-only: it reads the onboarding confirmation, the
@@ -22,6 +23,7 @@ const FIX: Record<AcceptCode, string> = {
 };
 
 export interface WorkflowStatus {
+  task?: string;
   onboarding: { confirmed: boolean } | null;
   review: { state: string; open: number; mustFix: number } | null;
   release: { package: string; current: boolean } | null;
@@ -42,10 +44,11 @@ export async function workflowStatus(projectDir: string, run: AcceptRun, pcb?: s
   const rv = await openReviewProject(projectDir, pcb)
     .then((p) => reviewStatus(p))
     .catch(() => null);
-  const rel = await newestRelease(projectDir);
+  const stages = await stageState(projectDir, pcb);
+  const rel = stages.release.package ? { package: stages.release.package, designHash: stages.release.state === "current" ? run.entry.designHash : null } : null;
   const failing = (Object.entries(run.entry.summary) as Array<[AcceptCode, boolean]>).filter(([, v]) => !v).map(([k]) => k);
   const regressed = run.baseline?.newFailures ?? [];
-  const reviewCurrent = rv?.state === "current";
+  const reviewCurrent = stages.review.state === "current";
   const releaseCurrent = !!rel && rel.designHash === run.entry.designHash;
   let next: string;
   if (failing.includes("A1")) next = `close the open connections: ${FIX.A1}`;
@@ -56,8 +59,9 @@ export async function workflowStatus(projectDir: string, run: AcceptRun, pcb?: s
   else if (!releaseCurrent) next = `release: board_release {"action":"check"}, then {"action":"fab"}${rel ? ` (newest package ${rel.package} is for an older design)` : ""}`;
   else next = `done: ${rel!.package} is the release of this exact design`;
   return {
+    task: stages.task.state,
     onboarding: ob ? { confirmed: ob.confirmed } : null,
-    review: rv ? { state: rv.state, open: rv.open, mustFix: rv.mustFix } : null,
+    review: rv ? { state: stages.review.state, open: rv.open, mustFix: rv.mustFix } : null,
     release: rel ? { package: rel.package, current: releaseCurrent } : null,
     next,
   };
@@ -67,5 +71,5 @@ export function statusLines(s: WorkflowStatus): string[] {
   const ob = s.onboarding ? (s.onboarding.confirmed ? "confirmed" : 'not yet confirmed (board_check {"confirm":true} once checked against the circuit)') : "none";
   const rv = s.review ? `${s.review.state}${s.review.state === "current" ? `, ${s.review.open} open${s.review.mustFix ? ` (${s.review.mustFix} must-fix)` : ""}` : ""}` : "none";
   const rel = s.release ? `${s.release.package} (${s.release.current ? "this design" : "an older design"})` : "none";
-  return [`Workflow: onboarding ${ob}; review ${rv}; release ${rel}.`, `Next: ${s.next}`];
+  return [`Task: ${s.task ?? "checks measured"}. Review: ${rv}. Release: ${rel}. Onboarding: ${ob}.`, `Recommended next: ${s.next} (the owner decides).`];
 }

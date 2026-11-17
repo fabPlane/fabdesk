@@ -29,7 +29,30 @@ describe("workflowStatus", () => {
     expect(s.release).toEqual({ package: "exports/release-20261113-010000", current: false });
     expect(s.next).toMatch(/^review this design: board_review/);
     const lines = statusLines(s);
-    expect(lines[0]).toContain("release exports/release-20261113-010000 (an older design)");
-    expect(lines[1]).toBe(`Next: ${s.next}`);
+    expect(lines[0]).toContain("Release: exports/release-20261113-010000 (an older design)");
+    expect(lines.join("\n")).toContain("Task:");
+    expect(lines.join("\n")).toContain("Recommended next:");
+    expect(lines.join("\n")).not.toMatch(/^Next:/m);
   });
+});
+
+test("a current review and an older release report three separate stages", async () => {
+  const { currentReviewHash } = await import("@fabdesk/board-workflow");
+  const { recordReviewGate } = await import("../src/board-state");
+  const dir = await mkdtemp(join(tmpdir(), "status-current-"));
+  await writeFile(join(dir, "board.kicad_pcb"), "(kicad_pcb)");
+  const hash = await currentReviewHash(dir);
+  await mkdir(join(dir, ".fabdesk/board/review/runs/current"), { recursive: true });
+  await writeFile(join(dir, ".fabdesk/board/review/latest.json"), JSON.stringify({ run: "current" }));
+  await writeFile(join(dir, ".fabdesk/board/review/runs/current/review.json"), JSON.stringify({ hash, pcb: "board.kicad_pcb", checks: [], findings: [] }));
+  await recordReviewGate(dir, { current: true, open: 0, mustFix: 0 });
+  await mkdir(join(dir, "exports/release-old"), { recursive: true });
+  await writeFile(join(dir, "exports/release-old/acceptance-gate.json"), JSON.stringify({ reviewDesignHash: "older" }));
+  const s = await workflowStatus(dir, run([]));
+  expect(s.review?.state).toBe("current");
+  expect(s.release?.current).toBe(false);
+  const lines = statusLines(s).join("\n");
+  for (const stage of ["Task:", "Review:", "Release:"]) expect(lines).toContain(stage);
+  expect(lines).not.toMatch(/^Next:/m);
+  expect(lines.match(/Recommended next:/g)).toHaveLength(1);
 });

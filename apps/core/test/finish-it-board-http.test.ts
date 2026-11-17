@@ -104,7 +104,7 @@ describe("Finish it with the board workflow on", () => {
     const project = await cleanProject("Needs Acceptance", pcb);
     const session = await finish(project.id);
     const ids = session.milestones.map((m) => m.id);
-    expect(ids).toEqual(["schematic", "build", "route", "verify", "review"]);
+    expect(ids).toEqual(["schematic", "build", "route", "verify", "review", "release"]);
     const pending = session.milestones.filter((m) => m.status === "pending" || m.status === "running").map((m) => m.id);
     expect(pending).toContain("verify");
     expect(pending).toContain("review");
