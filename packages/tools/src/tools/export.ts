@@ -233,7 +233,7 @@ export const export_bom = defineTool({
     await assertProjectBomInputs(project.dir, snapshot);
     const features = snapshot.lines.filter(line => line.source === "pcb" && isPcbFeature(line.footprint ?? ""));
     const lines = mode === "physical_purchase" ? snapshot.lines.filter(line => !features.includes(line)) : snapshot.lines;
-    const orderingWarnings = lines.flatMap(line => !line.mpn ? [`${line.refs.join(" ")}: no manufacturer ordering code recorded`] : /^SHT3[015]-DIS-B$/i.test(line.mpn) ? [`${line.refs.join(" ")}: ${line.mpn} is a device/family code; verify a complete manufacturer packaging/order variant against the datasheet ordering table`] : []);
+    const orderingWarnings = lines.flatMap(line => !line.mpn ? [`${line.refs.join(" ")}: no manufacturer ordering code recorded`] : []);
     await writeJson(p(project, "exports/pcb-features.json"), { features, mode });
     const csv = projectBomCsv(lines);
     await writeAtomic(receipt, `${JSON.stringify({ ...snapshot, export: { mode, artifactSha256: createHash("sha256").update(csv).digest("hex") } }, null, 2)}\n`);
