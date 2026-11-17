@@ -1,6 +1,8 @@
 import { fitModelCamera } from "@fabdesk/client-core";
 import { alignBoardCamera, type BoardCameraMode } from "./board-camera-mode";
 import { boardPreviewMaterial } from "./board-preview-material";
+import { batchPreviewMeshes } from "./preview-mesh-batching";
+import { previewFrame } from "./preview-frame";
 import { useBoardPartSelection, type PartSelectionSource } from "./usePartSelection";
 import { PartSelectionBar } from "./PartSelectionBar";
 import { nativeModelParts, modelPartReference, ModelPartTint } from "./model-part-selection";
@@ -73,14 +75,15 @@ async function loadModel(bytes: ArrayBuffer, path: string): Promise<THREE.Object
   // Only dispose replaced materials no longer referenced by another mesh.
   model.scene.traverse(object => { if (object instanceof THREE.Mesh) for (const material of Array.isArray(object.material) ? object.material : [object.material]) replaced.delete(material); });
   for (const material of replaced) material.dispose();
+  if (!model.animations.length) batchPreviewMeshes(model.scene);
   return model.scene;
 }
 
 /** View transforms affect only the camera. Model bytes and physical placement stay untouched. */
-export default function ModelCanvas({ projectId, path, blob, selectionSource, viewMode, side = "top" }: { projectId: string; path: string; blob?: Blob; selectionSource?: PartSelectionSource; viewMode?: "2d" | "3d"; side?: "top" | "bottom" }) {
-  const requestedView = useRef({ viewMode, side }); requestedView.current = { viewMode, side };
+export default function ModelCanvas({ projectId, path, blob, selectionSource, viewMode, side = "top", viewRevision = 0 }: { projectId: string; path: string; blob?: Blob; selectionSource?: PartSelectionSource; viewMode?: "2d" | "3d"; side?: "top" | "bottom"; viewRevision?: number }) {
+  const requestedView = useRef({ viewMode, side, viewRevision }); requestedView.current = { viewMode, side, viewRevision };
   const changeView = useRef<(() => void) | null>(null);
-  useEffect(() => { changeView.current?.(); }, [viewMode, side]);
+  useEffect(() => { changeView.current?.(); }, [viewMode, side, viewRevision]);
   const selection = useBoardPartSelection(selectionSource);
   const currentSelection = useRef(selection); currentSelection.current = selection;
   const updateSelection = useRef<(() => void) | null>(null), focusSelection = useRef<((animate?: boolean) => void) | null>(null);
@@ -118,6 +121,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, vi
     let stopMotion = () => {};
     let cleanupSelection: (() => void) | null = null;
     let environment: THREE.WebGLRenderTarget | null = null;
+    let stopRendering = () => {};
     setError(null); setLoading(true);
     void (async () => {
       try {
@@ -156,11 +160,13 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, vi
         controls.enableDamping = false; controls.minDistance = span * .08; controls.maxDistance = span * 60;
         let measureSelection = () => {};
         const selectionIsFramed = () => framedSelection.current !== null && framedSelection.current.scope === currentSelection.current.scope && framedSelection.current.ref === currentSelection.current.ref;
-        const render = () => { if (!disposed && renderer && camera) {
+        const frames = previewFrame(() => { if (!disposed && renderer && camera) {
           // Soft light from the viewer's upper left, on both sides of the board.
           studio.position.copy(controls?.target ?? root.position); studio.quaternion.copy(camera.quaternion);
           renderer.render(scene, camera); measureSelection();
-        } };
+        } });
+        const render = frames.render;
+        stopRendering = frames.dispose;
         let motionFrame = 0;
         stopMotion = () => { cancelAnimationFrame(motionFrame); motionFrame = 0; if (renderer) renderer.domElement.dataset["focusMotion"] = "idle"; };
         const reset = () => {
@@ -190,11 +196,12 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, vi
           else camera.position.sub(controls.target).multiplyScalar(factor).add(controls.target);
           controls.update(); render();
         };
+        let renderedWidth = 0, renderedHeight = 0;
         const resize = () => {
           if (!renderer || !camera) return;
           const w = target.clientWidth, h = target.clientHeight;
           if (w < 1 || h < 1) return;
-          renderer.setSize(w, h);
+          if (w !== renderedWidth || h !== renderedHeight) { renderer.setSize(w, h); renderedWidth = w; renderedHeight = h; }
           if (camera instanceof THREE.PerspectiveCamera) camera.aspect = w / h;
           else { const half = (camera.top - camera.bottom) / 2; camera.left = -half * w / h; camera.right = half * w / h; }
           camera.updateProjectionMatrix();
@@ -304,7 +311,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, vi
               flat = new THREE.OrthographicCamera(-half * aspect, half * aspect, half, -half, span / 1000, span * 1000);
               flat.up.set(0, 0, -1); flat.position.set(0, span * 3, 0);
             }
-            const next = { mode: requestedView.current.viewMode, side: requestedView.current.side };
+            const next = { mode: requestedView.current.viewMode, side: requestedView.current.side, revision: requestedView.current.viewRevision };
             alignBoardCamera(flat, controls.target, next, previousView);
             previousView = next;
             camera = flat;
@@ -330,7 +337,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, vi
       }
     })();
     return () => {
-      disposed = true; changeView.current = null; stopMotion(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
+      disposed = true; changeView.current = null; stopMotion(); stopRendering(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
       if (camera && controls) savedCamera.current = { position: camera.position.clone(), target: controls.target.clone(), up: camera.up.clone(), minDistance: controls.minDistance };
       observer?.disconnect(); cleanupContext?.(); controls?.dispose();
       if (model) disposeModel(model);

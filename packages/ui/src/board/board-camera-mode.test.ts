@@ -25,3 +25,12 @@ test("opening 3D directly starts above the board", () => {
   alignBoardCamera(camera, new Vector3(), { mode: "3d", side: "top" }, null);
   expect(camera.position.toArray()).toEqual([0, 120, 0]);
 });
+
+for (const side of ["top", "bottom"] as const) test(`3D ${side} button resets an orbit even when that side is already selected`, () => {
+  const camera = new OrthographicCamera(), target = new Vector3(4, 2, 3);
+  camera.position.set(10, 20, 30); camera.zoom = 2;
+  const distance = camera.position.distanceTo(target);
+  alignBoardCamera(camera, target, { mode: "3d", side, revision: 2 }, { mode: "3d", side, revision: 1 });
+  expect(camera.position.toArray()).toEqual([4, 2 + (side === "top" ? distance : -distance), 3]);
+  expect(camera.zoom).toBe(2);
+});
