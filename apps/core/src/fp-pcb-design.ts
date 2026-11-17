@@ -2575,8 +2575,9 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       const libraryTokens = new Set(partSearchTokens(n));
       const rest = tokens.filter((token) => !libraryTokens.has(token));
       const numeric = rest.find((token) => /^\d/.test(token));
-      const primary = numeric ??
-        [...rest].sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0))[0] ?? "";
+      const primary = !projectNicknames && !/\s/.test(query.trim())
+        ? query.trim().toLocaleLowerCase("en-US")
+        : (numeric ?? [...rest].sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0))[0] ?? "");
       const entries = await kicad.libraries.entries(kind, n, primary);
       for (const e of entries) {
         candidates.push({
