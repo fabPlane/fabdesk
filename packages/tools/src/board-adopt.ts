@@ -217,7 +217,7 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
   const checkDesign = async () => {
     sheets.length = 0;
     if (!matchingOrigin) return;
-    const now = await designFileHashes(project.dir);
+    const now = await designFileHashes(project.dir, { pcb: pcbRel });
     const cand = await designFileHashes(dirname(candidate));
     const names = Object.keys(cand).filter((n) => !n.endsWith(".kicad_pcb") && !n.endsWith(".kicad_pro"));
     const stale = [...new Set([...Object.keys(matchingOrigin.files), ...names])]
