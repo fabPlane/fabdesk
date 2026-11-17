@@ -369,6 +369,7 @@ export async function toCallToolResult(output: ToolOutput): Promise<CallToolResu
         type: "image",
         data: Buffer.from(await readFile(img.path)).toString("base64"),
         mimeType: img.mime,
+        ...(output.imagePresentation ? { _meta: { "fabplane/imagePresentation": output.imagePresentation } } : {}),
       });
     }
   }

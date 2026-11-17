@@ -1,3 +1,4 @@
+import { snapshotProjectDependencies } from "../src/project-dependencies";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -8,10 +9,10 @@ import { mockServices, tempProject, contextFactory } from "./mock-services";
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 async function fixture() {
   const project = await tempProject("gate-freshness");
-  await writeFile(join(project.dir, "board.kicad_pcb"), "saved PCB");
+  await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb)");
   await writeFile(join(project.dir, "board.kicad_sch"), "saved schematic");
   await mkdir(join(project.dir, "reports"));
-  const drc = { violations: [{ severity: "warning", rule: "silk", signature: "silk:warning", description: "warning", items: [] }], unconnected: [], schematicParity: [], counts: { errors: 0, warnings: 1, unconnected: 0 }, pcbRevision: { sha256: sha("saved PCB") } };
+  const drc = { violations: [{ severity: "warning", rule: "silk", signature: "silk:warning", description: "warning", items: [] }], unconnected: [], schematicParity: [], counts: { errors: 0, warnings: 1, unconnected: 0 }, projectDependencies: await snapshotProjectDependencies(project.dir), pcbRevision: { sha256: sha("(kicad_pcb)") } };
   const saveDrc = () => writeFile(join(project.dir, "reports/drc.json"), JSON.stringify(drc));
   await saveDrc();
   const services = mockServices([project]); services.kicad.gate = gate;
@@ -21,12 +22,12 @@ async function fixture() {
 }
 test("gate rejects stale PCB before accepting warnings; a fresh check restores eligibility", async () => {
   const f = await fixture();
-  await writeFile(join(f.project.dir, "board.kicad_pcb"), "edited PCB");
+  await writeFile(join(f.project.dir, "board.kicad_pcb"), "(kicad_pcb (version 1))");
   const stale = await f.call();
   expect(stale.isError).toBe(true);
   expect(stale.text).toContain("DRC evidence is stale");
   expect(f.project.manifest().allowedDrcWarnings).toEqual([]);
-  f.drc.pcbRevision.sha256 = sha("edited PCB"); await f.saveDrc();
+  f.drc.pcbRevision.sha256 = sha("(kicad_pcb (version 1))"); await f.saveDrc();
   const fresh = await f.call();
   expect(fresh.isError).toBe(false);
   expect(f.project.manifest().allowedDrcWarnings).toEqual(["silk:warning"]);
@@ -72,4 +73,10 @@ test("gate refuses a partially published canonical report set", async () => {
   expect(f.project.manifest().allowedDrcWarnings).toEqual([]);
   await tx.rollback();
   expect((await f.call()).isError).toBe(false);
+});
+
+test("legacy missing dependency provenance cannot mutate warning baselines",async()=>{
+ const f=await fixture();delete (f.drc as {projectDependencies?:unknown}).projectDependencies;await f.saveDrc();
+ await writeFile(join(f.project.dir,"board.kicad_dru"),"changed rules");
+ const result=await f.call();expect(result.isError).toBe(true);expect(result.text).toContain("no measured dependency snapshot");expect(f.project.manifest().allowedDrcWarnings).toEqual([]);
 });

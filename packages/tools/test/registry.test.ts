@@ -4111,7 +4111,9 @@ describe("registry", () => {
     const factory = contextFactory(services, project);
     await mkdir(join(project.dir, "reports"), { recursive: true });
     await writeFile(join(project.dir, "board.kicad_sch"), "schematic");
-    await writeFile(join(project.dir, "board.kicad_pcb"), "PCB");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb)");
+    const { snapshotProjectDependencies } = await import("../src/project-dependencies");
+    const projectDependencies = await snapshotProjectDependencies(project.dir);
     await writeFile(
       join(project.dir, "reports/drc.json"),
       JSON.stringify({
@@ -4128,12 +4130,13 @@ describe("registry", () => {
         schematicParity: [],
         schematicParityChecked: true,
         counts: { errors: 0, warnings: 1, unconnected: 0 },
-        pcbRevision: { sha256: createHash("sha256").update("PCB").digest("hex") },
+        projectDependencies,
+        pcbRevision: { sha256: createHash("sha256").update("(kicad_pcb)").digest("hex") },
       }),
     );
     await writeFile(
       join(project.dir, "reports/erc.json"),
-      JSON.stringify({ violations: [], counts: { errors: 0, warnings: 0 }, measurement: { evidenceLevel: "measured", scope: "complete saved hierarchy", checkedRevision: "a".repeat(64), revisionStable: true } }),
+      JSON.stringify({ projectDependencies, violations: [], counts: { errors: 0, warnings: 0 }, measurement: { evidenceLevel: "measured", scope: "complete saved hierarchy", checkedRevision: "a".repeat(64), revisionStable: true } }),
     );
     const call = (args: Record<string, unknown>) =>
       reg.invoke("verify_gate", args, (ref) =>

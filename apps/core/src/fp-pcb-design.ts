@@ -2632,6 +2632,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     limit: number,
     projectDir?: string,
   ): Promise<FootprintHit[]> => {
+    if (projectDir) await deps.sessions.refreshProjectLibraries(projectDir);
     const rows = projectDir ? await projectRows(projectDir, kind) : [];
     const overridden = new Set(rows.map((row) => row.name));
     const enabled = rows.filter(row => !row.disabled);
@@ -2659,6 +2660,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     libId: string,
     projectDir?: string,
   ): Promise<PartDescription> => {
+    if (projectDir) await deps.sessions.refreshProjectLibraries(projectDir);
     const nickname = libId.split(":")[0];
     const row = projectDir ? (await projectRows(projectDir, kind)).find((row) => row.name === nickname) : undefined;
     if (row?.disabled) throw new ToolError(`${kind} library ${nickname} is disabled in this project`, "not_found");

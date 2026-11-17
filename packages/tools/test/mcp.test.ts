@@ -340,3 +340,12 @@ test("image presentation metadata survives MCP conversion with the image payload
   expect(result.structuredContent?.["_imagePresentation"]).toBe("inspection");
   expect(result.content.some(item => item.type === "image" && item.data === Buffer.from("image bytes").toString("base64"))).toBe(true);
 });
+
+test("inspection markers survive the actual Messages-stream content-only boundary",async()=>{
+ const {toCallToolResult}=await import("../src/adapters/mcp"),{MessagesStreamParser}=await import("../../agents/src/parsers/messages");
+ const {writeFile}=await import("node:fs/promises"),{join}=await import("node:path"),p=await tempProject("messages-image"),path=join(p.dir,"image.png");await writeFile(path,"pixel bytes");
+ const mcp=await toCallToolResult({images:[{path,mime:"image/png"}],imagePresentation:"inspection"});
+ const events=new MessagesStreamParser().feed({type:"user",message:{content:[{type:"tool_result",tool_use_id:"wrapped",content:mcp.content}]}});
+ const result=events.find(e=>e.type==="tool_result");expect(result?.type).toBe("tool_result");
+ const image=(result as {output:Array<{type:string;_meta?:Record<string,unknown>}>}).output.find(block=>block.type==="image");expect(image?._meta?.["fabplane/imagePresentation"]).toBe("inspection");
+});

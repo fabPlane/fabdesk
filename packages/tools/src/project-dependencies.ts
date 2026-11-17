@@ -25,7 +25,7 @@ export async function snapshotProjectDependencies(dir: string): Promise<ProjectD
       const canonical = await realpath(safe);
       if (directories.has(canonical)) return;
       directories.add(canonical);
-      for (const entry of (await readdir(safe)).sort()) await add(join(safe, entry));
+      for (const entry of (await readdir(safe)).sort()) if (!entry.startsWith(".") && entry.endsWith(".kicad_mod")) await add(join(safe, entry));
       return;
     }
     if (files.size >= 4096 || info && (bytes += info.size) > 250 * 1024 * 1024) throw new ToolError("Dependency snapshot exceeds 4096 files or 250 MB", "precondition");

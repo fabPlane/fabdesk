@@ -649,7 +649,7 @@ export class AgentRunManager {
     });
     emit({ ts: Date.now(), topic: "thread.updated", threadId: input.threadId });
 
-    const workbenchEnv = await this.deps
+    const workbenchEnv: Record<string, string> | undefined = await this.deps
       .agentEnvironment?.({ cwd, project: input.project })
       .catch((e) => {
         logger.warn("agent PCB environment could not be resolved", { error: errMsg(e) });
