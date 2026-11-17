@@ -95,6 +95,16 @@ describe("board_review", () => {
     expect((await call({ action: "gate" })).json?.["exit"]).toBe(1);
   });
 
+  test("the agent can settle the review on its own; the saved gate says who settled it", async () => {
+    const { project, call } = await setup();
+    await call({ action: "run", offline: true });
+    await call({ action: "dispose", id: "*", state: "accept", by: "agent", reason: "checked each against the datasheet", thirdSource: "datasheets" });
+    const gate = await readReviewGate(project.dir);
+    expect(gate.state).toBe("pass");
+    expect(gate.agentSettled).toBeGreaterThan(1);
+    expect(gate.independentReview).toBeDefined();
+  });
+
   test("fix lists proposals; import_expert reads the file", async () => {
     const { project, call } = await setup();
     await call({ action: "run", offline: true });

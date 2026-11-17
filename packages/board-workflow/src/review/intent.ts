@@ -4,7 +4,7 @@
  * in every later review, read by `evaluate` and `propose`).
  *
  *   intentInit    a skeleton: constraints taken from the requirements (fixed parts, height limits), the goal left to the
- *                 owner, the default preferences (ask the owner for hard-constraint changes, spending, accepting a must-fix)
+ *                 owner, the default preferences (ask the owner for hard-constraint changes and spending; add "accepting a must-fix" to be asked)
  *   intentDecide  record one owner answer with the finding-id patterns it covers
  *   intentShow    the file as lines
  */
@@ -18,7 +18,8 @@ import type { Intent } from "./types";
 
 type Decision = NonNullable<Intent["decisions"]>[number];
 
-const DEFAULT_ASK = ["changes to a hard constraint", "anything that spends money or orders", "accepting a must-fix"];
+// autonomous by default: accepting a must-fix with evidence is the agent's; the owner adds it here to be asked
+const DEFAULT_ASK = ["changes to a hard constraint", "anything that spends money or orders"];
 
 /** The skeleton intent for a project; throws when the file exists (it is the owner's: never overwritten). */
 export async function intentInit(project: ReviewProject): Promise<{ path: string; intent: Intent; lines: string[] }> {
