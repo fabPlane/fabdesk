@@ -113,7 +113,13 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const connected = sseStatus === "open" && (coreStatus?.state ?? "ready") === "ready";
 
   return <div className="fd-canvas-workspace flex h-full min-w-0 flex-col" data-testid="canvas-workspace">
-    <header className="fd-canvas-header" style={{ paddingLeft: host.platform === "darwin" ? 84 : undefined, WebkitAppRegion: "drag" } as React.CSSProperties}>
+    <header className="fd-canvas-header" style={{
+      paddingLeft: host.platform === "darwin" ? 84 : undefined,
+      // Unlike the classic toolbar, this header follows page zoom. The overlay
+      // environment values already use its CSS pixels; do not scale them again.
+      paddingRight: "calc(var(--fd-canvas-gutter, 24px) + max(0px, 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)))",
+      WebkitAppRegion: "drag",
+    } as React.CSSProperties}>
       <button className="fd-canvas-brand" title="Project overview" onClick={() => { if (projectId) openArea("overview"); else { ui().setActiveThread(null); setShowProjects(false); } }}>
         <FabPlaneLogo /><span>fabPlane</span>
       </button>
