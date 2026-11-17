@@ -16,8 +16,10 @@ until you pick a router in Settings, pin `fabdesk.json`, or pass `route_run.rout
 ## Via-in-pad policy
 
 Vias whose drill meets SMD pad copper (`classifyVias` in `@fabdesk/board-workflow`'s `release/viaproc.ts`) are avoided
-unless the board's `acceptance.manufacturing_rules.via_in_pad` records `{allow: true, basis}` (a project without board
-requirements avoids them too). Per router:
+unless the board's `acceptance.manufacturing_rules.via_in_pad` records `{allow: true, basis}`. The board-workflow stages
+always apply it; `route_run` applies it only to a project with board requirements (`.fabdesk/board/requirements/
+acceptance.json`, where the decision can be recorded) and otherwise reports new vias in pads without holding the
+candidate or changing the router's options. Per router:
 
 | Router | How the policy is applied |
 |---|---|
@@ -26,8 +28,8 @@ requirements avoids them too). Per router:
 | Freerouting, fab_router | none: the PCB bridge writes the DSN and takes no such option (a native one needs a fab_pcb change), so the routed board is checked |
 
 Every routed board is then checked against the board it started from (`viaInPadReport`): `route_run` reports the new vias
-in pads in `result.viaInPad` and holds a candidate the policy does not allow (`route_apply` refuses it until the policy is
-recorded); the last-mile gate rejects such a candidate; the layout route stage leaves such a result out; adoption still
+in pads in `result.viaInPad` and, in a project with board requirements, holds a candidate the policy does not allow
+(`route_apply` refuses it until the policy is recorded); the last-mile gate rejects such a candidate; the layout route stage leaves such a result out; adoption still
 refuses them as the last line.
 
 ## KiCadRoutingTools (engine)

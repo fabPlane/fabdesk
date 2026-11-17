@@ -50,7 +50,8 @@ async function routeOnce(acceptance: unknown) {
 }
 
 test("route_run holds a Freerouting candidate that adds a via in a solder pad; route_apply waits for the policy", async () => {
-  const { pcb, starting, accPath, run, call } = await routeOnce(null);
+  // a board-workflow project (requirements recorded) without a via-in-pad decision
+  const { pcb, starting, accPath, run, call } = await routeOnce({ manufacturing_rules: {} });
   expect(run.result?.viaInPad?.vias).toEqual([{ net: "N2", x: 11, y: 10, lands: ["R1.2"] }]);
   expect(run.result?.viaInPad?.allowed).toBe(false);
   expect(run.application.state).toBe("manual");
@@ -65,6 +66,13 @@ test("route_run holds a Freerouting candidate that adds a via in a solder pad; r
   await writeFile(accPath, JSON.stringify({ manufacturing_rules: { via_in_pad: { allow: true, basis: "fab quotes filled+capped vias" } } }));
   const applied = await call("route_apply", { runId: run.id, expectedPcbRevision: run.startingPcbRevision });
   expect((applied.json as any).state).toBe("applied");
+});
+
+test("a project without board-workflow requirements gets the via-in-pad report, not a hold", async () => {
+  const { run } = await routeOnce(null);
+  expect(run.result?.viaInPad?.vias).toEqual([{ net: "N2", x: 11, y: 10, lands: ["R1.2"] }]);
+  expect(run.result?.viaInPad?.text).toContain("reported only");
+  expect(run.application.state).toBe("applied");
 });
 
 test("route_run applies a candidate with a via in a pad when the acceptance allows via-in-pad, and says so", async () => {

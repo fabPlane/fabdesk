@@ -34,7 +34,7 @@ import {
 } from "../routing-quality";
 import { installHintFor, runTraceMaker } from "../routers";
 import { release } from "@fabdesk/board-workflow";
-import { projectViaInPadPolicy } from "../board-adopt";
+import { projectHasAcceptance, projectViaInPadPolicy } from "../board-adopt";
 import { inspectOwnedProjectFile } from "../assembly";
 import { expectedPcbSource } from "../pcb-output";
 import { preferCandidate, type CandidateScore } from "../routing-choice";
@@ -475,7 +475,7 @@ async function applyCandidate(
       "precondition",
     );
   // new vias in solder pads need the requirements' decision, read now (it may have been recorded since the run)
-  if (rec.result?.viaInPad?.vias.length && !(await projectViaInPadPolicy(project.dir)).allowed)
+  if (rec.result?.viaInPad?.vias.length && (await projectHasAcceptance(project.dir)) && !(await projectViaInPadPolicy(project.dir)).allowed)
     throw new ToolError(
       `Candidate adds ${rec.result.viaInPad.vias.length} via(s) in solder pads (${rec.result.viaInPad.vias.slice(0, 4).map((v) => `${v.net} in ${v.lands.join(",")}`).join("; ")}) and manufacturing_rules.via_in_pad does not allow them: move them out, or record a justified {allow:true,basis} before applying it.`,
       "precondition",
@@ -623,6 +623,8 @@ async function executeRoute(
   const started = Date.now();
   // the board workflow's via-in-pad decision (avoid unless the acceptance records allow:true with a basis)
   const viaPolicy = await projectViaInPadPolicy(project.dir);
+  // enforced only where the decision can be recorded (board-workflow requirements); elsewhere it is reported, not held
+  const viaEnforced = await projectHasAcceptance(project.dir);
   let rec: RouteRunRecord = {
     ...initial,
     state: "running",
@@ -880,7 +882,7 @@ async function executeRoute(
             snapshotDir,
             timeoutMs: args.timeoutMs,
             signal,
-            keepViasOffPads: !viaPolicy.allowed,
+            keepViasOffPads: viaEnforced && !viaPolicy.allowed,
             onProgress: (value) => {
               frames.onProgress(value);
             },
@@ -1206,7 +1208,9 @@ async function executeRoute(
     } catch (error) {
       rec.progress.diagnostics.push(`Via-in-pad check failed: ${error instanceof Error ? error.message : String(error)}`);
     }
-    const viaHeld = !!viaInPad && viaInPad.vias.length > 0 && !viaInPad.allowed;
+    if (viaInPad && viaInPad.vias.length && !viaInPad.allowed && !viaEnforced)
+      viaInPad = { ...viaInPad, text: `Via-in-pad: ${viaInPad.vias.length} new via(s) in solder pads (reported only; this project records no via-in-pad decision): ${viaInPad.vias.slice(0, 6).map((v) => `${v.net || "(no net)"} in ${v.lands.join(", ")}`).join("; ")}. They need filled and capped vias when ordered, or move them out of the pads.` };
+    const viaHeld = viaEnforced && !!viaInPad && viaInPad.vias.length > 0 && !viaInPad.allowed;
     const touchedNets = [
       ...new Set([
         ...endpoints.map((row) => String(row["net"] ?? "")),

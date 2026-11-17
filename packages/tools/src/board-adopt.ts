@@ -40,6 +40,11 @@ export async function readAcceptanceRaw(projectDir: string): Promise<{ manufactu
 }
 
 /** The project's via-in-pad policy (avoid unless the acceptance records allow:true with a basis). */
+/** The project has board-workflow requirements (an acceptance file), where the via-in-pad decision is recorded. */
+export async function projectHasAcceptance(projectDir: string): Promise<boolean> {
+  return stat(join(projectDir, ".fabdesk/board/requirements/acceptance.json")).then((s) => s.isFile(), () => false);
+}
+
 export async function projectViaInPadPolicy(projectDir: string): Promise<ReturnType<typeof release.viaInPadPolicy>> {
   return release.viaInPadPolicy((await readAcceptanceRaw(projectDir)).manufacturing_rules?.via_in_pad);
 }
