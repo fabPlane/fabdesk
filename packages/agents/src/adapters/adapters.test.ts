@@ -501,3 +501,9 @@ test("Codex project history starts private and imports only an explicitly resume
   expect(existsSync(join(resumed.CODEX_HOME!,"sessions/2026/11/17/rollout-other-id.jsonl"))).toBe(false);
   expect(readFileSync(join(source,"sessions/2026/11/17/rollout-other-id.jsonl"),"utf8")).toBe("unrelated thread");
 });
+
+test("Codex history migration preserves rejection of a legacy private auth snapshot",async()=>{
+ const {createHash}=await import("node:crypto"),source=join(dir,"legacy-codex"),legacy=join(source,"fabdesk-agents",createHash("sha256").update(dir).digest("hex"));
+ mkdirSync(legacy,{recursive:true});writeFileSync(join(source,"auth.json"),"original auth");writeFileSync(join(legacy,"auth.json"),"possibly refreshed private auth");
+ expect(()=>codexEnv(session({env:{CODEX_HOME:source}}))).toThrow("private snapshot");expect(readFileSync(join(legacy,"auth.json"),"utf8")).toBe("possibly refreshed private auth");
+});

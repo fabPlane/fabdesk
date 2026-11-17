@@ -197,9 +197,13 @@ async function send(): Promise<{ sent: boolean; reason?: string; threadId: strin
   const draft = (useUiStore.getState().drafts[key] ?? "").trim();
   if (!draft) return { sent: false, reason: "composer is empty (call setComposer first)", threadId: useUiStore.getState().activeThreadId, elapsedMs: 0 };
   if (!composerHandlers.send) return { sent: false, reason: "composer is not mounted (core not ready or no chat view)", threadId: useUiStore.getState().activeThreadId, elapsedMs: 0 };
-  composerHandlers.send();
-  // The composer clears the draft after the message is accepted by the core.
   const deadline = started + 20_000;
+  // Agent/model preference saves can briefly disable Send. Wait for the actual composer
+  // readiness, then dispatch once; never retry a potentially accepted message.
+  while (composerHandlers.canSend && !composerHandlers.canSend() && performance.now() < deadline) await sleep(50);
+  if (composerHandlers.canSend && !composerHandlers.canSend()) return { sent: false, reason: "composer is not ready to send; check model selection or pending preferences", threadId: useUiStore.getState().activeThreadId, elapsedMs: Math.round(performance.now() - started) };
+  composerHandlers.send?.();
+  // The composer clears the draft after the message is accepted by the core.
   while (performance.now() < deadline) {
     await sleep(50);
     const s = useUiStore.getState();
