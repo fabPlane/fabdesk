@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { chmod, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { chmod, mkdir, rename, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type {
   RouterCatalogId,
@@ -17,6 +17,7 @@ import {
 import { bundledHint, installHintFor } from "./hints";
 import { krtRootProblem, krtVersionAt, setupKrt, type KrtSetupDeps, type KrtSetupResult } from "./krt";
 import { parseTraceMakerVersion, resolveTraceMakerInstallArtifact } from "./tracemaker-release";
+import { withInstallLock, type InstallLockOptions } from "./install-lock";
 import { extractZipArchive } from "./zip";
 
 export { extractZipArchive };
@@ -97,6 +98,8 @@ export type RouterRegistryDeps = {
   krtSetup?: (root: string, deps: KrtSetupDeps) => Promise<KrtSetupResult>;
   /** atlc's post-extract build (configure + make); injectable so tests need no C compiler. */
   atlcBuild?: (srcDir: string, log: (line: string) => void, signal: AbortSignal) => Promise<void>;
+  /** Tests only: timings and the liveness check of the cross-process install lock. */
+  installLock?: Pick<InstallLockOptions, "staleMs" | "waitMs" | "pollMs" | "isAlive">;
 };
 
 /** The source tree inside atlc's install. */
@@ -306,7 +309,7 @@ class FileRouterRegistry implements RouterRegistry {
     const local = this.localOverride(id);
     if (local) {
       this.persisted.routers[id] = { state: "installed", version: entry.version, path: local };
-      await this.writeState();
+      await this.writeState(id);
       return this.snapshot(entry);
     }
     const artifact = entry.artifact;
@@ -315,7 +318,7 @@ class FileRouterRegistry implements RouterRegistry {
         state: "failed",
         error: `${entry.displayName} has no downloadable artifact.`,
       };
-      await this.writeState();
+      await this.writeState(id);
       return this.snapshot(entry);
     }
     const abort = new AbortController();
@@ -350,7 +353,7 @@ class FileRouterRegistry implements RouterRegistry {
       /* keep the cancel/error */
     } else if (!this.bundled[id] && current?.state !== "installed") {
       this.persisted.routers[id] = { state: "not_installed" };
-      await this.writeState();
+      await this.writeState(id);
     }
     await this.cleanPartials(id);
     return this.get(id);
@@ -364,7 +367,7 @@ class FileRouterRegistry implements RouterRegistry {
     await this.cancel(id);
     await rm(this.installDir(id), { recursive: true, force: true });
     this.persisted.routers[id] = { state: "not_installed" };
-    await this.writeState();
+    await this.writeState(id);
     return this.snapshot(entry);
   }
 
@@ -596,7 +599,60 @@ class FileRouterRegistry implements RouterRegistry {
     return join(this.root, id);
   }
 
+  /**
+   * One install at a time per engine across processes (`inflight` only covers this one): wait for another
+   * process's install, then use what it installed instead of installing again.
+   */
   private async runInstall(
+    entry: RouterCatalogEntry,
+    artifact: RouterArtifact,
+    abort: AbortController,
+    job: InstallJob,
+  ): Promise<RouterSnapshot> {
+    const emit = (line: string) => {
+      for (const listener of job.listeners) {
+        try {
+          listener(line);
+        } catch {
+          /* a caller that went away */
+        }
+      }
+    };
+    try {
+      return await withInstallLock(
+        join(this.root, `.lock-${entry.id}`),
+        async () => {
+          this.refreshState(entry.id);
+          const saved = this.persisted.routers[entry.id];
+          if (!job.replace && saved?.state === "installed" && saved.path && existsSync(saved.path) && this.resolveRunnable(entry, saved.path) !== null) {
+            emit(`${entry.displayName}: installed by another fabdesk process`);
+            return this.finish(job, entry);
+          }
+          return this.runInstallLocked(entry, artifact, abort, job);
+        },
+        {
+          ...this.deps.installLock,
+          signal: abort.signal,
+          onWait: (holder) =>
+            emit(`${entry.displayName}: waiting for another fabdesk process${holder ? ` (pid ${holder.pid})` : ""} that is installing it`),
+        },
+      );
+    } catch (error) {
+      // Only the wait itself fails here (runInstallLocked records its own errors). The lock holder owns state.json,
+      // so this outcome stays in memory.
+      this.refreshState(entry.id);
+      if (this.persisted.routers[entry.id]?.state !== "installed") {
+        const aborted = abort.signal.aborted;
+        this.persisted.routers[entry.id] = {
+          state: aborted ? "not_installed" : "failed",
+          error: aborted ? "Installation cancelled." : error instanceof Error ? error.message : String(error),
+        };
+      }
+      return this.finish(job, entry);
+    }
+  }
+
+  private async runInstallLocked(
     entry: RouterCatalogEntry,
     artifact: RouterArtifact,
     abort: AbortController,
@@ -703,7 +759,7 @@ class FileRouterRegistry implements RouterRegistry {
         sha256: downloaded.sha256,
         ...(notice ? { notice } : {}),
       };
-      await this.writeState();
+      await this.writeState(entry.id);
       await rm(backup, { recursive: true, force: true });
       return this.finish(job, entry);
     } catch (error) {
@@ -721,7 +777,7 @@ class FileRouterRegistry implements RouterRegistry {
         prior?.state === "installed" && existsSync(final)
           ? { ...prior, ...(aborted ? {} : { error: message }) }
           : { state: aborted ? "not_installed" : "failed", error: message };
-      await this.writeState();
+      await this.writeState(entry.id);
       return this.finish(job, entry);
     } finally {
       await rm(work, { recursive: true, force: true });
@@ -780,11 +836,29 @@ class FileRouterRegistry implements RouterRegistry {
     }
   }
 
-  private async writeState(): Promise<void> {
-    await mkdir(this.root, { recursive: true, mode: 0o700 });
-    await writeFile(join(this.root, STATE_FILE), `${JSON.stringify(this.persisted, null, 2)}\n`, {
-      mode: 0o600,
-    });
+  /** Take this engine's entry from state.json: another process may have installed or removed it. */
+  private refreshState(id: RouterCatalogId): void {
+    const saved = this.readState().routers[id];
+    if (saved) this.persisted.routers[id] = saved;
+    else delete this.persisted.routers[id];
+  }
+
+  /**
+   * Record one engine's entry. Other engines' entries come from the file, so a write never reverts what another
+   * process recorded for them. Synchronous read-modify-write so two writes in this process cannot interleave; the
+   * file is replaced by rename so a reader never sees half of it.
+   */
+  private async writeState(id: RouterCatalogId): Promise<void> {
+    mkdirSync(this.root, { recursive: true, mode: 0o700 });
+    const mine = this.persisted.routers[id];
+    const merged: PersistedState = { routers: { ...this.readState().routers } };
+    if (mine) merged.routers[id] = mine;
+    else delete merged.routers[id];
+    const file = join(this.root, STATE_FILE);
+    const tmp = `${file}.${process.pid}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });
+    renameSync(tmp, file);
+    this.persisted = { routers: { ...this.persisted.routers, ...merged.routers } };
   }
 }
 

@@ -100,7 +100,9 @@ the route stage's TraceMaker branch), the last-mile router, rip and nudge steps 
 The missing engine is installed inline with progress lines and the step continues. Rules:
 
 - concurrent requests share one install (one download), whether they come from parallel candidates, two tools or
-  Settings;
+  Settings; across processes (two standalone `fabdesk mcp`) a lock file per engine (`routers/.lock-<id>`, and
+  `routers/uv/<version>.lock` for the bootstrapped uv) makes the second wait and then use the first one's install; a
+  lock whose pid is dead, or that is over 2 hours old, is taken over;
 - an override that is set (Settings `krtDir`, `FABDESK_KRT_DIR`, `TRACEMAKER_BIN`) is used as given; when it is broken
   that is reported and nothing is installed over it;
 - Settings `autoInstallEngines` (default on; Settings → Routers → *Install engines on first use*) turns it off: the

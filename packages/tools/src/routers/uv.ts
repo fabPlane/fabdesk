@@ -12,6 +12,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, stat
 import { join } from "node:path";
 import { posix, win32 } from "node:path";
 import { downloadAndVerify } from "./checksum";
+import { withInstallLock, type InstallLockOptions } from "./install-lock";
 import { extractZipArchive } from "./zip";
 
 export const UV_VERSION = "0.13.6";
@@ -56,6 +57,8 @@ export type UvBootstrapDeps = {
   spawn?: (cmd: string, args: string[]) => Promise<number>;
   /** Tests only: another archive than the pinned one for this OS/arch. */
   asset?: UvAsset & { url: string; filename: string };
+  /** Tests only: timings and the liveness check of the cross-process lock. */
+  lock?: Pick<InstallLockOptions, "staleMs" | "waitMs" | "pollMs" | "isAlive">;
 };
 
 const inflight = new Map<string, Promise<string>>();
@@ -70,7 +73,16 @@ export function bootstrapUv(routersRoot: string, deps: UvBootstrapDeps = {}): Pr
   if (existsSync(exe)) return Promise.resolve(exe);
   const running = inflight.get(exe);
   if (running) return running;
-  const job = doBootstrap(routersRoot, exe, deps).finally(() => inflight.delete(exe));
+  // The lock covers other processes (another `fabdesk mcp` bootstrapping the same uv); `inflight` this one.
+  const job = withInstallLock(
+    `${uvHome(routersRoot, platform)}.lock`,
+    async () => (existsSync(exe) ? exe : doBootstrap(routersRoot, exe, deps)),
+    {
+      ...(deps.signal ? { signal: deps.signal } : {}),
+      ...(deps.lock ?? {}),
+      onWait: (holder) => deps.log?.(`uv ${UV_VERSION}: waiting for another fabdesk process${holder ? ` (pid ${holder.pid})` : ""} that is downloading it`),
+    },
+  ).finally(() => inflight.delete(exe));
   inflight.set(exe, job);
   return job;
 }
