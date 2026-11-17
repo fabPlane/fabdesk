@@ -103,5 +103,6 @@ are recorded in [docs/fabplane-repository-cutover.md](docs/fabplane-repository-c
 
 ## License
 
-Original FabDesk source is licensed under [Apache-2.0](LICENSE). Third-party
-components retain their own terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Original FabDesk source in this repository is licensed under [Apache-2.0](LICENSE).
+Submodule repositories and third-party components are outside that grant and
+retain their own terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

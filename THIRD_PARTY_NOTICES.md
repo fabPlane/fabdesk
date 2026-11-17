@@ -1,8 +1,14 @@
 # Third-party components and notices
 
-The project's root license covers original fabDesk contributions only. Separately
+The project's root license covers original FabDesk contributions only. Separately
 licensed components, submodules, fixtures and artwork retain their own terms.
 This index does not replace their license texts or grant rights to trademarks.
+
+The pinned `fabPlane/fab_pcb` and `fabPlane/fab_cad` repositories have no root
+license declarations. FabDesk's Apache-2.0 license does not supply a license for
+their original code. This remains a recorded licensing gap; retain their nested
+third-party notices and establish the applicable grants before redistribution
+outside existing permissions.
 
 | Component | Source / notice |
 | --- | --- |
