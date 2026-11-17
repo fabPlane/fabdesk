@@ -129,6 +129,8 @@ export function rowsToRestore(
       now.uri !== row.uri ||
       now.type !== row.type ||
       now.options !== row.options ||
+      now.descr !== row.descr ||
+      now.hidden !== row.hidden ||
       now.disabled !== row.disabled
     );
   });
