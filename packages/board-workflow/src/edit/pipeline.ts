@@ -7,7 +7,7 @@
  */
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { AcceptRun } from "../history";
 import { figures } from "../accept";
 import { acceptDir, type AcceptIndexEntry } from "../history";
@@ -91,14 +91,23 @@ const DESIGN_FILE = /\.(kicad_pcb|kicad_sch|kicad_sym|kicad_mod|kicad_pro|kicad_
 
 const scratchName = (name: string) => name.startsWith(".") || name.startsWith("_autosave") || name.startsWith("~");
 
-/** Library paths a `fp-lib-table` / `sym-lib-table` names inside the project (`${KIPRJMOD}` only), resolved against `root`. */
+/**
+ * Library paths a `fp-lib-table` / `sym-lib-table` names, resolved against `root` (the table's project folder): a
+ * `${KIPRJMOD}` path, a relative path, or an absolute path. Paths through other variables (`${KICAD9_FOOTPRINT_DIR}`) and
+ * URLs are system libraries, not project inputs; the caller keeps only paths inside the project.
+ */
 export function projectLibraryPaths(table: string, root: string): string[] {
   const out: string[] = [];
   for (const m of table.matchAll(/\(uri\s+(?:"((?:[^"\\]|\\.)*)"|([^\s)]+))\s*\)/g)) {
     const uri = (m[1] ?? m[2] ?? "").replace(/\\(.)/g, "$1").trim();
+    if (!uri) continue;
     const rest = /^\$(?:\{KIPRJMOD\}|\(KIPRJMOD\))(.*)$/.exec(uri)?.[1];
-    if (rest === undefined || /\$[({]/.test(rest)) continue;
-    out.push(resolve(root, `.${rest.replaceAll("\\", "/")}`));
+    if (rest !== undefined) {
+      if (!/\$[({]/.test(rest)) out.push(resolve(root, `.${rest.replaceAll("\\", "/")}`));
+      continue;
+    }
+    if (/\$[({]/.test(uri) || /^[a-z][a-z0-9+.-]*:\/\//i.test(uri)) continue; // another variable, or a URL
+    out.push(isAbsolute(uri) || /^[a-z]:[\\/]/i.test(uri) ? resolve(uri) : resolve(root, uri.replaceAll("\\", "/")));
   }
   return out;
 }

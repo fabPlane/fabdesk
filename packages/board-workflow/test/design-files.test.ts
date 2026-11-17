@@ -89,8 +89,24 @@ describe("designFileHashes", () => {
     }
   });
 
-  test("library tables: only ${KIPRJMOD} paths inside the project", () => {
-    const table = `(fp_lib_table (lib (name "A")(type "KiCad")(uri "\${KIPRJMOD}/a.pretty")) (lib (name "B")(type "KiCad")(uri "$(KIPRJMOD)/b.pretty")) (lib (name "C")(type "KiCad")(uri "/abs/c.pretty")) (lib (name "D")(type "KiCad")(uri "\${KIPRJMOD}/\${OTHER}/d.pretty")))`;
-    expect(projectLibraryPaths(table, "/p")).toEqual(["/p/a.pretty", "/p/b.pretty"]);
+  test("library tables: ${KIPRJMOD}, relative and absolute paths; not other variables or URLs", () => {
+    const table = `(fp_lib_table (lib (name "A")(type "KiCad")(uri "\${KIPRJMOD}/a.pretty")) (lib (name "B")(type "KiCad")(uri "$(KIPRJMOD)/b.pretty")) (lib (name "C")(type "KiCad")(uri "/abs/c.pretty")) (lib (name "D")(type "KiCad")(uri "\${KIPRJMOD}/\${OTHER}/d.pretty")) (lib (name "E")(type "KiCad")(uri "lib/e.pretty")) (lib (name "F")(type "KiCad")(uri "\${KICAD9_FOOTPRINT_DIR}/f.pretty")) (lib (name "G")(type "KiCad")(uri "https://example.com/g.pretty")))`;
+    // the caller keeps only paths inside the project (/abs/c.pretty is dropped there)
+    expect(projectLibraryPaths(table, "/p")).toEqual(["/p/a.pretty", "/p/b.pretty", "/abs/c.pretty", "/p/lib/e.pretty"]);
   });
+
+  for (const spelling of ["relative", "absolute"] as const)
+    test(`a ${spelling} in-project library path is a design input`, async () => {
+      const dir = await project();
+      try {
+        const uri = spelling === "relative" ? "lib/Parts.pretty" : join(dir, "lib/Parts.pretty");
+        await writeFile(join(dir, "fp-lib-table"), `(fp_lib_table\n  (version 7)\n  (lib (name "Parts")(type "KiCad")(uri "${uri}")(options "")(descr ""))\n)\n`);
+        const before = await designFileHashes(dir);
+        expect(before["lib/Parts.pretty/R_0402.kicad_mod"]).toBeDefined();
+        await writeFile(join(dir, "lib/Parts.pretty/R_0402.kicad_mod"), "(footprint R_0402 pad moved)");
+        expect((await designFileHashes(dir))["lib/Parts.pretty/R_0402.kicad_mod"]).not.toBe(before["lib/Parts.pretty/R_0402.kicad_mod"]);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
 });
