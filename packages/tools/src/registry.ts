@@ -69,6 +69,7 @@ export type ToolOutput = {
   /** Structured result; exposed as `structuredContent` (MCP) / response body (HTTP). */
   json?: unknown;
   images?: ToolImage[];
+  imagePresentation?: "inspection" | "deliverable";
   isError?: boolean;
 };
 

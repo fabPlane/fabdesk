@@ -269,6 +269,10 @@ export class CoreClient {
   async getProjectStatus(id: string): Promise<ProjectShareSnapshot> {
     return ProjectShareSnapshot.parse(await this.request(`/projects/${encodeURIComponent(id)}/status`));
   }
+  inspectOutputDependencies(id: string, directory = "."): Promise<{ revision: string }> {
+    return this.request(`/projects/${encodeURIComponent(id)}/output-dependencies?directory=${encodeURIComponent(directory)}`);
+  }
+
   inspectBoardSources(id: string): Promise<ProjectBoardSources> {
     return this.request(`/projects/${encodeURIComponent(id)}/board-sources`);
   }

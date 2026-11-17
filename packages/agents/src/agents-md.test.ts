@@ -47,6 +47,13 @@ describe("renderAgentsMd", () => {
     expect(md.indexOf(USER_START)).toBeLessThan(md.indexOf(USER_END));
   });
 
+  test("sandboxed shell guidance suppresses the authenticated CLI instructions", () => {
+    const md = renderAgentsMd({ ...ctx, fabdeskCli: "/active/fabpcb", fabdeskCliUnavailableReason: "Use MCP capability_call because shell loopback is unavailable." });
+    expect(md).toContain("Use MCP capability_call");
+    expect(md).not.toContain('"$FABDESK_CLI" tool');
+    expect(renderAgentsMd({ ...ctx, fabdeskCli: "/active/fabpcb" })).toContain('"$FABDESK_CLI" tool describe');
+  });
+
   test("renders neutral direct-IPC discovery only for the programmable interface", () => {
     const md = renderAgentsMd({ ...ctx, interfaceMode: "programmable" });
     expect(md).toContain("No Fabdesk MCP design tools are exposed");

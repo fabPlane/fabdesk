@@ -267,3 +267,4 @@ export { acknowledgeComposerDraft } from "./composer-acknowledgement";
 export { partScopeKey, usePartSelection, pcbSelectionParts, schematicSelectionParts, hitSelectionPart, type PartScope, type SelectablePart, type PartBox } from "./part-selection";
 export { inspectSelectionIndex, type SelectionIndex } from "./part-selection-source";
 export { useAutomaticBoardViews } from "./automatic-board-views";
+export { summarizeRunWork } from "./run-work-summary";

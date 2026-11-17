@@ -178,6 +178,7 @@ describe("FabPCB build recovery", () => {
     } as unknown as FpPcbBridgeClient;
     const session = { id: "session-1", path: null } as ProjectSession;
     const sessions = {
+      preservingProjectLibraries: async <T>(_dir: string, _session: ProjectSession, write: () => Promise<T>) => write(),
       withRetry: async (
         _projectDir: string,
         run: (value: ProjectSession) => Promise<FpPcbCompileJob>,
@@ -228,6 +229,7 @@ describe("FabPCB build recovery", () => {
       layers: BoardLayer[];
     }> = async () => ({ copperLayerCount: 4, layers: [] });
     const sessions = {
+      preservingProjectLibraries: async <T>(_dir: string, _session: ProjectSession, write: () => Promise<T>) => write(),
       withRetry: async (
         _projectDir: string,
         run: (value: ProjectSession) => Promise<FpPcbCompileJob>,
@@ -755,6 +757,7 @@ describe("what a successful build checks against the saved board", () => {
       },
     } as unknown as ProjectSession;
     const sessions = {
+      preservingProjectLibraries: async <T>(_dir: string, _session: ProjectSession, write: () => Promise<T>) => write(),
       withRetry: async <T>(_dir: string, run: (s: ProjectSession) => Promise<T>) => run(session),
       release: async () => undefined,
       board: async () => ({ enabledLayers: async () => ({ copperLayerCount: 2 }) }),

@@ -22,7 +22,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { runKicadCli, type KicadCli } from "./cli";
+import { componentModelEnvironment, runKicadCli, type KicadCli } from "./cli";
 import { parseGlbContainer } from "./glb-container";
 
 export const MECHANICAL_COLLECTOR = { name: "fabdesk.mechanical-glb", version: "1.0.0" } as const;
@@ -217,7 +217,7 @@ export type ModelResolution = {
 export function resolveModelPath(
   declared: string,
   projectDir: string,
-  env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv = componentModelEnvironment(),
 ): ModelResolution {
   if (!declared.trim())
     return {
@@ -546,11 +546,11 @@ export type RuntimeModelDiagnostic = { ref: string; message: string };
  */
 export async function exportMechanicalGlb(
   cli: KicadCli,
-  options: { board: string; output: string; signal?: AbortSignal },
+  options: { board: string; output: string; modelProjectDir?: string; signal?: AbortSignal },
 ): Promise<{ exitCode: number; diagnostics: RuntimeModelDiagnostic[]; outputLines: string[] }> {
   const result = await runKicadCli(
     cli,
-    [...MECHANICAL_GLB_ARGS, "-o", options.output, options.board],
+    [...MECHANICAL_GLB_ARGS, ...(options.modelProjectDir ? ["--define-var", `KIPRJMOD=${options.modelProjectDir}`] : []), "-o", options.output, options.board],
     {
       tolerateExit: true,
       ...(options.signal ? { signal: options.signal } : {}),
@@ -1382,6 +1382,7 @@ export async function collectMechanical(
     const exported = await exportMechanicalGlb(cli, {
       board: options.board,
       output: glbPath,
+      modelProjectDir: options.projectDir,
       ...(options.signal ? { signal: options.signal } : {}),
     });
     const after = await readFile(options.board);

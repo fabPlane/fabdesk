@@ -363,3 +363,8 @@ export function projectBomCsv(lines: readonly ProjectBomLine[]): string {
   }
   return `${rows.join("\n")}\n`;
 }
+
+/** Physical board features are fabricated with the board rather than ordered as components. */
+export function isPcbFeature(footprint: string): boolean {
+  return /(?:^|:)MountingHole(?:_|:|$)/i.test(footprint) || /(?:^|:)(?:SolderJumper|SolderBridge)(?:_|:|$)/i.test(footprint);
+}

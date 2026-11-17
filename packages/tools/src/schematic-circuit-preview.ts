@@ -1,3 +1,4 @@
+import { snapshotProjectDependencies, assertProjectDependencies } from "./project-dependencies";
 import { RootSchematicPreviewRevision, SCHEMATIC_PREVIEW_REVISION_PATH } from "@fabdesk/protocol";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
@@ -6,16 +7,17 @@ import { ToolError, type ToolContext } from "./registry";
 import { fileUrl, ok, requireKicad } from "./tools/common";
 
 const sha = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
-/** Circuit presentation uses the existing immutable native renderer; document exports stay separate. */
-export async function renderRootCircuitPreview(ctx: ToolContext, maxWidth: number, expectedHierarchyRevision?: string) {
+/** Both preview modes capture the complete native hierarchy and publish source-bound receipts. */
+export async function renderRootCircuitPreview(ctx: ToolContext, maxWidth: number, expectedHierarchyRevision?: string, circuit = true) {
   const project = ctx.requireProject(), cli = await requireKicad(ctx);
   const schematic = await jailPath(project.dir, "board.kicad_sch"), metadata = await jailPath(project.dir, "board.kicad_pro");
-  const inspect = () => ctx.services.kicad.inspectSchematicHierarchy(cli, { projectDir: project.dir, rootSchematic: schematic, ownedFilesOnly: true, signal: ctx.signal });
+  const inspect = async () => ctx.services.kicad.inspectSchematicHierarchy(cli, { projectDir: project.dir, rootSchematic: schematic, ...(await exists(metadata) ? { projectFile: metadata } : {}), ownedFilesOnly: true, signal: ctx.signal });
+  const dependencies = await snapshotProjectDependencies(project.dir);
   const hierarchy = await inspect();
-  if (!hierarchy.complete || expectedHierarchyRevision && expectedHierarchyRevision !== hierarchy.aggregateRevision) throw new ToolError("Circuit view needs the current complete native hierarchy. Resolve missing or changed sheets first.", "precondition");
+  if (!hierarchy.complete || expectedHierarchyRevision && expectedHierarchyRevision !== hierarchy.aggregateRevision) throw new ToolError("Schematic preview needs the current complete native hierarchy. Resolve missing or changed sheets first.", "precondition");
   ctx.progress(.2, "rendering captured native circuitry");
-  const captured = await ctx.services.kicad.exportOwnedSchematicSvg(cli, { projectDir: project.dir, hierarchy, circuit: true, signal: ctx.signal });
-  if (captured.sheets.some(sheet => !new TextDecoder().decode(sheet.svg).includes('data-fabplane-schematic-view="circuit'))) throw new ToolError("The exporter did not produce circuit-framed drawings. The previous preview was kept.", "precondition");
+  const captured = await ctx.services.kicad.exportOwnedSchematicSvg(cli, { projectDir: project.dir, hierarchy, circuit, bindNativePages: true, signal: ctx.signal });
+  if (circuit && captured.sheets.some(sheet => !new TextDecoder().decode(sheet.svg).includes('data-fabplane-schematic-view="circuit'))) throw new ToolError("The exporter did not produce circuit-framed drawings. The previous preview was kept.", "precondition");
   const expected = new Set([...hierarchy.referencedFiles, ...(hierarchy.projectFile ? [hierarchy.projectFile] : [])]);
   if (captured.sourceRevision !== hierarchy.aggregateRevision || captured.sheets.length !== hierarchy.sheets.length || captured.sourceFiles.length !== expected.size || captured.sourceFiles.some(file => !expected.delete(file.path)) || expected.size) throw new ToolError("Circuit rendering did not capture the complete inspected hierarchy.", "precondition");
   const version = `renders/schematic/${randomUUID()}`, versionPath = await jailPath(project.dir, version);
@@ -37,12 +39,13 @@ export async function renderRootCircuitPreview(ctx: ToolContext, maxWidth: numbe
     if (!hierarchy.projectFile && await exists(metadata)) throw new ToolError("Native project metadata appeared during circuit rendering. Reinspect this design.", "precondition");
     ctx.signal.throwIfAborted();
     if (!sheets[0] || !images[0]) throw new ToolError("Circuit export produced no sheets.", "internal");
-    const receipt = RootSchematicPreviewRevision.parse({ contract: "fabplane.schematic-preview-revision.v1", projectId: project.id, sourceRevision: hierarchy.aggregateRevision, sourceFiles: captured.sourceFiles, sheets: artifacts, generatedAt: new Date().toISOString(), dependencies: "unverified" });
+    await assertProjectDependencies(project.dir, dependencies);
+    const receipt = RootSchematicPreviewRevision.parse({ contract: "fabplane.schematic-preview-revision.v1", projectId: project.id, sourceRevision: hierarchy.aggregateRevision, sourceFiles: captured.sourceFiles, sheets: artifacts, generatedAt: new Date().toISOString(), dependencies: "unverified", dependencySnapshot: dependencies });
     const output = await jailPath(project.dir, "renders/schematic.svg"), pngOutput = await jailPath(project.dir, "renders/schematic.png");
     await writeAtomic(pngOutput, await readFile(images[0].path)); await writeAtomic(output, await readFile(sheets[0]));
     await writeJson(await jailPath(project.dir, SCHEMATIC_PREVIEW_REVISION_PATH), receipt);
     published = true; ctx.progress(1, "done");
-    return ok(`Opened ${sheets.length} circuit sheet(s) from the captured native hierarchy. This is presentation only; document exports retain paper metadata. ERC and PCB parity remain separate checks.`, { path: output, pngPath: pngOutput, url: fileUrl(output), sheets, images, sourceRevision: captured.sourceRevision, sourceFiles: captured.sourceFiles, presentation: "circuit", preview: receipt }, { images: images.map(image => ({ path: image.path, mime: "image/png", requiredInline: true })) });
+    return ok(`Rendered ${sheets.length} ${circuit ? "circuit" : "document"} sheet(s) from the captured native hierarchy. ERC and PCB parity remain separate checks.`, { path: output, pngPath: pngOutput, url: fileUrl(output), sheets, images, sourceRevision: captured.sourceRevision, sourceFiles: captured.sourceFiles, presentation: circuit ? "circuit" : "document", schematicRevision: { sha256: hierarchy.aggregateRevision }, preview: receipt }, { images: images.map(image => ({ path: image.path, mime: "image/png", requiredInline: true })) });
   } finally {
     if (!published && await jailPath(project.dir, version).catch(() => null) === versionPath) await rm(versionPath, { recursive: true, force: true });
   }

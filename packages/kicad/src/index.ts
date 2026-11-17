@@ -2,6 +2,7 @@ export {
   kicadVersionAtLeast,
   findKicadCli,
   runKicadCli,
+  componentModelEnvironment,
   countCopperLayers,
   bundledKicadRoots,
   bundledKicadCliCandidates,
@@ -171,3 +172,5 @@ export {
 export { previewEnclosureSvg } from "./enclosure-preview";
 
 export { cropNativePageSvg } from "./pcb-svg-coordinates";
+
+export * from "./library-tables";

@@ -1,3 +1,4 @@
+import { render_publish } from "./render-publish";
 import { ToolRegistry, type ToolDef } from "../registry";
 import { bom_read } from "./bom";
 import { appTools } from "./app";
@@ -24,6 +25,7 @@ import { verifyTools } from "./verify";
 
 export const allTools: ReadonlyArray<ToolDef> = [
   ...coreTools,
+  render_publish,
   ...projectTools,
   bom_read,
   ...commentTools,
@@ -79,3 +81,5 @@ export * from "./cad";
 export * from "./spatial";
 
 export * from "./task-checkpoint";
+
+export * from "./render-publish";

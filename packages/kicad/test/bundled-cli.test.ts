@@ -35,7 +35,7 @@ describe("bundledKicadCliCandidates", () => {
 function writeVersionStub(path: string, version: string): void {
   writeFileSync(
     path,
-    `#!/usr/bin/env bash
+    `#!/bin/bash
 if [ "$1" = "version" ]; then echo "${version}"; exit 0; fi
 echo "unexpected $*" >&2
 exit 1
@@ -81,9 +81,12 @@ describe.skipIf(process.platform === "win32")("findKicadCli bundled preference",
     writeVersionStub(override, "9.0.0-override");
     writeVersionStub(bundledCli, "10.99.0-bundled");
     process.env.FABDESK_BUNDLED_KICAD = root;
+    const savedPath = process.env.PATH;
     process.env.PATH = "/nonexistent";
-    const found = await findKicadCli(override);
-    expect(found?.path).toBe(override);
-    expect(found?.version).toBe("9.0.0-override");
+    try {
+      const found = await findKicadCli(override);
+      expect(found?.path).toBe(override);
+      expect(found?.version).toBe("9.0.0-override");
+    } finally { process.env.PATH = savedPath; }
   });
 });
