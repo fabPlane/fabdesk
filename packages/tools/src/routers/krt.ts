@@ -247,6 +247,16 @@ export function findCargo(deps: KrtSetupDeps = {}): string | null {
   return exists(candidate) ? candidate : null;
 }
 
+/**
+ * `cargo build` arguments for grid_router. With the source's Cargo.lock, `--locked` pins crate resolution the way
+ * krt-lock.json pins the Python side (a lock that no longer matches Cargo.toml fails instead of re-resolving). A
+ * source without Cargo.lock builds unpinned as before: `--locked` would fail there, since it forbids writing one.
+ */
+export function cargoBuildArgs(rustDir: string, platform: NodeJS.Platform = process.platform, exists: (path: string) => boolean = existsSync): string[] {
+  const p = pathFor(platform);
+  return ["build", "--release", ...(exists(p.join(rustDir, "Cargo.lock")) ? ["--locked"] : []), "--manifest-path", p.join(rustDir, "Cargo.toml")];
+}
+
 /** What `cargo build --release` names the cdylib, per OS. */
 export function cargoArtifactName(platform: NodeJS.Platform): string {
   return platform === "win32" ? "grid_router.dll" : platform === "darwin" ? "libgrid_router.dylib" : "libgrid_router.so";
@@ -407,7 +417,7 @@ export async function setupKrt(root: string, deps: KrtSetupDeps = {}): Promise<K
     deps.signal?.throwIfAborted();
     const target = p.join(root, "build", "cargo-target");
     log(`KRT: building grid_router for ${platform}-${arch} with ${cargo} (a few minutes)`);
-    const b = await run(cargo, ["build", "--release", "--manifest-path", p.join(rustDir, "Cargo.toml")], {
+    const b = await run(cargo, cargoBuildArgs(rustDir, platform, exists), {
       env: { ...childEnv, CARGO_TARGET_DIR: target, PYO3_PYTHON: python, CARGO_TERM_COLOR: "never" },
       timeoutMs: 45 * 60_000,
       cwd: rustDir,

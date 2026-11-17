@@ -13,6 +13,7 @@ import {
   KRT_SHA256,
   KRT_URL,
   KRT_VERSION,
+  cargoBuildArgs,
   findCargo,
   findUv,
   krtLockText,
@@ -279,6 +280,24 @@ describe("setupKrt", () => {
     const order = calls.map((c) => (c.cmd.includes("cargo") ? "cargo" : c.args[0] === "venv" ? "venv" : c.args.includes("pip") ? "pip" : "check"));
     expect(order).toEqual(["venv", "pip", "cargo", "check"]);
     expect(existsSync(join(root, "build", "cargo-target"))).toBe(false);
+  });
+
+  test("ARM with cargo and a Cargo.lock in the source: the build passes --locked", async () => {
+    const root = await extractedRoot();
+    const rustDir = join(root, "src", "plugins", "rust_router");
+    touch(join(rustDir, "Cargo.lock"), "version = 3\n");
+    let cargoArgs: string[] = [];
+    const { run } = fakeRun(root, ({ cmd, args }) => {
+      if (cmd !== "/home/u/.cargo/bin/cargo") return undefined;
+      cargoArgs = args;
+      touch(join(root, "build", "cargo-target", "release", "libgrid_router.so"), "built-arm64");
+      return { code: 0, out: "Finished release" };
+    });
+    const exists = (p: string) => p === "/home/u/.cargo/bin/cargo" || existsSync(p);
+    await setupKrt(root, base({ arch: "arm64", home: "/home/u", exists, which: (n) => (n === "uv" ? "/bin/uv" : null), run }));
+    expect(cargoArgs).toEqual(["build", "--release", "--locked", "--manifest-path", join(rustDir, "Cargo.toml")]);
+    expect(cargoBuildArgs("/r", "linux", () => false)).toEqual(["build", "--release", "--manifest-path", "/r/Cargo.toml"]);
+    expect(cargoBuildArgs("C:\\r", "win32", (p) => p === "C:\\r\\Cargo.lock")).toContain("--locked");
   });
 
   test("the import check failing fails the setup", async () => {
