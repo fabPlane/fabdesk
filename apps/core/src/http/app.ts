@@ -578,8 +578,11 @@ export function createApp(deps: AppDeps): Hono<Env> {
       : r === "resolved"
         ? c.json({ error: "already resolved" }, 409)
         : c.json({ error: "not found" }, 404);
+  // An agent run's own token never resolves a card: approvals and answers come from the person, not the agent.
+  const fromAgentRun = (c: Context<Env>) => deps.tokens.lookup(c.get("token"))?.kind === "run";
   app.post("/threads/:id/approvals/:requestId", async (c) => {
     if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
+    if (fromAgentRun(c)) return c.json({ error: "An agent run cannot resolve approvals.", code: "forbidden" }, 403);
     const body = ResolveApproval.parse(await c.req.json());
     return outcome(
       c,
@@ -593,6 +596,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
   app.post("/threads/:id/inputs/:requestId", async (c) => {
     if (!deps.runs) return c.json({ error: "agent runs are disabled in this daemon" }, 503);
+    if (fromAgentRun(c)) return c.json({ error: "An agent run cannot answer its own questions.", code: "forbidden" }, 403);
     const body = ResolveInput.parse(await c.req.json());
     return outcome(
       c,
