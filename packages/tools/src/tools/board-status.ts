@@ -24,6 +24,7 @@ const FIX: Record<AcceptCode, string> = {
 
 export interface WorkflowStatus {
   task?: string;
+  board?: string;
   onboarding: { confirmed: boolean } | null;
   review: { state: string; open: number; mustFix: number } | null;
   release: { package: string; current: boolean } | null;
@@ -60,6 +61,7 @@ export async function workflowStatus(projectDir: string, run: AcceptRun, pcb?: s
   else next = `done: ${rel!.package} is the release of this exact design`;
   return {
     task: stages.task.state,
+    board: stages.board.status,
     onboarding: ob ? { confirmed: ob.confirmed } : null,
     review: rv ? { state: stages.review.state, open: rv.open, mustFix: rv.mustFix } : null,
     release: rel ? { package: rel.package, current: releaseCurrent } : null,
@@ -71,5 +73,5 @@ export function statusLines(s: WorkflowStatus): string[] {
   const ob = s.onboarding ? (s.onboarding.confirmed ? "confirmed" : 'not yet confirmed (board_check {"confirm":true} once checked against the circuit)') : "none";
   const rv = s.review ? `${s.review.state}${s.review.state === "current" ? `, ${s.review.open} open${s.review.mustFix ? ` (${s.review.mustFix} must-fix)` : ""}` : ""}` : "none";
   const rel = s.release ? `${s.release.package} (${s.release.current ? "this design" : "an older design"})` : "none";
-  return [`Task: ${s.task ?? "checks measured"}. Review: ${rv}. Release: ${rel}. Onboarding: ${ob}.`, `Recommended next: ${s.next} (the owner decides).`];
+  return [`Task: ${s.task ?? "checks measured"}. Board: ${s.board ?? "completion unverified"}. Review: ${rv}. Release: ${rel}. Onboarding: ${ob}.`, `Recommended next: ${s.next} (the owner decides).`];
 }

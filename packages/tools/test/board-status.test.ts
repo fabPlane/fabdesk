@@ -52,7 +52,7 @@ test("a current review and an older release report three separate stages", async
   expect(s.review?.state).toBe("current");
   expect(s.release?.current).toBe(false);
   const lines = statusLines(s).join("\n");
-  for (const stage of ["Task:", "Review:", "Release:"]) expect(lines).toContain(stage);
+  for (const stage of ["Task:", "Board:", "Review:", "Release:"]) expect(lines).toContain(stage);
   expect(lines).not.toMatch(/^Next:/m);
   expect(lines.match(/Recommended next:/g)).toHaveLength(1);
 });

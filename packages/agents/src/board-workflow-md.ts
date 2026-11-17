@@ -5,6 +5,8 @@ import { FINISH_BOARD_PROMPT } from "./finish-board";
  */
 export const BOARD_WORKFLOW_MD = `## Board workflow
 
+The following fabrication finish procedure applies only when the owner explicitly requests fabrication or release:
+
 ${FINISH_BOARD_PROMPT}
 
 The board toolset (\`load_toolset {"toolset":"board"}\`) is the method for separate task, review and release stages. **The owner gives
@@ -25,11 +27,17 @@ Release (when requested): release checks · fabrication package
 Every design change makes review and release stale.
 \`\`\`
 
-A task ends when its change is saved, its checks pass and previews are published once. The agent reports the task,
-says once what review and release state is stale and what it recommends, and ends the turn in plain text.
-Do not start review or release, or ask "what next" in a blocking card, unless the owner requested review, release or
-finishing the board. Later status lines keep reporting stale stages. Run render_publish once when the task is done,
-before handing back. Existing export_zip and portable handoff receipts still apply.
+Task done means the request scope is met. For a single edit or task, save the requested change, pass its checks,
+publish previews once, then stop at task done even if unrelated board work remains.
+For a request broader than one edit or task, leave the board complete: everything placed and routed,
+checks and acceptance A1–A9 passing, previews published. Continue placement, routing and repairs until this is met;
+a completed intermediate edit does not end the broader request. Report blockers if completion cannot be reached.
+Review and release are still only recommended; board completion does not authorize either stage.
+The stage line reports task scope separately from Board: complete or the board work that remains.
+The agent reports the result, says once what review and release state is stale and what it recommends, and ends the turn in plain text.
+Do not start review or release, or ask "what next" in a blocking card, unless the owner explicitly requested those
+stages or finishing the board for fabrication. Later status lines keep reporting stale stages.
+Run render_publish once when the request scope is met, before handing back. Existing export_zip and portable handoff receipts still apply.
 
 Before filled/capped via attributes are applied, the owner's decision must record
 manufacturing_rules.filled_capped_vias with a reason. Release changes fabrication attributes only.

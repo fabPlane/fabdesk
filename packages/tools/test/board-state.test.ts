@@ -301,3 +301,43 @@ test("stage readers agree after schematic-only and board-only changes", async ()
     expect((await loadCurrent(await openReviewProject(dir))).state).toContain("stale");
   }
 });
+
+test("Amendment 1 separates request completion from board completion", async () => {
+  const { savedStageLine, currentReviewHash } = await import("@fabdesk/board-workflow");
+  const dir = await project(BOARD);
+  const home = join(dir, ".fabdesk/board/accept");
+  await mkdir(home, { recursive: true });
+  const pcb = join(dir, "board.kicad_pcb");
+  const { readFile } = await import("node:fs/promises");
+  const summary = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`A${i + 1}`, true]));
+  const entry = { sha256: createHash("sha256").update(await readFile(pcb)).digest("hex"), designHash: (await designHash(dir)).design, summary, figures: { A1: 3 } };
+  await writeFile(join(home, "index.json"), JSON.stringify([{ ...entry, summary: { ...summary, A1: false } }]));
+  let line = await savedStageLine(dir);
+  expect(line).toContain("Board: 3 opens remain");
+  expect(line).toContain("request scope");
+  expect(line.match(/Recommended next:/g)).toHaveLength(1);
+  await writeFile(join(home, "index.json"), JSON.stringify([{ ...entry, figures: { A1: 0 } }]));
+  expect(await savedStageLine(dir)).toContain("Board: previews missing or stale");
+  await mkdir(join(dir, "reports"), { recursive: true });
+  await mkdir(join(dir, "renders"), { recursive: true });
+  const outputs = ["renders/pcb.svg", "renders/board.glb", "renders/schematic.svg", "reports/drc.json", "reports/erc.json"];
+  for (const path of outputs) await writeFile(join(dir, path), "published");
+  await writeFile(join(dir, "reports/board-completion.json"), JSON.stringify({
+    designHash: await currentReviewHash(dir), checksPass: true,
+    artifacts: outputs.map(path => ({ path, sha256: createHash("sha256").update("published").digest("hex") })),
+  }));
+  expect(await savedStageLine(dir)).toContain("Board: complete");
+  for (const invalid of [
+    { ...entry, summary: { ...summary, A7: false } },
+    { ...entry, parityChecked: false },
+    { ...entry, summary: { A1: true } },
+  ]) {
+    await writeFile(join(home, "index.json"), JSON.stringify([invalid]));
+    expect(await savedStageLine(dir)).not.toContain("Board: complete");
+  }
+  await writeFile(join(home, "index.json"), JSON.stringify([{ ...entry, figures: { A1: 0 } }]));
+  await writeFile(join(dir, "renders/board.glb"), "changed");
+  expect(await savedStageLine(dir)).not.toContain("Board: complete");
+  await writeFile(pcb, BOARD + "\n");
+  expect(await savedStageLine(dir)).toContain("Board: checks missing or stale");
+});

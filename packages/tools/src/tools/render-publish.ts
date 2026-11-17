@@ -1,3 +1,4 @@
+import { currentReviewHash } from "@fabdesk/board-workflow";
 import { beginPublicationVisibility } from "../publication-visibility";
 import { snapshotProjectDependencies, assertProjectDependencies } from "../project-dependencies";
 /** Prepare a saved-file handoff privately, then publish only if every captured input is unchanged. */
@@ -64,6 +65,7 @@ export const render_publish = defineTool({
           "Publishing requires a complete project-owned preview hierarchy",
           "precondition",
         );
+      const completionDesignHash = await currentReviewHash(project.dir);
       const dependencies = await snapshotProjectDependencies(project.dir);
       const inputs = new Map<string, Buffer>();
       for (const path of new Set([
@@ -196,6 +198,18 @@ export const render_publish = defineTool({
         };
         await collect("renders");
         await collect("reports");
+        const modelCoverage = (model.json as { modelCoverage?: unknown }).modelCoverage;
+        const checksPass =
+          drc.counts.errors === 0 &&
+          drc.counts.unconnected === 0 &&
+          erc.counts.errors === 0 &&
+          erc.measurement?.evidenceLevel === "measured" &&
+          erc.measurement?.revisionStable === true;
+        // Publish completion evidence in the same rollback-protected generation as its views/reports.
+        outputs.push({ path: "reports/board-completion.json", bytes: Buffer.from(JSON.stringify({
+          designHash: completionDesignHash, checksPass,
+          artifacts: outputs.map(o => ({ path: o.path, sha256: sha(o.bytes) })),
+        }) + "\n") });
         // Validate every output jail before replacing any canonical artifact.
         for (const output of outputs) await jailPath(project.dir, output.path);
         await stable();
@@ -233,13 +247,6 @@ export const render_publish = defineTool({
           await visibility.rollback();
           throw error;
         }
-        const modelCoverage = (model.json as { modelCoverage?: unknown }).modelCoverage;
-        const checksPass =
-          drc.counts.errors === 0 &&
-          drc.counts.unconnected === 0 &&
-          erc.counts.errors === 0 &&
-          erc.measurement?.evidenceLevel === "measured" &&
-          erc.measurement?.revisionStable === true;
         return {
           ...ok(
             `Published current PCB, schematic, interactive 3D and canonical reports. Saved-board DRC: ${drc.counts.errors} errors, ${drc.counts.unconnected} open; ERC: ${erc.counts.errors} errors. ${checksPass ? "Electrical checks passed." : "Checks need attention; inspect the canonical reports."}`,

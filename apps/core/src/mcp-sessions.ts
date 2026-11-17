@@ -197,7 +197,7 @@ export function boardWorkflowInstructions(opts: { listed?: boolean } = {}): stri
     .join(" · ");
   return [
     ` Board workflow (separate task, review and release stages): ${stages}.`,
-    "Task done is the saved requested change, its checks passing and previews published once. Report stale review/release once and end the turn in plain text; do not start those stages or ask what next unless requested. Done is the board's own acceptance checks A1-A9 passing, as board_check measures them against the requirements written at onboarding.",
+    "Task done means the request scope is met. A single edit or task ends with its change saved, its checks passing and previews published once. A request broader than one edit or task must leave everything placed and routed, checks and acceptance A1-A9 passing, and previews published. Report Board completion separately. Review and release are still only recommended; end the turn in plain text without a blocking what-next card. Start those stages only when explicitly requested, including finishing the board for fabrication.",
     "Engines a stage needs (routers, KiCadRoutingTools) install on demand; a call that cannot get one names it.",
     "A long call returns a job id; board_job waits for it, reports it or cancels it.",
     opts.listed
@@ -209,7 +209,7 @@ export function boardWorkflowInstructions(opts: { listed?: boolean } = {}): stri
 
 export function boardWorkflowPromptText(project?: string, request?: string): string {
   return [
-    "Handle the requested task, review or release stage with the fabdesk board tools, by the method below. Stop at the requested stage; finishing the board explicitly requests all stages.",
+    "Handle the requested task, review or release stage with the fabdesk board tools, by the method below. Meet the request scope: a single edit stops at task done; a broader request completes the board and only recommends review/release. Only an explicit fabrication finish request runs all stages.",
     project ? `Project: ${project} (pass project="${project}" to the board_* tools).` : "Use the session's project.",
     ...(request?.trim() ? [`Request: ${request.trim()}`] : []),
     "",

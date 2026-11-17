@@ -76,4 +76,4 @@ hosts that do not refresh the tool list).
 
 Pass `project` (id, name or absolute path) unless the session was started inside a project folder.
 
-A task ends when the requested change is saved, checks pass and previews are published once. Report stale review and release and recommend once, then end the turn in plain text. Do not start review or release or ask a blocking what-next question unless requested.
+Task done means the request scope is met. A single edit or task stops after its requested change is saved, its checks pass and previews are published once. A request broader than one edit or task must leave the board complete: everything placed and routed, checks and acceptance A1–A9 passing, previews published. Intermediate edits do not end that broader request. Report board completion separately from task completion. Review and release are still only recommended. Report stale stages and recommend once, then end the turn in plain text without a blocking what-next card. Only explicit review, release or fabrication finish requests authorize those stages.

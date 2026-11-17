@@ -94,6 +94,10 @@ async function fixture(change = false) {
 test("handoff publishes source-bound views and canonical reports, disclosing declared model coverage", async () => {
   const f = await fixture();
   const result = await f.run();
+  const completion = JSON.parse(await readFile(join(f.project.dir, "reports/board-completion.json"), "utf8"));
+  expect(completion.checksPass).toBe(true);
+  expect(completion.designHash).toMatch(/^[a-f0-9]{64}$/);
+  expect(completion.artifacts.some((a: { path: string }) => a.path === "renders/board.glb")).toBe(true);
   expect(result.json).toMatchObject({
     checksPass: true,
     modelCoverage: { total: 2, declared: 1, missing: ["U1"], loadVerification: "unverified" },
@@ -154,12 +158,13 @@ test("a stable failing measurement is published as a failing handoff, never a cl
   expect(result.isError).toBe(true);
   expect(result.json).toMatchObject({ checksPass: false, erc: { errors: 2 } });
   expect(result.text).toContain("Checks need attention");
+  expect(JSON.parse(await readFile(join(f.project.dir, "reports/board-completion.json"), "utf8")).checksPass).toBe(false);
   expect(
     JSON.parse(await readFile(join(f.project.dir, "reports/erc.json"), "utf8")).counts.errors,
   ).toBe(2);
 });
 
-const previousFiles = ["renders/pcb.svg", "renders/pcb.svg.revision.json", "renders/schematic.svg", "renders/schematic.png", "renders/schematic.revision.json", "renders/board.glb", "renders/board.glb.revision.json", "reports/drc.json", "reports/erc.json"];
+const previousFiles = ["reports/board-completion.json", "renders/pcb.svg", "renders/pcb.svg.revision.json", "renders/schematic.svg", "renders/schematic.png", "renders/schematic.revision.json", "renders/board.glb", "renders/board.glb.revision.json", "reports/drc.json", "reports/erc.json"];
 async function seedPrevious(f: Awaited<ReturnType<typeof fixture>>) {
   await mkdir(join(f.project.dir, "renders"), { recursive: true });
   await mkdir(join(f.project.dir, "reports"), { recursive: true });

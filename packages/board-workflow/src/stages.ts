@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { parseBoard } from "./board";
 import type { FindingRecord, ReviewRecord } from "./review/types";
 /** Stage currency rules. Reviews/releases cover the full review design (including requirements).
  * BOM evidence covers PCB bytes only: placements and fitted parts are board-derived.
@@ -55,12 +57,34 @@ export async function stageState(dir: string, pcb?: string) {
   const cfg = await readJsonOrNull<Record<string, never>>(join(dir, ".fabdesk/board/review/config.json")) ?? {};
   const currentFiles = await reviewHash({ dir, cfg }).then(r => r.files, () => ({} as Record<string, string>));
   const changed = (files?: Record<string, string>) => [...new Set([...Object.keys(files ?? {}), ...Object.keys(currentFiles)])].filter(k => files?.[k] !== currentFiles[k]);
-  const entries = await readJsonOrNull<Array<{ sha256?: string; designHash?: string; summary?: Record<string, boolean> }>>(join(dir, ".fabdesk/board/accept/index.json")) ?? [];
+  const entries = await readJsonOrNull<Array<{ sha256?: string; designHash?: string; summary?: Record<string, boolean>; parityChecked?: boolean; figures?: Record<string, number>; results?: Array<{ code: string; figures: Record<string, unknown> }> }>>(join(dir, ".fabdesk/board/accept/index.json")) ?? [];
   const saved = await savedBoard(dir, pcb);
   const checks = [...entries].reverse().find(e => matchesSavedBoard(e, saved));
+  const summary = checks ? countedSummary(checks) : {};
+  const acceptancePass = Array.from({ length: 9 }, (_, i) => `A${i + 1}`).every(k => summary[k] === true);
+  const openFigure = checks?.figures?.A1 ?? checks?.results?.find(r => r.code === "A1")?.figures.unconnected;
+  const opens = typeof openFigure === "number" && Number.isFinite(openFigure) && openFigure >= 0 ? openFigure : null;
+  const placed = reviewedBoard ? await readFile(join(dir, reviewedBoard), "utf8").then(t => parseBoard(t).footprints.size > 0, () => false).catch(() => false) : false;
+  const published = await readJsonOrNull<{ designHash: string; checksPass: boolean; artifacts: Array<{ path: string; sha256: string }> }>(join(dir, "reports/board-completion.json"));
+  let previewsCurrent = published?.designHash === hash && published.checksPass === true && Array.isArray(published.artifacts);
+  if (previewsCurrent && published) {
+    const paths = published.artifacts.map(a => a.path);
+    previewsCurrent = ["renders/pcb.svg", "renders/board.glb", "reports/drc.json", "reports/erc.json"].every(p => paths.includes(p))
+      && paths.some(p => p.startsWith("renders/") && p.endsWith(".svg") && p !== "renders/pcb.svg");
+    for (const a of published.artifacts) {
+      if (isAbsolute(a.path) || a.path.split(/[\\/]/).includes("..")) { previewsCurrent = false; break; }
+      const bytes = await readFile(join(dir, a.path)).catch(() => null);
+      if (!bytes || createHash("sha256").update(bytes).digest("hex") !== a.sha256) { previewsCurrent = false; break; }
+    }
+  }
+  const boardStatus = !checks ? "checks missing or stale" : opens !== null && opens > 0 ? `${opens} opens remain`
+    : !placed ? "placement missing or unverified" : !acceptancePass ? "acceptance checks failing"
+    : !previewsCurrent ? "previews missing or stale" : "complete";
   return {
     designHash: hash,
-    task: { state: checks ? Object.keys(countedSummary(checks)).length >= 9 && Object.values(countedSummary(checks)).every(Boolean) ? "done" : "checks failing" : "checks missing or stale" },
+    // Tool evidence cannot establish that the owner's requested scope has been met.
+    task: { state: "change saved; request scope determines task completion", checks: checks ? acceptancePass ? "pass" : "failing" : "missing or stale" },
+    board: { complete: boardStatus === "complete", status: boardStatus, opens },
     review: { state: !review ? "none" as const : reviewCurrency(review.hash, hash ?? "", review.pcb, reviewedBoard) === "current" && gate.state !== "stale" ? "current" as const : "stale" as const, coveredDesign: review?.hash ?? null, changedSince: changed(review?.files), gate },
     release: { state: (last || pkg) ? designCurrency(last?.designHash ?? rel?.reviewDesignHash ?? "legacy-unverified", hash) : "none" as Currency, package: last?.out ?? (pkg ? `exports/${pkg}` : null) },
     independent: { state: deferred ? "deferred" : !expert ? "missing" : expert.hash === hash ? "current" : "covers an earlier design", coveredDesign: expert?.hash ?? null, changedSince: changed(expert?.files) },
@@ -68,7 +92,7 @@ export async function stageState(dir: string, pcb?: string) {
 }
 export async function savedStageLine(dir: string, pcb?: string): Promise<string> {
   const s = await stageState(dir, pcb);
-  return `Task: change saved; checks determine task completion. Review: ${s.review.state === "current" ? "current" : "stale since this change"}. Release: ${s.release.state === "current" ? "current" : "stale"}. Recommended next: board_review run (the owner decides).`;
+  return `Task: change saved; task done means request scope met, its checks passing and previews published. Board: ${s.board.status}. Review: ${s.review.state === "current" ? "current" : "stale since this change"}. Release: ${s.release.state === "current" ? "current" : "stale"}. Recommended next: board_review run (the owner decides).`;
 }
 
 /** PCB-only BOM receipts deliberately remain current across schematic edits; the review never does. */

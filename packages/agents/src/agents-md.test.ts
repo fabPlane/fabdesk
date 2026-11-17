@@ -147,3 +147,12 @@ test("task handback ends without a blocking next-step question", () => {
   expect(renderAgentsMd(ctx)).not.toContain("Run after the last edit");
   expect(BOARD_WORKFLOW_MD).toContain("manufacturing_rules.filled_capped_vias");
 });
+
+test("Amendment 1 makes broader requests complete the board without starting review or release", () => {
+  expect(BOARD_WORKFLOW_MD).toContain("broader than one edit or task");
+  expect(BOARD_WORKFLOW_MD).toContain("everything placed and routed");
+  expect(BOARD_WORKFLOW_MD).toContain("checks and acceptance A1–A9 passing");
+  expect(BOARD_WORKFLOW_MD).toContain("single edit or task");
+  expect(BOARD_WORKFLOW_MD).toContain("Review and release are still only recommended");
+  expect(BOARD_WORKFLOW_MD).toContain("request scope");
+});
