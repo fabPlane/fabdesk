@@ -15,11 +15,11 @@ import { parseSexpr } from "../sexpr";
 import { parseCsv, toCsv } from "./csv";
 import { align, alignGeometry, polarRenumber, type Alignment } from "./footprint-fit";
 import { Fetch, LCSC_URL, edaPads, edaPinNames, jlcSearch, type FetchOptions, type JsonObj } from "./lookup";
-import { assembled, boardParts, copperOnlyShape, type BomPart } from "./parts";
+import { assembled, boardParts, copperOnlyShape, LCSC_FIELDS, type BomPart } from "./parts";
 
 export const norm = (s: string | null | undefined) => (s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 
-const CODE_KEYS = ["LCSC", "LCSC Part", "LCSC_Part", "JLC", "JLCPCB", "JLC Part", "LCSC Part #"];
+const CODE_KEYS: readonly string[] = LCSC_FIELDS;
 
 export interface Override {
   lcsc: string;

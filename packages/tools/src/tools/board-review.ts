@@ -325,7 +325,8 @@ async function run(ctx: ToolContext, project: ReviewProject, input: { checks?: s
       findings: res.review.findings.length,
       open: ev.open.map((r) => ({ id: r.id, severity: r.severity, claim: r.claim, proposal: r.proposal ? { by: r.proposal.by, action: r.proposal.action, effect: r.proposal.effect } : null })),
       errors: ev.errors.map((c) => ({ name: c.name, detail: c.detail })),
-      informational: info,
+      // once: the gate carries the list when there is one
+      ...(g ? {} : { informational: info }),
       gate: g ?? null,
     });
   } finally {

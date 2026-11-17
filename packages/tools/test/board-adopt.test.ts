@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -145,6 +146,22 @@ describe("adoptCandidate", () => {
     // the project's library footprint moved on since the candidate: refused, nothing written
     await writeFile(join(project.dir, "Parts.pretty/FIT_P2.kicad_mod"), "someone else's hole");
     await expect(adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "hole" })).rejects.toThrow(/Parts.pretty\/FIT_P2.kicad_mod changed in the project/);
+  });
+
+  test("a board in a subfolder: its edited sheet goes back beside it, not to the project root", async () => {
+    const { project, ctx } = await setup();
+    await mkdir(join(project.dir, "hw"), { recursive: true });
+    await writeFile(join(project.dir, "hw", "panel.kicad_pcb"), "(kicad_pcb)");
+    await writeFile(join(project.dir, "hw", "panel.kicad_sch"), "original sheet");
+    const dir = await mkdtemp(join(tmpdir(), "cand-"));
+    const candidate = join(dir, "c.kicad_pcb");
+    await writeFile(candidate, "(kicad_pcb edited)");
+    await writeFile(join(dir, "panel.kicad_sch"), "edited sheet");
+    await writeFile(join(dir, "origin.json"), JSON.stringify({ project: project.dir, files: await designFileHashes(project.dir, { pcb: "hw/panel.kicad_pcb" }) }));
+    const r = await adoptCandidate(await ctx(), { candidate, board: "hw/panel.kicad_pcb", reason: "edit" });
+    expect(r.data.designFiles).toEqual([join("hw", "panel.kicad_sch")]);
+    expect(await readFile(join(project.dir, "hw", "panel.kicad_sch"), "utf8")).toBe("edited sheet");
+    expect(existsSync(join(project.dir, "panel.kicad_sch"))).toBe(false);
   });
 
   test("carries changed schematic sheets, keeps the previous copy, and refuses when the project moved on", async () => {

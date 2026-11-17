@@ -38,7 +38,12 @@ export function setInterconnectGate(g: InterconnectGate | null): void {
  * than hiding them in a count. Empty when there is no current review (or it cannot be opened).
  */
 async function informationalOf(projectDir: string, pcb: string): Promise<InfoItem[]> {
-  return (await reviewInformational(await openReviewProject(projectDir, pcb)).catch(() => null)) ?? [];
+  // the notes only annotate a result; failing to read them never fails the release that is already written
+  try {
+    return (await reviewInformational(await openReviewProject(projectDir, pcb))) ?? [];
+  } catch {
+    return [];
+  }
 }
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");

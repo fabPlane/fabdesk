@@ -1093,11 +1093,16 @@ export async function checkCoverage(ctx: ReviewCtx): Promise<CheckResult> {
     r.findings.push(FIND({ layer: "L6", rule: "COVER", severity: "note", claim: `${unfitted.length} netted part(s) not fitted (DNP / excluded): ${sorted(unfitted).slice(0, 20).join(", ")}${unfitted.length > 20 ? "..." : ""}`, key: "unfitted" }));
   const cpl = cfg.cpl;
   if (cpl) {
+    // copper only as the release decides it: the BOM check's own decisions (they read the ordering file and overrides),
+    // else from the part alone
+    const bom = ctx.bom ?? (ctx.env?.bom ? await ctx.env.bom(ctx).catch(() => null) : null);
+    const decided = bom && !bom.stale ? new Set(bom.records.filter((rec) => rec.copper_only).flatMap((rec) => (Array.isArray(rec.refs) ? rec.refs : [rec.refs]))) : null;
+    const isCopper = (p: Part) => (decided ? decided.has(p.ref) : copperOnly(p));
     const rows = parseCsv(await readFile(cpl, "utf8"));
     const key = rows.length ? Object.keys(rows[0]!).find((k) => ["designator", "ref", "reference"].includes(k.toLowerCase())) : undefined;
     const have = new Set(key ? rows.map((row) => row[key]!) : []);
     // the release's CPL rule: hand-fitted (exclude_from_pos_files) and copper-only parts have no placement row
-    const want = new Set(need.filter((p) => placedPart(p, copperOnly(p)) && sides.has(p.side) && !post.has(p.ref)).map((p) => p.ref));
+    const want = new Set(need.filter((p) => placedPart(p, isCopper(p)) && sides.has(p.side) && !post.has(p.ref)).map((p) => p.ref));
     for (const ref of sorted(want)) if (!have.has(ref)) r.findings.push(FIND({ layer: "L6", rule: "CPL", severity: "must-fix", claim: `${ref} must be assembled but is missing from ${basename(cpl)}`, ref }));
     for (const ref of sorted(have)) if (!want.has(ref)) r.findings.push(FIND({ layer: "L6", rule: "CPL", severity: "question", claim: `${ref} is in ${basename(cpl)} but not an assembled part on the board`, ref }));
   }

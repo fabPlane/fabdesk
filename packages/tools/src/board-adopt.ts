@@ -8,7 +8,7 @@
  */
 import { copyFile, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { jailPath, writeAtomic, writeJson } from "./fs";
 import { tmpdir } from "node:os";
 import { runLiveDrc } from "./tools/common";
@@ -208,6 +208,17 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
     throw new ToolError("adopt refused: routing is active; wait for it to finish", "precondition");
   const origin = await candidateOrigin(candidate);
   const pcbRel = relative(project.dir, target);
+  // Where a project file lives in the candidate: a candidate that mirrors the project layout (its path ends with the
+  // board's project-relative path) keeps the same relative paths; a flat candidate holds the board folder's files.
+  const boardDirRel = dirname(pcbRel);
+  const mirrored = boardDirRel !== "." && candidate.endsWith(`${sep}${pcbRel}`);
+  const candRoot = mirrored ? candidate.slice(0, -(pcbRel.length + 1)) : dirname(candidate);
+  const candPath = (rel: string) => (mirrored || boardDirRel === "." ? join(candRoot, rel) : join(candRoot, relative(boardDirRel, rel)));
+  const candidateHashes = async (): Promise<Record<string, string>> => {
+    if (mirrored || boardDirRel === ".") return designFileHashes(candRoot, { pcb: pcbRel });
+    // a flat candidate of a board in a subfolder: its files are that folder's, named from the project root
+    return Object.fromEntries(Object.entries(await designFileHashes(candRoot)).map(([k, v]) => [join(boardDirRel, k), v]));
+  };
   const sheets: string[] = [];
   const matchingOrigin = origin && resolve(origin.project) === resolve(project.dir) ? origin : null;
   const checkSourceBoard = async () => {
@@ -218,7 +229,7 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
     sheets.length = 0;
     if (!matchingOrigin) return;
     const now = await designFileHashes(project.dir, { pcb: pcbRel });
-    const cand = await designFileHashes(dirname(candidate));
+    const cand = await candidateHashes();
     const names = Object.keys(cand).filter((n) => !n.endsWith(".kicad_pcb") && !n.endsWith(".kicad_pro"));
     const stale = [...new Set([...Object.keys(matchingOrigin.files), ...names])]
       .filter((n) => !n.endsWith(".kicad_pcb") && now[n] !== matchingOrigin.files[n] && cand[n] !== now[n]);
@@ -230,7 +241,7 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
     for (const [rel, h] of Object.entries(matchingOrigin.extra ?? {})) {
       const p = await jailPath(project.dir, rel);
       if ((await sha256File(p)) !== h) throw new ToolError(`adopt refused: ${rel} changed in the project since this candidate was computed; compute it again`, "precondition");
-      if ((await sha256File(join(dirname(candidate), rel))) !== h && !sheets.some((n) => join(n) === join(rel))) sheets.push(rel);
+      if ((await sha256File(candPath(rel))) !== h && !sheets.some((n) => join(n) === join(rel))) sheets.push(rel);
     }
   };
   await checkSourceBoard();
@@ -311,7 +322,7 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
       try {
         for (const n of sheets) {
           await mkdir(dirname(join(project.dir, n)), { recursive: true });
-          await writeAtomic(join(project.dir, n), await readFile(join(dirname(candidate), n)));
+          await writeAtomic(join(project.dir, n), await readFile(candPath(n)));
         }
         await checkSourceBoard();
         boardStarted = true;
