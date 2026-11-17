@@ -9,7 +9,7 @@
 import { copyFile, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { jailPath, writeJson } from "./fs";
+import { jailPath, writeAtomic, writeJson } from "./fs";
 import { tmpdir } from "node:os";
 import { runLiveDrc } from "./tools/common";
 import type { KicadCli, DrcReport } from "./services";
@@ -19,7 +19,6 @@ import { ToolError, type ToolContext } from "./registry";
 import type { BoardAdoptResult } from "./services";
 import { retainTaskCheckpoint } from "./task-checkpoints";
 import { childLists, edit, release, listSpanAt, parseSexpr } from "@fabdesk/board-workflow";
-import { writeFile } from "node:fs/promises";
 
 const sha256File = async (path: string) => {
   const b = await readFile(path).catch(() => null);
@@ -58,7 +57,7 @@ async function rolledBack(e: unknown, before: Array<{ name: string; dst: string;
   for (const b of before) {
     if ((await sha256File(b.dst)) === b.sha) continue;
     try {
-      if (b.sha) await copyFile(join(keep, b.name), b.dst);
+      if (b.sha) await writeAtomic(b.dst, await readFile(join(keep, b.name)));
       else await rm(b.dst, { force: true });
     } catch {
       /* checked below */
@@ -122,7 +121,7 @@ async function writeBoardFile(target: string, candidate: string, cli: { path: st
   const text = await readFile(candidate, "utf8");
   if (childLists(text, listSpanAt(text, text.indexOf("("))).some(span => /^\(zone\b/.test(text.slice(span.start, span.end))))
     throw new ToolError("This board has zones but no available KiCad can refill and save this format. Configure a compatible KiCad before adoption; the target was kept.", "precondition");
-  await writeFile(target, text);
+  await writeAtomic(target, text);
   const back = await readFile(target);
   const want = createHash("sha256").update(text).digest("hex");
   const got = createHash("sha256").update(back).digest("hex");
@@ -242,7 +241,20 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
   catch (error) { throw new ToolError(`Via manufacturing policy could not be verified: ${String(error)}. The canonical board was kept.`,"precondition"); }
   const identity = (v: typeof candidateVias[number]) => v.uuid ?? `${v.net}@${v.xy.join(",")}`;
   const old = new Map(previousVias.map(v => [identity(v), v]));
-  const newInPad = candidateVias.filter(v => v.in_component_lands.length && !(old.get(identity(v))?.in_component_lands.length));
+  // A via in the same pads on the same net counts as the one that was already there: a reroute that rips and recreates
+  // it gives it a new uuid but adds nothing to the manufacturing process.
+  const landsKey = (v: typeof candidateVias[number]) => `${v.net}|${v.in_component_lands.join(",")}`;
+  const before = new Map<string, number>();
+  for (const v of previousVias) if (v.in_component_lands.length) before.set(landsKey(v), (before.get(landsKey(v)) ?? 0) + 1);
+  const inPad = candidateVias.filter(v => v.in_component_lands.length);
+  const kept = new Set(inPad.filter(v => old.get(identity(v))?.in_component_lands.length));
+  for (const v of kept) before.set(landsKey(v), Math.max(0, (before.get(landsKey(v)) ?? 0) - 1));
+  const newInPad = inPad.filter(v => {
+    if (kept.has(v)) return false;
+    const left = before.get(landsKey(v)) ?? 0;
+    if (left > 0) { before.set(landsKey(v), left - 1); return false; }
+    return true;
+  });
   const newProcess = candidateVias.filter(v =>
     v.native_filling && !old.get(identity(v))?.native_filling ||
     v.native_capping && !old.get(identity(v))?.native_capping);
@@ -299,7 +311,7 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
       try {
         for (const n of sheets) {
           await mkdir(dirname(join(project.dir, n)), { recursive: true });
-          await copyFile(join(dirname(candidate), n), join(project.dir, n));
+          await writeAtomic(join(project.dir, n), await readFile(join(dirname(candidate), n)));
         }
         await checkSourceBoard();
         boardStarted = true;
@@ -320,12 +332,12 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
         const have = await readFile(target, "utf8");
         const cur = edit.stackupText(have);
         if (want !== null && cur !== null && want.replace(/\s+/g, " ") !== cur.replace(/\s+/g, " ")) {
-          await writeFile(target, edit.withStackup(have, want));
+          await writeAtomic(target, edit.withStackup(have, want));
           stackupWritten = true;
         }
         // after the commit and save: KiCad's save may write the project file too (KiCad 10.99 re-stores every exclusion in
         // its v3 form), so the edit's change is applied to the file as it is now, in the form it now uses
-        if (exclusions) await writeFile(exclusions.path, edit.withExclusionChanges(await readFile(exclusions.path, "utf8"), exclusions.from, exclusions.entries));
+        if (exclusions) await writeAtomic(exclusions.path, edit.withExclusionChanges(await readFile(exclusions.path, "utf8"), exclusions.from, exclusions.entries));
         return res;
       } catch (e) {
         throw await rolledBack(e, boardStarted ? before : before.filter((b) => b.dst !== target), keep, project.dir);
@@ -354,7 +366,7 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
     const fmt = (m: Record<string, number>) =>
       Object.entries(m).map(([k, n]) => `${k.replace("KOT_PCB_", "").toLowerCase()} ${n}`).join(", ") || "none";
     const text = [
-      `${canonicalDrc.status === "measured" && !canonicalDrc.pass ? "Adopted with DRC errors on the saved board" : clean ? "Adopted" : "Adopted with residual differences"}: ${relative(project.dir, target)} ← ${candidate}`,
+      `${canonicalDrc.status !== "measured" ? "Adopted (saved board not verified)" : !canonicalDrc.pass ? (canonicalDrc.counts?.errors ? "Adopted with DRC errors on the saved board" : "Adopted with open connections on the saved board") : clean ? "Adopted" : "Adopted with residual differences"}: ${relative(project.dir, target)} ← ${candidate}`,
       ...(fileWhy
         ? [`written as a file, not as a KiCad commit: ${viaNote}. Read back: sha256 equal to the candidate's and it parses as a kicad_pcb; no KiCad load check is possible here (configure a kicad-cli that opens this format in Settings → KiCad CLI for one)`]
         : bridgeWhy
@@ -401,7 +413,7 @@ export async function replaceBoardFile(ctx: ToolContext, input: { candidate: str
       await mkdir(dirname(join(keep, pcbRel)), { recursive: true });
       await copyFile(target, join(keep, pcbRel));
       try {
-        await copyFile(input.candidate, target);
+        await writeAtomic(target, await readFile(input.candidate));
       } catch (e) {
         await copyFile(join(keep, pcbRel), target).catch(() => null);
         throw e;

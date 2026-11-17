@@ -329,6 +329,17 @@ describe("via bindings", () => {
     expect(release.holeMeetsPad(0.9, 0, 0.3, { ...pad, shape: "rect" })).toBe(false);
     expect(release.holeMeetsPad(0, 0.5, 0.3, { ...pad, shape: "circle" })).toBe(true);
     expect(release.holeMeetsPad(0.7, 0.4, 0.1, { ...pad, shape: "oval" })).toBe(false);
+    // an unmodelled shape is counted as copper within its reach, and ignored beyond it
+    expect(release.holeMeetsPad(1.1, 0, 0.1, { ...pad, shape: "trapezoid" })).toBe(true);
+    expect(release.holeMeetsPad(5, 0, 0.1, { ...pad, shape: "trapezoid" })).toBe(false);
+    // a chamfered roundrect is tested as its rectangle
+    expect(release.holeMeetsPad(0.5, 0.25, 0.05, { ...pad, shape: "roundrect", chamfered: true })).toBe(true);
+    expect(release.holeMeetsPad(0.5, 0.25, 0.05, { ...pad, shape: "roundrect" })).toBe(false); // the rounded corner clears it
+    // an arc primitive: a quarter arc of radius 1 around the pad centre, width 0.2
+    const arcPad = { x: 0, y: 0, ang: 0, w: 0.1, h: 0.1, shape: "custom", anchor: "circle", primitives: [["gr_arc", ["start", "1", "0"], ["mid", "0.7071", "0.7071"], ["end", "0", "1"], ["width", "0.2"]]] as never };
+    expect(release.holeMeetsPad(0.7071 * 1.1, 0.7071 * 1.1, 0.05, arcPad)).toBe(true); // on the sweep, beside the stroke
+    expect(release.holeMeetsPad(-0.7071, -0.7071, 0.05, arcPad)).toBe(false); // on the circle, off the sweep
+    expect(release.holeMeetsPad(0.5, 0.5, 0.05, arcPad)).toBe(false); // inside the circle, away from the stroke
   });
 });
 

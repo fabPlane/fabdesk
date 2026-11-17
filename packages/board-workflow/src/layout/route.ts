@@ -152,7 +152,7 @@ export async function routeKrt(host: LayoutHost, o: RouteKrtOptions): Promise<Ro
     }
     const ov = overrides[i]!;
     const permission = acc.manufacturing_rules.via_in_pad;
-    const allowed = permission?.allow === true && permission.basis.trim().length > 0;
+    const allowed = permission?.allow === true && typeof permission.basis === "string" && permission.basis.trim().length > 0;
     const viaClearance = allowed ? -1 : Math.max(0.15, acc.manufacturing_rules.adopted.min_clearance);
     const stageArgs = [...args, ...(plan.common ?? [])];
     if (["route", "route_diff", "route_planes"].includes(st.tool)) {

@@ -91,9 +91,13 @@ function smdPads(root: SNode): SmdPad[] {
   return out;
 }
 
-/** Distance test of a circle (via hole) against exact pad copper. */
+/**
+ * Distance test of a circle (via hole) against pad copper. Exact for circle, rect, oval, roundrect and custom pads made
+ * of circles, lines, arcs, polygons and rects. Anything else is tested against a superset of its copper (a chamfered
+ * pad as its unchamfered shape, an unknown shape or primitive as its bounding circle), so it can over-report a via in a
+ * pad but never miss one, and a pad shape it does not model never stops the check.
+ */
 export function holeMeetsPad(vx: number, vy: number, rad: number, p: Pick<SmdPad, "x" | "y" | "ang" | "w" | "h" | "shape"> & Partial<Pick<SmdPad,"radiusRatio"|"primitives"|"anchor"|"chamfered">>): boolean {
-  if (p.chamfered) throw Error("Unsupported chamfered pad; via policy requires native geometry verification");
   const a = p.ang * (Math.PI / 180);
   const dx = vx - p.x;
   const dy = vy - p.y;
@@ -101,16 +105,18 @@ export function holeMeetsPad(vx: number, vy: number, rad: number, p: Pick<SmdPad
   const v = dx * Math.sin(a) + dy * Math.cos(a);
   const hw = p.w / 2;
   const hh = p.h / 2;
+  // far from every point the pad's copper can reach: no shape test needed (and no unmodelled shape can matter)
+  if (Math.hypot(u, v) > padReach(p) + rad) return false;
   if (p.shape === "circle") return Math.hypot(u, v) <= hw + rad;
   if (p.shape === "custom") {
     const anchor = p.anchor === "rect" ? "rect" : "circle";
     if (holeMeetsPad(u,v,rad,{x:0,y:0,ang:0,w:p.w,h:p.h,shape:anchor})) return true;
     return (p.primitives ?? []).some(primitive => meetsPrimitive(u,v,rad,primitive));
   }
-  if (p.shape === "roundrect") {
+  // a chamfer only removes copper: the unchamfered shape is a superset
+  if (p.shape === "roundrect" && !p.chamfered) {
     // KiCad PAD constructor defaults to 0.25: https://docs.kicad.org/doxygen/pad_8cpp_source.html
-    const ratio = p.radiusRatio ?? 0.25;
-    if (ratio < 0 || ratio > 0.5) throw Error("Unsupported roundrect radius; via policy requires exact geometry");
+    const ratio = Math.max(0, Math.min(0.5, p.radiusRatio ?? 0.25));
     const radius = Math.min(p.w,p.h)*ratio;
     return Math.hypot(Math.max(0,Math.abs(u)-(hw-radius)),Math.max(0,Math.abs(v)-(hh-radius))) <= radius+rad;
   }
@@ -118,8 +124,41 @@ export function holeMeetsPad(vx: number, vy: number, rad: number, p: Pick<SmdPad
     const r = Math.min(hw, hh);
     return Math.hypot(Math.max(0, Math.abs(u) - (hw - r)), Math.max(0, Math.abs(v) - (hh - r))) <= r + rad;
   }
-  if (p.shape !== "rect") throw Error(`Unsupported pad shape ${p.shape}; via policy cannot infer copper from bounds`);
-  return Math.hypot(Math.max(0, Math.abs(u) - hw), Math.max(0, Math.abs(v) - hh)) <= rad;
+  if (p.shape === "rect" || p.shape === "roundrect") return Math.hypot(Math.max(0, Math.abs(u) - hw), Math.max(0, Math.abs(v) - hh)) <= rad;
+  return true; // unmodelled shape (trapezoid, ...) and within its reach: counted as in the pad
+}
+
+/** Radius around the pad centre that contains all of its copper (generous for shapes it does not model). */
+function padReach(p: Pick<SmdPad, "w" | "h" | "shape"> & Partial<Pick<SmdPad, "primitives">>): number {
+  // a full diagonal also covers a trapezoid whose delta is at most the pad size
+  const body = p.shape === "rect" || p.shape === "roundrect" || p.shape === "oval" || p.shape === "circle" ? Math.hypot(p.w, p.h) / 2 : Math.hypot(p.w, p.h);
+  return Math.max(body, ...(p.primitives ?? []).map(primitiveReach));
+}
+function primitiveReach(node: SNode): number {
+  const width = num(kid(node, "width")?.[1]);
+  const pts: Array<[number, number]> = [];
+  for (const key of ["start", "mid", "end", "center"]) { const n = kid(node, key); if (n) pts.push([num(n[1]), num(n[2])]); }
+  for (const q of kids(kid(node, "pts") ?? [], "xy")) pts.push([num(q[1]), num(q[2])]);
+  let reach = Math.max(0, ...pts.map(([x, y]) => Math.hypot(x, y)));
+  if (node[0] === "gr_circle" && kid(node, "center") && kid(node, "end")) {
+    const [cx, cy] = [num(kid(node, "center")![1]), num(kid(node, "center")![2])], [ex, ey] = [num(kid(node, "end")![1]), num(kid(node, "end")![2])];
+    reach = Math.max(reach, Math.hypot(cx, cy) + Math.hypot(ex - cx, ey - cy));
+  }
+  const arc = arcCircle(node);
+  if (arc) reach = Math.max(reach, Math.hypot(arc.cx, arc.cy) + arc.r);
+  return reach + width / 2;
+}
+/** Circle through an arc primitive's start, mid and end; null for a degenerate or non-arc node. */
+function arcCircle(node: SNode): { cx: number; cy: number; r: number; a0: number; a1: number; a2: number } | null {
+  if (node[0] !== "gr_arc") return null;
+  const s = kid(node, "start"), m = kid(node, "mid"), e = kid(node, "end");
+  if (!s || !m || !e) return null;
+  const [ax, ay, bx, by, qx, qy] = [num(s[1]), num(s[2]), num(m[1]), num(m[2]), num(e[1]), num(e[2])];
+  const d = 2 * (ax * (by - qy) + bx * (qy - ay) + qx * (ay - by));
+  if (Math.abs(d) < 1e-12) return null;
+  const a2 = ax * ax + ay * ay, b2 = bx * bx + by * by, q2 = qx * qx + qy * qy;
+  const cx = (a2 * (by - qy) + b2 * (qy - ay) + q2 * (ay - by)) / d, cy = (a2 * (qx - bx) + b2 * (ax - qx) + q2 * (bx - ax)) / d;
+  return { cx, cy, r: Math.hypot(ax - cx, ay - cy), a0: Math.atan2(ay - cy, ax - cx), a1: Math.atan2(by - cy, bx - cx), a2: Math.atan2(qy - cy, qx - cx) };
 }
 
 function distanceSegment(x:number,y:number,ax:number,ay:number,bx:number,by:number):number {
@@ -134,8 +173,20 @@ function meetsPrimitive(x:number,y:number,radius:number,node:SNode):boolean {
   let polygon:Array<[number,number]>;
   if(node[0]==="gr_poly") polygon=kids(kid(node,"pts")??[],"xy").map(q=>[num(q[1]),num(q[2])]);
   else if(node[0]==="gr_rect") {const [ax,ay]=point("start"),[bx,by]=point("end");polygon=[[ax,ay],[bx,ay],[bx,by],[ax,by]];}
-  else throw Error(`Unsupported custom pad primitive ${String(node[0])}; via policy requires native geometry verification`);
-  if(polygon.length<3) throw Error("Invalid custom pad polygon");
+  else if(node[0]==="gr_arc") {
+    const arc=arcCircle(node);
+    if(!arc) {const [ax,ay]=point("start"),[bx,by]=point("end");return width>0 && distanceSegment(x,y,ax,ay,bx,by)<=radius+width/2;}
+    // on the arc's sweep (start -> mid -> end) the nearest point is radial; off it, the nearest is an end point
+    const turn=(from:number,to:number)=>((to-from)%(2*Math.PI)+2*Math.PI)%(2*Math.PI);
+    const ccw=turn(arc.a0,arc.a1)<=turn(arc.a0,arc.a2), sweep=ccw ? turn(arc.a0,arc.a2) : turn(arc.a2,arc.a0);
+    const at=Math.atan2(y-arc.cy,x-arc.cx), on=(ccw ? turn(arc.a0,at) : turn(arc.a2,at))<=sweep;
+    const [sx,sy]=point("start"),[ex,ey]=point("end");
+    const d=on ? Math.abs(Math.hypot(x-arc.cx,y-arc.cy)-arc.r) : Math.min(Math.hypot(x-sx,y-sy),Math.hypot(x-ex,y-ey));
+    return width>0 && d<=radius+width/2;
+  }
+  // unmodelled primitive (a bezier, ...): counted as copper anywhere within its reach
+  else return Math.hypot(x,y)<=primitiveReach(node)+radius;
+  if(polygon.length<3) return polygon.length>0 && Math.hypot(x,y)<=primitiveReach(node)+radius;
   let inside=false,edge=false;
   for(let i=0,j=polygon.length-1;i<polygon.length;j=i++) {const [ax,ay]=polygon[j]!,[bx,by]=polygon[i]!;if((ay>y)!==(by>y) && x<(bx-ax)*(y-ay)/(by-ay)+ax)inside=!inside;if(distanceSegment(x,y,ax,ay,bx,by)<=radius+width/2)edge=true;}
   return filled && inside || (filled || width>0) && edge;

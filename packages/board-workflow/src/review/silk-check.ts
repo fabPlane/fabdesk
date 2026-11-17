@@ -93,9 +93,12 @@ export async function checkSilk(ctx: ReviewCtx): Promise<CheckResult> {
   try {
     const m = await buildSilkModel(ctx.pcbText, { run, workDir: join(ctx.out, "silk"), ...(ctx.env.signal ? { signal: ctx.env.signal } : {}) });
     v = judge(m, plan);
-    const overlap = v.rows.map(row => ({ ref: row.ref, labelBox: m.parts[row.ref]?.label.box, issues: row.issues, plottedCopper: m.copper[row.side as "F" | "B"], plottedSilk: m.silk[row.side as "F" | "B"] }));
+    // the plotted polygons once per side; each row names its side (copying them per label grew as labels x polygons)
+    const overlap = v.rows.map(row => ({ ref: row.ref, side: row.side, labelBox: m.parts[row.ref]?.label.box, issues: row.issues }));
+    const sides = [...new Set(v.rows.map(row => row.side as "F" | "B"))];
+    const plotted = Object.fromEntries(sides.map(side => [side, { copper: m.copper[side], silk: m.silk[side] }]));
     const path = join(ctx.out, "silk-geometry.json");
-    await writeFile(path, JSON.stringify({ basis: "plotted polygons and label bounding boxes", rules: provenance, overlaps: overlap }) + "\n");
+    await writeFile(path, JSON.stringify({ basis: "plotted polygons and label bounding boxes", rules: provenance, plotted, overlaps: overlap }) + "\n");
     r.artifacts["silkGeometry"] = path;
   } catch (e) {
     r.status = "error";

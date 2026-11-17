@@ -43,6 +43,19 @@ describe("adoptCandidate", () => {
     expect(r.data.checkpointId).toMatch(/^task-/);
   });
 
+  for (const [name, runDrc, headline] of [
+    ["only open connections", async () => ({ violations: [], unconnected: [], schematicParity: [], raw: {}, counts: { errors: 0, warnings: 0, unconnected: 3 } }), "Adopted with open connections on the saved board"],
+    ["a DRC that could not run", async () => { throw new Error("kicad-cli unavailable"); }, "Adopted (saved board not verified)"],
+  ] as const) test(`headlines ${name} on the saved board`, async () => {
+    const { project, ctx, services } = await setup();
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb saved)");
+    const candidate = join(await mkdtemp(join(tmpdir(), "cand-")), "c.kicad_pcb");
+    await writeFile(candidate, "(kicad_pcb candidate)");
+    services.kicad.runDrc = runDrc as never;
+    const r = await adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "test" });
+    expect(r.text.split("\n")[0]).toStartWith(headline);
+  });
+
   test("reports the saved board's DRC errors instead of the candidate score", async () => {
     const { project, ctx, services } = await setup();
     await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb saved)");
@@ -335,16 +348,39 @@ for (const custom of [false,true]) test(`via policy uses exact ${custom ? "custo
  else {await adoptCandidate(await ctx(),{candidate,board:"board.kicad_pcb",reason:"clear roundrect corner"});expect(seen).toHaveLength(1);}
 });
 
-test("via policy refuses unsupported chamfered pads without changing the canonical board", async () => {
+test("via policy counts a via in a chamfered corner as in the pad (a superset) without changing the canonical board", async () => {
   const { project, ctx, seen } = await setup();
   const board = '(kicad_pcb (footprint "X" (at 0 0) (property "Reference" "U1") (pad "1" smd roundrect (at 0 0) (size 2 2) (roundrect_rratio 0) (chamfer_ratio 0.4) (chamfer bottom_right) (layers "F.Cu") (net "GND"))))';
   const target = join(project.dir, "board.kicad_pcb");
   await writeFile(target, board);
   const dir = await mkdtemp(join(tmpdir(), "via-chamfer-")), candidate = join(dir, "candidate.kicad_pcb");
   await writeFile(candidate, board.slice(0, -1) + ' (via (at 0.95 0.95) (size 0.2) (drill 0.1) (layers "F.Cu" "B.Cu") (net "GND") (uuid "new")))');
-  await expect(adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "verify unsupported chamfer" })).rejects.toThrow("Unsupported chamfered pad");
+  await expect(adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "verify chamfer superset" })).rejects.toThrow("new via(s) in solder pads");
   expect(seen).toHaveLength(0);
   expect(await readFile(target, "utf8")).toBe(board);
+});
+
+for (const extra of [false, true]) test(`a via already in a pad ${extra ? "does not cover a second new one" : "recreated by a reroute (new uuid) is not new"}`, async () => {
+  const { project, ctx, seen } = await setup();
+  const pad = '(pad "1" smd rect (at 0 0) (size 2 2) (layers "F.Cu") (net "GND"))';
+  const via = (uuid: string, x = 0.2) => `(via (at ${x} 0) (size 0.4) (drill 0.2) (layers "F.Cu" "B.Cu") (net "GND") (uuid "${uuid}"))`;
+  const board = `(kicad_pcb (footprint "X" (at 0 0) (property "Reference" "U1") ${pad}) ${via("old")})`;
+  await writeFile(join(project.dir, "board.kicad_pcb"), board);
+  const dir = await mkdtemp(join(tmpdir(), "via-reroute-")), candidate = join(dir, "candidate.kicad_pcb");
+  await writeFile(candidate, `(kicad_pcb (footprint "X" (at 0 0) (property "Reference" "U1") ${pad}) ${extra ? `${via("old")} ${via("new", -0.3)}` : via("rerouted", 0.25)})`);
+  if (extra) { await expect(adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "extra" })).rejects.toThrow("1 new via(s) in solder pads"); expect(seen).toHaveLength(0); }
+  else { await adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "reroute" }); expect(seen).toHaveLength(1); }
+});
+
+test("a pad shape the via policy does not model, far from every via, does not stop adoption", async () => {
+  const { project, ctx, seen } = await setup();
+  const pads = '(pad "1" smd roundrect (at 0 0) (size 2 2) (roundrect_rratio 0) (chamfer_ratio 0.4) (chamfer bottom_right) (layers "F.Cu") (net "GND")) (pad "2" smd trapezoid (at 10 0) (size 2 2) (rect_delta 0 0.5) (layers "F.Cu") (net "GND")) (pad "3" smd custom (at 20 0) (size 0.2 0.2) (layers "F.Cu") (net "GND") (options (anchor circle)) (primitives (gr_curve (pts (xy 0 0) (xy 1 1) (xy 2 1) (xy 3 0)) (width 0.2))))';
+  const board = `(kicad_pcb (footprint "X" (at 0 0) (property "Reference" "U1") ${pads}))`;
+  await writeFile(join(project.dir, "board.kicad_pcb"), board);
+  const dir = await mkdtemp(join(tmpdir(), "via-far-")), candidate = join(dir, "candidate.kicad_pcb");
+  await writeFile(candidate, board.slice(0, -1) + ' (via (at 40 40) (size 0.6) (drill 0.3) (layers "F.Cu" "B.Cu") (net "GND") (uuid "new")))');
+  await adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "far via" });
+  expect(seen).toHaveLength(1);
 });
 
 for (const added of ["filling", "capping"]) test(`adding ${added} to a partly processed via requires a new process decision`, async () => {

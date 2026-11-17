@@ -70,7 +70,11 @@ export const board_engines = defineTool({
       let placer: { path: string | null; why?: string; installed?: boolean } | undefined;
       for (const id of ids) {
         job.signal.throwIfAborted();
-        const r = await routers.ensure(id, { explicit: true, onLine: note });
+        // board_job cancel stops the download/setup too, not only the wait for it
+        const stop = () => void routers.cancel(id).catch(() => undefined);
+        job.signal.addEventListener("abort", stop, { once: true });
+        const r = await routers.ensure(id, { explicit: true, onLine: note }).finally(() => job.signal.removeEventListener("abort", stop));
+        job.signal.throwIfAborted();
         results.push(r);
         note(r.path ? `${id}: ready at ${r.path}` : `${id}: not installed: ${r.why ?? "unknown reason"}`);
         if (id === "tracemaker" && r.path) {
