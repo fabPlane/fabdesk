@@ -61,11 +61,17 @@ export async function traceMakerKeepsViasOffPads(binary: string, signal?: AbortS
     });
   }
   if (!signal) return answer;
-  // this caller's cancel ends its own wait
-  return Promise.race([
-    answer,
-    new Promise<boolean>((_, reject) => signal.addEventListener("abort", () => reject(signal.reason ?? new Error("cancelled")), { once: true })),
-  ]);
+  // this caller's cancel ends its own wait (the listener goes once the answer is in)
+  let onAbort: (() => void) | undefined;
+  const cancelled = new Promise<boolean>((_, reject) => {
+    onAbort = () => reject(signal.reason ?? new Error("cancelled"));
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([answer, cancelled]);
+  } finally {
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
 }
 
 /** TraceMaker's own count from its `routed N/M connections` summary line; null when it printed none. */

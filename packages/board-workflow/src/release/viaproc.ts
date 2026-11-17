@@ -78,7 +78,7 @@ function smdPads(root: SNode): SmdPad[] {
     for (const pad of kids(fp, "pad")) {
       padIndex++;
       if (pad.length < 3 || pad[2] !== "smd") continue;
-      const padUuid = kid(pad, "uuid")?.[1];
+      const padUuid = kid(pad, "uuid")?.[1] ?? kid(pad, "tstamp")?.[1];
       // without a uuid the label is the identity (a position in the file shifts when an edit adds a footprint)
       const id = padUuid ? `pad:${String(padUuid)}` : fpUuid ? `fp:${String(fpUuid)}#${padIndex}` : `ref:${String(ref ?? "")}.${String(pad[1])}`;
       const at = kid(pad, "at");
@@ -305,33 +305,34 @@ export function viaInPadPolicy(value: unknown): ViaInPadPolicy {
  * the one that was already there: a reroute that rips and recreates it gives it a new uuid but adds nothing to the
  * manufacturing process.
  */
-export function newViasInPads(before: ViaClass[], after: ViaClass[]): ViaClass[] {
-  // Each via already in pads is one allowance for its pad set, used at most once. A via keeps its allowance by uuid only
-  // while it still sits in the same pads; a via moved to other pads is judged like a new one, so it cannot hide a second
-  // via added in the pads it left. The net is not part of it: a renamed net (or one named by number on one side) does
-  // not make a via new, and a via that changed nets inside the same pad is a short that DRC reports.
-  // the physical pads (labels repeat: two "MP" pads of one connector, unannotated "REF**" parts)
-  const lands = (v: ViaClass) => (v.pad_ids_?.length ? v.pad_ids_ : [...v.in_component_lands].sort()).join(",");
-  const allowance = new Map<string, number>();
-  const priorByUuid = new Map<string, ViaClass>();
-  for (const v of before) {
-    if (!v.in_component_lands.length) continue;
-    allowance.set(lands(v), (allowance.get(lands(v)) ?? 0) + 1);
-    if (v.uuid) priorByUuid.set(v.uuid, v);
-  }
-  const take = (key: string): boolean => {
-    const n = allowance.get(key) ?? 0;
-    if (n <= 0) return false;
-    allowance.set(key, n - 1);
-    return true;
+export function newViasInPads(before: ViaClass[], after: ViaClass[], afterPadIds?: ReadonlySet<string>): ViaClass[] {
+  // Each via already in pads is one allowance, used at most once. The net is not part of it: a renamed net (or one named
+  // by number on one side) does not make a via new, and a via that changed nets inside the same pad is a short DRC reports.
+  // A via keeps an allowance when it sits in the same physical pads (pad ids); failing that, in pads with the same labels,
+  // but only when the earlier via's pads no longer exist on this board (re-created, e.g. a footprint swap gives its pads
+  // new uuids). A label match whose original pad is still there is a move: two pads both labelled "MP", or two
+  // unannotated "REF**" parts, so it cannot hide a via that went into the other one.
+  const ids = (v: ViaClass) => (v.pad_ids_?.length ? [...v.pad_ids_].sort() : [...v.in_component_lands].sort()).join(",");
+  const labels = (v: ViaClass) => [...v.in_component_lands].sort().join(",");
+  const priors = before.filter((v) => v.in_component_lands.length).map((v) => ({ v, used: false }));
+  const take = (match: (prior: ViaClass) => boolean): boolean => {
+    const hit = priors.find((p) => !p.used && match(p.v));
+    if (hit) hit.used = true;
+    return !!hit;
   };
+  // without the board's pad ids nothing counts as re-created: strict (it may over-report, never under-report)
+  const recreated = (prior: ViaClass) => !!afterPadIds && !(prior.pad_ids_ ?? []).some((id) => afterPadIds.has(id));
   const inPad = after.filter((v) => v.in_component_lands.length);
-  // the same via, unmoved out of its pads, first; then any other via in pads that had one before (a reroute's new uuid)
-  const pending = inPad.filter((v) => {
-    const prior = v.uuid ? priorByUuid.get(v.uuid) : undefined;
-    return !(prior && lands(prior) === lands(v) && take(lands(v)));
-  });
-  return pending.filter((v) => !take(lands(v)));
+  // the same via, unmoved out of its pads, first; then any via in the same physical pads (a reroute's new uuid); then
+  // the label match for pads that were re-created
+  const unmoved = inPad.filter((v) => !(v.uuid && take((p) => p.uuid === v.uuid && ids(p) === ids(v))));
+  const samePads = unmoved.filter((v) => !take((p) => ids(p) === ids(v)));
+  return samePads.filter((v) => !take((p) => labels(p) === labels(v) && recreated(p)));
+}
+
+/** Every SMD pad's physical id on a board (see `SmdPad.id`): which pads still exist after an edit or a reroute. */
+export function padIdsOf(text: string): Set<string> {
+  return new Set(smdPads(parseSexpr(text)).map((p) => p.id));
 }
 
 /** A router run's via-in-pad result: the policy, the new vias in pads, and one line for the agent. */
@@ -344,7 +345,7 @@ export interface ViaInPadReport {
 
 /** Classify both boards and report the vias the routed board adds in solder pads, against the policy. */
 export function viaInPadReport(beforeText: string, afterText: string, policy: ViaInPadPolicy): ViaInPadReport {
-  const fresh = newViasInPads(classifyVias(beforeText), classifyVias(afterText));
+  const fresh = newViasInPads(classifyVias(beforeText), classifyVias(afterText), padIdsOf(afterText));
   const vias = fresh.map((v) => ({ net: v.net, x: v.xy[0], y: v.xy[1], lands: v.in_component_lands }));
   const list =
     vias

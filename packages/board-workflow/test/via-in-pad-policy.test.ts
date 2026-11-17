@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifyVias, newViasInPads, viaInPadPolicy, viaInPadReport } from "../src/release/viaproc";
+import { classifyVias, newViasInPads, padIdsOf, viaInPadPolicy, viaInPadReport } from "../src/release/viaproc";
 import { krtClaim, tmClaim, tracemakerKeepsViasOffPads, TM_KEEP_VIAS_OFF_PADS } from "../src/layout/route";
 import { claimsOf } from "../src/lastmile/bench";
 
@@ -63,6 +63,24 @@ describe("via-in-pad policy", () => {
     expect(newViasInPads(classifyVias(twoMp(via(30, 10, "N", "b"))), classifyVias(twoMp(via(40, 10, "N", "c")))).map((v) => v.uuid)).toEqual(["c"]);
     // unchanged: nothing new
     expect(newViasInPads(classifyVias(twoMp(via(7, 10, "GND", "a"))), classifyVias(twoMp(via(7, 10, "GND", "a"))))).toEqual([]);
+  });
+
+  test("a footprint swap that gives its pads new uuids does not make a via already in them new", () => {
+    const r1 = (padUuid: string, fpUuid: string, vias: string) => `(kicad_pcb (version 20250114)
+	(layers (0 "F.Cu" signal) (2 "B.Cu" signal))
+	(footprint "R:R" (layer "F.Cu") (at 10 10 0) (uuid "${fpUuid}") (property "Reference" "R1" (at 0 0))
+		(pad "1" smd rect (at -1 0) (size 0.8 0.8) (layers "F.Cu") (net "SIG") (uuid "${padUuid}"))
+		(pad "2" smd rect (at 1 0) (size 0.8 0.8) (layers "F.Cu") (net "GND") (tstamp "${padUuid}-2")))
+	${vias}
+)`;
+    const beforeText = r1("pad-1", "fp-1", via(9, 10, "SIG", "v1"));
+    const afterText = r1("pad-new", "fp-new", via(9, 10, "SIG", "v1"));
+    expect(newViasInPads(classifyVias(beforeText), classifyVias(afterText), padIdsOf(afterText))).toEqual([]);
+    // the older pad tstamp is an identity too
+    expect([...padIdsOf(beforeText)].sort()).toEqual(["pad:pad-1", "pad:pad-1-2"]);
+    // but a second via in the re-created pad is still new (one allowance each)
+    const twice = r1("pad-new", "fp-new", via(9, 10, "SIG", "v1") + via(9.1, 10, "SIG", "v2"));
+    expect(newViasInPads(classifyVias(beforeText), classifyVias(twice), padIdsOf(twice)).map((v) => v.uuid)).toEqual(["v2"]);
   });
 
   test("the report names each new via in a pad and what to do, by policy", () => {
