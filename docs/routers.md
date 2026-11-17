@@ -142,17 +142,22 @@ not know arm64 Macs: then install atlc another way and set `ATLC_BIN`).
 TraceMaker is [DingoOz/TraceMaker](https://github.com/DingoOz/TraceMaker), C++20, **GPL-3.0-or-later**.
 
 Official upstream releases do not include a router binary (the `v0.8.0` zip is an 8.7 KB
-KiCad plugin; `v0.9.0` has no assets). fabdesk therefore builds our own binaries weekly
-(`.github/workflows/tracemaker-binaries.yml`) and publishes them as GitHub release assets
-on this repo.
+KiCad plugin; `v0.9.0` has no assets). fabdesk therefore builds our own binaries
+(`.github/workflows/tracemaker-binaries.yml`) and publishes them on downloads.fabplane.com.
+
+**The build fabdesk installs is pinned** in `packages/tools/src/routers/tracemaker-pin.json`: a copy of one
+immutable release's `manifest.json` (upstream tag and commit, and each platform archive's URL and sha256). The weekly
+workflow rebuilds only that pinned tag (a missing platform), never upstream's newest release, and a versioned release
+already on downloads.fabplane.com is never overwritten (a rebuild is not byte-identical; its archives keep the pinned
+hashes). To upgrade TraceMaker: run the workflow by hand with `upstream_ref` set to the new tag, check the build, then
+copy `https://downloads.fabplane.com/tracemaker/<release>/manifest.json` into `tracemaker-pin.json` in a PR.
 
 **Install** (Settings → Routers) does this:
 
 1. Honour `TRACEMAKER_BIN` if it points at an existing binary.
-2. Fetch the public rolling manifest
-   `https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json`
-   (overridable via `FABDESK_TRACEMAKER_MANIFEST_URL` or Settings), pick the asset for the
-   current OS/arch, and download it with SHA-256 verification.
+2. Take the pinned manifest (`tracemaker-pin.json`, no network lookup), or the manifest at
+   `FABDESK_TRACEMAKER_MANIFEST_URL` / Settings when one is set (for trying a build before pinning it), pick the
+   asset for the current OS/arch, and download it with SHA-256 verification.
 3. If that host is unreachable, or has no asset for this platform, fall back to the
    pinned upstream source tarball. The package is then `installed` but **not ready** until
    you build it or set `TRACEMAKER_BIN`.
@@ -258,7 +263,8 @@ Desktop installers already use `https://downloads.fabplane.com/desktop/<tag>/…
 
 | Role | URL |
 |---|---|
-| Shipped default manifest | `https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json` |
+| Shipped default manifest | the pinned copy in `packages/tools/src/routers/tracemaker-pin.json` (not fetched) |
+| Rolling pointer (not used by default) | `https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json` |
 | Versioned archive | `https://downloads.fabplane.com/tracemaker/<immutable-tag>/tracemaker-<platform>.tar.gz` (or `.zip` on Windows) |
 | Private GitHub copy (CI merge only) | `https://github.com/TensorFleet/fabdesk/releases/download/<tag>/…` (404 for anonymous users) |
 
@@ -270,8 +276,8 @@ compare sha256**. sha256s in the mirrored manifest are identical to the private 
 The shipped app never embeds a GitHub token. Install therefore:
 
 1. Honours `TRACEMAKER_BIN`.
-2. Fetches the manifest from `FABDESK_TRACEMAKER_MANIFEST_URL`, else Settings → Routers → TraceMaker
-   manifest URL, else `TRACEMAKER_PUBLIC_MANIFEST_URL` (the downloads.fabplane.com constant).
+2. Uses the manifest at `FABDESK_TRACEMAKER_MANIFEST_URL`, else Settings → Routers → TraceMaker manifest URL, else
+   the pinned manifest (`TRACEMAKER_PINNED_MANIFEST`, from `tracemaker-pin.json`; nothing is fetched).
 3. Falls back to the public upstream source tarball, with a card notice that the public
    downloads host was unreachable (or that a private GitHub override 404'd).
 

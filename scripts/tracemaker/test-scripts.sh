@@ -1536,6 +1536,22 @@ if grep -q "dummy-secret" "$ROOT/mirror-ok.out"; then
   echo "FAIL mirror success log printed the dummy secret"
   fail=1
 fi
+# a second run of the same release (a rebuild is not byte-identical) must not replace what is published: fabdesk pins
+# those archives by sha256
+set +e
+env -u TRACEMAKER_PUBLIC_RELEASE_REPO -u TRACEMAKER_PUBLIC_RELEASE_TOKEN \
+  -u DESKTOP_R2_ACCESS_KEY_ID -u CLOUDFLARE_ACCOUNT_ID -u CLOUDFLARE_API_TOKEN \
+  TRACEMAKER_S3_ACCESS_KEY_ID=dummy-access \
+  TRACEMAKER_S3_SECRET_ACCESS_KEY=dummy-secret \
+  TRACEMAKER_S3_BUCKET=fabplane-downloads \
+  TRACEMAKER_S3_ENDPOINT="http://127.0.0.1:${mirror_port}" \
+  TRACEMAKER_PUBLIC_BASE_URL="http://127.0.0.1:${mirror_port}" \
+  TRACEMAKER_S3_PREFIX=tracemaker \
+  TRACEMAKER_RELEASE_TAG=tracemaker-v0.9.0-24c8477 \
+  bash "$SCRIPT_DIR/mirror-public.sh" "$mirror_flat" >"$ROOT/mirror-again.out" 2>&1
+set -e
+assert_contains "$ROOT/mirror-again.out" "is already published; keeping its archives"
+assert_contains "$ROOT/mirror-again.out" "already published; not replaced"
 stop_mirror_http
 
 start_mirror_http --corrupt

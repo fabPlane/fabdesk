@@ -139,9 +139,36 @@ if [ "$have_s3" -eq 1 ]; then
     desktop_note=" using desktop R2 credentials"
   fi
   echo "Mirroring to s3://$s3_bucket/${s3_prefix}/ (public base $public_base)${desktop_note}"
+  # A published versioned release is immutable: fabdesk pins its archives by sha256
+  # (packages/tools/src/routers/tracemaker-pin.json), and a rebuild is not byte-identical.
+  # Archives it already lists are never uploaded again, and its manifest keeps those entries
+  # as published (a run may still add a platform it lacks).
+  published_manifest="$(mktemp)"
+  if [ -n "$public_base" ] && curl -fsSL --max-time 30 "${public_base%/}/${release_tag}/manifest.json" -o "$published_manifest" 2>/dev/null \
+    && python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); sys.exit(0 if isinstance(m.get("assets"), list) and m["assets"] else 1)' "$published_manifest" 2>/dev/null; then
+    notice "mirror-public: ${release_tag} is already published; keeping its archives and manifest entries as they are"
+    PUBLISHED="$published_manifest" NEW="$public_manifest" python3 - <<'PY'
+import json, os
+published = json.load(open(os.environ["PUBLISHED"]))
+new = json.load(open(os.environ["NEW"]))
+have = {a["filename"] for a in published.get("assets", [])}
+published["assets"] = published.get("assets", []) + [a for a in new.get("assets", []) if a["filename"] not in have]
+json.dump(published, open(os.environ["NEW"], "w"), indent=2)
+PY
+    cp "$public_manifest" "$latest_manifest"
+  else
+    : > "$published_manifest"
+  fi
+  already_published() {
+    [ -s "$published_manifest" ] && python3 -c 'import json,sys; sys.exit(0 if sys.argv[2] in {a["filename"] for a in json.load(open(sys.argv[1])).get("assets",[])} else 1)' "$published_manifest" "$1"
+  }
   while IFS= read -r archive; do
     [ -f "$archive" ] || continue
     name="$(basename "$archive")"
+    if already_published "$name"; then
+      echo "mirror-public: ${release_tag}/${name} already published; not replaced"
+      continue
+    fi
     if ! upload_s3 "$archive" "${s3_prefix}/${release_tag}/${name}" "public, max-age=31536000, immutable"; then
       warn "mirror-public: S3 upload failed for $name"
       mirror_failed=1

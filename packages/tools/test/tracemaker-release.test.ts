@@ -9,6 +9,7 @@ import {
   TRACEMAKER_BINARY_RELEASE_REPO,
   TRACEMAKER_BINARY_RELEASE_TAG,
   artifactFormatForFilename,
+  TRACEMAKER_PINNED_MANIFEST,
   TRACEMAKER_PUBLIC_MANIFEST_URL,
   defaultTraceMakerBinaryRelease,
   defaultTraceMakerManifestUrl,
@@ -214,19 +215,27 @@ describe("resolveTraceMakerInstallArtifact", () => {
     expect(fallback.warning).toMatch(/not reachable|not published yet|URL is wrong/);
   });
 
-  test("default public 404 names the downloads host and keeps the override hint", async () => {
+  test("the default installs the pinned build, with no network lookup", async () => {
     expect(defaultTraceMakerManifestUrl()).toBe(TRACEMAKER_PUBLIC_MANIFEST_URL);
     expect(defaultTraceMakerBinaryRelease({}).manifestUrl).toBe(TRACEMAKER_PUBLIC_MANIFEST_URL);
     const resolved = await resolveTraceMakerInstallArtifact({
       source: SOURCE,
       binaryRelease: defaultTraceMakerBinaryRelease({}),
-      fetchImpl: async () => new Response("missing", { status: 404 }),
+      fetchImpl: async () => {
+        throw new Error("the pinned build must not be looked up");
+      },
       platform: "linux",
       arch: "x64",
     });
-    expect(resolved.origin).toBe("source");
-    expect(resolved.warning).toMatch(/downloads\.fabplane\.com\/tracemaker/);
-    expect(resolved.warning).toMatch(/FABDESK_TRACEMAKER_MANIFEST_URL/);
+    const pinned = TRACEMAKER_PINNED_MANIFEST.assets.find((a) => a.platform === "linux-x86_64")!;
+    expect(resolved.origin).toBe("binary");
+    expect(resolved.version).toBe(TRACEMAKER_PINNED_MANIFEST.upstream.tag.replace(/^v/, ""));
+    expect(resolved.artifact).toMatchObject({ url: pinned.url, sha256: pinned.sha256, bytes: pinned.bytes });
+    // the pin names an immutable versioned release, never the rolling pointer
+    for (const asset of TRACEMAKER_PINNED_MANIFEST.assets) expect(asset.url).not.toContain("tracemaker-latest");
+    // a platform the pinned build lacks falls back to the source tarball, still without a lookup
+    const arm = await resolveTraceMakerInstallArtifact({ source: SOURCE, binaryRelease: defaultTraceMakerBinaryRelease({}), fetchImpl: async () => { throw new Error("no lookup"); }, platform: "linux", arch: "arm64" });
+    expect(arm.origin).toBe("source");
   });
 
   test("settings and env override the default public manifest URL (env wins)", async () => {

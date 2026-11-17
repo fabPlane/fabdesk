@@ -1,0 +1,36 @@
+{
+  "name": "tracemaker",
+  "builtAt": "2026-11-02T12:33:38Z",
+  "upstream": {
+    "repository": "https://github.com/DingoOz/TraceMaker",
+    "tag": "v0.12.1",
+    "commit": "db5950f4b8710d322ecaea3599077688a158ebfb",
+    "license": "GPL-3.0-or-later",
+    "sourceUrl": "https://github.com/DingoOz/TraceMaker/archive/db5950f4b8710d322ecaea3599077688a158ebfb.tar.gz"
+  },
+  "assets": [
+    {
+      "platform": "linux-x86_64",
+      "filename": "tracemaker-linux-x86_64.tar.gz",
+      "url": "https://downloads.fabplane.com/tracemaker/tracemaker-v0.12.1-db5950f/tracemaker-linux-x86_64.tar.gz",
+      "sha256": "f069ff962dfae40dfb473c50362cb982446190c54a7adbe22a4ec34ae0ce45d3",
+      "bytes": 5527432,
+      "format": "tar.gz",
+      "executable": "tracemaker",
+      "linkage": "bundled-non-system-libs"
+    },
+    {
+      "platform": "macos-arm64",
+      "filename": "tracemaker-macos-arm64.tar.gz",
+      "url": "https://downloads.fabplane.com/tracemaker/tracemaker-v0.12.1-db5950f/tracemaker-macos-arm64.tar.gz",
+      "sha256": "96be33396fda5c14f43355ab3be1230bd9693d42cef14540ebd4300d49dfc7b8",
+      "bytes": 3352730,
+      "format": "tar.gz",
+      "executable": "tracemaker",
+      "linkage": "system-libc-or-frameworks",
+      "minos": "15.0",
+      "cxxRuntime": "system",
+      "macosVariant": "system"
+    }
+  ]
+}

@@ -29,12 +29,17 @@ github_json() {
   fi
 }
 
+# The build fabdesk ships is pinned in packages/tools/src/routers/tracemaker-pin.json; scheduled runs rebuild only
+# that tag, never upstream's newest release (an upgrade is a reviewed change to the pin). A manual run may name
+# another ref to build a candidate for the next pin.
+PIN_FILE="${TRACEMAKER_PIN_FILE:-$SCRIPT_DIR/../../packages/tools/src/routers/tracemaker-pin.json}"
 if [ -n "$INPUT_REF" ]; then
   UPSTREAM_REF="$INPUT_REF"
 else
-  UPSTREAM_REF="$(github_json "${API}/releases/latest" | jq -r '.tag_name // empty' || true)"
+  UPSTREAM_REF="$(jq -r '.upstream.tag // empty' "$PIN_FILE")"
   if [ -z "$UPSTREAM_REF" ]; then
-    UPSTREAM_REF="$(github_json "$API" | jq -r '.default_branch')"
+    echo "::error::no upstream.tag in ${PIN_FILE}" >&2
+    exit 1
   fi
 fi
 

@@ -1,13 +1,17 @@
 import { z } from "zod/v4";
 import { SHA256_HEX, offlineOrFetchError } from "./checksum";
 import type { RouterArtifact, RouterArtifactFormat } from "./catalog";
+import pinnedManifest from "./tracemaker-pin.json";
 
 export const TRACEMAKER_UPSTREAM_REPO = "DingoOz/TraceMaker";
 export const TRACEMAKER_BINARY_RELEASE_REPO = "TensorFleet/fabdesk";
 export const TRACEMAKER_BINARY_RELEASE_TAG = "tracemaker-latest";
 /** Same public host as desktop installers (`docs/releases.md`). */
 export const TRACEMAKER_PUBLIC_DOWNLOADS_ORIGIN = "https://downloads.fabplane.com";
-/** Rolling public manifest. Env / Settings override still win. */
+/**
+ * The rolling public manifest's address. fabdesk does not fetch it: the default resolves to the pinned manifest below.
+ * A Settings / env override (another URL) is fetched, for trying a new build before it is pinned.
+ */
 export const TRACEMAKER_PUBLIC_MANIFEST_URL =
   `${TRACEMAKER_PUBLIC_DOWNLOADS_ORIGIN}/tracemaker/tracemaker-latest/manifest.json`;
 
@@ -166,6 +170,13 @@ export function traceMakerAssetToArtifact(asset: TraceMakerAsset): RouterArtifac
   };
 }
 
+/**
+ * The TraceMaker build fabdesk installs: the immutable manifest of one reviewed build (`tracemaker-pin.json`, a copy of
+ * downloads.fabplane.com/tracemaker/<release>/manifest.json), with each platform archive's sha256. Upgrading TraceMaker
+ * is a change to this file (see docs/routers.md), so no upstream release reaches users without review.
+ */
+export const TRACEMAKER_PINNED_MANIFEST: TraceMakerManifest = parseTraceMakerManifest(pinnedManifest);
+
 export async function fetchTraceMakerManifest(
   url: string,
   opts?: { fetchImpl?: typeof fetch; signal?: AbortSignal },
@@ -275,10 +286,13 @@ export async function resolveTraceMakerInstallArtifact(opts: {
     };
   }
   try {
-    const manifest = await fetchTraceMakerManifest(binaryRelease.manifestUrl, {
-      ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
-      ...(opts.signal ? { signal: opts.signal } : {}),
-    });
+    // the default is the pinned build (no network); only an explicit other manifest URL is fetched
+    const manifest = isDefaultPublicManifestUrl(binaryRelease.manifestUrl)
+      ? TRACEMAKER_PINNED_MANIFEST
+      : await fetchTraceMakerManifest(binaryRelease.manifestUrl, {
+          ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
+          ...(opts.signal ? { signal: opts.signal } : {}),
+        });
     const asset = selectTraceMakerAsset(manifest, detected);
     return {
       artifact: traceMakerAssetToArtifact(asset),
