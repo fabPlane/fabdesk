@@ -257,13 +257,12 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
   await checkDesign();
   // Attribute stamps from an engine are process changes, not manufacturing authorization.
   let previousVias: ReturnType<typeof release.classifyVias>, candidateVias: ReturnType<typeof release.classifyVias>;
-  let candidatePads: Set<string>;
-  try { previousVias = release.classifyVias(await readFile(target,"utf8")); const candText = await readFile(candidate,"utf8"); candidateVias = release.classifyVias(candText); candidatePads = release.padIdsOf(candText); }
+  try { previousVias = release.classifyVias(await readFile(target,"utf8")); candidateVias = release.classifyVias(await readFile(candidate,"utf8")); }
   catch (error) { throw new ToolError(`Via manufacturing policy could not be verified: ${String(error)}. The canonical board was kept.`,"precondition"); }
   const identity = (v: typeof candidateVias[number]) => v.uuid ?? `${v.net}@${v.xy.join(",")}`;
   const old = new Map(previousVias.map(v => [identity(v), v]));
   // a via in the same pads on the same net counts as the one that was already there (a reroute re-creates it)
-  const newInPad = release.newViasInPads(previousVias, candidateVias, candidatePads);
+  const newInPad = release.newViasInPads(previousVias, candidateVias);
   const newProcess = candidateVias.filter(v =>
     v.native_filling && !old.get(identity(v))?.native_filling ||
     v.native_capping && !old.get(identity(v))?.native_capping);

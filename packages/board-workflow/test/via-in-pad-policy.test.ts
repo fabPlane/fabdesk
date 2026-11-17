@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifyVias, newViasInPads, padIdsOf, viaInPadPolicy, viaInPadReport } from "../src/release/viaproc";
+import { classifyVias, newViasInPads, viaInPadPolicy, viaInPadReport } from "../src/release/viaproc";
 import { krtClaim, tmClaim, tracemakerKeepsViasOffPads, TM_KEEP_VIAS_OFF_PADS } from "../src/layout/route";
 import { claimsOf } from "../src/lastmile/bench";
 
@@ -65,22 +65,24 @@ describe("via-in-pad policy", () => {
     expect(newViasInPads(classifyVias(twoMp(via(7, 10, "GND", "a"))), classifyVias(twoMp(via(7, 10, "GND", "a"))))).toEqual([]);
   });
 
-  test("a footprint swap that gives its pads new uuids does not make a via already in them new", () => {
-    const r1 = (padUuid: string, fpUuid: string, vias: string) => `(kicad_pcb (version 20250114)
+  test("a footprint swap (same footprint uuid, new pad uuids, pads reordered) keeps a via already in its pad", () => {
+    const r1 = (padUuid: string, reorder: boolean, vias: string) => {
+      const p1 = `(pad "1" smd rect (at -1 0) (size 0.8 0.8) (layers "F.Cu") (net "SIG") (uuid "${padUuid}"))`;
+      const p2 = `(pad "2" smd rect (at 1 0) (size 0.8 0.8) (layers "F.Cu") (net "GND") (tstamp "${padUuid}-2"))`;
+      return `(kicad_pcb (version 20250114)
 	(layers (0 "F.Cu" signal) (2 "B.Cu" signal))
-	(footprint "R:R" (layer "F.Cu") (at 10 10 0) (uuid "${fpUuid}") (property "Reference" "R1" (at 0 0))
-		(pad "1" smd rect (at -1 0) (size 0.8 0.8) (layers "F.Cu") (net "SIG") (uuid "${padUuid}"))
-		(pad "2" smd rect (at 1 0) (size 0.8 0.8) (layers "F.Cu") (net "GND") (tstamp "${padUuid}-2")))
+	(footprint "R:R" (layer "F.Cu") (at 10 10 0) (uuid "fp-1") (property "Reference" "R1" (at 0 0))
+		${reorder ? p2 + p1 : p1 + p2})
 	${vias}
 )`;
-    const beforeText = r1("pad-1", "fp-1", via(9, 10, "SIG", "v1"));
-    const afterText = r1("pad-new", "fp-new", via(9, 10, "SIG", "v1"));
-    expect(newViasInPads(classifyVias(beforeText), classifyVias(afterText), padIdsOf(afterText))).toEqual([]);
-    // the older pad tstamp is an identity too
-    expect([...padIdsOf(beforeText)].sort()).toEqual(["pad:pad-1", "pad:pad-1-2"]);
-    // but a second via in the re-created pad is still new (one allowance each)
-    const twice = r1("pad-new", "fp-new", via(9, 10, "SIG", "v1") + via(9.1, 10, "SIG", "v2"));
-    expect(newViasInPads(classifyVias(beforeText), classifyVias(twice), padIdsOf(twice)).map((v) => v.uuid)).toEqual(["v2"]);
+    };
+    const before = classifyVias(r1("pad-1", false, via(9, 10, "SIG", "v1")));
+    // KiCad gave the pads new uuids and the new footprint lists them in another order
+    expect(newViasInPads(before, classifyVias(r1("pad-new", true, via(9, 10, "SIG", "v1"))))).toEqual([]);
+    // one allowance each: a second via in the same pad is new
+    expect(newViasInPads(before, classifyVias(r1("pad-new", true, via(9, 10, "SIG", "v1") + via(9.1, 10, "SIG", "v2")))).map((v) => v.uuid)).toEqual(["v2"]);
+    // the via moved to the other pad is new
+    expect(newViasInPads(before, classifyVias(r1("pad-new", false, via(11, 10, "GND", "v1")))).map((v) => v.uuid)).toEqual(["v1"]);
   });
 
   test("the report names each new via in a pad and what to do, by policy", () => {

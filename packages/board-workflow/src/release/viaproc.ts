@@ -14,7 +14,7 @@ import { kid, kids, num, parseSexpr, topLevelSpans as sexprTopLevelSpans, type S
 interface SmdPad {
   ref: string;
   pad: string;
-  /** The physical pad: its uuid, else its footprint's uuid (or tstamp) and pad index, else its label. */
+  /** The physical pad: its footprint (uuid or tstamp, else reference), its label, and its place among same-label pads. */
   id: string;
   net: string;
   x: number;
@@ -74,13 +74,21 @@ function smdPads(root: SNode): SmdPad[] {
     const ref = kids(fp, "property").find((p) => p[1] === "Reference")?.[2];
     const c = Math.cos(rot * (Math.PI / 180));
     const s = Math.sin(rot * (Math.PI / 180));
-    let padIndex = -1;
+    // which of the pads sharing a label this one is, by its place in the footprint (left to right, then top to bottom):
+    // stable when KiCad saves the board (pads without a uuid get a new random one each time) and when a swap reorders them
+    const ordinal = new Map<SNode, number>();
+    const byLabel = new Map<string, Array<{ pad: SNode; x: number; y: number }>>();
     for (const pad of kids(fp, "pad")) {
-      padIndex++;
+      const at = kid(pad, "at");
+      const list = byLabel.get(String(pad[1])) ?? [];
+      list.push({ pad, x: num(at?.[1]), y: num(at?.[2]) });
+      byLabel.set(String(pad[1]), list);
+    }
+    for (const list of byLabel.values()) list.sort((a, b) => a.x - b.x || a.y - b.y).forEach((e, i) => ordinal.set(e.pad, i));
+    const owner = fpUuid ? `fp:${String(fpUuid)}` : `ref:${String(ref ?? "")}`;
+    for (const pad of kids(fp, "pad")) {
       if (pad.length < 3 || pad[2] !== "smd") continue;
-      const padUuid = kid(pad, "uuid")?.[1] ?? kid(pad, "tstamp")?.[1];
-      // without a uuid the label is the identity (a position in the file shifts when an edit adds a footprint)
-      const id = padUuid ? `pad:${String(padUuid)}` : fpUuid ? `fp:${String(fpUuid)}#${padIndex}` : `ref:${String(ref ?? "")}.${String(pad[1])}`;
+      const id = `${owner}|${String(pad[1])}#${ordinal.get(pad) ?? 0}`;
       const at = kid(pad, "at");
       const px = num(at?.[1]);
       const py = num(at?.[2]);
@@ -305,34 +313,23 @@ export function viaInPadPolicy(value: unknown): ViaInPadPolicy {
  * the one that was already there: a reroute that rips and recreates it gives it a new uuid but adds nothing to the
  * manufacturing process.
  */
-export function newViasInPads(before: ViaClass[], after: ViaClass[], afterPadIds?: ReadonlySet<string>): ViaClass[] {
-  // Each via already in pads is one allowance, used at most once. The net is not part of it: a renamed net (or one named
-  // by number on one side) does not make a via new, and a via that changed nets inside the same pad is a short DRC reports.
-  // A via keeps an allowance when it sits in the same physical pads (pad ids); failing that, in pads with the same labels,
-  // but only when the earlier via's pads no longer exist on this board (re-created, e.g. a footprint swap gives its pads
-  // new uuids). A label match whose original pad is still there is a move: two pads both labelled "MP", or two
-  // unannotated "REF**" parts, so it cannot hide a via that went into the other one.
+export function newViasInPads(before: ViaClass[], after: ViaClass[]): ViaClass[] {
+  // Each via already in pads is one allowance, used at most once. A via keeps an allowance only in the same physical
+  // pads (footprint, label and place among same-label pads: stable across KiCad saves and footprint swaps), so a via
+  // moved to another pad, including another pad with the same label ("MP", or an unannotated "REF**" part), counts as
+  // new and cannot hide one added in the pad it left. The net is not part of it: a renamed net (or one named by number on
+  // one side) does not make a via new, and a via that changed nets inside the same pad is a short that DRC reports.
   const ids = (v: ViaClass) => (v.pad_ids_?.length ? [...v.pad_ids_].sort() : [...v.in_component_lands].sort()).join(",");
-  const labels = (v: ViaClass) => [...v.in_component_lands].sort().join(",");
   const priors = before.filter((v) => v.in_component_lands.length).map((v) => ({ v, used: false }));
   const take = (match: (prior: ViaClass) => boolean): boolean => {
     const hit = priors.find((p) => !p.used && match(p.v));
     if (hit) hit.used = true;
     return !!hit;
   };
-  // without the board's pad ids nothing counts as re-created: strict (it may over-report, never under-report)
-  const recreated = (prior: ViaClass) => !!afterPadIds && !(prior.pad_ids_ ?? []).some((id) => afterPadIds.has(id));
   const inPad = after.filter((v) => v.in_component_lands.length);
-  // the same via, unmoved out of its pads, first; then any via in the same physical pads (a reroute's new uuid); then
-  // the label match for pads that were re-created
+  // the same via, unmoved, first; then any other via in the same pads (a reroute's new uuid)
   const unmoved = inPad.filter((v) => !(v.uuid && take((p) => p.uuid === v.uuid && ids(p) === ids(v))));
-  const samePads = unmoved.filter((v) => !take((p) => ids(p) === ids(v)));
-  return samePads.filter((v) => !take((p) => labels(p) === labels(v) && recreated(p)));
-}
-
-/** Every SMD pad's physical id on a board (see `SmdPad.id`): which pads still exist after an edit or a reroute. */
-export function padIdsOf(text: string): Set<string> {
-  return new Set(smdPads(parseSexpr(text)).map((p) => p.id));
+  return unmoved.filter((v) => !take((p) => ids(p) === ids(v)));
 }
 
 /** A router run's via-in-pad result: the policy, the new vias in pads, and one line for the agent. */
@@ -345,7 +342,7 @@ export interface ViaInPadReport {
 
 /** Classify both boards and report the vias the routed board adds in solder pads, against the policy. */
 export function viaInPadReport(beforeText: string, afterText: string, policy: ViaInPadPolicy): ViaInPadReport {
-  const fresh = newViasInPads(classifyVias(beforeText), classifyVias(afterText), padIdsOf(afterText));
+  const fresh = newViasInPads(classifyVias(beforeText), classifyVias(afterText));
   const vias = fresh.map((v) => ({ net: v.net, x: v.xy[0], y: v.xy[1], lands: v.in_component_lands }));
   const list =
     vias

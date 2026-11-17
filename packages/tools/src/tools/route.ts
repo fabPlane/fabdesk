@@ -1213,7 +1213,7 @@ async function executeRoute(
       // where the policy is enforced, a candidate it could not check is held, never applied unchecked
       // recorded whatever the policy says now: applying reads the policy again, and an allowance withdrawn since must not
       // let an unchecked board through
-      if (viaEnforced) viaInPad = { allowed: viaPolicy.allowed, basis: viaPolicy.basis, vias: [], text: `Via-in-pad check failed (${why})${viaPolicy.allowed ? "; via-in-pad is allowed, so it does not hold the candidate" : "; the candidate is held: inspect it before applying"}.`, failed: true };
+      viaInPad = { allowed: viaPolicy.allowed, basis: viaPolicy.basis, vias: [], text: `Via-in-pad check failed (${why})${viaPolicy.allowed ? "; via-in-pad is allowed, so it does not hold the candidate" : viaEnforced ? "; the candidate is held: inspect it before applying" : "; recorded, so applying refuses it if a via-in-pad policy is recorded first"}.`, failed: true };
     }
     if (viaInPad && viaInPad.vias.length && !viaInPad.allowed && !viaEnforced)
       viaInPad = { ...viaInPad, text: `Via-in-pad: ${viaInPad.vias.length} new via(s) in solder pads (reported only; this project records no via-in-pad decision): ${viaInPad.vias.slice(0, 6).map((v) => `${v.net || "(no net)"} in ${v.lands.join(", ")}`).join("; ")}. They need filled and capped vias when ordered, or move them out of the pads.` };

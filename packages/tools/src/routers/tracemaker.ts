@@ -43,6 +43,7 @@ const keepOffSupport = new Map<string, Promise<boolean>>();
 export async function traceMakerKeepsViasOffPads(binary: string, signal?: AbortSignal): Promise<boolean> {
   signal?.throwIfAborted();
   const st = await stat(binary).catch(() => null);
+  signal?.throwIfAborted(); // a cancel during the stat
   const key = `${binary}|${st?.size ?? "?"}|${st?.mtimeMs ?? "?"}`;
   let answer = keepOffSupport.get(key);
   if (!answer) {
