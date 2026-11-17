@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "overrides": {
-    "undici@^6": "6.29.1"
+    "undici@^6": "6.29.1",
+    "minimatch@>=7.0.0 <11.0.9": "11.0.9"
   },
   "main": "expo-router/entry",
   "scripts": {
