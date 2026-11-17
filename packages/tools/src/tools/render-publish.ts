@@ -1,9 +1,11 @@
+import { beginPublicationVisibility } from "../publication-visibility";
+import { snapshotProjectDependencies, assertProjectDependencies } from "../project-dependencies";
 /** Prepare a saved-file handoff privately, then publish only if every captured input is unchanged. */
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { z } from "zod/v4";
-import { jailPath, writeAtomic } from "../fs";
+import { jailPath, writeAtomic, writeJson } from "../fs";
 import { defineTool, ToolError, type ToolContext } from "../registry";
 import { inspectSavedHierarchy, ok, requireKicad } from "./common";
 import { verify_drc } from "./core";
@@ -62,9 +64,11 @@ export const render_publish = defineTool({
           "Publishing requires a complete project-owned preview hierarchy",
           "precondition",
         );
+      const dependencies = await snapshotProjectDependencies(project.dir);
       const inputs = new Map<string, Buffer>();
       for (const path of new Set([
         "board.kicad_pcb",
+        ...dependencies.files.filter(file => file.sha256 !== null).map(file => file.path),
         ...hierarchy.referencedFiles,
         ...(hierarchy.projectFile ? [hierarchy.projectFile] : []),
       ]))
@@ -72,6 +76,7 @@ export const render_publish = defineTool({
       const pcbRevision = sha(inputs.get("board.kicad_pcb")!);
       const stable = async () => {
         ctx.signal.throwIfAborted();
+        await assertProjectDependencies(project.dir, dependencies);
         for (const [path, bytes] of inputs) {
           const current = await readFile(await jailPath(project.dir, path)).catch(() => null);
           if (!current || sha(current) !== sha(bytes))
@@ -171,6 +176,15 @@ export const render_publish = defineTool({
         const drc = JSON.parse(await readFile(join(stage, "reports/drc.json"), "utf8"));
         const erc = JSON.parse(await readFile(join(stage, "reports/erc.json"), "utf8"));
         await stable();
+        // Report checks ran on the original native documents; retain their original dependency context.
+        drc.projectDependencies = dependencies; erc.projectDependencies = dependencies;
+        await writeJson(join(stage, "reports/drc.json"), drc);
+        await writeJson(join(stage, "reports/erc.json"), erc);
+        for (const path of ["renders/pcb.svg.revision.json", "renders/board.glb.revision.json", "renders/schematic.revision.json"]) {
+          const receipt = JSON.parse(await readFile(join(stage, path), "utf8"));
+          receipt.dependencySnapshot = dependencies;
+          await writeJson(join(stage, path), receipt);
+        }
         const outputs: Array<{ path: string; bytes: Buffer }> = [];
         const collect = async (dir: string) => {
           for (const entry of await readdir(join(stage, dir), { withFileTypes: true })) {
@@ -196,6 +210,7 @@ export const render_publish = defineTool({
               },
             ),
           );
+        const visibility = await beginPublicationVisibility(project.dir, outputs);
         const written: typeof outputs = [];
         try {
           for (const output of outputs) {
@@ -203,6 +218,7 @@ export const render_publish = defineTool({
             written.push(output);
           }
           await stable();
+          await visibility.commit();
         } catch (error) {
           for (const output of written.reverse()) {
             const path = await jailPath(project.dir, output.path);
@@ -214,6 +230,7 @@ export const render_publish = defineTool({
               else await rm(path, { force: true });
             }
           }
+          await visibility.rollback();
           throw error;
         }
         const modelCoverage = (model.json as { modelCoverage?: unknown }).modelCoverage;
@@ -231,6 +248,7 @@ export const render_publish = defineTool({
               schematicRevision: previewHierarchy.aggregateRevision,
               checkedSchematicRevision: hierarchy.aggregateRevision,
               modelCoverage,
+              dependencies,
               checksPass,
               drc: drc.counts,
               erc: erc.counts,

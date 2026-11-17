@@ -81,7 +81,9 @@
     "mobile:typecheck": "bun run --cwd apps/mobile typecheck",
     "mobile:test": "bun run --cwd apps/mobile test",
     "mobile": "bun run --cwd apps/mobile start",
-    "usage:restore": "bun run scripts/restore-usage-record.ts"
+    "usage:restore": "bun run scripts/restore-usage-record.ts",
+    "desktop:install": "bun scripts/ensure-electron.ts",
+    "postinstall": "bun run desktop:install"
   },
   "devDependencies": {
     "dompurify": "3.4.18",

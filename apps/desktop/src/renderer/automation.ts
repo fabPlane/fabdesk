@@ -6,7 +6,7 @@
  * Everything here goes through the same zustand stores and composer handlers the UI uses, so the
  * real code paths run (thread creation, agent runs, cinema playback).
  */
-import { BOARD_TABS, newChatDraftKey, composerHandlers, useAuthStore, useCinemaStore, useUiStore, type BoardTab } from "@fabdesk/ui";
+import { BOARD_TABS, newChatDraftKey, composerHandlers, usePartSelection, useAuthStore, useCinemaStore, useUiStore, type BoardTab } from "@fabdesk/ui";
 import { cssPath, implicitRole, normalizeText, rankMatches, uiSnapshot, type ElementInfo, type PathNode, type RankedElement, type UiSnapshot } from "./automation-core";
 
 const SETTINGS_SECTIONS = ["agents", "kicad", "router", "auth", "remote", "voice", "appearance", "privacy", "shortcuts"] as const;
@@ -293,11 +293,21 @@ async function waitFor(predicate: ((state: UiSnapshot, document: Document, app: 
   }
 }
 
+async function clearSelection() {
+  const projectId = useUiStore.getState().activeProjectId;
+  const selected = usePartSelection.getState();
+  if (selected.selection && JSON.parse(selected.selection.scope)[1] === projectId) selected.clear(selected.selection.scope);
+  window.dispatchEvent(new CustomEvent("fabdesk-clear-selection", { detail: { projectId } }));
+  await settle();
+  return { projectId, selectedComponent: null, ...state() };
+}
+
 const api = {
   version: 1 as const,
   state,
   find,
   selectProject,
+  clearSelection,
   openTab,
   openThread,
   newChat,

@@ -1,3 +1,4 @@
+import { snapshotProjectDependencies, assertProjectDependencies } from "../project-dependencies";
 import { readSavedBoardModels } from "@fabdesk/kicad";
 import { renderRootCircuitPreview } from "../schematic-circuit-preview";
 import { expectedPcbSource } from "../pcb-output";
@@ -116,6 +117,7 @@ export const render_pcb_svg = defineTool({
     const output = await jailPath(project.dir, `${PROJECT_FILES.renders}/pcb.svg`);
     await jailPath(project.dir, PCB_PREVIEW_REVISION_PATH);
     ctx.progress(0.2, "exporting svg");
+    const dependencies = await snapshotProjectDependencies(project.dir);
     const sourceBytes = await readFile(board);
     const sourceRevision = createHash("sha256").update(sourceBytes).digest("hex");
     if (expectedSourceSha256 && sourceRevision !== expectedSourceSha256) throw new ToolError("PCB changed before preview rendering. Review the latest source and try again.", "precondition");
@@ -134,8 +136,9 @@ export const render_pcb_svg = defineTool({
       await jailPath(project.dir, `${PROJECT_FILES.renders}/pcb.svg`);
       await jailPath(project.dir, PCB_PREVIEW_REVISION_PATH);
       await ctx.runInScope?.(async () => {});
+      await assertProjectDependencies(project.dir, dependencies);
       await writeAtomic(output, artifactBytes);
-      await recordPcbPreviewRevision(project.dir, sourceRevision, createHash("sha256").update(artifactBytes).digest("hex"));
+      await recordPcbPreviewRevision(project.dir, sourceRevision, createHash("sha256").update(artifactBytes).digest("hex"), dependencies);
     } finally {
       await rm(scratch, { recursive: true, force: true });
     }
@@ -182,6 +185,7 @@ export const render_glb = defineTool({
     const output = await jailPath(project.dir, `${PROJECT_FILES.renders}/board.glb`);
     const receiptPath = await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
     ctx.progress(0.2, "exporting glb");
+    const dependencies = await snapshotProjectDependencies(project.dir);
     const sourceSha256 = await pcbPreviewFileHash(board);
     if (expectedSourceSha256 && sourceSha256 !== expectedSourceSha256) throw new ToolError("The saved PCB changed since inspection. Inspect the selected source again before exporting its model.", "precondition");
     // The editable PCB is copied to the root during import. Its project-relative
@@ -214,11 +218,12 @@ export const render_glb = defineTool({
       }
       if (await pcbPreviewFileHash(board) !== sourceSha256) throw new ToolError("PCB changed during model coverage measurement", "precondition");
       const bytes = await readFile(temporary);
-      const receipt = (ctx.board ? AssemblyBoardModelRevision : BoardModelRevision).parse({ contract: "fabplane.board-model-revision.v1", source: "board.kicad_pcb", artifact: "renders/board.glb", sourceSha256, artifactSha256: createHash("sha256").update(bytes).digest("hex"), generatedAt: new Date().toISOString(), dependencies: "unverified", warnings: res.warnings, ...(modelProjectDirectory ? { modelProjectDirectory } : {}), ...(ctx.board ? { boardSource: { projectId: project.id, ...ctx.board } } : {}) });
+      const receipt = (ctx.board ? AssemblyBoardModelRevision : BoardModelRevision).parse({ contract: "fabplane.board-model-revision.v1", source: "board.kicad_pcb", artifact: "renders/board.glb", sourceSha256, artifactSha256: createHash("sha256").update(bytes).digest("hex"), generatedAt: new Date().toISOString(), dependencies: "unverified", dependencySnapshot: dependencies, warnings: res.warnings, ...(modelProjectDirectory ? { modelProjectDirectory } : {}), ...(ctx.board ? { boardSource: { projectId: project.id, ...ctx.board } } : {}) });
       await jailPath(project.dir, `${PROJECT_FILES.renders}/board.glb`);
       await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
       await ctx.runInScope?.(async () => {});
       ctx.signal.throwIfAborted();
+      await assertProjectDependencies(project.dir, dependencies);
       await writeAtomic(output, bytes);
       await writeJson(receiptPath, receipt);
     } finally { await rm(scratch, { recursive: true, force: true }); }
@@ -293,6 +298,7 @@ export const render_view = defineTool({
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const board = await requireBoard(project);
+    const dependencies = await snapshotProjectDependencies(project.dir);
     const before = await fileRevision(board);
     await ensureDir(p(project, PROJECT_FILES.renders));
     const rawPath = p(project, PROJECT_FILES.renders, "pcb-view-source.svg");
@@ -353,12 +359,13 @@ export const render_view = defineTool({
       await Promise.all([svgPath, pngPath].map((path) => rm(path, { force: true })));
       throw new ToolError("PCB changed during rendering", "precondition");
     }
+    await assertProjectDependencies(project.dir, dependencies);
     let canonicalPreview: { path: string; sourceSha256: string } | undefined;
     if (!region && !layers?.length && !highlightReferences?.length && !highlightNets?.length) {
       const canonical = await jailPath(project.dir, "renders/pcb.svg");
       await jailPath(project.dir, PCB_PREVIEW_REVISION_PATH);
       await writeAtomic(canonical, svg);
-      await recordPcbPreviewRevision(project.dir, before.sha256, createHash("sha256").update(svg).digest("hex"));
+      await recordPcbPreviewRevision(project.dir, before.sha256, createHash("sha256").update(svg).digest("hex"), dependencies);
       canonicalPreview = { path: canonical, sourceSha256: before.sha256 };
     }
     ctx.progress(1, "done");

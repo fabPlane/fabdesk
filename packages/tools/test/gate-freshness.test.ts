@@ -48,3 +48,28 @@ test("present but unmeasured ERC cannot produce a current pass or mutate warning
   expect(f.project.manifest().allowedDrcWarnings).toEqual([]);
   expect(JSON.parse(await readFile(join(f.project.dir, "reports/gate.json"), "utf8")).pass).toBe(false);
 });
+
+test("gate refuses changed project rules before warning-baseline mutation", async () => {
+  const { snapshotProjectDependencies } = await import("../src/project-dependencies");
+  const f = await fixture();
+  (f.drc as typeof f.drc & { projectDependencies: unknown }).projectDependencies = await snapshotProjectDependencies(f.project.dir);
+  await f.saveDrc();
+  await writeFile(join(f.project.dir, "board.kicad_dru"), "changed rules");
+  const stale = await f.call();
+  expect(stale.isError).toBe(true);
+  expect(stale.text).toContain("dependencies changed");
+  expect(f.project.manifest().allowedDrcWarnings).toEqual([]);
+  (f.drc as typeof f.drc & { projectDependencies: unknown }).projectDependencies = await snapshotProjectDependencies(f.project.dir);
+  await f.saveDrc();
+  expect((await f.call()).isError).toBe(false);
+});
+
+test("gate refuses a partially published canonical report set", async () => {
+  const { beginPublicationVisibility } = await import("../src/publication-visibility");
+  const f = await fixture();
+  const tx = await beginPublicationVisibility(f.project.dir, [{ path: "reports/drc.json", bytes: Buffer.from("new report") }]);
+  await expect(f.call()).rejects.toThrow("publication is in progress");
+  expect(f.project.manifest().allowedDrcWarnings).toEqual([]);
+  await tx.rollback();
+  expect((await f.call()).isError).toBe(false);
+});

@@ -190,6 +190,20 @@ const NOISE = [
 ];
 
 /** Runs kicad-cli with `args`, filtering platform noise from stderr. Throws on non-zero exit unless `tolerateExit`. */
+/** Resolve legacy versioned model variables against an available configured/bundled stock tree.
+ * Explicit per-version overrides win; absent model assets remain absent. */
+export function componentModelEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const candidates = [env["FABDESK_KICAD_MODELS"], ...[11, 10, 9, 8, 7, 6].map(v => env[`KICAD${v}_3DMODEL_DIR`]), env["KICAD_STOCK_DATA_HOME"] ? join(env["KICAD_STOCK_DATA_HOME"]!, "3dmodels") : undefined,
+    ...bundledKicadRoots(env).map(root => join(root, "share/kicad/3dmodels")),
+    ...(process.platform === "linux" ? ["/usr/share/kicad/3dmodels", "/usr/share/kicad-nightly/3dmodels"] : process.platform === "darwin" ? ["/Applications/KiCad/KiCad.app/Contents/SharedSupport/3dmodels"] : []),
+  ];
+  const root = candidates.find(path => path && existsSync(path) && statSync(path).isDirectory());
+  if (!root) return env;
+  const out = { ...env };
+  for (const version of [6, 7, 8, 9, 10, 11]) if (!out[`KICAD${version}_3DMODEL_DIR`]) out[`KICAD${version}_3DMODEL_DIR`] = root;
+  return out;
+}
+
 export async function runKicadCli(
   cli: KicadCli,
   args: string[],
@@ -209,6 +223,7 @@ async function runKicadCliUntraced(
   const proc = Bun.spawn([cli.path, ...args], {
     stdout: "pipe",
     stderr: "pipe",
+    env: componentModelEnvironment(),
     ...(opts.cwd ? { cwd: opts.cwd } : {}),
   });
   const onAbort = () => proc.kill();

@@ -15,3 +15,13 @@ export function projectStatusTarget(projectId: string, board: SharedBoard, sourc
   if (sources.mode === "assembly" && !selection) return null;
   return { tab: tab === "design" ? "pcb" as const : tab, selection };
 }
+
+/** A missing source with saved board evidence is not a fresh, empty project. */
+export function projectStatusIsEmpty(files: readonly { path: string }[], mode: ProjectBoardSources["mode"]): boolean {
+  return mode === "single" && !files.some(({ path }) => {
+    const normalized = path.replace(/\\/g, "/");
+    return /\.kicad_(pcb|sch)$/i.test(normalized)
+      || /(?:^|\/)renders\/(?:board|pcb|schematic)(?:[.\/-]|$)/i.test(normalized)
+      || /(?:^|\/)reports\/(?:drc|erc)(?:[.\/-]|$)/i.test(normalized);
+  });
+}

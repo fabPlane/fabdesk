@@ -452,3 +452,15 @@ test("a session's durable wait follows its client: initialize clientInfo, or the
   await long.client.close();
   expect(seen).toContain("long-host");
 });
+
+test("image presentation metadata survives MCP conversion with the image payload intact", async () => {
+  const { toCallToolResult } = await import("../src/adapters/mcp");
+  const { writeFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const p = await tempProject("image-presentation"), path = join(p.dir,"shot.png");
+  await writeFile(path,Buffer.from("image bytes"));
+  const result = await toCallToolResult({ json:{path}, images:[{path,mime:"image/png"}], imagePresentation:"inspection" });
+  expect(result._meta?.["fabplane/imagePresentation"]).toBe("inspection");
+  expect(result.structuredContent?.["_imagePresentation"]).toBe("inspection");
+  expect(result.content.some(item => item.type === "image" && item.data === Buffer.from("image bytes").toString("base64"))).toBe(true);
+});

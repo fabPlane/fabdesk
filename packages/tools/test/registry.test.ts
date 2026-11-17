@@ -345,6 +345,7 @@ describe("registry", () => {
       "app_type",
       "app_key",
       "app_select_project",
+      "app_clear_selection",
       "app_open_tab",
       "app_open_thread",
       "app_new_chat",

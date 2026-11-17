@@ -11,5 +11,5 @@ export function WorkspaceBackButton() {
   useEffect(() => { useUiStore.getState().setNavigationEndpoint(client.baseUrl); }, [client.baseUrl]);
   if (!previous || previous.projectId !== projectId) return null;
   const label = previous.orderFlowOpen ? "Order preparation" : previous.inventoryOpen ? "Inventory" : previous.openSourceId ? "Open source" : WORKSPACE_AREAS[previous.area].label;
-  return <Button className="fd-workspace-back" size="sm" title={`Back to ${label}`} onClick={() => useUiStore.getState().navigateBack()}><Icon name="chevronLeft" width={16} height={16} />Back</Button>;
+  return <Button className="fd-workspace-back" size="sm" title={`Back to ${label}`} aria-label={`Back to ${label}`} onClick={() => useUiStore.getState().navigateBack()}><Icon name="chevronLeft" width={16} height={16} /><span>Back</span></Button>;
 }

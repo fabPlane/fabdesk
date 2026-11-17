@@ -1,3 +1,4 @@
+import { snapshotProjectDependencies, assertProjectDependencies } from "../project-dependencies";
 import { canonicalReportStatus } from "../canonical-report-status";
 import { outputRevision } from "../output-revision";
 import {
@@ -639,6 +640,7 @@ export const verify_drc = defineTool({
     const cli = await requireKicad(ctx);
     const board = p(project, PROJECT_FILES.boardPcb);
     if (!(await exists(board))) throw new ToolError("board.kicad_pcb not found", "precondition");
+    const dependencies = await snapshotProjectDependencies(project.dir);
     const beforeRevision = await pcbFileRevision(board);
     if (expectedSourceSha256 && beforeRevision.sha256 !== expectedSourceSha256) throw new ToolError("The saved PCB changed since inspection. Inspect the selected source again before checking it.", "precondition");
     const beforeHierarchy = schematicParity ? await inspectSavedHierarchy(ctx, project, cli) : null;
@@ -681,8 +683,10 @@ export const verify_drc = defineTool({
       );
     }
     const enriched = enrichDrcReport(report, geometry);
+    await assertProjectDependencies(project.dir, dependencies);
     const checkedReport = {
       ...enriched,
+      projectDependencies: dependencies,
       schematicParityChecked: schematicParity,
       ...(ctx.board ? { boardSource: { projectId: project.id, ...ctx.board } } : {}),
       pcbRevision: afterRevision,
