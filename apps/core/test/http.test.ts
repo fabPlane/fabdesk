@@ -6,7 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { PrivacyStatus } from "@fabdesk/protocol";
 import type { AgentEvent, AgentRun, AgentSession } from "@fabdesk/agents";
-import type { CoreServices } from "@fabdesk/tools";
+import { snapshotProjectDependencies, type CoreServices } from "@fabdesk/tools";
 import { serve, type Daemon } from "../src/serve";
 import { SettingsRepo } from "../src/db";
 import { mockServices } from "../../../packages/tools/test/mock-services";
@@ -840,7 +840,7 @@ describe("http daemon", () => {
     await Bun.write(join(created.path, "exports/fabrication.zip"), "synthetic export");
     await Bun.write(join(created.path, "circuit.routed.json"), "{}");
     const board = "(kicad_pcb)\n";
-    const cleanReport = { violations: [], unconnected: [], schematicParity: [], counts: { errors: 0, warnings: 0, unconnected: 0 }, raw: {}, pcbRevision: { sha256: new Bun.CryptoHasher("sha256").update(board).digest("hex") } };
+    const cleanReport = { projectDependencies: await snapshotProjectDependencies(created.path), violations: [], unconnected: [], schematicParity: [], counts: { errors: 0, warnings: 0, unconnected: 0 }, raw: {}, pcbRevision: { sha256: new Bun.CryptoHasher("sha256").update(board).digest("hex") } };
     const order = `/projects/${created.id}/order`;
     const assertBlocked = async () => {
       expect(await (await api(order)).json()).toMatchObject({ ready: false });
@@ -852,6 +852,10 @@ describe("http daemon", () => {
     await Bun.write(join(created.path, "reports/drc.json"), JSON.stringify(cleanReport));
     await assertBlocked();
     await Bun.write(join(created.path, "board.kicad_pcb"), board);
+    expect(await (await api(order)).json()).toMatchObject({ ready: true });
+    await Bun.write(join(created.path, "board.kicad_dru"), "new stricter rules");
+    await assertBlocked();
+    await unlink(join(created.path, "board.kicad_dru"));
     expect(await (await api(order)).json()).toMatchObject({ ready: true });
     await Bun.write(join(created.path, "board.kicad_pcb"), "(kicad_pcb (changed))\n");
     await assertBlocked();
@@ -895,6 +899,7 @@ describe("http daemon", () => {
         counts: { errors: 0, warnings: 0, unconnected: 0 },
         raw: {},
         pcbRevision: { sha256: pcbSha },
+        projectDependencies: await snapshotProjectDependencies(created.path),
       }),
     );
     const ready = (await (await api(`/projects/${created.id}/order`)).json()) as { ready: boolean };
