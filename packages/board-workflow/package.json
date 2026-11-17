@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./copper-contact": "./src/copper-contact.ts"
+    "./copper-contact": "./src/copper-contact.ts",
+    "./copper-graph": "./src/copper-graph.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

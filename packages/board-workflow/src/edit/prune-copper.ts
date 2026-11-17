@@ -42,7 +42,7 @@ export function padCopper(text: string, stack: string[]): LayerCopper[] {
     for (const pad of kids(fp, "pad")) {
       if (pad[2] === "np_thru_hole") continue;
       const rawLayers = (kid(pad, "layers")?.slice(1) ?? []).map(String);
-      const layers = rawLayers.includes("*.Cu") ? stack : rawLayers.filter(l => l.endsWith(".Cu"));
+      const layers = pad[2] === "thru_hole" || rawLayers.includes("*.Cu") ? stack : rawLayers.filter(l => l.endsWith(".Cu"));
       const at = kid(pad, "at"), size = kid(pad, "size");
       const [x, y] = toBoard(pose, num(at?.[1]), num(at?.[2]));
       const rot = num(at?.[3]), w = num(size?.[1], .6), h = num(size?.[2], .6);
@@ -76,4 +76,20 @@ export function padCopper(text: string, stack: string[]): LayerCopper[] {
     }
   }
   return out;
+}
+
+
+/** Only filled copper is a terminal; an unfilled zone outline cannot support a route. */
+export function zoneCopper(text: string): LayerCopper[] {
+  const root = parseSexpr(text);
+  const netNames = new Map(kids(root, "net").map(n => [String(n[1]), String(n.at(-1))]));
+  return kids(root, "zone").flatMap(zone => {
+    const raw = netOf(zone);
+    const net = String(kid(zone, "net_name")?.[1] ?? netNames.get(raw) ?? raw);
+    return kids(zone, "filled_polygon").map(fill => ({ net,
+      layers: [String(kid(fill, "layer")?.[1] ?? kid(zone, "layer")?.[1] ?? "")],
+      shape: { polygon: { outline: kids(kid(fill, "pts") ?? [], "xy").map(n => object(point(n))),
+        holes: kids(fill, "hole").map(hole => kids(kid(hole, "pts") ?? hole, "xy").map(n => object(point(n)))) } },
+    }));
+  });
 }

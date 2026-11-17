@@ -112,7 +112,9 @@ describe("stale footprint fan-out copper", () => {
     branch1.path[1]!.y = 5;
     const branch2 = track("b2", "A", 5, 10);
     branch2.path[1]!.y = -5;
-    const result = analyze(before, after, [track("stem", "A", 0, 5), branch1, branch2]);
+    const otherPads = [5, -5].map((y, i): CopperPad => ({ ...pad(`other${i}`, "1", "A", 10), parent: `other${i}`,
+      shapes: [{ layer: F, polygon: square(10, y) }] }));
+    const result = analyze(before, after, [track("stem", "A", 0, 5), branch1, branch2], otherPads);
     expect(result.staleIds).toEqual(["stem"]);
   });
 
@@ -139,7 +141,7 @@ describe("stale footprint fan-out copper", () => {
     expect(result.reports).toEqual({});
   });
 
-  test("a via in pad is included but copper beyond it is preserved", () => {
+  test("a via in pad and its dangling continuation are both leaves", () => {
     const before = [pad("p1", "1", "A", 0, [F, B])];
     const after = [pad("p1", "1", "A", -10, [F, B])];
     const via: CopperRoute = {
@@ -152,8 +154,8 @@ describe("stale footprint fan-out copper", () => {
       locked: true,
     };
     const result = analyze(before, after, [via, track("beyond", "A", 0, 5, B)]);
-    expect(result.staleIds).toEqual(["via-in-pad"]);
-    expect(result.reports.J1?.stale[0]?.locked).toBe(true);
+    expect(result.staleIds).toEqual(["beyond", "via-in-pad"]);
+    expect(result.reports.J1?.stale.find(item => item.id === "via-in-pad")?.locked).toBe(true);
   });
 });
 
@@ -213,6 +215,17 @@ describe("via copper contacts across its spanned layers", () => {
       expect(result.staleIds).toEqual(["continuation", "old-fanout", "via"]);
     }
   });
+  for (const interior of ["pad", "unsplit branch"] as const) {
+    test(`a ${interior} inside the traversed continuation preserves live copper`, () => {
+      const positions = interior === "pad" ? [[7, 0], [15, 0]] : [[15, 0], [7, -5], [7, 5]];
+      const others = positions.map(([x, y], i): CopperPad => ({ ...before, id: `U${i}`, parent: `U${i}`, reference: `U${i}`,
+        shapes: [{ layer: B, polygon: square(x! * mm, y! * mm, .3 * mm) }] }));
+      const result = analyzeStaleCopper({ beforePads: [before], afterPads: [after], allPadsBefore: [before, ...others], allPadsAfter: [after, ...others],
+        routes: [stem, via, route("continuation", [5, 0], [10, 0]), route("live-right", [10, 0], [15, 0]),
+          ...(interior === "unsplit branch" ? [route("live-unsplit", [7, -5], [7, 5])] : [])], zones: [] });
+      expect(result.staleIds).toEqual(["old-fanout", "via"]);
+    });
+  }
   test("one unsplit track alone supplies two continuing branches", () => {
     const unsplit = route("live-unsplit", [5, -5], [5, 5]);
     const result = analyzeStaleCopper({ beforePads: [before], afterPads: [after], allPadsBefore: [before], allPadsAfter: [after], routes: [stem, via, unsplit], zones: [] });
@@ -226,9 +239,9 @@ describe("via copper contacts across its spanned layers", () => {
     test(`off-centre ${kind} touches the annulus`, () => {
       expect(run([], square(5 * mm, .6 * mm, .3 * mm), zone)).toEqual(["old-fanout"]);
     });
-    test(`${kind} hole with clearance allows traversal; hole edge contact stops it`, () => {
+    test(`${kind} hole protects the via only until its continuation reaches solid copper`, () => {
       const outline = square(5 * mm, 0, 2 * mm).outline;
-      expect(run([], { outline, holes: [square(5 * mm, 0, .6 * mm).outline] }, zone)).toEqual(["live-next", "old-fanout", "via"]);
+      expect(run([], { outline, holes: [square(5 * mm, 0, .6 * mm).outline] }, zone)).toEqual(["old-fanout", "via"]);
       expect(run([], { outline, holes: [square(5 * mm, 0, .3 * mm).outline] }, zone)).toEqual(["old-fanout"]);
     });
     test(`${kind} on an unspanned layer does not stop traversal`, () => {

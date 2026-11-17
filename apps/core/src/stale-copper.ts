@@ -1,4 +1,5 @@
-import { copperShapesTouch, contactDistance, pointPolygonDistance, type ContactPoint, type ContactPolygon } from "@fabdesk/board-workflow/copper-contact";
+import { buildCopperGraph, pruneCopperLeaves, type CopperNode } from "@fabdesk/board-workflow/copper-graph";
+import { copperShapesTouch, type ContactPoint, type ContactPolygon } from "@fabdesk/board-workflow/copper-contact";
 import { BoardLayer } from "@fp-pcb/proto";
 import type {
   PcbShortedCopperItem,
@@ -36,8 +37,6 @@ export type StaleCopperAnalysis = {
   affectedNets: string[];
 };
 
-const EPSILON_NM = 1;
-const distance = contactDistance;
 function routeTouchesShape(route: CopperRoute, polygon: CopperPolygon): boolean {
   return route.layers.some(layer => copperShapesTouch(route, route.layers, { polygon }, [layer], layer));
 }
@@ -46,49 +45,6 @@ function routeTouchesPad(route: CopperRoute, pad: CopperPad): boolean {
   return pad.shapes.some(
     ({ layer, polygon }) => route.layers.includes(layer) && routeTouchesShape(route, polygon),
   );
-}
-
-function startsAtPadBeforeVia(route: CopperRoute, pad: CopperPad, routes: CopperRoute[]): boolean {
-  if (route.kind === "via") return true;
-  const padEnds = routeEndpoints(route).filter((point) =>
-    pad.shapes.some(
-      ({ layer, polygon }) =>
-        route.layers.includes(layer) && pointPolygonDistance(point, polygon) <= route.width / 2,
-    ),
-  );
-  // A centreline that crosses a pad without ending there is still directly attached.
-  if (!padEnds.length) return true;
-  return padEnds.some((point) =>
-    route.layers.some(
-      (layer) =>
-        !routes.some(
-          (candidate) =>
-            candidate.kind === "via" &&
-            candidate.net === route.net &&
-            candidate.id !== route.id &&
-            routeAtPoint(candidate, point, layer),
-        ),
-    ),
-  );
-}
-
-function routeEndpoints(route: CopperRoute): CopperPoint[] {
-  if (route.kind === "via") return route.path.slice(0, 1);
-  return route.path.length ? [route.path[0]!, route.path.at(-1)!] : [];
-}
-
-function routeAtPoint(route: CopperRoute, point: CopperPoint, layer: BoardLayer): boolean {
-  return (
-    route.layers.includes(layer) &&
-    routeEndpoints(route).some((endpoint) => distance(endpoint, point) <= EPSILON_NM)
-  );
-}
-
-/** An interior contact has two exits even when stored as one unsplit item. */
-function branchesAtContact(route: CopperRoute, contact: CopperRoute): number {
-  return Math.max(1, routeEndpoints(route).filter(point => !route.layers.some(layer =>
-    copperShapesTouch({ path: [point], width: route.width }, [layer], contact, contact.layers, layer, EPSILON_NM),
-  )).length);
 }
 
 function layerName(layer: BoardLayer | undefined): string | undefined {
@@ -112,61 +68,6 @@ function reported(route: CopperRoute, pad: CopperPad): PcbStaleCopperItem {
   };
 }
 
-function fanoutChain(
-  start: CopperRoute,
-  pad: CopperPad,
-  routes: CopperRoute[],
-  pads: CopperPad[],
-  zones: CopperZone[],
-): CopperRoute[] {
-  if (start.kind === "via") return [start];
-  const chain = new Map([[start.id, start]]);
-  const queue = routeEndpoints(start)
-    .filter(
-      (point) =>
-        !pad.shapes.some(
-          ({ layer, polygon }) =>
-            start.layers.includes(layer) && pointPolygonDistance(point, polygon) <= start.width / 2,
-        ),
-    )
-    .map((point) => ({ route: start, point }));
-  const visited = new Set<string>();
-  while (queue.length) {
-    const { route, point } = queue.shift()!;
-    for (const layer of route.layers) {
-      const key = `${route.id}|${layer}|${point.x}|${point.y}`;
-      if (visited.has(key)) continue;
-      visited.add(key);
-      // Every hop uses its endpoint's copper area; a via expands that area across its span.
-      const endpoint: CopperRoute = { ...route, path: [point], layers: [layer] };
-      const touches = (candidate: CopperRoute, contact: CopperRoute) => contact.layers.some(l =>
-        copperShapesTouch(candidate, candidate.layers, contact, contact.layers, l, EPSILON_NM));
-      const vias = routes.filter(candidate => candidate.kind === "via" && touches(candidate, endpoint));
-      const via = vias[0];
-      const contact = via ?? endpoint;
-      const connected = routes.filter(candidate => touches(candidate, contact));
-      if (vias.length > 1 || connected.some(candidate => candidate.net !== route.net) ||
-        connected.filter(candidate => candidate.kind === "via").length > 1 ||
-        connected.filter(candidate => candidate.kind !== "via")
-          .reduce((sum, candidate) => sum + branchesAtContact(candidate, contact), 0) > 2) continue;
-      if (pads.some(other => other.parent !== pad.parent && routeTouchesPad(contact, other))) continue;
-      if (zones.some(zone => contact.layers.includes(zone.layer) &&
-        zone.polygons.some(polygon => routeTouchesShape(contact, polygon)))) continue;
-      for (const via of vias) chain.set(via.id, via);
-      const next = connected.find(
-        (candidate) => candidate.id !== route.id && candidate.kind !== "via",
-      );
-      if (!next || chain.has(next.id)) continue;
-      chain.set(next.id, next);
-      for (const endpoint of routeEndpoints(next))
-        if (via
-          ? distance(endpoint, via.path[0]!) > (via.width + next.width) / 2 + EPSILON_NM
-          : distance(endpoint, point) > EPSILON_NM) queue.push({ route: next, point: endpoint });
-    }
-  }
-  return [...chain.values()];
-}
-
 /** Classifies copper invalidated by a footprint transform and returns only removable fan-out ids. */
 export function analyzeStaleCopper(input: {
   beforePads: CopperPad[];
@@ -180,6 +81,16 @@ export function analyzeStaleCopper(input: {
   const reports: Record<string, PcbStaleCopperReport> = {};
   const staleIds = new Set<string>();
   const allNets = new Set<string>();
+  const nodes: CopperNode<BoardLayer>[] = input.routes.map(route => ({ id: route.id, net: route.net, kind: route.kind,
+    copper: [{ shape: route, layers: route.layers }] }));
+  for (const pad of input.allPadsAfter) nodes.push({ id: `pad:${pad.id}`, net: pad.net, kind: "pad",
+    copper: pad.shapes.map(({ layer, polygon }) => ({ shape: { polygon }, layers: [layer] })) });
+  // The native snapshot contains filled polygons without net labels. Retain its
+  // conservative zone-contact policy on each route net until the bridge supplies them.
+  for (const net of new Set(input.routes.map(route => route.net))) for (const [i, zone] of input.zones.entries()) {
+    nodes.push({ id: `zone:${net}:${i}`, net, kind: "zone", copper: zone.polygons.map(polygon => ({ shape: { polygon }, layers: [zone.layer] })) });
+  }
+  const graph = buildCopperGraph(nodes, .000001);
   for (const beforePad of input.beforePads) {
     const afterPad = afterById.get(beforePad.id);
     if (!afterPad) continue;
@@ -193,17 +104,11 @@ export function analyzeStaleCopper(input: {
     for (const start of input.routes.filter(
       (route) =>
         route.net === beforePad.net &&
-        routeTouchesPad(route, beforePad) &&
-        startsAtPadBeforeVia(route, beforePad, input.routes),
+        routeTouchesPad(route, beforePad),
     )) {
       if (routeTouchesPad(start, afterPad)) continue;
-      for (const route of fanoutChain(
-        start,
-        beforePad,
-        input.routes,
-        input.allPadsBefore,
-        input.zones,
-      )) {
+      const removed = pruneCopperLeaves(graph, [start.id]);
+      for (const route of input.routes.filter(route => removed.has(route.id))) {
         const item = reported(route, beforePad);
         if (!report.stale.some((existing) => existing.id === item.id && existing.pad === item.pad))
           report.stale.push(item);

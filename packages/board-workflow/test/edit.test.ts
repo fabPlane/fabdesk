@@ -648,7 +648,7 @@ describe("moves written to the board", () => {
     const via = '(via (at 25 14) (size 0.5) (drill 0.3) (layers "F.Cu" "B.Cu") (net "SIG") (uuid "dead-via"))';
     const base = `(kicad_pcb ${fpT("A1", 20, 14, [["1", "SIG", 0, 0]])} ${seg(20,14,25,14,"SIG")} ${via})`;
     expect(pruneDangling(base, new Set(["SIG"])).pruned).toBe(2);
-    const live = base.slice(0,-1) + fpT("A2",30,14,[["1","SIG",0,0]]) + seg(25,14,30,14,"SIG","B.Cu") + ")";
+    const live = base.slice(0,-1) + fpT("A2",30,14,[["1","SIG",0,0]]).replace('(layers "F.Cu" "F.Paste")', '(layers "B.Cu")') + seg(25,14,30,14,"SIG","B.Cu") + ")";
     expect(pruneDangling(live, new Set(["SIG"])).pruned).toBe(0);
   });
 });
@@ -711,5 +711,58 @@ test("a via contacting an unsplit live arc interior survives pruning", () => {
   const text = `(kicad_pcb ${fpT("U1",5,10,[["1","A",0,0]])} ${backPad("U2",0)} ${backPad("U3",10)}
     ${seg(5,10,5,5,"A")} (via (at 5 5) (size 0.8) (drill 0.4) (layers "F.Cu" "B.Cu") (net "A"))
     (arc (start 0 0) (mid 5 5) (end 10 0) (width 0.2) (layer "B.Cu") (net "A")))`;
+  expect(pruneDangling(text, new Set(["A"])).pruned).toBe(0);
+});
+
+
+describe("shared graph deletion regressions", () => {
+  const stack = '(layers (0 "F.Cu" signal) (2 "In1.Cu" signal) (4 "In2.Cu" signal) (31 "B.Cu" signal))';
+  const vias = '(via blind (at 5 0) (size .8) (drill .4) (layers "F.Cu" "In1.Cu") (net "A")) (via blind (at 5 0) (size .8) (drill .4) (layers "In1.Cu" "B.Cu") (net "A"))';
+  const front = fpT("U1",0,0,[["1","A",0,0]]) + seg(0,0,5,0,"A");
+  const back = fpT("U2",10,0,[["1","A",0,0]]).replace('(layers "F.Cu" "F.Paste")', '(layers "B.Cu")') + seg(5,0,10,0,"A","B.Cu");
+  test("stacked blind vias preserve a live front-to-back connection repeatedly", () => {
+    let text = `(kicad_pcb ${stack} ${front} ${back} ${vias})`;
+    for (let i = 0; i < 3; i++) {
+      const result = pruneDangling(text, new Set(["A"]));
+      expect(result.pruned).toBe(0);
+      expect(parseBoard(result.text).vias).toHaveLength(2);
+      text = result.text;
+    }
+  });
+  test("dangling stacked vias do not support each other", () => {
+    for (const stub of [seg(0,0,5,0,"A"), front]) {
+      const result = pruneDangling(`(kicad_pcb ${stack} ${stub} ${vias})`, new Set(["A"]));
+      expect(result.pruned).toBe(3);
+      expect(pruneDangling(result.text, new Set(["A"])).pruned).toBe(0);
+    }
+  });
+  test("a live square-pad corner endpoint uses its actual copper", () => {
+    const text = `(kicad_pcb ${fpT("U1",0,0,[["1","A",0,0]])} ${fpT("U2",5,0,[["1","A",0,0]])} ${seg(.25,.25,5,0,"A")})`;
+    expect(pruneDangling(text, new Set(["A"])).pruned).toBe(0);
+  });
+});
+
+
+for (const numeric of [false, true]) test(`filled zones support only real copper contacts (${numeric ? "numeric nets" : "named nets"})`, () => {
+  const zone = '(zone (net "A") (layer "F.Cu") (filled_polygon (layer "F.Cu") (pts (xy 4.7 .3) (xy 5.3 .3) (xy 5.3 1) (xy 4.7 1))))';
+  let text = `(kicad_pcb ${fpT("U1",0,0,[["1","A",0,0]])} ${seg(0,0,5,0,"A")}
+    (via (at 5 0) (size .8) (drill .4) (layers "F.Cu" "B.Cu") (net "A")) ${zone})`;
+  if (numeric) text = text.replaceAll('(net "A")', '(net 1)').replace('(kicad_pcb', '(kicad_pcb (net 1 "A")');
+  expect(pruneDangling(text, new Set(["A"])).pruned).toBe(0);
+  // A zone's unfilled outline must not exempt every item on its net.
+  expect(pruneDangling(text.replace('filled_polygon', 'polygon'), new Set(["A"])).pruned).toBe(2);
+});
+
+test("track-end support respects copper layers", () => {
+  const back = fpT("U2",5,0,[["1","A",0,0]]).replace('(layers "F.Cu" "F.Paste")', '(layers "B.Cu")');
+  expect(pruneDangling(`(kicad_pcb ${fpT("U1",0,0,[["1","A",0,0]])} ${back} ${seg(0,0,5,0,"A")})`, new Set(["A"])).pruned).toBe(1);
+});
+
+
+test("through pads are terminals on inner copper layers", () => {
+  const land = (ref: string, x: number) => fpT(ref,x,0,[["1","A",0,0]])
+    .replace('smd rect', 'thru_hole circle').replace('(layers "F.Cu" "F.Paste")', '(layers "F.Cu" "B.Cu")');
+  const text = `(kicad_pcb (layers (0 "F.Cu" signal) (2 "In1.Cu" signal) (31 "B.Cu" signal))
+    ${land("U1",0)} ${land("U2",5)} ${seg(0,0,5,0,"A","In1.Cu")})`;
   expect(pruneDangling(text, new Set(["A"])).pruned).toBe(0);
 });
