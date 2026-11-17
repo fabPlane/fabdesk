@@ -15,7 +15,7 @@ import { parseSexpr } from "../sexpr";
 import { parseCsv, toCsv } from "./csv";
 import { align, alignGeometry, polarRenumber, type Alignment } from "./footprint-fit";
 import { Fetch, LCSC_URL, edaPads, edaPinNames, jlcSearch, type FetchOptions, type JsonObj } from "./lookup";
-import { assembled, boardParts, type BomPart } from "./parts";
+import { assembled, boardParts, copperOnlyShape, type BomPart } from "./parts";
 
 export const norm = (s: string | null | undefined) => (s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 
@@ -95,7 +95,7 @@ export interface BomResult {
   reused: number;
 }
 
-export function lcscCode(p: BomPart, ordering: Record<string, Record<string, string>>, overrides: Record<string, Override>): { code: string | null; source: string | null } {
+export function lcscCode(p: Pick<BomPart, "ref" | "props" | "value">, ordering: Record<string, Record<string, string>>, overrides: Record<string, Override>): { code: string | null; source: string | null } {
   const ov = overrides[p.ref];
   const written = new Set(CODE_KEYS.map((k) => (p.props[k] ?? "").trim()));
   if (ov && !written.has(ov.lcsc)) return { code: ov.lcsc, source: `agent decision (not yet in the schematic): ${ov.reason ?? ""}` };
@@ -110,7 +110,7 @@ export function lcscCode(p: BomPart, ordering: Record<string, Record<string, str
   return { code: null, source: null };
 }
 
-export function mpnOf(p: BomPart, ordering: Record<string, Record<string, string>>): string | null {
+export function mpnOf(p: Pick<BomPart, "ref" | "props">, ordering: Record<string, Record<string, string>>): string | null {
   const o = ordering[p.ref] ?? {};
   for (const v of [o["AssemblyMPN"], o["MPN"], p.props["MPN"], p.props["Manufacturer_Part_Number"], p.props["MPN_ID"]]) if (v && v.trim()) return v.trim();
   return null;
@@ -230,7 +230,7 @@ export async function bomCheck(o: BomOptions): Promise<BomResult> {
     } else rec.code_source = L.code_source;
     rec.lcsc = code;
     const p0 = L.parts[0]!;
-    if (!code && !L.mpn && !p0.models.length && p0.pads.every((q) => q.type === "smd") && p0.pads.length <= 3 && /(^|_)(TP|JP|SJ)\d+$/.test(p0.ref)) {
+    if (!code && !L.mpn && copperOnlyShape(p0)) {
       rec.status = "RESOLVED";
       rec.choice = "copper only (test pad / solder jumper): nothing to buy or place";
       rec.reason = `${p0.pads.length} SMD pad(s), no 3D model, no part number; exclude from BOM/CPL`;

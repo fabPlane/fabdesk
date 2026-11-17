@@ -1,11 +1,14 @@
 /** Board geometry the review reads beyond the shared board model: every footprint with its flags, outline, courtyards. */
 import { kid, kids, num, type SNode } from "../sexpr";
+import { footprintFlags } from "../release/parts";
 
 export interface PartPad {
   n: string;
   net: string;
   x: number;
   y: number;
+  /** Pad kind (`smd`, `thru_hole`, ...). */
+  type?: string;
 }
 
 export interface Part {
@@ -20,6 +23,8 @@ export interface Part {
   flags: string[];
   pads: PartPad[];
   props: Record<string, string>;
+  /** 3D model paths. */
+  models?: string[];
 }
 
 export function footprintPose(fp: SNode): { x: number; y: number; rot: number } {
@@ -40,10 +45,8 @@ export function boardParts(root: SNode): Part[] {
   for (const fp of kids(root, "footprint")) {
     const props: Record<string, string> = {};
     for (const p of kids(fp, "property")) props[String(p[1])] = String(p[2] ?? "");
-    const attr = kid(fp, "attr") ?? [];
-    const flags = new Set(attr.slice(1).filter((x): x is string => typeof x === "string"));
-    const dnp = kid(fp, "dnp");
-    if (dnp && dnp[1] !== "no" || flags.has("dnp")) flags.add("dnp");
+    // the release's flag reading: `(attr ...)` tokens and KiCad 9+'s `(exclude_from_bom yes)` style nodes alike
+    const flags = footprintFlags(fp);
     const { x, y, rot } = footprintPose(fp);
     const c = Math.cos((rot * Math.PI) / 180), s = Math.sin((rot * Math.PI) / 180);
     const pads: PartPad[] = [];
@@ -51,9 +54,9 @@ export function boardParts(root: SNode): Part[] {
       const a = kid(pad, "at");
       const px = num(a?.[1]), py = num(a?.[2]);
       const net = kid(pad, "net");
-      pads.push({ n: String(pad[1]), net: net ? String(net[net.length - 1] ?? "") : "", x: x + px * c + py * s, y: y - px * s + py * c });
+      pads.push({ n: String(pad[1]), net: net ? String(net[net.length - 1] ?? "") : "", x: x + px * c + py * s, y: y - px * s + py * c, type: String(pad[2] ?? "") });
     }
-    out.push({ footprint: String(fp[1] ?? ""), ref: props["Reference"] ?? "", value: props["Value"] ?? "", side: String(kid(fp, "layer")?.[1] ?? "F")[0]!, x, y, rot: mod360(rot), flags: [...flags].sort(), pads, props });
+    out.push({ footprint: String(fp[1] ?? ""), ref: props["Reference"] ?? "", value: props["Value"] ?? "", side: String(kid(fp, "layer")?.[1] ?? "F")[0]!, x, y, rot: mod360(rot), flags, pads, props, models: kids(fp, "model").map((m) => String(m[1])) });
   }
   return out;
 }

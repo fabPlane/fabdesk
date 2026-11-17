@@ -1,4 +1,3 @@
-import { isFittedPurchasedPart } from "@fabdesk/protocol";
 /**
  * Review checks, one function per check. Each takes the run context and returns a CheckResult.
  *
@@ -6,6 +5,9 @@ import { isFittedPurchasedPart } from "@fabdesk/protocol";
  * L8 expert pack. A check that cannot run returns status "error"; the gate never passes it.
  */
 import { createHash } from "node:crypto";
+import { assembled, copperOnlyShape, notFittedReason, placedPart } from "../release/parts";
+import { lcscCode, mpnOf } from "../release/bomcheck";
+import type { Part } from "./geometry";
 import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join } from "node:path";
 import { checkAcceptance, courtyardException, profile, PWR_PROXY, pyRound, type DrcInput } from "../accept";
@@ -1032,12 +1034,11 @@ export async function checkBom(ctx: ReviewCtx): Promise<CheckResult> {
   return r;
 }
 
-/** A part the assembler places: not DNP/excluded, netted (or a connector/switch/IC), with pads. */
-export function assembled(p: { ref: string; footprint?: string; flags: string[]; pads: Array<{ net: string }> }): boolean {
-  if (!isFittedPurchasedPart({ footprint: p.footprint ?? "", flags: p.flags })) return false;
-  if (!p.pads.some((q) => q.net && !q.net.startsWith("unconnected-")) && !/^(J|SW|U|IC)/.test(p.ref.split("_").pop() ?? "")) return false;
-  return p.pads.length > 0;
-}
+/** A part that is bought and fitted: the release's definition (`release/parts.ts`), so review and release agree. */
+export { assembled };
+
+/** Copper only (a test pad / solder jumper with nothing to buy), as the release's BOM check decides it from the part alone. */
+const copperOnly = (p: Part) => copperOnlyShape({ ref: p.ref, pads: p.pads, models: p.models ?? [] }) && !lcscCode(p, {}, {}).code && !mpnOf(p, {});
 
 function parseCsv(text: string): Array<Record<string, string>> {
   const rows: string[][] = [];
@@ -1080,8 +1081,10 @@ export async function checkCoverage(ctx: ReviewCtx): Promise<CheckResult> {
   const unfitted: string[] = [];
   for (const p of ctx.parts()) {
     const netted = p.pads.some((q) => q.net && !q.net.startsWith("unconnected-"));
-    if (assembled(p)) need.push(p);
-    else if (netted && !/^(H|MH|FIT|TP|FID|MECH|LOGO|G)/.test(p.ref.split("_").pop() ?? "")) unfitted.push(p.ref);
+    const why = notFittedReason(p);
+    if (!why) need.push(p);
+    // a board feature (mounting hole, solder jumper) is copper, not an unfitted part
+    else if (why !== "board_feature" && netted && !/^(H|MH|FIT|TP|FID|MECH|LOGO|G)/.test(p.ref.split("_").pop() ?? "")) unfitted.push(p.ref);
   }
   const sorted = (xs: Iterable<string>) => [...xs].sort();
   for (const p of need.filter((p_) => !sides.has(p_.side) && !post.has(p_.ref)))
@@ -1093,7 +1096,8 @@ export async function checkCoverage(ctx: ReviewCtx): Promise<CheckResult> {
     const rows = parseCsv(await readFile(cpl, "utf8"));
     const key = rows.length ? Object.keys(rows[0]!).find((k) => ["designator", "ref", "reference"].includes(k.toLowerCase())) : undefined;
     const have = new Set(key ? rows.map((row) => row[key]!) : []);
-    const want = new Set(need.filter((p) => sides.has(p.side) && !post.has(p.ref)).map((p) => p.ref));
+    // the release's CPL rule: hand-fitted (exclude_from_pos_files) and copper-only parts have no placement row
+    const want = new Set(need.filter((p) => placedPart(p, copperOnly(p)) && sides.has(p.side) && !post.has(p.ref)).map((p) => p.ref));
     for (const ref of sorted(want)) if (!have.has(ref)) r.findings.push(FIND({ layer: "L6", rule: "CPL", severity: "must-fix", claim: `${ref} must be assembled but is missing from ${basename(cpl)}`, ref }));
     for (const ref of sorted(have)) if (!want.has(ref)) r.findings.push(FIND({ layer: "L6", rule: "CPL", severity: "question", claim: `${ref} is in ${basename(cpl)} but not an assembled part on the board`, ref }));
   }

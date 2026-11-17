@@ -20,7 +20,7 @@ import { CHECK_KEYS } from "../accept";
 import { parseSexpr } from "../sexpr";
 import { confineToProject } from "../files";
 import { boardPinNames, readCplJlc, type BomResult } from "./bomcheck";
-import { assembled, boardParts } from "./parts";
+import { assembled, boardParts, placedPart } from "./parts";
 import { exportCam, requiredLayers, reproducible, sha256, type Reproducibility } from "./cam";
 import { parseCsv, toCsv } from "./csv";
 import { gerbCheck, type GerbCheckResult } from "./gerbcheck";
@@ -357,7 +357,7 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
       const j = await jlcFiles(work, inp.bomDir, inp.stem, g);
       const placedRefs = new Set(parseCsv(await readFile(join(work, `${inp.stem}-jlc-cpl.csv`), "utf8")).map(row => row["Designator"]));
       const copperOnly = new Set(bomDecisions.records.filter(record => record.copper_only).flatMap(record => record.refs));
-      const missingPlacements = boardParts(parseSexpr(pcbText)).filter(assembled).filter(part => !part.flags.includes("exclude_from_pos_files") && !copperOnly.has(part.ref) && !placedRefs.has(part.ref));
+      const missingPlacements = boardParts(parseSexpr(pcbText)).filter(part => placedPart(part, copperOnly.has(part.ref)) && !placedRefs.has(part.ref));
       if (j.no_lcsc_code.length || missingPlacements.length) throw new ReleaseStop("bom", `STOP JLC handoff omits fitted parts: ${[...new Set([...j.no_lcsc_code, ...missingPlacements.map(part => part.ref)])].join(", ")}`);
       if (inp.cpl) {
         const rows = parseCsv(await readFile(inp.cpl, "utf8"));
