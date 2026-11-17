@@ -33,3 +33,9 @@ if [ -n "$number" ]; then
 else
   gh pr create --base main --head "$branch" --title 'Update TraceMaker build pin' --body-file "$body"
 fi
+
+# Only expose the exact pushed revision, never the movable branch name.
+if [ -n "${GITHUB_OUTPUT:-}" ]; then
+  echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  echo "pr=$(gh pr list --base main --head "$branch" --state open --json number --jq '.[0].number')" >> "$GITHUB_OUTPUT"
+fi

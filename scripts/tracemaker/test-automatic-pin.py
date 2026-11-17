@@ -79,18 +79,70 @@ class AutomaticPin(unittest.TestCase):
             names = ['LICENSE', 'NOTICE', 'SOURCE.txt', 'DEPENDENCIES.txt',
                      'corresponding-source/upstream.tar.gz', 'corresponding-source/build.patch',
                      'tracemaker', 'tracemaker-place']
+            data = {name: b'x' for name in names}
             def pack():
                 with tarfile.open(archive, 'w:gz') as tar:
-                    for name in names:
+                    for name, body in data.items():
                         info = tarfile.TarInfo(name)
-                        info.size = 1
-                        tar.addfile(info, io.BytesIO(b'x'))
+                        info.size = len(body)
+                        tar.addfile(info, io.BytesIO(body))
             asset = {'platform': 'linux-x86_64', 'executable': 'tracemaker', 'placer': 'tracemaker-place'}
             pack()
             with self.assertRaises(ValueError): checker.check_archive(archive, asset)
-            names += ['licenses/' + c + '.txt' for c in ['zstd', 'sqlite', 'gcc', 'boost', 'eigen', 'cli11', 'nlohmann']]
+            data['corresponding-source/dependency-install-workflow.yml'] = b'install recipe'
+            hashes = {}
+            import hashlib
+            for component in ['zstd', 'sqlite', 'gcc', 'stdc++', 'boost', 'eigen', 'cli11', 'nlohmann']:
+                data['licenses/' + component + '.txt'] = b'x'
+                name = component + '/source.tar.gz'
+                data['corresponding-source/dependencies/' + name] = b'source input'
+                hashes[name] = hashlib.sha256(b'source input').hexdigest()
+            data['corresponding-source/dependencies/SHA256.json'] = json.dumps(hashes).encode()
+            pack()
+            # Correct filenames with meaningless contents must still fail.
+            with self.assertRaisesRegex(ValueError, 'meaningful'): checker.check_archive(archive, asset)
+            for name in data:
+                if name.startswith('licenses/'):
+                    data[name] = b'BSD public domain GPL Boost Software License MPL-2 MIT'
             pack()
             checker.check_archive(archive, asset)
+            data['licenses/boost.txt'] = b'MIT boost-defaults metapackage'
+            pack()
+            with self.assertRaisesRegex(ValueError, 'boost'): checker.check_archive(archive, asset)
+
+    def test_linux_offline_source_reconstruction_preserves_distro_patch(self):
+        deps = module('linux-dependencies')
+        import hashlib
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            cache = root / 'cache'; cache.mkdir()
+            def tarball(path, files):
+                with tarfile.open(path, 'w:gz') as tar:
+                    for name, body in files.items():
+                        body = body.encode(); info = tarfile.TarInfo(name); info.size = len(body)
+                        tar.addfile(info, io.BytesIO(body))
+            tarball(cache / 'fixture_1.0.orig.tar.gz', {'fixture-1.0/input.h': 'original\n'})
+            tarball(cache / 'fixture_1.0-1.debian.tar.gz', {
+                'debian/source/format': '3.0 (quilt)\n',
+                'debian/rules': '#!/usr/bin/make -f\n',
+                'debian/patches/series': 'installed.patch\n',
+                'debian/patches/installed.patch': '--- a/input.h\n+++ b/input.h\n@@ -1 +1 @@\n-original\n+distribution-patched\n'})
+            dsc = 'Format: 3.0 (quilt)\nSource: fixture\nVersion: 1.0-1\nChecksums-Sha256:\n'
+            for path in cache.iterdir():
+                dsc += f' {hashlib.sha256(path.read_bytes()).hexdigest()} {path.stat().st_size} {path.name}\n'
+            dsc += 'Files:\n'
+            for path in cache.iterdir():
+                dsc += f' {hashlib.md5(path.read_bytes()).hexdigest()} {path.stat().st_size} {path.name}\n'
+            (cache / 'fixture_1.0-1.dsc').write_text(dsc)
+            identities = {c: dict(package='fixture-dev', version='1.0-1', source='fixture', sourceVersion='1.0-1') for c in deps.COMPONENTS}
+            with patch.object(deps, 'identities', return_value=identities):
+                deps.sources(root / 'inputs', cache)
+            deps.reconstruct(root / 'inputs', root / 'unpacked')
+            for component in identities:
+                self.assertEqual((root / 'unpacked' / component / 'input.h').read_text(), 'distribution-patched\n')
+            (root / 'inputs' / 'boost' / 'fixture_1.0.orig.tar.gz').write_bytes(b'corrupt')
+            with self.assertRaisesRegex(ValueError, 'Corrupt'):
+                deps.reconstruct(root / 'inputs', root / 'corrupt-output')
 
     def test_newest_release_build_and_complete_pin_skip(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -112,6 +164,41 @@ class AutomaticPin(unittest.TestCase):
             candidate['assets'] = [{'platform': p, 'placer': 'tracemaker-place'} for p in ['linux-x86_64', 'macos-arm64', 'windows-x86_64']]
             pin.write_text(json.dumps(candidate))
             self.assertIn('skip=true', resolve())
+
+    def test_open_pr_exposes_exact_pushed_commit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            remote = root / 'origin.git'
+            subprocess.run(['git', 'init', '--bare', str(remote)], check=True, capture_output=True)
+            repo = root / 'repo'; repo.mkdir()
+            def git(*args):
+                return subprocess.check_output(['git', '-C', str(repo), *args], text=True).strip()
+            git('init', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.test')
+            shutil.copytree(ROOT, repo / 'scripts/tracemaker')
+            pin = repo / 'packages/tools/src/routers/tracemaker-pin.json'; pin.parent.mkdir(parents=True); pin.write_text('{}')
+            git('add', '.'); git('commit', '-m', 'base'); git('remote', 'add', 'origin', str(remote)); git('push', 'origin', 'main')
+            candidate = root / 'candidate.json'
+            candidate.write_text(json.dumps({'assets': [{'platform': p, 'placer': 'tracemaker-place',
+                'sha256': 'a'*64, 'url': 'https://downloads.fabplane.com/tracemaker/build/file'}
+                for p in ['linux-x86_64', 'macos-arm64']]}))
+            bin_dir = root / 'bin'; bin_dir.mkdir()
+            gh = bin_dir / 'gh'
+            gh.write_text('#!/bin/sh\ncase "$*" in "pr list"*) echo 7;; esac\n')
+            gh.chmod(0o755)
+            output = root / 'output'
+            subprocess.run(['bash', 'scripts/tracemaker/open-pin-pr.sh', str(candidate)], cwd=repo,
+                env=dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ['PATH'], GITHUB_OUTPUT=str(output)), check=True, capture_output=True)
+            fields = dict(line.split('=', 1) for line in output.read_text().splitlines())
+            self.assertEqual(fields['sha'], git('rev-parse', 'HEAD'))
+            self.assertEqual(fields['sha'], git('ls-remote', 'origin', 'refs/heads/automation/tracemaker-pin').split()[0])
+            self.assertEqual(fields['pr'], '7')
+            self.assertEqual(pin.read_bytes(), candidate.read_bytes())
+            # Reusable CI must check out that input in all three code jobs.
+            ci = (ROOT.parents[1] / '.github/workflows/ci.yml').read_text()
+            self.assertEqual(ci.count('ref: ${{ inputs.ref || github.sha }}'), 3)
+            workflow = (ROOT.parents[1] / '.github/workflows/tracemaker-binaries.yml').read_text()
+            self.assertIn('ref: ${{ needs.mirror.outputs.sha }}', workflow)
+            self.assertIn('head_sha: sha', workflow)
 
     def test_storage_lookup_error_cannot_write(self):
         s3 = module('s3-put')

@@ -5,13 +5,7 @@ platform="${1:?}"; dest="${2:?}"; runtime="${3:-system}"
 mkdir -p "$dest"
 case "$platform" in
   linux-*)
-    for package in libzstd-dev libsqlite3-dev libstdc++-15-dev libgcc-15-dev libboost-dev libeigen3-dev nlohmann-json3-dev libcli11-dev; do
-      path="/usr/share/doc/$package/copyright"
-      test -s "$path" || { echo "Missing dependency license: $path" >&2; exit 1; }
-      cp -L "$path" "$dest/$package.txt"
-    done
-    # Debian copyright files reference these full texts rather than repeating them.
-    cp -RL /usr/share/common-licenses "$dest/common-licenses"
+    python3 "$(dirname "$0")/linux-dependencies.py" licenses "$dest"
     ;;
   windows-*)
     # Package splits change (gcc-libs vs libgcc/libstdc++, sqlite vs

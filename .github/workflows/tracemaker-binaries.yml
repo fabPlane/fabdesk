@@ -108,16 +108,20 @@ jobs:
     if: needs.resolve.outputs.skip != 'true' && (needs.resolve.outputs.force == 'true' || contains(format(',{0},', needs.resolve.outputs.missing_platforms), ',linux-x86_64,'))
     runs-on: ubuntu-latest
     container: ubuntu:26.04
+    env:
+      CXX: g++-15
+      CC: gcc-15
     timeout-minutes: 60
     steps:
       - name: Install build dependencies (matches DingoOz/TraceMaker CI)
         run: |
           export DEBIAN_FRONTEND=noninteractive
+          sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
           apt-get update -qq
           apt-get install -y -qq --no-install-recommends \
             g++-15 cmake ninja-build git ca-certificates curl python3 \
             libboost-dev libboost-system-dev libeigen3-dev nlohmann-json3-dev libcli11-dev \
-            libsqlite3-dev libzstd-dev patchelf
+            libsqlite3-dev libzstd-dev patchelf dpkg-dev
 
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -276,6 +280,7 @@ jobs:
             zip
             python
             git
+            base-devel
           # `zip` is preferred. package.sh falls back to `python3 -m zipfile -c`
           # (then `python`) when zip is not on PATH, which is the self-hosted
           # Linux verify runner. UCRT64 gets both so either path works.
@@ -385,6 +390,9 @@ jobs:
         run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/publish.sh" "${GITHUB_WORKSPACE}/artifacts"
 
   mirror:
+    outputs:
+      sha: ${{ steps.pin.outputs.sha }}
+      pr: ${{ steps.pin.outputs.pr }}
     name: Mirror to public downloads
     needs: [resolve, publish]
     # Only complete, successfully published runs can advance to a pin PR.
@@ -429,12 +437,64 @@ jobs:
         run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/mirror-public.sh" "${GITHUB_WORKSPACE}/artifacts"
 
       - name: Open or update the reviewed pin PR
+        id: pin
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           # mirror-public.sh leaves only the successfully verified public manifest here.
           test -f artifacts/public-manifest.json
           bash scripts/tracemaker/open-pin-pr.sh "$GITHUB_WORKSPACE/artifacts/public-manifest.json"
+
+  validate-pin:
+    name: Validate pushed pin
+    needs: mirror
+    if: needs.mirror.outputs.sha != ''
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.mirror.outputs.sha }}
+    secrets: inherit
+
+  report-pin:
+    needs: [mirror, validate-pin]
+    if: always() && needs.mirror.outputs.sha != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@v8
+        env:
+          PIN_SHA: ${{ needs.mirror.outputs.sha }}
+          PIN_PR: ${{ needs.mirror.outputs.pr }}
+          SCRIPTS: ${{ needs.validate-pin.outputs.scripts }}
+          SECRETS: ${{ needs.validate-pin.outputs.secrets }}
+          VERIFY: ${{ needs.validate-pin.outputs.verify }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const sha = process.env.PIN_SHA;
+            const url = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const checks = [
+              ['TraceMaker scripts + CMake shims', process.env.SCRIPTS],
+              ['Secret scan', process.env.SECRETS],
+              ['Core verification', process.env.VERIFY],
+            ];
+            for (const [name, result] of checks) {
+              await github.rest.checks.create({ owner, repo, head_sha: sha, name,
+                status: 'completed', conclusion: result === 'success' ? 'success' : 'failure',
+                output: { title: `Pin CI: ${result || 'not completed'}`, summary: `Exact candidate ${sha}: ${url}` },
+                details_url: url });
+            }
+            // Do not attach a result to a newer candidate if another run moved the PR.
+            const { data: pr } = await github.rest.pulls.get({owner, repo, pull_number: Number(process.env.PIN_PR)});
+            if (pr.head.sha !== sha) throw new Error('Pin PR advanced during validation');
+            const marker = '\n<!-- pin-validation -->';
+            const body = (pr.body || '').split(marker)[0] + marker +
+              `\nValidated exact commit ${sha} in [this run](${url}).\n` +
+              checks.map(([name, result]) => `- ${name}: ${result || 'not completed'}`).join('\n');
+            await github.rest.pulls.update({owner, repo, pull_number: pr.number, body});
+            if (checks.some(([, result]) => result !== 'success')) core.setFailed('Pin CI failed');
 
   summarize:
     name: Summarize platform status

@@ -191,12 +191,33 @@ counts a platform only when its asset names the placer. An incomplete pin trigge
 including the first placer-capable build; old archive URLs remain byte-identical.
 
 Each binary archive contains upstream `LICENSE`, `NOTICE`, `SOURCE.txt`, dependency license texts in `licenses/`,
-and `corresponding-source/` with pristine upstream commit source, the exact build patch, and build scripts.
+and `corresponding-source/` with pristine upstream commit source, the exact build patch, build scripts,
+the dependency-install workflow, and matching dependency source inputs with SHA-256 inventories.
 The same source bundle is retained beside the binary archives on our immutable release. `SOURCE.txt` points to
 that copy first and upstream second, and records its SHA-256. Missing dependency notices stop packaging.
-Linux copies installed package copyright files plus the full common-license texts they reference; Windows copies
+Linux resolves actual header/runtime file owners (including versioned Boost), and copies their copyright
+files plus the full common-license texts they reference; Windows copies
 MSYS2 package license directories; macOS extracts notices from Homebrew's verified matching-version sources.
 The macOS static LLVM variant includes LLVM notices; a bundled static SQLite includes SQLite notices.
+License validation reads the notices and requires the relevant license text or identifier, including Boost's
+BSL rather than the boost-defaults metapackage's MIT notice. Debian source inputs are the exact installed
+source versions' `.dsc`, upstream archives and distribution patches. Homebrew retains the matching formula,
+version metadata, upstream archive and patched tree; MSYS2 retains the matching packaging commit and
+`makepkg --allsource` archive, including distribution patches. Missing versions fail packaging.
+OS libraries and general-purpose build tools are excluded. Sources for copied GCC runtimes and static LLVM/Windows runtimes are retained.
+
+On a Linux build host with `deb-src` enabled, collect and reconstruct dependency inputs offline:
+
+```sh
+python3 scripts/tracemaker/linux-dependencies.py sources "$RUNNER_TEMP/tm-inputs"
+# From here, reconstruction does not use the network and checks every retained file hash.
+python3 scripts/tracemaker/linux-dependencies.py reconstruct "$RUNNER_TEMP/tm-inputs" "$RUNNER_TEMP/tm-reconstructed"
+```
+
+`--cache DIR` on `sources` accepts previously downloaded matching apt source packages instead of fetching.
+`test-automatic-pin.py` reconstructs a fixture through real `dpkg-source`, checks that a distro patch applies,
+and rejects corrupt inputs. It does not claim to build TraceMaker offline without a provisioned toolchain.
+
 
 Measured 2026-10-09 (source fallback, still used when no binary exists for the platform):
 
@@ -220,6 +241,15 @@ Users do not need CMake or a C++ toolchain to *install* a published binary. They
 a matching OS/arch (glibc x86_64 Linux, Apple silicon macOS 15+, or 64-bit Windows).
 
 Release tags are immutable `tracemaker-<upstream-tag>-<shortsha>-b<run-id>-<attempt>`.
+After opening the pin PR, the same run calls CI on the exact pushed commit and reports each required
+check on that SHA with `github.token`, plus results and a run link in the PR body. No new token is needed.
+A bot-created PR can still display GitHub's “Approve workflows to run” banner for its separate PR-triggered
+run; validation does not depend on approving that run. If a main ruleset requires the CI *workflow run*
+rather than its named checks, that rule still blocks merging: change that rule to require status checks
+(the three CI check names) instead of “Require workflows to pass before merging.” An administrator should
+verify actual main rules in the first integration run. Actions → General → “Allow GitHub Actions to create
+and approve pull requests” must also be enabled for PR creation.
+
 The rolling `tracemaker-latest` manifest points at immutable asset URLs. Both GitHub
 releases use `--latest=false` so the desktop installer remains the repo's “Latest”.
 A complete pin of the latest upstream commit skips rebuilding. A missing placer or

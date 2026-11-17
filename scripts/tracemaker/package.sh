@@ -148,13 +148,17 @@ mkdir -p "$source_dir"
 git -C "$src_tree" archive --format=tar.gz "$upstream_commit" > "$source_dir/upstream.tar.gz"
 git -C "$src_tree" diff --binary "$upstream_commit" > "$source_dir/build.patch"
 cp -R "$SCRIPT_DIR" "$source_dir/build-scripts"
+runtime=system
+if [ -f "$src_tree/.fabdesk-macos-libcxx" ]; then runtime="$(cat "$src_tree/.fabdesk-macos-libcxx")"; fi
+TRACEMAKER_LINK_NOTE="$link_note" bash "$SCRIPT_DIR/collect-sources.sh" "$platform" "$source_dir/dependencies" "$runtime"
+cp "${TRACEMAKER_WORKFLOW_PATH:-$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml}" "$source_dir/dependency-install-workflow.yml"
 tar -czf "$dest_dir/$source_name" -C "$source_dir" .
 source_sha="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$dest_dir/$source_name")"
 runtime=system
 if [ -f "$src_tree/.fabdesk-macos-libcxx" ]; then runtime="$(cat "$src_tree/.fabdesk-macos-libcxx")"; fi
 TRACEMAKER_LINK_NOTE="$link_note" bash "$SCRIPT_DIR/collect-licenses.sh" "$platform" "$work/licenses" "$runtime"
 source_body="Unofficial binary built by ${repo}. The corresponding source is included in
-corresponding-source/ (upstream.tar.gz, build.patch and build-scripts/).
+corresponding-source/ (upstream.tar.gz, build.patch, build-scripts/, dependencies/ and dependency-install-workflow.yml).
 Apply build.patch to the extracted upstream tree before building.
 ${patch_note}
 ${link_note}"

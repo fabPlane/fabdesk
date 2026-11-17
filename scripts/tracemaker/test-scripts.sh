@@ -17,10 +17,27 @@ cat > "$SCRIPT_DIR/collect-licenses.sh" <<'EOF'
 #!/usr/bin/env bash
 mkdir -p "$2"
 for lib in zstd sqlite gcc boost eigen cli11 nlohmann-json; do
-  echo "fixture license for $lib" > "$2/$lib.txt"
+  echo "BSD public domain GPL Boost Software License MPL-2 MIT" > "$2/$lib.txt"
 done
 mkdir -p "$2/llvm"
-echo "fixture LLVM license" > "$2/llvm/LICENSE.txt"
+echo "Apache License" > "$2/llvm/LICENSE.txt"
+EOF
+
+mkdir -p "$ROOT/.github/workflows"
+cp "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "$ROOT/.github/workflows/"
+export TRACEMAKER_WORKFLOW_PATH="$ROOT/.github/workflows/tracemaker-binaries.yml"
+cat > "$SCRIPT_DIR/collect-sources.sh" <<'EOF'
+#!/usr/bin/env bash
+python3 - "$2" <<'PYSOURCE'
+import hashlib, json, pathlib, sys
+root = pathlib.Path(sys.argv[1]); root.mkdir(parents=True)
+files = {}
+for component in ['boost', 'eigen', 'cli11', 'nlohmann', 'zstd', 'sqlite', 'gcc', 'stdc++', 'winpthreads', 'llvm']:
+    name = component + '/source.fixture'
+    path = root / name; path.parent.mkdir(); path.write_text('source fixture')
+    files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+(root / 'SHA256.json').write_text(json.dumps(files))
+PYSOURCE
 EOF
 
 assert_eq() {
@@ -1363,7 +1380,7 @@ mirror_flat="$ROOT/mirror-flat"
 mkdir -p "$mirror_flat"
 cp "$partial_pack/manifest.json" "$mirror_flat/manifest.json"
 python3 - <<PY
-import json, pathlib, shutil
+import hashlib, json, pathlib, shutil
 manifest = json.loads(pathlib.Path("$partial_pack/manifest.json").read_text())
 dest = pathlib.Path("$mirror_flat")
 roots = [pathlib.Path("$partial_pack")]
@@ -1371,7 +1388,7 @@ for asset in manifest["assets"]:
     name = asset["filename"]
     found = None
     for root in roots:
-        hits = [p for p in root.rglob(name) if p.is_file() and p.name == name]
+        hits = [p for p in root.rglob(name) if p.is_file() and p.name == name and hashlib.sha256(p.read_bytes()).hexdigest() == asset["sha256"]]
         if hits:
             found = hits[0]
             break
@@ -1380,6 +1397,29 @@ for asset in manifest["assets"]:
     shutil.copy(found, dest / name)
 print("ok   staged flat mirror dir", sorted(p.name for p in dest.iterdir()))
 PY
+
+# Packaged manifest must satisfy the TypeScript zod schema (same parser the app uses).
+if command -v bun >/dev/null; then
+  # JS, not a shell snippet — $MANIFEST is passed via the environment.
+  # shellcheck disable=SC2016
+  MANIFEST="$partial_pack/manifest.json" bun --cwd "${BASH_SOURCE[0]%/*}/../../packages/tools" -e '
+    import { parseTraceMakerManifest } from "./src/routers/tracemaker-release";
+    const raw = JSON.parse(await Bun.file(process.env.MANIFEST!).text());
+    const m = parseTraceMakerManifest(raw);
+    if (m.assets.map(a => a.platform).sort().join(",") !== "linux-x86_64,macos-arm64,windows-x86_64") throw new Error(`unexpected platforms: ${m.assets.map(a => a.platform)}`);
+    for (const a of m.assets) {
+      if (a.linkage !== "system-libc-or-frameworks" && a.linkage !== "bundled-non-system-libs") {
+        throw new Error(`unexpected linkage ${a.linkage}`);
+      }
+    }
+    const mac = m.assets.find((a) => a.platform === "macos-arm64");
+    if (!mac || mac.minos !== "15.0" || mac.format !== "tar.gz" || mac.executable !== "tracemaker"
+        || (mac.cxxRuntime !== "llvm-static" && mac.cxxRuntime !== "system")) {
+      throw new Error(`macos-arm64 asset fields: ${JSON.stringify(mac)}`);
+    }
+    console.log("ok   parseTraceMakerManifest accepts packaged manifest");
+  '
+fi
 
 cat > "$ROOT/mirror-http.py" <<'PY'
 #!/usr/bin/env python3
@@ -1576,31 +1616,10 @@ if grep -q "Public TraceMaker mirror skipped" "$ROOT/mirror-upload-fail.out"; th
   fail=1
 fi
 
-# Packaged manifest must satisfy the TypeScript zod schema (same parser the app uses).
-if command -v bun >/dev/null; then
-  # JS, not a shell snippet — $MANIFEST is passed via the environment.
-  # shellcheck disable=SC2016
-  MANIFEST="$partial_pack/manifest.json" bun --cwd "${BASH_SOURCE[0]%/*}/../../packages/tools" -e '
-    import { parseTraceMakerManifest } from "./src/routers/tracemaker-release";
-    const raw = JSON.parse(await Bun.file(process.env.MANIFEST!).text());
-    const m = parseTraceMakerManifest(raw);
-    if (m.assets.length !== 2) throw new Error(`expected 2 assets, got ${m.assets.length}`);
-    for (const a of m.assets) {
-      if (a.linkage !== "system-libc-or-frameworks" && a.linkage !== "bundled-non-system-libs") {
-        throw new Error(`unexpected linkage ${a.linkage}`);
-      }
-    }
-    const mac = m.assets.find((a) => a.platform === "macos-arm64");
-    if (!mac || mac.minos !== "15.0" || mac.format !== "tar.gz" || mac.executable !== "tracemaker"
-        || (mac.cxxRuntime !== "llvm-static" && mac.cxxRuntime !== "system")) {
-      throw new Error(`macos-arm64 asset fields: ${JSON.stringify(mac)}`);
-    }
-    console.log("ok   parseTraceMakerManifest accepts packaged manifest");
-  '
-fi
 
 if [ "$fail" -ne 0 ]; then
   echo "script tests failed"
   exit 1
 fi
+python3 "${BASH_SOURCE[0]%/*}/test-shipped-pin.py"
 echo "all script tests passed"
