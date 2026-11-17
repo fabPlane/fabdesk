@@ -48,6 +48,7 @@ export class FpPcbSessions {
   private readonly recovering = new Set<string>();
   private readonly reconciliation = new Map<string, Promise<void>>();
   private readonly libraryRevisions = new WeakMap<ProjectSession, string>();
+  private readonly lookupLibraryRevisions = new WeakMap<ProjectSession, string>();
   private readonly libraryWrites = new WeakMap<ProjectSession, Promise<void>>();
   private readonly libraryRegistration = new WeakMap<ProjectSession, Promise<void>>();
 
@@ -259,21 +260,26 @@ export class FpPcbSessions {
     return result;
   }
 
-  /** Refresh native library tables after a saved override changes, before returning geometry. */
+  /** Lookup uses existing project tables without populating them with bundled host paths. */
   async refreshProjectLibraries(projectDir: string): Promise<void> {
     await this.withRetry(projectDir, async session => {
-      const previous = this.libraryRevisions.get(session), current = await this.libraryRevision(projectDir);
-      await this.ensureBundledLibraries(projectDir, session);
-      if (previous !== undefined && previous !== current) {
-        const rows = await captureProjectLibraryRows(projectDir);
-        await this.preservingProjectLibraries(projectDir, session, async () => {
-          for (const kind of ["footprint", "symbol"] as const) for (const row of rows[kind] ?? []) {
-            if (isManagedLibraryRow(kind,row)) continue;
-            await session.kicad.libraries.addTableRow(kind,"project",{nickname:row.name,uri:row.uri,type:row.type,options:row.options,description:row.descr,enabled:!row.disabled,hidden:row.hidden},true);
-          }
-        });
-        this.libraryRevisions.set(session,await this.libraryRevision(projectDir));
+      const previous = this.lookupLibraryRevisions.get(session), current = await this.libraryRevision(projectDir);
+      if (previous === current) return;
+      const rows = await captureProjectLibraryRows(projectDir);
+      const updates: Array<{ kind: "footprint" | "symbol"; row: ProjectLibraryRow }> = [];
+      for (const kind of ["footprint", "symbol"] as const) {
+        // On the first lookup compare against the table KiCad loaded. Re-adding an identical
+        // row saves/reformats the whole table and needlessly invalidates handoff receipts.
+        const memory: ProjectLibraryRow[] | null = previous === undefined
+          ? (await session.kicad.libraries.tables(kind, "project")).map(entry => ({ name: entry.nickname, uri: entry.uri, type: entry.type || "KiCad", options: entry.options, descr: entry.description, disabled: !entry.enabled, hidden: entry.hidden }))
+          : null;
+        const changed = previous === undefined ? rowsToRestore(rows[kind], memory) : rows[kind] ?? [];
+        for (const row of changed) if (!isManagedLibraryRow(kind, row)) updates.push({ kind, row });
       }
+      if (updates.length) await this.preservingProjectLibraries(projectDir, session, async () => {
+        for (const { kind, row } of updates) await session.kicad.libraries.addTableRow(kind, "project", { nickname: row.name, uri: row.uri, type: row.type, options: row.options, description: row.descr, enabled: !row.disabled, hidden: row.hidden }, true);
+      });
+      this.lookupLibraryRevisions.set(session, await this.libraryRevision(projectDir));
     });
   }
 

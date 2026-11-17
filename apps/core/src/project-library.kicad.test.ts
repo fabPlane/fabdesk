@@ -27,6 +27,18 @@ test.skipIf(!url)("real project library registration survives bundled table rewr
     expect((await design.describePart("footprint","SHT31Pilot:Sensor",dir)).pads?.[0]?.size.x).toBe(3);
     const updated = join(dir,"Updated.pretty/Sensor.kicad_mod"); await writeFile(updated,(await readFile(updated,"utf8")).replace("(size 3 1)","(size 4 1)"));
     expect((await design.describePart("footprint","SHT31Pilot:Sensor",dir)).pads?.[0]?.size.x).toBe(4);
+    // Relocated projects start with project-contained rows only. A read-only lookup must not
+    // populate tables with this host's hundreds of bundled paths or invalidate their receipts.
+    await sessions.dispose();
+    await writeFile(tablePath, '(fp_lib_table (version 7) (lib (name "SHT31Pilot") (type "KiCad") (uri "${KIPRJMOD}/Updated.pretty") (options "") (descr "portable")))');
+    await writeFile(join(dir,"sym-lib-table"), '(sym_lib_table (version 7))');
+    const before = await Promise.all([readFile(tablePath,"utf8"), readFile(join(dir,"sym-lib-table"),"utf8")]);
+    const reopened = new FpPcbSessions(() => bridge), lookup = createFpPcbDesign({ bridge: () => bridge, sessions: reopened });
+    try {
+      expect((await lookup.describePart("footprint", "SHT31Pilot:Sensor", dir)).pads?.[0]?.size.x).toBe(4);
+      expect(await Promise.all([readFile(tablePath,"utf8"),readFile(join(dir,"sym-lib-table"),"utf8")])).toEqual(before);
+    } finally { await reopened.dispose(); }
+
 
   } finally { await sessions.dispose(); await rm(dir, { recursive: true, force: true }); }
 }, 120_000);
