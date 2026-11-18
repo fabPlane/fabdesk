@@ -16,9 +16,14 @@ import type { EditPlan, Finding, FindingRecord, Intent, Proposal } from "./types
 
 type Decision = NonNullable<Intent["decisions"]>[number];
 
+/** Check the raw rationale before a citation or other display text is added. */
+export function validDecisionText(text: unknown): text is string {
+  return typeof text === "string" && !!text.trim();
+}
+
 /** Intent decisions are owner answers; legacy records may omit the author. Validate raw text before adding citations. */
 export function validIntentDecision(d: Decision): boolean {
-  return typeof d.decision === "string" && !!d.decision.trim() && (d.by === undefined || d.by === "owner");
+  return validDecisionText(d.decision) && (d.by === undefined || d.by === "owner");
 }
 
 /** Python's fnmatch: `*`, `?`, `[seq]`, matched against the whole string. */
@@ -113,7 +118,7 @@ export function propose(f: FindingRecord | (Finding & { id: string }), board: Pr
       by: "workflow",
       action: `settle by owner decision '${d.id}' (${d.date ?? ""}): ${d.decision.slice(0, 140)}`,
       effect: d.effect ?? "already decided by the owner",
-      apply: { kind: "disposition", state: "accept", as: "owner", intent_decision: d.id, reason: `owner decision ${d.id} (${d.date ?? ""}): ${d.decision.slice(0, 200)}`, third_source: d.source ?? "" },
+      apply: { kind: "disposition", state: "accept", as: "owner", intent_decision: d.id, reason: `intent decision ${d.id}: ${d.decision}`, third_source: d.source ?? "" },
     };
   const r = f.rule, claim = f.claim;
   if (r === "DECAP" && board.hasRequirements) {

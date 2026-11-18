@@ -11,7 +11,7 @@
 import { join } from "node:path";
 import { exists, readJsonOrNull, writeJsonFile } from "../files";
 import { readRequirements, requirementsDir } from "../onboard";
-import { coveringDecision } from "./proposals";
+import { coveringDecision, validDecisionText } from "./proposals";
 import { intentPath, loadCurrent } from "./store";
 import type { ReviewProject } from "./context";
 import type { Intent } from "./types";
@@ -66,7 +66,7 @@ export async function intentDecide(project: ReviewProject, input: DecideInput): 
   const it = await readJsonOrNull<Intent>(path);
   if (!it) throw new Error(`no intent for ${project.name}: board_review {"action": "intent_init"} first`);
   if (!input.id.trim()) throw new Error("decide needs an id");
-  if (!input.decision.trim()) throw new Error("decide needs the decision text");
+  if (!validDecisionText(input.decision)) throw new Error("decide needs the decision text");
   const decisions = (it.decisions ??= []);
   if (decisions.some((d) => d.id === input.id)) throw new Error(`decision ${input.id} exists`);
   const covers = (input.covers ?? []).filter(Boolean);

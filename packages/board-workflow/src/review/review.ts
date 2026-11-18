@@ -475,13 +475,14 @@ export async function fixProposals(project: ReviewProject, opts: FixOptions = {}
       continue;
     }
     if (ap.kind === "disposition") {
-      // Stored proposals can predate validation or a later edit to intent. Revalidate the raw decision on apply.
-      const legacyDecision = /^owner decision (.*?) \(/.exec(ap.reason)?.[1];
-      const decisionId = ap.intent_decision ?? legacyDecision;
-      if (decisionId !== undefined) {
+      // Stored proposals can predate validation or a later edit to intent. Only explicit agent proposals can
+      // proceed without a current owner decision; free-text reasons and saved IDs are not authority.
+      if (ap.as !== "agent" || ap.intent_decision !== undefined) {
         const decision = coveringDecision(r, intent ?? {});
-        if (!decision || decision.id !== decisionId) {
-          res.lines.push(`  ${r.id}: intent decision ${decisionId} ignored: missing or invalid owner decision text/author`);
+        if (!decision) {
+          const why = "proposal ignored: no valid current covering owner decision (missing or invalid decision text/author)";
+          res.lines.push(`  ${r.id}: ${why}`);
+          res.tasks.push({ id: r.id, steps: [why, "record a valid owner decision covering this finding, then retry"] });
           continue;
         }
         const fresh = propose(r, { dir: project.dir, hasRequirements: false }, intent ?? {}, { oracle_pins: {}, comps: null });
