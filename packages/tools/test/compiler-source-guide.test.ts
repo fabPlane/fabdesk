@@ -69,6 +69,7 @@ describe("selected compiler source guidance", () => {
       expect(json.sourceGuide).toBeDefined();
       expect(rejected.text).toContain("libSource: {lib, part}");
       expect(rejected.text).toContain("nodes: [{ref, pin}]");
+      expect(rejected.text).not.toContain('circuit_source {"action":"validate"}');
       const nextInput = JSON.stringify(json.sourceGuide.example);
       const shape = checkNetlistJson(JSON.parse(nextInput), "circuit.netlist.json");
       expect(shape.diagnostics).toEqual([]);
@@ -100,6 +101,7 @@ test("schema guide reaches Claude text and keeps JSON for other clients", async 
   const claude = await toCallToolResult(output, { structured: wantsStructured(output, "claude-code") });
   expect(claude.structuredContent).toBeUndefined();
   const text = claude.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
+  expect(text).toContain('Check the saved file with circuit_source {"action":"validate"} before circuit_build.');
   expect(text).toContain("libSource: {lib, part}");
   expect(text).toContain("nodes: [{ref, pin}]");
   expect(text).toContain(JSON.stringify(COMPILER_SOURCE_GUIDE.example));

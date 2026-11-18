@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   figures,
+  drcInputFromFile,
   checkAcceptance,
   deriveRequirements,
   designHash,
@@ -252,6 +253,21 @@ describe("acceptance", () => {
 describe("onboard + runAcceptance on a project", () => {
   let dir = "";
   afterAll(async () => dir && (await rm(dir, { recursive: true, force: true })));
+  test("runAcceptance returns names from real-shaped courtyard DRC items", async () => {
+    const project = await mkdtemp(join(tmpdir(), "bw-names-"));
+    try {
+      await writeFile(join(project, "board.kicad_pcb"), BOARD);
+      await writeFile(join(project, "board.kicad_pro"), PRO);
+      await onboard(project);
+      const drcPath = join(project, "test.drc.json");
+      await writeFile(drcPath, JSON.stringify({ violations: [{
+        type: "courtyards_overlap", severity: "error", description: "Footprints have overlapping courtyards",
+        items: [{ uuid: "a", description: "Footprint U1", pos: { x: 10, y: 10 } }, { uuid: "b", description: "Footprint C2", pos: { x: 11, y: 10 } }],
+      }], unconnected_items: [], schematic_parity: [] }));
+      const run = await runAcceptance(project, { drc: async () => drcInputFromFile(drcPath) });
+      expect(run.entry.results.find((r) => r.code === "A2")?.evidence).toEqual(["1 x courtyards_overlap: C2 / U1"]);
+    } finally { await rm(project, { recursive: true, force: true }); }
+  });
   test("stores requirements, keeps history by design hash and compares with the onboarded board", async () => {
     dir = await mkdtemp(join(tmpdir(), "bw-"));
     await writeFile(join(dir, "board.kicad_pcb"), BOARD);

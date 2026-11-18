@@ -394,6 +394,8 @@ export type NetlistNet = z.infer<typeof NetlistNet>;
 export const Netlist = z.object({
   components: z.array(NetlistComponent),
   nets: z.array(NetlistNet),
+  /** Explicitly unused symbol pins, matching the compiler source contract. */
+  noConnects: z.array(z.object({ ref: z.string(), pin: z.string() })).optional(),
   design: z
     .object({
       source: z.string().optional(),

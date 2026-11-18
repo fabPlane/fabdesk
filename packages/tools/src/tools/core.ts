@@ -458,8 +458,8 @@ export const circuit_build = defineTool({
       ? await powerFlagHelp(project.dir, entrypoint ?? PROJECT_FILES.netlistJson, (...args) => ctx.services.design.describePart(...args))
       : undefined;
     return {
-      text: text + (sourceGuide ? "\n\n" + formatCompilerSourceHelp(sourceGuide) : "") + (powerHelp ? "\n\n" + powerHelp.text : ""),
-      json: { ...summary, ...(sourceGuide ? { sourceGuide } : {}), ...(powerHelp ? { powerFlagHelp: { nets: powerHelp.nets } } : {}) },
+      text: text + (sourceGuide ? "\n\n" + formatCompilerSourceHelp(sourceGuide) : "") + (powerHelp?.text ? "\n\n" + powerHelp.text : ""),
+      json: { ...summary, ...(sourceGuide ? { sourceGuide } : {}), ...(powerHelp ? { powerFlagHelp: { nets: powerHelp.nets, unconnectedPins: powerHelp.unconnectedPins } } : {}) },
       isError: !result.ok,
     };
   },
