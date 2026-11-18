@@ -7,6 +7,7 @@ import {
 } from "../../../vendor/fab_pcb/packages/compile/src/frontends/netlist-json";
 import { validateNetlist } from "../../../vendor/fab_pcb/packages/compile/src/netlist";
 import { createRegistry } from "../src";
+import { toCallToolResult, wantsStructured } from "../src/adapters/mcp";
 import { COMPILER_SOURCE_GUIDE } from "../src/tools/compiler-source-guide";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
@@ -88,4 +89,21 @@ describe("selected compiler source guidance", () => {
   });
   test("format help is bounded", () =>
     expect(JSON.stringify(COMPILER_SOURCE_GUIDE).length).toBeLessThan(2500));
+});
+
+test("schema guide reaches Claude text and keeps JSON for other clients", async () => {
+  const registry = createRegistry();
+  const project = await tempProject("schema-guide");
+  const factory = contextFactory(mockServices([project]), project);
+  const output = await registry.invoke("circuit_source", { action: "schema" }, (ref) =>
+    factory({ def: registry.get("circuit_source")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+  const claude = await toCallToolResult(output, { structured: wantsStructured(output, "claude-code") });
+  expect(claude.structuredContent).toBeUndefined();
+  const text = claude.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
+  expect(text).toContain("libSource: {lib, part}");
+  expect(text).toContain("nodes: [{ref, pin}]");
+  expect(text).toContain(JSON.stringify(COMPILER_SOURCE_GUIDE.example));
+  const other = await toCallToolResult(output);
+  expect(other.structuredContent).toHaveProperty("schema");
+  expect(other.structuredContent).toHaveProperty("example");
 });

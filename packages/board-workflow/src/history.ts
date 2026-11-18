@@ -155,7 +155,7 @@ export async function runAcceptance(
     sha256: createHash("sha256").update(text).digest("hex"),
     summary: sums,
     figures: figs,
-    results: toAcceptResults(result),
+    results: toAcceptResults(result, drc, req.acceptance),
     parityChecked: parity,
     pcb: relative(projectDir, files.pcb).split(sep).join("/"),
     file: `.fabdesk/board/accept/${id}.json`,

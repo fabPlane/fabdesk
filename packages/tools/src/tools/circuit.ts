@@ -5,6 +5,7 @@ import { jailPath } from "../fs";
 import { z } from "zod/v4";
 import { defineTool } from "../registry";
 import { ToolError } from "../registry";
+import { COMPILER_SOURCE_GUIDE, formatCompilerSourceHelp } from "./compiler-source-guide";
 import { ok, table } from "./common";
 
 export const circuit_query = defineTool({
@@ -184,7 +185,7 @@ export const circuit_source = defineTool({
   inputSchema: { action: z.enum(["schema", "validate"]), path: z.string().default("circuit.netlist.json") },
   annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   handler: async ({ action, path }, ctx) => {
-    if (action === "schema") return ok("Compiler source schema and example; validate before circuit_build.", { schema: z.toJSONSchema(NetlistFile), example: { netlist: { components: [{ ref: "R1", value: "1k", footprint: "Resistor_SMD:R_0603_1608Metric", libSource: { lib: "Device", part: "R" } }], nets: [{ name: "TEST", nodes: [{ ref: "R1", pin: "1" }, { ref: "R1", pin: "2" }] }] }, board: { widthMm: 30, heightMm: 20 } } });
+    if (action === "schema") return ok(formatCompilerSourceHelp(COMPILER_SOURCE_GUIDE), { schema: z.toJSONSchema(NetlistFile), example: { netlist: { components: [{ ref: "R1", value: "1k", footprint: "Resistor_SMD:R_0603_1608Metric", libSource: { lib: "Device", part: "R" } }], nets: [{ name: "TEST", nodes: [{ ref: "R1", pin: "1" }, { ref: "R1", pin: "2" }] }] }, board: { widthMm: 30, heightMm: 20 } } });
     const project = ctx.requireProject();
     let data: unknown;
     try { data = JSON.parse(await readFile(await jailPath(project.dir, path), "utf8")); }
