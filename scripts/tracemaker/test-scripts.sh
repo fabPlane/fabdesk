@@ -32,10 +32,20 @@ python3 - "$2" <<'PYSOURCE'
 import hashlib, json, pathlib, sys
 root = pathlib.Path(sys.argv[1]); root.mkdir(parents=True)
 files = {}
-for component in ['boost', 'eigen', 'cli11', 'nlohmann', 'zstd', 'sqlite', 'gcc', 'stdc++', 'winpthreads', 'llvm']:
+records = {}
+for component in ['boost', 'eigen', 'cli11', 'nlohmann', 'zstd', 'sqlite', 'gcc', 'stdc++', 'stdc++-headers', 'stdc++-config', 'winpthreads', 'llvm']:
     name = component + '/source.fixture'
     path = root / name; path.parent.mkdir(); path.write_text('source fixture')
     files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    if component not in ['winpthreads', 'llvm']:
+        dsc_name = component + '/fixture.dsc'
+        dsc = root / dsc_name; dsc.write_text('Source: fixture\nVersion: 1.0-1\n')
+        files[dsc_name] = hashlib.sha256(dsc.read_bytes()).hexdigest()
+        records[component] = dict(package='fixture-dev', version='1.0-1', source='fixture', sourceVersion='1.0-1',
+            header='/include/' + ('bits/c++config.h' if component == 'stdc++-config' else 'vector'),
+            files={'source.fixture': files[name], 'fixture.dsc': files[dsc_name]})
+(root / 'inputs.json').write_text(json.dumps(records))
+files['inputs.json'] = hashlib.sha256((root / 'inputs.json').read_bytes()).hexdigest()
 (root / 'SHA256.json').write_text(json.dumps(files))
 PYSOURCE
 EOF

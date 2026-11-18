@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Reject incomplete distributable binary archives before publication."""
 import json
+import importlib.util
 from pathlib import Path
 import sys
 import re
@@ -74,6 +75,21 @@ def check_archive(path, asset):
     for component in extras:
         if not any(n.startswith(component + '/') for n in hashes):
             raise ValueError(f'{path}: missing {component} runtime source')
+    if asset['platform'].startswith('linux-'):
+        spec = importlib.util.spec_from_file_location('linux_dependencies', Path(__file__).with_name('linux-dependencies.py'))
+        deps = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(deps)
+        identity_name = 'inputs.json'
+        if identity_name not in hashes:
+            raise ValueError(f'{path}: missing Linux dependency source identities')
+        records = json.loads(contents[source_root + identity_name])
+        if set(records) != deps.COMPONENTS:
+            raise ValueError(f'{path}: incomplete Linux dependency source identities')
+        for component, record in records.items():
+            for name, sha in record['files'].items():
+                if Path(name).name != name or hashes.get(component + '/' + name) != sha:
+                    raise ValueError(f'{path}: missing {component} source input {name}')
+            deps.validate_identity(component, record, lambda name: contents[source_root + component + '/' + name])
     if asset.get('cxxRuntime') == 'llvm-static' and not licensed('llvm'):
         raise ValueError(f'{path}: missing LLVM licenses')
 

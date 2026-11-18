@@ -92,11 +92,25 @@ class AutomaticPin(unittest.TestCase):
             data['corresponding-source/dependency-install-workflow.yml'] = b'install recipe'
             hashes = {}
             import hashlib
-            for component in ['zstd', 'sqlite', 'gcc', 'stdc++', 'boost', 'eigen', 'cli11', 'nlohmann']:
+            deps = module('linux-dependencies')
+            records = {}
+            for component in sorted(deps.COMPONENTS):
                 data['licenses/' + component + '.txt'] = b'x'
                 name = component + '/source.tar.gz'
                 data['corresponding-source/dependencies/' + name] = b'source input'
                 hashes[name] = hashlib.sha256(b'source input').hexdigest()
+                source = 'gcc-13' if component in deps.CXX_HEADERS else 'fixture-runtime'
+                version = '13.3-1' if component in deps.CXX_HEADERS else '14.2-1'
+                dsc_name = component + '/source.dsc'
+                dsc = f'Source: {source}\nVersion: {version}\n'.encode()
+                data['corresponding-source/dependencies/' + dsc_name] = dsc
+                hashes[dsc_name] = hashlib.sha256(dsc).hexdigest()
+                records[component] = dict(package=source + '-dev', version=version, source=source,
+                    sourceVersion=version, header='/include/' + deps.CXX_HEADERS.get(component, 'fixture.h'),
+                    files={'source.tar.gz': hashes[name], 'source.dsc': hashes[dsc_name]})
+            identity = json.dumps(records).encode()
+            data['corresponding-source/dependencies/inputs.json'] = identity
+            hashes['inputs.json'] = hashlib.sha256(identity).hexdigest()
             data['corresponding-source/dependencies/SHA256.json'] = json.dumps(hashes).encode()
             pack()
             # Correct filenames with meaningless contents must still fail.
@@ -106,6 +120,33 @@ class AutomaticPin(unittest.TestCase):
                     data[name] = b'BSD public domain GPL Boost Software License MPL-2 MIT'
             pack()
             checker.check_archive(archive, asset)
+            # Runtime sources alone must not satisfy the Linux gate.
+            complete = dict(records)
+            for component in deps.CXX_HEADERS:
+                records.pop(component)
+            data['corresponding-source/dependencies/inputs.json'] = json.dumps(records).encode()
+            hashes['inputs.json'] = hashlib.sha256(data['corresponding-source/dependencies/inputs.json']).hexdigest()
+            data['corresponding-source/dependencies/SHA256.json'] = json.dumps(hashes).encode()
+            pack()
+            with self.assertRaisesRegex(ValueError, 'incomplete Linux'):
+                checker.check_archive(archive, asset)
+            data['corresponding-source/dependencies/inputs.json'] = json.dumps(complete).encode()
+            hashes['inputs.json'] = hashlib.sha256(data['corresponding-source/dependencies/inputs.json']).hexdigest()
+            data['corresponding-source/dependencies/SHA256.json'] = json.dumps(hashes).encode()
+            # A header record pointing at a runtime-version source must fail,
+            # even with an internally consistent outer archive hash inventory.
+            header_record = complete['stdc++-headers']
+            header_record['sourceVersion'] = '14.2-1'
+            data['corresponding-source/dependencies/inputs.json'] = json.dumps(complete).encode()
+            hashes['inputs.json'] = hashlib.sha256(data['corresponding-source/dependencies/inputs.json']).hexdigest()
+            data['corresponding-source/dependencies/SHA256.json'] = json.dumps(hashes).encode()
+            pack()
+            with self.assertRaisesRegex(ValueError, r'Mismatched stdc\+\+-headers source identity'):
+                checker.check_archive(archive, asset)
+            header_record['sourceVersion'] = '13.3-1'
+            data['corresponding-source/dependencies/inputs.json'] = json.dumps(complete).encode()
+            hashes['inputs.json'] = hashlib.sha256(data['corresponding-source/dependencies/inputs.json']).hexdigest()
+            data['corresponding-source/dependencies/SHA256.json'] = json.dumps(hashes).encode()
             data['licenses/boost.txt'] = b'MIT boost-defaults metapackage'
             pack()
             with self.assertRaisesRegex(ValueError, 'boost'): checker.check_archive(archive, asset)
@@ -135,14 +176,50 @@ class AutomaticPin(unittest.TestCase):
                 dsc += f' {hashlib.md5(path.read_bytes()).hexdigest()} {path.stat().st_size} {path.name}\n'
             (cache / 'fixture_1.0-1.dsc').write_text(dsc)
             identities = {c: dict(package='fixture-dev', version='1.0-1', source='fixture', sourceVersion='1.0-1') for c in deps.COMPONENTS}
+            for suffix in ['orig.tar.gz', 'debian.tar.gz']:
+                old_name = 'fixture_1.0' + ('.' if suffix.startswith('orig') else '-1.') + suffix
+                new_name = 'header-fixture_2.0' + ('.' if suffix.startswith('orig') else '-1.') + suffix
+                shutil.copyfile(cache / old_name, cache / new_name)
+            header_dsc = dsc.replace('Source: fixture\n', 'Source: header-fixture\n').replace('Version: 1.0-1\n', 'Version: 2.0-1\n').replace('fixture_1.0', 'header-fixture_2.0')
+            (cache / 'header-fixture_2.0-1.dsc').write_text(header_dsc)
+            for component, suffix in deps.CXX_HEADERS.items():
+                identities[component] = dict(package='header-fixture-dev', version='2.0-1',
+                    source='header-fixture', sourceVersion='2.0-1', header='/selected/include/' + suffix)
             with patch.object(deps, 'identities', return_value=identities):
                 deps.sources(root / 'inputs', cache)
             deps.reconstruct(root / 'inputs', root / 'unpacked')
             for component in identities:
                 self.assertEqual((root / 'unpacked' / component / 'input.h').read_text(), 'distribution-patched\n')
+            collected = json.loads((root / 'inputs' / 'inputs.json').read_text())
+            self.assertEqual(collected['stdc++']['sourceVersion'], '1.0-1')
+            self.assertEqual(collected['stdc++-headers']['sourceVersion'], '2.0-1')
+            del collected['stdc++-config']
+            (root / 'inputs' / 'inputs.json').write_text(json.dumps(collected))
+            with self.assertRaisesRegex(ValueError, 'Incomplete'):
+                deps.reconstruct(root / 'inputs', root / 'missing-header-output')
+            collected['stdc++-config'] = identities['stdc++-config']
+            (root / 'inputs' / 'inputs.json').write_text(json.dumps(collected))
             (root / 'inputs' / 'boost' / 'fixture_1.0.orig.tar.gz').write_bytes(b'corrupt')
             with self.assertRaisesRegex(ValueError, 'Corrupt'):
                 deps.reconstruct(root / 'inputs', root / 'corrupt-output')
+
+    @unittest.skipUnless(shutil.which('dpkg-query') and shutil.which(os.environ.get('CXX', 'g++')), 'requires Debian C++ toolchain')
+    def test_real_linux_compiler_header_owners(self):
+        deps = module('linux-dependencies')
+        compiler = os.environ.get('CXX', 'g++')
+        paths = deps.cxx_headers(compiler)
+        output = subprocess.check_output([compiler, '-E', '-x', 'c++', '-'],
+                                         input='#include <vector>\n', text=True)
+        for component, suffix in deps.CXX_HEADERS.items():
+            header = paths[component]
+            self.assertIn('"' + header + '"', output)
+            self.assertTrue(header.endswith('/' + suffix))
+            package = deps.owner(header)
+            self.assertEqual(package, subprocess.check_output(
+                ['dpkg-query', '-S', header], text=True).strip().split(': /')[0])
+            fields = deps.run('dpkg-query', '-W', '-f=${source:Package}\t${source:Version}', package).split('\t')
+            self.assertEqual(len(fields), 2)
+            self.assertTrue(all(fields))
 
     def test_newest_release_build_and_complete_pin_skip(self):
         with tempfile.TemporaryDirectory() as folder:

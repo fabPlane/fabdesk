@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -23,13 +24,43 @@ def owner(path):
     # A multiarch owner contains a colon; split at the path separator instead.
     return run('dpkg-query', '-S', path).split(': /')[0]
 
-COMPONENTS = set(HEADERS) | {'gcc', 'stdc++'}
+CXX_HEADERS = {'stdc++-headers': 'vector', 'stdc++-config': 'bits/c++config.h'}
+COMPONENTS = set(HEADERS) | {'gcc', 'stdc++'} | set(CXX_HEADERS)
+
+def cxx_headers(compiler):
+    # Line markers follow the compiler's actual include search, including the
+    # multiarch config directory. Never infer a GCC version from the runtime.
+    preprocessed = run(compiler, '-E', '-x', 'c++', '-', input='#include <vector>\n')
+    included = set(re.findall(r'^# \d+ "(/[^"\n]+)"', preprocessed, re.M))
+    paths = {}
+    for component, suffix in CXX_HEADERS.items():
+        matches = {path for path in included if path.endswith('/' + suffix)}
+        if len(matches) != 1:
+            raise ValueError(f'Cannot resolve {component} through {compiler}: {matches}')
+        paths[component] = matches.pop()
+    return paths
+
+def validate_identity(component, record, read_file):
+    for field in ('package', 'version', 'source', 'sourceVersion'):
+        if not isinstance(record.get(field), str) or not record[field]:
+            raise ValueError(f'Missing {component} source identity: {field}')
+    if component in CXX_HEADERS and not record.get('header', '').endswith('/' + CXX_HEADERS[component]):
+        raise ValueError(f'Missing {component} implementation header identity')
+    dscs = [name for name in record['files'] if name.endswith('.dsc')]
+    if len(dscs) != 1:
+        raise ValueError(f'Missing {component} source package')
+    text = '\n' + read_file(dscs[0]).decode()
+    for field, value in [('Source', record['source']), ('Version', record['sourceVersion'])]:
+        if f'\n{field}: {value}\n' not in text:
+            raise ValueError(f'Mismatched {component} source identity: {field}')
+
 
 def identities():
     result = {}
-    paths = dict(HEADERS)
+    compiler = os.environ.get('CXX', 'g++')
+    paths = dict(HEADERS, **cxx_headers(compiler))
     for component, filename in [('gcc', 'libgcc_s.so.1'), ('stdc++', 'libstdc++.so')]:
-        paths[component] = str(Path(run(os.environ.get('CXX', 'g++'), '-print-file-name=' + filename)).resolve(strict=True))
+        paths[component] = str(Path(run(compiler, '-print-file-name=' + filename)).resolve(strict=True))
     for component, header in paths.items():
         package = owner(header)
         fields = run('dpkg-query', '-W', '-f=${Version}\t${source:Package}\t${source:Version}', package).split('\t')
@@ -76,9 +107,9 @@ def sources(dest, cache=None):
         else:
             subprocess.run(['apt-get', 'source', '--download-only', '--', record['source'] + '=' + record['sourceVersion']], cwd=target, check=True)
         record['files'] = {p.name: digest(p) for p in target.iterdir() if p.is_file()}
-        if not any(p.endswith('.dsc') for p in record['files']): raise ValueError('Missing .dsc')
+        validate_identity(component, record, lambda name: (target / name).read_bytes())
     (dest / 'inputs.json').write_text(json.dumps(records, indent=2) + '\n')
-    (dest / 'EXCLUSIONS.txt').write_text('System glibc and OS libraries are excluded. General-purpose toolchain binaries are excluded. The GCC source package is retained to cover the copied runtime libraries, not to distribute a compiler binary.\n')
+    (dest / 'EXCLUSIONS.txt').write_text('System glibc and OS libraries are excluded. General-purpose toolchain binaries are excluded. The GCC source package is retained to cover the copied runtime libraries and compiled-in C++ implementation/configuration headers, not to distribute a compiler binary.\n')
 
 def dsc_members(path):
     members = {}
@@ -102,6 +133,7 @@ def reconstruct(dest, output):
         for filename, sha in record['files'].items():
             if Path(filename).name != filename or digest(folder / filename) != sha:
                 raise ValueError(f'Corrupt source input: {component}/{filename}')
+        validate_identity(component, record, lambda name: (folder / name).read_bytes())
         dsc, = folder.glob('*.dsc')
         subprocess.run(['dpkg-source', '--no-check', '-x', str(dsc.resolve()), str((output / component).resolve())], check=True)
 
