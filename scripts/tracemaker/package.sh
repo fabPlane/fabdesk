@@ -139,26 +139,28 @@ $(cat "$src_tree/.fabdesk-windows-patch")"
 fi
 
 # Retain pristine upstream source plus the exact tracked changes applied by the
-# build (including platform patches). Source is both in the binary archive and
-# beside it on the immutable public release, so upstream availability is irrelevant.
+# build (including platform patches). Publish source beside the small binary
+# archive, with equivalent access in the same immutable release folder.
 [ -n "$src_tree" ] || { echo "TRACEMAKER_SRC is required for corresponding source" >&2; exit 1; }
 source_name="tracemaker-source-${platform}.tar.gz"
-source_dir="$work/corresponding-source"
+source_dir="$(mktemp -d "${TMPDIR:-/tmp}/tm-source.XXXXXX")"
+trap 'rm -rf "$work" "$source_dir"' EXIT
 mkdir -p "$source_dir"
 git -C "$src_tree" archive --format=tar.gz "$upstream_commit" > "$source_dir/upstream.tar.gz"
 git -C "$src_tree" diff --binary "$upstream_commit" > "$source_dir/build.patch"
 cp -R "$SCRIPT_DIR" "$source_dir/build-scripts"
+find "$source_dir/build-scripts" -type d -name __pycache__ -prune -exec rm -rf {} +
 runtime=system
 if [ -f "$src_tree/.fabdesk-macos-libcxx" ]; then runtime="$(cat "$src_tree/.fabdesk-macos-libcxx")"; fi
-TRACEMAKER_LINK_NOTE="$link_note" bash "$SCRIPT_DIR/collect-sources.sh" "$platform" "$source_dir/dependencies" "$runtime"
+TRACEMAKER_BUNDLED_DIR="$work" TRACEMAKER_LINK_NOTE="$link_note" bash "$SCRIPT_DIR/collect-sources.sh" "$platform" "$source_dir/dependencies" "$runtime"
 cp "${TRACEMAKER_WORKFLOW_PATH:-$SCRIPT_DIR/../../.github/workflows/tracemaker-binaries.yml}" "$source_dir/dependency-install-workflow.yml"
 tar -czf "$dest_dir/$source_name" -C "$source_dir" .
 source_sha="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$dest_dir/$source_name")"
 runtime=system
 if [ -f "$src_tree/.fabdesk-macos-libcxx" ]; then runtime="$(cat "$src_tree/.fabdesk-macos-libcxx")"; fi
 TRACEMAKER_LINK_NOTE="$link_note" bash "$SCRIPT_DIR/collect-licenses.sh" "$platform" "$work/licenses" "$runtime"
-source_body="Unofficial binary built by ${repo}. The corresponding source is included in
-corresponding-source/ (upstream.tar.gz, build.patch, build-scripts/, dependencies/ and dependency-install-workflow.yml).
+source_body="Unofficial binary built by ${repo}. The corresponding source is provided in the
+separate source bundle named below (upstream.tar.gz, build.patch, build-scripts/, dependencies/ and dependency-install-workflow.yml).
 Apply build.patch to the extracted upstream tree before building.
 ${patch_note}
 ${link_note}"
@@ -240,7 +242,7 @@ fi
 
 PLATFORM="$platform" FILENAME="$filename" ASSET_URL="$asset_url" SHA="$sha" \
 BYTES="$bytes" FORMAT="$format" EXE_NAME="$exe_name" PLACER_NAME="$placer_name" NOTES="$notes" DEST_DIR="$dest_dir" \
-CXX_RUNTIME="$cxx_runtime" MACOS_VARIANT="$macos_variant" \
+CXX_RUNTIME="$cxx_runtime" MACOS_VARIANT="$macos_variant" SOURCE_NAME="$source_name" SOURCE_SHA="$source_sha" \
 python3 - <<'PY'
 import json, os, pathlib
 asset = {
@@ -254,6 +256,8 @@ asset = {
   # The placer sits beside the executable; the installer and archive gate
   # read this key (an asset without it predates the placer).
   "placer": os.environ["PLACER_NAME"],
+  "source": {"filename": os.environ["SOURCE_NAME"], "sha256": os.environ["SOURCE_SHA"],
+             "url": os.environ["ASSET_URL"].rsplit("/", 1)[0] + "/" + os.environ["SOURCE_NAME"]},
 }
 notes = pathlib.Path(os.environ["NOTES"]).read_text(encoding="utf-8")
 asset["linkage"] = (
@@ -280,3 +284,5 @@ if [ -f "$work/NOTICE" ]; then
   cp "$work/NOTICE" "$dest_dir/NOTICE"
 fi
 echo "Packed $archive ($bytes bytes, sha256 $sha)"
+
+python3 "$SCRIPT_DIR/archive-sizes.py" "$archive" "$dest_dir/$source_name"

@@ -53,7 +53,7 @@ manifest = {
     "assets": assets,
 }
 (root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-(root / "SHA256SUMS").write_text("".join(f"{a['sha256']}  {a['filename']}\n" for a in assets), encoding="utf-8")
+(root / "SHA256SUMS").write_text("".join(f"{a['sha256']}  {a['filename']}\n" for a in assets + [a["source"] for a in assets]), encoding="utf-8")
 print(json.dumps(manifest, indent=2))
 PY
 

@@ -27,6 +27,14 @@ def owner(path):
 CXX_HEADERS = {'stdc++-headers': 'vector', 'stdc++-config': 'bits/c++config.h'}
 COMPONENTS = set(HEADERS) | {'gcc', 'stdc++'} | set(CXX_HEADERS)
 
+def source_components(names):
+    # MPL Eigen headers and GCC implementation/configuration headers are
+    # compiled in. Retain runtime sources only for libraries actually bundled.
+    components = {'eigen'} | set(CXX_HEADERS)
+    if any('libgcc_s' in name for name in names): components.add('gcc')
+    if any('libstdc++' in name for name in names): components.add('stdc++')
+    return components
+
 def cxx_headers(compiler):
     # Line markers follow the compiler's actual include search, including the
     # multiarch config directory. Never infer a GCC version from the runtime.
@@ -80,13 +88,19 @@ def licenses(dest):
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
-def sources(dest, cache=None):
+def sources(dest, cache=None, components=None):
     dest.mkdir(parents=True, exist_ok=True)
     records = identities()
+    if components is not None: records = {k:v for k,v in records.items() if k in components}
+    previous = {}
     for component, record in records.items():
         target = dest / component
         target.mkdir()
-        if cache:
+        identity = (record['source'], record['sourceVersion'])
+        if identity in previous:
+            for path in previous[identity].iterdir():
+                if path.is_file(): os.link(path, target / path.name)
+        elif cache:
             # Cache is an apt-get source --download-only directory, not an
             # extracted upstream tarball: require the .dsc and Debian patches.
             candidates = []
@@ -106,10 +120,11 @@ def sources(dest, cache=None):
                 shutil.copyfile(path, target / filename)
         else:
             subprocess.run(['apt-get', 'source', '--download-only', '--', record['source'] + '=' + record['sourceVersion']], cwd=target, check=True)
+        previous[identity] = target
         record['files'] = {p.name: digest(p) for p in target.iterdir() if p.is_file()}
         validate_identity(component, record, lambda name: (target / name).read_bytes())
     (dest / 'inputs.json').write_text(json.dumps(records, indent=2) + '\n')
-    (dest / 'EXCLUSIONS.txt').write_text('System glibc and OS libraries are excluded. General-purpose toolchain binaries are excluded. The GCC source package is retained to cover the copied runtime libraries and compiled-in C++ implementation/configuration headers, not to distribute a compiler binary.\n')
+    (dest / 'EXCLUSIONS.txt').write_text('System glibc and OS libraries are excluded. Permissive Boost, CLI11, nlohmann_json, BSD zstd and public-domain SQLite retain notices, not source packages. General-purpose toolchain binaries are excluded. The GCC source package is retained to cover the copied runtime libraries and compiled-in C++ implementation/configuration headers, not to distribute a compiler binary.\n')
 
 def dsc_members(path):
     members = {}
@@ -126,7 +141,7 @@ def dsc_members(path):
 
 def reconstruct(dest, output):
     records = json.loads((dest / 'inputs.json').read_text())
-    if set(records) != COMPONENTS: raise ValueError('Incomplete source inputs')
+    if not ({'eigen'} | set(CXX_HEADERS)) <= set(records) or not set(records) <= COMPONENTS: raise ValueError('Incomplete source inputs')
     output.mkdir(parents=True, exist_ok=True)
     for component, record in records.items():
         folder = dest / component
@@ -145,5 +160,8 @@ if __name__ == '__main__':
     parser.add_argument('--cache', type=Path)
     args = parser.parse_args()
     if args.action == 'licenses': licenses(args.dest)
-    elif args.action == 'sources': sources(args.dest, args.cache)
+    elif args.action == 'sources':
+        bundle = os.environ.get('TRACEMAKER_BUNDLED_DIR')
+        names = [p.name for p in Path(bundle).rglob('*')] if bundle else []
+        sources(args.dest, args.cache, source_components(names))
     else: reconstruct(args.dest, args.output)

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Reject incomplete distributable binary archives before publication."""
 import json
+import hashlib
 import importlib.util
 from pathlib import Path
 import sys
@@ -8,23 +9,68 @@ import re
 import tarfile
 import zipfile
 
+MAX_BINARY_BYTES = 64 * 1024 * 1024
+MAX_EXPANDED_BYTES = 192 * 1024 * 1024
+
+def digest(path):
+    with path.open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
 def check_archive(path, asset):
+    if path.stat().st_size > MAX_BINARY_BYTES:
+        raise ValueError(f'{path}: binary archive too large (limit 64 MiB)')
     if asset.get('format') == 'zip':
         with zipfile.ZipFile(path) as archive:
+            if sum(i.file_size for i in archive.infolist()) > MAX_EXPANDED_BYTES: raise ValueError('Binary archive too large expanded')
             names = archive.namelist()
             contents = {n.removeprefix("./"): archive.read(n) for n in names if not n.endswith("/")}
     else:
         with tarfile.open(path) as archive:
+            if sum(m.size for m in archive.getmembers()) > MAX_EXPANDED_BYTES: raise ValueError('Binary archive too large expanded')
             names = archive.getnames()
             contents = {m.name.removeprefix("./"): archive.extractfile(m).read() for m in archive.getmembers() if m.isfile()}
     names = {n.removeprefix('./') for n in names}
-    required = {'LICENSE', 'NOTICE', 'SOURCE.txt', 'DEPENDENCIES.txt',
-                'corresponding-source/upstream.tar.gz', 'corresponding-source/build.patch',
-                'corresponding-source/dependency-install-workflow.yml',
-                'corresponding-source/dependencies/SHA256.json',
-                asset['executable'], asset.get('placer', 'MISSING-PLACER')}
+    if any(n.startswith('corresponding-source/') or n.endswith(('.tar.gz', '.dsc')) for n in names):
+        raise ValueError('Corresponding source inside binary archive')
+    required = {'LICENSE', 'NOTICE', 'SOURCE.txt', 'DEPENDENCIES.txt', asset['executable'], asset.get('placer', 'MISSING-PLACER')}
     if not required <= names:
         raise ValueError(f'{path}: missing {required - names}')
+    for name in contents:
+        if name not in required and not name.startswith(('lib/', 'licenses/')) and not name.lower().endswith('.dll'):
+            raise ValueError(f'Unexpected binary archive member: {name}')
+    payload = sum(len(data) for name, data in contents.items() if name in {asset['executable'], asset.get('placer')} or name.startswith(('lib/', 'licenses/')) or name.lower().endswith('.dll'))
+    if path.stat().st_size > 3 * payload + 1024 * 1024:
+        raise ValueError('Binary archive too large relative to programs, libraries and notices')
+    source = asset.get('source', {})
+    filename = source.get('filename', '')
+    if not filename or Path(filename).name != filename or not filename.startswith('tracemaker-source-'):
+        raise ValueError('Missing source bundle identity')
+    source_path = path.parent / filename
+    if not source_path.is_file() or digest(source_path) != source.get('sha256'):
+        raise ValueError('Missing or corrupt source bundle')
+    offer = contents['SOURCE.txt'].decode()
+    if source.get('url', '').rsplit('/', 1)[-1] != filename or filename not in offer or source['sha256'] not in offer:
+        raise ValueError('SOURCE.txt does not identify the matching source bundle')
+    source_archive = tarfile.open(source_path)
+    try:
+        check_source(source_archive, asset, contents, names, path)
+    finally:
+        source_archive.close()
+
+def check_source(source_archive, asset, contents, names, path):
+    def open_source(name):
+        for candidate in [name, './' + name]:
+            try:
+                member = source_archive.getmember(candidate)
+                if member.isfile() or member.islnk(): return source_archive.extractfile(member)
+            except KeyError: pass
+        raise ValueError(f'Missing source bundle member {name}')
+    def read_source(name):
+        with open_source(name) as stream: return stream.read()
+    for name in ['upstream.tar.gz', 'build.patch', 'dependency-install-workflow.yml']:
+        read_source(name)
+    if not any(m.name.removeprefix('./').startswith('build-scripts/') for m in source_archive.getmembers()):
+        raise ValueError('Missing build scripts')
     patterns = {
         'zstd': r'BSD|Redistribution and use in source and binary',
         'sqlite': r'public.domain|The author disclaims copyright to this source code',
@@ -45,19 +91,16 @@ def check_archive(path, asset):
             continue
         if not licensed(component):
             raise ValueError(f'{path}: missing meaningful {component} license text')
-    import hashlib
-    source_root = 'corresponding-source/dependencies/'
-    hashes = json.loads(contents[source_root + 'SHA256.json'])
+    source_root = 'dependencies/'
+    hashes = json.loads(read_source(source_root + 'SHA256.json'))
     for name, sha in hashes.items():
-        data = contents.get(source_root + name)
-        if data is None or hashlib.sha256(data).hexdigest() != sha:
+        if Path(name).is_absolute() or '..' in Path(name).parts: raise ValueError('Unsafe source input')
+        with open_source(source_root + name) as stream:
+            got = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if got != sha:
             raise ValueError(f'{path}: corrupt dependency source {name}')
-    for component in ['boost', 'eigen', 'cli11', 'nlohmann', 'zstd']:
-        if not any(n.startswith(component) for n in hashes):
-            raise ValueError(f'{path}: missing dependency source {component}')
-    if not asset['platform'].startswith('macos-') or licensed('sqlite'):
-        if not any(n.startswith('sqlite') for n in hashes):
-            raise ValueError(f'{path}: missing SQLite source')
+    if not any(n.startswith('eigen/') for n in hashes):
+        raise ValueError('Missing MPL Eigen header source')
     # A newly introduced shared dependency must bring its own license rather
     # than silently passing a fixed checklist for today's toolchain.
     for name in names:
@@ -70,8 +113,8 @@ def check_archive(path, asset):
         if not component or not licensed('gcc' if component == 'stdc++' else component):
             raise ValueError(f'{path}: unlicensed shared dependency {base}')
     extras = (['gcc', 'winpthreads'] if asset['platform'].startswith('windows-') else
-              ['gcc', 'stdc++'] if asset['platform'].startswith('linux-') else
-              ['llvm'] if asset.get('cxxRuntime') == 'llvm-static' else [])
+              [c for c, library in [('gcc', 'libgcc_s'), ('stdc++', 'libstdc++')] if any(library in n for n in names)] if asset['platform'].startswith('linux-') else
+              [])
     for component in extras:
         if not any(n.startswith(component + '/') for n in hashes):
             raise ValueError(f'{path}: missing {component} runtime source')
@@ -82,19 +125,28 @@ def check_archive(path, asset):
         identity_name = 'inputs.json'
         if identity_name not in hashes:
             raise ValueError(f'{path}: missing Linux dependency source identities')
-        records = json.loads(contents[source_root + identity_name])
-        if set(records) != deps.COMPONENTS:
+        records = json.loads(read_source(source_root + identity_name))
+        if set(records) != deps.source_components(names):
             raise ValueError(f'{path}: incomplete Linux dependency source identities')
         for component, record in records.items():
             for name, sha in record['files'].items():
                 if Path(name).name != name or hashes.get(component + '/' + name) != sha:
                     raise ValueError(f'{path}: missing {component} source input {name}')
-            deps.validate_identity(component, record, lambda name: contents[source_root + component + '/' + name])
+            deps.validate_identity(component, record, lambda name: read_source(source_root + component + '/' + name))
     if asset.get('cxxRuntime') == 'llvm-static' and not licensed('llvm'):
         raise ValueError(f'{path}: missing LLVM licenses')
 
 if __name__ == '__main__':
     root = Path(sys.argv[1])
-    for path in root.glob('*/asset.json'):
-        asset = json.loads(path.read_text())
-        check_archive(path.parent / asset['filename'], asset)
+    records = list(root.glob('*/asset.json'))
+    if not records and (root / 'manifest.json').is_file():
+        assets = json.loads((root / 'manifest.json').read_text())['assets']
+        for asset in assets:
+            candidates = [p for p in root.rglob(asset['filename']) if p.is_file() and digest(p) == asset['sha256']]
+            if not candidates: raise ValueError('Missing binary archive')
+            check_archive(candidates[0], asset)
+    else:
+        if not records: raise ValueError('Missing archive manifest')
+        for path in records:
+            asset = json.loads(path.read_text())
+            check_archive(path.parent / asset['filename'], asset)

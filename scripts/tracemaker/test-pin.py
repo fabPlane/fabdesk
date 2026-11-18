@@ -83,12 +83,14 @@ esac
             artifacts = root / 'artifacts'
             artifacts.mkdir()
             (artifacts / 'new.tar.gz').write_bytes(b'rebuilt bytes')
-            (artifacts / 'manifest.json').write_text(json.dumps({'assets': [dict(platform=p, placer='tracemaker-place', filename='new.tar.gz', sha256='a'*64, url='https://example.test/file') for p in ['linux-x86_64', 'macos-arm64']]}))
+            (artifacts / 'manifest.json').write_text(json.dumps({'assets': [dict(platform=p, placer='tracemaker-place', filename='new.tar.gz', sha256='a'*64, url='https://example.test/file', source=dict(filename='source.tar.gz', sha256=__import__('hashlib').sha256(b'source').hexdigest(), url='https://example.test/source.tar.gz')) for p in ['linux-x86_64', 'macos-arm64']]}))
+            (artifacts / 'source.tar.gz').write_bytes(b'source')
             existing = root / 'existing.tar.gz'
             existing.write_bytes(b'original immutable bytes')
             log = root / 'calls'
             # The authoritative store rejects HEAD (503); public GET would also
             # fail, as in F45-2. Any attempted PUT would destroy the fixture.
+            (scripts / 'check-archive.py').write_text('')
             (scripts / 's3-put.py').write_text(
                 'import pathlib,sys\n'
                 f'log=pathlib.Path({str(log)!r})\n'
@@ -147,7 +149,8 @@ shutil.copyfile(source,args[args.index('-o')+1])
             for platform in ['linux-x86_64', 'macos-arm64']:
                 directory = artifacts / platform; directory.mkdir()
                 archive = directory / (platform + '.tar.gz'); archive.write_bytes(platform.encode())
-                assets.append(dict(platform=platform, placer='tracemaker-place', filename=archive.name,
+                source = directory / ('tracemaker-source-' + platform + '.tar.gz'); source.write_bytes(b'source bundle')
+                assets.append(dict(platform=platform, placer='tracemaker-place', filename=archive.name, source=dict(filename=source.name, sha256=hashlib.sha256(source.read_bytes()).hexdigest(), url='https://example.test/tracemaker/build/' + source.name),
                     sha256=hashlib.sha256(archive.read_bytes()).hexdigest(), url='https://example.test/tracemaker/build/' + archive.name))
             env = {k:v for k,v in os.environ.items() if not k.startswith(('TRACEMAKER_', 'DESKTOP_R2_', 'CLOUDFLARE_'))}
             env.update(PATH=str(root)+os.pathsep+os.environ['PATH'], CALLS=str(calls), STORE=str(store),
@@ -170,6 +173,7 @@ shutil.copyfile(source,args[args.index('-o')+1])
                     self.assertFalse(calls.exists(),result.stderr)
             stage(assets)
             result = invoke('publish.sh'); self.assertEqual(result.returncode,0,result.stderr)
+            for source in artifacts.glob('*/tracemaker-source-*.tar.gz'): shutil.move(source, artifacts / source.name)
             self.assertEqual(len(calls.read_text().splitlines()),1)
             env.update(TRACEMAKER_PUBLIC_RELEASE_REPO='fixture/public', TRACEMAKER_PUBLIC_RELEASE_TOKEN='fixture')
             result = invoke('mirror-public.sh'); self.assertEqual(result.returncode,0,result.stderr)
@@ -186,11 +190,21 @@ shutil.copyfile(source,args[args.index('-o')+1])
             archive = pathlib.Path(folder) / 'binary.tar.gz'
             names = ['LICENSE', 'NOTICE', 'SOURCE.txt', 'DEPENDENCIES.txt',
                      'corresponding-source/upstream.tar.gz', 'corresponding-source/build.patch',
-                     'tracemaker', 'tracemaker-place']
+                     'corresponding-source/build-scripts/build.sh', 'tracemaker', 'tracemaker-place', 'lib/libgcc_s.so.1', 'lib/libstdc++.so.6']
             data = {name: b'x' for name in names}
             def pack():
+                import hashlib
+                source_path = archive.parent / 'tracemaker-source-linux-x86_64.tar.gz'
+                with tarfile.open(source_path, 'w:gz') as tar:
+                    for name, body in data.items():
+                        if not name.startswith('corresponding-source/'): continue
+                        info = tarfile.TarInfo(name.removeprefix('corresponding-source/')); info.size = len(body)
+                        tar.addfile(info, io.BytesIO(body))
+                asset['source'] = dict(filename=source_path.name, sha256=hashlib.sha256(source_path.read_bytes()).hexdigest(), url='https://example.test/build/' + source_path.name)
+                data['SOURCE.txt'] = (asset['source']['url'] + '\nSource copy sha256: ' + asset['source']['sha256']).encode()
                 with tarfile.open(archive, 'w:gz') as tar:
                     for name, body in data.items():
+                        if name.startswith('corresponding-source/'): continue
                         info = tarfile.TarInfo(name)
                         info.size = len(body)
                         tar.addfile(info, io.BytesIO(body))
@@ -202,7 +216,7 @@ shutil.copyfile(source,args[args.index('-o')+1])
             import hashlib
             deps = module('linux-dependencies')
             records = {}
-            for component in sorted(deps.COMPONENTS):
+            for component in sorted(deps.source_components(['libgcc_s.so.1', 'libstdc++.so.6'])):
                 data['licenses/' + component + '.txt'] = b'x'
                 name = component + '/source.tar.gz'
                 data['corresponding-source/dependencies/' + name] = b'source input'
@@ -227,9 +241,25 @@ shutil.copyfile(source,args[args.index('-o')+1])
                 if name.startswith('licenses/'):
                     data[name] = b'BSD public domain GPL Boost Software License MPL-2 MIT'
             pack()
+            for component in ['zstd', 'sqlite', 'gcc', 'boost', 'eigen', 'cli11', 'nlohmann']:
+                data['licenses/' + component + '.txt'] = b'BSD public domain GPL Boost Software License MPL-2 MIT'
             data['licenses/sqlite.txt'] = (ROOT / 'fixtures/sqlite3-notice.h').read_bytes()
             pack()
             checker.check_archive(archive, asset)
+            source_path = archive.parent / asset['source']['filename']
+            source_path.unlink()
+            with self.assertRaisesRegex(ValueError, 'source bundle'): checker.check_archive(archive, asset)
+            pack()
+            with archive.open('wb') as stream: stream.truncate(checker.MAX_BINARY_BYTES + 1)
+            with self.assertRaisesRegex(ValueError, 'too large'): checker.check_archive(archive, asset)
+            pack()
+            source_path.write_bytes(b'corrupt source')
+            with self.assertRaisesRegex(ValueError, 'source bundle'): checker.check_archive(archive, asset)
+            pack()
+            data['corresponding-source.tar.gz'] = b'forbidden embedded source'
+            pack()
+            with self.assertRaisesRegex(ValueError, 'inside binary'): checker.check_archive(archive, asset)
+            del data['corresponding-source.tar.gz']; pack()
             # Runtime sources alone must not satisfy the Linux gate.
             complete = dict(records)
             for component in deps.CXX_HEADERS:
@@ -303,6 +333,9 @@ shutil.copyfile(source,args[args.index('-o')+1])
             collected = json.loads((root / 'inputs' / 'inputs.json').read_text())
             self.assertEqual(collected['stdc++']['sourceVersion'], '1.0-1')
             self.assertEqual(collected['stdc++-headers']['sourceVersion'], '2.0-1')
+            self.assertEqual((root / 'inputs/stdc++-headers/header-fixture_2.0.orig.tar.gz').stat().st_ino, (root / 'inputs/stdc++-config/header-fixture_2.0.orig.tar.gz').stat().st_ino)
+            self.assertEqual(deps.source_components([]), {'eigen', 'stdc++-headers', 'stdc++-config'})
+            self.assertIn('gcc', deps.source_components(['libgcc_s.so.1']))
             del collected['stdc++-config']
             (root / 'inputs' / 'inputs.json').write_text(json.dumps(collected))
             with self.assertRaisesRegex(ValueError, 'Incomplete'):

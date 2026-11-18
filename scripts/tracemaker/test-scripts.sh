@@ -37,7 +37,7 @@ for component in ['boost', 'eigen', 'cli11', 'nlohmann', 'zstd', 'sqlite', 'gcc'
     name = component + '/source.fixture'
     path = root / name; path.parent.mkdir(); path.write_text('source fixture')
     files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
-    if component not in ['winpthreads', 'llvm']:
+    if component in ['eigen', 'stdc++-headers', 'stdc++-config']:
         dsc_name = component + '/fixture.dsc'
         dsc = root / dsc_name; dsc.write_text('Source: fixture\nVersion: 1.0-1\n')
         files[dsc_name] = hashlib.sha256(dsc.read_bytes()).hexdigest()
@@ -1310,6 +1310,14 @@ assert_contains "$ROOT/mirror-skip.out" "Public TraceMaker mirror skipped"
 missing_pack="$ROOT/missing-pack"
 mkdir -p "$missing_pack"
 cp "$partial_pack/manifest.json" "$missing_pack/manifest.json"
+python3 - "$partial_pack" "$missing_pack" <<'PYSOURCES'
+import hashlib, json, pathlib, shutil, sys
+root, dest = map(pathlib.Path, sys.argv[1:])
+for a in json.loads((root / 'manifest.json').read_text())['assets']:
+    source = a['source']
+    match = next(p for p in root.rglob(source['filename']) if hashlib.sha256(p.read_bytes()).hexdigest() == source['sha256'])
+    shutil.copyfile(match, dest / source['filename'])
+PYSOURCES
 set +e
 env -u TRACEMAKER_PUBLIC_RELEASE_REPO -u TRACEMAKER_PUBLIC_RELEASE_TOKEN \
   -u DESKTOP_R2_ACCESS_KEY_ID -u CLOUDFLARE_ACCOUNT_ID -u CLOUDFLARE_API_TOKEN \
@@ -1344,7 +1352,7 @@ import hashlib, json, pathlib, shutil
 manifest = json.loads(pathlib.Path("$partial_pack/manifest.json").read_text())
 dest = pathlib.Path("$mirror_flat")
 roots = [pathlib.Path("$partial_pack")]
-for asset in manifest["assets"]:
+for asset in manifest["assets"] + [a["source"] for a in manifest["assets"]]:
     name = asset["filename"]
     found = None
     for root in roots:

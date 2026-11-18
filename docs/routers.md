@@ -196,19 +196,25 @@ manifest shows that release carries it, so nothing is re-downloaded for nothing;
 `TRACEMAKER_BIN` or source-package install is never replaced; the reason says what to build or set.
 A reviewed pin change supplies the first placer-capable build; old archive URLs remain byte-identical.
 
-Each binary archive contains upstream `LICENSE`, `NOTICE`, `SOURCE.txt`, dependency license texts in `licenses/`,
-and `corresponding-source/` with pristine upstream commit source, the exact build patch, build scripts,
-the dependency-install workflow, and matching dependency source inputs with SHA-256 inventories.
-The same source bundle is retained beside the binary archives on our immutable release. `SOURCE.txt` points to
-that copy first and upstream second, and records its SHA-256. Missing dependency notices stop packaging.
-Linux resolves actual header/runtime file owners (including versioned Boost), and copies their copyright
-files plus the full common-license texts they reference; macOS extracts notices from Homebrew's verified matching-version sources.
-The macOS static LLVM variant includes LLVM notices; a bundled static SQLite includes SQLite notices.
-License validation reads the notices and requires the relevant license text or identifier, including Boost's
-BSL rather than the boost-defaults metapackage's MIT notice. Debian source inputs are the exact installed
-source versions' `.dsc`, upstream archives and distribution patches. Homebrew retains the matching formula,
-version metadata, upstream archive and patched tree. Missing versions fail packaging.
-OS libraries and general-purpose build tools are excluded. Sources for copied GCC runtimes, compiled-in C++ implementation/configuration headers, and static LLVM runtimes are retained.
+Each small binary archive contains both programs, bundled non-system libraries, upstream `LICENSE`, `NOTICE`,
+`SOURCE.txt`, dependency license texts in `licenses/`, and `DEPENDENCIES.txt`. Corresponding source is **beside**
+the binary archive in `tracemaker-source-<platform>.tar.gz`, in the same immutable release folder with equivalent
+access. It contains pristine upstream commit source, the exact build patch, build scripts, the dependency-install
+workflow, and required dependency source inputs. `SOURCE.txt` names this bundle and its SHA-256; the manifest's
+per-asset `source` object records its filename, URL and SHA-256. Publication and mirroring refuse a missing or corrupt
+source bundle. The mirror rewrites and verifies the versioned source URL along with the binary URLs.
+
+Linux retains MPL Eigen headers, GCC C++ implementation/configuration headers compiled into the programs, and
+GCC/libstdc++ runtime source packages only when those libraries are actually bundled. Exact Debian source versions,
+`.dsc`, upstream archives and distribution patches are retained; identical source inputs use tar hard links.
+macOS retains Eigen's MPL source with its matching Homebrew formula and patched tree. Apple system libraries are
+provided by the OS. Boost, CLI11, nlohmann_json, BSD zstd, SQLite (public domain), and LLVM's permissively licensed
+runtime retain their notices; their source trees are not copied into these bundles. Linux system glibc and macOS
+framework sources are excluded. Missing required sources or license notices stop publication.
+
+The binary gate rejects source trees or nested source archives inside a binary download. Its size limits are
+64 MiB compressed, 192 MiB expanded, and compressed bytes no greater than three times the programs, libraries and
+notices plus 1 MiB for archive overhead. Source bundles have separate hashes and no binary-download size limit.
 
 On a Linux build host with `deb-src` enabled, collect and reconstruct dependency inputs offline:
 

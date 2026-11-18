@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Require the complete router + placer platform set before any publication."""
 import json
+import hashlib
 from pathlib import Path
 import sys
 
@@ -29,3 +30,15 @@ if __name__ == '__main__':
     else:
         raise ValueError('Expected artifacts or manifest')
     validate_assets(assets)
+    for asset in assets:
+        source = asset.get('source', {})
+        filename = source.get('filename', '')
+        if not filename or Path(filename).name != filename: raise ValueError('Missing source bundle identity')
+        directory = path.parent if mode == 'manifest' else next(p.parent for p in sorted(path.glob('*/asset.json')) if json.loads(p.read_text()) == asset)
+        candidates = [directory / filename] if mode == 'artifacts' else list(directory.rglob(filename))
+        found = False
+        for bundle in candidates:
+            if not bundle.is_file(): continue
+            with bundle.open('rb') as stream:
+                if hashlib.file_digest(stream, 'sha256').hexdigest() == source.get('sha256'): found = True; break
+        if not found: raise ValueError('Missing or corrupt source bundle')

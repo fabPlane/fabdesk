@@ -36,6 +36,7 @@ export const TraceMakerAssetSchema = z.object({
   executable: z.string().min(1).optional(),
   /** The placer beside `executable` (archives packed since fabdesk shipped tracemaker-place); absent on older ones. */
   placer: z.string().min(1).optional(),
+  source: z.object({ filename: z.string().min(1), url: z.string().url(), sha256: z.string().regex(SHA256_HEX) }).optional(),
   linkage: z.string().optional(),
   minos: z.string().min(1).optional(),
   cxxRuntime: z.string().min(1).optional(),

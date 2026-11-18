@@ -27,6 +27,8 @@ def rewrite(manifest: dict, base: str, tag: str) -> dict:
         if not filename:
             raise SystemExit("asset is missing filename")
         asset["url"] = public_asset_url(base, tag, str(filename))
+        if asset.get("source"):
+            asset["source"]["url"] = public_asset_url(base, tag, asset["source"]["filename"])
     return out
 
 

@@ -12,9 +12,9 @@ case "$platform" in
     python3 "$(dirname "$0")/linux-dependencies.py" sources "$dest" "${args[@]}"
     ;;
   macos-*)
-    packages=(boost eigen cli11 nlohmann-json zstd)
-    [[ "${TRACEMAKER_LINK_NOTE:-}" != *libsqlite3.a* ]] || packages+=(sqlite)
-    [ "$runtime" != llvm-static ] || packages+=(llvm)
+    # Eigen MPL headers are compiled in. Boost/CLI11/nlohmann/zstd/LLVM
+    # use permissive licenses; SQLite is public domain. Keep their notices.
+    packages=(eigen)
     for package in "${packages[@]}"; do
       mkdir -p "$dest/$package"
       brew info --json=v2 "$package" > "$dest/$package/identity.json"

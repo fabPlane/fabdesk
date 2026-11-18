@@ -106,6 +106,8 @@ then
   exit 1
 fi
 
+python3 "$SCRIPT_DIR/check-archive.py" "$artifacts_dir"
+
 work="$(mktemp -d "${TMPDIR:-/tmp}/tm-mirror.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
@@ -195,7 +197,7 @@ uploaded = manifest_path.read_bytes()
 work = pathlib.Path(os.environ["WORK"])
 work.mkdir(parents=True, exist_ok=True)
 failed = 0
-for asset in manifest.get("assets", []):
+for asset in manifest.get("assets", []) + [a["source"] for a in manifest.get("assets", [])]:
     url = asset.get("url") if isinstance(asset, dict) else None
     want = asset.get("sha256") if isinstance(asset, dict) else None
     name = asset.get("filename") if isinstance(asset, dict) else None
