@@ -8,10 +8,11 @@ Use the path that fits the request. If a Fabdesk tool is not listed directly, us
 
 ### New-board inputs
 
-Before the first \`board_check\`, the board needs its parts, an outline, and connectors and other fixed parts in their intended positions, because \`board_check\` records those positions as anchors.
+Before a new board's first \`board_check\`, it needs its parts, an outline, and connectors and other fixed parts at their intended position, rotation and side, because \`board_check\` records them as anchors.
 
-- \`circuit_build\`: creates the schematic and board, including an outline when none exists and board dimensions or outline points are supplied, and uses \`board.placements\` for placed parts.
-- \`schematic_edit\`: edits the schematic only; \`pcb_update_from_schematic\` \`{"apply": true}\` brings parts to the board, \`pcb_define_outline\` sets the outline and \`pcb_place\` positions parts.
+- \`circuit_build\`: creates the schematic and board, including an outline when none exists and board dimensions or outline points are supplied. Outside template projects, \`board.placements\` sets x and y only.
+- \`schematic_edit\`: edits the schematic only; \`pcb_update_from_schematic\` \`{"apply": true}\` brings parts to the board and \`pcb_define_outline\` sets the outline.
+- For either path, \`pcb_place\` sets position, rotation and side (\`flip\`).
 
 - \`circuit_source {"action": "schema"}\` returns the format of \`circuit.netlist.json\`; \`{"action": "validate"}\` checks a saved file.
 - \`schematic_inspect\` with \`detail: "authoring"\` returns pins, unit numbers and item IDs.
