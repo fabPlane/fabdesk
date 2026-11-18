@@ -6,20 +6,25 @@ export const BOARD_START_MAP_MD = `## Start here
 
 Use the path that fits the request. If a Fabdesk tool is not listed directly, use \`capability_search\` and \`capability_call\` when offered; otherwise use the client's tool discovery.
 
+### New-board inputs
+
+Before the first \`board_check\`, the board needs its parts, an outline, and connectors and other fixed parts in their intended positions, because \`board_check\` records those positions as anchors.
+
+- \`circuit_build\`: creates the schematic and board, including an outline when none exists and board dimensions or outline points are supplied, and uses \`board.placements\` for placed parts.
+- \`schematic_edit\`: edits the schematic only; \`pcb_update_from_schematic\` \`{"apply": true}\` brings parts to the board, \`pcb_define_outline\` sets the outline and \`pcb_place\` positions parts.
+
+- \`circuit_source {"action": "schema"}\` returns the format of \`circuit.netlist.json\`; \`{"action": "validate"}\` checks a saved file.
+- \`schematic_inspect\` with \`detail: "authoring"\` returns pins, unit numbers and item IDs.
+- Parts: \`circuit_search_parts\` searches footprints unless \`kind\` is \`"symbol"\`. Use exact \`libId\` values from its results and check pins with \`circuit_describe_part\`.
+
 | Request | First step | Then |
 | --- | --- | --- |
-| New board | Choose \`circuit_build\` (writes schematic and board) or \`schematic_edit\` (edits schematic only; then \`pcb_update_from_schematic\` \`{"apply": true}\` updates and saves board) | \`board_check\` → layout → review → \`render_publish\` |
+| New board | Choose \`circuit_build\` or \`schematic_edit\`; get the board ready | \`board_check\` → layout → review → \`render_publish\` |
 | Change an existing board | \`board_check\` (onboards it if needed) | \`board_edit\` \`mode: "impact"\` → \`mode: "full", adopt: true\` → \`board_check\` → \`render_publish\` |
 | Connect open nets, fix DRC | \`board_check\` | \`board_route\` \`new\` → \`try\` → \`validate\` → \`accept\` |
 | Review a board | \`board_review {"action": "run"}\` | Settle findings; \`autopilot\` applies proven fixes and leaves the owner's questions |
 | Say where a board stands | \`board_check\` | Report its result and next step |
 | Prepare fabrication files | Check the review gate | \`board_release\` |
-
-### New-board inputs
-
-- \`circuit_build\`: \`circuit_source {"action": "schema"}\` returns the format of \`circuit.netlist.json\`; \`{"action": "validate"}\` checks a saved file.
-- \`schematic_edit\`: \`schematic_inspect\` with \`detail: "authoring"\` returns pins, unit numbers and item IDs.
-- Parts: \`circuit_search_parts\` searches footprints unless \`kind\` is \`"symbol"\`. Use exact \`libId\` values from its results and check pins with \`circuit_describe_part\`.
 
 ### Board stages
 

@@ -14,7 +14,7 @@ export interface AgentDocsContext {
   /** Resolved executable verified by the core; no guessed runtime paths. */
   kicadCli?: string | undefined;
   shellExecutables?: Record<string, string> | undefined;
-  /** The `board` toolset (board_check and the other stage tools) is registered: include the board workflow section. */
+  /** The `board` toolset (board_check and the other stage tools) is registered: include the board start map. */
   boardWorkflow?: boolean | undefined;
   fabdeskCli?: string | undefined;
   fabdeskCliUnavailableReason?: string | undefined;

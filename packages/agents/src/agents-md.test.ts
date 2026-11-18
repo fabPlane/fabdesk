@@ -70,21 +70,43 @@ describe("renderAgentsMd", () => {
     expect(md).not.toContain("`board_check`");
   });
 
-  test("new-board row gives both authoring paths equal standing", () => {
+  test("new-board choices have matching factual descriptions without recommendations", () => {
     const md = renderAgentsMd({ ...ctx, boardWorkflow: true });
-    const row = md.split("\n").find((line) => line.startsWith("| New board |"));
-    expect(row).toBeDefined();
-    const firstStep = row!.split("|")[2]!;
-    expect(firstStep).toMatch(/Choose `circuit_build`.* or `schematic_edit`/);
-    expect(firstStep).not.toMatch(/prefer|recommend|instead|fallback/i);
-    expect(firstStep).toMatch(/`circuit_build`[^;]*schematic and (?:the )?board/);
-    expect(firstStep).toMatch(/`schematic_edit`[^;]*schematic only/);
-    const schematicPath = row!.slice(row!.indexOf("`schematic_edit`"));
-    const sync = schematicPath.indexOf("`pcb_update_from_schematic`");
-    const check = schematicPath.indexOf("`board_check`");
-    expect(sync).toBeGreaterThan(0);
-    expect(check).toBeGreaterThan(sync);
-    expect(schematicPath.slice(sync, check)).toContain('"apply": true');
+    const row = md.split("\n").find((line) => line.startsWith("| New board |"))!;
+    expect(row.split("|")[2]?.trim()).toBe("Choose `circuit_build` or `schematic_edit`; get the board ready");
+    const inputs = md.split("### New-board inputs\n")[1]!.split(/\n(?:### |\| Request)/)[0]!;
+    const descriptions = inputs.split("\n").filter((line) => /^- `(circuit_build|schematic_edit)`:/.test(line));
+    // Closed factual descriptions for both choices catch added steering adjectives
+    // (including "slower") rather than trying to blacklist four words.
+    expect(descriptions).toEqual([
+      '- `circuit_build`: creates the schematic and board, including an outline when none exists and board dimensions or outline points are supplied, and uses `board.placements` for placed parts.',
+      '- `schematic_edit`: edits the schematic only; `pcb_update_from_schematic` `{"apply": true}` brings parts to the board, `pcb_define_outline` sets the outline and `pcb_place` positions parts.',
+    ]);
+    const newBoardText = inputs + row;
+    expect(newBoardText).not.toMatch(/prefer|recommend|instead|fallback|usual|default|faster|slower|simpler|easier|better|best|quick|easy|ideal/i);
+  });
+
+  test("board-ready requirement precedes the first board_check in reading order", () => {
+    const md = renderAgentsMd({ ...ctx, boardWorkflow: true });
+    const ready = md.match(/Before the first `board_check`,[^\n]+/);
+    expect(ready).not.toBeNull();
+    expect(ready![0]).toMatch(/parts, an outline, and connectors and other fixed parts in their intended positions/);
+    expect(ready![0]).toMatch(/because `board_check` records those positions as anchors/);
+    expect(ready!.index).toBe(md.indexOf("`board_check`") - "Before the first ".length);
+    expect(md.indexOf("### New-board inputs")).toBeLessThan(ready!.index!);
+  });
+
+  test("both new-board paths explain preparation before the board_check sequence", () => {
+    const md = renderAgentsMd({ ...ctx, boardWorkflow: true });
+    const row = md.split("\n").find((line) => line.startsWith("| New board |"))!;
+    expect(row).toContain("`board_check` → layout → review → `render_publish`");
+    const sequence = md.indexOf(row);
+    const inputs = md.slice(md.indexOf("### New-board inputs"), sequence);
+    expect(inputs).toMatch(/`circuit_build`[^\n]*schematic and board[^\n]*outline when none exists[^\n]*`board.placements`/);
+    const schematic = inputs.split("- `schematic_edit`:")[1]?.split("\n")[0] ?? "";
+    expect(schematic).toMatch(/schematic only[^\n]*`pcb_update_from_schematic` `{"apply": true}`[^\n]*brings parts to the board/);
+    expect(schematic).toMatch(/`pcb_define_outline` sets the outline/);
+    expect(schematic).toMatch(/`pcb_place` positions parts/);
   });
 
   test("resource pointer names the configured server without client-specific syntax", () => {
@@ -103,7 +125,7 @@ describe("renderAgentsMd", () => {
     }
   });
 
-  test("docs/board-workflow.md is the same text as the agent section", () => {
+  test("docs/board-workflow.md is the same text as the complete workflow constant", () => {
     const doc = readFileSync(new URL("../../../docs/board-workflow.md", import.meta.url), "utf8");
     expect(doc.replace(/^# /, "## ")).toBe(BOARD_WORKFLOW_MD);
   });

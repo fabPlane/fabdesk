@@ -604,7 +604,7 @@ describe("http daemon", () => {
     // AGENTS.md / CLAUDE.md regenerated before the run.
     const agentInstructions = await Bun.file(join(created.path, "AGENTS.md")).text();
     expect(agentInstructions).toContain("Canonical KiCad PCB");
-    // the board workflow section is the one place that prescribes a method; it is present because the board toolset is registered
+    // the board start map is the one place that prescribes a method; it is present because the board toolset is registered
     expect(agentInstructions).toContain("## Start here");
     expect(agentInstructions).toContain("## Other toolsets");
     expect(agentInstructions).toContain("fabdesk://docs/board-workflow");
