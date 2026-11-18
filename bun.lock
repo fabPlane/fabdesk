@@ -384,6 +384,7 @@
     "electron-builder",
   ],
   "patchedDependencies": {
+    "@electron/osx-sign@1.3.3": "patches/@electron%2Fosx-sign@1.3.3.patch",
     "app-builder-lib@26.15.3": "patches/app-builder-lib@26.15.3.patch",
     "@mcp-b/global@5.1.0": "patches/@mcp-b%2Fglobal@5.1.0.patch",
   },
