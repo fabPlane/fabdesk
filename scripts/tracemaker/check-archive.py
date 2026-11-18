@@ -27,7 +27,7 @@ def check_archive(path, asset):
         raise ValueError(f'{path}: missing {required - names}')
     patterns = {
         'zstd': r'BSD|Redistribution and use in source and binary',
-        'sqlite': r'public.domain',
+        'sqlite': r'public.domain|The author disclaims copyright to this source code',
         'gcc': r'GPL|GNU (?:Library |Lesser )?General Public License',
         'boost': r'Boost Software License|BSL-1[.]0',
         'eigen': r'MPL-2|Mozilla Public License',

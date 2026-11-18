@@ -149,8 +149,8 @@ KiCad plugin; `v0.9.0` has no assets). fabdesk therefore builds our own binaries
 immutable release's `manifest.json` (upstream tag and commit, and each platform archive's URL and sha256).
 TraceMaker stays on this known, pinned build. Change it only when a fix or feature is needed:
 
-1. Dispatch `tracemaker-binaries.yml` with a required upstream tag or commit (`upstream_ref`).
-2. Check router and placer smoke results, then verify the public archive hashes.
+1. Dispatch `tracemaker-binaries.yml` with a required upstream tag or commit (`upstream_ref`) and `publish=false` (the default). This builds, smoke-tests, packages, and uploads workflow artifacts only.
+2. Check both Linux and macOS artifacts, notices, sources, and router/placer smoke results. Dispatch the same known ref with `publish=true`, then verify that publishing run’s versioned public manifest and archive hashes.
 3. Download that immutable public manifest and run
    `python3 scripts/tracemaker/update-pin.py <public-manifest.json> packages/tools/src/routers/tracemaker-pin.json`.
    This copies the verified manifest byte-for-byte; never edit hashes by hand.
@@ -173,10 +173,10 @@ Lookup errors stop publication; existing objects are never overwritten.
 
 ### TraceMaker's placer (`tracemaker-place`)
 
-Every published archive carries upstream's placer `tracemaker-place` (`.exe` on Windows) beside `tracemaker`: `build.sh`
+Every published archive carries upstream's placer `tracemaker-place` beside `tracemaker`: `build.sh`
 builds both CMake targets (`src/place` has existed since v0.8.0, and its CLI is the one `floorplan.ts` calls:
 `board -o out --mode full --time --seed --courtyard-clearance-mm --json`), `package.sh` gives it the same strip, library
-bundling (`$ORIGIN/lib` on Linux, DLLs beside the `.exe` on Windows), Windows DLL probe and macOS ad-hoc signature, and
+bundling (`$ORIGIN/lib` on Linux) and macOS ad-hoc signature, and
 `smoke.sh` runs `tracemaker-place --help` (checking those flags) and a 2-part placement on the smoke fixture (checking
 the `legalisation: N placed, M failed` and `conflicts before … after … new …` lines and the `--json` report's
 `fixed_parts`, which the floorplan passes parse). On macOS both programs pass `verify-macos.sh` for the variant that is
@@ -202,15 +202,13 @@ the dependency-install workflow, and matching dependency source inputs with SHA-
 The same source bundle is retained beside the binary archives on our immutable release. `SOURCE.txt` points to
 that copy first and upstream second, and records its SHA-256. Missing dependency notices stop packaging.
 Linux resolves actual header/runtime file owners (including versioned Boost), and copies their copyright
-files plus the full common-license texts they reference; Windows copies
-MSYS2 package license directories; macOS extracts notices from Homebrew's verified matching-version sources.
+files plus the full common-license texts they reference; macOS extracts notices from Homebrew's verified matching-version sources.
 The macOS static LLVM variant includes LLVM notices; a bundled static SQLite includes SQLite notices.
 License validation reads the notices and requires the relevant license text or identifier, including Boost's
 BSL rather than the boost-defaults metapackage's MIT notice. Debian source inputs are the exact installed
 source versions' `.dsc`, upstream archives and distribution patches. Homebrew retains the matching formula,
-version metadata, upstream archive and patched tree; MSYS2 retains the matching packaging commit and
-`makepkg --allsource` archive, including distribution patches. Missing versions fail packaging.
-OS libraries and general-purpose build tools are excluded. Sources for copied GCC runtimes, compiled-in C++ implementation/configuration headers, and static LLVM/Windows runtimes are retained.
+version metadata, upstream archive and patched tree. Missing versions fail packaging.
+OS libraries and general-purpose build tools are excluded. Sources for copied GCC runtimes, compiled-in C++ implementation/configuration headers, and static LLVM runtimes are retained.
 
 On a Linux build host with `deb-src` enabled, collect and reconstruct dependency inputs offline:
 
@@ -241,14 +239,15 @@ Measured 2026-10-09 (source fallback, still used when no binary exists for the p
 | `linux-x86_64` | yes | `cpu-only` on Ubuntu 26.04 / GCC 15 | No CUDA. Non-system libs (zstd, sqlite) are bundled with `$ORIGIN/lib` when present. Remaining dynamic deps are glibc. |
 | `macos-arm64` | yes | `macos-metal` | Two variants in one job; **publish the first that passes smoke**. **A (preferred):** Apple clang + system `/usr/lib/libc++.1.dylib` (single C++ runtime; Metal/Foundation already load Apple libc++). **B:** Homebrew LLVM `clang++` + **static** `libc++` / `libc++abi` / `libunwind` (run 38016562996 linked B then SIGABRT on `--help`). Both apply the v0.9.0 `from_chars(double)` + `<cstdlib>` patch and `-Werror=unguarded-availability-new` on A. `CMAKE_OSX_DEPLOYMENT_TARGET=15.0`. SQLite: isolated headers + static `libsqlite3.a` or `/usr/lib/libsqlite3.dylib`. zstd is **static** `libzstd.a`. `--help` / `version` do not call Metal (`MTLCopyAllDevices` is lazy; smoke uses `route --no-gpu`). Smoke abort uploads unpackaged binaries + `lldb` / `DYLD_PRINT_LIBRARIES` / crash reports as `tracemaker-macos-arm64-debug`. Manifest records `minos=15.0`, `cxxRuntime`, and `macosVariant`. |
 | `macos-x86_64` | no | — | Intel macOS runners are not included in this build matrix; brew bottles on the arm64 runner are arm64. |
-| `windows-x86_64` | best-effort | no upstream preset; MSYS2 UCRT64 + Ninja | GCC-only `Warnings.cmake` and the `base` preset's Unix `PATH` rule out MSVC. Static libgcc/libstdc++ / zstd / sqlite. Archive is `.zip` with `tracemaker.exe` and `tracemaker-place.exe`. A Windows failure does not block linux/macos. |
 
 Users do not need CMake or a C++ toolchain to *install* a published binary. They still need
-a matching OS/arch (glibc x86_64 Linux, Apple silicon macOS 15+, or 64-bit Windows).
+a matching OS/arch (glibc x86_64 Linux or Apple silicon macOS 15+).
 
 Release tags are immutable `tracemaker-<upstream-tag>-<shortsha>-b<run-id>-<attempt>`.
-The rolling `tracemaker-latest` manifest points at immutable asset URLs. Both GitHub
-releases use `--latest=false` so the desktop installer remains the repo's “Latest”.
+The legacy `tracemaker-latest` GitHub release and public manifest are frozen at the known
+`v0.12.1-db5950f` build. Installed main apps still read this pointer; moving it would change
+users' binaries without an app-reviewed pin. These scripts never write it. New builds publish
+only immutable versioned releases with `--latest=false`, preserving the desktop installer's “Latest”.
 Every dispatch builds all configured platforms for the explicitly requested ref, even if it already matches
 the shipped pin. Each attempt creates a new version; it never replaces the previous build.
 
@@ -288,8 +287,8 @@ Desktop installers already use `https://downloads.fabplane.com/desktop/<tag>/…
 | Role | URL |
 |---|---|
 | Shipped default manifest | the pinned copy in `packages/tools/src/routers/tracemaker-pin.json` (not fetched) |
-| Rolling pointer (not used by default) | `https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json` |
-| Versioned archive | `https://downloads.fabplane.com/tracemaker/<immutable-tag>/tracemaker-<platform>.tar.gz` (or `.zip` on Windows) |
+| Frozen legacy pointer (read by older apps; never updated) | `https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json` |
+| Versioned archive | `https://downloads.fabplane.com/tracemaker/<immutable-tag>/tracemaker-<platform>.tar.gz` |
 | Private GitHub build copy | `https://github.com/TensorFleet/fabdesk/releases/download/<tag>/…` (404 for anonymous users) |
 
 The manually dispatched `publish` job writes the private GitHub release. `scripts/tracemaker/mirror-public.sh` then rewrites asset URLs onto the
@@ -311,7 +310,7 @@ When credentials are configured, a failed upload or sha256 re-check **exits non-
 (the private GitHub release from the publish step is not rolled back). The mirror job
 runs after successful publication of a fresh immutable version. An existing immutable release
 cannot be mirrored again: existing versioned objects fail the create-only checks. To retry, dispatch
-a new build version with the same known upstream ref; only the rolling latest pointer is mutable.
+a new build version with the same known upstream ref; the legacy latest pointer remains untouched.
 The owner creates these (do not commit values):
 
 **Recommended — same R2 bucket as desktop installers**
@@ -382,22 +381,25 @@ Settings `tracemakerManifestUrl` /
 `FABDESK_TRACEMAKER_RELEASE_TAG` / `FABDESK_TRACEMAKER_RELEASE_REPO`. Setting
 `FABDESK_TRACEMAKER_URL` disables the binary lookup and uses the source artifact.
 
-The manually dispatched workflow builds `linux-x86_64`, `macos-arm64`, and best-effort `windows-x86_64`.
+The manually dispatched workflow builds `linux-x86_64` and `macos-arm64`. Windows is disabled until its upstream port compiles.
+Publication requires both platforms to build, smoke-test and package successfully, including notices and sources.
 A pin PR requires both required platforms; each included asset must carry the placer.
 Retry missing platforms with another explicit dispatch, which creates a whole new version.
 A configured mirror that fails an upload or hash check fails its job; only a successfully verified public manifest should be used for a pin PR.
-`tracemaker-latest` is a rolling discovery pointer, never the shipped default or GitHub's “Latest” release.
+`tracemaker-latest` is a frozen compatibility pointer for older installed apps; it must not be moved.
 
 ### Dispatch (owner)
 
 ```bash
-gh workflow run tracemaker-binaries.yml --repo fabPlane/fabdesk --ref <this-branch> -f upstream_ref=<known-tag-or-commit>
-# after a known-good Windows + public-mirror run, the same on main
+# Dry run first (no releases or public uploads):
+gh workflow run tracemaker-binaries.yml --repo fabPlane/fabdesk --ref <this-branch> -f upstream_ref=<known-tag-or-commit> -f publish=false
+# After checking both platforms' workflow artifacts and smoke results:
+gh workflow run tracemaker-binaries.yml --repo fabPlane/fabdesk --ref <this-branch> -f upstream_ref=<same-known-tag-or-commit> -f publish=true
 ```
 
-Check: linux/macos/windows job results and the run summary,
+Check: Linux/macOS job results and the run summary,
 the private `tracemaker-*` GitHub release, then anonymous
-`curl -fsSI https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json`
+`curl -fsSI https://downloads.fabplane.com/tracemaker/<new-immutable-tag>/manifest.json`
 and sha256 of each rewritten archive URL. After verifying the versioned public manifest and its archives:
 
 ```bash

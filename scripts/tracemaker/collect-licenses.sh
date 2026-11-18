@@ -17,15 +17,16 @@ case "$platform" in
   macos-*)
     packages=(zstd boost eigen cli11 nlohmann-json)
     if [[ "${TRACEMAKER_LINK_NOTE:-}" == *libsqlite3.a* ]]; then
-      # SQLite amalgamations put their public-domain declaration in sqlite3.h.
+      # SQLite headers carry the copyright disclaimer and blessing. The
+      # canonical notice need not contain the literal words "public domain".
       mkdir -p "$dest/sqlite"
       python3 - "$(brew --prefix sqlite)/include/sqlite3.h" "$dest/sqlite/NOTICE.txt" <<'PYSQLITE'
 from pathlib import Path
 import sys
 text = Path(sys.argv[1]).read_text()
 notice = text[:text.index('*/') + 2]
-if 'public domain' not in notice.lower():
-    raise ValueError('SQLite public-domain notice missing')
+if not any(marker in notice.lower() for marker in ['public domain', 'the author disclaims copyright to this source code']):
+    raise ValueError('SQLite copyright disclaimer/public-domain notice missing')
 Path(sys.argv[2]).write_text(notice + '\n')
 PYSQLITE
     fi

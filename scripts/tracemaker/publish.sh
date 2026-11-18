@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Create a new immutable build release and refresh tracemaker-latest.
+# Create a complete immutable build release; never change legacy pointers.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,6 +23,8 @@ if [ ${#assets[@]} -eq 0 ]; then
   exit 1
 fi
 
+test "$release_tag" != tracemaker-latest || { echo "Refusing to write legacy pointer" >&2; exit 1; }
+python3 "$SCRIPT_DIR/validate-release.py" artifacts "$artifacts_dir"
 python3 "$SCRIPT_DIR/check-archive.py" "$artifacts_dir"
 
 # Build this run's manifest only. An existing release is an error, never a
@@ -55,7 +57,7 @@ manifest = {
 print(json.dumps(manifest, indent=2))
 PY
 
-# Copy a license/source offer next to the manifest so the pointer release stays complete.
+# Copy a license/source offer next to the manifest so the release stays complete.
 # Search only platform artifact dirs (mindepth 2). A second publish of the same
 # folder already has LICENSE/SOURCE.txt at the root; GNU cp errors on same-file
 # (ubuntu-latest, CI run 38015352358).
@@ -96,12 +98,11 @@ Linux builds are unmodified upstream. The recipe is
 ## Assets
 
 See \`manifest.json\` (platform, sha256, size, upstream tag/commit, build date).
-\`tracemaker-latest\` is a rolling pointer at this same immutable tag.
+Legacy rolling pointers are intentionally unchanged; app upgrades require a reviewed pin.
 
-CUDA is not included (cpu-only on Linux, Metal on macOS, cpu-only MinGW on Windows).
+CUDA is not included (cpu-only on Linux, Metal on macOS).
 macOS x86_64 is omitted (Intel runners are not cheap enough for a manual build).
-Windows is best-effort: a failed windows-x86_64 job leaves linux/macos published
-and is reported in the run summary.
+Windows binaries are not published until the upstream port builds successfully.
 EOF
 
 uploads=()
@@ -116,17 +117,4 @@ gh release create "$release_tag" "${uploads[@]}" \
   --repo "$repo" --title "TraceMaker ${upstream_tag} (${upstream_commit:0:7})" \
   --notes-file "$notes" --latest=false
 
-# Rolling pointer: manifest (+ license/source offer) only, URLs already point at the immutable tag.
-if gh release view tracemaker-latest --repo "$repo" >/dev/null 2>&1; then
-  gh release delete tracemaker-latest --repo "$repo" --yes --cleanup-tag
-fi
-pointer=("$artifacts_dir/manifest.json" "$artifacts_dir/SHA256SUMS" "$artifacts_dir/NOTES.md")
-[ -f "$artifacts_dir/LICENSE" ] && pointer+=("$artifacts_dir/LICENSE")
-[ -f "$artifacts_dir/SOURCE.txt" ] && pointer+=("$artifacts_dir/SOURCE.txt")
-gh release create tracemaker-latest "${pointer[@]}" \
-  --repo "$repo" \
-  --title "TraceMaker binaries (latest → ${release_tag})" \
-  --notes-file "$notes" \
-  --latest=false
-
-echo "Published ${release_tag} and updated tracemaker-latest"
+echo "Published immutable ${release_tag}; legacy pointer unchanged"

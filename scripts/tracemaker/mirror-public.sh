@@ -24,6 +24,8 @@ warn() {
 }
 
 manifest="$artifacts_dir/manifest.json"
+test "$release_tag" != tracemaker-latest || { echo "Refusing to write legacy pointer" >&2; exit 1; }
+python3 "$SCRIPT_DIR/validate-release.py" manifest "$manifest"
 
 # --- resolve public channel ------------------------------------------------
 # Preferred: same R2 bucket as desktop installers (fabplane-downloads) under
@@ -113,10 +115,6 @@ python3 "$SCRIPT_DIR/rewrite-public-manifest.py" "$manifest" \
   --tag "$release_tag" \
   --out "$public_manifest"
 
-# Latest pointer also uses the rewritten (versioned) asset URLs.
-latest_manifest="$work/latest-manifest.json"
-cp "$public_manifest" "$latest_manifest"
-
 mirror_failed=0
 
 upload_s3() {
@@ -162,7 +160,6 @@ PYFILES
   for file in "${files[@]}"; do
     upload_s3 "$file" "${s3_prefix}/${release_tag}/$(basename "$file")" "public, max-age=31536000, immutable"
   done
-  upload_s3 "$latest_manifest" "${s3_prefix}/tracemaker-latest/manifest.json" "public, max-age=300" ""
 
 fi
 
@@ -183,28 +180,12 @@ if [ "$have_repo" -eq 1 ]; then
   # release create fails if the tag exists; never upload --clobber to a version.
   gh release create "$release_tag" "${uploads[@]}" --repo "$public_repo" \
     --title "TraceMaker ${release_tag}" --notes "Unofficial fabPlane build; see SOURCE.txt." --latest=false
-  pointer=("$latest_manifest")
-  [ -f "$artifacts_dir/SHA256SUMS" ] && pointer+=("$artifacts_dir/SHA256SUMS")
-  [ -f "$artifacts_dir/NOTES.md" ] && pointer+=("$artifacts_dir/NOTES.md")
-  if gh release view tracemaker-latest --repo "$public_repo" >/dev/null 2>&1; then
-    gh release delete tracemaker-latest --repo "$public_repo" --yes --cleanup-tag || true
-  fi
-  # Rename latest pointer manifest back to the expected filename.
-  cp "$latest_manifest" "$work/manifest.json"
-  pointer=("$work/manifest.json")
-  [ -f "$artifacts_dir/SHA256SUMS" ] && pointer+=("$artifacts_dir/SHA256SUMS")
-  [ -f "$artifacts_dir/NOTES.md" ] && pointer+=("$artifacts_dir/NOTES.md")
-  gh release create tracemaker-latest "${pointer[@]}" \
-    --repo "$public_repo" \
-    --title "TraceMaker binaries (latest → ${release_tag})" \
-    --notes "Rolling pointer. Asset URLs are public." \
-    --latest=false \
-    || { warn "mirror-public: public-repo latest pointer failed"; mirror_failed=1; }
+
 fi
 
 # Re-download every rewritten asset and compare sha256 to the private manifest.
-# Also require tracemaker-latest/manifest.json to match the bytes we uploaded.
-export TRACEMAKER_PUBLIC_BASE_URL="$public_base"
+# Require the versioned public manifest to match the bytes we uploaded.
+export TRACEMAKER_PUBLIC_MANIFEST_URL="${public_base%/}/${release_tag}/manifest.json"
 if [ "$mirror_failed" -eq 0 ]; then
   if ! PUBLIC_MANIFEST="$public_manifest" WORK="$work/verify" python3 - <<'PY'
 import json, os, pathlib, subprocess, sys
@@ -238,18 +219,14 @@ for asset in manifest.get("assets", []):
         failed = 1
     else:
         print(f"verified public {name} sha256 {got}")
-latest = f"{os.environ.get('TRACEMAKER_PUBLIC_BASE_URL', '').rstrip('/')}/tracemaker-latest/manifest.json"
-if latest.startswith("http"):
-    dest = work / "latest-manifest.json"
-    rc = subprocess.run(["curl", "-fsSL", "--retry", "3", latest, "-o", str(dest)]).returncode
-    if rc != 0 or not dest.is_file():
-        print(f"::warning::mirror-public: failed to re-download {latest}", file=sys.stderr)
-        failed = 1
-    elif dest.read_bytes() != uploaded:
-        print(f"::warning::mirror-public: latest manifest bytes differ from upload at {latest}", file=sys.stderr)
-        failed = 1
-    else:
-        print(f"verified public latest manifest at {latest}")
+url = os.environ['TRACEMAKER_PUBLIC_MANIFEST_URL']
+dest = work / 'manifest.json'
+rc = subprocess.run(['curl', '-fsSL', '--retry', '3', url, '-o', str(dest)]).returncode
+if rc != 0 or not dest.is_file() or dest.read_bytes() != uploaded:
+    print(f'::warning::mirror-public: versioned manifest verification failed at {url}', file=sys.stderr)
+    failed = 1
+else:
+    print(f'verified public versioned manifest at {url}')
 raise SystemExit(failed)
 PY
   then
@@ -260,7 +237,7 @@ fi
 
 if [ "$mirror_failed" -eq 0 ]; then
   cp "$public_manifest" "$artifacts_dir/public-manifest.json"
-  echo "Public TraceMaker mirror is live at ${public_base}/tracemaker-latest/manifest.json"
+  echo "Public TraceMaker mirror is live at ${public_base}/${release_tag}/manifest.json"
   exit 0
 fi
 warn "Public mirror failed (upload or checksum). The private GitHub release ${release_tag} was not rolled back."

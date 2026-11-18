@@ -40,6 +40,41 @@ class Pin(unittest.TestCase):
                 update.update_pin(manifest, pin)
             self.assertEqual(pin.read_bytes(), before)
 
+    def test_macos_static_sqlite_disclaimer_notice(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            include = root / 'include'; include.mkdir()
+            header = ROOT / 'fixtures/sqlite3-notice.h'
+            shutil.copyfile(header, include / 'sqlite3.h')
+            source = root / 'source.tar.gz'
+            with tarfile.open(source, 'w:gz') as archive:
+                body = b'BSD MIT Boost Software License MPL-2'
+                info = tarfile.TarInfo('source/LICENSE'); info.size = len(body)
+                archive.addfile(info, io.BytesIO(body))
+            brew = root / 'brew'
+            brew.write_text("""#!/bin/sh
+case "$1" in
+--prefix) echo "$FIXTURE_ROOT";;
+info) echo '{"formulae":[{"installed":[{"version":"1.0"}],"versions":{"stable":"1.0"}}]}';;
+--cache) echo "$FIXTURE_ROOT/source.tar.gz";;
+fetch) :;;
+*) exit 1;;
+esac
+""")
+            brew.chmod(0o755)
+            env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'],
+                       FIXTURE_ROOT=str(root), TRACEMAKER_LINK_NOTE='static libsqlite3.a')
+            result = subprocess.run(['bash', str(ROOT / 'collect-licenses.sh'), 'macos-arm64', str(root / 'licenses')],
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            notice = (root / 'licenses/sqlite/NOTICE.txt').read_text()
+            self.assertIn('The author disclaims copyright to this source code.', notice)
+            self.assertIn('May you do good and not evil.', notice)
+            self.assertNotIn('public domain', header.read_text().lower())
+            (include / 'sqlite3.h').write_text('/* no legal notice */')
+            bad = subprocess.run(['bash', str(ROOT / 'collect-licenses.sh'), 'macos-arm64', str(root / 'bad-licenses')], env=env, capture_output=True)
+            self.assertNotEqual(bad.returncode, 0)
+
     def test_mirror_lookup_failure_preserves_existing_bytes(self):
         with tempfile.TemporaryDirectory() as folder:
             root = pathlib.Path(folder)
@@ -48,8 +83,7 @@ class Pin(unittest.TestCase):
             artifacts = root / 'artifacts'
             artifacts.mkdir()
             (artifacts / 'new.tar.gz').write_bytes(b'rebuilt bytes')
-            (artifacts / 'manifest.json').write_text(json.dumps({'assets': [{
-                'filename': 'new.tar.gz', 'sha256': 'a'*64, 'url': 'https://example.test/file'}]}))
+            (artifacts / 'manifest.json').write_text(json.dumps({'assets': [dict(platform=p, placer='tracemaker-place', filename='new.tar.gz', sha256='a'*64, url='https://example.test/file') for p in ['linux-x86_64', 'macos-arm64']]}))
             existing = root / 'existing.tar.gz'
             existing.write_bytes(b'original immutable bytes')
             log = root / 'calls'
@@ -71,6 +105,80 @@ class Pin(unittest.TestCase):
             self.assertEqual(existing.read_bytes(), b'original immutable bytes')
             self.assertEqual(len(log.read_text().splitlines()), 1)
             self.assertIn('--check-absent', log.read_text())
+
+    def test_publication_requires_both_platforms_and_never_changes_latest(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            scripts = root / 'scripts'; shutil.copytree(ROOT, scripts)
+            # Archive validation has its own real fixture test. These fixtures
+            # isolate publication control flow with small placeholder archives.
+            (scripts / 'check-archive.py').write_text('')
+            artifacts = root / 'artifacts'; artifacts.mkdir()
+            calls = root / 'calls'
+            store = root / 'store'; store.mkdir()
+            legacy = store / 'tracemaker/tracemaker-latest/manifest.json'
+            legacy.parent.mkdir(parents=True); legacy.write_bytes(b'known legacy pointer')
+            (root / 'gh').write_text('#!/bin/sh\necho "$*" >> "$CALLS"\ncase "$*" in *tracemaker-latest*) exit 99;; esac\n')
+            (root / 'gh').chmod(0o755)
+            (scripts / 's3-put.py').write_text("""import os,sys,pathlib,shutil
+args=sys.argv
+key=args[args.index('--key')+1]
+with open(os.environ['CALLS'],'a') as log: log.write(key+'\\n')
+assert 'tracemaker-latest' not in key
+path=pathlib.Path(os.environ['STORE'])/key
+if '--check-absent' in args:
+    assert not path.exists()
+else:
+    assert '--create-only' in args
+    path.parent.mkdir(parents=True,exist_ok=True)
+    shutil.copyfile(args[args.index('--file')+1],path)
+""")
+            (root / 'curl').write_text("""#!/usr/bin/env python3
+import os,sys,pathlib,shutil
+from urllib.parse import urlparse
+args=sys.argv
+url=next(a for a in args if a.startswith('https://'))
+source=pathlib.Path(os.environ['STORE'])/urlparse(url).path.lstrip('/')
+shutil.copyfile(source,args[args.index('-o')+1])
+""")
+            (root / 'curl').chmod(0o755)
+            assets = []
+            for platform in ['linux-x86_64', 'macos-arm64']:
+                directory = artifacts / platform; directory.mkdir()
+                archive = directory / (platform + '.tar.gz'); archive.write_bytes(platform.encode())
+                assets.append(dict(platform=platform, placer='tracemaker-place', filename=archive.name,
+                    sha256=hashlib.sha256(archive.read_bytes()).hexdigest(), url='https://example.test/tracemaker/build/' + archive.name))
+            env = {k:v for k,v in os.environ.items() if not k.startswith(('TRACEMAKER_', 'DESKTOP_R2_', 'CLOUDFLARE_'))}
+            env.update(PATH=str(root)+os.pathsep+os.environ['PATH'], CALLS=str(calls), STORE=str(store),
+                GH_TOKEN='fixture', GITHUB_REPOSITORY='fixture/repo', TRACEMAKER_RELEASE_TAG='build',
+                TRACEMAKER_UPSTREAM_TAG='v1', TRACEMAKER_UPSTREAM_COMMIT='a'*40, TRACEMAKER_SOURCE_URL='https://example.test/source',
+                TRACEMAKER_S3_BUCKET='bucket', TRACEMAKER_S3_ENDPOINT='https://example.test',
+                TRACEMAKER_PUBLIC_BASE_URL='https://example.test/tracemaker', TRACEMAKER_S3_ACCESS_KEY_ID='fixture', TRACEMAKER_S3_SECRET_ACCESS_KEY='fixture')
+            def stage(candidate):
+                for p in artifacts.glob('*/asset.json'): p.unlink()
+                for asset in candidate:
+                    (artifacts / asset['platform'] / 'asset.json').write_text(json.dumps(asset))
+                (artifacts / 'manifest.json').write_text(json.dumps({'assets':candidate}))
+            def invoke(script):
+                return subprocess.run(['bash', str(scripts / script), str(artifacts)], env=env, capture_output=True, text=True)
+            for invalid in [assets[:1], assets[1:], [dict(a, placer='') for a in assets]]:
+                stage(invalid)
+                for script in ['publish.sh', 'mirror-public.sh']:
+                    result = invoke(script)
+                    self.assertNotEqual(result.returncode,0,result.stdout)
+                    self.assertFalse(calls.exists(),result.stderr)
+            stage(assets)
+            result = invoke('publish.sh'); self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(len(calls.read_text().splitlines()),1)
+            env.update(TRACEMAKER_PUBLIC_RELEASE_REPO='fixture/public', TRACEMAKER_PUBLIC_RELEASE_TOKEN='fixture')
+            result = invoke('mirror-public.sh'); self.assertEqual(result.returncode,0,result.stderr)
+            self.assertNotIn('tracemaker-latest',calls.read_text())
+            self.assertEqual(legacy.read_bytes(), b'known legacy pointer')
+            self.assertTrue((artifacts / 'public-manifest.json').exists())
+            env['TRACEMAKER_RELEASE_TAG'] = 'tracemaker-latest'
+            for script in ['publish.sh','mirror-public.sh']:
+                self.assertNotEqual(invoke(script).returncode,0)
 
     def test_archive_requires_every_bundled_library_license(self):
         checker = module('check-archive')
@@ -118,6 +226,8 @@ class Pin(unittest.TestCase):
             for name in data:
                 if name.startswith('licenses/'):
                     data[name] = b'BSD public domain GPL Boost Software License MPL-2 MIT'
+            pack()
+            data['licenses/sqlite.txt'] = (ROOT / 'fixtures/sqlite3-notice.h').read_bytes()
             pack()
             checker.check_archive(archive, asset)
             # Runtime sources alone must not satisfy the Linux gate.
@@ -259,6 +369,21 @@ class Pin(unittest.TestCase):
         self.assertNotIn('validate-pin:', workflow)
         self.assertNotIn('report-pin:', workflow)
         self.assertFalse((ROOT / 'open-pin-pr.sh').exists())
+        self.assertNotIn('build-windows:', workflow)
+        self.assertIn('default: false', workflow)
+        self.assertIn('inputs.publish &&', workflow)
+        for job in ['publish', 'mirror']:
+            # Extract the entire job without mistaking nested indentation.
+            import re
+            section = re.split(r'\n  [a-z][a-z-]*:', workflow.split('\n  ' + job + ':', 1)[1])[0]
+            self.assertIn("needs.build-linux.result == 'success' && needs.build-macos.result == 'success'", section)
+            self.assertIn('inputs.publish', section)
+        for script in ['publish.sh', 'mirror-public.sh']:
+            text = (ROOT / script).read_text()
+            self.assertNotIn('gh release create tracemaker-latest', text)
+            self.assertNotIn('gh release delete tracemaker-latest', text)
+            self.assertNotIn('/tracemaker-latest/manifest.json', text)
+
 
     def test_storage_lookup_error_cannot_write(self):
         s3 = module('s3-put')

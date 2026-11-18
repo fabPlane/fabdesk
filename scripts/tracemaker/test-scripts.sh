@@ -550,7 +550,11 @@ for a in m["assets"]:
 print("ok   manifest joins", plats, "commit", m["upstream"]["commit"])
 PY
 assert_contains "$ROOT/gh.log.meta" "tracemaker-v0.9.0-24c8477 latest=false"
-assert_contains "$ROOT/gh.log.meta" "tracemaker-latest latest=false"
+if grep -q tracemaker-latest "$ROOT/gh.log"; then
+  echo "FAIL publisher touched legacy latest pointer"; fail=1
+else
+  echo "ok   publisher leaves legacy latest pointer unchanged"
+fi
 
 # A second publish must fail, preserving existing bytes exactly.
 before="$(sha256sum "$GH_STORE/$TRACEMAKER_RELEASE_TAG/tracemaker-linux-x86_64.tar.gz")"
@@ -830,12 +834,6 @@ fi
 assert_contains "$SCRIPT_DIR/macos-variants.sh" "for variant in system llvm-static"
 assert_contains "$SCRIPT_DIR/macos-variants.sh" "diagnose-macos.sh"
 assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "tracemaker-macos-arm64-debug"
-assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "tracemaker-windows-x86_64-debug"
-assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "continue-on-error: true"
-assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "windows-x86_64"
-assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "core.autocrlf false"
-assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "core.eol lf"
-assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "GIT_CONFIG_KEY_0: core.autocrlf"
 assert_contains "${BASH_SOURCE[0]%/*}/../../.gitattributes" "-text eol=lf"
 if grep -F -q 'scripts/tracemaker/patches/* -text eol=lf' "${BASH_SOURCE[0]%/*}/../../.gitattributes"; then
   echo "ok   .gitattributes keeps patch files unconverted (-text)"
@@ -1491,7 +1489,7 @@ if [ "$mirror_ok_rc" -ne 0 ]; then
 else
   echo "ok   configured mirror uploads and re-checks sha256"
 fi
-assert_contains "$ROOT/mirror-ok.out" "tracemaker-latest/manifest.json"
+assert_contains "$ROOT/mirror-ok.out" "tracemaker-v0.9.0-24c8477/manifest.json"
 assert_contains "$ROOT/mirror-ok.out" "verified public"
 if grep -q "using desktop R2 credentials" "$ROOT/mirror-ok.out"; then
   echo "FAIL TRACEMAKER_S3_* path claimed desktop credentials"
