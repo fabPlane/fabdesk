@@ -38,7 +38,6 @@ import {
 import { formatLastRelease, readProjectStatusEvidence } from "./project-status-evidence";
 import { ROUTE_RUN_DEFAULT_WAIT_MS, ROUTE_RUN_MAX_WAIT_MS, runRoute, RouteRunArgs } from "./route";
 import { inspectProjectBoardSources } from "../assembly";
-import { powerFlagHelp } from "./power-flag-help";
 import { compilerSourceHelp, formatCompilerSourceHelp } from "./compiler-source-guide";
 
 export const load_toolset = defineTool({
@@ -454,12 +453,9 @@ export const circuit_build = defineTool({
       ? `Build OK (${rebuild} rebuild) in ${Math.round(result.durationMs)} ms: ${c.components} components, ${c.nets} nets, ${c.footprintsAdded} footprints added, ${c.footprintsPlaced} placed${result.removedCopper ? `, ${result.removedCopper.tracks} old tracks/arcs and ${result.removedCopper.vias} routed vias removed` : ""}${c.viasAdded ? `, blank drawn (${c.viasAdded} free vias, ${c.holesAdded ?? 0} holes)` : ""}.${project.manifest().board.template ? ` Template ${project.manifest().board.template}: the netlist's own board spec was replaced by the blank.` : ""}${warnings.length ? `\nWarnings:\n${formatErrors(warnings)}` : ""}`
       : `Build FAILED (${result.errors.length} errors):\n${formatErrors(result.errors)}${result.rejectedSchematicPath ? `\nRejected schematic preserved at ${result.rejectedSchematicPath}; the canonical schematic was restored.` : ""}`;
     const sourceGuide = result.ok ? undefined : compilerSourceHelp(result.errors);
-    const powerHelp = !result.ok && result.errors.some((e) => e.type === "erc_errors" && e.message.includes("Input Power pin not driven"))
-      ? await powerFlagHelp(project.dir, entrypoint ?? PROJECT_FILES.netlistJson, (...args) => ctx.services.design.describePart(...args))
-      : undefined;
     return {
-      text: text + (sourceGuide ? "\n\n" + formatCompilerSourceHelp(sourceGuide) : "") + (powerHelp?.text ? "\n\n" + powerHelp.text : ""),
-      json: { ...summary, ...(sourceGuide ? { sourceGuide } : {}), ...(powerHelp ? { powerFlagHelp: { nets: powerHelp.nets, unconnectedPins: powerHelp.unconnectedPins } } : {}) },
+      text: text + (sourceGuide ? "\n\n" + formatCompilerSourceHelp(sourceGuide) : ""),
+      json: { ...summary, ...(sourceGuide ? { sourceGuide } : {}) },
       isError: !result.ok,
     };
   },
