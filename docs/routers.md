@@ -146,13 +146,20 @@ KiCad plugin; `v0.9.0` has no assets). fabdesk therefore builds our own binaries
 (`.github/workflows/tracemaker-binaries.yml`) and publishes them on downloads.fabplane.com.
 
 **The build fabdesk installs is pinned** in `packages/tools/src/routers/tracemaker-pin.json`: a copy of one
-immutable release's `manifest.json` (upstream tag and commit, and each platform archive's URL and sha256). The weekly
-workflow discovers the newest upstream release tag. If the pin is older or lacks the placer or an expected platform,
-it builds and smoke-tests both programs, publishes a fresh immutable version, verifies public archive hashes, then
-opens or updates one PR against `main` containing exactly the new manifest. Nothing merges automatically.
-There is no manual manifest-copy step. Versions use `tracemaker-<tag>-<commit7>-b<GitHub run ID>-<attempt>`;
-retries and rebuilds get distinct names. The mirror preflights all versioned keys in authenticated storage and uses
-conditional create-only uploads. Lookup errors stop publication; existing objects are never overwritten.
+immutable release's `manifest.json` (upstream tag and commit, and each platform archive's URL and sha256).
+TraceMaker stays on this known, pinned build. Change it only when a fix or feature is needed:
+
+1. Dispatch `tracemaker-binaries.yml` with a required upstream tag or commit (`upstream_ref`).
+2. Check router and placer smoke results, then verify the public archive hashes.
+3. Download that immutable public manifest and run
+   `python3 scripts/tracemaker/update-pin.py <public-manifest.json> packages/tools/src/routers/tracemaker-pin.json`.
+   This copies the verified manifest byte-for-byte; never edit hashes by hand.
+4. Open one PR against `main` with the updated pin and run the app's registry upgrade test and shipped-pin gate.
+
+There is no schedule or automatic PR. Each dispatch builds a fresh version named
+`tracemaker-<tag>-<commit7>-b<GitHub run ID>-<attempt>`; retries and rebuilds get distinct names.
+The mirror preflights all versioned keys in authenticated storage and uses conditional create-only uploads.
+Lookup errors stop publication; existing objects are never overwritten.
 
 **Install** (Settings → Routers) does this:
 
@@ -186,9 +193,8 @@ The registry resolves it (`traceMakerPlacerNear`, the snapshot's `placer` field,
 archive that predates the placer (no `placer` key) is replaced once from the current release, but only after the
 manifest shows that release carries it, so nothing is re-downloaded for nothing; automatic upgrades honour
 `autoInstallEngines` and are not retried after a failure (`board_engines install tracemaker` retries). A
-`TRACEMAKER_BIN` or source-package install is never replaced; the reason says what to build or set. `resolve-upstream.sh`
-counts a platform only when its asset names the placer. An incomplete pin triggers a new build version,
-including the first placer-capable build; old archive URLs remain byte-identical.
+`TRACEMAKER_BIN` or source-package install is never replaced; the reason says what to build or set.
+A reviewed pin change supplies the first placer-capable build; old archive URLs remain byte-identical.
 
 Each binary archive contains upstream `LICENSE`, `NOTICE`, `SOURCE.txt`, dependency license texts in `licenses/`,
 and `corresponding-source/` with pristine upstream commit source, the exact build patch, build scripts,
@@ -204,7 +210,7 @@ BSL rather than the boost-defaults metapackage's MIT notice. Debian source input
 source versions' `.dsc`, upstream archives and distribution patches. Homebrew retains the matching formula,
 version metadata, upstream archive and patched tree; MSYS2 retains the matching packaging commit and
 `makepkg --allsource` archive, including distribution patches. Missing versions fail packaging.
-OS libraries and general-purpose build tools are excluded. Sources for copied GCC runtimes and static LLVM/Windows runtimes are retained.
+OS libraries and general-purpose build tools are excluded. Sources for copied GCC runtimes, compiled-in C++ implementation/configuration headers, and static LLVM/Windows runtimes are retained.
 
 On a Linux build host with `deb-src` enabled, collect and reconstruct dependency inputs offline:
 
@@ -215,7 +221,7 @@ python3 scripts/tracemaker/linux-dependencies.py reconstruct "$RUNNER_TEMP/tm-in
 ```
 
 `--cache DIR` on `sources` accepts previously downloaded matching apt source packages instead of fetching.
-`test-automatic-pin.py` reconstructs a fixture through real `dpkg-source`, checks that a distro patch applies,
+`test-pin.py` reconstructs a fixture through real `dpkg-source`, checks that a distro patch applies,
 and rejects corrupt inputs. It does not claim to build TraceMaker offline without a provisioned toolchain.
 
 
@@ -234,27 +240,17 @@ Measured 2026-10-09 (source fallback, still used when no binary exists for the p
 |---|---|---|---|
 | `linux-x86_64` | yes | `cpu-only` on Ubuntu 26.04 / GCC 15 | No CUDA. Non-system libs (zstd, sqlite) are bundled with `$ORIGIN/lib` when present. Remaining dynamic deps are glibc. |
 | `macos-arm64` | yes | `macos-metal` | Two variants in one job; **publish the first that passes smoke**. **A (preferred):** Apple clang + system `/usr/lib/libc++.1.dylib` (single C++ runtime; Metal/Foundation already load Apple libc++). **B:** Homebrew LLVM `clang++` + **static** `libc++` / `libc++abi` / `libunwind` (run 38016562996 linked B then SIGABRT on `--help`). Both apply the v0.9.0 `from_chars(double)` + `<cstdlib>` patch and `-Werror=unguarded-availability-new` on A. `CMAKE_OSX_DEPLOYMENT_TARGET=15.0`. SQLite: isolated headers + static `libsqlite3.a` or `/usr/lib/libsqlite3.dylib`. zstd is **static** `libzstd.a`. `--help` / `version` do not call Metal (`MTLCopyAllDevices` is lazy; smoke uses `route --no-gpu`). Smoke abort uploads unpackaged binaries + `lldb` / `DYLD_PRINT_LIBRARIES` / crash reports as `tracemaker-macos-arm64-debug`. Manifest records `minos=15.0`, `cxxRuntime`, and `macosVariant`. |
-| `macos-x86_64` | no | — | Intel macOS runners are not cheap enough for a weekly job; brew bottles on the arm64 runner are arm64. |
+| `macos-x86_64` | no | — | Intel macOS runners are not included in this build matrix; brew bottles on the arm64 runner are arm64. |
 | `windows-x86_64` | best-effort | no upstream preset; MSYS2 UCRT64 + Ninja | GCC-only `Warnings.cmake` and the `base` preset's Unix `PATH` rule out MSVC. Static libgcc/libstdc++ / zstd / sqlite. Archive is `.zip` with `tracemaker.exe` and `tracemaker-place.exe`. A Windows failure does not block linux/macos. |
 
 Users do not need CMake or a C++ toolchain to *install* a published binary. They still need
 a matching OS/arch (glibc x86_64 Linux, Apple silicon macOS 15+, or 64-bit Windows).
 
 Release tags are immutable `tracemaker-<upstream-tag>-<shortsha>-b<run-id>-<attempt>`.
-After opening the pin PR, the same run calls CI on the exact pushed commit and reports each required
-check on that SHA with `github.token`, plus results and a run link in the PR body. No new token is needed.
-A bot-created PR can still display GitHub's “Approve workflows to run” banner for its separate PR-triggered
-run; validation does not depend on approving that run. If a main ruleset requires the CI *workflow run*
-rather than its named checks, that rule still blocks merging: change that rule to require status checks
-(the three CI check names) instead of “Require workflows to pass before merging.” An administrator should
-verify actual main rules in the first integration run. Actions → General → “Allow GitHub Actions to create
-and approve pull requests” must also be enabled for PR creation.
-
 The rolling `tracemaker-latest` manifest points at immutable asset URLs. Both GitHub
 releases use `--latest=false` so the desktop installer remains the repo's “Latest”.
-A complete pin of the latest upstream commit skips rebuilding. A missing placer or
-expected platform triggers a new build of all platforms. Dispatch `force` also creates
-a new version; it never replaces the previous build.
+Every dispatch builds all configured platforms for the explicitly requested ref, even if it already matches
+the shipped pin. Each attempt creates a new version; it never replaces the previous build.
 
 The team’s comparison is not checked into this repo. TraceMaker’s own harness is
 `bench/compare.py` / `bench/run.py` in that project (PCBench + Freerouting baselines).
@@ -296,8 +292,7 @@ Desktop installers already use `https://downloads.fabplane.com/desktop/<tag>/…
 | Versioned archive | `https://downloads.fabplane.com/tracemaker/<immutable-tag>/tracemaker-<platform>.tar.gz` (or `.zip` on Windows) |
 | Private GitHub build copy | `https://github.com/TensorFleet/fabdesk/releases/download/<tag>/…` (404 for anonymous users) |
 
-The weekly `publish` job still writes the private GitHub release (so the next run can
-merge checksums). `scripts/tracemaker/mirror-public.sh` then rewrites asset URLs onto the
+The manually dispatched `publish` job writes the private GitHub release. `scripts/tracemaker/mirror-public.sh` then rewrites asset URLs onto the
 public base, uploads archives + `manifest.json`, and **re-downloads each public URL to
 compare sha256**. sha256s in the mirrored manifest are identical to the private ones.
 
@@ -385,20 +380,28 @@ Settings `tracemakerManifestUrl` /
 `FABDESK_TRACEMAKER_RELEASE_TAG` / `FABDESK_TRACEMAKER_RELEASE_REPO`. Setting
 `FABDESK_TRACEMAKER_URL` disables the binary lookup and uses the source artifact.
 
-The weekly workflow builds `linux-x86_64`, `macos-arm64`, and best-effort `windows-x86_64`.
+The manually dispatched workflow builds `linux-x86_64`, `macos-arm64`, and best-effort `windows-x86_64`.
 A pin PR requires both required platforms; each included asset must carry the placer.
-Missing platforms trigger a whole new version on the next run. `force` also creates a new version.
-A configured mirror that fails an upload or hash check fails its job and prevents the pin PR.
+Retry missing platforms with another explicit dispatch, which creates a whole new version.
+A configured mirror that fails an upload or hash check fails its job; only a successfully verified public manifest should be used for a pin PR.
 `tracemaker-latest` is a rolling discovery pointer, never the shipped default or GitHub's “Latest” release.
 
 ### Dispatch (owner)
 
 ```bash
-gh workflow run tracemaker-binaries.yml --repo fabPlane/fabdesk --ref <this-branch>
+gh workflow run tracemaker-binaries.yml --repo fabPlane/fabdesk --ref <this-branch> -f upstream_ref=<known-tag-or-commit>
 # after a known-good Windows + public-mirror run, the same on main
 ```
 
 Check: linux/macos/windows job results and the run summary,
 the private `tracemaker-*` GitHub release, then anonymous
 `curl -fsSI https://downloads.fabplane.com/tracemaker/tracemaker-latest/manifest.json`
-and sha256 of each rewritten archive URL. This agent cannot dispatch Actions.
+and sha256 of each rewritten archive URL. After verifying the versioned public manifest and its archives:
+
+```bash
+python3 scripts/tracemaker/update-pin.py <public-manifest.json> packages/tools/src/routers/tracemaker-pin.json
+python3 scripts/tracemaker/test-shipped-pin.py
+bun run test # includes packages/tools/test/tracemaker-pin-upgrade.test.ts
+```
+
+Open one reviewed PR against `main` containing the pin change. The workflow does not open a PR.

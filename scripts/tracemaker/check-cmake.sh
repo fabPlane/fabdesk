@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Parse and configure every TraceMaker CMake shim. These files only run on
-# macos-15 / windows-latest in the weekly job; a missing `()` (run 38013328567)
+# macos-15 / windows-latest in the manual build; a missing `()` (run 38013328567)
 # must fail here before anyone dispatches those runners.
 set -euo pipefail
 

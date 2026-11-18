@@ -1,4 +1,4 @@
-# Weekly TraceMaker binaries for Settings → Routers.
+# Manually dispatched TraceMaker binaries for Settings → Routers.
 #
 # Upstream (DingoOz/TraceMaker) is C++20 / GPL-3.0-or-later and publishes no
 # official router binaries. This workflow follows their README + CI:
@@ -20,49 +20,39 @@
 #           Git for Windows checkouts force core.autocrlf=false / core.eol=lf
 #           (run 38082482176: LF patch vs CRLF sources).
 #           continue-on-error so a Windows failure leaves linux/macos
-#           publishable. Missing platforms trigger a fresh build next week.
+#           publishable. A later manual dispatch can retry missing platforms.
 # Each archive ships tracemaker and its placer tracemaker-place (board_route's
 # floorplan path; built, linkage-probed, smoked, stripped and signed alike),
 # plus LICENSE, NOTICE, SOURCE.txt, DEPENDENCIES.txt. asset.json names the
-# placer; a published asset without that key predates it and resolve rebuilds it.
+# placer; a published asset without that key predates it.
 #
-# Weekly discovery builds the newest upstream release when the shipped pin is
-# older/incomplete. Each run uses a fresh -b<run_id>-<attempt> version. Smoke
-# tests cover both programs; publication never replaces versioned objects.
-# After public hash verification, one main-targeted PR updates the exact pin.
-# The default GITHUB_TOKEN needs repository permission to create pull requests.
-# Nothing merges automatically.
+# Dispatch with a known upstream tag or commit. Each run uses a fresh
+# -b<run_id>-<attempt> version. Smoke tests cover both programs; publication
+# never replaces versioned objects. After checking the smoke results and public
+# hashes, use update-pin.py to copy the public manifest and open a reviewed PR.
 #
 # Not built (marked, not blocking):
 #   - macos-x86_64: GitHub Intel macOS runners are deprecated and expensive;
 #     brew bottles on Apple silicon are arm64, so a cheap extra cell is not practical.
 #
-# Triggers: weekly cron + workflow_dispatch only. No push/PR builds.
+# Trigger: workflow_dispatch only. No scheduled, push or PR builds.
 
 name: TraceMaker binaries
 
 on:
-  schedule:
-    - cron: "17 4 * * 1" # Monday 04:17 UTC — after the Sunday desktop nightly, before the 13:00 security scan
   workflow_dispatch:
     inputs:
       upstream_ref:
-        description: "Upstream ref (empty = latest published DingoOz/TraceMaker release tag)"
-        required: false
+        description: "Known upstream tag or commit to build"
+        required: true
         type: string
-      force:
-        description: "Build a fresh immutable version of every platform"
-        required: false
-        type: boolean
-        default: false
 
 concurrency:
   group: tracemaker-binaries
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 env:
   TRACEMAKER_UPSTREAM_REPO: DingoOz/TraceMaker
@@ -72,13 +62,6 @@ jobs:
     name: Resolve upstream ref
     runs-on: ubuntu-latest
     outputs:
-      skip: ${{ steps.resolve.outputs.skip }}
-      force: ${{ steps.resolve.outputs.force }}
-      release_exists: ${{ steps.resolve.outputs.release_exists }}
-      missing_platforms: ${{ steps.resolve.outputs.missing_platforms }}
-      published_platforms: ${{ steps.resolve.outputs.published_platforms }}
-      expected_platforms: ${{ steps.resolve.outputs.expected_platforms }}
-      waived_platforms: ${{ steps.resolve.outputs.waived_platforms }}
       upstream_repo: ${{ steps.resolve.outputs.upstream_repo }}
       upstream_ref: ${{ steps.resolve.outputs.upstream_ref }}
       upstream_tag: ${{ steps.resolve.outputs.upstream_tag }}
@@ -92,20 +75,16 @@ jobs:
           persist-credentials: false
           submodules: false
 
-      - name: Resolve DingoOz/TraceMaker and skip if already published
+      - name: Resolve the requested DingoOz/TraceMaker ref
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
-          # `inputs` is empty on schedule. Boolean dispatch values stay booleans
-          # in `inputs` and become the strings "true"/"false" from the CLI, so
-          # accept both. A scheduled run must not force a rebuild.
-          TRACEMAKER_FORCE: ${{ github.event_name == 'workflow_dispatch' && (inputs.force == true || inputs.force == 'true') }}
-        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/resolve-upstream.sh" "${{ github.event_name == 'workflow_dispatch' && inputs.upstream_ref || '' }}"
+          TRACEMAKER_INPUT_REF: ${{ inputs.upstream_ref }}
+        run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/resolve-upstream.sh" "$TRACEMAKER_INPUT_REF"
 
   build-linux:
     name: linux-x86_64
     needs: resolve
-    if: needs.resolve.outputs.skip != 'true' && (needs.resolve.outputs.force == 'true' || contains(format(',{0},', needs.resolve.outputs.missing_platforms), ',linux-x86_64,'))
     runs-on: ubuntu-latest
     container: ubuntu:26.04
     env:
@@ -168,12 +147,10 @@ jobs:
     permissions:
       contents: write
     uses: ./.github/workflows/select-macos-runner.yml
-    if: needs.resolve.outputs.skip != 'true' && (needs.resolve.outputs.force == 'true' || contains(format(',{0},', needs.resolve.outputs.missing_platforms), ',macos-arm64,'))
 
   build-macos:
     name: macos-arm64
     needs: [resolve, select-tracemaker-macos-runner]
-    if: needs.resolve.outputs.skip != 'true' && (needs.resolve.outputs.force == 'true' || contains(format(',{0},', needs.resolve.outputs.missing_platforms), ',macos-arm64,'))
     runs-on: ${{ fromJSON(needs.select-tracemaker-macos-runner.outputs.runner) }}
     timeout-minutes: 60
     steps:
@@ -241,7 +218,6 @@ jobs:
   build-windows:
     name: windows-x86_64
     needs: resolve
-    if: needs.resolve.outputs.skip != 'true' && (needs.resolve.outputs.force == 'true' || contains(format(',{0},', needs.resolve.outputs.missing_platforms), ',windows-x86_64,'))
     runs-on: windows-latest
     timeout-minutes: 90
     # A Windows failure must not fail the workflow or block linux/macos publish.
@@ -362,7 +338,7 @@ jobs:
   publish:
     name: Publish GitHub release
     needs: [resolve, build-linux, build-macos, build-windows]
-    if: needs.resolve.outputs.skip != 'true' && !cancelled() && (needs.build-linux.result == 'success' || needs.build-macos.result == 'success' || needs.build-windows.result == 'success')
+    if: ${{ !cancelled() && (needs.build-linux.result == 'success' || needs.build-macos.result == 'success' || needs.build-windows.result == 'success') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -390,17 +366,11 @@ jobs:
         run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/publish.sh" "${GITHUB_WORKSPACE}/artifacts"
 
   mirror:
-    outputs:
-      sha: ${{ steps.pin.outputs.sha }}
-      pr: ${{ steps.pin.outputs.pr }}
     name: Mirror to public downloads
     needs: [resolve, publish]
-    # Only complete, successfully published runs can advance to a pin PR.
+    # Mirror only successfully published runs; pin changes are reviewed separately.
     if: always() && !cancelled() && needs.resolve.result == 'success' && needs.publish.result == 'success'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -436,73 +406,11 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/mirror-public.sh" "${GITHUB_WORKSPACE}/artifacts"
 
-      - name: Open or update the reviewed pin PR
-        id: pin
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # mirror-public.sh leaves only the successfully verified public manifest here.
-          test -f artifacts/public-manifest.json
-          bash scripts/tracemaker/open-pin-pr.sh "$GITHUB_WORKSPACE/artifacts/public-manifest.json"
-
-  validate-pin:
-    name: Validate pushed pin
-    needs: mirror
-    if: needs.mirror.outputs.sha != ''
-    uses: ./.github/workflows/ci.yml
-    with:
-      ref: ${{ needs.mirror.outputs.sha }}
-    secrets: inherit
-
-  report-pin:
-    needs: [mirror, validate-pin]
-    if: always() && needs.mirror.outputs.sha != ''
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      checks: write
-      pull-requests: write
-    steps:
-      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
-        env:
-          PIN_SHA: ${{ needs.mirror.outputs.sha }}
-          PIN_PR: ${{ needs.mirror.outputs.pr }}
-          SCRIPTS: ${{ needs.validate-pin.outputs.scripts }}
-          SECRETS: ${{ needs.validate-pin.outputs.secrets }}
-          VERIFY: ${{ needs.validate-pin.outputs.verify }}
-        with:
-          script: |
-            const { owner, repo } = context.repo;
-            const sha = process.env.PIN_SHA;
-            const url = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
-            const checks = [
-              ['TraceMaker scripts + CMake shims', process.env.SCRIPTS],
-              ['Secret scan', process.env.SECRETS],
-              ['Core verification', process.env.VERIFY],
-            ];
-            for (const [name, result] of checks) {
-              await github.rest.checks.create({ owner, repo, head_sha: sha, name,
-                status: 'completed', conclusion: result === 'success' ? 'success' : 'failure',
-                output: { title: `Pin CI: ${result || 'not completed'}`, summary: `Exact candidate ${sha}: ${url}` },
-                details_url: url });
-            }
-            // Do not attach a result to a newer candidate if another run moved the PR.
-            const { data: pr } = await github.rest.pulls.get({owner, repo, pull_number: Number(process.env.PIN_PR)});
-            if (pr.head.sha !== sha) throw new Error('Pin PR advanced during validation');
-            const marker = '\n<!-- pin-validation -->';
-            const body = (pr.body || '').split(marker)[0] + marker +
-              `\nValidated exact commit ${sha} in [this run](${url}).\n` +
-              checks.map(([name, result]) => `- ${name}: ${result || 'not completed'}`).join('\n');
-            await github.rest.pulls.update({owner, repo, pull_number: pr.number, body});
-            if (checks.some(([, result]) => result !== 'success')) core.setFailed('Pin CI failed');
-
   summarize:
     name: Summarize platform status
     needs: [resolve, build-linux, build-macos, build-windows, publish]
-    if: always() && !cancelled() && needs.resolve.result == 'success' && needs.resolve.outputs.skip != 'true'
+    if: always() && !cancelled() && needs.resolve.result == 'success'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -511,14 +419,11 @@ jobs:
 
       - name: Record platform job summary
         env:
-          GH_TOKEN: ${{ github.token }}
           TRACEMAKER_RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
           TRACEMAKER_LINUX_RESULT: ${{ needs.build-linux.result }}
           TRACEMAKER_MACOS_RESULT: ${{ needs.build-macos.result }}
           TRACEMAKER_WINDOWS_RESULT: ${{ needs.build-windows.result }}
           TRACEMAKER_PUBLISH_RESULT: ${{ needs.publish.result }}
-          TRACEMAKER_MISSING_PLATFORMS: ${{ needs.resolve.outputs.missing_platforms }}
-          TRACEMAKER_PUBLISHED_PLATFORMS: ${{ needs.resolve.outputs.published_platforms }}
         run: bash "${GITHUB_WORKSPACE}/scripts/tracemaker/summarize-run.sh"
 
   release-tracemaker-macos-runner:

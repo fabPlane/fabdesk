@@ -20,7 +20,7 @@ def module(name):
     spec.loader.exec_module(mod)
     return mod
 
-class AutomaticPin(unittest.TestCase):
+class Pin(unittest.TestCase):
     def test_pin_is_exact_manifest_and_requires_placer(self):
         update = module('update-pin')
         with tempfile.TemporaryDirectory() as folder:
@@ -221,61 +221,44 @@ class AutomaticPin(unittest.TestCase):
             self.assertEqual(len(fields), 2)
             self.assertTrue(all(fields))
 
-    def test_newest_release_build_and_complete_pin_skip(self):
+    def test_explicit_ref_build_uses_unique_run_attempt_version(self):
         with tempfile.TemporaryDirectory() as folder:
             root = pathlib.Path(folder)
             curl = root / 'curl'
-            curl.write_text("#!/bin/sh\ncase \"$*\" in *releases/latest*) echo '{\"tag_name\":\"v1.0.0\"}';; *) echo '{\"sha\":\"" + 'b'*40 + "\"}';; esac\n")
+            calls = root / 'calls'
+            curl.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CALLS\"\nprintf '%s\\n' '{\"sha\":\"" + 'b'*40 + "\"}'\n")
             curl.chmod(0o755)
-            pin = root / 'pin.json'
-            candidate = {'upstream': {'tag': 'v0.12.1', 'commit': 'a'*40}, 'assets': []}
-            pin.write_text(json.dumps(candidate))
+            outputs = root / 'outputs'
             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'],
-                       TRACEMAKER_PIN_FILE=str(pin), GITHUB_RUN_ID='123', GITHUB_RUN_ATTEMPT='2', TRACEMAKER_FORCE='false')
-            def resolve():
-                return subprocess.run(['bash', str(ROOT / 'resolve-upstream.sh')], env=env, capture_output=True, text=True, check=True).stdout
-            output = resolve()
-            self.assertIn('release_tag=tracemaker-v1.0.0-bbbbbbb-b123-2', output)
-            self.assertIn('skip=false', output)
-            candidate['upstream'] = {'tag': 'v1.0.0', 'commit': 'b'*40}
-            candidate['assets'] = [{'platform': p, 'placer': 'tracemaker-place'} for p in ['linux-x86_64', 'macos-arm64', 'windows-x86_64']]
-            pin.write_text(json.dumps(candidate))
-            self.assertIn('skip=true', resolve())
+                       CALLS=str(calls), GITHUB_RUN_ID='123', GITHUB_RUN_ATTEMPT='2',
+                       GITHUB_OUTPUT=str(outputs), TRACEMAKER_PIN_FILE=str(root / 'absent-pin.json'))
+            def resolve(*refs):
+                return subprocess.run(['bash', str(ROOT / 'resolve-upstream.sh'), *refs],
+                                      env=env, capture_output=True, text=True)
+            for ref in [(), ('',), ('   ',)]:
+                result = resolve(*ref)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('explicit upstream tag or commit is required', result.stderr)
+            self.assertFalse(calls.exists(), 'empty input must fail before any network lookup')
+            result = resolve('v1.0.0')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('release_tag=tracemaker-v1.0.0-bbbbbbb-b123-2', result.stdout)
+            self.assertIn('upstream_commit=' + 'b'*40, outputs.read_text())
+            env['GITHUB_RUN_ATTEMPT'] = '3'
+            self.assertIn('release_tag=tracemaker-v1.0.0-bbbbbbb-b123-3', resolve('v1.0.0').stdout)
+            self.assertIn('release_tag=tracemaker-bbbbbbb-b123-3', resolve('b'*40).stdout)
+            self.assertNotIn('releases/latest', calls.read_text())
+            self.assertEqual(calls.read_text().count('/commits/'), 3)
 
-    def test_open_pr_exposes_exact_pushed_commit(self):
-        with tempfile.TemporaryDirectory() as folder:
-            root = pathlib.Path(folder)
-            remote = root / 'origin.git'
-            subprocess.run(['git', 'init', '--bare', str(remote)], check=True, capture_output=True)
-            repo = root / 'repo'; repo.mkdir()
-            def git(*args):
-                return subprocess.check_output(['git', '-C', str(repo), *args], text=True).strip()
-            git('init', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.test')
-            shutil.copytree(ROOT, repo / 'scripts/tracemaker')
-            pin = repo / 'packages/tools/src/routers/tracemaker-pin.json'; pin.parent.mkdir(parents=True); pin.write_text('{}')
-            git('add', '.'); git('commit', '-m', 'base'); git('remote', 'add', 'origin', str(remote)); git('push', 'origin', 'main')
-            candidate = root / 'candidate.json'
-            candidate.write_text(json.dumps({'assets': [{'platform': p, 'placer': 'tracemaker-place',
-                'sha256': 'a'*64, 'url': 'https://downloads.fabplane.com/tracemaker/build/file'}
-                for p in ['linux-x86_64', 'macos-arm64']]}))
-            bin_dir = root / 'bin'; bin_dir.mkdir()
-            gh = bin_dir / 'gh'
-            gh.write_text('#!/bin/sh\ncase "$*" in "pr list"*) echo 7;; esac\n')
-            gh.chmod(0o755)
-            output = root / 'output'
-            subprocess.run(['bash', 'scripts/tracemaker/open-pin-pr.sh', str(candidate)], cwd=repo,
-                env=dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ['PATH'], GITHUB_OUTPUT=str(output)), check=True, capture_output=True)
-            fields = dict(line.split('=', 1) for line in output.read_text().splitlines())
-            self.assertEqual(fields['sha'], git('rev-parse', 'HEAD'))
-            self.assertEqual(fields['sha'], git('ls-remote', 'origin', 'refs/heads/automation/tracemaker-pin').split()[0])
-            self.assertEqual(fields['pr'], '7')
-            self.assertEqual(pin.read_bytes(), candidate.read_bytes())
-            # Reusable CI must check out that input in all three code jobs.
-            ci = (ROOT.parents[1] / '.github/workflows/ci.yml').read_text()
-            self.assertEqual(ci.count('ref: ${{ inputs.ref || github.sha }}'), 3)
-            workflow = (ROOT.parents[1] / '.github/workflows/tracemaker-binaries.yml').read_text()
-            self.assertIn('ref: ${{ needs.mirror.outputs.sha }}', workflow)
-            self.assertIn('head_sha: sha', workflow)
+    def test_workflow_is_manual_without_pin_pr_path(self):
+        workflow = (ROOT.parents[1] / '.github/workflows/tracemaker-binaries.yml').read_text()
+        self.assertIn('workflow_dispatch:', workflow)
+        self.assertNotIn('schedule:', workflow)
+        self.assertNotIn('open-pin-pr', workflow)
+        self.assertNotIn('pull-requests: write', workflow)
+        self.assertNotIn('validate-pin:', workflow)
+        self.assertNotIn('report-pin:', workflow)
+        self.assertFalse((ROOT / 'open-pin-pr.sh').exists())
 
     def test_storage_lookup_error_cannot_write(self):
         s3 = module('s3-put')

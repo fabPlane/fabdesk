@@ -1,4 +1,4 @@
-# Included via CMAKE_PROJECT_INCLUDE on the macOS weekly build.
+# Included via CMAKE_PROJECT_INCLUDE on the macOS manual build.
 # Run 38009143938: Homebrew's zstd CMake config has no zstd::libzstd_static,
 # so tm_replay linked /opt/homebrew/opt/zstd/lib/libzstd.1.dylib.
 # We also pass -Dzstd_DIR at a config that imports libzstd.a under both

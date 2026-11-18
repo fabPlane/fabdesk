@@ -1,4 +1,4 @@
-# Included via CMAKE_PROJECT_INCLUDE on the Windows weekly build (MSYS2 UCRT64).
+# Included via CMAKE_PROJECT_INCLUDE on the Windows manual build (MSYS2 UCRT64).
 # Upstream CMakePresets.json has no Windows preset; the `base` preset prepends
 # /usr/bin to PATH and Warnings.cmake is GCC-only (-Wall), so we do not use
 # MSVC or clang-cl. This shim:

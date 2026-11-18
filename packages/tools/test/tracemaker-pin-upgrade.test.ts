@@ -24,7 +24,7 @@ test.skipIf(process.platform !== "linux" || process.arch !== "x64")("registry up
     const tar = join(home, "new.tar.gz");
     expect(Bun.spawnSync(["tar", "-czf", tar, "-C", pack, "."]).exitCode).toBe(0);
     const body = await readFile(tar);
-    // Model the manifest the automatic publisher will pin; keep real installer,
+    // Model the manifest a reviewed PR will pin; keep real installer,
     // registry upgrade and extraction, and replace only the published bytes.
     TRACEMAKER_PINNED_MANIFEST.assets = [{ platform: "linux-x86_64", filename: "new.tar.gz",
       url: "https://example.test/build/new.tar.gz", sha256: createHash("sha256").update(body).digest("hex"),

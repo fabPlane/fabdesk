@@ -126,7 +126,7 @@ See \`manifest.json\` (platform, sha256, size, upstream tag/commit, build date).
 \`tracemaker-latest\` is a rolling pointer at this same immutable tag.
 
 CUDA is not included (cpu-only on Linux, Metal on macOS, cpu-only MinGW on Windows).
-macOS x86_64 is omitted (Intel runners are not cheap enough for a weekly job).
+macOS x86_64 is omitted (Intel runners are not cheap enough for a manual build).
 Windows is best-effort: a failed windows-x86_64 job leaves linux/macos published
 and is reported in the run summary.
 EOF

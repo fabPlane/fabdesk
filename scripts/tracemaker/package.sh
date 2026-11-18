@@ -251,8 +251,8 @@ asset = {
   "bytes": int(os.environ["BYTES"]),
   "format": os.environ["FORMAT"],
   "executable": os.environ["EXE_NAME"],
-  # The placer sits beside the executable; the installer and resolve-upstream.sh
-  # read this key (an asset without it predates the placer and is rebuilt).
+  # The placer sits beside the executable; the installer and archive gate
+  # read this key (an asset without it predates the placer).
   "placer": os.environ["PLACER_NAME"],
 }
 notes = pathlib.Path(os.environ["NOTES"]).read_text(encoding="utf-8")

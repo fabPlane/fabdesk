@@ -80,7 +80,7 @@ case "$platform" in
     bash "$SCRIPT_DIR/apply-windows-patch.sh" "$src"
     ;;
   *)
-    echo "::error::No supported CMake recipe for $platform (weekly matrix is linux-x86_64, macos-arm64, windows-x86_64)" >&2
+    echo "::error::No supported CMake recipe for $platform (build matrix is linux-x86_64, macos-arm64, windows-x86_64)" >&2
     exit 1
     ;;
 esac

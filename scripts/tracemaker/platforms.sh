@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Single source of truth for platforms the weekly workflow is expected to publish.
+# Single source of truth for platforms the binary workflow is expected to publish.
 # Source this file; do not execute it.
 #
 # Required platforms (linux, macos-arm64) must be present before a release is
 # treated as complete. Optional platforms (windows-x86_64) are still built when
 # missing, but after TRACEMAKER_OPTIONAL_FAIL_LIMIT consecutive failures they
-# are waived so the weekly run can stay green and skip instead of looping.
+# can be reported as waived by platform-status helpers. Manual dispatch builds all platforms.
 #
 # Override in tests:
 #   TRACEMAKER_REQUIRED_PLATFORMS
@@ -52,7 +52,7 @@ optional_platforms_csv() {
 # Print expected platforms that are missing from a manifest.json (or none).
 # A platform counts as published only when its asset names the placer
 # (tracemaker-place ships beside tracemaker since the floorplan port), so a
-# release packed before that is rebuilt by the next weekly run, not skipped.
+# release packed before that counts as incomplete.
 missing_expected_platforms() {
   local manifest="${1:?manifest.json}"
   EXPECTED="$TRACEMAKER_EXPECTED_PLATFORMS" python3 - "$manifest" <<'PY'
@@ -166,11 +166,4 @@ raw = json.loads(path.read_text(encoding="utf-8"))
 plats = sorted({a.get("platform") for a in raw.get("assets", []) if isinstance(a, dict) and a.get("platform")})
 print(" ".join(plats))
 PY
-}
-
-force_rebuild_requested() {
-  case "${TRACEMAKER_FORCE:-}" in
-    1|true|TRUE|yes|YES) return 0 ;;
-    *) return 1 ;;
-  esac
 }

@@ -1,4 +1,4 @@
-# Configure-time harness for the macOS weekly-build shims.
+# Configure-time harness for the macOS binary-build shims.
 # Loaded the same way the runner does: CMAKE_PROJECT_INCLUDE at project(),
 # then a subdirectory that find_package(zstd CONFIG) and links tm_replay
 # the way upstream src/server/CMakeLists.txt does (prefer shared if present).

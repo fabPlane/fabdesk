@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=paths.sh
 source "$SCRIPT_DIR/paths.sh"
-python3 "$SCRIPT_DIR/test-automatic-pin.py"
+python3 "$SCRIPT_DIR/test-pin.py"
 ROOT="$(mktemp -d "${TMPDIR:-/tmp}/tm-script-test.XXXXXX")"
 trap 'rm -rf "$ROOT"' EXIT
 fail=0
@@ -591,20 +591,6 @@ if PATH="$ROOT/ghbin:$PATH" bash "$SCRIPT_DIR/publish.sh" "$ROOT/pack" > "$ROOT/
 fi
 assert_eq "$(sha256sum "$GH_STORE/$TRACEMAKER_RELEASE_TAG/tracemaker-linux-x86_64.tar.gz")" "$before" "repeat publish preserves bytes"
 partial_pack="$ROOT/pack"
-TRACEMAKER_FORCE=1
-if force_rebuild_requested; then
-  echo "ok   TRACEMAKER_FORCE=1 is a rebuild"
-else
-  echo "FAIL TRACEMAKER_FORCE=1 not detected"
-  fail=1
-fi
-unset TRACEMAKER_FORCE
-if force_rebuild_requested; then
-  echo "FAIL force defaulted on"
-  fail=1
-else
-  echo "ok   force is off by default"
-fi
 
 # --- keep-going summary lists every FAILED target ---
 cat > "$ROOT/ninja-fail.log" <<'EOF'
@@ -890,8 +876,6 @@ else
   fail=1
 fi
 assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "mirror-public.sh"
-assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "github.event_name == 'workflow_dispatch' && (inputs.force == true || inputs.force == 'true')"
-assert_contains "${BASH_SOURCE[0]%/*}/../../.github/workflows/tracemaker-binaries.yml" "release_exists"
 assert_contains "$SCRIPT_DIR/package.sh" "python3 -m zipfile"
 python3 - <<PY
 from pathlib import Path
