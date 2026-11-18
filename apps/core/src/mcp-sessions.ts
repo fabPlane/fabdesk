@@ -187,9 +187,9 @@ export function boardWorkflowStages(md: string = BOARD_WORKFLOW_MD): Array<{ sta
 }
 
 /**
- * The board-workflow pointer in the server instructions: what an external agent (Codex, Claude Code through the plugin)
- * otherwise never learns, since the full text reaches only the AGENTS.md of desktop runs. Stages come from the workflow
- * text; the full text is the resource and the prompt.
+ * The board-workflow pointer in the server instructions for desktop and external agents.
+ * Stages come from the full workflow text, served by the resource and prompt and mirrored in docs/board-workflow.md;
+ * generated project AGENTS.md contains a short start map pointing to that resource.
  */
 export function boardWorkflowInstructions(opts: { listed?: boolean } = {}): string {
   const stages = boardWorkflowStages()

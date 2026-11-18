@@ -72,7 +72,19 @@ describe("renderAgentsMd", () => {
 
   test("new-board row gives both authoring paths equal standing", () => {
     const md = renderAgentsMd({ ...ctx, boardWorkflow: true });
-    expect(md).toContain("| New board | Choose `circuit_build` or `schematic_edit` |");
+    const row = md.split("\n").find((line) => line.startsWith("| New board |"));
+    expect(row).toBeDefined();
+    const firstStep = row!.split("|")[2]!;
+    expect(firstStep).toMatch(/Choose `circuit_build`.* or `schematic_edit`/);
+    expect(firstStep).not.toMatch(/prefer|recommend|instead|fallback/i);
+    expect(firstStep).toMatch(/`circuit_build`[^;]*schematic and (?:the )?board/);
+    expect(firstStep).toMatch(/`schematic_edit`[^;]*schematic only/);
+    const schematicPath = row!.slice(row!.indexOf("`schematic_edit`"));
+    const sync = schematicPath.indexOf("`pcb_update_from_schematic`");
+    const check = schematicPath.indexOf("`board_check`");
+    expect(sync).toBeGreaterThan(0);
+    expect(check).toBeGreaterThan(sync);
+    expect(schematicPath.slice(sync, check)).toContain('"apply": true');
   });
 
   test("resource pointer names the configured server without client-specific syntax", () => {

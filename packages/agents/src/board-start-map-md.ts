@@ -8,7 +8,7 @@ Use the path that fits the request. If a Fabdesk tool is not listed directly, us
 
 | Request | First step | Then |
 | --- | --- | --- |
-| New board | Choose \`circuit_build\` or \`schematic_edit\` | \`board_check\` → layout → review → \`render_publish\` |
+| New board | Choose \`circuit_build\` (writes schematic and board) or \`schematic_edit\` (edits schematic only; then \`pcb_update_from_schematic\` \`{"apply": true}\` updates and saves board) | \`board_check\` → layout → review → \`render_publish\` |
 | Change an existing board | \`board_check\` (onboards it if needed) | \`board_edit\` \`mode: "impact"\` → \`mode: "full", adopt: true\` → \`board_check\` → \`render_publish\` |
 | Connect open nets, fix DRC | \`board_check\` | \`board_route\` \`new\` → \`try\` → \`validate\` → \`accept\` |
 | Review a board | \`board_review {"action": "run"}\` | Settle findings; \`autopilot\` applies proven fixes and leaves the owner's questions |

@@ -22,6 +22,7 @@ import {
 } from "./mcp-sessions";
 import { BOARD_START_MAP_MD, BOARD_WORKFLOW_MD } from "@fabdesk/agents";
 import { createRegistry } from "@fabdesk/tools";
+import { stepsFor } from "../../../packages/board-workflow/src/lastmile/actions";
 
 describe("initialToolsetsFor", () => {
   test("defaults, the full set, and a comma list added to the defaults", () => {
@@ -124,6 +125,7 @@ test("start map tools and documented arguments exist in the current registry", (
     ["circuit_source", { action: "schema" }],
     ["circuit_source", { action: "validate" }],
     ["schematic_inspect", { detail: "authoring" }],
+    ["pcb_update_from_schematic", { apply: true }],
     ["circuit_search_parts", { query: "part", kind: "symbol" }],
     ["circuit_describe_part", { kind: "symbol", libId: "Library:Part" }],
     ["board_check", { confirm: true }],
@@ -140,6 +142,12 @@ test("start map tools and documented arguments exist in the current registry", (
   for (const [name, args] of samples) {
     expect(registry.inputObject(registry.get(name)!).safeParse(args).success).toBe(true);
   }
+  // The tool schema accepts arbitrary strings here; validate the documented values
+  // with the same action parser used by the last-mile runner.
+  const lastMile = BOARD_START_MAP_MD.split("\n").find((line) => line.startsWith("| Last mile |"))!;
+  const actions = [...lastMile.matchAll(/\["([a-z]+)"\]/g)].map((match) => match[1]!);
+  expect(actions).toEqual(["finish", "opens"]);
+  for (const action of actions) expect(stepsFor(action).length).toBeGreaterThan(0);
 });
 
 describe("board workflow instructions, resource and prompt come from BOARD_WORKFLOW_MD", () => {
