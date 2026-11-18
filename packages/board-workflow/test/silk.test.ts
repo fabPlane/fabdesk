@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { cp, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findKicadCli } from "@fabdesk/kicad";
-import { parseSexpr, release, silk } from "../src";
+import { parseSexpr, release, silk, openReviewProject, runReview, dispose, reviewGate } from "../src";
+import { fakeEnv } from "./review-fixture";
 import { FIXTURE_BOARD } from "./fixtures";
 
 describe("text boxes (measured against KiCad's PCB_TEXT::GetBoundingBox, stable 10.0.6)", () => {
@@ -255,11 +256,22 @@ describe.skipIf(!cli)("with kicad-cli", () => {
       return { result: { packageDetail: { title: "R0603", dataStr: { head: { x: 0, y: 0 }, shape: ["PAD~RECT~-3.2480315~0~3.1496063~3.7401575~1~~1~0", "PAD~RECT~3.2480315~0~3.1496063~3.7401575~1~~2~0"] } }, dataStr: { shape: [] } } };
     } } });
     const allPass = Object.fromEntries(["A1_connectivity", "A2_drc", "A3_parity", "A4_circuit", "A5_anchors", "A6_stack", "A7_widths", "A8_pairs", "A9_heights"].map((k) => [k, true]));
+    // F2: the rerun emits a deferred note, but release still discloses the agent settlement.
+    await mkdir(join(dir, ".fabdesk/board/review"), { recursive: true });
+    await writeFile(join(dir, ".fabdesk/board/review/config.json"), JSON.stringify({ checks_only: ["pack"] }));
+    const reviewProject = await openReviewProject(dir);
+    await runReview(reviewProject, fakeEnv(), { offline: true });
+    await dispose(reviewProject, { id: "L8:EXPERT:-:-:pending", state: "defer", by: "agent", reason: "Prototype bench checks cover this run" });
+    await runReview(reviewProject, fakeEnv(), { offline: true });
+    const gate = await reviewGate(reviewProject);
+    expect(gate.state).toBe("pass");
+    const review = { state: gate.state, independentReview: gate.evidence!.independentReview, agentSettled: gate.evidence!.dispositions.filter(d => d.by === "agent").length };
     const r = await release.releaseFab({
       project: dir, stem: "fx", pcb, schematic: null, out, cli: cli!, step: false, bomDir, bomBoardSha: release.sha256(await readFile(pcb)),
-      gates: { review: async () => ({ state: "pass" }), acceptance: async () => ({ summary: allPass }) },
+      gates: { review: async () => review, acceptance: async () => ({ summary: allPass }) },
     });
     const man = r.manifest as { reproducible: { pass: boolean; files: number }; gerbcheck: { pass: boolean }; release_gate: string; jlc: { placements: number; no_lcsc_code: string[] }; files: Record<string, string> };
+    expect(JSON.parse(await readFile(join(out, "manifest.json"), "utf8")).review).toMatchObject({ gate: "pass", independent_review: "deferred", agent_settled: 1 });
     expect(man.release_gate).toContain("interconnect: none");
     expect(man.reproducible.pass).toBe(true);
     expect(man.gerbcheck.pass).toBe(true);

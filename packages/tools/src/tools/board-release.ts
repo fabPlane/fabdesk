@@ -1,3 +1,4 @@
+import { gateLabels } from "../board-state";
 import { fabricationGate, fabricationWaiver, packageWaivers } from "../fabrication-gate";
 import { currentReviewHash, stageState } from "@fabdesk/board-workflow";
 /**
@@ -276,7 +277,7 @@ async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
         review: async () => {
           if (reviewWaiver) return { state: "pass", open: 0, mustFix: 0 };
           const g = await reviewGate(await openReviewProject(project.dir, files.pcb));
-          return { state: g.state, open: g.open, mustFix: g.mustFix };
+          return { state: g.state, open: g.open, mustFix: g.mustFix, ...gateLabels(g) };
         },
         // the acceptance's net classes and rules on the project file before A1-A9 (no-op when the board keeps its native rules)
         rules: () => applyProjectRules(project.dir, files.pcb, undefined, true),

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { openReviewProject, runReview, importExpert, reviewGate, reviewStatus, stageState, currentReviewHash, dispose, designHash } from "@fabdesk/board-workflow";
 import { fakeEnv, PCB } from "../../board-workflow/test/review-fixture";
-import { recordReviewGate, readReviewGate } from "../src/board-state";
+import { recordReviewGate, readReviewGate, gateLabels } from "../src/board-state";
 import { fabricationGate, packageWaivers } from "../src/fabrication-gate";
 import { packageFixture } from "./release-package-fixture";
 const dirs: string[] = [];
@@ -20,17 +20,17 @@ async function project(checks = ["pack"]) {
   return openReviewProject(dir);
 }
 const provenance = async (p: { dir: string; pcb: string }) => ({ designHash: await currentReviewHash(p.dir), pcb: p.pcb.slice(p.dir.length + 1) });
-for (const skipPack of [false, true]) test(`common gate requires coverage even with accepted question / pack skipped=${skipPack}`, async () => {
+for (const skipPack of [false, true]) test(`coverage needs an import or valid settlement / pack skipped=${skipPack}`, async () => {
   const p = await project(skipPack ? ["identity"] : ["pack"]);
   await runReview(p, fakeEnv(), { offline: true });
   if (!skipPack) await dispose(p, { id: "L8:EXPERT:-:-:pending", state: "accept", by: "owner", reason: "Settled" });
   const gate = await reviewGate(p);
-  expect(gate.state).toBe("open");
-  expect(gate.lines.join(" ")).toContain("independent");
-  await recordReviewGate(p.dir, gate);
-  expect((await readReviewGate(p.dir)).state).toBe("open");
-  expect(JSON.parse(await readFile(join(p.dir, ".fabdesk/board/review-gate.json"), "utf8")).state).toBe("open");
-  await expect(fabricationGate(p.dir, "export_gerbers")).rejects.toThrow("fabrication refused");
+  expect(gate.state).toBe(skipPack ? "open" : "pass");
+  expect(gate.evidence?.independentReview).toBe("missing");
+  await recordReviewGate(p.dir, { ...gate, ...gateLabels(gate) });
+  expect((await readReviewGate(p.dir)).state).toBe(skipPack ? "open" : "pass");
+  if (skipPack) await expect(fabricationGate(p.dir, "export_gerbers")).rejects.toThrow("fabrication refused");
+  else await expect(fabricationGate(p.dir, "export_gerbers")).resolves.toBeNull();
 });
 test("expert evidence cannot be rebound by reimport; unbound evidence is rejected", async () => {
   const p = await project(); await runReview(p, fakeEnv(), { offline: true });
@@ -232,4 +232,61 @@ test("ambiguous legacy imports remain unverified", async () => {
   const saved = JSON.parse(await readFile(file, "utf8")); delete saved.pcb; await writeFile(file, JSON.stringify(saved));
   expect((await stageState(p.dir, other.pcb)).independent.coveredBoard).toBeNull();
   expect((await reviewGate(other)).state).not.toBe("pass");
+});
+
+// F1/F2: coverage uses the same settlements as review evaluation, even across finding IDs.
+for (const checks of [["pack"], ["identity"]]) test(`owner intent settles coverage with ${checks[0]} and preserves its full reason`, async () => {
+  const p = await project(checks);
+  await runReview(p, fakeEnv(), { offline: true });
+  const decision = "Independent review waived for this prototype. " + "Owner rationale remains in the evidence. ".repeat(8);
+  await json(p.dir, ".fabdesk/board/review/intent.json", { decisions: [{ id: "D1", by: "owner", decision, covers: [{ id: "L8:EXPERT:-:-:pending" }] }] });
+  const gate = await reviewGate(p);
+  expect(gate.state).toBe("pass");
+  expect(gate.evidence?.dispositions).toContainEqual({ id: "L8:EXPERT:-:-:pending", state: "accept", by: "owner", reason: `intent decision D1: ${decision}` });
+  expect(gateLabels(gate)).toEqual({ independentReview: "missing", agentSettled: 0 });
+  await recordReviewGate(p.dir, { ...gate, ...gateLabels(gate) });
+  expect((await readReviewGate(p.dir)).state).toBe("pass");
+  await expect(fabricationGate(p.dir, "export_gerbers")).resolves.toBeNull();
+});
+for (const variant of ["deferred", "earlier"] as const) test(`agent settlement survives rerun to ${variant}, saved gate and fabrication`, async () => {
+  const p = await project();
+  await runReview(p, fakeEnv(), { offline: true });
+  const settlement = { id: "L8:EXPERT:-:-:pending", state: variant === "deferred" ? "defer" as const : "accept" as const, by: "agent" as const, reason: "Prototype bench checks cover this run" };
+  await dispose(p, settlement);
+  expect(gateLabels(await reviewGate(p)).agentSettled).toBe(1);
+  if (variant === "earlier") {
+    await importExpert(p, { ...await provenance(p), findings: [] });
+    await writeFile(p.pcb, PCB + "\n");
+  }
+  const again = await runReview(p, fakeEnv(), { offline: true });
+  expect(again.review.findings.some(f => f.id === `L8:EXPERT:-:-:${variant}`)).toBe(true);
+  const gate = await reviewGate(p);
+  expect(gate.state).toBe("pass");
+  expect(gate.evidence?.dispositions).toEqual([settlement]);
+  expect(gate.lines.join("\n")).toContain(`by agent: ${settlement.reason}`);
+  expect(gateLabels(gate)).toEqual({ independentReview: variant === "deferred" ? "deferred" : "missing", agentSettled: 1 });
+  await recordReviewGate(p.dir, { ...gate, ...gateLabels(gate) });
+  const saved = await readReviewGate(p.dir);
+  expect(saved.state).toBe("pass");
+  expect(saved.agentSettled).toBe(1);
+  const raw = JSON.parse(await readFile(join(p.dir, ".fabdesk/board/review-gate.json"), "utf8"));
+  expect(JSON.stringify(raw.independentCoverage)).toContain(settlement.reason);
+  await expect(fabricationGate(p.dir, "export_gerbers")).resolves.toBeNull();
+});
+
+for (const disposition of [
+  { state: "accept", reason: "  " },
+  { state: "fix", reason: "Will fix later" },
+  { state: "false-positive", reason: "Unverified", evidence: { source: "bench" } },
+]) test(`skipped pack rejects unsettled coverage: ${disposition.state}/${disposition.reason}`, async () => {
+  const p = await project(["identity"]);
+  await runReview(p, fakeEnv(), { offline: true });
+  await json(p.dir, ".fabdesk/board/review/dispositions.json", { "L8:EXPERT:-:-:pending": { by: "agent", ...disposition } });
+  // An explicit disposition retains precedence over a covering intent decision, just as in evaluate().
+  await json(p.dir, ".fabdesk/board/review/intent.json", { decisions: [{ id: "D1", decision: "Prototype waiver", covers: [{ id: "L8:EXPERT:-:-:pending" }] }] });
+  const gate = await reviewGate(p);
+  expect(gate.state).toBe("open");
+  await recordReviewGate(p.dir, { ...gate, ...gateLabels(gate) });
+  expect((await readReviewGate(p.dir)).state).toBe("open");
+  await expect(fabricationGate(p.dir, "export_gerbers")).rejects.toThrow("fabrication refused");
 });

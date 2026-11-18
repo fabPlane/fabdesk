@@ -1298,7 +1298,7 @@ export async function checkPack(ctx: ReviewCtx): Promise<CheckResult> {
   if (independent) await writeFile(join(reviewHome(ctx.project.dir), "independent.json"), JSON.stringify(independent, null, 1) + "\n");
   const independentState = (await stageState(ctx.project.dir, ctx.project.pcb)).independent;
   if (independent?.hash === ctx.hash && independent.pcb === relative(ctx.project.dir, ctx.project.pcb).split(sep).join("/")) { /* Findings are carried centrally, including when pack is skipped. */ }
-  else if (independentState.state === "deferred") r.findings.push(FIND({ layer: "L8", rule: "EXPERT", severity: "note", claim: "independent review deferred by the owner", key: "deferred" }));
+  else if (independentState.state === "deferred") r.findings.push(FIND({ layer: "L8", rule: "EXPERT", severity: "note", claim: "independent review deferred with a recorded reason", key: "deferred" }));
   else if (independent) r.findings.push(FIND({ layer: "L8", rule: "EXPERT", severity: "note", claim: `independent review covers an earlier design (${(await stageState(ctx.project.dir, ctx.project.pcb)).independent.changedSince.length} changes since)`, key: "earlier" }));
   else r.findings.push(FIND({ layer: "L8", rule: "EXPERT", severity: "question", claim: "independent expert review not imported yet", key: "pending", suggest: `have a fresh-context reviewer (the owner's call) work from ${pack}/EXPERT-BRIEF.md, then board_review import_expert` }));
   r.artifacts["pack"] = pack;

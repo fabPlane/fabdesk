@@ -7,7 +7,7 @@ import { stageState, stageReviewGate } from "@fabdesk/board-workflow";
 import { createHash } from "node:crypto";
 import { mkdir, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
-import { countedSummary, locateProject, matchesSavedBoard, reviewBasis, savedBoard, type ReviewBasis } from "@fabdesk/board-workflow";
+import { countedSummary, locateProject, matchesSavedBoard, reviewBasis, savedBoard, type ReviewBasis, type GateResult } from "@fabdesk/board-workflow";
 import { acceptSummary, type AcceptRecord } from "@fabdesk/protocol";
 
 export type AcceptanceState = {
@@ -104,17 +104,25 @@ export async function initDoneMode(projectDir: string, boardAlreadyPlaced: boole
  * it, `board_release check`); `board_release fab` computes the gate live from the review records instead.
  * pass = the review is current and every finding is settled.
  */
-export type ReviewGate = { state: "none" | "stale" | "open" | "errors" | "pass"; open?: number; mustFix?: number; at?: string; pcb?: string };
+export type ReviewGate = { state: "none" | "stale" | "open" | "errors" | "pass"; open?: number; mustFix?: number; at?: string; pcb?: string; independentReview?: string; agentSettled?: number };
 const gateFile = (dir: string) => join(dir, ".fabdesk", "board", "review-gate.json");
 
-export async function recordReviewGate(projectDir: string, r: { current: boolean; open: number; mustFix: number; errors?: boolean }): Promise<void> {
+/** Labels follow evaluated evidence; a waiver never claims that independent review completed. */
+export function gateLabels(g: Pick<GateResult, "evidence">) {
+  return {
+    independentReview: g.evidence?.independentReview ?? "missing",
+    agentSettled: new Set(g.evidence?.dispositions.filter(d => d.by === "agent").map(d => d.id) ?? []).size,
+  };
+}
+
+export async function recordReviewGate(projectDir: string, r: { current: boolean; open: number; mustFix: number; errors?: boolean; independentReview?: string; agentSettled?: number }): Promise<void> {
   let state: ReviewGate["state"] = r.errors ? "errors" : !r.current ? "stale" : r.open > 0 ? "open" : "pass";
   const basis = await reviewBasis(projectDir);
   const independentReview = (await stageState(projectDir, basis.pcb ?? undefined)).independent;
-  const coverageMissing = !["current", "deferred"].includes(independentReview.state);
+  const coverageMissing = independentReview.state !== "current" && !independentReview.settled;
   if (state === "pass" && coverageMissing) state = "open";
   await mkdir(join(projectDir, ".fabdesk", "board"), { recursive: true });
-  await writeFile(gateFile(projectDir), JSON.stringify({ state, open: state === "open" && r.open === 0 && coverageMissing ? 1 : r.open, mustFix: r.mustFix, designHash: basis.design, independentReview, basis, at: new Date().toISOString() }) + "\n");
+  await writeFile(gateFile(projectDir), JSON.stringify({ state, open: state === "open" && r.open === 0 && coverageMissing ? 1 : r.open, mustFix: r.mustFix, designHash: basis.design, independentCoverage: independentReview, independentReview: r.independentReview ?? (independentReview.state === "current" ? "completed" : independentReview.state === "deferred" ? "deferred" : "missing"), agentSettled: r.agentSettled ?? 0, basis, at: new Date().toISOString() }) + "\n");
 }
 
 /** Forget the saved gate (the review has no current record: never run, or its runs were removed). */

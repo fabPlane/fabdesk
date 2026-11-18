@@ -22,7 +22,7 @@ import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { REGISTRY } from "./checks";
 import { ReviewCtx, reviewHash, reviewHome, type ReviewEnv, type ReviewProject } from "./context";
-import { propose, coveringDecision } from "./proposals";
+import { propose } from "./proposals";
 import { loadCurrent, readDispositions, readIntent, reviewedPcb, runsDir, setLatest, writeDispositions, type Current } from "./store";
 import {
   STATES,
@@ -41,52 +41,12 @@ import {
 import { readJsonOrNull } from "../files";
 import { changePicture, combinedCandidate, fixesDir, readCandidateRecord, writeCandidateRecord, type CombinedRecord } from "./candidates";
 
+import { evaluateFinding, type Row } from "./evaluation";
+export { judge, agentMayAcceptMustFix, agentMayAcceptQuestion, type Row } from "./evaluation";
+
 export const GATE_PASS = 0, GATE_STALE = 1, GATE_OPEN = 2, GATE_ERROR = 3;
 
 // ---------------------------------------------------------------- dispositions
-
-/** The owner's intent decides how far the agent's judgement goes, not the tool. Default: accepting a must-fix is the owner's. */
-export function agentMayAcceptMustFix(intent: Intent | null): boolean {
-  const pref = intent?.preferences ?? {};
-  const intentGiven = !!intent && Object.keys(intent).length > 0;
-  const ask = (pref.ask_owner_for ?? (intentGiven ? [] : ["accepting a must-fix"])).join(" ").toLowerCase();
-  const allow = (pref.workflow_decides ?? []).join(" ").toLowerCase();
-  return allow.includes("must-fix") || !ask.includes("must-fix");
-}
-
-/** (open?, why) for one finding under its disposition. Every rule asks for evidence, not for a particular path. */
-export function judge(finding: { severity: string }, disp: Disposition | null | undefined, intent: Intent | null = null): [boolean, string] {
-  if (finding.severity === "note") return [false, "note"];
-  if (!disp) return [true, "no disposition"];
-  const st = disp.state;
-  if (!disp.reason.trim()) return [true, "disposition has no reason"];
-  if (st === "defer" && finding.severity === "must-fix") return [true, "must-fix deferred, not resolved"];
-  if (st === "fix") return [true, "marked fix but still present"];
-  if (st === "false-positive" && !disp.third_source) return [true, "false-positive needs a third source"];
-  if (finding.severity === "must-fix" && st === "accept" && disp.by !== "owner") {
-    if (!agentMayAcceptMustFix(intent)) return [true, "must-fix accepted by agent: the owner's intent asks to be asked"];
-    if (!(disp.third_source || disp.evidence)) return [true, "must-fix accepted by agent needs evidence (third_source)"];
-  }
-  // The agent cannot waive a question on its own say-so: deferring one is the owner's call, and accepting one needs a
-  // source beyond the design and the check, unless the owner's intent hands questions to the workflow.
-  if (finding.severity === "question" && disp.by !== "owner") {
-    if (st === "defer") return [true, "question deferred by agent: the owner decides"];
-    if (st === "accept" && !(disp.third_source || disp.evidence) && !agentMayAcceptQuestion(intent)) return [true, "question accepted by agent needs evidence (third_source) or the owner"];
-  }
-  return [false, st];
-}
-
-/** The owner's intent may hand questions to the workflow (`workflow_decides` naming "question"). */
-export function agentMayAcceptQuestion(intent: Intent | null): boolean {
-  return (intent?.preferences?.workflow_decides ?? []).join(" ").toLowerCase().includes("question");
-}
-
-export interface Row extends FindingRecord {
-  open: boolean;
-  why: string;
-  disposition: Disposition | null;
-  carried: boolean;
-}
 
 export interface Evaluation {
   rows: Row[];
@@ -95,15 +55,7 @@ export interface Evaluation {
 }
 
 export function evaluate(review: ReviewRecord, disps: Dispositions, intent: Intent | null = null): Evaluation {
-  const rows: Row[] = [];
-  for (const f of review.findings) {
-    let d: Disposition | null = disps[f.id] ?? null;
-    const dec = !d ? coveringDecision(f, intent ?? {}) : null;
-    if (dec) // the owner already decided this (intent file): settled, cited
-      d = { state: "accept", by: "owner", reason: `intent decision ${dec.id}: ${dec.decision.slice(0, 160)}`, third_source: dec.source ?? "", hash: review.hash };
-    const [isOpen, why] = judge(f, d, intent);
-    rows.push({ ...f, open: isOpen, why, disposition: d, carried: !!(d?.hash && d.hash !== review.hash) });
-  }
+  const rows = review.findings.map(f => evaluateFinding(f, disps, intent, review.hash));
   const errors = review.checks.filter((c) => c.status === "error");
   return { rows, errors, open: rows.filter((r) => r.open) };
 }
@@ -359,11 +311,14 @@ async function gateFromEvaluation(project: ReviewProject, cur: Current, ev: Eval
   if (cur.state !== "current" || !cur.review)
     return { exit: GATE_STALE, state: cur.state === "no review" ? "none" : "stale", current: false, open: 0, mustFix: 0, errors: false, lines: [`REVIEW GATE: BLOCKED (${cur.state}). Run: board_review {"action": "run"}`] };
   const stages = await stageState(project.dir, project.pcb);
-  const coverageMissing = !["current", "deferred"].includes(stages.independent.state);
-  const coverageLine = `independent review ${stages.independent.state} (${stages.independent.changedSince.length} changes since). Import a current independent review, or record the owner's deferral.`;
+  const coverageMissing = stages.independent.state !== "current" && !stages.independent.settled;
+  const coverageLine = `independent review ${stages.independent.state} (${stages.independent.changedSince.length} changes since). Import a current independent review, or settle the coverage question with a reason (agent or owner).`;
 
   const notRun = notRunOf(cur.review);
-  const dispositions = ev.rows.filter(r => r.disposition).map(r => ({ id: r.id, state: r.disposition!.state, by: r.disposition!.by, reason: r.disposition!.reason }));
+  // Keep coverage settlements when pack changed IDs or was skipped; disclose each identity only once.
+  const coverageSettlements = stages.independent.state === "current" ? [] : stages.independent.settlements;
+  const rows = [...new Map([...coverageSettlements, ...ev.rows].map(r => [r.id, r])).values()];
+  const dispositions = rows.filter(r => r.disposition).map(r => ({ id: r.id, state: r.disposition!.state, by: r.disposition!.by, reason: r.disposition!.reason }));
   const independentReview = stages.independent.state === "current" ? "completed" as const : stages.independent.state === "deferred" ? "deferred" as const : "missing" as const;
   const evidence = { checks: cur.review.checks.map(c => ({ name: c.name, status: c.status })), dispositions, independentReview };
   const nr = { ...(notRun ? { notRun } : {}), evidence };

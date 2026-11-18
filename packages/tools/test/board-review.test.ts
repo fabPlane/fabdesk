@@ -89,7 +89,7 @@ describe("board_review", () => {
     await expect(call({ action: "dispose", id: "L*" })).rejects.toThrow(/needs state/);
     const d = await call({ action: "dispose", id: "*", state: "accept", by: "owner", reason: "looked at each on the bench", thirdSource: "bench log" });
     expect((d.json?.["disposed"] as string[]).length).toBeGreaterThan(1);
-    expect((await readReviewGate(project.dir)).state).toBe("open");
+    expect((await readReviewGate(project.dir)).state).toBe("pass");
     await call({ action: "dispose", id: "L8:EXPERT:-:-:pending", state: "defer", by: "owner", reason: "Owner defers independent coverage" });
     expect((await readReviewGate(project.dir)).state).toBe("pass");
     await writeFile(join(project.dir, "board.kicad_pcb"), PCB + "\n");

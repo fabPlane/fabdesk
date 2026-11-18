@@ -32,7 +32,7 @@ import type { FetchRecord } from "./lookup";
 import { classifyVias, viaBindings } from "./viaproc";
 import { zipFiles } from "./zip";
 
-export type ReviewGateInfo = { state: "none" | "stale" | "open" | "errors" | "pass"; open?: number; mustFix?: number; at?: string };
+export type ReviewGateInfo = { independentReview?: string; agentSettled?: number; state: "none" | "stale" | "open" | "errors" | "pass"; open?: number; mustFix?: number; at?: string };
 
 export class ReleaseStop extends Error {
   constructor(
@@ -389,7 +389,7 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
       reproducible: rep,
       gerbcheck: { gerbers: join(final, "gerbers"), pcb: gc.pcb, dpi: gc.dpi, drill: gc.drill, pass: gc.pass },
       sources: { pcb: sha256(await readFile(inp.pcb)), pcb_path: relative(inp.project, inp.pcb).split(sep).join("/"), ...(inp.schematic ? { schematic_root: sha256(await readFile(inp.schematic)) } : {}) },
-      review: { gate: rg.state, open: rg.open ?? 0, mustFix: rg.mustFix ?? 0, ...(rg.at ? { at: rg.at } : {}) },
+      review: { independent_review: rg.independentReview ?? "missing", agent_settled: rg.agentSettled ?? 0, gate: rg.state, open: rg.open ?? 0, mustFix: rg.mustFix ?? 0, ...(rg.at ? { at: rg.at } : {}) },
       files: {} as Record<string, string>,
     };
     for (const f of (await walk(work)).sort()) man.files[relative(work, f)] = sha256(await readFile(f));

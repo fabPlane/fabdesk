@@ -206,9 +206,10 @@ describe("a review run, the gate and dispositions", () => {
     expect(open).toBeGreaterThan(3);
     const d = await dispose(p, { id: "L*", state: "accept", by: "owner", reason: "reviewed on the bench", third_source: "bench log" });
     expect(d.disposed.length).toBeGreaterThan(3);
-    // the pilot case: the agent deferring the independent review itself must not pass the gate
+    // Coverage deferrals disclose the agent, without claiming independent review completed.
     await dispose(p, { id: "L8:EXPERT:-:-:pending", state: "defer", by: "agent", reason: "Independent reviewer unavailable for this session" });
-    expect((await reviewGate(p)).exit).toBe(2);
+    expect((await reviewGate(p)).exit).toBe(0);
+    expect((await reviewGate(p)).evidence?.independentReview).toBe("deferred");
     await dispose(p, { id: "L8:EXPERT:-:-:pending", state: "defer", by: "owner", reason: "Independent reviewer unavailable for this session" });
     const g = await reviewGate(p);
     expect(g.exit).toBe(0);

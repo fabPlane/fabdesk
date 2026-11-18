@@ -46,7 +46,7 @@ import {
   confineToProject,
 } from "@fabdesk/board-workflow";
 import { runKicadCli, type KicadCli } from "@fabdesk/kicad";
-import { clearReviewGate, recordReviewGate } from "../board-state";
+import { clearReviewGate, recordReviewGate, gateLabels } from "../board-state";
 import { bomDirOf, readBomState } from "../release-state";
 import { runDurable } from "../durable";
 import { boardMemGiB, governor } from "../resources";
@@ -74,7 +74,7 @@ export async function bomDecisions(dir: string, pcb?: string): Promise<BomDecisi
 async function recordGate(project: ReviewProject, g: GateResult): Promise<void> {
   // never reviewed, or its runs removed: forget any saved gate rather than keep an old pass
   if (g.state === "none") return clearReviewGate(project.dir);
-  await recordReviewGate(project.dir, { current: g.current, open: g.open, mustFix: g.mustFix, errors: g.errors });
+  await recordReviewGate(project.dir, { current: g.current, open: g.open, mustFix: g.mustFix, errors: g.errors, ...gateLabels(g) });
 }
 
 function gateText(g: GateResult): string {
