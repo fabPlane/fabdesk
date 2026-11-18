@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { BOARD_WORKFLOW_MD } from "./board-workflow-md";
-export { BOARD_WORKFLOW_MD };
+import { BOARD_START_MAP_MD } from "./board-start-map-md";
+export { BOARD_WORKFLOW_MD } from "./board-workflow-md";
 
 export interface AgentDocsContext {
   projectName: string;
@@ -49,6 +49,10 @@ Manage it with the \`shopping\` toolset (\`load_toolset {"toolset":"shopping"}\`
 \`shopping_list_remove\`, \`shopping_list_destinations\`, \`inventory_search\`, \`inventory_add\`. A
 message starting with \`/shopping-list\` is a request to use these tools. They need the user to be
 signed in to fabplane.`;
+
+const OTHER_TOOLSETS_SECTION = `## Other toolsets
+Off-board parts: \`project\` toolset (\`parts_search\`, \`parts_add\`, \`parts_list\`, \`parts_remove\`). A message starting with \`/parts\` asks for these tools.
+Shopping list and inventory: \`shopping\` toolset, signed in to fabplane. A message starting with \`/shopping-list\` asks for these tools.`;
 
 const TOOL_NEEDS = `## Tools and runtime
 Both authoring paths are available: \`circuit_build\` compiles \`circuit.netlist.json\`; \`schematic_edit\` edits native symbols and wires. Multi-unit parts share a reference and use distinct unit numbers, including power units.
@@ -127,7 +131,7 @@ ${sketches}
 | \`board.kicad_pro\` | Canonical KiCad project. |
 | \`board.kicad_sch\` | Canonical KiCad schematic. |
 | \`board.kicad_pcb\` | Canonical KiCad PCB. |
-| \`sketches/\` | User-provided drawings and photos. |
+${!ctx.interfaceMode && ctx.boardWorkflow ? "| `circuit.netlist.json` | Source for `circuit_build`, when that path is used. |\n" : ""}| \`sketches/\` | User-provided drawings and photos. |
 | \`renders/\` | Rendered artifacts. |
 | \`reports/\` | Machine-readable reports. |
 | \`exports/\` | Manufacturing and interchange outputs (gerbers, BOM, 3D-printed stencil STL, laser-cut stencil SVG/DXF/.lbrn2). |
@@ -142,7 +146,7 @@ ${
               .map(([name, path]) => `\`${name}\` = \`${path}\``)
               .join("; ")}.\n`
           : ""
-      }\n${ctx.boardWorkflow ? `${BOARD_WORKFLOW_MD}\n` : ""}${OFFBOARD_SECTION}\n\n${SHOPPING_SECTION}\n\n`
+      }\n${ctx.boardWorkflow ? `${BOARD_START_MAP_MD.replaceAll("{{MCP_SERVER_NAME}}", () => mcp)}\n${OTHER_TOOLSETS_SECTION}` : `${OFFBOARD_SECTION}\n\n${SHOPPING_SECTION}`}\n\n`
 }${USER_START}
 ${userSection.trim() === "" ? DEFAULT_USER_SECTION : userSection.trim()}
 ${USER_END}

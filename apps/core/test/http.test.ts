@@ -605,10 +605,13 @@ describe("http daemon", () => {
     const agentInstructions = await Bun.file(join(created.path, "AGENTS.md")).text();
     expect(agentInstructions).toContain("Canonical KiCad PCB");
     // the board workflow section is the one place that prescribes a method; it is present because the board toolset is registered
-    expect(agentInstructions).toContain("## Board workflow");
+    expect(agentInstructions).toContain("## Start here");
+    expect(agentInstructions).toContain("## Other toolsets");
+    expect(agentInstructions).toContain("fabdesk://docs/board-workflow");
+    expect(agentInstructions.length).toBeLessThan(9000);
     expect(agentInstructions).toContain("board_check");
     expect(agentInstructions).not.toMatch(/~\/pcb|FABDESK_PCB_BIN|\bpcb (run|review|flow|lastmile|edit)\b/);
-    const neutral = agentInstructions.replace(/## Board workflow[\s\S]*?(?=## Off-board parts)/, "");
+    const neutral = agentInstructions.replace(/## Start here[\s\S]*?(?=## Other toolsets)/, "");
     expect(neutral).not.toMatch(/workflow|prefer|retry|repeat until|run .* first/i);
     // Neutral discovery must give both authoring paths equal visibility.
     expect(/circuit_build/i.test(agentInstructions)).toBe(

@@ -48,19 +48,47 @@ describe("renderAgentsMd", () => {
     expect(md.indexOf(USER_START)).toBeLessThan(md.indexOf(USER_END));
   });
 
-  test("the board workflow section appears only when asked, names the single tool per stage and no outside toolkit", () => {
-    expect(renderAgentsMd(ctx)).not.toContain("## Board workflow");
+  test("board start map is short and points to complete stage detail", () => {
     const md = renderAgentsMd({ ...ctx, boardWorkflow: true });
-    expect(md).toContain("## Board workflow");
-    for (const t of ["board_check", "board_route", "board_edit", "board_review", "board_silk", "board_release", "board_job"]) expect(md).toContain(`\`${t}\``);
-    for (const code of ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9"]) expect(md).toContain(code);
-    expect(md).toContain("Defaults you may depart from");
-    expect(md).toContain("intent.json");
-    expect(md).not.toMatch(/~\/pcb|FABDESK_PCB_BIN|\bpcb (run|review|flow|lastmile|edit|onboard)\b|toolkit_|board_lastmile/);
-    // outside the board section the neutral wording guard still holds
-    const neutral = md.replace(/## Board workflow[\s\S]*?(?=## Off-board parts)/, "");
+    expect(md).toContain("## Start here");
+    expect(md).toContain("circuit_source");
+    expect(md).toContain("| `circuit.netlist.json` | Source for `circuit_build`, when that path is used. |");
+    expect(md).toContain("fabdesk://docs/board-workflow");
+    expect(md).not.toContain("### Working rules");
+    expect(md.length).toBeLessThan(9000);
+    expect(md).toContain("## Other toolsets");
+    expect(md).not.toContain("## Off-board parts");
+    expect(md).not.toContain("## Shopping list");
+    const neutral = md.replace(/## Start here[\s\S]*?(?=## Other toolsets)/, "");
     expect(neutral).not.toMatch(/workflow|must use|should use|prefer|retry|repeat until|run .* first|stopping policy/i);
-    expect(md.indexOf(USER_START)).toBeLessThan(md.indexOf(USER_END));
+  });
+
+  test("no start map or workflow resource pointer without board tools", () => {
+    const md = renderAgentsMd({ ...ctx, boardWorkflow: false });
+    expect(md).not.toContain("## Start here");
+    expect(md).not.toContain("fabdesk://docs/board-workflow");
+    expect(md).not.toContain("`board_check`");
+  });
+
+  test("new-board row gives both authoring paths equal standing", () => {
+    const md = renderAgentsMd({ ...ctx, boardWorkflow: true });
+    expect(md).toContain("| New board | Choose `circuit_build` or `schematic_edit` |");
+  });
+
+  test("resource pointer names the configured server without client-specific syntax", () => {
+    const md = renderAgentsMd({ ...ctx, boardWorkflow: true, mcpServerName: "custom-pcb" });
+    const detail = md.split("### More detail")[1]?.split("## Other toolsets")[0];
+    expect(detail).toContain("fabdesk://docs/board-workflow");
+    expect(detail).toContain("`custom-pcb`");
+    expect(detail).not.toContain("read_mcp_resource");
+  });
+
+  test("experimental modes keep their output even with board tools registered", () => {
+    for (const interfaceMode of ["substrate", "programmable"] as const) {
+      expect(renderAgentsMd({ ...ctx, interfaceMode, boardWorkflow: true })).toBe(
+        renderAgentsMd({ ...ctx, interfaceMode, boardWorkflow: false }),
+      );
+    }
   });
 
   test("docs/board-workflow.md is the same text as the agent section", () => {
