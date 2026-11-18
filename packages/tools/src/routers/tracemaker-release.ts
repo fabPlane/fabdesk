@@ -226,7 +226,7 @@ export class ManifestNotFoundError extends Error {
       `TraceMaker binary manifest was not reachable at ${url} (HTTP 404).` +
         (isDefaultPublicManifestUrl(url) || githubReleaseLooksPrivate(url)
           ? unreachableManifestAdvice(url)
-          : " The weekly binaries may not be published yet, or the URL is wrong."),
+          : " The manually published binaries may not be available yet, or the URL is wrong."),
     );
     this.name = "ManifestNotFoundError";
   }

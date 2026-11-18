@@ -457,39 +457,7 @@ assert mac["macosVariant"] == "system"
 print("ok   system-libcxx package records cxxRuntime=system")
 PY
 
-# --- expected-platform helpers ---
-# shellcheck source=platforms.sh
-source "$SCRIPT_DIR/platforms.sh"
-assert_eq "$(expected_platforms_csv)" "linux-x86_64,macos-arm64,windows-x86_64" "expected platform list"
-assert_eq "$(required_platforms_csv)" "linux-x86_64,macos-arm64" "required platform list"
-assert_eq "$(optional_platforms_csv)" "windows-x86_64" "optional platform list"
-python3 - <<PY
-import json, pathlib
-partial = pathlib.Path("$ROOT/partial-manifest.json")
-partial.write_text(json.dumps({
-  "name": "tracemaker",
-  "builtAt": "2026-10-09T22:00:00Z",
-  "upstream": {"repository": "https://github.com/DingoOz/TraceMaker", "tag": "v0.9.0",
-               "commit": "24c847772e57ea8888e2cfe4bbf1aa00666390a4", "license": "GPL-3.0-or-later",
-               "sourceUrl": "https://example.test/src.tgz"},
-  "assets": [{"platform": "linux-x86_64", "filename": "tracemaker-linux-x86_64.tar.gz",
-              "url": "https://example.test/linux.tgz", "sha256": "a"*64, "bytes": 1, "format": "tar.gz",
-              "executable": "tracemaker", "placer": "tracemaker-place"}]
-}) + "\n")
-old = json.loads(partial.read_text())
-del old["assets"][0]["placer"]
-pathlib.Path("$ROOT/preplacer-manifest.json").write_text(json.dumps(old) + "\n")
-PY
-assert_eq "$(missing_expected_platforms "$ROOT/preplacer-manifest.json")" "linux-x86_64 macos-arm64 windows-x86_64" "an asset without the placer counts as missing (rebuilt)"
-assert_eq "$(missing_expected_platforms "$ROOT/partial-manifest.json")" "macos-arm64 windows-x86_64" "linux-only manifest is missing macos + windows"
-assert_eq "$(missing_expected_platforms "$ROOT/no-such-manifest.json")" "linux-x86_64 macos-arm64 windows-x86_64" "missing file → all platforms"
-printf '%s\n' '{"platforms":{"windows-x86_64":{"status":"failed","attempts":3}}}' > "$ROOT/waived-status.json"
-assert_eq "$(missing_build_platforms "$ROOT/partial-manifest.json" "$ROOT/waived-status.json")" "macos-arm64" "waived windows is omitted from the next build list"
-assert_eq "$(waived_optional_platforms "$ROOT/waived-status.json")" "windows-x86_64" "three failures waive windows"
-printf '%s\n' '{"platforms":{"windows-x86_64":{"status":"failed","attempts":1}}}' > "$ROOT/retry-status.json"
-assert_eq "$(missing_build_platforms "$ROOT/partial-manifest.json" "$ROOT/retry-status.json")" "macos-arm64 windows-x86_64" "one Windows failure still rebuilds windows"
-
-# --- publish: join platforms, --latest=false, complete a partial release ---
+# --- publish: this run only, --latest=false, reject an existing release ---
 mkdir -p "$ROOT/ghbin" "$ROOT/ghstore"
 cat > "$ROOT/ghbin/gh" <<'EOF'
 #!/usr/bin/env bash

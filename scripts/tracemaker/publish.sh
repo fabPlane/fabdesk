@@ -5,8 +5,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=paths.sh
 source "$SCRIPT_DIR/paths.sh"
-# shellcheck source=platforms.sh
-source "$SCRIPT_DIR/platforms.sh"
 
 artifacts_dir="$(abs_existing_dir "${1:?artifacts directory}")"
 repo="${GITHUB_REPOSITORY:?}"
@@ -27,44 +25,19 @@ fi
 
 python3 "$SCRIPT_DIR/check-archive.py" "$artifacts_dir"
 
-merge_dir="$(mktemp -d "${TMPDIR:-/tmp}/tm-publish.XXXXXX")"
-trap 'rm -rf "$merge_dir"' EXIT
-
-# Merge this run's asset.json files with any already-published platforms.
-# New artifacts win. Existing entries are kept only after the archive downloads
-# and its sha256 matches the previous manifest.
-ARTIFACTS_DIR="$artifacts_dir" MERGE_DIR="$merge_dir" \
-BUILT_AT="$built_at" UPSTREAM_REPO="$upstream_repo" \
-UPSTREAM_TAG="$upstream_tag" UPSTREAM_COMMIT="$upstream_commit" \
-SOURCE_URL="$source_url" EXPECTED="$TRACEMAKER_EXPECTED_PLATFORMS" \
-python3 - <<'PY'
-import json, os, pathlib
-root = pathlib.Path(os.environ["ARTIFACTS_DIR"])
-merge = pathlib.Path(os.environ["MERGE_DIR"])
-local = []
-for path in sorted(root.glob("*/asset.json")):
-    local.append(json.loads(path.read_text(encoding="utf-8")))
-(merge / "local.json").write_text(json.dumps(local, indent=2) + "\n", encoding="utf-8")
-print("local platforms:", " ".join(sorted(a["platform"] for a in local)))
-PY
-
-# This run has a unique build tag. Creation below is atomic at GitHub: an
-# existing release is an error, never a reason to upload replacement assets.
-echo '[]' > "$merge_dir/kept.json"
-
-ARTIFACTS_DIR="$artifacts_dir" MERGE_DIR="$merge_dir" BUILT_AT="$built_at" \
+# Build this run's manifest only. An existing release is an error, never a
+# source of retained platforms or replacement uploads.
+ARTIFACTS_DIR="$artifacts_dir" BUILT_AT="$built_at" \
 UPSTREAM_REPO="$upstream_repo" UPSTREAM_TAG="$upstream_tag" \
 UPSTREAM_COMMIT="$upstream_commit" SOURCE_URL="$source_url" \
 python3 - <<'PY'
 import json, os, pathlib
 root = pathlib.Path(os.environ["ARTIFACTS_DIR"])
-merge = pathlib.Path(os.environ["MERGE_DIR"])
-local = json.loads((merge / "local.json").read_text(encoding="utf-8"))
-kept = json.loads((merge / "kept.json").read_text(encoding="utf-8"))
-by_plat = {a["platform"]: a for a in kept}
-for asset in local:
-    by_plat[asset["platform"]] = asset
-assets = [by_plat[k] for k in sorted(by_plat)]
+by_platform = {}
+for path in sorted(root.glob("*/asset.json")):
+    asset = json.loads(path.read_text(encoding="utf-8"))
+    by_platform[asset["platform"]] = asset
+assets = [by_platform[platform] for platform in sorted(by_platform)]
 manifest = {
     "name": "tracemaker",
     "builtAt": os.environ["BUILT_AT"],

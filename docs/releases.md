@@ -65,7 +65,7 @@ Changing this baseline or merging the PR does not itself publish a release.
    at startup and every 6 hours (`FABDESK_UPDATE_URL` overrides), compares semver with the running
    version and points the user at the right installer. It never downloads or installs on its own.
 
-TraceMaker weekly binaries reuse the same public host under `tracemaker/`
+TraceMaker manually published binaries reuse the same public host under `tracemaker/`
 (`https://downloads.fabplane.com/tracemaker/…`). See [routers.md](routers.md). The desktop
 `website` job is unchanged.
 

@@ -309,8 +309,10 @@ The shipped app never embeds a GitHub token. Install therefore:
 The mirror step **skips with a notice and exits 0** when credentials are unset.
 When credentials are configured, a failed upload or sha256 re-check **exits non-zero**
 (the private GitHub release from the publish step is not rolled back). The mirror job
-also runs when the immutable tag already exists, so a completed release still uploads
-`tracemaker-latest/manifest.json`. The owner creates these (do not commit values):
+runs after successful publication of a fresh immutable version. An existing immutable release
+cannot be mirrored again: existing versioned objects fail the create-only checks. To retry, dispatch
+a new build version with the same known upstream ref; only the rolling latest pointer is mutable.
+The owner creates these (do not commit values):
 
 **Recommended — same R2 bucket as desktop installers**
 
