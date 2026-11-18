@@ -23,10 +23,16 @@ export function reviewCurrency(hash: string, now: string, covered: string | unde
   if (covered !== pcb) return `stale: reviewed board ${covered ?? "(unspecified)"}, not ${pcb}`;
   return "current";
 }
-export type SavedGate = { state: "none" | "stale" | "open" | "errors" | "pass"; open?: number; mustFix?: number; at?: string; pcb?: string; designHash?: string | null; basis?: ReviewBasis };
+export type SavedGate = { independentReview?: string; independentCoverage?: unknown; agentSettled?: number; state: "none" | "stale" | "open" | "errors" | "pass"; open?: number; mustFix?: number; at?: string; pcb?: string; designHash?: string | null; basis?: ReviewBasis };
 export async function stageReviewGate(dir: string, pcb?: string): Promise<SavedGate> {
-  const d = await readJsonOrNull<SavedGate>(join(dir, ".fabdesk/board/review-gate.json"));
-  if (!d?.state) return { state: "none" };
+  const raw = await readJsonOrNull<Omit<SavedGate, "independentReview"> & { independentReview?: string | { state?: string } }>(join(dir, ".fabdesk/board/review-gate.json"));
+  if (!raw?.state) return { state: "none" };
+  const legacy = typeof raw.independentReview === "object" && raw.independentReview !== null ? raw.independentReview : null;
+  const { independentReview, ...rest } = raw;
+  const d: SavedGate = { ...rest, ...(legacy ? {
+    independentCoverage: raw.independentCoverage ?? legacy,
+    independentReview: legacy.state === "current" ? "completed" : legacy.state === "deferred" ? "deferred" : "missing",
+  } : typeof independentReview === "string" ? { independentReview } : {}) };
   // Migration can create independent.json: include that evidence in this very read.
   await readIndependentReview(dir);
   const now = await reviewBasis(dir);
@@ -77,13 +83,15 @@ export async function independentState(dir: string, hash: string | null, pcb: st
   const [dispositions, intent] = await Promise.all([readDispositions(dir), readIntent(dir)]);
   // Coverage questions keep their settlement identity across reruns (pending -> deferred/earlier).
   // Evaluate them as questions even when the pack now emits only an informational note.
-  const settlements = ["pending", "earlier"].map(key => {
+  const evaluated = ["pending", "earlier"].map(key => {
     const f = makeFinding({ layer: "L8", rule: "EXPERT", severity: "question", claim: "Independent review coverage", key });
     return evaluateFinding({ ...f, id: findingId(f), check: "pack", proposal: null }, dispositions, intent, hash ?? "");
-  }).filter(r => !r.open && r.disposition);
+  });
+  const settlements = evaluated.filter(r => !r.open && r.disposition);
+  const ignoredDispositions = evaluated.filter(r => r.open && r.why.includes(" ignored:")).map(r => r.why);
   const deferred = settlements.some(r => r.disposition?.state === "defer");
   const settled = settlements.length > 0;
-  return { settled, settlements, state: expert?.hash === hash && expert.pcb === pcb ? "current" : deferred ? "deferred" : !expert ? "missing" : "covers an earlier design", expert };
+  return { settled, settlements, ignoredDispositions, state: expert?.hash === hash && expert.pcb === pcb ? "current" : deferred ? "deferred" : !expert ? "missing" : "covers an earlier design", expert };
 }
 
 /** The receipt identifies one package for one PCB; every recorded identity/hash must still match.
@@ -128,7 +136,7 @@ export async function stageState(dir: string, pcb?: string) {
   const latest = await readJsonOrNull<{ run: string }>(join(dir, ".fabdesk/board/review/latest.json"));
   const review = latest ? await readJsonOrNull<{ hash: string; files?: Record<string, string>; pcb?: string }>(join(dir, ".fabdesk/board/review/runs", latest.run, "review.json")) : null;
   const reviewedBoard = await locateProject(dir, pcb).then(f => relative(dir, f.pcb).split(sep).join("/"), () => "");
-  const { state: independent, expert, settled, settlements } = await independentState(dir, hash, reviewedBoard);
+  const { state: independent, expert, settled, settlements, ignoredDispositions } = await independentState(dir, hash, reviewedBoard);
   const cfg = await readJsonOrNull<Record<string, never>>(join(dir, ".fabdesk/board/review/config.json")) ?? {};
   const currentFiles = await reviewHash({ dir, cfg }).then(r => r.files, () => ({} as Record<string, string>));
   const changed = (files?: Record<string, string>) => [...new Set([...Object.keys(files ?? {}), ...Object.keys(currentFiles)])].filter(k => files?.[k] !== currentFiles[k]);
@@ -163,7 +171,7 @@ export async function stageState(dir: string, pcb?: string) {
     board: { complete: boardStatus === "complete", status: boardStatus, opens },
     review: { state: !review ? "none" as const : reviewCurrency(review.hash, hash ?? "", review.pcb, reviewedBoard) === "current" && gate.state !== "stale" ? "current" as const : "stale" as const, coveredDesign: review?.hash ?? null, changedSince: changed(review?.files), gate },
     release: await releaseState(dir, hash, reviewedBoard),
-    independent: { state: independent, settled, settlements, coveredDesign: expert?.hash ?? null, coveredBoard: expert?.pcb ?? null, changedSince: changed(expert?.files) },
+    independent: { state: independent, settled, settlements, ignoredDispositions, coveredDesign: expert?.hash ?? null, coveredBoard: expert?.pcb ?? null, changedSince: changed(expert?.files) },
   };
 }
 export async function savedStageLine(dir: string, pcb?: string): Promise<string> {

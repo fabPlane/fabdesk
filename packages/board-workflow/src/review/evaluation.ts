@@ -1,4 +1,5 @@
 import { coveringDecision } from "./proposals";
+import { STATES } from "./types";
 import type { Disposition, Dispositions, FindingRecord, Intent } from "./types";
 
 /** Coverage waivers disclose their author, but do not claim an independent review ran. */
@@ -19,8 +20,11 @@ export function agentMayAcceptMustFix(intent: Intent | null): boolean {
 export function judge(finding: { severity: string; layer?: string; rule?: string; key?: string }, disp: Disposition | null | undefined, intent: Intent | null = null): [boolean, string] {
   if (finding.severity === "note") return [false, "note"];
   if (!disp) return [true, "no disposition"];
+  if (!disp.by) return [true, "disposition ignored: no author"];
+  if (disp.by !== "agent" && disp.by !== "owner") return [true, `disposition ignored: unrecognised author ${disp.by}`];
+  if (!STATES.includes(disp.state)) return [true, `disposition ignored: unrecognised state ${disp.state}`];
   const st = disp.state;
-  if (!disp.reason.trim()) return [true, "disposition has no reason"];
+  if (typeof disp.reason !== "string" || !disp.reason.trim()) return [true, "disposition has no reason"];
   if (st === "defer" && finding.severity === "must-fix") return [true, "must-fix deferred, not resolved"];
   if (st === "fix") return [true, "marked fix but still present"];
   if (st === "false-positive" && !disp.third_source) return [true, "false-positive needs a third source"];
@@ -56,5 +60,5 @@ export function evaluateFinding(f: FindingRecord, disps: Dispositions, intent: I
   if (dec)
     d = { state: "accept", by: "owner", reason: `intent decision ${dec.id}: ${dec.decision}`, third_source: dec.source ?? "", hash };
   const [open, why] = judge(f, d, intent);
-  return { ...f, open, why, disposition: d, carried: !!(d?.hash && d.hash !== hash) };
+  return { ...f, open, why: why.replace("disposition ignored:", `disposition for ${f.id} ignored:`), disposition: d, carried: !!(d?.hash && d.hash !== hash) };
 }

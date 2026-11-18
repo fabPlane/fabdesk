@@ -104,7 +104,7 @@ export async function initDoneMode(projectDir: string, boardAlreadyPlaced: boole
  * it, `board_release check`); `board_release fab` computes the gate live from the review records instead.
  * pass = the review is current and every finding is settled.
  */
-export type ReviewGate = { state: "none" | "stale" | "open" | "errors" | "pass"; open?: number; mustFix?: number; at?: string; pcb?: string; independentReview?: string; agentSettled?: number };
+export type ReviewGate = { state: "none" | "stale" | "open" | "errors" | "pass"; open?: number; mustFix?: number; at?: string; pcb?: string; independentReview?: string; independentCoverage?: unknown; agentSettled?: number };
 const gateFile = (dir: string) => join(dir, ".fabdesk", "board", "review-gate.json");
 
 /** Labels follow evaluated evidence; a waiver never claims that independent review completed. */

@@ -63,7 +63,7 @@ export function newResult(name: string, layer: string): CheckResult {
 }
 
 export type ProposalApply =
-  | { kind: "disposition"; state: DispositionState; as?: "owner" | "agent"; reason: string; third_source?: string }
+  | { kind: "disposition"; state: DispositionState; as?: "owner" | "agent"; intent_decision?: string; reason: string; third_source?: string }
   | { kind: "edit"; plan: EditPlan }
   | { kind: "command"; cmd: string }
   | { kind: "task"; steps: string[] };

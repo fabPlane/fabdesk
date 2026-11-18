@@ -22,7 +22,7 @@ import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { REGISTRY } from "./checks";
 import { ReviewCtx, reviewHash, reviewHome, type ReviewEnv, type ReviewProject } from "./context";
-import { propose } from "./proposals";
+import { coveringDecision, propose } from "./proposals";
 import { loadCurrent, readDispositions, readIntent, reviewedPcb, runsDir, setLatest, writeDispositions, type Current } from "./store";
 import {
   STATES,
@@ -322,7 +322,8 @@ async function gateFromEvaluation(project: ReviewProject, cur: Current, ev: Eval
   const independentReview = stages.independent.state === "current" ? "completed" as const : stages.independent.state === "deferred" ? "deferred" as const : "missing" as const;
   const evidence = { checks: cur.review.checks.map(c => ({ name: c.name, status: c.status })), dispositions, independentReview };
   const nr = { ...(notRun ? { notRun } : {}), evidence };
-  const nrLines = [...(coverageMissing ? [coverageLine] : []), ...(notRun ? [notRunLine(notRun)] : []), `Independent review: ${independentReview}.`, ...dispositions.map(d => `${d.id}: ${d.state} by ${d.by}: ${d.reason}`)];
+  const ignored = [...new Set([...stages.independent.ignoredDispositions, ...ev.open.map(r => r.why).filter(why => why.includes(" ignored:"))])];
+  const nrLines = [...ignored, ...(coverageMissing ? [coverageLine] : []), ...(notRun ? [notRunLine(notRun)] : []), `Independent review: ${independentReview}.`, ...dispositions.map(d => `${d.id}: ${d.state} by ${d.by}: ${d.reason}`)];
   if (ev.errors.length)
     return { ...nr, exit: GATE_ERROR, state: "errors", current: true, open: ev.open.length, mustFix: ev.open.filter((r) => r.severity === "must-fix").length, errors: true, lines: ["REVIEW GATE: BLOCKED (check errors)", ...ev.errors.map((c) => `- ${c.name}: ${c.detail}`), ...nrLines] };
   if (ev.open.length) {
@@ -467,13 +468,26 @@ export async function fixProposals(project: ReviewProject, opts: FixOptions = {}
   const d = await readDispositions(project.dir);
   const build = opts.build ?? true;
   for (const r of wf) {
-    const ap = r.proposal!.apply;
+    let ap = r.proposal!.apply;
     res.workflow.push({ id: r.id, action: r.proposal!.action, kind: ap.kind });
     if (!opts.apply) {
       res.lines.push(`  workflow ${r.id}: ${r.proposal!.action.slice(0, 150)}`);
       continue;
     }
     if (ap.kind === "disposition") {
+      // Stored proposals can predate validation or a later edit to intent. Revalidate the raw decision on apply.
+      const legacyDecision = /^owner decision (.*?) \(/.exec(ap.reason)?.[1];
+      const decisionId = ap.intent_decision ?? legacyDecision;
+      if (decisionId !== undefined) {
+        const decision = coveringDecision(r, intent ?? {});
+        if (!decision || decision.id !== decisionId) {
+          res.lines.push(`  ${r.id}: intent decision ${decisionId} ignored: missing or invalid owner decision text/author`);
+          continue;
+        }
+        const fresh = propose(r, { dir: project.dir, hasRequirements: false }, intent ?? {}, { oracle_pins: {}, comps: null });
+        if (fresh?.apply.kind !== "disposition") continue;
+        ap = fresh.apply;
+      }
       d[r.id] = { state: ap.state, by: ap.as === "owner" ? "owner" : "agent", reason: ap.reason, third_source: ap.third_source ?? "", date: new Date().toISOString(), hash: review.hash, claim: r.claim.slice(0, 200), via: "board_review fix" };
       res.settled.push(r.id);
     } else if (ap.kind === "edit" && opts.builder && !build) res.tasks.push({ id: r.id, steps: ["candidate not built: disk low (free space, then fix again)"] });
