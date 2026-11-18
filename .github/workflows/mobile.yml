@@ -115,7 +115,7 @@ jobs:
 
       # The standalone app lockfile is excluded from the root dependency audit.
       - name: Audit mobile dependencies
-        run: bun audit
+        run: bun run audit
         working-directory: source/apps/mobile
 
       - name: Typecheck
