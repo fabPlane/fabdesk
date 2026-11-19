@@ -1,6 +1,6 @@
 import { fitModelCamera } from "@fabdesk/client-core";
 import { alignBoardCamera, type BoardCameraMode } from "./board-camera-mode";
-import { prepareBoardPreviewMaterials } from "./board-preview-material";
+import { BoardInspectionMaterials, prepareBoardPreviewMaterials } from "./board-preview-material";
 import { previewPixelRatio } from "./preview-quality";
 import { enclosurePreviewMaterial } from "./enclosure-preview-material";
 import { batchPreviewMeshes } from "./preview-mesh-batching";
@@ -108,6 +108,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
     let cleanupContext: (() => void) | null = null;
     let stopMotion = () => {};
     let cleanupSelection: (() => void) | null = null;
+    let inspectionMaterials: BoardInspectionMaterials | null = null;
     let environment: THREE.WebGLRenderTarget | null = null;
     let stopRendering = () => {};
     let stopInput = () => {};
@@ -120,6 +121,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
         const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), b => b.toString(16).padStart(2, "0")).join("");
         model = await loadModel(bytes, path);
         if (disposed) { disposeModel(model); return; }
+        inspectionMaterials = new BoardInspectionMaterials(model);
         const bounds = new THREE.Box3().setFromObject(model);
         const size = bounds.getSize(new THREE.Vector3());
         const span = Math.max(size.x, size.y, size.z);
@@ -302,6 +304,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
           if (!controls || !renderer || !perspective) return;
           stopMotion();
           const isFlat = requestedView.current.viewMode === "2d";
+          inspectionMaterials?.setFlat(isFlat);
           // The inspection view favors legible ink and pad boundaries over
           // specular highlights; 3D retains directional shape and metal reflections.
           ambient.intensity = isFlat ? 1.15 : .8;
@@ -351,6 +354,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
       disposed = true; clearTimeout(settleTimer); changeView.current = null; stopMotion(); stopInput(); stopRendering(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
       if (camera && controls) savedCamera.current = { position: camera.position.clone(), target: controls.target.clone(), up: camera.up.clone(), minDistance: controls.minDistance };
       observer?.disconnect(); cleanupContext?.(); controls?.dispose();
+      inspectionMaterials?.dispose();
       if (model) disposeModel(model);
       environment?.dispose();
       renderer?.dispose(); renderer?.domElement.remove();

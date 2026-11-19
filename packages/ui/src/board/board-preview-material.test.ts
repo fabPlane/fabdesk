@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { BoxGeometry, Color, Group, Mesh, MeshStandardMaterial, Texture } from "three";
+import { BoxGeometry, Color, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, Texture } from "three";
 import type { GLTF } from "three/addons/loaders/GLTFLoader.js";
-import { boardPreviewMaterial, prepareBoardPreviewMaterials } from "./board-preview-material";
+import { BoardInspectionMaterials, boardPreviewMaterial, prepareBoardPreviewMaterials } from "./board-preview-material";
 
 test("native ink occludes the soldermask without changing a shared source material", () => {
   const original = new MeshStandardMaterial({ color: 0xffffff, opacity: .9, transparent: true });
@@ -25,14 +25,40 @@ test("imported glass, components, and alpha-textured artwork stay untouched", ()
 test("default KiCad mask becomes satin green without mutating shared source data", () => {
   const original = new MeshStandardMaterial({ color: new Color().setRGB(.08, .2, .14), opacity: .83, transparent: true });
   const mask = boardPreviewMaterial(original, "board_soldermask") as MeshStandardMaterial;
-  expect(mask.color.getHex()).toBe(0x12643b);
+  expect(mask.color.getHex()).toBe(0x033e1b);
   expect(mask.metalness).toBe(0);
-  expect(mask.roughness).toBe(.5);
-  expect(mask.opacity).toBe(.95);
+  expect(mask.roughness).toBe(.7);
+  expect(mask.opacity).toBe(.84);
   expect(mask.transparent).toBe(true);
   expect(mask.forceSinglePass).toBe(true);
   expect(original.color.g).toBe(.2);
   expect(original.opacity).toBe(.83);
+});
+
+test("flat inspection reuses unlit surfaces, restores 3D, and preserves component selection", () => {
+  const scene = new Group(), geometry = new BoxGeometry();
+  const mask = boardPreviewMaterial(new MeshStandardMaterial({ color: new Color().setRGB(.08, .2, .14), opacity: .83, transparent: true }), "board_soldermask");
+  const top = new Mesh(geometry, mask), bottom = new Mesh(geometry, mask);
+  const part = new Mesh(geometry, new MeshStandardMaterial());
+  scene.add(top, bottom, part);
+  const inspection = new BoardInspectionMaterials(scene);
+  const selected = new MeshStandardMaterial({ color: 0xff0000 }); part.material = selected;
+  inspection.setFlat(true);
+  expect(top.material).toBeInstanceOf(MeshBasicMaterial);
+  expect(top.material).toBe(bottom.material);
+  expect(top.material.opacity).toBe(mask.opacity);
+  expect(top.material.depthWrite).toBe(mask.depthWrite);
+  expect(top.material.toneMapped).toBe(false);
+  expect(part.material).toBe(selected);
+  const flat = top.material; let disposed = 0; flat.addEventListener("dispose", () => disposed++);
+  inspection.setFlat(false);
+  expect(top.material).toBe(mask);
+  inspection.setFlat(true);
+  expect(top.material).toBe(flat);
+  inspection.dispose();
+  expect(top.material).toBe(mask);
+  expect(part.material).toBe(selected);
+  expect(disposed).toBe(1);
 });
 
 test("custom board colors, opacity, and authored textures are retained", () => {
@@ -57,7 +83,7 @@ test("native surface clones are reused by kind and keep component selection/geom
   scene.add(...meshes);
   meshes[0]!.name = "U1";
   meshes[0]!.position.set(1, 2, 3);
-  const names = ["board_silkscreen", "board_silkscreen", "board_soldermask", "component"];
+  const names = ["custom-pcb_silkscreen", "custom-pcb_silkscreen", "custom-pcb_soldermask", "component", "custom-pcb_PCB", "custom-pcb_copper"];
   const model = {scene, parser:{associations:new Map(meshes.map((m,i)=>[m,{meshes:i}])),json:{meshes:names.map(name=>({name}))}}} as unknown as GLTF;
   let disposed = 0;
   source.addEventListener("dispose",()=>disposed++);
@@ -77,7 +103,14 @@ test("unreferenced originals are disposed once, including multi-material meshes"
   const scene = new Group(), material = new MeshStandardMaterial();
   const mesh = new Mesh(new BoxGeometry(), [material, material]); scene.add(mesh);
   let disposed = 0; material.addEventListener("dispose",()=>disposed++);
-  prepareBoardPreviewMaterials({scene, parser:{associations:new Map([[mesh,{meshes:0}]]),json:{meshes:[{name:"board_silkscreen"}]}}} as unknown as GLTF);
+  prepareBoardPreviewMaterials({scene, parser:{associations:new Map([[mesh,{meshes:0}]]),json:{meshes:[{name:"board_silkscreen"}, {name:"board_PCB"}, {name:"board_soldermask"}, {name:"board_copper"}]}}} as unknown as GLTF);
   expect(disposed).toBe(1);
   expect(mesh.material[0]!).toBe(mesh.material[1]!);
+});
+
+test("a component with a surface-like name alone is not treated as a native PCB", () => {
+  const scene = new Group(), material = new MeshStandardMaterial();
+  const mesh = new Mesh(new BoxGeometry(), material); scene.add(mesh);
+  prepareBoardPreviewMaterials({scene, parser:{associations:new Map([[mesh,{meshes:0}]]),json:{meshes:[{name:"component_silkscreen"}]}}} as unknown as GLTF);
+  expect(mesh.material).toBe(material);
 });

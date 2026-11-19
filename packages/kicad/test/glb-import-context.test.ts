@@ -24,6 +24,9 @@ test("GLB passes imported model root as one CLI argument and keeps stdout model 
   try {
     const result = await exportGlb({ path: cli, version: "10" }, { board: join(dir, "board.kicad_pcb"), output, modelProjectDir: join(dir, "imported folder") });
     const args: string[] = JSON.parse(await readFile(argsPath, "utf8"));
+    // Surface detail must survive into the saved artifact, not just the viewer.
+    for (const flag of ["--include-pads", "--include-tracks", "--include-zones", "--include-silkscreen", "--include-soldermask"]) expect(args).toContain(flag);
+    expect(args).not.toContain("--include-inner-copper");
     expect(args[args.indexOf("--define-var") + 1]).toBe(`KIPRJMOD=${join(dir, "imported folder")}`);
     expect(result.warnings).toEqual(["Could not add 3D model for J2.", "Warning: model input missing"]);
   } finally { await rm(dir, { recursive: true, force: true }); }

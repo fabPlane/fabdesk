@@ -72,13 +72,14 @@ export interface ExportGlbOptions {
 }
 
 /**
- * Exports a binary glTF with substituted STEP models, pads, silkscreen and solder mask. KiCad
+ * Exports a binary glTF with substituted STEP models and the complete outer copper
+ * (pads, tracks, vias and filled zones), silkscreen and solder mask. KiCad
  * reports a failure exit code when `--fuse-shapes` hits geometry it cannot fuse even though it
  * still writes a valid file. Validate the complete GLB before publishing it; retry an invalid or
  * missing result once unfused. Failed/cancelled attempts never replace an existing good export.
  */
 export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promise<{ fused: boolean; warnings: string[] }> {
-  const base = ["pcb", "export", "glb", "--force", "--subst-models", "--include-pads", "--include-silkscreen", "--include-soldermask"];
+  const base = ["pcb", "export", "glb", "--force", "--subst-models", "--include-pads", "--include-tracks", "--include-zones", "--include-silkscreen", "--include-soldermask"];
   if (options.modelProjectDir) base.push("--define-var", `KIPRJMOD=${options.modelProjectDir}`);
   if (!options.includeDnp) base.push("--no-dnp");
   if (options.mechanical) base.push("--user-origin", "0x0mm");

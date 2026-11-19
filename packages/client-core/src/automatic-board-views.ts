@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { BoardLayers, BOARD_LAYERS_PATH, BoardModelRevision, BOARD_MODEL_REVISION_PATH, type BoardSourceSelection } from "@fabdesk/protocol";
 import { useCoreClient } from "./provider";
 import { CoreHttpError, type CoreClient } from "./CoreClient";
@@ -72,5 +72,10 @@ export function useAutomaticBoardViews({ projectId, directory = ".", board, sour
       return result;
     },
   });
-  return { source, model, layers, path: prefix + "renders/board.glb" };
+  const refreshModel = useMutation({ mutationKey: ["refresh-board-model", ...scope, hash], mutationFn: async () => {
+    if (!hash || !enabled) throw new Error("Wait for the saved board before refreshing its preview.");
+    await runPreviewTool(client, "render_glb", args);
+    await model.refetch({ throwOnError: true });
+  } });
+  return { source, model, layers, refreshModel, path: prefix + "renders/board.glb" };
 }
