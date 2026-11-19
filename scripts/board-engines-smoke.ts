@@ -218,7 +218,23 @@ if (!a["skip-krt"]) {
         diskFreeGiB: async () => 0,
         log: (line) => process.stderr.write(`[smoke]   ${line}\n`),
       };
-      const req = { acceptance: { net_classes: { classes: {} }, stack_policy: { copper_layers: ["F.Cu", "B.Cu"], no_track_layers: [] } } } as unknown as Requirements;
+      // Match the real acceptance contract; do not opt the smoke into via-in-pad.
+      const manufacturingRules: Requirements["acceptance"]["manufacturing_rules"] = {
+        adopted: {
+          min_track_width: 0.15,
+          min_clearance: 0.15,
+          default_class: { track_width: 0.15, clearance: 0.15, via_diameter: 0.5, via_drill: 0.2 },
+        },
+        scoped_rules: [],
+        basis: "smoke fixture defaults",
+        native_project_rules: false,
+        native_project_rules_basis: "isolated smoke fixture",
+      };
+      const req = { acceptance: {
+        manufacturing_rules: manufacturingRules,
+        net_classes: { classes: {} },
+        stack_policy: { copper_layers: ["F.Cu", "B.Cu"], no_track_layers: [] },
+      } } as unknown as Requirements;
       const plan = { note: "smoke: one route stage on both layers", stages: [{ name: "route", tool: "route", args: ["--layers", "@layers"] }] } as layout.KrtPlan;
       const rec = await layout.routeKrt(host, { placed, out, plan, stem: "smoke", req, score: false, budgetMs: 10 * 60_000 });
       const copper = (t: string) => (t.match(/\((segment|via|arc)\s/g) ?? []).length;
@@ -229,6 +245,8 @@ if (!a["skip-krt"]) {
       const log = await readFile(join(out, "s1-route.log"), "utf8").catch(() => "");
       const detail: Record<string, unknown> = { record: rec, copperBefore: before, copperAfter: copper(routed), logTail: log.slice(-3000) };
       expect(!rec.error, `routeKrt: ${rec.error}`, detail);
+      const policy = stage["viaInPadPolicy"] as { allowed?: boolean; clearanceMm?: number } | undefined;
+      expect(policy?.allowed === false && policy.clearanceMm === 0.15, "default via-in-pad exclusion was not enforced", detail);
       expect(stage["exit"] === 0, `route stage exit ${String(stage["exit"])}`, detail);
       expect(copper(routed) > before, "the routed board has no new copper", detail);
       const failed = (stage["failed_single"] as unknown[] | undefined) ?? [];
