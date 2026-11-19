@@ -196,7 +196,7 @@ export const render_glb = defineTool({
   toolset: "render",
   title: "Export 3D GLB",
   description:
-    "Export a 3D model (GLB) of the KiCad board to renders/board.glb for the app's 3D tab. Requires kicad-cli and board.kicad_pcb.",
+    "Export a 3D model (GLB) of the KiCad board to renders/board.glb. Reuses existing models and caches exact missing official KiCad models. Requires kicad-cli and board.kicad_pcb.",
   inputSchema: {
     expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Required for an assembly member: hash of its inspected saved PCB"),
     boardPath: z.string().optional(),
@@ -205,7 +205,7 @@ export const render_glb = defineTool({
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
-    openWorldHint: false,
+    openWorldHint: true,
     idempotentHint: true,
   },
   longRunning: true,
@@ -222,8 +222,6 @@ export const render_glb = defineTool({
     const cli = await boardPreviewCli(ctx, await readFile(board, "utf8"));
     const output = await jailPath(project.dir, `${PROJECT_FILES.renders}/board.glb`);
     const receiptPath = await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
-    ctx.progress(0.2, "exporting glb");
-    const dependencies = await snapshotProjectDependencies(project.dir);
     const sourceSha256 = await pcbPreviewFileHash(board);
     if (expectedSourceSha256 && sourceSha256 !== expectedSourceSha256) throw new ToolError("The saved PCB changed since inspection. Inspect the selected source again before exporting its model.", "precondition");
     // The editable PCB is copied to the root during import. Its project-relative
@@ -231,6 +229,11 @@ export const render_glb = defineTool({
     const imported = !ctx.board ? project.manifest().importedBoard : undefined;
     const modelProjectDir = imported ? dirname(await jailPath(project.dir, imported.path)) : project.dir;
     if (!(await stat(modelProjectDir).catch(() => null))?.isDirectory()) throw new ToolError("The imported board's component-model directory is missing. Restore that source folder before exporting the model.", "precondition");
+    ctx.progress(0.1, "preparing component models");
+    const prepared = await ctx.services.kicad.prepareModels(cli, { board, modelProjectDir, signal: ctx.signal });
+    if (await pcbPreviewFileHash(board) !== sourceSha256) throw new ToolError("PCB changed while preparing component models; retry the latest saved board.", "precondition");
+    const dependencies = await snapshotProjectDependencies(project.dir);
+    ctx.progress(0.2, "exporting glb");
     const modelProjectDirectory = relative(project.dir, modelProjectDir).split(sep).join("/");
     const scratch = await mkdtemp(join(tmpdir(), "fabplane-board-model-"));
     let res: { fused: boolean; warnings: string[] };
@@ -240,6 +243,7 @@ export const render_glb = defineTool({
       // resolve normally. Only publish a newly written export, after rechecking saved PCB bytes.
       const temporary = join(scratch, "board.glb");
       res = await ctx.services.kicad.exportGlb(cli, { board, output: temporary, ...(modelProjectDirectory ? { modelProjectDir } : {}), signal: ctx.signal });
+      res.warnings.push(...prepared.warnings);
       if (await pcbPreviewFileHash(board) !== sourceSha256)
         throw new ToolError("PCB changed while exporting the model. The previous model was kept; review the saved PCB and try again.", "precondition");
       try {

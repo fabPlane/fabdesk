@@ -52,7 +52,29 @@ Artifacts: [public release feed](https://fabplane.com/desktop/latest.json) and
 Model discovery reuses existing libraries in place: explicit model overrides,
 the backend's declared stock-data root, bundled KiCad/PCB-backend trees, the selected
 CLI's installation, then known standalone installs. Prefix, macOS `SharedSupport`,
-and nested nightly layouts are supported. No model downloads or duplicate copies
-are added. Custom project paths and transforms remain unchanged; unavailable exact
-models remain missing. A fresh machine without model assets still needs a library
-or project-provided models.
+and nested nightly layouts are supported. Existing model files are never copied
+into the cache or replaced.
+
+For missing `${KICAD6_3DMODEL_DIR}` through `${KICAD10_3DMODEL_DIR}` references,
+3D preview preparation downloads only the exact library/filename from the matching
+pinned official KiCad release. A WRL reference uses KiCad's same-stem STEP convention.
+Custom paths, URLs, unknown versions, and unassigned models are not guessed. Missing
+parts are identified by reference; network errors can be retried without replacing
+the previous preview. Premium materials continue to apply in the viewer.
+
+The per-user `cache/kicad-models` directory under FabDesk's data home stores verified
+STEP objects by SHA-256, shared across projects and versions when bytes match.
+Small receipts retain the pinned source and license links. Cached models work offline;
+concurrent requests share downloads, and partial/invalid responses are not published.
+Downloads have a 30-second timeout and 50 MB per-file limit, with three requests at
+most in parallel. Larger boards use the same bounded queue; their component lists
+are not limited to the demonstration project.
+
+Only temporary export copies receive resolved model paths. The user's PCB, custom
+model files, offsets, rotations, and scale remain unchanged. Dependency receipts
+include cached models so a changed/deleted file invalidates its preview.
+
+Fresh-cache PlayBridge validation downloaded 19 stock models totaling **3.26 MB**;
+its custom model stayed in the project. All 77 model references resolved, and a
+second preparation succeeded with network access disabled. Cache size grows with
+the unique parts used, rather than with the number of projects.

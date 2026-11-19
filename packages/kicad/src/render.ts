@@ -2,8 +2,10 @@
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { componentModelEnvironment, lastLines, runKicadCli, type KicadCli } from "./cli";
+import { componentModelEnvironment, componentModelLibraryRoots, lastLines, runKicadCli, type KicadCli } from "./cli";
 import { parseGlbContainer } from "./glb-container";
+import { resolveModelPath } from "./mechanical";
+import { withModelBoard } from "./model-board";
 
 export type BoardView = "top" | "bottom" | "perspective" | "side";
 
@@ -55,8 +57,12 @@ export async function renderPng(cli: KicadCli, options: RenderPngOptions): Promi
       break;
     }
   }
-  args.push(options.board);
-  await runKicadCli(cli, args, { ...(options.signal ? { signal: options.signal } : {}) });
+  const modelDir = dirname(resolve(options.board)), env = componentModelEnvironment(process.env, cli.path);
+  const roots = componentModelLibraryRoots(env, cli.path);
+  await withModelBoard(options.board, declared => {
+    const resolution = resolveModelPath(declared, modelDir, env, roots);
+    return resolution.status === "resolved" ? resolution.path : resolution.substitutionCandidates[0] ?? null;
+  }, board => runKicadCli(cli, [...args, "--define-var", `KIPRJMOD=${modelDir}`, board], { ...(options.signal ? { signal: options.signal } : {}) }));
   if (!existsSync(options.output)) throw new Error(`kicad-cli did not write ${options.output}`);
 }
 
@@ -79,6 +85,9 @@ export interface ExportGlbOptions {
  * missing result once unfused. Failed/cancelled attempts never replace an existing good export.
  */
 export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promise<{ fused: boolean; warnings: string[] }> {
+  const modelDir = options.modelProjectDir ?? dirname(resolve(options.board));
+  const modelEnv = componentModelEnvironment(process.env, cli.path);
+  const modelRoots = componentModelLibraryRoots(modelEnv, cli.path);
   const base = ["pcb", "export", "glb", "--force", "--subst-models", "--include-pads", "--include-tracks", "--include-zones", "--include-silkscreen", "--include-soldermask"];
   // The STEP/GLB exporter resolves project text variables, but some KiCad builds
   // leave versioned library variables literal even when present in the process
@@ -86,7 +95,7 @@ export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promi
   for (const [name, value] of Object.entries(componentModelEnvironment(process.env, cli.path))) {
     if (/^KICAD\d+_3DMODEL_DIR$/.test(name) && value) base.push("--define-var", `${name}=${value}`);
   }
-  if (options.modelProjectDir) base.push("--define-var", `KIPRJMOD=${options.modelProjectDir}`);
+  base.push("--define-var", `KIPRJMOD=${modelDir}`);
   if (!options.includeDnp) base.push("--no-dnp");
   if (options.mechanical) base.push("--user-origin", "0x0mm");
   const attempt = async (fused: boolean) => {
@@ -97,10 +106,13 @@ export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promi
     const scratch = await mkdtemp(join(dirname(resolve(options.output)), ".fabdesk-glb-"));
     const temporary = join(scratch, "model.glb");
     try {
-      const result = await runKicadCli(cli, [...base, ...(fused ? ["--fuse-shapes"] : []), "-o", temporary, options.board], {
+      const result = await withModelBoard(options.board, declared => {
+        const resolution = resolveModelPath(declared, modelDir, modelEnv, modelRoots);
+        return resolution.status === "resolved" ? resolution.path : resolution.substitutionCandidates[0] ?? null;
+      }, board => runKicadCli(cli, [...base, ...(fused ? ["--fuse-shapes"] : []), "-o", temporary, board], {
         tolerateExit: true,
         ...(options.signal ? { signal: options.signal } : {}),
-      });
+      }));
       const warnings = `${result.stdout}\n${result.stderr}`
         .split("\n")
         .filter((line) => /file not found|problems encountered|warning|could not add|unable to load|failed/i.test(line))

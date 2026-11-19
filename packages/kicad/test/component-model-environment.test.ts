@@ -84,7 +84,7 @@ describe("reuse component model libraries", () => {
     expect(input).not.toHaveProperty("KICAD10_3DMODEL_DIR");
     expect(resolveModelPath("${KIPRJMOD}/models/USB.step", join(root, "project"), env).path).toBe(custom);
     expect(readFileSync(custom, "utf8")).toBe("custom connector geometry");
-    expect(resolveModelPath("${KICAD9_3DMODEL_DIR}/Connector.3dshapes/USB.step", root, env).status).toBe("file-not-found");
+    expect(resolveModelPath("${KICAD9_3DMODEL_DIR}/Connector.3dshapes/USB.step", root, env).path).toBe(join(models, "Connector.3dshapes", "USB.step"));
   });
 
   test("reports an absent exact model instead of substituting a different connector", () => {

@@ -25,7 +25,7 @@ export const render_publish = defineTool({
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
-    openWorldHint: false,
+    openWorldHint: true,
     idempotentHint: true,
   },
   longRunning: true,
@@ -64,6 +64,12 @@ export const render_publish = defineTool({
           "Publishing requires a complete project-owned preview hierarchy",
           "precondition",
         );
+      const imported = project.manifest().importedBoard;
+      await ctx.services.kicad.prepareModels(cli, {
+        board: await jailPath(project.dir, "board.kicad_pcb"),
+        modelProjectDir: imported ? dirname(await jailPath(project.dir, imported.path)) : project.dir,
+        signal: ctx.signal,
+      });
       const dependencies = await snapshotProjectDependencies(project.dir);
       const inputs = new Map<string, Buffer>();
       for (const path of new Set([

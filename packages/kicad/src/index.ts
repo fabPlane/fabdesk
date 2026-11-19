@@ -1,8 +1,11 @@
+export { prepareBoardModels } from "./prepare-models";
+export { stockModelCacheRoot } from "./stock-model-cache";
 export {
   kicadVersionAtLeast,
   findKicadCli,
   runKicadCli,
   componentModelEnvironment,
+  componentModelLibraryRoots,
   countCopperLayers,
   bundledKicadRoots,
   bundledKicadCliCandidates,

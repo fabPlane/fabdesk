@@ -1,10 +1,14 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { BOARD_MODEL_REVISION_PATH, BoardModelRevision } from "@fabdesk/protocol";
 import { createRegistry } from "../src";
 import { pcbPreviewFileHash } from "../src/pcb-preview-revision";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
+import { prepareBoardModels } from "../../kicad/src/prepare-models";
+import { cachedStockModel, stockModelCacheRoot } from "../../kicad/src/stock-model-cache";
+import { snapshotProjectDependencies } from "../src/project-dependencies";
 
 async function fixture(mode: "normal" | "source-change" | "failure" | "no-output") {
   const project = await tempProject("board-model-revision");
@@ -68,5 +72,54 @@ test("imported root copy exports with the explicitly selected model directory wi
     expect(await Bun.file(join(project.dir, origin)).text()).toBe("original PCB");
     expect(await Bun.file(join(project.dir, "board.kicad_pcb")).text()).toBe("edited working PCB");
     expect(receipt.sourceSha256).toBe(await pcbPreviewFileHash(join(project.dir, "board.kicad_pcb")));
+  } finally { await rm(project.dir, { recursive: true, force: true }); }
+});
+
+test("model downloads complete before dependency binding, and cache changes invalidate that receipt", async () => {
+  const project = await tempProject("cached-model-receipt"), board = join(project.dir, "board.kicad_pcb");
+  const declared = "${KICAD9_3DMODEL_DIR}/Resistor_SMD.3dshapes/FabDesk_Test_Part_0603.step";
+  await Bun.write(board, `(kicad_pcb (footprint "R" (property "Reference" "R1") (model "${declared}")))`);
+  const previousHome = process.env.FABDESK_HOME, previousModels = process.env.KICAD9_3DMODEL_DIR;
+  const cacheHome = await mkdtemp(join(tmpdir(), "fabdesk-cache-receipt-"));
+  process.env.FABDESK_HOME = cacheHome; process.env.KICAD9_3DMODEL_DIR = join(project.dir, "absent-library");
+  const base = mockServices([project]); let downloads = 0;
+  const services = mockServices([project], { kicad: { ...base.kicad,
+    prepareModels: (cli, options) => prepareBoardModels(cli, { ...options, fetch: async () => { downloads++; return new Response("ISO-10303-21;\nDATA;\nENDSEC;\nEND-ISO-10303-21;\n"); } }),
+    exportGlb: async (_cli, options) => {
+      expect(cachedStockModel(declared)).not.toBeNull();
+      await Bun.write(options.output, "new geometry"); return { fused: false, warnings: [] };
+    },
+  } });
+  const registry = createRegistry(), factory = contextFactory(services, project);
+  try {
+    await registry.invoke("render_glb", {}, ref => factory({ def: registry.get("render_glb")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+    const receipt = JSON.parse(await readFile(join(project.dir, BOARD_MODEL_REVISION_PATH), "utf8"));
+    expect(downloads).toBe(1);
+    expect(receipt.dependencySnapshot.external).toHaveLength(1);
+    expect(receipt.dependencySnapshot.revision).toBe((await snapshotProjectDependencies(project.dir)).revision);
+    await Bun.write(cachedStockModel(declared, stockModelCacheRoot())!, "changed cache object");
+    expect((await snapshotProjectDependencies(project.dir)).revision).not.toBe(receipt.dependencySnapshot.revision);
+  } finally {
+    if (previousHome === undefined) delete process.env.FABDESK_HOME; else process.env.FABDESK_HOME = previousHome;
+    if (previousModels === undefined) delete process.env.KICAD9_3DMODEL_DIR; else process.env.KICAD9_3DMODEL_DIR = previousModels;
+    await rm(cacheHome, { recursive: true, force: true });
+    await rm(project.dir, { recursive: true, force: true });
+  }
+});
+
+for (const mode of ["network-failure", "source-edit"] as const) test(`model preparation ${mode} preserves previous artifacts`, async () => {
+  const project = await tempProject("model-preparation-race"), board = join(project.dir, "board.kicad_pcb"), output = join(project.dir, "renders/board.glb");
+  await Bun.write(board, "(kicad_pcb)"); await Bun.write(output, "previous model");
+  await Bun.write(join(project.dir, BOARD_MODEL_REVISION_PATH), "previous receipt");
+  const base = mockServices([project]); let exports = 0;
+  const services = mockServices([project], { kicad: { ...base.kicad,
+    prepareModels: async () => { if (mode === "network-failure") throw Error("offline"); await Bun.write(board, "(kicad_pcb changed)"); return { warnings: [] }; },
+    exportGlb: async () => { exports++; return { fused: false, warnings: [] }; },
+  } });
+  const registry = createRegistry(), factory = contextFactory(services, project);
+  try {
+    await expect(registry.invoke("render_glb", {}, ref => factory({ def: registry.get("render_glb")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }))).rejects.toThrow();
+    expect(exports).toBe(0); expect(await readFile(output, "utf8")).toBe("previous model");
+    expect(await readFile(join(project.dir, BOARD_MODEL_REVISION_PATH), "utf8")).toBe("previous receipt");
   } finally { await rm(project.dir, { recursive: true, force: true }); }
 });

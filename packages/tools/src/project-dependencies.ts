@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir, stat, realpath } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { componentModelEnvironment, parseLibraryTable, readSavedBoardModels, resolveModelPath } from "@fabdesk/kicad";
+import { componentModelEnvironment, componentModelLibraryRoots, parseLibraryTable, readSavedBoardModels, resolveModelPath, stockModelCacheRoot } from "@fabdesk/kicad";
 import { jailPath } from "./fs";
 import { ToolError } from "./registry";
 
@@ -13,7 +13,9 @@ export async function snapshotProjectDependencies(dir: string): Promise<ProjectD
   const files = new Map<string, string | null>();
   const unresolved = new Set<string>();
   const external = new Map<string, string | null>();
-  const modelRoots = Object.entries(componentModelEnvironment()).filter(([key, value]) => /^KICAD\d+_3DMODEL_DIR$/.test(key) && value).map(([, value]) => value!);
+  const modelRoots = componentModelLibraryRoots();
+  const modelEnvironment = componentModelEnvironment();
+  modelRoots.push(stockModelCacheRoot());
   let bytes = 0, visited = 0;
   const directories = new Set<string>();
   const add = async (path: string) => {
@@ -54,7 +56,7 @@ export async function snapshotProjectDependencies(dir: string): Promise<ProjectD
   let footprints: ReturnType<typeof readSavedBoardModels> = [];
   try { if (source) footprints = readSavedBoardModels(source); } catch { unresolved.add("native model declarations unavailable"); }
   for (const fp of footprints) for (const model of fp.models) {
-    const resolved = resolveModelPath(model.declared, modelDirectory);
+    const resolved = resolveModelPath(model.declared, modelDirectory, modelEnvironment, modelRoots);
     if (!resolved.path) { unresolved.add(`model:${model.declared}`); continue; }
     for (const path of [resolved.path, ...resolved.substitutionCandidates]) {
       try { await add(path); } catch (e) {

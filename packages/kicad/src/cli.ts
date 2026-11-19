@@ -206,10 +206,10 @@ function modelLibrariesNearCli(path: string): string[] {
 /** Resolve legacy versioned model variables against an available configured/bundled stock tree.
  * Reuse assets in place: never download/copy models or rewrite project paths/transforms.
  * Explicit per-version overrides win; absent model assets remain absent. */
-export function componentModelEnvironment(
+export function componentModelLibraryRoots(
   env: NodeJS.ProcessEnv = process.env,
   cliPath: string | undefined = env["KICAD_CLI"],
-): NodeJS.ProcessEnv {
+): string[] {
   const resourceRoots = [env["FABDESK_RESOURCES"], join(dirname(process.execPath), "..")]
     .filter((root): root is string => !!root);
   const candidates = [
@@ -222,10 +222,17 @@ export function componentModelEnvironment(
     ...knownLocations(env).flatMap(modelLibrariesNearCli),
     ...(process.platform === "linux" ? ["/usr/share/kicad/3dmodels", "/usr/share/kicad-nightly/3dmodels"] : process.platform === "darwin" ? ["/Applications/KiCad/KiCad.app/Contents/SharedSupport/3dmodels"] : []),
   ];
-  const root = [...new Set(candidates)].find(path => {
+  return [...new Set(candidates)].filter((path): path is string => {
     if (!path) return false;
     try { return statSync(path).isDirectory(); } catch { return false; }
   });
+}
+
+export function componentModelEnvironment(
+  env: NodeJS.ProcessEnv = process.env,
+  cliPath: string | undefined = env["KICAD_CLI"],
+): NodeJS.ProcessEnv {
+  const root = componentModelLibraryRoots(env, cliPath)[0];
   if (!root) return env;
   const out = { ...env };
   for (const version of [6, 7, 8, 9, 10, 11]) if (!out[`KICAD${version}_3DMODEL_DIR`]) out[`KICAD${version}_3DMODEL_DIR`] = root;

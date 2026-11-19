@@ -117,6 +117,7 @@ export async function renderPcbDisplay(ctx: ToolContext, path: string, expected:
       "precondition",
     );
   const cli = await requireKicad(ctx);
+  const prepared = await ctx.services.kicad.prepareModels(cli, { board, signal: ctx.signal });
   const relativePath = `renders/pcb-models/${randomUUID()}.glb`;
   const output = await jailPath(project.dir, relativePath);
   await ensureDir(await jailPath(project.dir, "renders/pcb-models"));
@@ -147,7 +148,7 @@ export async function renderPcbDisplay(ctx: ToolContext, path: string, expected:
         maxY: Math.max(...measured.roots.flatMap((r) => (r.bounds ? [r.bounds.maxY] : []))),
         maxZ: Math.max(...measured.roots.flatMap((r) => (r.bounds ? [r.bounds.maxZ] : []))),
       },
-      warnings: result.warnings,
+      warnings: [...prepared.warnings, ...result.warnings],
     });
   } catch (error) {
     await rm(output, { force: true });
