@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
 import { ProjectBoardSources } from "@fabdesk/protocol";
+import { expect,test } from "bun:test";
 import { inspectAssemblyBoardModel } from "./assembly-board-model";
 import { CoreHttpError } from "./CoreClient";
 import { sha256Blob } from "./pcb-preview-revision";
@@ -27,6 +27,17 @@ test("root/other-source/older-declaration receipts remain unverified and missing
   }
   const missing = await inspectAssemblyBoardModel({ ...f.client, readFileBlob: async (p, path) => { if (path.endsWith("board.glb")) throw new CoreHttpError(404, path, "missing"); return f.client.readFileBlob(p, path); } }, "p", f.board);
   expect(missing.state).toBe("missing-model"); expect(missing.model).toBeNull();
+});
+
+test("a member model becomes stale when its model library changes without a PCB edit", async () => {
+  const f = await fixture();
+  const receipt = { ...f.receipt, dependencySnapshot: { revision: "a".repeat(64), files: [], unresolved: [] } };
+  const client = { ...f.client, readFile: async () => JSON.stringify(receipt),
+    inspectOutputDependencies: async (_projectId: string, directory: string) => {
+      expect(directory).toBe("boards/io");
+      return { revision: "b".repeat(64) };
+    } };
+  expect((await inspectAssemblyBoardModel(client, "p", f.board)).state).toBe("source-changed");
 });
 test("changed ownership/source during model reads fails closed and caller mutation cannot retarget", async () => {
   const f = await fixture(), requested = { ...f.board }; let inspections = 0;

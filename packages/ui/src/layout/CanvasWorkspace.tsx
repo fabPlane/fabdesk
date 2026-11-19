@@ -1,41 +1,39 @@
+import { draftConversation as latestDraftConversation,projectSketchImagePaths,useBoardSources,useCore,useCoreIdentity,useProject,useProjects,useRunsStore,useThreads,WORKSPACE_AREAS,type WorkspaceArea } from "@fabdesk/client-core";
+import type { ProjectDetail } from "@fabdesk/protocol";
+import { useEffect,useRef,useState } from "react";
 import { ProfileButton } from "../auth/ProfileAccountDialog";
-import { WorkspaceBackButton } from "./WorkspaceBackButton";
+import { BoardPanel } from "../board/BoardPanel";
+import { ConnectionsWorkspace } from "../board/ConnectionsWorkspace";
+import { HistoryWorkspace } from "../board/HistoryWorkspace";
+import { HostedReviewTools } from "../board/HostedReviewTools";
+import { ProjectPickerDialog } from "../chat/ProjectPickerDialog";
+import { ThreadView } from "../chat/ThreadView";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
-import { HostedReviewTools } from "../board/HostedReviewTools";
-import { useEffect, useRef, useState } from "react";
-import type { ProjectDetail } from "@fabdesk/protocol";
-import { useRunsStore } from "@fabdesk/client-core";
-import { CreateIdeaProjectDialog } from "./CreateIdeaProjectDialog";
-import { draftConversation as latestDraftConversation, projectSketchImagePaths, useCoreIdentity, useCore, useBoardSources, useProject, useProjects, useThreads, WORKSPACE_AREAS, type WorkspaceArea } from "@fabdesk/client-core";
-import { BoardPanel } from "../board/BoardPanel";
-import { ThreadView } from "../chat/ThreadView";
-import { ProjectPickerDialog } from "../chat/ProjectPickerDialog";
-import { ThreadSidebar } from "../sidebar/ThreadSidebar";
-import { CreateProjectDialog } from "../sidebar/CreateProjectDialog";
-import { ProjectActionDialog, type ProjectAction } from "../sidebar/ProjectActionDialog";
+import { FabPlaneLogo } from "../components/FabPlaneLogo";
+import { Icon } from "../components/Icon";
+import { Button,Dialog,EmptyState,IconButton } from "../components/ui";
+import { UpdateBadge } from "../components/UpdateBadge";
 import { InventoryView } from "../inventory/InventoryView";
 import { OpenSourceView } from "../opensource/OpenSourceView";
 import { OrderFlow } from "../order/OrderFlow";
-import { Button, Dialog, EmptyState, IconButton } from "../components/ui";
-import { Icon } from "../components/Icon";
-import { FabPlaneLogo } from "../components/FabPlaneLogo";
-import { UpdateBadge } from "../components/UpdateBadge";
+import { CreateProjectDialog } from "../sidebar/CreateProjectDialog";
+import { ProjectActionDialog,type ProjectAction } from "../sidebar/ProjectActionDialog";
+import { ThreadSidebar } from "../sidebar/ThreadSidebar";
+import { newChatDraftKey,useUiStore } from "../stores/ui";
 import { WhatsNewLink } from "../whatsnew/WhatsNew";
-import { newChatDraftKey, useUiStore } from "../stores/ui";
-import { WorkspaceMenu } from "./WorkspaceMenu";
-import { LiveAssemblyPreviews } from "./LiveAssemblyPreviews";
-import { ProjectOverview } from "./ProjectOverview";
-import { ProjectStatus } from "./ProjectStatus";
-import { ConnectionsWorkspace } from "../board/ConnectionsWorkspace";
-import { HistoryWorkspace } from "../board/HistoryWorkspace";
+import type { AppShellProps } from "./AppShell";
+import "./canvas-v6.css";
+import "./canvas-workspace.css";
+import { CreateIdeaProjectDialog } from "./CreateIdeaProjectDialog";
 import { ProjectActivity } from "./ProjectActivity";
 import { ProjectHome } from "./ProjectHome";
+import { ProjectOverview } from "./ProjectOverview";
+import { ProjectStatus } from "./ProjectStatus";
 import { SketchStartReference } from "./SketchStartReference";
-import type { AppShellProps } from "./AppShell";
-import "./canvas-workspace.css";
-import "./canvas-v6.css";
 import "./workspace-bars.css";
+import { WorkspaceBackButton } from "./WorkspaceBackButton";
+import { WorkspaceMenu } from "./WorkspaceMenu";
 
 
 export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps) {
@@ -146,7 +144,6 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       </div>
     </header>
     {banner}
-    {projectId && boardSources.data?.mode === "assembly" && <LiveAssemblyPreviews key={`${client.baseUrl}/${projectId}/${boardSources.data.manifestSha256}`} projectId={projectId} data={boardSources.data} enabled={!boardSources.isFetching && !boardSources.isError && connected && boardSources.data.editing === "explicit-source-tools"} />}
     {home ? <main className="fd-home-surface"><ProjectHome listing={showProjects} onViewProjects={() => setShowProjects(true)} onCreate={() => setCreating("create")} onImport={() => setCreating("github")} onBrowse={() => { ui().setSidebarListTab("open_source"); setNavigationOpen(true); }} /></main> : <main className="fd-canvas-main" data-draft-view={isDraft && !secondary ? conversationOnly ? "conversation" : "sketch" : undefined} data-task-toolbar={!!projectId && !secondary && (!conversationOnly || isDraft)} data-area={fresh ? "start" : area}>
       {projectId && !secondary && (!conversationOnly || isDraft) && <nav className="fd-canvas-destinations" aria-label="Project workspace">
         {isDraft ? <><Button size="sm" variant="ghost" aria-pressed={!draftConversation} onClick={() => { setDraftView("sketch"); if (!sketchPaths.length) ui().setSketchOpen(true, "draw"); }}><Icon name="compose" width={16} height={16} />Sketch</Button><Button size="sm" variant="ghost" aria-pressed={draftConversation} onClick={() => { if (!threadId) ui().setActiveThread(latestDraftConversation(projectId, threads.data ?? [])?.id ?? null); setDraftView("conversation"); }}><Icon name="sparkles" width={16} height={16} />Conversation</Button></> : <WorkspaceMenu label={<><Icon name="library" width={16} height={16} /><span>{fresh ? "Start" : areaLabel}</span><Icon name="chevronDown" width={14} height={14} /></>}>

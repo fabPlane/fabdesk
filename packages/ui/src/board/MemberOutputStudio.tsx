@@ -1,10 +1,11 @@
-import { useAssistantSurface } from "../chat/useAssistantSurface";
-import { lazy, Suspense, useState } from "react";
-import { useAssemblyBoardModel, useCoreClient, useProject, useRunTool, useModelOutputActivity } from "@fabdesk/client-core";
+import { useAssemblyBoardModel,useCoreClient,useModelOutputActivity,useProject,useRunTool } from "@fabdesk/client-core";
 import type { BoardSourceSelection } from "@fabdesk/protocol";
-import { Select, Button, EmptyState, LoadError, Spinner } from "../components/ui";
+import { lazy,Suspense,useState } from "react";
+import { useAssistantSurface } from "../chat/useAssistantSurface";
+import { Button,EmptyState,LoadError,Select,Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
-import { ProductVideoPanel, type ProductVideoForm } from "./ProductVideoPanel";
+import { AutomaticPreviewStatus } from "./AutomaticPreviewStatus";
+import { ProductVideoPanel,type ProductVideoForm } from "./ProductVideoPanel";
 import { useOutputSource } from "./useOutputSource";
 const ModelCanvas = lazy(() => import("./ModelCanvas"));
 
@@ -49,7 +50,7 @@ function MemberStudio({ projectId, board, prefix, sourceSha256, enabled }: { pro
     {...(activity.model?.note ? { exportNote: activity.model.note } : {})}
     {...(activity.video?.note ? { makeNote: activity.video.note } : {})}
     canGenerate={enabled && !model.isFetching && !model.isError && !!model.data} checkingSources={!enabled || model.isFetching}
-    modelStatus={<p className="text-xs text-muted" role="status">{model.isError ? "Model source check unavailable" : model.isFetching ? "Checking model source…" : model.data?.state === "source-unchanged" ? "PCB unchanged since model export · Component models unverified" : model.data?.state === "source-changed" ? "PCB changed · Regenerate the model" : "Model source unverified · Generate from the saved PCB"}</p>}
+    modelStatus={<AutomaticPreviewStatus kind="model" projectId={projectId} board={board} directory={prefix ? prefix.slice(0, -1) : "."} enabled={enabled} />}
     {...(model.data?.model ? { modelPreview: <Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={path} blob={model.data.model} /></Suspense> } : {})}
     {...((glbRun.state.error || error) ? { exportError: glbRun.state.error ?? error! } : {})}
     {...(videoRun.state.error ? { makeError: videoRun.state.error } : {})}

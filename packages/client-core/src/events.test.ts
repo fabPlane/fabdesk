@@ -1,16 +1,16 @@
-import { describe, expect, test } from "bun:test";
-import type { FinishItSession, Message, Thread } from "@fabdesk/protocol";
+import type { FinishItSession,Message,Thread } from "@fabdesk/protocol";
 import { QueryClient } from "@tanstack/react-query";
+import { describe,expect,test } from "bun:test";
 import type { CoreClient } from "./CoreClient";
-import { useRunsStore } from "./stores/runs";
 import {
-  appendDelta,
-  appendPart,
-  handleCoreEvent,
-  messagesKey,
-  patchThreadCaches,
-  syncLiveRuns,
+appendDelta,
+appendPart,
+handleCoreEvent,
+messagesKey,
+patchThreadCaches,
+syncLiveRuns,
 } from "./events";
+import { useRunsStore } from "./stores/runs";
 
 const base: Message = {
   id: "msg_1",
@@ -358,6 +358,16 @@ describe("syncLiveRuns", () => {
       ),
     ).toEqual([]);
   });
+});
+
+test("saved-source events invalidate live input hashes, but generated output events cannot loop exports", () => {
+  const qc = new QueryClient();
+  const key = ["preview-inputs", "p", "endpoint", "."];
+  qc.setQueryData(key, "current");
+  handleCoreEvent({ topic: "project.changed", projectId: "p", paths: ["renders/pcb.svg", "reports/drc.json"], ts: 1 } as never, { qc, client: {} as never });
+  expect(qc.getQueryState(key)?.isInvalidated).toBe(false);
+  handleCoreEvent({ topic: "project.changed", projectId: "p", paths: ["board.kicad_pcb"], ts: 2 } as never, { qc, client: {} as never });
+  expect(qc.getQueryState(key)?.isInvalidated).toBe(true);
 });
 
 describe("patchMessages on an unseen thread", () => {

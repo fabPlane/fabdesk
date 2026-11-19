@@ -250,7 +250,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
             const visible = !highlightBox.isEmpty();
             canvas.dataset["tintedMeshes"] = String(tint.apply(selectable.get(current.ref ?? "") ?? []));
             canvas.dataset["selectedComponent"] = visible ? current.ref! : "";
-            setSelectionNotice(!requestedComponents.current ? undefined : !current.ready || receipt?.sha256 !== digest ? "Update the 3D preview to select components" : current.ref && !visible ? `${current.ref} has no selectable model in this preview` : undefined);
+            setSelectionNotice(!requestedComponents.current ? undefined : !current.ready || receipt?.sha256 !== digest ? "Preview updating · component selection will return automatically" : current.ref && !visible ? `${current.ref} has no selectable model in this preview` : undefined);
             if (visible && selectionIsFramed()) focusSelection.current?.(false);
             render();
           };

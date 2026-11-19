@@ -1,15 +1,16 @@
-import { WorkspaceMenu } from "../layout/WorkspaceMenu";
+import { useBoardSources,useCoreClient,useLivePreview,useModelOutputActivity,useProject,useRunsStore,useRunTool } from "@fabdesk/client-core";
+import { lazy,Suspense,useMemo,useState } from "react";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
-import { MemberOutputStudio } from "./MemberOutputStudio";
-import { AssemblyModels } from "./AssemblyBoardModel";
-import { BoardModelStatus } from "./BoardModelStatus";
-import { lazy, Suspense, useMemo, useState } from "react";
-import { useBoardSources, useCoreClient, useProject, useRunTool, useRunsStore, useModelOutputActivity } from "@fabdesk/client-core";
-import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
+import { Button,EmptyState,LoadError,Spinner } from "../components/ui";
+import { WorkspaceMenu } from "../layout/WorkspaceMenu";
 import { useUiStore } from "../stores/ui";
+import { AssemblyModels } from "./AssemblyBoardModel";
+import { AutomaticPreviewStatus } from "./AutomaticPreviewStatus";
+import { BoardModelStatus } from "./BoardModelStatus";
+import { MemberOutputStudio } from "./MemberOutputStudio";
 import {
-  ProductVideoPanel,
-  type ProductVideoForm,
+ProductVideoPanel,
+type ProductVideoForm,
 } from "./ProductVideoPanel";
 
 const ModelCanvas = lazy(() => import("./ModelCanvas"));
@@ -44,12 +45,13 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
   const canvas = useUiStore((s) => s.canvasMode && s.workspaceArea === "boards");
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
+  const automatic = useLivePreview("model", { projectId: projectId ?? "", enabled: scopeReady });
   const glbRun = useRunTool();
   const videoRun = useRunTool();
   const glbJob = useRunsStore((s) => (glbRun.state.jobId ? s.jobs[glbRun.state.jobId] : undefined));
   const videoJob = useRunsStore((s) => (videoRun.state.jobId ? s.jobs[videoRun.state.jobId] : undefined));
   const activity = useModelOutputActivity(projectId);
-  const exporting = glbRun.state.status === "running" || !!activity.model;
+  const exporting = automatic.updating || !!activity.model;
   const making = videoRun.state.status === "running" || !!activity.video;
   const activityNotice = activity.isError ? <LoadError title="Could not check export tasks" onRetry={() => void activity.refetch()} /> : !activity.ready ? <p role="status" className="text-xs text-muted">Checking export tasks…</p> : null;
   const [form, setForm] = useState<ProductVideoForm>(DEFAULT_FORM);
@@ -90,13 +92,13 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
   }
 
   if (canvas) return <div className="fd-board-model-view">
-    {glb ? <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} selectionSource={{ projectId, enabled: scopeReady }} /></Suspense> : <EmptyState title="See your board in 3D" action={<Button disabled={!canGenerate || !activity.ready || exporting || making} onClick={() => void glbRun.run("glb", { projectId })}>{exporting ? "Generating model…" : "Generate 3D preview"}</Button>}>Generate a model from your saved KiCad PCB. Components with available 3D models appear in the preview.</EmptyState>}
+    {glb ? <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} selectionSource={{ projectId, enabled: scopeReady }} /></Suspense> : <EmptyState title="Preparing your board in 3D…"><AutomaticPreviewStatus kind="model" projectId={projectId} /></EmptyState>}
     <BoardModelStatus projectId={projectId} present={!!glb} updating={exporting} floating={!compact} />
     {compact ? <WorkspaceMenu className="fd-comparison-model-menu" label={<span aria-label="3D model tools">···</span>}>
-      {glb && <Button size="sm" disabled={!canGenerate || !activity.ready || exporting || making} onClick={() => void glbRun.run("glb", { projectId })}>{exporting ? "Updating…" : "Update model"}</Button>}
+      <AutomaticPreviewStatus kind="model" projectId={projectId} />
       <Button size="sm" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("3d"); }}>Video & downloads</Button>
 </WorkspaceMenu> : <div className="fd-board-model-actions">
-      {glb && <Button size="sm" disabled={!canGenerate || !activity.ready || exporting || making} onClick={() => void glbRun.run("glb", { projectId })}>{exporting ? "Updating…" : "Update model"}</Button>}
+      <AutomaticPreviewStatus kind="model" projectId={projectId} />
       <Button size="sm" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("3d"); }}>Video & downloads</Button>
     </div>}
     {glbRun.state.error && <div className="fd-model-export-error" role="alert">{glbRun.state.error}</div>}
@@ -108,7 +110,7 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
       projectId={projectId}
       canGenerate={canGenerate}
       checkingSources={checkingSources || project.isFetching}
-      modelStatus={<BoardModelStatus projectId={projectId} present={!!glb} updating={exporting} />}
+      modelStatus={<AutomaticPreviewStatus kind="model" projectId={projectId} />}
       {...(canvasMode && glb ? { modelPreview: <Suspense fallback={<Spinner />}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} selectionSource={{ projectId, enabled: scopeReady }} /></Suspense> } : {})}
       glb={glb}
       videos={videos}
