@@ -2,7 +2,7 @@
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { lastLines, runKicadCli, type KicadCli } from "./cli";
+import { componentModelEnvironment, lastLines, runKicadCli, type KicadCli } from "./cli";
 import { parseGlbContainer } from "./glb-container";
 
 export type BoardView = "top" | "bottom" | "perspective" | "side";
@@ -80,6 +80,12 @@ export interface ExportGlbOptions {
  */
 export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promise<{ fused: boolean; warnings: string[] }> {
   const base = ["pcb", "export", "glb", "--force", "--subst-models", "--include-pads", "--include-tracks", "--include-zones", "--include-silkscreen", "--include-soldermask"];
+  // The STEP/GLB exporter resolves project text variables, but some KiCad builds
+  // leave versioned library variables literal even when present in the process
+  // environment. Supply only model-library paths explicitly, never other env data.
+  for (const [name, value] of Object.entries(componentModelEnvironment())) {
+    if (/^KICAD\d+_3DMODEL_DIR$/.test(name) && value) base.push("--define-var", `${name}=${value}`);
+  }
   if (options.modelProjectDir) base.push("--define-var", `KIPRJMOD=${options.modelProjectDir}`);
   if (!options.includeDnp) base.push("--no-dnp");
   if (options.mechanical) base.push("--user-origin", "0x0mm");

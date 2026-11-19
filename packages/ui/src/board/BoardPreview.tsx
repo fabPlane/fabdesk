@@ -32,6 +32,7 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
 }) {
   const previews = useAutomaticBoardViews({ projectId, directory, sourceStamp, enabled, ...(board ? { board } : {}) });
   const [side, setSide] = useState<"top" | "bottom">("top");
+  const [showComponents, setShowComponents] = useState(true);
   const [viewRevision, setViewRevision] = useState(0);
   const [selectionToolbar, setSelectionToolbar] = useState<HTMLDivElement | null>(null);
   const modelView = useRef<"2d" | "3d">("2d");
@@ -46,18 +47,22 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
       <div className="fd-preview-side" aria-label="Board side" hidden={layerView}>
         {(["top", "bottom"] as const).map(value => <Button key={value} size="sm" variant={side === value ? "primary" : "ghost"} aria-pressed={side === value} onClick={() => { setSide(value); setViewRevision(revision => revision + 1); }}>{value === "top" ? "Top" : "Bottom"}</Button>)}
       </div>
-      <div className="fd-preview-selection" ref={setSelectionToolbar} hidden={layerView} />
+      <div className="fd-preview-side" role="group" aria-label="Board assembly" hidden={layerView}>
+        <Button size="sm" variant={showComponents ? "primary" : "ghost"} aria-pressed={showComponents} onClick={() => setShowComponents(true)}>Assembled</Button>
+        <Button size="sm" variant={!showComponents ? "primary" : "ghost"} aria-pressed={!showComponents} onClick={() => setShowComponents(false)}>Bare board</Button>
+      </div>
+      <div className="fd-preview-selection" ref={setSelectionToolbar} hidden={layerView || !showComponents} />
       {!layerView && <Button size="sm" variant="ghost" disabled={!enabled || !previews.source.data || previews.source.isFetching || previews.model.isFetching || previews.refreshModel.isPending} onClick={() => previews.refreshModel.mutate()}>{previews.refreshModel.isPending ? "Refreshing preview…" : "Refresh preview"}</Button>}
       <span className="fd-board-preview-status" role="status">{!enabled ? "Checking board source…" : previews.refreshModel.isPending || previews.model.isFetching || previews.layers.isFetching || previews.source.isFetching ? "Preparing board views…" : error ? "Preview needs attention" : "Saved board · previews ready"}</span>
     </div>
     <div className="fd-preview-stage">
       <div className="fd-preview-surface" style={{ visibility: layerView ? "hidden" : "visible" }} inert={layerView || undefined} aria-hidden={layerView}>
-        {previews.model.data && <Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={previews.path} blob={previews.model.data.blob} viewMode={modelView.current} side={side} viewRevision={viewRevision} selectionToolbar={selectionToolbar} selectionSource={{ projectId, ...(board ? { board } : {}), enabled }} /></Suspense>}
+        {previews.model.data && <Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={previews.path} blob={previews.model.data.blob} viewMode={modelView.current} side={side} viewRevision={viewRevision} showComponents={showComponents} selectionToolbar={selectionToolbar} selectionSource={{ projectId, ...(board ? { board } : {}), enabled }} /></Suspense>}
       </div>
       <div className="fd-preview-surface fd-preview-layers" style={{ visibility: layerView ? "visible" : "hidden" }} inert={!layerView || undefined} aria-hidden={!layerView}>
         {previews.layers.data && <><aside aria-label="PCB layers"><header><strong>Layers</strong><Button size="sm" variant="ghost" onClick={() => setHidden(new Set())}>Show all</Button></header>{previews.layers.data.layers.map(layer => <label key={layer.name}><input type="checkbox" checked={!hidden.has(layer.name)} onChange={event => setHidden(previous => { const next = new Set(previous); if (event.target.checked) next.delete(layer.name); else next.add(layer.name); return next; })} /><span className="fd-layer-swatch" style={{ background: layerColors.get(layer.name) }} /><span>{names[layer.name] ?? layer.name.replace(/^In(\d+)\.Cu$/, "Inner $1 copper")}<small>{layer.name}</small></span></label>)}</aside><div className="fd-layer-drawing"><SvgViewer svg={drawing} viewKey={`${projectId}:${directory}:layers`} fitLabel="Fit board" />{hidden.size >= previews.layers.data.layers.length && <div className="fd-preview-notice">All layers hidden. Select a layer to show it.</div>}</div></>}
       </div>
-      {!layerView && !!previews.model.data?.warnings.length && <details className="fd-preview-model-notes"><summary>Component model notes</summary><p>Some components may be missing or incomplete in 2D and 3D.</p><ul>{previews.model.data.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></details>}
+      {!layerView && showComponents && !!previews.model.data?.warnings.length && <details className="fd-preview-model-notes"><summary>Model export notes</summary><p>KiCad reported the following while preparing this preview.</p><ul>{previews.model.data.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></details>}
       {!current.data && !error && <div className="fd-preview-loading" role="status"><Spinner /><strong>Preparing your board</strong><span>You can switch views while previews load.</span></div>}
       {error && <div className="fd-preview-loading"><LoadError title="Could not prepare this view" onRetry={() => { if (previews.source.isError) void previews.source.refetch(); else if (!layerView && previews.refreshModel.isError) previews.refreshModel.mutate(); else void current.refetch(); }} /><p>{error instanceof Error ? error.message : "Try again."}</p></div>}
     </div>

@@ -1,6 +1,7 @@
 import { fitModelCamera } from "@fabdesk/client-core";
 import { alignBoardCamera, type BoardCameraMode } from "./board-camera-mode";
 import { BoardInspectionMaterials, prepareBoardPreviewMaterials } from "./board-preview-material";
+import { BoardComponentVisibility, modelObjectVisible } from "./board-component-visibility";
 import { previewPixelRatio } from "./preview-quality";
 import { enclosurePreviewMaterial } from "./enclosure-preview-material";
 import { batchPreviewMeshes } from "./preview-mesh-batching";
@@ -68,7 +69,10 @@ async function loadModel(bytes: ArrayBuffer, path: string): Promise<THREE.Object
 }
 
 /** View transforms affect only the camera. Model bytes and physical placement stay untouched. */
-export default function ModelCanvas({ projectId, path, blob, selectionSource, selectionToolbar, viewMode, side = "top", viewRevision = 0 }: { projectId: string; path: string; blob?: Blob; selectionSource?: PartSelectionSource; selectionToolbar?: HTMLElement | null; viewMode?: "2d" | "3d"; side?: "top" | "bottom"; viewRevision?: number }) {
+export default function ModelCanvas({ projectId, path, blob, selectionSource, selectionToolbar, viewMode, side = "top", viewRevision = 0, showComponents = true }: { projectId: string; path: string; blob?: Blob; selectionSource?: PartSelectionSource; selectionToolbar?: HTMLElement | null; viewMode?: "2d" | "3d"; side?: "top" | "bottom"; viewRevision?: number; showComponents?: boolean }) {
+  const requestedComponents = useRef(showComponents); requestedComponents.current = showComponents;
+  const changeComponents = useRef<(() => void) | null>(null);
+  useEffect(() => { changeComponents.current?.(); }, [showComponents]);
   const requestedView = useRef({ viewMode, side, viewRevision }); requestedView.current = { viewMode, side, viewRevision };
   const changeView = useRef<(() => void) | null>(null);
   useEffect(() => { changeView.current?.(); }, [viewMode, side, viewRevision]);
@@ -122,6 +126,8 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
         model = await loadModel(bytes, path);
         if (disposed) { disposeModel(model); return; }
         inspectionMaterials = new BoardInspectionMaterials(model);
+        const componentVisibility = new BoardComponentVisibility(model);
+        componentVisibility.setAssembled(requestedComponents.current);
         const bounds = new THREE.Box3().setFromObject(model);
         const size = bounds.getSize(new THREE.Vector3());
         const span = Math.max(size.x, size.y, size.z);
@@ -234,7 +240,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
             if (!selectionIsFramed()) framedSelection.current = null;
             stopMotion();
             selectable.clear(); model.updateWorldMatrix(true, true);
-            if (current.ready && receipt?.sha256 === digest) {
+            if (requestedComponents.current && current.ready && receipt?.sha256 === digest) {
               selectable = nativeModelParts(model, receipt.references);
             }
             setSelectableRefs([...selectable.keys()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
@@ -243,7 +249,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
             const visible = !highlightBox.isEmpty();
             canvas.dataset["tintedMeshes"] = String(tint.apply(selectable.get(current.ref ?? "") ?? []));
             canvas.dataset["selectedComponent"] = visible ? current.ref! : "";
-            setSelectionNotice(!current.ready || receipt?.sha256 !== digest ? "Update the 3D preview to select components" : current.ref && !visible ? `${current.ref} has no selectable model in this preview` : undefined);
+            setSelectionNotice(!requestedComponents.current ? undefined : !current.ready || receipt?.sha256 !== digest ? "Update the 3D preview to select components" : current.ref && !visible ? `${current.ref} has no selectable model in this preview` : undefined);
             if (visible && selectionIsFramed()) focusSelection.current?.(false);
             render();
           };
@@ -281,7 +287,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
             if (!start || event.button !== 0 || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4 || !camera || !model) return;
             const rect = canvas.getBoundingClientRect(), ray = new THREE.Raycaster();
             ray.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1), camera);
-            const ref = modelPartReference(ray.intersectObject(model, true)[0]?.object ?? null, selectable);
+            const ref = modelPartReference(ray.intersectObject(model, true).find(hit => modelObjectVisible(hit.object))?.object ?? null, selectable);
             if (ref) currentSelection.current.select(ref);
           };
           const cancel = () => { down = null; };
@@ -297,6 +303,14 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
           cleanupSelection = () => { canvas.removeEventListener("keydown", keyDown); canvas.removeEventListener("pointerdown", pointerDown); canvas.removeEventListener("pointerup", pointerUp); canvas.removeEventListener("pointercancel", cancel); tint.clear(); };
           sync();
         }
+        // Display-only switch: reuse geometry/materials and keep the current orbit,
+        // pan and zoom. Selection intent survives, but hidden parts cannot focus.
+        changeComponents.current = () => {
+          stopMotion();
+          componentVisibility.setAssembled(requestedComponents.current);
+          updateSelection.current?.();
+          render();
+        };
         const perspective = camera;
         let flat: THREE.OrthographicCamera | null = null;
         let previousView: BoardCameraMode | null = null;
@@ -351,7 +365,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
       }
     })();
     return () => {
-      disposed = true; clearTimeout(settleTimer); changeView.current = null; stopMotion(); stopInput(); stopRendering(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
+      disposed = true; clearTimeout(settleTimer); changeView.current = null; changeComponents.current = null; stopMotion(); stopInput(); stopRendering(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
       if (camera && controls) savedCamera.current = { position: camera.position.clone(), target: controls.target.clone(), up: camera.up.clone(), minDistance: controls.minDistance };
       observer?.disconnect(); cleanupContext?.(); controls?.dispose();
       inspectionMaterials?.dispose();

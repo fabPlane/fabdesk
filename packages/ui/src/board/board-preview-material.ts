@@ -113,6 +113,8 @@ export function prepareBoardPreviewMaterials(model: GLTF) {
     const name: unknown = index === undefined ? undefined : model.parser.json.meshes?.[index]?.name;
     const kind = typeof name === "string" ? surfacesByName.get(name) : undefined;
     if (!kind) return;
+    // Geometry identity is independent of color/texture customization.
+    object.userData["nativeBoardSurface"] = kind;
     let surfaces = cache.get(kind);
     if (!surfaces) { surfaces = new Map(); cache.set(kind, surfaces); }
     const prepare = (material: Material) => {
