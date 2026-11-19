@@ -1,5 +1,6 @@
 import { Color, Material, Mesh, MeshBasicMaterial, MeshStandardMaterial, type Object3D } from "three";
 import type { GLTF } from "three/addons/loaders/GLTFLoader.js";
+import { componentPreviewMaterial } from "./component-preview-material";
 
 // KiCad's default colors are linear glTF values, not CSS/sRGB colors. Only the
 // known defaults are retuned: a deliberately red/blue/custom board stays that way.
@@ -91,7 +92,7 @@ export class BoardInspectionMaterials {
   }
 }
 
-/** Use native mesh identity, never component names or guessed component colors.
+/** Use native mesh identity and opt-in library palettes, never reference names.
  * Cache by surface AND source material: exporters may share one material across
  * several meshes. Both the board preview and mechanical workspace use this path. */
 export function prepareBoardPreviewMaterials(model: GLTF) {
@@ -107,19 +108,26 @@ export function prepareBoardPreviewMaterials(model: GLTF) {
     if (!names.has(`${prefix}_soldermask`) || !names.has(`${prefix}_copper`)) continue;
     for (const kind of ["PCB", "soldermask", "silkscreen", "copper"]) surfacesByName.set(`${prefix}_${kind}`, `board_${kind}`);
   }
+  const nativeComponents = surfacesByName.size > 0 && /^KiCad /.test(model.parser.json.asset?.extras?.generator ?? "");
   model.scene.traverse(object => {
     if (!(object instanceof Mesh)) return;
     const index = model.parser.associations.get(object)?.meshes;
     const name: unknown = index === undefined ? undefined : model.parser.json.meshes?.[index]?.name;
-    const kind = typeof name === "string" ? surfacesByName.get(name) : undefined;
-    if (!kind) return;
+    const boardKind = typeof name === "string" ? surfacesByName.get(name) : undefined;
+    if (!boardKind && (!nativeComponents || typeof name !== "string")) return;
+    const kind = boardKind ?? `component:${name}`;
     // Geometry identity is independent of color/texture customization.
-    object.userData["nativeBoardSurface"] = kind;
+    if (boardKind) object.userData["nativeBoardSurface"] = boardKind;
     let surfaces = cache.get(kind);
     if (!surfaces) { surfaces = new Map(); cache.set(kind, surfaces); }
     const prepare = (material: Material) => {
       let surface = surfaces.get(material);
-      if (!surface) { surface = boardPreviewMaterial(material, kind); surfaces.set(material, surface); }
+      if (!surface) {
+        const materialIndex = model.parser.associations.get(material)?.materials;
+        surface = boardKind ? boardPreviewMaterial(material, boardKind) : componentPreviewMaterial(material, name as string,
+          materialIndex === undefined ? undefined : model.parser.json.materials?.[materialIndex]);
+        surfaces.set(material, surface);
+      }
       if (surface !== material) replaced.add(material);
       return surface;
     };
