@@ -1,6 +1,8 @@
 import { fitModelCamera } from "@fabdesk/client-core";
 import { alignBoardCamera, type BoardCameraMode } from "./board-camera-mode";
-import { boardPreviewMaterial } from "./board-preview-material";
+import { prepareBoardPreviewMaterials } from "./board-preview-material";
+import { previewPixelRatio } from "./preview-quality";
+import { enclosurePreviewMaterial } from "./enclosure-preview-material";
 import { batchPreviewMeshes } from "./preview-mesh-batching";
 import { previewFrame } from "./preview-frame";
 import { previewInteraction } from "./preview-interaction";
@@ -43,7 +45,7 @@ async function loadModel(bytes: ArrayBuffer, path: string): Promise<THREE.Object
       throw new Error("This STL contains no triangles to display. Choose another file, or replace it and retry.");
     }
     geometry.computeVertexNormals();
-    const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0x76b6a1, roughness: .65, metalness: .05, side: THREE.DoubleSide }));
+    const mesh = new THREE.Mesh(geometry, enclosurePreviewMaterial());
     mesh.rotation.x = -Math.PI / 2; // STL convention: Z up; display only, never rewrite the source.
     return mesh;
   }
@@ -54,28 +56,13 @@ async function loadModel(bytes: ArrayBuffer, path: string): Promise<THREE.Object
     return url;
   });
   const model = await new GLTFLoader(manager).parseAsync(bytes, "");
-  const replaced = new Set<THREE.Material>();
-  const inkMaterials = new Map<THREE.Material, THREE.Material>();
+  prepareBoardPreviewMaterials(model);
   // GLTFLoader sanitizes Object3D.name (e.g. brackets). Retain exact native references.
   model.scene.traverse(object => {
     const node = model.parser.associations.get(object)?.nodes;
     const name = node === undefined ? undefined : model.parser.json.nodes?.[node]?.name;
     object.userData["nativeComponentName"] = typeof name === "string" ? name : null;
-    const meshIndex = model.parser.associations.get(object)?.meshes;
-    const meshName = meshIndex === undefined ? "" : model.parser.json.meshes?.[meshIndex]?.name;
-    if (object instanceof THREE.Mesh && meshName === "board_silkscreen") {
-      const prepare = (material: THREE.Material) => {
-        const ink = inkMaterials.get(material) ?? boardPreviewMaterial(material, meshName);
-        inkMaterials.set(material, ink);
-        if (ink !== material) replaced.add(material);
-        return ink;
-      };
-      object.material = Array.isArray(object.material) ? object.material.map(prepare) : prepare(object.material);
-    }
   });
-  // Only dispose replaced materials no longer referenced by another mesh.
-  model.scene.traverse(object => { if (object instanceof THREE.Mesh) for (const material of Array.isArray(object.material) ? object.material : [object.material]) replaced.delete(material); });
-  for (const material of replaced) material.dispose();
   if (!model.animations.length) batchPreviewMeshes(model.scene);
   return model.scene;
 }
@@ -124,6 +111,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
     let environment: THREE.WebGLRenderTarget | null = null;
     let stopRendering = () => {};
     let stopInput = () => {};
+    let settleTimer: ReturnType<typeof setTimeout> | undefined;
     setError(null); setLoading(true);
     void (async () => {
       try {
@@ -139,20 +127,20 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
         const center = bounds.getCenter(new THREE.Vector3());
         const root = new THREE.Group(); root.add(model); root.position.copy(center).multiplyScalar(-1);
         const scene = new THREE.Scene(); scene.add(root);
-        scene.add(new THREE.HemisphereLight(0xffffff, 0xffffff, .6));
+        const ambient = new THREE.HemisphereLight(0xffffff, 0xb7c5bc, .8); scene.add(ambient);
         const studio = new THREE.Group(); studio.scale.setScalar(span); scene.add(studio);
-        const light = new THREE.DirectionalLight(0xffffff, 2); light.position.set(-1, 1.5, 2); studio.add(light, light.target);
-        const fill = new THREE.DirectionalLight(0xffffff, .8); fill.position.set(1, -.5, 1); studio.add(fill, fill.target);
+        const light = new THREE.DirectionalLight(0xffffff, 1.6); light.position.set(-1, 1.5, 2); studio.add(light, light.target);
+        const fill = new THREE.DirectionalLight(0xffffff, .45); fill.position.set(1, -.5, 1); studio.add(fill, fill.target);
         camera = new THREE.PerspectiveCamera(38, 1, span / 1000, span * 1000);
         // OrbitControls captures the up axis at construction. Match the shared
         // board camera so top/bottom views can orbit immediately in 3D.
         if (requestedView.current.viewMode) camera.up.set(0, 0, -1);
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setClearColor(0x000000, 0);
+        renderer.setClearColor(0x000000, 0);
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.toneMapping = THREE.NeutralToneMapping;
         const room = new RoomEnvironment(), pmrem = new THREE.PMREMGenerator(renderer);
-        try { environment = pmrem.fromScene(room, .04); scene.environment = environment.texture; scene.environmentIntensity = .7; }
+        try { environment = pmrem.fromScene(room, .04); scene.environment = environment.texture; scene.environmentIntensity = .55; }
         finally { room.dispose(); pmrem.dispose(); }
         renderer.domElement.tabIndex = 0;
         renderer.domElement.setAttribute("aria-label", "3D model. Drag to orbit, scroll to zoom, right-drag to pan. Use Fit view to reset.");
@@ -161,8 +149,16 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
         controls.listenToKeyEvents(renderer.domElement);
         controls.enableDamping = false; controls.minDistance = span * .08; controls.maxDistance = span * 60;
         let measureSelection = () => {};
+        let interacting = false, renderedWidth = 0, renderedHeight = 0, renderedRatio = 0;
         const selectionIsFramed = () => framedSelection.current !== null && framedSelection.current.scope === currentSelection.current.scope && framedSelection.current.ref === currentSelection.current.ref;
         const frames = previewFrame(() => { if (!disposed && renderer && camera) {
+          const w = target.clientWidth, h = target.clientHeight;
+          if (w < 1 || h < 1) return;
+          const ratio = previewPixelRatio(w, h, devicePixelRatio, interacting);
+          if (w !== renderedWidth || h !== renderedHeight || ratio !== renderedRatio) {
+            renderer.setDrawingBufferSize(w, h, ratio);
+            renderedWidth = w; renderedHeight = h; renderedRatio = ratio;
+          }
           // Soft light from the viewer's upper left, on both sides of the board.
           studio.position.copy(controls?.target ?? root.position); studio.quaternion.copy(camera.quaternion);
           renderer.render(scene, camera); measureSelection();
@@ -199,14 +195,12 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
           else camera.position.sub(controls.target).multiplyScalar(factor).add(controls.target);
           controls.update(); render();
         };
-        let renderedWidth = 0, renderedHeight = 0;
         const resize = () => frames.renderWith(() => {
           if (!renderer || !camera) return;
           const w = target.clientWidth, h = target.clientHeight;
           if (w < 1 || h < 1) return;
           // CSS stretches the previous image during layout; the buffer changes
           // only when its replacement is ready to draw in this same frame.
-          if (w !== renderedWidth || h !== renderedHeight) { renderer.setSize(w, h, false); renderedWidth = w; renderedHeight = h; }
           if (camera instanceof THREE.PerspectiveCamera) camera.aspect = w / h;
           else { const half = (camera.top - camera.bottom) / 2; camera.left = -half * w / h; camera.right = half * w / h; }
           camera.updateProjectionMatrix();
@@ -308,6 +302,12 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
           if (!controls || !renderer || !perspective) return;
           stopMotion();
           const isFlat = requestedView.current.viewMode === "2d";
+          // The inspection view favors legible ink and pad boundaries over
+          // specular highlights; 3D retains directional shape and metal reflections.
+          ambient.intensity = isFlat ? 1.15 : .8;
+          light.intensity = isFlat ? .85 : 1.6;
+          fill.intensity = isFlat ? .3 : .45;
+          scene.environmentIntensity = isFlat ? .3 : .55;
           if (requestedView.current.viewMode) {
             if (!flat) {
               const aspect = Math.max(.1, target.clientWidth / Math.max(1, target.clientHeight));
@@ -329,7 +329,14 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
         };
         changeView.current = setView;
         if (requestedView.current.viewMode) setView();
-        controls.addEventListener("start", () => { framedSelection.current = null; stopMotion(); });
+        controls.addEventListener("start", () => {
+          framedSelection.current = null; stopMotion(); clearTimeout(settleTimer);
+          interacting = true; render();
+        });
+        controls.addEventListener("end", () => {
+          clearTimeout(settleTimer);
+          settleTimer = setTimeout(() => { interacting = false; render(); }, 140);
+        });
         controls.addEventListener("change", render);
         observer = new ResizeObserver(resize); observer.observe(target);
         const lost = (event: Event) => { event.preventDefault(); setError("The 3D graphics connection was interrupted. Retry to reopen the preview."); };
@@ -341,7 +348,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
       }
     })();
     return () => {
-      disposed = true; changeView.current = null; stopMotion(); stopInput(); stopRendering(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
+      disposed = true; clearTimeout(settleTimer); changeView.current = null; stopMotion(); stopInput(); stopRendering(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
       if (camera && controls) savedCamera.current = { position: camera.position.clone(), target: controls.target.clone(), up: camera.up.clone(), minDistance: controls.minDistance };
       observer?.disconnect(); cleanupContext?.(); controls?.dispose();
       if (model) disposeModel(model);
