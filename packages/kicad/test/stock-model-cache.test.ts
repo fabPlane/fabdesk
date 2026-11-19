@@ -141,3 +141,10 @@ test("unassigned custom parts are identified, while hidden and DNP models are no
   const result = await prepareBoardModels({ path: "unused", version: "10" }, { board, env: { FABDESK_HOME: root }, fetch: async () => { throw Error("Should not download hidden/DNP models"); } });
   expect(result.warnings).toEqual(["J1: no 3D model is assigned; add the exact part model."]);
 });
+
+test("copper-only test pads need no model, but physical test-point pins still report missing bodies", async () => {
+  const root = await fixture(), board = join(root, "board.kicad_pcb");
+  await writeFile(board, `(kicad_pcb (footprint "TestPoint:TestPoint_Pad_D2.0mm" (property "Reference" "TP1")) (footprint "TestPoint:TestPoint_Keystone_5000-5004_Miniature" (property "Reference" "TP2")))`);
+  const result = await prepareBoardModels({ path: "unused", version: "10" }, { board, env: { FABDESK_HOME: root }, fetch: async () => { throw Error("No model references to fetch"); } });
+  expect(result.warnings).toEqual(["TP2: no 3D model is assigned; add the exact part model."]);
+});

@@ -13,7 +13,10 @@ export async function prepareBoardModels(cli: KicadCli, options: {
   const references = new Map<string, string[]>();
   for (const fp of readSavedBoardModels(await readFile(options.board, "utf8"))) {
     if (fp.dnp) continue;
-    if (!fp.models.length && !/mounting.?hole|fiducial/i.test(fp.footprint)) warnings.push(`${fp.ref ?? "(unreferenced)"}: no 3D model is assigned; add the exact part model.`);
+    // Copper-only test pads have no separate component body to render. Other test
+    // points (loops, pins, etc.) still need their own model and must remain visible gaps.
+    const boardFeature = /mounting.?hole|fiducial/i.test(fp.footprint) || /^TestPoint:TestPoint_Pad_/i.test(fp.footprint);
+    if (!fp.models.length && !boardFeature) warnings.push(`${fp.ref ?? "(unreferenced)"}: no 3D model is assigned; add the exact part model.`);
     for (const model of fp.models) {
       if (model.hidden) continue;
       const refs = references.get(model.declared) ?? []; refs.push(fp.ref ?? "(unreferenced)"); references.set(model.declared, refs);
