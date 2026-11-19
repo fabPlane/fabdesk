@@ -83,7 +83,7 @@ export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promi
   // The STEP/GLB exporter resolves project text variables, but some KiCad builds
   // leave versioned library variables literal even when present in the process
   // environment. Supply only model-library paths explicitly, never other env data.
-  for (const [name, value] of Object.entries(componentModelEnvironment())) {
+  for (const [name, value] of Object.entries(componentModelEnvironment(process.env, cli.path))) {
     if (/^KICAD\d+_3DMODEL_DIR$/.test(name) && value) base.push("--define-var", `${name}=${value}`);
   }
   if (options.modelProjectDir) base.push("--define-var", `KIPRJMOD=${options.modelProjectDir}`);
