@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   applyStartToolsets,
   BOARD_START_TOOLS,
@@ -14,10 +17,12 @@ import {
   nativeToolsFor,
   NATIVE_AGENT_TOOLS,
   projectStartToolsets,
+  registerBoardWorkflowDocs,
   startOptionsFor,
 } from "./mcp-sessions";
-import { BOARD_WORKFLOW_MD } from "@fabdesk/agents";
+import { BOARD_START_MAP_MD, BOARD_WORKFLOW_MD } from "@fabdesk/agents";
 import { createRegistry } from "@fabdesk/tools";
+import { stepsFor } from "../../../packages/board-workflow/src/lastmile/actions";
 
 describe("initialToolsetsFor", () => {
   test("defaults, the full set, and a comma list added to the defaults", () => {
@@ -109,7 +114,65 @@ describe("durableWaitForClient", () => {
   });
 });
 
+test("start map tools and documented arguments exist in the current registry", () => {
+  const registry = createRegistry();
+  // MCP capability tools are registered by the adapter, rather than the registry.
+  const names = [...BOARD_START_MAP_MD.matchAll(/`([a-z]+_[a-z_]+)(?:`| )/g)]
+    .map((match) => match[1]!)
+    .filter((name) => !["capability_search", "capability_call"].includes(name));
+  for (const name of names) expect(registry.get(name)).toBeDefined();
+  const samples: Array<[string, Record<string, unknown>]> = [
+    ["circuit_source", { action: "schema" }],
+    ["circuit_source", { action: "validate" }],
+    ["schematic_inspect", { detail: "authoring" }],
+    ["pcb_update_from_schematic", { apply: true }],
+    ["circuit_search_parts", { query: "part", kind: "symbol" }],
+    ["circuit_describe_part", { kind: "symbol", libId: "Library:Part" }],
+    ["board_check", { confirm: true }],
+    ["board_edit", { plan: "edit-plan.json", mode: "impact" }],
+    ["board_edit", { plan: "edit-plan.json", mode: "full", adopt: true }],
+    ...["check", "place", "rank", "route", "new", "why", "validate", "accept"].map(
+      (action): [string, Record<string, unknown>] => ["board_route", { action }],
+    ),
+    ["board_route", { action: "try", actions: ["finish"] }],
+    ["board_route", { action: "try", actions: ["opens"] }],
+    ["board_review", { action: "run" }],
+    ["board_review", { action: "autopilot" }],
+  ];
+  for (const [name, args] of samples) {
+    expect(registry.inputObject(registry.get(name)!).safeParse(args).success).toBe(true);
+  }
+  // The tool schema accepts arbitrary strings here; validate the documented values
+  // with the same action parser used by the last-mile runner.
+  const lastMile = BOARD_START_MAP_MD.split("\n").find((line) => line.startsWith("| Last mile |"))!;
+  const actions = [...lastMile.matchAll(/\["([a-z]+)"\]/g)].map((match) => match[1]!);
+  expect(actions).toEqual(["finish", "opens"]);
+  for (const action of actions) expect(stepsFor(action).length).toBeGreaterThan(0);
+});
+
 describe("board workflow instructions, resource and prompt come from BOARD_WORKFLOW_MD", () => {
+  test("the registered resource and prompt retain the complete workflow", async () => {
+    const server = new McpServer({ name: "workflow-test", version: "0.0.0" });
+    registerBoardWorkflowDocs(server);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+      const resource = await client.readResource({ uri: BOARD_WORKFLOW_RESOURCE_URI });
+      const content = resource.contents[0];
+      expect(content && "text" in content ? content.text : undefined).toBe(BOARD_WORKFLOW_MD);
+      const prompt = await client.getPrompt({ name: BOARD_WORKFLOW_PROMPT });
+      expect(prompt.messages[0]?.content).toEqual({
+        type: "text", text: boardWorkflowPromptText(),
+      });
+      expect(boardWorkflowPromptText().endsWith(BOARD_WORKFLOW_MD)).toBe(true);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   test("the stage table is read from the workflow text", () => {
     const stages = boardWorkflowStages();
     expect(stages.length).toBeGreaterThanOrEqual(6);

@@ -1,6 +1,7 @@
 /**
- * The board workflow as the agent reads it (AGENTS.md section) and as docs/board-workflow.md (same text; a test keeps them
- * equal). Adapted from the toolkit's WORKFLOW.md to the tools of the `board` toolset.
+ * The full board workflow served by the MCP resource and prompt and mirrored in docs/board-workflow.md
+ * (same text; a test keeps them equal). Generated project AGENTS.md links to it from a short start map.
+ * Adapted from the toolkit's WORKFLOW.md to the tools of the `board` toolset.
  */
 export const BOARD_WORKFLOW_MD = `## Board workflow
 

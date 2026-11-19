@@ -118,7 +118,7 @@ describe("stdio proxy: a board project for an external agent", () => {
     const doc = await board.readResource({ uri: BOARD_WORKFLOW_RESOURCE_URI });
     expect((doc.contents[0] as { text: string }).text).toBe(BOARD_WORKFLOW_MD);
     const prompt = await board.getPrompt({ name: BOARD_WORKFLOW_PROMPT, arguments: { project: "Placed Board" } });
-    expect((prompt.messages[0]!.content as { text: string }).text).toContain(BOARD_WORKFLOW_MD);
+    expect((prompt.messages[0]!.content as { text: string }).text.endsWith(BOARD_WORKFLOW_MD)).toBe(true);
     // tool calls still carry the proxy's project, alongside the host hint in _meta
     const status = await board.callTool({ name: "project_status", arguments: {} });
     expect(status.isError).toBeFalsy();
