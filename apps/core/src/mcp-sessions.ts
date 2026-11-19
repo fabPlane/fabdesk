@@ -18,7 +18,7 @@ import {
   type McpClientHint,
   type ToolRegistry,
 } from "@fabdesk/tools";
-import { BOARD_WORKFLOW_MD, PERMISSION_PROMPT_TOOL } from "@fabdesk/agents";
+import { BOARD_WORKFLOW_MD, BOARD_WORKFLOW_RESOURCE_URI, PERMISSION_PROMPT_TOOL } from "@fabdesk/agents";
 import type { PermissionPromptResult } from "./agent-runs";
 import { logger, errMsg } from "./log";
 import { MCP_MAX_REQUEST_BYTES, MCP_MAX_TOOL_INPUT_ELEMENTS } from "./mcp-limits";
@@ -173,7 +173,7 @@ export function durableWaitForClient(
   return DURABLE_WAIT_SHORT_MS;
 }
 
-export const BOARD_WORKFLOW_RESOURCE_URI = "fabdesk://docs/board-workflow";
+export { BOARD_WORKFLOW_RESOURCE_URI };
 export const BOARD_WORKFLOW_PROMPT = "board_workflow";
 
 /** The stage table of the workflow text: `| 1 onboard + check | \`board_check\` | ...`. */
@@ -187,9 +187,9 @@ export function boardWorkflowStages(md: string = BOARD_WORKFLOW_MD): Array<{ sta
 }
 
 /**
- * The board-workflow pointer in the server instructions: what an external agent (Codex, Claude Code through the plugin)
- * otherwise never learns, since the full text reaches only the AGENTS.md of desktop runs. Stages come from the workflow
- * text; the full text is the resource and the prompt.
+ * The board-workflow pointer in the server instructions for desktop and external agents.
+ * Stages come from the full workflow text, served by the resource and prompt and mirrored in docs/board-workflow.md;
+ * generated project AGENTS.md contains a short start map pointing to that resource.
  */
 export function boardWorkflowInstructions(opts: { listed?: boolean } = {}): string {
   const stages = boardWorkflowStages()
@@ -217,7 +217,7 @@ export function boardWorkflowPromptText(project?: string, request?: string): str
   ].join("\n");
 }
 
-/** The workflow text as a resource and a prompt, generated from BOARD_WORKFLOW_MD (the AGENTS.md section desktop runs get). */
+/** The workflow text as a resource and a prompt, generated from the complete BOARD_WORKFLOW_MD. */
 export function registerBoardWorkflowDocs(server: McpServer): void {
   server.registerResource(
     "board-workflow",
