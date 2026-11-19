@@ -14,6 +14,7 @@ Thread,
 import type { QueryClient } from "@tanstack/react-query";
 import { BOARD_WORKSPACE_PATHS,BOARD_WORKSPACE_QUERY_KEY } from "./board-workspace-keys";
 import type { CoreClient } from "./CoreClient";
+import { refreshPreviewArtifacts } from "./preview-refresh";
 import { useAuthStore } from "./stores/auth";
 import { useRunsStore,type RunsState } from "./stores/runs";
 
@@ -352,6 +353,7 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       void qc.invalidateQueries({ queryKey: ["route-run", event.result.runId] });
       break;
     case "project.changed":
+      refreshPreviewArtifacts(qc, event.projectId, event.paths);
       // Output writes must not schedule another export; source events re-read hashes.
       if (event.paths.some(path => !/(?:^|\/)(?:renders|exports|reports)\//.test(path)))
         void qc.invalidateQueries({ queryKey: ["preview-inputs", event.projectId] });

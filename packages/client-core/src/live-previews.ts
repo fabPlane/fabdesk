@@ -141,7 +141,7 @@ export function useLivePreview(kind: PreviewKind, { projectId, directory = ".", 
       } finally {
         if (changed) {
           // Tool completion can race the final file-watcher notification.
-          for (const key of ["file", "project", "pcb-preview-revision", "board-model-revision", "assembly-board-model", "root-schematic-preview", "assembly-schematic-preview", "board-sources"])
+          for (const key of ["file", "project", "part-selection-index", "pcb-preview-revision", "board-model-revision", "assembly-board-model", "root-schematic-preview", "assembly-schematic-preview", "board-sources"])
             void queries.invalidateQueries({ queryKey: [key, projectId] });
         }
       }
