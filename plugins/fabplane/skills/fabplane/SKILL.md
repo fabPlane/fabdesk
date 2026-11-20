@@ -28,7 +28,8 @@ A project with a placed board is taken to a releasable one with the `board_*` to
 such a project folder (or with `fabdesk mcp --project <dir>`), the session lists them from the
 start, as fabPlane's own agent sees them; elsewhere, `load_toolset {"toolset":"board"}`. The server
 instructions repeat the stages; the full method is the resource `fabdesk://docs/board-workflow`
-and the prompt `board_workflow` (the same text fabPlane's agent reads in AGENTS.md).
+and the prompt `board_workflow` (also in `docs/board-workflow.md`). Generated project AGENTS.md
+contains a short start map pointing to that resource.
 
 | Stage | Tool |
 | --- | --- |

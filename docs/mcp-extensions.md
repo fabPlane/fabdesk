@@ -87,7 +87,8 @@ placed board (`board.kicad_pcb` with footprints), as fabPlane's own agent runs s
   install on demand, long calls → `board_job`, and where the full text is.
 - **Full text.** Resource `fabdesk://docs/board-workflow` (Markdown) and prompt `board_workflow`
   (`project`, `request` arguments; `/mcp__fabdesk__board_workflow` in Claude Code), both
-  `BOARD_WORKFLOW_MD`, the section fabPlane writes into its runs' AGENTS.md (= `docs/board-workflow.md`).
+  `BOARD_WORKFLOW_MD` (= `docs/board-workflow.md`). Generated project AGENTS.md contains a short
+  start map pointing to that resource.
 - **Plugin.** `skills/fabplane/SKILL.md` carries the same stages and rules in short.
 
 **Long calls and client timeouts.** Board tools run as durable jobs (`runDurable`): a call waits, then
