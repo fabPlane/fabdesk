@@ -60,20 +60,27 @@ export interface CourtyardOverlapException {
   [extra: string]: unknown;
 }
 
-/**
- * The acceptance.json `courtyard_overlap_exceptions` entry that accepts this DRC courtyards_overlap item, or null
- * (check_acceptance.courtyard_exception). Each entry names exactly two footprints; only that pair is accepted, never
- * courtyard overlaps in general. `rule` is the DRC type (`type` in KiCad's raw JSON).
- */
-export function courtyardException(v: { rule?: string; type?: string; items?: Array<{ description?: string }> }, acc: Pick<Acceptance, "courtyard_overlap_exceptions">): CourtyardOverlapException | null {
-  if ((v.rule ?? v.type) !== "courtyards_overlap") return null;
+type CourtyardFinding = { rule?: string; type?: string; items?: Array<{ description?: string }> };
+
+function courtyardRefs(v: CourtyardFinding): string[] {
+  if ((v.rule ?? v.type) !== "courtyards_overlap") return [];
   const refs = new Set<string>();
   for (const i of v.items ?? []) {
     const m = /^Footprint (\S+)/.exec(i.description ?? "");
     if (m) refs.add(m[1]!);
   }
-  if (refs.size !== 2) return null;
-  return (acc.courtyard_overlap_exceptions ?? []).find((e) => new Set(e.refs).size === refs.size && e.refs.every((r) => refs.has(r))) ?? null;
+  return refs.size === 2 ? [...refs].sort() : [];
+}
+
+/**
+ * The acceptance.json `courtyard_overlap_exceptions` entry that accepts this DRC courtyards_overlap item, or null
+ * (check_acceptance.courtyard_exception). Each entry names exactly two footprints; only that pair is accepted, never
+ * courtyard overlaps in general. `rule` is the DRC type (`type` in KiCad's raw JSON).
+ */
+export function courtyardException(v: CourtyardFinding, acc: Pick<Acceptance, "courtyard_overlap_exceptions">): CourtyardOverlapException | null {
+  const refs = courtyardRefs(v);
+  if (refs.length !== 2) return null;
+  return (acc.courtyard_overlap_exceptions ?? []).find((e) => new Set(e.refs).size === refs.length && e.refs.every((r) => refs.includes(r))) ?? null;
 }
 
 export type Verdict = { pass: boolean; [field: string]: unknown };
@@ -532,7 +539,7 @@ export interface AcceptResult {
 const top = (o: unknown, n = 6): string[] => (o && typeof o === "object" ? Object.keys(o as object).slice(0, n) : []);
 
 /** The nine verdicts as `AcceptResult[]`: `na` where a check does not apply or was not measured. */
-export function toAcceptResults(r: AcceptanceResult): AcceptResult[] {
+export function toAcceptResults(r: AcceptanceResult, drc?: DrcInput, acc?: Acceptance): AcceptResult[] {
   const f = figures(r);
   const res = r.results;
   const list = (label: string, xs: unknown): string[] => (Array.isArray(xs) && xs.length ? [`${label}: ${xs.slice(0, 8).join(", ")}${xs.length > 8 ? ", ..." : ""}`] : []);
@@ -543,12 +550,17 @@ export function toAcceptResults(r: AcceptanceResult): AcceptResult[] {
     evidence: res[key].pass ? [] : evidence,
   });
   const a2 = (res.A2_drc["errors"] ?? {}) as Record<string, number>;
+  // DRC context enriches display evidence only; persisted verdict records retain their existing shape.
+  const pairs = (drc?.violations ?? [])
+    .filter((v) => v.severity === "error" && (!acc || !courtyardException(v, acc)))
+    .map(courtyardRefs).filter((refs) => refs.length === 2).map((refs) => refs.join(" / ")).sort();
+  const overlapNames = pairs.length ? `: ${pairs.slice(0, 5).join(", ")}${pairs.length > 5 ? `, +${pairs.length - 5} more` : ""}` : "";
   const a6 = res.A6_stack;
   const a7 = res.A7_widths;
   const a8 = res.A8_pairs;
   return [
     one("A1", "A1_connectivity", { unconnected: f.A1 }, [`${f.A1} unconnected items (KiCad DRC, refilled zones)`]),
-    one("A2", "A2_drc", { errors: f.A2, class_width_proxy_findings: Number(res.A2_drc["class_width_proxy_findings_judged_by_A7"] ?? 0), ...(Array.isArray(res.A2_drc["accepted_courtyard_overlaps"]) ? { accepted_courtyard_overlaps: (res.A2_drc["accepted_courtyard_overlaps"] as unknown[]).length } : {}) }, Object.entries(a2).map(([k, n]) => `${n} x ${k}`)),
+    one("A2", "A2_drc", { errors: f.A2, class_width_proxy_findings: Number(res.A2_drc["class_width_proxy_findings_judged_by_A7"] ?? 0), ...(Array.isArray(res.A2_drc["accepted_courtyard_overlaps"]) ? { accepted_courtyard_overlaps: (res.A2_drc["accepted_courtyard_overlaps"] as unknown[]).length } : {}) }, Object.entries(a2).map(([k, n]) => `${n} x ${k}${k === "courtyards_overlap" ? overlapNames : ""}`)),
     one("A3", "A3_parity", { items: f.A3, measured: res.A3_parity["checked"] !== false }, [`${f.A3} schematic/PCB parity items`], res.A3_parity["checked"] === false),
     one("A4", "A4_circuit", { missing: (res.A4_circuit["missing"] as unknown[]).length, pin_net_diff: (res.A4_circuit["pin_net_diff"] as unknown[]).length, value_diff: (res.A4_circuit["value_diff"] as unknown[]).length },
       [...list("missing parts", res.A4_circuit["missing"]), ...list("pin/net differences", res.A4_circuit["pin_net_diff"]), ...list("value differences", res.A4_circuit["value_diff"])]),

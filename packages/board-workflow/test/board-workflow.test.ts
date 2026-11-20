@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  figures,
+  drcInputFromFile,
   checkAcceptance,
   deriveRequirements,
   designHash,
@@ -224,11 +226,48 @@ describe("acceptance", () => {
     expect(pyRound(2.675, 2)).toBe(2.67);
     expect(pyRound(-0.125, 2)).toBe(-0.12);
   });
+  test("A2 overlap evidence names sorted error pairs, caps names and preserves the record and figures", () => {
+    const q = reqs();
+    q.acceptance.courtyard_overlap_exceptions = [{ refs: ["U1", "C1"], basis: "accepted" }];
+    const overlap = (...refs: string[]) => ({ rule: "courtyards_overlap", severity: "error", description: "overlap", items: refs.map((ref) => ({ description: `Footprint ${ref}` })) });
+    const violations = [overlap("U1", "C3"), overlap("U1", "C2"), overlap("U1", "C1"), ...["C9", "C8", "C7", "C6"].map((ref) => overlap("U1", ref)), overlap(), overlap("A", "B", "C"), { ...overlap("U2", "C1"), severity: "warning" }, { rule: "clearance", severity: "error", description: "clearance" }];
+    const drc = { violations, unconnected: 0, parity: 0 };
+    const r = checkAcceptance(parseBoard(BOARD), q, drc);
+    const record = JSON.stringify(r);
+    const a2 = toAcceptResults(r, drc, q.acceptance).find((x) => x.code === "A2")!;
+    expect(a2.evidence).toEqual(["8 x courtyards_overlap: C2 / U1, C3 / U1, C6 / U1, C7 / U1, C8 / U1, +1 more", "1 x clearance"]);
+    expect(a2.status).toBe("fail");
+    expect(a2.figures).toEqual({ errors: 9, class_width_proxy_findings: 0, accepted_courtyard_overlaps: 1 });
+    expect(figures(r).A2).toBe(9);
+    expect(JSON.stringify(r)).toBe(record);
+    const unnamed = { ...drc, violations: [overlap(), overlap("A", "B", "C")] };
+    expect(toAcceptResults(checkAcceptance(parseBoard(BOARD), q, unnamed), unnamed, q.acceptance).find((x) => x.code === "A2")!.evidence).toEqual(["2 x courtyards_overlap"]);
+    const accepted = { ...drc, violations: [overlap("C1", "U1")] };
+    const pass = toAcceptResults(checkAcceptance(parseBoard(BOARD), q, accepted), accepted, q.acceptance).find((x) => x.code === "A2")!;
+    expect(pass.status).toBe("pass");
+    expect(pass.figures.errors).toBe(0);
+    expect(pass.evidence).toEqual([]);
+  });
 });
 
 describe("onboard + runAcceptance on a project", () => {
   let dir = "";
   afterAll(async () => dir && (await rm(dir, { recursive: true, force: true })));
+  test("runAcceptance returns names from real-shaped courtyard DRC items", async () => {
+    const project = await mkdtemp(join(tmpdir(), "bw-names-"));
+    try {
+      await writeFile(join(project, "board.kicad_pcb"), BOARD);
+      await writeFile(join(project, "board.kicad_pro"), PRO);
+      await onboard(project);
+      const drcPath = join(project, "test.drc.json");
+      await writeFile(drcPath, JSON.stringify({ violations: [{
+        type: "courtyards_overlap", severity: "error", description: "Footprints have overlapping courtyards",
+        items: [{ uuid: "a", description: "Footprint U1", pos: { x: 10, y: 10 } }, { uuid: "b", description: "Footprint C2", pos: { x: 11, y: 10 } }],
+      }], unconnected_items: [], schematic_parity: [] }));
+      const run = await runAcceptance(project, { drc: async () => drcInputFromFile(drcPath) });
+      expect(run.entry.results.find((r) => r.code === "A2")?.evidence).toEqual(["1 x courtyards_overlap: C2 / U1"]);
+    } finally { await rm(project, { recursive: true, force: true }); }
+  });
   test("stores requirements, keeps history by design hash and compares with the onboarded board", async () => {
     dir = await mkdtemp(join(tmpdir(), "bw-"));
     await writeFile(join(dir, "board.kicad_pcb"), BOARD);
