@@ -18,5 +18,5 @@ export async function inspectAssemblyBoardModel(client: Pick<CoreClient, "inspec
   const receipt = AssemblyBoardModelRevision.safeParse(raw);
   const scoped = receipt.success && receipt.data.boardSource.projectId === projectId && receipt.data.boardSource.sourceId === board.sourceId && receipt.data.boardSource.manifestSha256 === board.manifestSha256;
   const state = !model ? "missing-model" : !scoped ? "scope-unverified" : artifactSha256 !== receipt.data.artifactSha256 ? "artifact-changed" : receipt.data.sourceSha256 !== sourceSha256 ? "source-changed" : "source-unchanged";
-  return { projectId, board, sourceSha256, path, model, state, warnings: scoped ? receipt.data.warnings : [], artifactSha256 };
+  return { projectId, board, sourceSha256, path, model, state, warnings: scoped ? receipt.data.warnings : [], pendingModels: scoped ? receipt.data.pendingModels ?? 0 : 0, artifactSha256 };
 }

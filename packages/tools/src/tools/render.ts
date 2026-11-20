@@ -1,5 +1,5 @@
 import { snapshotProjectDependencies, assertProjectDependencies } from "../project-dependencies";
-import { readSavedBoardModels } from "@fabdesk/kicad";
+import { readSavedBoardModels, withModelCache, stockModelCacheRoot } from "@fabdesk/kicad";
 import { renderRootCircuitPreview } from "../schematic-circuit-preview";
 import { boardPreviewLayers } from "@fabdesk/kicad";
 import { BOARD_LAYERS_PATH, BoardLayers } from "@fabdesk/protocol";
@@ -196,21 +196,25 @@ export const render_glb = defineTool({
   toolset: "render",
   title: "Export 3D GLB",
   description:
-    "Export a 3D model (GLB) of the KiCad board to renders/board.glb for the app's 3D tab. Requires kicad-cli and board.kicad_pcb.",
+    "Export a 3D model (GLB) of the KiCad board to renders/board.glb. Reuses existing models and caches exact missing official KiCad models. Requires kicad-cli and board.kicad_pcb.",
   inputSchema: {
     expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Required for an assembly member: hash of its inspected saved PCB"),
+    completeLocalPreview: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Digest of the local preview to enrich with missing components"),
+    localModelsOnly: z.boolean().optional().describe("Use local and cached models for a network-free preview"),
     boardPath: z.string().optional(),
     expectedPcbRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
-    openWorldHint: false,
+    openWorldHint: true,
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async (args, ctx) => {
+  handler: async (args, ctx) => withModelCache(stockModelCacheRoot(), async () => {
     const { expectedSourceSha256 } = args;
+    if (((args.localModelsOnly || args.completeLocalPreview) && (args.boardPath || args.expectedPcbRevision)) || (args.localModelsOnly && args.completeLocalPreview))
+      throw new ToolError("Choose either a local board preview, its completion, or an explicit board-path export.", "invalid_args");
     if (args.boardPath || args.expectedPcbRevision) {
       if (!args.boardPath || !args.expectedPcbRevision)
         throw new ToolError("Provide both boardPath and expectedPcbRevision.", "invalid_args");
@@ -222,8 +226,6 @@ export const render_glb = defineTool({
     const cli = await boardPreviewCli(ctx, await readFile(board, "utf8"));
     const output = await jailPath(project.dir, `${PROJECT_FILES.renders}/board.glb`);
     const receiptPath = await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
-    ctx.progress(0.2, "exporting glb");
-    const dependencies = await snapshotProjectDependencies(project.dir);
     const sourceSha256 = await pcbPreviewFileHash(board);
     if (expectedSourceSha256 && sourceSha256 !== expectedSourceSha256) throw new ToolError("The saved PCB changed since inspection. Inspect the selected source again before exporting its model.", "precondition");
     // The editable PCB is copied to the root during import. Its project-relative
@@ -231,6 +233,31 @@ export const render_glb = defineTool({
     const imported = !ctx.board ? project.manifest().importedBoard : undefined;
     const modelProjectDir = imported ? dirname(await jailPath(project.dir, imported.path)) : project.dir;
     if (!(await stat(modelProjectDir).catch(() => null))?.isDirectory()) throw new ToolError("The imported board's component-model directory is missing. Restore that source folder before exporting the model.", "precondition");
+    ctx.progress(0.1, "preparing component models");
+    const prepared = await ctx.services.kicad.prepareModels(cli, { board, modelProjectDir, signal: ctx.signal, allowOffline: true, localOnly: !!args.localModelsOnly });
+    if (await pcbPreviewFileHash(board) !== sourceSha256) throw new ToolError("PCB changed while preparing component models; retry the latest saved board.", "precondition");
+    const dependencies = await snapshotProjectDependencies(project.dir);
+    if (args.completeLocalPreview) {
+      const raw = await readFile(receiptPath, "utf8").then(text => JSON.parse(text)).catch(() => null);
+      const receipt = (ctx.board ? AssemblyBoardModelRevision : BoardModelRevision).safeParse(raw);
+      const owner = AssemblyBoardModelRevision.safeParse(raw);
+      const sameScope = ctx.board ? owner.success && owner.data.boardSource.projectId === project.id &&
+        owner.data.boardSource.sourceId === ctx.board.sourceId && owner.data.boardSource.manifestSha256 === ctx.board.manifestSha256 : !owner.success;
+      if (sameScope && receipt.success && receipt.data.pendingModels && receipt.data.sourceSha256 === sourceSha256 &&
+        receipt.data.artifactSha256 === args.completeLocalPreview && receipt.data.dependencySnapshot?.revision === dependencies.revision &&
+        await pcbPreviewFileHash(output) === args.completeLocalPreview) {
+        // No new geometry (offline, or exact models unavailable). Keep the local GLB and camera.
+        await ctx.runInScope?.(async () => {});
+        ctx.signal.throwIfAborted();
+        await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
+        if (await pcbPreviewFileHash(board) !== sourceSha256)
+          throw new ToolError("PCB changed while checking available models.", "precondition");
+        const warnings = [...(receipt.data.warnings ?? []).filter(note => !note.includes(": stock model is not available locally (") && !note.includes(": could not fetch ")), ...prepared.warnings];
+        await writeJson(receiptPath, { ...receipt.data, warnings: [...new Set(warnings)], pendingModels: prepared.pendingModels || undefined });
+        return ok("Kept the existing preview with available component models.", { path: output, warnings });
+      }
+    }
+    ctx.progress(0.2, "exporting glb");
     const modelProjectDirectory = relative(project.dir, modelProjectDir).split(sep).join("/");
     const scratch = await mkdtemp(join(tmpdir(), "fabplane-board-model-"));
     let res: { fused: boolean; warnings: string[] };
@@ -240,23 +267,26 @@ export const render_glb = defineTool({
       // resolve normally. Only publish a newly written export, after rechecking saved PCB bytes.
       const temporary = join(scratch, "board.glb");
       res = await ctx.services.kicad.exportGlb(cli, { board, output: temporary, ...(modelProjectDirectory ? { modelProjectDir } : {}), signal: ctx.signal });
+      res.warnings.push(...prepared.warnings);
       if (await pcbPreviewFileHash(board) !== sourceSha256)
         throw new ToolError("PCB changed while exporting the model. The previous model was kept; review the saved PCB and try again.", "precondition");
-      try {
-        const mechanical = await ctx.services.kicad.measureMechanical(cli, { board, projectDir: modelProjectDir, scratchDir: scratch, signal: ctx.signal });
-        if (mechanical.source.pcbRevision !== sourceSha256) throw new ToolError("Mechanical coverage does not match the saved PCB", "precondition");
-        const entries = mechanical["footprints"];
-        if (!Array.isArray(entries)) throw new Error("Mechanical report has no per-footprint geometry");
-        const fitted = (entries as Array<{ ref: string | null; dnp: boolean; status: string; models: Array<{ load: { status: string } }> }>).filter(entry => !entry.dnp);
-        const loaded = fitted.filter(entry => entry.models.some(model => model.load.status === "loaded"));
-        measured = { loaded: loaded.length, unavailable: fitted.filter(entry => !loaded.includes(entry)).map(entry => ({ ref: entry.ref ?? "(unreferenced)", status: entry.status })), loadVerification: "measured" };
-      } catch (error) {
-        if (ctx.signal.aborted || error instanceof ToolError) throw error;
-        res.warnings.push(`Component geometry coverage unavailable: ${error instanceof Error ? error.message : String(error)}`);
+      if (!(args.localModelsOnly && prepared.pendingModels)) {
+        try {
+          const mechanical = await ctx.services.kicad.measureMechanical(cli, { board, projectDir: modelProjectDir, scratchDir: scratch, signal: ctx.signal });
+          if (mechanical.source.pcbRevision !== sourceSha256) throw new ToolError("Mechanical coverage does not match the saved PCB", "precondition");
+          const entries = mechanical["footprints"];
+          if (!Array.isArray(entries)) throw new Error("Mechanical report has no per-footprint geometry");
+          const fitted = (entries as Array<{ ref: string | null; dnp: boolean; status: string; models: Array<{ load: { status: string } }> }>).filter(entry => !entry.dnp);
+          const loaded = fitted.filter(entry => entry.models.some(model => model.load.status === "loaded"));
+          measured = { loaded: loaded.length, unavailable: fitted.filter(entry => !loaded.includes(entry)).map(entry => ({ ref: entry.ref ?? "(unreferenced)", status: entry.status })), loadVerification: "measured" };
+        } catch (error) {
+          if (ctx.signal.aborted || error instanceof ToolError) throw error;
+          res.warnings.push(`Component geometry coverage unavailable: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
       if (await pcbPreviewFileHash(board) !== sourceSha256) throw new ToolError("PCB changed during model coverage measurement", "precondition");
       const bytes = await readFile(temporary);
-      const receipt = (ctx.board ? AssemblyBoardModelRevision : BoardModelRevision).parse({ contract: "fabplane.board-model-revision.v1", source: "board.kicad_pcb", artifact: "renders/board.glb", sourceSha256, artifactSha256: createHash("sha256").update(bytes).digest("hex"), generatedAt: new Date().toISOString(), dependencies: "unverified", dependencySnapshot: dependencies, warnings: res.warnings, ...(modelProjectDirectory ? { modelProjectDirectory } : {}), ...(ctx.board ? { boardSource: { projectId: project.id, ...ctx.board } } : {}) });
+      const receipt = (ctx.board ? AssemblyBoardModelRevision : BoardModelRevision).parse({ contract: "fabplane.board-model-revision.v1", source: "board.kicad_pcb", artifact: "renders/board.glb", sourceSha256, artifactSha256: createHash("sha256").update(bytes).digest("hex"), generatedAt: new Date().toISOString(), dependencies: "unverified", dependencySnapshot: dependencies, ...(prepared.pendingModels ? { pendingModels: prepared.pendingModels } : {}), warnings: res.warnings, ...(modelProjectDirectory ? { modelProjectDirectory } : {}), ...(ctx.board ? { boardSource: { projectId: project.id, ...ctx.board } } : {}) });
       await jailPath(project.dir, `${PROJECT_FILES.renders}/board.glb`);
       await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
       await ctx.runInScope?.(async () => {});
@@ -278,7 +308,7 @@ export const render_glb = defineTool({
       `Exported ${PROJECT_FILES.renders}/board.glb. ${coverageText}${res.fused ? " (fused shapes)" : ""}. Browser URL: ${url}${res.warnings.length ? `\nWarnings:\n${res.warnings.map((w) => `- ${w}`).join("\n")}` : ""}`,
       { path: output, url, fileUrl: url, ...res, modelCoverage },
     );
-  },
+  }),
 });
 
 const ViewRegion = z.object({
