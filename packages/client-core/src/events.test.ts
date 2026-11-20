@@ -10,6 +10,7 @@ messagesKey,
 patchThreadCaches,
 syncLiveRuns,
 } from "./events";
+import { refreshPcbPresence } from "./preview-refresh";
 import { useRunsStore } from "./stores/runs";
 
 const base: Message = {
@@ -391,6 +392,8 @@ test("removing or restoring the drawing refreshes the correct board without a re
   const keys = ["boards/io", "boards/power"].map(dir => ["live-preview", "p", "endpoint", dir, "id", "manifest", "pcb", "source"]);
   for (const key of keys) qc.setQueryData(key, "drawing");
   handleCoreEvent({ topic: "project.changed", projectId: "p", paths: ["boards/io/renders/pcb.svg"], ts: 1 }, { qc, client: {} as CoreClient });
+  expect(keys.map(key => qc.getQueryState(key)?.isInvalidated)).toEqual([false, false]);
+  refreshPcbPresence(qc, ["p", "endpoint", "boards/io", "id", "manifest"], false);
   expect(keys.map(key => qc.getQueryState(key)?.isInvalidated)).toEqual([true, false]);
   qc.clear();
 });

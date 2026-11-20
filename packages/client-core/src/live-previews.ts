@@ -8,6 +8,7 @@ import { inspectPcbPreviewRevision, sha256Blob } from "./pcb-preview-revision";
 import { loadProgressiveBoardModel, type BoardPreviewModel } from "./progressive-board-model";
 import { inspectAssemblySchematicPreview, inspectRootSchematicPreview } from "./assembly-schematic-preview";
 import { captureAssemblySchematicInspection } from "./assembly-schematic-inspection";
+import { refreshPcbPresence } from "./preview-refresh";
 import { previewQueue } from "./preview-queue";
 
 export type PreviewKind = "pcb" | "schematic" | "layers" | "model";
@@ -61,6 +62,12 @@ export function useLivePreview(kind: PreviewKind, { projectId, directory = ".", 
   const member = sources.data?.sources.find(row => row.source.id === board?.sourceId);
   const owned = board ? sources.data?.manifestSha256 === board.manifestSha256 && member?.status === "available" && member.source.location === "project" && member.source.directory === directory : sources.data?.mode === "single" && directory === ".";
   const scope = [projectId, client.baseUrl, directory, board?.sourceId ?? "root", board?.manifestSha256 ?? ""];
+  const drawingPresent = files.some(file => file.path === prefix + "renders/pcb.svg");
+  useEffect(() => {
+    if (kind === "pcb" && owned && project.isSuccess) {
+      refreshPcbPresence(queries, [projectId, client.baseUrl, directory, board?.sourceId ?? "root", board?.manifestSha256 ?? ""], drawingPresent);
+    }
+  }, [kind, owned, project.isSuccess, queries, projectId, client.baseUrl, directory, board?.sourceId, board?.manifestSha256, drawingPresent]);
   const queue = previewQueue(client.baseUrl);
   const viewKey = JSON.stringify([...scope, kind]);
   // Warm-up may own the shared query. Register visibility independently of who enqueued it.

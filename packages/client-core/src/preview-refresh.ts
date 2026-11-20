@@ -3,7 +3,6 @@ import type { QueryClient } from "@tanstack/react-query";
 const artifactKinds: Readonly<Record<string, string>> = {
   "board.glb.revision.json": "model",
   "pcb.svg.revision.json": "pcb",
-  "pcb.svg": "pcb",
   "schematic.revision.json": "schematic",
   "board-layers.json": "layers",
 };
@@ -21,5 +20,14 @@ export function refreshPreviewArtifacts(queries: QueryClient, projectId: string,
   void queries.invalidateQueries({
     queryKey: ["live-preview", projectId],
     predicate: query => changed.has(JSON.stringify([query.queryKey[3], query.queryKey[6]])),
+  }, { cancelRefetch: false });
+}
+
+/** A drawing-only write may be the first half of a manual export. Repair a missing
+ * file, or retry a failed preview after restoration, without interrupting that writer. */
+export function refreshPcbPresence(queries: QueryClient, scope: readonly string[], present: boolean) {
+  void queries.invalidateQueries({
+    queryKey: ["live-preview", ...scope, "pcb"],
+    predicate: query => present ? query.state.status === "error" : query.state.data !== undefined,
   }, { cancelRefetch: false });
 }
