@@ -197,11 +197,15 @@ export const export_pos = defineTool({
     let jlcNote = "";
     if (await projectHasPlacedBoard(project.dir)) {
       ctx.progress(0.6, "JLC placement file");
+      // working files go to a temporary folder, never into the real project outside this export's staged scope
+      const scratch = await mkdtemp(join(tmpdir(), "fabdesk-pos-jlc-"));
       try {
-        jlc = await writeJlcExports({ exportGerbers: (outDir) => ctx.services.kicad.exportGerbers(cli, { board, outDir, signal: ctx.signal }), projectDir: real.dir, pcb: board, stem: basename(board, ".kicad_pcb"), posCsv: output, outDir: p(project, PROJECT_FILES.exports), signal: ctx.signal });
+        jlc = await writeJlcExports({ exportGerbers: (outDir) => ctx.services.kicad.exportGerbers(cli, { board, outDir, signal: ctx.signal }), projectDir: real.dir, pcb: board, stem: basename(board, ".kicad_pcb"), posCsv: output, outDir: p(project, PROJECT_FILES.exports), scratchDir: scratch, signal: ctx.signal });
         jlcNote = `\nJLC placement exports/positions-jlc.csv (+ bom-jlc.csv): ${jlc.summary.placements} parts at pad-centre positions with JLC-simulated rotations (${jlc.summary.rotationDiffers} differ from KiCad), source ${jlc.source}; placement check ${jlc.summary.pass} pass, ${jlc.summary.fail} fail${jlc.failing.length ? ` (${jlc.failing.slice(0, 8).join(", ")})` : ""}, ${jlc.summary.noFootprint.length} without a JLC footprint; no LCSC code: ${jlc.summary.noLcscCode.join(", ") || "none"}.${jlc.source.startsWith("evidence") ? " Run board_release bom for JLC data on every part." : ""}`;
       } catch (e) {
         jlcNote = `\nJLC placement file not written: ${e instanceof Error ? e.message : String(e)}`;
+      } finally {
+        await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
       }
     }
     ctx.progress(1, "done");
