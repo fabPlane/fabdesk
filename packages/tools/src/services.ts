@@ -721,7 +721,7 @@ export interface KicadService {
     opts: { board: string; output: string; modelProjectDir?: string; mechanical?: boolean; signal?: AbortSignal },
   ): Promise<{ fused: boolean; warnings: string[] }>;
   /** Reuse existing files; cache exact missing official models before dependency snapshots. */
-  prepareModels(cli: KicadCli, opts: { board: string; modelProjectDir?: string; signal?: AbortSignal }): Promise<{ warnings: string[] }>;
+  prepareModels(cli: KicadCli, opts: { board: string; modelProjectDir?: string; signal?: AbortSignal; localOnly?: boolean; allowOffline?: boolean }): Promise<{ warnings: string[]; pendingModels?: number }>;
   /**
    * Per-footprint 3D model coverage and exact board-space bounds measured from the packaged
    * `kicad-cli pcb export glb`; `scratchDir` (temporary GLB only) must be jailed to the project.

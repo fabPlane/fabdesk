@@ -1,3 +1,4 @@
+import { stockModelCacheRoot, withModelCache } from "@fabdesk/kicad";
 import { beginPublicationVisibility } from "../publication-visibility";
 import { snapshotProjectDependencies, assertProjectDependencies } from "../project-dependencies";
 /** Prepare a saved-file handoff privately, then publish only if every captured input is unchanged. */
@@ -29,7 +30,7 @@ export const render_publish = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async ({ maxWidth }, ctx) => {
+  handler: async ({ maxWidth }, ctx) => withModelCache(stockModelCacheRoot(), async () => {
     if (ctx.board)
       throw new ToolError(
         "Combined handoff publishing is not yet supported for assembly members; use the source-qualified render and check tools.",
@@ -269,5 +270,5 @@ export const render_publish = defineTool({
     } finally {
       activePublications.delete(project.dir);
     }
-  },
+  }),
 });

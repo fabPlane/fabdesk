@@ -55,9 +55,10 @@ export async function snapshotProjectDependencies(dir: string): Promise<ProjectD
   }
   let footprints: ReturnType<typeof readSavedBoardModels> = [];
   try { if (source) footprints = readSavedBoardModels(source); } catch { unresolved.add("native model declarations unavailable"); }
-  for (const fp of footprints) for (const model of fp.models) {
-    const resolved = resolveModelPath(model.declared, modelDirectory, modelEnvironment, modelRoots);
-    if (!resolved.path) { unresolved.add(`model:${model.declared}`); continue; }
+  const declarations = new Set(footprints.flatMap(fp => fp.models.map(model => model.declared)));
+  for (const declared of declarations) {
+    const resolved = resolveModelPath(declared, modelDirectory, modelEnvironment, modelRoots);
+    if (!resolved.path) { unresolved.add(`model:${declared}`); continue; }
     for (const path of [resolved.path, ...resolved.substitutionCandidates]) {
       try { await add(path); } catch (e) {
         if (e instanceof ToolError && e.code !== "invalid_args") throw e;
@@ -66,11 +67,11 @@ export async function snapshotProjectDependencies(dir: string): Promise<ProjectD
           try {
             const safe = await jailPath(root, path), info = await stat(safe).catch(() => null);
             if (info && info.size > 50 * 1024 * 1024) throw new ToolError("External model exceeds 50 MB dependency limit", "precondition");
-            external.set(`${model.declared}:${path.endsWith(".step") ? "step" : "model"}`, info?.isFile() ? hash(await readFile(safe)) : null);
+            external.set(`${declared}:${path.endsWith(".step") ? "step" : "model"}`, info?.isFile() ? hash(await readFile(safe)) : null);
             trusted = true; break;
           } catch (e) { if (e instanceof ToolError && e.code !== "invalid_args") throw e; }
         }
-        if (!trusted) unresolved.add(`model:${model.declared}`);
+        if (!trusted) unresolved.add(`model:${declared}`);
       }
     }
   }

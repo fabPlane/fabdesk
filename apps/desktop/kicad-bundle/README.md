@@ -59,8 +59,9 @@ For missing `${KICAD6_3DMODEL_DIR}` through `${KICAD10_3DMODEL_DIR}` references,
 3D preview preparation downloads only the exact library/filename from the matching
 pinned official KiCad release. A WRL reference uses KiCad's same-stem STEP convention.
 Custom paths, URLs, unknown versions, and unassigned models are not guessed. Missing
-parts are identified by reference; network errors can be retried without replacing
-the previous preview. Premium materials continue to apply in the viewer.
+parts are identified by reference. The board viewer opens the geometry available locally,
+then fetches missing stock models. Offline previews retain the board and its available
+components. Reconnecting retries pending downloads. Premium materials continue to apply in the viewer.
 
 The per-user `cache/kicad-models` directory under FabDesk's data home stores verified
 STEP objects by SHA-256, shared across projects and versions when bytes match.
@@ -68,7 +69,8 @@ Small receipts retain the pinned source and license links. Cached models work of
 concurrent requests share downloads, and partial/invalid responses are not published.
 Downloads have a 30-second timeout and 50 MB per-file limit, with three requests at
 most in parallel. Larger boards use the same bounded queue; their component lists
-are not limited to the demonstration project.
+are not limited to the demonstration project. A confirmed 404 is remembered for an hour
+in the running daemon. Network failures can be retried immediately.
 
 Only temporary export copies receive resolved model paths. The user's PCB, custom
 model files, offsets, rotations, and scale remain unchanged. Dependency receipts
@@ -76,5 +78,6 @@ include cached models so a changed/deleted file invalidates its preview.
 
 Fresh-cache PlayBridge validation downloaded 19 stock models totaling **3.26 MB**;
 its custom model stayed in the project. All 77 model references resolved, and a
-second preparation succeeded with network access disabled. Cache size grows with
-the unique parts used, rather than with the number of projects.
+second preparation succeeded with network access disabled. FabDesk trims cached STEP files and their receipts to 256 MiB after active
+exports finish. Least recently used references expire first. A shared object remains
+until its last reference expires. Active exports can temporarily exceed the budget.

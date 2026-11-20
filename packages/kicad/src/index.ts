@@ -1,4 +1,5 @@
 export { prepareBoardModels } from "./prepare-models";
+export { withModelCache } from "./model-cache-budget";
 export { stockModelCacheRoot } from "./stock-model-cache";
 export {
   kicadVersionAtLeast,

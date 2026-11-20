@@ -1,8 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cachedStockModel, downloadStockModel, officialStockModel, stockModelCacheRoot, stockModelUrl, type ModelFetch } from "../src/stock-model-cache";
+import { trimModelCache, withModelCache } from "../src/model-cache-budget";
 import { prepareBoardModels } from "../src/prepare-models";
 import { resolveModelPath } from "../src/mechanical";
 import { rewriteModelPaths, withModelBoard } from "../src/model-board";
@@ -15,6 +16,7 @@ afterEach(async () => { for (const root of directories.splice(0)) await rm(root,
 const response: ModelFetch = async () => new Response(step);
 
 test("only exact official references are eligible; WRL selects the native same-stem STEP", () => {
+  expect(officialStockModel(declaration.replace("Resistor_SMD", "Connector_PinHeader_2.54mm"))?.path).toStartWith("Connector_PinHeader_2.54mm.3dshapes/");
   const source = officialStockModel(declaration)!;
   expect(stockModelUrl(source)).toBe("https://gitlab.com/kicad/libraries/kicad-packages3D/-/raw/d5db5cea003fe2b4b1c9b145f5fcbd5fdb48f8ca/Resistor_SMD.3dshapes/FabDesk_Test_Part_0603.step");
   expect(officialStockModel(declaration.replace(".step", ".wrl"))).toEqual(source);
@@ -66,8 +68,12 @@ test("404 stays missing without a guessed connector, while network errors are re
   const root = await fixture();
   expect(await downloadStockModel(declaration, { root, fetch: async () => new Response(null, { status: 404 }) })).toBeNull();
   expect(cachedStockModel(declaration, root)).toBeNull();
-  await expect(downloadStockModel(declaration, { root, fetch: async () => new Response(null, { status: 503 }) })).rejects.toThrow("Retry when online");
-  expect(await downloadStockModel(declaration, { root, fetch: response })).not.toBeNull();
+  let calls = 0;
+  expect(await downloadStockModel(declaration, { root, fetch: async () => { calls++; return new Response(step); } })).toBeNull();
+  expect(calls).toBe(0);
+  const other = declaration.replace("0603", "0805");
+  await expect(downloadStockModel(other, { root, fetch: async () => new Response(null, { status: 503 }) })).rejects.toThrow("Retry when online");
+  expect(await downloadStockModel(other, { root, fetch: response })).not.toBeNull();
 });
 
 test("rejects HTML, incomplete STEP, oversized responses, and tampered cache receipts", async () => {
@@ -147,4 +153,66 @@ test("copper-only test pads need no model, but physical test-point pins still re
   await writeFile(board, `(kicad_pcb (footprint "TestPoint:TestPoint_Pad_D2.0mm" (property "Reference" "TP1")) (footprint "TestPoint:TestPoint_Keystone_5000-5004_Miniature" (property "Reference" "TP2")))`);
   const result = await prepareBoardModels({ path: "unused", version: "10" }, { board, env: { FABDESK_HOME: root }, fetch: async () => { throw Error("No model references to fetch"); } });
   expect(result.warnings).toEqual(["TP2: no 3D model is assigned; add the exact part model."]);
+});
+
+test("cache pressure evicts the coldest receipts and preserves shared geometry and project models", async () => {
+  const root = await fixture(), cold = declaration.replace("0603", "cold");
+  const alias = declaration.replace("KICAD9", "KICAD8");
+  await downloadStockModel(cold, { root, fetch: async () => new Response(step.replace("HEADER;", "HEADER; /*cold*/")) });
+  const kept = await downloadStockModel(declaration, { root, fetch: response });
+  await downloadStockModel(alias, { root, fetch: response });
+  const custom = join(root, "custom.step");
+  await writeFile(custom, step);
+  let keepBytes = step.length;
+  for (const file of await readdir(join(root, "refs"))) {
+    const path = join(root, "refs", file), bytes = await readFile(path);
+    const ref = JSON.parse(bytes.toString());
+    const lastUse = ref.path.includes("cold") ? 100 : ref.commit === officialStockModel(alias)!.commit ? 200 : 300;
+    await utimes(path, lastUse, lastUse);
+    if (lastUse === 300) keepBytes += bytes.length;
+  }
+  await trimModelCache(root, keepBytes);
+  expect(cachedStockModel(cold, root)).toBeNull();
+  expect(cachedStockModel(alias, root)).toBeNull();
+  expect(cachedStockModel(declaration, root)).toBe(kept);
+  expect(await readdir(join(root, "objects"))).toHaveLength(1);
+  expect(await readFile(custom, "utf8")).toBe(step);
+  expect(await downloadStockModel(alias, { root, fetch: response })).toBe(kept);
+});
+
+test("local preparation never fetches; offline preparation stops the queue and cancellation still propagates", async () => {
+  const root = await fixture(), board = join(root, "board.kicad_pcb"), env = { FABDESK_HOME: root };
+  const parts = Array.from({ length: 50 }, (_, i) => `(footprint "R" (property "Reference" "R${i}") (model "${declaration.replace("0603", String(i))}"))`);
+  await writeFile(board, `(kicad_pcb ${parts.join(" ")})`);
+  let calls = 0;
+  const options = { board, env, allowOffline: true, fetch: async () => { calls++; throw new TypeError("offline"); } };
+  const cli = { path: "unused", version: "10" };
+  expect((await prepareBoardModels(cli, { ...options, localOnly: true })).pendingModels).toBe(50);
+  expect(calls).toBe(0);
+  expect((await prepareBoardModels(cli, options)).pendingModels).toBe(50);
+  expect(calls).toBeGreaterThan(0); expect(calls).toBeLessThanOrEqual(3);
+  await expect(prepareBoardModels(cli, { ...options, signal: AbortSignal.abort() })).rejects.toThrow();
+});
+
+test("a second daemon defers cleanup until the last native reader has released the cache", async () => {
+  const root = await fixture(), objects = join(root, "objects");
+  await mkdir(objects);
+  const temporary = join(objects, "12345678-1234-1234-1234-123456789abc.tmp");
+  const child = Bun.spawn([process.execPath, "-e", `
+    import { withModelCache } from ${JSON.stringify(import.meta.resolve("../src/model-cache-budget"))};
+    await withModelCache(process.argv[1], async () => {
+      process.stdout.write("ready");
+      for await (const _ of process.stdin) break;
+    });
+  `, root], { stdout: "pipe", stdin: "pipe", stderr: "pipe" });
+  try {
+    const ready = await child.stdout.getReader().read();
+    expect(new TextDecoder().decode(ready.value)).toBe("ready");
+    await withModelCache(root, () => writeFile(temporary, "interrupted writer"));
+    expect(await Bun.file(temporary).exists()).toBe(true);
+  } finally {
+    child.stdin.end();
+    expect(await child.exited).toBe(0);
+  }
+  expect(await Bun.file(temporary).exists()).toBe(false);
 });

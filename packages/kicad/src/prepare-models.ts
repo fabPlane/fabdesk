@@ -1,13 +1,19 @@
 import { readFile } from "node:fs/promises";
+import { withModelCache } from "./model-cache-budget";
 import { dirname } from "node:path";
 import { componentModelEnvironment, componentModelLibraryRoots, type KicadCli } from "./cli";
 import { readSavedBoardModels, resolveModelPath } from "./mechanical";
-import { downloadStockModel, officialStockModel, stockModelCacheRoot, type ModelFetch } from "./stock-model-cache";
+import { downloadStockModel, officialStockModel, recentlyMissing, stockModelCacheRoot, type ModelFetch } from "./stock-model-cache";
 
 /** Resolve local models first, then fetch only exact missing official STEP models. */
-export async function prepareBoardModels(cli: KicadCli, options: {
+type PreparationOptions = {
   board: string; modelProjectDir?: string; signal?: AbortSignal; env?: NodeJS.ProcessEnv; fetch?: ModelFetch;
-}): Promise<{ warnings: string[] }> {
+  localOnly?: boolean; allowOffline?: boolean;
+};
+export function prepareBoardModels(cli: KicadCli, options: PreparationOptions) {
+  return withModelCache(stockModelCacheRoot(options.env), () => prepare(cli, options));
+}
+async function prepare(cli: KicadCli, options: PreparationOptions) {
   const env = componentModelEnvironment(options.env ?? process.env, cli.path);
   const projectDir = options.modelProjectDir ?? dirname(options.board), warnings: string[] = [];
   const references = new Map<string, string[]>();
@@ -30,7 +36,9 @@ export async function prepareBoardModels(cli: KicadCli, options: {
     if (resolved.status !== "resolved" && !resolved.substitutionCandidates.length) queued.push([declared, refs]);
     if (++inspected % 32 === 0) await new Promise<void>(resolve => setImmediate(resolve));
   }
-  let next = 0;
+  let next = 0, pendingModels = 0;
+  const root = stockModelCacheRoot(env);
+  let networkUnavailable = false;
   const cancellation = new AbortController();
   const signal = options.signal ? AbortSignal.any([options.signal, cancellation.signal]) : cancellation.signal;
   const workers = Array.from({ length: Math.min(3, queued.length) }, async () => {
@@ -38,11 +46,26 @@ export async function prepareBoardModels(cli: KicadCli, options: {
       signal.throwIfAborted();
       const [declared, refs] = queued[next++]!;
       if (!officialStockModel(declared)) { warnings.push(`${refs.join(", ")}: model unavailable (${declared}); provide the original model file.`); continue; }
-      const path = await downloadStockModel(declared, { root: stockModelCacheRoot(env), signal, ...(options.fetch ? { fetch: options.fetch } : {}) });
+      if (!recentlyMissing(declared, root) && (options.localOnly || networkUnavailable)) {
+        pendingModels++;
+        warnings.push(`${refs.join(", ")}: stock model is not available locally (${declared}).`);
+        continue;
+      }
+      let path;
+      try {
+        path = await downloadStockModel(declared, { root, signal, ...(options.fetch ? { fetch: options.fetch } : {}) });
+      } catch (error) {
+        signal.throwIfAborted();
+        if (!options.allowOffline) throw error;
+        if (error instanceof TypeError || error instanceof Error && ["TimeoutError", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "ConnectionRefused", "FailedToOpenSocket"].includes((error as NodeJS.ErrnoException).code ?? error.name)) networkUnavailable = true;
+        pendingModels++;
+        warnings.push(`${refs.join(", ")}: could not fetch ${declared}. ${error instanceof Error ? error.message : "Try again when online."}`);
+        continue;
+      }
       if (!path) warnings.push(`${refs.join(", ")}: exact stock model unavailable (${declared}); no substitute was used.`);
     }
   });
   try { await Promise.all(workers); } catch (error) { cancellation.abort(error); await Promise.allSettled(workers); throw error; }
   options.signal?.throwIfAborted();
-  return { warnings: warnings.sort() };
+  return { warnings: warnings.sort(), pendingModels };
 }

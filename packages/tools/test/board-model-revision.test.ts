@@ -123,3 +123,37 @@ for (const mode of ["network-failure", "source-edit"] as const) test(`model prep
     expect(await readFile(join(project.dir, BOARD_MODEL_REVISION_PATH), "utf8")).toBe("previous receipt");
   } finally { await rm(project.dir, { recursive: true, force: true }); }
 });
+
+test("an offline completion reuses the exact local GLB; newly resolved geometry replaces it once", async () => {
+  const project = await tempProject("progressive-glb"), board = join(project.dir, "board.kicad_pcb");
+  const output = join(project.dir, "renders/board.glb");
+  await Bun.write(board, '(kicad_pcb (footprint "Example" (property "Reference" "J1") (model "custom.step")))');
+  const base = mockServices([project]);
+  let exports = 0, online = false;
+  const services = mockServices([project], { kicad: { ...base.kicad,
+    prepareModels: async (_cli, options) => {
+      if (options.localOnly || !online) return { warnings: ["J1: model unavailable locally"], pendingModels: 1 };
+      await Bun.write(join(project.dir, "custom.step"), "new geometry");
+      return { warnings: [] };
+    },
+    exportGlb: async (_cli, options) => {
+      await Bun.write(options.output, "geometry " + ++exports);
+      return { fused: false, warnings: [] };
+    },
+  } });
+  const registry = createRegistry(), factory = contextFactory(services, project);
+  const run = (options: Record<string, unknown>) => registry.invoke("render_glb", options, ref => factory({ def: registry.get("render_glb")!, projectRef: ref, signal: new AbortController().signal, progress: () => {} }));
+  try {
+    await run({ localModelsOnly: true });
+    const digest = await pcbPreviewFileHash(output);
+    await run({ completeLocalPreview: digest });
+    expect(exports).toBe(1);
+    expect(await pcbPreviewFileHash(output)).toBe(digest);
+    online = true;
+    await run({ completeLocalPreview: digest });
+    expect(exports).toBe(2);
+    expect(await pcbPreviewFileHash(output)).not.toBe(digest);
+    const receipt = BoardModelRevision.parse(await Bun.file(join(project.dir, BOARD_MODEL_REVISION_PATH)).json());
+    expect(receipt.pendingModels).toBeUndefined();
+  } finally { await rm(project.dir, { recursive: true, force: true }); }
+});

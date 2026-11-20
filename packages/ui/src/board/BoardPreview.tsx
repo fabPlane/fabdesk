@@ -42,6 +42,13 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
   const layerColors = useMemo(() => new Map(previews.layers.data?.layers.map(layer => [layer.name, boardLayerColor(layer.svg)]) ?? []), [previews.layers.data]);
   const layerView = mode === "layers", current = layerView ? previews.layers : previews.model;
   const error = previews.source.error ?? (!layerView ? previews.refreshModel.error : null) ?? current.error;
+  const loadingModels = !layerView && !!previews.model.data?.pendingModels && previews.model.isFetching;
+  let status = "Saved board · previews ready";
+  if (error) status = "Preview needs attention";
+  else if (loadingModels) status = "Loading component models…";
+  else if (!layerView && previews.model.data?.pendingModels) status = "Showing available components";
+  else if (!enabled) status = "Checking board source…";
+  else if (previews.refreshModel.isPending || previews.model.isFetching || previews.layers.isFetching || previews.source.isFetching) status = "Preparing board views…";
   return <div className="fd-board-preview" data-testid="automatic-board-preview" data-mode={mode}>
     <div className="fd-preview-topbar">
       <div className="fd-preview-side" aria-label="Board side" hidden={layerView}>
@@ -53,7 +60,7 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
       </div>
       <div className="fd-preview-selection" ref={setSelectionToolbar} hidden={layerView || !showComponents} />
       {!layerView && <Button size="sm" variant="ghost" disabled={!enabled || !previews.source.data || previews.source.isFetching || previews.model.isFetching || previews.refreshModel.isPending} onClick={() => previews.refreshModel.mutate()}>{previews.refreshModel.isPending ? "Refreshing preview…" : "Refresh preview"}</Button>}
-      <span className="fd-board-preview-status" role="status">{!enabled ? "Checking board source…" : previews.refreshModel.isPending || previews.model.isFetching || previews.layers.isFetching || previews.source.isFetching ? "Preparing board views…" : error ? "Preview needs attention" : "Saved board · previews ready"}</span>
+      <span className="fd-board-preview-status" role="status">{status}</span>
     </div>
     <div className="fd-preview-stage">
       <div className="fd-preview-surface" style={{ visibility: layerView ? "hidden" : "visible" }} inert={layerView || undefined} aria-hidden={layerView}>
@@ -64,7 +71,7 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
       </div>
       {!layerView && showComponents && !!previews.model.data?.warnings.length && <details className="fd-preview-model-notes"><summary>Model export notes</summary><p>KiCad reported the following while preparing this preview.</p><ul>{previews.model.data.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></details>}
       {!current.data && !error && <div className="fd-preview-loading" role="status"><Spinner /><strong>Preparing your board</strong><span>You can switch views while previews load.</span></div>}
-      {error && <div className="fd-preview-loading"><LoadError title="Could not prepare this view" onRetry={() => { if (previews.source.isError) void previews.source.refetch(); else if (!layerView && previews.refreshModel.isError) previews.refreshModel.mutate(); else void current.refetch(); }} /><p>{error instanceof Error ? error.message : "Try again."}</p></div>}
+      {error && !current.data && <div className="fd-preview-loading"><LoadError title="Could not prepare this view" onRetry={() => { if (previews.source.isError) void previews.source.refetch(); else if (!layerView && previews.refreshModel.isError) previews.refreshModel.mutate(); else void current.refetch(); }} /><p>{error instanceof Error ? error.message : "Try again."}</p></div>}
     </div>
   </div>;
 }

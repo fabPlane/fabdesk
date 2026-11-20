@@ -1,5 +1,5 @@
 import { fitModelCamera } from "@fabdesk/client-core";
-import { alignBoardCamera, type BoardCameraMode } from "./board-camera-mode";
+import { alignBoardCamera, restoreBoardCamera, type BoardCameraMode, type SavedBoardCamera } from "./board-camera-mode";
 import { BoardInspectionMaterials, prepareBoardPreviewMaterials } from "./board-preview-material";
 import { BoardComponentVisibility, modelObjectVisible } from "./board-component-visibility";
 import { previewPixelRatio } from "./preview-quality";
@@ -20,7 +20,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { useProjectBlobUrl } from "../hooks/queries";
 import { Button, Spinner } from "../components/ui";
 
-type CameraState = { position: THREE.Vector3; target: THREE.Vector3; up: THREE.Vector3; minDistance: number };
+type CameraState = { position: THREE.Vector3; target: THREE.Vector3; up: THREE.Vector3; minDistance: number; board: SavedBoardCamera | null };
 
 function disposeModel(root: THREE.Object3D) {
   const textures = new Set<THREE.Texture>();
@@ -109,6 +109,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
     let model: THREE.Object3D | null = null;
     let observer: ResizeObserver | null = null;
     let camera: THREE.PerspectiveCamera | THREE.OrthographicCamera | null = null;
+    let appliedView: BoardCameraMode | null = null;
     let cleanupContext: (() => void) | null = null;
     let stopMotion = () => {};
     let cleanupSelection: (() => void) | null = null;
@@ -331,10 +332,13 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
               const half = Math.max(size.z, size.x / aspect) * .6;
               flat = new THREE.OrthographicCamera(-half * aspect, half * aspect, half, -half, span / 1000, span * 1000);
               flat.up.set(0, 0, -1); flat.position.set(0, span * 3, 0);
+              const saved = savedCamera.current?.board;
+              if (saved) { restoreBoardCamera(flat, controls.target, saved); previousView = saved.view; }
             }
             const next = { mode: requestedView.current.viewMode, side: requestedView.current.side, revision: requestedView.current.viewRevision };
             alignBoardCamera(flat, controls.target, next, previousView);
             previousView = next;
+            appliedView = next;
             camera = flat;
           } else camera = perspective;
           controls.object = camera;
@@ -366,7 +370,10 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
     })();
     return () => {
       disposed = true; clearTimeout(settleTimer); changeView.current = null; changeComponents.current = null; stopMotion(); stopInput(); stopRendering(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
-      if (camera && controls) savedCamera.current = { position: camera.position.clone(), target: controls.target.clone(), up: camera.up.clone(), minDistance: controls.minDistance };
+      if (camera && controls) savedCamera.current = {
+        position: camera.position.clone(), target: controls.target.clone(), up: camera.up.clone(), minDistance: controls.minDistance,
+        board: camera instanceof THREE.OrthographicCamera && appliedView ? { camera: camera.clone(), target: controls.target.clone(), view: appliedView } : null,
+      };
       observer?.disconnect(); cleanupContext?.(); controls?.dispose();
       inspectionMaterials?.dispose();
       if (model) disposeModel(model);

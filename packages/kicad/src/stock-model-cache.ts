@@ -1,6 +1,7 @@
+import { cacheWriteCompleted, withModelCache } from "./model-cache-budget";
 import { fabdeskHome } from "@fabdesk/auth-client";
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, utimesSync } from "node:fs";
 import { link, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -20,7 +21,7 @@ export type StockModel = { commit: string; path: string };
 
 /** Only an exact official library/file reference is eligible. No custom paths, URLs or traversal. */
 export function officialStockModel(declared: string): StockModel | null {
-  const match = /^\$(?:\{KICAD(\d+)_3DMODEL_DIR\}|\(KICAD(\d+)_3DMODEL_DIR\))\/([A-Za-z0-9_+-]+\.3dshapes)\/([A-Za-z0-9_+.,() -]+\.(?:step|stp|wrl))$/.exec(declared);
+  const match = /^\$(?:\{KICAD(\d+)_3DMODEL_DIR\}|\(KICAD(\d+)_3DMODEL_DIR\))\/([A-Za-z0-9_+-]+(?:\.[A-Za-z0-9_+-]+)*\.3dshapes)\/([A-Za-z0-9_+.,() -]+\.(?:step|stp|wrl))$/.exec(declared);
   const commit = match && STOCK_MODEL_COMMITS[match[1] ?? match[2]!];
   if (!match || !commit) return null;
   // KiCad's native --subst-models uses the same-named STEP for a WRL declaration.
@@ -46,6 +47,11 @@ export function cachedStockModel(declared: string, root = stockModelCacheRoot())
       if (verified.size > 4096) verified.clear();
       verified.set(path, stamp);
     }
+    const ref = refPath(root, model);
+    const now = Date.now();
+    if (now - statSync(ref).mtimeMs > 60_000) {
+      try { utimesSync(ref, now / 1000, now / 1000); } catch { /* A read-only cache is still usable. */ }
+    }
     return path;
   } catch { return null; }
 }
@@ -53,6 +59,11 @@ export function cachedStockModel(declared: string, root = stockModelCacheRoot())
 export type ModelFetch = (url: string, options: { signal: AbortSignal; redirect: "error" }) => Promise<Response>;
 type Flight = { controller: AbortController; promise: Promise<string | null>; users: number };
 const flights = new Map<string, Flight>();
+const missingUntil = new Map<string, number>();
+export function recentlyMissing(declared: string, root: string) {
+  const model = officialStockModel(declared);
+  return !!model && (missingUntil.get(refPath(root, model)) ?? 0) > Date.now();
+}
 
 /** One request per exact model in flight; one content-addressed object across projects/versions. */
 export async function downloadStockModel(declared: string, options: { root?: string; signal?: AbortSignal; fetch?: ModelFetch } = {}): Promise<string | null> {
@@ -61,11 +72,12 @@ export async function downloadStockModel(declared: string, options: { root?: str
   if (!model) return null;
   const cached = cachedStockModel(declared, root);
   if (cached) return cached;
+  if (recentlyMissing(declared, root)) return null;
   const key = refPath(root, model);
   let flight = flights.get(key);
   if (!flight) {
     const controller = new AbortController();
-    flight = { controller, users: 0, promise: fetchModel(model, root, controller.signal, options.fetch ?? fetch) };
+    flight = { controller, users: 0, promise: withModelCache(root, () => fetchModel(model, root, controller.signal, options.fetch ?? fetch)) };
     flights.set(key, flight);
     const current = flight;
     void flight.promise.finally(() => { if (flights.get(key) === current) flights.delete(key); }).catch(() => {});
@@ -90,8 +102,14 @@ export async function downloadStockModel(declared: string, options: { root?: str
 
 async function fetchModel(model: StockModel, root: string, cancellation: AbortSignal, request: ModelFetch): Promise<string | null> {
   const signal = AbortSignal.any([cancellation, AbortSignal.timeout(30_000)]);
+  signal.throwIfAborted();
   const response = await request(stockModelUrl(model), { signal, redirect: "error" });
-  if (response.status === 404) { await response.body?.cancel(); return null; }
+  if (response.status === 404) {
+    await response.body?.cancel();
+    if (missingUntil.size >= 4096) missingUntil.delete(missingUntil.keys().next().value!);
+    missingUntil.set(refPath(root, model), Date.now() + 60 * 60_000);
+    return null;
+  }
   if (!response.ok) { await response.body?.cancel(); throw new Error(`Stock model download failed (${response.status}). Retry when online.`); }
   if (Number(response.headers.get("content-length")) > MAX_BYTES) { await response.body?.cancel(); throw new Error("Stock model exceeds the 50 MB limit"); }
   if (!response.body) throw new Error("Stock model response was empty");
@@ -126,6 +144,7 @@ async function fetchModel(model: StockModel, root: string, cancellation: AbortSi
     await writeFile(receiptTemporary, JSON.stringify({ ...model, sha256: digest, bytes, source: stockModelUrl(model), license: `${SOURCE}/-/blob/${model.commit}/LICENSE.md` }));
     signal.throwIfAborted();
     await rename(receiptTemporary, refPath(root, model));
+    cacheWriteCompleted(root);
     return object;
   } finally { await rm(temporary, { force: true }); await rm(receiptTemporary, { force: true }); }
 }
