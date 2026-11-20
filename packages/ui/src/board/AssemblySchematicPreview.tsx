@@ -27,7 +27,7 @@ function AssemblySchematicContent({ projectId, data, selection, enabled }: { pro
 
   const preview = useAssemblySchematicPreview(projectId, board, page, enabled && owned);
   const source = data.sources.find(row => row.source.id === board.sourceId), state = preview.data?.state;
-  const livePreview = useLivePreview("schematic", { projectId, board, directory: source?.source.location === "project" ? source.source.directory : ".", enabled: enabled && owned });
+  const livePreview = useLivePreview("schematic", { projectId, board, directory: source?.source.location === "project" ? source.source.directory : ".", enabled: enabled && owned, foreground: true });
   const generate = () => livePreview.retry();
   const busy = livePreview.updating, error = livePreview.error?.message;
   const nativeSheet = preview.data?.sheet?.nativeSheet;

@@ -50,7 +50,7 @@ function MemberStudio({ projectId, board, prefix, sourceSha256, enabled }: { pro
     {...(activity.model?.note ? { exportNote: activity.model.note } : {})}
     {...(activity.video?.note ? { makeNote: activity.video.note } : {})}
     canGenerate={enabled && !model.isFetching && !model.isError && !!model.data} checkingSources={!enabled || model.isFetching}
-    modelStatus={<AutomaticPreviewStatus kind="model" projectId={projectId} board={board} directory={prefix ? prefix.slice(0, -1) : "."} enabled={enabled} />}
+    modelStatus={<AutomaticPreviewStatus foreground kind="model" projectId={projectId} board={board} directory={prefix ? prefix.slice(0, -1) : "."} enabled={enabled} />}
     {...(model.data?.model ? { modelPreview: <Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={path} blob={model.data.model} /></Suspense> } : {})}
     {...((glbRun.state.error || error) ? { exportError: glbRun.state.error ?? error! } : {})}
     {...(videoRun.state.error ? { makeError: videoRun.state.error } : {})}

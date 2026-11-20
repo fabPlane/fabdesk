@@ -16,7 +16,7 @@ export function AssemblyBoardModel({ projectId, data, selection, enabled }: { pr
   const model = useAssemblyBoardModel(projectId, board, enabled && owned);
 
   const source = data.sources.find(row => row.source.id === selection.sourceId), state = model.data?.state;
-  const automatic = useLivePreview("model", { projectId, board, directory: source?.source.location === "project" ? source.source.directory : ".", enabled: enabled && owned });
+  const automatic = useLivePreview("model", { projectId, board, directory: source?.source.location === "project" ? source.source.directory : ".", enabled: enabled && owned, foreground: true });
   const busy = automatic.updating, error = automatic.error?.message;
   const assistantSurface = { projectId, label: `3D / ${source?.source.name ?? selection.sourceId}`, priority: 15, details: JSON.stringify({ board, instanceId: selection.instanceId, source: source?.source, path: model.data?.path, sourceSha256: model.data?.sourceSha256, modelState: state, checking: !enabled || model.isFetching, generating: busy, warnings: model.data?.warnings, instruction: "Individual board model; assembly alignment, external component models and fit are not established." }) };
   useAssistantSurface(assistantSurface);

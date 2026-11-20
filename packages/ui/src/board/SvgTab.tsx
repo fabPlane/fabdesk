@@ -100,7 +100,7 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
     if (previousFrame.current !== nativeCoordinates) { setCanvasPoint(null); setDraftPoint(null); setSelectedId(null); }
     previousFrame.current = nativeCoordinates;
   }, [nativeCoordinates]);
-  const livePreview = useLivePreview(kind, { projectId: projectId ?? "", enabled: scopeReady });
+  const livePreview = useLivePreview(kind, { projectId: projectId ?? "", enabled: scopeReady, foreground: active });
   const selectedSheetIdentity = useRef<string | undefined>(undefined);
   if (nativeSheet) selectedSheetIdentity.current = nativeSheet.identity;
   useEffect(() => {

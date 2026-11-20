@@ -13,10 +13,11 @@ test("native exports are serial, drawings precede waiting models, and superseded
     if (wait) await gate;
     running--; return name;
   };
-  const first = queue.enqueue(3, active.signal, () => work("running model", true));
-  const stale = queue.enqueue(3, old.signal, () => work("obsolete model")).catch(error => error.name);
-  const latest = queue.enqueue(3, active.signal, () => work("latest model"));
-  const drawing = queue.enqueue(0, active.signal, () => work("latest drawing"));
+  const first = queue.enqueue("model", 3, active.signal, () => work("running model", true));
+  await Promise.resolve(); // The first model is already exporting.
+  const stale = queue.enqueue("model", 3, old.signal, () => work("obsolete model")).catch(error => error.name);
+  const latest = queue.enqueue("model", 3, active.signal, () => work("latest model"));
+  const drawing = queue.enqueue("drawing", 0, active.signal, () => work("latest drawing"));
   old.abort(); release();
   expect(await Promise.all([first, stale, latest, drawing])).toEqual(["running model", "AbortError", "latest model", "latest drawing"]);
   expect(order).toEqual(["running model", "latest drawing", "latest model"]);
@@ -25,8 +26,8 @@ test("native exports are serial, drawings precede waiting models, and superseded
 
 test("a failed renderer releases the queue so another preview can still load", async () => {
   const queue = new PreviewQueue(), signal = new AbortController().signal;
-  const failed = queue.enqueue(0, signal, async () => { throw new Error("missing sheet"); }).catch(error => error.message);
-  const model = queue.enqueue(3, signal, async () => "model");
+  const failed = queue.enqueue("drawing", 0, signal, async () => { throw new Error("missing sheet"); }).catch(error => error.message);
+  const model = queue.enqueue("model", 3, signal, async () => "model");
   expect(await Promise.all([failed, model])).toEqual(["missing sheet", "model"]);
 });
 
@@ -49,4 +50,34 @@ test("direct HTTP tool envelopes retain the scoped inspection used by assembly r
   const result = { ok: true, json: { _board: { sourceId: "io" }, hierarchy: { complete: true } } };
   const client = { callTool: async () => result } as unknown as CoreClient;
   expect(await runPreviewTool(client, "schematic_inspect", {})).toBe(result);
+});
+
+test("opening a view promotes its warm-up job and lets other previews finish", async () => {
+  const queue = new PreviewQueue(), signal = new AbortController().signal;
+  const order: string[] = [];
+  const jobs = ["pcb", "layers", "model"].map((view, priority) =>
+    queue.enqueue(view, priority, signal, async () => { order.push(view); }));
+  const close = queue.prefer("model");
+  await Promise.all(jobs);
+  close();
+  expect(order).toEqual(["model", "pcb", "layers"]);
+});
+
+test("switching assembly members while an export runs promotes only the new visible source", async () => {
+  const queue = new PreviewQueue(), signal = new AbortController().signal;
+  let finish!: () => void;
+  const running = queue.enqueue("export", 0, signal, () => new Promise<void>(resolve => { finish = resolve; }));
+  await Promise.resolve();
+  const order: string[] = [];
+  const submit = (key: string, priority: number) => queue.enqueue(key, priority, signal, async () => { order.push(key); });
+  const closeA = queue.prefer("member-A/model");
+  const jobs = [submit("member-A/model", 3), submit("member-B/model", 3), submit("member-B/layers", 2)];
+  closeA();
+  const closeB = queue.prefer("member-B/model");
+  const closeDuplicate = queue.prefer("member-B/model");
+  closeDuplicate();
+  finish();
+  await Promise.all([running, ...jobs]);
+  closeB();
+  expect(order).toEqual(["member-B/model", "member-B/layers", "member-A/model"]);
 });

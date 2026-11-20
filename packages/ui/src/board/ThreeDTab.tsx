@@ -45,7 +45,7 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
   const canvas = useUiStore((s) => s.canvasMode && s.workspaceArea === "boards");
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
-  const automatic = useLivePreview("model", { projectId: projectId ?? "", enabled: scopeReady });
+  const automatic = useLivePreview("model", { projectId: projectId ?? "", enabled: scopeReady, foreground: active });
   const glbRun = useRunTool();
   const videoRun = useRunTool();
   const glbJob = useRunsStore((s) => (glbRun.state.jobId ? s.jobs[glbRun.state.jobId] : undefined));

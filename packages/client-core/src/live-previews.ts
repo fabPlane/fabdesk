@@ -11,7 +11,7 @@ import { captureAssemblySchematicInspection } from "./assembly-schematic-inspect
 import { previewQueue } from "./preview-queue";
 
 export type PreviewKind = "pcb" | "schematic" | "layers" | "model";
-export type PreviewScope = { projectId: string; directory?: string; board?: BoardSourceSelection; enabled?: boolean };
+export type PreviewScope = { projectId: string; directory?: string; board?: BoardSourceSelection; enabled?: boolean; foreground?: boolean };
 type PreviewResult = { model?: BoardPreviewModel; layers?: BoardLayers; svg?: string; sheets?: Array<{ path: string; nativeSheet?: { identity: string } | undefined }> };
 const priority: Record<PreviewKind, number> = { pcb: 0, schematic: 1, layers: 2, model: 3 };
 const nativeInput = /(?:\.kicad_(?:pcb|sch|pro|dru|mod|sym)$|\.(?:step|stp|wrl)$|(?:^|\/)(?:fp-lib-table|sym-lib-table|fabdesk.json|fabplane.assembly.json)$)/i;
@@ -50,7 +50,7 @@ export async function readBoardLayers(client: Pick<CoreClient, "readFile">, proj
 
 /** Shared by warm-up and every viewer. Events handle local saves; a quiet poll
  * detects changed external model libraries and reconnects without a render loop. */
-export function useLivePreview(kind: PreviewKind, { projectId, directory = ".", board, enabled = true }: PreviewScope) {
+export function useLivePreview(kind: PreviewKind, { projectId, directory = ".", board, enabled = true, foreground = false }: PreviewScope) {
   const client = useCoreClient(), queries = useQueryClient();
   const project = useProject(projectId || null), sources = useBoardSources(projectId || null);
   const prefix = directory === "." ? "" : `${directory}/`;
@@ -61,6 +61,12 @@ export function useLivePreview(kind: PreviewKind, { projectId, directory = ".", 
   const member = sources.data?.sources.find(row => row.source.id === board?.sourceId);
   const owned = board ? sources.data?.manifestSha256 === board.manifestSha256 && member?.status === "available" && member.source.location === "project" && member.source.directory === directory : sources.data?.mode === "single" && directory === ".";
   const scope = [projectId, client.baseUrl, directory, board?.sourceId ?? "root", board?.manifestSha256 ?? ""];
+  const queue = previewQueue(client.baseUrl);
+  const viewKey = JSON.stringify([...scope, kind]);
+  // Warm-up may own the shared query. Register visibility independently of who enqueued it.
+  useEffect(() => {
+    if (projectId && foreground) return queue.prefer(viewKey);
+  }, [queue, viewKey, projectId, foreground]);
   const sourcePath = prefix + (kind === "schematic" ? "board.kicad_sch" : "board.kicad_pcb");
   const available = !!projectId && enabled && owned && !sources.isError && !project.isError && files.some(file => file.path === sourcePath);
   const inputs = useQuery({ queryKey: ["preview-inputs", ...scope, settled], enabled: available && settled === stamp,
@@ -82,7 +88,7 @@ export function useLivePreview(kind: PreviewKind, { projectId, directory = ".", 
     staleTime: Infinity, gcTime: 5 * 60_000, retry: false, retryOnMount: false,
     // Do not retain another board's data when navigation changes source scope.
     placeholderData: (previous, query) => JSON.stringify(query?.queryKey.slice(1, 7)) === JSON.stringify([...scope, kind]) ? previous : undefined,
-    queryFn: ({ signal }) => previewQueue(client.baseUrl).enqueue(priority[kind], signal, async () => {
+    queryFn: ({ signal }) => queue.enqueue(viewKey, priority[kind], signal, async () => {
       signal.throwIfAborted();
       // Waiting work must not render a later edit under an earlier cache key.
       for (const [path, expected] of Object.entries(captured!.hashes)) {

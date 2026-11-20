@@ -30,16 +30,20 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
   projectId: string; mode: "pcb" | "3d" | "layers"; directory?: string;
   board?: BoardSourceSelection; sourceStamp: string; enabled?: boolean;
 }) {
-  const previews = useAutomaticBoardViews({ projectId, directory, sourceStamp, enabled, ...(board ? { board } : {}) });
+  const previews = useAutomaticBoardViews({ mode, projectId, directory, sourceStamp, enabled, ...(board ? { board } : {}) });
   const [side, setSide] = useState<"top" | "bottom">("top");
   const [showComponents, setShowComponents] = useState(true);
   const [viewRevision, setViewRevision] = useState(0);
   const [selectionToolbar, setSelectionToolbar] = useState<HTMLDivElement | null>(null);
-  const modelView = useRef<"2d" | "3d">("2d");
+  const modelView = useRef<"2d" | "3d" | null>(null);
   if (mode !== "layers") modelView.current = mode === "pcb" ? "2d" : "3d";
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
-  const drawing = useMemo(() => combineBoardLayers(previews.layers.data?.layers ?? [], hidden), [previews.layers.data, hidden]);
-  const layerColors = useMemo(() => new Map(previews.layers.data?.layers.map(layer => [layer.name, boardLayerColor(layer.svg)]) ?? []), [previews.layers.data]);
+  // Mount the layer viewer on first use, then preserve its pan and zoom across tabs.
+  const hasViewedLayers = useRef(false);
+  if (mode === "layers") hasViewedLayers.current = true;
+  const layers = hasViewedLayers.current ? previews.layers.data : undefined;
+  const drawing = useMemo(() => combineBoardLayers(layers?.layers ?? [], hidden), [layers, hidden]);
+  const layerColors = useMemo(() => new Map(layers?.layers.map(layer => [layer.name, boardLayerColor(layer.svg)]) ?? []), [layers]);
   const layerView = mode === "layers", current = layerView ? previews.layers : previews.model;
   const error = current.error;
   const quickDrawing = mode === "pcb" && !previews.model.data ? previews.pcb.data : null;
@@ -66,10 +70,10 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
     <div className="fd-preview-stage">
       {quickDrawing && <div className="fd-preview-surface"><SvgViewer svg={quickDrawing} viewKey={`${projectId}:${directory}:quick-pcb`} fitLabel="Fit board" /></div>}
       <div className="fd-preview-surface" style={{ visibility: layerView || quickDrawing ? "hidden" : "visible" }} inert={!!quickDrawing || layerView || undefined} aria-hidden={!!quickDrawing || layerView}>
-        {previews.model.data && <Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={previews.path} blob={previews.model.data.blob} viewMode={modelView.current} side={side} viewRevision={viewRevision} showComponents={showComponents} selectionToolbar={selectionToolbar} selectionSource={{ projectId, ...(board ? { board } : {}), enabled }} /></Suspense>}
+        {modelView.current && previews.model.data && <Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={previews.path} blob={previews.model.data.blob} viewMode={modelView.current} side={side} viewRevision={viewRevision} showComponents={showComponents} selectionToolbar={selectionToolbar} selectionSource={{ projectId, ...(board ? { board } : {}), enabled }} /></Suspense>}
       </div>
       <div className="fd-preview-surface fd-preview-layers" style={{ visibility: layerView ? "visible" : "hidden" }} inert={!layerView || undefined} aria-hidden={!layerView}>
-        {previews.layers.data && <><aside aria-label="PCB layers"><header><strong>Layers</strong><Button size="sm" variant="ghost" onClick={() => setHidden(new Set())}>Show all</Button></header>{previews.layers.data.layers.map(layer => <label key={layer.name}><input type="checkbox" checked={!hidden.has(layer.name)} onChange={event => setHidden(previous => { const next = new Set(previous); if (event.target.checked) next.delete(layer.name); else next.add(layer.name); return next; })} /><span className="fd-layer-swatch" style={{ background: layerColors.get(layer.name) }} /><span>{names[layer.name] ?? layer.name.replace(/^In(\d+)\.Cu$/, "Inner $1 copper")}<small>{layer.name}</small></span></label>)}</aside><div className="fd-layer-drawing"><SvgViewer svg={drawing} viewKey={`${projectId}:${directory}:layers`} fitLabel="Fit board" />{hidden.size >= previews.layers.data.layers.length && <div className="fd-preview-notice">All layers hidden. Select a layer to show it.</div>}</div></>}
+        {layers && <><aside aria-label="PCB layers"><header><strong>Layers</strong><Button size="sm" variant="ghost" onClick={() => setHidden(new Set())}>Show all</Button></header>{layers.layers.map(layer => <label key={layer.name}><input type="checkbox" checked={!hidden.has(layer.name)} onChange={event => setHidden(previous => { const next = new Set(previous); if (event.target.checked) next.delete(layer.name); else next.add(layer.name); return next; })} /><span className="fd-layer-swatch" style={{ background: layerColors.get(layer.name) }} /><span>{names[layer.name] ?? layer.name.replace(/^In(\d+)\.Cu$/, "Inner $1 copper")}<small>{layer.name}</small></span></label>)}</aside><div className="fd-layer-drawing"><SvgViewer svg={drawing} viewKey={`${projectId}:${directory}:layers`} fitLabel="Fit board" />{hidden.size >= layers.layers.length && <div className="fd-preview-notice">All layers hidden. Select a layer to show it.</div>}</div></>}
       </div>
       {!layerView && showComponents && !!previews.model.data?.warnings.length && <details className="fd-preview-model-notes"><summary>Model export notes</summary><p>KiCad reported the following while preparing this preview.</p><ul>{previews.model.data.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></details>}
       {!current.data && !quickDrawing && !error && <div className="fd-preview-loading" role="status"><Spinner /><strong>Preparing your board</strong><span>You can switch views while previews load.</span></div>}

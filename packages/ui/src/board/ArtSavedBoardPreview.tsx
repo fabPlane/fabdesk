@@ -20,7 +20,7 @@ export function ArtSavedBoardPreview({ projectId, enabled, overlayUrl, widthMm, 
   const checking = outline.isFetching || revision.isFetching || drawing.isFetching;
   const current = enabled && !checking && !outline.isError && !revision.isError && !drawing.isError && revision.data === "matches-source" && !!drawing.data && pcbSvgHasNativeCoordinates(drawing.data);
   const canOverlay = current && !!bounds && dimensionsMatch && silkOnly && !!overlayUrl;
-  const livePreview = useLivePreview("pcb", { projectId, enabled });
+  const livePreview = useLivePreview("pcb", { projectId, enabled, foreground: true });
   const update = () => { void livePreview.retry(); };
   const updating = livePreview.updating;
   if (drawing.isError) return <LoadError title="Could not open the saved PCB preview" onRetry={() => void drawing.refetch()} />;
