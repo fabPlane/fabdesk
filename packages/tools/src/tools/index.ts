@@ -1,3 +1,4 @@
+import { board_representation } from "./board-representation";
 import { render_publish } from "./render-publish";
 import { ToolRegistry, type ToolDef } from "../registry";
 import { bom_read } from "./bom";
@@ -49,6 +50,7 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...kicadTools,
   ...boardDiffTools,
   ...verifyTools,
+  board_representation,
   ...boardCheckTools,
   ...boardReviewTools,
   ...boardEditTools,

@@ -28,6 +28,7 @@ export class KicadCliError extends Error {
 
 export interface RunOptions {
   cwd?: string;
+  env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
   /** Resolve with the exit code instead of throwing on a non-zero exit. */
   tolerateExit?: boolean;
@@ -146,7 +147,14 @@ export function kicadVersionAtLeast(actual: string, required: string): boolean {
 
 export async function findKicadCli(
   explicit?: string,
-  opts: { extraLocations?: string[]; trace?: KicadInvocationTracer; minimumVersion?: string } = {},
+  opts: {
+    extraLocations?: string[];
+    trace?: KicadInvocationTracer;
+    minimumVersion?: string;
+    signal?: AbortSignal;
+    env?: NodeJS.ProcessEnv;
+    cwd?: string;
+  } = {},
 ): Promise<KicadCli | null> {
   const candidates = [
     explicit,
@@ -166,7 +174,12 @@ export async function findKicadCli(
       const result = await runKicadCli(
         { path, version: "", ...(opts.trace ? { trace: opts.trace } : {}) },
         ["version"],
-        { tolerateExit: true },
+        {
+          tolerateExit: true,
+          ...(opts.signal ? { signal: opts.signal } : {}),
+          ...(opts.env ? { env: opts.env } : {}),
+          ...(opts.cwd ? { cwd: opts.cwd } : {}),
+        },
       );
       const version = result.stdout.trim().split("\n")[0]?.trim() ?? "";
       if (
@@ -176,6 +189,7 @@ export async function findKicadCli(
       )
         return { path, version, ...(opts.trace ? { trace: opts.trace } : {}) };
     } catch {
+      opts.signal?.throwIfAborted();
       // Try the next candidate.
     }
   }
@@ -193,14 +207,22 @@ const NOISE = [
 /** Resolve legacy versioned model variables against an available configured/bundled stock tree.
  * Explicit per-version overrides win; absent model assets remain absent. */
 export function componentModelEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const candidates = [env["FABDESK_KICAD_MODELS"], ...[11, 10, 9, 8, 7, 6].map(v => env[`KICAD${v}_3DMODEL_DIR`]), env["KICAD_STOCK_DATA_HOME"] ? join(env["KICAD_STOCK_DATA_HOME"]!, "3dmodels") : undefined,
-    ...bundledKicadRoots(env).map(root => join(root, "share/kicad/3dmodels")),
-    ...(process.platform === "linux" ? ["/usr/share/kicad/3dmodels", "/usr/share/kicad-nightly/3dmodels"] : process.platform === "darwin" ? ["/Applications/KiCad/KiCad.app/Contents/SharedSupport/3dmodels"] : []),
+  const candidates = [
+    env["FABDESK_KICAD_MODELS"],
+    ...[11, 10, 9, 8, 7, 6].map((v) => env[`KICAD${v}_3DMODEL_DIR`]),
+    env["KICAD_STOCK_DATA_HOME"] ? join(env["KICAD_STOCK_DATA_HOME"]!, "3dmodels") : undefined,
+    ...bundledKicadRoots(env).map((root) => join(root, "share/kicad/3dmodels")),
+    ...(process.platform === "linux"
+      ? ["/usr/share/kicad/3dmodels", "/usr/share/kicad-nightly/3dmodels"]
+      : process.platform === "darwin"
+        ? ["/Applications/KiCad/KiCad.app/Contents/SharedSupport/3dmodels"]
+        : []),
   ];
-  const root = candidates.find(path => path && existsSync(path) && statSync(path).isDirectory());
+  const root = candidates.find((path) => path && existsSync(path) && statSync(path).isDirectory());
   if (!root) return env;
   const out = { ...env };
-  for (const version of [6, 7, 8, 9, 10, 11]) if (!out[`KICAD${version}_3DMODEL_DIR`]) out[`KICAD${version}_3DMODEL_DIR`] = root;
+  for (const version of [6, 7, 8, 9, 10, 11])
+    if (!out[`KICAD${version}_3DMODEL_DIR`]) out[`KICAD${version}_3DMODEL_DIR`] = root;
   return out;
 }
 
@@ -223,10 +245,14 @@ async function runKicadCliUntraced(
   const proc = Bun.spawn([cli.path, ...args], {
     stdout: "pipe",
     stderr: "pipe",
-    env: componentModelEnvironment(),
+    env: opts.env ?? componentModelEnvironment(),
     ...(opts.cwd ? { cwd: opts.cwd } : {}),
   });
-  const onAbort = () => proc.kill();
+  let abortKill: ReturnType<typeof setTimeout> | undefined;
+  const onAbort = () => {
+    proc.kill();
+    abortKill = setTimeout(() => proc.kill("SIGKILL"), 1000);
+  };
   opts.signal?.addEventListener("abort", onAbort, { once: true });
   try {
     const [stdout, rawStderr, exitCode] = await Promise.all([
@@ -250,6 +276,7 @@ async function runKicadCliUntraced(
     return result;
   } finally {
     opts.signal?.removeEventListener("abort", onAbort);
+    if (abortKill) clearTimeout(abortKill);
   }
 }
 
