@@ -8,7 +8,7 @@ import { inspectPcbPreviewRevision, sha256Blob } from "./pcb-preview-revision";
 import { loadProgressiveBoardModel, type BoardPreviewModel } from "./progressive-board-model";
 import { inspectAssemblySchematicPreview, inspectRootSchematicPreview } from "./assembly-schematic-preview";
 import { captureAssemblySchematicInspection } from "./assembly-schematic-inspection";
-import { refreshPcbPresence } from "./preview-refresh";
+import { PreviewInTrashError, refreshPreviewPresence, respectPreviewTrash } from "./preview-refresh";
 import { previewQueue } from "./preview-queue";
 
 export type PreviewKind = "pcb" | "schematic" | "layers" | "model";
@@ -62,12 +62,13 @@ export function useLivePreview(kind: PreviewKind, { projectId, directory = ".", 
   const member = sources.data?.sources.find(row => row.source.id === board?.sourceId);
   const owned = board ? sources.data?.manifestSha256 === board.manifestSha256 && member?.status === "available" && member.source.location === "project" && member.source.directory === directory : sources.data?.mode === "single" && directory === ".";
   const scope = [projectId, client.baseUrl, directory, board?.sourceId ?? "root", board?.manifestSha256 ?? ""];
-  const drawingPresent = files.some(file => file.path === prefix + "renders/pcb.svg");
+  const artifact = prefix + ({ pcb: "renders/pcb.svg", schematic: "renders/schematic.svg", layers: BOARD_LAYERS_PATH, model: "renders/board.glb" } as const)[kind];
+  const artifactPresent = files.some(file => file.path === artifact);
   useEffect(() => {
-    if (kind === "pcb" && owned && project.isSuccess) {
-      refreshPcbPresence(queries, [projectId, client.baseUrl, directory, board?.sourceId ?? "root", board?.manifestSha256 ?? ""], drawingPresent);
+    if (owned && project.isSuccess) {
+      refreshPreviewPresence(queries, [projectId, client.baseUrl, directory, board?.sourceId ?? "root", board?.manifestSha256 ?? ""], kind, artifactPresent);
     }
-  }, [kind, owned, project.isSuccess, queries, projectId, client.baseUrl, directory, board?.sourceId, board?.manifestSha256, drawingPresent]);
+  }, [kind, owned, project.isSuccess, queries, projectId, client.baseUrl, directory, board?.sourceId, board?.manifestSha256, artifactPresent]);
   const queue = previewQueue(client.baseUrl);
   const viewKey = JSON.stringify([...scope, kind]);
   // Warm-up may own the shared query. Register visibility independently of who enqueued it.
@@ -106,8 +107,14 @@ export function useLivePreview(kind: PreviewKind, { projectId, directory = ".", 
       const args = { projectId, ...(board ? { board } : {}) };
       const hash = captured!.hashes[prefix + "board.kicad_pcb"];
       let changed = false;
+      let trashChecked = false;
       const run = async (name: string, extra: Record<string, unknown> = {}) => {
         signal.throwIfAborted();
+        if (kind !== "layers" && !trashChecked) {
+          await respectPreviewTrash(client, projectId, artifact);
+          trashChecked = true;
+          signal.throwIfAborted();
+        }
         await runPreviewTool(client, name, { ...args, ...extra }); changed = true;
       };
       let result: PreviewResult = {};
@@ -128,12 +135,6 @@ export function useLivePreview(kind: PreviewKind, { projectId, directory = ".", 
           result = { svg: saved.svg, sheets: saved.sheets };
         } else if (kind === "pcb") {
           const state = await inspectPcbPreviewRevision(client, projectId, directory, hash);
-          if (state === "missing-artifact") {
-            const trash = await client.listOutputTrash(projectId);
-            if (trash.files.some(file => file.path === prefix + "renders/pcb.svg")) {
-              throw new Error("PCB drawing is in Trash. Restore it from Outputs.");
-            }
-          }
           if (state !== "matches-source") await run("render_pcb_svg", { expectedSourceSha256: hash });
           result = { svg: await client.readFile(projectId, prefix + "renders/pcb.svg") };
         } else if (kind === "layers") {
@@ -168,6 +169,6 @@ export function useLivePreview(kind: PreviewKind, { projectId, directory = ".", 
       }
     }),
   });
-  return { ...preview, available, updating: available && (settled !== stamp || inputs.isPending || preview.isFetching || preview.isPlaceholderData),
+  return { ...preview, data: preview.error instanceof PreviewInTrashError ? undefined : preview.data, available, updating: available && (settled !== stamp || inputs.isPending || preview.isFetching || preview.isPlaceholderData),
     error: inputs.error ?? preview.error, retry: () => inputs.isError ? inputs.refetch() : preview.refetch() };
 }

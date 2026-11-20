@@ -2,6 +2,7 @@ import { useAutomaticBoardViews,useBoardSources,useProject } from "@fabdesk/clie
 import type { BoardLayers,BoardSourceSelection } from "@fabdesk/protocol";
 import { lazy,Suspense,useMemo,useRef,useState } from "react";
 import { Button,EmptyState,LoadError,Spinner } from "../components/ui";
+import { PreviewError } from "./AutomaticPreviewStatus";
 import { SvgViewer } from "./SvgViewer";
 import "./board-preview.css";
 
@@ -58,11 +59,11 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
   return <div className="fd-board-preview" data-testid="automatic-board-preview" data-mode={mode}>
     <div className="fd-preview-topbar">
       <div className="fd-preview-side" aria-label="Board side" hidden={layerView}>
-        {(["top", "bottom"] as const).map(value => <Button key={value} size="sm" disabled={!!quickDrawing} variant={side === value ? "primary" : "ghost"} aria-pressed={side === value} onClick={() => { setSide(value); setViewRevision(revision => revision + 1); }}>{value === "top" ? "Top" : "Bottom"}</Button>)}
+        {(["top", "bottom"] as const).map(value => <Button key={value} size="sm" disabled={!previews.model.data} variant={side === value ? "primary" : "ghost"} aria-pressed={side === value} onClick={() => { setSide(value); setViewRevision(revision => revision + 1); }}>{value === "top" ? "Top" : "Bottom"}</Button>)}
       </div>
       <div className="fd-preview-side" role="group" aria-label="Board assembly" hidden={layerView}>
-        <Button size="sm" variant={showComponents ? "primary" : "ghost"} aria-pressed={showComponents} onClick={() => setShowComponents(true)}>Assembled</Button>
-        <Button size="sm" variant={!showComponents ? "primary" : "ghost"} aria-pressed={!showComponents} onClick={() => setShowComponents(false)}>Bare board</Button>
+        <Button size="sm" disabled={!previews.model.data} variant={showComponents ? "primary" : "ghost"} aria-pressed={showComponents} onClick={() => setShowComponents(true)}>Assembled</Button>
+        <Button size="sm" disabled={!previews.model.data} variant={!showComponents ? "primary" : "ghost"} aria-pressed={!showComponents} onClick={() => setShowComponents(false)}>Bare board</Button>
       </div>
       <div className="fd-preview-selection" ref={setSelectionToolbar} hidden={layerView || !showComponents} />
       <span className="fd-board-preview-status" role="status">{status}</span>
@@ -78,7 +79,7 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
       </div>
       {!layerView && showComponents && !!previews.model.data?.warnings.length && <details className="fd-preview-model-notes"><summary>Model export notes</summary><p>KiCad reported the following while preparing this preview.</p><ul>{previews.model.data.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></details>}
       {!current.data && !quickDrawing && !error && <div className="fd-preview-loading" role="status"><Spinner /><strong>Preparing your board</strong><span>You can switch views while previews load.</span></div>}
-      {error && !current.data && <div className="fd-preview-loading"><LoadError title="Could not prepare this view" onRetry={() => void current.retry()} /><p>{error instanceof Error ? error.message : "Try again."}</p></div>}
+      {error && !current.data && <div className="fd-preview-loading"><PreviewError error={error} retry={() => void current.retry()} /></div>}
     </div>
   </div>;
 }

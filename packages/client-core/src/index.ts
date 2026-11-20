@@ -214,6 +214,7 @@ export type { WorkspaceHistoryEntry } from "./workspace-history";
 export { useAutomaticBoardViews } from "./automatic-board-views";
 export { acknowledgeComposerDraft } from "./composer-acknowledgement";
 export { DrawingViewportMemory,type DrawingViewport } from "./drawing-viewport";
+export { PreviewInTrashError } from "./preview-refresh";
 export { useLivePreview } from "./live-previews";
 export type { PreviewKind,PreviewScope } from "./live-previews";
 export { hitSelectionPart,partScopeKey,pcbSelectionParts,schematicSelectionParts,usePartSelection,type PartBox,type PartScope,type SelectablePart } from "./part-selection";

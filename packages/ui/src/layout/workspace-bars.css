@@ -301,3 +301,17 @@
     display: none;
   }
 }
+
+/* A wrapped tools button may sit at either edge of the window. */
+.fd-canvas-controls .fd-board-tools { anchor-name: --fd-board-tools; }
+.fd-canvas-controls .fd-board-tools > .fd-workspace-menu-content {
+  --menu-width: min(280px, calc(100vw - 2 * var(--fd-canvas-gutter)));
+  position: fixed;
+  position-anchor: --fd-board-tools;
+  top: calc(anchor(bottom) + 6px);
+  left: clamp(var(--fd-canvas-gutter), anchor(left), calc(100vw - var(--menu-width) - var(--fd-canvas-gutter)));
+  right: auto;
+  width: var(--menu-width);
+  max-height: min(60dvh, 420px);
+  overflow-y: auto;
+}

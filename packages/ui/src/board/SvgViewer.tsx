@@ -265,7 +265,7 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
           {circuitView ? "Fit circuit" : fitLabel}
         </Button>
         <Button size="sm" className="fd-svg-fit-button" title="Fill the available width; scroll to see the rest" onClick={() => { setDismissedFocus(focusRegion?.key ?? null); if (viewport.current) { zoomAt((viewport.current.clientWidth - 24) / fitSize.width); requestAnimationFrame(() => viewport.current?.scrollTo(0, 0)); } }}>Fit width</Button>
-        {canReturn && <Button size="sm" onClick={returnBeforeFocus} title="Restore zoom and position from before focusing a component">Return to previous view</Button>}
+        {canReturn && <Button size="sm" className="fd-svg-return" aria-label="Return to previous view" onClick={returnBeforeFocus} title="Restore zoom and position from before focusing a component"><Icon name="undo" width={14} height={14} /><span>Return to previous view</span></Button>}
         {toolbar && <div className="fd-svg-context ml-auto flex items-center gap-1">{toolbar}</div>}
       </div>
       <div ref={viewport} tabIndex={0} aria-label="Drawing viewport. Drag to pan; scroll to zoom. Plus and minus zoom; arrow keys pan." className={cn("fd-svg-viewport min-h-0 flex-1 select-none overflow-auto overscroll-contain bg-panel-2/40 p-3", dragging ? "cursor-grabbing" : commentMode ? "cursor-crosshair" : "cursor-grab")}

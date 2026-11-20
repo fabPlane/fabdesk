@@ -1,7 +1,7 @@
 import type { FinishItSession,Message,Thread } from "@fabdesk/protocol";
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { describe,expect,test } from "bun:test";
-import type { CoreClient } from "./CoreClient";
+import { CoreHttpError, type CoreClient } from "./CoreClient";
 import {
 appendDelta,
 appendPart,
@@ -10,7 +10,7 @@ messagesKey,
 patchThreadCaches,
 syncLiveRuns,
 } from "./events";
-import { refreshPcbPresence } from "./preview-refresh";
+import { PreviewInTrashError, refreshPreviewPresence, respectPreviewTrash } from "./preview-refresh";
 import { useRunsStore } from "./stores/runs";
 
 const base: Message = {
@@ -393,9 +393,20 @@ test("removing or restoring the drawing refreshes the correct board without a re
   for (const key of keys) qc.setQueryData(key, "drawing");
   handleCoreEvent({ topic: "project.changed", projectId: "p", paths: ["boards/io/renders/pcb.svg"], ts: 1 }, { qc, client: {} as CoreClient });
   expect(keys.map(key => qc.getQueryState(key)?.isInvalidated)).toEqual([false, false]);
-  refreshPcbPresence(qc, ["p", "endpoint", "boards/io", "id", "manifest"], false);
+  refreshPreviewPresence(qc, ["p", "endpoint", "boards/io", "id", "manifest"], "pcb", false);
   expect(keys.map(key => qc.getQueryState(key)?.isInvalidated)).toEqual([true, false]);
   qc.clear();
+});
+
+test("automatic previews respect trashed output paths while allowing a newer file at the same path", async () => {
+  const path = "boards/io/renders/board.glb";
+  const client = {
+    listOutputTrash: async () => ({ files: [{ id: "old", path, size: 1, sha256: "old", trashedAt: "yesterday" }] }),
+    readFileBlob: async (): Promise<Blob> => { throw new CoreHttpError(404, path, "missing"); },
+  };
+  await expect(respectPreviewTrash(client, "p", path)).rejects.toBeInstanceOf(PreviewInTrashError);
+  await respectPreviewTrash(client, "p", "boards/power/renders/board.glb");
+  await respectPreviewTrash({ ...client, readFileBlob: async () => new Blob(["replacement"]) }, "p", path);
 });
 
 test("an export's own receipt event does not cancel or restart its in-flight preview", async () => {

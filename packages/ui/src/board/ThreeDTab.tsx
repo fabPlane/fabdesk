@@ -5,7 +5,7 @@ import { Button,EmptyState,LoadError,Spinner } from "../components/ui";
 import { WorkspaceMenu } from "../layout/WorkspaceMenu";
 import { useUiStore } from "../stores/ui";
 import { AssemblyModels } from "./AssemblyBoardModel";
-import { AutomaticPreviewStatus } from "./AutomaticPreviewStatus";
+import { AutomaticPreviewStatus, PreviewError } from "./AutomaticPreviewStatus";
 import { BoardModelStatus } from "./BoardModelStatus";
 import { MemberOutputStudio } from "./MemberOutputStudio";
 import {
@@ -102,7 +102,7 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
         <ModelCanvas projectId={projectId} path={GLB_PATH} {...(previewModel ? { blob: previewModel.blob } : {})} selectionSource={{ projectId, enabled: scopeReady }} />
       </Suspense>
     ) : automatic.error ? (
-      <LoadError title="Could not prepare the 3D preview" onRetry={() => void automatic.retry()} />
+      <PreviewError error={automatic.error} retry={() => void automatic.retry()} />
     ) : checkingSources || canGenerate ? (
       <EmptyState title="Preparing your board in 3D…"><Spinner /></EmptyState>
     ) : (

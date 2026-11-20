@@ -456,30 +456,31 @@ export class ProjectStore implements ProjectResolver {
   }
 
   async listFiles(dir: string, max = 2000): Promise<FileEntry[]> {
-    const out: FileEntry[] = [];
-    const walk = async (d: string): Promise<void> => {
-      if (out.length >= max) return;
+    const out = new Map<string, FileEntry>();
+    const walk = async (d: string, target: Map<string, FileEntry>): Promise<void> => {
+      if (target.size >= max) return;
       const entries = await readdir(d, { withFileTypes: true }).catch(() => []);
-      for (const e of entries) {
-        if (e.name === "node_modules" || e.name === ".git") continue;
+      // A project's immediate files take precedence over nested output history.
+      for (const e of entries.filter(entry => entry.isFile())) {
         const abs = join(d, e.name);
-        if (e.isDirectory()) {
-          if (e.name === ".fabdesk") continue;
-          await walk(abs);
-        } else if (e.isFile()) {
+        const path = relative(dir, abs).split(sep).join("/");
+        if (target.has(path)) continue;
+        const listed = out.get(path);
+        if (listed) target.set(path, listed);
+        else {
           const st = await stat(abs).catch(() => null);
-          if (st)
-            out.push({
-              path: relative(dir, abs).split(sep).join("/"),
-              size: st.size,
-              mtime: st.mtime.toISOString(),
-            });
+          if (st) target.set(path, { path, size: st.size, mtime: st.mtime.toISOString() });
         }
-        if (out.length >= max) return;
+        if (target.size >= max) return;
+      }
+      for (const e of entries) {
+        if (!e.isDirectory() || [".git", ".fabdesk", "node_modules"].includes(e.name)) continue;
+        await walk(join(d, e.name), target);
+        if (target.size >= max) return;
       }
     };
-    await walk(dir);
-    if (max > 0 && out.length === max) {
+    await walk(dir, out);
+    if (max > 0 && out.size === max) {
       // Board tools share this bounded inventory. Reserve entries for canonical
       // sources and their drawings even if a large vendor directory was visited first.
       const root = await realpath(dir);
@@ -492,12 +493,11 @@ export class ProjectStore implements ProjectResolver {
           }
         } catch { /* The board-source inspector reports invalid manifests. */ }
       }
-      const entries = new Map<string, FileEntry>(out.map(file => [file.path, file]));
       const priority = new Map<string, FileEntry>();
       for (const directory of directories) {
-        for (const name of [PROJECT_FILES.boardPcb, PROJECT_FILES.boardSch, "renders/pcb.svg", "renders/schematic.svg"]) {
+        for (const name of [PROJECT_FILES.boardPcb, PROJECT_FILES.boardSch, "renders/pcb.svg", "renders/schematic.svg", "renders/board.glb", "renders/board-layers.json"]) {
           const path = directory === "." ? name : directory + "/" + name;
-          const listed = entries.get(path);
+          const listed = out.get(path);
           if (listed) { priority.set(path, listed); continue; }
           const absolute = resolve(root, path);
           if (await realpath(absolute).catch(() => null) !== absolute) continue;
@@ -505,10 +505,19 @@ export class ProjectStore implements ProjectResolver {
           if (info?.isFile()) priority.set(path, { path, size: info.size, mtime: info.mtime.toISOString() });
         }
       }
-      const reserved = [...priority.values(), ...out.filter(file => !priority.has(file.path))];
+      // Review, downloads and the library consume this same inventory. Give
+      // owned output folders the remaining slots before unrelated vendor files.
+      for (const directory of directories) {
+        for (const folder of [PROJECT_FILES.renders, PROJECT_FILES.exports]) {
+          if (priority.size >= max) break;
+          const absolute = resolve(root, directory, folder);
+          if (await realpath(absolute).catch(() => null) === absolute) await walk(join(dir, directory, folder), priority);
+        }
+      }
+      const reserved = [...priority.values(), ...Array.from(out.values()).filter(file => !priority.has(file.path))];
       return reserved.slice(0, max).sort((a, b) => a.path.localeCompare(b.path));
     }
-    return out.sort((a, b) => a.path.localeCompare(b.path));
+    return [...out.values()].sort((a, b) => a.path.localeCompare(b.path));
   }
 
   private async readManifest(dir: string): Promise<ProjectManifest | null> {
