@@ -50,6 +50,7 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
   const pendingModels = !layerView && !previews.model.isPlaceholderData && !!previews.model.data?.pendingModels;
   let status = "Saved board · previews ready";
   if (error) status = "Preview needs attention";
+  else if (previews.pcb.error) status = previews.pcb.error.message;
   else if (pendingModels && previews.model.isFetching) status = "Loading component models…";
   else if (pendingModels) status = "Showing available components";
   else if (!enabled) status = "Checking board source…";

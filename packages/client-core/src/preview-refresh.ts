@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 const artifactKinds: Readonly<Record<string, string>> = {
   "board.glb.revision.json": "model",
   "pcb.svg.revision.json": "pcb",
+  "pcb.svg": "pcb",
   "schematic.revision.json": "schematic",
   "board-layers.json": "layers",
 };

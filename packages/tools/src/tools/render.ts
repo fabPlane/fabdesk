@@ -80,6 +80,7 @@ export const render_schematic_svg = defineTool({
   description:
     "Export schematic SVG previews. Single-board projects also receive PNG pixels. Assembly members require expectedHierarchyRevision from schematic_inspect and publish all captured sheets with a source-qualified receipt; maxWidth only affects single-board PNGs.",
   inputSchema: {
+    automaticPreview: z.literal(true).optional().describe("Keep bounded working history for the automatic schematic viewer"),
     expectedHierarchyRevision: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Required for an assembly member: aggregate revision from its saved schematic inspection"),
     circuit: z.boolean().default(false).describe("Working circuit view: omit paper framing and fit actual circuit geometry, preserving native sources and document exports."),
     maxWidth: z.number().int().min(320).max(4096).default(1600),
@@ -91,10 +92,10 @@ export const render_schematic_svg = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async ({ maxWidth, expectedHierarchyRevision, circuit }, ctx) => {
-    if (ctx.board) return renderMemberSchematicPreview(ctx, expectedHierarchyRevision, circuit);
+  handler: async ({ maxWidth, expectedHierarchyRevision, circuit, automaticPreview }, ctx) => {
+    if (ctx.board) return renderMemberSchematicPreview(ctx, expectedHierarchyRevision, circuit, automaticPreview);
     await requireSchematic(ctx.requireProject());
-    return renderRootCircuitPreview(ctx, maxWidth, expectedHierarchyRevision, circuit);
+    return renderRootCircuitPreview(ctx, maxWidth, expectedHierarchyRevision, circuit, automaticPreview);
   },
 });
 

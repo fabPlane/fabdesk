@@ -386,6 +386,15 @@ test("a completed external export refreshes the mounted model even when board in
   } finally { unsubscribe(); qc.clear(); }
 });
 
+test("removing or restoring the drawing refreshes the correct board without a receipt event", () => {
+  const qc = new QueryClient();
+  const keys = ["boards/io", "boards/power"].map(dir => ["live-preview", "p", "endpoint", dir, "id", "manifest", "pcb", "source"]);
+  for (const key of keys) qc.setQueryData(key, "drawing");
+  handleCoreEvent({ topic: "project.changed", projectId: "p", paths: ["boards/io/renders/pcb.svg"], ts: 1 }, { qc, client: {} as CoreClient });
+  expect(keys.map(key => qc.getQueryState(key)?.isInvalidated)).toEqual([true, false]);
+  qc.clear();
+});
+
 test("an export's own receipt event does not cancel or restart its in-flight preview", async () => {
   const qc = new QueryClient(), key = ["live-preview", "p", "endpoint", ".", "root", "", "model", "same-source"];
   qc.setQueryData(key, "old-model");

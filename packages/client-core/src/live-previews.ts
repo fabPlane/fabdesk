@@ -108,7 +108,7 @@ export function useLivePreview(kind: PreviewKind, { projectId, directory = ".", 
         if (kind === "schematic") {
           let saved = board ? await inspectAssemblySchematicPreview(client, projectId, board) : await inspectRootSchematicPreview(client, projectId);
           if (saved.state !== "source-unchanged" || !saved.svg?.includes('data-fabplane-schematic-view="circuit')) {
-            const extra: Record<string, unknown> = { circuit: true };
+            const extra: Record<string, unknown> = { circuit: true, automaticPreview: true };
             if (board) {
               const inspection = captureAssemblySchematicInspection(await runPreviewTool(client, "schematic_inspect", { ...args, detail: "summary" }), projectId, board);
               if (!inspection.hierarchy.complete) throw new Error("A referenced schematic sheet is missing. Restore it to prepare the preview.");
@@ -120,7 +120,14 @@ export function useLivePreview(kind: PreviewKind, { projectId, directory = ".", 
           if (saved.state !== "source-unchanged" || !saved.svg) throw new Error("Schematic changed while preparing its preview.");
           result = { svg: saved.svg, sheets: saved.sheets };
         } else if (kind === "pcb") {
-          if (await inspectPcbPreviewRevision(client, projectId, directory, hash) !== "matches-source") await run("render_pcb_svg", { expectedSourceSha256: hash });
+          const state = await inspectPcbPreviewRevision(client, projectId, directory, hash);
+          if (state === "missing-artifact") {
+            const trash = await client.listOutputTrash(projectId);
+            if (trash.files.some(file => file.path === prefix + "renders/pcb.svg")) {
+              throw new Error("PCB drawing is in Trash. Restore it from Outputs.");
+            }
+          }
+          if (state !== "matches-source") await run("render_pcb_svg", { expectedSourceSha256: hash });
           result = { svg: await client.readFile(projectId, prefix + "renders/pcb.svg") };
         } else if (kind === "layers") {
           let saved = await readBoardLayers(client, projectId, prefix + BOARD_LAYERS_PATH, hash!);
