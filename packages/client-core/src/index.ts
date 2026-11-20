@@ -114,6 +114,7 @@ export type { ToolKind, ToolRunState } from "./tools";
 export { groupThreadsByProject, sidebarSections, searchProjectGroups } from "./group-threads";
 export type { ProjectThreadGroup, ProjectThreadGroupKind } from "./group-threads";
 export { pickerModelChoices, agentModelLabel } from "./agent-model-choices";
+export { codexCacheGuidance, CODEX_CACHE_ISSUE_URL, CODEX_INSTRUCTION_INPUT_RELEASE_URL } from "./codex-cache-guidance";
 
 export * from "./queries";
 export * from "./route-review";
