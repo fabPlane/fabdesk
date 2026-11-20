@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -147,6 +148,38 @@ describe("adoptCandidate", () => {
     await expect(adoptCandidate(await ctx(), { candidate, board: "board.kicad_pcb", reason: "hole" })).rejects.toThrow(/Parts.pretty\/FIT_P2.kicad_mod changed in the project/);
   });
 
+  test("a board in a subfolder: its edited sheet goes back beside it, not to the project root", async () => {
+    const { project, ctx } = await setup();
+    await mkdir(join(project.dir, "hw"), { recursive: true });
+    await writeFile(join(project.dir, "hw", "panel.kicad_pcb"), "(kicad_pcb)");
+    await writeFile(join(project.dir, "hw", "panel.kicad_sch"), "original sheet");
+    const dir = await mkdtemp(join(tmpdir(), "cand-"));
+    const candidate = join(dir, "c.kicad_pcb");
+    await writeFile(candidate, "(kicad_pcb edited)");
+    await writeFile(join(dir, "panel.kicad_sch"), "edited sheet");
+    await writeFile(join(dir, "origin.json"), JSON.stringify({ project: project.dir, files: await designFileHashes(project.dir, { pcb: "hw/panel.kicad_pcb" }) }));
+    const r = await adoptCandidate(await ctx(), { candidate, board: "hw/panel.kicad_pcb", reason: "edit" });
+    expect(r.data.designFiles).toEqual([join("hw", "panel.kicad_sch")]);
+    expect(await readFile(join(project.dir, "hw", "panel.kicad_sch"), "utf8")).toBe("edited sheet");
+    expect(existsSync(join(project.dir, "panel.kicad_sch"))).toBe(false);
+  });
+
+  test("a board two folders deep in a mirrored candidate: origin.json at its root still guards adoption", async () => {
+    const { project, ctx } = await setup();
+    await mkdir(join(project.dir, "hw", "a"), { recursive: true });
+    await writeFile(join(project.dir, "hw", "a", "panel.kicad_pcb"), "(kicad_pcb)");
+    await writeFile(join(project.dir, "hw", "a", "panel.kicad_sch"), "original sheet");
+    const root = await mkdtemp(join(tmpdir(), "cand-"));
+    await mkdir(join(root, "hw", "a"), { recursive: true });
+    const candidate = join(root, "hw", "a", "panel.kicad_pcb");
+    await writeFile(candidate, "(kicad_pcb edited)");
+    await writeFile(join(root, "hw", "a", "panel.kicad_sch"), "edited sheet");
+    await writeFile(join(root, "origin.json"), JSON.stringify({ project: project.dir, files: await designFileHashes(project.dir, { pcb: "hw/a/panel.kicad_pcb" }) }));
+    // the project's sheet moved on since the candidate was computed: refused
+    await writeFile(join(project.dir, "hw", "a", "panel.kicad_sch"), "someone else's sheet");
+    await expect(adoptCandidate(await ctx(), { candidate, board: "hw/a/panel.kicad_pcb", reason: "edit" })).rejects.toThrow(/changed in the project since/);
+  });
+
   test("carries changed schematic sheets, keeps the previous copy, and refuses when the project moved on", async () => {
     const { project, ctx } = await setup();
     await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb)");
@@ -206,6 +239,31 @@ describe("adoptCandidate", () => {
       expect(seen).toHaveLength(0);
       expect(await readFile(join(project.dir, ".fabdesk/board/requirements", name), "utf8")).toBe("newer requirement");
       expect(await readFile(join(project.dir, "board.kicad_sch"), "utf8")).toBe("original sheet");
+    }
+  });
+
+  test("an unrelated nested KiCad file does not block adoption; a referenced sheet or project library does", async () => {
+    for (const changed of ["archive/rev-a/board.kicad_sch", "sheets/power.kicad_sch", "lib/Parts.pretty/R.kicad_mod"]) {
+      const { project, ctx, seen } = await setup();
+      const put = async (rel: string, text: string) => (await mkdir(join(project.dir, rel, ".."), { recursive: true }), writeFile(join(project.dir, rel), text));
+      await put("board.kicad_pcb", "(kicad_pcb)");
+      await put("board.kicad_sch", `(kicad_sch (sheet (property "Sheetfile" "sheets/power.kicad_sch")))`);
+      await put("sheets/power.kicad_sch", "(kicad_sch power)");
+      await put("fp-lib-table", `(fp_lib_table (lib (name "Parts")(type "KiCad")(uri "\${KIPRJMOD}/lib/Parts.pretty")(options "")(descr "")))`);
+      await put("lib/Parts.pretty/R.kicad_mod", "(footprint R)");
+      await put("archive/rev-a/board.kicad_sch", "(kicad_sch old)");
+      const dir = await mkdtemp(join(tmpdir(), "cand-"));
+      await writeFile(join(dir, "c.kicad_pcb"), "(kicad_pcb edited)");
+      await writeFile(join(dir, "origin.json"), JSON.stringify({ project: project.dir, files: await designFileHashes(project.dir) }));
+      await put(changed, "(changed meanwhile)");
+      const run = adoptCandidate(await ctx(), { candidate: join(dir, "c.kicad_pcb"), board: "board.kicad_pcb", reason: "nested" });
+      if (changed.startsWith("archive/")) {
+        await run;
+        expect(seen).toHaveLength(1);
+      } else {
+        await expect(run).rejects.toThrow(new RegExp(`${changed.replaceAll(".", "\\.")} changed in the project since`));
+        expect(seen).toHaveLength(0);
+      }
     }
   });
 

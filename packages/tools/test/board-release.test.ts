@@ -113,6 +113,22 @@ describe("board_release", () => {
     expect((await call("board_release", { action: "check" })).json.ready).toBe(false);
   });
 
+  test("check itemizes the current review's informational findings (capped text, full list in the data)", async () => {
+    const { project, call } = await setup();
+    const { currentReviewHash, setLatest } = await import("@fabdesk/board-workflow");
+    const note = (i: number) => ({ id: `L1:DRC:R${i}:-`, check: "drc", layer: "L1", rule: "DRC", severity: "note", claim: `silk over pad ${i}`, ref: `R${i}`, pad: "", net: "", key: "", evidence: [], suggest: "", proposal: null });
+    const run = join(project.dir, ".fabdesk/board/review/runs/r1");
+    await mkdir(run, { recursive: true });
+    await writeFile(join(run, "review.json"), JSON.stringify({ hash: await currentReviewHash(project.dir), pcb: "board.kicad_pcb", checks: [], findings: Array.from({ length: 23 }, (_, i) => note(i + 1)) }));
+    await setLatest(project.dir, "r1");
+    const r = await call("board_release", { action: "check" });
+    expect(r.text).toContain("  Informational, not blocking (23):");
+    expect(r.text).toContain("    - DRC: silk over pad 1 (R1) [L1:DRC:R1:-]");
+    expect(r.text).not.toContain("silk over pad 21 ");
+    expect(r.text).toContain("... 3 more");
+    expect(r.json.review.informational).toHaveLength(23);
+  });
+
   test("vias lists the vias that need fill+cap; apply writes the attributes through adopt and checks again", async () => {
     // a through via in R1's pad 2 (board 10,9.5 at rot 90) and one in the open
     const vias = `(via (at 10 9.5) (size 0.4) (drill 0.2) (layers "F.Cu" "B.Cu") (net "A") (uuid "v1"))

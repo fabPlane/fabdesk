@@ -75,7 +75,7 @@ async function run(a: Args, ctx: ToolContext): Promise<ToolOutput> {
       return ok(`dry run: ${r.placed}/${r.wanted} placed; ${r.fit_nowhere} fit nowhere; blockers of those: ${counts(r.blockers)}`, r);
     }
     const out = join(work, "candidate");
-    const origin = await designFileHashes(project.dir);
+    const origin = await designFileHashes(project.dir, { pcb: files.pcb });
     const r = await silk.silkPlace({ pcb: files.pcb, out, plan, cli, pictures: a.pictures, signal: ctx.signal, log: (s) => ctx.progress(0.5, s) });
     await writeFile(join(out, "origin.json"), JSON.stringify({ project: project.dir, files: origin }) + "\n");
     const text = [

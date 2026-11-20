@@ -6,12 +6,12 @@
  * `adoptCandidate` reads to write it into the project.
  */
 import { createHash } from "node:crypto";
-import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { AcceptRun } from "../history";
 import { figures } from "../accept";
 import { acceptDir, type AcceptIndexEntry } from "../history";
-import { BOARD_DIR, designHash, exists, readJson, writeJsonFile } from "../files";
+import { BOARD_DIR, designHash, exists, isInside, readJson, sheetRefs, writeJsonFile } from "../files";
 import type { Comparison } from "../history";
 import { applyEdit, type ApplyLog, type Scored } from "./apply";
 import { churn, diffBoards, revertNets, type BoardDiff, type Churn } from "./diff";
@@ -89,18 +89,92 @@ export interface ComparisonView {
 
 const DESIGN_FILE = /\.(kicad_pcb|kicad_sch|kicad_sym|kicad_mod|kicad_pro|kicad_dru)$|^(sym|fp)-lib-table$/;
 
-/** Source revision and adoptable design/requirement files (project-relative paths). */
-export async function designFileHashes(dir: string): Promise<Record<string, string>> {
+const scratchName = (name: string) => name.startsWith(".") || name.startsWith("_autosave") || name.startsWith("~");
+
+/**
+ * Library paths a `fp-lib-table` / `sym-lib-table` names, resolved against `root` (the table's project folder): a
+ * `${KIPRJMOD}` path, a relative path, or an absolute path. Paths through other variables (`${KICAD9_FOOTPRINT_DIR}`) and
+ * URLs are system libraries, not project inputs; the caller keeps only paths inside the project.
+ */
+export function projectLibraryPaths(table: string, root: string): string[] {
+  const out: string[] = [];
+  for (const m of table.matchAll(/\(uri\s+(?:"((?:[^"\\]|\\.)*)"|([^\s)]+))\s*\)/g)) {
+    const uri = (m[1] ?? m[2] ?? "").replace(/\\(.)/g, "$1").trim();
+    if (!uri) continue;
+    const rest = /^\$(?:\{KIPRJMOD\}|\(KIPRJMOD\))(.*)$/.exec(uri)?.[1];
+    if (rest !== undefined) {
+      if (!/\$[({]/.test(rest)) out.push(resolve(root, `.${rest.replaceAll("\\", "/")}`));
+      continue;
+    }
+    if (/\$[({]/.test(uri) || /^[a-z][a-z0-9+.-]*:\/\//i.test(uri)) continue; // another variable, or a URL
+    const drive = /^[a-z]:[\\/]/i.test(uri);
+    if (drive && process.platform !== "win32") continue; // a Windows path in a table read on another OS: not here
+    out.push(isAbsolute(uri) || drive ? resolve(uri) : resolve(root, uri.replaceAll("\\", "/")));
+  }
+  return out;
+}
+
+/**
+ * Source revision and adoptable design/requirement files (project-relative paths -> sha256). Only the project's own
+ * design inputs: the KiCad files in the project folder (and in the board's folder when `opts.pcb` lies below it), every
+ * schematic sheet those schematics reference (followed sheet to sheet, inside the project), the files of each
+ * `${KIPRJMOD}` library in the project's `fp-lib-table` / `sym-lib-table`, and the requirements folder. Other KiCad files
+ * deeper in the tree (an archived revision, a vendored library repository) are not inputs: they neither block adoption
+ * nor slow the walk. KiCad autosave and lock files are skipped.
+ */
+export async function designFileHashes(dir: string, opts: { pcb?: string } = {}): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
-  const native = async (rel = ""): Promise<void> => {
-    for (const entry of await readdir(join(dir,rel), { withFileTypes: true }).catch(() => [])) {
-      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-      const name = join(rel,entry.name);
-      if (entry.isDirectory()) await native(name);
-      else if (entry.isFile() && DESIGN_FILE.test(entry.name)) out[name] = createHash("sha256").update(await readFile(join(dir,name))).digest("hex");
+  const top = resolve(dir);
+  const seen = new Set<string>();
+  const hash = async (abs: string): Promise<boolean> => {
+    if (seen.has(abs) || !isInside(top, abs)) return false;
+    const bytes = await readFile(abs).catch(() => null);
+    if (!bytes) return false;
+    seen.add(abs);
+    out[relative(top, abs)] = createHash("sha256").update(bytes).digest("hex");
+    return true;
+  };
+  const roots = [top];
+  if (opts.pcb) {
+    const boardDir = dirname(resolve(top, opts.pcb));
+    if (boardDir !== top && isInside(top, boardDir)) roots.push(boardDir);
+  }
+  const sheets: string[] = [];
+  const libraries: string[] = [];
+  for (const root of roots) {
+    for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) {
+      if (!entry.isFile() || scratchName(entry.name) || !DESIGN_FILE.test(entry.name)) continue;
+      const abs = join(root, entry.name);
+      if (!(await hash(abs))) continue;
+      if (entry.name.endsWith(".kicad_sch")) sheets.push(abs);
+      if (entry.name.endsWith("-lib-table")) libraries.push(...projectLibraryPaths(await readFile(abs, "utf8").catch(() => ""), root));
+    }
+  }
+  // the sheets the schematics reference, however deep (inside the project)
+  while (sheets.length) {
+    const sheet = sheets.shift()!;
+    const text = await readFile(sheet, "utf8").catch(() => null);
+    if (text === null) continue;
+    for (const ref of sheetRefs(text)) {
+      const abs = resolve(dirname(sheet), ref.replaceAll("\\", "/"));
+      if (abs.endsWith(".kicad_sch") && (await hash(abs))) sheets.push(abs);
+    }
+  }
+  // the project's own libraries: a folder (`.pretty`, a folder of `.kicad_sym`) walked, a library file hashed
+  const walk = async (abs: string): Promise<void> => {
+    if (!isInside(top, abs)) return;
+    const info = await stat(abs).catch(() => null);
+    if (info?.isFile()) {
+      if (DESIGN_FILE.test(basename(abs))) await hash(abs);
+      return;
+    }
+    if (!info?.isDirectory()) return;
+    for (const entry of await readdir(abs, { withFileTypes: true }).catch(() => [])) {
+      if (scratchName(entry.name) || entry.name === "node_modules") continue;
+      if (entry.isDirectory() || (entry.isFile() && DESIGN_FILE.test(entry.name))) await walk(join(abs, entry.name));
     }
   };
-  await native();
+  for (const lib of libraries) await walk(lib);
   const requirements = async (rel: string): Promise<void> => {
     for (const entry of await readdir(join(dir, rel), { withFileTypes: true }).catch(() => [])) {
       const name = join(rel, entry.name);
@@ -205,7 +279,7 @@ export async function runEdit(input0: EditRunInput): Promise<EditRunResult> {
   t = Date.now();
   say(0.15, "scoring the unedited project, then applying the edit");
   let applied: Awaited<ReturnType<typeof applyEdit>>;
-  const projectHashes = await designFileHashes(env.projectDir);
+  const projectHashes = await designFileHashes(env.projectDir, { pcb: env.pcbName });
   projectHashes[env.pcbName] = createHash("sha256").update(env.pcbText).digest("hex");
   try {
     applied = await applyEdit(plan, env, out, { score: async (d) => (await input.runners.accept(d, env.pcbName)).result, beforeScored: async (d) => (await applyProjectRules(d, env.pcbName), beforeScore(env, d, input.runners)) });

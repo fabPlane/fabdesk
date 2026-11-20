@@ -15,7 +15,7 @@
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { z } from "zod/v4";
-import { applyProjectRules, CHECK_KEYS, locateProject, openReviewProject, readRequirements, release, reviewGate, runAcceptance, type AcceptRun } from "@fabdesk/board-workflow";
+import { applyProjectRules, CHECK_KEYS, informationalLines, locateProject, openReviewProject, readRequirements, release, reviewGate, reviewInformational, runAcceptance, type AcceptRun, type InfoItem } from "@fabdesk/board-workflow";
 import { runDurable } from "../durable";
 import { jailPath } from "../fs";
 import { boardMemGiB, governor } from "../resources";
@@ -31,6 +31,19 @@ type InterconnectGate = (input: { projectDir: string }) => Promise<{ pass: boole
 let interconnectGate: InterconnectGate | null = null;
 export function setInterconnectGate(g: InterconnectGate | null): void {
   interconnectGate = g;
+}
+
+/**
+ * The current review's informational (note) findings for this board: never blocking, but a summary lists them rather
+ * than hiding them in a count. Empty when there is no current review (or it cannot be opened).
+ */
+async function informationalOf(projectDir: string, pcb: string): Promise<InfoItem[]> {
+  // the notes only annotate a result; failing to read them never fails the release that is already written
+  try {
+    return (await reviewInformational(await openReviewProject(projectDir, pcb))) ?? [];
+  } catch {
+    return [];
+  }
 }
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
@@ -220,6 +233,7 @@ async function checkAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
     readLastFab(project.dir),
   ]);
   const ic = interconnectGate ? await interconnectGate({ projectDir: project.dir }) : { pass: true, text: "none (standalone project)" };
+  const info = await informationalOf(project.dir, files.pcb);
   const accText = acc.state === "none" ? "not measured: board_check" : acc.state === "stale" ? "measured on an earlier board: board_check" : acc.pass ? "A1-A9 pass" : `failing ${acc.failing.join(", ")}`;
   const gateText = gate.state === "pass" ? "passes" : gate.state === "none" ? "not run" : gate.state === "stale" ? "stale (the design changed since: board_review run)" : gate.state === "errors" ? "check errors" : `${gate.open ?? "?"} findings open (${gate.mustFix ?? 0} must-fix)`;
   let bomReady = false;
@@ -236,13 +250,14 @@ async function checkAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
     `Release readiness for ${files.stem}:`,
     `1 interconnect gate: ${ic.pass ? "passes" : "STOP"} (${ic.text})`,
     `2 review gate: ${gateText}`,
+    ...informationalLines(info, undefined, "  "),
     `3 acceptance: ${accText}`,
     `4 via-in-pad / microvia bindings: ${vias.record.counts.require_fill_cap} need fill+cap, ${vias.missing.length} missing natively`,
     a.assembly ? `BOM / JLC rotations: ${bomText}` : `BOM / JLC rotations: not required (bare-board order, assembly: false)`,
     last ? `Last package: ${relative(project.dir, last.out)} (${last.boardSha256 === (await sha256Of(files.pcb)) ? "of this board" : "of an earlier board"})` : "No package built yet.",
   ].join("\n");
   const ready = ic.pass && gate.state === "pass" && acc.pass && !vias.missing.length && (bomReady || !a.assembly);
-  return ok(text, { ready, interconnect: ic, review: gate, acceptance: { state: acc.state, failing: acc.failing, pass: acc.pass }, vias: { ...vias.record.counts }, bom: { state: bom.state, ...(bom.meta ? { summary: bom.meta.summary } : {}) } });
+  return ok(text, { ready, interconnect: ic, review: { ...gate, informational: info },acceptance: { state: acc.state, failing: acc.failing, pass: acc.pass }, vias: { ...vias.record.counts }, bom: { state: bom.state, ...(bom.meta ? { summary: bom.meta.summary } : {}) } });
 }
 
 async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
@@ -302,14 +317,16 @@ async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
     const man = r.manifest as { jlc?: { bom_lines?: number; placements?: number; placement_check?: { pass: number; fail: number; placements: number; no_jlc_footprint: string[] }; no_lcsc_code?: string[]; rotation_differs_from_kicad?: unknown[]; skipped?: string }; reproducible: { files: number }; gerbcheck: { pass: boolean }; files: Record<string, string> };
     await writeLastFab(project.dir, { at: new Date().toISOString(), out, boardSha256: (await sha256Of(files.pcb)) ?? "", manifestSha256: (await sha256Of(join(out, "manifest.json"))) ?? "" });
     const j = man.jlc;
+    const info = await informationalOf(project.dir, files.pcb);
     const text = [
       `RELEASED: fabrication package ${relative(project.dir, out)} (${Object.keys(man.files).length} files)`,
       ...r.gates.map((g) => `gate ok: ${g}`),
+      ...informationalLines(info),
       `CAM exported twice: ${man.reproducible.files} files identical after the date lines; Gerber render check passes`,
       j?.skipped ? `JLC files: ${j.skipped}` : `JLC BOM ${j?.bom_lines} lines / CPL ${j?.placements} placements; rotation differs from KiCad on ${j?.rotation_differs_from_kicad?.length ?? 0}; placement check ${j?.placement_check?.pass}/${j?.placement_check?.placements} pass (${j?.placement_check?.no_jlc_footprint.length ?? 0} without JLC footprint); no LCSC code: ${j?.no_lcsc_code?.join(", ") || "none"}`,
       `manifest.json holds the hashes of every file, the board and schematic hashes and the gate records.`,
     ].join("\n");
-    return ok(text, { released: true, out, manifest: r.manifest });
+    return ok(text, { released: true, out, manifest: r.manifest, informational: info });
   } catch (e) {
     if (e instanceof release.ReleaseStop) return ok(`NOT RELEASED (${e.gate}): ${e.message}`, { released: false, gate: e.gate, reason: e.message, ...(e.detail !== undefined ? { detail: e.detail } : {}) });
     throw e;

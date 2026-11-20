@@ -27,6 +27,8 @@ export interface BomRecord {
   owner?: unknown[];
   evidence?: string[];
   checks?: { datasheet?: string; description?: string };
+  /** Test pad / solder jumper copper with nothing to buy, as the BOM check decided it (no CPL row). */
+  copper_only?: boolean;
 }
 
 /** The release stage's BOM decisions (bomcheck's `bom-decisions.json`), as the review reads them. */

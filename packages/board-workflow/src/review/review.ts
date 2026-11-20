@@ -297,13 +297,15 @@ export interface StatusResult {
   open: number;
   errors: number;
   mustFix: number;
+  /** Every informational (note) finding of the latest review. */
+  informational: InfoItem[];
 }
 
 export async function reviewStatus(project: ReviewProject): Promise<StatusResult> {
   const cur = await loadCurrent(project);
-  if (!cur.review) return { state: cur.state, run: cur.run, findings: 0, open: 0, errors: 0, mustFix: 0 };
+  if (!cur.review) return { state: cur.state, run: cur.run, findings: 0, open: 0, errors: 0, mustFix: 0, informational: [] };
   const ev = evaluate(cur.review, await readDispositions(project.dir), await readIntent(project.dir));
-  return { state: cur.state, run: cur.run, findings: cur.review.findings.length, open: ev.open.length, errors: ev.errors.length, mustFix: ev.open.filter((r) => r.severity === "must-fix").length };
+  return { state: cur.state, run: cur.run, findings: cur.review.findings.length, open: ev.open.length, errors: ev.errors.length, mustFix: ev.open.filter((r) => r.severity === "must-fix").length, informational: informational(ev) };
 }
 
 export interface GateResult {
@@ -319,7 +321,47 @@ export interface GateResult {
   classified?: { auto: string[]; candidate: string[]; task: string[]; owner: string[] };
   /** The project's own (custom) checks the review did not run because they were not trusted. */
   notRun?: number;
+  /** Every informational (note) finding of the current review; the text lists the first `INFO_TEXT_CAP`. */
+  informational?: InfoItem[];
   evidence?: { checks: Array<{ name: string; status: string }>; dispositions: Array<{ id: string; state: string; by: string; reason: string }>; independentReview: "completed" | "deferred" | "missing" };
+}
+
+/** An informational finding (severity note: it never blocks), itemized in the gate, review and release summaries. */
+export interface InfoItem {
+  id: string;
+  check: string;
+  rule: string;
+  claim: string;
+  /** Part, pad and net it names, or null when it names none. */
+  location: string | null;
+}
+
+/** Informational items listed in a summary's text; the structured result carries all of them. */
+export const INFO_TEXT_CAP = 20;
+
+/** The informational (note) findings of an evaluated review, in review order. */
+export function informational(ev: Pick<Evaluation, "rows">): InfoItem[] {
+  return ev.rows
+    .filter((r) => r.severity === "note")
+    .map((r) => {
+      const at = [r.ref && (r.pad ? `${r.ref} pad ${r.pad}` : r.ref), r.net && `net ${r.net}`].filter(Boolean).join(", ");
+      return { id: r.id, check: r.check, rule: r.rule, claim: r.claim, location: at || null };
+    });
+}
+
+/** Text lines for informational items: the first `cap`, then how many more (and where the full list is). */
+export function informationalLines(items: readonly InfoItem[], cap = INFO_TEXT_CAP, indent = ""): string[] {
+  if (!items.length) return [];
+  const shown = items.slice(0, cap).map((i) => `${indent}  - ${i.rule}: ${i.claim}${i.location ? ` (${i.location})` : ""} [${i.id}]`);
+  const more = items.length > cap ? [`${indent}  ... ${items.length - cap} more (full list in the structured result and review.md)`] : [];
+  return [`${indent}Informational, not blocking (${items.length}):`, ...shown, ...more];
+}
+
+/** The current review's informational items, or null when there is no current review of this design. */
+export async function reviewInformational(project: ReviewProject): Promise<InfoItem[] | null> {
+  const cur = await loadCurrent(project);
+  if (cur.state !== "current" || !cur.review) return null;
+  return informational(evaluate(cur.review, await readDispositions(project.dir), await readIntent(project.dir)));
 }
 
 /** Owner checks a review skipped for want of `trustCustom`: said in the gate output, never silent. */
@@ -341,8 +383,9 @@ export async function reviewGate(project: ReviewProject): Promise<GateResult> {
   const independentRows = ev.rows.filter(r => r.layer === "L8");
   const independentReview = cur.review.checks.some(c => c.name === "expert" && c.status === "ok") ? "completed" as const : independentRows.some(r => r.disposition?.state === "defer") ? "deferred" as const : "missing" as const;
   const evidence = { checks: cur.review.checks.map(c => ({ name: c.name, status: c.status })), dispositions, independentReview };
-  const nr = { ...(notRun ? { notRun } : {}), evidence };
-  const nrLines = [...(notRun ? [notRunLine(notRun)] : []), `Independent review: ${independentReview}.`, ...dispositions.map(d => `${d.id}: ${d.state} by ${d.by}: ${d.reason}`)];
+  const info = informational(ev);
+  const nr = { ...(notRun ? { notRun } : {}), informational: info, evidence };
+  const nrLines = [...(notRun ? [notRunLine(notRun)] : []), `Independent review: ${independentReview}.`, ...dispositions.map(d => `${d.id}: ${d.state} by ${d.by}: ${d.reason}`), ...informationalLines(info)];
   if (ev.errors.length)
     return { ...nr, exit: GATE_ERROR, state: "errors", current: true, open: ev.open.length, mustFix: ev.open.filter((r) => r.severity === "must-fix").length, errors: true, lines: ["REVIEW GATE: BLOCKED (check errors)", ...ev.errors.map((c) => `- ${c.name}: ${c.detail}`), ...nrLines] };
   if (ev.open.length) {
