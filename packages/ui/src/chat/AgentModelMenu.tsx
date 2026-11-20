@@ -6,6 +6,7 @@ import { AgentLogo } from "../components/AgentLogo";
 import { Icon } from "../components/Icon";
 import { modelDisplayName } from "./model-display-name";
 import { EffortSection, type EffortSectionProps } from "./EffortSection";
+import { CodexCacheNotice } from "./CodexCacheNotice";
 
 export interface AgentModelMenuProps {
   open: boolean;
@@ -28,7 +29,8 @@ export interface AgentModelMenuProps {
 export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, model, defaultModel, configuredModels, onSelect, onOpenSettings, effort }: AgentModelMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState<AgentId | "effort" | null>(null);
-  useEffect(() => { if (!open) setExpanded(null); }, [open]);
+  const [focusedChoice, setFocusedChoice] = useState<{ agentId: AgentId; model: string } | null>(null);
+  useEffect(() => { if (!open) { setExpanded(null); setFocusedChoice(null); } }, [open]);
   const [position, setPosition] = useState({ left: 8, top: 8, maxHeight: 300 });
   useLayoutEffect(() => {
     if (!open) return;
@@ -49,7 +51,7 @@ export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, mode
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, anchorRef, expanded, agents, agentId, model, effort.levels, effort.saving]);
+  }, [open, anchorRef, expanded, agents, agentId, model, focusedChoice, effort.levels, effort.saving]);
   useEffect(() => {
     if (!open) return;
     ref.current?.querySelector<HTMLElement>(`[data-agent="${agentId}"]`)?.focus();
@@ -93,7 +95,8 @@ export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, mode
   const ordered = [...agents].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
 
   return createPortal(
-    <div ref={ref} role="menu" aria-label="Agent and model" style={position} className="fd-elevated fixed z-40 w-[310px] max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border border-border bg-panel p-1.5 font-sans" data-testid="agent-model-menu">
+    <div ref={ref} role="menu" aria-label="Agent and model" style={position} className="fd-elevated fixed z-40 w-[310px] max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border border-border bg-panel p-1.5 font-sans" data-testid="agent-model-menu"
+      onFocusCapture={event => { if (!(event.target as Element).closest("[data-codex-cache-notice]")) setFocusedChoice(null); }}>
       <div className="px-2.5 py-2 text-xs text-muted">Agent &amp; model</div>
       {ordered.map((agent) => {
         const isOpen = expanded === agent.id;
@@ -116,10 +119,10 @@ export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, mode
             <Icon name={isOpen ? "chevronDown" : "chevronRight"} className="shrink-0 text-muted" width={15} height={15} />
           </button>
           {isOpen && <div id={`agent-models-${agent.id}`} role="group" aria-label={`${agent.displayName} models`} className="mb-1 ml-3 border-l border-border pl-2">
-            <Item selected={selected && (!model || model === fallback)} onClick={() => choose(agent.id, fallback)} title={defaultLabel || "Use the agent's default model"}>
+            <Item selected={selected && (!model || model === fallback)} onClick={() => choose(agent.id, fallback)} onFocus={() => setFocusedChoice({ agentId: agent.id, model: defaultLabel })} title={defaultLabel || "Use the agent's default model"}>
               <span className="min-w-0"><span className="block truncate">{defaultLabel ? modelDisplayName(defaultLabel, agent.modelAliases) : "Agent setting"}</span><span className="block text-[11px] font-normal text-muted">{defaultLabel ? "Default" : "Model not reported; choose one below"}</span></span>
             </Item>
-            {choices.filter((id) => id !== fallback).map((id) => <Item key={id} selected={selected && model === id} onClick={() => choose(agent.id, id)} title={agent.modelAliases?.[id] ?? id}>
+            {choices.filter((id) => id !== fallback).map((id) => <Item key={id} selected={selected && model === id} onClick={() => choose(agent.id, id)} onFocus={() => setFocusedChoice({ agentId: agent.id, model: id })} title={agent.modelAliases?.[id] ?? id}>
               <span className="min-w-0"><span className="block truncate">{modelDisplayName(id, agent.modelAliases)}</span>
                 {/^(fable|opus|sonnet|haiku)(\[1m\])?$/.test(id) && !agent.modelAliases?.[id] && <span className="block text-[11px] font-normal text-muted">Version not reported by agent</span>}
               </span>
@@ -127,6 +130,7 @@ export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, mode
           </div>}
         </div>;
       })}
+      {focusedChoice && <CodexCacheNotice agent={agents.find(agent => agent.id === focusedChoice.agentId)} model={focusedChoice.model} inMenu />}
       <EffortSection {...effort} open={expanded === "effort"} onToggle={(next) => setExpanded(next ? "effort" : null)} />
       <div className="mt-1 border-t border-border pt-1">
         <Item onClick={() => { onClose(); onOpenSettings(); }}><Icon name="settings" width={15} height={15} /><span className="text-muted">Model settings</span></Item>
@@ -135,7 +139,7 @@ export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, mode
   );
 }
 
-function Item({ selected, onClick, title, children }: { selected?: boolean; onClick: () => void; title?: string; children: ReactNode }) {
+function Item({ selected, onClick, onFocus, title, children }: { selected?: boolean; onClick: () => void; onFocus?: () => void; title?: string; children: ReactNode }) {
   return (
     <button
       type="button"
@@ -147,6 +151,7 @@ function Item({ selected, onClick, title, children }: { selected?: boolean; onCl
         selected ? "bg-panel-2 text-fg" : "text-fg",
       )}
       onClick={onClick}
+      onFocus={onFocus}
     >
       {children}
       {selected && <Icon name="check" className="ml-auto shrink-0 text-accent" width={16} height={16} />}

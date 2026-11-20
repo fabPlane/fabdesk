@@ -17,6 +17,7 @@ import { basename, mimeFromPath, modKey } from "../util";
 import { AgentLogo } from "../components/AgentLogo";
 import { reasoningEffortLabel } from "./EffortSection";
 import { AgentModelMenu } from "./AgentModelMenu";
+import { CodexCacheNotice } from "./CodexCacheNotice";
 import { PermissionsMenu } from "./PermissionsMenu";
 import { expandSlashCommand, isFinishItCommand, slashSuggestions } from "@fabdesk/client-core";
 import { applyComposerTextareaHeight } from "./composer-autosize";
@@ -563,6 +564,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
             </div>
           </div>
         </div>
+        {!loadingThread && <CodexCacheNotice agent={selectedAgent} model={displayedModel} />}
         {!loadingThread && agentMissing && selectedAgent && (
           <details className="fd-setup-notice mt-2 rounded-lg border border-warning/25 bg-warning/5 text-xs leading-5 text-warning">
             <summary className="flex cursor-pointer items-center gap-2 px-3 py-2">

@@ -75,6 +75,14 @@ describe("detectBinary", () => {
       installed: true, path,
     });
   });
+
+  test("version metadata belongs to the configured executable, not the Codex on PATH", async () => {
+    const onPath = fakeBinary("codex");
+    const configured = fakeBinary("codex-custom");
+    const args = ["-e", 'console.log(process.execPath.includes("codex-custom") ? "codex-cli 0.154.0" : "codex-cli 0.171.0")'];
+    expect(await detectBinary(["codex"], configured, args)).toEqual({ installed: true, path: configured, version: "0.154.0" });
+    expect(await detectBinary(["codex"], undefined, args)).toEqual({ installed: true, path: onPath, version: "0.171.0" });
+  });
 });
 
 describe("detectAgents", () => {
