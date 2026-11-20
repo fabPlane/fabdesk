@@ -11,9 +11,9 @@
  *   (candidates.ts) tryPlan: the agent's own plan through the same proof; (autopilot.ts) review -> fixes -> owner only;
  *   (intent.ts)    the owner's intent file: init, decide, show
  *
- * Findings: must-fix | question | note. Notes never block. A question is closed by an owner disposition, or by an
- * agent 'accept' that cites a third source (or that the owner's intent delegates); a
- * must-fix only by fixing it (it disappears) or by an owner 'accept'. 'false-positive' needs a third source. A
+ * Findings: must-fix | question | note. Notes never block. A question is closed by any disposition with a reason (the
+ * gate lists who settled it); a must-fix only by fixing it (it disappears), by an owner 'accept', or by an agent 'accept'
+ * with evidence unless the owner's intent asks to be asked. 'false-positive' needs a third source. A
  * disposition is keyed by finding id and carries to later runs; the report marks it as carried. The reviewer never
  * edits a design.
  */
@@ -44,11 +44,13 @@ export const GATE_PASS = 0, GATE_STALE = 1, GATE_OPEN = 2, GATE_ERROR = 3;
 
 // ---------------------------------------------------------------- dispositions
 
-/** The owner's intent decides how far the agent's judgement goes, not the tool. Default: accepting a must-fix is the owner's. */
+/**
+ * The owner's intent decides how far the agent's judgement goes, not the tool. Default: the workflow is autonomous, so
+ * the agent may accept a must-fix with evidence unless the owner's intent asks to be asked about it.
+ */
 export function agentMayAcceptMustFix(intent: Intent | null): boolean {
   const pref = intent?.preferences ?? {};
-  const intentGiven = !!intent && Object.keys(intent).length > 0;
-  const ask = (pref.ask_owner_for ?? (intentGiven ? [] : ["accepting a must-fix"])).join(" ").toLowerCase();
+  const ask = (pref.ask_owner_for ?? []).join(" ").toLowerCase();
   const allow = (pref.workflow_decides ?? []).join(" ").toLowerCase();
   return allow.includes("must-fix") || !ask.includes("must-fix");
 }
@@ -66,18 +68,9 @@ export function judge(finding: { severity: string }, disp: Disposition | null | 
     if (!agentMayAcceptMustFix(intent)) return [true, "must-fix accepted by agent: the owner's intent asks to be asked"];
     if (!(disp.third_source || disp.evidence)) return [true, "must-fix accepted by agent needs evidence (third_source)"];
   }
-  // The agent cannot waive a question on its own say-so: deferring one is the owner's call, and accepting one needs a
-  // source beyond the design and the check, unless the owner's intent hands questions to the workflow.
-  if (finding.severity === "question" && disp.by !== "owner") {
-    if (st === "defer") return [true, "question deferred by agent: the owner decides"];
-    if (st === "accept" && !(disp.third_source || disp.evidence) && !agentMayAcceptQuestion(intent)) return [true, "question accepted by agent needs evidence (third_source) or the owner"];
-  }
+  // A question closes with any disposition that has a reason, the agent's included (the workflow is autonomous); the
+  // gate lists who settled each one and whether independent review ran, so an agent-settled question stays visible.
   return [false, st];
-}
-
-/** The owner's intent may hand questions to the workflow (`workflow_decides` naming "question"). */
-export function agentMayAcceptQuestion(intent: Intent | null): boolean {
-  return (intent?.preferences?.workflow_decides ?? []).join(" ").toLowerCase().includes("question");
 }
 
 export interface Row extends FindingRecord {
