@@ -70,7 +70,12 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
   };
   const files = project.data?.files ?? [];
   const glb = files.find((f) => f.path === GLB_PATH);
-  const canGenerate = scopeReady && files.some(file => file.path === "board.kicad_pcb");
+  const hasPcb = files.some(file => file.path === "board.kicad_pcb");
+  const canGenerate = scopeReady && hasPcb;
+  // The project file list can omit a generated GLB on large boards.
+  // Use the same revision-scoped geometry as standalone 3D for native boards.
+  const previewModel = automatic.data?.model;
+  const hasPreview = !!previewModel || (!!glb && (!hasPcb || !!automatic.error));
   const videos = useMemo(
     () =>
       files
@@ -92,8 +97,18 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
   }
 
   if (canvas) return <div className="fd-board-model-view">
-    {glb ? <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} selectionSource={{ projectId, enabled: scopeReady }} /></Suspense> : <EmptyState title="Preparing your board in 3D…"><AutomaticPreviewStatus kind="model" projectId={projectId} /></EmptyState>}
-    <BoardModelStatus projectId={projectId} present={!!glb} updating={exporting} floating={!compact} />
+    {hasPreview ? (
+      <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}>
+        <ModelCanvas projectId={projectId} path={GLB_PATH} {...(previewModel ? { blob: previewModel.blob } : {})} selectionSource={{ projectId, enabled: scopeReady }} />
+      </Suspense>
+    ) : automatic.error ? (
+      <LoadError title="Could not prepare the 3D preview" onRetry={() => void automatic.retry()} />
+    ) : checkingSources || canGenerate ? (
+      <EmptyState title="Preparing your board in 3D…"><Spinner /></EmptyState>
+    ) : (
+      <EmptyState title="No saved PCB">Save a PCB to see it in 3D.</EmptyState>
+    )}
+    <BoardModelStatus projectId={projectId} present={hasPreview} updating={exporting} floating={!compact} />
     {compact ? <WorkspaceMenu className="fd-comparison-model-menu" label={<span aria-label="3D model tools">···</span>}>
       <AutomaticPreviewStatus kind="model" projectId={projectId} />
       <Button size="sm" onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("3d"); }}>Video & downloads</Button>

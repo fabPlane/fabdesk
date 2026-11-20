@@ -279,3 +279,25 @@
   border:0;
   background:transparent;
 }
+
+/* Board navigation participates in the toolbar's flex lines, including at page zoom. */
+.fd-canvas-controls[data-inline-navigation] {
+  min-height: 60px;
+  height: auto;
+  padding: 10px var(--fd-canvas-gutter);
+  gap: 8px 12px;
+}
+.fd-canvas-controls > .fd-canvas-destinations {
+  position: relative;
+  inset: auto;
+}
+.fd-canvas-main:has(.fd-canvas-controls[data-inline-navigation])::before {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  /* Edit placement is also available under More board tools. */
+  .fd-canvas-controls[data-inline-navigation]:has(.fd-board-tools) .fd-placement-shortcut {
+    display: none;
+  }
+}

@@ -1,5 +1,5 @@
 import { RootBoardPreview } from "./BoardPreview";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { BoardChecksDialog } from "./BoardChecksDialog";
 import { ImportedBoardIdentity } from "./ImportedBoardIdentity";
 import { AssemblyBoardPicker } from "./AssemblyBoardPicker";
@@ -75,7 +75,7 @@ function TabBody({ tab, canvas = false, onOpenChecks }: { tab: BoardTab; canvas?
   }
 }
 
-export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
+export function BoardPanel({ canvas = false, navigation }: { canvas?: boolean; navigation?: ReactNode }) {
   const { host } = useCore();
   const area = useUiStore((s) => s.workspaceArea);
   const setWorkspaceTab = useUiStore((s) => s.setWorkspaceTab);
@@ -112,7 +112,8 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
       label: item.label,
     }));
   if (canvas) return <div className="fd-canvas-board" data-testid="board-panel">
-    <div className="fd-canvas-controls">
+    <div className="fd-canvas-controls" data-inline-navigation={navigation ? true : undefined}>
+      {navigation}
       {area === "boards" && projectId && sources.data?.mode === "single" && <ImportedBoardIdentity projectId={projectId} />}
       {area === "boards" && tab === "placement" && projectId && sources.data?.mode === "assembly" && <AssemblyBoardPicker projectId={projectId} data={sources.data} selection={selected} disabled={sources.isFetching} onChoose={selection => useUiStore.getState().setAssemblyBoard(selection)} onBack={() => useUiStore.getState().setWorkspaceArea("overview")} />}
       {area === "boards" && tab === "cinema" ? <div className="fd-routing-toolbar-slot" data-routing-toolbar-slot /> : area === "boards" ? <BoardViewTabs value={tab === "placement" ? "pcb" : tab} onChange={setWorkspaceTab} /> : workspaceViews(area).length > 1 && <Tabs tabs={visibleTabs} value={tab} onChange={setWorkspaceTab} />}
@@ -122,7 +123,7 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
       {area === "review" && tab === "diff" && projectId && <HostedReviewTools key={projectId} projectId={projectId} />}
       {area === "review" && (tab === "updates" || tab === "diff" || tab === "comments") && <div className="fd-review-scope-slot" data-review-scope-slot />}
       {compareAvailable && <CanvasToolButton label={compare ? "Close all views" : "Show all three views"} icon="panel" active={compare} onClick={() => useUiStore.getState().setBoardComparison(!compare)} />}
-      {area === "boards" && tab !== "cinema" && tab !== "placement" && <div className="fd-board-task-actions">{tab === "pcb" && <Button size="sm" variant="secondary" onClick={() => setWorkspaceTab("placement")}><Icon name="pcb" width={18} height={18} />Edit placement</Button>}<Button size="sm" className="fd-routing-task" variant="secondary" onClick={() => setWorkspaceTab("cinema")}><Icon name="route" width={18} height={18} />Routing</Button><Button size="sm" onClick={openChecks}><Icon name="checkCircle" width={18} height={18} />Checks</Button></div>}
+      {area === "boards" && tab !== "cinema" && tab !== "placement" && <div className="fd-board-task-actions">{tab === "pcb" && <Button className="fd-placement-shortcut" size="sm" variant="secondary" onClick={() => setWorkspaceTab("placement")}><Icon name="pcb" width={18} height={18} />Edit placement</Button>}<Button size="sm" className="fd-routing-task" variant="secondary" onClick={() => setWorkspaceTab("cinema")}><Icon name="route" width={18} height={18} />Routing</Button><Button size="sm" onClick={openChecks}><Icon name="checkCircle" width={18} height={18} />Checks</Button></div>}
     </div>
     {projectId && <BoardChecksDialog key={projectId} projectId={projectId} open={checksOpen} onClose={() => setChecksOpen(false)} />}
     <div className="fd-canvas-board-body">{compareAvailable && compare && projectId ? <BoardComparison key={projectId} projectId={projectId} active={tab as "pcb" | "schematic" | "3d"} onOpenChecks={openChecks} /> : area === "outputs" && tab === "renders" ? <OutputsLibrary key={projectId} projectId={projectId} /> : area === "outputs" && tab === "files" ? <FilesTab key={projectId} exportFocus /> : area === "boards" && projectId && !(tab === "pcb" && (rootFinding || nativeDrawing || commentRequested)) && (tab === "pcb" || tab === "3d" || tab === "layers") ? <RootBoardPreview key={projectId} projectId={projectId} mode={tab} /> : <TabBody key={`${projectId}:${tab}`} tab={tab} canvas onOpenChecks={openChecks} />}</div>

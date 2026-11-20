@@ -1,8 +1,8 @@
 /* One selector, a tall PCB, and wide schematic/model panes. Controls reserve space
    in each viewport instead of covering the circuit or another pane. */
 .fd-three-view { display:flex; flex-direction:column; min-width:0; gap:6px; }
-.fd-three-view .fd-shared-part-selection { height:38px; min-height:38px; }
-.fd-three-view-panes { flex:1; min-height:0; }
+.fd-three-view .fd-shared-part-selection { height:auto; min-height:44px; padding:6px var(--fd-canvas-gutter, 16px); }
+.fd-three-view-panes { flex:1; min-height:0; margin:2px var(--fd-canvas-gutter, 16px) 10px; }
 .fd-three-view .fd-comparison-pane > header { flex-wrap:nowrap; gap:4px; padding:3px 6px; min-height:32px; }
 .fd-three-view .fd-comparison-pane > header .fd-button { height:26px; padding:2px 7px; font-size:11px; }
 .fd-comparison-part-actions { display:flex; flex:1; min-width:0; justify-content:flex-end; align-items:center; gap:4px; }
