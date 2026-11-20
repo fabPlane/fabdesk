@@ -36,7 +36,7 @@ await bridge("/ui", { action: "selectProject", args: [projectId] });
 await page(`window.__selectionErrors=[];window.addEventListener('error',e=>window.__selectionErrors.push(e.message));window.addEventListener('unhandledrejection',e=>window.__selectionErrors.push(String(e.reason)));`);
 const open = async (tab: string) => { await bridge("/ui", { action: "openTab", args: [tab] }); await until(tab === "3d" ? `!!document.querySelector('.fd-model-viewport canvas') && !document.querySelector('.fd-model-message')` : `!!document.querySelector('.fd-svg-host canvas')`); if (!baseline) await until(`!!document.querySelector('.fd-part-picker:not(:disabled)')`); await sleep(350); if (tab !== "3d") { await bridge("/click", { selector: '.fd-svg-fit-button[title="Show the whole drawing"]' }); await until(`document.querySelector('.fd-svg-zoom-value')?.textContent==='100%'`); } };
 // Comparisons persist in the isolated profile; begin the walkthrough in one view.
-if (await page(`!!document.querySelector('button[aria-label="Close comparison"]')`)) await bridge("/click", { selector: 'button[aria-label="Close comparison"]' });
+if (await page(`!!document.querySelector('button[aria-label="Single view, close comparison"]')`)) await bridge("/click", { selector: 'button[aria-label="Single view, close comparison"]' });
 const selected = () => page(`document.querySelector('.fd-part-picker')?.value`);
 const pick = async (view: "pcb" | "schematic", ref: string, scope = "") => {
   await until(`!document.querySelector('[data-focus-motion="running"]')`);
@@ -53,8 +53,9 @@ const pick = async (view: "pcb" | "schematic", ref: string, scope = "") => {
 // Exercise the coordinate-bound PCB drawing rather than the assembled 2D model.
 await bridge("/ui", { action: "openTab", args: ["pcb"] });
 if (await page("!!document.querySelector('.fd-board-preview')")) {
-  await bridge("/click", { selector: ".fd-canvas-tool-menu > summary" });
-  await page(`[...document.querySelectorAll('.fd-canvas-tool-menu button')].find(button => button.textContent === 'PCB drawing & comments').click()`);
+  const toolsMenu = baseline ? ".fd-canvas-tool-menu" : ".fd-board-inspection-tools";
+  await bridge("/click", { selector: toolsMenu + " > summary" });
+  await page(`[...document.querySelectorAll('${toolsMenu} button')].find(button => button.textContent === 'PCB drawing & comments').click()`);
 }
 await open("pcb");
 const zoomBefore = await page(`document.querySelector('.fd-svg-zoom-value')?.textContent`);
@@ -115,7 +116,7 @@ if (!baseline) {
   check("PCB click animates the other views", await page(`['schematic','3d'].every(view=>window.__animatedViews.includes(view))`));
   await until(`!document.querySelector('[data-focus-motion="running"]')`);
   check("PCB click keeps its own zoom steady", await page(`document.querySelector('.fd-comparison-pane[data-view="pcb"] .fd-svg-zoom-value')?.textContent==='100%'`));
-  const controlsInside = `Array.from(document.querySelectorAll('.fd-comparison-pane')).every(p=>{const pane=p.getBoundingClientRect();return [...p.querySelectorAll('header button,.fd-svg-tools button,.fd-model-view-tools button')].every(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.left>=pane.left&&r.right<=pane.right&&r.top>=pane.top&&r.bottom<=pane.bottom})})`;
+  const controlsInside = `Array.from(document.querySelectorAll('.fd-comparison-pane')).every(p=>{const pane=p.getBoundingClientRect();return [...p.querySelectorAll('header button,header summary,.fd-svg-tools button,.fd-model-view-tools button')].filter(e=>e.checkVisibility()).every(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.left>=pane.left&&r.right<=pane.right&&r.top>=pane.top&&r.bottom<=pane.bottom})})`;
   const columns = await page(`document.querySelector('.fd-three-view')?.dataset.layout==='columns'`);
   for (const [label, limits] of [["Resize PCB and other views", columns ? [28,36] : [32,60]], ["Resize schematic and 3D views", columns ? [45,55] : [40,60]]] as const) {
     await page(`document.querySelector('[aria-label="${label}"]').focus()`);
@@ -129,6 +130,7 @@ if (!baseline) {
     await bridge("/key", { key: "Home" });
     await bridge("/key", { key: label.includes("PCB") || columns ? "ArrowRight" : "ArrowDown" });
   }
+  await bridge("/click", { selector: 'summary[aria-label="Part options in Schematic"]' });
   await bridge("/click", { selector: 'button[aria-label="Actions for selected part in Schematic"]' });
   await until(`!!document.querySelector('.fd-location-toolbar')`);
   check("Component actions stay inside their pane", await page(`(()=>{const p=document.querySelector('.fd-comparison-pane[data-view="schematic"]').getBoundingClientRect(), t=document.querySelector('.fd-location-toolbar').getBoundingClientRect();return t.left>=p.left&&t.right<=p.right&&t.top>=p.top&&t.bottom<=p.bottom})()`));
@@ -142,10 +144,13 @@ if (!baseline) {
   await until(`(()=>{const pane=document.querySelector('.fd-comparison-pane[data-view="schematic"]'), frame=pane.querySelector('.fd-svg-viewport').getBoundingClientRect(), mark=pane.querySelector('[data-component-ref="U1"]').getBoundingClientRect();return mark.left>=frame.left&&mark.right<=frame.right&&mark.top>=frame.top&&mark.bottom<=frame.bottom})()`);
   check("Linked focus remains visible after resizing panes", true);
   await capture("04-all-three-views");
+  await bridge("/click", { selector: 'summary[aria-label="Part options in Schematic"]' });
   await bridge("/click", { selector: 'button[aria-label="Focus selected in Schematic"]' });
   await until(`parseInt(document.querySelector('.fd-comparison-pane[data-view="schematic"] .fd-svg-zoom-value')?.textContent)>100`);
   check("Focus zooms the selected schematic part in a compact pane", await page(`parseInt(document.querySelector('.fd-comparison-pane[data-view="schematic"] .fd-svg-zoom-value')?.textContent)>100`));
+  await bridge("/click", { selector: 'summary[aria-label="Part options in PCB drawing"]' });
   await bridge("/click", { selector: 'button[aria-label="Focus selected in PCB drawing"]' });
+  await bridge("/click", { selector: 'summary[aria-label="Part options in 3D"]' });
   await bridge("/click", { selector: 'button[aria-label="Focus selected in 3D"]' });
   await until(`!document.querySelector('[data-focus-motion="running"]')`);
   const focusedInside = `['pcb','schematic'].every(view=>{const pane=document.querySelector('.fd-comparison-pane[data-view="'+view+'"]'), frame=pane.querySelector('.fd-svg-viewport').getBoundingClientRect(), mark=pane.querySelector('[data-component-ref="U1"]').getBoundingClientRect();return mark.left>=frame.left&&mark.right<=frame.right&&mark.top>=frame.top&&mark.bottom<=frame.bottom})`;
@@ -169,6 +174,7 @@ if (!baseline) {
   await openPartPicker("R2");
   const keyInterruption = await page(`new Promise((resolve,reject)=>{document.querySelector('[cmdk-item][data-value="R2"]').click();const started=performance.now();const interrupt=()=>{const c=document.querySelector('.fd-model-viewport canvas');if(c.dataset.focusMotion!=='running'){if(performance.now()-started>5000)return reject(new Error('3D focus did not start'));return requestAnimationFrame(interrupt)}c.focus();c.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',code:'ArrowUp',bubbles:true,cancelable:true}));const motion=c.dataset.focusMotion,bounds=c.dataset.componentBounds;setTimeout(()=>resolve({stopped:motion==='idle',stable:bounds===c.dataset.componentBounds}),400)};requestAnimationFrame(interrupt)})`);
   check("Keyboard panning cancels automatic 3D focus immediately", keyInterruption.stopped && keyInterruption.stable);
+  await bridge("/click", { selector: 'summary[aria-label="Part options in 3D"]' });
   await bridge("/click", { selector: 'button[aria-label="Focus selected in 3D"]' });
   await until(`!document.querySelector('[data-focus-motion="running"]')`);
   check("A small-part keyboard pan repaints immediately", await page(`(()=>{const c=document.querySelector('.fd-model-viewport canvas'),before=c.dataset.componentBounds;c.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',code:'ArrowUp',bubbles:true,cancelable:true}));return before!==c.dataset.componentBounds})()`));
@@ -256,7 +262,7 @@ if (!baseline) {
   await page(`document.querySelector('.fd-comparison-pane[data-view="pcb"] .fd-svg-host').focus()`); await bridge("/key", { key: "Escape" });
   await until(`!document.querySelector('[data-component-ref]') && document.querySelector('.fd-model-viewport canvas')?.dataset.selectedComponent===''`);
   check("Escape clears all three visible highlights and removes model tint", await page(`document.querySelector('.fd-model-viewport canvas')?.dataset.tintedMeshes==='0'`));
-  await bridge("/click", { selector: 'button[aria-label="Close comparison"]' });
+  await bridge("/click", { selector: 'button[aria-label="Single view, close comparison"]' });
 
 }
 await page(`window.__motionObserver?.disconnect()`);

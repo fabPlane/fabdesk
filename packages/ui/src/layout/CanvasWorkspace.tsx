@@ -109,6 +109,8 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const home = !projectId && !threadId && !secondary;
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(client.baseUrl).hostname);
   const connected = sseStatus === "open" && (coreStatus?.state ?? "ready") === "ready";
+  const inspectingBoard = area === "boards" && !fresh && !isDraft && !secondary && !conversationOnly && !!projectId;
+  const connection = <span className="fd-canvas-connection" title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`}><i data-connected={connected} />{connected ? local ? "Local workspace" : "Remote workspace" : "Reconnecting…"}</span>;
 
   return <div className="fd-canvas-workspace flex h-full min-w-0 flex-col" data-testid="canvas-workspace">
     <header className="fd-canvas-header" style={{
@@ -128,18 +130,19 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
         {home && !showProjects && <Button size="sm" onClick={() => setCreating("create")}><Icon name="plus" width={16} height={16} />New project</Button>}
         {home && <Button size="sm" onClick={() => setShowProjects(!showProjects)}><Icon name={showProjects ? "chevronLeft" : "folder"} width={16} height={16} />{showProjects ? "Home" : "Projects"}</Button>}
         {projectId && <ProjectActivity key={`${client.baseUrl}/${projectId}`} projectId={projectId} />}
-        <span className="fd-canvas-connection" title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`}><i data-connected={connected} />{connected ? local ? "Local workspace" : "Remote workspace" : "Reconnecting…"}</span>
-        {projectId && !fresh && !isDraft && <Button size="sm" variant="secondary" title="Review source and output updates" aria-current={area === "review" && boardTab === "updates" ? "page" : undefined} onClick={() => ui().setBoardTab("updates")}>Review</Button>}
+        {(!inspectingBoard || !local || !connected) && connection}
+        {projectId && !fresh && !isDraft && !inspectingBoard && <Button size="sm" variant="secondary" title="Review source and output updates" aria-current={area === "review" && boardTab === "updates" ? "page" : undefined} onClick={() => ui().setBoardTab("updates")}>Review</Button>}
         {projectId && !fresh && !isDraft && <HostedReviewTools key={projectId} projectId={projectId} shareButton />}
         <ProfileButton />
         <WorkspaceMenu className="fd-workspace-overflow" label={<span aria-label="Workspace options"><Icon name="more" width={20} height={20} /></span>}>
           {projectId && <><div className="fd-menu-caption">Current project</div><button onClick={() => setProjectAction({ id: projectId, name, action: "rename", isDraft })}><Icon name="compose" width={16} height={16} />{isDraft ? "Rename idea" : "Rename project"}</button><button onClick={() => ui().requestProjectClose(true)}><Icon name="close" width={16} height={16} />Close project · Home</button><button onClick={() => setNavigationOpen(true)}><Icon name="sidebar" width={16} height={16} />Project conversations</button><div className="fd-menu-divider" /></>}
+          {inspectingBoard && <button onClick={() => ui().setBoardTab("updates")}><Icon name="history" width={16} height={16} />Review updates</button>}
           <button onClick={() => ui().setPaletteOpen(true)}><Icon name="search" width={16} height={16} />Search commands</button>
           <button onClick={() => ui().setSettingsOpen(true)}><Icon name="settings" width={16} height={16} />Settings</button>
           <button onClick={() => ui().setInventoryOpen(true)}><Icon name="library" width={16} height={16} />Parts inventory</button>
           {projectId && <button onClick={() => { ui().setBoardOpen(!boardOpen); setAssistantOpen(false); }}>{boardOpen ? "Focus conversation" : "Return to canvas"}</button>}
           <button onClick={() => ui().setCanvasMode(false)}>Use classic layout</button>
-          <div className="fd-menu-divider" /><div className="fd-workspace-update-actions"><WhatsNewLink /><UpdateBadge /></div>
+          <div className="fd-menu-divider" /><div className="fd-workspace-update-actions"><WhatsNewLink /><UpdateBadge />{inspectingBoard && local && connected && connection}</div>
         </WorkspaceMenu>
       </div>
     </header>

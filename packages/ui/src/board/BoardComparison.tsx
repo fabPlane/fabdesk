@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useMemo, useState, useLayoutEffect, useRef, useCallback, type ReactNode } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { PartPicker } from "./PartPicker";
@@ -22,7 +23,7 @@ function Pane({ view, active, onExpand, onFocus, children, focus, onSelect }: { 
 }
 
 /** Three source-bound views; changing pane focus never unmounts the other previews. */
-export function BoardComparison({ projectId, active, onOpenChecks, onExpandPcb, twoPanes }: { projectId: string; twoPanes: boolean; onExpandPcb: () => void; active: View; onOpenChecks?: () => void }) {
+export function BoardComparison({ projectId, active, onOpenChecks, onExpandPcb, twoPanes, toolbar }: { toolbar: HTMLDivElement | null; projectId: string; twoPanes: boolean; onExpandPcb: () => void; active: View; onOpenChecks?: () => void }) {
   const [linkedFocus, setLinkedFocus] = useState<ComparisonFocus | null>(null);
   const sequence = useRef(0);
   const followSelection = useCallback((ref: string, origin: View | null) => setLinkedFocus({ ref, origin, id: ++sequence.current }), []);
@@ -42,14 +43,14 @@ export function BoardComparison({ projectId, active, onOpenChecks, onExpandPcb, 
   return <div ref={host} className="fd-board-comparison fd-three-view" data-layout={twoPanes ? "pair" : columns ? "columns" : "stacked"} data-testid="board-comparison" onKeyDown={event => {
     if (event.key === "Escape" && !event.defaultPrevented && selection.ref && !(event.target instanceof Element && event.target.closest("input,textarea,select,[role=dialog],[role=menu]"))) { selection.clear(); event.preventDefault(); }
   }}>
-    <div className="fd-part-selection-bar fd-shared-part-selection" data-testid="shared-part-selection">
-      <PartPicker reference={selection.ref} references={references} values={selection.values} disabled={!selection.ready}
-        onSelect={ref => { selection.select(ref); followSelection(ref, null); }} onClear={selection.clear}>
-        {selection.ref && <Button size="sm" disabled={!selection.ready} onClick={() => followSelection(selection.ref!, null)}>Focus</Button>}
-      </PartPicker>
-      {!selection.ready && <span role="status">{selection.index.isError ? "Component selection unavailable" : "Loading components…"}</span>}
-      {twoPanes && <Button size="sm" variant="ghost" className="ml-auto" onClick={() => { useUiStore.getState().setBoardComparison(false); focus("schematic"); }}>Add schematic</Button>}
-    </div>
+    {toolbar && createPortal(
+      <div className="fd-part-selection-bar fd-shared-part-selection" data-testid="shared-part-selection">
+        <PartPicker primary reference={selection.ref} references={references} values={selection.values} disabled={!selection.ready}
+          onSelect={ref => { selection.select(ref); followSelection(ref, null); }} onClear={selection.clear}>
+          {selection.ref && <Button size="sm" disabled={!selection.ready} onClick={() => followSelection(selection.ref!, null)}>Focus</Button>}
+        </PartPicker>
+        {!selection.ready && <span role="status">{selection.index.isError ? "Component selection unavailable" : "Loading components…"}</span>}
+      </div>, toolbar)}
     <div className="fd-three-view-panes">
       <PanelGroup direction="horizontal" keyboardResizeBy={5} key={twoPanes ? "two" : "three"} autoSaveId={`fabplane-${twoPanes ? "two" : "three"}-view-columns-${columns ? "short" : "tall"}-${projectId}`}>
         <Panel id="pcb" order={1} defaultSize={twoPanes ? 50 : columns ? 33 : 42} minSize={twoPanes || columns ? 28 : 32} maxSize={twoPanes ? 72 : columns ? 36 : 60}>

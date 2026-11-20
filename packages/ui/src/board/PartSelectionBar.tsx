@@ -1,6 +1,8 @@
 import { useContext } from "react";
 import { createPortal } from "react-dom";
 import { ComparisonControls } from "./ComparisonControls";
+import { WorkspaceMenu } from "../layout/WorkspaceMenu";
+import { Icon } from "../components/Icon";
 import { Button } from "../components/ui";
 import { PartPicker } from "./PartPicker";
 import "./part-selection.css";
@@ -9,7 +11,10 @@ export function PartSelectionBar({ reference, references, values, onSelect, onCl
   if (comparison) return comparison.target ? createPortal(<>
     {notice && <span className="fd-comparison-selection-notice" role="status" title={notice}>{notice}</span>}
     {onRetry && <Button size="sm" disabled={retrying} aria-label={`Retry component inspection in ${comparison.label}`} onClick={onRetry}>{retrying ? "Retrying…" : "Retry"}</Button>}
-    {reference && <>{onActions && <Button size="sm" variant="ghost" aria-label={`Actions for selected part in ${comparison.label}`} onClick={onActions}>Actions</Button>}<Button size="sm" disabled={!onFocus} aria-label={`Focus selected in ${comparison.label}`} onClick={onFocus}>Focus</Button></>}
+    {reference && <WorkspaceMenu className="fd-pane-part-menu" ariaLabel={`Part options in ${comparison.label}`} label={<>Part<Icon name="chevronDown" width={12} height={12} /></>}>
+      <button disabled={!onFocus} aria-label={`Focus selected in ${comparison.label}`} onClick={onFocus}>Focus in this view</button>
+      {onActions && <button aria-label={`Actions for selected part in ${comparison.label}`} onClick={onActions}>Part actions</button>}
+    </WorkspaceMenu>}
   </>, comparison.target) : null;
   const content = <div className="fd-part-selection-bar" data-testid="part-selection-bar">
     <PartPicker reference={reference} references={references} values={values} onSelect={onSelect} onClear={onClear}>

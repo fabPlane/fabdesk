@@ -52,7 +52,7 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
   const pendingModels = !layerView && !previews.model.isPlaceholderData && !!previews.model.data?.pendingModels;
   const model = !layerView && showComponents ? previews.model.data : undefined;
   const notes = model?.warnings.length ? model.warnings : undefined;
-  let status = "Saved board · previews ready";
+  let status: string | undefined;
   if (error) status = "Preview needs attention";
   else if (pendingModels && previews.model.isFetching) status = "Loading component models…";
   else if (pendingModels) status = "Showing available components";
@@ -68,7 +68,7 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
         <Button size="sm" variant={!showComponents ? "primary" : "ghost"} aria-pressed={!showComponents} onClick={() => setShowComponents(false)}>Bare board</Button>
       </div>
       <div className="fd-preview-selection" ref={setSelectionToolbar} hidden={layerView || !showComponents} />
-      {(!notes || status !== "Saved board · previews ready") && <span className="fd-board-preview-status" role="status">{status}</span>}
+      {status && <span className="fd-board-preview-status" role="status">{status}</span>}
       {notes && <details className="fd-preview-model-notes">
         <summary>{inspectModelWarnings(notes).label}</summary>
         <div><ModelExportNotes projectId={projectId} warnings={notes} path={previews.path} {...(board ? { sourceId: board.sourceId, manifestSha256: board.manifestSha256 } : {})} /></div>

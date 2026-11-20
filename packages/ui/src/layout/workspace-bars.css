@@ -279,3 +279,5 @@
   border:0;
   background:transparent;
 }
+
+.fd-workspace-overflow .fd-canvas-connection { font-size:12px; gap:6px; }

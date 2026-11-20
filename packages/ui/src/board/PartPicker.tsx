@@ -9,17 +9,18 @@ type Props = {
   references: readonly string[];
   values: ReadonlyMap<string, string>;
   disabled?: boolean;
+  primary?: boolean;
   onSelect: (ref: string) => void;
   onClear: () => void;
   children?: ReactNode;
 };
 
-export function PartPicker({ reference, references, values, disabled, onSelect, onClear, children }: Props) {
+export function PartPicker({ reference, references, values, disabled, primary, onSelect, onClear, children }: Props) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const close = () => setOpen(false);
   return <>
-    <Button ref={trigger} size="sm" variant="secondary" className="fd-part-picker" value={reference ?? ""} aria-haspopup="dialog" aria-expanded={open}
+    <Button ref={trigger} size="sm" variant={primary ? "primary" : "secondary"} className="fd-part-picker" value={reference ?? ""} aria-haspopup="dialog" aria-expanded={open}
       aria-label={reference ? `Find part, selected ${reference}` : "Find part"} disabled={disabled || !references.length} onClick={() => setOpen(true)}>
       <Icon name="search" width={14} height={14} /><span>{reference || "Find part"}</span>
     </Button>
