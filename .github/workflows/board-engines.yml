@@ -60,12 +60,7 @@ jobs:
         with:
           bun-version: 1.4.0
 
-      - uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-
-
+      # Install cold: actions/cache is not permitted by the repository Actions policy.
       # No lifecycle scripts: the smoke needs none, and they would fetch Electron and other desktop-only binaries.
       - run: bun install --frozen-lockfile --ignore-scripts
 
