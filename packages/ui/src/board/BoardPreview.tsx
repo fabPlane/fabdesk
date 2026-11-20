@@ -2,7 +2,7 @@ import { useAutomaticBoardViews,useBoardSources,useProject } from "@fabdesk/clie
 import type { BoardLayers,BoardSourceSelection } from "@fabdesk/protocol";
 import { lazy,Suspense,useMemo,useRef,useState } from "react";
 import { Button,EmptyState,LoadError,Spinner } from "../components/ui";
-import { PreviewError } from "./AutomaticPreviewStatus";
+import { PreviewError, PreviewRecovery } from "./AutomaticPreviewStatus";
 import { SvgViewer } from "./SvgViewer";
 import "./board-preview.css";
 
@@ -48,9 +48,11 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
   const layerView = mode === "layers", current = layerView ? previews.layers : previews.model;
   const error = current.error;
   const quickDrawing = mode === "pcb" && !previews.model.data ? previews.pcb.data : null;
+  const hasDrawing = !!current.data || !!quickDrawing;
   const pendingModels = !layerView && !previews.model.isPlaceholderData && !!previews.model.data?.pendingModels;
   let status = "Saved board · previews ready";
-  if (error) status = "Preview needs attention";
+  if (quickDrawing && error) status = "Showing PCB drawing · 3D unavailable";
+  else if (error) status = "Preview needs attention";
   else if (previews.pcb.error) status = previews.pcb.error.message;
   else if (pendingModels && previews.model.isFetching) status = "Loading component models…";
   else if (pendingModels) status = "Showing available components";
@@ -66,8 +68,8 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
         <Button size="sm" disabled={!previews.model.data} variant={!showComponents ? "primary" : "ghost"} aria-pressed={!showComponents} onClick={() => setShowComponents(false)}>Bare board</Button>
       </div>
       <div className="fd-preview-selection" ref={setSelectionToolbar} hidden={layerView || !showComponents} />
-      <span className="fd-board-preview-status" role="status">{status}</span>
-      {error && current.data && <Button size="sm" variant="ghost" onClick={() => void current.retry()}>Retry preview</Button>}
+      <span className="fd-board-preview-status" role="status" title={error?.message}>{status}</span>
+      {error && hasDrawing && <PreviewRecovery error={error} retry={() => void current.retry()} />}
     </div>
     <div className="fd-preview-stage">
       {quickDrawing && <div className="fd-preview-surface"><SvgViewer svg={quickDrawing} viewKey={`${projectId}:${directory}:quick-pcb`} fitLabel="Fit board" /></div>}
@@ -75,11 +77,11 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
         {modelView.current && previews.model.data && <Suspense fallback={<Spinner />}><ModelCanvas projectId={projectId} path={previews.path} blob={previews.model.data.blob} viewMode={modelView.current} side={side} viewRevision={viewRevision} showComponents={showComponents} selectionToolbar={selectionToolbar} selectionSource={{ projectId, ...(board ? { board } : {}), enabled }} /></Suspense>}
       </div>
       <div className="fd-preview-surface fd-preview-layers" style={{ visibility: layerView ? "visible" : "hidden" }} inert={!layerView || undefined} aria-hidden={!layerView}>
-        {layers && <><aside aria-label="PCB layers"><header><strong>Layers</strong><Button size="sm" variant="ghost" onClick={() => setHidden(new Set())}>Show all</Button></header>{layers.layers.map(layer => <label key={layer.name}><input type="checkbox" checked={!hidden.has(layer.name)} onChange={event => setHidden(previous => { const next = new Set(previous); if (event.target.checked) next.delete(layer.name); else next.add(layer.name); return next; })} /><span className="fd-layer-swatch" style={{ background: layerColors.get(layer.name) }} /><span>{names[layer.name] ?? layer.name.replace(/^In(\d+)\.Cu$/, "Inner $1 copper")}<small>{layer.name}</small></span></label>)}</aside><div className="fd-layer-drawing"><SvgViewer svg={drawing} viewKey={`${projectId}:${directory}:layers`} fitLabel="Fit board" />{hidden.size >= layers.layers.length && <div className="fd-preview-notice">All layers hidden. Select a layer to show it.</div>}</div></>}
+        {layers && <><aside aria-label="PCB layers"><header><strong>Layers</strong><Button size="sm" variant="ghost" onClick={() => setHidden(new Set())}>Show all</Button></header>{layers.layers.map(layer => <label key={layer.name}><input type="checkbox" checked={!hidden.has(layer.name)} onChange={event => setHidden(previous => { const next = new Set(previous); if (event.target.checked) next.delete(layer.name); else next.add(layer.name); return next; })} /><span className="fd-layer-swatch" style={{ background: layerColors.get(layer.name) }} /><span>{names[layer.name] ?? layer.name.replace(/^In(\d+)\.Cu$/, "Inner $1 copper")}<small>{layer.name}</small></span></label>)}</aside><div className="fd-layer-drawing"><SvgViewer svg={drawing} viewKey={`${projectId}:${directory}:layers`} fitLabel="Fit board" />{layers.layers.every(layer => hidden.has(layer.name)) && <div className="fd-preview-notice">All layers hidden. Select a layer to show it.</div>}</div></>}
       </div>
       {!layerView && showComponents && !!previews.model.data?.warnings.length && <details className="fd-preview-model-notes"><summary>Model export notes</summary><p>KiCad reported the following while preparing this preview.</p><ul>{previews.model.data.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></details>}
-      {!current.data && !quickDrawing && !error && <div className="fd-preview-loading" role="status"><Spinner /><strong>Preparing your board</strong><span>You can switch views while previews load.</span></div>}
-      {error && !current.data && <div className="fd-preview-loading"><PreviewError error={error} retry={() => void current.retry()} /></div>}
+      {!hasDrawing && !error && <div className="fd-preview-loading" role="status"><Spinner /><strong>Preparing your board</strong><span>You can switch views while previews load.</span></div>}
+      {error && !hasDrawing && <div className="fd-preview-loading"><PreviewError error={error} retry={() => void current.retry()} /></div>}
     </div>
   </div>;
 }
