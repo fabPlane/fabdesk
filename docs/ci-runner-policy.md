@@ -42,13 +42,16 @@ detection.
 
 No override is set by preparing this change.
 
-## GitHub-hosted bootstrap
+## Selection order
 
-The new repository sets `LINUX_RUNNER=github-hosted` while owned runners are
-being connected. This selects `ubuntu-latest` without requiring a NAS heartbeat
-or Blacksmith installation. `FORCE_BLACKSMITH_LINUX` still takes precedence; fork
-PRs always remain isolated on GitHub-hosted Ubuntu. Unset `LINUX_RUNNER` only
-after registering a matching NAS runner for this repository.
+Trusted work uses the NAS labels. Blacksmith is next, and only when
+`FORCE_BLACKSMITH_LINUX` is set, `LINUX_RUNNER` is `blacksmith`, or a live
+`NAS_RUNNER_OUTAGE_UNTIL` lease is active. GitHub-hosted Ubuntu is last, and
+only for fork pull requests.
+
+`LINUX_RUNNER=github-hosted` does not move trusted work off the NAS. A missing
+or stale heartbeat does not either. Unset that variable if it is still present
+from the repository bootstrap.
 
 ## Durable Blacksmith override
 
