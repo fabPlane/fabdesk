@@ -58,5 +58,15 @@ export function judge(before: Judged, after: Judged): Judgement {
   const unrouted = !before.summary.A1_connectivity && o0 >= UNROUTED_OPENS;
   if (unrouted && !summ.A1_connectivity && o1 > o0) worse.push(`A1 opens ${o0}->${o1}`);
   const ok = !worse.length && (summ.A1_connectivity || unrouted);
-  return { mode: "no-regression", verdict: ok ? "PASS (no regression)" : `FAIL regress ${pyList(worse)}`, pass: ok, failing: ok ? [] : worse.length ? worse : failingNow, figures };
+  if (ok) return { mode: "no-regression", verdict: "PASS (no regression)", pass: true, failing: [], figures };
+  if (worse.length) return { mode: "no-regression", verdict: `FAIL regress ${pyList(worse)}`, pass: false, failing: worse, figures };
+  // nothing got worse, yet the candidate is still open: a routed board (fewer than UNROUTED_OPENS opens before) has to end
+  // connected. Say so; "FAIL regress []" read as a refusal with no reason (a via-removal ECO that took 19 opens to 1).
+  return {
+    mode: "no-regression",
+    verdict: `FAIL A1 connectivity: ${o1} open connection${o1 === 1 ? "" : "s"} left (${o0} before); a board with fewer than ${UNROUTED_OPENS} opens before the edit has to end connected`,
+    pass: false,
+    failing: ["A1_connectivity"],
+    figures,
+  };
 }

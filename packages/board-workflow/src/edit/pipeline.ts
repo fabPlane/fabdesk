@@ -21,6 +21,7 @@ import { coordinatesInPlan, parsePlan, type EditPlan } from "./plan";
 import { judge, type Judgement } from "./proof";
 import { carryExclusions, exclusionsText, readDrcExclusions, violationId, withDrcExclusions, type CarriedExclusion, type DrcViolation } from "./exclusions";
 import { EditStop } from "./sch";
+import { stackViaNets } from "./stack";
 import { applyProjectRules } from "../rules";
 import { REQUIREMENT_FILES } from "../requirements";
 
@@ -247,12 +248,14 @@ export async function runEdit(input0: EditRunInput): Promise<EditRunResult> {
 }
 
 /**
- * Nets the repair should look at: the ones the edit cut, and an added part's pin nets (a new part is a new connection:
- * placed off a pour, or with no direct track, its pads are open and only the repair routes them).
+ * Nets the repair should look at: the ones the edit cut (a stack plan's removed vias among them: a via that carried a
+ * connection leaves it open), and an added part's pin nets (a new part is a new connection: placed off a pour, or with
+ * no direct track, its pads are open and only the repair routes them).
  */
 export function routeAgainOf(applied: ApplyLog, plan: EditPlan): string[] {
   const added = (plan.add ?? []).flatMap((ad) => Object.values(ad.pins));
-  return [...new Set([...(applied.moves?.cut_nets ?? []), ...(applied.landing?.cut_nets ?? []), ...(applied.pad_cut?.cut_nets ?? []), ...added])].filter(Boolean).sort();
+  const viaNets = plan.stack ? stackViaNets(plan.stack) : [];
+  return [...new Set([...(applied.moves?.cut_nets ?? []), ...(applied.landing?.cut_nets ?? []), ...(applied.pad_cut?.cut_nets ?? []), ...viaNets, ...added])].filter(Boolean).sort();
 }
 
 async function diffOnly(before: string, after: string, ledger: { plan: EditPlan; impact: ImpactReport; applied: ApplyLog }) {

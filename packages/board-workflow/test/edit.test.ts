@@ -340,6 +340,13 @@ describe("judging", () => {
     // a connected source must stay connected (unchanged)
     const c = res({ A2_drc: { pass: false, errors: { courtyards_overlap: 3 } } });
     expect(judge(J(c), J(res({ ...c, A1_connectivity: { pass: false, unconnected: 1 } }))).verdict).toBe("FAIL regress ['A1_connectivity']");
+    // a routed source with a few opens (under UNROUTED_OPENS) that the edit improved but did not close: the reason is the
+    // open left, not an empty regression list
+    const few = res({ A1_connectivity: { pass: false, unconnected: 19 } });
+    const j = judge(J(few), J(res({ ...few, A1_connectivity: { pass: false, unconnected: 1 } })));
+    expect(j.verdict).toBe("FAIL A1 connectivity: 1 open connection left (19 before); a board with fewer than 20 opens before the edit has to end connected");
+    expect(j.failing).toEqual(["A1_connectivity"]);
+    expect(j.pass).toBe(false);
   });
 });
 
