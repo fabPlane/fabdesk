@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "test": "bun test"
   },
   "dependencies": {
@@ -20,7 +20,8 @@
     "@fabdesk/protocol": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "hono": "4.13.19",
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "@fabdesk/board-representation": "workspace:*"
   },
   "devDependencies": {
     "typescript": "5.9.2",

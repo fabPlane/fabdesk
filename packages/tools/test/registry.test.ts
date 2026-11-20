@@ -310,6 +310,7 @@ describe("registry", () => {
       "verify_erc",
       "verify_gate",
       "verify_viagrid",
+      "board_representation",
       "board_check",
       "board_review",
       "board_edit",
