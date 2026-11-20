@@ -7,6 +7,8 @@ import { mkdir, readdir, readFile, realpath, rename, rm, rmdir, stat } from "nod
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
 import {
+  ASSEMBLY_MANIFEST_PATH,
+  ProjectAssembly,
   ProjectManifest,
   type CoreEvent,
   type FileEntry,
@@ -14,6 +16,7 @@ import {
   type ProjectSummary,
 } from "@fabdesk/protocol";
 import {
+  inspectOwnedProjectFile,
   PROJECT_FILES,
   ToolError,
   jailPath,
@@ -476,6 +479,35 @@ export class ProjectStore implements ProjectResolver {
       }
     };
     await walk(dir);
+    if (max > 0 && out.length === max) {
+      // Board tools share this bounded inventory. Reserve entries for canonical
+      // sources and their drawings even if a large vendor directory was visited first.
+      const root = await realpath(dir);
+      const directories = new Set(["."]);
+      const manifest = await inspectOwnedProjectFile(root, ASSEMBLY_MANIFEST_PATH, 512 * 1024, true).catch(() => null);
+      if (manifest?.text) {
+        try {
+          for (const source of ProjectAssembly.parse(JSON.parse(manifest.text)).sources) {
+            if (source.location === "project" && !source.directory.split("/").some(part => [".git", ".fabdesk", "node_modules"].includes(part))) directories.add(source.directory);
+          }
+        } catch { /* The board-source inspector reports invalid manifests. */ }
+      }
+      const entries = new Map<string, FileEntry>(out.map(file => [file.path, file]));
+      const priority = new Map<string, FileEntry>();
+      for (const directory of directories) {
+        for (const name of [PROJECT_FILES.boardPcb, PROJECT_FILES.boardSch, "renders/pcb.svg", "renders/schematic.svg"]) {
+          const path = directory === "." ? name : directory + "/" + name;
+          const listed = entries.get(path);
+          if (listed) { priority.set(path, listed); continue; }
+          const absolute = resolve(root, path);
+          if (await realpath(absolute).catch(() => null) !== absolute) continue;
+          const info = await stat(absolute).catch(() => null);
+          if (info?.isFile()) priority.set(path, { path, size: info.size, mtime: info.mtime.toISOString() });
+        }
+      }
+      const reserved = [...priority.values(), ...out.filter(file => !priority.has(file.path))];
+      return reserved.slice(0, max).sort((a, b) => a.path.localeCompare(b.path));
+    }
     return out.sort((a, b) => a.path.localeCompare(b.path));
   }
 
