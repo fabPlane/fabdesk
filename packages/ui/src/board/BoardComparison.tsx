@@ -32,7 +32,8 @@ export function BoardComparison({ projectId, active, onOpenChecks, onExpandPcb, 
   useLayoutEffect(() => {
     const element = host.current;
     if (!element) return;
-    const measure = () => setColumns(element.clientHeight < 560);
+    // A short window can fit three columns only if their drawing controls fit too.
+    const measure = () => setColumns(element.clientHeight < 560 && element.clientWidth >= 960);
     measure(); const observer = new ResizeObserver(measure); observer.observe(element);
     return () => observer.disconnect();
   }, []);

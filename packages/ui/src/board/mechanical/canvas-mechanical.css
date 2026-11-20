@@ -50,6 +50,7 @@
 }
 .fd-mechanical[data-canvas="true"] > .fd-mechanical-entry {
   top: 18px;
+  max-height: calc(100% - 110px);
 }
 .fd-mechanical[data-canvas="true"] > .fd-case-workflow.fd-case-compact {
   top: 18px;

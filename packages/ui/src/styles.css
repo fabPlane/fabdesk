@@ -228,6 +228,7 @@ select option:disabled {
 .group:is(:hover, :focus-within) > .fd-chat-row { padding-right: 60px; }
 .fd-project-heading:has(.fd-project-add):is(:hover, :focus-within, [data-menu-open="true"]) .fd-project-row { padding-right: 72px; }
 .fd-project-heading[data-menu-open="true"] > .fd-icon-button { opacity: 1; }
+.fd-project-heading:not(:hover, :focus-within, [data-menu-open="true"]) > .fd-icon-button { pointer-events:none; }
 .fd-scrolling-title { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .fd-scrolling-title-text { display: block; width: max-content; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Fade only clipped text; the first and final characters remain clear at rest. */
@@ -470,6 +471,10 @@ img.fd-file-image { background: #fff; padding: 8px; }
 .fd-prose table { display: block; max-width: 100%; overflow-x: auto; }
 [role="row"]:focus-visible, tr[tabindex]:focus-visible, [role="separator"]:focus-visible { outline: 2px solid var(--fd-accent); outline-offset: -2px; }
 .fd-topbar-actions, .fd-topbar-tools, .fd-wordmark { flex-shrink: 0; }
+@media (max-width: 800px) {
+  .fd-topbar, .fd-topbar-actions { gap:4px; }
+  .fd-topbar .fd-workspace-back > span { display:none; }
+}
 
 .fd-svg-document > svg { width: 100%; height: 100%; }
 

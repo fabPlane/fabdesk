@@ -230,9 +230,60 @@
   max-width: calc(100% - 48px);
 }
 
-/* Keep project views in the same place instead of swapping rows on navigation. */
-.fd-canvas-workspace .fd-project-status { padding:86px 40px 90px; }
-.fd-canvas-workspace .fd-project-status > .fd-project-status-nav { margin:0 0 24px; padding:0; }
+/* Standalone project pages scroll below the workspace picker. Board and assembly
+   toolbars share their row with it and retain their own layout. */
+.fd-canvas-main[data-task-toolbar=true]:has(> .fd-canvas-surface > :is(.fd-project-overview, .fd-project-status)) {
+  display:grid;
+  grid-template-rows:auto minmax(0, 1fr);
+
+  &::before { display:none; }
+  > .fd-canvas-destinations {
+    position:relative;
+    inset:auto;
+    padding:14px var(--fd-canvas-gutter);
+    background:var(--fd-panel);
+    border-bottom:1px solid var(--fd-border);
+  }
+  > .fd-canvas-surface { height:auto; }
+
+  &:has(> .fd-assistant-dock:not([hidden])) {
+    grid-template-columns:minmax(0, 1fr) clamp(310px, 32vw, 400px);
+    > .fd-canvas-destinations { grid-column:1 / -1; }
+    > .fd-assistant-dock {
+      position:relative;
+      inset:auto;
+      width:auto;
+      height:auto;
+      min-height:0;
+      max-height:none;
+      margin:12px;
+    }
+    @media (max-width:900px) {
+      grid-template-columns:minmax(0, 1fr);
+      > .fd-canvas-surface { display:none; }
+    }
+  }
+}
+.fd-canvas-workspace :is(.fd-project-overview, .fd-project-status) {
+  padding:clamp(16px, 3vh, 28px) var(--fd-canvas-gutter) 80px;
+}
+.fd-project-overview .fd-overview-board {
+  padding-top:0;
+  grid-template-areas:"actions" "preview" "caption";
+  grid-template-rows:auto minmax(0, 1fr) auto;
+  row-gap:0;
+}
+.fd-overview-board > .fd-board-context-tools {
+  grid-area:actions;
+  position:relative;
+  inset:auto;
+  transform:none;
+  justify-self:center;
+  margin-bottom:8px;
+  z-index:1;
+}
+.fd-overview-board > .fd-overview-preview { grid-area:preview; }
+.fd-overview-board > .fd-overview-board-caption { grid-area:caption; margin-top:12px; }
 .fd-project-status-heading { flex-wrap:wrap; }
 .fd-project-status-heading > div { min-width:0; overflow-wrap:anywhere; }
 .fd-workspace-menu-content { max-width:calc(100vw - 40px); }
@@ -248,12 +299,7 @@
   .fd-canvas-header .fd-header-home { display:none; }
   .fd-canvas-header .fd-activity-label { display:none; }
 }
-@media(max-width:780px) {
-  .fd-canvas-workspace .fd-project-status { padding:86px 20px 90px; }
-  /* These pages only have the destination picker, not a second tool row. */
-  .fd-canvas-main[data-task-toolbar=true]:is([data-area=overview],[data-area=status])::before { height:64px; }
-  .fd-canvas-workspace .fd-project-overview { padding-top:86px; }
-}
+
 
 /* Board tools share the navigation rhythm; secondary view controls live below. */
 .fd-assembly-detail-heading > .fd-board-tools > summary {

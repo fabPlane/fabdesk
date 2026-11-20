@@ -92,8 +92,7 @@
 .fd-fresh-art-link:focus-visible { outline:2px solid var(--fd-accent); outline-offset:5px; border-radius:3px; }
 .fd-fresh-actions { display:flex; flex-wrap:wrap; align-items:start; justify-content:center; gap:10px; margin:28px auto 0; }
 .fd-fresh-actions > button { height:52px; padding:0 20px; display:flex; gap:10px; align-items:center; border:1px solid var(--fd-border); border-radius:13px; background:var(--fd-panel); box-shadow:none; font-size:13px; font-weight:450; }
-.fd-project-overview { height:100%; overflow:auto; display:grid; grid-template-rows:auto auto minmax(260px,1fr) auto; gap:24px; padding:22px 40px 90px; text-align:center; }
-.fd-project-overview > .fd-project-status-nav { margin:0; padding-top:0; }
+.fd-project-overview { height:100%; overflow:auto; display:grid; grid-template-rows:auto minmax(260px,1fr) auto; gap:24px; padding:22px 40px 90px; text-align:center; }
 .fd-overview-source-boards { align-self:start; text-align:left; min-width:0; }
 .fd-overview-source-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
 .fd-overview-source-heading h2 { margin:0; font-size:16px; font-weight:600; }
@@ -207,6 +206,11 @@
 .fd-model-message { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); display:flex; align-items:center; flex-direction:column; gap:14px; max-width:440px; padding:22px; border-radius:12px; background:var(--fd-panel); text-align:center; }
 .fd-model-view-tools { position:absolute; left:28px; bottom:26px; display:flex; align-items:center; gap:15px; padding:7px 14px; border:1px solid var(--fd-border); border-radius:24px; background:var(--fd-panel); box-shadow:0 3px 10px #102a2010; }
 .fd-model-view-tools span { color:var(--fd-muted); font-size:11px; }
+.fd-board-panel .fd-model-canvas { container:classic-model / inline-size; }
+@container classic-model (max-width:420px) {
+  .fd-model-view-tools { left:8px; bottom:8px; gap:4px; padding:4px; }
+  .fd-model-view-tools > span { display:none; }
+}
 .fd-file-model-preview { display:flex; flex-direction:column; overflow:hidden; }
 .fd-file-model-status { flex:none; margin:0; padding:8px 12px; color:var(--fd-muted); font-size:11px; }
 .fd-file-model-preview > .fd-model-canvas { flex:1; height:auto; min-height:180px; }
