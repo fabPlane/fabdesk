@@ -1,19 +1,18 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BoardLayers, BOARD_LAYERS_PATH, BoardModelRevision, BOARD_MODEL_REVISION_PATH, type BoardSourceSelection } from "@fabdesk/protocol";
+import { BoardLayers, BOARD_LAYERS_PATH, type BoardSourceSelection } from "@fabdesk/protocol";
 import { CoreHttpError, type CoreClient } from "./CoreClient";
 import { useCoreClient } from "./provider";
 import { useBoardSources, useProject } from "./queries";
 import { inspectPcbPreviewRevision, sha256Blob } from "./pcb-preview-revision";
-import { inspectBoardModelRevision } from "./board-model-revision";
-import { inspectAssemblyBoardModel } from "./assembly-board-model";
+import { loadProgressiveBoardModel, type BoardPreviewModel } from "./progressive-board-model";
 import { inspectAssemblySchematicPreview, inspectRootSchematicPreview } from "./assembly-schematic-preview";
 import { captureAssemblySchematicInspection } from "./assembly-schematic-inspection";
 import { previewQueue } from "./preview-queue";
 
 export type PreviewKind = "pcb" | "schematic" | "layers" | "model";
 export type PreviewScope = { projectId: string; directory?: string; board?: BoardSourceSelection; enabled?: boolean };
-type PreviewResult = { model?: { blob: Blob; warnings: string[] }; layers?: BoardLayers; svg?: string; sheets?: Array<{ path: string; nativeSheet?: { identity: string } | undefined }> };
+type PreviewResult = { model?: BoardPreviewModel; layers?: BoardLayers; svg?: string; sheets?: Array<{ path: string; nativeSheet?: { identity: string } | undefined }> };
 const priority: Record<PreviewKind, number> = { pcb: 0, schematic: 1, layers: 2, model: 3 };
 const nativeInput = /(?:\.kicad_(?:pcb|sch|pro|dru|mod|sym)$|\.(?:step|stp|wrl)$|(?:^|\/)(?:fp-lib-table|sym-lib-table|fabdesk.json|fabplane.assembly.json)$)/i;
 export function previewInputStamp(files: readonly { path: string; size: number; mtime: number | string }[]) {
@@ -76,7 +75,9 @@ export function useLivePreview(kind: PreviewKind, { projectId, directory = ".", 
   });
   const captured = inputs.data;
   const revision = kind === "schematic" ? captured?.revision : captured && JSON.stringify([captured.hashes[prefix + "board.kicad_pcb"], captured.dependencies]);
-  const preview = useQuery<PreviewResult>({ queryKey: ["live-preview", ...scope, kind, revision],
+  const previewKey = ["live-preview", ...scope, kind, revision];
+  const preview = useQuery<PreviewResult>({ queryKey: previewKey,
+    refetchOnReconnect: query => query.state.data?.model?.pendingModels ? "always" : true,
     enabled: available && settled === stamp && !!captured && !inputs.isError,
     staleTime: Infinity, gcTime: 5 * 60_000, retry: false, retryOnMount: false,
     // Do not retain another board's data when navigation changes source scope.
@@ -121,20 +122,20 @@ export function useLivePreview(kind: PreviewKind, { projectId, directory = ".", 
           if (!saved) throw new Error("Layers changed during preview preparation.");
           result = { layers: saved };
         } else {
-          // Root and member receipts both carry the dependency snapshot.
-          if (board) {
-            let saved = await inspectAssemblyBoardModel(client, projectId, board);
-            if (saved.state !== "source-unchanged") { await run("render_glb", { expectedSourceSha256: hash }); saved = await inspectAssemblyBoardModel(client, projectId, board); }
-            if (saved.state !== "source-unchanged" || !saved.model || saved.sourceSha256 !== hash) throw new Error("Model changed during preparation.");
-            result = { model: { blob: saved.model, warnings: saved.warnings } };
-          } else {
-            if (await inspectBoardModelRevision(client, projectId) !== "source-unchanged") await run("render_glb", { expectedSourceSha256: hash });
-            if (await inspectBoardModelRevision(client, projectId) !== "source-unchanged") throw new Error("Model changed during preparation.");
-            const receipt = BoardModelRevision.parse(JSON.parse(await client.readFile(projectId, BOARD_MODEL_REVISION_PATH)));
-            const blob = await client.readFileBlob(projectId, "renders/board.glb");
-            if (receipt.sourceSha256 !== hash || await sha256Blob(blob) !== receipt.artifactSha256) throw new Error("Model changed while opening it.");
-            result = { model: { blob, warnings: receipt.warnings ?? [] } };
-          }
+          // A receipt refresh or reconnect may return the same GLB. Keep its Blob so
+          // the existing canvas stays interactive while stock models download.
+          const reuseGeometry = (model: BoardPreviewModel) => {
+            const previous = queries.getQueryData<PreviewResult>(previewKey)?.model;
+            return previous?.digest === model.digest ? { ...model, blob: previous.blob } : model;
+          };
+          const model = await loadProgressiveBoardModel(client, projectId, hash!, board,
+            options => run("render_glb", { expectedSourceSha256: hash, ...options }),
+            local => {
+              signal.throwIfAborted();
+              queries.setQueryData<PreviewResult>(previewKey, { model: reuseGeometry(local) });
+            },
+            () => globalThis.navigator?.onLine !== false);
+          result = { model: reuseGeometry(model) };
         }
         signal.throwIfAborted();
         return result;

@@ -43,6 +43,13 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
   const layerView = mode === "layers", current = layerView ? previews.layers : previews.model;
   const error = current.error;
   const quickDrawing = mode === "pcb" && !previews.model.data ? previews.pcb.data : null;
+  const pendingModels = !layerView && !previews.model.isPlaceholderData && !!previews.model.data?.pendingModels;
+  let status = "Saved board · previews ready";
+  if (error) status = "Preview needs attention";
+  else if (pendingModels && previews.model.isFetching) status = "Loading component models…";
+  else if (pendingModels) status = "Showing available components";
+  else if (!enabled) status = "Checking board source…";
+  else if (previews.model.updating || previews.layers.updating || previews.pcb.updating) status = "Updating from saved board…";
   return <div className="fd-board-preview" data-testid="automatic-board-preview" data-mode={mode}>
     <div className="fd-preview-topbar">
       <div className="fd-preview-side" aria-label="Board side" hidden={layerView}>
@@ -53,7 +60,8 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
         <Button size="sm" variant={!showComponents ? "primary" : "ghost"} aria-pressed={!showComponents} onClick={() => setShowComponents(false)}>Bare board</Button>
       </div>
       <div className="fd-preview-selection" ref={setSelectionToolbar} hidden={layerView || !showComponents} />
-      <span className="fd-board-preview-status" role="status">{!enabled ? "Checking board source…" : error ? "Preview needs attention" : previews.model.updating || previews.layers.updating || previews.pcb.updating ? "Updating from saved board…" : "Saved board · previews ready"}</span>
+      <span className="fd-board-preview-status" role="status">{status}</span>
+      {error && current.data && <Button size="sm" variant="ghost" onClick={() => void current.retry()}>Retry preview</Button>}
     </div>
     <div className="fd-preview-stage">
       {quickDrawing && <div className="fd-preview-surface"><SvgViewer svg={quickDrawing} viewKey={`${projectId}:${directory}:quick-pcb`} fitLabel="Fit board" /></div>}
@@ -65,7 +73,7 @@ export function BoardPreview({ projectId, mode, directory = ".", board, sourceSt
       </div>
       {!layerView && showComponents && !!previews.model.data?.warnings.length && <details className="fd-preview-model-notes"><summary>Model export notes</summary><p>KiCad reported the following while preparing this preview.</p><ul>{previews.model.data.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></details>}
       {!current.data && !quickDrawing && !error && <div className="fd-preview-loading" role="status"><Spinner /><strong>Preparing your board</strong><span>You can switch views while previews load.</span></div>}
-      {error && <div className="fd-preview-loading"><LoadError title="Could not prepare this view" onRetry={() => { if (previews.source.isError) void previews.source.refetch(); else void current.refetch(); }} /><p>{error instanceof Error ? error.message : "Try again."}</p></div>}
+      {error && !current.data && <div className="fd-preview-loading"><LoadError title="Could not prepare this view" onRetry={() => void current.retry()} /><p>{error instanceof Error ? error.message : "Try again."}</p></div>}
     </div>
   </div>;
 }
