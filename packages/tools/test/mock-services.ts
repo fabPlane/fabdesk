@@ -400,6 +400,7 @@ export function mockServices(
         return rasterizeSvg(svg, opts);
       },
       exportGlb: async () => ({ fused: false, warnings: [] }),
+      prepareModels: async () => ({ warnings: [] }),
       measureMechanical: async () => {
         throw new Error("mechanical measurement is not mocked");
       },

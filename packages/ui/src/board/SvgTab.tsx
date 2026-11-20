@@ -1,39 +1,25 @@
-import { SchematicSheetNav } from "./SchematicSheetNav";
-import { SchematicFocusView } from "./SchematicFocusView";
-import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
-import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
+import { pcbSvgHasNativeCoordinates,useBoardCommentMutations,useBoardComments,useBoardSources,useCoreClient,useLivePreview,usePcbPreviewRevision,useProject,useProjectText,useRootSchematicPreview } from "@fabdesk/client-core";
+import type { BoardComment,CommentView } from "@fabdesk/protocol";
+import { commentAnchorLabel,commentMillimetrePoint } from "@fabdesk/protocol";
+import { useEffect,useMemo,useRef,useState } from "react";
+import { askAboutSurface,useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { BoardComment, CommentView } from "@fabdesk/protocol";
-import { RootSchematicPreviewRevision, commentAnchorLabel, commentMillimetrePoint } from "@fabdesk/protocol";
-import { Button, EmptyState, IconButton, Input, LoadError, Spinner, Textarea } from "../components/ui";
-import { Icon } from "../components/Icon";
 import { ErrorNotice } from "../components/ErrorNotice";
-import {
-  useCoreClient,
-  useBoardCommentMutations,
-  useBoardSources,
-  useBoardComments,
-  useProject,
-  useThreads,
-  useRunsStore,
-  usePcbPreviewRevision,
-  useRootSchematicPreview,
-  pcbToolJson,
-  pcbSvgHasNativeCoordinates,
-  useProjectText,
-  useRunTool,
-} from "@fabdesk/client-core";
+import { Icon } from "../components/Icon";
+import { Button,EmptyState,IconButton,Input,LoadError,Spinner,Textarea } from "../components/ui";
+import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
 import { useUiStore } from "../stores/ui";
-import { RootFindingOverlay } from "./RootFindingOverlay";
+import { buildCommentsAskPrompt,buildCommentsUserPrompt,pendingBoardComments } from "./comment-requests";
+import { CommentPins } from "./CommentPins";
+import { MissingNativeSource } from "./MissingNativeSource";
 import { NativePartTools } from "./NativePartTools";
 import { PcbPreviewStatus } from "./PcbPreviewStatus";
-import { CommentPins } from "./CommentPins";
+import { RootFindingOverlay } from "./RootFindingOverlay";
+import { SchematicFocusView } from "./SchematicFocusView";
+import { SchematicPreviewStatus } from "./SchematicPreviewStatus";
+import { SchematicSheetNav } from "./SchematicSheetNav";
 import { SelectableSvgViewer } from "./SelectableSvgViewer";
 import { type SvgPoint } from "./svg-coords";
-import { buildCommentsAskPrompt, buildCommentsUserPrompt, pendingBoardComments } from "./comment-requests";
-import { SchematicPreviewStatus } from "./SchematicPreviewStatus";
-import { MissingNativeSource } from "./MissingNativeSource";
 
 export function SvgTab(props: { kind: "schematic" | "pcb"; active?: boolean; onOpenChecks?: () => void }) {
   const focus = useUiStore(s => s.schematicFocus), projectId = useUiStore(s => s.activeProjectId);
@@ -41,7 +27,6 @@ export function SvgTab(props: { kind: "schematic" | "pcb"; active?: boolean; onO
   return <div className="relative h-full min-h-0"><div className="h-full" style={showing ? { visibility: "hidden" } : undefined} inert={showing || undefined}><SvgTabContent {...props} /></div>{showing && <SchematicFocusView key={focus.focus.id} focus={focus.focus} endpoint={focus.endpoint} />}</div>;
 }
 
-const RENDER_TOOL = { schematic: "render_schematic_svg", pcb: "render_pcb_svg" } as const;
 
 function BoardOutline() {
   return <svg width="100" height="76" viewBox="0 0 100 76" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
@@ -96,9 +81,7 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
     return () => window.removeEventListener("fabdesk-clear-selection", clear);
   }, [projectId]);
   const project = useProject(projectId);
-  const threads = useThreads(projectId ? { projectId } : {});
-  const projectWorking = useRunsStore(state => Object.keys(state.runsByThread).some(id => threads.data?.some(thread => thread.id === id)) || Object.values(state.jobs).some(job => job.projectId === projectId && (job.status === "running" || job.status === "queued")));
-  const autoPreview = useRef<string | null>(null);
+
   const sources = useBoardSources(projectId);
   const scopeReady = sources.data?.mode === "single" && !sources.isFetching && !sources.isError;
   const rendered = useProjectText(projectId, `renders/${kind}.svg`);
@@ -117,7 +100,16 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
     if (previousFrame.current !== nativeCoordinates) { setCanvasPoint(null); setDraftPoint(null); setSelectedId(null); }
     previousFrame.current = nativeCoordinates;
   }, [nativeCoordinates]);
-  const render = useRunTool();
+  const livePreview = useLivePreview(kind, { projectId: projectId ?? "", enabled: scopeReady, foreground: active });
+  const selectedSheetIdentity = useRef<string | undefined>(undefined);
+  if (nativeSheet) selectedSheetIdentity.current = nativeSheet.identity;
+  useEffect(() => {
+    const sheets = livePreview.data?.sheets;
+    if (!schematicPage || !sheets || sheets.some(sheet => sheet.path === schematicPage)) return;
+    const next = sheets.find(sheet => sheet.nativeSheet?.identity === selectedSheetIdentity.current)?.path ?? null;
+    useUiStore.getState().setSchematicPage(pageKey, next);
+  }, [livePreview.data?.sheets, schematicPage, pageKey]);
+  const render = { state: { status: livePreview.updating ? "running" : livePreview.isError ? "failed" : "done", error: livePreview.error?.message } };
   const comments = useBoardComments(projectId);
   const { pin, patch } = useBoardCommentMutations(projectId);
   const [commentMode, setCommentMode] = useState(false);
@@ -189,37 +181,7 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
       setCommentMode(true);
     } });
   };
-  const refreshPreview = () => {
-    if (!projectId || !scopeReady || useUiStore.getState().activeProjectId !== projectId) return;
-    void render.run(RENDER_TOOL[kind], { projectId, ...(kind === "schematic" ? { circuit: true } : {}) }).then(result => { if (result.status === "done") {
-      void rendered.refetch();
-      if (kind === "pcb") void revision.refetch();
-      else {
-        const parsed = RootSchematicPreviewRevision.safeParse(pcbToolJson(result.result).preview);
-        if (useUiStore.getState().activeProjectId !== projectId) return;
-        const next = parsed.success && parsed.data.projectId === projectId ? parsed.data.sheets.find(sheet => sheet.nativeSheet?.identity === nativeSheet?.identity)?.path ?? null : null;
-        useUiStore.getState().setSchematicPage(pageKey, next); if (next === schematicPage) void schematicPreview.refetch();
-      }
-    } });
-  };
-  useEffect(() => {
-    // Read the saved source once a build/agent has settled. Alternate image exports are not
-    // a coordinate or freshness receipt, so create the normal canvas preview through its tool.
-    if (!projectId || !active || !scopeReady || projectWorking || threads.isPending || threads.isError || project.isPending || project.isFetching || project.isError || rendered.isPending || rendered.isError || rendered.data || render.state.status === "running" || !project.data.files.some(file => file.path === `board.kicad_${kind === "pcb" ? "pcb" : "sch"}`)) return;
-    const key = `${projectId}/${kind}`;
-    if (autoPreview.current === key) return;
-    autoPreview.current = key;
-    void render.run(RENDER_TOOL[kind], { projectId, ...(kind === "schematic" ? { circuit: true } : {}) }).then(result => { if (result.status === "done") {
-      void rendered.refetch();
-      if (kind === "pcb") void revision.refetch();
-      else {
-        const parsed = RootSchematicPreviewRevision.safeParse(pcbToolJson(result.result).preview);
-        if (useUiStore.getState().activeProjectId !== projectId) return;
-        const next = parsed.success && parsed.data.projectId === projectId ? parsed.data.sheets.find(sheet => sheet.nativeSheet?.identity === nativeSheet?.identity)?.path ?? null : null;
-        useUiStore.getState().setSchematicPage(pageKey, next); if (next === schematicPage) void schematicPreview.refetch();
-      }
-    } });
-  }, [projectId, active, scopeReady, projectWorking, threads.isPending, threads.isError, project.data, project.isPending, project.isFetching, project.isError, rendered.data, rendered.isPending, rendered.isError, render.state.status, kind, render.run]);
+  const refreshPreview = () => { void livePreview.retry(); };
 
   if (!projectId)
     return (
@@ -417,27 +379,16 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
   const sourcePath = kind === "pcb" ? "board.kicad_pcb" : "board.kicad_sch";
   if (!project.data?.files.some((file) => file.path === sourcePath))
     return <MissingNativeSource key={`${projectId}/${kind}`} projectId={projectId} kind={kind} enabled={scopeReady} visible={active} />;
-  const running = render.state.status === "running";
-  const copy = svgArtifactCopy(kind);
   return (
     <div className="fd-canvas-empty h-full" data-testid={`board-${kind}-empty`}>
       <EmptyState
-        title={copy.title}
+        title="Preparing preview automatically…"
         icon={<BoardOutline />}
-        action={
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={running || !scopeReady}
-            onClick={refreshPreview}
-          >
-            {running ? "Creating preview…" : copy.action}
-          </Button>
-        }
+        action={livePreview.error ? <Button onClick={refreshPreview}>Retry preview</Button> : <Spinner />}
       >
         {kind === "pcb"
-          ? "Create a drawing from your saved PCB to inspect the layout. Image exports are available in Outputs."
-          : "Create a drawing from your saved KiCad schematic to inspect the circuit here."}
+          ? "Your saved PCB drawing appears here automatically."
+          : "Your saved schematic drawing appears here automatically."}
         {render.state.error && <div role="alert" className="mt-2 text-danger">{render.state.error}</div>}
       </EmptyState>
     </div>

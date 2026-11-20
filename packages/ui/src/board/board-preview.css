@@ -1,6 +1,6 @@
 .fd-board-preview { display:flex; flex-direction:column; min-height:0; height:100%; flex:1; }
 .fd-preview-topbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; padding:10px var(--fd-canvas-gutter, 24px); min-height:54px; flex:none; border-bottom:1px solid var(--fd-border); }
-.fd-board-preview-status { margin-left:auto; font-size:12px; color:var(--fd-muted); white-space:nowrap; }
+.fd-board-preview-status { margin-left:auto; font-size:12px; color:var(--fd-muted); max-width:100%; overflow-wrap:anywhere; }
 .fd-preview-side { display:flex; flex:none; gap:2px; padding:2px; border:1px solid var(--fd-border); border-radius:8px; }
 .fd-preview-side > button { height:28px; min-height:28px; padding:0 12px; border-radius:5px; }
 .fd-preview-selection { flex:1 1 260px; min-width:0; padding-left:16px; border-left:1px solid var(--fd-border); }
