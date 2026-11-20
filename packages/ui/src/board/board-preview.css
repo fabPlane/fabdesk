@@ -4,8 +4,8 @@
 .fd-preview-side { display:flex; flex:none; gap:2px; padding:2px; border:1px solid var(--fd-border); border-radius:8px; }
 .fd-preview-side > button { height:28px; min-height:28px; padding:0 12px; border-radius:5px; }
 .fd-preview-selection { flex:1 1 260px; min-width:0; padding-left:16px; border-left:1px solid var(--fd-border); }
-.fd-preview-selection > .fd-part-selection-bar { min-height:32px; height:auto; padding:0; gap:8px; border:0; background:transparent; flex-wrap:wrap; }
-.fd-preview-selection select { min-width:140px; height:32px; border-radius:6px; }
+.fd-preview-selection > .fd-part-selection-bar { min-height:32px; height:auto; padding:0; gap:8px; border:0; background:transparent; flex-wrap:nowrap; }
+
 .fd-preview-selection .fd-part-selection-bar > span:empty { display:none; }
 .fd-preview-selection .fd-part-selection-bar > span { flex:0 1 auto; }
 .fd-preview-selection .fd-part-selection-bar > button { height:32px; min-height:32px; }
@@ -26,8 +26,12 @@
 @media(max-width:700px) { .fd-preview-layers aside { width:160px; padding:8px; } .fd-preview-topbar { gap:8px 12px; padding:10px 16px; } .fd-preview-selection { flex-basis:200px; padding-left:12px; } .fd-board-preview-status { font-size:11px; } }
 
 
-.fd-preview-model-notes { position:absolute; top:12px; right:var(--fd-canvas-gutter, 24px); z-index:2; max-width:360px; padding:8px 12px; border:1px solid var(--fd-border); border-radius:8px; background:var(--fd-panel); font-size:12px; }
-.fd-preview-model-notes[open] { max-height:40%; overflow:auto; }
+.fd-preview-model-notes { position:relative; margin-left:auto; font-size:12px; }
+.fd-preview-model-notes > summary { padding:6px 8px; border-radius:6px; }
+.fd-preview-model-notes > div { position:absolute; top:100%; right:0; z-index:5; width:min(360px,85vw); max-height:min(420px,55vh); overflow:auto; border:1px solid var(--fd-border); border-radius:8px; background:var(--fd-panel); padding:12px; }
+.fd-model-warning-groups { list-style:none; margin:0 0 10px; padding:0; }
+.fd-model-warning-groups li { display:grid; gap:3px; padding:5px 0; overflow-wrap:anywhere; }
+.fd-model-warning-groups li span { color:var(--fd-muted); }
 .fd-preview-model-notes summary { cursor:pointer; color:var(--fd-warning); }
 .fd-preview-model-notes p { margin:8px 0; }
 .fd-preview-model-notes li { overflow-wrap:anywhere; margin:6px 0; }

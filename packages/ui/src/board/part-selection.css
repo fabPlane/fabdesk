@@ -1,6 +1,13 @@
 .fd-selectable-drawing { display:flex; flex-direction:column; height:100%; min-height:0; }
 .fd-part-selection-bar { display:flex; align-items:center; gap:8px; min-height:38px; flex-shrink:0; padding:4px 10px; border-bottom:1px solid var(--fd-border); background:var(--fd-panel); font-size:12px; }
-.fd-part-selection-bar select { max-width:150px; min-width:90px; border:1px solid var(--fd-border); border-radius:6px; background:var(--fd-panel-2); color:var(--fd-fg); padding:4px 6px; }
+.fd-part-picker { display:inline-flex; gap:7px; max-width:150px; }
+.fd-part-picker span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fd-part-picker + .sr-only { position:absolute; }
+.fd-part-search { width:100%; padding:8px 10px; border:1px solid var(--fd-border); border-radius:6px; color:var(--fd-fg); background:var(--fd-panel-2); }
+.fd-part-results { max-height:min(42vh,320px); overflow-y:auto; margin-top:8px; }
+.fd-part-results [cmdk-item] { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.fd-part-results [cmdk-item] span { color:var(--fd-muted); overflow-wrap:anywhere; }
+.fd-part-results [cmdk-empty] { padding:12px; color:var(--fd-muted); }
 .fd-part-selection-bar [role=status] { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--fd-muted); }
 .fd-part-selection-bar .fd-button { flex-shrink:0; white-space:nowrap; }
 .fd-part-selection-highlight { position:absolute; pointer-events:none; z-index:2; }
@@ -21,7 +28,6 @@
 .fd-board-comparison .fd-comparison-pane { contain:layout; }
 @container (max-width:440px) {
   .fd-comparison-pane .fd-part-selection-bar { flex-wrap:wrap; height:auto; gap:4px; padding:4px 6px; }
-  .fd-comparison-pane .fd-part-selection-bar select { flex:0 0 100%; max-width:100%; }
   .fd-comparison-pane .fd-part-selection-bar [role=status] { flex-basis:100%; }
   .fd-comparison-pane .fd-part-selection-bar .fd-button { padding-inline:6px; font-size:11px; }
   .fd-board-comparison .fd-comparison-pane .fd-svg-tools { flex-wrap:wrap; height:auto; justify-content:center; width:calc(100% - 20px); border-radius:14px; }

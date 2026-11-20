@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type PartBox = { x: number; y: number; width: number; height: number };
-export type SelectablePart = { ref: string; uuid: string; unit?: number; box: PartBox; hull?: { x: number; y: number }[] };
+export type SelectablePart = { ref: string; value?: string; uuid: string; unit?: number; box: PartBox; hull?: { x: number; y: number }[] };
 export type PartScope = { endpoint: string; projectId: string; sourceId?: string; manifestSha256?: string };
 export const partScopeKey = (scope: PartScope) => JSON.stringify([scope.endpoint, scope.projectId, scope.sourceId ?? null, scope.manifestSha256 ?? null]);
 export const usePartSelection = create<{ selection: { scope: string; ref: string } | null; select: (scope: string, ref: string) => void; clear: (scope: string) => void }>(set => ({
@@ -104,7 +104,8 @@ export function pcbSelectionParts(text: string): SelectablePart[] {
       pts.push({ x: center.x - w, y: center.y - h }, { x: center.x + w, y: center.y + h });
     }
     const box = bounds(pts);
-    if (box) parts.push({ ref, uuid: value(fp, "uuid") || value(fp, "tstamp"), box, hull: componentHull(pts) });
+    const partValue = property(fp, "Value") || String(children(fp, "fp_text").find(n => n[1] === "value")?.[2] ?? "");
+    if (box) parts.push({ ref, ...(partValue ? { value: partValue } : {}), uuid: value(fp, "uuid") || value(fp, "tstamp"), box, hull: componentHull(pts) });
   }
   // Duplicate references have no safe counterpart in another view.
   const counts = new Map<string, number>();
@@ -130,7 +131,8 @@ export function schematicSelectionParts(text: string, sheetIdentity: string, roo
     const points = units.flatMap(n => n.filter((v): v is Node[] => Array.isArray(v) && ["rectangle", "polyline", "circle", "arc", "pin"].includes(String(v[0]))).flatMap(n => geometry(n, toSheet)));
     const box = bounds(points);
     const body = units.flatMap(n => n.filter((v): v is Node[] => Array.isArray(v) && ["rectangle", "polyline", "circle", "arc"].includes(String(v[0]))).flatMap(n => geometry(n, toSheet)));
-    if (box) parts.push({ ref, uuid: value(sym, "uuid"), unit, box, hull: componentHull(body.length >= 3 ? body : points) });
+    const partValue = property(sym, "Value");
+    if (box) parts.push({ ref, ...(partValue ? { value: partValue } : {}), uuid: value(sym, "uuid"), unit, box, hull: componentHull(body.length >= 3 ? body : points) });
   }
   const seen = new Set<string>(), ambiguous = new Set<string>();
   for (const part of parts) { const key = JSON.stringify([part.ref, part.unit]); if (seen.has(key)) ambiguous.add(part.ref); seen.add(key); }

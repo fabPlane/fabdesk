@@ -5,7 +5,7 @@ import { CoreHttpError } from "./CoreClient";
 import { sha256Blob } from "./pcb-preview-revision";
 import type { ProjectBoardSources } from "@fabdesk/protocol";
 
-const pcb = `(kicad_pcb (footprint "R" (at 20 30 90) (uuid "r") (property "Reference" "R[1]") (pad "1" smd rect (at 2 0 90) (size 2 1))))`;
+const pcb = `(kicad_pcb (footprint "R" (at 20 30 90) (uuid "r") (property "Reference" "R[1]") (property "Value" "10k") (pad "1" smd rect (at 2 0 90) (size 2 1))))`;
 const schematic = (annotations = "", extra = "", at = "20 30 0", mirror = "") => `(kicad_sch (uuid "root") (lib_symbols (symbol "Device:R" (symbol "R_0_1" (rectangle (start -1 2) (end 1 -2))))) (symbol (lib_id "Device:R") (at ${at}) (unit 1) (uuid "r") (property "Reference" "R1") ${mirror} ${annotations}) ${extra})`;
 afterEach(() => usePartSelection.setState({ selection: null }));
 test("selection follows a board across views and cannot leak across projects, endpoints or sources", () => {
@@ -20,6 +20,8 @@ test("PCB hit testing respects native rotation and literal references", () => {
   const parts = pcbSelectionParts(pcb); expect(parts).toHaveLength(1);
   expect(hitSelectionPart(parts, { x: 20, y: 28 })?.ref).toBe("R[1]");
   expect(hitSelectionPart(parts, { x: 22, y: 30 })).toBeNull();
+  expect(parts[0]?.value).toBe("10k");
+  expect(pcbSelectionParts(pcb.replace('(property "Value" "10k")', '(fp_text value "4k7")'))[0]?.value).toBe("4k7");
   expect(parts[0]!.box.width).toBeCloseTo(1.8);
 });
 test("PCB duplicate references are ambiguous and malformed sources fail closed", () => {
@@ -30,6 +32,8 @@ test("PCB duplicate references are ambiguous and malformed sources fail closed",
 test("schematic parts come from placed symbols, not library definitions", () => {
   const parts = schematicSelectionParts(schematic(), "root", schematic());
   expect(parts).toHaveLength(1); expect(hitSelectionPart(parts, { x: 20, y: 30 })?.ref).toBe("R1");
+  const valued = schematic('(property "Value" "ESP32-WROOM-32E")');
+  expect(schematicSelectionParts(valued, "root", valued)[0]?.value).toBe("ESP32-WROOM-32E");
   expect(parts[0]!.box.width).toBeCloseTo(2.8); expect(parts[0]!.box.height).toBeCloseTo(4.8);
 });
 test("repeated schematic instances use their exact annotation", () => {
@@ -57,6 +61,7 @@ async function fixture() {
 test("preview mappings bind to saved PCB hashes, and stale previews lose selection targets", async () => {
   const f = await fixture(); const fresh = await inspectSelectionIndex(f.client, "p");
   expect(fresh.pcb?.parts[0]?.ref).toBe("R[1]"); expect(fresh.model?.references).toEqual(["R[1]"]);
+  expect(fresh.model?.values?.["R[1]"]).toBe("10k");
   f.files.set("board.kicad_pcb", new Blob([pcb.replace("20 30", "40 50")]));
   const stale = await inspectSelectionIndex(f.client, "p"); expect(stale.pcb).toBeNull(); expect(stale.model).toBeNull();
 });

@@ -7,20 +7,20 @@ The 2D fill uses a source-derived component envelope, not editable model geometr
 Clearing or switching parts restores the original 3D materials, including shared
 materials and textures. Selection belongs to the endpoint, project, and board source; two
 boards with an R1 do not share a selection. Switching views keeps the selection.
-**Show all three views** opens PCB on the left and schematic above 3D on the
-right in taller windows. Short windows use three columns to give each drawing
-more vertical space. All three stay mounted and highlight together. One shared selector
-and Clear control sit above the panes. Drag either divider (or use its arrow keys,
-Home and End) to resize; each pane has Focus and an expand button. Expanding a pane
-preserves selection; Show all three views returns to the saved arrangement.
+**Compare views** opens the PCB drawing and 3D model side by side on PCB-only projects.
+**Add schematic** opens the schematic setup screen. Projects with a schematic use
+three panes. Taller windows stack the schematic above 3D and shorter windows use three columns.
+Use **Find part** to search by reference or saved value. **Focus** locates the selection
+and **Clear** removes it. Resize panes with the divider or its arrow keys, Home and End.
+Each pane has its own Focus and expand buttons. **Compare views** restores the saved arrangement.
 Schematic view memory stores the visible drawing center so expanding a focused
 pane does not restore comparison-padding offsets and scroll the part off-screen.
 
 In the three-view workspace, clicking a component smoothly focuses its counterparts
 in the other views. PCB and schematic keep the clicked view steady; 3D also
 zooms into a component clicked directly in the model. Its close-up fits the part
-at the current camera angle, including small parts on large boards. The shared dropdown focuses
-all three. Transitions take 320 ms, respect reduced motion, and are interrupted by
+at the current camera angle, including small parts on large boards. Choosing a search result focuses
+all available panes. Transitions take 320 ms, respect reduced motion, and are interrupted by
 manual camera input or a newer selection. **Focus** also zooms explicitly; **Fit**
 restores the overview. In single-view mode, selection leaves the camera unchanged.
 After manual zoom or pan, resizing preserves camera control rather than refocusing

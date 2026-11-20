@@ -18,6 +18,14 @@ async function bridge(path: string, body?: unknown): Promise<any> {
 }
 const page = async (code: string) => (await bridge("/eval", { code })).result;
 async function until(code: string) { for (let i = 0; i < 120; i++) { if (await page(code)) return; await Bun.sleep(250); } throw new Error(`Timed out: ${code}`); }
+async function openPartPicker(ref: string) {
+  await bridge("/click", { selector: ".fd-part-picker:not(:disabled)" });
+  await until(`!!document.querySelector(\`[cmdk-item][data-value=${JSON.stringify(ref)}]\`)`);
+}
+async function choosePart(ref: string) {
+  await openPartPicker(ref);
+  await bridge("/click", { selector: `[cmdk-item][data-value=${JSON.stringify(ref)}]` });
+}
 let passed = 0;
 const check = (name: string, condition: boolean) => { if (!condition) throw new Error(`FAIL ${name}`); passed++; console.log(`PASS ${name}`); };
 const selected = (ref: string) => `document.querySelector('.fd-model-viewport canvas')?.dataset.selectedComponent===${JSON.stringify(ref)}`;
@@ -31,12 +39,12 @@ const pcb = readFileSync(pcbPath), pcbReceipt = readFileSync(pcbReceiptPath);
 const originalSize = await page(`({width:innerWidth,height:innerHeight})`);
 if ((await bridge("/ui", { action:"selectProject", args:[projectId] })).result.activeProjectId !== projectId) throw new Error("Open the disposable project before running these checks.");
 await bridge("/ui", { action:"openTab", args:["pcb"] });
-if (!await page(`!!document.querySelector('.fd-shared-part-selection')`)) await bridge("/click", { selector:'button[aria-label="Show all three views"]' });
-await until(`!!document.querySelector('.fd-shared-part-selection option[value="U1"]') && !document.querySelector('.fd-shared-part-selection select').disabled && !!document.querySelector('.fd-model-viewport canvas')`);
+if (!await page(`!!document.querySelector('.fd-shared-part-selection')`)) await bridge("/click", { selector:'button[aria-label="Compare views"]' });
+await until(`!!document.querySelector('.fd-shared-part-selection .fd-part-picker') && !document.querySelector('.fd-shared-part-selection .fd-part-picker').disabled && !!document.querySelector('.fd-model-viewport canvas')`);
 await page(`(()=>{window.__recoveryErrors=[];window.addEventListener('error',e=>window.__recoveryErrors.push(e.message));window.addEventListener('unhandledrejection',e=>window.__recoveryErrors.push(String(e.reason)));})()`);
 try {
   await page(`window.resizeTo(1440,920)`); await Bun.sleep(300);
-  await bridge("/click", { selector:'.fd-shared-part-selection option[value="U1"]' });
+  await choosePart("U1");
   await until(selected("U1")); await until(`!document.querySelector('[data-focus-motion="running"]')`);
   await bridge("/click", { selector:'.fd-comparison-pane[data-view="pcb"] .fd-svg-fit-button[title="Show the whole drawing"]' });
   const point = await page(`(()=>{const r=document.querySelector('.fd-comparison-pane[data-view="pcb"] [data-component-ref="U1"]').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`);
@@ -46,11 +54,11 @@ try {
   const refreshedPcb = Buffer.from(pcb.toString().replace('</svg>', '<!-- refreshed preview audit -->\n</svg>'));
   const refreshedReceipt = JSON.parse(pcbReceipt.toString()); refreshedReceipt.artifactSha256 = createHash("sha256").update(refreshedPcb).digest("hex");
   writeFileSync(pcbPath, refreshedPcb); writeFileSync(pcbReceiptPath, JSON.stringify(refreshedReceipt));
-  await until(`!!window.__heldPreview && !document.querySelector('.fd-shared-part-selection select').disabled`);
+  await until(`!!window.__heldPreview && !document.querySelector('.fd-shared-part-selection .fd-part-picker').disabled`);
   check("An unpainted replacement preview hides source-bound overlays", await page(`!!document.querySelector('.fd-comparison-pane[data-view="pcb"] .fd-svg-host[aria-busy="true"]') && !document.querySelector('.fd-comparison-pane[data-view="pcb"] [data-component-ref]')`));
-  await bridge("/click", { selector:'.fd-shared-part-selection button' }); await bridge("/click", point);
+  await bridge("/click", { selector:'.fd-shared-part-selection button[aria-label="Clear selection"]' }); await bridge("/click", point);
   await page(`document.querySelector('.fd-comparison-pane[data-view="pcb"] .fd-svg-host').focus()`); await bridge("/key", { key:"Enter" });
-  check("Unpainted previews reject mouse and keyboard selection", await page(`document.querySelector('.fd-shared-part-selection select').value==='' && !document.querySelector('.fd-location-toolbar')`));
+  check("Unpainted previews reject mouse and keyboard selection", await page(`document.querySelector('.fd-shared-part-selection .fd-part-picker').value==='' && !document.querySelector('.fd-location-toolbar')`));
   await page(`(()=>{document.removeEventListener('load',window.__holdPreview,true);window.__heldPreview.dispatchEvent(new Event('load'));delete window.__holdPreview;delete window.__heldPreview})()`);
   await until(`!!document.querySelector('.fd-comparison-pane[data-view="pcb"] .fd-svg-host[aria-busy="false"]')`);
   await bridge("/click", point); await until(selected("U1"));
@@ -64,7 +72,7 @@ try {
   await page(`window.resizeTo(960,600)`); await Bun.sleep(400);
   check("Source revalidation preserves 3D framing through resize", inside(await bounds()));
   await page(`window.resizeTo(1440,920)`); await Bun.sleep(400);
-  await bridge("/click", { selector:'.fd-shared-part-selection option[value="R2"]' });
+  await choosePart("R2");
   await until(selected("R2")); await until(`!document.querySelector('[data-focus-motion="running"]')`);
   const focused = await bounds();
   await page(`window.__recoveryCanvas=document.querySelector('.fd-model-viewport canvas')`);
@@ -93,12 +101,12 @@ try {
   updatedReceipt.artifactSha256 = createHash("sha256").update(missingPartModel).digest("hex");
   await page(`window.__recoveryCanvas=document.querySelector('.fd-model-viewport canvas')`);
   writeFileSync(modelPath, missingPartModel); writeFileSync(receiptPath, JSON.stringify(updatedReceipt));
-  await until(`document.querySelector('.fd-model-viewport canvas')!==window.__recoveryCanvas && (${selected("R2")}) && !document.querySelector('.fd-shared-part-selection select').disabled`);
-  await bridge("/click", { selector:'.fd-shared-part-selection option[value="U1"]' });
+  await until(`document.querySelector('.fd-model-viewport canvas')!==window.__recoveryCanvas && (${selected("R2")}) && !document.querySelector('.fd-shared-part-selection .fd-part-picker').disabled`);
+  await choosePart("U1");
   await until(`document.querySelector('.fd-comparison-pane[data-view="3d"] [role=status]')?.textContent.includes('U1 has no selectable model')`);
   check("Missing 3D counterpart keeps both verified drawing highlights", await page(`document.querySelectorAll('.fd-comparison-pane [data-component-ref="U1"]').length===2`));
   check("Missing counterpart disables Focus and removes the previous model tint", await page(`document.querySelector('button[aria-label="Focus selected in 3D"]').disabled && document.querySelector('.fd-model-viewport canvas').dataset.tintedMeshes==='0'`));
-  await bridge("/click", { selector:'.fd-shared-part-selection option[value="R2"]' }); await until(selected("R2"));
+  await choosePart("R2"); await until(selected("R2"));
 } finally {
   await page(`(()=>{if(window.__holdPreview)document.removeEventListener('load',window.__holdPreview,true);window.__heldPreview?.dispatchEvent(new Event('load'));delete window.__holdPreview;delete window.__heldPreview})()`);
   writeFileSync(sourcePath, source); writeFileSync(modelPath, model); writeFileSync(receiptPath, receipt);

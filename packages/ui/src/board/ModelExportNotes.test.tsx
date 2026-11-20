@@ -1,28 +1,24 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { missingModelReferences, ModelExportNotes } from "./ModelExportNotes";
+import { ModelExportNotes } from "./ModelExportNotes";
+import { inspectModelWarnings } from "./model-warnings";
 
-test("export notes count missing references rather than duplicate path warnings", () => {
-  const warnings = ["Could not add 3D model for SW1.", "File not found: ${KICAD10_3DMODEL_DIR}/switch.step", "Could not add 3D model for J1.", "Could not add 3D model for SW1."];
-  expect(missingModelReferences(warnings)).toEqual(["SW1", "J1"]);
+test("group shared files and count each affected placement once across receipt formats", () => {
+  const warnings = ["Could not add 3D model for J1.", "File not found: connector.step",
+    "J1, J2: exact stock model unavailable (lib/connector.step); no substitute was used.",
+    "J2: model unavailable (custom/shield.step); provide the original model file.",
+    "R3: no 3D model is assigned; add the exact part model."];
+  const result = inspectModelWarnings(warnings);
+  expect(result.label).toBe("3 placements missing 3D models");
+  expect([...result.byFile.get("lib/connector.step")!]).toEqual(["J1", "J2"]);
+  expect(result.ungrouped).toEqual(["R3"]);
   const html = renderToStaticMarkup(<ModelExportNotes projectId="p" warnings={warnings} />);
-  expect(html).toContain("2 component models missing");
-  expect(html).toContain("SW1, J1");
-  expect(html).toContain("Review missing models");
-  expect(html).toContain("Components missing 3D models");
-  expect(html.match(/3D model not included/g)).toHaveLength(2);
-  expect(html).not.toContain("4 notes");
-  expect(html).toContain("Technical details");
-  expect(html).toContain("Find missing models");
-  expect(html).toContain("incomplete preview");
-  expect(html).toContain("switch.step");
-  expect(html).toContain("<details");
+  for (const text of ["connector.step", "J1, J2", "Model file unspecified", "Technical details", "Find missing models", "custom/shield.step"]) expect(html).toContain(text);
   expect(html).not.toContain("<details open");
 });
 
-test("unknown warnings remain actionable without inventing missing components", () => {
-  const html = renderToStaticMarkup(<ModelExportNotes projectId="p" warnings={["Exporter requires review."]} />);
-  expect(html).toContain("Model export needs review");
-  expect(html).toContain("Exporter requires review.");
-  expect(html).not.toContain("component models missing");
+test("older and offline receipts retain available evidence without guessing a file for legacy references", () => {
+  expect(inspectModelWarnings(["Could not add 3D model for SW1.", "File not found: x.step"]).ungrouped).toEqual(["SW1"]);
+  expect(inspectModelWarnings(["Q1: stock model is not available locally (q.step)."]).label).toBe("1 placement missing a 3D model");
+  expect(inspectModelWarnings(["Unknown exporter message"]).references).toEqual([]);
 });

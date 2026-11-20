@@ -19,7 +19,7 @@ import { BoardViewMenu } from "./BoardViewMenu";
 import { CircuitLogo } from "../components/CircuitLogo";
 import { workspaceViews } from "@fabdesk/client-core";
 import { useCore } from "@fabdesk/client-core";
-import { useBoardSources, useProjectOrder, useProjects } from "@fabdesk/client-core";
+import { useBoardSources, useProject, useProjectOrder, useProjects } from "@fabdesk/client-core";
 import { BOARD_TABS, BOARD_TAB_LABELS, useUiStore, type BoardTab } from "../stores/ui";
 import { modKey } from "../util";
 import { CadTab } from "./CadTab";
@@ -94,6 +94,16 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
   const sources = useBoardSources(projectId);
   const [checksOpen, setChecksOpen] = useState(false);
   const openChecks = () => { if (projectId && useUiStore.getState().activeProjectId === projectId) canvas && area === "boards" ? setChecksOpen(true) : setBoardTab("drc"); };
+  const design = useProject(compareAvailable ? projectId : null);
+  const pcbOnly = design.isSuccess && design.data.files.some(file => file.path === "board.kicad_pcb") && !design.data.files.some(file => file.path === "board.kicad_sch");
+  const selectBoardView = (next: BoardTab) => {
+    if (compare && pcbOnly && next === "schematic") useUiStore.getState().setBoardComparison(false);
+    setWorkspaceTab(next);
+  };
+  const toggleComparison = () => {
+    if (!compare && pcbOnly && tab === "schematic") setWorkspaceTab("pcb");
+    useUiStore.getState().setBoardComparison(!compare);
+  };
   const assembly = sources.data?.mode === "assembly";
   const savedSelection = useUiStore(state => projectId ? state.assemblyBoardByProject[projectId] : undefined);
   const selected = sources.data?.mode === "assembly" ? restoreAssemblySelection(sources.data, savedSelection) : null;
@@ -115,17 +125,17 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
     <div className="fd-canvas-controls">
       {area === "boards" && projectId && sources.data?.mode === "single" && <ImportedBoardIdentity projectId={projectId} />}
       {area === "boards" && tab === "placement" && projectId && sources.data?.mode === "assembly" && <AssemblyBoardPicker projectId={projectId} data={sources.data} selection={selected} disabled={sources.isFetching} onChoose={selection => useUiStore.getState().setAssemblyBoard(selection)} onBack={() => useUiStore.getState().setWorkspaceArea("overview")} />}
-      {area === "boards" && tab === "cinema" ? <div className="fd-routing-toolbar-slot" data-routing-toolbar-slot /> : area === "boards" ? <BoardViewTabs value={tab === "placement" ? "pcb" : tab} onChange={setWorkspaceTab} /> : workspaceViews(area).length > 1 && <Tabs tabs={visibleTabs} value={tab} onChange={setWorkspaceTab} />}
+      {area === "boards" && tab === "cinema" ? <div className="fd-routing-toolbar-slot" data-routing-toolbar-slot /> : area === "boards" ? <BoardViewTabs value={tab === "placement" ? "pcb" : tab} onChange={selectBoardView} /> : workspaceViews(area).length > 1 && <Tabs tabs={visibleTabs} value={tab} onChange={setWorkspaceTab} />}
       {area === "boards" && tab !== "cinema" && tab !== "placement" && <WorkspaceMenu className="fd-board-tools fd-canvas-tool-menu" label={<><span aria-label="More board tools"><Icon name="more" width={18} height={18} /></span><span className="fd-canvas-tool-label" aria-hidden="true">More board tools</span></>}><div className="fd-menu-caption">Board tools</div><button onClick={() => { setNativeDrawing(value => !value); setWorkspaceTab("pcb"); }}>{nativeDrawing ? "Realistic board view" : "PCB drawing & comments"}</button><button onClick={() => setWorkspaceTab("placement")}>Edit placement</button><button aria-current={tab === "art" ? "page" : undefined} onClick={() => setWorkspaceTab("art")}>Artwork</button>{order.data && <button onClick={openOrder}>Order options</button>}</WorkspaceMenu>}
       {area === "boards" && tab === "placement" && <div className="fd-placement-toolbar-slot" data-placement-toolbar-slot />}
       {area === "mechanical" && <div className="fd-mechanical-toolbar-slot" data-mechanical-toolbar-slot />}
       {area === "review" && tab === "diff" && projectId && <HostedReviewTools key={projectId} projectId={projectId} />}
       {area === "review" && (tab === "updates" || tab === "diff" || tab === "comments") && <div className="fd-review-scope-slot" data-review-scope-slot />}
-      {compareAvailable && <CanvasToolButton label={compare ? "Close all views" : "Show all three views"} icon="panel" active={compare} onClick={() => useUiStore.getState().setBoardComparison(!compare)} />}
+      {compareAvailable && <CanvasToolButton label={compare ? "Close comparison" : "Compare views"} icon="panel" active={compare} onClick={toggleComparison} />}
       {area === "boards" && tab !== "cinema" && tab !== "placement" && <div className="fd-board-task-actions">{tab === "pcb" && <Button size="sm" variant="secondary" onClick={() => setWorkspaceTab("placement")}><Icon name="pcb" width={18} height={18} />Edit placement</Button>}<Button size="sm" className="fd-routing-task" variant="secondary" onClick={() => setWorkspaceTab("cinema")}><Icon name="route" width={18} height={18} />Routing</Button><Button size="sm" onClick={openChecks}><Icon name="checkCircle" width={18} height={18} />Checks</Button></div>}
     </div>
     {projectId && <BoardChecksDialog key={projectId} projectId={projectId} open={checksOpen} onClose={() => setChecksOpen(false)} />}
-    <div className="fd-canvas-board-body">{compareAvailable && compare && projectId ? <BoardComparison key={projectId} projectId={projectId} active={tab as "pcb" | "schematic" | "3d"} onOpenChecks={openChecks} /> : area === "outputs" && tab === "renders" ? <OutputsLibrary key={projectId} projectId={projectId} /> : area === "outputs" && tab === "files" ? <FilesTab key={projectId} exportFocus /> : area === "boards" && projectId && !(tab === "pcb" && (rootFinding || nativeDrawing || commentRequested)) && (tab === "pcb" || tab === "3d" || tab === "layers") ? <RootBoardPreview key={projectId} projectId={projectId} mode={tab} /> : <TabBody key={`${projectId}:${tab}`} tab={tab} canvas onOpenChecks={openChecks} />}</div>
+    <div className="fd-canvas-board-body">{compareAvailable && compare && projectId ? <BoardComparison twoPanes={pcbOnly} onExpandPcb={() => setNativeDrawing(true)} key={projectId} projectId={projectId} active={tab as "pcb" | "schematic" | "3d"} onOpenChecks={openChecks} /> : area === "outputs" && tab === "renders" ? <OutputsLibrary key={projectId} projectId={projectId} /> : area === "outputs" && tab === "files" ? <FilesTab key={projectId} exportFocus /> : area === "boards" && projectId && !(tab === "pcb" && (rootFinding || nativeDrawing || commentRequested)) && (tab === "pcb" || tab === "3d" || tab === "layers") ? <RootBoardPreview key={projectId} projectId={projectId} mode={tab} /> : <TabBody key={`${projectId}:${tab}`} tab={tab} canvas onOpenChecks={openChecks} />}</div>
   </div>;
   return (
     <div className="fd-board-panel flex h-full min-w-0 flex-col bg-panel" data-testid="board-panel">

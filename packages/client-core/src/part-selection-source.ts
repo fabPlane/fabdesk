@@ -5,7 +5,7 @@ import { pcbSelectionParts, schematicSelectionParts, type SelectablePart } from 
 
 export type SelectionIndex = {
   pcb: { parts: SelectablePart[]; sha256: string } | null;
-  model: { references: string[]; sha256: string } | null;
+  model: { references: string[]; values?: Record<string, string>; sha256: string } | null;
   sheets: { path: string; identity: string; name: string; sha256: string; parts: SelectablePart[] }[];
 };
 /** Read-only selection metadata. A stale/untracked preview never receives current-source markers. */
@@ -34,7 +34,7 @@ export async function inspectSelectionIndex(client: Pick<CoreClient, "readFileBl
   if (preview.success && preview.data.sourceSha256 === pcbHash) result.pcb = { parts: pcbParts, sha256: preview.data.artifactSha256 };
   const memberModel = AssemblyBoardModelRevision.safeParse(modelRaw);
   const model = BoardModelRevision.safeParse(modelRaw);
-  if (model.success && model.data.sourceSha256 === pcbHash && (!board || memberModel.success && memberModel.data.boardSource.projectId === projectId && memberModel.data.boardSource.sourceId === board.sourceId && memberModel.data.boardSource.manifestSha256 === board.manifestSha256)) result.model = { references: pcbParts.map(p => p.ref), sha256: model.data.artifactSha256 };
+  if (model.success && model.data.sourceSha256 === pcbHash && (!board || memberModel.success && memberModel.data.boardSource.projectId === projectId && memberModel.data.boardSource.sourceId === board.sourceId && memberModel.data.boardSource.manifestSha256 === board.manifestSha256)) result.model = { references: pcbParts.map(p => p.ref), values: Object.fromEntries(pcbParts.filter(p => p.value).map(p => [p.ref, p.value!])), sha256: model.data.artifactSha256 };
   const schematic = board ? AssemblySchematicPreviewRevision.safeParse(schRaw) : RootSchematicPreviewRevision.safeParse(schRaw);
   if (schematic.success && (board ? "boardSource" in schematic.data && schematic.data.boardSource.projectId === projectId && schematic.data.boardSource.sourceId === board.sourceId && schematic.data.boardSource.manifestSha256 === board.manifestSha256 : "projectId" in schematic.data && schematic.data.projectId === projectId)) {
     let valid = true;
