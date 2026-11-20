@@ -174,3 +174,17 @@ export { previewEnclosureSvg } from "./enclosure-preview";
 export { cropNativePageSvg } from "./pcb-svg-coordinates";
 
 export * from "./library-tables";
+export {
+  applyLibraryFields,
+  buildSchematicClipboard,
+  clipboardLooksPasteable,
+  escapeSexpr,
+  fallbackSymbolSexpr,
+  propertyBlock,
+  quote,
+  renameSymbolSexpr,
+  splitLibId,
+} from "./clipboard";
+export type { ClipboardFields, ClipboardPart } from "./clipboard";
+export { makePartFromDatasheet } from "./datasheet-part";
+export type { DatasheetPartInput, MadeCadPart } from "./datasheet-part";

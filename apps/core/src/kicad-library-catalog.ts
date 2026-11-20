@@ -16,6 +16,20 @@ type CatalogIndexEntry = {
   path: string;
   description?: string | undefined;
   keywords?: string[] | undefined;
+  value?: string | undefined;
+  footprint?: string | undefined;
+  mpn?: string | undefined;
+  manufacturer?: string | undefined;
+};
+
+export type CatalogPickerHit = {
+  libId: string;
+  footprint: string;
+  value: string;
+  mpn?: string;
+  manufacturer?: string;
+  description?: string;
+  pinNumbers: string[];
 };
 
 export class KicadLibraryCatalog {
@@ -55,8 +69,16 @@ export class KicadLibraryCatalog {
           libId,
           nickname: nickname!,
           name: name.join(":"),
-          description: entry.description,
-          keywords: entry.keywords,
+          description: [entry.description, entry.value, entry.footprint, entry.mpn, entry.manufacturer]
+            .filter(Boolean)
+            .join(" "),
+          keywords: [
+            ...(entry.keywords ?? []),
+            ...(entry.value ? [entry.value] : []),
+            ...(entry.footprint ? [entry.footprint] : []),
+            ...(entry.mpn ? [entry.mpn] : []),
+            ...(entry.manufacturer ? [entry.manufacturer] : []),
+          ],
         };
       }),
     ).slice(0, Math.max(50, limit * 10));
@@ -98,6 +120,31 @@ export class KicadLibraryCatalog {
           ...(part ? { part } : {}),
         };
       });
+  }
+
+  async searchPicker(query: string, limit: number): Promise<CatalogPickerHit[]> {
+    const hits = await this.search("symbol", expandPickerQuery(query), limit);
+    const rows = await Promise.all(
+      hits.map(async (hit) => {
+        const entry = (await this.index("symbol")).get(hit.libId);
+        const part = hit.part ?? (await this.describe("symbol", hit.libId));
+        const pinNumbers = (part?.pins ?? [])
+          .map((pin) => pin.number)
+          .filter((number): number is string => Boolean(number));
+        const footprint = entry?.footprint || guessFootprint(hit.libId, query);
+        const description = part?.description || entry?.description;
+        return {
+          libId: hit.libId,
+          footprint,
+          value: entry?.value || hit.name,
+          ...(entry?.mpn ? { mpn: entry.mpn } : {}),
+          ...(entry?.manufacturer ? { manufacturer: entry.manufacturer } : {}),
+          ...(description ? { description } : {}),
+          pinNumbers: pinNumbers.length ? pinNumbers : ["1", "2"],
+        };
+      }),
+    );
+    return rows;
   }
 
   async describe(kind: CatalogKind, libId: string): Promise<PartDescription | null> {
@@ -148,6 +195,10 @@ export class KicadLibraryCatalog {
           path,
           description: symbol.description,
           keywords: symbol.keywords,
+          ...(symbol.value ? { value: symbol.value } : {}),
+          ...(symbol.footprint ? { footprint: symbol.footprint } : {}),
+          ...(symbol.mpn ? { mpn: symbol.mpn } : {}),
+          ...(symbol.manufacturer ? { manufacturer: symbol.manufacturer } : {}),
         });
     }
     return result;
@@ -163,12 +214,73 @@ export class KicadLibraryCatalog {
   }
 }
 
-function topLevelSymbolEntries(
-  text: string,
-): Array<{ name: string; description?: string; keywords?: string[] }> {
-  const symbols: Array<{ name: string; description?: string; keywords?: string[] }> = [];
+/** Expand an MPN-like query so `RC0402` also searches 0402 / resistor / Device:R. */
+export function expandPickerQuery(query: string): string {
+  const extra: string[] = [];
+  const q = query.trim();
+  if (/0402|1005metric/i.test(q)) extra.push("0402", "R_0402_1005Metric");
+  if (/0603|1608metric/i.test(q)) extra.push("0603", "R_0603_1608Metric");
+  if (/0805|2012metric/i.test(q)) extra.push("0805", "R_0805_2012Metric");
+  if (/1206|3216metric/i.test(q)) extra.push("1206", "R_1206_3216Metric");
+  if (/^(rc|ac|erj|crcw)/i.test(q) || /\bres(istor)?\b/i.test(q)) extra.push("R", "resistor");
+  if (/^(grm|cl\d)/i.test(q) || /\bcap(acitor)?\b/i.test(q)) extra.push("C", "capacitor");
+  if (/^tps|^lm\d|^stm32|^esp32/i.test(q)) extra.push("U", "regulator", "ic");
+  return extra.length ? `${q} ${extra.join(" ")}` : q;
+}
+
+function guessFootprint(libId: string, query: string): string {
+  const name = libId.split(":").at(-1) ?? "";
+  const blob = `${libId} ${query}`;
+  const isCap = name === "C" || /cap/i.test(blob);
+  const isLed = name === "LED" || /\bled\b/i.test(blob);
+  const isInductor = name === "L" || /inductor/i.test(blob);
+  if (/0402|1005metric/i.test(blob)) {
+    if (isCap) return "Capacitor_SMD:C_0402_1005Metric";
+    if (isLed) return "LED_SMD:LED_0402_1005Metric";
+    if (isInductor) return "Inductor_SMD:L_0402_1005Metric";
+    return "Resistor_SMD:R_0402_1005Metric";
+  }
+  if (/0603|1608metric/i.test(blob)) {
+    if (isCap) return "Capacitor_SMD:C_0603_1608Metric";
+    return "Resistor_SMD:R_0603_1608Metric";
+  }
+  if (/0805|2012metric/i.test(blob)) {
+    if (isCap) return "Capacitor_SMD:C_0805_2012Metric";
+    return "Resistor_SMD:R_0805_2012Metric";
+  }
+  return "";
+}
+
+function topLevelSymbolEntries(text: string): Array<{
+  name: string;
+  description?: string;
+  keywords?: string[];
+  value?: string;
+  footprint?: string;
+  mpn?: string;
+  manufacturer?: string;
+}> {
+  const symbols: Array<{
+    name: string;
+    description?: string;
+    keywords?: string[];
+    value?: string;
+    footprint?: string;
+    mpn?: string;
+    manufacturer?: string;
+  }> = [];
   const tokens = tokenize(text);
-  let current: { name: string; description?: string; keywords?: string[] } | undefined;
+  let current:
+    | {
+        name: string;
+        description?: string;
+        keywords?: string[];
+        value?: string;
+        footprint?: string;
+        mpn?: string;
+        manufacturer?: string;
+      }
+    | undefined;
   for (let i = 0; i < tokens.length - 1; i++) {
     if (tokens[i]!.depth === 2 && tokens[i]!.value === "symbol" && tokens[i + 1]!.depth === 2) {
       current = { name: tokens[i + 1]!.value };
@@ -183,6 +295,10 @@ function topLevelSymbolEntries(
       current.description = value.value;
     if (["Keywords", "keywords", "ki_keywords"].includes(property.value))
       current.keywords = value.value.split(/\s+/).filter(Boolean);
+    if (property.value === "Value") current.value = value.value;
+    if (property.value === "Footprint") current.footprint = value.value;
+    if (["MPN", "mpn", "PartNumber"].includes(property.value)) current.mpn = value.value;
+    if (["Manufacturer", "manufacturer"].includes(property.value)) current.manufacturer = value.value;
   }
   return symbols;
 }

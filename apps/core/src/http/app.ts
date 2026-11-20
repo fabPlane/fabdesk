@@ -84,6 +84,8 @@ import { parsePublicGitHubUrl } from "../github-import";
 import { applyErrorReporting, captureCoreException } from "../sentry";
 import { parseTopics, sseResponse } from "./sse";
 import { cloudRoutes } from "./cloud-routes";
+import { partsPickerRoutes } from "./parts-picker-routes";
+import { KicadLibraryCatalog } from "../kicad-library-catalog";
 import { resolveNativeBoardBinding } from "../assembly-board-binding";
 import { commentRoutes } from "./comment-routes";
 import { outputTrashRoutes } from "./output-trash-routes";
@@ -914,6 +916,15 @@ export function createApp(deps: AppDeps): Hono<Env> {
 
   /* ---------- fabplane.com shopping lists & inventory ---------- */
   app.route("/", cloudRoutes<Env["Variables"]>({ cloud: () => deps.services.cloud, projects: deps.projects, readBom: project => readProjectBom(makeContext({ project, services: deps.services })), canManageSharing: token => deps.tokens.lookup(token)?.kind === "daemon", rasterizeSharePreview: (svg, options) => deps.services.kicad.rasterizeSvg(svg, options) }));
+
+  /* ---------- in-KiCad shared parts picker (plugin → local daemon only) ---------- */
+  partsPickerRoutes(app, {
+    cloud: () => deps.services.cloud,
+    catalog: new KicadLibraryCatalog({
+      footprints: process.env["KICAD_FOOTPRINT_DIR"],
+      symbols: process.env["KICAD_SYMBOL_DIR"],
+    }),
+  });
 
   /* ---------- folders ---------- */
   app.get("/folders", (c) => c.json(deps.store.folders.list()));

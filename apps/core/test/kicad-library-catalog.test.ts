@@ -116,4 +116,34 @@ describe("bundled KiCad library catalog", () => {
       },
     );
   });
+
+  test("picker search matches an MPN like RC0402 onto Device:R and a 0402 footprint", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fabdesk-picker-catalog-"));
+    roots.push(root);
+    const symbols = join(root, "symbols");
+    await mkdir(symbols, { recursive: true });
+    await writeFile(
+      join(symbols, "Device.kicad_sym"),
+      `(kicad_symbol_lib (version 20231120)
+        (symbol "R"
+          (property "Value" "R")
+          (property "Footprint" "")
+          (property "ki_keywords" "R res resistor")
+          (property "ki_description" "Resistor")
+          (pin passive line (at 0 0 0) (length 2.54) (name "~") (number "1"))
+          (pin passive line (at 2.54 0 180) (length 2.54) (name "~") (number "2")))
+        (symbol "C"
+          (property "Value" "C")
+          (property "ki_keywords" "C cap capacitor")
+          (property "ki_description" "Unpolarized capacitor")))`,
+    );
+    const catalog = new KicadLibraryCatalog({ symbols });
+    const hits = await catalog.searchPicker("RC0402", 10);
+    expect(hits[0]).toMatchObject({
+      libId: "Device:R",
+      footprint: "Resistor_SMD:R_0402_1005Metric",
+      value: "R",
+    });
+    expect(hits[0]?.pinNumbers).toEqual(["1", "2"]);
+  });
 });

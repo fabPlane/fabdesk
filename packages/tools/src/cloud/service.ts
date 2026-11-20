@@ -76,6 +76,11 @@ export class CloudService {
     return !!this.opts.token();
   }
 
+  /** Current fabplane bearer, or null while signed out. */
+  token(): string | null {
+    return this.opts.token();
+  }
+
   /** The API client for the current token. Throws while signed out or when unavailable. */
   client(): CloudApi {
     if (!this.opts.api) throw new CloudUnavailableError();
