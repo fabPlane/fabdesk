@@ -122,6 +122,7 @@ export type Evidence = {
 export type Resolver = (options: {
   env: NodeJS.ProcessEnv;
   cwd: string;
+  signal?: AbortSignal;
 }) => Promise<KicadCli | null>;
 
 async function fileHash(path: string) {
@@ -204,9 +205,13 @@ export async function captureInputs(project: string, board: string) {
     if (++visited > 8192) throw Error("Dependency entry limit exceeded");
     if (info?.isDirectory()) {
       const canonical = await realpath(absolute);
-      if (directories.has(canonical)) return;
+      if (directories.has(canonical)) throw Error("Library ancestor cycle");
       directories.add(canonical);
-      for (const n of (await readdir(absolute)).sort()) await add(join(absolute, n));
+      try {
+        for (const n of (await readdir(absolute)).sort()) await add(join(absolute, n));
+      } finally {
+        directories.delete(canonical);
+      }
       return;
     }
     const data = await optional(absolute);
@@ -305,18 +310,23 @@ async function profile(root: string) {
   env.XDG_CONFIG_HOME = xdg;
   return env;
 }
-async function run(command: string[], cwd: string, env: NodeJS.ProcessEnv) {
+async function run(command: string[], cwd: string, env: NodeJS.ProcessEnv, signal: AbortSignal) {
   const p = Bun.spawn(command, { cwd, env, stdout: "pipe", stderr: "pipe" });
-  const timer = setTimeout(() => p.kill(), 120000);
+  const abort = () => p.kill("SIGKILL");
+  signal.addEventListener("abort", abort, { once: true });
+  if (signal.aborted) abort();
+  const timer = setTimeout(() => p.kill("SIGKILL"), 120000);
   try {
     const [stdout, stderr, code] = await Promise.all([
       new Response(p.stdout).text(),
       new Response(p.stderr).text(),
       p.exited,
     ]);
+    signal.throwIfAborted();
     return { stdout, stderr, code };
   } finally {
     clearTimeout(timer);
+    signal.removeEventListener("abort", abort);
   }
 }
 async function native(
@@ -324,6 +334,7 @@ async function native(
   root: string,
   board: string,
   env: NodeJS.ProcessEnv,
+  signal: AbortSignal,
 ): Promise<Fact[]> {
   if (process.platform === "win32")
     throw Error("Native representation transport not qualified on Windows yet");
@@ -333,9 +344,16 @@ async function native(
   // Drain immediately: a full diagnostic pipe must not deadlock startup or cleanup.
   const logs = Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
   let api: KiCad | undefined;
+  const abort = () => {
+    p.kill("SIGKILL");
+    void api?.close().catch(() => {});
+  };
+  signal.addEventListener("abort", abort, { once: true });
   try {
+    signal.throwIfAborted();
     const deadline = Date.now() + 15000;
     while (!(await stat(socket).catch(() => null))) {
+      signal.throwIfAborted();
       if (p.exitCode !== null || Date.now() > deadline) throw Error("Native API did not start");
       await Bun.sleep(50);
     }
@@ -368,13 +386,14 @@ async function native(
       })
       .sort((a, b) => a.id.localeCompare(b.id));
   } catch (cause) {
-    p.kill();
+    p.kill("SIGKILL");
     await p.exited;
     const [stdout, stderr] = await logs;
     throw Error(`${error(cause)}; native stdout: ${stdout}; native stderr: ${stderr}`);
   } finally {
+    signal.removeEventListener("abort", abort);
     await api?.close();
-    p.kill();
+    p.kill("SIGKILL");
     await p.exited;
     await logs;
   }
@@ -384,6 +403,7 @@ async function measure(
   root: string,
   board: string,
   env: NodeJS.ProcessEnv,
+  signal: AbortSignal,
 ): Promise<Check> {
   const invocation = [
     cli.path,
@@ -399,7 +419,7 @@ async function measure(
     join(root, "source", board),
   ];
   try {
-    const result = await run(invocation, root, env);
+    const result = await run(invocation, root, env, signal);
     if (result.code !== 0)
       return {
         status: "failed",
@@ -508,7 +528,12 @@ export async function refresh(
   project: string,
   board: string,
   resolver: Resolver,
+  callSignal?: AbortSignal,
 ): Promise<Evidence> {
+  const signal = callSignal
+    ? AbortSignal.any([callSignal, AbortSignal.timeout(180000)])
+    : AbortSignal.timeout(180000);
+  signal.throwIfAborted();
   board = relative(project, await safe(project, board)).replaceAll("\\", "/");
   if (!board.endsWith(".kicad_pcb")) throw Error("Expected a native .kicad_pcb path");
   const store = join(project, ".fabdesk", "representation", hash(board)),
@@ -519,12 +544,13 @@ export async function refresh(
   } catch {
     throw Error("Representation refresh busy (exclusive lock exists)");
   }
-  const scratch = await mkdtemp(join(tmpdir(), "fabdesk-representation-"));
+  let scratch = "";
   const revision = randomUUID(),
     generation = join(store, revision),
     pending = join(store, `.pending-${revision}`);
   let previous: Evidence | null = null;
   try {
+    scratch = await mkdtemp(join(tmpdir(), "fabdesk-representation-"));
     const prior = await optional(join(store, "current.json"));
     if (prior) {
       previous = JSON.parse(prior.toString()) as Evidence;
@@ -554,10 +580,22 @@ export async function refresh(
       await install(join(pending, "measurement-tables"), input.checkerTables);
       await install(join(scratch, "source"), { ...input.bytes, ...input.checkerTables });
       const env = await profile(scratch),
-        cli = await resolver({ env, cwd: scratch });
+        cli = await resolver({
+          env,
+          cwd: scratch,
+          signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+        });
       if (!cli) throw Error("No configured native KiCad runtime available");
       e.runtime = await runtimeIdentity(cli);
       e.context = {
+        checkerInputs: hash(
+          json({
+            manifest: Object.fromEntries(
+              Object.entries(input.manifest).filter(([name]) => name !== board),
+            ),
+            unresolved: input.unresolved,
+          }),
+        ),
         profile: "empty isolated writable profile per refresh",
         locale: { LANG: env.LANG ?? null, LC_ALL: env.LC_ALL ?? null },
         discovery: [cli.path, "version"],
@@ -568,7 +606,7 @@ export async function refresh(
       };
       // Library tables are normalized to frozen local paths; unsupported tables are empty
       // only in the disposable measurement, with their missing scope explicit above.
-      e.facts = await native(cli, scratch, board, env);
+      e.facts = await native(cli, scratch, board, env, signal);
       const available = new Set(
         Object.values(input.checkerTables).flatMap((v) =>
           parseLibraryTable(v.toString()).map((r) => r.name),
@@ -579,7 +617,7 @@ export async function refresh(
       ))
         if (!available.has(lib))
           e.unresolved.push(`footprint-library:${lib}:not captured in local measurement tables`);
-      e.check = await measure(cli, scratch, board, env);
+      e.check = await measure(cli, scratch, board, env, signal);
       if (await optional(join(scratch, "receipt.json")))
         await writeFile(
           join(pending, "receipt.json"),
@@ -618,7 +656,8 @@ export async function refresh(
             previous.check.status === "measured" &&
             json(e.check.coverage) === json(previous.check.coverage) &&
             json(e.runtime) === json(previous.runtime) &&
-            json(e.context) === json(previous.context),
+            json(e.context) === json(previous.context) &&
+            json(e.unresolved) === json(previous.unresolved),
         };
         if (e.changes.checksComparable) {
           const old = new Set(previous.check.findings!.map((f) => f.handle)),
@@ -633,6 +672,7 @@ export async function refresh(
       e.failure = error(cause);
       e.sourceStatus = "failed";
     }
+    signal.throwIfAborted();
     // Final publication read includes dependency content and absence, not only board mtime.
     if (e.sourceStatus === "current") {
       try {
@@ -654,7 +694,7 @@ export async function refresh(
     await rename(pointer, join(store, "current.json"));
     return e;
   } finally {
-    await rm(scratch, { recursive: true, force: true });
+    if (scratch) await rm(scratch, { recursive: true, force: true });
     await rm(lock, { recursive: true, force: true });
   }
 }
@@ -677,7 +717,10 @@ export async function inspect(
   if (e.revision !== revision || e.board !== board) throw Error("Evidence binding mismatch");
   if (options.detail === "receipt") {
     const raw = await optional(join(root, "receipt.json"));
-    if (raw && e.check.sha256 && hash(raw) !== e.check.sha256)
+    if (
+      (e.check.status === "measured" && (!raw || !e.check.sha256)) ||
+      (raw && e.check.sha256 && hash(raw) !== e.check.sha256)
+    )
       throw Error("Receipt evidence hash mismatch");
     return { historical: true, revision, check: e.check, rawReceipt: raw?.toString() ?? null };
   }
@@ -690,14 +733,22 @@ export async function inspect(
         await Promise.all(
           Object.entries(e.manifest)
             .filter(([, v]) => v !== null)
-            .map(async ([name]) => [
-              name,
-              (await readFile(join(root, "source", name))).toString("base64"),
-            ]),
+            .map(async ([name, expected]) => {
+              const data = await readFile(join(root, "source", name));
+              if (hash(data) !== expected) throw Error("Source evidence hash mismatch: " + name);
+              return [name, data.toString("base64")];
+            }),
         ),
       ),
       encoding: "base64",
     };
+  const findingIds = options.finding
+    ? new Set(
+        e.check.findings
+          ?.filter((f) => f.handle === options.finding)
+          .flatMap((f) => f.items.map((i) => i.uuid)),
+      )
+    : null;
   const roots = new Set(
     e.facts
       .filter((f) => f.id === options.component || f.reference === options.component)
@@ -705,6 +756,7 @@ export async function inspect(
   );
   const facts = e.facts.filter(
     (f) =>
+      (!findingIds || findingIds.has(f.id)) &&
       (!options.component || roots.has(f.id) || (!!f.parent && roots.has(f.parent))) &&
       (options.net === undefined || f.net === options.net) &&
       (!options.region ||

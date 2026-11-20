@@ -1,5 +1,15 @@
 import { test, expect } from "bun:test";
-import { mkdtemp, mkdir, writeFile, rm, cp, readFile, chmod, readdir } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  rm,
+  cp,
+  readFile,
+  chmod,
+  readdir,
+  symlink,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureInputs, refresh, inspect, packet } from "./index";
@@ -24,6 +34,23 @@ test("nested board captures same-stem sources, library bytes, absence and outsid
     await writeFile(join(root, "native", "local.pretty", "A.kicad_mod"), "second");
     expect((await captureInputs(root, "native/design.kicad_pcb")).manifest).not.toEqual(a.manifest);
     await expect(captureInputs(root, "../escape.kicad_pcb")).rejects.toThrow("escapes");
+    await symlink("local.pretty", join(root, "native", "alias.pretty"));
+    const tablePath = join(root, "native/fp-lib-table");
+    await writeFile(
+      tablePath,
+      '(fp_lib_table (lib (name "Local")(type "KiCad")(uri "${KIPRJMOD}/local.pretty"))(lib (name "Alias")(type "KiCad")(uri "${KIPRJMOD}/alias.pretty")))',
+    );
+    const aliased = await captureInputs(root, "native/design.kicad_pcb");
+    expect(aliased.bytes["native/alias.pretty/A.kicad_mod"]).toEqual(
+      aliased.bytes["native/local.pretty/A.kicad_mod"]!,
+    );
+    await symlink(".", join(root, "native/local.pretty/cycle"));
+    expect(
+      (await captureInputs(root, "native/design.kicad_pcb")).unresolved.some((x) =>
+        x.includes("cycle"),
+      ),
+    ).toBe(true);
+    await rm(join(root, "native/local.pretty/cycle"));
     const e = await refresh(root, "native/design.kicad_pcb", async () => null);
     expect(e.sourceStatus).toBe("failed");
     expect(packet(e).check.counts).toBeNull();
@@ -87,6 +114,22 @@ for (const name of ["usb", "hdmi"])
         };
         const a = await refresh(root, board, resolve);
         await oracle(a);
+        const ns = (await readdir(join(root, ".fabdesk/representation")))[0]!;
+        const gen = join(root, ".fabdesk/representation", ns, a.revision),
+          saved = join(gen, "source", board);
+        await writeFile(saved, "corrupted retained source");
+        await expect(inspect(root, board, a.revision, { detail: "source" })).rejects.toThrow(
+          "Source evidence hash mismatch",
+        );
+        await writeFile(saved, bytes);
+        const receiptPath = join(gen, "receipt.json"),
+          raw = await readFile(receiptPath);
+        await rm(receiptPath);
+        await expect(inspect(root, board, a.revision, { detail: "receipt" })).rejects.toThrow(
+          "Receipt evidence hash mismatch",
+        );
+        await writeFile(receiptPath, raw);
+
         const checkRoot = join(root, "independent-check");
         await mkdir(checkRoot);
         const env: NodeJS.ProcessEnv = Object.fromEntries(
@@ -152,6 +195,7 @@ for (const name of ["usb", "hdmi"])
         );
         const b = await refresh(root, board, resolve);
         await oracle(b);
+        expect(b.changes?.checksComparable).toBe(true);
         expect(b.sourceStatus).toBe("current");
         expect(b.changes!.changed.length).toBeGreaterThan(0);
         expect((await inspect(root, board, a.revision)).historical).toBe(true);

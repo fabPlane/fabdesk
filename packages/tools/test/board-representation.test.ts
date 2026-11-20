@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { toCallToolResult, wantsStructured } from "../src/adapters/mcp";
 import { createRegistry } from "../src";
 import { tempProject, mockServices, contextFactory } from "./mock-services";
 
@@ -32,6 +33,29 @@ test("representation registry selects imported native path and preserves source 
       progress: () => {},
     }),
   );
+  const detail = await registry.invoke(
+    "board_representation",
+    { action: "inspect", detail: "source" },
+    (ref) =>
+      factory({
+        def: registry.get("board_representation")!,
+        projectRef: ref,
+        signal: new AbortController().signal,
+        progress: () => {},
+      }),
+  );
+  for (const output of [result, detail])
+    for (const client of ["claude-code", "codex"]) {
+      const converted = await toCallToolResult(output, {
+        structured: wantsStructured(output, client),
+      });
+      const visible = converted.content
+        .filter((c) => c.type === "text")
+        .map((c) => c.text)
+        .join("");
+      expect(visible).toContain("unresolved");
+      expect(visible).toContain(output === detail ? "base64" : "components");
+    }
   expect(isolated).toBe(true);
   expect(result.json).toMatchObject({
     board: path,

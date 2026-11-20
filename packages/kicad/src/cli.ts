@@ -151,6 +151,7 @@ export async function findKicadCli(
     extraLocations?: string[];
     trace?: KicadInvocationTracer;
     minimumVersion?: string;
+    signal?: AbortSignal;
     env?: NodeJS.ProcessEnv;
     cwd?: string;
   } = {},
@@ -175,6 +176,7 @@ export async function findKicadCli(
         ["version"],
         {
           tolerateExit: true,
+          ...(opts.signal ? { signal: opts.signal } : {}),
           ...(opts.env ? { env: opts.env } : {}),
           ...(opts.cwd ? { cwd: opts.cwd } : {}),
         },
@@ -187,6 +189,7 @@ export async function findKicadCli(
       )
         return { path, version, ...(opts.trace ? { trace: opts.trace } : {}) };
     } catch {
+      opts.signal?.throwIfAborted();
       // Try the next candidate.
     }
   }
@@ -245,7 +248,11 @@ async function runKicadCliUntraced(
     env: opts.env ?? componentModelEnvironment(),
     ...(opts.cwd ? { cwd: opts.cwd } : {}),
   });
-  const onAbort = () => proc.kill();
+  let abortKill: ReturnType<typeof setTimeout> | undefined;
+  const onAbort = () => {
+    proc.kill();
+    abortKill = setTimeout(() => proc.kill("SIGKILL"), 1000);
+  };
   opts.signal?.addEventListener("abort", onAbort, { once: true });
   try {
     const [stdout, rawStderr, exitCode] = await Promise.all([
@@ -269,6 +276,7 @@ async function runKicadCliUntraced(
     return result;
   } finally {
     opts.signal?.removeEventListener("abort", onAbort);
+    if (abortKill) clearTimeout(abortKill);
   }
 }
 

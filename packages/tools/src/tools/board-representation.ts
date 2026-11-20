@@ -40,8 +40,11 @@ export const board_representation = defineTool({
       project.dir,
       await jailPath(project.dir, pcb ?? manifest?.importedBoard?.path ?? "board.kicad_pcb"),
     ).replaceAll("\\", "/");
-    const current = await refresh(project.dir, board, (options) =>
-      ctx.services.kicad.resolveCli(options),
+    const current = await refresh(
+      project.dir,
+      board,
+      (options) => ctx.services.kicad.resolveCli(options),
+      ctx.signal,
     );
     const result =
       action === "inspect"
@@ -57,7 +60,7 @@ export const board_representation = defineTool({
           }
         : packet(current);
     return {
-      text: `Saved board representation: ${current.sourceStatus}; checks ${current.check.status}; revision ${current.revision}.`,
+      text: `Saved board representation: ${current.sourceStatus}; checks ${current.check.status}; revision ${current.revision}.\n${JSON.stringify(result)}`,
       json: result,
     };
   },

@@ -90,7 +90,7 @@ function simService(settings: () => Settings): SimService {
 export async function createServices(
   deps: ServiceDeps,
 ): Promise<CoreServices & { dispose(): Promise<void> }> {
-  const resolveCli = async (options?: { env: NodeJS.ProcessEnv; cwd: string }): Promise<KicadCli | null> => {
+  const resolveCli = async (options?: { env: NodeJS.ProcessEnv; cwd: string; signal?:AbortSignal }): Promise<KicadCli | null> => {
     const explicit = deps.settings().kicadCliPath ?? undefined;
     const trace = deps.telemetry
       ? (input: kicad.KicadInvocation, invoke: () => Promise<kicad.RunResult>) =>
