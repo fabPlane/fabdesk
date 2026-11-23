@@ -167,6 +167,11 @@ describe("ProjectStore custom locations", () => {
       expect((await restarted.detail(project.id))?.path).toBe(project.path);
       const ordinary = await projects.create("Default Board");
       expect(ordinary.path).toBe(join(root, "default-board"));
+      expect(ordinary.manifest.board.material).toBeUndefined();
+      const flex = await projects.create("Probe Tail", undefined, { material: "flex", construction: "2l" });
+      expect(flex.manifest.board.material).toBe("flex");
+      expect(flex.manifest.board.construction).toBe("2l");
+      expect(flex.manifest.board.layers).toBe(2);
       const concurrent = await Promise.all([projects.create("Parallel", parent), projects.create("Parallel", parent)]);
       expect(new Set(concurrent.map((p) => p.path)).size).toBe(2);
       const otherParent = join(dir, "other");

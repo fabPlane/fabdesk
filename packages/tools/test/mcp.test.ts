@@ -168,6 +168,9 @@ describe("mcp adapter", () => {
     const initial = await client.listTools();
     const names = initial.tools.map((t) => t.name).sort();
     expect(names).toEqual([
+      "board_material_get",
+      "board_material_list",
+      "board_material_set",
       "capability_call",
       "capability_search",
       "circuit_build",
@@ -197,6 +200,7 @@ describe("mcp adapter", () => {
     expect(after.tools.map((t) => t.name)).toEqual(
       expect.arrayContaining(["export_gerbers", "silk_art", "export_stencil", "export_laser_stencil"]),
     );
+    expect(after.tools.length).toBe(14 + 10);
     expect(after.tools.length).toBe(initial.tools.length + 10);
     expect(attachment.session.enabledToolsets()).toEqual(["core", "export"]);
     await new Promise((r) => setTimeout(r, 10));

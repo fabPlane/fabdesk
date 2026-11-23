@@ -7,7 +7,14 @@ export interface AgentDocsContext {
   toolsMarkdown: string;
   /** Absolute paths of sketch images attached to the project/run. */
   sketches: string[];
-  board: { layers: number; widthMm?: number; heightMm?: number; template?: string };
+  board: {
+    layers: number;
+    widthMm?: number;
+    heightMm?: number;
+    template?: string;
+    material?: string;
+    construction?: string;
+  };
   mcpServerName: string;
   /** Resolved executable verified by the core; no guessed runtime paths. */
   kicadCli?: string | undefined;
@@ -57,6 +64,7 @@ When asked to identify a component while viewing a schematic, inspect the real s
 | Saved DRC/ERC results by item | \`verify_drc\` (responseMode=full for all geometry); \`verify_erc\` |
 | Router progress and terminal result | \`route_status\` (latest or runId); returns final state and application outcome |
 | Fabrication files and named archive | \`export_gerbers\`, \`export_drill\`, \`export_pos\`, \`export_bom\`, \`export_zip\` (filename), \`export_stencil\`, \`export_laser_stencil\`; \`release_build\` checks and packages a release |
+| Board laminate / stackup | \`board_material_list\`, \`board_material_get\`, \`board_material_set\` (dryRun for a stackup+rules diff); \`verify_material\` |
 | Board/schematic images | \`render_view\`, \`render_schematic_svg\` |
 | Symbols, footprints and pins | \`circuit_describe_part\`, \`circuit_search_parts\` |
 
@@ -107,7 +115,9 @@ ${ipcNote}
 ## Board constraints
 - Copper layers: ${ctx.board.layers}
 - Size: ${boardSize(ctx.board)}
-${ctx.board.template && TEMPLATE_NOTES[ctx.board.template] ? `\n${TEMPLATE_NOTES[ctx.board.template]}\n` : ""}
+- Material: ${ctx.board.material ?? "fr4 (default, unset)"}
+${ctx.board.construction ? `- Construction: ${ctx.board.construction}\n` : ""}${ctx.board.template && TEMPLATE_NOTES[ctx.board.template] ? `\n${TEMPLATE_NOTES[ctx.board.template]}\n` : ""}
+The agent may pick a laminate from the brief (flex, aluminium, copper core, Rogers, PTFE, HDI, or FR-4) and must explain the choice. Override with the UI or \`board_material_set\`. Leave material unset for ordinary rigid FR-4.
 ## Sketches
 ${sketches}
 

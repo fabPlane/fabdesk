@@ -1,9 +1,10 @@
 /** Export toolset: manufacturing outputs via kicad-cli. */
-import { readdir, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod/v4";
-import { projectBomCsv } from "@fabdesk/protocol";
-import { PROJECT_FILES, ensureDir, jailPath, writeAtomic } from "../fs";
+import { projectBomCsv, projectBomLines } from "@fabdesk/protocol";
+import { PROJECT_FILES, ensureDir, exists, writeAtomic, jailPath } from "../fs";
+import { fabNotesPackage, planMaterialApply } from "../materials";
 import { readProjectBom, assertProjectBomInputs } from "../project-bom";
 import { ToolError, defineTool } from "../registry";
 import { ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
@@ -229,7 +230,7 @@ export const export_zip = defineTool({
   toolset: "export",
   title: "Zip fabrication outputs",
   description:
-    "Bundle the files currently present in exports/gerbers plus positions.csv and bom.csv into exports/fabrication.zip or a named filename under exports/. Missing optional entries are reported.",
+    "Bundle the files currently present in exports/gerbers plus positions.csv, bom.csv, and a material spec / stackup drawing into exports/fabrication.zip or a named filename under exports/. Missing optional entries are reported.",
   inputSchema: {
     expectedSourceSha256: expectedPcbSource,
     gerberFiles: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/).max(240)).min(1).max(512).optional()
@@ -264,6 +265,21 @@ export const export_zip = defineTool({
       if (await stat(abs).catch(() => null)) entries.push({ name: f, path: abs });
       else missing.push(f);
     }
+    const board = project.manifest().board;
+    const pcbPath = p(project, PROJECT_FILES.boardPcb);
+    const pcbText = (await exists(pcbPath)) ? await readFile(pcbPath, "utf8") : undefined;
+    const plan = planMaterialApply({
+      ...(board.material ? { material: board.material } : {}),
+      ...(board.construction ? { construction: board.construction } : {}),
+      current: board,
+      ...(pcbText ? { pcbText } : {}),
+    });
+    const notes = fabNotesPackage(plan);
+    const specPath = join(exportsDir, "fab-notes.txt");
+    const drawingPath = join(exportsDir, "stackup.txt");
+    await writeAtomic(specPath, notes.spec);
+    await writeAtomic(drawingPath, notes.drawing);
+    entries.push({ name: "fab-notes.txt", path: specPath }, { name: "stackup.txt", path: drawingPath });
     if (entries.length === 0)
       throw new ToolError("no fabrication outputs found in exports/", "precondition");
     const output = join(exportsDir, filename);

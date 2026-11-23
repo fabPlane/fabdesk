@@ -496,6 +496,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
           ...(board.widthMm !== undefined ? { widthMm: board.widthMm } : {}),
           ...(board.heightMm !== undefined ? { heightMm: board.heightMm } : {}),
           ...(board.template !== undefined ? { template: board.template } : {}),
+          ...(board.material !== undefined ? { material: board.material } : {}),
+          ...(board.construction !== undefined ? { construction: board.construction } : {}),
         },
         mcpServerName: agents.MCP_SERVER_NAME,
         ...(agentInterface ? { interfaceMode: agentInterface } : {}),

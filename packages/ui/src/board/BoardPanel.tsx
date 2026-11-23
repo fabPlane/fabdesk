@@ -1,25 +1,21 @@
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import { BoardChecksDialog } from "./BoardChecksDialog";
 import { ImportedBoardIdentity } from "./ImportedBoardIdentity";
 import { AssemblyBoardPicker } from "./AssemblyBoardPicker";
-import { restoreAssemblySelection } from "@fabdesk/client-core";
+import { restoreAssemblySelection, useCore, useProjectOrder, useProjects, workspaceViews, useBoardSources } from "@fabdesk/client-core";
 import { BoardViewTabs } from "./BoardViewTabs";
 import { CanvasToolButton } from "../components/CanvasToolButton";
 import { HostedReviewTools } from "./HostedReviewTools";
 import { WorkspaceMenu } from "../layout/WorkspaceMenu";
 import { Icon } from "../components/Icon";
 import { BoardComparison } from "./BoardComparison";
-import { Button } from "../components/ui";
+import { Button, Tabs } from "../components/ui";
 import { ReviewUpdates } from "./ReviewUpdates";
 import { OutputsLibrary } from "./OutputsLibrary";
-import { Tabs } from "../components/ui";
-import { lazy, Suspense } from "react";
 import { BoardViewMenu } from "./BoardViewMenu";
 import { CircuitLogo } from "../components/CircuitLogo";
-import { workspaceViews } from "@fabdesk/client-core";
-import { useCore } from "@fabdesk/client-core";
-import { useBoardSources, useProjectOrder, useProjects } from "@fabdesk/client-core";
 import { BOARD_TABS, BOARD_TAB_LABELS, useUiStore, type BoardTab } from "../stores/ui";
+import { BoardMaterialSettings } from "./BoardMaterialSettings";
 import { modKey } from "../util";
 import { CadTab } from "./CadTab";
 import { CinemaTab } from "./cinema/CinemaTab";
@@ -128,6 +124,7 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
         <div className="min-w-0 flex-1">
           <div className="fd-board-eyebrow">Board workspace</div>
           <div className="fd-board-title truncate" title={project?.name}>{project?.name ?? "Select a project"}</div>
+          {projectId && <BoardMaterialSettings projectId={projectId} />}
         </div>
         <div className="fd-board-actions">
           {assembly ? <Button size="sm" onClick={openChecks}>Board checks</Button> : order.data && (order.data.hasKicadPcb || order.data.hasRouted || order.data.ready) && (

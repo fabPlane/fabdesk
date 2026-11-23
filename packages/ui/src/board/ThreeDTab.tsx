@@ -1,11 +1,12 @@
+import { useMemo, useState, lazy, Suspense } from "react";
+import { boardMaterialSummary } from "@fabdesk/protocol";
+import { useProject, useRunTool, useRunsStore, useBoardSources, useCoreClient, useModelOutputActivity } from "@fabdesk/client-core";
+import { EmptyState, LoadError, Spinner, Button } from "../components/ui";
 import { WorkspaceMenu } from "../layout/WorkspaceMenu";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { MemberOutputStudio } from "./MemberOutputStudio";
 import { AssemblyModels } from "./AssemblyBoardModel";
 import { BoardModelStatus } from "./BoardModelStatus";
-import { lazy, Suspense, useMemo, useState } from "react";
-import { useBoardSources, useCoreClient, useProject, useRunTool, useRunsStore, useModelOutputActivity } from "@fabdesk/client-core";
-import { Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 import {
   ProductVideoPanel,
@@ -77,6 +78,8 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
     [files],
   );
   const poster = files.find((f) => f.path === "exports/product-video-poster.png");
+  const material = project.data?.manifest.board.material;
+  const look = material ? boardMaterialSummary(material) : undefined;
   useAssistantSurface(projectId && active ? { projectId, label: canvas ? "Board / 3D" : "Outputs / Models & video", priority: 10, details: JSON.stringify({ model: glb?.path, videos: videos.map(file => file.path), videoSettings: form, sourceReady: canGenerate, exportingModel: exporting, makingVideo: making }) } : null);
 
   if (!projectId) return <EmptyState title="No project selected" />;
@@ -106,6 +109,18 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
   return (
     <ProductVideoPanel
       projectId={projectId}
+      {...(look
+        ? {
+            materialLook: {
+              name: look.shortName,
+              look: look.appearance.look,
+              substrate: look.appearance.substrate,
+              ...(project.data?.manifest.board.construction
+                ? { thicknessNote: project.data.manifest.board.construction }
+                : {}),
+            },
+          }
+        : {})}
       canGenerate={canGenerate}
       checkingSources={checkingSources || project.isFetching}
       modelStatus={<BoardModelStatus projectId={projectId} present={!!glb} updating={exporting} />}

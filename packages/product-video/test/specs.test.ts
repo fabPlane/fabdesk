@@ -14,6 +14,9 @@ describe("caption specs", () => {
     });
     expect(specs.name).toBe("Pico Sensor");
     expect(specs.lines).toEqual(["50 MM × 30.5 MM", "2 LAYERS", "MCU RP2040", "3 PARTS"]);
+    expect(
+      extractSpecs({ name: "Radar", board: { layers: 2, material: "ptfe" } }).lines,
+    ).toEqual(["2 LAYERS", "PTFE"]);
   });
 
   test("prefers a U-prefixed MCU over a value mentioned in a connector", () => {

@@ -383,6 +383,9 @@ describe("order readiness", () => {
     expect(assessOrderReadiness([{ path: "circuit.tsx" }], none).ready).toBe(false);
     expect(assessOrderReadiness([{ path: "exports/gerbers/F_Cu.gbr" }], none).ready).toBe(true);
     expect(assessOrderReadiness([{ path: "exports/fabrication.zip" }], none).ready).toBe(true);
+    const flex = assessOrderReadiness([{ path: "exports/fabrication.zip" }], none, "flex");
+    expect(flex.ready).toBe(true);
+    expect(flex.warnings.join(" ")).toMatch(/not a standard FR-4 order/i);
     // A board verify_drc cannot check (other name, legacy routed json) does not block.
     expect(assessOrderReadiness([{ path: "hw/other.kicad_pcb" }], none).checks.drc).toBe("not_required");
     expect(assessOrderReadiness([{ path: "circuit.routed.json" }], none).ready).toBe(true);

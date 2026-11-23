@@ -1,6 +1,8 @@
 /** Verify toolset: ERC and the release gate (kicad-automation semantics). */
+import { readFile } from "node:fs/promises";
 import { z } from "zod/v4";
-import { PROJECT_FILES, readJsonOrNull, writeJson } from "../fs";
+import { PROJECT_FILES, exists, readJsonOrNull, writeJson } from "../fs";
+import { checkMaterialBoard, materialCheckTitle, planMaterialApply } from "../materials";
 import { ToolError, defineTool } from "../registry";
 import type { DrcReport, ErcReport } from "../services";
 import { describeViolation } from "./core";
@@ -362,4 +364,46 @@ export const verify_viagrid = defineTool({
   },
 });
 
-export const verifyTools = [verify_erc, verify_gate, verify_viagrid];
+export const verify_material = defineTool({
+  name: "verify_material",
+  toolset: "verify",
+  title: "Check material rules",
+  description:
+    "Run laminate-specific checks on board.kicad_pcb: vias/pads in flex bend zones, plated holes or backside parts on metal-core, missing copper-core pedestals, and 50 Ω widths that do not match the chosen Dk/thickness. Writes reports/material.json.",
+  inputSchema: {},
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
+  handler: async (_args, ctx) => {
+    const project = ctx.requireProject();
+    const board = project.manifest().board;
+    const pcb = p(project, PROJECT_FILES.boardPcb);
+    if (!(await exists(pcb))) throw new ToolError("board.kicad_pcb is missing", "precondition");
+    const pcbText = await readFile(pcb, "utf8");
+    const plan = planMaterialApply({
+      ...(board.material ? { material: board.material } : {}),
+      ...(board.construction ? { construction: board.construction } : {}),
+      current: board,
+      pcbText,
+      ...(board.bendZones ? { bendZones: board.bendZones } : {}),
+      ...(board.pedestalPads ? { pedestalPads: board.pedestalPads } : {}),
+    });
+    const violations = checkMaterialBoard(pcbText, plan);
+    await writeReport(project, "material", {
+      at: new Date().toISOString(),
+      material: plan.material,
+      construction: plan.construction,
+      violations,
+    });
+    const title = materialCheckTitle(plan.material);
+    const text = violations.length
+      ? `${title}: ${violations.length} issue(s).\n${violations.map((v) => `- [${v.kind}] ${v.detail}`).join("\n")}`
+      : `${title}: no issues.`;
+    return { text, json: { material: plan.material, construction: plan.construction, violations }, isError: violations.length > 0 };
+  },
+});
+
+export const verifyTools = [verify_erc, verify_gate, verify_viagrid, verify_material];

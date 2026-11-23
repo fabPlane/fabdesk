@@ -13,6 +13,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ASSEMBLY_MANIFEST_PATH, AssemblyPcbCheckReceipt, type ProjectBoardSources, type FpPcbBoardSpec, type NetlistFile } from "@fabdesk/protocol";
 import { PROJECT_FILES, exists, jailPath, mtimeMs, readJsonOrNull, writeAtomic, writeJson } from "../fs";
+import { applyPlanToPcb, applyPlanToPro, planMaterialApply } from "../materials";
+import { materialTools } from "./material";
 import {
   ToolError,
   ToolsetIdOrAlias,
@@ -242,7 +244,7 @@ export const project_status = defineTool({
       ...(assembly ? [assembly.status === "inspected"
         ? `Assembly instances: ${assembly.membership.assembly!.instances.length}; source boards: ${assembly.membership.sources.length}; declared connections: ${assembly.membership.assembly!.connections.length}. Source files available: ${assembly.membership.sources.filter(source => source.status === "available").length}/${assembly.membership.sources.length}. Geometry, schematic parity and connection compatibility are unverified. Explicit source tools accept board {sourceId, manifestSha256}: native PCB inspection, saved schematic inspection/rendering, PCB previews, placement/resize, PCB-only DRC, GLB/images/video, manufacturing exports, board_revision_list/diff/checkpoint, and comment_list/pin/answer/resolve. Placement, resize, DRC, GLB/images/video and manufacturing exports require the selected PCB's inspected expectedSourceSha256. Member render_schematic_svg requires expectedHierarchyRevision from schematic_inspect and publishes immutable sheet previews with one source receipt. Member schematic_inspect supports saved-hierarchy summary only, using independently owned source snapshots; live authoring, ERC and parity remain unavailable. Member DRC is PCB-only: pass schematicParity=false explicitly; its report is not schematic parity, ERC or inter-board compatibility. Member GLB receipts track source and model bytes; external component models and fit remain unverified. Shared physical instances use the same source and source-local comments.json. Member route_run requires expectedSourceSha256 and applyPolicy=manual; route_status/cancel/apply require the same explicit source selector. Candidates use private source snapshots and need explicit revision-bound Apply. Live schematic authoring remains unavailable; do not substitute the root board. Canvas placement and rectangular resizing require verified preview coordinates and captured source ownership. Remaining native status below describes only the project root.`
         : assembly.reason] : []),
-      `${assembly ? "Root project defaults" : "Board"}: ${manifest.board.layers} layers${manifest.board.widthMm ? `, ${manifest.board.widthMm}×${manifest.board.heightMm ?? "?"} mm` : ""}; router: ${manifest.router === "capacity" ? "fab_router" : (manifest.router ?? "freerouting (default; fab_router fallback)")}`,
+      `${assembly ? "Root project defaults" : "Board"}: ${manifest.board.layers} layers${manifest.board.widthMm ? `, ${manifest.board.widthMm}×${manifest.board.heightMm ?? "?"} mm` : ""}${manifest.board.material ? `, material ${manifest.board.material}${manifest.board.construction ? `/${manifest.board.construction}` : ""}` : ""}; router: ${manifest.router === "capacity" ? "fab_router" : (manifest.router ?? "freerouting (default; fab_router fallback)")}`,
       `${assembly ? "Root files" : "Files"}: ${Object.entries(files)
         .map(([k, v]) => `${k}=${v.exists ? "yes" : "no"}`)
         .join(", ")}`,
@@ -423,6 +425,18 @@ export const circuit_build = defineTool({
       signal: ctx.signal,
       progress: (fraction, note) => ctx.progress(0.05 + fraction * 0.9, note),
     });
+    const settings = project.manifest().board;
+    if (result.ok && settings.material) {
+      const pcbPath = p(project, PROJECT_FILES.boardPcb);
+      if (await exists(pcbPath)) {
+        const pcbText = await readFile(pcbPath, "utf8");
+        const plan = planMaterialApply({ current: settings, pcbText });
+        await writeAtomic(pcbPath, applyPlanToPcb(pcbText, plan));
+        const proPath = p(project, PROJECT_FILES.boardPro);
+        const proText = (await exists(proPath)) ? await readFile(proPath, "utf8") : undefined;
+        await writeAtomic(proPath, applyPlanToPro(proText, plan));
+      }
+    }
     const layerCheck = result.ok
       ? checkBoardLayers(project.manifest().board.layers, result.copperLayers)
       : {};
@@ -1076,5 +1090,6 @@ export const coreTools = [
   route_run,
   verify_drc,
   render_board,
+  ...materialTools,
 ];
 export { table };

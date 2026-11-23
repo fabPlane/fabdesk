@@ -249,6 +249,9 @@ describe("registry", () => {
       "route_run",
       "verify_drc",
       "render_board",
+      "board_material_list",
+      "board_material_get",
+      "board_material_set",
       "project_checkpoint",
       "project_read_file",
       "project_write_file",
@@ -307,6 +310,7 @@ describe("registry", () => {
       "verify_erc",
       "verify_gate",
       "verify_viagrid",
+      "verify_material",
       "release_build",
       "render_pcb_readiness",
       "render_pcb_display",
@@ -367,7 +371,7 @@ describe("registry", () => {
       "cad_fit",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
-    expect(reg.byToolset("core").length).toBe(10);
+    expect(reg.byToolset("core").length).toBe(13);
     expect(() =>
       defineTool({
         name: "bad.name",

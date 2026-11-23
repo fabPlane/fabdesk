@@ -26,6 +26,8 @@ describe("renderAgentsMd", () => {
     expect(md).toContain("# Blinky — fabPlane project");
     expect(md).toContain("Copper layers: 2");
     expect(md).toContain("50 × 30 mm");
+    expect(md).toContain("Material: fr4 (default, unset)");
+    expect(md).toContain("board_material_set");
     expect(md).toContain("`/tmp/p/sketches/front.png`");
     expect(md).toContain("Its MCP server is `fabdesk`");
     expect(md).not.toContain("fabpcb ipc");

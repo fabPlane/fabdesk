@@ -71,6 +71,7 @@ export type ProductVideoPanelProps = {
   downloadingVideo?: string | null;
   onOpenVideoFile?: (path: string) => void;
   onMakeVideo: () => void;
+  materialLook?: { name: string; look: string; substrate: string; thicknessNote?: string };
 };
 
 export function pickPreview(videos: FileEntry[]): FileEntry | undefined {
@@ -110,6 +111,7 @@ export function ProductVideoPanel({
   downloadingVideo,
   onOpenVideoFile,
   onMakeVideo,
+  materialLook,
 }: ProductVideoPanelProps) {
   const hasSavedVideo = videos.some(file => file.size > 0);
   const [setupOpen, setSetupOpen] = useState(() => !hasSavedVideo);
@@ -120,6 +122,17 @@ export function ProductVideoPanel({
   return (
     <div className="fd-video-workspace flex h-full min-h-0 flex-col" data-testid="product-video-panel">
       <div className="fd-video-model-tools flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+        {materialLook && (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[11px]"
+            data-testid="material-look"
+            title={materialLook.look}
+          >
+            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: materialLook.substrate }} aria-hidden />
+            {materialLook.name}
+            {materialLook.thicknessNote ? ` · ${materialLook.thicknessNote}` : ""}
+          </span>
+        )}
         <Button variant="secondary" size="sm" disabled={exporting || making || !canGenerate || !activityReady} onClick={onExportGlb}>
           {exporting ? (
             <>

@@ -342,7 +342,14 @@ export function createApp(deps: AppDeps): Hono<Env> {
       return c.json({ error: "Choosing a parent directory requires the local desktop connection" }, 403);
     }
     const body = CreateProject.parse(input);
-    return c.json(await deps.projects.create(body.name, body.parentDirectory, body.draft), 201);
+    return c.json(
+      await deps.projects.create(body.name, body.parentDirectory, {
+        ...(body.draft ? { draft: true } : {}),
+        ...(body.material ? { material: body.material } : {}),
+        ...(body.construction ? { construction: body.construction } : {}),
+      }),
+      201,
+    );
   });
   app.post("/projects/:id/promote", async c => {
     const id = c.req.param("id"), input = await c.req.json();
@@ -882,7 +889,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const d = await deps.projects.detail(projectId);
     if (!d) return null;
     const evidence = await loadOrderCheckEvidence(d.path, d.manifest.allowedDrcWarnings);
-    return assessOrderReadiness(d.files, evidence);
+    return assessOrderReadiness(d.files, evidence, d.manifest.board.material);
   };
   app.get("/projects/:id/order", async (c) => {
     const readiness = await orderReadiness(c.req.param("id"));

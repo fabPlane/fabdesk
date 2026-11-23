@@ -12,6 +12,7 @@ import {
   type ApprovalRequestedEvent,
   type InputRequestedEvent,
 } from "./events";
+import { BoardConstructionId, BoardMaterialId, PedestalPad, RectMm } from "./materials";
 
 export const ProjectId = z.string().min(1);
 
@@ -45,7 +46,16 @@ export const BoardSettings = z.object({
   rules: BoardRules.optional(),
   /** When set, the blank's fixed vias are the only vias allowed: routing uses the laser-prefab solver and claims them. */
   template: BoardTemplate.optional(),
+  /** Base laminate / construction preset. Omitted means FR-4 rigid (unchanged default). */
+  material: BoardMaterialId.optional(),
+  /** Preset construction (2l / 4l / 6l / hybrid / …). Omitted uses the material default. */
+  construction: BoardConstructionId.optional(),
+  /** Flex bend keepouts in the board frame (mm). */
+  bendZones: z.array(RectMm).optional(),
+  /** Copper-core thermal pads tied into the metal base. */
+  pedestalPads: z.array(PedestalPad).optional(),
 });
+export type BoardSettings = z.infer<typeof BoardSettings>;
 
 export const ProjectManifest = z.object({
   schema: z.literal(1),
@@ -99,7 +109,14 @@ export const ProjectDetail = ProjectSummary.extend({
 });
 export type ProjectDetail = z.infer<typeof ProjectDetail>;
 
-export const CreateProject = z.object({ name: z.string().min(1).max(80), parentDirectory: z.string().min(1).optional(), draft: z.boolean().optional() });
+export const CreateProject = z.object({
+  name: z.string().min(1).max(80),
+  parentDirectory: z.string().min(1).optional(),
+  material: BoardMaterialId.optional(),
+  construction: BoardConstructionId.optional(),
+  draft: z.boolean().optional(),
+});
+export type CreateProject = z.infer<typeof CreateProject>;
 
 /**
  * `full`: the agent runs with the permission mode from Settings. `supervised`: the daemon pauses
