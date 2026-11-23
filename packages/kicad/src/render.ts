@@ -6,6 +6,7 @@ import { componentModelEnvironment, componentModelLibraryRoots, lastLines, runKi
 import { parseGlbContainer } from "./glb-container";
 import { resolveModelPath } from "./mechanical";
 import { withModelBoard } from "./model-board";
+import { ledLensModels } from "./led-lens-models";
 
 export type BoardView = "top" | "bottom" | "perspective" | "side";
 
@@ -22,6 +23,16 @@ export interface RenderPngOptions {
 }
 
 export const DEFAULT_PERSPECTIVE = { rotate: "-38,0,28", zoom: 0.72 } as const;
+
+function withRenderedModelBoard<T>(board: string, modelDir: string, env: NodeJS.ProcessEnv, cli: KicadCli, run: (path: string) => Promise<T>) {
+  const roots = componentModelLibraryRoots(env, cli.path);
+  const resolvePath = (declared: string, preferStep = false) => {
+    const model = resolveModelPath(declared, modelDir, env, roots);
+    if (preferStep && model.substitutionCandidates.length) return model.substitutionCandidates[0]!;
+    return model.status === "resolved" ? model.path : model.substitutionCandidates[0] ?? null;
+  };
+  return withModelBoard(board, resolvePath, run, (text, scratch) => ledLensModels(text, scratch, declared => resolvePath(declared, true)));
+}
 
 /** Renders one PNG of a board with the KiCad ray tracer, transparent background. */
 export async function renderPng(cli: KicadCli, options: RenderPngOptions): Promise<void> {
@@ -58,11 +69,8 @@ export async function renderPng(cli: KicadCli, options: RenderPngOptions): Promi
     }
   }
   const modelDir = dirname(resolve(options.board)), env = componentModelEnvironment(process.env, cli.path);
-  const roots = componentModelLibraryRoots(env, cli.path);
-  await withModelBoard(options.board, declared => {
-    const resolution = resolveModelPath(declared, modelDir, env, roots);
-    return resolution.status === "resolved" ? resolution.path : resolution.substitutionCandidates[0] ?? null;
-  }, board => runKicadCli(cli, [...args, "--define-var", `KIPRJMOD=${modelDir}`, board], { ...(options.signal ? { signal: options.signal } : {}) }));
+  await withRenderedModelBoard(options.board, modelDir, env, cli, board =>
+    runKicadCli(cli, [...args, "--define-var", `KIPRJMOD=${modelDir}`, board], { ...(options.signal ? { signal: options.signal } : {}) }));
   if (!existsSync(options.output)) throw new Error(`kicad-cli did not write ${options.output}`);
 }
 
@@ -87,7 +95,6 @@ export interface ExportGlbOptions {
 export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promise<{ fused: boolean; warnings: string[] }> {
   const modelDir = options.modelProjectDir ?? dirname(resolve(options.board));
   const modelEnv = componentModelEnvironment(process.env, cli.path);
-  const modelRoots = componentModelLibraryRoots(modelEnv, cli.path);
   const base = ["pcb", "export", "glb", "--force", "--subst-models", "--include-pads", "--include-tracks", "--include-zones", "--include-silkscreen", "--include-soldermask"];
   // The STEP/GLB exporter resolves project text variables, but some KiCad builds
   // leave versioned library variables literal even when present in the process
@@ -106,10 +113,7 @@ export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promi
     const scratch = await mkdtemp(join(dirname(resolve(options.output)), ".fabdesk-glb-"));
     const temporary = join(scratch, "model.glb");
     try {
-      const result = await withModelBoard(options.board, declared => {
-        const resolution = resolveModelPath(declared, modelDir, modelEnv, modelRoots);
-        return resolution.status === "resolved" ? resolution.path : resolution.substitutionCandidates[0] ?? null;
-      }, board => runKicadCli(cli, [...base, ...(fused ? ["--fuse-shapes"] : []), "-o", temporary, board], {
+      const result = await withRenderedModelBoard(options.board, modelDir, modelEnv, cli, board => runKicadCli(cli, [...base, ...(fused ? ["--fuse-shapes"] : []), "-o", temporary, board], {
         tolerateExit: true,
         ...(options.signal ? { signal: options.signal } : {}),
       }));

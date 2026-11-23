@@ -287,7 +287,7 @@ export const render_glb = defineTool({
       }
       if (await pcbPreviewFileHash(board) !== sourceSha256) throw new ToolError("PCB changed during model coverage measurement", "precondition");
       const bytes = await readFile(temporary);
-      const receipt = (ctx.board ? AssemblyBoardModelRevision : BoardModelRevision).parse({ contract: "fabplane.board-model-revision.v1", source: "board.kicad_pcb", artifact: "renders/board.glb", sourceSha256, artifactSha256: createHash("sha256").update(bytes).digest("hex"), generatedAt: new Date().toISOString(), dependencies: "unverified", dependencySnapshot: dependencies, ...(prepared.pendingModels ? { pendingModels: prepared.pendingModels } : {}), warnings: res.warnings, ...(modelProjectDirectory ? { modelProjectDirectory } : {}), ...(ctx.board ? { boardSource: { projectId: project.id, ...ctx.board } } : {}) });
+      const receipt = (ctx.board ? AssemblyBoardModelRevision : BoardModelRevision).parse({ contract: "fabplane.board-model-revision.v1", source: "board.kicad_pcb", artifact: "renders/board.glb", ledLensVersion: 1, sourceSha256, artifactSha256: createHash("sha256").update(bytes).digest("hex"), generatedAt: new Date().toISOString(), dependencies: "unverified", dependencySnapshot: dependencies, ...(prepared.pendingModels ? { pendingModels: prepared.pendingModels } : {}), warnings: res.warnings, ...(modelProjectDirectory ? { modelProjectDirectory } : {}), ...(ctx.board ? { boardSource: { projectId: project.id, ...ctx.board } } : {}) });
       await jailPath(project.dir, `${PROJECT_FILES.renders}/board.glb`);
       await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
       await ctx.runInScope?.(async () => {});
