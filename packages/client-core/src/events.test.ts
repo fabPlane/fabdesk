@@ -551,6 +551,8 @@ test("an auth event supersedes an older in-flight status snapshot", async () => 
   expect(qc.getQueryData<import('@fabdesk/protocol').AuthState>(['auth'])).toEqual(next);
   qc.clear();
 });
+});
+
 describe("routing ownership refresh", () => {
   test("metadata refreshes durable run lists without treating each frame as a history refresh", () => {
     const qc = new QueryClient();
