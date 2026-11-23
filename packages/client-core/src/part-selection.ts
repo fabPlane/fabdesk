@@ -4,9 +4,10 @@ export type PartBox = { x: number; y: number; width: number; height: number };
 export type SelectablePart = { ref: string; uuid: string; unit?: number; box: PartBox; hull?: { x: number; y: number }[] };
 export type PartScope = { endpoint: string; projectId: string; sourceId?: string; manifestSha256?: string };
 export const partScopeKey = (scope: PartScope) => JSON.stringify([scope.endpoint, scope.projectId, scope.sourceId ?? null, scope.manifestSha256 ?? null]);
-export const usePartSelection = create<{ selection: { scope: string; ref: string } | null; select: (scope: string, ref: string) => void; clear: (scope: string) => void }>(set => ({
+export type PartSelection = { scope: string; ref: string; refs?: string[] };
+export const usePartSelection = create<{ selection: PartSelection | null; select: (scope: string, ref: string, refs?: string[]) => void; clear: (scope: string) => void }>(set => ({
   selection: null,
-  select: (scope, ref) => set({ selection: { scope, ref } }),
+  select: (scope, ref, refs) => set({ selection: { scope, ref, ...(refs && refs.length ? { refs } : {}) } }),
   clear: scope => set(state => state.selection?.scope === scope ? { selection: null } : {}),
 }));
 

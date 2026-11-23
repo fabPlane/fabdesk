@@ -281,6 +281,7 @@ describe("registry", () => {
       "circuit_search_parts",
       "circuit_describe_part",
       "circuit_check_part_compatibility",
+      "circuit_system",
       "design_inspect",
       "pcb_inspect",
       "native_edit_transaction",

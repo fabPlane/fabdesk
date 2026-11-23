@@ -1,7 +1,15 @@
 /** Circuit toolset: inspect the board KiCad holds and search the footprint libraries. */
+import { readdir, readFile } from "node:fs/promises";
+import { basename, join, relative, sep } from "node:path";
 import { z } from "zod/v4";
+import {
+  buildSystemDiagramFromSources,
+  formatSystemSummary,
+  type DesignSources,
+} from "@fabdesk/protocol";
 import { defineTool } from "../registry";
-import { ok, table } from "./common";
+import { exists, PROJECT_FILES } from "../fs";
+import { loadNetlistOrNull, ok, p, table } from "./common";
 
 export const circuit_query = defineTool({
   name: "circuit_query",
@@ -152,9 +160,74 @@ export const circuit_check_part_compatibility = defineTool({
   },
 });
 
+async function collectDesignFiles(dir: string): Promise<string[]> {
+  const found: string[] = [];
+  const walk = async (current: string) => {
+    const entries = await readdir(current, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (entry.name === ".fabdesk" || entry.name === "node_modules" || entry.name === "renders" || entry.name === "exports") continue;
+      const full = join(current, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (!entry.name.includes(".unrouted.") && (entry.name.endsWith(".kicad_pcb") || entry.name.endsWith(".kicad_sch") || entry.name === PROJECT_FILES.netlistJson)) {
+        found.push(relative(dir, full).split(sep).join("/"));
+      }
+    }
+  };
+  await walk(dir);
+  return found.sort();
+}
+
+export const circuit_system = defineTool({
+  name: "circuit_system",
+  toolset: "circuit",
+  title: "System block diagram",
+  description:
+    "Group the project's parts into functional blocks and report labelled connections (power rails, buses such as I2C/SPI/UART/USB, and other notable nets). Uses schematic sheets when present, otherwise part type, reference prefix, and net names.",
+  inputSchema: {},
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
+  handler: async (_args, ctx) => {
+    const project = ctx.requireProject();
+    const files = await collectDesignFiles(project.dir);
+    const pcbRel = files.find((path) => path === PROJECT_FILES.boardPcb) ?? files.find((path) => path.endsWith(".kicad_pcb"));
+    const schRels = files.filter((path) => path.endsWith(".kicad_sch"));
+    const pcbText = pcbRel && (await exists(p(project, pcbRel))) ? await readFile(p(project, pcbRel), "utf8") : undefined;
+    const schematics = [];
+    for (const rel of schRels) {
+      if (!(await exists(p(project, rel)))) continue;
+      schematics.push({ name: basename(rel, ".kicad_sch"), text: await readFile(p(project, rel), "utf8") });
+    }
+    const netlist = await loadNetlistOrNull(project);
+    const sources: DesignSources = {
+      ...(netlist ? { netlist } : {}),
+      ...(pcbText ? { pcbText } : {}),
+      ...(schematics.length ? { schematics } : {}),
+    };
+    const diagram = buildSystemDiagramFromSources(sources);
+    const summary = formatSystemSummary(diagram);
+    return ok(summary, {
+      blocks: diagram.blocks.map((block) => ({
+        id: block.id,
+        name: block.name,
+        kind: block.kind,
+        source: block.source,
+        parts: block.parts.map((part) => part.ref),
+        keyParts: block.keyParts.map((part) => ({ ref: part.ref, value: part.value })),
+        ...(block.passiveSummary ? { passiveSummary: block.passiveSummary } : {}),
+      })),
+      edges: diagram.edges.map((edge) => ({ from: edge.from, to: edge.to, kind: edge.kind, labels: edge.labels })),
+    });
+  },
+});
+
 export const circuitTools = [
   circuit_query,
   circuit_search_parts,
   circuit_describe_part,
   circuit_check_part_compatibility,
+  circuit_system,
 ];

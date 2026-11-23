@@ -16,6 +16,13 @@ test("selection follows a board across views and cannot leak across projects, en
   }
   usePartSelection.getState().clear(a); expect(usePartSelection.getState().selection).toBeNull();
 });
+test("a block can select several references without dropping the primary ref", () => {
+  const a = partScopeKey({ endpoint: "a", projectId: "p" });
+  usePartSelection.getState().select(a, "U1", ["U1", "Y1", "C1"]);
+  expect(usePartSelection.getState().selection).toEqual({ scope: a, ref: "U1", refs: ["U1", "Y1", "C1"] });
+  usePartSelection.getState().select(a, "R1");
+  expect(usePartSelection.getState().selection).toEqual({ scope: a, ref: "R1" });
+});
 test("PCB hit testing respects native rotation and literal references", () => {
   const parts = pcbSelectionParts(pcb); expect(parts).toHaveLength(1);
   expect(hitSelectionPart(parts, { x: 20, y: 28 })?.ref).toBe("R[1]");

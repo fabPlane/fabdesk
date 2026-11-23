@@ -33,6 +33,7 @@ import { DiffTab } from "./DiffTab";
 import { ShoppingListTab } from "./ShoppingListTab";
 import { SvgTab } from "./SvgTab";
 import { ThreeDTab } from "./ThreeDTab";
+import { SystemTab } from "./SystemTab";
 import { OrderChecksButton } from "./OrderChecksButton";
 
 const PlacementTab = lazy(() => import("./placement/PlacementTab").then(module => ({ default: module.PlacementTab })));
@@ -45,6 +46,8 @@ function TabBody({ tab, canvas = false, onOpenChecks }: { tab: BoardTab; canvas?
       return <SvgTab kind="schematic" {...(onOpenChecks ? { onOpenChecks } : {})} />;
     case "pcb":
       return <SvgTab kind="pcb" {...(onOpenChecks ? { onOpenChecks } : {})} />;
+    case "system":
+      return <SystemTab />;
     case "placement":
       return <Suspense fallback={<div className="p-6 text-sm text-muted">Opening placement workspace…</div>}><PlacementTab canvas={canvas} /></Suspense>;
     case "cinema":
@@ -108,7 +111,7 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
   if (canvas) return <div className="fd-canvas-board" data-testid="board-panel">
     <div className="fd-canvas-controls">
       {area === "boards" && projectId && sources.data?.mode === "single" && <ImportedBoardIdentity projectId={projectId} />}
-      {area === "boards" && tab === "placement" && projectId && sources.data?.mode === "assembly" && <AssemblyBoardPicker projectId={projectId} data={sources.data} selection={selected} disabled={sources.isFetching} onChoose={selection => useUiStore.getState().setAssemblyBoard(selection)} onBack={() => useUiStore.getState().setWorkspaceArea("overview")} />}
+      {area === "boards" && (tab === "placement" || tab === "system") && projectId && sources.data?.mode === "assembly" && <AssemblyBoardPicker projectId={projectId} data={sources.data} selection={selected} disabled={sources.isFetching} onChoose={selection => useUiStore.getState().setAssemblyBoard(selection)} onBack={() => useUiStore.getState().setWorkspaceArea("overview")} />}
       {area === "boards" && tab === "cinema" ? <div className="fd-routing-toolbar-slot" data-routing-toolbar-slot /> : area === "boards" ? <BoardViewTabs value={tab === "placement" ? "pcb" : tab} onChange={setWorkspaceTab} /> : workspaceViews(area).length > 1 && <Tabs tabs={visibleTabs} value={tab} onChange={setWorkspaceTab} />}
       {area === "boards" && tab !== "cinema" && tab !== "placement" && <WorkspaceMenu className="fd-board-tools fd-canvas-tool-menu" label={<><span aria-label="More board tools"><Icon name="more" width={18} height={18} /></span><span className="fd-canvas-tool-label" aria-hidden="true">More board tools</span></>}><div className="fd-menu-caption">Board tools</div><button onClick={() => setWorkspaceTab("placement")}>Edit placement</button><button aria-current={tab === "art" ? "page" : undefined} onClick={() => setWorkspaceTab("art")}>Artwork</button>{order.data && <button onClick={openOrder}>Order options</button>}</WorkspaceMenu>}
       {area === "boards" && tab === "placement" && <div className="fd-placement-toolbar-slot" data-placement-toolbar-slot />}

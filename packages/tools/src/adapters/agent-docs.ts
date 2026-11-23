@@ -4,7 +4,7 @@ import { TOOLSETS, type ToolDef, type ToolRegistry } from "../registry";
 const TOOLSET_BLURB: Record<string, string> = {
   core: "always available",
   project: "files, sketches, board settings, off-board parts, pinned comments, NOTES.md",
-  circuit: "query the board, footprint search",
+  circuit: "query the board, footprint search, system block diagram",
   route: "routing status/cancel/partial reroute",
   kicad: "KiCad conversion and stats",
   verify: "ERC and release gate",

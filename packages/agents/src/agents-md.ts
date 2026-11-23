@@ -52,6 +52,7 @@ When asked to identify a component while viewing a schematic, inspect the real s
 | Need | Available tool |
 | --- | --- |
 | Board geometry, pads, copper and object IDs | \`pcb_inspect\` (references/nets/kinds, region/near, limitPerKind) |
+| System blocks and labelled connections | \`circuit_system\` |
 | Show an identified component on the schematic canvas | \`schematic_focus\` with its exact reference after source inspection; single saved root sheet only. Report requested versus visibly confirmed navigation honestly |
 | Schematic pins, unit numbers, dangling item IDs | \`schematic_inspect\` (detail=authoring/full, selectors); live session diagnostics are informational |
 | Saved DRC/ERC results by item | \`verify_drc\` (responseMode=full for all geometry); \`verify_erc\` |

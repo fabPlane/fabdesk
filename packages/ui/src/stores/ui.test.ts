@@ -70,15 +70,17 @@ describe("sidebar list tabs", () => {
 
 describe("board tabs", () => {
   test("existing shortcuts remain stable while notes and revision diff stay available", () => {
-    expect(BOARD_TABS[8]).toBe("bom");
+    expect(BOARD_TABS[2]).toBe("system");
+    expect(BOARD_TAB_LABELS.system).toBe("System");
+    expect(BOARD_TABS[9]).toBe("bom");
     expect(BOARD_TAB_LABELS.bom).toBe("Shopping list");
-    expect(BOARD_TABS[9]).toBe("art");
+    expect(BOARD_TABS[10]).toBe("art");
     expect(BOARD_TAB_LABELS.art).toBe("Art");
     expect(BOARD_TABS).toContain("notes");
     expect(BOARD_TAB_LABELS.notes).toBe("Notes");
-    expect(BOARD_TABS[11]).toBe("diff");
-    expect(BOARD_TABS[12]).toBe("comments");
-    expect(BOARD_TABS[13]).toBe("updates");
+    expect(BOARD_TABS[12]).toBe("diff");
+    expect(BOARD_TABS[13]).toBe("comments");
+    expect(BOARD_TABS[14]).toBe("updates");
     expect(BOARD_TABS.at(-1)).toBe("placement");
     expect(BOARD_TAB_LABELS.placement).toBe("Placement");
     expect(BOARD_TAB_LABELS.comments).toBe("Comments");

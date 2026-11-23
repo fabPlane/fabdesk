@@ -14,6 +14,7 @@ import { ok, table } from "./common";
 export const APP_BOARD_TABS = [
   "schematic",
   "pcb",
+  "system",
   "cinema",
   "3d",
   "cad",

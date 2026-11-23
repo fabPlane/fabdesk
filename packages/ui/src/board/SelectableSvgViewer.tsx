@@ -14,7 +14,8 @@ export function SelectableSvgViewer({ selectionSource, selectionView, sheetPath,
   const valid = selected.ready && frame && hash?.svg === props.svg && hash.hash === entry?.sha256;
   const parts = valid && entry ? entry.parts : [];
   const references = useMemo(() => [...new Set(parts.map(p => p.ref))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })), [parts]);
-  const targets = parts.filter(p => p.ref === selected.ref);
+  const selectedRefs = selected.refs?.length ? selected.refs : selected.ref ? [selected.ref] : [];
+  const targets = parts.filter(p => selectedRefs.includes(p.ref));
   const otherSheet = selected.index.data?.sheets.find(s => s.path !== sheetPath && s.parts.some(p => p.ref === selected.ref));
   const followed = useRef<string | null>(null);
   useEffect(() => {
@@ -25,7 +26,7 @@ export function SelectableSvgViewer({ selectionSource, selectionView, sheetPath,
     const sheets = selected.index.data!.sheets.filter(s => s.parts.some(p => p.ref === selected.ref));
     if (!sheets.some(s => s.path === sheetPath) && sheets.length === 1) onSelectionSheet(sheets[0]!.path);
   }, [selectionView, selected.ready, selected.scope, selected.ref, selected.index.data, sheetPath, onSelectionSheet]);
-  const notice = !valid ? selected.index.isError ? "Component selection unavailable · reopen this view to retry" : selected.index.isFetching ? "Loading components…" : "Update the preview to select components" : selected.ref && !targets.length ? `${selected.ref} ${selectionView === "schematic" && otherSheet ? `is on sheet ${otherSheet.name}` : "is not present in this view"}` : undefined;
+  const notice = !valid ? selected.index.isError ? "Component selection unavailable · reopen this view to retry" : selected.index.isFetching ? "Loading components…" : "Update the preview to select components" : selected.ref && !targets.length ? `${selected.ref} ${selectionView === "schematic" && otherSheet ? `is on sheet ${otherSheet.name}` : "is not present in this view"}` : selected.refs && selected.refs.length > 1 ? `${selected.refs.length} parts selected across views` : undefined;
   useEffect(() => setFocus(undefined), [props.svg, selected.scope]);
   const selectPart = (ref: string) => { onPartSelected?.(); selected.select(ref); };
   const focusSelected = () => { if (!targets.length) return; const x = Math.min(...targets.map(p => p.box.x)), y = Math.min(...targets.map(p => p.box.y)); setFocus({ x: x - 3, y: y - 3, width: Math.max(...targets.map(p => p.box.x + p.box.width)) - x + 6, height: Math.max(...targets.map(p => p.box.y + p.box.height)) - y + 6, key: `${selected.scope}/${selected.ref}/${performance.now()}`, animate: true, reference: selected.ref }); };

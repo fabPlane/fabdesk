@@ -2,7 +2,7 @@
 export const WORKSPACE_AREAS = {
   overview: { label: "Overview", views: [] },
   status: { label: "Status", views: [] },
-  boards: { label: "Board", views: [{ tab: "pcb", label: "PCB" }, { tab: "schematic", label: "Schematic" }, { tab: "3d", label: "3D" }, { tab: "cinema", label: "Routing" }, { tab: "art", label: "Artwork" }, { tab: "placement", label: "Placement" }] },
+  boards: { label: "Board", views: [{ tab: "pcb", label: "PCB" }, { tab: "schematic", label: "Schematic" }, { tab: "system", label: "System" }, { tab: "3d", label: "3D" }, { tab: "cinema", label: "Routing" }, { tab: "art", label: "Artwork" }, { tab: "placement", label: "Placement" }] },
   connections: { label: "Connections", views: [] },
   history: { label: "History", views: [] },
   mechanical: { label: "Mechanical", views: [{ tab: "cad", label: "Enclosure & CAD" }] },
@@ -39,6 +39,7 @@ export function workspaceViewSearchTerms(area: WorkspaceArea, view: { tab: Works
     "boards:pcb": "pcb layout placement position rotate resize board dimensions",
     "boards:placement": "edit placement arrange parts footprint replace resize dimensions reserved areas draft unrouted",
     "boards:schematic": "schematic circuit sheets",
+    "boards:system": "system block diagram functional blocks power mcu connectors buses",
     "boards:cinema": "route board router cinema playback",
     "parts:bom": "bill of materials bom parts shopping list off-board items quantities",
     "outputs:files": "export gerbers drill fabrication zip bom csv pick and place component placement dxf layers solder stencil laser cut lightburn download files",

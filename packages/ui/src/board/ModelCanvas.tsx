@@ -58,7 +58,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
   const updateSelection = useRef<(() => void) | null>(null), focusSelection = useRef<((animate?: boolean) => void) | null>(null);
   const [selectableRefs, setSelectableRefs] = useState<string[]>([]);
   const [selectionNotice, setSelectionNotice] = useState<string | undefined>();
-  useEffect(() => { updateSelection.current?.(); }, [selection.ref, selection.ready, selection.index.data]);
+  useEffect(() => { updateSelection.current?.(); }, [selection.ref, selection.refs, selection.ready, selection.index.data]);
   const host = useRef<HTMLDivElement>(null);
   const savedCamera = useRef<CameraState | null>(null);
   const framedSelection = useRef<{ scope: string; ref: string | null } | null>(null);
@@ -178,11 +178,13 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
             }
             setSelectableRefs([...selectable.keys()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
             highlightBox.makeEmpty();
-            for (const object of selectable.get(current.ref ?? "") ?? []) highlightBox.union(new THREE.Box3().setFromObject(object));
+            const selectedRefs = current.refs?.length ? current.refs : current.ref ? [current.ref] : [];
+            const highlighted = selectedRefs.flatMap(ref => selectable.get(ref) ?? []);
+            for (const object of highlighted) highlightBox.union(new THREE.Box3().setFromObject(object));
             const visible = !highlightBox.isEmpty();
-            canvas.dataset["tintedMeshes"] = String(tint.apply(selectable.get(current.ref ?? "") ?? []));
+            canvas.dataset["tintedMeshes"] = String(tint.apply(highlighted));
             canvas.dataset["selectedComponent"] = visible ? current.ref! : "";
-            setSelectionNotice(!current.ready || receipt?.sha256 !== digest ? "Update the 3D preview to select components" : current.ref && !visible ? `${current.ref} has no selectable model in this preview` : undefined);
+            setSelectionNotice(!current.ready || receipt?.sha256 !== digest ? "Update the 3D preview to select components" : current.ref && !visible ? `${current.ref} has no selectable model in this preview` : current.refs && current.refs.length > 1 ? `${current.refs.length} parts selected across views` : undefined);
             if (visible && selectionIsFramed()) focusSelection.current?.(false);
             render();
           };

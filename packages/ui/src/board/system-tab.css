@@ -1,0 +1,54 @@
+.fd-system-tab { display:flex; flex-direction:column; height:100%; min-height:0; }
+.fd-system-stage { position:relative; display:flex; flex:1; min-height:0; }
+.fd-system-viewport {
+  flex:1; min-height:0; overflow:hidden; cursor:grab; outline:none;
+  background:
+    radial-gradient(1200px 600px at 20% 0%, color-mix(in srgb, var(--fd-accent) 8%, transparent), transparent 60%),
+    var(--fd-bg, transparent);
+}
+.fd-system-viewport:active { cursor:grabbing; }
+.fd-system-viewport svg { display:block; }
+
+.fd-system-block rect {
+  fill: color-mix(in srgb, var(--fd-panel) 92%, var(--fd-bg));
+  stroke: var(--fd-border);
+  stroke-width: 1.2;
+}
+.fd-system-block { cursor:pointer; }
+.fd-system-block[data-kind=power] rect { stroke: #d97706; }
+.fd-system-block[data-kind=mcu] rect { stroke: #2563eb; }
+.fd-system-block[data-kind=io] rect { stroke: #0f766e; }
+.fd-system-block[data-kind=sensors] rect { stroke: #7c3aed; }
+.fd-system-block[data-kind=motor] rect { stroke: #c2410c; }
+.fd-system-block[data-kind=rf] rect { stroke: #db2777; }
+.fd-system-block[data-selected] rect {
+  stroke: var(--fd-accent);
+  stroke-width: 2;
+  fill: color-mix(in srgb, var(--fd-accent) 12%, var(--fd-panel));
+}
+.fd-system-block-title { font: 600 13px/1.2 Inter, system-ui, sans-serif; fill: var(--fd-fg); }
+.fd-system-block-kind { font: 500 10px/1 Inter, system-ui, sans-serif; fill: var(--fd-muted); }
+.fd-system-block-part { font: 500 11px/1 Inter, system-ui, sans-serif; fill: var(--fd-fg); }
+.fd-system-block-passives { font: 500 10px/1 Inter, system-ui, sans-serif; fill: var(--fd-muted); }
+
+.fd-system-edge path { stroke: color-mix(in srgb, var(--fd-muted) 70%, var(--fd-border)); stroke-width: 1.4; }
+.fd-system-edge[data-kind=power] path { stroke: #d97706; }
+.fd-system-edge[data-kind=bus] path { stroke: #2563eb; }
+.fd-system-edge text {
+  font: 600 10px/1 Inter, system-ui, sans-serif;
+  fill: var(--fd-fg);
+  paint-order: stroke;
+  stroke: var(--fd-panel);
+  stroke-width: 4px;
+}
+
+.fd-system-tools {
+  position:absolute; z-index:10; bottom:18px; left:26px;
+  display:flex; flex-wrap:nowrap; align-items:center; gap:8px;
+  width:max-content; max-width:calc(100% - 52px); height:44px; padding:5px 12px;
+  border:1px solid var(--fd-border); border-radius:24px; background:var(--fd-panel);
+  box-shadow:0 3px 10px #102a2010; color:var(--fd-muted); font-size:12px;
+}
+.fd-system-tools span:last-child { padding-left:6px; }
+
+.fd-canvas-workspace .fd-canvas-board-body > .fd-system-tab { padding-bottom:0; background:transparent; }

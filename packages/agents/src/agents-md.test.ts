@@ -33,6 +33,7 @@ describe("renderAgentsMd", () => {
     expect(md).toContain("Both authoring paths are available");
     expect(md).toContain("`circuit.netlist.json`");
     expect(md).toContain("`route_status`");
+    expect(md).toContain("`circuit_system`");
     expect(md).toContain("`$KICAD_CLI`");
     expect(md).not.toContain("### circuit_build");
     expect(md).toContain("`project.parts.json`");
