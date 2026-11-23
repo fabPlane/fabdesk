@@ -57,6 +57,7 @@ import { RunTelemetry } from "./run-telemetry";
 import { buildInfo } from "./build-info";
 import { ArchiveConsentRevokedError, UsageArchive } from "./usage-archive";
 import { UsageApiArchiveWriter } from "./usage-api";
+import { userPathReady } from "./user-path";
 
 /** Delay before retrying a failed usage-archive backfill (rate or daily limits, an outage). */
 const BACKFILL_RETRY_MS = 30 * 60_000;
@@ -612,7 +613,10 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       return e ? [e] : [];
     },
     doctor,
-    agents: async () => (await import("@fabdesk/agents")).detectAgents(store.settings.get()),
+    agents: async () => {
+      await userPathReady();
+      return (await import("@fabdesk/agents")).detectAgents(store.settings.get());
+    },
     shutdown: (reason: string) => void daemon.close(reason),
     startedAt,
     privacy: () => privacy,
