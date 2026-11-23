@@ -50,6 +50,9 @@ optional_platforms_csv() {
 }
 
 # Print expected platforms that are missing from a manifest.json (or none).
+# A platform counts as published only when its asset names the placer
+# (tracemaker-place ships beside tracemaker since the floorplan port), so a
+# release packed before that is rebuilt by the next weekly run, not skipped.
 missing_expected_platforms() {
   local manifest="${1:?manifest.json}"
   EXPECTED="$TRACEMAKER_EXPECTED_PLATFORMS" python3 - "$manifest" <<'PY'
@@ -60,7 +63,8 @@ if not path.is_file():
     print(" ".join(expected))
     raise SystemExit(0)
 raw = json.loads(path.read_text(encoding="utf-8"))
-published = {a.get("platform") for a in raw.get("assets", []) if isinstance(a, dict)}
+# An asset without "placer" predates tracemaker-place in the archive: rebuild it.
+published = {a.get("platform") for a in raw.get("assets", []) if isinstance(a, dict) and a.get("placer")}
 missing = [p for p in expected if p not in published]
 print(" ".join(missing))
 PY
@@ -112,7 +116,7 @@ if not path.is_file():
     missing = expected
 else:
     raw = json.loads(path.read_text(encoding="utf-8"))
-    published = {a.get("platform") for a in raw.get("assets", []) if isinstance(a, dict)}
+    published = {a.get("platform") for a in raw.get("assets", []) if isinstance(a, dict) and a.get("placer")}
     missing = [p for p in expected if p not in published]
 skip = waived(os.environ.get("STATUS", ""), optional, limit)
 print(" ".join(p for p in missing if p not in skip))

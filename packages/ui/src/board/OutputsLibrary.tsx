@@ -1,27 +1,22 @@
-import { FeedbackNotice } from "../components/FeedbackNotice";
-import { useQueryClient } from "@tanstack/react-query";
-import { refreshProjectPreviews } from "@fabdesk/client-core";
-import { useOutputTrashReview } from "@fabdesk/client-core";
-import { OutputTrashDialog } from "./OutputTrashDialog";
-import { useOutputRevisions, outputRevisionLabel, outputInputsNeedReview } from "@fabdesk/client-core";
-import { useAssistantSurface } from "../chat/useAssistantSurface";
-import { CanvasToolButton } from "../components/CanvasToolButton";
-import { OutputPreviewDialog } from "./OutputPreviewDialog";
-import { BoardImageOutput } from "./BoardImageOutput";
 import { buildZip } from "@fabdesk/board-art";
-import { readOutputSelection } from "@fabdesk/client-core";
-import { videoInputLabel } from "./VideoSourceStatus";
-import { filterSavedOutputs, outputCards, useVideoInputRevisions, videoInputsNeedReview } from "@fabdesk/client-core";
-import { useEffect, useRef, useState } from "react";
-import { assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, useAssemblyPreviewRevisions, savedOutputs, useBoardSources, useBoardModelRevision, usePcbPreviewRevision, useEnclosureSourceRevision, useCoreClient, useProject, useRunTool, type OutputKind } from "@fabdesk/client-core";
-import { Select, Button, Dialog, EmptyState, LoadError, Spinner } from "../components/ui";
+import { assemblyModelNeedsReview,assemblyModelSummaryLabel,filterSavedOutputs,outputCards,outputInputsNeedReview,outputRevisionLabel,readOutputSelection,refreshProjectPreviews,savedOutputs,useAssemblyModelSummaries,useAssemblyPreviewRevisions,useBoardModelRevision,useBoardSources,useCoreClient,useEnclosureSourceRevision,useOutputRevisions,useOutputTrashReview,usePcbPreviewRevision,useProject,useRunTool,useVideoInputRevisions,videoInputsNeedReview,type OutputKind } from "@fabdesk/client-core";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect,useRef,useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
 import { ProjectVideo } from "../chat/ProjectVideo";
+import { useAssistantSurface } from "../chat/useAssistantSurface";
+import { CanvasToolButton } from "../components/CanvasToolButton";
+import { FeedbackNotice } from "../components/FeedbackNotice";
 import { Icon } from "../components/Icon";
-import { useUiStore } from "../stores/ui";
+import { Button,Dialog,EmptyState,LoadError,Select,Spinner } from "../components/ui";
 import { WorkspaceMenu } from "../layout/WorkspaceMenu";
+import { useUiStore } from "../stores/ui";
 import { basename } from "../util";
+import { BoardImageOutput } from "./BoardImageOutput";
 import { formatFileSize } from "./file-explorer";
+import { OutputPreviewDialog } from "./OutputPreviewDialog";
+import { OutputTrashDialog } from "./OutputTrashDialog";
+import { videoInputLabel } from "./VideoSourceStatus";
 const FILTERS = [{ id: "all", label: "All" }, { id: "images", label: "Images" }, { id: "videos", label: "Videos" }, { id: "models", label: "Models" }, { id: "manufacturing", label: "Manufacturing" }] as const;
 
 /** Open a preview directly; explicit checkboxes select files for single or batch download. */
@@ -161,7 +156,7 @@ export function OutputsLibrary({ projectId }: { projectId: string | null }) {
         {!sourceReady && <div className="fd-menu-caption">{boardSources.isError ? "Board sources could not be checked." : "Checking board sources…"}</div>}
         {boardSources.isError && <button onClick={() => void boardSources.refetch()}>Retry source check</button>}
         {sourceReady && !assembly && !hasPcb && <><div className="fd-menu-caption">Add a saved PCB in Board to create images, models or videos.</div><button onClick={() => useUiStore.getState().setBoardTab("pcb")}>Open Board</button></>}
-        <button disabled={!sourceReady || !assembly && !rootGenerationReady || generate.state.status === "running"} title={!assembly && !hasPcb ? "Add a saved PCB first" : undefined} onClick={() => create("glb")}>{assembly ? "Review board models…" : "Generate board model"}</button>
+        <button disabled={!sourceReady || !assembly && !rootGenerationReady || generate.state.status === "running"} title={!assembly && !hasPcb ? "Add a saved PCB first" : undefined} onClick={() => { const ui = useUiStore.getState(); ui.setWorkspaceArea("boards"); ui.setBoardTab("3d"); }}>Open board model</button>
         <button disabled={!sourceReady || !assembly && !hasPcb} onClick={() => create("video")}>Make video…</button>
         <button onClick={() => create("files")}>Export files…</button>
       </WorkspaceMenu>

@@ -39,11 +39,40 @@ export {
 } from "./checksum";
 export { bundledHint, installHintFor } from "./hints";
 export {
+  KRT_BYTES,
+  KRT_LOCK_FILE,
+  KRT_MIN_PYTHON,
+  KRT_PINNED_DEPS,
+  KRT_SHA256,
+  KRT_URL,
+  KRT_VERSION,
+  cargoArtifactName,
+  findCargo,
+  findUv,
+  krtLockText,
+  krtNoRustMessage,
+  krtRootProblem,
+  krtRustBinary,
+  pythonCandidates,
+  setupKrt,
+  type KrtRun,
+  type KrtSetupDeps,
+  type KrtSetupResult,
+} from "./krt";
+export {
   createRouterRegistry,
   extractZipArchive,
   probeTraceMakerCliVersion,
   routersRoot,
+  traceMakerPlacerNear,
+  TRACEMAKER_PLACE_ENV,
+  TRACEMAKER_PLACER,
   type BundledRouter,
+  type EngineEnsureOptions,
+  type EngineEnsureResult,
+  type PlacerEnsureResult,
+  type TraceMakerPlacerState,
+  type RouterInstallOptions,
   type RouterRegistry,
   type RouterRegistryDeps,
   type RouterRegistrySettings,
@@ -55,3 +84,4 @@ export {
   type RouterInputId,
 } from "./select";
 export { runTraceMaker } from "./tracemaker";
+export { UV_ASSETS, UV_VERSION, bootstrapUv, bootstrappedUvPath, uvAsset, type UvAsset } from "./uv";

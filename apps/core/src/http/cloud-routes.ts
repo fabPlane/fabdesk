@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 /**
  * fabplane.com shopping lists and inventory, proxied through the daemon so the UI never holds the
@@ -21,7 +21,7 @@ import {
   type ProjectBomSnapshot,
 } from "@fabdesk/protocol";
 import {
-  prepareProjectShare, inspectProjectStatus, prepareEditableBoard, inspectProjectBoardSources,
+  prepareProjectShare, inspectProjectStatus, readAcceptanceState, readDoneMode, readBoardOverview, prepareEditableBoard, inspectProjectBoardSources,
   CloudSignedOutError,
   CloudUnavailableError,
   isCloudApiError,
@@ -115,6 +115,12 @@ export function cloudRoutes<E extends object>(deps: Deps): Hono<{ Variables: E }
   };
   app.get("/projects/:id/status", run(async c => {
     return c.json(await inspectProjectStatus(await project(param(c, "id"))));
+  }));
+  // local only, additive: the board workflow's recorded A1-A9 for the saved board (not part of the published status)
+  app.get("/projects/:id/board-checks", run(async c => {
+    const handle = await project(param(c, "id"));
+    const [acc, mode, dir, overview] = await Promise.all([readAcceptanceState(handle.dir), readDoneMode(handle.dir), stat(join(handle.dir, ".fabdesk", "board")).catch(() => null), readBoardOverview(handle.dir)]);
+    return c.json({ used: !!dir || acc.state !== "none", state: acc.state, failing: acc.failing, baselineFailing: acc.baselineFailing, regressions: acc.regressions, mode, ...(acc.at ? { at: acc.at } : {}), ...overview });
   }));
   app.get("/projects/:id/share", run(async c => {
     const handle = await project(param(c, "id")), api = cloud().client();

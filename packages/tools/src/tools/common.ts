@@ -3,7 +3,9 @@ import { join } from "node:path";
 import { NetlistFile, ProjectPartsFile, emptyProjectParts } from "@fabdesk/protocol";
 import { PROJECT_FILES, exists, readJsonIfPresent, readJsonOrNull, writeJson } from "../fs";
 import { ToolError, type ProjectHandle, type ToolContext, type ToolOutput } from "../registry";
-import type { KicadCli, SchematicHierarchy } from "../services";
+import { parseDrcJson } from "@fabdesk/kicad";
+import { readFile } from "node:fs/promises";
+import type { DrcReport, KicadCli, SchematicHierarchy } from "../services";
 
 export function p(project: ProjectHandle, ...parts: string[]): string {
   return join(project.dir, ...parts);
@@ -163,4 +165,33 @@ export function table(rows: Array<Record<string, unknown>>, columns?: string[]):
 
 export function trim(s: string, max = 20_000): string {
   return s.length > max ? `${s.slice(0, max)}\n… (${s.length - max} more chars truncated)` : s;
+}
+
+/**
+ * The DRC the board workflow judges: the project's own rule severities (no `--severity-all`, which also reports what the
+ * owner marked ignored or excluded as ordinary errors) with any `excluded` item dropped from the JSON. This is the
+ * figure the toolkit's acceptance checks read.
+ */
+export async function runLiveDrc(
+  ctx: ToolContext,
+  cli: KicadCli,
+  opts: { board: string; outFile: string; parity: boolean; refill: boolean; signal?: AbortSignal | undefined },
+): Promise<DrcReport> {
+  const report = await ctx.services.kicad.runDrc(cli, {
+    board: opts.board,
+    outFile: opts.outFile,
+    severity: "project",
+    schematicParity: opts.parity,
+    refillZones: opts.refill,
+    ...(opts.signal ? { signal: opts.signal } : {}),
+  });
+  type Raw = { violations?: Array<{ excluded?: boolean }>; unconnected_items?: Array<{ excluded?: boolean }>; schematic_parity?: Array<{ excluded?: boolean }> };
+  let raw: Raw;
+  try {
+    raw = JSON.parse(await readFile(opts.outFile, "utf8")) as Raw;
+  } catch {
+    return report; // a service that did not write the file (test doubles): its own report
+  }
+  const live = <T extends { excluded?: boolean }>(l: T[] | undefined) => (l ?? []).filter((v) => !v.excluded);
+  return parseDrcJson({ ...raw, violations: live(raw.violations), unconnected_items: live(raw.unconnected_items), schematic_parity: live(raw.schematic_parity) } as never) as DrcReport;
 }

@@ -1,7 +1,7 @@
 import { project_checkpoint } from "./task-checkpoint";
 /** Project toolset: files, sketches and board settings. All paths are jailed under the project dir. */
-import { copyFile, readdir, readFile, stat } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { z } from "zod/v4";
 import { BoardConstructionId, BoardMaterialId } from "@fabdesk/protocol";
 import { PROJECT_FILES, jailPath, projectRelative, writeAtomic } from "../fs";
@@ -146,7 +146,7 @@ export const project_set_board = defineTool({
   description:
     'Update fabdesk.json board settings: layer count, outline dimensions, router, laminate/material preset, and optional prefab blank template. template="viagrid-9055" represents the Opulo 90 x 55 mm blank with its factory vias, mounting holes, and 0.2 mm track and clearance rules; template="none" removes the template. board_material_set also rewrites the KiCad stackup when changing only the laminate.',
   inputSchema: {
-    layers: z.number().int().min(1).max(8).optional(),
+    layers: z.number().int().min(1).max(32).optional(),
     widthMm: z.number().positive().optional(),
     heightMm: z.number().positive().optional(),
     router: z
@@ -239,7 +239,7 @@ export const project_import_kicad = defineTool({
   toolset: "project",
   title: "Adopt a KiCad board",
   description:
-    "Copy an existing .kicad_pcb and adjacent .kicad_pro/.kicad_sch files into the canonical project paths. The imported board becomes the project design. Also records its copper-layer count when kicad-cli is available.",
+    "Copy an existing .kicad_pcb and adjacent .kicad_pro/.kicad_sch/.kicad_dru files into canonical project paths. Preserves adjacent sheets, rejects conflicting names and unsaved live work. This is native-file adoption, not a complete project-folder import. Also records copper-layer count when kicad-cli is available.",
   inputSchema: {
     path: z
       .string()
@@ -255,40 +255,55 @@ export const project_import_kicad = defineTool({
   longRunning: true,
   handler: async ({ path }, ctx) => {
     const project = ctx.requireProject();
-    const abs = isAbsolute(path) ? path : await jailPath(project.dir, path);
-    if (!(await stat(abs).catch(() => null)))
+    const abs = resolve(isAbsolute(path) ? path : await jailPath(project.dir, path));
+    if (!(await stat(abs).catch(() => null))?.isFile())
       throw new ToolError(`file not found: ${path}`, "not_found");
     if (!/\.kicad_pcb$/i.test(abs))
       throw new ToolError("path must be a .kicad_pcb", "invalid_args");
-    ctx.progress(0.1, "copying");
-    const copied: string[] = [];
-    const target = p(project, PROJECT_FILES.boardPcb);
-    if (abs !== target) {
-      await copyFile(abs, target);
-      copied.push(PROJECT_FILES.boardPcb);
-    }
+    // Resolve the complete plan before writing: an adjacent board.kicad_sch must
+    // never overwrite the imported root after product.kicad_sch was renamed.
+    const plan = new Map<string, string>();
+    const destinations = new Map<string, string>();
+    const add = (source: string, destination: string) => {
+      // Imported projects must also be safe on case-insensitive macOS/Windows volumes.
+      const key = destination.toLowerCase();
+      if (destinations.has(key) && destinations.get(key) !== source)
+        throw new ToolError(`multiple source files map to ${destination}; resolve the conflicting sheet names before importing`, "precondition");
+      destinations.set(key, source);
+      plan.set(destination, source);
+    };
+    add(abs, PROJECT_FILES.boardPcb);
     for (const [ext, dest] of [
       [".kicad_pro", PROJECT_FILES.boardPro],
       [".kicad_sch", PROJECT_FILES.boardSch],
+      [".kicad_dru", "board.kicad_dru"],
     ] as const) {
       const sibling = abs.replace(/\.kicad_pcb$/i, ext);
-      const to = p(project, dest);
-      if (sibling !== to && (await stat(sibling).catch(() => null))) {
-        await copyFile(sibling, to);
-        copied.push(dest);
-      }
+      if ((await stat(sibling).catch(() => null))?.isFile()) add(sibling, dest);
     }
-    // KiCad 10 projects may have several top-level native schematic files. Preserve every adjacent
-    // sheet when adopting a project; the source/root sheet itself remains canonical board.kicad_sch.
+    // Preserve adjacent native sheets without confusing another root with ours.
     for (const name of await readdir(dirname(abs))) {
       if (!name.toLowerCase().endsWith(".kicad_sch")) continue;
       const sibling = join(dirname(abs), name);
       if (sibling === abs.replace(/\.kicad_pcb$/i, ".kicad_sch")) continue;
-      const destination = p(project, basename(name));
-      if (sibling === destination) continue;
-      await copyFile(sibling, destination);
-      copied.push(basename(name));
+      add(sibling, basename(name));
     }
+    const files: Array<{ destination: string; data: Buffer }> = [];
+    for (const [destination, source] of plan) {
+      const target = await jailPath(project.dir, destination);
+      if (source !== target) files.push({ destination, data: await readFile(source) });
+    }
+    const route = ctx.services.routeRuns.latest(project.id);
+    if (route && ["queued", "running", "cancel_requested", "cancelling"].includes(route.state))
+      throw new ToolError("import refused: routing is active; wait for it to finish", "precondition");
+    const recovery = ctx.services.design.withSavedFilesRecovery;
+    if (!recovery) throw new ToolError("native saved-file recovery is unavailable in this runtime", "unavailable");
+    ctx.progress(0.1, "copying");
+    await recovery(project.dir, async () => {
+      for (const file of files) await writeAtomic(await jailPath(project.dir, file.destination), file.data);
+    });
+    const copied = files.map(file => file.destination);
+    const target = p(project, PROJECT_FILES.boardPcb);
     let layers: number | undefined;
     const cli = await ctx.services.kicad.resolveCli();
     if (cli) {

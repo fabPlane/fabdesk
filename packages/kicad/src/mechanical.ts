@@ -21,9 +21,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
-import { runKicadCli, type KicadCli } from "./cli";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { componentModelEnvironment, componentModelLibraryRoots, runKicadCli, type KicadCli } from "./cli";
 import { parseGlbContainer } from "./glb-container";
+import { cachedStockModel, officialStockModel, stockModelCacheRoot } from "./stock-model-cache";
+import { withModelBoard } from "./model-board";
 
 export const MECHANICAL_COLLECTOR = { name: "fabdesk.mechanical-glb", version: "1.0.0" } as const;
 export const MECHANICAL_CONTRACT = { name: "fabdesk.mechanical", version: "1.0.0" } as const;
@@ -116,6 +118,7 @@ export type SavedModelReference = {
 
 export type SavedFootprint = {
   ref: string | null;
+  value?: string;
   uuid: string | null;
   footprint: string;
   layer: string | null;
@@ -142,6 +145,8 @@ export function readSavedBoardModels(boardText: string): SavedFootprint[] {
     const reference =
       children(fp, "property").find((p) => p[1] === "Reference")?.[2] ??
       children(fp, "fp_text").find((t) => t[1] === "reference")?.[2];
+    const value = children(fp, "property").find(p => p[1] === "Value")?.[2] ??
+      children(fp, "fp_text").find(t => t[1] === "value")?.[2];
     const layerNode = child(fp, "layer");
     const layer = typeof layerNode?.[1] === "string" ? layerNode[1] : null;
     const transform = child(fp, "transform");
@@ -192,6 +197,7 @@ export function readSavedBoardModels(boardText: string): SavedFootprint[] {
     });
     return {
       ref: typeof reference === "string" ? reference : null,
+      ...(typeof value === "string" ? { value } : {}),
       uuid: typeof child(fp, "uuid")?.[1] === "string" ? (child(fp, "uuid")![1] as string) : null,
       footprint: typeof fp[1] === "string" ? fp[1] : "",
       layer,
@@ -217,7 +223,8 @@ export type ModelResolution = {
 export function resolveModelPath(
   declared: string,
   projectDir: string,
-  env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv = componentModelEnvironment(),
+  stockRoots?: readonly string[],
 ): ModelResolution {
   if (!declared.trim())
     return {
@@ -240,19 +247,36 @@ export function resolveModelPath(
       return value;
     },
   );
-  if (unresolved.length)
+  const availableStock = () => {
+    const official = officialStockModel(declared);
+    if (!official) return null;
+    // A partial bundled library must not trigger a download of a file already installed elsewhere.
+    for (const root of stockRoots ?? componentModelLibraryRoots(env)) {
+      const candidate = join(root, official.path);
+      if (existsSync(candidate)) return candidate;
+    }
+    return cachedStockModel(declared, stockModelCacheRoot(env));
+  };
+  if (unresolved.length) {
+    const path = availableStock();
+    if (path) return { status: "resolved", path, unresolvedVariables: [], substitutionCandidates: [] };
     return {
       status: "unresolved-variable",
       path: null,
       unresolvedVariables: unresolved,
       substitutionCandidates: [],
     };
+  }
   const path = isAbsolute(expanded) ? resolve(expanded) : resolve(projectDir, expanded);
   const lower = path.toLowerCase();
   const stem = VRML_EXTENSIONS.find((ext) => lower.endsWith(ext)) ? path.slice(0, -4) : null;
   const substitutionCandidates = stem
     ? SUBSTITUTE_EXTENSIONS.map((ext) => stem + ext).filter((p) => existsSync(p))
     : [];
+  if (!existsSync(path) && !substitutionCandidates.length) {
+    const cachePath = availableStock();
+    if (cachePath) return { status: "resolved", path: cachePath, unresolvedVariables: [], substitutionCandidates: [] };
+  }
   return {
     status: existsSync(path) ? "resolved" : "file-not-found",
     path,
@@ -546,16 +570,22 @@ export type RuntimeModelDiagnostic = { ref: string; message: string };
  */
 export async function exportMechanicalGlb(
   cli: KicadCli,
-  options: { board: string; output: string; signal?: AbortSignal },
+  options: { board: string; output: string; modelProjectDir?: string; signal?: AbortSignal },
 ): Promise<{ exitCode: number; diagnostics: RuntimeModelDiagnostic[]; outputLines: string[] }> {
-  const result = await runKicadCli(
+  const modelDir = options.modelProjectDir ?? dirname(options.board);
+  const modelEnv = componentModelEnvironment(process.env, cli.path);
+  const modelRoots = componentModelLibraryRoots(modelEnv, cli.path);
+  const result = await withModelBoard(options.board, declared => {
+    const resolution = resolveModelPath(declared, modelDir, modelEnv, modelRoots);
+    return resolution.status === "resolved" ? resolution.path : resolution.substitutionCandidates[0] ?? null;
+  }, board => runKicadCli(
     cli,
-    [...MECHANICAL_GLB_ARGS, "-o", options.output, options.board],
+    [...MECHANICAL_GLB_ARGS, "--define-var", `KIPRJMOD=${modelDir}`, "-o", options.output, board],
     {
       tolerateExit: true,
       ...(options.signal ? { signal: options.signal } : {}),
     },
-  );
+  ));
   if (!existsSync(options.output))
     throw new Error(
       `pcb export glb wrote no file (${result.exitCode}): ${result.stderr.trim().split("\n").slice(-3).join(" | ")}`,
@@ -1351,7 +1381,7 @@ export async function collectMechanical(
     env?: NodeJS.ProcessEnv;
   },
 ): Promise<MechanicalSection> {
-  const env = options.env ?? process.env;
+  const env = componentModelEnvironment(options.env ?? process.env, cli.path);
   const boardBytes = await readFile(options.board);
   const boardText = boardBytes.toString("utf8");
   const pcbRevision = createHash("sha256").update(boardBytes).digest("hex");
@@ -1382,6 +1412,7 @@ export async function collectMechanical(
     const exported = await exportMechanicalGlb(cli, {
       board: options.board,
       output: glbPath,
+      modelProjectDir: options.projectDir,
       ...(options.signal ? { signal: options.signal } : {}),
     });
     const after = await readFile(options.board);

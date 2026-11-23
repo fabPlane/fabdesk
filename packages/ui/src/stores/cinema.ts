@@ -103,15 +103,16 @@ export const useCinemaStore = create<CinemaState>()((set, get) => ({
       const prev = s.runs[line.runId] ?? emptyRun(line.runId);
       const next = capFrames(applyLine(prev, line));
       const runs = { ...s.runs, [line.runId]: next };
-      const becomesActive = s.activeRunId === null || line.kind === "meta";
-      const activeRunId = becomesActive ? line.runId : s.activeRunId;
+      // Frame metadata has no project/source identity. Only a view that has
+      // checked the durable run record may select it; background traffic is cached.
+      const activeRunId = s.activeRunId;
       const isActive = activeRunId === line.runId;
       const cursor = isActive && s.followLive ? next.frames.length - 1 : isActive ? clampCursor(next, s.cursor) : s.cursor;
       let perf = s.perf;
       if (line.kind === "frame" && isActive) {
         perf = { ...s.perf, fps: updateFps(s.perf.fps, lastFrameAt, now), received: (line.runId === s.activeRunId ? s.perf.received : 0) + 1, dropped: droppedFrames(next) };
         lastFrameAt = now;
-      } else if (line.kind === "meta") {
+      } else if (line.kind === "meta" && isActive) {
         perf = { fps: 0, drawMs: 0, received: 0, dropped: 0 };
         lastFrameAt = null;
       }
@@ -129,7 +130,7 @@ export const useCinemaStore = create<CinemaState>()((set, get) => ({
       }
       run = capFrames(run);
       const runs = { ...s.runs, [runId]: run };
-      const activeRunId = s.activeRunId ?? runId;
+      const activeRunId = s.activeRunId;
       const cursor = activeRunId === runId && s.followLive ? run.frames.length - 1 : s.cursor;
       const perf = activeRunId === runId ? { ...s.perf, received: s.perf.received + frames, dropped: droppedFrames(run) } : s.perf;
       return { runs, activeRunId, cursor, perf };
@@ -140,14 +141,16 @@ export const useCinemaStore = create<CinemaState>()((set, get) => ({
       const run = s.runs[result.runId] ?? emptyRun(result.runId);
       return { runs: { ...s.runs, [result.runId]: { ...run, result } } };
     }),
-  setActiveRun: (runId) =>
+  setActiveRun: (runId) => {
+    lastFrameAt = null;
     set((s) => ({
       activeRunId: runId,
       cursor: runId ? (s.runs[runId]?.frames.length ?? 0) - 1 : -1,
       followLive: true,
       playing: false,
       perf: { fps: 0, drawMs: 0, received: runId ? (s.runs[runId]?.frames.length ?? 0) + (s.runs[runId]?.evicted ?? 0) : 0, dropped: runId && s.runs[runId] ? droppedFrames(s.runs[runId]!) : 0 },
-    })),
+    }));
+  },
   seek: (index, opts) =>
     set((s) => {
       const run = s.activeRunId ? s.runs[s.activeRunId] : undefined;

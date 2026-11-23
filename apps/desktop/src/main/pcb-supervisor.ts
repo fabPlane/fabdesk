@@ -3,7 +3,7 @@ import { type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { homedir } from "node:os";
+import { resolveProjectsDirectory } from "@fabdesk/auth-client";
 import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
 import { spawnSidecar } from "./child-process-env";
 
@@ -38,6 +38,7 @@ export interface PcbBackendCommand {
 /** Environment the core needs for CLI-based DRC/render/export, not only the bridge process. */
 export function corePcbEnvironment(command: PcbBackendCommand): Record<string, string> {
   return {
+    ...Object.fromEntries(Object.entries(command.env).filter(([key]) => key === "FABDESK_KICAD_MODELS" || /^KICAD\d+_3DMODEL_DIR$/.test(key))),
     FABDESK_FP_PCB_BRIDGE_URL: command.url,
     KICAD_CLI: command.env.KICAD_CLI!,
     KICAD_STOCK_DATA_HOME: command.env.KICAD_STOCK_DATA_HOME!,
@@ -106,7 +107,7 @@ export function resolvePcbBackend(opts: {
   const port = new URL(url).port || "4020";
   const runtimeId = env["FABDESK_RUNTIME_ID"]?.trim() || randomUUID();
   const desktopPid = env["FABDESK_DESKTOP_PID"]?.trim() || String(process.pid);
-  const workspace = env["FABDESK_PROJECTS_DIR"] ?? join(homedir(), "fabdesk");
+  const workspace = resolveProjectsDirectory(env);
   const workspaceRoot =
     isAbsolute(workspace) || win32.isAbsolute(workspace) ? workspace : resolve(workspace);
   return {

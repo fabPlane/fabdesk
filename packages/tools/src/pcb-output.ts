@@ -48,7 +48,7 @@ export async function withPcbOutput(ctx: ToolContext, expected: string | undefin
       await walk(root);
     }
     for (const file of pending) if (/\.(json|md|txt|csv|svg|dxf|lbrn2)$/i.test(file.path)) file.bytes = Buffer.from(file.bytes.toString("utf8").replaceAll(scratch, project.dir));
-    const receipts = await Promise.all(pending.filter(file => /\.(png|jpe?g|webp|svg|stl|obj|step|stp|zip|csv|gbr|gbl|gtl|gbo|gto|gbs|gts|gbp|gtp|gm1|gko|drl|pdf|dxf|lbrn2|net|pos)$/i.test(file.path)).map(async file => ({
+    const receipts = await Promise.all(pending.filter(file => /\.(png|jpe?g|webp|svg|stl|obj|step|stp|zip|csv|gbr|gbl|gtl|gbo|gto|gbs|gts|gbp|gtp|gm1|gko|drl|pdf|dxf|lbrn2|net|pos|gbrjob|txt)$/i.test(file.path)).map(async file => ({
       path: `${file.path}.revision.json`, destination: await jailPath(project.dir, `${file.path}.revision.json`),
       bytes: Buffer.from(outputRevision(ctx, file.path, file.bytes, existingFabrication ? "saved-files" : "pcb", existingFabrication ? captured : [{ path: "board.kicad_pcb", sha256: revision! }])),
     })));

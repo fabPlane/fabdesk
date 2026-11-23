@@ -43,7 +43,9 @@ export function schematicFocusFromResult(output: unknown): SchematicFocus | null
       const candidate = SchematicFocus.safeParse(data.focus);
       if (candidate.success) return candidate.data;
       if (key === "result" && data.structuredContent && typeof data.structuredContent === "object") {
-        const wrapped = SchematicFocus.safeParse((data.structuredContent as Record<string, unknown>).focus);
+        const content = data.structuredContent as Record<string, unknown>;
+        if (content.isError === true) continue;
+        const wrapped = SchematicFocus.safeParse(content.focus);
         if (wrapped.success) return wrapped.data;
       }
     }
@@ -62,7 +64,9 @@ export function schematicFocusChoicesFromResult(output: unknown): SchematicFocus
     const parsed = SchematicFocusChoices.safeParse(row.focusChoices);
     if (parsed.success) return parsed.data;
     if (row.structuredContent && typeof row.structuredContent === "object") {
-      const wrapped = SchematicFocusChoices.safeParse((row.structuredContent as Record<string, unknown>).focusChoices);
+      const content = row.structuredContent as Record<string, unknown>;
+      if (content.isError === true) continue;
+      const wrapped = SchematicFocusChoices.safeParse(content.focusChoices);
       if (wrapped.success) return wrapped.data;
     }
   }
