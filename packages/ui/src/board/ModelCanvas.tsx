@@ -248,7 +248,6 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
               parts = references ? nativeModelParts(model, references) : null;
               setModelParts(parts);
             }
-            const selectedObjects = parts?.get(current.ref ?? "") ?? [];
             highlightBox.makeEmpty();
             const selectedRefs = current.refs?.length ? current.refs : current.ref ? [current.ref] : [];
             const selectedObjects = selectedRefs.flatMap(ref => parts?.get(ref) ?? []);
