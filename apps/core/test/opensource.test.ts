@@ -6,7 +6,7 @@ import { Store } from "../src/db";
 import { catalogPreviewUrl, isGitHubAssetHost } from "@fabdesk/protocol";
 import { allowedCloneUrl, fetchOpenCatalog, findCatalogProject } from "../src/opensource/catalog";
 import type { DrcReport, DrcViolation, ErcReport } from "@fabdesk/kicad";
-import { savedHierarchyRevision } from "@fabdesk/tools";
+import { publicationInProgress, savedHierarchyRevision, snapshotProjectDependencies } from "@fabdesk/tools";
 import {
   assessOrderReadiness,
   loadOrderCheckEvidence,
@@ -366,30 +366,36 @@ describe("order readiness", () => {
     drc: null,
     erc: null,
   };
-  const drcReport = (over: Partial<DrcReport> = {}): DrcReport => ({
+  const dependencies = { revision: "b".repeat(64), files: [], unresolved: [] };
+  const drcReport = (over: Partial<DrcReport> = {}): DrcReport & { pcbRevision: { sha256: string }; projectDependencies: typeof dependencies } => ({
     violations: [],
     unconnected: [],
     schematicParity: [],
     counts: { errors: 0, warnings: 0, unconnected: 0 },
+    pcbRevision: { sha256: "a".repeat(64) },
+    projectDependencies: dependencies,
     raw: {},
     ...over,
   });
-  const ercReport = (errors = 0): ErcReport => ({ violations: [], counts: { errors, warnings: 0 }, raw: {} });
+  const ercReport = (errors = 0) => ({ projectDependencies: dependencies, violations: [], counts: { errors, warnings: 0 }, raw: {}, measurement: { evidenceLevel: "measured", checkedRevision: "a".repeat(64), revisionStable: true } });
   const board = { ...none, hasBoardPcb: true };
   const cleanDrc = { report: drcReport(), inputsChanged: false };
 
-  test("gerbers or a zip without board.kicad_pcb need no checks; board.kicad_pcb needs DRC", () => {
+  test("export-only and legacy artifacts require a canonical board and fresh DRC", () => {
     expect(assessOrderReadiness([], none).ready).toBe(false);
-    expect(assessOrderReadiness([{ path: "circuit.tsx" }], none).ready).toBe(false);
-    expect(assessOrderReadiness([{ path: "exports/gerbers/F_Cu.gbr" }], none).ready).toBe(true);
-    expect(assessOrderReadiness([{ path: "exports/fabrication.zip" }], none).ready).toBe(true);
-    // A board verify_drc cannot check (other name, legacy routed json) does not block.
-    expect(assessOrderReadiness([{ path: "hw/other.kicad_pcb" }], none).checks.drc).toBe("not_required");
-    expect(assessOrderReadiness([{ path: "circuit.routed.json" }], none).ready).toBe(true);
+    for (const path of ["exports/gerbers/F_Cu.gbr", "exports/fabrication.zip", "hw/other.kicad_pcb", "circuit.routed.json"]) {
+      const result = assessOrderReadiness([{ path }], none);
+      expect(result.ready).toBe(false);
+      expect(result.checks.drc).toBe("missing");
+      expect(result.reasons.join(" ")).toContain("source board");
+      // A leftover passing report cannot substitute for the missing board it measured.
+      expect(assessOrderReadiness([{ path }], { ...none, drc: cleanDrc }).ready).toBe(false);
+      const failed = { report: drcReport({ counts: { errors: 25, warnings: 0, unconnected: 0 } }), inputsChanged: false };
+      expect(assessOrderReadiness([{ path }], { ...none, drc: failed }).ready).toBe(false);
+    }
     const blocked = assessOrderReadiness([{ path: "board.kicad_pcb" }], board);
     expect(blocked.ready).toBe(false);
     expect(blocked.checks).toEqual({ drc: "missing", erc: "not_required" });
-    expect(blocked.reasons.join(" ")).toContain("Run DRC");
   });
 
   test("assembly artifacts never establish root-only order readiness", () => {
@@ -432,6 +438,10 @@ describe("order readiness", () => {
     const project = async (files: Record<string, string>) => {
       const dir = await mkdtemp(join(tmpdir(), "fabdesk-order-"));
       for (const [path, text] of Object.entries(files)) await Bun.write(join(dir, path), text);
+      const projectDependencies = await snapshotProjectDependencies(dir);
+      for (const path of ["reports/drc.json", "reports/erc.json"]) {
+        if (files[path]) await Bun.write(join(dir, path), JSON.stringify({ ...JSON.parse(files[path]), projectDependencies }));
+      }
       return dir;
     };
     const drcJson = (boardText = pcb) => JSON.stringify({ ...drcReport(), pcbRevision: { sha256: sha(boardText) } });
@@ -439,6 +449,7 @@ describe("order readiness", () => {
     const ercJson = async (dir: string) =>
       JSON.stringify({
         ...ercReport(),
+        projectDependencies: await snapshotProjectDependencies(dir),
         measurement: {
           evidenceLevel: "measured",
           applicability: true,
@@ -464,6 +475,15 @@ describe("order readiness", () => {
       const readiness = assessOrderReadiness([{ path: "exports/fabrication.zip" }], evidence);
       expect(readiness.ready).toBe(false);
       expect(readiness.reasons.join(" ")).toContain("multi-board");
+    });
+
+    test("clean reports without content receipts cannot qualify ordering", async () => {
+      const dir = await project({ "board.kicad_pcb": pcb, "reports/drc.json": JSON.stringify({ ...drcReport(), pcbRevision: undefined }) });
+      expect(assessOrderReadiness([], await loadOrderCheckEvidence(dir, [])).checks.drc).toBe("missing");
+      await Bun.write(join(dir, "reports/drc.json"), drcJson());
+      await Bun.write(join(dir, "board.kicad_sch"), sheetText);
+      await Bun.write(join(dir, "reports/erc.json"), JSON.stringify({ violations: [], counts: { errors: 0, warnings: 0 } }));
+      expect(assessOrderReadiness([], await loadOrderCheckEvidence(dir, [])).checks.erc).toBe("missing");
     });
 
     test("editing the board makes DRC stale", async () => {
@@ -495,7 +515,38 @@ describe("order readiness", () => {
       expect(assessOrderReadiness([], await loadOrderCheckEvidence(dir, [])).checks.erc).toBe("stale");
     });
 
-    test("older ERC reports without sheet identities fall back to the measured files' times", async () => {
+    test("order readiness refuses changed dependencies and missing provenance", async () => {
+      const dir = await project({ "board.kicad_pcb": pcb, "reports/drc.json": drcJson() });
+      expect(assessOrderReadiness([], await loadOrderCheckEvidence(dir, [])).ready).toBe(true);
+      await Bun.write(join(dir, "board.kicad_dru"), "new stricter rules");
+      expect(assessOrderReadiness([], await loadOrderCheckEvidence(dir, [])).checks.drc).toBe("stale");
+      const report = JSON.parse(await Bun.file(join(dir, "reports/drc.json")).text());
+      delete report.projectDependencies;
+      await Bun.write(join(dir, "reports/drc.json"), JSON.stringify(report));
+      expect(assessOrderReadiness([], await loadOrderCheckEvidence(dir, [])).checks.drc).toBe("missing");
+    });
+    test("parity freshness follows saved schematic identities even when PCB bytes are unchanged", async () => {
+      const dir = await project({ "board.kicad_pcb": pcb, "reports/drc.json": drcJson(), "board.kicad_sch": sheetText });
+      await Bun.write(join(dir, "reports/erc.json"), await ercJson(dir));
+      const report = JSON.parse(await Bun.file(join(dir, "reports/drc.json")).text());
+      report.schematicHierarchy = { aggregateRevision: await savedHierarchyRevision(dir, sheets) };
+      await Bun.write(join(dir, "reports/drc.json"), JSON.stringify(report));
+      expect(assessOrderReadiness([], await loadOrderCheckEvidence(dir, [])).ready).toBe(true);
+      await Bun.write(join(dir, "board.kicad_sch"), `${sheetText}edited`);
+      expect(assessOrderReadiness([], await loadOrderCheckEvidence(dir, [])).checks.drc).toBe("stale");
+    });
+    test("order readiness refuses while publication is in progress and recovers after commit", async () => {
+      const dir = await project({ "board.kicad_pcb": pcb, "reports/drc.json": drcJson() });
+      await Bun.write(join(dir, ".fabdesk/handoff/visibility.json"), JSON.stringify({ phase: "publishing", files: {} }));
+      expect(await publicationInProgress(dir)).toBe(true);
+      const result = assessOrderReadiness([], await loadOrderCheckEvidence(dir, []));
+      expect(result.ready).toBe(false);
+      expect(result.reasons.join(" ")).toContain("publication to complete");
+      await Bun.write(join(dir, ".fabdesk/handoff/visibility.json"), JSON.stringify({ phase: "committed", files: {} }));
+      expect(assessOrderReadiness([], await loadOrderCheckEvidence(dir, [])).ready).toBe(true);
+    });
+
+    test("older ERC reports without sheet identities cannot establish content freshness", async () => {
       const dir = await project({ "board.kicad_pcb": pcb, "reports/drc.json": drcJson(), "board.kicad_sch": sheetText });
       const earlier = new Date(Date.now() - 60_000);
       await utimes(join(dir, "board.kicad_sch"), earlier, earlier);
@@ -504,10 +555,10 @@ describe("order readiness", () => {
         JSON.stringify({ ...ercReport(), measurement: { hierarchy: { referencedFiles: ["board.kicad_sch", "libraries/lib.kicad_sch"] } } }),
       );
       await Bun.write(join(dir, "libraries/lib.kicad_sch"), "(kicad_sch)\n");
-      expect(assessOrderReadiness([], await loadOrderCheckEvidence(dir, [])).checks.erc).toBe("pass");
+      expect(assessOrderReadiness([], await loadOrderCheckEvidence(dir, [])).checks.erc).toBe("missing");
       const later = new Date(Date.now() + 60_000);
       await utimes(join(dir, "board.kicad_sch"), later, later);
-      expect(assessOrderReadiness([], await loadOrderCheckEvidence(dir, [])).checks.erc).toBe("stale");
+      expect(assessOrderReadiness([], await loadOrderCheckEvidence(dir, [])).checks.erc).toBe("missing");
     });
   });
 

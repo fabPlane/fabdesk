@@ -273,14 +273,19 @@ describe("formatting", () => {
 describe("against a running daemon", () => {
   let daemon: Daemon;
   let home: string;
-  const REMOTE = { enabled: true, host: "127.0.0.1", port: 47824 };
+  const REMOTE = { enabled: true, host: "127.0.0.1", port: 0 };
 
   beforeAll(async () => {
     home = await mkdtemp(join(tmpdir(), "fabdesk-cli-"));
     process.env["FABDESK_PROJECTS_DIR"] = join(home, "Fabdesk");
     process.env["FABDESK_TOKEN"] = "cli-test-token-0123456789abcdef";
     process.env["FABDESK_TAILSCALE_CLI"] = "off";
-    // What `serve --remote --remote-host 127.0.0.1 --remote-port 47824` does before binding.
+    // A fixed port can collide with another test or a client socket on CI.
+    // Allocate a free port, then persist it through the same CLI path as users.
+    const reservation = Bun.serve({ hostname: REMOTE.host, port: 0, fetch: () => new Response() });
+    REMOTE.port = reservation.port!;
+    await reservation.stop(true);
+    // What `serve --remote --remote-host ... --remote-port ...` does before binding.
     expect(
       await persistRemoteFlags(join(home, "fabdesk.db"), {
         remote: true,

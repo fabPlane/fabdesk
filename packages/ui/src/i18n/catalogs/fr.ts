@@ -94,6 +94,7 @@ export const messages = {
   "board.tab.placement": "Placement",
   "board.tab.comments": "Comments",
   "board.tab.updates": "Updates",
+  "board.tab.layers": "Couches",
   "board.empty": "La carte commence ici",
   "board.emptyHint": "Choisissez un projet dans le panneau pour voir son {kind}.",
   "board.comment": "Commentaire",

@@ -1,6 +1,14 @@
 import { z } from "zod/v4";
 import { AssemblyRelativePath, BoardSourceSelection } from "./assembly";
 
+export const ProjectDependencySnapshot = z.object({
+  revision: z.string().regex(/^[a-f0-9]{64}$/),
+  files: z.array(z.object({ path: AssemblyRelativePath, sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable() }).strict()).max(4096),
+  unresolved: z.array(z.string()).max(4096),
+  external: z.array(z.object({ declared: z.string(), sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable() }).strict()).max(4096).optional(),
+}).strict();
+export type ProjectDependencySnapshot = z.infer<typeof ProjectDependencySnapshot>;
+
 /** Records the bytes used for a PCB SVG preview; it is not an electrical compatibility check. */
 export const PcbPreviewRevision = z.object({
   contract: z.literal("fabplane.pcb-preview-revision.v1"),
@@ -9,6 +17,7 @@ export const PcbPreviewRevision = z.object({
   sourceSha256: z.string().regex(/^[a-f0-9]{64}$/),
   artifactSha256: z.string().regex(/^[a-f0-9]{64}$/),
   generatedAt: z.string().datetime(),
+  dependencySnapshot: ProjectDependencySnapshot.optional(),
 });
 export type PcbPreviewRevision = z.infer<typeof PcbPreviewRevision>;
 export const PCB_PREVIEW_REVISION_PATH = "renders/pcb.svg.revision.json";
@@ -36,9 +45,12 @@ export const BoardModelRevision = z.object({
   sourceSha256: z.string().regex(/^[a-f0-9]{64}$/),
   artifactSha256: z.string().regex(/^[a-f0-9]{64}$/),
   generatedAt: z.string().datetime(),
+  dependencySnapshot: ProjectDependencySnapshot.optional(),
   dependencies: z.literal("unverified"),
   /** Recorded import directory used for KIPRJMOD; does not establish model coverage or freshness. */
   modelProjectDirectory: AssemblyRelativePath.optional(),
+  ledLensVersion: z.literal(1).optional(),
+  pendingModels: z.number().int().positive().optional(),
   warnings: z.array(z.string()).optional(),
 });
 export type BoardModelRevision = z.infer<typeof BoardModelRevision>;
@@ -60,6 +72,7 @@ const SchematicPreviewContent = z.object({
   sourceFiles: z.array(SchematicSourceFile).min(1).max(257),
   sheets: z.array(z.object({ path: z.string().min(1), name: z.string().min(1).max(512), sha256: z.string().regex(/^[a-f0-9]{64}$/), nativeSheet: z.object({ identity: z.string().min(1).max(1024), hierarchyPath: z.string().min(1).max(1024), nativePath: AssemblyRelativePath.refine(path => path.endsWith(".kicad_sch")), pageNumber: z.number().int().positive() }).strict().optional() }).strict()).min(1).max(256),
   generatedAt: z.string().datetime(),
+  dependencySnapshot: ProjectDependencySnapshot.optional(),
   dependencies: z.literal("unverified"),
 }).strict();
 const checkSchematicPreview = (value: z.infer<typeof SchematicPreviewContent>, ctx: z.RefinementCtx) => {

@@ -404,3 +404,16 @@ describe("route_run inline result", () => {
     expect(done.candidate.available).toBe(true);
   });
 });
+
+test("saved native connectivity is the headline even when the router reports completion", async () => {
+  const h = await harness("native-connectivity-headline", 1);
+  const query = h.services.design.query;
+  h.services.design.query = async (dir, select, ...args) => select === "unrouted" && dir === h.project.dir
+    ? [{ net: "GND", from: "A", to: "B" }, { net: "GND", from: "C", to: "D" }]
+    : query(dir, select, ...args);
+  const response = await h.call("route_run", { timeoutMs: 5000, waitMs: 10000, applyPolicy: "auto" });
+  const run = (response.json as { run: RouteRunRecord }).run;
+  expect(run.application.state).toBe("applied");
+  expect(run.application.nativeConnectivity).toMatchObject({ status: "measured", open: 2 });
+  expect(response.text).toStartWith("Saved-board native connectivity: 2 open");
+});

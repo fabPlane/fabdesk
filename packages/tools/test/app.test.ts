@@ -44,6 +44,7 @@ describe("app toolset", () => {
       "app_type",
       "app_key",
       "app_select_project",
+      "app_clear_selection",
       "app_open_tab",
       "app_open_thread",
       "app_new_chat",
@@ -59,7 +60,7 @@ describe("app toolset", () => {
     expect(registry.get("app_eval")!.annotations.openWorldHint).toBe(true);
     // Global scope: no injected `project` argument.
     expect(Object.keys(registry.inputShape(registry.get("app_state")!))).not.toContain("project");
-    expect(registry.manifest().filter((t) => t.toolset === "app")).toHaveLength(14);
+    expect(registry.manifest().filter((t) => t.toolset === "app")).toHaveLength(15);
   });
 
   test("every tool reports a clear error when no bridge is configured", async () => {

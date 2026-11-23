@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { BOARD_COLORS, BOARD_FINISH, type BoardColor, type ColorMode } from "@fabdesk/board-art";
+import type { ReactNode } from "react";
 
 const PRESETS = [
   ["White", "#ffffff"],
@@ -139,6 +140,7 @@ export function ArtColorControls({
   onBackground,
   ink,
   onInk,
+  recolorControls,
 }: {
   mode: ColorMode;
   onMode(value: ColorMode): void;
@@ -148,6 +150,7 @@ export function ArtColorControls({
   onBackground(value: string | null): void;
   ink: string;
   onInk(value: string): void;
+  recolorControls?: ReactNode;
 }) {
   return (
     <div className="fd-art-colors">
@@ -225,6 +228,7 @@ export function ArtColorControls({
       </div>
       {mode === "multicolor" ? (
         <>
+          {recolorControls}
           <HexColor
             label="Printed background"
             value={background ?? "#ffffff"}

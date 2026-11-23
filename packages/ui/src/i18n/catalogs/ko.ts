@@ -94,6 +94,7 @@ export const messages = {
   "board.tab.placement": "Placement",
   "board.tab.comments": "Comments",
   "board.tab.updates": "Updates",
+  "board.tab.layers": "레이어",
   "board.empty": "보드는 여기서 시작합니다",
   "board.emptyHint": "사이드바에서 프로젝트를 고르면 {kind}가 보입니다.",
   "board.comment": "댓글",

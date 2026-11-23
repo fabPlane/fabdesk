@@ -4,6 +4,17 @@ import { commentMillimetrePoint, type CommentAnchor } from "@fabdesk/protocol";
 
 export type SvgBox = { x: number; y: number; width: number; height: number };
 export type SvgPoint = { x: number; y: number };
+type ClientBox = { left: number; top: number; width: number; height: number };
+
+/** Keyboard selection targets the visible drawing, never an off-screen sheet center. */
+export function visibleSvgCenter(box: SvgBox, drawing: ClientBox, viewport: ClientBox): SvgPoint | null {
+  if (![...Object.values(drawing), ...Object.values(viewport)].every(Number.isFinite) || drawing.width <= 0 || drawing.height <= 0 || viewport.width <= 0 || viewport.height <= 0) return null;
+  const left = Math.max(drawing.left, viewport.left), top = Math.max(drawing.top, viewport.top);
+  const right = Math.min(drawing.left + drawing.width, viewport.left + viewport.width);
+  const bottom = Math.min(drawing.top + drawing.height, viewport.top + viewport.height);
+  if (right <= left || bottom <= top) return null;
+  return clientPointToSvg(box, drawing, (left + right) / 2, (top + bottom) / 2);
+}
 
 /** Enough of an SVG element to read viewBox or fall back to getBBox. */
 export type SvgBoxSource = {

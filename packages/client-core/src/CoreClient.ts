@@ -1,5 +1,5 @@
 /** Typed fetch wrapper over the fabdesk-core control API plus SSE subscription. */
-import { TeamProjects, ContributionBoards, ProjectShareState, ProjectShareSnapshot, SharedProject, SharedProjectStatus, BoardSourceSelection } from "@fabdesk/protocol";
+import { BoardChecks, TeamProjects, ContributionBoards, ProjectShareState, ProjectShareSnapshot, SharedProject, SharedProjectStatus, BoardSourceSelection } from "@fabdesk/protocol";
 import type {
   OutputTrashReview,
   OutputTrashEntry,
@@ -269,6 +269,13 @@ export class CoreClient {
   async getProjectStatus(id: string): Promise<ProjectShareSnapshot> {
     return ProjectShareSnapshot.parse(await this.request(`/projects/${encodeURIComponent(id)}/status`));
   }
+  async getBoardChecks(id: string): Promise<BoardChecks> {
+    return BoardChecks.parse(await this.request(`/projects/${encodeURIComponent(id)}/board-checks`));
+  }
+  inspectOutputDependencies(id: string, directory = "."): Promise<{ revision: string }> {
+    return this.request(`/projects/${encodeURIComponent(id)}/output-dependencies?directory=${encodeURIComponent(directory)}`);
+  }
+
   inspectBoardSources(id: string): Promise<ProjectBoardSources> {
     return this.request(`/projects/${encodeURIComponent(id)}/board-sources`);
   }

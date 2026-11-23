@@ -5,11 +5,17 @@ import type { SettingsRepo } from "../src/db";
 
 const settings = Settings.parse({
   kicadCliPath: "/opt/kicad",
+  ngspicePath: null,
+  fpPcbBridgeUrl: null,
+  router: "fab_router",
+  tracemakerManifestUrl: null,
+  krtDir: null,
+  defaultAgent: "claude",
+  defaultRuntimeMode: "full",
+  agents: {},
   keepCoreRunning: true,
   errorReporting: true,
   theme: "dark",
-  defaultAgent: "claude",
-  defaultRuntimeMode: "full",
   uiLocale: "system",
   agentReplyLanguage: "match",
 });

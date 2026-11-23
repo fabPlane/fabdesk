@@ -94,6 +94,7 @@ export const messages = {
   "board.tab.placement": "Placement",
   "board.tab.comments": "Comments",
   "board.tab.updates": "Updates",
+  "board.tab.layers": "レイヤー",
   "board.empty": "ボードはここから始まります",
   "board.emptyHint": "サイドバーでプロジェクトを選ぶと {kind} が表示されます。",
   "board.comment": "コメント",

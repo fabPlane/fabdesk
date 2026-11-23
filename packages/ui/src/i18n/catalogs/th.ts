@@ -94,6 +94,7 @@ export const messages = {
   "board.tab.placement": "Placement",
   "board.tab.comments": "Comments",
   "board.tab.updates": "Updates",
+  "board.tab.layers": "เลเยอร์",
   "board.empty": "บอร์ดเริ่มที่นี่",
   "board.emptyHint": "เลือกโปรเจกต์ในแถบด้านข้างเพื่อดู {kind}",
   "board.comment": "ความคิดเห็น",

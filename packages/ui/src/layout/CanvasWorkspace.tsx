@@ -1,41 +1,39 @@
+import { draftConversation as latestDraftConversation,projectSketchImagePaths,useBoardSources,useCore,useCoreIdentity,useProject,useProjects,useRunsStore,useThreads,WORKSPACE_AREAS,type WorkspaceArea } from "@fabdesk/client-core";
+import type { ProjectDetail } from "@fabdesk/protocol";
+import { useEffect,useRef,useState } from "react";
 import { ProfileButton } from "../auth/ProfileAccountDialog";
-import { WorkspaceBackButton } from "./WorkspaceBackButton";
+import { BoardPanel } from "../board/BoardPanel";
+import { ConnectionsWorkspace } from "../board/ConnectionsWorkspace";
+import { HistoryWorkspace } from "../board/HistoryWorkspace";
+import { HostedReviewTools } from "../board/HostedReviewTools";
+import { ProjectPickerDialog } from "../chat/ProjectPickerDialog";
+import { ThreadView } from "../chat/ThreadView";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
-import { HostedReviewTools } from "../board/HostedReviewTools";
-import { useEffect, useRef, useState } from "react";
-import type { ProjectDetail } from "@fabdesk/protocol";
-import { useRunsStore } from "@fabdesk/client-core";
-import { CreateIdeaProjectDialog } from "./CreateIdeaProjectDialog";
-import { draftConversation as latestDraftConversation, projectSketchImagePaths, useCoreIdentity, useCore, useBoardSources, useProject, useProjects, useThreads, WORKSPACE_AREAS, type WorkspaceArea } from "@fabdesk/client-core";
-import { BoardPanel } from "../board/BoardPanel";
-import { ThreadView } from "../chat/ThreadView";
-import { ProjectPickerDialog } from "../chat/ProjectPickerDialog";
-import { ThreadSidebar } from "../sidebar/ThreadSidebar";
-import { CreateProjectDialog } from "../sidebar/CreateProjectDialog";
-import { ProjectActionDialog, type ProjectAction } from "../sidebar/ProjectActionDialog";
+import { FabPlaneLogo } from "../components/FabPlaneLogo";
+import { Icon } from "../components/Icon";
+import { Button,Dialog,EmptyState,IconButton } from "../components/ui";
+import { UpdateBadge } from "../components/UpdateBadge";
 import { InventoryView } from "../inventory/InventoryView";
 import { OpenSourceView } from "../opensource/OpenSourceView";
 import { OrderFlow } from "../order/OrderFlow";
-import { Button, Dialog, EmptyState, IconButton } from "../components/ui";
-import { Icon } from "../components/Icon";
-import { FabPlaneLogo } from "../components/FabPlaneLogo";
-import { UpdateBadge } from "../components/UpdateBadge";
+import { CreateProjectDialog } from "../sidebar/CreateProjectDialog";
+import { ProjectActionDialog,type ProjectAction } from "../sidebar/ProjectActionDialog";
+import { ThreadSidebar } from "../sidebar/ThreadSidebar";
+import { newChatDraftKey,useUiStore } from "../stores/ui";
 import { WhatsNewLink } from "../whatsnew/WhatsNew";
-import { newChatDraftKey, useUiStore } from "../stores/ui";
-import { WorkspaceMenu } from "./WorkspaceMenu";
-import { LiveAssemblyPreviews } from "./LiveAssemblyPreviews";
-import { ProjectOverview } from "./ProjectOverview";
-import { ProjectStatus } from "./ProjectStatus";
-import { ConnectionsWorkspace } from "../board/ConnectionsWorkspace";
-import { HistoryWorkspace } from "../board/HistoryWorkspace";
+import type { AppShellProps } from "./AppShell";
+import "./canvas-v6.css";
+import "./canvas-workspace.css";
+import { CreateIdeaProjectDialog } from "./CreateIdeaProjectDialog";
 import { ProjectActivity } from "./ProjectActivity";
 import { ProjectHome } from "./ProjectHome";
+import { ProjectOverview } from "./ProjectOverview";
+import { ProjectStatus } from "./ProjectStatus";
 import { SketchStartReference } from "./SketchStartReference";
-import type { AppShellProps } from "./AppShell";
-import "./canvas-workspace.css";
-import "./canvas-v6.css";
 import "./workspace-bars.css";
+import { WorkspaceBackButton } from "./WorkspaceBackButton";
+import { WorkspaceMenu } from "./WorkspaceMenu";
 
 
 export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps) {
@@ -112,12 +110,39 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(client.baseUrl).hostname);
   const connected = sseStatus === "open" && (coreStatus?.state ?? "ready") === "ready";
 
+  const destinations = projectId && !secondary && (!conversationOnly || isDraft) && <nav className="fd-canvas-destinations" aria-label="Project workspace">
+    {isDraft ? <><Button size="sm" variant="ghost" aria-pressed={!draftConversation} onClick={() => { setDraftView("sketch"); if (!sketchPaths.length) ui().setSketchOpen(true, "draw"); }}><Icon name="compose" width={16} height={16} />Sketch</Button><Button size="sm" variant="ghost" aria-pressed={draftConversation} onClick={() => { if (!threadId) ui().setActiveThread(latestDraftConversation(projectId, threads.data ?? [])?.id ?? null); setDraftView("conversation"); }}><Icon name="sparkles" width={16} height={16} />Conversation</Button></> : <WorkspaceMenu label={<><Icon name="library" width={16} height={16} /><span>{fresh ? "Start" : areaLabel}</span><Icon name="chevronDown" width={14} height={14} /></>}>
+      <div className="fd-menu-caption">Project workspace</div>
+      {(Object.keys(WORKSPACE_AREAS) as WorkspaceArea[]).map((key) => <button key={key} aria-current={area === key ? "page" : undefined} onClick={() => openArea(key)}>{key === "boards" && boardSources.data?.mode === "single" && !hasNativeDesign ? "Start" : key === "boards" && boardSources.data?.mode === "assembly" ? "Boards" : WORKSPACE_AREAS[key].label}</button>)}
+    </WorkspaceMenu>}
+    {fresh && !isDraft && <Button size="sm" variant="ghost" onClick={() => ui().setBoardTab("notes")}><Icon name="compose" width={16} height={16} />Project notes</Button>}
+  </nav>;
+  const surface = order
+    ? <OrderFlow />
+    : inventory ? <InventoryView />
+    : sourceId ? <OpenSourceView />
+    : projectId && boardSources.isError && !conversationOnly && (area === "boards" || area === "overview") ? <EmptyState title="Could not verify project board sources" action={<><Button onClick={() => void boardSources.refetch()}>Try again</Button><Button variant="ghost" onClick={() => ui().setBoardTab("files")}>Open project files</Button></>}><p role="alert">Review the project files or retry the source check before opening a board.</p>{boardSources.error instanceof Error && <details className="mt-3 max-w-xl text-left"><DisclosureSummary icon="warning" label="Source check details" variant="compact" /><p className="mt-2 break-words">{boardSources.error.message}</p></details>}</EmptyState>
+    : projectId && area === "status" && !conversationOnly ? <ProjectStatus key={projectId} />
+    : projectId && sketchReference && !conversationOnly ? <SketchStartReference key={projectId} projectId={projectId} paths={sketchPaths} preferred={sketchReference} checking={project.isFetching} failed={project.isError} conversation={isDraft || !!threadId || area === "overview"} assistantOpen={assistantOpen} attached={attachedSketch} />
+    : fresh || conversationOnly ? null
+    : projectId && area === "connections" ? <ConnectionsWorkspace key={projectId} projectId={projectId} />
+    : projectId && area === "history" ? <HistoryWorkspace key={projectId} projectId={projectId} />
+    : area === "overview" || area === "boards" && boardSources.data?.mode === "assembly" && boardTab !== "cinema" && boardTab !== "placement" ? <ProjectOverview key={projectId} boardPicker={area === "boards"} />
+    : undefined;
+  const inlineBoardNavigation = area === "boards" && surface === undefined && !isDraft;
+
   return <div className="fd-canvas-workspace flex h-full min-w-0 flex-col" data-testid="canvas-workspace">
-    <header className="fd-canvas-header" style={{ paddingLeft: host.platform === "darwin" ? 84 : undefined, WebkitAppRegion: "drag" } as React.CSSProperties}>
+    <header className="fd-canvas-header" style={{
+      paddingLeft: host.platform === "darwin" ? 84 : undefined,
+      // Unlike the classic toolbar, this header follows page zoom. The overlay
+      // environment values already use its CSS pixels; do not scale them again.
+      paddingRight: "calc(var(--fd-canvas-gutter, 24px) + max(0px, 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)))",
+      WebkitAppRegion: "drag",
+    } as React.CSSProperties}>
       <button className="fd-canvas-brand" title="Project overview" onClick={() => { if (projectId) openArea("overview"); else { ui().setActiveThread(null); setShowProjects(false); } }}>
         <FabPlaneLogo /><span>fabPlane</span>
       </button>
-      {projectId ? <><WorkspaceBackButton /><strong className="fd-project-identity" title={name}>{name}</strong><Button size="sm" variant="ghost" onClick={() => ui().requestProjectClose(true)} title="Close project and return to Home">Home</Button></> : <span className="fd-home-header-label">{showProjects ? "Projects" : "Home"}</span>}
+      {projectId ? <><WorkspaceBackButton /><strong className="fd-project-identity" title={name}>{name}</strong><Button className="fd-header-home" size="sm" variant="ghost" onClick={() => ui().requestProjectClose(true)} title="Close project and return to Home">Home</Button></> : <span className="fd-home-header-label">{showProjects ? "Projects" : "Home"}</span>}
       {isDraft && <span className="fd-idea-badge">Draft</span>}
       {referenceStart && <span className="fd-canvas-breadcrumb"><span>/</span><strong>Start with sketch</strong></span>}
       <div className="fd-canvas-header-actions">
@@ -140,19 +165,12 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       </div>
     </header>
     {banner}
-    {projectId && boardSources.data?.mode === "assembly" && <LiveAssemblyPreviews key={`${client.baseUrl}/${projectId}/${boardSources.data.manifestSha256}`} projectId={projectId} data={boardSources.data} enabled={!boardSources.isFetching && !boardSources.isError && connected && boardSources.data.editing === "explicit-source-tools"} />}
     {home ? <main className="fd-home-surface"><ProjectHome listing={showProjects} onViewProjects={() => setShowProjects(true)} onCreate={() => setCreating("create")} onImport={() => setCreating("github")} onBrowse={() => { ui().setSidebarListTab("open_source"); setNavigationOpen(true); }} /></main> : <main className="fd-canvas-main" data-draft-view={isDraft && !secondary ? conversationOnly ? "conversation" : "sketch" : undefined} data-task-toolbar={!!projectId && !secondary && (!conversationOnly || isDraft)} data-area={fresh ? "start" : area}>
-      {projectId && !secondary && (!conversationOnly || isDraft) && <nav className="fd-canvas-destinations" aria-label="Project workspace">
-        {isDraft ? <><Button size="sm" variant="ghost" aria-pressed={!draftConversation} onClick={() => { setDraftView("sketch"); if (!sketchPaths.length) ui().setSketchOpen(true, "draw"); }}><Icon name="compose" width={16} height={16} />Sketch</Button><Button size="sm" variant="ghost" aria-pressed={draftConversation} onClick={() => { if (!threadId) ui().setActiveThread(latestDraftConversation(projectId, threads.data ?? [])?.id ?? null); setDraftView("conversation"); }}><Icon name="sparkles" width={16} height={16} />Conversation</Button></> : <WorkspaceMenu label={<><Icon name="library" width={16} height={16} /><span>{fresh ? "Start" : areaLabel}</span><Icon name="chevronDown" width={14} height={14} /></>}>
-          <div className="fd-menu-caption">Project workspace</div>
-          {(Object.keys(WORKSPACE_AREAS) as WorkspaceArea[]).map((key) => <button key={key} aria-current={area === key ? "page" : undefined} onClick={() => openArea(key)}>{key === "boards" && boardSources.data?.mode === "single" && !hasNativeDesign ? "Start" : key === "boards" && boardSources.data?.mode === "assembly" ? "Boards" : WORKSPACE_AREAS[key].label}</button>)}
-        </WorkspaceMenu>}
-        {fresh && !isDraft && <Button size="sm" variant="ghost" onClick={() => ui().setBoardTab("notes")}><Icon name="compose" width={16} height={16} />Project notes</Button>}
-      </nav>}
+      {!inlineBoardNavigation && destinations}
       {sketchReference && !isDraft && !fresh && !secondary && !conversationOnly && <span className="fd-reference-view-label">Project reference</span>}
       {secondary && !order && <Button className="fd-canvas-back" size="sm" onClick={() => { ui().setActiveOpenSourceId(null); ui().setInventoryOpen(false); ui().setOrderFlowOpen(false); ui().setBoardOpen(true); }}>← Return to canvas</Button>}
       <div className="fd-canvas-surface">
-        {order ? <OrderFlow /> : inventory ? <InventoryView /> : sourceId ? <OpenSourceView /> : projectId && boardSources.isError && !conversationOnly && (area === "boards" || area === "overview") ? <EmptyState title="Could not verify project board sources" action={<><Button onClick={() => void boardSources.refetch()}>Try again</Button><Button variant="ghost" onClick={() => ui().setBoardTab("files")}>Open project files</Button></>}><p role="alert">Review the project files or retry the source check before opening a board.</p>{boardSources.error instanceof Error && <details className="mt-3 max-w-xl text-left"><DisclosureSummary icon="warning" label="Source check details" variant="compact" /><p className="mt-2 break-words">{boardSources.error.message}</p></details>}</EmptyState> : projectId && area === "status" && !conversationOnly ? <ProjectStatus key={projectId} /> : projectId && sketchReference && !conversationOnly ? <SketchStartReference key={projectId} projectId={projectId} paths={sketchPaths} preferred={sketchReference} checking={project.isFetching} failed={project.isError} conversation={isDraft || !!threadId || area === "overview"} assistantOpen={assistantOpen} attached={attachedSketch} /> : fresh || conversationOnly ? null : projectId && area === "connections" ? <ConnectionsWorkspace key={projectId} projectId={projectId} /> : projectId && area === "history" ? <HistoryWorkspace key={projectId} projectId={projectId} /> : area === "overview" || area === "boards" && boardSources.data?.mode === "assembly" && boardTab !== "cinema" && boardTab !== "placement" ? <ProjectOverview key={projectId} boardPicker={area === "boards"} /> : <BoardPanel canvas />}
+        {surface !== undefined ? surface : <BoardPanel canvas navigation={inlineBoardNavigation ? destinations : null} />}
       </div>
         <section className={referenceStart ? "fd-canvas-reference-composer" : fresh ? "fd-canvas-start-surface" : conversationOnly ? "fd-canvas-conversation-surface" : "fd-assistant-dock"} aria-label="fabPlane assistant" hidden={!fresh && !conversationOnly && !assistantOpen} onKeyDown={(event) => {
           if (!fresh && !conversationOnly && event.key === "Escape" && !(event.target as HTMLElement).closest("details[open]")) { event.stopPropagation(); closeAssistant(); }

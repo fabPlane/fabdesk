@@ -1,0 +1,34 @@
+diff --git a/lib/parse.js b/lib/parse.js
+--- a/lib/parse.js
++++ b/lib/parse.js
+@@ -280,6 +280,19 @@
+   return depth;
+ };
+ 
++// Reject an unbounded wildcard inside a repeated extglob, including a single
++// branch (GHSA-fc5q-39xc-vjpf). Escapes and bracket classes are bounded literals.
++const hasUnboundedWildcard = branch => {
++  let bracket = false;
++  for (let i = 0; i < branch.length; i++) {
++    if (branch[i] === '\\') { i++; continue; }
++    if (branch[i] === '[') { bracket = true; continue; }
++    if (branch[i] === ']') { bracket = false; continue; }
++    if (!bracket && branch[i] === '*') return true;
++  }
++  return false;
++};
++
+ const analyzeRepeatedExtglob = (body, options) => {
+   if (options.maxExtglobRecursion === false) {
+     return { risky: false };
+@@ -311,6 +324,10 @@
+     if (repeatedExtglobRecursion(branch) > max) {
+       return { risky: true };
+     }
++  }
++
++  if (branches.some(hasUnboundedWildcard)) {
++    return { risky: true };
+   }
+ 
+   return { risky: false };

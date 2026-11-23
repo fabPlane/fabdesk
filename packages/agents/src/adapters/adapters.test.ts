@@ -488,3 +488,22 @@ test("draft planning cannot inherit bypass or extra native write tools", () => {
   expect(claude).not.toContain("Write");
   expect(claude).not.toContain("bypassPermissions");
 });
+
+test("Codex project history starts private and imports only an explicitly resumed legacy rollout", () => {
+  const source = join(dir,"codex-history");
+  mkdirSync(join(source,"sessions/2026/11/17"),{recursive:true});
+  writeFileSync(join(source,"sessions/2026/11/17/rollout-known-id.jsonl"),"known thread");
+  writeFileSync(join(source,"sessions/2026/11/17/rollout-other-id.jsonl"),"unrelated thread");
+  const fresh = codexEnv(session({env:{CODEX_HOME:source}}));
+  expect(existsSync(join(fresh.CODEX_HOME!,"sessions/2026/11/17/rollout-other-id.jsonl"))).toBe(false);
+  const resumed = codexEnv(session({resume:"known-id",env:{CODEX_HOME:source}}));
+  expect(readFileSync(join(resumed.CODEX_HOME!,"sessions/2026/11/17/rollout-known-id.jsonl"),"utf8")).toBe("known thread");
+  expect(existsSync(join(resumed.CODEX_HOME!,"sessions/2026/11/17/rollout-other-id.jsonl"))).toBe(false);
+  expect(readFileSync(join(source,"sessions/2026/11/17/rollout-other-id.jsonl"),"utf8")).toBe("unrelated thread");
+});
+
+test("Codex history migration preserves rejection of a legacy private auth snapshot",async()=>{
+ const {createHash}=await import("node:crypto"),source=join(dir,"legacy-codex"),legacy=join(source,"fabdesk-agents",createHash("sha256").update(dir).digest("hex"));
+ mkdirSync(legacy,{recursive:true});writeFileSync(join(source,"auth.json"),"original auth");writeFileSync(join(legacy,"auth.json"),"possibly refreshed private auth");
+ expect(()=>codexEnv(session({env:{CODEX_HOME:source}}))).toThrow("private snapshot");expect(readFileSync(join(legacy,"auth.json"),"utf8")).toBe("possibly refreshed private auth");
+});

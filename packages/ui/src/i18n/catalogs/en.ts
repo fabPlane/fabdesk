@@ -99,6 +99,7 @@ export const messages = {
   "board.tab.placement": "Placement",
   "board.tab.comments": "Comments",
   "board.tab.updates": "Updates",
+  "board.tab.layers": "Layers",
   "board.empty": "Your board starts here",
   "board.emptyHint": "Pick a project in the sidebar to see its {kind}.",
   "board.comment": "Comment",

@@ -16,6 +16,12 @@ Only the **core** toolset (`pcb_environment`, `project_status`, `circuit_build`,
 (drive the running desktop window; see [app-automation.md](app-automation.md)) or `shopping`
 to enable more; the tool list refreshes automatically.
 
+A project with a placed board starts with the **board** toolset instead (`board_check` …
+`board_release`, `board_job`) when `fabdesk-core mcp` runs in the project folder or with
+`--project <dir>`; the server instructions, the resource `fabdesk://docs/board-workflow` and the
+prompt `board_workflow` describe the board workflow. Board calls return a job id before a short
+client timeout; see [mcp-extensions.md](mcp-extensions.md#a-board-project-from-an-external-agent).
+
 ### Interactive views (MCP Apps)
 
 Hosts that render [MCP Apps](https://github.com/modelcontextprotocol/ext-apps) (ChatGPT, Codex,
@@ -111,7 +117,8 @@ HTTP variant:
 ```toml
 [mcp_servers.fabdesk]
 command = "/Applications/fabPlane.app/Contents/Resources/core/fabdesk-core"
-args = ["mcp"]
+args = ["mcp", "--tool-timeout", "1830"]
+tool_timeout_sec = 1830   # Codex's default is 60 s; --tool-timeout tells fabdesk the raised value
 ```
 
 HTTP variant (token from an environment variable, never inline):

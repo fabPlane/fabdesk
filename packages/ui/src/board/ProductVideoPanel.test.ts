@@ -1,11 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { describe,expect,test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
-  ProductVideoPanel,
-  VIDEO_PRESETS,
-  pickPreview,
-  type ProductVideoForm,
+ProductVideoPanel,
+VIDEO_PRESETS,
+pickPreview,
+type ProductVideoForm,
 } from "./ProductVideoPanel";
 
 const form: ProductVideoForm = {
@@ -37,7 +37,7 @@ describe("product video panel", () => {
     expect(html).toContain('data-testid="make-video"');
     expect(html).toContain('class="fd-video-setup" open=""');
     expect(html).toContain("Make video");
-    expect(html).toContain("Generate 3D model");
+    expect(html).not.toContain("Generate 3D model");
     for (const preset of VIDEO_PRESETS) expect(html).toContain(preset.label);
     expect(html).toContain("Title and spec captions");
     expect(html).toContain("project’s outputs");

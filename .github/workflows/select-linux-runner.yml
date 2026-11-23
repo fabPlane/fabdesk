@@ -82,6 +82,9 @@ jobs:
             # Durable admin override. Idle evidence does not win; unset the
             # variable to return trusted work to NAS.
             runner="$(jq -cn --arg label "$BLACKSMITH_RUNNER" '$label')"
+          elif [ "$linux_choice" = github-hosted ]; then
+            # Bootstrap a new repository without a private runner registration.
+            runner='"ubuntu-latest"'
           elif [ "$idle" = false ] &&
                [[ "${NAS_RUNNER_OUTAGE_UNTIL:-}" =~ ^[1-9][0-9]{0,9}$ ]] &&
                [ "$NAS_RUNNER_OUTAGE_UNTIL" -gt "$now" ] &&

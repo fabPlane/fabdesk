@@ -9,6 +9,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { DEFAULT_REQUEST_TIMEOUT_MSEC } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod/v4";
@@ -18,6 +19,8 @@ import {
   clientSupportsApps,
   createRegistry,
   FABDESK_SERVER_ICONS,
+  MCP_CLIENT_META,
+  type McpClientHint,
   type ProjectHandle,
 } from "@fabdesk/tools";
 import { locateAppBridgeFile } from "./app-bridge";
@@ -29,7 +32,17 @@ import { resolveConfig } from "./config";
 import { createContextFactory } from "./context";
 import { Store } from "./db";
 import { logger, errMsg } from "./log";
-import { DEFAULT_AGENT_TOOLSETS, INSTRUCTIONS } from "./mcp-sessions";
+import {
+  applyStartToolsets,
+  boardWorkflowInstructions,
+  DURABLE_WAIT_MAX_MS,
+  durableWaitForClient,
+  INSTRUCTIONS,
+  projectStartToolsets,
+  registerBoardWorkflowDocs,
+  startOptionsFor,
+} from "./mcp-sessions";
+import { MCP_MAX_TOOL_INPUT_ELEMENTS } from "./mcp-limits";
 import { ProjectStore } from "./projects";
 import { pidAlive } from "./serve";
 
@@ -39,6 +52,11 @@ export type McpStdioOptions = {
   dataDir?: string;
   /** Always list the MCP Apps views (Codex / ChatGPT plugin). Default: only for clients that advertise MCP Apps. */
   apps?: boolean;
+  /**
+   * The host's per-call tool timeout in seconds, when it was raised (Codex `tool_timeout_sec`). Board jobs then wait just
+   * under it before returning a job id; unknown, they wait 50 s for hosts other than Claude Code (`durableWaitForClient`).
+   */
+  toolTimeoutSec?: number;
 };
 
 export async function readHandshake(path: string): Promise<DaemonHandshake | null> {
@@ -84,7 +102,7 @@ export async function runMcpStdio(opts: McpStdioOptions = {}): Promise<void> {
     const hs = await findLiveDaemon(config.handshakePath);
     if (hs) {
       logger.info("proxying stdio MCP to the running daemon", { port: hs.port, pid: hs.pid });
-      await proxyToDaemon(hs, projectDir, opts.apps === true);
+      await proxyToDaemon(hs, projectDir, opts.apps === true, opts.toolTimeoutSec);
       return;
     }
     logger.info("no live daemon; running standalone MCP server");
@@ -97,6 +115,7 @@ async function proxyToDaemon(
   hs: DaemonHandshake,
   projectDir: string | null,
   apps: boolean,
+  toolTimeoutSec?: number,
 ): Promise<void> {
   type Upstream = { client: Client; transport: StreamableHTTPClientTransport };
   let server: Server | null = null;
@@ -108,6 +127,8 @@ async function proxyToDaemon(
     // The daemon sees this proxy's capabilities, not the host's, so MCP Apps are requested explicitly.
     const url = new URL(`http://${hs.host}:${hs.port}/mcp`);
     if (withApps) url.searchParams.set("apps", "on");
+    // The daemon starts the session as a desktop run on this project would (the board toolset for a placed board).
+    if (projectDir) url.searchParams.set("project", projectDir);
     const transport = new StreamableHTTPClientTransport(url, {
       requestInit: { headers: { authorization: `Bearer ${hs.token}` } },
     });
@@ -142,17 +163,13 @@ async function proxyToDaemon(
       await previous.client.close().catch(() => {});
     })().catch((e) => logger.warn("MCP Apps session failed; keeping the plain one", { error: errMsg(e) }));
   };
-  const Any = z.looseObject({});
-  downstream.fallbackRequestHandler = async (request) => {
+  forwardRequests(downstream, async () => {
     await ready;
-    const params = { ...((request.params as Record<string, unknown> | undefined) ?? {}) };
-    // Inject the detected project when a tool call omits it.
-    if (request.method === "tools/call" && projectDir) {
-      const args = (params["arguments"] as Record<string, unknown> | undefined) ?? {};
-      if (args["project"] === undefined) params["arguments"] = { ...args, project: projectDir };
-    }
-    return upstream.client.request({ method: request.method, params }, Any as never);
-  };
+    return upstream.client;
+  }, {
+    projectDir,
+    ...(toolTimeoutSec ? { toolTimeoutSec } : {}),
+  });
   downstream.fallbackNotificationHandler = async (n) => {
     await ready;
     await upstream.client
@@ -171,6 +188,75 @@ async function proxyToDaemon(
   upstream.client.onclose = () => {};
   await upstream.transport.terminateSession().catch(() => {});
   await upstream.client.close().catch(() => {});
+}
+
+/** Margin over the daemon's durable wait for the reply (the job id or result) to reach the proxy. */
+const PROXY_REPLY_MARGIN_MS = 2 * 60_000;
+
+/**
+ * How long the proxy waits for the daemon's reply to one request, between progress notifications (each one resets it).
+ * A tools/call waits as long as the daemon's durable wait for this host (`durableWaitForClient`, the same hint the daemon
+ * gets; 25 min for Claude Code) plus a margin, and at least the host's declared timeout; anything else keeps the SDK's 60 s.
+ * The SDK default alone would cut every board call at 60 s with -32001 before the daemon returned the job id.
+ */
+export function proxyRequestTimeoutMs(method: string, hint: McpClientHint | undefined): number {
+  if (method !== "tools/call") return DEFAULT_REQUEST_TIMEOUT_MSEC;
+  const wait = durableWaitForClient(hint) ?? DURABLE_WAIT_MAX_MS;
+  return Math.max(DEFAULT_REQUEST_TIMEOUT_MSEC, wait + PROXY_REPLY_MARGIN_MS, (hint?.toolTimeoutSec ?? 0) * 1000);
+}
+
+export type ForwardOptions = {
+  projectDir: string | null;
+  toolTimeoutSec?: number;
+  /** Override of `proxyRequestTimeoutMs` (tests). */
+  timeoutMs?: (method: string, hint: McpClientHint | undefined) => number;
+};
+
+/**
+ * Relays every host request the downstream server does not handle itself to the upstream (daemon) client: the detected
+ * project and the host's name are added to tool calls, progress comes back under the host's own progressToken (the SDK
+ * replaces it upstream with its message id, so tokens never clash), the host's cancellation aborts the upstream request,
+ * and the timeout is the session's durable wait plus a margin, reset by each progress notification.
+ */
+export function forwardRequests(downstream: Server, upstream: () => Promise<Client>, opts: ForwardOptions): void {
+  const Any = z.looseObject({});
+  downstream.fallbackRequestHandler = async (request, extra) => {
+    const client = await upstream();
+    const params = { ...((request.params as Record<string, unknown> | undefined) ?? {}) };
+    const meta = { ...((params["_meta"] as Record<string, unknown> | undefined) ?? {}) };
+    const hostToken = meta["progressToken"] as string | number | undefined;
+    delete meta["progressToken"];
+    let hint: McpClientHint | undefined;
+    if (request.method === "tools/call") {
+      // Inject the detected project when a tool call omits it.
+      if (opts.projectDir) {
+        const args = (params["arguments"] as Record<string, unknown> | undefined) ?? {};
+        if (args["project"] === undefined) params["arguments"] = { ...args, project: opts.projectDir };
+      }
+      // The daemon sees this proxy, not the host: name the host so board jobs wait within its tool timeout.
+      const host = downstream.getClientVersion();
+      hint = {
+        ...(host?.name ? { name: host.name } : {}),
+        ...(host?.version ? { version: host.version } : {}),
+        ...(opts.toolTimeoutSec ? { toolTimeoutSec: opts.toolTimeoutSec } : {}),
+      };
+      meta[MCP_CLIENT_META] = hint;
+    }
+    if (Object.keys(meta).length) params["_meta"] = meta;
+    else delete params["_meta"];
+    return client.request({ method: request.method, params }, Any as never, {
+      timeout: (opts.timeoutMs ?? proxyRequestTimeoutMs)(request.method, hint),
+      resetTimeoutOnProgress: true,
+      signal: extra.signal,
+      // Always registered, so the daemon heartbeats and the timeout resets; relayed only when the host asked for progress.
+      onprogress: (progress) => {
+        if (hostToken === undefined) return;
+        void extra
+          .sendNotification({ method: "notifications/progress", params: { ...progress, progressToken: hostToken } })
+          .catch(() => {});
+      },
+    }) as never;
+  };
 }
 
 async function standalone(opts: McpStdioOptions, projectDir: string | null): Promise<void> {
@@ -267,14 +353,25 @@ async function standalone(opts: McpStdioOptions, projectDir: string | null): Pro
     tokens: new TokenSet(config.token),
     defaultProject: async () => defaultProject,
   });
+  // The start set and instructions a daemon session on this project gets (mcp-sessions).
+  const start = new URLSearchParams();
+  applyStartToolsets(start, await projectStartToolsets(registry, defaultProject));
+  const boardDocs = registry.get("board_check") !== undefined;
   const server = new McpServer(
     { name: "fabdesk", title: "fabPlane", version: config.version, icons: FABDESK_SERVER_ICONS },
-    { instructions: INSTRUCTIONS },
+    {
+      instructions:
+        INSTRUCTIONS + (boardDocs ? boardWorkflowInstructions({ listed: start.get("start") === "board" }) : ""),
+      maxToolInputElements: MCP_MAX_TOOL_INPUT_ELEMENTS,
+    },
   );
   attachToRegistry(server, registry, ctxFactory, {
-    initialToolsets: [...DEFAULT_AGENT_TOOLSETS],
+    ...startOptionsFor(start, registry),
     apps: opts.apps ? "on" : "auto",
+    durableWaitMs: (client) =>
+      durableWaitForClient(client, { ...(opts.toolTimeoutSec ? { toolTimeoutSec: opts.toolTimeoutSec } : {}) }),
   });
+  if (boardDocs) registerBoardWorkflowDocs(server);
   const stdio = new StdioServerTransport();
   await server.connect(stdio);
   await new Promise<void>((resolveDone) => {

@@ -1,5 +1,6 @@
 import { fitArtPlacement, imagePointAt, pointInArtworkCrop } from "./placement";
 import { sampleDarkness } from "./image";
+import { recolorRgb } from "./recolor";
 import {
   MAX_PRIMITIVES,
   resolveArtOptions,
@@ -157,7 +158,7 @@ function colorHalftone(img: GrayImage, o: ResolvedArtOptions): Primitive[] {
         x,
         y,
         d,
-        color: "#" + rgb.map((c) => c.toString(16).padStart(2, "0")).join(""),
+        color: "#" + recolorRgb(rgb, o.recolor).map((c) => c.toString(16).padStart(2, "0")).join(""),
       });
     }
   }

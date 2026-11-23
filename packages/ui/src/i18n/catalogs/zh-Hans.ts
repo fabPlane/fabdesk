@@ -94,6 +94,7 @@ export const messages = {
   "board.tab.placement": "Placement",
   "board.tab.comments": "Comments",
   "board.tab.updates": "Updates",
+  "board.tab.layers": "层",
   "board.empty": "电路板从这里开始",
   "board.emptyHint": "在侧栏选择一个项目以查看其{kind}。",
   "board.comment": "评论",

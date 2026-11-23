@@ -112,12 +112,13 @@ export function toolRoutes(opts: HttpAdapterOptions): Hono<HttpEnv> {
   return app;
 }
 
-export function serializeOutput(output: ToolOutput): { ok: boolean; text: string; json?: unknown; images?: ToolOutput["images"] } {
+export function serializeOutput(output: ToolOutput): { ok: boolean; text: string; json?: unknown; images?: ToolOutput["images"]; imagePresentation?: ToolOutput["imagePresentation"] } {
   return {
     ok: !output.isError,
     text: output.text ?? (output.json !== undefined ? JSON.stringify(output.json) : "ok"),
     ...(output.json !== undefined ? { json: output.json } : {}),
     ...(output.images ? { images: output.images } : {}),
+    ...(output.imagePresentation ? { imagePresentation: output.imagePresentation } : {}),
   };
 }
 

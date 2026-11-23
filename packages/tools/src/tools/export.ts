@@ -1,14 +1,23 @@
+import { portableHandoff } from "../portable-handoff";
+import { canonicalReportStatus } from "../canonical-report-status";
 /** Export toolset: manufacturing outputs via kicad-cli. */
-import { readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { basename, join } from "node:path";
+import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
+import { outputRevision } from "../output-revision";
 import { z } from "zod/v4";
-import { projectBomCsv } from "@fabdesk/protocol";
-import { PROJECT_FILES, ensureDir, jailPath, writeAtomic } from "../fs";
+import { readSavedBoardModels } from "@fabdesk/kicad";
+import { csvRows } from "../bom-csv";
+import { projectBomCsv, isPcbFeature } from "@fabdesk/protocol";
+import { PROJECT_FILES, ensureDir, jailPath, writeAtomic, writeJson } from "../fs";
 import { readProjectBom, assertProjectBomInputs } from "../project-bom";
 import { ToolError, defineTool } from "../registry";
-import { ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
+import { ok, p, requireBoard, requireKicad, requireSchematic, inspectSavedHierarchy } from "./common";
 import { expectedPcbSource, withPcbOutput } from "../pcb-output";
 import { silk_art } from "./silk-art";
+import { projectHasPlacedBoard } from "../board-state";
+import { writeJlcExports } from "../release-jlc";
 
 const rel = (project: { dir: string }, abs: string) =>
   abs.startsWith(project.dir) ? abs.slice(project.dir.length + 1) : abs;
@@ -19,8 +28,8 @@ export const export_gerbers = defineTool({
   toolset: "export",
   title: "Export Gerbers",
   description:
-    "Export Gerber files for all copper, mask, paste, silkscreen and edge layers to exports/gerbers/. Requires kicad-cli and board.kicad_pcb.",
-  inputSchema: { expectedSourceSha256: expectedPcbSource },
+    "Export production Gerbers for copper, mask, paste, silkscreen and edge layers (preset=all includes auxiliary layers) to exports/gerbers/. Requires kicad-cli and board.kicad_pcb.",
+  inputSchema: { expectedSourceSha256: expectedPcbSource, preset: z.enum(["production", "all"]).default("production") },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
@@ -37,12 +46,14 @@ export const export_gerbers = defineTool({
     const { paths: files } = await ctx.services.kicad.exportGerbers(cli, {
       board,
       outDir,
+      preset: args.preset,
       signal: ctx.signal,
     });
+    await writeJson(join(outDir, "gerbers.inventory.json"), { contract: "fabplane.cam-inventory.v1", pcbSha256: createHash("sha256").update(await readFile(board)).digest("hex"), preset: args.preset, options: { layers: args.preset === "all" ? "all enabled" : "*.Cu,F.Mask,B.Mask,F.Paste,B.Paste,F.Silkscreen,B.Silkscreen,Edge.Cuts" }, files: files.map(file => basename(file)) });
     ctx.progress(1, "done");
     return ok(
       `Exported ${files.length} gerber file(s) to exports/gerbers/:\n${files.map((f) => `- ${rel(project, f)}`).join("\n")}`,
-      { files },
+      { files, preset: args.preset, inventoryPath: join(outDir, "gerbers.inventory.json") },
     );
   }),
 });
@@ -108,7 +119,7 @@ export const export_drill = defineTool({
   toolset: "export",
   title: "Export drill files",
   description:
-    "Export Excellon drill files (plated/non-plated, with map) to exports/gerbers/. Requires kicad-cli and board.kicad_pcb.",
+    "Export Excellon drill files (plated/non-plated, with map) to exports/gerbers/. Requires kicad-cli and board.kicad_pcb. For a package you will order, board_release fab supersedes this (drill files are part of its gated package).",
   inputSchema: { expectedSourceSha256: expectedPcbSource },
   annotations: {
     readOnlyHint: false,
@@ -128,10 +139,11 @@ export const export_drill = defineTool({
       outDir,
       signal: ctx.signal,
     });
+    await writeJson(join(outDir, "drills.inventory.json"), { contract: "fabplane.cam-inventory.v1", pcbSha256: createHash("sha256").update(await readFile(board)).digest("hex"), options: { format: "excellon", separatePthNpth: true, mapFormat: "svg", report: true }, files: files.map(file => basename(file)) });
     ctx.progress(1, "done");
     return ok(
       `Exported ${files.length} drill file(s):\n${files.map((f) => `- ${rel(project, f)}`).join("\n")}`,
-      { files },
+      { files, separatedPthNpth: true, mapFormat: "svg", inventoryPath: join(outDir, "drills.inventory.json") },
     );
   }),
 });
@@ -143,7 +155,7 @@ export const export_pos = defineTool({
   title: "Export pick-and-place",
   description:
     "Export the component placement (pick-and-place) CSV to exports/positions.csv. Requires kicad-cli and board.kicad_pcb.",
-  inputSchema: { expectedSourceSha256: expectedPcbSource },
+  inputSchema: { expectedSourceSha256: expectedPcbSource, mode: z.enum(["physical_purchase", "engineering"]).default("physical_purchase") },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
@@ -151,16 +163,49 @@ export const export_pos = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async (args, ctx) => withPcbOutput(ctx, args.expectedSourceSha256, async (ctx) => {
+  handler: async (args, outer) => withPcbOutput(outer, args.expectedSourceSha256, async (ctx) => {
     const project = ctx.requireProject();
+    const real = outer.requireProject(); // the exporter runs on a staged copy; the BOM check lives with the real project
     const cli = await requireKicad(ctx);
     const board = await requireBoard(project);
     await ensureDir(p(project, PROJECT_FILES.exports));
     const output = p(project, PROJECT_FILES.exports, "positions.csv");
     ctx.progress(0.2, "exporting positions");
     await ctx.services.kicad.exportPos(cli, { board, output, signal: ctx.signal });
+    const features: string[][] = [];
+    if (args.mode === "physical_purchase") {
+      const footprints = new Map(readSavedBoardModels(await readFile(board, "utf8")).map(fp => [fp.ref, fp]));
+      const [header, ...rows] = csvRows(await readFile(output, "utf8"));
+      if (!header) throw new ToolError("Placement export has no header", "precondition");
+      const refColumn = header.findIndex(key => /^(ref|reference)$/i.test(key.trim()));
+      if (refColumn < 0) throw new ToolError("Placement export has no reference column", "precondition");
+      const kept = rows.filter(row => {
+        const fp = footprints.get(row[refColumn] ?? "");
+        if (!fp) throw new ToolError("Placement row cannot be bound to its native footprint", "precondition");
+        if (isPcbFeature(fp.footprint)) { features.push(row); return false; }
+        return !fp.dnp;
+      });
+      const csv = (rows: string[][]) => rows.map(row => row.map(value => `"${value.replaceAll('"', '""')}"`).join(",")).join("\n") + "\n";
+      await writeAtomic(output, csv([header, ...kept]));
+      await writeAtomic(p(project, "exports/placement-features.csv"), csv([header, ...features]));
+    }
+    const coordinateContract = { units: "mm", origin: "absolute PCB origin", x: "PCB +X", y: "negative PCB Y (up in exported top view)", side: "native CSV top/bottom", rotation: "native KiCad CSV degrees; preserve and compare with a fresh native export" };
+    await writeJson(p(project, "exports/positions.contract.json"), coordinateContract);
+    // a placed board also gets JLC's placement file: pad-centre positions from our copper, the rotation JLC's own
+    // footprint needs (see board_release bom), every row simulated on our copper
+    let jlc: Awaited<ReturnType<typeof writeJlcExports>> | undefined;
+    let jlcNote = "";
+    if (await projectHasPlacedBoard(project.dir)) {
+      ctx.progress(0.6, "JLC placement file");
+      try {
+        jlc = await writeJlcExports({ exportGerbers: (outDir) => ctx.services.kicad.exportGerbers(cli, { board, outDir, signal: ctx.signal }), projectDir: real.dir, pcb: board, stem: basename(board, ".kicad_pcb"), posCsv: output, outDir: p(project, PROJECT_FILES.exports), signal: ctx.signal });
+        jlcNote = `\nJLC placement exports/positions-jlc.csv (+ bom-jlc.csv): ${jlc.summary.placements} parts at pad-centre positions with JLC-simulated rotations (${jlc.summary.rotationDiffers} differ from KiCad), source ${jlc.source}; placement check ${jlc.summary.pass} pass, ${jlc.summary.fail} fail${jlc.failing.length ? ` (${jlc.failing.slice(0, 8).join(", ")})` : ""}, ${jlc.summary.noFootprint.length} without a JLC footprint; no LCSC code: ${jlc.summary.noLcscCode.join(", ") || "none"}.${jlc.source.startsWith("evidence") ? " Run board_release bom for JLC data on every part." : ""}`;
+      } catch (e) {
+        jlcNote = `\nJLC placement file not written: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    }
     ctx.progress(1, "done");
-    return ok(`Exported exports/positions.csv.`, { path: output });
+    return ok(`Exported exports/positions.csv (${args.mode}); ${features.length} PCB feature(s) listed separately.${jlcNote}`, { path: output, mode: args.mode, features: features.length, coordinateContract, ...(jlc ? { jlc: { cpl: jlc.cpl, bom: jlc.bom, ...jlc.summary, source: jlc.source, failing: jlc.failing } } : {}) });
   }),
 });
 
@@ -170,7 +215,7 @@ export const export_bom = defineTool({
   title: "Export BOM",
   description:
     "Export the project BOM from captured native schematic sources, explicit physical instances and project hardware. Writes exports/bom.csv and its coverage receipt. Incomplete or netlist-only coverage requires explicit allowPartial; pass expectedRevision from bom_read to refuse changed inputs.",
-  inputSchema: { expectedRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(), allowPartial: z.boolean().default(false) },
+  inputSchema: { expectedRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(), allowPartial: z.boolean().default(false), mode: z.enum(["physical_purchase", "engineering"]).default("physical_purchase") },
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
@@ -178,7 +223,7 @@ export const export_bom = defineTool({
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async ({ expectedRevision, allowPartial }, ctx) => {
+  handler: async ({ expectedRevision, allowPartial, mode }, ctx) => {
     const project = ctx.requireProject();
     const snapshot = await readProjectBom(ctx);
     if (expectedRevision && snapshot.revision !== expectedRevision) throw new ToolError("BOM inputs changed; refresh and review the parts list before exporting.", "precondition");
@@ -186,9 +231,38 @@ export const export_bom = defineTool({
     if (!snapshot.lines.length) throw new ToolError("No included parts are listed. Resolve the board sources or add project hardware before exporting.", "precondition");
     const output = await jailPath(project.dir, "exports/bom.csv"), receipt = await jailPath(project.dir, "exports/bom.coverage.json");
     await assertProjectBomInputs(project.dir, snapshot);
-    await writeAtomic(receipt, `${JSON.stringify(snapshot, null, 2)}\n`);
-    await writeAtomic(output, projectBomCsv(snapshot.lines));
-    return ok(`Exported exports/bom.csv (${snapshot.lines.length} lines${snapshot.complete ? "" : "; partial source coverage"}). Coverage receipt: exports/bom.coverage.json. Electrical checks remain separate.`, { path: output, receiptPath: receipt, lines: snapshot.lines.length, complete: snapshot.complete, revision: snapshot.revision });
+    const features = snapshot.lines.filter(line => line.source === "pcb" && isPcbFeature(line.footprint ?? ""));
+    const lines = mode === "physical_purchase" ? snapshot.lines.filter(line => !features.includes(line)) : snapshot.lines;
+    const orderingWarnings = lines.flatMap(line => !line.mpn ? [`${line.refs.join(" ")}: no manufacturer ordering code recorded`] : /^SHT3[015]-DIS-B$/i.test(line.mpn) ? [`${line.refs.join(" ")}: ${line.mpn} is a device/family code; verify a complete manufacturer packaging/order variant against the datasheet ordering table`] : []);
+    await writeJson(p(project, "exports/pcb-features.json"), { features, mode });
+    const csv = projectBomCsv(lines);
+    await writeAtomic(receipt, `${JSON.stringify({ ...snapshot, export: { mode, artifactSha256: createHash("sha256").update(csv).digest("hex") } }, null, 2)}\n`);
+    await writeAtomic(output, csv);
+    return ok(`Exported exports/bom.csv (${lines.length} lines${snapshot.complete ? "" : "; partial source coverage"}). Coverage receipt: exports/bom.coverage.json. Electrical checks remain separate.${orderingWarnings.length ? `\nOrdering warnings:\n${orderingWarnings.map(warning => `- ${warning}`).join("\n")}` : ""}`, { path: output, receiptPath: receipt, lines: lines.length, mode, features, orderingWarnings, complete: snapshot.complete, revision: snapshot.revision });
+  },
+});
+
+export const export_schematic_pdf = defineTool({
+  name: "export_schematic_pdf", toolset: "export", title: "Export schematic PDF",
+  description: "Export the complete saved schematic hierarchy to exports/schematic.pdf with a source receipt. Rejects source changes during export; does not navigate the desktop.",
+  inputSchema: {}, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true }, longRunning: true,
+  handler: async (_args, ctx) => {
+    const project = ctx.requireProject(), cli = await requireKicad(ctx), schematic = await requireSchematic(project);
+    const before = await inspectSavedHierarchy(ctx, project, cli);
+    if (!before.complete) throw new ToolError("PDF export requires a complete saved hierarchy", "precondition");
+    const sources = await Promise.all([...new Set([...before.referencedFiles, ...(before.projectFile ? [before.projectFile] : [])])].map(async path => ({ path, sha256: createHash("sha256").update(await readFile(await jailPath(project.dir, path))).digest("hex") })));
+    const scratch = await mkdtemp(join(tmpdir(), "fabdesk-schematic-pdf-"));
+    try {
+      const temporary = join(scratch, "schematic.pdf");
+      await ctx.services.kicad.exportSchematicPdf(cli, { schematic, output: temporary, signal: ctx.signal });
+      const bytes = await readFile(temporary), after = await inspectSavedHierarchy(ctx, project, cli);
+      if (!after.complete || before.aggregateRevision !== after.aggregateRevision) throw new ToolError("Schematic changed while exporting PDF", "precondition");
+      for (const source of sources) if (createHash("sha256").update(await readFile(await jailPath(project.dir, source.path))).digest("hex") !== source.sha256) throw new ToolError("Schematic inputs changed while exporting PDF", "precondition");
+      ctx.signal.throwIfAborted();
+      const path = await jailPath(project.dir, "exports/schematic.pdf"), receipt = await jailPath(project.dir, "exports/schematic.pdf.revision.json");
+      await writeAtomic(path, bytes); await writeAtomic(receipt, outputRevision(ctx, "exports/schematic.pdf", bytes, "schematic", sources));
+      return ok("Exported complete saved hierarchy to exports/schematic.pdf.", { path, sourceRevision: before.aggregateRevision, receiptPath: receipt });
+    } finally { await rm(scratch, { recursive: true, force: true }); }
   },
 });
 
@@ -229,9 +303,10 @@ export const export_zip = defineTool({
   toolset: "export",
   title: "Zip fabrication outputs",
   description:
-    "Bundle the files currently present in exports/gerbers plus positions.csv and bom.csv into exports/fabrication.zip or a named filename under exports/. Missing optional entries are reported.",
+    "Bundle the files currently present in exports/gerbers plus positions.csv and bom.csv into exports/fabrication.zip or a named filename under exports/. Missing optional entries are reported. For a package you will order, board_release fab supersedes this: its archive is gated on the interconnect, review, A1-A9 and via checks.",
   inputSchema: {
     expectedSourceSha256: expectedPcbSource,
+    package: z.enum(["fabrication", "handoff"]).default("fabrication").describe("handoff includes editable native sources, project dependencies, views, reports and a source-bound inventory; requires current exports"),
     gerberFiles: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/).max(240)).min(1).max(512).optional()
       .describe("Exact basenames in exports/gerbers/ to package from a completed Gerber/drill export. Omitting this retains saved-file packaging."),
     filename: z
@@ -247,16 +322,34 @@ export const export_zip = defineTool({
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async ({ filename, expectedSourceSha256, gerberFiles }, ctx) => withPcbOutput(ctx, expectedSourceSha256, async (ctx) => {
+  handler: async ({ filename, expectedSourceSha256, gerberFiles, package: kind }, sourceCtx) => kind === "handoff" ? portableHandoff(sourceCtx, filename === "fabrication.zip" ? "handoff.zip" : filename, zipFiles) : withPcbOutput(sourceCtx, expectedSourceSha256, async (ctx) => {
     const project = ctx.requireProject();
+    if (!sourceCtx.board) {
+      const reports = await canonicalReportStatus(sourceCtx);
+      if (reports.drc.status === "stale" || reports.erc.status === "stale")
+        throw new ToolError("Canonical DRC/ERC reports are stale. Run render_publish (or verify_drc and verify_erc) after the last edit before packaging.", "precondition");
+    }
     const exportsDir = p(project, PROJECT_FILES.exports);
     const gerbersDir = join(exportsDir, "gerbers");
+    const inventories: string[] = [];
+    let hasInventory = false;
+    if (!gerberFiles) for (const name of ["gerbers.inventory.json", "drills.inventory.json"]) {
+      const file = join(gerbersDir, name);
+      let inventory: { pcbSha256: string; files: string[] };
+      try { inventory = JSON.parse(await readFile(file, "utf8")); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") continue; throw new ToolError(`Invalid CAM inventory ${name}`, "precondition"); }
+      if (!Array.isArray(inventory.files) || inventory.files.some(name => typeof name !== "string" || name !== basename(name))) throw new ToolError(`Invalid CAM inventory ${name}`, "precondition");
+      const source = await readFile(p(sourceCtx.requireProject(), PROJECT_FILES.boardPcb)).catch(() => null);
+      if (!source || createHash("sha256").update(source).digest("hex") !== inventory.pcbSha256) throw new ToolError("CAM inventory is stale; regenerate fabrication outputs before packaging", "precondition");
+      hasInventory = true;
+      inventories.push(...inventory.files);
+    }
+    const selectedFiles = gerberFiles ?? (hasInventory ? [...new Set(inventories)] : undefined);
     const entries: Array<{ name: string; path: string }> = [];
-    for (const f of gerberFiles ? [...new Set(gerberFiles)] : await readdir(gerbersDir).catch(() => [])) {
+    for (const f of selectedFiles ? [...new Set(selectedFiles)] : await readdir(gerbersDir).catch(() => [])) {
       const abs = join(gerbersDir, f);
       const info = await stat(abs).catch(() => null);
       if (info?.isFile()) entries.push({ name: `gerbers/${f}`, path: abs });
-      else if (gerberFiles) throw new ToolError(`Requested manufacturing file is missing: ${f}. Export again before packaging.`, "precondition");
+      else if (selectedFiles) throw new ToolError(`Requested manufacturing file is missing: ${f}. Export again before packaging.`, "precondition");
     }
     const missing: string[] = [];
     for (const f of gerberFiles ? [] : ["positions.csv", "bom.csv"]) {
@@ -588,6 +681,7 @@ export const export_laser_stencil = defineTool({
 });
 
 export const exportTools = [
+  export_schematic_pdf,
   export_gerbers,
   export_drill,
   export_pos,

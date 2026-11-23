@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
-import { attachToRegistry, createRegistry } from "../src";
+import { attachToRegistry, createRegistry, toCallToolResult, wantsStructured } from "../src";
 import { contextFactory, mockServices, tempProject } from "./mock-services";
 
 async function pair(
@@ -27,6 +27,40 @@ async function pair(
 }
 
 describe("mcp adapter", () => {
+  test("Claude Code gets the text, not the JSON, when a tool wrote both (it hands the model structuredContent)", async () => {
+    const out = { text: "finish 29s open 0 -> ACCEPT", json: { figures: { open: 0 } } };
+    expect(wantsStructured(out, "claude-code")).toBe(false);
+    expect(wantsStructured(out, "codex-mcp-client")).toBe(true);
+    expect(wantsStructured(out, undefined)).toBe(true);
+    expect(wantsStructured({ json: { a: 1 } }, "claude-code")).toBe(true); // no text: the JSON is the result
+    const forClaude = await toCallToolResult(out, { structured: false });
+    expect(forClaude.structuredContent).toBeUndefined();
+    expect(forClaude.content).toEqual([{ type: "text", text: "finish 29s open 0 -> ACCEPT" }]);
+    expect((await toCallToolResult(out)).structuredContent).toEqual({ figures: { open: 0 } });
+  });
+
+  test("no listed input schema has array-form `items` (tuples): Codex silently drops such a tool", async () => {
+    // Codex 0.167 left board_edit and board_route out of its tool list because their schemas held z.tuple, which the
+    // SDK writes as `items: [...]`; use `z.array(...).length(n)` instead.
+    const registry = createRegistry();
+    const { client, server } = await pair(registry.list().map((tool) => tool.name));
+    try {
+      const tuples: string[] = [];
+      const walk = (o: unknown, path: string): void => {
+        if (Array.isArray(o)) return o.forEach((v, i) => walk(v, `${path}[${i}]`));
+        if (!o || typeof o !== "object") return;
+        for (const [k, v] of Object.entries(o)) {
+          if (k === "items" && Array.isArray(v)) tuples.push(path);
+          walk(v, `${path}.${k}`);
+        }
+      };
+      for (const tool of (await client.listTools()).tools) walk(tool.inputSchema, tool.name);
+      expect(tuples).toEqual([]);
+    } finally {
+      await server.close();
+    }
+  });
+
   test("all exposed and discovered tools carry explicit effect annotations", async () => {
     const registry = createRegistry();
     const { client, server } = await pair(registry.list().map((tool) => tool.name));
@@ -163,6 +197,48 @@ describe("mcp adapter", () => {
     expect(attachment.session.enabledToolsets()).toEqual(["core", "route"]);
   });
 
+  test("a start list hiding part of a start toolset: load_toolset exposes the rest", async () => {
+    // A `start=board` session: circuit and verify are start toolsets, but the exact start list lists only some of their tools.
+    const registry = createRegistry();
+    const board = ["core", "render", "board"].flatMap((id) => registry.byToolset(id as never).map((t) => t.name));
+    const initialTools = [...board.filter((n) => n !== "verify_drc"), "schematic_inspect", "verify_erc"];
+    const project = await tempProject("mcp-board-start");
+    const server = new McpServer({ name: "fabdesk-test", version: "0.0.0" });
+    const attachment = attachToRegistry(server, registry, contextFactory(mockServices([project]), project), {
+      initialToolsets: ["circuit", "verify", "render", "board"],
+      initialTools,
+    });
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverT);
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    await client.connect(clientT);
+    try {
+      let listChanged = 0;
+      client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
+        listChanged++;
+      });
+      const listed = async () => (await client.listTools()).tools.map((t) => t.name);
+      const before = await listed();
+      for (const n of ["schematic_edit", "pcb_update_from_schematic", "verify_drc", "verify_gate"]) expect(before).not.toContain(n);
+      // Only the toolsets the list fully exposes count as enabled.
+      expect(attachment.session.enabledToolsets()).toEqual(["core", "render", "board"]);
+      const circuit = await client.callTool({ name: "load_toolset", arguments: { toolset: "circuit" } });
+      expect(circuit.isError).toBeFalsy();
+      expect(await listed()).toEqual(expect.arrayContaining(["schematic_edit", "pcb_update_from_schematic"]));
+      await client.callTool({ name: "load_toolset", arguments: { toolset: "verify" } });
+      expect(await listed()).toContain("verify_gate");
+      // core is always reported enabled; loading it still exposes what the start list hid (verify_drc).
+      await client.callTool({ name: "load_toolset", arguments: { toolset: "core" } });
+      expect(await listed()).toContain("verify_drc");
+      expect(attachment.session.enabledToolsets()).toEqual(expect.arrayContaining(["core", "circuit", "verify", "render", "board"]));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(listChanged).toBeGreaterThan(0);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   test("core tools visible, load_toolset enables more and emits list_changed", async () => {
     const { client, attachment } = await pair();
     const initial = await client.listTools();
@@ -177,6 +253,7 @@ describe("mcp adapter", () => {
       "pcb_environment",
       "project_status",
       "render_board",
+      "render_publish",
       "request_project_creation",
       "route_run",
       "verify_drc",
@@ -197,7 +274,7 @@ describe("mcp adapter", () => {
     expect(after.tools.map((t) => t.name)).toEqual(
       expect.arrayContaining(["export_gerbers", "silk_art", "export_stencil", "export_laser_stencil"]),
     );
-    expect(after.tools.length).toBe(initial.tools.length + 10);
+    expect(after.tools.length).toBe(initial.tools.length + 11);
     expect(attachment.session.enabledToolsets()).toEqual(["core", "export"]);
     await new Promise((r) => setTimeout(r, 10));
     expect(listChanged).toBeGreaterThan(0);
@@ -326,4 +403,73 @@ test("direct MCP rejects unknown top-level mutation fields", async () => {
     await client.close();
     await server.close();
   }
+});
+
+test("a session's durable wait follows its client: initialize clientInfo, or the host a proxy names in _meta", async () => {
+  const { ToolRegistry, defineTool } = await import("../src/registry");
+  const { durableWaitMs } = await import("../src/durable");
+  const { MCP_CLIENT_META } = await import("../src/adapters/mcp");
+  const registry = new ToolRegistry([
+    defineTool({
+      name: "wait_probe",
+      toolset: "core",
+      title: "wait probe",
+      description: "returns the durable wait of this call",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+      scope: "global",
+      handler: async (_args, ctx) => ({ text: String(durableWaitMs(ctx)), json: { wait: durableWaitMs(ctx) } }),
+    }),
+  ]);
+  const services = mockServices([]);
+  const seen: Array<string | undefined> = [];
+  const open = async (clientName: string) => {
+    const server = new McpServer({ name: "fabdesk-test", version: "0.0.0" });
+    attachToRegistry(server, registry, contextFactory(services, null), {
+      toolsOnly: true,
+      durableWaitMs: (client) => {
+        seen.push(client?.name);
+        return client?.toolTimeoutSec ? client.toolTimeoutSec * 1000 : client?.name === "short-host" ? 50_000 : undefined;
+      },
+    });
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverT);
+    const client = new Client({ name: clientName, version: "1" });
+    await client.connect(clientT);
+    const wait = async (meta?: Record<string, unknown>) =>
+      ((await client.callTool({ name: "wait_probe", arguments: {}, ...(meta ? { _meta: meta } : {}) })).structuredContent as { wait: number }).wait;
+    return { server, client, wait };
+  };
+  const short = await open("short-host");
+  expect(await short.wait()).toBe(50_000);
+  await short.client.close();
+  const long = await open("long-host");
+  expect(await long.wait()).toBe(durableWaitMs());
+  // a proxy names its host (and its declared timeout); the hint stays for later calls of the session
+  expect(await long.wait({ [MCP_CLIENT_META]: { name: "short-host" } })).toBe(50_000);
+  expect(await long.wait()).toBe(50_000);
+  expect(await long.wait({ [MCP_CLIENT_META]: { name: "short-host", toolTimeoutSec: 120 } })).toBe(120_000);
+  await long.client.close();
+  expect(seen).toContain("long-host");
+});
+
+test("image presentation metadata survives MCP conversion with the image payload intact", async () => {
+  const { toCallToolResult } = await import("../src/adapters/mcp");
+  const { writeFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const p = await tempProject("image-presentation"), path = join(p.dir,"shot.png");
+  await writeFile(path,Buffer.from("image bytes"));
+  const result = await toCallToolResult({ json:{path}, images:[{path,mime:"image/png"}], imagePresentation:"inspection" });
+  expect(result._meta?.["fabplane/imagePresentation"]).toBe("inspection");
+  expect(result.structuredContent?.["_imagePresentation"]).toBe("inspection");
+  expect(result.content.some(item => item.type === "image" && item.data === Buffer.from("image bytes").toString("base64"))).toBe(true);
+});
+
+test("inspection markers survive the actual Messages-stream content-only boundary",async()=>{
+ const {toCallToolResult}=await import("../src/adapters/mcp"),{MessagesStreamParser}=await import("../../agents/src/parsers/messages");
+ const {writeFile}=await import("node:fs/promises"),{join}=await import("node:path"),p=await tempProject("messages-image"),path=join(p.dir,"image.png");await writeFile(path,"pixel bytes");
+ const mcp=await toCallToolResult({images:[{path,mime:"image/png"}],imagePresentation:"inspection"});
+ const events=new MessagesStreamParser().feed({type:"user",message:{content:[{type:"tool_result",tool_use_id:"wrapped",content:mcp.content}]}});
+ const result=events.find(e=>e.type==="tool_result");expect(result?.type).toBe("tool_result");
+ const image=(result as {output:Array<{type:string;_meta?:Record<string,unknown>}>}).output.find(block=>block.type==="image");expect(image?._meta?.["fabplane/imagePresentation"]).toBe("inspection");
 });

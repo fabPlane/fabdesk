@@ -94,6 +94,7 @@ export const messages = {
   "board.tab.placement": "Placement",
   "board.tab.comments": "Comments",
   "board.tab.updates": "Updates",
+  "board.tab.layers": "Katmanlar",
   "board.empty": "Ihr Board beginnt hier",
   "board.emptyHint": "Wählen Sie in der Seitenleiste ein Projekt, um {kind} zu sehen.",
   "board.comment": "Yorum",

@@ -1,5 +1,6 @@
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
-import { overviewBoardImages } from "@fabdesk/client-core";
+import { overviewBoardImages, enclosureSourceBoards } from "@fabdesk/client-core";
+import { OverviewBoardFiles } from "./OverviewBoardFiles";
 import { useOverviewImage } from "./useOverviewImage";
 import { useEffect, useRef, useState } from "react";
 import { CoreHttpError, savedOutputs, editableSketchPaths, projectSketchImagePaths, useBoardSources, useProject, useProjectOrder, usePcbPreviewRevision, useBoardModelRevision, useEnclosureSourceRevision, usePcbCheckRevision, useVideoInputRevision, videoInputsNeedReview } from "@fabdesk/client-core";
@@ -48,6 +49,8 @@ function SingleBoardOverview() {
   const ui = () => useUiStore.getState();
   const pcb = files.find((file) => file.path === "board.kicad_pcb");
   const schematic = files.find((file) => file.path === "board.kicad_sch");
+  const boardFiles = enclosureSourceBoards(files.map(file => file.path), []).filter(path => path !== "board.kicad_pcb");
+  const collection = !pcb && !schematic && boardFiles.length > 0;
   const designTab = pcb || !schematic ? "pcb" : "schematic";
   const designLabel = pcb ? "Main board" : schematic ? "Schematic design" : "Saved board preview";
   const imageCandidates = overviewBoardImages(files, { schematicOnly: designTab === "schematic" });
@@ -58,7 +61,7 @@ function SingleBoardOverview() {
   const references = projectSketchImagePaths(files);
   const reference = chosenReference && references.includes(chosenReference) ? chosenReference : references[0];
   const editableReference = !!reference && editableSketchPaths([{ path: reference }]).includes(reference);
-  const referenceOnly = !pcb && !schematic && !preview && !!reference;
+  const referenceOnly = !collection && !pcb && !schematic && !preview && !!reference;
   // New native sources must not inherit a selection made on a different design/reference.
   // A refreshed drawing of the same native board keeps its contextual tools.
   const surfaceKey = pcb ? "native:board.kicad_pcb" : schematic ? "native:board.kicad_sch" : preview ? `preview:${preview.path}` : `reference:${reference ?? ""}`;
@@ -78,10 +81,10 @@ function SingleBoardOverview() {
     event.preventDefault(); event.stopPropagation(); setSelectedKey(null); requestAnimationFrame(() => selectionTrigger.current?.focus({ preventScroll: true }));
   } }}>
     <nav className="fd-project-status-nav" aria-label="Project views"><Button size="sm" aria-current="page">Overview</Button><Button size="sm" variant="ghost" onClick={() => ui().setWorkspaceArea("status")}>Status</Button></nav>
-    <div className="fd-overview-heading"><h1 title={project.data.name}>Project overview</h1><p>{referenceOnly ? "Select a saved reference to continue your design." : designTab === "schematic" ? "Select your schematic to open its tools." : "Select your board to open its tools."}</p>
+    <div className="fd-overview-heading"><h1 title={project.data.name}>Project overview</h1><p>{collection ? `${boardFiles.length} saved boards in this project. Open a source file or work on their enclosure.` : referenceOnly ? "Select a saved reference to continue your design." : designTab === "schematic" ? "Select your schematic to open its tools." : pcb || preview ? "Select your board to open its tools." : "Add a design or describe what you want to build."}</p>
       {updates.length > 0 && <Button className="fd-overview-updates" size="sm" variant="ghost" title={`${updates.join(", ")} ${updates.length === 1 ? "has" : "have"} source or artifact changes. This covers tracked artifacts only; review before sharing or fabrication.`} onClick={() => ui().setBoardTab("updates")}><Icon name="warning" width={16} height={16} />Review updates · {updates.length}</Button>}
     </div>
-    {(pcb || schematic || preview) ? <div className="fd-overview-board">
+    {collection ? <OverviewBoardFiles paths={boardFiles} onOpen={path => ui().openProjectFile(path)} onEnclosure={() => ui().setWorkspaceArea("mechanical")} /> : (pcb || schematic || preview) ? <div className="fd-overview-board">
       <button ref={selectionTrigger} className="fd-overview-preview" data-selected={selected} aria-pressed={selected} aria-label={`Select ${designLabel.toLowerCase()} to show tools`} onClick={() => setSelectedKey(selected ? null : surfaceKey)} onDoubleClick={() => ui().setBoardTab(pcb || schematic ? designTab : "files")}>
         {overviewImage.url ? <img src={overviewImage.url} onError={overviewImage.onError} alt={`${project.data.name} ${preview?.kind === "top" ? "saved top render" : "saved board preview"}`} /> : <span><Icon name={designTab === "schematic" ? "compose" : "pcb"} width={64} height={64} /><span>{designTab === "schematic" ? "Open the schematic to create its preview" : "Open the PCB to render its preview"}</span></span>}
       </button>
