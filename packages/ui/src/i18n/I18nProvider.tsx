@@ -12,16 +12,21 @@ import { formatDate, formatMessage, formatNumber, type FormatValues } from "./fo
 import { glossaryTerm, type GlossaryTermId } from "./glossary";
 import { catalogFor, fallbackCatalog, loadCatalog, resolveLoadableLocale } from "./load";
 
+function processEnv(name: string): string | undefined {
+  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
+  return env?.[name];
+}
+
 export function hostLocales(): string[] {
   if (typeof navigator !== "undefined") {
     const list = navigator.languages?.length ? [...navigator.languages] : [navigator.language];
     return list.filter((item): item is string => !!item);
   }
   const env = [
-    process.env.LC_ALL,
-    process.env.LC_MESSAGES,
-    process.env.LANG,
-    process.env.LANGUAGE,
+    processEnv("LC_ALL"),
+    processEnv("LC_MESSAGES"),
+    processEnv("LANG"),
+    processEnv("LANGUAGE"),
   ].filter((item): item is string => !!item);
   return env;
 }
