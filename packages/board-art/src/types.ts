@@ -24,6 +24,23 @@ export const MAX_PRIMITIVES = 12_000;
 export const COLOR_MODES = ["monotone", "multicolor"] as const;
 export type ColorMode = (typeof COLOR_MODES)[number];
 
+export type ArtworkRecolor = {
+  mode: "original" | "grayscale" | "duotone";
+  amount: number;
+  shadow: string;
+  highlight: string;
+};
+export const ORIGINAL_RECOLOR: ArtworkRecolor = {
+  mode: "original", amount: 1, shadow: "#30204f", highlight: "#ffe4b5",
+};
+
+export function resolveArtworkRecolor(value?: ArtworkRecolor): ArtworkRecolor {
+  const result = { ...ORIGINAL_RECOLOR, ...value };
+  if (!["original", "grayscale", "duotone"].includes(result.mode)) throw new Error("Unknown artwork color effect.");
+  if (!Number.isFinite(result.amount) || result.amount < 0 || result.amount > 1) throw new Error("Color effect strength must be between 0 and 1.");
+  return { ...result, shadow: normalizeHex(result.shadow), highlight: normalizeHex(result.highlight) };
+}
+
 export function normalizeHex(value: string): string {
   if (!/^#[0-9a-f]{6}$/i.test(value))
     throw new Error("Use a six-digit hex color, such as #1D3F7A.");
@@ -63,6 +80,7 @@ export type ArtPlacement = {
 };
 
 export type ArtOptions = {
+  recolor?: ArtworkRecolor;
   colorMode?: ColorMode;
   printedBackground?: string | null;
   /** Monotone ink is a preview/order choice; conventional Gerber carries geometry only. */
@@ -88,6 +106,7 @@ export type ArtOptions = {
 };
 
 export type ResolvedArtOptions = {
+  recolor: ArtworkRecolor;
   colorMode: ColorMode;
   printedBackground: string | null;
   inkColor: string;
@@ -141,7 +160,8 @@ export function resolveArtOptions(raw: ArtOptions): ResolvedArtOptions {
   const usable = Math.min(widthMm, heightMm) - 2 * marginMm;
   if (usable <= minFeatureMm)
     throw new Error("board is too small for the margin and minimum feature size");
-  const pitchMm = Math.max(minFeatureMm, raw.pitchMm ?? Math.max(minFeatureMm, usable / 90));
+  // Opaque dark color dots occupy 55% of the pitch; retain them above the minimum feature.
+  const pitchMm = Math.max(raw.colorMode === "multicolor" ? minFeatureMm / .55 : minFeatureMm, raw.pitchMm ?? Math.max(minFeatureMm, usable / 90));
   const layers = raw.layers && raw.layers.length > 0 ? raw.layers : (["silk"] as const);
   const colorMode = raw.colorMode ?? "monotone";
   if (!COLOR_MODES.includes(colorMode)) throw new Error("Unknown artwork color mode");
@@ -150,6 +170,7 @@ export function resolveArtOptions(raw: ArtOptions): ResolvedArtOptions {
       "Multicolor artwork supports printed silkscreen only, not copper or mask openings.",
     );
   return {
+    recolor: resolveArtworkRecolor(raw.recolor),
     colorMode,
     printedBackground: raw.printedBackground == null ? null : normalizeHex(raw.printedBackground),
     inkColor: normalizeHex(raw.inkColor ?? BOARD_FINISH[raw.color].silk),

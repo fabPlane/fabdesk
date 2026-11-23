@@ -18,7 +18,10 @@ export function savedOutputs(files: FileEntry[], sources: ProjectBoardSources["s
     // A nested declaration owns its directory even when blocked; do not relabel it as its parent.
     const member = members.find(row => file.path.startsWith(row.prefix));
     if (member && !member.browsable) return [];
-    const kind = member ? outputKind(file.path.slice(member.prefix.length)) : outputKind(file.path);
+    const relative = member ? file.path.slice(member.prefix.length) : file.path;
+    // The schematic viewer uses these retained sheets to resolve revisions.
+    if (/^renders\/schematic\/auto-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\/sheet-[1-9]\d*\.(?:svg|png)$/.test(relative)) return [];
+    const kind = outputKind(relative);
     return kind && !(kind === "videos" && file.size === 0) ? [{ ...file, kind, ...(member ? { sourceId: member.sourceId, sourceName: member.sourceName } : {}) }] : [];
   });
   const completedVideos = new Set(outputs.filter(file => file.kind === "videos" && /(?:^|\/)exports\/product-video\.(mp4|webm|gif)$/i.test(file.path)).map(file => file.path.replace(/\.[^.]+$/, "")));

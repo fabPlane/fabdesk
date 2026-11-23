@@ -25,13 +25,13 @@ async function ensureDir(dir: string): Promise<void> {
 /** Gerbers for every enabled layer (plus edge cuts) into `outDir`. */
 export async function exportGerbers(
   cli: KicadCli,
-  opts: { board: string; outDir: string; signal?: AbortSignal },
+  opts: { board: string; outDir: string; preset?: "production" | "all"; signal?: AbortSignal },
 ): Promise<Paths> {
   await ensureDir(opts.outDir);
   const started = Date.now();
   await runKicadCli(
     cli,
-    ["pcb", "export", "gerbers", "-o", withTrailingSep(opts.outDir), opts.board],
+    ["pcb", "export", "gerbers", ...(opts.preset === "all" ? [] : ["--layers", "*.Cu,F.Mask,B.Mask,F.Paste,B.Paste,F.Silkscreen,B.Silkscreen,Edge.Cuts"]), "-o", withTrailingSep(opts.outDir), opts.board],
     sig(opts),
   );
   return { paths: await filesWrittenSince(opts.outDir, started, /\.(g[a-z0-9]+|gbr|gbrjob)$/i) };
@@ -69,7 +69,7 @@ export async function exportDxf(
   return { paths: await filesWrittenSince(opts.outDir, started, /\.dxf$/i) };
 }
 
-/** Excellon drill files (PTH/NPTH merged) into `outDir`. */
+/** Separate PTH/NPTH Excellon files with SVG drill maps and a report. */
 export async function exportDrill(
   cli: KicadCli,
   opts: { board: string; outDir: string; signal?: AbortSignal },
@@ -84,13 +84,20 @@ export async function exportDrill(
       "drill",
       "--format",
       "excellon",
+      "--excellon-separate-th",
+      "--generate-map",
+      "--map-format",
+      "svg",
+      "--generate-report",
+      "--report-path",
+      join(opts.outDir, "drill-report.txt"),
       "-o",
       withTrailingSep(opts.outDir),
       opts.board,
     ],
     sig(opts),
   );
-  return { paths: await filesWrittenSince(opts.outDir, started, /\.(drl|xln|txt)$/i) };
+  return { paths: await filesWrittenSince(opts.outDir, started, /\.(drl|xln|txt|svg)$/i) };
 }
 
 /** Pick-and-place CSV (both sides, mm). */
@@ -110,6 +117,7 @@ export async function exportPos(
       "mm",
       "--side",
       "both",
+      "--exclude-dnp",
       "-o",
       opts.output,
       opts.board,

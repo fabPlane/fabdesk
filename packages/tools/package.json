@@ -13,13 +13,14 @@
   "dependencies": {
     "fflate": "0.8.3",
     "@fabdesk/board-diff": "workspace:*",
+    "@fabdesk/board-workflow": "workspace:*",
     "@fabdesk/board-art": "workspace:*",
     "@fabdesk/kicad": "workspace:*",
     "@fabdesk/product-video": "workspace:*",
     "@fabdesk/protocol": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "hono": "4.13.7",
-    "zod": "3.25.76"
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "hono": "4.13.19",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "typescript": "5.9.2",

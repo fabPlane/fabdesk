@@ -82,13 +82,13 @@ afterEach(async () => {
 async function destination() {
   const dir = await mkdtemp(join(tmpdir(), "fabdesk-glb-integrity-"));
   temporary.push(dir);
-  return { dir, output: join(dir, "board.glb"), board: join(dir, "board.kicad_pcb") };
+  return { dir, output: join(dir, "board.glb"), board: join(import.meta.dir, "fixtures/mini-two-layer.kicad_pcb") };
 }
 
 test("concurrent board exports isolate KiCad's fixed scratch filename and preserve each model", async () => {
-  const { dir } = await destination();
+  const { dir, board } = await destination();
   const outputs = [join(dir, "first.glb"), join(dir, "second.glb")];
-  const boards = [join(dir, "first.kicad_pcb"), join(dir, "second.kicad_pcb")];
+  const boards = [board, join(import.meta.dir, "fixtures/stencil-sample.kicad_pcb")];
   const models = [10, 20].map((width, index) => {
     const binary = Buffer.alloc(36);
     binary.writeFloatLE(width / 1000, 12);

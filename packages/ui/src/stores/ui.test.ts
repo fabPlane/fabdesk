@@ -81,7 +81,9 @@ describe("board tabs", () => {
     expect(BOARD_TABS[12]).toBe("diff");
     expect(BOARD_TABS[13]).toBe("comments");
     expect(BOARD_TABS[14]).toBe("updates");
-    expect(BOARD_TABS.at(-1)).toBe("placement");
+    expect(BOARD_TABS[15]).toBe("placement");
+    expect(BOARD_TABS.at(-1)).toBe("layers");
+    expect(BOARD_TAB_LABELS.layers).toBe("Layers");
     expect(BOARD_TAB_LABELS.placement).toBe("Placement");
     expect(BOARD_TAB_LABELS.comments).toBe("Comments");
     expect(BOARD_TAB_LABELS.diff).toBe("Diff");

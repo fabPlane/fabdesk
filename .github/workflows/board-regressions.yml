@@ -44,12 +44,8 @@ jobs:
         with:
           submodules: false
 
-      - uses: webfactory/ssh-agent@v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
-
-      - name: Initialize the fabplane submodule
-        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli vendor/fab_cad
+      - name: Initialize public CLI and CAD submodules
+        run: git submodule update --init --depth 1 vendor/fabplane-cli vendor/fab_cad
 
       - name: Resolve the fab_pcb pin
         id: fab-pcb
@@ -124,7 +120,7 @@ jobs:
       - name: Fetch KiCad runtime metadata
         run: |
           git init -q "$RUNNER_TEMP/kicad-src"
-          git -C "$RUNNER_TEMP/kicad-src" remote add origin https://github.com/TensorFleet/kicad.git
+          git -C "$RUNNER_TEMP/kicad-src" remote add origin https://github.com/fabPlane/kicad.git
           git -C "$RUNNER_TEMP/kicad-src" sparse-checkout set --no-cone tools/nightly/linux
           git -C "$RUNNER_TEMP/kicad-src" fetch --depth 1 --filter=blob:none origin '${{ steps.nightly.outputs.commit }}'
           git -C "$RUNNER_TEMP/kicad-src" checkout -q FETCH_HEAD

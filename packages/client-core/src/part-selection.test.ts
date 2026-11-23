@@ -67,6 +67,17 @@ test("preview mappings bind to saved PCB hashes, and stale previews lose selecti
   f.files.set("board.kicad_pcb", new Blob([pcb.replace("20 30", "40 50")]));
   const stale = await inspectSelectionIndex(f.client, "p"); expect(stale.pcb).toBeNull(); expect(stale.model).toBeNull();
 });
+test("picker references come from the board even when its previews have no geometry mappings", async () => {
+  const f = await fixture();
+  const footprints = ["TP10", "J3", "TP2", "H1"].map(ref =>
+    `(footprint "pad" (at 10 20) (uuid "${ref}") (property "Reference" "${ref}") (pad "1" smd circle (at 0 0) (size 2 2)))`
+  );
+  f.files.set("board.kicad_pcb", new Blob([`(kicad_pcb ${footprints.join(" ")})`]));
+  const index = await inspectSelectionIndex(f.client, "p");
+  expect(index.references).toEqual(["H1", "J3", "TP2", "TP10"]);
+  expect(index.model).toBeNull();
+  expect(index.pcb).toBeNull();
+});
 test("source changes during inspection reject the entire mapping", async () => {
   const f = await fixture(), read = f.client.readFileBlob; let reads = 0;
   f.client.readFileBlob = async (project, path) => { const result = await read(project, path); if (path === "board.kicad_pcb" && ++reads === 1) f.files.set(path, new Blob([pcb + " "])); return result; };

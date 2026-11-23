@@ -6,7 +6,7 @@
  * Everything here goes through the same zustand stores and composer handlers the UI uses, so the
  * real code paths run (thread creation, agent runs, cinema playback).
  */
-import { BOARD_TABS, newChatDraftKey, composerHandlers, useAuthStore, useCinemaStore, useUiStore, type BoardTab } from "@fabdesk/ui";
+import { BOARD_TABS, newChatDraftKey, composerHandlers, usePartSelection, useAuthStore, useCinemaStore, useUiStore, type BoardTab } from "@fabdesk/ui";
 import { cssPath, implicitRole, normalizeText, rankMatches, uiSnapshot, type ElementInfo, type PathNode, type RankedElement, type UiSnapshot } from "./automation-core";
 
 const SETTINGS_SECTIONS = ["agents", "kicad", "router", "auth", "remote", "voice", "appearance", "privacy", "shortcuts"] as const;
@@ -197,9 +197,13 @@ async function send(): Promise<{ sent: boolean; reason?: string; threadId: strin
   const draft = (useUiStore.getState().drafts[key] ?? "").trim();
   if (!draft) return { sent: false, reason: "composer is empty (call setComposer first)", threadId: useUiStore.getState().activeThreadId, elapsedMs: 0 };
   if (!composerHandlers.send) return { sent: false, reason: "composer is not mounted (core not ready or no chat view)", threadId: useUiStore.getState().activeThreadId, elapsedMs: 0 };
-  composerHandlers.send();
-  // The composer clears the draft after the message is accepted by the core.
   const deadline = started + 20_000;
+  // Agent/model preference saves can briefly disable Send. Wait for the actual composer
+  // readiness, then dispatch once; never retry a potentially accepted message.
+  while (composerHandlers.canSend && !composerHandlers.canSend() && performance.now() < deadline) await sleep(50);
+  if (composerHandlers.canSend && !composerHandlers.canSend()) return { sent: false, reason: "composer is not ready to send; check model selection or pending preferences", threadId: useUiStore.getState().activeThreadId, elapsedMs: Math.round(performance.now() - started) };
+  composerHandlers.send?.();
+  // The composer clears the draft after the message is accepted by the core.
   while (performance.now() < deadline) {
     await sleep(50);
     const s = useUiStore.getState();
@@ -211,6 +215,9 @@ async function send(): Promise<{ sent: boolean; reason?: string; threadId: strin
 
 async function sendMessage(text: string, agent?: string | null) {
   if (agent) {
+    const deadline = performance.now() + 20_000;
+    while (composerHandlers.canSelectAgent && !composerHandlers.canSelectAgent() && performance.now() < deadline) await sleep(50);
+    if (composerHandlers.canSelectAgent && !composerHandlers.canSelectAgent()) return { sent: false, reason: "agent selection is busy or chat settings are still loading", threadId: useUiStore.getState().activeThreadId, elapsedMs: 20_000 };
     const ok = setAgent(agent);
     if (!ok) return { sent: false, reason: `agent "${agent}" is not offered by the composer`, threadId: useUiStore.getState().activeThreadId, elapsedMs: 0 };
     await settle();
@@ -293,11 +300,21 @@ async function waitFor(predicate: ((state: UiSnapshot, document: Document, app: 
   }
 }
 
+async function clearSelection() {
+  const projectId = useUiStore.getState().activeProjectId;
+  const selected = usePartSelection.getState();
+  if (selected.selection && JSON.parse(selected.selection.scope)[1] === projectId) selected.clear(selected.selection.scope);
+  window.dispatchEvent(new CustomEvent("fabdesk-clear-selection", { detail: { projectId } }));
+  await settle();
+  return { projectId, selectedComponent: null, ...state() };
+}
+
 const api = {
   version: 1 as const,
   state,
   find,
   selectProject,
+  clearSelection,
   openTab,
   openThread,
   newChat,

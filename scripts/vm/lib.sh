@@ -9,6 +9,7 @@ REPO_ROOT="$(cd "$VM_SCRIPTS/../.." && pwd)"
 VM_DIR="${FABDESK_VM_DIR:-$HOME/.fabdesk-vm}"
 RESULTS_DIR="$VM_DIR/results"
 CACHE_DIR="$VM_DIR/cache"
+FABDESK_VM_REPO="${FABDESK_VM_REPO:-${GITHUB_REPOSITORY:-fabPlane/fabdesk}}"
 mkdir -p "$VM_DIR" "$RESULTS_DIR" "$CACHE_DIR"
 
 log() { printf '\033[1;32m[vm]\033[0m %s\n' "$*" >&2; }
@@ -72,7 +73,7 @@ resolve_installer() {
     dir="$CACHE_DIR/run-$RUN/$artifact"; mkdir -p "$dir"
     if [ -z "$(find "$dir" -type f -print -quit)" ]; then
       log "downloading exact artifact $artifact from workflow run $RUN"
-      gh run download "$RUN" --repo TensorFleet/fabdesk --name "$artifact" --dir "$dir" >&2
+      gh run download "$RUN" --repo "$FABDESK_VM_REPO" --name "$artifact" --dir "$dir" >&2
     fi
     re="^(fabplane|fabPlane|Fabdesk)-.*-${os}-${arch}.*\.(${ext})$"
     out="$(ls "$dir" 2>/dev/null | grep -E "$re" | head -1 || true)"
@@ -108,9 +109,9 @@ for a in d["assets"]:
     out="$(ls "$dir" 2>/dev/null | grep -E "$re" | head -1 || true)"
     if [ -z "$out" ]; then
       log "downloading fabplane-/fabPlane-/Fabdesk-${TAG#v}-${os}-* from release $TAG"
-      gh release download "$TAG" --repo TensorFleet/fabdesk --dir "$dir" --pattern "fabplane-${TAG#v}-${os}-*" --clobber >&2 || true
-      gh release download "$TAG" --repo TensorFleet/fabdesk --dir "$dir" --pattern "fabPlane-${TAG#v}-${os}-*" --clobber >&2 || true
-      gh release download "$TAG" --repo TensorFleet/fabdesk --dir "$dir" --pattern "Fabdesk-${TAG#v}-${os}-*" --clobber >&2 || true
+      gh release download "$TAG" --repo "$FABDESK_VM_REPO" --dir "$dir" --pattern "fabplane-${TAG#v}-${os}-*" --clobber >&2 || true
+      gh release download "$TAG" --repo "$FABDESK_VM_REPO" --dir "$dir" --pattern "fabPlane-${TAG#v}-${os}-*" --clobber >&2 || true
+      gh release download "$TAG" --repo "$FABDESK_VM_REPO" --dir "$dir" --pattern "Fabdesk-${TAG#v}-${os}-*" --clobber >&2 || true
       out="$(ls "$dir" | grep -E "$re" | head -1 || true)"
     fi
     [ -n "$out" ] || die "release $TAG has no file matching $re"

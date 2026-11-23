@@ -31,6 +31,8 @@ jobs:
     secrets: inherit
 
   version:
+    # Keep the new repository's public release handoff off until cutover.
+    if: inputs.channel == 'internal' || vars.RELEASE_PUBLISHING_ENABLED == 'true'
     needs: select-version-runner
     runs-on: ${{ fromJSON(needs.select-version-runner.outputs.runner) }}
     permissions:
@@ -47,12 +49,8 @@ jobs:
           submodules: false
           fetch-depth: 0 # full history + tags for the release notes
 
-      - uses: webfactory/ssh-agent@v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
-
-      - name: Init the fabplane, fabplane-cli and fab_cad submodules
-        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli vendor/fab_cad
+      - name: Initialize public CLI and CAD submodules
+        run: git submodule update --init --depth 1 vendor/fabplane-cli vendor/fab_cad
 
       - name: Resolve the fab_pcb pin
         id: fab-pcb
@@ -141,28 +139,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The shared Mac handles one native Apple Silicon build; overflow uses Blacksmith.
+          # The shared Mac handles one native Apple Silicon build; overflow uses GitHub-hosted macOS.
           - os: ${{ fromJSON(needs.select-build-macos-runner.outputs.runner) }}
             target: bun-darwin-arm64
             eb: "--mac --arm64"
-          # Intel packaging stays on the Rosetta-provisioned Blacksmith image.
-          - { os: blacksmith-6vcpu-macos-15, target: bun-darwin-x64, eb: "--mac --x64" }
+          # Intel packaging runs natively on the GitHub-hosted Intel image.
+          - { os: macos-15-intel, target: bun-darwin-x64, eb: "--mac --x64" }
           - os: ${{ fromJSON(needs.select-build-linux-runner.outputs.runner) }}
             target: bun-linux-x64
             eb: "--linux"
-          - { os: blacksmith-4vcpu-windows-2025, target: bun-windows-x64, eb: "--win" }
+          - { os: windows-2025, target: bun-windows-x64, eb: "--win" }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
         with:
           submodules: false
 
-      # The deploy key provides read-only access to fabplane.com. fab_pcb is checked out below
-      # with its token because the fabPlane organization disables deploy keys.
-      - uses: webfactory/ssh-agent@v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
-
+      # All source dependencies are public; contributor CI needs no deploy key.
       - name: Trust GitHub SSH host key on Windows
         if: runner.os == 'Windows'
         shell: bash
@@ -170,8 +163,8 @@ jobs:
           mkdir -p ~/.ssh
           echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' >> ~/.ssh/known_hosts
 
-      - name: Init the fabplane, fabplane-cli and fab_cad submodules
-        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli vendor/fab_cad
+      - name: Initialize public CLI and CAD submodules
+        run: git submodule update --init --depth 1 vendor/fabplane-cli vendor/fab_cad
 
       - name: Resolve the fab_pcb pin
         id: fab-pcb
@@ -250,7 +243,7 @@ jobs:
           sha10="${commit:0:10}"
           releases="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/TensorFleet/kicad/releases?per_page=100")"
+            "https://api.github.com/repos/fabPlane/kicad/releases?per_page=100")"
           tag="$(printf '%s' "$releases" | jq -r --arg s "$sha10" \
             '.[] | .tag_name | select(startswith("nightly-") and endswith("-" + $s))' | head -1)"
           if [ -z "$tag" ]; then
@@ -268,9 +261,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Only forward overrides when set — an empty FABDESK_KICAD_REPO would wipe the
-          # TensorFleet/kicad default and 404 on https://github.com//releases/...
+          # fabPlane/kicad default and 404 on https://github.com//releases/...
           FABDESK_KICAD_BUNDLE_URL: ${{ secrets.FABDESK_KICAD_BUNDLE_URL }}
-          FABDESK_KICAD_REPO: ${{ vars.FABDESK_KICAD_REPO != '' && vars.FABDESK_KICAD_REPO || 'TensorFleet/kicad' }}
+          FABDESK_KICAD_REPO: ${{ vars.FABDESK_KICAD_REPO != '' && vars.FABDESK_KICAD_REPO || 'fabPlane/kicad' }}
         run: bun run scripts/stage-kicad-bundle.ts --target ${{ matrix.target }} --require
 
       - name: Build renderer/main
@@ -345,7 +338,12 @@ jobs:
         env:
           FABDESK_CHANNEL: ${{ env.CHANNEL }}
           FABDESK_REQUIRE_KICAD_BUNDLE: "true"
-        run: cd apps/desktop && bunx electron-builder ${{ matrix.eb }} --publish never
+        run: |
+          # osx-sign probes the bundled KiCad libraries concurrently. Hosted Macs
+          # need a larger process-local file limit before that scan.
+          if [ "$RUNNER_OS" = macOS ]; then ulimit -Sn 65536; fi
+          cd apps/desktop
+          bunx electron-builder ${{ matrix.eb }} --publish never
 
       - name: Collect installers
         shell: bash
@@ -562,12 +560,8 @@ jobs:
       # The app aliases @fabdesk/client-core and @fabdesk/protocol to source, whose imports resolve
       # from the root node_modules — so the root install (and its submodule workspaces) is needed
       # too, exactly as in mobile.yml.
-      - uses: webfactory/ssh-agent@v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.FABDESK_SUBMODULE_SSH_KEY }}
-
-      - name: Init the fabplane, fabplane-cli and fab_cad submodules
-        run: git submodule update --init --depth 1 vendor/fabplane vendor/fabplane-cli vendor/fab_cad
+      - name: Initialize public CLI and CAD submodules
+        run: git submodule update --init --depth 1 vendor/fabplane-cli vendor/fab_cad
 
       - name: Resolve the fab_pcb pin
         id: fab-pcb

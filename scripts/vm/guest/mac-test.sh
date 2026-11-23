@@ -89,7 +89,9 @@ import json, sys
 core, pcb = map(json.loads, sys.argv[1:])
 assert pcb.get("name") == "@fp-pcb/bridge", pcb
 assert pcb.get("kicadCliExists") is True, pcb
-if core.get("channel") == "internal": assert pcb.get("jsAutorouter", {}).get("ok") is True, pcb
+if core.get("channel") == "internal":
+    assert pcb.get("capacityRouter", {}).get("name") == "fab-router", pcb
+    assert pcb.get("capacityRouter", {}).get("ok") is True, pcb
 PY
 then err "PCB bridge health is incomplete (KiCad or internal router unavailable)"; fi
 LAUNCH_MS=$(( $(python3 -c 'import time;print(int(time.time()*1000))') - T0 ))

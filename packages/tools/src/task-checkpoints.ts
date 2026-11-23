@@ -1,16 +1,20 @@
 /** Saved native checkpoints and guarded recovery; no native check or inferred acceptance. */
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod/v4";
 import { jailPath, projectRelative, writeJson } from "./fs";
 import { ToolError, type ProjectHandle } from "./registry";
+import { kicadString } from "./kicad-string";
 
 type Node = string | Node[];
 const digest = (bytes: Uint8Array | string) => createHash("sha256").update(bytes).digest("hex");
 const ROOT = ".fabdesk/task-checkpoints";
 const MAX_FILES = 500;
-const MAX_BYTES = 100 * 1024 * 1024;
+// Real boards are large (an 85 MB PCB with its sheets); file contents are stored once by hash, so checkpoints of
+// an unchanged schematic set cost nothing after the first.
+const MAX_BYTES = 1024 * 1024 * 1024;
+const BLOBS = `${ROOT}/blobs`;
 export const TaskScope = z.object({
   nets: z.array(z.string().min(1)).max(500).default([]),
   references: z.array(z.string().min(1)).max(500).default([]),
@@ -79,7 +83,7 @@ async function nativePaths(project: ProjectHandle) {
   await walk("");
   return [...paths].sort();
 }
-async function capture(project: ProjectHandle): Promise<Captured[]> {
+async function capture(project: ProjectHandle, keep = true): Promise<Captured[]> {
   const result: Captured[] = [];
   let bytes = 0;
   for (const path of await nativePaths(project)) {
@@ -92,7 +96,8 @@ async function capture(project: ProjectHandle): Promise<Captured[]> {
     bytes += data?.length ?? 0;
     if (bytes > MAX_BYTES)
       throw new ToolError("native checkpoint size exceeds limit", "precondition");
-    result.push({ path, data, sha256: data ? digest(data) : null, bytes: data?.length ?? null });
+    // observation-only captures keep identities, not bytes (a large board would otherwise be held several times)
+    result.push({ path, data: keep ? data : data && Buffer.alloc(0), sha256: data ? digest(data) : null, bytes: data?.length ?? null });
   }
   return result;
 }
@@ -101,7 +106,7 @@ const identities = (files: Captured[]) =>
 const revision = (files: z.infer<typeof FileIdentity>[]) => digest(JSON.stringify(files));
 async function stableCapture(project: ProjectHandle) {
   const first = await capture(project),
-    second = await capture(project);
+    second = await capture(project, false);
   if (revision(identities(first)) !== revision(identities(second)))
     throw new ToolError(
       "native files changed during checkpoint observation; retry",
@@ -268,14 +273,24 @@ async function retainUnlocked(
       validation: { designChecksRun: false, taskAccepted: false },
     };
     await mkdir(temporary);
+    await mkdir(await jailPath(project.dir, BLOBS), { recursive: true });
     for (const file of files)
-      if (file.data !== null) {
+      if (file.data !== null && file.sha256) {
+        // each checkpoint keeps its own files/<path>; the bytes are a hardlink to one blob per content, reused
+        // only after its hash is checked again (a tampered copy never seeds a later checkpoint)
+        const blob = await jailPath(project.dir, `${BLOBS}/${file.sha256}`);
+        const current = await readFile(blob).catch(() => null);
+        if (!current || digest(current) !== file.sha256) {
+          const part = `${blob}.part-${id}`;
+          await writeFile(part, file.data, { flag: "wx" });
+          await rename(part, blob);
+        }
         const path = await jailPath(project.dir, `${ROOT}/.pending-${id}/files/${file.path}`);
         await mkdir(join(path, ".."), { recursive: true });
-        await writeFile(path, file.data, { flag: "wx" });
+        await link(blob, path).catch(() => writeFile(path, file.data!, { flag: "wx" }));
       }
     // Reject changed file sets/content before exposing any checkpoint as retained.
-    if (manifest.revision !== revision(identities(await capture(project))))
+    if (manifest.revision !== revision(identities(await capture(project, false))))
       throw new ToolError(
         "native files changed before checkpoint publication; retry",
         "precondition",
@@ -427,7 +442,7 @@ function parsePcb(text: string): Node[] {
     } else if (token === ")") {
       if (stack.length < 2) throw new ToolError("invalid saved PCB", "precondition");
       stack.pop();
-    } else stack.at(-1)!.push(token.startsWith('"') ? (JSON.parse(token) as string) : token);
+    } else stack.at(-1)!.push(token.startsWith('"') ? kicadString(token) : token);
   }
   const result = stack[0]![0];
   if (

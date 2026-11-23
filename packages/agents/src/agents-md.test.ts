@@ -6,6 +6,7 @@ import {
   extractUserSection,
   renderAgentsMd,
   USER_END,
+  BOARD_WORKFLOW_MD,
   USER_START,
   writeAgentDocs,
   type AgentDocsContext,
@@ -46,6 +47,100 @@ describe("renderAgentsMd", () => {
       /workflow|must use|should use|prefer|retry|repeat until|run .* first|stopping policy/i,
     );
     expect(md.indexOf(USER_START)).toBeLessThan(md.indexOf(USER_END));
+  });
+
+  test("board start map is short and points to complete stage detail", () => {
+    const md = renderAgentsMd({ ...ctx, boardWorkflow: true });
+    expect(md).toContain("## Start here");
+    expect(md).toContain("circuit_source");
+    expect(md).toContain("| `circuit.netlist.json` | Source for `circuit_build`, when that path is used. |");
+    expect(md).toContain("fabdesk://docs/board-workflow");
+    expect(md).not.toContain("### Working rules");
+    expect(md.length).toBeLessThan(9000);
+    expect(md).toContain("## Other toolsets");
+    expect(md).not.toContain("## Off-board parts");
+    expect(md).not.toContain("## Shopping list");
+    const neutral = md.replace(/## Start here[\s\S]*?(?=## Other toolsets)/, "");
+    expect(neutral).not.toMatch(/workflow|must use|should use|prefer|retry|repeat until|run .* first|stopping policy/i);
+  });
+
+  test("no start map or workflow resource pointer without board tools", () => {
+    const md = renderAgentsMd({ ...ctx, boardWorkflow: false });
+    expect(md).not.toContain("## Start here");
+    expect(md).not.toContain("fabdesk://docs/board-workflow");
+    expect(md).not.toContain("`board_check`");
+  });
+
+  test("new-board choices have matching factual descriptions without recommendations", () => {
+    const md = renderAgentsMd({ ...ctx, boardWorkflow: true });
+    const row = md.split("\n").find((line) => line.startsWith("| New board |"))!;
+    expect(row.split("|")[2]?.trim()).toBe("Choose `circuit_build` or `schematic_edit`; get the board ready");
+    const inputs = md.split("### New-board inputs\n")[1]!.split(/\n(?:### |\| Request)/)[0]!;
+    // Keep the whole section factual: additions to the prerequisite, shared step,
+    // or other bullets must receive the same review as the two path descriptions.
+    expect(inputs.trim().split("\n").filter(Boolean)).toEqual([
+      "Before a new board's first `board_check`, it needs its parts, an outline, and connectors and other fixed parts at their intended position, rotation and side, because `board_check` records them as anchors.",
+      '- `circuit_build`: creates the schematic and board, including an outline when none exists and board dimensions or outline points are supplied. Outside template projects, `board.placements` sets x and y only.',
+      '- `schematic_edit`: edits the schematic only; `pcb_update_from_schematic` `{"apply": true}` brings parts to the board and `pcb_define_outline` sets the outline.',
+      '- For either path, `pcb_place` sets position, rotation and side (`flip`).',
+      '- `circuit_source {"action": "schema"}` returns the format of `circuit.netlist.json`; `{"action": "validate"}` checks a saved file.',
+      '- `schematic_inspect` with `detail: "authoring"` returns pins, unit numbers and item IDs.',
+      '- Parts: `circuit_search_parts` searches footprints unless `kind` is `"symbol"`. Use exact `libId` values from its results and check pins with `circuit_describe_part`.',
+    ]);
+  });
+
+  test("board-ready requirement precedes the first board_check in reading order", () => {
+    const md = renderAgentsMd({ ...ctx, boardWorkflow: true });
+    const ready = md.match(/Before a new board's first `board_check`,[^\n]+/);
+    expect(ready).not.toBeNull();
+    expect(ready![0]).toMatch(/parts, an outline, and connectors and other fixed parts at their intended position, rotation and side/);
+    expect(ready![0]).toMatch(/because `board_check` records them as anchors/);
+    expect(ready!.index).toBe(md.indexOf("`board_check`") - "Before a new board's first ".length);
+    expect(md.indexOf("### New-board inputs")).toBeLessThan(ready!.index!);
+  });
+
+  test("both new-board paths explain preparation before the board_check sequence", () => {
+    const md = renderAgentsMd({ ...ctx, boardWorkflow: true });
+    const row = md.split("\n").find((line) => line.startsWith("| New board |"))!;
+    expect(row).toContain("`board_check` → layout → review → `render_publish`");
+    const sequence = md.indexOf(row);
+    const inputs = md.slice(md.indexOf("### New-board inputs"), sequence);
+    expect(inputs).toMatch(/`circuit_build`[^\n]*schematic and board[^\n]*outline when none exists[^\n]*`board.placements`/);
+    const schematic = inputs.split("- `schematic_edit`:")[1]?.split("\n")[0] ?? "";
+    expect(schematic).toMatch(/schematic only[^\n]*`pcb_update_from_schematic` `{"apply": true}`[^\n]*brings parts to the board/);
+    expect(schematic).toMatch(/`pcb_define_outline` sets the outline/);
+    const sharedPlacement = inputs.split("\n").find((line) => line.startsWith("- For either path,"));
+    expect(sharedPlacement).toBe('- For either path, `pcb_place` sets position, rotation and side (`flip`).');
+    const build = inputs.split("- `circuit_build`:")[1]?.split("\n")[0] ?? "";
+    expect(build).toContain("Outside template projects, `board.placements` sets x and y only.");
+  });
+
+  test("resource pointer names the configured server without client-specific syntax", () => {
+    const md = renderAgentsMd({ ...ctx, boardWorkflow: true, mcpServerName: "custom-pcb" });
+    const detail = md.split("### More detail")[1]?.split("## Other toolsets")[0];
+    expect(detail).toContain("fabdesk://docs/board-workflow");
+    expect(detail).toContain("`custom-pcb`");
+    expect(detail).not.toContain("read_mcp_resource");
+  });
+
+  test("experimental modes keep their output even with board tools registered", () => {
+    for (const interfaceMode of ["substrate", "programmable"] as const) {
+      expect(renderAgentsMd({ ...ctx, interfaceMode, boardWorkflow: true })).toBe(
+        renderAgentsMd({ ...ctx, interfaceMode, boardWorkflow: false }),
+      );
+    }
+  });
+
+  test("docs/board-workflow.md is the same text as the complete workflow constant", () => {
+    const doc = readFileSync(new URL("../../../docs/board-workflow.md", import.meta.url), "utf8");
+    expect(doc.replace(/^# /, "## ")).toBe(BOARD_WORKFLOW_MD);
+  });
+
+  test("sandboxed shell guidance suppresses the authenticated CLI instructions", () => {
+    const md = renderAgentsMd({ ...ctx, fabdeskCli: "/active/fabpcb", fabdeskCliUnavailableReason: "Use MCP capability_call because shell loopback is unavailable." });
+    expect(md).toContain("Use MCP capability_call");
+    expect(md).not.toContain('"$FABDESK_CLI" tool');
+    expect(renderAgentsMd({ ...ctx, fabdeskCli: "/active/fabpcb" })).toContain('"$FABDESK_CLI" tool describe');
   });
 
   test("renders neutral direct-IPC discovery only for the programmable interface", () => {

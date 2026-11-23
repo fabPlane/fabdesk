@@ -1,0 +1,9 @@
+{"part": "JST SH-10 C6 <-> carrier link (SM10B-SRSS side entry, catalog 1-to-1 cable)",
+ "match": "TO CARRIER SH10|SM10B-SRSS",
+ "boards": ["C6-eco95", "R1N-bom"],
+ "source_kind": "measurement",
+ "source": "meter check on both boards, vaio-p-guides power-path-rev1 maintainer-log 2026-10-26 (pin 1 = 5 V / pack group, pin 10 = GND), cited in hardware/interconnect-contracts.json io-c6-carrier-rev1-sh10",
+ "rules": [
+  {"pad": "1", "net_matches": "5V", "why": "pin 1 measured in the 5 V group"},
+  {"pad": "10", "net_matches": "GND", "why": "pin 10 measured as ground"}
+ ]}

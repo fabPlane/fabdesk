@@ -1,0 +1,210 @@
+{
+ "schema": "REVIEW_SEEDS_V1",
+ "purpose": "Seeded defects: each plants one known defect into a copy of an accepted board (edit.py apply, or a config/file change) and names the finding the reviewer must raise. The finding must be absent on the unseeded base, so the seed is its cause. `pcb review seeds` scores recall per class.",
+ "checks": [
+  "identity",
+  "netlist",
+  "erc",
+  "pinsense",
+  "cards",
+  "decoupling",
+  "current",
+  "impedance",
+  "coverage"
+ ],
+ "seeds": [
+  {
+   "id": "S1-silent-fault",
+   "class": "L2 silent status output (E08)",
+   "base": "R1N-bom",
+   "edit": {
+    "net": [
+     {
+      "pin": "U701.4",
+      "to": "SEED_FAULT_NC"
+     }
+    ],
+    "accept_unconnected": [
+     "U701.4"
+    ]
+   },
+   "expect": {
+    "rule": "F",
+    "ref": "U701",
+    "pad": "4"
+   }
+  },
+  {
+   "id": "S2-i2c-swap-wired",
+   "class": "L2 role contradiction (E05)",
+   "base": "R1N-bom",
+   "edit": {
+    "net": [
+     {
+      "pin": "J501.15",
+      "to": "/CM5/HDMI_PI.SDA"
+     },
+     {
+      "pin": "J501.16",
+      "to": "/CM5/HDMI_PI.SCL"
+     }
+    ]
+   },
+   "expect": {
+    "rule": "R",
+    "ref": "J501",
+    "pad": "15"
+   },
+   "note": "planted since 2026-11-11: edit.py net op now renames labels anywhere on the pin's wires (R1N HDMI bus-member labels sit mid-wire) and writes sheet-local names into local labels"
+  },
+  {
+   "id": "S2b-i2c-swap",
+   "class": "L2 role contradiction (E05)",
+   "base": "C6-eco95",
+   "edit": {
+    "net": [
+     {
+      "pin": "C6_U920.14",
+      "to": "a74::MCU_SDA"
+     },
+     {
+      "pin": "C6_U920.15",
+      "to": "a74::MCU_SCL"
+     }
+    ]
+   },
+   "expect": {
+    "rule": "R",
+    "ref": "C6_U920",
+    "pad": "14"
+   }
+  },
+  {
+   "id": "S3-decap-removed",
+   "class": "L3 decoupling",
+   "base": "R1N-bom",
+   "edit": {
+    "remove": [
+     "C705"
+    ]
+   },
+   "expect": {
+    "rule": "DECAP",
+    "ref": "U702"
+   }
+  },
+  {
+   "id": "S4-bom-wrong-package",
+   "class": "L6 BOM identity vs footprint (E02-E04)",
+   "base": "R1N-bom",
+   "edit": {
+    "swap": [
+     {
+      "ref": "R702",
+      "fields": {
+       "LCSC": "C22775"
+      }
+     }
+    ]
+   },
+   "checks_add": [
+    "bom"
+   ],
+   "expect": {
+    "rule": "BOM",
+    "ref": "R702"
+   }
+  },
+  {
+   "id": "S5-top-only-order",
+   "class": "L6 assembly coverage (E15)",
+   "base": "C6-eco95",
+   "config": {
+    "assembly": {
+     "sides": [
+      "F"
+     ],
+     "post_assembly": {}
+    }
+   },
+   "expect": {
+    "rule": "COVER",
+    "side": "B"
+   }
+  },
+  {
+   "id": "S7-bootstrap-to-gnd",
+   "class": "L2 datasheet rule card (E06)",
+   "base": "C6-eco95",
+   "edit": {
+    "net": [
+     {
+      "pin": "A74_C39.2",
+      "to": "IO_GND"
+     }
+    ]
+   },
+   "expect": {
+    "rule": "CARD",
+    "ref": "A74_U10",
+    "pad": "1"
+   }
+  },
+  {
+   "id": "S8-narrow-power",
+   "class": "L3 copper vs current (WholeBoard trace heating)",
+   "base": "C6-eco95",
+   "narrow": {
+    "net": "a74::SYS",
+    "width": 0.2
+   },
+   "expect": {
+    "rule": "HEAT",
+    "net": "a74::SYS"
+   }
+  },
+  {
+   "id": "S9-pair-too-narrow",
+   "class": "L3 differential impedance (WholeBoard interface profiles)",
+   "base": "C6-eco95",
+   "narrow": {
+    "nets": [
+     "c18::LCD_RX0+",
+     "c18::LCD_RX0-"
+    ],
+    "width": 0.05
+   },
+   "expect": {
+    "rule": "ZDIFF",
+    "net": "c18::LCD_RX0+"
+   }
+  },
+  {
+   "id": "S10-rail-over-cap-rating",
+   "class": "L3 part ratings (WholeBoard ratings)",
+   "base": "C6-eco95",
+   "config": {
+    "net_voltages": {
+     "c18::IO_HUB_3V3": 30
+    }
+   },
+   "checks_add": [
+    "bom",
+    "ratings"
+   ],
+   "expect": {
+    "rule": "VRATING",
+    "net": "c18::IO_HUB_3V3"
+   }
+  },
+  {
+   "id": "S6-edit-after-review",
+   "class": "L0 stale review (E17, E20)",
+   "base": "R1N-bom",
+   "touch": true,
+   "expect": {
+    "gate_exit": 1
+   }
+  }
+ ]
+}
