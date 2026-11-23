@@ -132,7 +132,7 @@ function ProjectCinema({ projectId, scopeReady, board, prefix = "", sourceSha256
   const [frameRetry, setFrameRetry] = useState(0);
   const runRecord = useRouteRun(activeRunId);
   // Frame metadata has no project identity. Verify the durable record before showing it.
-  const ownedRunId = runRecord.data && routeRunMatchesSource(runRecord.data, projectId, board) ? activeRunId : null;
+  const ownedRunId = runRecord.data && routeRunMatchesSource(runRecord.data, projectId, board, client.nativeSource) ? activeRunId : null;
   const run = ownedRunId ? runs[ownedRunId] : undefined;
   const runError = runFailureText(runRecord.data);
   const frames = run?.frames.length ?? 0;
@@ -140,10 +140,10 @@ function ProjectCinema({ projectId, scopeReady, board, prefix = "", sourceSha256
   const restoredHistory = useRef(false);
   useEffect(() => {
     if (!history.data) return;
-    const foreignActiveRun = !!runRecord.data && !routeRunMatchesSource(runRecord.data, projectId, board);
+    const foreignActiveRun = !!runRecord.data && !routeRunMatchesSource(runRecord.data, projectId, board, client.nativeSource);
     if (restoredHistory.current && !foreignActiveRun) return;
     restoredHistory.current = true;
-    if (!ownedRunId) setActiveRun(history.data.find(item => routeRunMatchesSource(item, projectId, board))?.id ?? null);
+    if (!ownedRunId) setActiveRun(history.data.find(item => routeRunMatchesSource(item, projectId, board, client.nativeSource))?.id ?? null);
   }, [history.data, ownedRunId, projectId, board?.sourceId, board?.manifestSha256, runRecord.data?.projectId, runRecord.data?.board?.sourceId, runRecord.data?.board?.manifestSha256, setActiveRun]);
 
   // A newly launched run can return immediately. Refresh the project list while awaiting it.
@@ -248,7 +248,7 @@ function ProjectCinema({ projectId, scopeReady, board, prefix = "", sourceSha256
     return () => window.removeEventListener("keydown", onKey);
   }, [ownedRunId]);
 
-  const projectRuns = (history.data ?? []).filter(item => routeRunMatchesSource(item, projectId, board));
+  const projectRuns = (history.data ?? []).filter(item => routeRunMatchesSource(item, projectId, board, client.nativeSource));
   const runIds = [...new Set([...projectRuns.map(item => item.id), ...(ownedRunId ? [ownedRunId] : [])])];
   const active = !!ownedRunId && ["queued", "running", "cancel_requested", "cancelling"].includes(runRecord.data?.status ?? "");
   const busy = applying || route.state.status === "running" || active || projectRuns.some(item => ["queued", "running", "cancel_requested", "cancelling"].includes(item.status));

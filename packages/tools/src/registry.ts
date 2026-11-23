@@ -1,3 +1,4 @@
+import type { NativeSourceContext } from "@fabdesk/protocol";
 /**
  * Tool registry: the single source of truth for every fabdesk tool. Adapters (MCP, HTTP, WebMCP
  * manifest, AGENTS.md) are generated from it; handlers are deterministic and never call a model.
@@ -83,6 +84,10 @@ export interface ProjectHandle {
 
 export interface ToolContext {
   project: ProjectHandle | null;
+  threadId?: string;
+  nativeSource?: NativeSourceContext;
+  setWorkingDesign?: (sourcePath: string) => Promise<unknown>;
+  getWorkingDesign?: () => Promise<unknown>;
   requireProject(): ProjectHandle;
   services: CoreServices;
   signal: AbortSignal;
@@ -376,12 +381,13 @@ export class ToolRegistry {
       : invoke());
     const contract = this.contract();
     const structured = output.json;
+    const nativeOwner = ctx.nativeSource ? { _nativeSource: ctx.nativeSource } : {};
     return {
       ...output,
       json:
         structured && typeof structured === "object" && !Array.isArray(structured)
-          ? { ...(structured as Record<string, unknown>), ...(executionBoard ? { _board: executionBoard } : {}), _contract: contract }
-          : { value: structured ?? null, ...(executionBoard ? { _board: executionBoard } : {}), _contract: contract },
+          ? { ...(structured as Record<string, unknown>), ...(executionBoard ? { _board: executionBoard } : {}), ...nativeOwner, _contract: contract }
+          : { value: structured ?? null, ...(executionBoard ? { _board: executionBoard } : {}), ...nativeOwner, _contract: contract },
     };
   }
 }
@@ -399,10 +405,15 @@ export type ContextRequest = {
   sessionId?: string;
   /** Bearer token that authenticated the call, when the adapter knows it. */
   token?: string;
+  nativeSource?: NativeSourceContext;
 };
 export type ContextFactory = (req: ContextRequest) => Promise<ToolContext> | ToolContext;
 
 export function makeContext(opts: {
+  threadId?: string;
+  nativeSource?: NativeSourceContext;
+  setWorkingDesign?: (sourcePath: string) => Promise<unknown>;
+  getWorkingDesign?: () => Promise<unknown>;
   services: CoreServices;
   project: ProjectHandle | null;
   signal?: AbortSignal;
@@ -418,6 +429,10 @@ export function makeContext(opts: {
   const project = opts.project;
   return {
     project,
+    ...(opts.threadId ? { threadId: opts.threadId } : {}),
+    ...(opts.nativeSource ? { nativeSource: opts.nativeSource } : {}),
+    ...(opts.setWorkingDesign ? { setWorkingDesign: opts.setWorkingDesign } : {}),
+    ...(opts.getWorkingDesign ? { getWorkingDesign: opts.getWorkingDesign } : {}),
     requireProject() {
       if (!project) throw new ToolError("this tool needs a project", "precondition");
       return project;

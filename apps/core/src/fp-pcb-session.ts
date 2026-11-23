@@ -10,14 +10,14 @@
  * `board()` re-asks KiCad for the current board every time rather than caching what may not
  * exist yet.
  */
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { assertNativeBoardOwnership } from "./assembly-board-binding";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { KiCad, type Board, type Schematic } from "@fp-pcb/client";
 import { DocumentType } from "@fp-pcb/proto";
 import { WebSocketTransport, bridgeWsUrl } from "@fp-pcb/client/transport";
-import { ToolError, NativeRevisionConflict } from "@fabdesk/tools";
+import { currentNativeLayout, withNativeLayout, nativeProjectPath, nativeSessionKey, ToolError, NativeRevisionConflict } from "@fabdesk/tools";
 export { NativeRevisionConflict } from "@fabdesk/tools";
 import type { FpPcbBridgeClient } from "./fp-pcb-bridge";
 
@@ -54,17 +54,17 @@ export class FpPcbSessions {
 
   /** The session for `projectDir`, creating or reconnecting it as needed. */
   session(projectDir: string): Promise<ProjectSession> {
-    if (this.recovering.has(projectDir))
+    if (this.recovering.has(nativeSessionKey(projectDir)))
       return Promise.reject(
         new NativeRevisionConflict("native project recovery is active; retry after it finishes"),
       );
-    const cached = this.open.get(projectDir);
+    const cached = this.open.get(nativeSessionKey(projectDir));
     if (cached) return cached;
     const pending = this.connect(projectDir).catch((e) => {
-      this.open.delete(projectDir);
+      this.open.delete(nativeSessionKey(projectDir));
       throw e;
     });
-    this.open.set(projectDir, pending);
+    this.open.set(nativeSessionKey(projectDir), pending);
     return pending;
   }
 
@@ -76,7 +76,7 @@ export class FpPcbSessions {
       if (open) return this.guardSave(projectDir, BOARD_PCB, open);
       // A session started on the .kicad_pro (or bare, then given a project) has the project but no
       // board document open yet.
-      const pcb = join(projectDir, BOARD_PCB);
+      const pcb = nativeProjectPath(projectDir, BOARD_PCB);
       if (s.path && (await exists(pcb)))
         return this.guardSave(projectDir, BOARD_PCB, await s.kicad.openBoard(pcb));
       return null;
@@ -91,7 +91,7 @@ export class FpPcbSessions {
     const schematic = await this.withRetry(projectDir, async (s) => {
       const open = await s.kicad.currentSchematic();
       if (open) return this.guardSave(projectDir, "board.kicad_sch", open);
-      const path = join(projectDir, "board.kicad_sch");
+      const path = nativeProjectPath(projectDir, "board.kicad_sch");
       return (await exists(path))
         ? this.guardSave(projectDir, "board.kicad_sch", await s.kicad.openSchematic(path))
         : null;
@@ -124,27 +124,27 @@ export class FpPcbSessions {
   ): Promise<{ session: ProjectSession; schematic: Schematic; board: Board }> {
     return this.withRetry(projectDir, async (s) => {
       const exists = this.opts.exists ?? ((p: string) => Bun.file(p).exists());
-      const pro = join(projectDir, BOARD_PRO);
-      const sch = join(projectDir, "board.kicad_sch");
-      const pcb = join(projectDir, BOARD_PCB);
+      const pro = nativeProjectPath(projectDir, BOARD_PRO);
+      const sch = nativeProjectPath(projectDir, "board.kicad_sch");
+      const pcb = nativeProjectPath(projectDir, BOARD_PCB);
       if (!(await exists(pro))) {
         await s.kicad.newProject(pro);
         s.path = pro;
         // NewProject owns the stub writes that occur after the initial missing-file check.
         for (const filename of [BOARD_PCB, "board.kicad_sch"])
           this.revisions
-            .get(projectDir)
-            ?.set(filename, await this.diskRevision(join(projectDir, filename)));
+            .get(nativeSessionKey(projectDir))
+            ?.set(filename, await this.diskRevision(nativeProjectPath(projectDir, filename)));
       }
       // Read-only inspection must not rewrite retained project library tables. Mutation and
       // construction paths can explicitly use bundled libraries through the default behavior.
-      if (options.registerLibraries !== false) await this.ensureBundledLibraries(projectDir, s);
+      if (options.registerLibraries !== false && !currentNativeLayout()) await this.ensureBundledLibraries(projectDir, s);
       let schematic = await s.kicad.currentSchematic();
       if (!schematic) {
         if (await exists(sch)) schematic = await s.kicad.openSchematic(sch);
         else {
           schematic = await s.kicad.newDocument(DocumentType.DOCTYPE_SCHEMATIC, sch);
-          this.revisions.get(projectDir)?.set("board.kicad_sch", await this.diskRevision(sch));
+          this.revisions.get(nativeSessionKey(projectDir))?.set("board.kicad_sch", await this.diskRevision(sch));
         }
       }
       let board = await s.kicad.currentBoard();
@@ -152,7 +152,7 @@ export class FpPcbSessions {
         if (await exists(pcb)) board = await s.kicad.openBoard(pcb);
         else {
           board = await s.kicad.newDocument(DocumentType.DOCTYPE_PCB, pcb);
-          this.revisions.get(projectDir)?.set(BOARD_PCB, await this.diskRevision(pcb));
+          this.revisions.get(nativeSessionKey(projectDir))?.set(BOARD_PCB, await this.diskRevision(pcb));
         }
       }
       return {
@@ -188,7 +188,7 @@ export class FpPcbSessions {
   }
 
   private async libraryRevision(projectDir: string): Promise<string> {
-    return JSON.stringify(await Promise.all([BOARD_PRO, "sym-lib-table", "fp-lib-table"].map(filename => this.diskRevision(join(projectDir, filename)))));
+    return JSON.stringify(await Promise.all([BOARD_PRO, "sym-lib-table", "fp-lib-table"].map(filename => this.diskRevision(nativeProjectPath(projectDir, filename)))));
   }
 
   /** Runs `fn` on the session, reconnecting once when the bridge no longer knows it. */
@@ -215,53 +215,47 @@ export class FpPcbSessions {
    * that could not re-adopt) left a ~500 MB kicad-cli behind.
    */
   async release(projectDir: string): Promise<void> {
-    this.generations.set(projectDir, (this.generations.get(projectDir) ?? 0) + 1);
-    const pending = this.open.get(projectDir);
-    this.open.delete(projectDir);
-    this.revisions.delete(projectDir);
-    if (!pending) return;
-    const s = await pending.catch(() => null);
-    await s?.ws.close().catch(() => undefined);
-    if (s)
-      await this.bridge()
-        .deleteSession(s.id)
-        .catch(() => undefined);
+    const key = nativeSessionKey(projectDir);
+    const keys = currentNativeLayout() ? [key] : [...new Set([key, ...[...this.open.keys()].filter(path => path.startsWith(projectDir + sep))])];
+    for (const source of keys) await this.releaseKey(source);
   }
 
-  /** Close the API server so the next operation reloads the exact saved native files. */
-  async restart(projectDir: string): Promise<void> {
-    this.generations.set(projectDir, (this.generations.get(projectDir) ?? 0) + 1);
-    const pending = this.open.get(projectDir);
-    this.open.delete(projectDir);
-    this.revisions.delete(projectDir);
+  private async releaseKey(key: string): Promise<void> {
+    this.generations.set(key, (this.generations.get(key) ?? 0) + 1);
+    const pending = this.open.get(key);
+    this.open.delete(key);
+    this.revisions.delete(key);
     if (!pending) return;
     const session = await pending.catch(() => null);
     if (!session) return;
     await session.ws.close().catch(() => undefined);
-    await this.bridge()
-      .deleteSession(session.id)
-      .catch(() => undefined);
+    await this.bridge().deleteSession(session.id).catch(() => undefined);
+  }
+
+  /** Close this source's API server so the next operation reloads its saved native files. */
+  async restart(projectDir: string): Promise<void> {
+    await this.releaseKey(nativeSessionKey(projectDir));
   }
 
   async dispose(): Promise<void> {
-    for (const dir of [...this.open.keys()]) await this.release(dir);
+    for (const key of [...this.open.keys()]) await this.releaseKey(key);
   }
 
   /** Suspend session access while saved files are replaced. Never discard unsaved live work. */
   async withSavedFilesRecovery<T>(projectDir: string, replace: () => Promise<T>): Promise<T> {
-    if (this.recovering.has(projectDir))
+    if (this.recovering.has(nativeSessionKey(projectDir)))
       throw new NativeRevisionConflict("native project recovery is already active");
-    this.recovering.add(projectDir);
+    this.recovering.add(nativeSessionKey(projectDir));
     try {
       // Also inspect an adopted bridge session after a core restart; absence from our map
       // does not prove there is no live work.
-      let pending = this.open.get(projectDir);
+      let pending = this.open.get(nativeSessionKey(projectDir));
       if (!pending) {
         pending = this.connect(projectDir).catch((error) => {
-          this.open.delete(projectDir);
+          this.open.delete(nativeSessionKey(projectDir));
           throw error;
         });
-        this.open.set(projectDir, pending);
+        this.open.set(nativeSessionKey(projectDir), pending);
       }
       const session = await pending;
       if (session) {
@@ -277,13 +271,13 @@ export class FpPcbSessions {
         // A failed termination must not proceed to replacing saved files.
         await this.bridge().deleteSession(session.id);
         await session.ws.close().catch(() => undefined);
-        this.open.delete(projectDir);
+        this.open.delete(nativeSessionKey(projectDir));
       }
-      this.revisions.delete(projectDir);
-      this.generations.set(projectDir, (this.generations.get(projectDir) ?? 0) + 1);
+      this.revisions.delete(nativeSessionKey(projectDir));
+      this.generations.set(nativeSessionKey(projectDir), (this.generations.get(nativeSessionKey(projectDir)) ?? 0) + 1);
       return await replace();
     } finally {
-      this.recovering.delete(projectDir);
+      this.recovering.delete(nativeSessionKey(projectDir));
     }
   }
 
@@ -300,24 +294,24 @@ export class FpPcbSessions {
 
   /** Reconcile saved documents only; never discard unsaved or unknown live state. */
   private async reconcile(projectDir: string, session: ProjectSession): Promise<void> {
-    const previous = this.reconciliation.get(projectDir) ?? Promise.resolve();
+    const previous = this.reconciliation.get(nativeSessionKey(projectDir)) ?? Promise.resolve();
     const pending = previous
       .catch(() => undefined)
       .then(() => this.reconcileSaved(projectDir, session));
-    this.reconciliation.set(projectDir, pending);
+    this.reconciliation.set(nativeSessionKey(projectDir), pending);
     try {
       await pending;
     } finally {
-      if (this.reconciliation.get(projectDir) === pending) this.reconciliation.delete(projectDir);
+      if (this.reconciliation.get(nativeSessionKey(projectDir)) === pending) this.reconciliation.delete(nativeSessionKey(projectDir));
     }
   }
 
   private async reconcileSaved(projectDir: string, session: ProjectSession): Promise<void> {
     if (!projectDir) return;
-    let known = this.revisions.get(projectDir);
+    let known = this.revisions.get(nativeSessionKey(projectDir));
     if (!known) {
       known = new Map();
-      this.revisions.set(projectDir, known);
+      this.revisions.set(nativeSessionKey(projectDir), known);
     }
     const pending: Array<{
       filename: string;
@@ -327,7 +321,7 @@ export class FpPcbSessions {
     }> = [];
     // Preflight the entire pair before closing either document.
     for (const filename of [BOARD_PCB, "board.kicad_sch"]) {
-      const path = join(projectDir, filename);
+      const path = nativeProjectPath(projectDir, filename);
       const disk = await this.diskRevision(path);
       // A document not seen before has unknown loaded provenance (including adopted sessions).
       // Reopen it from disk once rather than declaring its current bytes to be the loaded bytes.
@@ -385,8 +379,8 @@ export class FpPcbSessions {
    */
   async adoptSaved(projectDir: string, filename: string): Promise<void> {
     this.revisions
-      .get(projectDir)
-      ?.set(filename, await this.diskRevision(join(projectDir, filename)));
+      .get(nativeSessionKey(projectDir))
+      ?.set(filename, await this.diskRevision(nativeProjectPath(projectDir, filename)));
   }
 
   /** A document acquired before an external restore must never save over that restore. */
@@ -396,22 +390,23 @@ export class FpPcbSessions {
     document: T,
   ): Promise<T> {
     if (this.guarded.has(document)) return document;
-    const path = join(projectDir, filename);
-    const generation = this.generations.get(projectDir) ?? 0;
+    const layout = currentNativeLayout(), sourceKey = nativeSessionKey(projectDir);
+    const path = nativeProjectPath(projectDir, filename);
+    const generation = this.generations.get(sourceKey) ?? 0;
     const documentGeneration = this.documentGenerations.get(path) ?? 0;
     // Bind to the state reconciled/created by the owner, not newly sampled bytes that may
     // have changed between reconciliation and acquiring the document wrapper.
-    let expected = this.revisions.get(projectDir)?.get(filename);
+    let expected = this.revisions.get(sourceKey)?.get(filename);
     if (expected === undefined || (await this.diskRevision(path)) !== expected)
       throw new NativeRevisionConflict(
         `${filename} changed while acquiring the native document; refusing access to potentially stale state. Retry after the external writer finishes.`,
       );
     const save = document.save.bind(document);
-    document.save = async () => {
+    const saveOwned = async () => {
       await assertNativeBoardOwnership(projectDir);
       if (
-        this.recovering.has(projectDir) ||
-        generation !== (this.generations.get(projectDir) ?? 0) ||
+        this.recovering.has(sourceKey) ||
+        generation !== (this.generations.get(sourceKey) ?? 0) ||
         documentGeneration !== (this.documentGenerations.get(path) ?? 0)
       )
         throw new NativeRevisionConflict(
@@ -424,16 +419,17 @@ export class FpPcbSessions {
         );
       await save();
       expected = await this.diskRevision(path);
-      this.revisions.get(projectDir)?.set(filename, expected);
+      this.revisions.get(sourceKey)?.set(filename, expected);
     };
+    document.save = () => layout ? withNativeLayout(layout, saveOwned) : saveOwned();
     this.guarded.add(document);
     return document;
   }
 
   private async connect(projectDir: string): Promise<ProjectSession> {
     const exists = this.opts.exists ?? ((p: string) => Bun.file(p).exists());
-    const pro = join(projectDir, BOARD_PRO);
-    const pcb = join(projectDir, BOARD_PCB);
+    const pro = nativeProjectPath(projectDir, BOARD_PRO);
+    const pcb = nativeProjectPath(projectDir, BOARD_PCB);
     const path = (await exists(pcb)) ? pcb : (await exists(pro)) ? pro : null;
     const bridge = this.bridge();
     const clientName = this.opts.clientName ?? `fabdesk/core/${process.pid}`;
@@ -472,11 +468,11 @@ export class FpPcbSessions {
     }
     const initial = new Map<string, string | null>();
     for (const filename of [BOARD_PCB, "board.kicad_sch"])
-      initial.set(filename, await this.diskRevision(join(projectDir, filename)));
+      initial.set(filename, await this.diskRevision(nativeProjectPath(projectDir, filename)));
     const session = await bridge.createSession(path);
     const connection = await attach(session.id);
     for (const [filename, revision] of initial) {
-      if ((await this.diskRevision(join(projectDir, filename))) !== revision) {
+      if ((await this.diskRevision(nativeProjectPath(projectDir, filename))) !== revision) {
         await connection.ws.close().catch(() => undefined);
         await bridge.deleteSession(session.id).catch(() => undefined);
         throw new NativeRevisionConflict(
@@ -485,7 +481,7 @@ export class FpPcbSessions {
       }
     }
     // Only a session we just launched has known provenance. Adopted sessions still reconcile.
-    this.revisions.set(projectDir, initial);
+    this.revisions.set(nativeSessionKey(projectDir), initial);
     return { id: session.id, ...connection, path };
   }
 }

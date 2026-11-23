@@ -78,7 +78,7 @@ type NativeSheetReference = { filename: string; name: string; identity: string }
 const unquote = (value: string) => value.replace(/\\([\\"])/g, "$1");
 
 /** Tolerant native S-expression traversal: only top-level `sheet` blocks are interpreted. */
-function parseNativeSchematic(text: string): { identity: string; sheets: NativeSheetReference[] } {
+export function parseNativeSchematic(text: string): { identity: string; sheets: NativeSheetReference[] } {
   if (!/^\s*\(kicad_sch\b/.test(text)) throw new Error("not a native kicad_sch document");
   const blocks: Array<{ text: string; identity: string }> = [];
   let depth = 0;

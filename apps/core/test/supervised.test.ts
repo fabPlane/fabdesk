@@ -38,7 +38,7 @@ function fakeRun(session: AgentSession): AgentRun {
   return {
     events: (async function* (): AsyncGenerator<AgentEvent> {
       yield { type: "init", sessionId: "s1" };
-      const [verb, arg = ""] = session.prompt.split(":", 2) as [string, string?];
+      const [verb, arg = ""] = session.prompt.split("\n", 1)[0]!.split(":", 2) as [string, string?];
       if (verb === "approve") {
         yield { type: "tool_use", id: "tu1", name: "Bash", input: { command: arg } };
         const decision = await session.supervisor!.requestApproval({
@@ -736,7 +736,7 @@ describe("one agent writer per project (#93)", () => {
     const b = await newThread({ runtimeMode: "full", projectId: project.id });
     const scratch = await newThread({ runtimeMode: "full" });
     expect((await send(a.id, "hold:lease")).status).toBe(202);
-    await waitFor(() => sessions.some((s) => s.prompt === "hold:lease"));
+    await waitFor(() => sessions.some((s) => s.prompt.split("\n", 1)[0] === "hold:lease"));
 
     // Refused whether or not the client asked to queue: b has no run of its own to drain after.
     for (const extra of [{}, { queue: true }]) {

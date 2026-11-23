@@ -1,4 +1,8 @@
-import { useState } from "react";
+import { NativePreviewStatus } from "./NativePreviewStatus";
+import { NativeBoardScope } from "./NativeBoardScope";
+import { errorPayload, useWorkingDesign } from "@fabdesk/client-core";
+import { useWorkingDesignPreparation } from "./useWorkingDesignPreparation";
+import { useState, type ReactNode } from "react";
 import { BoardChecksDialog } from "./BoardChecksDialog";
 import { ImportedBoardIdentity } from "./ImportedBoardIdentity";
 import { AssemblyBoardPicker } from "./AssemblyBoardPicker";
@@ -74,7 +78,19 @@ function TabBody({ tab, canvas = false, onOpenChecks }: { tab: BoardTab; canvas?
   }
 }
 
-export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
+export function BoardPanel(props: { canvas?: boolean }) {
+  const preparation = useWorkingDesignPreparation();
+  const projectId = useUiStore(s => s.activeProjectId), threadId = useUiStore(s => s.activeThreadId);
+  const area = useUiStore(s => s.workspaceArea), tab = useUiStore(s => s.boardTab);
+  const design = useWorkingDesign(projectId, threadId);
+  const enabled = area === "boards" || area === "review" && (tab === "drc" || tab === "comments") || area === "outputs";
+  const preview = tab === "schematic" && design.data?.schematic ? preparation.schematic : tab === "3d" && design.data?.board ? preparation.model : tab === "pcb" && design.data?.board ? preparation.pcb : null;
+  return <NativeBoardScope projectId={projectId} threadId={threadId} design={design.data} enabled={enabled}
+    pending={design.isPending} error={design.isError ? errorPayload(design.error).message : null} onRetry={() => void design.refetch()}>
+    <BoardPanelContent {...props} previewStatus={enabled && design.data?.sourcePath && preview ? <NativePreviewStatus source={design.data.sourcePath} pending={preview.isFetching || preview.isPending} error={preview.isError ? errorPayload(preview.error).message : null} onRetry={() => void preview.refetch()} /> : null} />
+  </NativeBoardScope>;
+}
+function BoardPanelContent({ canvas = false, previewStatus }: { canvas?: boolean; previewStatus?: ReactNode }) {
   const { host } = useCore();
   const area = useUiStore((s) => s.workspaceArea);
   const setWorkspaceTab = useUiStore((s) => s.setWorkspaceTab);
@@ -86,6 +102,9 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
   const setOrderFlowOpen = useUiStore((s) => s.setOrderFlowOpen);
   const order = useProjectOrder(projectId);
   const sources = useBoardSources(projectId);
+  const threadId = useUiStore(s => s.activeThreadId);
+  const working = useWorkingDesign(projectId, threadId);
+
   const [checksOpen, setChecksOpen] = useState(false);
   const openChecks = () => { if (projectId && useUiStore.getState().activeProjectId === projectId) canvas && area === "boards" ? setChecksOpen(true) : setBoardTab("drc"); };
   const assembly = sources.data?.mode === "assembly";
@@ -107,7 +126,7 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
     }));
   if (canvas) return <div className="fd-canvas-board" data-testid="board-panel">
     <div className="fd-canvas-controls">
-      {area === "boards" && projectId && sources.data?.mode === "single" && <ImportedBoardIdentity projectId={projectId} />}
+      {(area === "boards" || area === "review" || area === "outputs") && projectId && sources.data?.mode === "single" && <ImportedBoardIdentity {...(working.data?.sourceRevision ? { sourceRevision: working.data.sourceRevision } : {})} {...(working.data?.board ? { workingSource: working.data.board } : working.data?.schematic ? { workingSource: working.data.schematic } : {})} projectId={projectId} />}
       {area === "boards" && tab === "placement" && projectId && sources.data?.mode === "assembly" && <AssemblyBoardPicker projectId={projectId} data={sources.data} selection={selected} disabled={sources.isFetching} onChoose={selection => useUiStore.getState().setAssemblyBoard(selection)} onBack={() => useUiStore.getState().setWorkspaceArea("overview")} />}
       {area === "boards" && tab === "cinema" ? <div className="fd-routing-toolbar-slot" data-routing-toolbar-slot /> : area === "boards" ? <BoardViewTabs value={tab === "placement" ? "pcb" : tab} onChange={setWorkspaceTab} /> : workspaceViews(area).length > 1 && <Tabs tabs={visibleTabs} value={tab} onChange={setWorkspaceTab} />}
       {area === "boards" && tab !== "cinema" && tab !== "placement" && <WorkspaceMenu className="fd-board-tools fd-canvas-tool-menu" label={<><span aria-label="More board tools"><Icon name="more" width={18} height={18} /></span><span className="fd-canvas-tool-label" aria-hidden="true">More board tools</span></>}><div className="fd-menu-caption">Board tools</div><button onClick={() => setWorkspaceTab("placement")}>Edit placement</button><button aria-current={tab === "art" ? "page" : undefined} onClick={() => setWorkspaceTab("art")}>Artwork</button>{order.data && <button onClick={openOrder}>Order options</button>}</WorkspaceMenu>}
@@ -118,6 +137,7 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
       {compareAvailable && <CanvasToolButton label={compare ? "Close all views" : "Show all three views"} icon="panel" active={compare} onClick={() => useUiStore.getState().setBoardComparison(!compare)} />}
       {area === "boards" && tab !== "cinema" && tab !== "placement" && <div className="fd-board-task-actions">{tab === "pcb" && <Button size="sm" variant="secondary" onClick={() => setWorkspaceTab("placement")}><Icon name="pcb" width={18} height={18} />Edit placement</Button>}<Button size="sm" className="fd-routing-task" variant="secondary" onClick={() => setWorkspaceTab("cinema")}><Icon name="route" width={18} height={18} />Routing</Button><Button size="sm" onClick={openChecks}><Icon name="checkCircle" width={18} height={18} />Checks</Button></div>}
     </div>
+    {previewStatus}
     {projectId && <BoardChecksDialog key={projectId} projectId={projectId} open={checksOpen} onClose={() => setChecksOpen(false)} />}
     <div className="fd-canvas-board-body">{compareAvailable && compare && projectId ? <BoardComparison key={projectId} projectId={projectId} active={tab as "pcb" | "schematic" | "3d"} onOpenChecks={openChecks} /> : area === "outputs" && tab === "renders" ? <OutputsLibrary key={projectId} projectId={projectId} /> : area === "outputs" && tab === "files" ? <FilesTab key={projectId} exportFocus /> : <TabBody key={`${projectId}:${tab}`} tab={tab} canvas onOpenChecks={openChecks} />}</div>
   </div>;
@@ -130,13 +150,13 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
           <div className="fd-board-title truncate" title={project?.name}>{project?.name ?? "Select a project"}</div>
         </div>
         <div className="fd-board-actions">
-          {assembly ? <Button size="sm" onClick={openChecks}>Board checks</Button> : order.data && (order.data.hasKicadPcb || order.data.hasRouted || order.data.ready) && (
+          {(assembly ? <Button size="sm" onClick={openChecks}>Board checks</Button> : order.data && (order.data.hasKicadPcb || order.data.hasRouted || order.data.ready) && (
             <OrderChecksButton
               order={order.data}
               unavailable={order.isError || sources.isError || sources.isFetching || sources.data?.mode !== "single"}
               onClick={openOrder}
             />
-          )}
+          ))}
         </div>
       </div>
       <div className="fd-board-controls flex shrink-0 items-center px-3">
@@ -149,6 +169,7 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
         />
         <BoardViewMenu value={tab} onChange={setBoardTab} modifier={mod} />
       </div>
+      {previewStatus}
       <div className="fd-board-stage min-h-0 flex-1">
         <TabBody key={`${projectId}:${tab}`} tab={tab} />
       </div>

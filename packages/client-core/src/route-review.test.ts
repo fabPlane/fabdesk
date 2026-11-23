@@ -28,3 +28,12 @@ test("member history and review require the captured source and qualify its cand
   expect(() => parseRouteReview(member, "project", "run_test")).toThrow("another board source");
   expect(() => parseRouteReview(member, "project", "run_test", { ...board, manifestSha256: "b".repeat(64) })).toThrow("selected board source");
 });
+
+
+test("native route history never treats another filename in the same project as the current source", () => {
+  const nativeSource = { projectId: "p", sourcePath: "hardware/revision-a.kicad_pcb" };
+  const run = { projectId: "p", nativeSource };
+  expect(routeRunMatchesSource(run, "p", undefined, nativeSource)).toBe(true);
+  expect(routeRunMatchesSource(run, "p")).toBe(false);
+  expect(routeRunMatchesSource(run, "p", undefined, { ...nativeSource, sourcePath: "hardware/revision-b.kicad_pcb" })).toBe(false);
+});

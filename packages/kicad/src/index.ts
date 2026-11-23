@@ -170,3 +170,5 @@ export {
 export { previewEnclosureSvg } from "./enclosure-preview";
 
 export { cropNativePageSvg } from "./pcb-svg-coordinates";
+
+export { parseNativeSchematic } from "./hierarchy";

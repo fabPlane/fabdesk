@@ -5,7 +5,7 @@ import { lstat, open, realpath, stat } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { ASSEMBLY_MANIFEST_PATH, type BoardSourceSelection } from "@fabdesk/protocol";
-import { inspectProjectBoardSources, NativeRevisionConflict, ToolError } from "@fabdesk/tools";
+import { currentNativeLayout, inspectProjectBoardSources, NativeRevisionConflict, ToolError } from "@fabdesk/tools";
 
 export type AssemblyBoardSelector = BoardSourceSelection;
 export type NativeBoardBinding = Readonly<{
@@ -105,4 +105,6 @@ export async function withNativeRoutingSnapshot<T>(binding: NativeBoardBinding, 
 /** Called at native entry and immediately before save; unscoped legacy operations are unchanged. */
 export async function assertNativeBoardOwnership(dir: string): Promise<void> {
   await currentBinding.getStore()?.assertCurrent(dir);
+  const native = currentNativeLayout();
+  if (native && resolve(dir) === native.directory) await native.assertCurrent();
 }

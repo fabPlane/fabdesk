@@ -14,6 +14,7 @@ import {
   type ProjectSummary,
 } from "@fabdesk/protocol";
 import {
+  currentNativeLayout,
   PROJECT_FILES,
   ToolError,
   jailPath,
@@ -179,6 +180,8 @@ export class ProjectStore implements ProjectResolver {
   }
 
   async handle(id: string): Promise<ProjectHandle | null> {
+    const native = currentNativeLayout();
+    if (native?.project.id === id) return native.project;
     const cached = this.handles.get(id);
     if (cached) return cached;
     const row = this.repo.get(id);
@@ -421,7 +424,12 @@ export class ProjectStore implements ProjectResolver {
     if (!row) return null;
     const h = await this.handle(id);
     if (!h) return null;
-    const files = await this.outputGenerationTimes.attach(row.path, id, await this.listFiles(row.path));
+    const native = currentNativeLayout();
+    let files;
+    if (native?.project.id === id) {
+      const reverse = Object.fromEntries(Object.entries(native.files).map(([logical, actual]) => [actual, logical]));
+      files = [...(await this.listFiles(native.directory)).filter(file => !["renders", "reports", "exports", "placement"].includes(file.path.split("/")[0]!) && !["comments.json", "NOTES.md"].includes(file.path)).map(file => ({ ...file, path: reverse[file.path] ?? file.path })), ...await this.listFiles(native.cacheDirectory)];
+    } else files = await this.outputGenerationTimes.attach(row.path, id, await this.listFiles(row.path));
     const { slug: _slug, ...summary } = row;
     return { ...summary, ...(h.manifest().ideaDraft ? { isDraft: true } : {}), name: h.name, manifest: h.manifest(), files };
   }

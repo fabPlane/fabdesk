@@ -27,6 +27,7 @@ function harness(
     run?: AgentAdapterLike["run"];
     resolveProject?: (id: string) => Promise<ProjectHandle | null>;
     detect?: NonNullable<AgentAdapterLike["detect"]>;
+    prepareProject?: (project: ProjectHandle) => Promise<string | void>;
   } = {},
 ) {
   return (async () => {
@@ -64,6 +65,7 @@ function harness(
       workspaceDir: dir,
       abortSettleTimeoutMs: 100,
       ...(opts.resolveProject ? { resolveProject: opts.resolveProject } : {}),
+      ...(opts.prepareProject ? { prepareProject: opts.prepareProject } : {}),
     });
     const project = (id: string): ProjectHandle =>
       ({ id, name: id, dir: join(dir, id), manifest: () => ProjectManifest.parse({ schema: 1, id, name: id, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), board: {} }) }) as unknown as ProjectHandle;
@@ -75,6 +77,17 @@ function harness(
 }
 
 const settle = () => Bun.sleep(20);
+
+test("passes app-owned runtime information to the adapter separately from repository instructions", async () => {
+  const context = "Fabdesk runtime information: fixture capability context";
+  const h = await harness({ prepareProject: async () => context });
+  const p = h.project("existing-repository"), t = h.thread();
+  await h.start(t.id, p, "Explain the existing design");
+  expect(h.runs[0]!.session.cwd).toBe(p.dir);
+  expect(h.runs[0]!.session.prompt).toBe(`Explain the existing design\n\n${context}`);
+  h.runs[0]!.finish();
+  await settle();
+});
 
 test("saved effort survives storage reload and applies to new chats only when supported", async () => {
   const h = await harness({ detect: async () => ({ installed: true, defaultModel: "test-model", modelEfforts: { "test-model": ["low", "high"] } }) });

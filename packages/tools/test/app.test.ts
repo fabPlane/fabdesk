@@ -45,6 +45,7 @@ describe("app toolset", () => {
       "app_key",
       "app_select_project",
       "app_open_tab",
+      "app_present",
       "app_open_thread",
       "app_new_chat",
       "app_send_message",
@@ -59,11 +60,11 @@ describe("app toolset", () => {
     expect(registry.get("app_eval")!.annotations.openWorldHint).toBe(true);
     // Global scope: no injected `project` argument.
     expect(Object.keys(registry.inputShape(registry.get("app_state")!))).not.toContain("project");
-    expect(registry.manifest().filter((t) => t.toolset === "app")).toHaveLength(14);
+    expect(registry.manifest().filter((t) => t.toolset === "app")).toHaveLength(15);
   });
 
   test("every tool reports a clear error when no bridge is configured", async () => {
-    const { invoke } = await setup();
+    const { invoke, registry, project, services } = await setup();
     for (const [name, args] of [
       ["app_state", {}],
       ["app_screenshot", {}],
@@ -82,6 +83,7 @@ describe("app toolset", () => {
     ] as const) {
       await expect(invoke(name, args)).rejects.toMatchObject({ code: "unavailable", message: expect.stringContaining("automation bridge is not running") });
     }
+    await expect(registry.invoke("app_present", { path: "README.md" }, () => makeContext({ services, project }))).rejects.toMatchObject({ code: "unavailable" });
   });
 
   test("app_state summarises the bridge response", async () => {

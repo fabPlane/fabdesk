@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { svgRasterCache, svgRasterSize } from "./svg-raster-cache";
 
 /** Resize the existing bitmap immediately; refine vector detail once the user stops resizing. */
-export function SvgCanvas({ svg, image, width, height }: {
-  svg: string; image: HTMLImageElement; width: number; height: number;
+export function SvgCanvas({ svg, image, width, height, onState }: {
+  svg: string; image: HTMLImageElement; width: number; height: number; onState?: (state: "loading" | "ready" | "failed") => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const painted = useRef<string | null>(null);
@@ -32,18 +32,18 @@ export function SvgCanvas({ svg, image, width, height }: {
         const context = target.getContext("2d");
         if (!context) throw new Error("Canvas unavailable");
         context.drawImage(raster, 0, 0);
-        painted.current = svg;
+        painted.current = svg; onState?.("ready");
       } catch {
         // Keep the original vector preview usable on hosts without a 2D canvas.
-        setFailed(true);
+        setFailed(true); onState?.("loading");
       }
     };
     if (painted.current !== svg) { paint(); return; }
     const timer = setTimeout(paint, 120);
     return () => clearTimeout(timer);
-  }, [svg, image, size.width, size.height]);
+  }, [svg, image, size.width, size.height, onState]);
   return <>
     <canvas ref={canvas} role="img" aria-label="Board preview" className={failed ? "hidden" : "block h-full w-full max-w-none"} />
-    {failed && <img src={image.src} alt="Board preview" draggable={false} className="block h-full w-full max-w-none" />}
+    {failed && <img src={image.src} onLoad={() => onState?.("ready")} onError={() => onState?.("failed")} alt="Board preview" draggable={false} className="block h-full w-full max-w-none" />}
   </>;
 }

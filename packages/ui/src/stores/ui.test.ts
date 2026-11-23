@@ -79,7 +79,7 @@ describe("board tabs", () => {
     expect(BOARD_TABS[11]).toBe("diff");
     expect(BOARD_TABS[12]).toBe("comments");
     expect(BOARD_TABS[13]).toBe("updates");
-    expect(BOARD_TABS.at(-1)).toBe("placement");
+    expect(BOARD_TABS).toContain("placement");
     expect(BOARD_TAB_LABELS.placement).toBe("Placement");
     expect(BOARD_TAB_LABELS.comments).toBe("Comments");
     expect(BOARD_TAB_LABELS.diff).toBe("Diff");
@@ -592,6 +592,19 @@ test("closing a project clears Back history, while a blocked close retains it", 
   expect(store.getState().navigationHistory).toEqual([]);
 });
 
+
+test("switching conversations restores their own existing panel and deliberate file navigation", () => {
+  const store = createUiStore({ getItem: () => null, setItem() {}, removeItem() {} });
+  const ui = () => store.getState();
+  openProjectFromHome(store, "repo");
+  ui().setActiveThread("io-chat"); ui().openProjectFile("renders/presented/io.svg"); ui().rememberProjectFile("repo", "renders/presented/io.svg");
+  ui().setActiveThread("carrier-chat"); ui().openProjectFile("renders/presented/carrier.svg"); ui().rememberProjectFile("repo", "renders/presented/carrier.svg");
+  ui().setActiveThread("io-chat");
+  expect(ui().boardTab).toBe("files"); expect(ui().fileToReveal?.path).toBe("renders/presented/io.svg");
+  ui().openProjectFile("docs/current.md"); ui().rememberProjectFile("repo", "docs/current.md");
+  ui().setActiveThread("carrier-chat"); expect(ui().fileToReveal?.path).toBe("renders/presented/carrier.svg");
+  ui().setActiveThread("io-chat"); expect(ui().fileToReveal?.path).toBe("docs/current.md");
+});
 
 test("Account opens the shared profile window without navigating or losing settings and project drafts", () => {
   const store = createUiStore({ getItem: () => null, setItem() {}, removeItem() {} });

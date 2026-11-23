@@ -82,6 +82,8 @@ import type {
   FpPcbRouteJob,
 } from "@fabdesk/protocol";
 import {
+  currentNativeLayout,
+  nativeProjectPath,
   PROJECT_FILES,
   ToolError,
   type BuildError,
@@ -544,11 +546,12 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
    * (a native schematic-first one) is left alone.
    */
   const keepNetClass = async (projectDir: string): Promise<void> => {
+    if (currentNativeLayout()) return;
     const rules =
       rulesByProject.get(projectDir) ??
-      fileRules(await readText(join(projectDir, PROJECT_FILES.netlistJson)).catch(() => undefined));
+      fileRules(await readText(nativeProjectPath(projectDir, PROJECT_FILES.netlistJson)).catch(() => undefined));
     if (!rules || !Object.values(rules).some((v) => v !== undefined)) return;
-    await persistDefaultNetClass(join(projectDir, BOARD_PRO), rules, { readText, writeText }).catch(
+    await persistDefaultNetClass(nativeProjectPath(projectDir, BOARD_PRO), rules, { readText, writeText }).catch(
       () => false,
     );
   };
@@ -556,7 +559,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   const build = async (opts: BuildOptions): Promise<BuildResult> => {
     const started = performance.now();
     const entrypoint = opts.entrypoint ?? PROJECT_FILES.netlistJson;
-    const entryPath = join(opts.projectDir, entrypoint);
+    const entryPath = nativeProjectPath(opts.projectDir, entrypoint);
     if (!(await exists(entryPath))) {
       return {
         ok: false,
@@ -583,7 +586,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       // drop the session, then the generated files, and let the compile create the project anew.
       await deps.sessions.release(opts.projectDir);
       for (const f of ["board.kicad_pcb", "board.kicad_pro", "board.kicad_prl", "board.kicad_sch"])
-        await rm(join(opts.projectDir, f), { force: true });
+        await rm(nativeProjectPath(opts.projectDir, f), { force: true });
     }
     opts.progress?.(0.05, "session");
     let sessionWasBare = false;
@@ -593,7 +596,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         s.id,
         {
           source,
-          ...(s.path ? {} : { project: { path: join(opts.projectDir, BOARD_PRO) } }),
+          ...(s.path ? {} : { project: { path: nativeProjectPath(opts.projectDir, BOARD_PRO) } }),
           ...(opts.board ? { board: opts.board } : {}),
           ...(opts.rebuild ? { rebuild: opts.rebuild } : {}),
           autoplace: true,
@@ -618,7 +621,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       if (
         sessionWasBare &&
         /^NewProject:/i.test(job.error ?? "") &&
-        (await exists(join(opts.projectDir, BOARD_PCB)))
+        (await exists(nativeProjectPath(opts.projectDir, BOARD_PCB)))
       ) {
         await deps.sessions.release(opts.projectDir);
       }
@@ -679,7 +682,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     netlistText: string | undefined,
     warnings: BuildError[],
   ): Promise<void> => {
-    const pcb = join(opts.projectDir, BOARD_PCB);
+    const pcb = nativeProjectPath(opts.projectDir, BOARD_PCB);
     const saved = await readText(pcb).catch(() => null);
     const placements = saved !== null ? readFootprintPlacements(saved) : [];
     const stacks = stackedFootprints(placements);
@@ -1317,7 +1320,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     if (save) await schematic.save();
     if (save && createdSymbols.some((symbol) => symbol.libraryId.startsWith("power:")))
       await normalizePowerSymbolMarkers(
-        resolve(projectDir, selectedEntry.filename || "board.kicad_sch"),
+        nativeProjectPath(projectDir, selectedEntry.filename || "board.kicad_sch"),
       );
     // KiCad's API document retains transient library-mismatch markers after a new symbol is
     // committed even though the saved file is clean. Reload after creation so the next inspect,
@@ -1453,7 +1456,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   ) => {
     const assertExpectedSource = async () => {
       if (!options.expectedSourceSha256) return;
-      const bytes = await readFile(join(projectDir, BOARD_PCB)).catch((error: NodeJS.ErrnoException) => {
+      const bytes = await readFile(nativeProjectPath(projectDir, BOARD_PCB)).catch((error: NodeJS.ErrnoException) => {
         if (error.code === "ENOENT") throw new NativeRevisionConflict("The saved PCB is missing. Reopen the project before resizing its outline.");
         throw error;
       });
@@ -1556,7 +1559,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     if (![request.widthMm, request.heightMm].every(Number.isFinite) || request.widthMm < .000001 || request.heightMm < .000001 || request.widthMm > 1000 || request.heightMm > 1000)
       throw new ToolError("Outline dimensions must be between 0.000001 and 1000 mm.", "invalid_args");
     const assertSource = async () => {
-      const bytes = await readFile(join(projectDir, BOARD_PCB)).catch((error: NodeJS.ErrnoException) => {
+      const bytes = await readFile(nativeProjectPath(projectDir, BOARD_PCB)).catch((error: NodeJS.ErrnoException) => {
         if (error.code === "ENOENT") throw new NativeRevisionConflict("The saved PCB is missing. Reopen the project before resizing its outline.");
         throw error;
       });
@@ -1589,7 +1592,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
   ): Promise<PcbPlacementResult> => {
     const assertExpectedSource = async () => {
       if (!options.expectedSourceSha256) return;
-      const bytes = await readFile(join(projectDir, BOARD_PCB)).catch((error: NodeJS.ErrnoException) => {
+      const bytes = await readFile(nativeProjectPath(projectDir, BOARD_PCB)).catch((error: NodeJS.ErrnoException) => {
         if (error.code === "ENOENT") throw new NativeRevisionConflict("The saved PCB is missing. Reopen the project before placing parts.");
         throw error;
       });
@@ -1672,8 +1675,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     const zones = copperZones(zoneItems);
     const originals = await Promise.all(
       [BOARD_PCB, BOARD_PRO].map(async (file) => ({
-        path: join(projectDir, file),
-        text: await readText(join(projectDir, file)).catch((error: NodeJS.ErrnoException) => {
+        path: nativeProjectPath(projectDir, file),
+        text: await readText(nativeProjectPath(projectDir, file)).catch((error: NodeJS.ErrnoException) => {
           if (error.code !== "ENOENT") throw error;
           return null;
         }),

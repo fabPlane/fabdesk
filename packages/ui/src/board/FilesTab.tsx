@@ -1,9 +1,11 @@
+import { useQuery } from "@tanstack/react-query";
+import { useProjectBlobUrl } from "../hooks/queries";
 import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
 import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { DisclosureSummary } from "../components/DisclosureSummary";
 import { useOutputSource } from "./useOutputSource";
-import { boardFileDestination, sha256Blob, exportGerberPackage, gerberPackageFilename } from "@fabdesk/client-core";
+import { useWorkingDesign, boardFileDestination, sha256Blob, exportGerberPackage, gerberPackageFilename } from "@fabdesk/client-core";
 import { CanvasToolButton } from "../components/CanvasToolButton";
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
@@ -40,6 +42,8 @@ export function FilesTab({ exportFocus = false }: { exportFocus?: boolean } = {}
 
 function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFocus: boolean }) {
   const client = useCoreClient();
+  const working = useWorkingDesign(projectId, useUiStore(s => s.activeThreadId));
+  const nativeSource = client.nativeSource ? working.data?.board ?? client.nativeSource.sourcePath : undefined;
   const project = useProject(projectId);
   const outputSource = useOutputSource(projectId), sources = outputSource.sources;
   const thicknessMm = useUiStore((s) => stencilThicknessMm(s.stencilThicknessByProject?.[projectId]));
@@ -107,7 +111,10 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const previewLabel = assembly ? "Saved PCB drawing · Review checks separately" : previewRevision.isFetching ? "Checking saved preview…" : previewRevision.isError ? "Preview source check unavailable" : previewRevision.data === "matches-source" ? "Preview matches saved PCB" : previewRevision.data === "source-changed" ? "PCB changed · Preview is older" : "Saved preview · Source unverified";
   const tree = useMemo(() => buildFileTree(files, query), [project.data?.files, query]);
   const matchingFileCount = query.trim() ? files.filter(file => file.path.replaceAll("\\", "/").toLowerCase().includes(query.trim().toLowerCase())).length : files.length;
-  const file = files.find((f) => f.path === selected);
+  const knownFile = files.find((f) => f.path === selected);
+  // A direct presentation must not depend on the bounded directory inventory containing its path.
+  const directFile = useProjectBlobUrl(projectId, selected && !knownFile ? selected : null);
+  const file = knownFile ?? (selected && directFile.data ? { path: selected, size: directFile.data.size, mtime: "" } : undefined);
   const appearance = file ? fileAppearance(file.path) : null;
   const canPreviewModel = !!file && /\.(glb|stl|obj)$/i.test(file.path);
   const modelPreview = canPreviewModel && modelPreviewPath === file?.path ? {
@@ -115,10 +122,20 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
     path: modelPreviewPath!, kind: "models" as const,
   } : null;
   const designDestination = file && scopeReady && sources.data ? boardFileDestination(sources.data, file.path) : null;
-  const assistantSurface = { projectId, label: exportFocus ? "Outputs / Export files" : file ? `File · ${file.path.split("/").pop()}` : "Project files", priority: 10, details: JSON.stringify(exportFocus ? { board, source: source?.source, sourceReady, format: exportKind, outputDirectory: `${prefix}exports/`, busy, error: state.error } : { selectedFile: file?.path, format: appearance?.label, fileBytes: file?.size, preview: appearance?.preview }) };
+  const assistantSurface = { projectId, label: exportFocus ? "Outputs / Export files" : file ? `File · ${file.path.split("/").pop()}` : "Project files", priority: 10, details: JSON.stringify(exportFocus ? { board, source: nativeSource ?? source?.source, sourceReady, format: exportKind, outputDirectory: `${prefix}exports/`, busy, error: state.error } : { selectedFile: file?.path, format: appearance?.label, fileBytes: file?.size, preview: appearance?.preview }) };
   useAssistantSurface(assistantSurface);
   const tooBig = !!file && file.size > MAX_TEXT_BYTES;
   const text = useProjectText(projectId, file && appearance?.preview === "text" && !tooBig ? file.path : null);
+  const [textDigest, setTextDigest] = useState<{ text: string; sha: string } | null>(null);
+  useEffect(() => {
+    let canceled = false; const value = text.data;
+    if (typeof value === "string") void crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)).then(bytes => {
+      if (!canceled) setTextDigest({ text: value, sha: Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, "0")).join("") });
+    }).catch(() => {});
+    return () => { canceled = true; };
+  }, [text.data]);
+  const sourceBinding = useQuery<{ status: string; source?: string }>({ queryKey: ["presentation-binding", client.baseUrl, projectId, selected], queryFn: () => client.request(`/projects/${encodeURIComponent(projectId)}/presentation-binding?path=${encodeURIComponent(selected!)}`), enabled: !!selected?.startsWith("renders/presented/"), refetchInterval: 2000 });
+  const previewStatus = !selected ? "empty" : text.isError || directFile.isError ? "error" : appearance?.preview !== "text" || tooBig ? "unknown" : text.isFetching ? "loading" : typeof text.data === "string" && textDigest?.text === text.data ? "ready" : "loading";
   async function exportFiles() {
     if (!canExport || busy || useUiStore.getState().activeProjectId !== projectId) return;
     setLastExport(exportKind);
@@ -133,7 +150,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
         setPackagePhase("Checking package source…");
         const capturedSha = source?.pcbSha256 ?? await sha256Blob(await client.readFileBlob(projectId, `${prefix}board.kicad_pcb`));
         const result = await exportGerberPackage({ projectId, sourceSha256: capturedSha,
-          filename: gerberPackageFilename(source?.source.name ?? project.data?.name ?? "board"),
+          filename: gerberPackageFilename(nativeSource?.split("/").pop()?.replace(/\.kicad_(pcb|sch|pro)$/i, "") ?? source?.source.name ?? project.data?.name ?? "board"),
           ...(capturedBoard ? { board: capturedBoard } : {}), run,
           isCurrent: () => useUiStore.getState().activeProjectId === projectId, onPhase: setPackagePhase });
         setPackageResult({ path: `${prefix}exports/${result.filename}`, files: result.files });
@@ -195,9 +212,9 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
     {assembly && <label className="fd-export-board-scope">Board source<Select aria-label="Board source for exports" disabled={!scopeReady || busy} value={outputSource.sourceId ?? ""} onChange={event => outputSource.choose(event.target.value)}><option value="" disabled>Choose a board…</option>{!source && outputSource.sourceId && <option value={outputSource.sourceId} disabled>Source definition changed</option>}{sources.data?.sources.map(row => <option key={row.source.id} value={row.source.id}>{row.source.name}{row.status !== "available" ? " · source unavailable" : ""}</option>)}</Select></label>}
     <div className="fd-export-flow">
       <section className="fd-export-reference" aria-label="Export source reference">
-        <h2>{source?.source.name ?? "Saved board"}</h2>
+        <h2>{nativeSource?.split("/").pop() ?? source?.source.name ?? "Saved board"}</h2>
         {previewPresent ? <><ProjectImage retryable projectId={projectId} path={`${prefix}renders/pcb.svg`} alt="Saved PCB preview for export reference" /><p>{previewLabel}</p></> : <div className="fd-export-no-preview"><Icon name="pcb" width={48} height={48} /><p>{hasPcb ? "Saved native PCB" : "PCB source unavailable"}</p></div>}
-        <p className="fd-export-path">{prefix}board.kicad_pcb</p>
+        <p className="fd-export-path">{nativeSource ?? `${prefix}board.kicad_pcb`}</p>
         <Button disabled={busy || !sourceReady} size="sm" onClick={() => { const ui = useUiStore.getState(); if (assembly && outputSource.sourceId) outputSource.choose(outputSource.sourceId); ui.setBoardTab("pcb"); }}>Inspect board</Button>
         {assembly && !sourceReady && <Button size="sm" disabled={busy} onClick={() => source?.status === "available" && outputSource.sourceId ? outputSource.choose(outputSource.sourceId) : useUiStore.getState().openProjectFile("fabplane.assembly.json")}>{source?.status === "available" ? "Select source again" : "Review source files"}</Button>}
       </section>
@@ -222,7 +239,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
 
   </div>;
   return (
-    <div className="fd-files flex h-full min-h-0 flex-col">
+    <div className="fd-files flex h-full min-h-0 flex-col" data-workspace-artifact={selected ?? undefined} data-workspace-status={previewStatus} data-workspace-sha256={textDigest?.text === text.data ? textDigest?.sha : undefined} data-workspace-freshness={JSON.stringify(sourceBinding.isFetching || sourceBinding.isError ? { status: "unknown" } : sourceBinding.data ?? { status: "unknown" })}>
       <div className="fd-files-body flex min-h-0 flex-1">
         <nav ref={fileTree} hidden={!fileListOpen} aria-label="Project file explorer" className="fd-files-list flex w-72 shrink-0 flex-col border-r border-border bg-panel/40">
           <div className="fd-files-list-heading"><h2>Project files</h2><output className="fd-file-count" aria-live="polite" title={query.trim() ? "Files matching your search out of all project files" : "Total saved files in this project"}>{query.trim() ? `${matchingFileCount} of ${files.length} files` : `${files.length} ${files.length === 1 ? "file" : "files"}`}</output><CanvasToolButton icon="library" label="Open saved outputs" onClick={() => { const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId) return; ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }} /></div>
@@ -246,7 +263,8 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
             <div className="fd-file-preview-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-panel/40 px-3 py-2">
               <IconButton title={fileListOpen ? "Hide file list" : "Show file list"} size="sm" aria-expanded={fileListOpen} onClick={() => setFileListOpen(value => !value)}><Icon name="sidebar" width={16} height={16} /></IconButton>
               <FileGlyph kind={appearance.kind} />
-              <span className="fd-file-preview-path min-w-0 flex-1 truncate text-xs" title={file.path}>{file.path.replaceAll("\\", "/").split("/").join(" / ")}</span>
+              <span className="fd-file-preview-path min-w-0 flex-1 truncate text-xs" title={file.path}>{(sourceBinding.data?.source ?? file.path).replaceAll("\\", "/").split("/").join(" / ")}</span>
+              {sourceBinding.data?.source && <span className="text-xs text-muted" title={sourceBinding.data.source}>Preview · {sourceBinding.isFetching ? "checking" : sourceBinding.isError ? "unavailable" : sourceBinding.data.status}</span>}
               <span className="fd-file-format rounded border border-border px-1.5 py-0.5 text-[10px] text-muted">{appearance.label}</span>
               <span className="fd-file-bytes text-[10px] text-muted">{formatFileSize(file.size)}</span>
               {appearance.preview === "pdf" && <div ref={setPdfToolbarHost} className="fd-file-pdf-controls" />}
@@ -276,7 +294,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
             <div className={cn("min-h-0 flex-1", appearance.preview === "pdf" ? "fd-file-pdf-preview" : "overflow-auto p-4")}>
               {downloadError?.path === file.path && <p role="alert" className="mb-3 text-xs text-danger">{downloadError.message}</p>}
               {appearance.preview === "pdf" && <Suspense fallback={<div className="fd-pdf-loading" role="status"><Spinner />Loading PDF reader…</div>}><ProjectPdf key={file.path} projectId={projectId} path={file.path} toolbarHost={pdfToolbarHost} /></Suspense>}
-              {appearance.preview === "image" && <ProjectImage retryable projectId={projectId} path={file.path} className="fd-file-image max-h-none max-w-full" />}
+              {appearance.preview === "image" && <ProjectImage observe retryable projectId={projectId} path={file.path} className={sourceBinding.data?.source ? "fd-file-image w-full h-full max-h-none max-w-full object-contain" : "fd-file-image max-h-none max-w-full"} />}
               {appearance.preview === "video" && <ProjectVideo projectId={projectId} path={file.path} className="fd-file-video max-w-full" />}
               {appearance.preview === "none" && <EmptyState title={`${appearance.label} file`} icon={<FileGlyph kind={appearance.kind} className="!h-10 !w-10" />} {...(canPreviewModel ? { action: <Button onClick={() => setModelPreviewPath(file.path)}><Icon name="cube" width={16} height={16} />Preview model</Button> } : {})}>
                 {canPreviewModel ? "Inspect this saved model in fabPlane, or download it for your viewer or slicer." : appearance.kind === "model" ? "Open this file in a compatible 3D viewer or slicer." : "A preview for this format is not available here."}

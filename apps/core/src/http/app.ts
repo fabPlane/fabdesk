@@ -1,3 +1,9 @@
+import { bindNativeSource } from "../native-source-binding";
+import { NATIVE_SOURCE_HEADER, NativeSourceContext } from "@fabdesk/protocol";
+import { nativeViewBinding, nativeProjectPath, currentNativeLayout, withNativeLayout } from "@fabdesk/tools";
+import { WorkingDesigns } from "../working-design";
+import { presentationBinding, summarizePresentationBinding } from "@fabdesk/tools";
+import { createHash as presentationHash } from "node:crypto";
 /** Hono application: auth + origin guard, control API, tools/jobs, MCP, events. */
 import { readFile, stat, mkdir } from "node:fs/promises";
 import { threadTitleFrom } from "../thread-title";
@@ -154,6 +160,8 @@ const MIME: Record<string, string> = {
 
 export function createApp(deps: AppDeps): Hono<Env> {
   const app = new Hono<Env>();
+  const workingDesigns = new WorkingDesigns(deps.config.home);
+  const nativeRenders = new Map<string, Promise<{ path: string; artifactSha256: string; sourceBinding: { status: string; source: string; artifactSha256: string; sourceRevision: string; checkedAt: string; dependencies: string } }>>();
   const speech =
     deps.speech ?? createSpeechService({ settings: deps.store.settings, home: deps.config.home });
 
@@ -266,6 +274,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const allowQuery =
       c.req.path === "/events" ||
       c.req.path === "/ws" ||
+      c.req.path.startsWith("/native-context/") && /\/(events|ws)$/.test(c.req.path) ||
       c.req.path.startsWith("/opensource/preview/");
     const token = extractToken(c.req.raw, { allowQuery });
     const info = deps.tokens.lookup(token);
@@ -280,6 +289,36 @@ export function createApp(deps: AppDeps): Hono<Env> {
       });
     c.set("token", token as string);
     await next();
+  });
+
+  // A logical source namespace gives existing clients independent caches and resolves original
+  // native filenames without creating board.* copies in the repository.
+  app.all("/native-context/:context/*", async c => {
+    const context = NativeSourceContext.parse(JSON.parse(c.req.param("context")));
+    const url = new URL(c.req.url);
+    url.pathname = "/" + c.req.path.split("/").slice(3).join("/");
+    const headers = new Headers(c.req.raw.headers); headers.set(NATIVE_SOURCE_HEADER, JSON.stringify(context));
+    return app.fetch(new Request(url, { method: c.req.method, headers, ...(c.req.method === "GET" || c.req.method === "HEAD" ? {} : { body: c.req.raw.body, duplex: "half" }) }));
+  });
+  app.use("*", async (c, next) => {
+    const raw = c.req.header(NATIVE_SOURCE_HEADER);
+    if (!raw) return next();
+    const context = NativeSourceContext.parse(JSON.parse(raw));
+    if (context.threadId && deps.store.threads.get(context.threadId)?.projectId !== context.projectId) throw new ToolError("Native context conversation is unavailable", "precondition");
+    const match = /^\/projects\/([^/]+)(.*)$/.exec(c.req.path), tail = match?.[2] ?? "";
+    if (match && decodeURIComponent(match[1]!) === context.projectId && !tail.startsWith("/working-design")) {
+      if (tail === "" && c.req.method !== "GET") throw new ToolError("Change workspace metadata outside the native board context", "precondition");
+      const root = await deps.projects.handle(context.projectId);
+      if (!root) throw new ToolError("Project not found", "not_found");
+      const layout = await bindNativeSource(root, context, workingDesigns);
+      return withNativeLayout(layout, next);
+    }
+    if (c.req.path.startsWith("/route/")) {
+      const root = await deps.projects.handle(context.projectId);
+      if (!root) throw new ToolError("Project not found", "not_found");
+      return withNativeLayout(await bindNativeSource(root, context, workingDesigns), next);
+    }
+    return next();
   });
 
   app.get("/doctor", async (c) => c.json(await deps.doctor()));
@@ -390,7 +429,64 @@ export function createApp(deps: AppDeps): Hono<Env> {
     });
     return ok ? c.json({ ok: true }) : c.json({ error: "not found" }, 404);
   });
-  app.get("/projects/:id/route-runs", (c) => c.json(deps.store.routeRuns.list(c.req.param("id"))));
+  app.get("/projects/:id/working-design", async c => {
+    const project = await deps.projects.handle(c.req.param("id"));
+    if (!project) return c.json({ error: "not found" }, 404);
+    const threadId = c.req.query("threadId");
+    if (threadId && deps.store.threads.get(threadId)?.projectId !== project.id) return c.json({ error: "thread not found" }, 404);
+    return c.json(await workingDesigns.describe(project, threadId));
+  });
+  app.post("/projects/:id/working-design/render", async c => {
+    const project = await deps.projects.handle(c.req.param("id"));
+    if (!project) return c.json({ error: "not found" }, 404);
+    const body = z.object({ threadId: z.string().optional(), sourceRevision: z.string().regex(/^[a-f0-9]{64}$/), kind: z.enum(["pcb", "schematic", "3d"]) }).parse(await c.req.json());
+    if (body.threadId && deps.store.threads.get(body.threadId)?.projectId !== project.id) return c.json({ error: "thread not found" }, 404);
+    const selected = await workingDesigns.describe(project, body.threadId);
+    if (!("sourceRevision" in selected) || selected.sourceRevision !== body.sourceRevision) return c.json({ error: "Working source changed" }, 409);
+    const key = JSON.stringify([project.dir, selected.sourcePath, body.sourceRevision, body.kind]);
+    let pending = nativeRenders.get(key);
+    if (!pending) {
+      if (nativeRenders.size >= 8) return c.json({ error: "Preview renderer is busy" }, 503);
+      const source = { projectId: project.id, ...(body.threadId ? { threadId: body.threadId } : {}), sourcePath: selected.sourcePath! };
+      pending = (async () => {
+        const tool = body.kind === "pcb" ? "render_pcb_svg" : body.kind === "schematic" ? "render_schematic_svg" : "render_glb";
+        await deps.registry.invoke(tool, { project: project.id }, (projectRef, def) => deps.ctxFactory({ projectRef, def, nativeSource: source, signal: c.req.raw.signal, progress: () => {} }));
+        const layout = await bindNativeSource(project, source, workingDesigns);
+        return withNativeLayout(layout, async () => {
+          const path = body.kind === "3d" ? "renders/board.glb" : `renders/${body.kind === "pcb" ? "pcb" : "schematic"}.svg`;
+          const artifactSha256 = presentationHash("sha256").update(await readFile(await jailPath(layout.directory, path))).digest("hex");
+          return { path, artifactSha256, sourceBinding: { status: "current", source: source.sourcePath, artifactSha256, sourceRevision: body.sourceRevision, checkedAt: new Date().toISOString(), dependencies: "saved native documents; external assets unverified" } };
+        });
+      })();
+      nativeRenders.set(key, pending);
+    }
+    let result: Awaited<NonNullable<typeof pending>>;
+    try { result = await pending; } finally { if (nativeRenders.get(key) === pending) nativeRenders.delete(key); }
+    const current = await workingDesigns.describe(project, body.threadId);
+    const binding = result.sourceBinding;
+    if (current.sourcePath !== selected.sourcePath || !("sourceRevision" in current) || current.sourceRevision !== body.sourceRevision || !("sourceRevision" in binding) || binding.sourceRevision !== body.sourceRevision) return c.json({ error: "Working source changed while rendering" }, 409);
+    deps.bus.emit({ ts: Date.now(), topic: "project.changed", projectId: project.id, paths: [result.path] });
+    return c.json({ ...result, sourceBinding: binding, sourcePath: selected.sourcePath, sourceRevision: body.sourceRevision, kind: body.kind });
+  });
+  app.get("/projects/:id/presentation-binding", async c => {
+    const h = await deps.projects.handle(c.req.param("id"));
+    if (!h) return c.json({ error: "not found" }, 404);
+    const path = c.req.query("path") ?? "";
+    const kind = path === "renders/pcb.svg" ? "pcb" : path === "renders/schematic.svg" ? "schematic" : path === "renders/board.glb" ? "3d" : null;
+    if (currentNativeLayout() && kind) {
+      const artifactSha256 = presentationHash("sha256").update(await readFile(await jailPath(h.dir, path))).digest("hex");
+      return c.json(await nativeViewBinding(kind, artifactSha256));
+    }
+    if (!path.startsWith("renders/presented/") || !/\.(svg|glb)$/.test(path)) return c.json({ status: "unknown" });
+    const absolute = await jailPath(h.dir, path);
+    const info = await stat(absolute).catch(() => null);
+    if (!info?.isFile() || info.size > (path.endsWith(".glb") ? 80 : 16) * 1024 * 1024) return c.json({ status: "unknown" });
+    return c.json(summarizePresentationBinding(await presentationBinding(h.dir, path, presentationHash("sha256").update(await readFile(absolute)).digest("hex"))));
+  });
+  app.get("/projects/:id/route-runs", (c) => {
+    const scope = currentNativeLayout()?.context;
+    return c.json(deps.store.routeRuns.list(c.req.param("id")).filter(run => (run.nativeSource?.sourcePath ?? null) === (scope?.sourcePath ?? null)));
+  });
 
   app.get("/projects/:id/files/*", async (c) => {
     const h = await deps.projects.handle(c.req.param("id"));
@@ -759,16 +855,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     try {
       const handle = await deps.projects.handle(project.id);
       const boards = handle ? (await listKicadPcbFiles(handle.dir)).map((entry) => entry.path) : [];
-      let adoptedBoard: string | null = null;
-      if (handle && boards.length === 1) {
-        const adopted = await hydrateClonedBoard({
-          project: handle, files: [{ path: boards[0]! }],
-          resolveCli: () => deps.services.kicad.resolveCli(),
-          exportPcbSvg: (cli, opts) => deps.services.kicad.exportPcbSvg(cli, opts),
-          boardStats: (cli, opts) => deps.services.kicad.boardStats(cli, opts),
-        });
-        adoptedBoard = adopted?.pcbPath ?? null;
-      }
+      const adoptedBoard: string | null = null;
       c.req.raw.signal.throwIfAborted();
       return c.json({ project: (await deps.projects.detail(project.id)) ?? project, boards, adoptedBoard }, 201);
     } catch (error) {
@@ -959,6 +1046,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     if (!rec) return c.json({ error: "not found" }, 404);
     const from = Number(c.req.query("from") ?? 0) || 0;
     let project = await deps.projects.handle(rec.projectId);
+    if ((currentNativeLayout()?.context.sourcePath ?? null) !== (rec.nativeSource?.sourcePath ?? null)) throw new ToolError("Routing frames belong to another native source", "precondition");
     if (rec.board) {
       if (!project || !/^run_[A-Za-z0-9_-]+$/.test(rec.id)) throw new ToolError("Routing source ownership is unavailable.", "precondition");
       const binding = await resolveNativeBoardBinding(project, rec.board);
@@ -967,7 +1055,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
       project = { ...project, dir: binding.boardDir };
     }
     const currentPath = project
-      ? join(project.dir, PROJECT_FILES.runs, rec.id, "frames.jsonl")
+      ? nativeProjectPath(project.dir, PROJECT_FILES.runs, rec.id, "frames.jsonl")
       : null;
     const persistedPath =
       project && !isAbsolute(rec.framesPath)
@@ -1001,6 +1089,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
   app.get("/route/runs/:id", (c) => {
     const rec = deps.store.routeRuns.get(c.req.param("id"));
+    if (rec && (currentNativeLayout()?.context.sourcePath ?? null) !== (rec.nativeSource?.sourcePath ?? null)) return c.json({ error: "Routing run belongs to another native source" }, 412);
     return rec ? c.json(rec) : c.json({ error: "not found" }, 404);
   });
 

@@ -1,3 +1,4 @@
+import { useNativeViewObservation } from "./useNativeViewObservation";
 import { SchematicSheetNav } from "./SchematicSheetNav";
 import { SchematicFocusView } from "./SchematicFocusView";
 import { useProjectExitGuard } from "../hooks/useProjectExitGuard";
@@ -97,6 +98,7 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
   const sources = useBoardSources(projectId);
   const scopeReady = sources.data?.mode === "single" && !sources.isFetching && !sources.isError;
   const rendered = useProjectText(projectId, `renders/${kind}.svg`);
+  const observation = useNativeViewObservation(projectId, `renders/${kind}.svg`, rendered.data);
   const pageKey = JSON.stringify([client.baseUrl, projectId, "root-schematic"]);
   const schematicPage = useUiStore(state => state.schematicPageBySource[pageKey] ?? null);
   const selectSheet = (path: string | null) => { setCanvasPoint(null); setCommentMode(false); setSelectedId(null); setDraftPoint(null); useUiStore.getState().setSchematicPage(pageKey, path); };
@@ -239,7 +241,7 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
   if (kind === "schematic" && schematicPreview.isPending && scopeReady) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   if (drawing) {
     return (
-      <div className="relative flex h-full min-h-0" data-testid={`board-${kind}-svg`} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); if (canvasPoint) { const drawing = event.currentTarget.querySelector<HTMLElement>(".fd-svg-host"); setCanvasPoint(null); requestAnimationFrame(() => drawing?.focus({ preventScroll: true })); } else if (selected || draftPoint || commentMode) closeComments(); else if (findingRequested) { const drawing = event.currentTarget.querySelector<HTMLElement>(".fd-svg-host"); useUiStore.getState().dismissRootFinding(); requestAnimationFrame(() => drawing?.focus({ preventScroll: true })); } } }}>
+      <div className="relative flex h-full min-h-0" data-testid={`board-${kind}-svg`} {...observation.attributes} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); if (canvasPoint) { const drawing = event.currentTarget.querySelector<HTMLElement>(".fd-svg-host"); setCanvasPoint(null); requestAnimationFrame(() => drawing?.focus({ preventScroll: true })); } else if (selected || draftPoint || commentMode) closeComments(); else if (findingRequested) { const drawing = event.currentTarget.querySelector<HTMLElement>(".fd-svg-host"); useUiStore.getState().dismissRootFinding(); requestAnimationFrame(() => drawing?.focus({ preventScroll: true })); } } }}>
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1"><SelectableSvgViewer
             drawingHeader={kind === "pcb" ? canvasMode && <div className="fd-schematic-canvas-header">{canvasMode && kind === "pcb" && <PcbPreviewStatus projectId={projectId} coordinatesVerified={nativeCoordinates} scopeReady={scopeReady} {...(sources.isError ? { onRetryScope: () => void sources.refetch() } : {})} busy={render.state.status === "running" || nativeEditBusy} error={render.state.error ?? null} onUpdate={refreshPreview} />}</div> : kind === "schematic" && (canvasMode || (schematicPreview.data?.sheets.length ?? 0) > 1) && <div className="fd-schematic-canvas-header"><SchematicSheetNav sheets={schematicPreview.data?.sheets ?? []} selected={schematicPreview.data?.sheet?.path} busy={render.state.status === "running" || !!draftPoint || pin.isPending || patch.isPending} onSelect={selectSheet} />{canvasMode && kind === "schematic" && <SchematicPreviewStatus sourceState={schematicPreview.data?.state} circuit={drawing.includes('data-fabplane-schematic-view="circuit')} scopeReady={scopeReady} hasSource={project.data?.files.some(file => file.path === "board.kicad_sch") ?? false} updated={render.state.status === "done"} busy={render.state.status === "running"} error={render.state.error ?? null} onUpdate={refreshPreview} onOpenSource={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().openProjectFile(nativeSheet?.nativePath ?? "board.kicad_sch"); }} {...(sources.isError ? { onRetryScope: () => void sources.refetch() } : {})} />}</div>}
@@ -249,6 +251,7 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
             initialFit={kind === "schematic" && !drawing.includes('data-fabplane-schematic-view="circuit') ? "width" : "sheet"}
             viewKey={`${projectId}:${kind}:${kind === "schematic" ? schematicPreview.data?.sheet?.path ?? "legacy" : ""}`}
             {...(kind === "schematic" ? { viewportKey: JSON.stringify([client.baseUrl, projectId, kind, nativeSheet?.identity ?? schematicPreview.data?.sheet?.path]) } : {})}
+            onState={observation.onState}
             commentMode={commentMode}
             {...((commentMode || canvasMode) ? { onDrawingClick: (point: SvgPoint) => {
               if (commentMode) { setDraftPoint(point); setSelectedId(null); }

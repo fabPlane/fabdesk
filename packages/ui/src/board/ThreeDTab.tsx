@@ -1,3 +1,5 @@
+import { useNativeViewObservation } from "./useNativeViewObservation";
+import { useProjectBlobUrl } from "../hooks/queries";
 import { WorkspaceMenu } from "../layout/WorkspaceMenu";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { MemberOutputStudio } from "./MemberOutputStudio";
@@ -44,6 +46,8 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
   const canvas = useUiStore((s) => s.canvasMode && s.workspaceArea === "boards");
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
+  const model = useProjectBlobUrl(projectId, GLB_PATH);
+  const observation = useNativeViewObservation(projectId, GLB_PATH, model.data);
   const glbRun = useRunTool();
   const videoRun = useRunTool();
   const glbJob = useRunsStore((s) => (glbRun.state.jobId ? s.jobs[glbRun.state.jobId] : undefined));
@@ -89,8 +93,8 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
     );
   }
 
-  if (canvas) return <div className="fd-board-model-view">
-    {glb ? <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} selectionSource={{ projectId, enabled: scopeReady }} /></Suspense> : <EmptyState title="See your board in 3D" action={<Button disabled={!canGenerate || !activity.ready || exporting || making} onClick={() => void glbRun.run("glb", { projectId })}>{exporting ? "Generating model…" : "Generate 3D preview"}</Button>}>Generate a model from your saved KiCad PCB. Components with available 3D models appear in the preview.</EmptyState>}
+  if (canvas) return <div className="fd-board-model-view" {...observation.attributes}>
+    {glb ? <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} {...(model.data ? { blob: model.data } : {})} onState={observation.onState} selectionSource={{ projectId, enabled: scopeReady }} /></Suspense> : <EmptyState title="See your board in 3D" action={<Button disabled={!canGenerate || !activity.ready || exporting || making} onClick={() => void glbRun.run("glb", { projectId })}>{exporting ? "Generating model…" : "Generate 3D preview"}</Button>}>Generate a model from your saved KiCad PCB. Components with available 3D models appear in the preview.</EmptyState>}
     <BoardModelStatus projectId={projectId} present={!!glb} updating={exporting} floating={!compact} />
     {compact ? <WorkspaceMenu className="fd-comparison-model-menu" label={<span aria-label="3D model tools">···</span>}>
       {glb && <Button size="sm" disabled={!canGenerate || !activity.ready || exporting || making} onClick={() => void glbRun.run("glb", { projectId })}>{exporting ? "Updating…" : "Update model"}</Button>}
@@ -109,7 +113,7 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
       canGenerate={canGenerate}
       checkingSources={checkingSources || project.isFetching}
       modelStatus={<BoardModelStatus projectId={projectId} present={!!glb} updating={exporting} />}
-      {...(canvasMode && glb ? { modelPreview: <Suspense fallback={<Spinner />}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} selectionSource={{ projectId, enabled: scopeReady }} /></Suspense> } : {})}
+      {...(canvasMode && glb ? { modelPreview: <Suspense fallback={<Spinner />}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} {...(model.data ? { blob: model.data } : {})} onState={observation.onState} selectionSource={{ projectId, enabled: scopeReady }} /></Suspense> } : {})}
       glb={glb}
       videos={videos}
       poster={poster}

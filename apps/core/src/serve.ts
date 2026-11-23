@@ -1,3 +1,4 @@
+import { WorkingDesigns } from "./working-design";
 /** `fabdesk-core serve`: bind, write the handshake, print the ReadyLine, run until told to stop. */
 import { AGENT_OWNER_DIR, recoverAgentProcesses, stopAgentProcess } from "@fabdesk/agents";
 import { chmod, mkdir, rename, writeFile, unlink } from "node:fs/promises";
@@ -413,8 +414,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     });
   }
 
+  const workingDesigns = new WorkingDesigns(config.home);
   const registry = createRegistry({ channel: config.channel });
-  const ctxFactory = createContextFactory({ services, projects, tokens, telemetry });
+  const ctxFactory = createContextFactory({ services, projects, tokens, telemetry, workingDesigns });
   const mcp = new McpSessionManager({
     registry,
     ctxFactory,
@@ -480,7 +482,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         .map((f) => join(project.dir, "sketches", f.path));
       const board = project.manifest().board;
       const cli = await services.kicad.resolveCli().catch(() => null);
-      await agents.writeAgentDocs(project.dir, {
+      return agents.writeAgentDocs(project.dir, {
         projectName: project.name,
         toolsMarkdown: toolsMarkdown(registry),
         ...(cli ? { kicadCli: cli.path } : {}),

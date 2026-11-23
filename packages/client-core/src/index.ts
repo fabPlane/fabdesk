@@ -261,6 +261,7 @@ export * from "./enclosure-layout";
 export * from "./enclosure-setup";
 export * from "./enclosure-openings";
 
+export * from "./working-design";
 export { DrawingViewportMemory, type DrawingViewport } from "./drawing-viewport";
 export { partScopeKey, usePartSelection, pcbSelectionParts, schematicSelectionParts, hitSelectionPart, type PartScope, type SelectablePart, type PartBox } from "./part-selection";
 export { inspectSelectionIndex, type SelectionIndex } from "./part-selection-source";

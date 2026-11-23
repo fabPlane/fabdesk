@@ -1,3 +1,4 @@
+import { nativeProjectPath } from "../native-layout";
 /** SHARED-003: revision-guarded, previewable native edit transactions with disk rollback. */
 import { readCopper, recordRemoval, qualityText } from "../routing-quality";
 import { createHash, randomUUID } from "node:crypto";
@@ -57,8 +58,8 @@ async function sha(path: string): Promise<string | null> {
 
 async function revisions(projectDir: string) {
   return {
-    schematic: await sha(join(projectDir, PROJECT_FILES.boardSch)),
-    pcb: await sha(join(projectDir, PROJECT_FILES.boardPcb)),
+    schematic: await sha(nativeProjectPath(projectDir, PROJECT_FILES.boardSch)),
+    pcb: await sha(nativeProjectPath(projectDir, PROJECT_FILES.boardPcb)),
   };
 }
 

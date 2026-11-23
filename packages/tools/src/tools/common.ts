@@ -1,3 +1,4 @@
+import { nativeProjectPath } from "../native-layout";
 /** Helpers shared by tool handlers. */
 import { join } from "node:path";
 import { NetlistFile, ProjectPartsFile, emptyProjectParts } from "@fabdesk/protocol";
@@ -6,7 +7,7 @@ import { ToolError, type ProjectHandle, type ToolContext, type ToolOutput } from
 import type { KicadCli, SchematicHierarchy } from "../services";
 
 export function p(project: ProjectHandle, ...parts: string[]): string {
-  return join(project.dir, ...parts);
+  return nativeProjectPath(project.dir, ...parts);
 }
 
 export function fileUrl(path: string): string {

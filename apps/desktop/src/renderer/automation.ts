@@ -6,7 +6,7 @@
  * Everything here goes through the same zustand stores and composer handlers the UI uses, so the
  * real code paths run (thread creation, agent runs, cinema playback).
  */
-import { BOARD_TABS, newChatDraftKey, composerHandlers, useAuthStore, useCinemaStore, useUiStore, type BoardTab } from "@fabdesk/ui";
+import { capturePanelContext, BOARD_TABS, newChatDraftKey, composerHandlers, useAuthStore, useCinemaStore, useUiStore, type BoardTab } from "@fabdesk/ui";
 import { cssPath, implicitRole, normalizeText, rankMatches, uiSnapshot, type ElementInfo, type PathNode, type RankedElement, type UiSnapshot } from "./automation-core";
 
 const SETTINGS_SECTIONS = ["agents", "kicad", "router", "auth", "remote", "voice", "appearance", "privacy", "shortcuts"] as const;
@@ -36,16 +36,16 @@ function runtime() {
   return window.__fabdeskRuntime ?? { client: null, coreInfo: null };
 }
 
-function state(): UiSnapshot {
+function state() {
   const core = runtime().coreInfo;
-  return uiSnapshot({
+  return { ...uiSnapshot({
     ui: useUiStore.getState(),
     cinema: useCinemaStore.getState(),
     auth: useAuthStore.getState().state,
     core: core ? { url: core.url, status: core.status } : null,
     page: { href: location.href, title: document.title, width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio, composerMounted: composerHandlers.send !== null },
     newChatDraftKey: newChatDraftKey(useUiStore.getState().activeProjectId),
-  });
+  }), panelContext: capturePanelContext() };
 }
 
 function pathNode(el: Element): PathNode {
@@ -293,9 +293,40 @@ async function waitFor(predicate: ((state: UiSnapshot, document: Document, app: 
   }
 }
 
+// Track deliberate navigation without introducing another UI control or panel.
+let navigationVersion = 0;
+const locationKey = (s: ReturnType<typeof useUiStore.getState>) => JSON.stringify([s.activeProjectId, s.activeThreadId, s.workspaceArea, s.boardTab, s.selectedFileByProject[s.activeProjectId ?? ""], s.boardOpen, s.settingsOpen, s.sketchOpen, s.inventoryOpen, s.orderFlowOpen]);
+useUiStore.subscribe((next, previous) => { if (locationKey(next) !== locationKey(previous)) navigationVersion++; });
+function presentationContext() {
+  const s = useUiStore.getState();
+  return { projectId: s.activeProjectId, threadId: s.activeThreadId, navigationVersion };
+}
+async function present(projectId: string, threadId: string | null, path: string, sha256: string, expectedNavigation: number) {
+  const active = () => { const s = useUiStore.getState(); return s.activeProjectId === projectId && s.activeThreadId === threadId; };
+  if (!active()) return { status: "chat-inactive" };
+  if (navigationVersion !== expectedNavigation || document.querySelector('[role="dialog"][aria-modal="true"]')) return { status: "view-held" };
+  useUiStore.getState().openProjectFile(path);
+  await settle();
+  if (!active()) return { status: "superseded" };
+  const initial = useUiStore.getState();
+  if (initial.boardTab !== "files" || initial.selectedFileByProject[projectId] !== path) return { status: "view-held" };
+  const ownNavigation = navigationVersion, deadline = Date.now() + 5000;
+  while (true) {
+    if (!active()) return { status: "superseded" };
+    if (navigationVersion !== ownNavigation) return { status: "view-held" };
+    const workspace = capturePanelContext();
+    if (workspace.panel.visible && workspace.panel.artifact === path && workspace.panel.status === "ready" && workspace.panel.artifactSha256 === sha256) return { status: "displayed", workspace };
+    if (workspace.panel.artifact === path && workspace.panel.status === "error") return { status: "failed", workspace };
+    if (Date.now() >= deadline) return { status: "unconfirmed", workspace };
+    await sleep(50);
+  }
+}
+
 const api = {
   version: 1 as const,
   state,
+  presentationContext,
+  present,
   find,
   selectProject,
   openTab,

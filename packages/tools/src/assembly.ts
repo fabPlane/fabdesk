@@ -1,3 +1,4 @@
+import { nativeProjectPath } from "./native-layout";
 /** Read-only assembly inspection. Membership is declared, never inferred from historical PCB files. */
 import { constants } from "node:fs";
 import { open, realpath, lstat } from "node:fs/promises";
@@ -13,7 +14,7 @@ const unchanged = (a: { dev: number; ino: number; size: number; mtimeMs: number;
 
 /** Reject aliases even within the jail: one inode must never become two editable sources. */
 export async function inspectOwnedProjectFile(root: string, relative: string, limit: number, content = false, binary = false) {
-  const path = resolve(root, relative);
+  const path = nativeProjectPath(root, relative);
   const entry = await lstat(path);
   if (!entry.isFile() || entry.isSymbolicLink()) throw new Error("Sources must be regular files");
   if (await realpath(path) !== path) throw new Error("Symbolic links are not independent board sources");
@@ -54,7 +55,7 @@ async function inspectSource(root: string, source: AssemblyBoardSource, identiti
     const optional: { schematicPath?: string; previewPath?: string } = {};
     for (const [key, relative] of [["schematicPath", `${prefix}${PROJECT_FILES.boardSch}`], ["previewPath", `${prefix}renders/pcb.svg`]] as const) {
       try {
-        const path = resolve(root, relative), st = await lstat(path);
+        const path = nativeProjectPath(root, relative), st = await lstat(path);
         if (st.isFile() && st.nlink === 1 && await realpath(path) === path) optional[key] = relative;
       } catch { /* An absent or unsafe optional artifact cannot establish source ownership. */ }
     }

@@ -140,10 +140,11 @@ export const project_list_sketches = defineTool({
 export const project_set_board = defineTool({
   name: "project_set_board",
   toolset: "project",
-  title: "Set board settings",
+  title: "Set working design or board settings",
   description:
-    'Update fabdesk.json board settings: layer count, outline dimensions, router, and optional prefab blank template. template="viagrid-9055" represents the Opulo 90 x 55 mm blank with its factory vias, mounting holes, and 0.2 mm track and clearance rules; template="none" removes the template.',
+    'Declare sourcePath as the native project/PCB/schematic this conversation is working on; existing PCB, schematic and 3D preview content is prepared and refreshed automatically without opening or switching panels. This preserves native paths and does not adopt files or control UI navigation. Without sourcePath, update fabdesk.json board settings: layer count, outline dimensions, router, and optional prefab blank template. template="viagrid-9055" represents the Opulo 90 x 55 mm blank with its factory vias, mounting holes, and 0.2 mm track and clearance rules; template="none" removes the template.',
   inputSchema: {
+    sourcePath: z.string().min(1).max(1024).optional().describe("Project-relative working native .kicad_pro/.kicad_pcb/.kicad_sch path; declare context rather than driving the UI"),
     layers: z.number().int().min(1).max(8).optional(),
     widthMm: z.number().positive().optional(),
     heightMm: z.number().positive().optional(),
@@ -164,8 +165,13 @@ export const project_set_board = defineTool({
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async ({ layers, widthMm, heightMm, router, template }, ctx) => {
+  handler: async ({ sourcePath, layers, widthMm, heightMm, router, template }, ctx) => {
     const project = ctx.requireProject();
+    if (sourcePath) {
+      if (!ctx.setWorkingDesign) throw new ToolError("Working design context is unavailable in this host", "unavailable");
+      const workingDesign = await ctx.setWorkingDesign(sourcePath);
+      if ([layers, widthMm, heightMm, router, template].every(value => value === undefined)) return ok("Working design established; preview content updates automatically; panel navigation is unchanged. Original native files and repository instructions are unchanged.", { workingDesign });
+    }
     const current = project.manifest();
     const { template: currentTemplate, ...currentBoard } = current.board;
     const templateBoard =

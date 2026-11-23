@@ -138,6 +138,8 @@ export { useSavedHosts, activeSavedHost, watchSavedHosts } from "./pair/store";
 export { parsePairLink, buildPairLink, isPairPath, normalizeHost, browserLabel } from "./pair/parse";
 export type { PairLink, PairLinkFailure, PairLocation } from "./pair/parse";
 export type { SavedHost, SavedHosts } from "./pair/hosts";
+
+export { capturePanelContext } from "./panel-context";
 export { SharedProjectDialog } from "./board/SharedProjectDialog";
 
 export { TeamProjectsDialog } from "./board/TeamProjectsDialog";

@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useProjectBlobUrl } from "../hooks/queries";
 import { Button } from "../components/ui";
 import { cn } from "../util";
@@ -10,6 +10,7 @@ export function ProjectImage({
   className,
   alt,
   retryable = false,
+  observe = false,
   fallback,
 }: {
   projectId: string | null;
@@ -18,10 +19,20 @@ export function ProjectImage({
   alt?: string;
   /** Opt in only outside another button/link, such as the selected Files preview. */
   retryable?: boolean;
+  observe?: boolean;
   /** Compact decorative previews may supply an icon instead of an error paragraph. */
   fallback?: ReactNode;
 }) {
   const { url, scope, isLoading, isError, isFetching, data, refetch } = useProjectBlobUrl(projectId, path);
+  const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
+  const [fingerprint, setFingerprint] = useState<{ blob: Blob; sha: string } | null>(null);
+  useEffect(() => {
+    let canceled = false;
+    if (observe && data) void data.arrayBuffer().then(bytes => crypto.subtle.digest("SHA-256", bytes)).then(bytes => {
+      if (!canceled) setFingerprint({ blob: data, sha: Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, "0")).join("") });
+    }).catch(() => {});
+    return () => { canceled = true; };
+  }, [observe, data]);
   const [retryingScope, setRetryingScope] = useState<string | null>(null);
   const currentScope = useRef(scope); currentScope.current = scope;
   const retryButton = useRef<HTMLButtonElement>(null), retryRequested = useRef(false);
@@ -47,9 +58,9 @@ export function ProjectImage({
   if (isError || data === null || retrying || unreadable) {
     if (!retryable && fallback !== undefined) return <>{fallback}</>;
     const message = retrying ? "Retrying image preview…" : isError ? "Could not load image." : unreadable ? "This file could not be displayed as an image. The saved file is unchanged." : "Image file unavailable.";
-    return retryable ? <div role="alert" className="space-y-2 text-xs text-danger"><p>{message}</p><p className="break-all text-muted">{path}</p><Button ref={retryButton} size="sm" variant="ghost" aria-disabled={isFetching || retrying} className={isFetching || retrying ? "opacity-50" : ""} onClick={() => { if (!isFetching && !retrying) void retry(); }}>{isFetching || retrying ? "Retrying…" : "Retry image preview"}</Button></div> : <span role="alert" className="break-all text-xs text-muted">{message} {path}</span>;
+    return retryable ? <div data-workspace-artifact={observe ? path : undefined} data-workspace-status={observe ? retrying ? "loading" : "error" : undefined} role="alert" className="space-y-2 text-xs text-danger"><p>{message}</p><p className="break-all text-muted">{path}</p><Button ref={retryButton} size="sm" variant="ghost" aria-disabled={isFetching || retrying} className={isFetching || retrying ? "opacity-50" : ""} onClick={() => { if (!isFetching && !retrying) void retry(); }}>{isFetching || retrying ? "Retrying…" : "Retry image preview"}</Button></div> : <span role="alert" className="break-all text-xs text-muted">{message} {path}</span>;
   }
   if (isLoading || data && !url) return <div className={cn("h-24 w-32 animate-pulse rounded bg-panel-2", className)} />;
   if (!url) return fallback !== undefined ? <>{fallback}</> : <span className="break-all text-xs text-muted">Image file unavailable: {path}</span>;
-  return <img src={url} alt={alt ?? path} onError={() => failed(url)} onLoad={() => { retryRequested.current = false; }} className={cn("max-h-80 rounded border border-border", className)} />;
+  return <img data-workspace-artifact={observe ? path : undefined} data-workspace-sha256={observe && fingerprint && fingerprint.blob === data ? fingerprint.sha : undefined} data-workspace-status={observe ? unreadable ? "error" : loadedUrl === url && fingerprint?.blob === data && !isFetching ? "ready" : "loading" : undefined} src={url} alt={alt ?? path} onError={() => failed(url)} onLoad={() => { setLoadedUrl(url); retryRequested.current = false; }} className={cn("max-h-80 rounded border border-border", className)} />;
 }

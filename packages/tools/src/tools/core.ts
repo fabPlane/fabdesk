@@ -180,6 +180,8 @@ export const project_status = defineTool({
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const manifest = project.manifest();
+    const workingDesign = await ctx.getWorkingDesign?.().catch(error => ({ error: error instanceof Error ? error.message : String(error) }));
+    const hasWorkingSource = !!workingDesign && typeof workingDesign === "object" && "sourcePath" in workingDesign && !!workingDesign.sourcePath;
     let assembly: { status: "inspected"; membership: ProjectBoardSources; editing: "explicit-source-tools" } | { status: "unavailable"; reason: string; editing: "unavailable" } | null = null;
     let declaredAssembly = false;
     try {
@@ -217,6 +219,8 @@ export const project_status = defineTool({
     const drc = await readJsonOrNull<DrcReport>(p(project, PROJECT_FILES.reports, "drc.json"));
     const json = {
       contract: { name: "fabdesk.project-status", version: "2.0.0" },
+      workingDesign: workingDesign ?? null,
+      settingsScope: "workspace root defaults; not selected native design metadata",
       id: project.id,
       name: project.name,
       dir: project.dir,
@@ -242,10 +246,11 @@ export const project_status = defineTool({
       ...(assembly ? [assembly.status === "inspected"
         ? `Assembly instances: ${assembly.membership.assembly!.instances.length}; source boards: ${assembly.membership.sources.length}; declared connections: ${assembly.membership.assembly!.connections.length}. Source files available: ${assembly.membership.sources.filter(source => source.status === "available").length}/${assembly.membership.sources.length}. Geometry, schematic parity and connection compatibility are unverified. Explicit source tools accept board {sourceId, manifestSha256}: native PCB inspection, saved schematic inspection/rendering, PCB previews, placement/resize, PCB-only DRC, GLB/images/video, manufacturing exports, board_revision_list/diff/checkpoint, and comment_list/pin/answer/resolve. Placement, resize, DRC, GLB/images/video and manufacturing exports require the selected PCB's inspected expectedSourceSha256. Member render_schematic_svg requires expectedHierarchyRevision from schematic_inspect and publishes immutable sheet previews with one source receipt. Member schematic_inspect supports saved-hierarchy summary only, using independently owned source snapshots; live authoring, ERC and parity remain unavailable. Member DRC is PCB-only: pass schematicParity=false explicitly; its report is not schematic parity, ERC or inter-board compatibility. Member GLB receipts track source and model bytes; external component models and fit remain unverified. Shared physical instances use the same source and source-local comments.json. Member route_run requires expectedSourceSha256 and applyPolicy=manual; route_status/cancel/apply require the same explicit source selector. Candidates use private source snapshots and need explicit revision-bound Apply. Live schematic authoring remains unavailable; do not substitute the root board. Canvas placement and rectangular resizing require verified preview coordinates and captured source ownership. Remaining native status below describes only the project root.`
         : assembly.reason] : []),
-      `${assembly ? "Root project defaults" : "Board"}: ${manifest.board.layers} layers${manifest.board.widthMm ? `, ${manifest.board.widthMm}×${manifest.board.heightMm ?? "?"} mm` : ""}; router: ${manifest.router === "capacity" ? "fab_router" : (manifest.router ?? "freerouting (default; fab_router fallback)")}`,
-      `${assembly ? "Root files" : "Files"}: ${Object.entries(files)
+      `${assembly || hasWorkingSource ? "Root project defaults" : "Board"}: ${manifest.board.layers} layers${manifest.board.widthMm ? `, ${manifest.board.widthMm}×${manifest.board.heightMm ?? "?"} mm` : ""}; router: ${manifest.router === "capacity" ? "fab_router" : (manifest.router ?? "freerouting (default; fab_router fallback)")}`,
+      `${assembly || hasWorkingSource ? "Root files" : "Files"}: ${Object.entries(files)
         .map(([k, v]) => `${k}=${v.exists ? "yes" : "no"}`)
         .join(", ")}`,
+      ...(workingDesign ? [`Working design: ${JSON.stringify(workingDesign)}. Remaining checks and settings describe the workspace root.`] : []),
       `Sketches: ${sketches.length ? sketches.join(", ") : "none"}`,
       `Last source/compiler build: ${lastSourceBuild ? `${lastSourceBuild.ok ? "ok" : "FAILED"} (${lastSourceBuild.errors} errors, ${lastSourceBuild.warnings} warnings, captured ${lastSourceBuild.at})` : "never"}`,
       `${assembly ? "Root last release" : "Last release"}: ${formatLastRelease(lastRelease)}`,

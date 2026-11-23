@@ -52,7 +52,7 @@ async function loadModel(bytes: ArrayBuffer, path: string): Promise<THREE.Object
 }
 
 /** View transforms affect only the camera. Model bytes and physical placement stay untouched. */
-export default function ModelCanvas({ projectId, path, blob, selectionSource }: { projectId: string; path: string; blob?: Blob; selectionSource?: PartSelectionSource }) {
+export default function ModelCanvas({ projectId, path, blob, onState, selectionSource }: { projectId: string; path: string; blob?: Blob; onState?: (state: "loading" | "ready" | "failed") => void; selectionSource?: PartSelectionSource }) {
   const selection = useBoardPartSelection(selectionSource);
   const currentSelection = useRef(selection); currentSelection.current = selection;
   const updateSelection = useRef<(() => void) | null>(null), focusSelection = useRef<((animate?: boolean) => void) | null>(null);
@@ -86,9 +86,9 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
     let observer: ResizeObserver | null = null;
     let camera: THREE.PerspectiveCamera | null = null;
     let cleanupContext: (() => void) | null = null;
+    setError(null); setLoading(true); onState?.("loading");
     let stopMotion = () => {};
     let cleanupSelection: (() => void) | null = null;
-    setError(null); setLoading(true);
     void (async () => {
       try {
         if (data.size > 80 * 1024 * 1024) throw new Error("This model is too large for the canvas preview (80 MB limit). The saved file is unchanged.");
@@ -235,12 +235,12 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
         controls.addEventListener("start", () => { framedSelection.current = null; stopMotion(); });
         controls.addEventListener("change", render);
         observer = new ResizeObserver(resize); observer.observe(target);
-        const lost = (event: Event) => { event.preventDefault(); setError("The 3D graphics connection was interrupted. Retry to reopen the preview."); };
+        const lost = (event: Event) => { event.preventDefault(); setError("The 3D graphics connection was interrupted. Retry to reopen the preview."); onState?.("failed"); };
         renderer.domElement.addEventListener("webglcontextlost", lost);
         cleanupContext = () => renderer?.domElement.removeEventListener("webglcontextlost", lost);
-        setLoading(false);
+        setLoading(false); onState?.("ready");
       } catch (failure) {
-        if (!disposed) { setError(failure instanceof Error ? failure.message : "Could not open the model preview."); setLoading(false); }
+        if (!disposed) { setError(failure instanceof Error ? failure.message : "Could not open the model preview."); setLoading(false); onState?.("failed"); }
       }
     })();
     return () => {
@@ -250,7 +250,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
       if (model) disposeModel(model);
       renderer?.dispose(); renderer?.domElement.remove();
     };
-  }, [data, path, retry]);
+  }, [data, path, retry, onState]);
 
   return <div className="fd-model-canvas" data-testid="model-canvas" onKeyDown={event => { if (event.key === "Escape" && selectionSource && selection.ref && !(event.target instanceof Element && event.target.closest("input, textarea, select, [role=dialog]"))) { selection.clear(); event.preventDefault(); event.stopPropagation(); } }}>
     {selectionSource && <PartSelectionBar reference={selection.ref} references={selectableRefs} onSelect={selection.select} onClear={selection.clear} onFocus={selectableRefs.includes(selection.ref ?? "") ? () => focusSelection.current?.() : undefined} notice={selectionNotice} />}

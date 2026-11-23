@@ -1,9 +1,12 @@
+import { createHash } from "node:crypto";
+import { jailPath } from "../fs";
+import { preparePresentation, presentationBinding, summarizePresentationBinding } from "../presentation";
 /**
  * App toolset: screenshot and drive the fabPlane desktop window through the loopback automation
  * bridge (Electron main, dev builds or FABDESK_AUTOMATION=1; docs/app-automation.md). Every tool
  * fails with a clear `unavailable` error when no bridge is running.
  */
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod/v4";
@@ -97,6 +100,7 @@ function summarizeState(state: Record<string, unknown>): string {
     );
     return lines.join("\n");
   }
+  if (u["panelContext"]) lines.push(`Panel: ${JSON.stringify(u["panelContext"])}`);
   const cinema = (u["cinema"] ?? {}) as Record<string, unknown>;
   const core = (u["core"] ?? {}) as Record<string, unknown>;
   lines.push(
@@ -377,7 +381,7 @@ export const app_open_tab = defineTool({
   scope: "global",
   title: "Open a board tab",
   description:
-    "Open one of the board panel tabs (schematic, pcb, cinema = Route Cinema, 3d, cad, drc, renders, notes, files, art = picture-to-silkscreen, bom = Shopping list, placement = interactive component placement, diff = revision comparison) and make sure the board panel is visible.",
+    "Only when the user explicitly asks to see something (natural requests like show me the current board count), open one of the board panel tabs (schematic, pcb, cinema = Route Cinema, 3d, cad, drc, renders, notes, files, art = picture-to-silkscreen, bom = Shopping list, placement = interactive component placement, diff = revision comparison) and make sure the board panel is visible.",
   inputSchema: {
     tab: z.enum(APP_BOARD_TABS),
   },
@@ -388,8 +392,40 @@ export const app_open_tab = defineTool({
     idempotentHint: true,
   },
   handler: async ({ tab }, ctx) => {
+    if (ctx.threadId) {
+      const current = await ui<Record<string, unknown>>(ctx, "presentationContext");
+      if (current["threadId"] !== ctx.threadId || ctx.project && current["projectId"] !== ctx.project.id) return ok("Requested presentation belongs to an inactive chat; current view was preserved", { status: "chat-inactive" });
+    }
     const result = await ui<Record<string, unknown>>(ctx, "openTab", [tab]);
     return ok(`Board tab is now ${tab}.`, { tab, ui: result });
+  },
+});
+
+/** Adapted from PR407: use the current Files preview, with explicit identity and actual-display receipts. */
+export const app_present = defineTool({
+  name: "app_present", toolset: "app", title: "Present an existing project artifact",
+  description: "Only when the user explicitly asks to see an artifact, show an existing artifact or native PCB/schematic preview in the existing Files panel. Routine source-context updates must not invoke this tool. Native rendering uses a private snapshot and preserves original project files. Returns actual display status and source freshness; only displayed confirms loaded visible bytes. Does not adopt a board or redirect edit tools. Background chats and navigation during rendering are preserved.",
+  inputSchema: { path: z.string().min(1).max(1024), expectedSha256: z.string().regex(/^[a-f0-9]{64}$/).optional() },
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  handler: async ({ path, expectedSha256 }, ctx) => {
+    requireBridge(ctx); const project = ctx.requireProject();
+    const before = await ui<Record<string, unknown>>(ctx, "presentationContext");
+    if (before["projectId"] !== project.id || ctx.threadId && before["threadId"] !== ctx.threadId) return ok("Presentation chat is inactive", { status: "chat-inactive" });
+    const absolute = await jailPath(project.dir, path);
+    if ((await stat(absolute)).size > 32 * 1024 * 1024) throw new ToolError("Presentation source exceeds 32 MiB", "invalid_args");
+    const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+    if (expectedSha256 && hash(await readFile(absolute)) !== expectedSha256) throw new ToolError("Requested source/artifact changed", "precondition");
+    const prepared = await preparePresentation(ctx, path);
+    if (expectedSha256) {
+      const captured = /\.kicad_(pcb|sch|pro)$/i.test(path) && "inputs" in prepared.sourceBinding ? prepared.sourceBinding.inputs[path] : prepared.artifactSha256;
+      if (captured !== expectedSha256) throw new ToolError("Requested source/artifact changed before capture", "precondition");
+    }
+    ctx.signal.throwIfAborted();
+    const receipt = await ui<Record<string, unknown>>(ctx, "present", [project.id, ctx.threadId ?? before["threadId"], prepared.path, prepared.artifactSha256, before["navigationVersion"]], { timeoutMs: 10_000 });
+    const unchanged = hash(await readFile(await jailPath(project.dir, prepared.path))) === prepared.artifactSha256;
+    if (!unchanged) receipt["status"] = "changed-during-presentation";
+    const sourceBinding = unchanged ? summarizePresentationBinding(await presentationBinding(project.dir, prepared.path, prepared.artifactSha256)) : { status: "unknown" };
+    return ok(`Presentation ${receipt["status"] ?? "unconfirmed"}: ${prepared.path}. Source: ${sourceBinding.status}.`, { projectId: project.id, requested: path, artifact: prepared.path, artifactSha256: prepared.artifactSha256, ...receipt, sourceBinding });
   },
 });
 
@@ -609,6 +645,7 @@ export const appTools = [
   app_key,
   app_select_project,
   app_open_tab,
+  app_present,
   app_open_thread,
   app_new_chat,
   app_send_message,

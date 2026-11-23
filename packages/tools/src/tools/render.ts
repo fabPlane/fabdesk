@@ -1,3 +1,4 @@
+import { nativeViewRevision, assertNativeViewRevision, recordNativeView } from "../native-view";
 import { renderRootCircuitPreview } from "../schematic-circuit-preview";
 import { expectedPcbSource } from "../pcb-output";
 import { renderMemberSchematicPreview } from "../member-schematic-preview";
@@ -7,7 +8,7 @@ import { AssemblyBoardModelRevision, BoardModelRevision, BOARD_MODEL_REVISION_PA
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { z } from "zod/v4";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, sep } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import {
   extractSpecs,
   renderProductVideo,
@@ -98,6 +99,7 @@ export const render_schematic_svg = defineTool({
     const project = ctx.requireProject();
     const cli = await requireKicad(ctx);
     const schematic = await requireSchematic(project);
+    const nativeRevision = await nativeViewRevision();
     const before = await fileRevision(schematic);
     const outDir = await ensureDir(p(project, PROJECT_FILES.renders, "schematic"));
     ctx.progress(0.2, "exporting svg");
@@ -107,6 +109,8 @@ export const render_schematic_svg = defineTool({
       signal: ctx.signal,
     });
     if (!paths.length) throw new ToolError("schematic export produced no sheets", "internal");
+    const rootPage = basename(schematic).replace(/\.kicad_sch$/i, ".svg");
+    paths.sort((a, b) => Number(basename(b) === rootPage) - Number(basename(a) === rootPage));
     const revisionPrefix = before.sha256.slice(0, 16);
     const images: Array<{
       sheet: number;
@@ -145,11 +149,13 @@ export const render_schematic_svg = defineTool({
         "precondition",
       );
     }
+    await assertNativeViewRevision(nativeRevision);
     const firstSvg = paths[0]!;
     const output = p(project, PROJECT_FILES.renders, "schematic.svg");
     const pngOutput = p(project, PROJECT_FILES.renders, "schematic.png");
     await Bun.write(output, await readFile(firstSvg));
     await Bun.write(pngOutput, await readFile(imagePaths[0]!));
+    await recordNativeView("schematic", output, nativeRevision);
     ctx.progress(1, "done");
     const url = fileUrl(output);
     return ok(
@@ -189,6 +195,7 @@ export const render_pcb_svg = defineTool({
     const output = await jailPath(project.dir, `${PROJECT_FILES.renders}/pcb.svg`);
     await jailPath(project.dir, PCB_PREVIEW_REVISION_PATH);
     ctx.progress(0.2, "exporting svg");
+    const nativeRevision = await nativeViewRevision();
     const sourceBytes = await readFile(board);
     const sourceRevision = createHash("sha256").update(sourceBytes).digest("hex");
     if (expectedSourceSha256 && sourceRevision !== expectedSourceSha256) throw new ToolError("PCB changed before preview rendering. Review the latest source and try again.", "precondition");
@@ -207,7 +214,9 @@ export const render_pcb_svg = defineTool({
       await jailPath(project.dir, `${PROJECT_FILES.renders}/pcb.svg`);
       await jailPath(project.dir, PCB_PREVIEW_REVISION_PATH);
       await ctx.runInScope?.(async () => {});
+      await assertNativeViewRevision(nativeRevision);
       await writeAtomic(output, artifactBytes);
+      await recordNativeView("pcb", output, nativeRevision);
       await recordPcbPreviewRevision(project.dir, sourceRevision, createHash("sha256").update(artifactBytes).digest("hex"));
     } finally {
       await rm(scratch, { recursive: true, force: true });
@@ -255,6 +264,7 @@ export const render_glb = defineTool({
     const output = await jailPath(project.dir, `${PROJECT_FILES.renders}/board.glb`);
     const receiptPath = await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
     ctx.progress(0.2, "exporting glb");
+    const nativeRevision = await nativeViewRevision();
     const sourceSha256 = await pcbPreviewFileHash(board);
     if (expectedSourceSha256 && sourceSha256 !== expectedSourceSha256) throw new ToolError("The saved PCB changed since inspection. Inspect the selected source again before exporting its model.", "precondition");
     // The editable PCB is copied to the root during import. Its project-relative
@@ -278,7 +288,9 @@ export const render_glb = defineTool({
       await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
       await ctx.runInScope?.(async () => {});
       ctx.signal.throwIfAborted();
+      await assertNativeViewRevision(nativeRevision);
       await writeAtomic(output, bytes);
+      await recordNativeView("3d", output, nativeRevision);
       await writeJson(receiptPath, receipt);
     } finally { await rm(scratch, { recursive: true, force: true }); }
     ctx.progress(1, "done");
