@@ -33,12 +33,13 @@ export function rewriteModelPaths(text: string, resolvePath: (declared: string) 
 }
 
 /** Export-only copy; keep the native PCB and its custom model transforms byte-for-byte intact. */
-export async function withModelBoard<T>(board: string, resolvePath: (declared: string) => string | null, run: (board: string) => Promise<T>, prepareVariants?: (text: string) => Promise<ModelVariants>): Promise<T> {
+export async function withModelBoard<T>(board: string, resolvePath: (declared: string) => string | null, run: (board: string) => Promise<T>, prepareVariants?: (text: string, scratch: string) => Promise<ModelVariants>): Promise<T> {
   const original = await readFile(board, "utf8");
-  const rewritten = rewriteModelPaths(original, resolvePath, await prepareVariants?.(original));
-  if (rewritten === original) return run(board);
   const scratch = await mkdtemp(join(tmpdir(), "fabdesk-model-paths-")), path = join(scratch, basename(board));
   try {
+    const variants = await prepareVariants?.(original, scratch);
+    const rewritten = rewriteModelPaths(original, resolvePath, variants);
+    if (rewritten === original) return await run(board);
     await writeFile(path, rewritten);
     // Preserve project variables/settings when the native CLI opens the temporary PCB.
     if (/\.kicad_pcb$/i.test(board)) await copyFile(board.replace(/\.kicad_pcb$/i, ".kicad_pro"), path.replace(/\.kicad_pcb$/i, ".kicad_pro")).catch(error => { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; });

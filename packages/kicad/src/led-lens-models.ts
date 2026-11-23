@@ -21,7 +21,7 @@ export async function ledLensModels(text: string, scratch: string, resolvePath: 
     const value = footprint.value?.trim().toLowerCase().replace(/^led[\s_-]+|[\s_-]+led$/g, "");
     const rgb = colors.get(value ?? "");
     const visible = footprint.models.filter(model => !model.hidden);
-    if (!rgb || visible.length !== 1 || footprint.dnp) continue;
+    if (!rgb || visible.length !== 1) continue;
     const declared = visible[0]!.declared;
     const family = stockModel.exec(declared)?.[1];
     if (!family) continue;
