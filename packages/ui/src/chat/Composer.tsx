@@ -10,7 +10,7 @@ import { Icon } from "../components/Icon";
 import { InstallHint } from "../components/InstallHint";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useCore, useSaveAgentPreference, useSaveAgentEffort } from "@fabdesk/client-core";
-import { activeQuestion, CoreHttpError, formatVoiceShortcut, parseVoiceShortcut, useDoctor, useSettings, useSpeechStatus, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt, useBoardSources, useProject } from "@fabdesk/client-core";
+import { activeQuestion, CoreHttpError, formatVoiceShortcut, parseVoiceShortcut, useDoctor, useSettings, useSpeechStatus, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt, useBoardSources, useProject, usePhoto, useAnalyzePhoto } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { basename, mimeFromPath, modKey } from "../util";
@@ -25,6 +25,8 @@ import { MicButton, VoiceBar } from "./voice/VoiceBar";
 import { WorkspaceMenu } from "../layout/WorkspaceMenu";
 import { FinishItPanel } from "./FinishItPanel";
 import { finishItActive } from "./finish-it-view";
+import { PhotoPipelinePanel } from "./PhotoPipelinePanel";
+import { imageFilesFromList, isSketchPath } from "./composer-photos";
 
 /** Bridge for the global shortcut hook (mod+Enter send, mod+. abort) and for app automation. */
 export const composerHandlers: {
@@ -83,6 +85,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
   const removeAttachment = useUiStore((s) => s.removeAttachment);
   const clearAttachments = useUiStore((s) => s.clearAttachments);
   const setSketchOpen = useUiStore((s) => s.setSketchOpen);
+  const setBoardTab = useUiStore((s) => s.setBoardTab);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const focusNonce = useUiStore((s) => s.composerFocusNonce);
   const agentPickerOpen = useUiStore((s) => s.agentPickerOpen);
@@ -109,6 +112,9 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
     },
   });
   const finishIt = useFinishIt(projectId);
+  const photo = usePhoto(projectId);
+  const analyzePhoto = useAnalyzePhoto();
+  const pendingPhotos = useRef<File[]>([]);
   const startFinishIt = useStartFinishIt();
   const stopFinishIt = useStopFinishIt();
   const setActiveThread = useUiStore((s) => s.setActiveThread);
@@ -330,6 +336,31 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
 
   const showStop = !!run && !draft.trim() && !sending;
 
+  const attachImageFiles = async (files: File[]) => {
+    const images = imageFilesFromList(files);
+    if (images.length === 0) return;
+    if (!projectId) {
+      pendingPhotos.current = [...pendingPhotos.current, ...images];
+      setProjectPickerOpen(true);
+      return;
+    }
+    for (const file of images) {
+      try {
+        const { path } = await client.uploadSketch(projectId, file, file.name);
+        addAttachment(draftKey, { path, mime: file.type || mimeFromPath(path), label: file.name });
+      } catch (failure) {
+        setError(failure);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!projectId || pendingPhotos.current.length === 0) return;
+    const queued = pendingPhotos.current;
+    pendingPhotos.current = [];
+    void attachImageFiles(queued);
+  }, [projectId]);
+
   const pickFiles = async () => {
     const paths = await host.pickFile({
       multiple: true,
@@ -402,6 +433,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
             ))}
           </div>
         )}
+{photo.data?.session && <PhotoPipelinePanel session={photo.data.session} />}
         {finishItSession && (rootAutomation || finishItActive(finishItSession)) && (
           <FinishItPanel
             session={finishItSession}
@@ -438,7 +470,28 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
           <details><DisclosureSummary icon="pcb" label={`Attached context · ${boardContext.label}`} variant="compact" /><p>This source context accompanies your next message.</p><p className="break-words">{boardContext.instruction}</p></details>
           <button type="button" aria-label="Remove attached context" onClick={() => setDraftBoardContext(draftKey, null)}>×</button>
         </div>}
-        <div className="fd-composer rounded-xl border border-border bg-panel transition-colors focus-within:border-accent">
+        <div
+          className="fd-composer rounded-xl border border-border bg-panel transition-colors focus-within:border-accent"
+          data-testid="composer-drop-target"
+          onDragOver={(e) => {
+            if ([...e.dataTransfer.types].includes("Files")) {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "copy";
+            }
+          }}
+          onDrop={(e) => {
+            const images = imageFilesFromList(e.dataTransfer.files);
+            if (images.length === 0) return;
+            e.preventDefault();
+            void attachImageFiles(images);
+          }}
+          onPaste={(e) => {
+            const images = imageFilesFromList(e.clipboardData?.files);
+            if (images.length === 0) return;
+            e.preventDefault();
+            void attachImageFiles(images);
+          }}
+        >
           <VoiceBar
             state={voice.state}
             shortcut={settings.data?.voice.pushToTalkShortcut ?? "Alt+Space"}
@@ -490,12 +543,30 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
               onToggle={voice.toggle}
             />
             {thread && !ideaDraft && <PermissionsMenu key={thread.id} thread={thread} />}
+            {projectId && pending.some((a) => a.mime.startsWith("image/") && isSketchPath(a.path)) && (
+              <Button
+                variant="secondary"
+                size="sm"
+                data-testid="draft-from-photos"
+                disabled={analyzePhoto.isPending || loadingThread}
+                onClick={() => {
+                  const photos = pending.filter((a) => a.mime.startsWith("image/") && isSketchPath(a.path)).map((a) => a.path);
+                  void analyzePhoto.mutateAsync({
+                    projectId,
+                    photos,
+                    ...(draft.trim() ? { description: draft.trim() } : {}),
+                  }).then(() => setBoardTab("photo")).catch((failure: unknown) => setError(failure));
+                }}
+              >
+                <Icon name="image" width={14} height={14} />
+                <span className="fd-action-label">Draft from photos</span>
+              </Button>
+            )}
             {projectId && rootAutomation && (startMode ? <WorkspaceMenu className="fd-composer-more" label={<span aria-label="Assistant tools"><Icon name="more" width={18} height={18} /></span>}>
               <div className="fd-menu-caption">Automation</div>
               {finishAction}
               <p className="fd-menu-caption">Finish schematic, placement, routing and checks with the agent.</p>
             </WorkspaceMenu> : finishAction)}
-
             <div className="fd-composer-send-group ml-auto flex min-w-0 items-center gap-2">
               <div className="fd-agent-control relative min-w-0">
                 <Button

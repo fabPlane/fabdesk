@@ -25,6 +25,7 @@ import { CadTab } from "./CadTab";
 import { CinemaTab } from "./cinema/CinemaTab";
 import { DrcTab } from "./DrcTab";
 import { ArtTab } from "./ArtTab";
+import { PhotoTab } from "./PhotoTab";
 import { FilesTab } from "./FilesTab";
 import { NotesTab } from "./NotesTab";
 import { RendersTab } from "./RendersTab";
@@ -65,6 +66,8 @@ function TabBody({ tab, canvas = false, onOpenChecks }: { tab: BoardTab; canvas?
       return <ArtTab />;
     case "bom":
       return <ShoppingListTab />;
+    case "photo":
+      return <PhotoTab />;
     case "comments":
       return <ReviewComments />;
     case "diff":

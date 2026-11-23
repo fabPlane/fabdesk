@@ -16,6 +16,7 @@ export * from "./cad-runtime";
 export * from "./comments";
 export * from "./board-workspace";
 export * from "./finish-it";
+export * from "./photo";
 export * from "./routers";
 export * from "./speech";
 

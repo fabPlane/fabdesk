@@ -2,7 +2,7 @@
 import { TOOLSETS, type ToolDef, type ToolRegistry } from "../registry";
 
 const TOOLSET_BLURB: Record<string, string> = {
-  core: "always available",
+  core: "always available — includes photo_analyze / photo_to_project (draft an editable KiCad project from hardware photos)",
   project: "files, sketches, board settings, off-board parts, pinned comments, NOTES.md",
   circuit: "query the board, footprint search",
   route: "routing status/cancel/partial reroute",

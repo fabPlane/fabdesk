@@ -28,6 +28,10 @@ import type {
   DevicePushState,
   DoctorReport,
   FinishItSession,
+  PhotoAnalyzeRequest,
+  PhotoContinueRequest,
+  PhotoSighting,
+  PhotoState,
   Job,
   Message,
   OpenCatalogEntry,
@@ -558,6 +562,28 @@ export class CoreClient {
   stopFinishIt(projectId: string): Promise<{ session: FinishItSession | null }> {
     return this.request(`/projects/${encodeURIComponent(projectId)}/finish-it/stop`, {
       method: "POST",
+    });
+  }
+
+  getPhoto(projectId: string): Promise<PhotoState> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/photo`);
+  }
+  analyzePhoto(projectId: string, input: PhotoAnalyzeRequest): Promise<unknown> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/photo/analyze`, {
+      method: "POST",
+      json: input,
+    });
+  }
+  continuePhoto(projectId: string, input: PhotoContinueRequest = {}): Promise<unknown> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/photo/continue`, {
+      method: "POST",
+      json: input,
+    });
+  }
+  savePhotoSighting(projectId: string, sighting: PhotoSighting): Promise<{ sighting: PhotoSighting }> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/photo/sighting`, {
+      method: "PUT",
+      json: sighting,
     });
   }
 

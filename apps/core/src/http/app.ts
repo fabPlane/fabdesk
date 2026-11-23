@@ -85,6 +85,7 @@ import { parseTopics, sseResponse } from "./sse";
 import { cloudRoutes } from "./cloud-routes";
 import { resolveNativeBoardBinding } from "../assembly-board-binding";
 import { commentRoutes } from "./comment-routes";
+import { photoRoutes } from "./photo-routes";
 import { outputTrashRoutes } from "./output-trash-routes";
 import { createSpeechService, SpeechProviderError, type SpeechService } from "../speech";
 
@@ -422,6 +423,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
 
   commentRoutes(app, deps);
+  photoRoutes(app, deps);
   outputTrashRoutes(app, deps);
 
   app.get("/projects/:id/sketches", async (c) => {

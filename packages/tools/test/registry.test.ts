@@ -249,6 +249,8 @@ describe("registry", () => {
       "route_run",
       "verify_drc",
       "render_board",
+      "photo_analyze",
+      "photo_to_project",
       "project_checkpoint",
       "project_read_file",
       "project_write_file",
@@ -367,6 +369,7 @@ describe("registry", () => {
       "cad_fit",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
+    expect(reg.byToolset("core").length).toBe(11);
     expect(reg.byToolset("core").length).toBe(10);
     expect(() =>
       defineTool({

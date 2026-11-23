@@ -23,6 +23,9 @@ import type {
   AgentId,
   ApprovalDecision,
   PendingRequests,
+  PhotoAnalyzeRequest,
+  PhotoContinueRequest,
+  PhotoSighting,
   RuntimeMode,
   Job,
   Message,
@@ -1073,6 +1076,67 @@ export function useStopFinishIt() {
     mutationFn: (projectId: string) => client.stopFinishIt(projectId),
     onSuccess: (data, projectId) => {
       qc.setQueryData(["finish-it", projectId], data.session);
+    },
+  });
+}
+
+export function usePhoto(projectId: string | null) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["photo", projectId],
+    queryFn: () => client.getPhoto(projectId!),
+    enabled: !!projectId,
+  });
+}
+
+export function useAnalyzePhoto() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      ...input
+    }: { projectId: string } & PhotoAnalyzeRequest) =>
+      client.analyzePhoto(projectId, input),
+    onSuccess: (_data, vars) => {
+      void qc.invalidateQueries({ queryKey: ["photo", vars.projectId] });
+      void qc.invalidateQueries({ queryKey: ["file", vars.projectId] });
+      void qc.invalidateQueries({ queryKey: ["project", vars.projectId] });
+    },
+  });
+}
+
+export function useContinuePhoto() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      ...input
+    }: { projectId: string } & PhotoContinueRequest) =>
+      client.continuePhoto(projectId, input),
+    onSuccess: (_data, vars) => {
+      void qc.invalidateQueries({ queryKey: ["photo", vars.projectId] });
+      void qc.invalidateQueries({ queryKey: ["file", vars.projectId] });
+      void qc.invalidateQueries({ queryKey: ["project", vars.projectId] });
+    },
+  });
+}
+
+export function useSavePhotoSighting() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      sighting,
+    }: {
+      projectId: string;
+      sighting: PhotoSighting;
+    }) => client.savePhotoSighting(projectId, sighting),
+    onSuccess: (_data, vars) => {
+      void qc.invalidateQueries({ queryKey: ["photo", vars.projectId] });
+      void qc.invalidateQueries({ queryKey: ["file", vars.projectId] });
     },
   });
 }

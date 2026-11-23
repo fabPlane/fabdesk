@@ -2,16 +2,23 @@ import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCore, sortImportedBoards, importedBoardLabel, isBackupBoard, type ImportedBoardSort } from "@fabdesk/client-core";
 import { parsePublicGitHubUrl } from "@fabdesk/protocol";
-import { Select, Button, Dialog, Input } from "../components/ui";
+import { Select, Button, Dialog, Input, Textarea } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useUiStore } from "../stores/ui";
+import { imageFilesFromList } from "../chat/composer-photos";
+
+type CreateMode = "create" | "github" | "photo";
 
 /** Mounted only while open, so canceled names and locations never leak into the next project. */
-export function CreateProjectDialog({ onClose, onCreated, initialMode = "create" }: { onClose: () => void; onCreated: (id: string) => void; initialMode?: "create" | "github" }) {
+export function CreateProjectDialog({ onClose, onCreated, initialMode = "create" }: { onClose: () => void; onCreated: (id: string) => void; initialMode?: CreateMode }) {
   const { client, host } = useCore();
   const qc = useQueryClient();
-  const [mode, setMode] = useState<"create" | "github">(initialMode);
+  const [mode, setMode] = useState<CreateMode>(initialMode);
+  const setBoardTab = useUiStore((s) => s.setBoardTab);
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [description, setDescription] = useState("");
+  const [knownDimensionMm, setKnownDimensionMm] = useState("");
   const [name, setName] = useState("");
   const [nameTouched, setNameTouched] = useState(false);
   const [url, setUrl] = useState("");
@@ -54,13 +61,29 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
   };
   const submit = async () => {
     if (!name.trim() || pending || picking) return;
+    if (mode === "photo" && photos.length === 0) return;
+    if (mode === "github" && (!url.trim() || !destination || destination.exists)) return;
     setPending(true); setError(null);
     try {
       if (mode === "create") {
         const project = await client.createProject(name.trim(), directory ?? undefined);
         await finish(project.id);
+      } else if (mode === "photo") {
+        const project = await client.createProject(name.trim(), directory ?? undefined);
+        const uploaded: string[] = [];
+        for (const file of photos) {
+          const { path } = await client.uploadSketch(project.id, file, file.name);
+          uploaded.push(path);
+        }
+        const dim = Number(knownDimensionMm);
+        await client.analyzePhoto(project.id, {
+          photos: uploaded,
+          ...(description.trim() ? { description: description.trim() } : {}),
+          ...(Number.isFinite(dim) && dim > 0 ? { knownDimensionMm: dim, knownDimensionOf: "width" } : {}),
+        });
+        setBoardTab("photo");
+        await finish(project.id);
       } else {
-        if (!url.trim() || !destination || destination.exists) return;
         abort.current = new AbortController();
         const imported = await client.importGitHub(url.trim(), name.trim(), directory ?? undefined, abort.current.signal);
         await qc.invalidateQueries({ queryKey: ["projects"] });
@@ -78,9 +101,10 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
     catch (e) { setError(e); }
     finally { setPending(false); }
   };
-  return <Dialog open onClose={close} closeDisabled={pending || picking} title={result ? "Project imported" : mode === "github" ? "Import from GitHub" : "Create project"} className="!w-[520px]">
-    {!result && <div className="mb-5 flex gap-2" role="tablist" aria-label="Project setup">
+  return <Dialog open onClose={close} closeDisabled={pending || picking} title={result ? "Project imported" : mode === "github" ? "Import from GitHub" : mode === "photo" ? "Start from a photo" : "Create project"} className="!w-[520px]">
+    {!result && <div className="mb-5 flex flex-wrap gap-2" role="tablist" aria-label="Project setup">
       <Button type="button" role="tab" aria-selected={mode === "create"} {...(mode === "create" ? { variant: "primary" as const } : {})} disabled={pending} onClick={() => { setMode("create"); setError(null); }}>New project</Button>
+      <Button type="button" role="tab" aria-selected={mode === "photo"} {...(mode === "photo" ? { variant: "primary" as const } : {})} disabled={pending} onClick={() => { setMode("photo"); setError(null); }} data-testid="start-from-photo">From a photo</Button>
       <Button type="button" role="tab" aria-selected={mode === "github"} {...(mode === "github" ? { variant: "primary" as const } : {})} disabled={pending} onClick={() => { setMode("github"); setError(null); }}>Import from GitHub</Button>
     </div>}
     {result ? <div className="space-y-4">
@@ -109,6 +133,33 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
         }} placeholder="https://github.com/owner/repo" className="h-11" />
         <span className="text-xs font-normal leading-5 text-muted">Public repositories only. The Git origin stays connected.</span>
       </label>}
+      {mode === "photo" && <div
+        className="rounded-2xl border border-dashed border-border bg-bg/40 p-4 text-sm"
+        data-testid="create-project-photo-drop"
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setPhotos((prev) => [...prev, ...imageFilesFromList(e.dataTransfer.files)]);
+        }}
+      >
+        <label className="flex cursor-pointer flex-col items-center gap-2 text-center">
+          <Icon name="image" className="text-muted" />
+          <span className="font-medium">Drop photos of the board or device</span>
+          <span className="text-xs font-normal text-muted">Front and back help. PNG or JPEG.</span>
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple className="sr-only" onChange={(e) => {
+            setPhotos((prev) => [...prev, ...imageFilesFromList(e.target.files)]);
+            e.target.value = "";
+          }} />
+        </label>
+        {photos.length > 0 && <ul className="mt-3 space-y-1 text-xs">{photos.map((file) => <li key={`${file.name}-${file.size}`}>{file.name}</li>)}</ul>}
+      </div>}
+      {mode === "photo" && <label className="flex flex-col gap-2 text-[13px] font-medium">What should this board do?
+        <Textarea value={description} disabled={pending} onChange={(e) => setDescription(e.target.value)} placeholder="A USB-C LED badge I can wear, keep the cat-shaped outline…" className="min-h-[72px] text-sm font-normal" />
+      </label>}
+      {mode === "photo" && <label className="flex flex-col gap-2 text-[13px] font-medium">Known width (mm), optional
+        <Input type="number" min={1} step="0.1" value={knownDimensionMm} disabled={pending} onChange={(e) => setKnownDimensionMm(e.target.value)} placeholder="e.g. 50" className="h-11" />
+        <span className="text-xs font-normal leading-5 text-muted">Or leave blank and we infer scale from a USB-C, AA holder, or similar part.</span>
+      </label>}
       <label className="flex flex-col gap-2 text-[13px] font-medium">Project name
         <div className="relative"><Icon name="folder" className="pointer-events-none absolute left-3 top-3 text-muted" />
           <Input autoFocus={mode === "create"} required maxLength={80} value={name} disabled={pending} onChange={(e) => { setNameTouched(true); setName(e.target.value); }} placeholder="My project" className="h-11 pl-10" data-testid="create-project-name" />
@@ -135,7 +186,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
       {error != null && <ErrorNotice error={error} />}
       <div className="sticky bottom-0 z-10 flex flex-wrap justify-end gap-3 border-t border-border bg-panel py-3">
         <Button type="button" disabled={picking} onClick={() => { if (pending && abort.current) abort.current.abort(); else close(); }}>{pending && mode === "github" ? "Cancel import" : "Cancel"}</Button>
-        <Button type="submit" variant="primary" disabled={!name.trim() || pending || picking || (mode === "github" && (!url.trim() || !destination || destination.exists))}>{pending ? mode === "github" ? "Importing…" : "Creating…" : mode === "github" ? "Import project" : "Create project"}</Button>
+        <Button type="submit" variant="primary" disabled={!name.trim() || pending || picking || (mode === "github" && (!url.trim() || !destination || destination.exists)) || (mode === "photo" && photos.length === 0)}>{pending ? mode === "github" ? "Importing…" : mode === "photo" ? "Reading photos…" : "Creating…" : mode === "github" ? "Import project" : mode === "photo" ? "Start from photos" : "Create project"}</Button>
       </div>
     </form>}
   </Dialog>;

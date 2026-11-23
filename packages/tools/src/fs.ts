@@ -33,6 +33,12 @@ export const PROJECT_FILES = {
   comments: "comments.json",
   /** Git-tracked shared notes sheet for the board. */
   notes: "NOTES.md",
+  photo: "photo",
+  photoSighting: "photo/sighting.json",
+  photoIntent: "photo/intent.json",
+  photoDraft: "photo/draft.json",
+  photoSession: "photo/session.json",
+  photoPublish: "photo/publish.json",
 } as const;
 
 /**

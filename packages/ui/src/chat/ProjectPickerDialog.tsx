@@ -15,17 +15,19 @@ export function ProjectPickerDialog() {
 
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [fromPhoto, setFromPhoto] = useState(false);
 
   const choose = (projectId: string) => {
     startNewChatInProject(projectId);
     setCreating(false);
     setImporting(false);
+    setFromPhoto(false);
 
   };
 
   if (open && activeProjectId) return <Dialog open onClose={() => setOpen(false)} title="New conversation"><p>Start in {projects.data?.find(project => project.id === activeProjectId)?.name ?? "this project"}, or return to Home to choose another. Cancel keeps your current conversation.</p><div className="mt-4 flex justify-end gap-2"><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" onClick={() => choose(activeProjectId)}>Start conversation here</Button><Button onClick={() => { setOpen(false); useUiStore.getState().requestProjectClose(true); }}>Close project · Home</Button></div></Dialog>;
 
-  if (open && (creating || importing)) return <CreateProjectDialog initialMode={importing ? "github" : "create"} onClose={() => { setCreating(false); setImporting(false); }} onCreated={choose} />;
+  if (open && (creating || importing || fromPhoto)) return <CreateProjectDialog initialMode={importing ? "github" : fromPhoto ? "photo" : "create"} onClose={() => { setCreating(false); setImporting(false); setFromPhoto(false); }} onCreated={choose} />;
 
   return (
     <Dialog open={open} onClose={() => setOpen(false)} title="Which project?" className="w-[420px]">
@@ -53,6 +55,7 @@ export function ProjectPickerDialog() {
           <Button variant="primary" onClick={() => setCreating(true)}>
             New project
           </Button>
+          <Button onClick={() => setFromPhoto(true)} data-testid="picker-start-from-photo">Start from a photo</Button>
           <Button onClick={() => setImporting(true)}>Import from GitHub</Button>
         </div>
 

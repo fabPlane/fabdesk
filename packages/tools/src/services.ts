@@ -1241,4 +1241,9 @@ export interface CoreServices {
   cadKernels?: import("./cad-kernel").CadKernelHost;
   /** Install-on-demand autorouter catalog (Settings → Routers). */
   routers?: RouterRegistry;
+  /**
+   * Optional vision pass for photo_analyze. Tests inject a fake provider.
+   * When omitted, photo tools use the heuristic outline/scale provider.
+   */
+  vision?: import("./photo/vision").VisionProvider;
 }
