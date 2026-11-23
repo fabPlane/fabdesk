@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { BoardLayers, BOARD_LAYERS_PATH, BoardModelRevision, BOARD_MODEL_REVISION_PATH, type BoardSourceSelection } from "@fabdesk/protocol";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { BoardLayers, BOARD_LAYERS_PATH, type BoardSourceSelection } from "@fabdesk/protocol";
 import { useCoreClient } from "./provider";
 import { CoreHttpError, type CoreClient } from "./CoreClient";
 import { sha256Blob } from "./pcb-preview-revision";
-import { inspectBoardModelRevision } from "./board-model-revision";
-import { inspectAssemblyBoardModel } from "./assembly-board-model";
+import { loadProgressiveBoardModel, type BoardPreviewModel } from "./progressive-board-model";
 
 export async function runPreviewTool(client: Pick<CoreClient, "callTool" | "waitJob">, name: string, args: Record<string, unknown>) {
   const response = await client.callTool(name, args);
+  let result: unknown = "result" in response ? response.result : response;
   if (response.jobId) {
     const job = await client.waitJob(response.jobId);
     if (job.status !== "done") throw new Error(job.error ?? "Preview preparation stopped. Try again.");
+    result = job.result;
   }
+  const envelope = result as { isError?: boolean; ok?: boolean; text?: string } | null;
+  if (envelope?.isError || envelope?.ok === false) throw new Error(envelope.text ?? "Preview preparation failed.");
 }
 
 export async function readBoardLayers(client: Pick<CoreClient, "readFile">, projectId: string, path: string, hash: string) {
@@ -39,26 +42,13 @@ export function useAutomaticBoardViews({ projectId, directory = ".", board, sour
   });
   const hash = source.data;
   const args = { projectId, ...(board ? { board } : {}), expectedSourceSha256: hash };
-  const model = useQuery({ queryKey: ["automatic-board-model", ...scope, hash], enabled: enabled && !!hash,
+  const queries = useQueryClient(), modelKey = ["automatic-board-model", ...scope, hash];
+  const model = useQuery<BoardPreviewModel>({ queryKey: modelKey, enabled: enabled && !!hash,
     retry: false, staleTime: Infinity, gcTime: 5 * 60_000,
-    queryFn: async () => {
-      if (board) {
-        let saved = await inspectAssemblyBoardModel(client, projectId, board);
-        if (saved.sourceSha256 !== hash) throw new Error("Board changed. Waiting for its latest saved version.");
-        if (saved.state !== "source-unchanged") {
-          await runPreviewTool(client, "render_glb", args);
-          saved = await inspectAssemblyBoardModel(client, projectId, board);
-        }
-        if (saved.sourceSha256 !== hash || saved.state !== "source-unchanged" || !saved.model) throw new Error("Model does not match this board. Retry preparation.");
-        return { blob: saved.model, warnings: saved.warnings };
-      }
-      if (await inspectBoardModelRevision(client, projectId) !== "source-unchanged") await runPreviewTool(client, "render_glb", args);
-      if (await sha256Blob(await client.readFileBlob(projectId, "board.kicad_pcb")) !== hash) throw new Error("Board changed while preparing its model.");
-      const [blob, text] = await Promise.all([client.readFileBlob(projectId, "renders/board.glb"), client.readFile(projectId, BOARD_MODEL_REVISION_PATH)]);
-      const receipt = BoardModelRevision.parse(JSON.parse(text));
-      if (receipt.sourceSha256 !== hash || receipt.artifactSha256 !== await sha256Blob(blob)) throw new Error("Model changed while opening it. Retry preparation.");
-      return { blob, warnings: receipt.warnings ?? [] };
-    },
+    refetchOnReconnect: query => query.state.data?.pendingModels ? "always" : false,
+    queryFn: () => loadProgressiveBoardModel(client, projectId, hash!, board,
+      options => runPreviewTool(client, "render_glb", { ...args, ...options }),
+      local => queries.setQueryData(modelKey, local), () => globalThis.navigator?.onLine !== false),
   });
   const layers = useQuery({ queryKey: ["automatic-board-layers", ...scope, hash], enabled: enabled && !!hash,
     retry: false, staleTime: Infinity, gcTime: 5 * 60_000,
@@ -72,5 +62,10 @@ export function useAutomaticBoardViews({ projectId, directory = ".", board, sour
       return result;
     },
   });
-  return { source, model, layers, path: prefix + "renders/board.glb" };
+  const refreshModel = useMutation({ mutationKey: ["refresh-board-model", ...scope, hash], networkMode: "always", mutationFn: async () => {
+    if (!hash || !enabled) throw new Error("Wait for the saved board before refreshing its preview.");
+    if (!model.data?.pendingModels) await runPreviewTool(client, "render_glb", args);
+    await model.refetch({ throwOnError: true });
+  } });
+  return { source, model, layers, refreshModel, path: prefix + "renders/board.glb" };
 }

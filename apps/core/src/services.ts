@@ -153,6 +153,7 @@ export async function createServices(
       renderPng: (cli, o) => kicad.renderPng(cli, o),
       rasterizeSvg: (svg, o) => kicad.rasterizeSvg(svg, o),
       exportGlb: (cli, o) => kicad.exportGlb(cli, o),
+      prepareModels: (cli, o) => kicad.prepareBoardModels(cli, o),
       measureMechanical: (cli, o) => kicad.collectMechanical(cli, o),
       boardStats: async (cli, o) => {
         try {

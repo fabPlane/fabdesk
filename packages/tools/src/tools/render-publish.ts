@@ -1,3 +1,4 @@
+import { stockModelCacheRoot, withModelCache } from "@fabdesk/kicad";
 import { beginPublicationVisibility } from "../publication-visibility";
 import { snapshotProjectDependencies, assertProjectDependencies } from "../project-dependencies";
 /** Prepare a saved-file handoff privately, then publish only if every captured input is unchanged. */
@@ -25,11 +26,11 @@ export const render_publish = defineTool({
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
-    openWorldHint: false,
+    openWorldHint: true,
     idempotentHint: true,
   },
   longRunning: true,
-  handler: async ({ maxWidth }, ctx) => {
+  handler: async ({ maxWidth }, ctx) => withModelCache(stockModelCacheRoot(), async () => {
     if (ctx.board)
       throw new ToolError(
         "Combined handoff publishing is not yet supported for assembly members; use the source-qualified render and check tools.",
@@ -64,6 +65,12 @@ export const render_publish = defineTool({
           "Publishing requires a complete project-owned preview hierarchy",
           "precondition",
         );
+      const imported = project.manifest().importedBoard;
+      await ctx.services.kicad.prepareModels(cli, {
+        board: await jailPath(project.dir, "board.kicad_pcb"),
+        modelProjectDir: imported ? dirname(await jailPath(project.dir, imported.path)) : project.dir,
+        signal: ctx.signal,
+      });
       const dependencies = await snapshotProjectDependencies(project.dir);
       const inputs = new Map<string, Buffer>();
       for (const path of new Set([
@@ -263,5 +270,5 @@ export const render_publish = defineTool({
     } finally {
       activePublications.delete(project.dir);
     }
-  },
+  }),
 });

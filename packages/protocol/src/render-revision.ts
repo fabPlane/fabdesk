@@ -49,6 +49,7 @@ export const BoardModelRevision = z.object({
   dependencies: z.literal("unverified"),
   /** Recorded import directory used for KIPRJMOD; does not establish model coverage or freshness. */
   modelProjectDirectory: AssemblyRelativePath.optional(),
+  pendingModels: z.number().int().positive().optional(),
   warnings: z.array(z.string()).optional(),
 });
 export type BoardModelRevision = z.infer<typeof BoardModelRevision>;
