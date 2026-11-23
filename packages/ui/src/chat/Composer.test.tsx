@@ -92,3 +92,39 @@ test("Home can begin an idea draft without requiring a project picker", () => {
   expect(sendButton(html)).not.toContain(' disabled=""');
   expect(html).not.toContain("Choose project");
 });
+
+test("markup toggle is off by default and pressed with a drawing placeholder while on", () => {
+  const html = renderComposer("project-a");
+  expect(html).toContain('data-testid="markup-toggle"');
+  expect(html).toContain("Markup");
+  expect(html).not.toContain("Draw on the canvas and ask about it");
+  expect(html.match(/<button[^>]*data-testid="markup-toggle"[^>]*>/)?.[0]).not.toContain(' disabled=""');
+  const initial = useUiStore.getInitialState();
+  const previous = { ...initial };
+  Object.assign(initial, { markupOpen: true, markupTool: "pen", activeProjectId: "project-a", drafts: { [newChatDraftKey("project-a")]: "Build a board" } });
+  try {
+    const open = renderComposer("project-a");
+    expect(open).toContain('aria-pressed="true"');
+    expect(open).toContain("Draw on the canvas and ask about it");
+  } finally {
+    Object.assign(initial, previous);
+  }
+});
+
+test("startMode hides markup because there is no board view", () => {
+  expect(renderComposer(null, null, false, true, undefined, undefined, true)).not.toContain('data-testid="markup-toggle"');
+});
+
+test("markup toggle is disabled on DOM-only workspace tabs", () => {
+  const initial = useUiStore.getInitialState();
+  const previous = { ...initial };
+  Object.assign(initial, { boardTab: "notes", workspaceArea: "files", activeProjectId: "project-a", drafts: { [newChatDraftKey("project-a")]: "Build a board" } });
+  try {
+    const html = renderComposer("project-a");
+    const button = html.match(/<button[^>]*data-testid="markup-toggle"[^>]*>/)?.[0];
+    expect(button).toBeDefined();
+    expect(button).toContain(' disabled=""');
+  } finally {
+    Object.assign(initial, previous);
+  }
+});

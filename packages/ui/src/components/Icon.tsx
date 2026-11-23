@@ -19,6 +19,8 @@ export type IconName =
   | "tool"
   | "shield"
   | "compose"
+  | "markup"
+  | "arrowRight"
   | "copy"
   | "check"
   | "checklist"
@@ -87,6 +89,8 @@ export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconN
     checklist: <><path d="m3 6 1.5 1.5L7 4M10 6h11M3 12h4m3 0h11M3 18h4m3 0h11" /></>,
     warning: <><path d="m12 3 10 18H2L12 3Z" /><path d="M12 9v5m0 3h.01" /></>,
     compose: <><path d="M12 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7" /><path d="m16 3 5 5-10 10-5 1 1-5 9-11Z" /></>,
+    markup: <><path d="m15 3 6 6-11 11H4v-6L15 3Z" /><path d="M13 5 19 11" /><path d="M4 21h7" /></>,
+    arrowRight: <path d="M5 12h14M13 6l6 6-6 6" />,
     folderOpen: <><path d="M3 18V6a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v2" /><path d="M3 18a2 2 0 0 0 2 2h13a2 2 0 0 0 1.9-1.4l2-6A1.2 1.2 0 0 0 20.8 11H7.5a2 2 0 0 0-1.9 1.4L3 18Z" /></>,
     trash: <><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6" /></>,
     minus: <path d="M5 12h14" />,

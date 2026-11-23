@@ -10,6 +10,8 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { useProjectBlobUrl } from "../hooks/queries";
 import { Button, Spinner } from "../components/ui";
+import { useUiStore } from "../stores/ui";
+import { bindMarkupWebglCanvas, unbindMarkupWebglCanvas } from "../markup/webgl";
 
 type CameraState = { position: THREE.Vector3; target: THREE.Vector3; up: THREE.Vector3; minDistance: number };
 
@@ -64,6 +66,8 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
   const framedSelection = useRef<{ scope: string; ref: string | null } | null>(null);
   const zoom = useRef<((factor: number) => void) | null>(null);
   const fit = useRef<(() => void) | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
+  const markupOpen = useUiStore((s) => s.markupOpen);
   const query = useProjectBlobUrl(projectId, blob ? null : path);
   const data = blob ?? query.data, isPending = !blob && query.isPending, isError = !blob && query.isError, refetch = query.refetch;
   const [error, setError] = useState<string | null>(null);
@@ -114,11 +118,14 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
         renderer.domElement.setAttribute("aria-label", "3D model. Drag to orbit, scroll to zoom, right-drag to pan. Use Fit view to reset.");
         target.append(renderer.domElement);
         controls = new OrbitControls(camera, renderer.domElement);
+        controlsRef.current = controls;
+        controls.enabled = !useUiStore.getState().markupOpen;
         controls.listenToKeyEvents(renderer.domElement);
         controls.enableDamping = false; controls.minDistance = span * .08; controls.maxDistance = span * 60;
         let measureSelection = () => {};
         const selectionIsFramed = () => framedSelection.current !== null && framedSelection.current.scope === currentSelection.current.scope && framedSelection.current.ref === currentSelection.current.ref;
         const render = () => { if (!disposed && renderer && camera) { renderer.render(scene, camera); measureSelection(); } };
+        bindMarkupWebglCanvas(renderer.domElement, render);
         let motionFrame = 0;
         stopMotion = () => { cancelAnimationFrame(motionFrame); motionFrame = 0; if (renderer) renderer.domElement.dataset["focusMotion"] = "idle"; };
         const reset = () => {
@@ -244,13 +251,18 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource }: 
       }
     })();
     return () => {
-      disposed = true; stopMotion(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
+      disposed = true; stopMotion(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.(); controlsRef.current = null;
       if (camera && controls) savedCamera.current = { position: camera.position.clone(), target: controls.target.clone(), up: camera.up.clone(), minDistance: controls.minDistance };
       observer?.disconnect(); cleanupContext?.(); controls?.dispose();
       if (model) disposeModel(model);
+      if (renderer) unbindMarkupWebglCanvas(renderer.domElement);
       renderer?.dispose(); renderer?.domElement.remove();
     };
   }, [data, path, retry]);
+
+  useEffect(() => {
+    if (controlsRef.current) controlsRef.current.enabled = !markupOpen;
+  }, [markupOpen]);
 
   return <div className="fd-model-canvas" data-testid="model-canvas" onKeyDown={event => { if (event.key === "Escape" && selectionSource && selection.ref && !(event.target instanceof Element && event.target.closest("input, textarea, select, [role=dialog]"))) { selection.clear(); event.preventDefault(); event.stopPropagation(); } }}>
     {selectionSource && <PartSelectionBar reference={selection.ref} references={selectableRefs} onSelect={selection.select} onClear={selection.clear} onFocus={selectableRefs.includes(selection.ref ?? "") ? () => focusSelection.current?.() : undefined} notice={selectionNotice} />}

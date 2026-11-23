@@ -243,6 +243,7 @@ export const codexAdapter: AgentAdapter = {
    * permission decisions remain in the separate approvals integration.
    */
   supportsSupervised: false,
+  images: "native",
   run(session: AgentSession): AgentRun {
     const parser = new CodexStreamParser();
     const bin = session.binaryPath ?? resolveFirst(CANDIDATES) ?? "codex";

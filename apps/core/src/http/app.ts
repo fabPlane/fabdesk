@@ -1,6 +1,7 @@
 /** Hono application: auth + origin guard, control API, tools/jobs, MCP, events. */
 import { readFile, stat, mkdir } from "node:fs/promises";
 import { threadTitleFrom } from "../thread-title";
+import { imagePartsFromAttachments } from "../message-attachments";
 import { withRouterRuntime } from "./router-runtime";
 import { basename, extname, isAbsolute, join } from "node:path";
 import { Hono, type Context } from "hono";
@@ -626,7 +627,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const parts = [
       { type: "text" as const, text: body.content },
       ...(body.workspaceContext ? [{ type: "workspace_context" as const, context: body.workspaceContext }] : []),
-      ...body.attachments.map((a) => ({ type: "image" as const, path: a.path, mime: a.mime })),
+      ...imagePartsFromAttachments(body.attachments),
     ];
     if (deps.runs.isRunning(t.id)) {
       // C5: with a run live, keep the message and send it when the run ends. The agent/model switch
@@ -681,7 +682,11 @@ export function createApp(deps: AppDeps): Hono<Env> {
         ...((body.model ?? t.model) ? { model: (body.model ?? t.model) as string } : {}),
         prompt: body.content,
         ...(body.workspaceContext ? { workspaceContext: body.workspaceContext } : {}),
-        attachments: body.attachments,
+        attachments: body.attachments.map((a) => ({
+          path: a.path,
+          mime: a.mime,
+          ...(a.role ? { role: a.role } : {}),
+        })),
       });
     } catch (e) {
       // Refused (thread or project busy): the client keeps its draft, so the stored turn would

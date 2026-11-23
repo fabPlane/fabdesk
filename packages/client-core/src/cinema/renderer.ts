@@ -143,6 +143,10 @@ export function toCanvas(t: Transform, x: number, y: number): [number, number] {
   return [x * t.scale + t.ox, t.oy - y * t.scale];
 }
 
+export function fromCanvas(t: Transform, cx: number, cy: number): [number, number] {
+  return [(cx - t.ox) / t.scale, (t.oy - cy) / t.scale];
+}
+
 /** Shapes in `current` whose ids do not appear in `previous` (the copper drawn in white). */
 export function newShapeIds(previous: readonly CinemaShape[] | undefined, current: readonly CinemaShape[]): Set<number> {
   const prevIds = new Set<number>();

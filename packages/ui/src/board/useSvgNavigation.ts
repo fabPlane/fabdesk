@@ -8,6 +8,7 @@ export function useSvgNavigation(
   setZoom: Dispatch<SetStateAction<number>>,
   viewKey: string,
   commentMode = false,
+  panLocked = false,
 ) {
   const currentZoom = useRef(zoom);
   const anchor = useRef<{ x: number; y: number; clientX: number; clientY: number } | null>(null);
@@ -36,6 +37,10 @@ export function useSvgNavigation(
     const wheel = (event: WheelEvent) => {
       const host = drawing.current;
       if (!host || !event.deltaY) return;
+      if (panLocked) {
+        event.preventDefault();
+        return;
+      }
       const rect = host.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
       // React's delegated wheel listener is passive; this native listener must
@@ -56,6 +61,7 @@ export function useSvgNavigation(
     };
     const down = (event: PointerEvent) => {
       if (drag || event.pointerType === "touch" || (event.button !== 0 && event.button !== 1)) return;
+      if (panLocked) return;
       if (commentMode && event.button === 0) return;
       const target = event.target;
       if (!(target instanceof Element) || target.closest("button, a, input, textarea, select, [data-comment-pin], [data-canvas-tools]")) return;
@@ -110,7 +116,7 @@ export function useSvgNavigation(
       if (drag?.target.hasPointerCapture(drag.id)) drag.target.releasePointerCapture(drag.id);
       anchor.current = null;
     };
-  }, [viewport, drawing, setZoom, viewKey, commentMode]);
+  }, [viewport, drawing, setZoom, viewKey, commentMode, panLocked]);
 
   return dragging;
 }

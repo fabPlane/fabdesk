@@ -16,7 +16,7 @@ import { claudeArgs, claudeMcpConfig, claudeEnv } from "./claude";
 import { codexArgs, codexForeignServers, codexAdapter, codexEnv, CODEX_QUESTION_INSTRUCTIONS } from "./codex";
 import { cursorArgs, cursorMcpPath, writeCursorMcp } from "./cursor";
 import { grokArgs, grokConfigPath, writeGrokConfig, grokEnv } from "./grok";
-import { agentEnv, promptWithAttachments, replaceMarkedBlock } from "./shared";
+import { agentEnv, applyImagePolicy, promptWithAttachments, replaceMarkedBlock } from "./shared";
 
 const TOKEN = "super-secret-token";
 let dir: string;
@@ -59,15 +59,29 @@ describe("shared", () => {
     expect(env["PATH"]).toBe(process.env["PATH"] ?? "");
   });
 
-  test("promptWithAttachments mentions sketches and other files", () => {
+  test("promptWithAttachments mentions sketches, marked views and other files", () => {
     const p = promptWithAttachments("Go", [
       { path: "/a.png", mime: "image/png" },
+      { path: "/m.png", mime: "image/png", role: "markup" },
       { path: "/notes.pdf", mime: "application/pdf" },
     ]);
-    expect(p).toBe("Go\n\nSketch: /a.png\nAttachment (application/pdf): /notes.pdf");
+    expect(p).toBe("Go\n\nSketch: /a.png\nMarked view: /m.png\nAttachment (application/pdf): /notes.pdf");
     expect(
       promptWithAttachments("Go", [{ path: "/a.png", mime: "image/png" }], { skipImages: true }),
     ).toBe("Go");
+  });
+
+  test("applyImagePolicy drops images and notes when the CLI cannot take them", () => {
+    const markup = applyImagePolicy("none", "Make this thicker", [
+      { path: "/m.png", mime: "image/png", role: "markup" },
+      { path: "/notes.pdf", mime: "application/pdf" },
+    ]);
+    expect(markup.attachments).toEqual([{ path: "/notes.pdf", mime: "application/pdf" }]);
+    expect(markup.prompt).toContain("does not accept images");
+    expect(markup.prompt).toContain("markup text context");
+    const kept = applyImagePolicy("read", "Go", [{ path: "/m.png", mime: "image/png", role: "markup" }]);
+    expect(kept.attachments).toHaveLength(1);
+    expect(kept.prompt).toBe("Go");
   });
 
   test("agentEnv respects platform casing when overriding inherited variables", () => {

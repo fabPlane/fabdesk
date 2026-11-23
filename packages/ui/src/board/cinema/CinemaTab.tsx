@@ -221,7 +221,7 @@ function ProjectCinema({ projectId, scopeReady, board, prefix = "", sourceSha256
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!ownedRunId || e.metaKey || e.ctrlKey || e.altKey || isEditable(e.target)) return;
+      if (!ownedRunId || e.metaKey || e.ctrlKey || e.altKey || isEditable(e.target) || useUiStore.getState().markupOpen) return;
       const s = useCinemaStore.getState();
       switch (e.key) {
         case " ":

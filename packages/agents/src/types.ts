@@ -35,9 +35,12 @@ export interface AgentSupervisor {
   requestInput(req: { question: string; options?: string[]; signal?: AbortSignal }): Promise<string>;
 }
 
+export type AgentImageSupport = "native" | "read" | "none";
+
 export interface AgentAttachment {
   path: string;
   mime: string;
+  role?: "sketch" | "markup";
 }
 
 export interface AgentSession {
@@ -85,6 +88,8 @@ export interface AgentAdapter {
   readonly beta?: boolean;
   /** Can pause a tool call until a human approves it (`runtimeMode: "supervised"`). */
   readonly supportsSupervised: boolean;
+  /** How this CLI receives images: native flags, readable paths in the prompt, or not at all. */
+  readonly images?: AgentImageSupport;
   detect(binaryPath?: string): Promise<DetectResult>;
   models(): string[];
   run(session: AgentSession): AgentRun;

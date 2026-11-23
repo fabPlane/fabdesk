@@ -223,6 +223,7 @@ function PlacementWorkspace({ projectId, baseline, canvas }: { projectId: string
   const session = preview?.session ?? history?.present;
   const dirty = !!history && history.revision !== savedRevision;
   const blocked = !!busy || !!preview;
+  const markupOpen = useUiStore((s) => s.markupOpen);
   const files = canvas ? (project.data?.files.some(f => f.path === baseline.path) ? [baseline.path] : []) : placementBoardFiles(project.data?.files ?? []);
   const one =
     selection.length === 1 ? session?.parts.find((p) => p.id === selection[0]) : undefined;
@@ -912,7 +913,7 @@ function PlacementWorkspace({ projectId, baseline, canvas }: { projectId: string
                 push={push}
                 grid={grid}
                 mode={mode}
-                disabled={blocked}
+                disabled={blocked || markupOpen}
                 focus={focus}
                 onSelection={selectParts}
                 onResize={(w, h) =>

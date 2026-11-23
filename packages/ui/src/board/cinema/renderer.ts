@@ -18,6 +18,7 @@ export {
   computeBounds,
   computeTransform,
   toCanvas,
+  fromCanvas,
   newShapeIds,
   perfStatusText,
   frameStatusText,

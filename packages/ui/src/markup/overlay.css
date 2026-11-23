@@ -1,0 +1,43 @@
+.fd-markup-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: crosshair;
+}
+.fd-markup-overlay canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  min-height: 0;
+}
+.fd-markup-tools {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--fd-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--fd-panel) 92%, transparent);
+  box-shadow: 0 8px 24px color-mix(in srgb, black 18%, transparent);
+  cursor: default;
+}
+.fd-markup-tools .fd-button { height: 32px; }
+.fd-markup-hint {
+  margin-left: 4px;
+  padding: 0 8px;
+  color: var(--fd-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+@media (max-width: 780px) {
+  .fd-markup-hint { display: none; }
+}

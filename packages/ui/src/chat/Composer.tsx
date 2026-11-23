@@ -25,6 +25,8 @@ import { MicButton, VoiceBar } from "./voice/VoiceBar";
 import { WorkspaceMenu } from "../layout/WorkspaceMenu";
 import { FinishItPanel } from "./FinishItPanel";
 import { finishItActive } from "./finish-it-view";
+import { captureMarkupSnapshot } from "../markup/session";
+import { markupAttachment, markupViewCapturable } from "../markup/payload";
 
 /** Bridge for the global shortcut hook (mod+Enter send, mod+. abort) and for app automation. */
 export const composerHandlers: {
@@ -83,6 +85,11 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
   const removeAttachment = useUiStore((s) => s.removeAttachment);
   const clearAttachments = useUiStore((s) => s.clearAttachments);
   const setSketchOpen = useUiStore((s) => s.setSketchOpen);
+  const markupOpen = useUiStore((s) => s.markupOpen);
+  const setMarkupOpen = useUiStore((s) => s.setMarkupOpen);
+  const boardTab = useUiStore((s) => s.boardTab);
+  const workspaceArea = useUiStore((s) => s.workspaceArea);
+  const markupAvailable = markupViewCapturable(boardTab, workspaceArea);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const focusNonce = useUiStore((s) => s.composerFocusNonce);
   const agentPickerOpen = useUiStore((s) => s.agentPickerOpen);
@@ -115,6 +122,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
   const [agentId, setAgentId] = useState<AgentId>(thread?.agentId ?? settings.data?.defaultAgent ?? "claude");
   const [model, setModel] = useState<string>(thread ? thread.model ?? "" : settings.data?.agents[settings.data.defaultAgent]?.model ?? "");
   const [sending, setSending] = useState(false);
+  const sendingLock = useRef(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [selectionNotice, setSelectionNotice] = useState<{ agentId: AgentId; model: string; error: unknown; savedForChat: boolean } | null>(null);
@@ -243,7 +251,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
 
   const send = useCallback(async () => {
     const typed = draft.trim();
-    if (!typed || sending || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending || savingEffort.current) return;
+    if (!typed || sending || sendingLock.current || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending || savingEffort.current) return;
     if (!thread && !projectId && !startMode) {
       setProjectPickerOpen(true);
       return;
@@ -253,13 +261,33 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
       await beginFinishIt();
       return;
     }
-    // `/shopping-list …` and friends expand into the instructions the agent needs.
-    const expanded = expandSlashCommand(typed) ?? typed;
-    const content = expanded;
-    const workspaceContext = captureAssistantContext(selectAssistantState(useUiStore.getState()), boardSources.data, boardSources.isFetching || boardSources.isError, matchingContexts);
+    // Guard before capture/upload so a second Enter cannot double-send while the snapshot awaits.
+    sendingLock.current = true;
     setSending(true);
     setError(null);
+    // `/shopping-list …` and friends expand into the instructions the agent needs.
+    const expanded = expandSlashCommand(typed) ?? typed;
+    let content = expanded;
+    const attachments = pending.map((a) => ({ path: a.path, mime: a.mime, ...(a.role ? { role: a.role } : {}) }));
     try {
+      if (useUiStore.getState().markupOpen) {
+        try {
+          const shot = await captureMarkupSnapshot();
+          if (shot) {
+            content = `${content}\n\n${shot.context}`;
+            if (shot.blob && projectId) {
+              const { path } = await client.uploadSketch(projectId, shot.blob, `markup-${Date.now()}.png`);
+              attachments.push(markupAttachment(path));
+            }
+          } else {
+            content = `${content}\n\n[markup]\nnote: marked view image was not attached; use this text context`;
+          }
+        } catch {
+          content = `${content}\n\n[markup]\nnote: marked view image was not attached; use this text context`;
+        }
+        useUiStore.getState().setMarkupOpen(false);
+      }
+      const workspaceContext = captureAssistantContext(selectAssistantState(useUiStore.getState()), boardSources.data, boardSources.isFetching || boardSources.isError, matchingContexts);
       let threadId = thread?.id;
       let created = preparedThread.current;
       if (!threadId) {
@@ -271,7 +299,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
       const input = {
         content,
         workspaceContext: created && !thread ? { ...workspaceContext, projectId: created.projectId } : workspaceContext,
-        attachments: pending.map((a) => ({ path: a.path, mime: a.mime })),
+        attachments,
         agentId,
         ...(model ? { model } : {}),
       };
@@ -293,9 +321,10 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
       // Retain this prepared thread and the visible draft for a normal retry.
       setError(e);
     } finally {
+      sendingLock.current = false;
       setSending(false);
     }
-  }, [draft, rootAutomation, matchingContexts, boardSources.data, boardSources.isFetching, boardSources.isError, setDraftBoardContext, sending, saveEffort.isPending, loadingThread, settings.data, savePreference.isPending, startMode, projectId, setProjectPickerOpen, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
+  }, [draft, rootAutomation, matchingContexts, boardSources.data, boardSources.isFetching, boardSources.isError, setDraftBoardContext, sending, saveEffort.isPending, loadingThread, settings.data, savePreference.isPending, startMode, projectId, setProjectPickerOpen, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, voice.reset, beginFinishIt, client]);
 
   const stop = useCallback(async () => {
     if (!run || stopping) return;
@@ -340,7 +369,9 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
 
   const suggestions = slashSuggestions(draft).filter(command => rootAutomation || !isFinishItCommand(`/${command.name}`));
   const mod = modKey(host.platform);
-  const placeholder = ideaDraft
+  const placeholder = markupOpen
+    ? "Draw on the canvas and ask about it"
+    : ideaDraft
     ? "Ask or describe the next step…" : thread
     ? "Message the agent..."
     : startMode ? "Describe your idea or ask a question…" : projectId
@@ -454,6 +485,11 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
             rows={1}
             onChange={(e) => setDraft(draftKey, e.target.value)}
             onKeyDown={(e) => {
+              if (e.key === "Escape" && markupOpen) {
+                e.preventDefault();
+                setMarkupOpen(false);
+                return;
+              }
               if (e.key === "Escape" && voice.state.phase !== "idle") {
                 e.preventDefault();
                 voice.cancel();
@@ -479,6 +515,19 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
               onClick={() => setSketchOpen(true)}
             >
               <Icon name="compose" width={16} height={16} /><span className="fd-action-label">Sketch</span>
+            </Button>}
+            {!startMode && <Button
+              variant={markupOpen ? "primary" : "ghost"}
+              size="sm"
+              className="fd-markup-button"
+              aria-label="Markup"
+              aria-pressed={markupOpen}
+              disabled={!markupAvailable && !markupOpen}
+              title={markupOpen ? "Exit markup (Esc)" : markupAvailable ? "Markup: draw on the current view and ask about it" : "Markup is available on schematic, PCB, placement, routing, 3D, CAD, and artwork views"}
+              data-testid="markup-toggle"
+              onClick={() => setMarkupOpen(!markupOpen)}
+            >
+              <Icon name="markup" width={16} height={16} /><span className="fd-action-label">Markup</span>
             </Button>}
             <MicButton
               active={voice.state.phase === "recording"}

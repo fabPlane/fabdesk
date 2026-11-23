@@ -34,6 +34,8 @@ import { ShoppingListTab } from "./ShoppingListTab";
 import { SvgTab } from "./SvgTab";
 import { ThreeDTab } from "./ThreeDTab";
 import { OrderChecksButton } from "./OrderChecksButton";
+import { MarkupOverlay } from "../markup/Overlay";
+import { markupViewCapturable } from "../markup/payload";
 
 const PlacementTab = lazy(() => import("./placement/PlacementTab").then(module => ({ default: module.PlacementTab })));
 
@@ -99,6 +101,7 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
   const projects = useProjects();
   const project = projects.data?.find((item) => item.id === projectId);
   const mod = modKey(host.platform);
+  const markupCapturable = markupViewCapturable(tab, area);
   const visibleTabs = workspaceViews(area)
     .filter(item => area !== "boards" || item.tab !== "cinema" && item.tab !== "art" && item.tab !== "placement")
     .map(item => ({
@@ -119,7 +122,7 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
       {area === "boards" && tab !== "cinema" && tab !== "placement" && <div className="fd-board-task-actions">{tab === "pcb" && <Button size="sm" variant="secondary" onClick={() => setWorkspaceTab("placement")}><Icon name="pcb" width={18} height={18} />Edit placement</Button>}<Button size="sm" className="fd-routing-task" variant="secondary" onClick={() => setWorkspaceTab("cinema")}><Icon name="route" width={18} height={18} />Routing</Button><Button size="sm" onClick={openChecks}><Icon name="checkCircle" width={18} height={18} />Checks</Button></div>}
     </div>
     {projectId && <BoardChecksDialog key={projectId} projectId={projectId} open={checksOpen} onClose={() => setChecksOpen(false)} />}
-    <div className="fd-canvas-board-body">{compareAvailable && compare && projectId ? <BoardComparison key={projectId} projectId={projectId} active={tab as "pcb" | "schematic" | "3d"} onOpenChecks={openChecks} /> : area === "outputs" && tab === "renders" ? <OutputsLibrary key={projectId} projectId={projectId} /> : area === "outputs" && tab === "files" ? <FilesTab key={projectId} exportFocus /> : <TabBody key={`${projectId}:${tab}`} tab={tab} canvas onOpenChecks={openChecks} />}</div>
+    <div className="fd-canvas-board-body">{compareAvailable && compare && projectId ? <BoardComparison key={projectId} projectId={projectId} active={tab as "pcb" | "schematic" | "3d"} onOpenChecks={openChecks} /> : area === "outputs" && tab === "renders" ? <OutputsLibrary key={projectId} projectId={projectId} /> : area === "outputs" && tab === "files" ? <FilesTab key={projectId} exportFocus /> : <TabBody key={`${projectId}:${tab}`} tab={tab} canvas onOpenChecks={openChecks} />}{markupCapturable && <MarkupOverlay />}</div>
   </div>;
   return (
     <div className="fd-board-panel flex h-full min-w-0 flex-col bg-panel" data-testid="board-panel">
@@ -151,6 +154,7 @@ export function BoardPanel({ canvas = false }: { canvas?: boolean }) {
       </div>
       <div className="fd-board-stage min-h-0 flex-1">
         <TabBody key={`${projectId}:${tab}`} tab={tab} />
+        {markupCapturable && <MarkupOverlay />}
       </div>
     </div>
   );

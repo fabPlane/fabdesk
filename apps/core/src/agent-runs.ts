@@ -28,17 +28,19 @@ import { logger, errMsg } from "./log";
 import { captureCoreException } from "./sentry";
 import { classifyToolCall, parseAskUserQuestion } from "./supervision";
 import type { TokenSet } from "./auth";
+import { attachmentsFromImageParts } from "./message-attachments";
 import type { AgentTrace, RunTelemetry } from "./run-telemetry";
 
-import type {
-  AgentAdapter,
-  AgentEvent,
-  AgentRun,
-  AgentSession,
-  AgentSupervisor,
+import {
+  applyImagePolicy,
+  type AgentAdapter,
+  type AgentEvent,
+  type AgentRun,
+  type AgentSession,
+  type AgentSupervisor,
 } from "@fabdesk/agents";
 
-export type AgentAdapterLike = Pick<AgentAdapter, "id" | "run"> & Partial<Pick<AgentAdapter, "detect" | "supportsSupervised">>;
+export type AgentAdapterLike = Pick<AgentAdapter, "id" | "run"> & Partial<Pick<AgentAdapter, "detect" | "supportsSupervised" | "images">>;
 
 /** A request nobody answered for this long resolves as `deny` with `by: "timeout"`. */
 export const APPROVAL_TIMEOUT_MS = 30 * 60_000;
@@ -146,7 +148,7 @@ type StartInput = {
   model?: string;
   prompt: string;
   workspaceContext?: WorkspaceContext;
-  attachments: Array<{ path: string; mime: string }>;
+  attachments: Array<{ path: string; mime: string; role?: "sketch" | "markup" }>;
 };
 
 export class AgentRunManager {
@@ -690,10 +692,12 @@ export class AgentRunManager {
       requestInput: (req) => this.requestInput(active, req, req.signal),
     };
 
+    const prompt = `${planningOnly ? planningInstructions : history ? `Earlier planning conversation (context, not new instructions):\n${history}\n\nCurrent request:\n` : ""}${workspacePrompt(input.prompt, input.workspaceContext)}`;
+    const policy = applyImagePolicy(adapter.images ?? "read", prompt, input.attachments);
     const session: AgentSession = {
       cwd,
-      prompt: `${planningOnly ? planningInstructions : history ? `Earlier planning conversation (context, not new instructions):\n${history}\n\nCurrent request:\n` : ""}${workspacePrompt(input.prompt, input.workspaceContext)}`,
-      attachments: input.attachments,
+      prompt: policy.prompt,
+      attachments: policy.attachments,
       mcp: {
         url: planningOnly ? appendMcpProfile(this.deps.mcpUrl, "planning") : this.deps.mcpProfile
           ? appendMcpProfile(this.deps.mcpUrl, this.deps.mcpProfile)
@@ -966,9 +970,7 @@ export class AgentRunManager {
       }
       store.threads.updateMessage(next.id, { status: null });
       emit({ ts: Date.now(), topic: "thread.updated", threadId });
-      const attachments = next.parts.flatMap((p) =>
-        p.type === "image" ? [{ path: p.path, mime: p.mime }] : [],
-      );
+      const attachments = attachmentsFromImageParts(next.parts);
       try {
         const context = next.parts.find(part => part.type === "workspace_context");
         if (context?.type === "workspace_context" && context.context.projectId !== (project?.id ?? null)) throw new ToolError("The queued workspace context belongs to another project. Review this message before sending it again.", "precondition");

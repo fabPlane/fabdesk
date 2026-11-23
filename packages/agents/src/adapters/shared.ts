@@ -18,6 +18,13 @@ export function isImage(a: AgentAttachment): boolean {
   return a.mime.startsWith("image/");
 }
 
+export type ImageSupport = "native" | "read" | "none";
+
+function attachmentNote(a: AgentAttachment): string {
+  if (!isImage(a)) return `Attachment (${a.mime}): ${a.path}`;
+  return a.role === "markup" ? `Marked view: ${a.path}` : `Sketch: ${a.path}`;
+}
+
 /**
  * Appends a path per attachment so CLIs without an image flag still receive the user-provided file.
  */
@@ -28,9 +35,28 @@ export function promptWithAttachments(
 ): string {
   const notes = attachments
     .filter((a) => !(opts.skipImages && isImage(a)))
-    .map((a) => (isImage(a) ? `Sketch: ${a.path}` : `Attachment (${a.mime}): ${a.path}`));
+    .map(attachmentNote);
   if (notes.length === 0) return prompt;
   return `${prompt}\n\n${notes.join("\n")}`;
+}
+
+const IMAGE_UNSUPPORTED_NOTE =
+  "Marked view image was not sent because this agent does not accept images. Use the markup text context (view, viewport, and nearby objects).";
+
+/** Drop image attachments for CLIs that cannot take them, and say so in the prompt. */
+export function applyImagePolicy(
+  support: ImageSupport,
+  prompt: string,
+  attachments: AgentAttachment[],
+): { prompt: string; attachments: AgentAttachment[] } {
+  if (support !== "none") return { prompt, attachments };
+  const images = attachments.filter(isImage);
+  if (images.length === 0) return { prompt, attachments };
+  const kept = attachments.filter((a) => !isImage(a));
+  const note = images.some((a) => a.role === "markup")
+    ? IMAGE_UNSUPPORTED_NOTE
+    : "Image attachments were not sent because this agent does not accept images.";
+  return { prompt: `${prompt}\n\n${note}`, attachments: kept };
 }
 
 /** Writes a file, creating parent directories. */
