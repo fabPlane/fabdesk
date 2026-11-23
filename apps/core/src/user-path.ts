@@ -15,7 +15,12 @@ const START = "__FABDESK_PATH_START__";
 const END = "__FABDESK_PATH_END__";
 const POSIX_SHELLS = new Set(["zsh", "bash", "sh", "dash", "ksh"]);
 
-/** Set to `off` to keep the inherited `PATH` untouched. */
+/**
+ * Set to `off` to leave the daemon's `PATH` exactly as inherited: no login shell is started and
+ * nothing is appended, so agents run with the launcher's environment. It does not turn off agent
+ * detection's own lookup in the common install folders (`resolveBinary` in `@fabdesk/agents`);
+ * that reads no environment and changes none.
+ */
 export const USER_PATH_ENV = "FABDESK_USER_PATH";
 
 function entries(path: string | undefined, sep: string): string[] {
@@ -101,7 +106,7 @@ export function userPathReady(): Promise<void> {
 }
 
 /**
- * Extends `env.PATH` in place. The well-known folders are added before this returns; the login
+ * Extends `env.PATH` in place. The common install folders are added before this returns; the login
  * shell is asked in the background so a slow shell profile never delays startup.
  */
 export function adoptUserPath(env: NodeJS.ProcessEnv = process.env): Promise<void> {

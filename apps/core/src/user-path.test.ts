@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { resolveBinary } from "@fabdesk/agents";
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -90,9 +91,23 @@ describe.skipIf(!posix)("adoptUserPath", () => {
     expect(env["PATH"]?.startsWith(`${dir}/tools:/usr/bin:/bin`)).toBe(true);
   });
 
-  test("FABDESK_USER_PATH=off leaves PATH alone", async () => {
+  test("FABDESK_USER_PATH=off leaves PATH alone and starts no shell", async () => {
+    const ran = join(dir, "shell-ran");
+    writeFileSync(shell, `#!/bin/sh\ntouch "${ran}"\nexec /bin/sh -c "$2"\n`);
+    const env: NodeJS.ProcessEnv = { SHELL: shell, PATH: "/usr/bin", FABDESK_USER_PATH: "off" };
+    await adoptUserPath(env);
+    await userPathReady();
+    expect(env["PATH"]).toBe("/usr/bin");
+    expect(existsSync(ran)).toBe(false);
+  });
+
+  test("FABDESK_USER_PATH=off does not turn off detection's common-folder lookup", async () => {
+    // The flag is about the daemon's environment; finding a CLI off PATH is detection's own step.
+    const cli = join(dir, "fabdesk-test-agent");
+    copyFileSync(process.execPath, cli);
     const env: NodeJS.ProcessEnv = { SHELL: shell, PATH: "/usr/bin", FABDESK_USER_PATH: "off" };
     await adoptUserPath(env);
     expect(env["PATH"]).toBe("/usr/bin");
+    expect(resolveBinary("fabdesk-test-agent", [dir])).toBe(cli);
   });
 });
