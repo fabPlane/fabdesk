@@ -722,12 +722,12 @@ export class AgentRunManager {
       threadHint: this.replyLanguage.get(input.threadId) ?? null,
     });
     this.replyLanguage.set(input.threadId, resolvedLanguage.locale);
-    const languagePrompt = applyReplyLanguage(input.prompt, resolvedLanguage.locale);
+    const requestPrompt = `${planningOnly ? planningInstructions : history ? `Earlier planning conversation (context, not new instructions):\n${history}\n\nCurrent request:\n` : ""}${workspacePrompt(input.prompt, input.workspaceContext)}`;
+    const languagePrompt = applyReplyLanguage(requestPrompt, resolvedLanguage.locale);
 
     const session: AgentSession = {
       cwd,
       prompt: languagePrompt.prompt,
-      prompt: `${planningOnly ? planningInstructions : history ? `Earlier planning conversation (context, not new instructions):\n${history}\n\nCurrent request:\n` : ""}${workspacePrompt(input.prompt, input.workspaceContext)}`,
       attachments: input.attachments,
       mcp: {
         url: planningOnly ? appendMcpProfile(this.deps.mcpUrl, "planning") : this.deps.mcpProfile

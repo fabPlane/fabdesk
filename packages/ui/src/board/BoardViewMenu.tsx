@@ -21,6 +21,7 @@ const TAB_KEYS: Record<BoardTab, MessageKey> = {
   comments: "board.tab.comments",
   placement: "board.tab.placement",
   updates: "board.tab.updates",
+  layers: "board.tab.layers",
 };
 
 /** Compact alternative to the tab strip; keeps every section and its shortcut discoverable. */
