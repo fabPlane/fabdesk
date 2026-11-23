@@ -1,5 +1,5 @@
 /** Typed fetch wrapper over the fabdesk-core control API plus SSE subscription. */
-import { TeamProjects, ContributionBoards, ProjectShareState, ProjectShareSnapshot, SharedProject, SharedProjectStatus, BoardSourceSelection } from "@fabdesk/protocol";
+import { TeamProjects, ContributionBoards, ProjectShareState, ProjectShareSnapshot, SharedProject, SharedProjectStatus, BoardSourceSelection, type LibraryEntry, type LibraryEntryPatch, type LibrarySearchHit } from "@fabdesk/protocol";
 import type {
   OutputTrashReview,
   OutputTrashEntry,
@@ -288,6 +288,50 @@ export class CoreClient {
   }
   async readJson<T = unknown>(projectId: string, path: string): Promise<T> {
     return JSON.parse(await this.readFile(projectId, path)) as T;
+  }
+  listLibrary(projectId: string): Promise<{ entries: Array<LibraryEntry & { bytes: number; mtime: string }> }> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/library`);
+  }
+  searchLibrary(projectId: string, q: string, ref?: string): Promise<{ hits: LibrarySearchHit[]; query: string }> {
+    const params = new URLSearchParams({ q });
+    if (ref) params.set("ref", ref);
+    return this.request(`/projects/${encodeURIComponent(projectId)}/library/search?${params.toString()}`);
+  }
+  async uploadLibraryFile(
+    projectId: string,
+    file: Blob,
+    filename: string,
+    extras?: { folder?: string; title?: string; tags?: string[]; linkedRefs?: string[] },
+  ): Promise<{ entry: LibraryEntry & { bytes: number; mtime: string } }> {
+    const form = new FormData();
+    form.append("file", file, filename);
+    if (extras?.folder) form.append("folder", extras.folder);
+    if (extras?.title) form.append("title", extras.title);
+    if (extras?.tags?.length) form.append("tags", extras.tags.join(","));
+    if (extras?.linkedRefs?.length) form.append("linkedRefs", extras.linkedRefs.join(","));
+    const res = await this.fetchImpl(`${this.baseUrl}/projects/${encodeURIComponent(projectId)}/library`, {
+      method: "POST",
+      headers: this.headers(),
+      body: form,
+    });
+    if (!res.ok)
+      throw new CoreHttpError(res.status, "/library", await res.text().catch(() => res.statusText));
+    return (await res.json()) as { entry: LibraryEntry & { bytes: number; mtime: string } };
+  }
+  patchLibraryEntry(
+    projectId: string,
+    entryId: string,
+    patch: LibraryEntryPatch,
+  ): Promise<{ entry: LibraryEntry & { bytes: number; mtime: string } }> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/library/${encodeURIComponent(entryId)}`, {
+      method: "PATCH",
+      json: patch,
+    });
+  }
+  deleteLibraryEntry(projectId: string, entryId: string): Promise<{ ok: true; path: string }> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/library/${encodeURIComponent(entryId)}`, {
+      method: "DELETE",
+    });
   }
   listComments(projectId: string, board?: BoardSourceSelection): Promise<BoardCommentsFile> {
     return this.request(`/projects/${encodeURIComponent(projectId)}/comments${commentScopeQuery(board)}`);

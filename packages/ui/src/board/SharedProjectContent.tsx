@@ -76,6 +76,33 @@ export function SharedProjectContent({ snapshot }: { snapshot: ProjectShareSnaps
         </>
       ) : (
         <div className="fd-shared-board-list">
+          {snapshot.library && snapshot.library.length > 0 && (
+            <div className="fd-shared-library">
+              <h3>Project files</h3>
+              <p className="fd-share-muted">
+                Datasheets and notes published with this board. Visibility follows the share settings.
+              </p>
+              <ul>
+                {snapshot.library.map((item) => (
+                  <li key={item.id}>
+                    <strong>{item.title}</strong>
+                    <small>
+                      {item.kind.replaceAll("_", " ")}
+                      {item.pageCount ? ` · ${item.pageCount} pages` : ""}
+                      {item.linkedRefs.length ? ` · ${item.linkedRefs.join(", ")}` : ""}
+                    </small>
+                    {item.textExcerpt && <p>{item.textExcerpt}</p>}
+                    {item.preview && (
+                      <img
+                        src={`data:${item.preview.contentType};base64,${item.preview.dataBase64}`}
+                        alt=""
+                      />
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {snapshot.boards.map((item) => (
             <button key={item.id} onClick={() => setSelected(item.id)}>
               <div className="fd-shared-board-thumbnail">

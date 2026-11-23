@@ -85,6 +85,7 @@ import { parseTopics, sseResponse } from "./sse";
 import { cloudRoutes } from "./cloud-routes";
 import { resolveNativeBoardBinding } from "../assembly-board-binding";
 import { commentRoutes } from "./comment-routes";
+import { libraryRoutes } from "./library-routes";
 import { outputTrashRoutes } from "./output-trash-routes";
 import { createSpeechService, SpeechProviderError, type SpeechService } from "../speech";
 
@@ -147,6 +148,8 @@ const MIME: Record<string, string> = {
   ".webm": "video/webm",
   ".csv": "text/csv; charset=utf-8",
   ".zip": "application/zip",
+  ".pdf": "application/pdf",
+  ".webp": "image/webp",
   ".kicad_pcb": "text/plain; charset=utf-8",
   ".kicad_sch": "text/plain; charset=utf-8",
   ".kicad_pro": "application/json",
@@ -422,6 +425,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
   });
 
   commentRoutes(app, deps);
+  libraryRoutes(app, deps);
   outputTrashRoutes(app, deps);
 
   app.get("/projects/:id/sketches", async (c) => {

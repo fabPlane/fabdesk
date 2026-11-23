@@ -12,7 +12,7 @@ import { inspectAssemblyBoardModel } from "./assembly-board-model";
 import { inspectAssemblyCheckSummaries } from "./assembly-check-summary";
 import { inspectAssemblyPcbCheck } from "./assembly-checks";
 import { inspectAssemblyBoard } from "./assembly-scene";
-import type { BoardSourceSelection, ProjectBoardSources, ProjectBomSnapshot, BomSyncOptions } from "@fabdesk/protocol";
+import type { BoardSourceSelection, LibraryEntryPatch, ProjectBoardSources, ProjectBomSnapshot, BomSyncOptions } from "@fabdesk/protocol";
 import { inspectBoardModelRevision } from "./board-model-revision";
 import { inspectPcbCheckRevision } from "./check-revision";
 import { inspectPcbOutline } from "./pcb-outline";
@@ -664,6 +664,90 @@ export function useFolders(enabled = true) {
 }
 
 /* ---------- files ---------- */
+
+export function useProjectLibrary(projectId: string | null) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: ["project-library", projectId],
+    queryFn: () => client.listLibrary(projectId!),
+    enabled: !!projectId,
+  });
+}
+
+export function useProjectLibrarySearch(projectId: string | null, q: string) {
+  const client = useCoreClient();
+  const query = q.trim();
+  return useQuery({
+    queryKey: ["project-library-search", projectId, query],
+    queryFn: () => client.searchLibrary(projectId!, query),
+    enabled: !!projectId && query.length > 0,
+  });
+}
+
+export function useUploadLibraryFile() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      file,
+      filename,
+      folder,
+      tags,
+      linkedRefs,
+    }: {
+      projectId: string;
+      file: Blob;
+      filename: string;
+      folder?: string;
+      tags?: string[];
+      linkedRefs?: string[];
+    }) =>
+      client.uploadLibraryFile(projectId, file, filename, {
+        ...(folder ? { folder } : {}),
+        ...(tags ? { tags } : {}),
+        ...(linkedRefs ? { linkedRefs } : {}),
+      }),
+    onSuccess: (_data, vars) => {
+      void qc.invalidateQueries({ queryKey: ["project-library", vars.projectId] });
+      void qc.invalidateQueries({ queryKey: ["project", vars.projectId] });
+      void qc.invalidateQueries({ queryKey: ["project-library-search", vars.projectId] });
+    },
+  });
+}
+
+export function usePatchLibraryEntry() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      entryId,
+      patch,
+    }: {
+      projectId: string;
+      entryId: string;
+      patch: LibraryEntryPatch;
+    }) => client.patchLibraryEntry(projectId, entryId, patch),
+    onSuccess: (_data, vars) => {
+      void qc.invalidateQueries({ queryKey: ["project-library", vars.projectId] });
+      void qc.invalidateQueries({ queryKey: ["project-library-search", vars.projectId] });
+    },
+  });
+}
+
+export function useDeleteLibraryEntry() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, entryId }: { projectId: string; entryId: string }) =>
+      client.deleteLibraryEntry(projectId, entryId),
+    onSuccess: (_data, vars) => {
+      void qc.invalidateQueries({ queryKey: ["project-library", vars.projectId] });
+      void qc.invalidateQueries({ queryKey: ["project", vars.projectId] });
+    },
+  });
+}
 
 export function useWriteProjectFile() {
   const client = useCoreClient();

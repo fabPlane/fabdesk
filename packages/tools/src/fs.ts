@@ -33,6 +33,9 @@ export const PROJECT_FILES = {
   comments: "comments.json",
   /** Git-tracked shared notes sheet for the board. */
   notes: "NOTES.md",
+  /** Supporting documents (datasheets, app notes, images) that travel with the project. */
+  library: "files",
+  libraryManifest: "files/library.json",
 } as const;
 
 /**

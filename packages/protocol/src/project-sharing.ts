@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { SharedLibraryItem } from "./project-library";
 
 export const ShareId = z.string().regex(/^[A-Za-z0-9_-]{16,80}$/);
 export const ProjectShareState = z.discriminatedUnion("visibility", [
@@ -72,22 +73,30 @@ export const ProjectShareSnapshot = z
     name: z.string().min(1).max(120),
     capturedAt: z.string().datetime(),
     boards: z.array(SharedBoard).min(1).max(128),
+    library: z.array(SharedLibraryItem).max(64).optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
     if (new Set(value.boards.map((board) => board.id)).size !== value.boards.length)
       ctx.addIssue({ code: "custom", message: "Shared board IDs must be unique" });
-    if (
-      value.boards.reduce(
-        (sum, board) =>
-          sum + (board.preview?.dataBase64.length ?? 0) + (board.model?.dataBase64.length ?? 0),
-        0,
-      ) >
-      28 * 1024 * 1024
-    )
+    const boardBytes = value.boards.reduce(
+      (sum, board) =>
+        sum + (board.preview?.dataBase64.length ?? 0) + (board.model?.dataBase64.length ?? 0),
+      0,
+    );
+    const libraryBytes = (value.library ?? []).reduce(
+      (sum, item) => sum + (item.preview?.dataBase64.length ?? 0) + item.textExcerpt.length,
+      0,
+    );
+    if (boardBytes > 28 * 1024 * 1024)
       ctx.addIssue({
         code: "custom",
         message: "Shared project previews and models exceed the size limit",
+      });
+    if (libraryBytes > 4 * 1024 * 1024)
+      ctx.addIssue({
+        code: "custom",
+        message: "Shared project files library exceeds the size limit",
       });
   });
 export type ProjectShareSnapshot = z.infer<typeof ProjectShareSnapshot>;

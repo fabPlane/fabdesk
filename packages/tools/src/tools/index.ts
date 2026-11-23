@@ -4,6 +4,7 @@ import { appTools } from "./app";
 import { cadTools } from "./cad";
 import { circuitTools } from "./circuit";
 import { commentTools } from "./comments";
+import { libraryTools } from "./library";
 import { coreTools } from "./core";
 import { exportTools } from "./export";
 import { boardDiffTools } from "./board-diff";
@@ -27,6 +28,7 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...projectTools,
   bom_read,
   ...commentTools,
+  ...libraryTools,
   ...boardWorkspaceTools,
   ...circuitTools,
   ...inspectionTools,
@@ -56,6 +58,7 @@ export function createRegistry(opts: { channel?: "public" | "internal" } = {}): 
 export * from "./core";
 export * from "./project";
 export * from "./comments";
+export * from "./library";
 export * from "./parts";
 export * from "./circuit";
 export * from "./schematic";

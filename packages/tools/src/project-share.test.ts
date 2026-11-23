@@ -50,6 +50,20 @@ test("publishes an explicit summary without source files, raw findings, notes or
   ])
     expect(json.includes(secret)).toBe(false);
 });
+test("publishes library excerpts without local paths", async () => {
+  const project = await fixture();
+  const { addLibraryFile } = await import("./library");
+  await addLibraryFile(project, {
+    filename: "mcu.md",
+    data: Buffer.from("Absolute maximum ratings for the MCU.\n"),
+    linkedRefs: ["U1"],
+  });
+  const snapshot = await prepareProjectShare(project, rasterize);
+  expect(snapshot.library?.[0]?.title).toBe("mcu");
+  expect(snapshot.library?.[0]?.linkedRefs).toEqual(["U1"]);
+  expect(snapshot.library?.[0]?.textExcerpt).toContain("Absolute maximum");
+  expect(JSON.stringify(snapshot)).not.toContain(project.dir);
+});
 test("malformed reports cannot be presented as clean", async () => {
   const project = await fixture();
   await writeFile(join(project.dir, "reports/drc.json"), "{}");
