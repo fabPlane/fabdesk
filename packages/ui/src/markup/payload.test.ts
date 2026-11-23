@@ -7,6 +7,7 @@ test("markup capture is limited to design views with a canvas or image", () => {
   expect(markupViewCapturable("placement", "boards")).toBe(true);
   expect(markupViewCapturable("cinema", "boards")).toBe(true);
   expect(markupViewCapturable("3d", "boards")).toBe(true);
+  expect(markupViewCapturable("layers", "boards")).toBe(true);
   expect(markupViewCapturable("cad", "mechanical")).toBe(true);
   expect(markupViewCapturable("art", "boards")).toBe(true);
   expect(markupViewCapturable("3d", "outputs")).toBe(true);

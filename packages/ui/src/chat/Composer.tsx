@@ -338,7 +338,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
       sendingLock.current = false;
       setSending(false);
     }
-  }, [draft, rootAutomation, matchingContexts, boardSources.data, boardSources.isFetching, boardSources.isError, setDraftBoardContext, sending, saveEffort.isPending, loadingThread, settings.data, savePreference.isPending, startMode, projectId, setProjectPickerOpen, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, voice.reset, beginFinishIt, client]);
+  }, [draft, rootAutomation, matchingContexts, boardSources.data, boardSources.isFetching, boardSources.isError, setDraftBoardContext, sending, saveEffort.isPending, loadingThread, settings.data, savePreference.isPending, startMode, projectId, setProjectPickerOpen, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, qc, queueMessage, voice.reset, beginFinishIt, client]);
 
   const stop = useCallback(async () => {
     if (!run || stopping) return;

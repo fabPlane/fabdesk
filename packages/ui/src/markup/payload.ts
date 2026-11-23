@@ -33,6 +33,7 @@ const MARKUP_CAPTURE_TABS = new Set([
   "placement",
   "cinema",
   "3d",
+  "layers",
   "cad",
   "art",
 ]);
