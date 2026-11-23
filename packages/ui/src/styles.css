@@ -108,7 +108,7 @@
   --color-code: var(--fd-code-bg);
   --color-code-fg: var(--fd-code-fg);
   --color-link: var(--fd-link);
-  --font-sans: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "Inter Variable", Inter, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans CJK JP", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "PingFang TC", "Noto Sans CJK TC", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Leelawadee UI", "Noto Sans Thai", "Nirmala UI", "Noto Sans Devanagari", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --radius-sm: 5px;
   --radius-md: 7px;

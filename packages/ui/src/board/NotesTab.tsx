@@ -3,13 +3,17 @@ import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { useEffect, useRef, useState } from "react";
 import { Button, Dialog, EmptyState, LoadError, Spinner, Textarea } from "../components/ui";
 import { useBoardCommentMutations, useBoardNotes, useCoreClient, useProject } from "@fabdesk/client-core";
-import { useUiStore } from "../stores/ui";
+import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
+import { LOCALE_META } from "@fabdesk/protocol";
+import { applyCommentTranslation, useI18n } from "../i18n";
+import { TranslateText } from "../i18n/TranslateText";
 import { WorkspaceMenu } from "../layout/WorkspaceMenu";
 import { Markdown } from "../chat/Markdown";
 import { Icon } from "../components/Icon";
 
 /** A project-wide document; an unfinished local draft survives switching tasks. */
 export function NotesTab() {
+  const { t, locale } = useI18n();
   const projectId = useUiStore(s => s.activeProjectId), client = useCoreClient();
   const notes = useBoardNotes(projectId), project = useProject(projectId);
   const { writeNotes } = useBoardCommentMutations(projectId);
@@ -49,7 +53,7 @@ export function NotesTab() {
     finally { setSaving(false); }
   };
 
-  if (!projectId) return <EmptyState title="Project notes">Choose a project for its decisions and open questions.</EmptyState>;
+  if (!projectId) return <EmptyState title={t("notes.title")}>{t("notes.empty")}</EmptyState>;
   if (notes.isError && !draft && !notes.data) return <LoadError title="Could not load project notes" onRetry={() => void notes.refetch()} />;
   if (notes.isLoading && !draft) return <div className="flex h-full items-center justify-center"><Spinner /></div>;
   return <div className="fd-project-notes" data-testid="board-notes" onKeyDown={event => {
@@ -63,7 +67,24 @@ export function NotesTab() {
           <button disabled={!hasSavedNotes} onClick={() => useUiStore.getState().openProjectFile("NOTES.md")}>Show saved file</button>
           <div className="fd-menu-caption">Saved as NOTES.md. Markdown formatting is optional.</div>
         </WorkspaceMenu>
-        <Button size="sm" variant="primary" disabled={!canSave} onClick={() => void save()}>{saving ? "Saving…" : !dirty && hasSavedNotes ? "Saved" : "Save notes"}</Button>
+        {notes.data?.content ? (
+          <TranslateText
+            original={notes.data.content}
+            hideOriginal
+            onRequest={async () => {
+              const target = locale === "qps" ? "en" : locale;
+              const prompt = `${t("agent.explainNote", { language: LOCALE_META[target].nameEn })}\n\n${notes.data!.content}`;
+              const threadId = useUiStore.getState().activeThreadId;
+              if (threadId) await client.sendMessage(threadId, { content: prompt });
+              else {
+                useUiStore.getState().setDraft(DRAFT_KEY_NEW, prompt);
+                useUiStore.getState().focusComposer();
+              }
+              return applyCommentTranslation(notes.data!.content, notes.data!.content, target);
+            }}
+          />
+        ) : null}
+        <Button size="sm" variant="primary" disabled={!canSave} onClick={() => void save()}>{saving ? t("common.saving") : !dirty && hasSavedNotes ? t("common.saved") : t("common.save")}</Button>
       </div>
     </header>
     {changedOutside && <div className="fd-notes-notice" role="alert"><p>Saved notes changed while you were editing. Your draft is kept.</p><Button size="sm" onClick={() => setReviewSaved(true)}>Review saved notes</Button><Button size="sm" onClick={() => { useUiStore.getState().setNotesDraft(key, null); setReviewSaved(false); setPreview(false); setSaveError(null); focusEditor(); }}>Use saved notes</Button><Button size="sm" onClick={() => { useUiStore.getState().setNotesDraft(key, { base: saved, content }); setReviewSaved(false); setPreview(false); setSaveError(null); focusEditor(); }}>Keep my draft</Button></div>}
@@ -74,7 +95,7 @@ export function NotesTab() {
         const next = event.target.value;
         useUiStore.getState().setNotesDraft(key, next === saved ? null : { base: draft && dirty ? draft.base : saved, content: next });
         setSaveError(null);
-      }} placeholder={"What should everyone working on this project know?\n\nWrite decisions, requirements, open questions or bring-up notes…"} aria-label="Project notes" />}
+      }} placeholder={t("notes.placeholder")} aria-label="Project notes" />}
     </section>
     <Dialog open={discardFor === key} title="Discard unsaved notes?" onClose={() => { setDiscardFor(null); focusEditor(); }}>
       <p className="text-sm text-muted">Your saved NOTES.md file stays unchanged. The unsaved draft for this project will be removed.</p>

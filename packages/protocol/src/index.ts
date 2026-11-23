@@ -18,6 +18,7 @@ export * from "./board-workspace";
 export * from "./finish-it";
 export * from "./routers";
 export * from "./speech";
+export * from "./locales";
 
 export * from "./render-revision";
 

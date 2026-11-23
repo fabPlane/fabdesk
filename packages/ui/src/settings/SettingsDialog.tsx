@@ -12,6 +12,9 @@ import { THEME_BACKGROUNDS, THEME_PANELS, THEME_FOREGROUNDS } from "../theme/res
 import { RemoteSection } from "./RemoteSection";
 import { RoutersSection } from "./RoutersSection";
 import { VoiceSection } from "./VoiceSection";
+import { LanguageSection } from "./LanguageSection";
+import { useI18n } from "../i18n";
+import type { MessageKey } from "../i18n";
 import { withoutRouterDefault } from "./routers";
 import { SETTINGS_SECTIONS, useUiStore, type SettingsSection } from "../stores/ui";
 import { cn } from "../util";
@@ -26,8 +29,22 @@ const LABELS: Record<SettingsSection, string> = {
   remote: "Remote access",
   voice: "Voice",
   appearance: "Appearance",
+  language: "Language",
   privacy: "Privacy",
   shortcuts: "Shortcuts",
+};
+
+const SECTION_KEYS: Record<SettingsSection, MessageKey> = {
+  agents: "settings.section.agents",
+  kicad: "settings.section.kicad",
+  router: "settings.section.router",
+  auth: "settings.section.auth",
+  remote: "settings.section.remote",
+  voice: "settings.section.voice",
+  appearance: "settings.section.appearance",
+  language: "settings.section.language",
+  privacy: "settings.section.privacy",
+  shortcuts: "settings.section.shortcuts",
 };
 
 type AgentSettings = Settings["agents"][string];
@@ -63,6 +80,7 @@ function AgentModelSetting({ name, models, value, onChange }: { name: string; mo
 }
 
 export function SettingsDialog() {
+  const { t } = useI18n();
   const { host } = useCore();
   const open = useUiStore((s) => s.settingsOpen);
   const setOpen = useUiStore((s) => s.setSettingsOpen);
@@ -106,7 +124,7 @@ export function SettingsDialog() {
   };
 
   return (
-    <><Dialog open={open} onClose={close} closeDisabled={patch.isPending} title="Settings" className="fd-settings h-[80vh] w-[860px]">
+    <><Dialog open={open} onClose={close} closeDisabled={patch.isPending} title={t("settings.title")} className="fd-settings h-[80vh] w-[860px]">
       <div className="fd-settings-layout flex min-h-0 flex-1 gap-6">
         <nav className="w-40 shrink-0 overflow-y-auto border-r border-border pr-3" aria-label="Settings sections">
           {SETTINGS_SECTIONS.map((s) => (
@@ -118,12 +136,12 @@ export function SettingsDialog() {
                 s === section ? "bg-panel-2 font-semibold text-fg" : "text-fg hover:bg-panel-2/50",
               )}
             >
-              {LABELS[s]}
+              {t(SECTION_KEYS[s])}
             </button>
           ))}
         </nav>
         <div className="min-w-0 flex-1 overflow-auto pr-1">
-          <h2 className="mb-5 text-xl font-semibold tracking-tight">{LABELS[section]}</h2>
+          <h2 className="mb-5 text-xl font-semibold tracking-tight">{t(SECTION_KEYS[section])}</h2>
           {!draft && settings.isError ? <div role="alert" className="text-sm text-danger">Could not load settings. Close and reopen Settings to retry.</div> : !draft ? (
             <Spinner />
           ) : section === "agents" ? (
@@ -245,6 +263,8 @@ export function SettingsDialog() {
                 </label>)}
               </div>
             </fieldset>
+          ) : section === "language" ? (
+            <LanguageSection draft={draft} update={update} />
           ) : section === "privacy" ? (
             <div>
               <Row label="Error reporting" hint="Send crash and error reports to Sentry so bugs get fixed. Reports carry no prompts, board files, tokens or project paths. Turning this off applies immediately; turning it back on applies after a restart.">

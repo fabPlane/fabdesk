@@ -8,6 +8,7 @@ import { useCore } from "@fabdesk/client-core";
 import { useProjectOrder, useStartOrder } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn } from "../util";
+import { useI18n } from "../i18n";
 
 const VENDOR_COPY: Record<OrderVendorId, { blurb: string }> = {
   jlcpcb: { blurb: "Upload a fabrication zip and walk through JLCPCB's quote." },
@@ -17,6 +18,7 @@ const VENDOR_COPY: Record<OrderVendorId, { blurb: string }> = {
 };
 
 export function OrderFlow() {
+  const { t } = useI18n();
   const projectId = useUiStore((s) => s.activeProjectId);
   const setOrderFlowOpen = useUiStore((s) => s.setOrderFlowOpen);
   const setBoardTab = useUiStore((s) => s.setBoardTab);
@@ -45,7 +47,7 @@ export function OrderFlow() {
             className="mt-5 max-w-xl rounded-lg border border-danger/40 bg-danger/5 p-4"
             data-testid="order-blockers"
           >
-            <div className="text-sm font-semibold text-danger">Resolve these requirements before continuing</div>
+            <div className="text-sm font-semibold text-danger">{t("order.blockers")}</div>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted">
               {order.data.reasons.map((reason) => (
                 <li key={reason}>{reason}</li>
@@ -59,7 +61,7 @@ export function OrderFlow() {
                 setOrderFlowOpen(false);
               }}
             >
-              Review board checks
+              {t("order.openDrc")}
             </Button>
           </div>
         )}

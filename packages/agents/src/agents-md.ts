@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { LANGUAGE_RULE } from "./language";
 
 export interface AgentDocsContext {
   projectName: string;
@@ -104,6 +105,7 @@ export function renderAgentsMd(
 ${interfaceNote}
 ${ipcNote}
 
+${LANGUAGE_RULE}
 ## Board constraints
 - Copper layers: ${ctx.board.layers}
 - Size: ${boardSize(ctx.board)}

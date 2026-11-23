@@ -1,13 +1,33 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "../components/Icon";
-import { BOARD_TABS, BOARD_TAB_LABELS, type BoardTab } from "../stores/ui";
+import { BOARD_TABS, type BoardTab } from "../stores/ui";
+import { useI18n, type MessageKey } from "../i18n";
 import "./board-view-menu.css";
+
+const TAB_KEYS: Record<BoardTab, MessageKey> = {
+  schematic: "board.tab.schematic",
+  pcb: "board.tab.pcb",
+  cinema: "board.tab.cinema",
+  "3d": "board.tab.3d",
+  cad: "board.tab.cad",
+  drc: "board.tab.drc",
+  renders: "board.tab.renders",
+  notes: "board.tab.notes",
+  files: "board.tab.files",
+  art: "board.tab.art",
+  bom: "board.tab.bom",
+  diff: "board.tab.diff",
+  comments: "board.tab.comments",
+  placement: "board.tab.placement",
+  updates: "board.tab.updates",
+};
 
 /** Compact alternative to the tab strip; keeps every section and its shortcut discoverable. */
 export function BoardViewMenu({ value, onChange, modifier }: {
   value: BoardTab; onChange: (tab: BoardTab) => void; modifier: string;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0 });
   const trigger = useRef<HTMLButtonElement>(null);
@@ -70,11 +90,11 @@ export function BoardViewMenu({ value, onChange, modifier }: {
   }, [open]);
 
   return <div className="fd-board-compact" data-testid="board-view-menu">
-    <button ref={trigger} type="button" className="fd-board-view-trigger" aria-label={`Board view: ${BOARD_TAB_LABELS[value]}`} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(!open)} onKeyDown={event => {
+    <button ref={trigger} type="button" className="fd-board-view-trigger" aria-label={`${t("board.workspace")}: ${t(TAB_KEYS[value])}`} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(!open)} onKeyDown={event => {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setOpen(true); }
     }}>
       <Icon name="library" width={15} height={15} />
-      <span>{BOARD_TAB_LABELS[value]}</span>
+      <span>{t(TAB_KEYS[value])}</span>
       <Icon name="chevronDown" className="fd-board-view-chevron" width={14} height={14} />
     </button>
     {open && createPortal(<div ref={menu} id={id} role="menu" aria-label="Board sections" className="fd-board-view-menu fd-elevated" style={position} onKeyDown={event => {
@@ -97,9 +117,9 @@ export function BoardViewMenu({ value, onChange, modifier }: {
       }
     }}>
       <div className="fd-board-view-caption" aria-hidden="true">Board sections</div>
-      {BOARD_TABS.map((tab, index) => <button key={tab} type="button" role="menuitemradio" aria-checked={tab === value} tabIndex={-1} data-label={BOARD_TAB_LABELS[tab]} className="fd-board-view-option" onClick={() => { onChange(tab); close(true); }}>
+      {BOARD_TABS.map((tab, index) => <button key={tab} type="button" role="menuitemradio" aria-checked={tab === value} tabIndex={-1} data-label={t(TAB_KEYS[tab])} className="fd-board-view-option" onClick={() => { onChange(tab); close(true); }}>
         <span className="fd-board-view-check">{tab === value && <Icon name="check" width={15} height={15} />}</span>
-        <span>{BOARD_TAB_LABELS[tab]}</span>
+        <span>{t(TAB_KEYS[tab])}</span>
         {index < 9 && <kbd aria-hidden="true">{modifier} {index + 1}</kbd>}
       </button>)}
     </div>, document.body)}

@@ -7,7 +7,8 @@ import { Icon } from "../components/Icon";
 import { useProjects, useThreads, useThreadMutations } from "@fabdesk/client-core";
 import { useBranchThread } from "../hooks/threadActions";
 import { useRunsStore } from "@fabdesk/client-core";
-import { SIDEBAR_LIST_TABS, SIDEBAR_LIST_TAB_LABELS, normalizeSidebarListTab, useUiStore } from "../stores/ui";
+import { SIDEBAR_LIST_TABS, normalizeSidebarListTab, useUiStore } from "../stores/ui";
+import { useI18n } from "../i18n";
 import { cn } from "../util";
 import { groupThreadsByProject, sidebarSections, searchProjectGroups, type ProjectThreadGroup } from "@fabdesk/client-core";
 import { OpenSourceList } from "./OpenSourceList";
@@ -29,6 +30,7 @@ interface Menu {
 }
 
 export function ThreadSidebar({ onNewChat, onOpenProject, projectOnly: requestedProjectOnly = false }: ThreadSidebarProps) {
+  const i18n = useI18n();
 
   const [q, setQ] = useState("");
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
@@ -110,13 +112,13 @@ export function ThreadSidebar({ onNewChat, onOpenProject, projectOnly: requested
             running[t.id] && "pr-9",
             t.id === activeThreadId ? "bg-panel-2 font-medium text-fg shadow-sm" : "text-fg hover:bg-panel-2/60",
           )}
-          title={t.title || "Untitled"}
+          title={t.title || i18n.t("common.untitled")}
           onClick={() => openThread(t.id, t.projectId)}
           onContextMenu={(e) => openMenu(e, t)}
           data-testid={`sidebar-thread-${t.id}`}
         >
-          <ScrollingTitle text={t.title || "Untitled"} />
-          {running[t.id] && <span className="sr-only">Agent working</span>}
+          <ScrollingTitle text={t.title || i18n.t("common.untitled")} />
+          {running[t.id] && <span className="sr-only">{i18n.t("sidebar.agentWorking")}</span>}
         </button>
       )}
       {running[t.id] && renaming?.id !== t.id && (
@@ -130,7 +132,7 @@ export function ThreadSidebar({ onNewChat, onOpenProject, projectOnly: requested
         </span>
       )}
       <IconButton
-        title={t.pinned ? "Unpin" : "Pin"}
+        title={t.pinned ? i18n.t("sidebar.unpin") : i18n.t("sidebar.pin")}
         style={{ width: 28, height: 28 }}
         className={cn("absolute right-0 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100", t.pinned && "text-accent", menu?.thread.id === t.id && "opacity-100")}
         onClick={(e) => {
@@ -142,7 +144,7 @@ export function ThreadSidebar({ onNewChat, onOpenProject, projectOnly: requested
         <Icon name={t.pinned ? "pinFilled" : "pin"} width={16} height={16} />
       </IconButton>
       <IconButton
-        title="Chat menu"
+        title={i18n.t("sidebar.chatMenu")}
         style={{ width: 28, height: 28 }}
         className={cn("absolute right-7 top-1 h-7 w-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100", menu?.thread.id === t.id && "opacity-100")}
         onClick={(e) => openMenu(e, t)}
@@ -195,7 +197,7 @@ export function ThreadSidebar({ onNewChat, onOpenProject, projectOnly: requested
               {group.kind === "project" && group.projectId && (
                 <>
                 <IconButton
-                  title={`Project menu for ${group.title}`}
+                  title={i18n.t("sidebar.projectMenu", { name: group.title })}
                   aria-haspopup="menu"
                   aria-expanded={projectMenu?.id === group.projectId}
                   className="fd-project-menu absolute right-8 top-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
@@ -208,7 +210,7 @@ export function ThreadSidebar({ onNewChat, onOpenProject, projectOnly: requested
                   }}
                 ><Icon name="more" /></IconButton>
                 <IconButton
-                  title={`New chat in ${group.title}`}
+                  title={i18n.t("sidebar.newChatIn", { name: group.title })}
                   className="fd-project-add absolute right-0 top-0 text-fg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-fg"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -242,15 +244,15 @@ export function ThreadSidebar({ onNewChat, onOpenProject, projectOnly: requested
         {(projectOnly ? ["projects"] as const : SIDEBAR_LIST_TABS).map((id) => (
           <button key={id} type="button" aria-current={sidebarListTab === id ? "page" : undefined} onClick={() => setSidebarListTab(id)}>
             <Icon name={id === "projects" ? "folder" : "library"} width={17} height={17} />
-            {projectOnly ? "Conversations" : SIDEBAR_LIST_TAB_LABELS[id]}
+            {projectOnly ? "Conversations" : id === "projects" ? i18n.t("sidebar.projects") : i18n.t("sidebar.openSource")}
           </button>
         ))}
       </nav>
       {sidebarListTab === "projects" && (
         <>
           <div className="px-3 pt-1">
-            <Button variant="secondary" className="fd-new-chat-button w-full" onClick={onNewChat} aria-label="New chat" data-testid="sidebar-new-chat">
-              <Icon name="compose" width={18} height={18} /><span className="fd-new-chat-label text-left">New chat</span>
+            <Button variant="secondary" className="fd-new-chat-button w-full" onClick={onNewChat} aria-label={i18n.t("common.newChat")} data-testid="sidebar-new-chat">
+              <Icon name="compose" width={18} height={18} /><span className="fd-new-chat-label text-left">{i18n.t("common.newChat")}</span>
             </Button>
           </div>
           <div className="fd-sidebar-search relative mx-3 mb-1 mt-2">
@@ -283,8 +285,8 @@ export function ThreadSidebar({ onNewChat, onOpenProject, projectOnly: requested
         </section>}
         <section aria-labelledby="sidebar-projects-heading" data-testid="sidebar-projects-section">
           <div className="flex min-h-9 items-center justify-between px-2">
-            <h2 id="sidebar-projects-heading" className="text-[11px] font-medium text-muted">{projectOnly ? "This project" : "Projects"}</h2>
-            {!projectOnly && <IconButton title="New project" onClick={() => setCreatingProject(true)}><Icon name="plus" /></IconButton>}
+            <h2 id="sidebar-projects-heading" className="text-[11px] font-medium text-muted">{projectOnly ? "This project" : i18n.t("sidebar.projects")}</h2>
+            {!projectOnly && <IconButton title={i18n.t("sidebar.newProject")} onClick={() => setCreatingProject(true)}><Icon name="plus" /></IconButton>}
           </div>
           {sections.projects.map(renderProject)}
           {!projects.isLoading && !projects.isError && projectGroups.filter((group) => group.kind === "project").length === 0 && <div className="px-2 py-3 text-xs text-muted">No projects yet.</div>}

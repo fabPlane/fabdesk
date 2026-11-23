@@ -108,6 +108,8 @@ describe("detectAgents", () => {
       notifications: { enabled: true },
       cloudOrgId: null,
       voice: { provider: "auto", language: "en", pushToTalkMode: "hold", pushToTalkShortcut: "Alt+Space" },
+      uiLocale: "system",
+      agentReplyLanguage: "match",
     });
     expect(infos.map((i) => i.id)).toEqual(["claude", "codex", "grok", "cursor"]);
     const byId = Object.fromEntries(infos.map((i) => [i.id, i]));

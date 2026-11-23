@@ -122,6 +122,7 @@ export { themeBootInlineCss, themeBootInlineScript } from "./theme/boot-inline";
 export * from "./components/ui";
 export * from "./util";
 
+export * from "./i18n";
 export { FabdeskApp } from "./app/FabdeskApp";
 export type { FabdeskAppProps } from "./app/FabdeskApp";
 export { CoreStatusScreen } from "./app/CoreStatusScreen";

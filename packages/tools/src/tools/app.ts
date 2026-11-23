@@ -34,6 +34,7 @@ export const APP_SETTINGS_SECTIONS = [
   "remote",
   "voice",
   "appearance",
+  "language",
   "privacy",
   "shortcuts",
 ] as const;

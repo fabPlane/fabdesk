@@ -30,13 +30,16 @@ import { classifyToolCall, parseAskUserQuestion } from "./supervision";
 import type { TokenSet } from "./auth";
 import type { AgentTrace, RunTelemetry } from "./run-telemetry";
 
-import type {
-  AgentAdapter,
-  AgentEvent,
-  AgentRun,
-  AgentSession,
-  AgentSupervisor,
+import {
+  applyReplyLanguage,
+  resolveReplyLanguage,
+  type AgentAdapter,
+  type AgentEvent,
+  type AgentRun,
+  type AgentSession,
+  type AgentSupervisor,
 } from "@fabdesk/agents";
+import type { AppLocale } from "@fabdesk/protocol";
 
 export type AgentAdapterLike = Pick<AgentAdapter, "id" | "run"> & Partial<Pick<AgentAdapter, "detect" | "supportsSupervised">>;
 
@@ -151,6 +154,8 @@ type StartInput = {
 
 export class AgentRunManager {
   private readonly active = new Map<string, ActiveRun>();
+  /** Last reply language chosen for a thread (`match my message` uses this as the fallback). */
+  private readonly replyLanguage = new Map<string, AppLocale>();
   /**
    * Runs between the start checks and `active.set`: `start` awaits (mkdir, prepareProject,
    * telemetry) before the run is registered, so two requests must not both pass the checks.
@@ -690,8 +695,17 @@ export class AgentRunManager {
       requestInput: (req) => this.requestInput(active, req, req.signal),
     };
 
+    const resolvedLanguage = resolveReplyLanguage({
+      preference: settings.agentReplyLanguage,
+      message: input.prompt,
+      threadHint: this.replyLanguage.get(input.threadId) ?? null,
+    });
+    this.replyLanguage.set(input.threadId, resolvedLanguage.locale);
+    const languagePrompt = applyReplyLanguage(input.prompt, resolvedLanguage.locale);
+
     const session: AgentSession = {
       cwd,
+      prompt: languagePrompt.prompt,
       prompt: `${planningOnly ? planningInstructions : history ? `Earlier planning conversation (context, not new instructions):\n${history}\n\nCurrent request:\n` : ""}${workspacePrompt(input.prompt, input.workspaceContext)}`,
       attachments: input.attachments,
       mcp: {

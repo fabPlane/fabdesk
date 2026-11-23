@@ -12,6 +12,9 @@ import { usePrefs, type Appearance } from "@/state/prefs";
 import { useConnection } from "@/transport/CoreConnection";
 import { useConnections } from "@/transport/connections";
 import { useTheme } from "@/theme";
+import { APP_LOCALES, LOCALE_META, mobileLocale, preloadMobileCatalog, translate } from "@/lib/i18n";
+import type { AgentReplyChoice, UiLocaleChoice } from "@fabdesk/protocol";
+import { useEffect } from "react";
 
 const APPEARANCE_OPTIONS: readonly { value: Appearance; label: string }[] = [
   { value: "system", label: "System" },
@@ -88,6 +91,8 @@ export default function SettingsScreen() {
         </Card>
 
         <AgentsCard />
+
+        <LanguageCard />
 
         <NotificationsCard />
 
@@ -182,6 +187,92 @@ function AgentsCardBody() {
         </View>
       ) : null}
     </Card>
+  );
+}
+
+function LanguageCard() {
+  const t = useTheme();
+  const { status } = useConnection();
+  if (status !== "open") return null;
+  return <LanguageCardBody theme={t} />;
+}
+
+function LanguageCardBody({ theme: t }: { theme: ReturnType<typeof useTheme> }) {
+  const settings = useSettings();
+  const patch = usePatchSettings();
+  const uiLocale = (settings.data?.uiLocale ?? "system") as UiLocaleChoice;
+  const agentReply = (settings.data?.agentReplyLanguage ?? "match") as AgentReplyChoice;
+  const languages =
+    typeof navigator !== "undefined" && navigator.languages ? [...navigator.languages] : [];
+  const locale = mobileLocale(uiLocale, languages);
+  useEffect(() => {
+    void preloadMobileCatalog(locale);
+  }, [locale]);
+  const label = (key: Parameters<typeof translate>[1]) => translate(locale, key);
+  const setUi = (next: UiLocaleChoice) => {
+    if (next === uiLocale || patch.isPending) return;
+    haptic("selection");
+    patch.mutate({ uiLocale: next });
+  };
+  const setAgent = (next: AgentReplyChoice) => {
+    if (next === agentReply || patch.isPending) return;
+    haptic("selection");
+    patch.mutate({ agentReplyLanguage: next });
+  };
+  return (
+    <Card>
+      <Text style={{ color: t.fg, fontSize: 15, fontWeight: "600", marginBottom: 8 }}>{label("common.language")}</Text>
+      <Text style={{ color: t.muted, fontSize: 12, marginBottom: 6 }}>{label("settings.language.ui")}</Text>
+      <View style={{ gap: 6 }}>
+        <Option
+          label={label("settings.language.system")}
+          selected={uiLocale === "system"}
+          onPress={() => setUi("system")}
+        />
+        {APP_LOCALES.map((id) => (
+          <Option
+            key={id}
+            label={`${LOCALE_META[id].nativeName} — ${LOCALE_META[id].nameEn}`}
+            selected={uiLocale === id}
+            onPress={() => setUi(id)}
+          />
+        ))}
+      </View>
+      <Text style={{ color: t.muted, fontSize: 12, marginTop: 12, marginBottom: 6 }}>
+        {label("settings.language.agent")}
+      </Text>
+      <Option
+        label={label("settings.language.matchMessage")}
+        selected={agentReply === "match"}
+        onPress={() => setAgent("match")}
+      />
+      {APP_LOCALES.map((id) => (
+        <Option
+          key={`agent-${id}`}
+          label={LOCALE_META[id].nativeName}
+          selected={agentReply === id}
+          onPress={() => setAgent(id)}
+        />
+      ))}
+    </Card>
+  );
+}
+
+function Option({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Button
+      title={selected ? `✓ ${label}` : label}
+      onPress={onPress}
+      style={{ marginTop: 4 }}
+    />
   );
 }
 

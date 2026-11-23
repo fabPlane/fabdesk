@@ -24,7 +24,7 @@ import {
   useProjectText,
   useRunTool,
 } from "@fabdesk/client-core";
-import { useUiStore } from "../stores/ui";
+import { DRAFT_KEY_NEW, useUiStore } from "../stores/ui";
 import { RootFindingOverlay } from "./RootFindingOverlay";
 import { NativePartTools } from "./NativePartTools";
 import { PcbPreviewStatus } from "./PcbPreviewStatus";
@@ -32,6 +32,8 @@ import { CommentPins } from "./CommentPins";
 import { SelectableSvgViewer } from "./SelectableSvgViewer";
 import { type SvgPoint } from "./svg-coords";
 import { buildCommentsAskPrompt, buildCommentsUserPrompt, pendingBoardComments } from "./comment-requests";
+import { applyCommentTranslation, buildTranslateCommentPrompt, useI18n } from "../i18n";
+import { TranslateText } from "../i18n/TranslateText";
 import { SchematicPreviewStatus } from "./SchematicPreviewStatus";
 import { MissingNativeSource } from "./MissingNativeSource";
 
@@ -82,6 +84,7 @@ export function commentPinAnchor(
 
 /** Schematic / PCB tab: shows the daemon's rendered SVG (`renders/<kind>.svg`, drawn by kicad-cli) and offers to render it. */
 function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic" | "pcb"; active?: boolean; onOpenChecks?: () => void }) {
+  const { t, locale } = useI18n();
   const client = useCoreClient();
   const commentTrigger = useRef<HTMLButtonElement>(null);
   const commentToReveal = useUiStore((s) => s.commentToReveal);
@@ -289,16 +292,16 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
                   ref={commentTrigger}
                   data-testid="comment-mode"
                   aria-pressed={commentMode || !!selected || !!draftPoint}
-                  title={legacyPinsVisible ? "Pin a question to this drawing" : "Pins are currently available on the root sheet; use Ask fabPlane for this native sheet instance."}
+                  title={legacyPinsVisible ? t("board.commentMode") : "Pins are currently available on the root sheet; use Ask fabPlane for this native sheet instance."}
                 >
                   <Icon name="pin" width={14} height={14} />
-                  Comment
+                  {t("board.comment")}
                 </Button> : <Button size="sm" onClick={() => {
                   if (!nativeSheet || useUiStore.getState().activeProjectId !== projectId) return;
                   askAboutSurface({ projectId, label: `Schematic · ${nativeSheet.hierarchyPath}`, priority: 20, details: JSON.stringify({ sheet: nativeSheet, sourceRevision: schematicPreview.data?.sourceRevision, previewState: schematicPreview.data?.state, instruction: "Inspect this exact saved native sheet instance. Explain the circuit without assuming electrical checks passed." }) }, "Explain what this circuit sheet does and which parts I should understand first.");
                 }}><Icon name="sparkles" width={14} height={14} />Ask about this sheet</Button>}
                 <span className="text-[11px] text-muted">
-                  {commentMode ? "Click the board to drop a pin" : legacyPinsVisible ? `${pins.length} pin${pins.length === 1 ? "" : "s"} · ${nativeSheet?.hierarchyPath ?? `renders/${kind}.svg`}` : "Native sheet instance"}
+                  {commentMode ? t("board.clickToPin") : legacyPinsVisible ? `${pins.length} pin${pins.length === 1 ? "" : "s"} · ${nativeSheet?.hierarchyPath ?? `renders/${kind}.svg`}` : "Native sheet instance"}
                 </span>
               </>
             }
@@ -309,7 +312,7 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
             <div className="flex items-center justify-between"><strong className="text-sm">Pinned comments</strong><IconButton size="sm" title="Close comments" onClick={closeComments}><Icon name="close" width={16} height={16} /></IconButton></div>
             {pins.length > 0 && (
               <div className="mb-1 border-b border-border pb-3">
-                <p className="mb-2 text-xs font-medium">Pins on this {kind === "pcb" ? "PCB" : "schematic"}</p>
+                <p className="mb-2 text-xs font-medium">{t("board.pinsOn", { kind: kind === "pcb" ? "PCB" : t("board.tab.schematic") })}</p>
                 <ul className="max-h-40 space-y-1 overflow-auto">
                   {pins.map((comment, index) => (
                     <li key={comment.id}>
@@ -318,49 +321,49 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
                         onClick={() => { setSelectedId(comment.id); resetCompose(); }} title={comment.question}>
                         <span className="font-mono text-muted">{index + 1}</span>
                         <span className="min-w-0 flex-1 truncate">{comment.question}</span>
-                        <span className="text-[10px] text-muted">{comment.status === "resolved" ? "Resolved" : comment.answer ? "Answered" : "Pending"}</span>
+                        <span className="text-[10px] text-muted">{t("board.pendingStatus", { status: comment.status === "resolved" ? "resolved" : comment.answer ? "answered" : "pending" })}</span>
                       </button>
                     </li>
                   ))}
                 </ul>
               </div>
             )}
-            {commentMode && !selected && !draftPoint && <p className="text-xs text-muted">Click a location on the board to add a pin. Collect your comments, then ask the agent about them together.</p>}
+            {commentMode && !selected && !draftPoint && <p className="text-xs text-muted">{t("board.clickToPin")}</p>}
             {draftPoint && (
               <>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">New pin</div>
-                <p className="text-xs text-muted">The blue marker shows the selected location. Click another spot on the board to move it.</p>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted">{t("board.newPin")}</div>
+                <p className="text-xs text-muted">{t("board.newPinHint")}</p>
                 <Textarea
                   autoFocus
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
-                  placeholder="What is this?"
+                  placeholder={t("board.pinQuestion")}
                   rows={4}
-                  aria-label="Comment question"
+                  aria-label={t("board.comment")}
                 />
                 <details className="fd-comment-optional"><DisclosureSummary icon="pin" label="Component, pin or net" badge="Optional" /><div className="mt-3 space-y-3">
                 <p className="text-[11px] text-muted">The board location is already captured. Add these details if you know them.</p>
                 <label className="flex flex-col gap-1 text-xs">
-                  <span>Component reference <span className="text-muted">(optional)</span></span>
+                  <span>{t("board.refLabel")} <span className="text-muted">{t("board.optional")}</span></span>
                   <Input value={ref} onChange={(event) => setRef(event.target.value)} placeholder="e.g. R2, D1, U12" />
                   <span className="text-[11px] text-muted">The part’s label on the board or schematic.</span>
                 </label>
                 <label className="flex flex-col gap-1 text-xs">
-                  <span>Pin or pad number <span className="text-muted">(optional)</span></span>
+                  <span>{t("board.padLabel")} <span className="text-muted">{t("board.optional")}</span></span>
                   <Input value={pad} onChange={(event) => setPad(event.target.value)} placeholder="e.g. 1 or A1" />
                   <span className="text-[11px] text-muted">A specific connection on that component.</span>
                 </label>
                 <label className="flex flex-col gap-1 text-xs">
-                  <span>Signal / net name <span className="text-muted">(optional)</span></span>
+                  <span>{t("board.netLabel")} <span className="text-muted">{t("board.optional")}</span></span>
                   <Input value={net} onChange={(event) => setNet(event.target.value)} placeholder="e.g. GND, VCC, SPI.CS" />
                   <span className="text-[11px] text-muted">The named electrical connection you’re asking about.</span>
                 </label>
                 </div></details>
                 <div className="flex gap-1">
                   <Button size="sm" variant="primary" disabled={!question.trim() || pin.isPending} onClick={savePin}>
-                    {pin.isPending ? "Saving pin…" : "Save pin"}
+                    {pin.isPending ? t("common.saving") : t("board.savePin")}
                   </Button>
-                  <Button size="sm" variant="ghost" disabled={pin.isPending} onClick={resetCompose}>Cancel</Button>
+                  <Button size="sm" variant="ghost" disabled={pin.isPending} onClick={resetCompose}>{t("common.cancel")}</Button>
                 </div>
                 {pin.isError && <ErrorNotice error={pin.error} />}
               </>
@@ -371,21 +374,35 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
                   {commentAnchorLabel(selected.anchor)}
                 </div>
                 {kind === "pcb" && !commentMillimetrePoint(selected.anchor) && <p className="text-xs text-warning">This pin’s PCB origin is unverified. Confirm its location on an updated preview before using it for native edits.</p>}
-                <div className="text-[13px] font-medium">{selected.question}</div>
+                <TranslateText
+                  original={selected.question}
+                  onRequest={async () => {
+                    const target = locale === "qps" ? "en" : locale;
+                    const prompt = buildTranslateCommentPrompt(selected, target);
+                    const threadId = useUiStore.getState().activeThreadId;
+                    if (threadId) {
+                      await client.sendMessage(threadId, { content: prompt });
+                    } else {
+                      useUiStore.getState().setDraft(DRAFT_KEY_NEW, prompt);
+                      useUiStore.getState().focusComposer();
+                    }
+                    return applyCommentTranslation(selected.question, selected.question, target);
+                  }}
+                />
                 {selected.answer ? (
                   <p className="text-[12.5px] leading-relaxed text-fg/90">{selected.answer}</p>
                 ) : (
-                  <p className="text-[12px] text-muted">Saved. Add more pins, or ask the agent when you’re ready.</p>
+                  <p className="text-[12px] text-muted">{t("board.savedPin")}</p>
                 )}
                 <div className="flex flex-wrap gap-1">
                   {selected.status !== "resolved" && (
                     <Button size="sm" disabled={patch.isPending} onClick={() => patch.mutate({ commentId: selected.id, patch: { status: "resolved" } })}>
-                      Resolve
+                      {t("board.resolve")}
                     </Button>
                   )}
                   {selected.status === "resolved" && (
                     <Button size="sm" disabled={patch.isPending} onClick={() => patch.mutate({ commentId: selected.id, patch: { status: "open" } })}>
-                      Reopen
+                      {t("board.reopen")}
                     </Button>
                   )}
                 </div>
@@ -393,13 +410,13 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
             )}
             {!draftPoint && (
               <div className="mt-auto flex flex-col gap-2 border-t border-border pt-3">
-                <Button size="sm" onClick={beginPin}>Add another pin</Button>
+                <Button size="sm" onClick={beginPin}>{t("board.addPin")}</Button>
                 {pendingPins.length > 0 ? <>
                   <p className="text-[11px] text-muted">Send all {pendingPins.length} unanswered pin{pendingPins.length === 1 ? "" : "s"} in this view as one request.</p>
                   <Button size="sm" variant="primary" onClick={() => askAgent(pendingPins)}>
-                    {`Ask fabPlane about ${pendingPins.length} pin${pendingPins.length === 1 ? "" : "s"}`}
+                    {t("board.askAgent", { count: pendingPins.length })}
                   </Button>
-                </> : selected && <Button size="sm" onClick={() => askAgent([selected])}>Ask again about this pin</Button>}
+                </> : selected && <Button size="sm" onClick={() => askAgent([selected])}>{t("board.askAgain")}</Button>}
                 <p className="text-[11px] text-muted">Review the question in Ask fabPlane, then send when ready.</p>
                 {patch.isError && <ErrorNotice error={patch.error} />}
               </div>
