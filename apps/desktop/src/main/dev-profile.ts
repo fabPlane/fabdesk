@@ -55,6 +55,23 @@ export function useDevProfile(opts: { packaged: boolean; env?: NodeJS.ProcessEnv
   return !opts.packaged;
 }
 
+/**
+ * Icon an unpackaged run shows, relative to `apps/desktop/build`: the "DEV" band artwork by default,
+ * the plain shipped artwork with `FABDESK_DEV_ICON=0` (screen recordings). Packaged apps use the
+ * icon in their bundle, so they get none.
+ */
+export function developmentIconFile(opts: {
+  packaged: boolean;
+  platform: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+}): string | undefined {
+  if (opts.packaged) return undefined;
+  const banner = parseDevProfileFlag(opts.env?.["FABDESK_DEV_ICON"]) !== false;
+  if (opts.platform === "win32") return banner ? "dev/icon.ico" : "icon.ico";
+  if (opts.platform === "linux") return banner ? "dev/icon-512.png" : "icons/512x512.png";
+  return banner ? "dev/icon.png" : "icon.png";
+}
+
 export function desktopIdentity(devProfile: boolean): DesktopIdentity {
   if (devProfile) {
     return {

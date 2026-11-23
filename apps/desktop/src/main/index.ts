@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type { CoreInfo } from "../shared/core-info";
 import { CoreSupervisor } from "./core-supervisor";
-import { applyDesktopIdentity } from "./dev-profile";
+import { applyDesktopIdentity, developmentIconFile } from "./dev-profile";
 import { registerIpc } from "./ipc";
 import { installAppMenu } from "./app-menu";
 import { automationEnabled, startAppAutomation, type AppAutomation } from "./automation";
@@ -110,12 +110,9 @@ let cadSupervisor: CadSupervisor | null = null;
 let automation: AppAutomation | null = null;
 let quitting = false;
 
-/** Unpackaged runs show the "DEV" band icon (build/dev, from scripts/desktop-dev-icons.ts). */
 function developmentIconPath(): string | undefined {
-  if (app.isPackaged) return undefined;
-  if (process.platform === "win32") return join(here, "../../build/dev/icon.ico");
-  if (process.platform === "linux") return join(here, "../../build/dev/icon-512.png");
-  return join(here, "../../build/dev/icon.png");
+  const file = developmentIconFile({ packaged: app.isPackaged, platform: process.platform, env: process.env });
+  return file ? join(here, "../../build", file) : undefined;
 }
 
 function createWindow(): BrowserWindow {
