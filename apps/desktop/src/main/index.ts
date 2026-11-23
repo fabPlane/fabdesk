@@ -110,11 +110,12 @@ let cadSupervisor: CadSupervisor | null = null;
 let automation: AppAutomation | null = null;
 let quitting = false;
 
+/** Unpackaged runs show the "DEV" band icon (build/dev, from scripts/desktop-dev-icons.ts). */
 function developmentIconPath(): string | undefined {
   if (app.isPackaged) return undefined;
-  if (process.platform === "win32") return join(here, "../../build/icon.ico");
-  if (process.platform === "linux") return join(here, "../../build/icons/512x512.png");
-  return join(here, "../../build/icon.png");
+  if (process.platform === "win32") return join(here, "../../build/dev/icon.ico");
+  if (process.platform === "linux") return join(here, "../../build/dev/icon-512.png");
+  return join(here, "../../build/dev/icon.png");
 }
 
 function createWindow(): BrowserWindow {
