@@ -5,6 +5,12 @@ export const BoardArtworkSettings = z.object({
   style: z.enum(["realistic", "retro", "poster"]),
   color: z.enum(["green", "black", "blue", "red", "purple", "white", "yellow"]),
   colorMode: z.enum(["monotone", "multicolor"]).optional(),
+  recolor: z.object({
+    mode: z.enum(["original", "grayscale", "duotone"]),
+    amount: z.number().finite().min(0).max(1),
+    shadow: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    highlight: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  }).optional(),
   printedBackground: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
   inkColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   crop: z.enum(["none", "circle", "rounded"]),

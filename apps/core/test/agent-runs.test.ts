@@ -12,6 +12,7 @@ import type { ProjectHandle } from "@fabdesk/tools";
 import { AgentRunManager, type AgentAdapterLike } from "../src/agent-runs";
 import { TokenSet } from "../src/auth";
 import { Store } from "../src/db";
+import { DURABLE_WAIT_SHORT_MS, durableWaitForClient, RAISED_TOOL_TIMEOUT_AGENTS } from "../src/mcp-sessions";
 
 const stores: Store[] = [];
 afterEach(() => {
@@ -27,6 +28,7 @@ function harness(
     run?: AgentAdapterLike["run"];
     resolveProject?: (id: string) => Promise<ProjectHandle | null>;
     detect?: NonNullable<AgentAdapterLike["detect"]>;
+    extraToolsets?: (project: ProjectHandle | null) => Promise<string[]>;
   } = {},
 ) {
   return (async () => {
@@ -64,6 +66,7 @@ function harness(
       workspaceDir: dir,
       abortSettleTimeoutMs: 100,
       ...(opts.resolveProject ? { resolveProject: opts.resolveProject } : {}),
+      ...(opts.extraToolsets ? { extraToolsets: opts.extraToolsets } : {}),
     });
     const project = (id: string): ProjectHandle =>
       ({ id, name: id, dir: join(dir, id), manifest: () => ProjectManifest.parse({ schema: 1, id, name: id, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), board: {} }) }) as unknown as ProjectHandle;
@@ -369,6 +372,16 @@ describe("captured workspace context", () => {
   });
 });
 
+test("a run starts with the toolsets the project asks for, and without them when it asks for none or fails", async () => {
+  const asked: Array<string | null> = [];
+  const h = await harness({ extraToolsets: async (p) => { asked.push(p?.id ?? null); if (p?.id === "boom") throw new Error("x"); return p?.id === "board" ? ["board"] : []; } });
+  const url = () => new URL(h.runs.at(-1)!.session.mcp.url).searchParams.get("toolsets");
+  await h.start(h.thread().id, h.project("board")); expect(url()).toBe("board"); expect(new URL(h.runs.at(-1)!.session.mcp.url).searchParams.get("start")).toBe("board"); h.runs.at(-1)!.finish(); await settle();
+  await h.start(h.thread().id, h.project("blank")); expect(url()).toBeNull(); h.runs.at(-1)!.finish(); await settle();
+  await h.start(h.thread().id, h.project("boom")); expect(url()).toBeNull(); h.runs.at(-1)!.finish(); await settle();
+  expect(asked).toEqual(["board", "blank", "boom"]);
+});
+
 test("idea planning is restricted and promotion carries history into a fresh engineering session once", async () => {
   const h = await harness(), p = h.project("idea-plan"), t = h.thread();
   let manifest = { ...p.manifest(), ideaDraft: {} };
@@ -390,4 +403,21 @@ test("idea planning is restricted and promotion carries history into a fresh eng
   await h.start(t.id, p, "Explain the result");
   expect(h.runs[2]?.session.resume).toBe("s2");
   h.runs[2]!.finish(); await settle();
+});
+
+test("a run token names its agent; only agents whose tool timeout fabdesk raised get the full durable wait", async () => {
+  const h = await harness();
+  expect(h.manager.activeRunAgent(null)).toBeNull();
+  await h.start(h.thread().id, null);
+  const token = h.runs.at(-1)!.session.mcp.token;
+  expect(h.manager.activeRunAgent(token)).toBe("claude");
+  expect(durableWaitForClient(undefined, { ownRun: RAISED_TOOL_TIMEOUT_AGENTS.has("claude") })).toBeUndefined();
+  // Cursor and Grok configs carry no tool-timeout key: their own runs return a job id after the short wait
+  for (const agent of ["cursor", "grok"]) {
+    expect(RAISED_TOOL_TIMEOUT_AGENTS.has(agent)).toBe(false);
+    expect(durableWaitForClient({ name: agent }, { ownRun: RAISED_TOOL_TIMEOUT_AGENTS.has(agent) })).toBe(DURABLE_WAIT_SHORT_MS);
+  }
+  h.runs.at(-1)!.finish();
+  await settle();
+  expect(h.manager.activeRunAgent(token)).toBeNull();
 });

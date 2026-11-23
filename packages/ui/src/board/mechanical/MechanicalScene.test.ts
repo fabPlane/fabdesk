@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { Box3, Vector3 } from "three";
+import { Box3, Mesh, MeshStandardMaterial, Vector3 } from "three";
 import { enclosureBoardPose, mechanicalItem } from "@fabdesk/client-core";
 import { MechanicalScene } from "./MechanicalScene";
 const encode = (text: string) => new TextEncoder().encode(text).buffer;
@@ -21,6 +21,23 @@ test("empty or invalid model geometry is rejected", async () => {
   await expect(
     MechanicalScene.decode({ item: mechanicalItem("bad.obj"), data: encode("not a model") }),
   ).rejects.toThrow(/empty, invalid/);
+});
+
+test("untextured enclosures get a satin display finish without changing exported geometry", async () => {
+  for (const kind of ["base", "lid", "import"] as const) {
+    const model = await MechanicalScene.decode({item: mechanicalItem("case.stl", kind), data: encode(triangle), enclosure: true});
+    let surfaces = 0;
+    model.traverse(object => {
+      if (!(object instanceof Mesh) || !(object.material instanceof MeshStandardMaterial)) return;
+      surfaces++;
+      expect(object.material.name).toBe("Preview satin aluminum");
+      expect(object.material.metalness).toBe(.85);
+      expect(object.material.transparent).toBe(false);
+      expect(object.geometry.getAttribute("position").count).toBe(3);
+    });
+    expect(surfaces).toBe(1);
+    expect(new Box3().setFromObject(model).getSize(new Vector3()).toArray()).toEqual([20,10,0]);
+  }
 });
 
 test("centre-mounted placement preserves the board's exported world frame", async () => {

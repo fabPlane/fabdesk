@@ -220,7 +220,7 @@ export const schematic_edit = defineTool({
   toolset: "circuit",
   title: "Edit native schematic",
   description:
-    "Apply one undoable edit batch directly to board.kicad_sch. Multi-unit parts share reference/libId/value/footprint with distinct unit numbers; place every required unit, including power units. Use symbolUpdates {reference,unit} for a placed unit or deleteItemIds from schematic_inspect to replace it. Supports rotated or mirrored library symbols, symbol movement, safely labelled pin stubs, explicit wires, local and global labels, junctions, no-connect markers, notes, and deletion by inspected ID. Creates native KiCad files when absent. Coordinates are absolute sheet millimetres, origin top-left, +X right, +Y down, on KiCad's 1.27 mm grid. Off-grid arguments are preserved and reported as gridProblems. Each batch uses one commit; changedObjectIds and revision describe the applied result.",
+    "Apply one undoable edit batch directly to board.kicad_sch. Multi-unit parts share reference/libId/value/footprint with distinct unit numbers; place every required unit, including power units. Use symbolUpdates {reference,unit} for a placed unit or deleteItemIds from schematic_inspect to replace it. Supports rotated or mirrored library symbols, symbol movement, safely labelled pin stubs, explicit wires, local and global labels, junctions, no-connect markers, notes, and deletion by inspected ID. Creates native KiCad files when absent. Coordinates are absolute sheet millimetres, origin top-left, +X right, +Y down, on KiCad's 1.27 mm grid. Off-grid arguments are preserved and reported as gridProblems. Each batch uses one commit; changedObjectIds and revision describe the applied result. For an ECO that must reach schematic, board and requirements together (remove, swap, add, net changes), board_edit supersedes this.",
   inputSchema: {
     sheet: z
       .string()
@@ -585,7 +585,7 @@ export const pcb_update_from_schematic = defineTool({
   toolset: "circuit",
   title: "Atomically update PCB from schematic",
   description:
-    "Atomically validate and run KiCad's native Update PCB from Schematic. The normal apply=true path performs its own dry-run validation, requires zero PCB↔schematic parity conflicts, and saves the PCB only on success. Use apply=false only when a forecast without PCB changes is specifically needed. Both modes save the live schematic before checking it. Live-session diagnostic errors block the board update but are not saved-file or release-authoritative ERC. Board-only footprints are preserved by default.",
+    "Atomically validate and run KiCad's native Update PCB from Schematic. The normal apply=true path performs its own dry-run validation, requires zero PCB↔schematic parity conflicts, and saves the PCB only on success. Use apply=false only when a forecast without PCB changes is specifically needed. Both modes save the live schematic before checking it. Live-session diagnostic errors block the board update but are not saved-file or release-authoritative ERC. Board-only footprints are preserved by default. For an ECO on a routed board, board_edit supersedes this: it edits sheet and board together as a plan and proves the result before adopting it.",
   inputSchema: {
     apply: z
       .boolean()

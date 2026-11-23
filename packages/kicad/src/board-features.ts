@@ -52,6 +52,16 @@ const head = (node: Sexpr): string | null =>
   Array.isArray(node) && typeof node[0] === "string" ? node[0] : null;
 const child = (node: Sexpr[], name: string): Sexpr[] | undefined =>
   node.find((n): n is Sexpr[] => head(n) === name);
+
+/** Native enabled manufacturing layers, including the actual internal copper stack. */
+export function boardPreviewLayers(text: string): string[] {
+  const root = parseSexpr(text).find((n): n is Sexpr[] => head(n) === "kicad_pcb");
+  if (!root) throw new Error("Not a KiCad PCB");
+  return [...new Set((child(root, "layers") ?? []).flatMap(row => {
+    const name = Array.isArray(row) ? row[1] : null;
+    return typeof name === "string" && /^(?:[FB]\.(?:Cu|SilkS|Mask|Paste)|In\d+\.Cu|Edge\.Cuts)$/.test(name) ? [name] : [];
+  }))];
+}
 const children = (node: Sexpr[], name: string): Sexpr[][] =>
   node.filter((n): n is Sexpr[] => head(n) === name);
 const numberAt = (node: Sexpr[] | undefined, index: number): number | null => {

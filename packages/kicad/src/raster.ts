@@ -58,3 +58,22 @@ export async function rasterizeSvg(
     renderer.free();
   }
 }
+
+/** Rasterize SVG markup to raw RGBA pixels at an exact pixel width (height follows the aspect ratio). */
+export async function rasterizeSvgPixels(
+  svg: string | Uint8Array,
+  options: { width: number; background?: string },
+): Promise<{ rgba: Uint8Array; width: number; height: number }> {
+  await ready();
+  const renderer = new Resvg(svg, { background: options.background ?? "white", fitTo: { mode: "width", value: options.width } });
+  try {
+    const image = renderer.render();
+    try {
+      return { rgba: new Uint8Array(image.pixels), width: image.width, height: image.height };
+    } finally {
+      image.free();
+    }
+  } finally {
+    renderer.free();
+  }
+}

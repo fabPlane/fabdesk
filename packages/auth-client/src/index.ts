@@ -1,6 +1,7 @@
 export { AuthClient, defaultSleep } from "./client";
 export type { AuthClientOptions } from "./client";
 export { fabdeskHome, localModeAllowed, LOCAL_PRINCIPAL } from "./home";
+export { resolveProjectsDirectory } from "./projects-directory";
 export {
   Credentials,
   CREDENTIALS_FILE,

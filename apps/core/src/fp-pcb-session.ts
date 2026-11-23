@@ -12,14 +12,21 @@
  */
 import { join } from "node:path";
 import { assertNativeBoardOwnership } from "./assembly-board-binding";
-import { readFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { readFile, mkdir, writeFile, rm, readdir, stat } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
 import { KiCad, type Board, type Schematic } from "@fp-pcb/client";
 import { DocumentType } from "@fp-pcb/proto";
 import { WebSocketTransport, bridgeWsUrl } from "@fp-pcb/client/transport";
-import { ToolError, NativeRevisionConflict } from "@fabdesk/tools";
+import { ToolError, NativeRevisionConflict, jailPath } from "@fabdesk/tools";
 export { NativeRevisionConflict } from "@fabdesk/tools";
 import type { FpPcbBridgeClient } from "./fp-pcb-bridge";
+import {
+  captureProjectLibraryRows,
+  isManagedLibraryRow,
+  rowsToRestore,
+  type ProjectLibrarySnapshot,
+  type ProjectLibraryRow,
+} from "./project-library-tables";
 
 export const BOARD_PRO = "board.kicad_pro";
 export const BOARD_PCB = "board.kicad_pcb";
@@ -41,6 +48,8 @@ export class FpPcbSessions {
   private readonly recovering = new Set<string>();
   private readonly reconciliation = new Map<string, Promise<void>>();
   private readonly libraryRevisions = new WeakMap<ProjectSession, string>();
+  private readonly lookupLibraryRevisions = new WeakMap<ProjectSession, string>();
+  private readonly libraryWrites = new WeakMap<ProjectSession, Promise<void>>();
   private readonly libraryRegistration = new WeakMap<ProjectSession, Promise<void>>();
 
   constructor(
@@ -177,7 +186,9 @@ export class FpPcbSessions {
     if (this.libraryRegistration.has(session)) return this.ensureBundledLibraries(projectDir, session);
     this.libraryRevisions.delete(session);
     const registration = (async () => {
-      await this.bridge().registerBundledLibraries(session.id);
+      await this.preservingProjectLibraries(projectDir, session, () =>
+        this.bridge().registerBundledLibraries(session.id),
+      );
       this.libraryRevisions.set(session, await this.libraryRevision(projectDir));
     })();
     this.libraryRegistration.set(session, registration);
@@ -187,8 +198,145 @@ export class FpPcbSessions {
     }
   }
 
+  /**
+   * Run `write`, which may make KiCad save its in-memory project library tables (bundled
+   * registration, a compile job), then re-add through the same session every project row the saved
+   * tables had before it and lost. KiCad loads the tables once when the project opens, so a row
+   * added to `fp-lib-table` afterwards would otherwise vanish on the next table save.
+   */
+  async preservingProjectLibraries<T>(
+    projectDir: string,
+    session: ProjectSession,
+    write: () => Promise<T>,
+    replacing?: { kind: "footprint" | "symbol"; nickname: string },
+  ): Promise<T> {
+    const previous = this.libraryWrites.get(session) ?? Promise.resolve();
+    let unlock!: () => void;
+    const held = new Promise<void>(resolve => { unlock = resolve; });
+    const queued = previous.then(() => held);
+    this.libraryWrites.set(session, queued);
+    await previous;
+    try { return await this.writePreservingProjectLibraries(projectDir, session, write, replacing); }
+    finally {
+      unlock();
+      if (this.libraryWrites.get(session) === queued) this.libraryWrites.delete(session);
+    }
+  }
+
+  private async writePreservingProjectLibraries<T>(projectDir: string, session: ProjectSession, write: () => Promise<T>, replacing?: { kind: "footprint" | "symbol"; nickname: string }): Promise<T> {
+    const before = await captureProjectLibraryRows(projectDir);
+    const recovery = projectDir ? join(projectDir, ".fabdesk", "library-recovery", `${randomUUID()}.json`) : null;
+    if (recovery) { await mkdir(join(recovery,".."), { recursive: true }); await writeFile(recovery, JSON.stringify({ before }), { mode: 0o600 }); }
+    let expected = JSON.stringify(before);
+    const libraries = session.kicad.libraries;
+    const originalAdd = libraries?.addTableRow;
+    if (originalAdd) libraries.addTableRow = async (...args: Parameters<typeof originalAdd>) => {
+      if (JSON.stringify(await captureProjectLibraryRows(projectDir)) !== expected)
+        throw new NativeRevisionConflict("Library table changed outside the native writer before a table save; the newer saved version was kept. Reopen before retrying.");
+      const result = await originalAdd.apply(libraries, args);
+      expected = JSON.stringify(await captureProjectLibraryRows(projectDir));
+      return result;
+    };
+    let result!: T, operationError: unknown, operationFailed = false;
+    try { result = await write(); }
+    catch (error) { operationError = error; operationFailed = true; }
+    finally { if (originalAdd) libraries.addTableRow = originalAdd; }
+    if (!operationFailed && replacing && before[replacing.kind])
+      before[replacing.kind] = before[replacing.kind]!.filter(row => row.name !== replacing.nickname);
+    try {
+      try { await this.restoreProjectLibraries(projectDir, session, before); }
+      catch (error) {
+        if (!isGone(error)) throw error;
+        await this.release(projectDir);
+        const replacement = await this.session(projectDir);
+        await this.restoreProjectLibraries(projectDir, replacement, before);
+      }
+      if (recovery) await rm(recovery, { force: true });
+    } catch (error) {
+      if (recovery) await writeFile(recovery, JSON.stringify({ before, after: await captureProjectLibraryRows(projectDir), error: String(error) }), { mode: 0o600 });
+      throw new NativeRevisionConflict(`Project library recovery could not finish; saved table versions were preserved${recovery ? ` in ${recovery}` : ""}. Reopen before retrying. ${String(error)}`);
+    }
+    if (operationFailed) throw operationError;
+    return result;
+  }
+
+  /** Lookup uses existing project tables without populating them with bundled host paths. */
+  async refreshProjectLibraries(projectDir: string): Promise<void> {
+    await this.withRetry(projectDir, async session => {
+      const previous = this.lookupLibraryRevisions.get(session), current = await this.libraryRevision(projectDir);
+      if (previous === current) return;
+      const rows = await captureProjectLibraryRows(projectDir);
+      const updates: Array<{ kind: "footprint" | "symbol"; row: ProjectLibraryRow }> = [];
+      for (const kind of ["footprint", "symbol"] as const) {
+        // On the first lookup compare against the table KiCad loaded. Re-adding an identical
+        // row saves/reformats the whole table and needlessly invalidates handoff receipts.
+        const memory: ProjectLibraryRow[] | null = previous === undefined
+          ? (await session.kicad.libraries.tables(kind, "project")).map(entry => ({ name: entry.nickname, uri: entry.uri, type: entry.type || "KiCad", options: entry.options, descr: entry.description, disabled: !entry.enabled, hidden: entry.hidden }))
+          : null;
+        const changed = previous === undefined ? rowsToRestore(rows[kind], memory) : rows[kind] ?? [];
+        for (const row of changed) if (!isManagedLibraryRow(kind, row)) updates.push({ kind, row });
+      }
+      if (updates.length) await this.preservingProjectLibraries(projectDir, session, async () => {
+        for (const { kind, row } of updates) await session.kicad.libraries.addTableRow(kind, "project", { nickname: row.name, uri: row.uri, type: row.type, options: row.options, description: row.descr, enabled: !row.disabled, hidden: row.hidden }, true);
+      });
+      this.lookupLibraryRevisions.set(session, await this.libraryRevision(projectDir));
+    });
+  }
+
+  private async restoreProjectLibraries(
+    projectDir: string,
+    session: ProjectSession,
+    before: ProjectLibrarySnapshot,
+  ): Promise<string[]> {
+    const after = await captureProjectLibraryRows(projectDir);
+    const restored: string[] = [];
+    for (const kind of ["footprint", "symbol"] as const) {
+      for (const row of rowsToRestore(before[kind], after[kind], (row) => isManagedLibraryRow(kind, row))) {
+        // A native save and an external editor are independent writers. If disk differs from
+        // KiCad's current table, it contains a newer external edit: refuse instead of replaying
+        // our older snapshot over it. Recheck before every restorative RPC.
+        const native = await session.kicad.libraries.tables(kind, "project");
+        const memory: ProjectLibraryRow[] = native.map(entry => ({ name: entry.nickname, uri: entry.uri, type: entry.type || "KiCad", options: entry.options, descr: entry.description, disabled: !entry.enabled, hidden: entry.hidden }));
+        const disk = (await captureProjectLibraryRows(projectDir))[kind];
+        const identity = (rows: ProjectLibraryRow[] | null) => JSON.stringify(rows?.slice().sort((a, b) => a.name.localeCompare(b.name)).map(r => [r.name, r.type, r.uri, r.options, r.descr, r.disabled, r.hidden]));
+        if (identity(disk) !== identity(memory))
+          throw new NativeRevisionConflict(`The ${kind} library table was edited outside KiCad during registration; the newer saved table was kept. Reopen the project before retrying.`);
+        await session.kicad.libraries.addTableRow(
+          kind,
+          "project",
+          {
+            nickname: row.name,
+            uri: row.uri,
+            type: row.type,
+            options: row.options,
+            description: row.descr,
+            enabled: !row.disabled,
+            hidden: row.hidden,
+          },
+          true,
+        );
+        restored.push(`${kind}:${row.name}`);
+      }
+    }
+    if (restored.length)
+      this.opts.log?.(`restored project library rows KiCad dropped on save: ${restored.join(", ")}`);
+    return restored;
+  }
+
   private async libraryRevision(projectDir: string): Promise<string> {
-    return JSON.stringify(await Promise.all([BOARD_PRO, "sym-lib-table", "fp-lib-table"].map(filename => this.diskRevision(join(projectDir, filename)))));
+    const revisions: unknown[] = await Promise.all([BOARD_PRO, "sym-lib-table", "fp-lib-table"].map(filename => this.diskRevision(join(projectDir, filename))));
+    const rows = await captureProjectLibraryRows(projectDir);
+    for (const kind of ["footprint", "symbol"] as const) for (const row of rows[kind] ?? []) {
+      const uri = row.uri.replaceAll("${KIPRJMOD}", projectDir);
+      let path: string; try { path = await jailPath(projectDir, uri); } catch { continue; }
+      const info = await stat(path).catch(() => null);
+      if (info?.isDirectory()) {
+        for (const name of (await readdir(path)).filter(name => name.endsWith(".kicad_mod")).sort()) {
+          const file = await jailPath(projectDir, join(path,name)); revisions.push([kind,row.name,name,await this.diskRevision(file)]);
+        }
+      } else revisions.push([kind,row.name,await this.diskRevision(path)]);
+    }
+    return JSON.stringify(revisions);
   }
 
   /** Runs `fn` on the session, reconnecting once when the bridge no longer knows it. */

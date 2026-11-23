@@ -1,0 +1,22 @@
+import { expect, test } from "bun:test";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { beginPublicationVisibility, visiblePublishedFile } from "../src/publication-visibility";
+import { tempProject } from "./mock-services";
+import { writeAtomic } from "../src/fs";
+test("readers see the previous complete generation during writes and the next complete generation at commit", async () => {
+  const p = await tempProject("visibility");
+  const output = (path: string, value: string) => ({ path, bytes: Buffer.from(value) });
+  await writeAtomic(join(p.dir, "renders/pcb.svg"), "old SVG");
+  await writeAtomic(join(p.dir, "reports/drc.json"), "old DRC");
+  const values = [output("renders/pcb.svg", "new SVG"), output("reports/drc.json", "new DRC")];
+  const tx = await beginPublicationVisibility(p.dir, values);
+  await writeAtomic(join(p.dir, values[0]!.path), values[0]!.bytes);
+  const read = async (path: string) => readFile((await visiblePublishedFile(p.dir, path)) ?? join(p.dir, path), "utf8");
+  expect(await read(values[0]!.path)).toBe("old SVG"); expect(await read(values[1]!.path)).toBe("old DRC");
+  await writeAtomic(join(p.dir, values[1]!.path), values[1]!.bytes);
+  await tx.commit();
+  expect(await read(values[0]!.path)).toBe("new SVG"); expect(await read(values[1]!.path)).toBe("new DRC");
+  await writeFile(join(p.dir, values[0]!.path), "later explicit render");
+  expect(await read(values[0]!.path)).toBe("later explicit render");
+});

@@ -7,6 +7,7 @@
  * api-server` per project) for building, querying, routing and library search; `KicadService`
  * runs the fork `kicad-cli` for DRC, renders and exports; `SimService` reads the netlist source.
  */
+import type { RunChild } from "./child-tasks";
 import type { CloudService } from "./cloud/service";
 import type { RouterRegistry } from "./routers/registry";
 import type {
@@ -580,17 +581,20 @@ export interface DesignService {
     opts?: { excludePlaneNets?: boolean; excludeNets?: string[] },
   ): Promise<ComponentScope>;
   /** Footprints in the KiCad libraries the bridge's server can see. */
-  searchFootprints(query: string, limit: number): Promise<FootprintHit[]>;
+  searchFootprints(query: string, limit: number, projectDir?: string): Promise<FootprintHit[]>;
   /** Symbols in the KiCad libraries the bridge's server can see. */
-  searchSymbols(query: string, limit: number): Promise<FootprintHit[]>;
+  searchSymbols(query: string, limit: number, projectDir?: string): Promise<FootprintHit[]>;
   /** Pin/pad geometry needed to connect and place one exact library id safely. */
-  describePart(kind: "footprint" | "symbol", libId: string): Promise<PartDescription>;
+  describePart(kind: "footprint" | "symbol", libId: string, projectDir?: string): Promise<PartDescription>;
   /** Validate a symbol/footprint pair without placing or changing either one. */
   checkPartCompatibility(
     symbolLibId: string,
     footprintLibId: string,
     role?: "power-only-usb-c",
+    projectDir?: string,
   ): Promise<PartCompatibility>;
+  /** Register an existing project-contained library, saved through the live KiCad table. */
+  registerLibrary?(projectDir: string, kind: "footprint" | "symbol", nickname: string, path: string): Promise<{ nickname: string; uri: string }>;
   /** Move footprints (mm, degrees) on the built board; returns what moved and the references it could not find. */
   place(
     projectDir: string,
@@ -679,7 +683,8 @@ export interface KicadService {
     opts: {
       board: string;
       outFile: string;
-      severity?: "error" | "all";
+      /** "project": the project's own rule severities decide what is reported (the toolkit's last-mile scoring). */
+      severity?: "error" | "all" | "project";
       schematicParity?: boolean;
       refillZones?: boolean;
       signal?: AbortSignal;
@@ -715,6 +720,8 @@ export interface KicadService {
     cli: KicadCli,
     opts: { board: string; output: string; modelProjectDir?: string; mechanical?: boolean; signal?: AbortSignal },
   ): Promise<{ fused: boolean; warnings: string[] }>;
+  /** Reuse existing files; cache exact missing official models before dependency snapshots. */
+  prepareModels(cli: KicadCli, opts: { board: string; modelProjectDir?: string; signal?: AbortSignal; localOnly?: boolean; allowOffline?: boolean }): Promise<{ warnings: string[]; pendingModels?: number }>;
   /**
    * Per-footprint 3D model coverage and exact board-space bounds measured from the packaged
    * `kicad-cli pcb export glb`; `scratchDir` (temporary GLB only) must be jailed to the project.
@@ -729,7 +736,7 @@ export interface KicadService {
   ): Promise<Record<string, unknown>>;
   exportGerbers(
     cli: KicadCli,
-    opts: { board: string; outDir: string; signal?: AbortSignal },
+    opts: { board: string; outDir: string; preset?: "production" | "all"; signal?: AbortSignal },
   ): Promise<{ paths: string[] }>;
   exportDrill(
     cli: KicadCli,
@@ -759,7 +766,7 @@ export interface KicadService {
   ): Promise<{ paths: string[] }>;
   exportOwnedSchematicSvg(
     cli: KicadCli,
-    opts: { projectDir: string; hierarchy: SchematicHierarchy; circuit?: boolean; signal?: AbortSignal },
+    opts: { projectDir: string; hierarchy: SchematicHierarchy; circuit?: boolean; bindNativePages?: boolean; signal?: AbortSignal },
   ): Promise<{ sourceRevision: string; sourceFiles: Array<{ path: string; sha256: string }>; sheets: Array<{ name: string; svg: Uint8Array; nativeSheet?: { identity: string; hierarchyPath: string; nativePath: string; pageNumber: number } }> }>;
   exportOwnedSchematicPage(
     cli: KicadCli,
@@ -1040,6 +1047,7 @@ export type RouteRunRecord = {
     expectedPcbRevision: string;
     resultingPcbRevision: string | null;
     appliedAt: string | null;
+    nativeConnectivity?: { status: "measured" | "unavailable" | "stale"; pcbSha256: string; open: number | null; reason?: string };
     reason: string | null;
   };
   startedAt: string;
@@ -1215,6 +1223,31 @@ export interface CadService {
   release(projectDir: string): Promise<void>;
 }
 
+/** One board-level change applied to a saved native board through KiCad IPC. */
+export type BoardAdoptResult = {
+  /** The target was refilled before its native save; absent only in older service adapters. */
+  zoneRefill?: { refilled: boolean; error?: string };
+  /** Items the candidate changes relative to the target, by KiCad object type. */
+  delta: { removed: Record<string, number>; added: Record<string, number>; changed: Record<string, number> };
+  /** Differences left after the commit (normalised); empty when the target now equals the candidate. */
+  residual: { removed: Record<string, number>; added: Record<string, number>; changed: Record<string, number> };
+  targetSha256Before: string;
+  targetSha256After: string;
+  timingsMs: Record<string, number>;
+  kicadCli: string;
+};
+
+/** Adopting a candidate board writes it into the project's saved board as one KiCad commit (see `adoptCandidate`). */
+export interface BoardAdoptService {
+  /** Apply the candidate board's items to the target board file in one IPC commit, then save. */
+  adopt(input: {
+    target: string;
+    candidate: string;
+    cli: KicadCli;
+    signal?: AbortSignal;
+  }): Promise<BoardAdoptResult>;
+}
+
 export interface CoreServices {
   version: string;
   /** Attested packaged runtime identity; null only for un-packaged development. */
@@ -1246,4 +1279,11 @@ export interface CoreServices {
    * When omitted, photo tools use the heuristic outline/scale provider.
    */
   vision?: import("./photo/vision").VisionProvider;
+  /**
+   * Run a heavy board computation in a child process of the core (its own heap, killable, the event loop stays free).
+   * Absent (tests, embedded hosts), tools run the computation in-process.
+   */
+  runChild?: RunChild;
+  /** Optional: adopt a candidate board into the saved board over KiCad IPC (board workflow edits). */
+  boardAdopt?: BoardAdoptService;
 }

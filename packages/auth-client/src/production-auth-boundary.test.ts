@@ -1,6 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import {
   PRODUCTION_API_HOST,
   PRODUCTION_API_ORIGIN,
@@ -10,8 +8,6 @@ import {
   PRODUCTION_PUBLIC_HOST,
   isProductionFabplaneOrigin,
 } from "./dev-accounts";
-
-const FABPLANE_ROOT = join(import.meta.dir, "../../../vendor/fabplane");
 
 describe("production authentication boundary", () => {
   test("keeps public site, device UI, and API on separate hosts", () => {
@@ -26,17 +22,6 @@ describe("production authentication boundary", () => {
     expect(isProductionFabplaneOrigin("https://fabplane.com")).toBe(false);
   });
 
-  test("editor production deploy never enables password / dev login", () => {
-    const workflow = readFileSync(join(FABPLANE_ROOT, ".github/workflows/deploy-app.yml"), "utf8");
-    expect(workflow).toContain("workflow_dispatch");
-    expect(workflow).toMatch(/VITE_DEV_LOGIN=false/);
-    const productionBlock = workflow.split('deployment_target }}" = "production"')[1] ?? "";
-    const stagingBlock = productionBlock.split("else")[1] ?? "";
-    expect(productionBlock).toContain("VITE_DEV_LOGIN=false");
-    expect(productionBlock.split("else")[0]).not.toContain("VITE_DEV_LOGIN=true");
-    expect(productionBlock.split("else")[0]).not.toMatch(/AUTH_PASSWORD_LOGIN=true/);
-    expect(stagingBlock).toContain("VITE_DEV_LOGIN=true");
-    expect(workflow).not.toMatch(/vars\.AUTH_PASSWORD_LOGIN/);
-    expect(workflow).not.toMatch(/VITE_DEV_LOGIN=\$\{\{\s*vars\./);
-  });
+  // Password-to-production request prevention is exercised in password-login.test.ts.
+  // Website deployment configuration belongs to the independently maintained API/browser repo.
 });

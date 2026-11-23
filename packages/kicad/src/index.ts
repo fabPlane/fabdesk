@@ -1,7 +1,12 @@
+export { prepareBoardModels } from "./prepare-models";
+export { withModelCache } from "./model-cache-budget";
+export { stockModelCacheRoot } from "./stock-model-cache";
 export {
   kicadVersionAtLeast,
   findKicadCli,
   runKicadCli,
+  componentModelEnvironment,
+  componentModelLibraryRoots,
   countCopperLayers,
   bundledKicadRoots,
   bundledKicadCliCandidates,
@@ -12,6 +17,7 @@ export {
   type RunOptions,
   type RunResult,
 } from "./cli";
+export { boardPreviewLayers } from "./board-features";
 export {
   placeFootprints,
   readFootprintPlacements,
@@ -20,7 +26,7 @@ export {
   type Placement,
   type PlaceResult,
 } from "./place";
-export { rasterizeSvg, type RasterizedSvg } from "./raster";
+export { rasterizeSvg, rasterizeSvgPixels, type RasterizedSvg } from "./raster";
 export {
   renderPng,
   exportGlb,
@@ -170,3 +176,5 @@ export {
 export { previewEnclosureSvg } from "./enclosure-preview";
 
 export { cropNativePageSvg } from "./pcb-svg-coordinates";
+
+export * from "./library-tables";

@@ -390,8 +390,17 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     expect(fp(first, "U4").models.map((m) => m.load.status)).toEqual(["loaded", "loaded"]);
     // KiCad model offset +Y moves the body towards board -Y.
     expect(bounds(first, "U12")).toEqual([134, 136, 92, 96, 1.615, 2.745]);
-    // VRML is read natively at 2.54 mm per unit.
-    expect(bounds(first, "U13")).toEqual([152.46, 157.54, 102.46, 107.54, 1.615, 6.695]);
+    // KiCad readVRML is compiled only for OCC_VERSION_HEX >= 0x070700:
+    // https://docs.kicad.org/doxygen/step__pcb__model_8cpp_source.html
+    // Older OCCT must expose the missing geometry honestly; no fixture is skipped.
+    const occ = /Open CASCADE Technology (\d+)\.(\d+)/.exec(first.source.toolchain.glbGenerator ?? "");
+    expect(occ).not.toBeNull();
+    const nativeVrml = Number(occ![1]) > 7 || Number(occ![1]) === 7 && Number(occ![2]) >= 7;
+    if (nativeVrml) expect(bounds(first, "U13")).toEqual([152.46, 157.54, 102.46, 107.54, 1.615, 6.695]);
+    else {
+      expect(fp(first, "U13").models[0]!.load).toMatchObject({ status: "unloadable", formatRecognized: true });
+      expect(fp(first, "U13").bounds).toMatchObject({ status: "missing" });
+    }
 
     expect(first.board.mountPlanes).toMatchObject({ top: { zMm: 1.615 }, bottom: { zMm: -0.085 } });
     expect(first.board.body).toMatchObject({
@@ -427,27 +436,28 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
       declaredModels: 13,
       hiddenModels: 1,
       resolvedModels: 12,
-      loadedModels: 9,
+      loadedModels: nativeVrml ? 9 : 8,
       missingModels: 1,
       unresolvedModels: 0,
-      unloadableModels: 1,
+      unloadableModels: nativeVrml ? 1 : 2,
       unsupportedModels: 1,
       indeterminateModels: 0,
-      footprintsWithBounds: 8,
-      footprintsWithHeight: 8,
+      footprintsWithBounds: nativeVrml ? 8 : 7,
+      footprintsWithHeight: nativeVrml ? 8 : 7,
     });
     expect(first.status).toBe("partial");
     expect(first.issues.map((i) => `${i.code}:${i.ref}`).sort()).toEqual([
       "missing-model-file:U7",
       "no-model-declared:U8",
+      ...(!nativeVrml ? ["unloadable-model:U13"] : []),
       "unloadable-model:U9",
       "unsupported-model-format:U10",
     ]);
     expect(first.runtimeDiagnostics.join("\n")).toContain("Could not add 3D model for U7.");
     expect(first.assembly).toMatchObject({
-      maxHeightAboveTopMm: { value: 5.08, ref: "U13" },
+      maxHeightAboveTopMm: nativeVrml ? { value: 5.08, ref: "U13" } : { value: 3.46, ref: "U4" },
       maxDepthBelowBottomMm: { value: 1.13, ref: "U3" },
-      footprintsIncluded: 8,
+      footprintsIncluded: nativeVrml ? 8 : 7,
     });
     // Only the intentionally overlapping pair; separated bodies and the board are not candidates.
     expect(first.interference.broadPhaseOverlapCandidates).toMatchObject({
@@ -465,6 +475,8 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
   };
 
   nativeTest("unchanged content hits the process-local cache; hits cannot be poisoned", async () => {
+    // Cache integrity must run even when a separate runtime-geometry assertion fails.
+    dir = await fixtureCopy(); first = await collect();
     expect(await readdir(scratch())).toEqual([]); // temporary GLB removed after success
     const pristine = structuredClone(first);
     // Mutating the object a miss returned must not reach the cache.
@@ -485,13 +497,14 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     const again = await collect();
     expect(again.source.cache.status).toBe("hit");
     expect(bounds(again, "U1")).toEqual([109, 111, 98, 102, 1.615, 2.745]);
-    expect(again.coverage.loadedModels).toBe(9);
+    expect(again.coverage.loadedModels).toBe(pristine.coverage.loadedModels);
     expect(again.status).toBe("partial");
     expect(await readdir(scratch())).toEqual([]);
     first = pristine;
   });
 
   nativeTest("project-local result JSON never influences returned evidence", async () => {
+    dir = await fixtureCopy(); first = await collect();
     const key = first.source.cache.key!;
     const real = () => JSON.parse(JSON.stringify(first));
     const fabricated = real();
@@ -550,7 +563,29 @@ describe.skipIf(!packaged)("packaged kicad-cli mechanical truth", () => {
     }
   });
 
+  test.skipIf(!process.env["FABDESK_STOCK_MODEL_TEST_ROOT"])("versioned stock model variables load actual passive and connector bodies", async () => {
+    const root = process.env["FABDESK_STOCK_MODEL_TEST_ROOT"]!;
+    const stock = ["Resistor_SMD.3dshapes/R_0603_1608Metric.step", "Connector_JST.3dshapes/JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical.step"];
+    // Explicit opt-in stock asset qualification; the native fixture above remains mandatory.
+    for (const model of stock) {
+      expect(await Bun.file(join(root, model)).exists()).toBe(true);
+      const local = await fixtureCopy(), board = join(local, "board.kicad_pcb");
+      const saved = process.env["KICAD9_3DMODEL_DIR"];
+      try {
+        process.env["KICAD9_3DMODEL_DIR"] = root;
+        await writeFile(board, (await readFile(board, "utf8")).replaceAll("${KIPRJMOD}/models/box.step", "${KICAD9_3DMODEL_DIR}/" + model));
+        const section = await collectMechanical(cli!, { projectDir: local, board, scratchDir: join(local, ".scratch") });
+        expect(fp(section, "U1").models[0]!.load.status).toBe("loaded");
+        expect(fp(section, "U1").status).toBe("measured");
+        expect(fp(section, "U1").height.aboveTopMm).toBeGreaterThan(0);
+      } finally {
+        if (saved === undefined) delete process.env["KICAD9_3DMODEL_DIR"]; else process.env["KICAD9_3DMODEL_DIR"] = saved;
+      }
+    }
+  }, 30_000);
+
   nativeTest("placement-only and model-file-only changes miss", async () => {
+    dir = await fixtureCopy(); first = await collect();
     const boardPath = join(dir, "board.kicad_pcb");
     const moved = placeFootprints(await readFile(boardPath, "utf8"), [
       { ref: "U1", x: 112, y: 100 },

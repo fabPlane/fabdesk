@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/platforms.sh"
 
 release_tag="${TRACEMAKER_RELEASE_TAG:-}"
-repo="${GITHUB_REPOSITORY:-TensorFleet/fabdesk}"
+repo="${GITHUB_REPOSITORY:-fabPlane/fabdesk}"
 linux_result="${TRACEMAKER_LINUX_RESULT:-skipped}"
 macos_result="${TRACEMAKER_MACOS_RESULT:-skipped}"
 windows_result="${TRACEMAKER_WINDOWS_RESULT:-skipped}"

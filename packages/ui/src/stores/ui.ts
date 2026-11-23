@@ -8,16 +8,17 @@ import { createJSONStorage, persist, type StateStorage } from "zustand/middlewar
 import { readStoredThemeId, type ThemeId } from "../theme/resolve";
 import { stencilThicknessMm } from "./stencil-thickness";
 
-export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "cad", "drc", "renders", "files", "bom", "art", "notes", "photo", "diff", "comments", "updates", "placement"] as const;
+export const BOARD_TABS = ["schematic", "pcb", "cinema", "3d", "cad", "drc", "renders", "files", "bom", "art", "notes", "photo", "diff", "comments", "updates", "placement", "layers"] as const;
 export { DRAFT_KEY_NEW, newChatDraftKey } from "@fabdesk/client-core";
 
 export type BoardTab = (typeof BOARD_TABS)[number];
 export const BOARD_TAB_LABELS: Record<BoardTab, string> = {
   schematic: "Schematic",
-  pcb: "PCB",
+  pcb: "2D",
+  layers: "Layers",
   placement: "Placement",
   cinema: "Route Cinema",
-  "3d": "3D export",
+  "3d": "3D",
   cad: "CAD",
   drc: "DRC/ERC",
   renders: "Renders",
