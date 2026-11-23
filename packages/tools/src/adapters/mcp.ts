@@ -1,3 +1,4 @@
+import { capabilityScore } from "../capability-ranking";
 /**
  * MCP adapter: registers the registry on an `McpServer`. The core toolset is enabled; other
  * toolsets are registered disabled and switched on by `load_toolset` (list_changed fires).
@@ -41,6 +42,25 @@ const heartbeatMs = (): number =>
 
 export const MAX_INLINE_IMAGE_BYTES = 2 * 1024 * 1024;
 
+/**
+ * The client a session serves. A proxy (the stdio `fabdesk mcp`) opens the session itself, so it names the host it
+ * relays for in each tools/call's `_meta[MCP_CLIENT_META]`; otherwise it is the client's own `initialize` clientInfo.
+ * `toolTimeoutSec` is the host's per-call timeout when the proxy was told it (`fabdesk mcp --tool-timeout`).
+ */
+export const MCP_CLIENT_META = "fabdesk/client";
+export type McpClientHint = { name?: string; version?: string; toolTimeoutSec?: number };
+
+function clientHintFrom(meta: Record<string, unknown> | undefined): McpClientHint | undefined {
+  const raw = meta?.[MCP_CLIENT_META];
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  return {
+    ...(typeof r["name"] === "string" ? { name: r["name"] } : {}),
+    ...(typeof r["version"] === "string" ? { version: r["version"] } : {}),
+    ...(typeof r["toolTimeoutSec"] === "number" && r["toolTimeoutSec"] > 0 ? { toolTimeoutSec: r["toolTimeoutSec"] } : {}),
+  };
+}
+
 export type McpAttachment = {
   session: ToolSession;
   registered: Map<string, RegisteredTool>;
@@ -60,6 +80,8 @@ export type AttachOptions = {
   toolsOnly?: boolean;
   /** MCP Apps views and OpenAI extensions (`mcp-apps.ts`). Default `auto`; off with `toolsOnly`. */
   apps?: McpAppsMode;
+  /** The durable wait for this session's client (`ToolSession.durableWaitMs`); undefined keeps the default. */
+  durableWaitMs?: (client: McpClientHint | undefined) => number | undefined;
 };
 
 export function attachToRegistry(
@@ -68,19 +90,35 @@ export function attachToRegistry(
   ctxFactory: ContextFactory,
   opts: AttachOptions = {},
 ): McpAttachment {
-  const enabled = new Set<ToolsetId>(["core", ...(opts.initialToolsets ?? [])]);
   const initialTools = opts.initialTools ? new Set(opts.initialTools) : null;
+  // With an exact start list, a toolset counts as enabled only when that list exposes all of it; otherwise
+  // `load_toolset` on a half-listed toolset (circuit, verify in a `start=board` session) would look done and add nothing.
+  const covered = (id: ToolsetId) => !initialTools || registry.byToolset(id).every((def) => initialTools.has(def.name));
+  const enabled = new Set<ToolsetId>(["core", ...(opts.initialToolsets ?? []).filter(covered)]);
   const registered = new Map<string, RegisteredTool>();
   const sessionId = opts.sessionId ?? crypto.randomUUID();
+  let announced: McpClientHint | undefined;
+  const noteClient = (meta: Record<string, unknown> | undefined) => {
+    announced = clientHintFrom(meta) ?? announced;
+  };
+  const clientName = (): string | undefined => announced?.name ?? (server.server.getClientVersion() as McpClientHint | undefined)?.name;
+  const waitFor = opts.durableWaitMs;
 
   const session: ToolSession = {
     id: sessionId,
     enabledToolsets: () => TOOLSETS.filter((t) => enabled.has(t)),
     enableToolset(id) {
-      if (enabled.has(id)) return;
       enabled.add(id);
-      for (const def of registry.byToolset(id)) registered.get(def.name)?.enable();
+      // Every tool of the toolset, even when it is already counted enabled: `core` is, while a start list may hide some
+      // of it. `enable()` on a hidden tool emits tools/list_changed; listed tools are left alone.
+      for (const def of registry.byToolset(id)) {
+        const tool = registered.get(def.name);
+        if (tool && !tool.enabled) tool.enable();
+      }
     },
+    ...(waitFor
+      ? { durableWaitMs: () => waitFor(announced ?? (server.server.getClientVersion() as McpClientHint | undefined)) }
+      : {}),
   };
 
   for (const def of registry.list()) {
@@ -97,6 +135,7 @@ export function attachToRegistry(
         args: Record<string, unknown>,
         extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
       ): Promise<CallToolResult> => {
+        noteClient(extra._meta);
         const progressToken = extra._meta?.progressToken;
         let last: { pr: number; note?: string } = { pr: 0 };
         const send = (pr: number, note?: string) => {
@@ -137,7 +176,7 @@ export function attachToRegistry(
               ...(extra.authInfo?.token ? { token: extra.authInfo.token } : {}),
             }),
           );
-          return await toCallToolResult(output);
+          return await toCallToolResult(output, { structured: wantsStructured(output, clientName()) });
         } catch (e) {
           return errorResult(e);
         } finally {
@@ -159,6 +198,8 @@ export function attachToRegistry(
       registered,
       initialTools,
       new Set(opts.capabilityExclude ?? []),
+      noteClient,
+      clientName,
     );
 
   if (!opts.toolsOnly) {
@@ -225,6 +266,8 @@ function registerCapabilityTools(
   registered: Map<string, RegisteredTool>,
   initialTools: Set<string> | null,
   excluded: Set<string>,
+  noteClient: (meta: Record<string, unknown> | undefined) => void,
+  clientName: () => string | undefined,
 ): void {
   const discovered = new Set<string>();
   const search = server.registerTool(
@@ -253,9 +296,7 @@ function registerCapabilityTools(
         .list()
         .filter((def) => !initialTools?.has(def.name) && !excluded.has(def.name))
         .map((def) => {
-          const haystack =
-            `${def.name} ${def.title} ${def.description} ${def.toolset}`.toLowerCase();
-          const score = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
+          const score = capabilityScore(query, def);
           return { def, score };
         })
         .filter(({ score }) => score > 0)
@@ -287,7 +328,7 @@ function registerCapabilityTools(
     {
       title: "Call an additional Fabdesk capability",
       description:
-        "Invoke an operation returned by capability_search with its documented arguments.",
+        'Invoke a discovered operation with {"name":"render_glb","arguments":{}}. Use its returned schema; project arguments go inside arguments.',
       inputSchema: {
         name: z.string().min(1).describe("Exact operation name returned by capability_search"),
         arguments: z.record(z.string(), z.unknown()).default({}),
@@ -304,6 +345,7 @@ function registerCapabilityTools(
       rawArgs: Record<string, unknown>,
       extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
     ): Promise<CallToolResult> => {
+      noteClient(extra._meta);
       const name = String(rawArgs["name"]);
       const args = (rawArgs["arguments"] ?? {}) as Record<string, unknown>;
       if (name === "capability_search" || name === "capability_call")
@@ -323,7 +365,7 @@ function registerCapabilityTools(
             ...(extra.authInfo?.token ? { token: extra.authInfo.token } : {}),
           }),
         );
-        return toCallToolResult(output);
+        return toCallToolResult(output, { structured: wantsStructured(output, clientName()) });
       } catch (error) {
         return errorResult(error);
       }
@@ -338,7 +380,19 @@ export function errorResult(e: unknown): CallToolResult {
   return { isError: true, content: [{ type: "text", text: msg }] };
 }
 
-export async function toCallToolResult(output: ToolOutput): Promise<CallToolResult> {
+/**
+ * Clients that hand the model `structuredContent` instead of the text block when a result has both: Claude Code
+ * (2.1.x) does, so a fabdesk agent on Claude read every board tool's JSON (pairs tables, phases) and never the summary
+ * written for it, while Codex read the text. For these clients a result that has text leaves the JSON out.
+ */
+export const STRUCTURED_FIRST_CLIENTS = /^claude-code$/i;
+
+/** Whether a result for this client carries `structuredContent` next to its text. */
+export function wantsStructured(output: ToolOutput, clientName: string | undefined): boolean {
+  return !(output.text !== undefined && clientName !== undefined && STRUCTURED_FIRST_CLIENTS.test(clientName));
+}
+
+export async function toCallToolResult(output: ToolOutput, opts: { structured?: boolean } = {}): Promise<CallToolResult> {
   const content: CallToolResult["content"] = [];
   const text =
     output.text ?? (output.json !== undefined ? JSON.stringify(output.json, null, 2) : "ok");
@@ -370,10 +424,12 @@ export async function toCallToolResult(output: ToolOutput): Promise<CallToolResu
         type: "image",
         data: Buffer.from(await readFile(img.path)).toString("base64"),
         mimeType: img.mime,
+        ...(output.imagePresentation ? { _meta: { "fabplane/imagePresentation": output.imagePresentation } } : {}),
       });
     }
   }
   const structured =
+    opts.structured !== false &&
     output.json !== undefined &&
     output.json !== null &&
     typeof output.json === "object" &&
@@ -382,7 +438,8 @@ export async function toCallToolResult(output: ToolOutput): Promise<CallToolResu
       : undefined;
   return {
     content,
-    ...(structured ? { structuredContent: structured } : {}),
+    ...(output.imagePresentation ? { _meta: { "fabplane/imagePresentation": output.imagePresentation } } : {}),
+    ...(structured ? { structuredContent: { ...structured, ...(output.imagePresentation ? { _imagePresentation: output.imagePresentation } : {}) } } : {}),
     ...(output.isError ? { isError: true } : {}),
   };
 }

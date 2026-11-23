@@ -1,15 +1,16 @@
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import { useEffect, useRef, useState } from "react";
+import { useEffect,useRef,useState } from "react";
+import { Panel,PanelGroup,PanelResizeHandle } from "react-resizable-panels";
 import type { CoreStatusInfo } from "../app/types";
 import { BoardPanel } from "../board/BoardPanel";
-import { BoardPanelToggle } from "../components/BoardPanelToggle";
 import { ProjectPickerDialog } from "../chat/ProjectPickerDialog";
 import { ThreadView } from "../chat/ThreadView";
+import { BoardPanelToggle } from "../components/BoardPanelToggle";
 import { InventoryView } from "../inventory/InventoryView";
 import { OpenSourceView } from "../opensource/OpenSourceView";
 import { OrderFlow } from "../order/OrderFlow";
 import { ThreadSidebar } from "../sidebar/ThreadSidebar";
 import { useUiStore } from "../stores/ui";
+import { AutomaticProjectPreviews } from "./AutomaticProjectPreviews";
 import { CanvasWorkspace } from "./CanvasWorkspace";
 import { TopBar } from "./TopBar";
 import { useSlidingPane } from "./useSlidingPane";
@@ -60,7 +61,7 @@ function usePaneWidth(initialWidth: number) {
 export function AppShell(props: AppShellProps) {
   const canvasMode = useUiStore((s) => s.canvasMode);
   const home = useUiStore(s => !s.activeProjectId && !s.activeThreadId);
-  return canvasMode || home ? <CanvasWorkspace {...props} /> : <ClassicAppShell {...props} />;
+  return <><AutomaticProjectPreviews />{canvasMode || home ? <CanvasWorkspace {...props} /> : <ClassicAppShell {...props} />}</>;
 }
 
 function ClassicAppShell({ onNewChat, coreStatus, banner }: AppShellProps) {

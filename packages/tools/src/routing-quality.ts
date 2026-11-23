@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PROJECT_FILES, writeJson } from "./fs";
+import { kicadString } from "./kicad-string";
 
 type Node = string | Node[];
 export type PairDefinition = {
@@ -68,7 +69,7 @@ function sexpressions(text: string): Node[] {
     } else if (token === ")") {
       if (stack.length < 2) throw new Error("unbalanced PCB");
       stack.pop();
-    } else stack.at(-1)!.push(token.startsWith('"') ? (JSON.parse(token) as string) : token);
+    } else stack.at(-1)!.push(token.startsWith('"') ? kicadString(token) : token);
   }
   if (stack.length !== 1) throw new Error("unbalanced native file");
   return stack[0]!;

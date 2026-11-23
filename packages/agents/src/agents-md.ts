@@ -1,5 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { BOARD_START_MAP_MD } from "./board-start-map-md";
+export { BOARD_WORKFLOW_MD } from "./board-workflow-md";
 
 export interface AgentDocsContext {
   projectName: string;
@@ -12,6 +14,10 @@ export interface AgentDocsContext {
   /** Resolved executable verified by the core; no guessed runtime paths. */
   kicadCli?: string | undefined;
   shellExecutables?: Record<string, string> | undefined;
+  /** The `board` toolset (board_check and the other stage tools) is registered: include the board start map. */
+  boardWorkflow?: boolean | undefined;
+  fabdeskCli?: string | undefined;
+  fabdeskCliUnavailableReason?: string | undefined;
   /** Experimental interfaces without Fabdesk MCP tools. */
   interfaceMode?: "substrate" | "programmable";
 }
@@ -44,6 +50,10 @@ Manage it with the \`shopping\` toolset (\`load_toolset {"toolset":"shopping"}\`
 message starting with \`/shopping-list\` is a request to use these tools. They need the user to be
 signed in to fabplane.`;
 
+const OTHER_TOOLSETS_SECTION = `## Other toolsets
+Off-board parts: \`project\` toolset (\`parts_search\`, \`parts_add\`, \`parts_list\`, \`parts_remove\`). A message starting with \`/parts\` asks for these tools.
+Shopping list and inventory: \`shopping\` toolset, signed in to fabplane. A message starting with \`/shopping-list\` asks for these tools.`;
+
 const TOOL_NEEDS = `## Tools and runtime
 Both authoring paths are available: \`circuit_build\` compiles \`circuit.netlist.json\`; \`schematic_edit\` edits native symbols and wires. Multi-unit parts share a reference and use distinct unit numbers, including power units.
 Use \`capability_search\` to find a tool and its arguments; \`load_toolset\` loads a toolset.
@@ -57,8 +67,10 @@ When asked to identify a component while viewing a schematic, inspect the real s
 | Saved DRC/ERC results by item | \`verify_drc\` (responseMode=full for all geometry); \`verify_erc\` |
 | Router progress and terminal result | \`route_status\` (latest or runId); returns final state and application outcome |
 | Fabrication files and named archive | \`export_gerbers\`, \`export_drill\`, \`export_pos\`, \`export_bom\`, \`export_zip\` (filename), \`export_stencil\`, \`export_laser_stencil\`; \`release_build\` checks and packages a release |
-| Board/schematic images | \`render_view\`, \`render_schematic_svg\` |
-| Symbols, footprints and pins | \`circuit_describe_part\`, \`circuit_search_parts\` |
+| Board/schematic images | \`render_view\`, \`render_pcb_svg\`, \`render_schematic_svg\` |
+| Interactive desktop 3D | \`render_glb\` writes renders/board.glb; \`render_board\` produces an image only. Disclose model coverage and warnings |
+| Final saved-file handoff | \`render_publish\` publishes current PCB, schematic, interactive 3D and canonical DRC/ERC together. Run after the last edit and disclose check failures |
+| Symbols, footprints and pins | \`circuit_describe_part\`, \`circuit_search_parts\`; register project libraries with \`circuit_library\` action=register |
 
 Shell file reads and scripts are available too. The agent environment exposes the resolved CLI as \`$KICAD_CLI\`: \`"$KICAD_CLI" version\`, \`"$KICAD_CLI" --help\`.
 Shell executables and Python modules come from the host. A host \`pcbnew\` may use a different KiCad format; native tools use the packaged KiCad API. No Python/pcbnew runtime is supplied by the PCB bundle.`;
@@ -103,6 +115,7 @@ export function renderAgentsMd(
 
 ${interfaceNote}
 ${ipcNote}
+${ctx.fabdeskCliUnavailableReason ?? (ctx.fabdeskCli ? `Active desktop CLI: \`${ctx.fabdeskCli}\`. For authenticated shell tool access use \`"$FABDESK_CLI" tool describe <name>\` or \`"$FABDESK_CLI" tool call <name> --request '<json>'\` (PowerShell: \`& $env:FABDESK_CLI tool describe <name>\`). This executable and the inherited endpoint/token belong to this running desktop. Keep credentials out of output.` : "")}
 
 ## Board constraints
 - Copper layers: ${ctx.board.layers}
@@ -118,7 +131,7 @@ ${sketches}
 | \`board.kicad_pro\` | Canonical KiCad project. |
 | \`board.kicad_sch\` | Canonical KiCad schematic. |
 | \`board.kicad_pcb\` | Canonical KiCad PCB. |
-| \`sketches/\` | User-provided drawings and photos. |
+${!ctx.interfaceMode && ctx.boardWorkflow ? "| `circuit.netlist.json` | Source for `circuit_build`, when that path is used. |\n" : ""}| \`sketches/\` | User-provided drawings and photos. |
 | \`renders/\` | Rendered artifacts. |
 | \`reports/\` | Machine-readable reports. |
 | \`exports/\` | Manufacturing and interchange outputs (gerbers, BOM, 3D-printed stencil STL, laser-cut stencil SVG/DXF/.lbrn2). |
@@ -133,7 +146,7 @@ ${
               .map(([name, path]) => `\`${name}\` = \`${path}\``)
               .join("; ")}.\n`
           : ""
-      }\n${OFFBOARD_SECTION}\n\n${SHOPPING_SECTION}\n\n`
+      }\n${ctx.boardWorkflow ? `${BOARD_START_MAP_MD.replaceAll("{{MCP_SERVER_NAME}}", () => mcp)}\n${OTHER_TOOLSETS_SECTION}` : `${OFFBOARD_SECTION}\n\n${SHOPPING_SECTION}`}\n\n`
 }${USER_START}
 ${userSection.trim() === "" ? DEFAULT_USER_SECTION : userSection.trim()}
 ${USER_END}

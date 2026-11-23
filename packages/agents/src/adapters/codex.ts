@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, statSync, symlinkSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, statSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { detectBinary, resolveFirst } from "../detect";
@@ -167,7 +167,11 @@ export function codexEnv(
     env["CODEX_HOME"] ?? join(env["HOME"] ?? env["USERPROFILE"] ?? homedir(), ".codex"),
   );
   const id = createHash("sha256").update(session.cwd).digest("hex");
-  const isolated = join(source, "fabdesk-agents", id);
+  // A legacy private credential snapshot may contain a newer refresh token: never
+  // bypass that rejection when changing the overlay layout.
+  const legacyAuth = join(source, "fabdesk-agents", id, "auth.json");
+  if (lstatSync(legacyAuth, { throwIfNoEntry: false })) linkSharedAuth(legacyAuth, join(source, "auth.json"));
+  const isolated = join(source, "fabdesk-agents", "v2", id);
   mkdirSync(isolated, { recursive: true, mode: 0o700 });
   const raw = readFileIfExists(join(source, "config.toml"));
   const config = raw === undefined ? {} : (Bun.TOML.parse(raw) as Record<string, unknown>);
@@ -183,9 +187,11 @@ export function codexEnv(
   writeFileEnsuringDir(join(isolated, "config.toml"), toml.stringify(config), 0o600);
   try {
     linkSharedAuth(join(isolated, "auth.json"), join(source, "auth.json"));
-    // Preserve ordinary user skills/instructions and existing conversation paths. Plugin
-    // skills stay excluded. New state databases and trust writes stay inside the overlay.
-    for (const name of ["sessions", "archived_sessions", "skills", "rules", "AGENTS.md"]) {
+    // Keep ordinary skills/instructions, while session history belongs to this project.
+    // Sharing the global rollout tree makes fresh app-server startup backfill every user
+    // conversation and can time out before initialize. Only an explicitly resumed rollout
+    // is copied forward; credentials continue to use the single live auth symlink.
+    for (const name of ["skills", "rules", "AGENTS.md"]) {
       const original = join(source, name);
       if (existsSync(original) && !existsSync(join(isolated, name)))
         symlinkSync(
@@ -209,6 +215,16 @@ export function codexEnv(
       "Windows denied a Codex overlay symlink (EPERM). Using the original CODEX_HOME and live credential store; per-project config isolation is unavailable. Apps and plugins remain disabled and discovered foreign MCP servers are disabled, but full MCP isolation is not qualified. Codex may save config and state in the original home.",
     );
     return env;
+  }
+  for (const name of ["sessions", "archived_sessions"]) mkdirSync(join(isolated, name), { recursive: true });
+  if (session.resume && /^[a-zA-Z0-9-]+$/.test(session.resume)) {
+    for (const base of [source, join(source, "fabdesk-agents", id)]) for (const name of ["sessions", "archived_sessions"]) {
+      const old = join(base, name); if (!existsSync(old)) continue;
+      for (const file of new Bun.Glob(`**/*${session.resume}.jsonl`).scanSync({ cwd: old, onlyFiles: true })) {
+        const destination = join(isolated, name, file);
+        if (!existsSync(destination)) { mkdirSync(join(destination, ".."), { recursive: true }); copyFileSync(join(old, file), destination); }
+      }
+    }
   }
   env["CODEX_HOME"] = isolated;
   return env;

@@ -6,9 +6,19 @@ import {
   resolveSvgBox,
   svgElementBox,
   svgPointToPercent,
+  visibleSvgCenter,
   type SvgBox,
   type SvgBoxSource,
 } from "./svg-coords";
+
+test("keyboard selection follows the visible drawing after zoom and pan", () => {
+  const box = { x: 10, y: 20, width: 100, height: 50 };
+  expect(visibleSvgCenter(box, { left: -600, top: -200, width: 1000, height: 500 }, { left: 0, top: 0, width: 200, height: 100 })).toEqual({ x: 80, y: 45 });
+  // A fitted drawing may be smaller than its viewport: use their intersection.
+  expect(visibleSvgCenter(box, { left: 100, top: 50, width: 200, height: 100 }, { left: 0, top: 0, width: 800, height: 600 })).toEqual({ x: 60, y: 45 });
+  expect(visibleSvgCenter(box, { left: 900, top: 0, width: 200, height: 100 }, { left: 0, top: 0, width: 800, height: 600 })).toBeNull();
+  expect(visibleSvgCenter(box, { left: 0, top: 0, width: 0, height: 100 }, { left: 0, top: 0, width: 800, height: 600 })).toBeNull();
+});
 
 function fakeSvg(viewBox: SvgBox | null, bbox: SvgBox): SvgBoxSource {
   return {

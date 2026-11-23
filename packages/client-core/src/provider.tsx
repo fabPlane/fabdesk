@@ -115,7 +115,7 @@ export function CoreProvider({
       ({
         key: ++nextConnectionScope,
         cache: queryClient ?? new QueryClient({
-          defaultOptions: { queries: { retry: 1, staleTime: 5_000, refetchOnWindowFocus: false } },
+          defaultOptions: { queries: { networkMode: /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(client.baseUrl) ? "always" : "online", retry: 1, staleTime: 5_000, refetchOnWindowFocus: false } },
         }),
       }),
     [client, queryClient],

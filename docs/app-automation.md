@@ -70,6 +70,7 @@ the file up on the next tool call; no restart needed.
 | `app_find` | interactive/labelled elements matching a query; returns `ref` selectors for `app_click` / `app_type` |
 | `app_click` | click a `selector` (ref) or `x,y`; `<option>` refs select the option in their `<select>` |
 | `app_type` | type text with key events, optionally focusing `selector` first |
+| `app_clear_selection` | clear component highlights and drawing-location popovers in the active project, independent of keyboard focus |
 | `app_key` | press an accelerator: `Enter`, `Escape`, `CommandOrControl+K`, `Shift+Enter` |
 | `app_select_project` | make a project (id, name or path) active in the UI |
 | `app_open_tab` | schematic, pcb, cinema, 3d, drc, renders, notes, files, bom (Shopping list) |
@@ -115,3 +116,5 @@ do the same through the stores.
   (no DOM).
 - `packages/tools/test/app.test.ts`: the tools against a fake `AppBridge`.
 - `apps/core/test/app-bridge.test.ts`: `AppBridgeClient` against a local HTTP stub.
+
+Automation coordinates are renderer CSS pixels, relative to the content viewport; window bounds include native framing. Record viewport width/height, devicePixelRatio and zoom with screenshots. Escape dismisses a focused drawing popover; a native select or input may consume it. Use `app_clear_selection` when the goal is to clear both location and cross-view component selection.

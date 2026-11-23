@@ -22,7 +22,8 @@ function renderComposer(projectId: string | null, thread: Thread | null = null, 
     id: "codex", displayName: "Codex", installed: true, models: ["gpt-6-astra"],
     modelEfforts: { "gpt-6-astra": levels },
   }] });
-  Object.assign(initial, { activeProjectId: projectId, drafts: { [thread?.id ?? newChatDraftKey(projectId)]: "Build a board" } });
+  const selectedId = thread?.id ?? (loadingThread ? "loading-thread" : null);
+  Object.assign(initial, { activeProjectId: projectId, activeThreadId: selectedId, drafts: { [selectedId ?? newChatDraftKey(projectId)]: "Build a board" } });
   try {
     return renderToStaticMarkup(<CoreProvider client={client} host={nullHost} queryClient={qc}>
       <Composer startMode={startMode} thread={thread} loadingThread={loadingThread} onCreateThread={async () => { throw new Error("Rendering must not create a chat"); }} />
@@ -49,6 +50,8 @@ test("a nonempty draft still requires a project, with a way to reopen the picker
 
 test("sending waits for the existing chat and saved settings to load", () => {
   expect(sendButton(renderComposer("project-a", null, true))).toContain(' disabled=""');
+  expect(renderComposer("project-a", null, true)).toContain("Build a board");
+  expect(renderComposer("project-a", null, true)).toContain("Loading chat agent and model");
   expect(sendButton(renderComposer("project-a", null, false, false))).toContain(' disabled=""');
   expect(renderComposer("project-a", null, true).match(/<button[^>]*data-testid="agent-model"[^>]*>/)?.[0]).toContain(' disabled=""');
 });

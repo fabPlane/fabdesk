@@ -1,0 +1,91 @@
+{
+ "schema": "REVIEW_BENCH_BOARDS_V1",
+ "purpose": "The escape replay's boards (the toolkit's boards/replay-*.json): which copy of which board, its stem and the checks the replay runs. The board folders themselves (review/bench/boards/<dir> in the toolkit, 21 MB) are not shipped: the bench is pointed at them.",
+ "boards": {
+  "replay-a387.json": {
+   "name": "replay-a387",
+   "dir": "a387",
+   "stem": "vaio_cm5_carrier",
+   "note": "escape replay copy of carrier A3.8.7 (vaio_cm5_carrier 0495966); read-only",
+   "checks_only": [
+    "identity",
+    "netlist",
+    "erc",
+    "pinsense",
+    "cards",
+    "decoupling"
+   ]
+  },
+  "replay-b2245.json": {
+   "name": "replay-b2245",
+   "dir": "b2245",
+   "stem": "vaio_cm5_carrier",
+   "note": "escape replay copy of carrier B2.24.5 (USB-C copper backwards, E01) from the carrier repository; read-only",
+   "checks_only": [
+    "identity",
+    "mouth"
+   ]
+  },
+  "replay-b22451.json": {
+   "name": "replay-b22451",
+   "dir": "b22451",
+   "stem": "vaio_cm5_carrier",
+   "note": "escape replay copy of carrier B2.24.5.1 (USB-C corrected outward) from the carrier repository; read-only",
+   "checks_only": [
+    "identity",
+    "mouth"
+   ]
+  },
+  "replay-b81.json": {
+   "name": "replay-b81",
+   "dir": "b81",
+   "stem": "tf-battery-board-b8",
+   "note": "escape replay copy of TF battery board b81 from vaio_p_modding git; read-only",
+   "checks_only": [
+    "identity",
+    "netlist",
+    "erc",
+    "pinsense",
+    "cards",
+    "decoupling"
+   ]
+  },
+  "replay-b82.json": {
+   "name": "replay-b82",
+   "dir": "b82",
+   "stem": "tf-battery-board-b8",
+   "note": "escape replay copy of TF battery board b82 from vaio_p_modding git; read-only",
+   "checks_only": [
+    "identity",
+    "netlist",
+    "erc",
+    "pinsense",
+    "cards",
+    "decoupling"
+   ]
+  },
+  "replay-b83.json": {
+   "name": "replay-b83",
+   "dir": "b83",
+   "stem": "tf-battery-board-b8",
+   "note": "escape replay copy of TF battery board b83 from vaio_p_modding git; read-only",
+   "checks_only": [
+    "identity",
+    "netlist",
+    "erc",
+    "pinsense",
+    "cards",
+    "decoupling"
+   ]
+  },
+  "replay-c6silk.json": {
+   "name": "replay-c6silk",
+   "dir": "c6silk",
+   "stem": "C6",
+   "note": "escape replay E27: C6-eco95 board at vaio_p_modding 45cf4b2e (labels over pads, stacked labels, 0 of 102 clean); read-only",
+   "checks_only": [
+    "silk"
+   ]
+  }
+ }
+}

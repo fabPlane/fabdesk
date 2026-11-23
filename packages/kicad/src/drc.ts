@@ -112,8 +112,9 @@ export function normalizeViolation(raw: RawViolation): DrcViolation {
 const count = (list: DrcViolation[], severity: Severity) =>
   list.filter((v) => v.severity === severity).length;
 
-function severityArg(severity: "error" | "all" | undefined): string {
-  return severity === "error" ? "--severity-error" : "--severity-all";
+function severityArg(severity: "error" | "all" | "project" | undefined): string[] {
+  // "project": no flag, so the project's own rule severities (ignored rules stay ignored) decide what is reported
+  return severity === "project" ? [] : [severity === "error" ? "--severity-error" : "--severity-all"];
 }
 
 /** `kicad-cli pcb drc --format json` into `outFile`, parsed into a DrcReport. */
@@ -122,13 +123,13 @@ export async function runDrc(
   opts: {
     board: string;
     outFile: string;
-    severity?: "error" | "all";
+    severity?: "error" | "all" | "project";
     schematicParity?: boolean;
     refillZones?: boolean;
     signal?: AbortSignal;
   },
 ): Promise<DrcReport> {
-  const args = ["pcb", "drc", "--format", "json", "--units", "mm", severityArg(opts.severity)];
+  const args = ["pcb", "drc", "--format", "json", "--units", "mm", ...severityArg(opts.severity)];
   if (opts.schematicParity) args.push("--schematic-parity");
   if (opts.refillZones) args.push("--refill-zones");
   args.push("-o", opts.outFile, opts.board);
@@ -167,7 +168,7 @@ export async function runErc(
     "json",
     "--units",
     "mm",
-    severityArg(opts.severity),
+    ...severityArg(opts.severity),
     "-o",
     opts.outFile,
     opts.schematic,

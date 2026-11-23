@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build macOS variants in preference order, smoke each, publish the first
-# that passes. Variant A = Apple clang + system libc++ (single C++ runtime).
+# Build macOS variants in preference order (tracemaker + tracemaker-place),
+# probe and smoke both, publish the first that passes. Variant A = Apple clang + system libc++ (single C++ runtime).
 # Variant B = Homebrew LLVM static libc++ (run 6: linked, then SIGABRT on
 # --help). Stops at the first smoke success. If every variant fails, leaves
 # unpackaged binaries + diagnose-macos.sh output under TRACEMAKER_DIAG_DIR.
@@ -24,6 +24,7 @@ fi
 
 winner=""
 winner_bin=""
+winner_placer=""
 any_built=0
 
 # Preference order: system libc++ first (Metal/Foundation already load Apple's
@@ -56,12 +57,20 @@ for variant in system llvm-static; do
     echo "missing_binary" >"$variant_diag/result.txt"
     continue
   fi
+  placer="$build_dir/src/place/tracemaker-place"
+  if [ ! -f "$placer" ]; then
+    echo "variant ${variant}: build reported success but $placer is missing"
+    echo "missing_placer" >"$variant_diag/result.txt"
+    continue
+  fi
   any_built=1
   cp "$binary" "$variant_diag/tracemaker" || true
-  chmod +x "$variant_diag/tracemaker" || true
+  cp "$placer" "$variant_diag/tracemaker-place" || true
+  chmod +x "$variant_diag/tracemaker" "$variant_diag/tracemaker-place" || true
 
+  # Same linkage rules for the placer (minos 15, no Homebrew dylibs, libc++ per variant).
   set +e
-  bash "$SCRIPT_DIR/verify-macos.sh" "$binary"
+  bash "$SCRIPT_DIR/verify-macos.sh" "$binary" && bash "$SCRIPT_DIR/verify-macos.sh" "$placer"
   probe_code=$?
   set -e
   if [ "$probe_code" -ne 0 ]; then
@@ -73,7 +82,7 @@ for variant in system llvm-static; do
 
   smoke_out="$variant_diag/smoke"
   set +e
-  bash "$SCRIPT_DIR/smoke.sh" "$binary" "$fixture" "$smoke_out"
+  bash "$SCRIPT_DIR/smoke.sh" "$binary" "$fixture" "$smoke_out" "$placer"
   smoke_code=$?
   set -e
   if [ "$smoke_code" -eq 0 ]; then
@@ -81,6 +90,7 @@ for variant in system llvm-static; do
     echo "smoke_ok" >"$variant_diag/result.txt"
     winner="$variant"
     winner_bin="$binary"
+    winner_placer="$placer"
     break
   fi
   echo "variant ${variant}: smoke failed (exit $smoke_code)"
@@ -91,6 +101,7 @@ done
 {
   echo "winner=${winner:-none}"
   echo "binary=${winner_bin:-}"
+  echo "placer=${winner_placer:-}"
   echo "diag=$diag_root"
 } | tee "$diag_root/selection.txt"
 
@@ -103,9 +114,11 @@ if [ -z "$winner" ]; then
 fi
 
 echo "binary=$winner_bin"
+echo "placer=$winner_placer"
 echo "macos_variant=$winner"
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
   echo "binary=$winner_bin" >>"$GITHUB_OUTPUT"
+  echo "placer=$winner_placer" >>"$GITHUB_OUTPUT"
   echo "macos_variant=$winner" >>"$GITHUB_OUTPUT"
   echo "diag_dir=$diag_root" >>"$GITHUB_OUTPUT"
 fi

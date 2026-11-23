@@ -2,7 +2,7 @@ import { AssemblyRelativePath, OutputRevision, type BoardSourceSelection } from 
 import { CoreHttpError, type CoreClient } from "./CoreClient";
 import { sha256Blob } from "./pcb-preview-revision";
 
-export type OutputRevisionState = { state: "untracked" | "scope-unverified" | "artifact-changed" | "missing-artifact" | "input-changed" | "missing-input" | "inputs-unchanged"; basis?: "pcb" | "saved-files" };
+export type OutputRevisionState = { state: "untracked" | "scope-unverified" | "artifact-changed" | "missing-artifact" | "input-changed" | "missing-input" | "inputs-unchanged"; basis?: "pcb" | "schematic" | "saved-files" };
 export type OutputRevisionTarget = { path: string; directory: string; board?: BoardSourceSelection };
 
 /** Check the exact file and inputs from a qualified exporter receipt. Legacy files stay unverified. */
@@ -34,8 +34,8 @@ export async function inspectOutputRevision(client: Pick<CoreClient, "readFile" 
 
 export function outputRevisionLabel(result: OutputRevisionState | undefined): string {
   switch (result?.state) {
-    case "inputs-unchanged": return result.basis === "saved-files" ? "Packaged files unchanged · PCB not compared" : "Recorded PCB input unchanged · Dependencies unverified";
-    case "input-changed": return result.basis === "saved-files" ? "Packaged files changed · Review ZIP" : "PCB changed since export · Review output";
+    case "inputs-unchanged": return result.basis === "schematic" ? "Recorded schematic inputs unchanged · Dependencies unverified" : result.basis === "saved-files" ? "Packaged files unchanged · PCB not compared" : "Recorded PCB input unchanged · Dependencies unverified";
+    case "input-changed": return result.basis === "schematic" ? "Schematic changed since export · Review output" : result.basis === "saved-files" ? "Packaged files changed · Review ZIP" : "PCB changed since export · Review output";
     case "missing-input": return "Recorded input missing · Saved output";
     case "artifact-changed": return "Output changed · Source unverified";
     case "missing-artifact": return "Saved output file missing";

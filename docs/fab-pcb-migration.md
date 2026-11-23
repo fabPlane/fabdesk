@@ -436,3 +436,7 @@ Reading the fork-written board:
 The first draft of this doc recommended keeping `@tscircuit/eval` as the compiler behind the seam
 and embedding `SessionManager` in `apps/core`. Both are reversed above (§4.2, §4.4) on the
 strength of the router job precedent that landed on `fab_pcb` `main` between drafts.
+
+Project library writes use one host-managed transaction per native session. The host keeps a private recovery snapshot in `.fabdesk/library-recovery/`, refuses detected external changes before each client table-write RPC, and carries the snapshot through session-loss recovery. A detected conflict keeps the newer disk table and both recorded versions for inspection. Search/description refresh saved project overrides before returning geometry.
+
+Direct filesystem writers must close the native session before changing library tables, or use `circuit_library` for supported registration. The native bridge can perform internal table saves that an uncoordinated filesystem writer does not participate in; the host cannot promise atomic compare-and-swap against arbitrary external programs. This bounded writer contract is distinct from recovery after detected client-side conflicts. Never describe table restoration alone as a guarantee for every external edit during a remote compile.

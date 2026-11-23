@@ -2,6 +2,8 @@ import type { RouterCatalogId, RouterSnapshot } from "@fabdesk/protocol";
 
 export type RouterAction = "install" | "uninstall" | "cancel" | "set-default";
 export function routerUsable(router: RouterSnapshot): boolean { return router.ready && router.runtime?.ready !== false; }
+/** Board-workflow engines (KiCadRoutingTools) install here but are never a `route_run` router or the default. */
+export function isEngine(router: RouterSnapshot): boolean { return router.kind === "engine"; }
 
 export function canInstall(router: RouterSnapshot): boolean {
   return router.install === "download" && (router.state === "not_installed" || router.state === "failed");
@@ -36,13 +38,14 @@ export function stateLabel(router: RouterSnapshot): string {
         : "bundled";
     case "installed": {
       const ver = router.versionInstalled ?? router.version;
-      if (!router.ready) return "source only · not built";
+      if (!router.ready) return isEngine(router) ? "incomplete" : "source only · not built";
       return `installed${ver && ver !== "bundled" ? ` ${ver}` : ""}${router.overriddenBy ? ` (${router.overriddenBy})` : ""}`;
     }
     case "installing": {
       const { received, total, phase } = router.progress ?? { received: 0, total: 0 };
       if (phase === "verifying") return "verifying";
       if (phase === "extracting") return "extracting";
+      if (phase === "setup") return "setting up";
       if (phase === "resolving") return "installing";
       return total > 0 ? `installing ${Math.round((100 * received) / total)}%` : "installing";
     }
@@ -90,6 +93,7 @@ export function installProgressView(router: RouterSnapshot): InstallProgressView
   if (phase === "resolving") return { fraction: null, text: "Looking for a published binary…" };
   if (phase === "verifying") return { fraction: 1, text: "Verifying checksum…" };
   if (phase === "extracting") return { fraction: 1, text: "Extracting…" };
+  if (phase === "setup") return { fraction: null, text: "Setting up Python (venv, numpy, scipy, shapely)…" };
   if (total > 0)
     return {
       fraction: Math.min(1, received / total),
@@ -99,14 +103,14 @@ export function installProgressView(router: RouterSnapshot): InstallProgressView
 }
 
 /**
- * The Settings dialog saves its draft with one PATCH. The router default is written the moment "Set
- * default" is clicked, so it is left out of the draft: a stale copy in the draft must never revert it
+ * The Settings dialog saves its draft with one PATCH. The router default (and the other Routers fields:
+ * manifest URL, KRT folder, install on first use) is written the moment it changes, so it is left out of the draft: a stale copy in the draft must never revert it
  * on Save, nor make the dialog look dirty.
  */
-export function withoutRouterDefault<T extends { preferredRouter?: unknown; tracemakerManifestUrl?: unknown }>(
+export function withoutRouterDefault<T extends { preferredRouter?: unknown; tracemakerManifestUrl?: unknown; krtDir?: unknown; autoInstallEngines?: unknown }>(
   settings: T,
-): Omit<T, "preferredRouter" | "tracemakerManifestUrl"> {
-  const { preferredRouter: _preferred, tracemakerManifestUrl: _manifest, ...rest } = settings;
+): Omit<T, "preferredRouter" | "tracemakerManifestUrl" | "krtDir" | "autoInstallEngines"> {
+  const { preferredRouter: _preferred, tracemakerManifestUrl: _manifest, krtDir: _krt, autoInstallEngines: _auto, ...rest } = settings;
   return rest;
 }
 
@@ -146,6 +150,7 @@ export function routerPickerOptions(
     },
   ];
   for (const router of routers) {
+    if (isEngine(router)) continue;
     options.push({
       id: router.id,
       label: router.displayName,

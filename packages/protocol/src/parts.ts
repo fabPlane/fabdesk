@@ -363,3 +363,13 @@ export function projectBomCsv(lines: readonly ProjectBomLine[]): string {
   }
   return `${rows.join("\n")}\n`;
 }
+
+/** Physical board features are fabricated with the board rather than ordered as components. */
+export function isPcbFeature(footprint: string): boolean {
+  return /(?:^|:)MountingHole(?:_|:|$)/i.test(footprint) || /(?:^|:)(?:SolderJumper|SolderBridge)(?:_|:|$)/i.test(footprint);
+}
+
+/** Purchased fitted PCB part; native inclusion flags take precedence over reference prefixes. */
+export function isFittedPurchasedPart(part: { footprint: string; flags?: readonly string[]; dnp?: boolean }): boolean {
+  return !part.dnp && !isPcbFeature(part.footprint) && !(part.flags ?? []).some(flag => ["dnp", "exclude_from_bom", "board_only"].includes(flag));
+}

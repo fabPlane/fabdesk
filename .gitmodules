@@ -1,7 +1,3 @@
-[submodule "vendor/fabplane"]
-	path = vendor/fabplane
-	url = ../fabplane.com.git
-	branch = main
 [submodule "vendor/fab_pcb"]
 	path = vendor/fab_pcb
 	url = https://github.com/fabPlane/fab_pcb.git

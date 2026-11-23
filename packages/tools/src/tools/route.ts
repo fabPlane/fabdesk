@@ -52,7 +52,7 @@ export const RouteRunArgs = {
     .enum(["fab_router", "freerouting", "capacity", "tracemaker"])
     .optional()
     .describe(
-      "Router; capacity is a legacy fab_router alias. An unpinned project defaults to Freerouting, falling back to fab_router when unavailable or failed. Automatic selective reroutes use fab_router. Explicit Freerouting falls back only when unavailable. tracemaker is install-on-demand (Settings → Routers) and errors with an install hint if it is not installed.",
+      "Router; capacity is a legacy fab_router alias. An unpinned project defaults to Freerouting, falling back to fab_router when unavailable or failed. Automatic selective reroutes use fab_router. Explicit Freerouting falls back only when unavailable. tracemaker installs itself on first use (unless Settings autoInstallEngines is off; then it errors with an install hint).",
     ),
   timeoutMs: z
     .number()
@@ -532,6 +532,14 @@ async function applyCandidate(
         facts.nets.map((n) => n.net).filter((net) => !rec.result!.open.includes(net)),
       );
     }
+    let nativeConnectivity: NonNullable<RouteRunRecord["application"]["nativeConnectivity"]>;
+    try {
+      const rows = await ctx.services.design.query(project.dir, "unrouted");
+      const stable = sha256(await readFile(boardPath)) === resulting;
+      nativeConnectivity = { status: stable ? "measured" : "stale", pcbSha256: resulting, open: stable ? rows.length : null };
+    } catch (error) {
+      nativeConnectivity = { status: "unavailable", pcbSha256: resulting, open: null, reason: error instanceof Error ? error.message : String(error) };
+    }
     next = {
       ...next,
       currentPcbRevision: resulting,
@@ -541,6 +549,7 @@ async function applyCandidate(
         state: "applied",
         resultingPcbRevision: resulting,
         appliedAt: iso(),
+        nativeConnectivity,
         reason: null,
       },
     };
@@ -843,7 +852,13 @@ async function executeRoute(
       await persistProgress(ctx, rec, runDir);
       try {
         if (rec.router === "tracemaker") {
-          const binary = ctx.services.routers?.executable("tracemaker");
+          let binary = ctx.services.routers?.executable("tracemaker");
+          if (!binary && ctx.services.routers) {
+            // install on first use, as the board tools do (off with Settings autoInstallEngines)
+            const got = await ctx.services.routers.ensure("tracemaker", { onLine: (line) => ctx.progress(0, line) });
+            binary = got.path ?? undefined;
+            if (!binary && got.why) throw new ToolError(got.why, "unavailable");
+          }
           if (!binary) {
             throw new ToolError(
               installHintFor("tracemaker", ctx.services.routers?.get("tracemaker")),
@@ -1575,9 +1590,15 @@ async function routeStatusOutput(
     heartbeatFreshnessMs: Date.now() - Date.parse(rec.progress.heartbeatAt),
   };
   ctx.services.routeRuns.update(rec.id, run);
+  const native = rec.application.nativeConnectivity;
+  const nativeCurrent = native?.pcbSha256 === current && native.status === "measured";
+  const connectivity = rec.application.state === "applied"
+    ? nativeCurrent ? `Saved-board native connectivity: ${native.open} open connection(s). Router counts may differ because zone/island models differ.`
+      : "Saved-board native connectivity is unverified or stale; router-reported completion is not a saved-board connectivity check."
+    : "Canonical connectivity has not been verified for this candidate; it has not been applied.";
   return ok(
-    `Run ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.application.reason ? ` ${rec.application.reason}` : ""}${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${rec.result?.diagnostics ? `\n${rec.result.diagnostics.text}` : rec.error ? `\n${rec.error}` : ""}${rec.result?.endpointCollisions ? `\n${rec.result.endpointCollisions.text}` : ""}${outsideScopeText(rec.result?.outsideScopeChanges)}${rec.result?.quality ? `\n${rec.result.quality.text}` : "\nQuality pending; no candidate applied."}`,
-    { run },
+    `${connectivity}\nRun ${rec.id} (${rec.router}): ${rec.state}; ${rec.progress.routed ?? "?"}/${rec.progress.total ?? "?"} routed; candidate ${rec.candidate.available ? "ready" : "unavailable"}; apply ${rec.application.state}.${rec.application.reason ? ` ${rec.application.reason}` : ""}${rec.fallbackReason ? ` Fallback: ${rec.fallbackReason}.` : ""}${rec.result?.diagnostics ? `\n${rec.result.diagnostics.text}` : rec.error ? `\n${rec.error}` : ""}${rec.result?.endpointCollisions ? `\n${rec.result.endpointCollisions.text}` : ""}${outsideScopeText(rec.result?.outsideScopeChanges)}${rec.result?.quality ? `\n${rec.result.quality.text}` : "\nQuality pending; no candidate applied."}`,
+    { run, connectivity: { native: nativeCurrent ? native : null, routerReported: { routed: rec.progress.routed, total: rec.progress.total, remaining: rec.progress.remaining } } },
   );
 }
 

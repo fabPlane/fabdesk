@@ -2,11 +2,12 @@
 """Resolve an exact public Release run to its tag; otherwise use run artifacts."""
 import base64
 import json
+import os
 import re
 import subprocess
 import sys
 
-REPO = 'TensorFleet/fabdesk'
+REPO = os.environ.get('FABDESK_VM_REPO') or os.environ.get('GITHUB_REPOSITORY') or 'fabPlane/fabdesk'
 
 
 def github(path, missing_ok=False):

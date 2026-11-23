@@ -1,12 +1,12 @@
-import { ErrorNotice } from "../components/ErrorNotice";
-import { DisclosureSummary } from "../components/DisclosureSummary";
-import { VideoSourceStatus } from "./VideoSourceStatus";
-import { useEffect, useState, type ReactNode } from "react";
 import type { FileEntry } from "@fabdesk/protocol";
-import { Button, Select, Spinner } from "../components/ui";
+import { useEffect,useState,type ReactNode } from "react";
 import { ProjectImage } from "../chat/ProjectImage";
 import { ProjectVideo } from "../chat/ProjectVideo";
+import { DisclosureSummary } from "../components/DisclosureSummary";
+import { ErrorNotice } from "../components/ErrorNotice";
+import { Button,Select,Spinner } from "../components/ui";
 import { basename } from "../util";
+import { VideoSourceStatus } from "./VideoSourceStatus";
 
 export const VIDEO_PRESETS = [
   { id: "review", label: "Review (title, orbit, flip, assemble)" },
@@ -120,17 +120,6 @@ export function ProductVideoPanel({
   return (
     <div className="fd-video-workspace flex h-full min-h-0 flex-col" data-testid="product-video-panel">
       <div className="fd-video-model-tools flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-        <Button variant="secondary" size="sm" disabled={exporting || making || !canGenerate || !activityReady} onClick={onExportGlb}>
-          {exporting ? (
-            <>
-              <Spinner className="mr-1" /> Exporting GLB…
-            </>
-          ) : glb ? (
-            "Regenerate 3D model"
-          ) : (
-            "Generate 3D model"
-          )}
-        </Button>
         {glb && onPreviewGlb && <Button size="sm" variant="ghost" onClick={onPreviewGlb}>View model</Button>}
         {glb && onDownloadGlb && <Button size="sm" variant="ghost" disabled={downloading || !!downloadingVideo || exporting || making} onClick={onDownloadGlb}>{downloading ? "Downloading…" : "Download GLB"}</Button>}
         <span className="text-[11px] text-muted">

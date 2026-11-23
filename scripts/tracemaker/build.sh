@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Configure and build the tracemaker CLI using upstream CMake presets.
+# Configure and build the tracemaker CLI and its placer (tracemaker-place,
+# which board_route's floorplan path runs) using upstream CMake presets.
 # Linux: cpu-only (no CUDA). macOS: macos-metal with Homebrew LLVM libc++
 # (static) and CMAKE_OSX_DEPLOYMENT_TARGET=15.0. Windows: no upstream preset
 # (base prepends /usr/bin to PATH; Warnings.cmake is GCC-only), so we invoke
@@ -19,6 +20,8 @@ source "$SCRIPT_DIR/windows-msys.sh"
 src="$(abs_existing_dir "${1:?TraceMaker source tree}")"
 platform="${2:?platform id}"
 jobs="${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
+# Both CLIs ship in one archive: the router and TraceMaker's placer.
+targets=(--target tracemaker --target tracemaker-place)
 
 cd "$src"
 
@@ -117,9 +120,9 @@ if [[ "$platform" == macos-* ]]; then
   set +e
   set +o pipefail
   if [ -n "${TM_MACOS_BUILD_DIR:-}" ]; then
-    cmake --build "$build_dir" --target tracemaker --parallel "$jobs" -- -k 0 2>&1 | tee "$build_log"
+    cmake --build "$build_dir" "${targets[@]}" --parallel "$jobs" -- -k 0 2>&1 | tee "$build_log"
   else
-    cmake --build --preset "$preset" --target tracemaker --parallel "$jobs" -- -k 0 2>&1 | tee "$build_log"
+    cmake --build --preset "$preset" "${targets[@]}" --parallel "$jobs" -- -k 0 2>&1 | tee "$build_log"
   fi
   build_code="${PIPESTATUS[0]}"
   set -e
@@ -144,7 +147,7 @@ elif [[ "$platform" == windows-* ]]; then
   build_log="$build_dir/fabdesk-build.log"
   set +e
   set +o pipefail
-  cmake --build "$build_dir" --target tracemaker --parallel "$jobs" -- -k 0 2>&1 | tee "$build_log"
+  cmake --build "$build_dir" "${targets[@]}" --parallel "$jobs" -- -k 0 2>&1 | tee "$build_log"
   build_code="${PIPESTATUS[0]}"
   set -e
   set -o pipefail
@@ -157,7 +160,7 @@ elif [[ "$platform" == windows-* ]]; then
     exit "$build_code"
   fi
 else
-  cmake --build --preset "$preset" --target tracemaker --parallel "$jobs"
+  cmake --build --preset "$preset" "${targets[@]}" --parallel "$jobs"
 fi
 
 binary="$build_dir/src/app/tracemaker"
@@ -176,7 +179,21 @@ if [[ "$platform" != windows-* ]] && [ ! -x "$binary" ]; then
   exit 1
 fi
 
+# The placer is upstream's src/place target (every release since v0.8.0).
+placer="$build_dir/src/place/tracemaker-place"
+if [[ "$platform" == windows-* ]]; then
+  placer="$build_dir/src/place/tracemaker-place.exe"
+fi
+if [ ! -f "$placer" ]; then
+  echo "::error::expected $placer after the build (tracemaker-place target)" >&2
+  find "$build_dir" -name 'tracemaker-place' -o -name 'tracemaker-place.exe' >&2 || true
+  exit 1
+fi
+chmod +x "$placer" || true
+
 echo "binary=$binary"
+echo "placer=$placer"
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
   echo "binary=$binary" >> "$GITHUB_OUTPUT"
+  echo "placer=$placer" >> "$GITHUB_OUTPUT"
 fi

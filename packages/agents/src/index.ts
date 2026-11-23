@@ -35,6 +35,7 @@ export {
 } from "./adapters/grok";
 export { cursorAdapter, cursorArgs, writeCursorMcp, cursorMcpPath } from "./adapters/cursor";
 export {
+  BOARD_WORKFLOW_MD,
   renderAgentsMd,
   writeAgentDocs,
   extractUserSection,
@@ -78,3 +79,5 @@ export async function detectAgents(settings?: Settings): Promise<AgentInfo[]> {
 }
 
 export { AGENT_OWNER_DIR, recoverAgentProcesses, stopAgentProcess } from "./process-ownership";
+
+export { BOARD_START_MAP_MD, BOARD_WORKFLOW_RESOURCE_URI } from "./board-start-map-md";

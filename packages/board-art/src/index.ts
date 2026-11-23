@@ -10,3 +10,4 @@ export * from "./zip";
 export * from "./job";
 export * from "./placement";
 export * from "./native-graphics";
+export * from "./recolor";

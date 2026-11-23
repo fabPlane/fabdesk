@@ -13,7 +13,7 @@ source "$SCRIPT_DIR/platforms.sh"
 UPSTREAM_REPO="${TRACEMAKER_UPSTREAM_REPO:-DingoOz/TraceMaker}"
 API="https://api.github.com/repos/${UPSTREAM_REPO}"
 INPUT_REF="${1:-}"
-GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-TensorFleet/fabdesk}"
+GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-fabPlane/fabdesk}"
 
 github_json() {
   local url="$1"

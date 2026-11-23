@@ -4,7 +4,7 @@ import json
 import subprocess
 import time
 
-REPOSITORIES = ('TensorFleet/fabdesk', 'fabPlane/fab_pcb', 'TensorFleet/js_autorouter')
+REPOSITORIES = ('fabPlane/fabdesk', 'fabPlane/fab_pcb', 'TensorFleet/js_autorouter')
 
 
 def api(path, method='GET', body=None):

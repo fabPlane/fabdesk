@@ -12,12 +12,13 @@ import {
   type FinishItStatus,
   type Settings,
 } from "@fabdesk/protocol";
-import { ToolError, type ProjectHandle } from "@fabdesk/tools";
+import { initDoneMode, projectHasPlacedBoard, ToolError, type ProjectHandle } from "@fabdesk/tools";
 import type { AgentRunManager } from "./agent-runs";
 import type { EventBus } from "./bus";
 import { newId, type Store } from "./db";
 import { commitMilestone } from "./finish-it-git";
 import {
+  boardPlacedByOwner,
   finishItPrompt,
   inspectProject,
   milestoneDone,
@@ -35,6 +36,15 @@ export { finishItPrompt, inspectProject, milestoneForTool, planMilestones } from
 
 const TERMINAL: ReadonlySet<FinishItStatus> = new Set(["completed", "stopped", "failed"]);
 
+/**
+ * The daemon's default for `FinishItDeps.boardChecks`: the board workflow judges a project only when its tools are
+ * registered, the `boardChecksInFinishIt` setting is not off, and the project has a placed board. A fresh circuit
+ * design keeps the DRC/ERC plan (route_run, verify_drc) until circuit_build has placed its board.
+ */
+export async function boardChecksApply(projectDir: string, opts: { workflowReady: boolean; settings: Pick<Settings, "boardChecksInFinishIt"> }): Promise<boolean> {
+  return opts.workflowReady && opts.settings.boardChecksInFinishIt !== false && (await projectHasPlacedBoard(projectDir));
+}
+
 export type FinishItStartInput = {
   projectId: string;
   threadId?: string;
@@ -50,10 +60,18 @@ export type FinishItDeps = {
   settings: () => Settings;
   commit?: (dir: string, message: string) => Promise<string | null>;
   maxFollowUps?: number;
+  /**
+   * Whether the board workflow judges this project: its A1-A9 then decide "verified", the review milestone is planned
+   * and the prompt names the board tools. The daemon answers per project (a placed board, the workflow registered and
+   * the `boardChecksInFinishIt` setting on); decided once when a run starts, so a run keeps one plan.
+   */
+  boardChecks?: (project: ProjectHandle) => boolean | Promise<boolean>;
 };
 
 type Live = {
   session: FinishItSession;
+  /** The board workflow judges this run (decided when it started). */
+  boardChecks: boolean;
   stopping: boolean;
   abortWait: (() => void) | null;
 };
@@ -144,7 +162,11 @@ export class FinishItManager {
     if (busy)
       throw new ToolError(busy.message, "precondition");
 
-    const snap = await this.snapshot(project);
+    // before the first snapshot: an owner's routed board is judged by "no new failure"; a board fabdesk built, or one
+    // not routed yet, strictly (boardChecks already implies a placed board, so placement alone says nothing)
+    const boardChecks = await this.boardChecksFor(project);
+    if (boardChecks) await initDoneMode(project.dir, await boardPlacedByOwner(project.dir));
+    const snap = await this.snapshot(project, boardChecks);
     const milestones = planMilestones(snap);
     const now = new Date().toISOString();
     const session: FinishItSession = {
@@ -161,7 +183,7 @@ export class FinishItManager {
       endedAt: null,
     };
     this.deps.store.finishIt.insert(session);
-    this.live.set(project.id, { session, stopping: false, abortWait: null });
+    this.live.set(project.id, { session, boardChecks, stopping: false, abortWait: null });
     this.deps.bus.emit({ ts: Date.now(), topic: "finish_it.started", session });
     if (remainingMilestones(milestones).length === 0) {
       this.finish(project.id, "completed");
@@ -231,7 +253,7 @@ export class FinishItManager {
           snapshot: snap,
           remaining,
           ...(followUps > 0 ? { followUp: true } : {}),
-        });
+        }, { boardChecks: this.live.get(project.id)?.boardChecks === true });
         this.deps.store.threads.addMessage({
           threadId,
           role: "user",
@@ -324,7 +346,13 @@ export class FinishItManager {
     return this.live.keys().next().value;
   }
 
-  private async snapshot(project: ProjectHandle): Promise<FinishItSnapshot> {
+  private async boardChecksFor(project: ProjectHandle): Promise<boolean> {
+    return (await this.deps.boardChecks?.(project)) === true;
+  }
+
+  /** A live run keeps the board-checks decision it started with; otherwise ask now. */
+  private async snapshot(project: ProjectHandle, boardChecks?: boolean): Promise<FinishItSnapshot> {
+    const bc = boardChecks ?? this.live.get(project.id)?.boardChecks ?? (await this.boardChecksFor(project));
     const route = this.deps.store.routeRuns.latest(project.id);
     const lastRoute: FinishItRouteHint | null = route
       ? {
@@ -336,7 +364,7 @@ export class FinishItManager {
             : {}),
         }
       : null;
-    return inspectProject(project.dir, { ...(lastRoute ? { lastRoute } : {}) });
+    return inspectProject(project.dir, { ...(lastRoute ? { lastRoute } : {}), boardChecks: bc });
   }
 
   private async syncMilestonesById(projectId: string): Promise<void> {

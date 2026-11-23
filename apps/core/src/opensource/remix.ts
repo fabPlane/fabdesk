@@ -86,7 +86,7 @@ export async function hydrateClonedBoard(opts: {
     if (cli) {
       const stats = (await opts.boardStats(cli, { board: target, scratchFile: join(opts.project.dir, PROJECT_FILES.reports, "stats.json") }).catch(() => ({}))) as Record<string, unknown>;
       const layers = Number(stats["copperLayers"] ?? stats["copper_layers"] ?? stats["layers"]);
-      if (Number.isInteger(layers) && layers >= 1 && layers <= 8) await opts.project.updateManifest({ board: { ...opts.project.manifest().board, layers } });
+      if (Number.isInteger(layers) && layers >= 1 && layers <= 32) await opts.project.updateManifest({ board: { ...opts.project.manifest().board, layers } });
       try {
         await mkdir(join(opts.project.dir, PROJECT_FILES.renders), { recursive: true });
         await opts.exportPcbSvg(cli, { board: target, output: join(opts.project.dir, PROJECT_FILES.renders, "pcb.svg") });
