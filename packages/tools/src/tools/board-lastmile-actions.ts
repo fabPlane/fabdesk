@@ -9,7 +9,7 @@
  * the router registry, the bridge's fab_router / Freerouting) under the resource governor. Without KRT only `finish`
  * runs (on the host router); other KRT steps fail by name. Boards of any file name work.
  */
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { edit, lastmile as L, layout, locateProject, onboard, parseBoard, profile, readRequirements, type Requirements } from "@fabdesk/board-workflow";
 import { adoptCandidate, designFileHashes, type CanonicalAdoptionDrc } from "../board-adopt";
@@ -192,8 +192,11 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
           if (!original) throw new ToolError("Workspace has no source receipt; start a new workspace", "precondition");
           const current = await designFileHashes(project.dir);
           const requirements = (path: string) => path.replaceAll("\\", "/").startsWith(".fabdesk/board/requirements/");
+          // a path only in the receipt is a design input that was deleted, or (a receipt from before design inputs were
+          // limited to the project's own files) a file that is no longer an input: only the first one refuses
+          const outOfScope = async (path: string) => !(path in current) && await stat(join(project.dir, path)).then(() => true, () => false);
           for (const path of new Set([...Object.keys(original), ...Object.keys(current)]))
-            if (!requirements(path) && original[path] !== current[path]) throw new ToolError(`Revalidation refused: native design input changed: ${path}. Start a new workspace.`, "precondition");
+            if (!requirements(path) && original[path] !== current[path] && !(await outOfScope(path))) throw new ToolError(`Revalidation refused: native design input changed: ${path}. Start a new workspace.`, "precondition");
           const proof = await bench.revalidate({ originFiles: current, revalidatedAt: new Date().toISOString() });
           if (proof.all_pass !== true) throw new ToolError("Candidate does not pass the current requirements; geometry kept for further repair. See revalidate.json.", "precondition");
           return ok("Candidate revalidated with current requirements and full schematic parity. Geometry retained; adoption remains a separate action.", proof);

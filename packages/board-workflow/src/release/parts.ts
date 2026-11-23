@@ -3,6 +3,7 @@
  * 3D models. Built over the same s-expression tree as the shared board model (`readBoard`), which keeps only what the
  * acceptance checks need.
  */
+import { isFittedPurchasedPart } from "@fabdesk/protocol";
 import { kid, kids, num, type SNode } from "../sexpr";
 
 export interface PartPad {
@@ -49,13 +50,7 @@ export function boardParts(root: SNode): BomPart[] {
     for (const p of kids(fp, "property")) props[String(p[1])] = String(p[2] ?? "");
     const ref = props["Reference"];
     if (ref === undefined) continue;
-    const attr = kid(fp, "attr") ?? [];
-    const flags = new Set(attr.slice(1).filter((x): x is string => typeof x === "string"));
-    // KiCad 9+ writes these as (dnp yes) / (exclude_from_bom yes) too; a `no` value is not a flag
-    for (const k of ["dnp", "exclude_from_bom", "board_only", "exclude_from_pos_files"]) {
-      const n = kid(fp, k);
-      if (n && n[1] !== "no") flags.add(k);
-    }
+    const flags = footprintFlags(fp);
     const { x, y, rot } = placement(fp);
     const layer = String(kid(fp, "layer")?.[1] ?? "F.Cu");
     const side = layer[0] === "B" ? "B" : "F";
@@ -85,7 +80,7 @@ export function boardParts(root: SNode): BomPart[] {
       y,
       rot: mod360(rot),
       props,
-      flags: [...flags].sort(),
+      flags,
       pads,
       models: kids(fp, "model").map((m) => String(m[1])),
     });
@@ -93,10 +88,75 @@ export function boardParts(root: SNode): BomPart[] {
   return out;
 }
 
-/** A part that is assembled: not DNP / excluded, and either netted or a connector/switch/IC-like reference. */
-export function assembled(p: BomPart): boolean {
-  if (p.flags.includes("dnp") || p.flags.includes("exclude_from_bom") || p.flags.includes("board_only")) return false;
-  const netted = p.pads.some((q) => q.net && !q.net.startsWith("unconnected-"));
-  if (!netted && !/^(J|SW|U|IC)/.test(p.ref.split("_").pop()!)) return false;
-  return p.pads.length > 0;
+/**
+ * The one definition of a fitted part, shared by review coverage and the release (BOM check, BOM gate, JLC handoff).
+ * A part is bought and fitted when it is not DNP / exclude_from_bom / board_only, its footprint is not a board feature
+ * made with the copper (mounting hole, solder jumper / bridge: `isFittedPurchasedPart`), it has pads, and it is netted
+ * or a connector / switch / IC reference (a mechanical-only J/SW/U part is still bought). The assembler places it (a CPL
+ * row) unless it is also exclude_from_pos_files (fitted by hand) or copper only (a test pad / solder jumper with nothing
+ * to buy, as the BOM check decides it).
+ */
+export interface FitPart {
+  ref: string;
+  /** Library id (`Lib:Name`): the review's name for it. */
+  footprint?: string;
+  /** Library id: the release's name for it. */
+  lib?: string;
+  flags: readonly string[];
+  pads: ReadonlyArray<{ net: string }>;
+  /** Footprint properties: an LCSC/JLC code there makes it a bought part even on a board-feature footprint name. */
+  props?: Readonly<Record<string, string>>;
+  /** The Value field (bomcheck also reads a `C123456` code written there). */
+  value?: string | null;
+}
+
+/** Fields that carry an LCSC/JLC code (bomcheck's CODE_KEYS). */
+export const LCSC_FIELDS = ["LCSC", "LCSC Part", "LCSC_Part", "JLC", "JLCPCB", "JLC Part", "LCSC Part #"] as const;
+
+/**
+ * The part names an assembler (LCSC/JLC) code, in a code field or the Value: someone means the assembler to place it.
+ * An MPN alone does not count: a mounting hole often carries the screw's MPN, and a placeholder (`~`) means nothing.
+ * (Codes only in the ordering file or an agent override are not visible here; write them into the footprint.)
+ */
+export function hasAssemblerCode(p: { props?: Readonly<Record<string, string>>; value?: string | null }): boolean {
+  return LCSC_FIELDS.some((k) => /^C\d{3,}$/.test((p.props?.[k] ?? "").trim())) || /\bC\d{4,}\b/.test(p.value ?? "");
+}
+
+export type NotFitted = "dnp" | "exclude_from_bom" | "board_only" | "board_feature" | "no_pads" | "not_netted";
+
+/** Why a part is not bought and fitted, or null when it is. */
+export function notFittedReason(p: FitPart): NotFitted | null {
+  for (const flag of ["dnp", "exclude_from_bom", "board_only"] as const) if (p.flags.includes(flag)) return flag;
+  // a board-feature footprint name (mounting hole, solder jumper) is copper, unless the part names an assembler code
+  // (an SMT standoff on a "MountingHole_..." footprint with an LCSC code is still bought and placed)
+  if (!isFittedPurchasedPart({ footprint: p.footprint ?? p.lib ?? "", flags: p.flags }) && !hasAssemblerCode(p)) return "board_feature";
+  if (!p.pads.length) return "no_pads";
+  if (!p.pads.some((q) => q.net && !q.net.startsWith("unconnected-")) && !/^(J|SW|U|IC)/.test(p.ref.split("_").pop() ?? "")) return "not_netted";
+  return null;
+}
+
+/** A part that is bought and fitted (see `FitPart`): the release's and review coverage's `assembled`. */
+export function assembled(p: FitPart): boolean {
+  return notFittedReason(p) === null;
+}
+
+/** Test pad / solder jumper copper with nothing to buy: TP/JP/SJ, at most 3 SMD pads, no 3D model. The caller checks it has no part number. */
+export function copperOnlyShape(p: { ref: string; pads: ReadonlyArray<{ type?: string }>; models: readonly string[] }): boolean {
+  return !p.models.length && p.pads.length <= 3 && p.pads.every((q) => q.type === "smd") && /(^|_)(TP|JP|SJ)\d+$/.test(p.ref);
+}
+
+/** A fitted part the assembler places from the CPL: not exclude_from_pos_files, and not copper only. */
+export function placedPart(p: FitPart, copperOnly: boolean): boolean {
+  return assembled(p) && !p.flags.includes("exclude_from_pos_files") && !copperOnly;
+}
+
+/** A footprint's inclusion flags: `(attr ...)` tokens, and KiCad 9+'s `(dnp yes)` style nodes (a `no` value is not a flag). */
+export function footprintFlags(fp: SNode): string[] {
+  const attr = kid(fp, "attr") ?? [];
+  const flags = new Set(attr.slice(1).filter((x): x is string => typeof x === "string"));
+  for (const k of ["dnp", "exclude_from_bom", "board_only", "exclude_from_pos_files"]) {
+    const n = kid(fp, k);
+    if (n && n[1] !== "no") flags.add(k);
+  }
+  return [...flags].sort();
 }
