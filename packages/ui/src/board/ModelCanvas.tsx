@@ -79,7 +79,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
   const selection = useBoardPartSelection(selectionSource);
   const currentSelection = useRef(selection); currentSelection.current = selection;
   const updateSelection = useRef<(() => void) | null>(null), focusSelection = useRef<((animate?: boolean) => void) | null>(null);
-  const [selectableRefs, setSelectableRefs] = useState<string[]>([]);
+  const [modelParts, setModelParts] = useState<ReturnType<typeof nativeModelParts> | null>(null);
   const [selectionNotice, setSelectionNotice] = useState<string | undefined>();
   useEffect(() => { updateSelection.current?.(); }, [selection.ref, selection.ready, selection.index.data]);
   const host = useRef<HTMLDivElement>(null);
@@ -93,15 +93,16 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
   const [loading, setLoading] = useState(true);
   const linkedFocus = useRef<number | null>(null);
   useEffect(() => {
-    if (selection.linkedFocus === null || linkedFocus.current === selection.linkedFocus || loading || !selectableRefs.includes(selection.ref ?? "")) return;
+    if (selection.linkedFocus === null || linkedFocus.current === selection.linkedFocus || loading || !modelParts?.has(selection.ref ?? "")) return;
     linkedFocus.current = selection.linkedFocus;
     focusSelection.current?.();
-  }, [selection.linkedFocus, selection.ref, loading, selectableRefs]);
+  }, [selection.linkedFocus, selection.ref, loading, modelParts]);
   const [retry, setRetry] = useState(0);
   const viewUnavailable = loading || !!error || isPending || isError || !data;
 
   useEffect(() => {
     const target = host.current;
+    setModelParts(null);
     if (!target || !data) return;
     let disposed = false;
     let renderer: THREE.WebGLRenderer | null = null;
@@ -223,7 +224,8 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
         } else reset();
         if (selectionSource) {
           const canvas = renderer.domElement;
-          let selectable = new Map<string, THREE.Object3D[]>();
+          let indexedReferences: readonly string[] | null = null;
+          let parts: ReturnType<typeof nativeModelParts> | null = null;
           const highlightBox = new THREE.Box3();
           const tint = new ModelPartTint();
           measureSelection = () => {
@@ -240,15 +242,17 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
             // or reference changes, and never render an unverified highlight.
             if (!selectionIsFramed()) framedSelection.current = null;
             stopMotion();
-            selectable.clear(); model.updateWorldMatrix(true, true);
-            if (requestedComponents.current && current.ready && receipt?.sha256 === digest) {
-              selectable = nativeModelParts(model, receipt.references);
+            const references = requestedComponents.current && current.ready && receipt?.sha256 === digest ? receipt.references : null;
+            if (references !== indexedReferences) {
+              indexedReferences = references;
+              parts = references ? nativeModelParts(model, references) : null;
+              setModelParts(parts);
             }
-            setSelectableRefs([...selectable.keys()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
+            const selectedObjects = parts?.get(current.ref ?? "") ?? [];
             highlightBox.makeEmpty();
-            for (const object of selectable.get(current.ref ?? "") ?? []) highlightBox.union(new THREE.Box3().setFromObject(object));
+            for (const object of selectedObjects) highlightBox.union(new THREE.Box3().setFromObject(object));
             const visible = !highlightBox.isEmpty();
-            canvas.dataset["tintedMeshes"] = String(tint.apply(selectable.get(current.ref ?? "") ?? []));
+            canvas.dataset["tintedMeshes"] = String(tint.apply(selectedObjects));
             canvas.dataset["selectedComponent"] = visible ? current.ref! : "";
             setSelectionNotice(!requestedComponents.current ? undefined : !current.ready || receipt?.sha256 !== digest ? "Preview updating · component selection will return automatically" : current.ref && !visible ? `${current.ref} has no selectable model in this preview` : undefined);
             if (visible && selectionIsFramed()) focusSelection.current?.(false);
@@ -288,7 +292,8 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
             if (!start || event.button !== 0 || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4 || !camera || !model) return;
             const rect = canvas.getBoundingClientRect(), ray = new THREE.Raycaster();
             ray.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1), camera);
-            const ref = modelPartReference(ray.intersectObject(model, true).find(hit => modelObjectVisible(hit.object))?.object ?? null, selectable);
+            if (!parts) return;
+            const ref = modelPartReference(ray.intersectObject(model, true).find(hit => modelObjectVisible(hit.object))?.object ?? null, parts);
             if (ref) currentSelection.current.select(ref);
           };
           const cancel = () => { down = null; };
@@ -383,7 +388,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
   }, [data, path, retry]);
 
   return <div className="fd-model-canvas" data-testid="model-canvas" onKeyDown={event => { if (event.key === "Escape" && selectionSource && selection.ref && !(event.target instanceof Element && event.target.closest("input, textarea, select, [role=dialog]"))) { selection.clear(); event.preventDefault(); event.stopPropagation(); } }}>
-    {selectionSource && <PartSelectionBar target={selectionToolbar} reference={selection.ref} references={selectableRefs} onSelect={selection.select} onClear={selection.clear} onFocus={selectableRefs.includes(selection.ref ?? "") ? () => focusSelection.current?.() : undefined} notice={selectionNotice} />}
+    {selectionSource && <PartSelectionBar target={selectionToolbar} reference={selection.ref} references={selection.ready && modelParts ? selection.index.data?.references ?? [] : []} onSelect={selection.select} onClear={selection.clear} onFocus={modelParts?.has(selection.ref ?? "") ? () => focusSelection.current?.() : undefined} notice={selectionNotice} />}
     <div ref={host} className="fd-model-viewport" />
     {(isPending || (loading && data !== null)) && !error && !isError && <div className="fd-model-message" role="status"><Spinner /><span>Opening model…</span></div>}
     {(error || isError || data === null) && <div className="fd-model-message" role="alert"><p>{error ?? (isError ? "Could not load the saved model." : "Model file not found.")}</p><Button onClick={() => { savedCamera.current = null; setRetry((n) => n + 1); if (!blob) void refetch(); }}>Retry preview</Button></div>}

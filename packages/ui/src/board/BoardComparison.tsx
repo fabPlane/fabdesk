@@ -39,7 +39,7 @@ export function BoardComparison({ projectId, active, onOpenChecks }: { projectId
     return () => observer.disconnect();
   }, []);
   const selection = useBoardPartSelection({ projectId });
-  const references = useMemo(() => [...new Set([...(selection.index.data?.pcb?.parts ?? []), ...(selection.index.data?.sheets.flatMap(sheet => sheet.parts) ?? [])].map(part => part.ref))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })), [selection.index.data]);
+  const references = selection.index.data?.references ?? [];
   const focus = (view: View) => { if (useUiStore.getState().activeProjectId === projectId && useUiStore.getState().boardTab !== view) useUiStore.getState().setWorkspaceTab(view); };
   return <div ref={host} className="fd-board-comparison fd-three-view" data-layout={layout} data-testid="board-comparison" onKeyDown={event => {
     if (event.key === "Escape" && !event.defaultPrevented && selection.ref && !(event.target instanceof Element && event.target.closest("input,textarea,select,[role=dialog],[role=menu]"))) { selection.clear(); event.preventDefault(); }
