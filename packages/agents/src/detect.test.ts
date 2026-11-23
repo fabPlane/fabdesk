@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { detectBinary } from "./detect";
+import { commonBinDirs, detectBinary, resolveBinary } from "./detect";
 import { detectAgents } from "./index";
 
 let dir: string;
@@ -53,7 +53,10 @@ describe("detectBinary", () => {
   });
 
   test("reports not installed when nothing matches", async () => {
-    expect(await detectBinary(["agent", "cursor-agent", join(dir, "missing")])).toEqual({
+    // Names no machine has: bare names are also looked up in the common install folders.
+    expect(
+      await detectBinary(["fabdesk-absent-agent", "fabdesk-absent-cli", join(dir, "missing")]),
+    ).toEqual({
       installed: false,
     });
   });
@@ -74,6 +77,35 @@ describe("detectBinary", () => {
     expect(await detectBinary(["codex"], undefined, ["-e", "process.exit(3)"])).toEqual({
       installed: true, path,
     });
+  });
+});
+
+describe("common install folders", () => {
+  test("a bare name off PATH is found in a search folder; a path is not searched for", () => {
+    const path = fakeBinary("codex");
+    process.env["PATH"] = join(dir, "empty");
+    expect(resolveBinary("codex", [join(dir, "nowhere"), dir])).toBe(path);
+    expect(resolveBinary("codex", [])).toBeUndefined();
+    expect(resolveBinary(join(dir, "sub", "codex"), [dir])).toBeUndefined();
+  });
+
+  test("PATH wins over the search folders", () => {
+    const onPath = fakeBinary("codex");
+    const other = mkdtempSync(join(tmpdir(), "fabdesk-detect-other-"));
+    try {
+      copyFileSync(process.execPath, join(other, "codex"));
+      expect(resolveBinary("codex", [other])).toBe(onPath);
+    } finally {
+      rmSync(other, { recursive: true, force: true });
+    }
+  });
+
+  test.skipIf(process.platform === "win32")("cover Homebrew and the home folder", () => {
+    expect(commonBinDirs("/Users/me", "darwin")).toEqual(
+      expect.arrayContaining(["/opt/homebrew/bin", "/usr/local/bin", "/Users/me/.local/bin"]),
+    );
+    expect(commonBinDirs("/home/me", "linux")).toContain("/home/me/.npm-global/bin");
+    expect(commonBinDirs("C:\\Users\\me", "win32")).toEqual([]);
   });
 });
 

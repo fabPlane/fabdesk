@@ -19,7 +19,7 @@ export type {
 export { MCP_SERVER_NAME, PERMISSION_PROMPT_TOOL, TOKEN_ENV } from "./types";
 export { readJsonl, parseJsonlLine } from "./jsonl";
 export { runAgentProcess, killTree } from "./process";
-export { detectBinary, resolveBinary, readVersion } from "./detect";
+export { commonBinDirs, detectBinary, resolveBinary, readVersion } from "./detect";
 export { MessagesStreamParser } from "./parsers/messages";
 export { CodexStreamParser } from "./parsers/codex";
 export { CursorStreamParser } from "./parsers/cursor";

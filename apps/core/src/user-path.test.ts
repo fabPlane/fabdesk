@@ -9,7 +9,6 @@ import {
   readLoginShellPath,
   shellPathCommand,
   userPathReady,
-  wellKnownBinDirs,
 } from "./user-path";
 
 const posix = process.platform !== "win32";
@@ -46,12 +45,6 @@ describe("shell PATH", () => {
     expect(shellPathCommand("/bin/zsh")?.slice(0, 2)).toEqual(["/bin/zsh", "-ilc"]);
     expect(shellPathCommand("/opt/homebrew/bin/fish")?.[2]).toContain("string join");
     expect(shellPathCommand("/usr/bin/nu")).toBeUndefined();
-  });
-
-  test("well-known folders cover Homebrew on macOS and none on Windows", () => {
-    expect(wellKnownBinDirs("/Users/me", "darwin")).toContain("/opt/homebrew/bin");
-    expect(wellKnownBinDirs("/home/me", "linux")).toContain(join("/home/me", ".local", "bin"));
-    expect(wellKnownBinDirs("C:\\Users\\me", "win32")).toEqual([]);
   });
 });
 

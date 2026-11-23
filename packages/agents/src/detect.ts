@@ -42,13 +42,46 @@ export function resolveWindowsShim(path: string): string | undefined {
   return target;
 }
 
-/** Resolves a command name or path to an executable, honoring the current `PATH`. */
-export function resolveBinary(candidate: string): string | undefined {
+/**
+ * Where package managers put per-user commands (Homebrew, npm prefixes, installers' `~/.local/bin`, …).
+ * A desktop app started from Finder or a launcher does not have these on `PATH`, so a bare command
+ * name is also looked up here. Empty on Windows, where GUI apps get the user's `PATH`.
+ */
+export function commonBinDirs(
+  home: string = homedir(),
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  if (platform === "win32") return [];
+  const shared = [
+    "/usr/local/bin",
+    join(home, ".local", "bin"),
+    join(home, "bin"),
+    join(home, ".bun", "bin"),
+    join(home, ".cargo", "bin"),
+    join(home, ".npm-global", "bin"),
+    join(home, ".volta", "bin"),
+  ];
+  return platform === "darwin"
+    ? ["/opt/homebrew/bin", "/opt/homebrew/sbin", ...shared, "/opt/local/bin"]
+    : [...shared, "/home/linuxbrew/.linuxbrew/bin", "/snap/bin"];
+}
+
+/**
+ * Resolves a command name or path to an executable: the current `PATH` first, then, for a bare
+ * name, `searchDirs` (the common install folders unless given).
+ */
+export function resolveBinary(
+  candidate: string,
+  searchDirs: string[] = commonBinDirs(),
+): string | undefined {
   const expanded = expandHome(candidate);
   const looksLikePath = expanded.includes("/") || expanded.includes("\\") || isAbsolute(expanded);
   let found: string | undefined;
   if (looksLikePath) found = isExecutableFile(expanded) ? expanded : undefined;
-  else found = Bun.which(expanded, { PATH: process.env["PATH"] ?? "" }) ?? undefined;
+  else
+    found =
+      Bun.which(expanded, { PATH: process.env["PATH"] ?? "" }) ??
+      searchDirs.map((dir) => join(dir, expanded)).find(isExecutableFile);
   if (found && process.platform === "win32") return resolveWindowsShim(found) ?? found;
   return found;
 }

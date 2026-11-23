@@ -3,11 +3,11 @@
  * (`/usr/bin:/bin:/usr/sbin:/sbin` on macOS), not the one the user's shell builds. Agent CLIs
  * installed by Homebrew, npm, nvm, … are then invisible to detection, and the tools an agent runs
  * are missing too. The daemon therefore adopts the user's `PATH` once at startup: the usual
- * per-user bin folders immediately, then whatever the login shell reports.
+ * common install folders (`commonBinDirs`) immediately, then whatever the login shell reports.
  */
+import { commonBinDirs } from "@fabdesk/agents";
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { basename, delimiter, join } from "node:path";
+import { basename, delimiter } from "node:path";
 import { errMsg, logger } from "./log";
 
 const SHELL_TIMEOUT_MS = 5_000;
@@ -17,25 +17,6 @@ const POSIX_SHELLS = new Set(["zsh", "bash", "sh", "dash", "ksh"]);
 
 /** Set to `off` to keep the inherited `PATH` untouched. */
 export const USER_PATH_ENV = "FABDESK_USER_PATH";
-
-/** Where package managers put per-user commands; only existing folders are ever added. */
-export function wellKnownBinDirs(
-  home: string = homedir(),
-  platform: NodeJS.Platform = process.platform,
-): string[] {
-  if (platform === "win32") return [];
-  const shared = [
-    "/usr/local/bin",
-    join(home, ".local", "bin"),
-    join(home, ".bun", "bin"),
-    join(home, ".cargo", "bin"),
-    join(home, ".npm-global", "bin"),
-    join(home, ".volta", "bin"),
-  ];
-  return platform === "darwin"
-    ? ["/opt/homebrew/bin", "/opt/homebrew/sbin", ...shared, "/opt/local/bin"]
-    : [...shared, "/home/linuxbrew/.linuxbrew/bin", "/snap/bin"];
-}
 
 function entries(path: string | undefined, sep: string): string[] {
   return (path ?? "").split(sep).filter((entry) => entry !== "");
@@ -126,7 +107,7 @@ export function userPathReady(): Promise<void> {
 export function adoptUserPath(env: NodeJS.ProcessEnv = process.env): Promise<void> {
   if (process.platform === "win32" || env[USER_PATH_ENV] === "off") return ready;
   const inherited = env["PATH"];
-  const fallbacks = wellKnownBinDirs().filter((dir) => existsSync(dir));
+  const fallbacks = commonBinDirs().filter((dir) => existsSync(dir));
   env["PATH"] = mergePath(inherited, undefined, fallbacks);
   ready = readLoginShellPath(env)
     .then((shellPath) => {
