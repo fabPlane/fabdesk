@@ -76,6 +76,20 @@ describe.skipIf(!posix)("adoptUserPath", () => {
     expect(await readLoginShellPath({ SHELL: join(dir, "missing-zsh"), PATH: "/usr/bin" })).toBeUndefined();
   });
 
+  test("a profile's background process holding stdout cannot stall the lookup", async () => {
+    // Prints nothing useful and leaves a child with the pipe open, as a profile-started daemon would.
+    writeFileSync(shell, "#!/bin/sh\nsleep 20 &\nsleep 20\n");
+    const started = Date.now();
+    expect(await readLoginShellPath({ SHELL: shell, PATH: "/usr/bin:/bin" }, 300)).toBeUndefined();
+    expect(Date.now() - started).toBeLessThan(5_000);
+
+    writeFileSync(shell, `#!/bin/sh\nsleep 20 &\nexec /bin/sh -c "$2"\n`);
+    expect(await readLoginShellPath({ SHELL: shell, PATH: "/usr/bin:/bin" }, 10_000)).toBe(
+      "/usr/bin:/bin",
+    );
+    expect(Date.now() - started).toBeLessThan(8_000);
+  });
+
   test("puts the shell's folders on a launcher PATH", async () => {
     const env: NodeJS.ProcessEnv = { SHELL: shell, PATH: "/usr/bin:/bin" };
     await adoptUserPath(env);

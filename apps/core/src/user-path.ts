@@ -88,16 +88,27 @@ export async function readLoginShellPath(
   for (const [key, value] of Object.entries(env)) if (typeof value === "string") childEnv[key] = value;
   // An interactive shell must not stop to ask about a framework update.
   childEnv["DISABLE_AUTO_UPDATE"] = "true";
-  const proc = Bun.spawn(command, {
-    env: childEnv,
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "ignore",
-    timeout: timeoutMs,
-    killSignal: "SIGKILL",
+  const proc = Bun.spawn(command, { env: childEnv, stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+  // The deadline covers the read itself: a profile that leaves a background process holding stdout
+  // keeps the pipe open after the shell is gone, so the shell's exit cannot be what ends the wait.
+  const reader = proc.stdout.getReader();
+  const decoder = new TextDecoder();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), timeoutMs);
   });
-  const output = await new Response(proc.stdout).text();
-  await proc.exited;
+  let output = "";
+  try {
+    while (parseShellPath(output) === undefined) {
+      const next = await Promise.race([reader.read(), deadline]);
+      if (next === "timeout" || next.done) break;
+      output += decoder.decode(next.value, { stream: true });
+    }
+  } finally {
+    clearTimeout(timer);
+    proc.kill("SIGKILL");
+    void reader.cancel().catch(() => {});
+  }
   return parseShellPath(output);
 }
 

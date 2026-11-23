@@ -29,6 +29,7 @@ import { captureCoreException } from "./sentry";
 import { classifyToolCall, parseAskUserQuestion } from "./supervision";
 import type { TokenSet } from "./auth";
 import type { AgentTrace, RunTelemetry } from "./run-telemetry";
+import { userPathReady } from "./user-path";
 
 import type {
   AgentAdapter,
@@ -544,6 +545,9 @@ export class AgentRunManager {
    * dropped on every exit from here.
    */
   async start(input: StartInput): Promise<{ runId: string; messageId: string }> {
+    // The adapter resolves its CLI on PATH; a message sent right after startup must not beat the
+    // login-shell lookup (bounded, and already settled in every later call).
+    await userPathReady();
     if (this.deletingThreads.has(input.threadId))
       throw new ToolError("the thread is being deleted", "not_found");
     if (this.isRunning(input.threadId))
