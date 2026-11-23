@@ -28,7 +28,7 @@ export function SelectableSvgViewer({ selectionSource, selectionView, sheetPath,
     const sheets = selected.index.data!.sheets.filter(s => s.parts.some(p => p.ref === selected.ref));
     if (!sheets.some(s => s.path === sheetPath) && sheets.length === 1) onSelectionSheet(sheets[0]!.path);
   }, [selectionView, selected.ready, selected.scope, selected.ref, selected.index.data, sheetPath, onSelectionSheet]);
-  const notice = !valid ? selected.index.isFetching ? "Loading components…" : selected.index.isError ? "Could not load components · retry inspection" : "Update the preview to select components" : selected.ref && !targets.length ? `${selected.ref} ${selectionView === "schematic" && otherSheet ? `is on sheet ${otherSheet.name}` : "is not present in this view"}` : undefined;
+  const notice = !valid ? selected.index.isFetching ? "Loading components…" : selected.index.isError ? "Could not load components · retry inspection" : "Preview updating � component selection will return automatically" : selected.ref && !targets.length ? `${selected.ref} ${selectionView === "schematic" && otherSheet ? `is on sheet ${otherSheet.name}` : "is not present in this view"}` : undefined;
   const retryInspection = async () => {
     const trigger = document.activeElement;
     const drawing = currentDrawing.current;

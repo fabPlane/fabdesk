@@ -26,18 +26,22 @@ export function BoardComparison({ projectId, active, onOpenChecks }: { projectId
   const sequence = useRef(0);
   const followSelection = useCallback((ref: string, origin: View | null) => setLinkedFocus({ ref, origin, id: ++sequence.current }), []);
   const host = useRef<HTMLDivElement>(null);
-  const [columns, setColumns] = useState(false);
+  const [layout, setLayout] = useState<"rows" | "columns" | "stacked">("stacked");
+  const columns = layout === "columns", rows = layout === "rows";
   useLayoutEffect(() => {
     const element = host.current;
     if (!element) return;
-    const measure = () => setColumns(element.clientHeight < 560);
+    const measure = () => {
+      if (element.clientWidth < 620) setLayout("rows");
+      else setLayout(element.clientHeight < 560 && element.clientWidth >= 1080 ? "columns" : "stacked");
+    };
     measure(); const observer = new ResizeObserver(measure); observer.observe(element);
     return () => observer.disconnect();
   }, []);
   const selection = useBoardPartSelection({ projectId });
   const references = useMemo(() => [...new Set([...(selection.index.data?.pcb?.parts ?? []), ...(selection.index.data?.sheets.flatMap(sheet => sheet.parts) ?? [])].map(part => part.ref))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })), [selection.index.data]);
   const focus = (view: View) => { if (useUiStore.getState().activeProjectId === projectId && useUiStore.getState().boardTab !== view) useUiStore.getState().setWorkspaceTab(view); };
-  return <div ref={host} className="fd-board-comparison fd-three-view" data-layout={columns ? "columns" : "stacked"} data-testid="board-comparison" onKeyDown={event => {
+  return <div ref={host} className="fd-board-comparison fd-three-view" data-layout={layout} data-testid="board-comparison" onKeyDown={event => {
     if (event.key === "Escape" && !event.defaultPrevented && selection.ref && !(event.target instanceof Element && event.target.closest("input,textarea,select,[role=dialog],[role=menu]"))) { selection.clear(); event.preventDefault(); }
   }}>
     <div className="fd-part-selection-bar fd-shared-part-selection" data-testid="shared-part-selection">
@@ -48,13 +52,13 @@ export function BoardComparison({ projectId, active, onOpenChecks }: { projectId
       {selection.ref && <Button size="sm" variant="ghost" onClick={selection.clear}>Clear</Button>}
     </div>
     <div className="fd-three-view-panes">
-      <PanelGroup direction="horizontal" keyboardResizeBy={5} autoSaveId={`fabplane-three-view-columns-${columns ? "short" : "tall"}-${projectId}`}>
+      <PanelGroup direction={rows ? "vertical" : "horizontal"} keyboardResizeBy={5} autoSaveId={`fabplane-three-view-columns-${rows ? "narrow" : columns ? "short" : "tall"}-${projectId}`}>
         <Panel id="pcb" order={1} defaultSize={columns ? 33 : 42} minSize={columns ? 28 : 32} maxSize={columns ? 36 : 60}>
           <Pane view="pcb" active={active} onFocus={focus} focus={linkedFocus} onSelect={followSelection}><SvgTab {...(onOpenChecks ? { onOpenChecks } : {})} kind="pcb" active={active === "pcb"} /></Pane>
         </Panel>
-        <PanelResizeHandle className="fd-comparison-divider" aria-label="Resize PCB and other views" />
+        <PanelResizeHandle className={rows ? "fd-comparison-divider fd-comparison-divider-horizontal" : "fd-comparison-divider"} aria-label="Resize PCB and other views" />
         <Panel id="other-views" order={2} defaultSize={columns ? 67 : 58} minSize={columns ? 64 : 40}>
-          <PanelGroup direction={columns ? "horizontal" : "vertical"} keyboardResizeBy={5} autoSaveId={`fabplane-three-view-rows-${columns ? "short" : "tall"}-${projectId}`}>
+          <PanelGroup direction={columns ? "horizontal" : "vertical"} keyboardResizeBy={5} autoSaveId={`fabplane-three-view-rows-${rows ? "narrow" : columns ? "short" : "tall"}-${projectId}`}>
             <Panel id="schematic" order={1} defaultSize={50} minSize={columns ? 45 : 40}>
               <Pane view="schematic" active={active} onFocus={focus} focus={linkedFocus} onSelect={followSelection}><SvgTab kind="schematic" active={active === "schematic"} /></Pane>
             </Panel>

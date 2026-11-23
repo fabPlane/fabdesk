@@ -147,3 +147,11 @@ test("export chronology overrides touched mtime, orders grouped layers and keeps
   expect(after.flatMap(card => card.files).filter(file => selected.has(file.path)).map(file => file.path)).toEqual(["renders/top.png"]);
   expect(outputCards(filterSavedOutputs(savedOutputs(files), { kind: "manufacturing" }), false)[0]!.primary.path).toBe("exports/gerbers/drill.drl");
 });
+
+test("the library shows the published schematic without listing automatic history as duplicate downloads", () => {
+  const version = "10bc3532-6a92-4ca9-ba47-3adbc02f641b";
+  const paths = ["renders/schematic.svg", `renders/schematic/auto-${version}/sheet-1.svg`,
+    `renders/schematic/auto-${version}/sheet-1.png`, `renders/schematic/${version}/sheet-1.svg`];
+  const rows = savedOutputs(paths.map(path => ({ path, size: 1, mtime: "" })));
+  expect(rows.map(row => row.path).sort()).toEqual([paths[0]!, paths[3]!].sort());
+});

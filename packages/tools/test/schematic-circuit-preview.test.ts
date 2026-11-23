@@ -25,6 +25,22 @@ test("working circuit previews keep full native hierarchy and write distinct ver
   expect(paths).toHaveLength(2); expect(newer[0]).not.toBe(paths[0]); expect(await readFile(paths[0]!, "utf8")).toBe(svg);
   expect(await readFile(join(f.project.dir, "board.kicad_sch"), "utf8")).toBe("root"); expect(await readFile(join(f.project.dir, "child.kicad_sch"), "utf8")).toBe("child");
 });
+test("automatic saves bound working history and preserve manual and referenced sheets", async () => {
+  const { ctx, project } = await fixture();
+  async function render(automatic: boolean) {
+    const result = await renderRootCircuitPreview(ctx, 320, undefined, true, automatic);
+    return (result.json as { sheets: string[] }).sheets[0]!;
+  }
+  const manual = await render(false), pinned = await render(true);
+  await mkdir(join(project.dir, "exports"), { recursive: true });
+  await writeFile(join(project.dir, "exports/kept.revision.json"), JSON.stringify({ inputs: [{ path: pinned }] }));
+  const obsolete = await render(true);
+  const previous = await render(true), current = await render(true);
+  for (const path of [manual, pinned, previous, current]) expect(await readFile(path, "utf8")).toBe(svg);
+  expect(await Bun.file(obsolete).exists()).toBe(false);
+  expect(await readdir(join(project.dir, "renders/schematic"))).toHaveLength(4);
+});
+
 test("child edits during rasterization keep the earlier working preview and remove unpublished staging files", async () => {
   const f = await fixture(true);
   await mkdir(join(f.project.dir, "renders"), { recursive: true });

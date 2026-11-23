@@ -1,3 +1,4 @@
+import { recordAutomaticSchematicVersion } from "./automatic-schematic-history";
 import { snapshotProjectDependencies, assertProjectDependencies } from "./project-dependencies";
 import { RootSchematicPreviewRevision, SCHEMATIC_PREVIEW_REVISION_PATH } from "@fabdesk/protocol";
 import { createHash, randomUUID } from "node:crypto";
@@ -8,7 +9,7 @@ import { fileUrl, ok, requireKicad } from "./tools/common";
 
 const sha = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
 /** Both preview modes capture the complete native hierarchy and publish source-bound receipts. */
-export async function renderRootCircuitPreview(ctx: ToolContext, maxWidth: number, expectedHierarchyRevision?: string, circuit = true) {
+export async function renderRootCircuitPreview(ctx: ToolContext, maxWidth: number, expectedHierarchyRevision?: string, circuit = true, automaticPreview = false) {
   const project = ctx.requireProject(), cli = await requireKicad(ctx);
   const schematic = await jailPath(project.dir, "board.kicad_sch"), metadata = await jailPath(project.dir, "board.kicad_pro");
   const inspect = async () => ctx.services.kicad.inspectSchematicHierarchy(cli, { projectDir: project.dir, rootSchematic: schematic, ...(await exists(metadata) ? { projectFile: metadata } : {}), ownedFilesOnly: true, signal: ctx.signal });
@@ -20,7 +21,7 @@ export async function renderRootCircuitPreview(ctx: ToolContext, maxWidth: numbe
   if (circuit && captured.sheets.some(sheet => !new TextDecoder().decode(sheet.svg).includes('data-fabplane-schematic-view="circuit'))) throw new ToolError("The exporter did not produce circuit-framed drawings. The previous preview was kept.", "precondition");
   const expected = new Set([...hierarchy.referencedFiles, ...(hierarchy.projectFile ? [hierarchy.projectFile] : [])]);
   if (captured.sourceRevision !== hierarchy.aggregateRevision || captured.sheets.length !== hierarchy.sheets.length || captured.sourceFiles.length !== expected.size || captured.sourceFiles.some(file => !expected.delete(file.path)) || expected.size) throw new ToolError("Circuit rendering did not capture the complete inspected hierarchy.", "precondition");
-  const version = `renders/schematic/${randomUUID()}`, versionPath = await jailPath(project.dir, version);
+  const version = `renders/schematic/${automaticPreview ? "auto-" : ""}${randomUUID()}`, versionPath = await jailPath(project.dir, version);
   let published = false;
   const artifacts: RootSchematicPreviewRevision["sheets"] = [];
   const sheets: string[] = [], images: Array<{ sheet: number; path: string; width: number; height: number; sha256: string; bytes: number; schematicRevision: string }> = [];
@@ -44,7 +45,9 @@ export async function renderRootCircuitPreview(ctx: ToolContext, maxWidth: numbe
     const output = await jailPath(project.dir, "renders/schematic.svg"), pngOutput = await jailPath(project.dir, "renders/schematic.png");
     await writeAtomic(pngOutput, await readFile(images[0].path)); await writeAtomic(output, await readFile(sheets[0]));
     await writeJson(await jailPath(project.dir, SCHEMATIC_PREVIEW_REVISION_PATH), receipt);
-    published = true; ctx.progress(1, "done");
+    published = true;
+    if (automaticPreview) await recordAutomaticSchematicVersion(ctx, version, [...artifacts.map(s => [s.path, s.sha256] as const), ...images.map(image => [image.path, image.sha256] as const)]);
+    ctx.progress(1, "done");
     return ok(`Rendered ${sheets.length} ${circuit ? "circuit" : "document"} sheet(s) from the captured native hierarchy. ERC and PCB parity remain separate checks.`, { path: output, pngPath: pngOutput, url: fileUrl(output), sheets, images, sourceRevision: captured.sourceRevision, sourceFiles: captured.sourceFiles, presentation: circuit ? "circuit" : "document", schematicRevision: { sha256: hierarchy.aggregateRevision }, preview: receipt }, { images: images.map(image => ({ path: image.path, mime: "image/png", requiredInline: true })) });
   } finally {
     if (!published && await jailPath(project.dir, version).catch(() => null) === versionPath) await rm(versionPath, { recursive: true, force: true });
