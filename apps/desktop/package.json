@@ -2,7 +2,7 @@
   "name": "@fabdesk/desktop",
   "productName": "fabPlane",
   "desktopName": "com.tensorfleet.fabdesk.desktop",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "fabPlane: AI PCB generator desktop app",
   "author": {
     "name": "TensorFleet",
@@ -22,11 +22,12 @@
   },
   "dependencies": {},
   "devDependencies": {
+    "@fabdesk/auth-client": "workspace:*",
     "@fabdesk/protocol": "workspace:*",
     "@fabdesk/ui": "workspace:*",
     "@fabdesk/updates": "workspace:*",
-    "@mcp-b/global": "latest",
-    "@mcp-b/webmcp-types": "latest",
+    "@mcp-b/global": "5.1.0",
+    "@mcp-b/webmcp-types": "5.1.0",
     "@sentry/electron": "^7.18.0",
     "@sentry/react": "^10.73.0",
     "@tailwindcss/vite": "^4.1.0",
@@ -35,14 +36,14 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^5.0.0",
-    "electron": "44.1.1",
+    "electron": "44.9.1",
     "electron-builder": "^26.0.0",
     "electron-vite": "^5.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "tailwindcss": "^4.1.0",
     "typescript": "5.9.2",
-    "vite": "^7.0.0",
+    "vite": "^7.3.8",
     "zustand": "^5.0.0"
   }
 }

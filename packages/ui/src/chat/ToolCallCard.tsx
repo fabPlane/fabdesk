@@ -21,24 +21,27 @@ export interface ExtractedImage {
 }
 
 /** Finds images in a tool result: MCP content blocks, `{type:"image"}` objects, or image file paths. */
-export function extractImages(output: unknown, depth = 0): ExtractedImage[] {
-  if (depth > 4 || output === null || output === undefined) return [];
+export function extractImages(output: unknown, depth = 0, includeInspection = false, inherited?: string): ExtractedImage[] {
+  if (depth > 8 || output === null || output === undefined || inherited === "inspection" && !includeInspection) return [];
   if (typeof output === "string") {
     if (output.startsWith("data:image/")) return [{ kind: "data", src: output }];
     if (isImagePath(output) && !output.includes("\n") && output.length < 400) return [{ kind: "path", src: output }];
     return [];
   }
-  if (Array.isArray(output)) return output.flatMap((o) => extractImages(o, depth + 1));
+  if (Array.isArray(output)) return output.flatMap((o) => extractImages(o, depth + 1, includeInspection, inherited));
   if (typeof output === "object") {
     const o = output as Record<string, unknown>;
+    const meta = o["_meta"] as Record<string, unknown> | undefined;
+    const presentation = o["_imagePresentation"] ?? o["imagePresentation"] ?? meta?.["fabplane/imagePresentation"] ?? inherited;
+    if (presentation === "inspection" && !includeInspection) return [];
     if (o["type"] === "image" && typeof o["data"] === "string") {
       const mime = typeof o["mimeType"] === "string" ? o["mimeType"] : "image/png";
       return [{ kind: "data", src: `data:${mime};base64,${o["data"]}`, mime }];
     }
     if (o["type"] === "image" && typeof o["path"] === "string") return [{ kind: "path", src: o["path"] }];
     const out: ExtractedImage[] = [];
-    for (const key of ["content", "result", "images", "image", "path", "png", "svg", "outputs", "files"]) {
-      if (key in o) out.push(...extractImages(o[key], depth + 1));
+    for (const key of ["content", "result", "structuredContent", "json", "output", "images", "image", "path", "png", "svg", "outputs", "files"]) {
+      if (key in o) out.push(...extractImages(o[key], depth + 1, includeInspection, typeof presentation === "string" ? presentation : inherited));
     }
     return out;
   }
@@ -140,7 +143,7 @@ export function ToolCallCard({ use, result, streaming = false }: { use: ToolUse;
   const projectId = useUiStore((s) => s.activeProjectId);
   const pending = !result;
   const error = result?.isError === true;
-  const images = result ? extractImages(result.output) : [];
+  const images = result ? extractImages(result.output, 0, open) : [];
   const command = isCommandTool(use.name);
   const viewingImage = isImageTool(use.name);
   const active = pending && streaming;

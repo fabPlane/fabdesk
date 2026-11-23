@@ -1,0 +1,10 @@
+{
+ "schema": "ORACLE_ERRATA_V1",
+ "purpose": "Pins where JLC/EasyEDA's own symbol (the pinsense outside oracle) is known to be wrong. Each entry needs a third source; the oracle then stays silent on those pins for every board, and the review lists how many it skipped.",
+ "errata": [
+  {"match": "FE1\\.1s", "lcsc": ["C42383361", "C9359"], "pins": ["12", "13", "21", "28"],
+   "jlc_says": "12/13/28 NC, 21 VD33F", "truth": "12 VD18_O, 13 VD33, 21 VD33_O, 28 VD18 (internal regulator pins with their capacitors)",
+   "third_source": "bench: the C1.8 FE1.1s hub with this pin map enumerates (1a40:0101 at 480M, vaio-p-guides cm5-carrier-b2.28 README 2026-10-14); datasheet table still to be cited",
+   "found": "review pilot 2026-11-11 (C6-eco95), again on held-out A2v5"}
+ ]
+}

@@ -2,7 +2,7 @@
 export const WORKSPACE_AREAS = {
   overview: { label: "Overview", views: [] },
   status: { label: "Status", views: [] },
-  boards: { label: "Board", views: [{ tab: "pcb", label: "PCB" }, { tab: "schematic", label: "Schematic" }, { tab: "3d", label: "3D" }, { tab: "cinema", label: "Routing" }, { tab: "art", label: "Artwork" }, { tab: "placement", label: "Placement" }] },
+  boards: { label: "Board", views: [{ tab: "pcb", label: "2D" }, { tab: "schematic", label: "Schematic" }, { tab: "3d", label: "3D" }, { tab: "layers", label: "Layers" }, { tab: "cinema", label: "Routing" }, { tab: "art", label: "Artwork" }, { tab: "placement", label: "Placement" }] },
   connections: { label: "Connections", views: [] },
   history: { label: "History", views: [] },
   mechanical: { label: "Mechanical", views: [{ tab: "cad", label: "Enclosure & CAD" }] },

@@ -1,3 +1,7 @@
+import { publicationInProgress } from "../publication-visibility";
+import { snapshotProjectDependencies, assertProjectDependencies, type ProjectDependencies } from "../project-dependencies";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 /** Verify toolset: ERC and the release gate (kicad-automation semantics). */
 import { z } from "zod/v4";
 import { PROJECT_FILES, readJsonOrNull, writeJson } from "../fs";
@@ -39,6 +43,7 @@ export const verify_erc = defineTool({
   longRunning: true,
   handler: async ({ severity, limit }, ctx) => {
     const project = ctx.requireProject();
+    const dependencies = await snapshotProjectDependencies(project.dir);
     const cli = await requireKicad(ctx);
     const schematic = await requireSchematic(project);
     const outFile = p(project, PROJECT_FILES.reports, "erc.json");
@@ -84,8 +89,10 @@ export const verify_erc = defineTool({
     const currentHierarchy = await inspectSavedHierarchy(ctx, project, cli);
     const checkedRevision = checkedHierarchy.aggregateRevision;
     const currentRevision = currentHierarchy.aggregateRevision;
+    await assertProjectDependencies(project.dir, dependencies);
     const result = {
       ...report,
+      projectDependencies: dependencies,
       measurement: {
         evidenceLevel: "measured" as const,
         source: "packaged-kicad-cli" as const,
@@ -142,19 +149,33 @@ export const verify_gate = defineTool({
   },
   handler: async ({ acceptWarnings, requireErc }, ctx) => {
     const project = ctx.requireProject();
+    if (await publicationInProgress(project.dir)) throw new ToolError("A handoff publication is in progress; retry the gate after publication completes", "precondition");
     const drc = await readJsonOrNull<
-      DrcReport & { schematicHierarchy?: { aggregateRevision?: string } }
+      DrcReport & { projectDependencies?: ProjectDependencies; pcbRevision?: { sha256?: string }; schematicHierarchy?: { aggregateRevision?: string } }
     >(p(project, PROJECT_FILES.reports, "drc.json"));
     if (!drc) throw new ToolError("reports/drc.json missing", "precondition");
     const erc = await readJsonOrNull<
-      ErcReport & { measurement?: { checkedRevision?: string; scope?: string } }
+      ErcReport & { projectDependencies?: ProjectDependencies; measurement?: { checkedRevision?: string; scope?: string; evidenceLevel?: string; revisionStable?: boolean } }
     >(p(project, PROJECT_FILES.reports, "erc.json"));
     if (!erc && requireErc) throw new ToolError("reports/erc.json missing", "precondition");
     const hierarchyClaimed =
       erc?.measurement?.scope === "complete saved hierarchy" ||
       typeof drc.schematicHierarchy?.aggregateRevision === "string";
     const currentHierarchy = hierarchyClaimed ? await inspectSavedHierarchy(ctx, project) : null;
+    const checkedPcb = drc.pcbRevision?.sha256;
+    const pcbBytes = await readFile(p(project, PROJECT_FILES.boardPcb)).catch(() => null);
+    const currentPcb = pcbBytes ? createHash("sha256").update(pcbBytes).digest("hex") : null;
+    const currentDependencies = await snapshotProjectDependencies(project.dir);
     const staleEvidence = [
+      ...(!drc.projectDependencies || erc && !erc.projectDependencies ? ["dependency freshness is unverified: reports have no measured dependency snapshot; rerun verify_drc / verify_erc"] : []),
+      ...(currentDependencies.unresolved.length ? ["dependency freshness is unverified: resolve the reported library/model inputs before baselining warnings"] : []),
+      ...([drc.projectDependencies, erc?.projectDependencies].some(d => d && d.revision !== currentDependencies.revision) ? ["project rules, library or model dependencies changed; rerun saved-file checks"] : []),
+      ...(!checkedPcb || !/^[a-f0-9]{64}$/.test(checkedPcb)
+        ? ["saved-file DRC evidence is unverified: missing or unsupported PCB revision; run verify_drc"]
+        : currentPcb !== checkedPcb ? ["saved-file DRC evidence is stale relative to the current saved PCB; run verify_drc"] : []),
+      ...(erc && (erc.measurement?.evidenceLevel !== "measured" || erc.measurement.scope !== "complete saved hierarchy" || !erc.measurement.checkedRevision || erc.measurement.revisionStable !== true)
+        ? ["saved-file ERC evidence is unverified: run verify_erc on the complete saved hierarchy"] : []),
+      ...(hierarchyClaimed && !currentHierarchy ? ["saved schematic hierarchy freshness is unverified"] : []),
       ...(erc?.measurement?.checkedRevision &&
       currentHierarchy &&
       erc.measurement.checkedRevision !== currentHierarchy.aggregateRevision
@@ -174,10 +195,11 @@ export const verify_gate = defineTool({
         ? ["current saved schematic hierarchy has no placed symbols; ERC had nothing to check"]
         : []),
     ];
+    const dependencyFreshness = drc.projectDependencies && (!erc || erc.projectDependencies) && !currentDependencies.unresolved.length && [drc.projectDependencies, ...(erc ? [erc.projectDependencies] : [])].every(snapshot => snapshot?.revision === currentDependencies.revision) ? "current" : "unverified";
     let allowed = project.manifest().allowedDrcWarnings;
     let gate = ctx.services.kicad.gate(drc, erc ?? undefined, allowed);
     let baselined: string[] = [];
-    if (acceptWarnings && gate.newWarningSignatures.length) {
+    if (acceptWarnings && staleEvidence.length === 0 && gate.newWarningSignatures.length) {
       baselined = gate.newWarningSignatures;
       allowed = [...new Set([...allowed, ...baselined])];
       await project.updateManifest({ allowedDrcWarnings: allowed });
@@ -193,9 +215,11 @@ export const verify_gate = defineTool({
       at: new Date().toISOString(),
       ...gate,
       allowedDrcWarnings: allowed,
+      dependencyFreshness,
     });
     const text = [
       `Gate: ${gate.pass ? "PASS" : "FAIL"}`,
+      dependencyFreshness === "current" ? "Measured rule/library/model file dependencies match their saved check snapshots; component loading and fit remain separate evidence." : "Dependency freshness is unverified; regenerate checks before baselining warnings.",
       ...gate.reasons.map((r) => `- ${r}`),
       ...(gate.newWarningSignatures.length
         ? [
@@ -208,7 +232,7 @@ export const verify_gate = defineTool({
         : []),
       ...(erc ? [] : ["(no saved-file ERC report)"]),
     ].join("\n");
-    return { text, json: { ...gate, baselined, ercChecked: Boolean(erc) }, isError: !gate.pass };
+    return { text, json: { ...gate, baselined, ercChecked: Boolean(erc), dependencyFreshness }, isError: !gate.pass };
   },
 });
 

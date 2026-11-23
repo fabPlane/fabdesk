@@ -1,3 +1,4 @@
+import { dependenciesMatch } from "./dependency-revision";
 import { BoardModelRevision, BOARD_MODEL_REVISION_PATH } from "@fabdesk/protocol";
 import { CoreHttpError, type CoreClient } from "./CoreClient";
 import { sha256Blob } from "./pcb-preview-revision";
@@ -25,5 +26,6 @@ export async function inspectBoardModelRevision(client: Pick<CoreClient, "readFi
   if (!artifact) return "missing-artifact";
   const [sourceHash, artifactHash] = await Promise.all([sha256Blob(source), sha256Blob(artifact)]);
   if (artifactHash !== receipt.data.artifactSha256) return "artifact-changed";
+  if (!await dependenciesMatch(client, projectId, receipt.data.dependencySnapshot)) return "source-changed";
   return sourceHash === receipt.data.sourceSha256 ? "source-unchanged" : "source-changed";
 }

@@ -30,6 +30,8 @@ export const TraceMakerAssetSchema = z.object({
   bytes: z.number().int().positive(),
   format: FormatSchema.optional(),
   executable: z.string().min(1).optional(),
+  /** The placer beside `executable` (archives packed since fabdesk shipped tracemaker-place); absent on older ones. */
+  placer: z.string().min(1).optional(),
   linkage: z.string().optional(),
   minos: z.string().min(1).optional(),
   cxxRuntime: z.string().min(1).optional(),
@@ -63,6 +65,8 @@ export type ResolvedTraceMakerArtifact = {
   platform: TraceMakerPlatform | null;
   version?: string;
   warning?: string;
+  /** Binary origin only: the placer the archive carries (`tracemaker-place[.exe]`), absent when it predates it. */
+  placer?: string;
 };
 
 export function detectTraceMakerPlatform(opts?: {
@@ -281,6 +285,7 @@ export async function resolveTraceMakerInstallArtifact(opts: {
       origin: "binary",
       platform: detected,
       version: manifest.upstream.tag.replace(/^v/, ""),
+      ...(asset.placer ? { placer: asset.placer } : {}),
     };
   } catch (error) {
     if (error instanceof ManifestNotFoundError || isMissingPlatform(error)) {

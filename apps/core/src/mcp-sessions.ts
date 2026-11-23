@@ -5,18 +5,23 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";
+import type { GetPromptResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod/v4";
 import {
   attachToRegistry,
   FABDESK_SERVER_ICONS,
+  projectHasPlacedBoard,
   TOOLSETS,
+  type ToolsetId,
   type ContextFactory,
   type McpAppsMode,
+  type McpClientHint,
   type ToolRegistry,
 } from "@fabdesk/tools";
-import { PERMISSION_PROMPT_TOOL } from "@fabdesk/agents";
+import { BOARD_WORKFLOW_MD, BOARD_WORKFLOW_RESOURCE_URI, PERMISSION_PROMPT_TOOL } from "@fabdesk/agents";
 import type { PermissionPromptResult } from "./agent-runs";
 import { logger, errMsg } from "./log";
+import { MCP_MAX_REQUEST_BYTES, MCP_MAX_TOOL_INPUT_ELEMENTS } from "./mcp-limits";
 
 type Session = {
   id: string;
@@ -61,6 +66,198 @@ export const NATIVE_CAPABILITY_EXCLUDE = ["load_toolset"] as const;
  */
 export const DEFAULT_AGENT_TOOLSETS = ["circuit", "verify", "render"] as const;
 
+/**
+ * `toolsets=all`, or a comma list added to the defaults (`toolsets=board`): a run on a project that already
+ * has a board starts with the board toolset instead of discovering it through `load_toolset`.
+ */
+export function initialToolsetsFor(param: string | null): ToolsetId[] {
+  if (param === "all") return [...TOOLSETS];
+  const extra = (param ?? "").split(",").filter((id): id is ToolsetId => (TOOLSETS as readonly string[]).includes(id));
+  return TOOLSETS.filter((id) => (DEFAULT_AGENT_TOOLSETS as readonly string[]).includes(id) || extra.includes(id));
+}
+
+/**
+ * The native profile (Codex) lists a fixed set at turn start and cannot load more; a toolset the project asks for
+ * (`toolsets=board`, an existing placed board) is added to it, or that agent could never reach it.
+ */
+export function nativeToolsFor(toolsetsParam: string | null, registry: Pick<ToolRegistry, "byToolset">): string[] {
+  const asked = initialToolsetsFor(toolsetsParam).filter((id) => !(DEFAULT_AGENT_TOOLSETS as readonly string[]).includes(id));
+  return [...new Set([...NATIVE_AGENT_TOOLS, ...asked.flatMap((id) => registry.byToolset(id).map((t) => t.name))])];
+}
+
+/**
+ * A run on a project that already has a placed board does not need the schematic-authoring tools (about 48k characters of
+ * schemas) in front of it: it starts with the board-reading tools, verification, rendering and the `board` toolset. The
+ * rest stays one `load_toolset` / `capability_search` away.
+ *
+ * The board-workflow stage tools (check, edit, route, review, release, silk) are in the `board` toolset, part of
+ * BOARD_START_TOOLSETS; add a tool to BOARD_START_TOOLS only for one that lives in another toolset.
+ */
+export const BOARD_START_TOOLS = ["pcb_environment", "project_status", "pcb_inspect", "schematic_inspect", "schematic_review", "route_status", "verify_erc", "verify_viagrid"] as const;
+export const BOARD_START_TOOLSETS = ["core", "render", "board"] as const;
+/**
+ * Tools of the start toolsets that a board tool replaces for the same job, so the run does not see two ways to do it:
+ * `verify_drc` (board_check measures the same DRC with parity and A1-A9). Still loadable (`load_toolset`, `capability_search`).
+ * Not listed here because the board tools do not cover the whole job: `route_run` (the single autoroute of the live board),
+ * `verify_erc`, `render_*`, `pcb_inspect`, `schematic_inspect`. The `verify` toolset is not a start toolset: `verify_gate` and
+ * `release_build` are covered by `board_release`; `verify_erc` and `verify_viagrid` are named in BOARD_START_TOOLS.
+ */
+export const BOARD_START_SUPERSEDED = ["verify_drc"] as const;
+
+export function boardStartTools(registry: Pick<ToolRegistry, "byToolset">): string[] {
+  const superseded = new Set<string>(BOARD_START_SUPERSEDED);
+  return [...new Set([...BOARD_START_TOOLS, ...BOARD_START_TOOLSETS.flatMap((id) => registry.byToolset(id).map((t) => t.name))])].filter((n) => !superseded.has(n));
+}
+
+/**
+ * The one decision, for desktop runs and external MCP sessions alike, of which toolsets a session on `project` starts
+ * with besides the defaults: `board` once the project has a placed board and the board workflow is registered
+ * (`board_check`; before that the set is board_job alone).
+ */
+export async function projectStartToolsets(
+  registry: Pick<ToolRegistry, "get">,
+  project: { dir: string } | null,
+): Promise<ToolsetId[]> {
+  return project && registry.get("board_check") !== undefined && (await projectHasPlacedBoard(project.dir)) ? ["board"] : [];
+}
+
+/** The endpoint query for those toolsets, as a fabdesk run's endpoint carries it (`agent-runs` appendToolsets). */
+export function applyStartToolsets(query: URLSearchParams, toolsets: readonly string[]): void {
+  if (!toolsets.length) return;
+  query.set("toolsets", toolsets.join(","));
+  if (toolsets.includes("board")) query.set("start", "board");
+}
+
+/** The session's start options for that query: the same lists a desktop run's endpoint gets. */
+export function startOptionsFor(
+  query: URLSearchParams,
+  registry: Pick<ToolRegistry, "byToolset">,
+): { initialToolsets: ToolsetId[]; initialTools?: string[] } {
+  return {
+    initialToolsets: initialToolsetsFor(query.get("toolsets")),
+    ...(query.get("start") === "board" ? { initialTools: boardStartTools(registry) } : {}),
+  };
+}
+
+/**
+ * Agents whose MCP config fabdesk writes with a raised per-call tool timeout (Codex `tool_timeout_sec=1830`, Claude
+ * `timeout: 1_830_000`). Cursor's `.cursor/mcp.json` and Grok's `[mcp_servers.*]` have no known tool-timeout key, so
+ * their runs keep the client default and board calls there return a job id after the short wait.
+ */
+export const RAISED_TOOL_TIMEOUT_AGENTS: ReadonlySet<string> = new Set(["codex", "claude"]);
+
+/** A client times a tool call out after ~60 s unless it was raised (the MCP SDK default and Codex's). */
+export const DURABLE_WAIT_SHORT_MS = 50_000;
+export const DURABLE_WAIT_MAX_MS = 25 * 60_000;
+/** Clients whose tool calls outlast a durable job's wait (Claude Code resets its deadline on the progress heartbeat). */
+const LONG_CALL_CLIENTS = /^claude-code$/i;
+
+/**
+ * How long a board tool waits before it returns a job id (`runDurable`), per session client. undefined keeps the
+ * default 25 min: fabdesk's own runs of an agent whose tool timeout it raised (RAISED_TOOL_TIMEOUT_AGENTS) and
+ * clients known to wait. A declared timeout (`toolTimeoutSec`, from `fabdesk mcp --tool-timeout` or `/mcp?toolTimeoutSec=`)
+ * waits just under it. Anything else, external Codex included, keeps its 60 s default as far as fabdesk can tell, so the
+ * call returns a job id after 50 s and `board_job` continues it.
+ */
+export function durableWaitForClient(
+  client: McpClientHint | undefined,
+  opts: { ownRun?: boolean; toolTimeoutSec?: number } = {},
+): number | undefined {
+  const timeoutSec = client?.toolTimeoutSec ?? opts.toolTimeoutSec;
+  if (timeoutSec && timeoutSec > 0) {
+    const ms = timeoutSec * 1000;
+    return Math.min(DURABLE_WAIT_MAX_MS, Math.max(1_000, ms - Math.min(10_000, ms / 4)));
+  }
+  if (opts.ownRun) return undefined;
+  if (client?.name && LONG_CALL_CLIENTS.test(client.name)) return undefined;
+  return DURABLE_WAIT_SHORT_MS;
+}
+
+export { BOARD_WORKFLOW_RESOURCE_URI };
+export const BOARD_WORKFLOW_PROMPT = "board_workflow";
+
+/** The stage table of the workflow text: `| 1 onboard + check | \`board_check\` | ...`. */
+export function boardWorkflowStages(md: string = BOARD_WORKFLOW_MD): Array<{ stage: string; tool: string }> {
+  const rows: Array<{ stage: string; tool: string }> = [];
+  for (const line of md.split("\n")) {
+    const m = /^\|\s*(\d+[a-z]?\s[^|]*?)\s*\|\s*`([a-z_]+)`/.exec(line);
+    if (m) rows.push({ stage: m[1]!, tool: m[2]! });
+  }
+  return rows;
+}
+
+/**
+ * The board-workflow pointer in the server instructions for desktop and external agents.
+ * Stages come from the full workflow text, served by the resource and prompt and mirrored in docs/board-workflow.md;
+ * generated project AGENTS.md contains a short start map pointing to that resource.
+ */
+export function boardWorkflowInstructions(opts: { listed?: boolean } = {}): string {
+  const stages = boardWorkflowStages()
+    .map((r) => `${r.stage} \`${r.tool}\``)
+    .join(" · ");
+  return [
+    ` Board workflow (a placed board to a releasable one): ${stages}.`,
+    "Done is the board's own acceptance checks A1-A9 passing, as board_check measures them against the requirements written at onboarding.",
+    "Engines a stage needs (routers, KiCadRoutingTools) install on demand; a call that cannot get one names it.",
+    "A long call returns a job id; board_job waits for it, reports it or cancels it.",
+    opts.listed
+      ? "This project has a placed board, so the board tools are listed from the start."
+      : 'The board tools are the `board` toolset (load_toolset {"toolset":"board"}); a session started in a project with a placed board lists them.',
+    `Full method: resource ${BOARD_WORKFLOW_RESOURCE_URI}, or prompt ${BOARD_WORKFLOW_PROMPT}.`,
+  ].join(" ");
+}
+
+export function boardWorkflowPromptText(project?: string, request?: string): string {
+  return [
+    "Take this project's placed board to a releasable one with the fabdesk board tools, by the method below.",
+    project ? `Project: ${project} (pass project="${project}" to the board_* tools).` : "Use the session's project.",
+    ...(request?.trim() ? [`Request: ${request.trim()}`] : []),
+    "",
+    BOARD_WORKFLOW_MD,
+  ].join("\n");
+}
+
+/** The workflow text as a resource and a prompt, generated from the complete BOARD_WORKFLOW_MD. */
+export function registerBoardWorkflowDocs(server: McpServer): void {
+  server.registerResource(
+    "board-workflow",
+    BOARD_WORKFLOW_RESOURCE_URI,
+    {
+      title: "Board workflow",
+      description: "The board toolset's method: stages, tools, gates, the A1-A9 acceptance checks and working rules.",
+      mimeType: "text/markdown",
+    },
+    async (uri): Promise<ReadResourceResult> => ({
+      contents: [{ uri: uri.href, mimeType: "text/markdown", text: BOARD_WORKFLOW_MD }],
+    }),
+  );
+  server.registerPrompt(
+    BOARD_WORKFLOW_PROMPT,
+    {
+      title: "Board workflow",
+      description: "Take a placed board to a releasable one with the board_* tools (the full workflow text).",
+      argsSchema: {
+        project: z.string().optional().describe("Project id, name or path"),
+        request: z.string().optional().describe("What to do with the board"),
+      } as unknown as ZodRawShapeCompat,
+    },
+    (args: Record<string, unknown>): GetPromptResult => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: boardWorkflowPromptText(
+              typeof args["project"] === "string" && args["project"] ? args["project"] : undefined,
+              typeof args["request"] === "string" ? args["request"] : undefined,
+            ),
+          },
+        },
+      ],
+    }),
+  );
+}
+
 export type McpSessionOptions = {
   registry: ToolRegistry;
   ctxFactory: ContextFactory;
@@ -68,6 +265,16 @@ export type McpSessionOptions = {
   /** Hosts accepted in the `Host` header (DNS rebinding protection). Set after bind. */
   allowedHosts?: string[];
   idleMs?: number;
+  /**
+   * The extra start toolsets of a session opened with `?project=<id|name|dir>` (the stdio proxy sends the folder it was
+   * started in): `projectStartToolsets`, so an external client gets a desktop run's start set without `load_toolset`.
+   */
+  startToolsets?: (projectRef: string) => Promise<readonly string[]>;
+  /**
+   * The token belongs to a run fabdesk launched whose agent it raised the tool timeout for (RAISED_TOOL_TIMEOUT_AGENTS);
+   * see `durableWaitForClient`.
+   */
+  ownRun?: (token: string | null) => boolean;
   userInput?: {
     enabledFor(token: string | null): boolean;
     handle(
@@ -154,6 +361,16 @@ export class McpSessionManager {
     // New session: the transport validates that the body is an initialize request.
     const userInput = this.opts.userInput;
     const canAsk = userInput?.enabledFor(opts.token ?? null) === true;
+    // Codex snapshots MCP tools when a turn starts and currently ignores tools/list_changed.
+    // Let clients that cannot refresh opt into the complete inventory at initialization.
+    const query = new URL(req.url).searchParams;
+    const profile = query.get("profile");
+    // An external session names its project (the stdio proxy's folder): it starts as a desktop run on it would.
+    const projectRef = query.get("project");
+    if (projectRef && this.opts.startToolsets && !profile && !query.has("toolsets") && !query.has("start"))
+      applyStartToolsets(query, await this.opts.startToolsets(projectRef).catch(() => []));
+    const agentProfile = profile === "planning" || profile === "substrate";
+    const boardDocs = !agentProfile && this.opts.registry.get("board_check") !== undefined;
     const server = new McpServer(
       {
         name: "fabdesk",
@@ -161,9 +378,16 @@ export class McpSessionManager {
         version: this.opts.version,
         icons: FABDESK_SERVER_ICONS,
       },
-      { instructions: INSTRUCTIONS + (canAsk ? USER_INPUT_INSTRUCTIONS : "") },
+      {
+        instructions:
+          INSTRUCTIONS +
+          (boardDocs ? boardWorkflowInstructions({ listed: query.get("start") === "board" }) : "") +
+          (canAsk ? USER_INPUT_INSTRUCTIONS : ""),
+        maxToolInputElements: MCP_MAX_TOOL_INPUT_ELEMENTS,
+      },
     );
     const transport = new WebStandardStreamableHTTPServerTransport({
+      maxRequestBodySize: MCP_MAX_REQUEST_BYTES,
       sessionIdGenerator: () => crypto.randomUUID(),
       enableDnsRebindingProtection: this.allowedHosts.length > 0,
       ...(this.allowedHosts.length > 0 ? { allowedHosts: this.allowedHosts } : {}),
@@ -186,14 +410,17 @@ export class McpSessionManager {
     transport.onclose = () => {
       if (transport.sessionId) this.sessions.delete(transport.sessionId);
     };
-    // Codex snapshots MCP tools when a turn starts and currently ignores tools/list_changed.
-    // Let clients that cannot refresh opt into the complete inventory at initialization.
-    const query = new URL(req.url).searchParams;
-    const initialToolsets =
-      query.get("toolsets") === "all" ? [...TOOLSETS] : [...DEFAULT_AGENT_TOOLSETS];
-    const profile = query.get("profile");
+    const initialToolsets = initialToolsetsFor(query.get("toolsets"));
     const initialTools =
-      profile === "planning" ? ["request_project_creation"] : profile === "native" ? [...NATIVE_AGENT_TOOLS] : profile === "substrate" ? [] : undefined;
+      profile === "planning"
+        ? ["request_project_creation"]
+        : profile === "native"
+          ? nativeToolsFor(query.get("toolsets"), this.opts.registry)
+          : profile === "substrate"
+            ? []
+            : query.get("start") === "board"
+              ? boardStartTools(this.opts.registry)
+              : undefined;
     // MCP Apps views: `auto` lists them for clients that advertise io.modelcontextprotocol/ui;
     // `?apps=on` forces them (stdio proxy started with --apps). The agent profiles never get them.
     const appsParam = query.get("apps");
@@ -203,8 +430,15 @@ export class McpSessionManager {
         : appsParam === "on" || appsParam === "off"
           ? appsParam
           : "auto";
+    const ownRun = this.opts.ownRun?.(opts.token ?? null) === true;
+    const declaredTimeout = Number(query.get("toolTimeoutSec"));
     attachToRegistry(server, this.opts.registry, this.opts.ctxFactory, {
       apps,
+      durableWaitMs: (client) =>
+        durableWaitForClient(client, {
+          ownRun,
+          ...(declaredTimeout > 0 ? { toolTimeoutSec: declaredTimeout } : {}),
+        }),
       ...(initialToolsets ? { initialToolsets } : {}),
       ...(initialTools ? { initialTools } : {}),
       ...(profile === "native" ? { capabilityExclude: [...NATIVE_CAPABILITY_EXCLUDE] } : {}),
@@ -296,6 +530,7 @@ export class McpSessionManager {
     }
     if (prompt && prompt.enabledFor(opts.token ?? null))
       this.registerPermissionPrompt(server, (token, req) => prompt.handle(token, req));
+    if (boardDocs) registerBoardWorkflowDocs(server);
     await server.connect(transport);
     return transport.handleRequest(
       req,

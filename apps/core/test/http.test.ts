@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { PrivacyStatus } from "@fabdesk/protocol";
 import type { AgentEvent, AgentRun, AgentSession } from "@fabdesk/agents";
-import type { CoreServices } from "@fabdesk/tools";
+import { snapshotProjectDependencies, type CoreServices } from "@fabdesk/tools";
 import { serve, type Daemon } from "../src/serve";
 import { SettingsRepo } from "../src/db";
 import { mockServices } from "../../../packages/tools/test/mock-services";
@@ -88,6 +88,15 @@ const api = (path: string, init: RequestInit = {}) =>
   });
 
 describe("http daemon", () => {
+  test.each(["%0A", "%0D", "%E2%80%A8", "%E2%80%A9"])("encoded line terminators %s cannot bypass origin or bearer middleware", async encoded => {
+    const url = `${daemon.url}/projects/missing${encoded}project`;
+    expect((await fetch(url)).status).toBe(401);
+    expect((await fetch(url, { headers: { authorization: "Bearer wrong" } })).status).toBe(401);
+    expect((await fetch(url, { headers: { ...H(), origin: "https://evil.example" } })).status).toBe(403);
+    // An authenticated, allowed-origin request still reaches the normal not-found response.
+    expect((await fetch(url, { headers: H() })).status).toBe(404);
+  });
+
   test("effort saves preserve concurrent model choices and unrelated agent settings", async () => {
     const before = daemon.store.settings.get();
     try {
@@ -595,7 +604,15 @@ describe("http daemon", () => {
     // AGENTS.md / CLAUDE.md regenerated before the run.
     const agentInstructions = await Bun.file(join(created.path, "AGENTS.md")).text();
     expect(agentInstructions).toContain("Canonical KiCad PCB");
-    expect(agentInstructions).not.toMatch(/workflow|prefer|retry|repeat until|run .* first/i);
+    // the board start map is the one place that prescribes a method; it is present because the board toolset is registered
+    expect(agentInstructions).toContain("## Start here");
+    expect(agentInstructions).toContain("## Other toolsets");
+    expect(agentInstructions).toContain("fabdesk://docs/board-workflow");
+    expect(agentInstructions.length).toBeLessThan(9000);
+    expect(agentInstructions).toContain("board_check");
+    expect(agentInstructions).not.toMatch(/~\/pcb|FABDESK_PCB_BIN|\bpcb (run|review|flow|lastmile|edit)\b/);
+    const neutral = agentInstructions.replace(/## Start here[\s\S]*?(?=## Other toolsets)/, "");
+    expect(neutral).not.toMatch(/workflow|prefer|retry|repeat until|run .* first/i);
     // Neutral discovery must give both authoring paths equal visibility.
     expect(/circuit_build/i.test(agentInstructions)).toBe(
       /schematic_edit/i.test(agentInstructions),
@@ -721,7 +738,7 @@ describe("http daemon", () => {
     await a.client.callTool({ name: "load_toolset", arguments: { toolset: "export" } });
     const exportNames = (await a.client.listTools()).tools.map((tool) => tool.name);
     expect(exportNames.length).toBeGreaterThan(names.length);
-    expect(exportNames).toHaveLength(names.length + 11);
+    expect(exportNames).toHaveLength(names.length + 12);
     expect(exportNames).toEqual(expect.arrayContaining(names));
     expect(exportNames).toEqual(
       expect.arrayContaining(["silk_art", "export_stencil", "export_laser_stencil", "fab_package_check"]),
@@ -822,6 +839,34 @@ describe("http daemon", () => {
     expect(daemon.mcp.activeCount()).toBe(3);
   });
 
+  test("ordering rejects export-only projects and a deleted or changed verified board (#116)", async () => {
+    const created = await (await api("/projects", { method: "POST", body: JSON.stringify({ name: "Order source evidence" }) })).json() as { id: string; path: string };
+    await Bun.write(join(created.path, "exports/fabrication.zip"), "synthetic export");
+    await Bun.write(join(created.path, "circuit.routed.json"), "{}");
+    const board = "(kicad_pcb)\n";
+    const cleanReport = { projectDependencies: await snapshotProjectDependencies(created.path), violations: [], unconnected: [], schematicParity: [], counts: { errors: 0, warnings: 0, unconnected: 0 }, raw: {}, pcbRevision: { sha256: new Bun.CryptoHasher("sha256").update(board).digest("hex") } };
+    const order = `/projects/${created.id}/order`;
+    const assertBlocked = async () => {
+      expect(await (await api(order)).json()).toMatchObject({ ready: false });
+      expect((await api(order, { method: "POST", body: JSON.stringify({ vendor: "jlcpcb" }) })).status).toBe(412);
+    };
+    // Neither old failing evidence nor an orphaned passing report proves export readiness.
+    await Bun.write(join(created.path, "reports/drc.json"), JSON.stringify({ ...cleanReport, counts: { errors: 25, warnings: 0, unconnected: 0 } }));
+    await assertBlocked();
+    await Bun.write(join(created.path, "reports/drc.json"), JSON.stringify(cleanReport));
+    await assertBlocked();
+    await Bun.write(join(created.path, "board.kicad_pcb"), board);
+    expect(await (await api(order)).json()).toMatchObject({ ready: true });
+    await Bun.write(join(created.path, "board.kicad_dru"), "new stricter rules");
+    await assertBlocked();
+    await unlink(join(created.path, "board.kicad_dru"));
+    expect(await (await api(order)).json()).toMatchObject({ ready: true });
+    await Bun.write(join(created.path, "board.kicad_pcb"), "(kicad_pcb (changed))\n");
+    await assertBlocked();
+    await unlink(join(created.path, "board.kicad_pcb"));
+    await assertBlocked();
+  });
+
   test("opensource catalog, remix, and order readiness", async () => {
     const catalog = (await (await api("/opensource?q=koyomi")).json()) as {
       projects: Array<{ id: string; cloneUrl: string }>;
@@ -858,6 +903,7 @@ describe("http daemon", () => {
         counts: { errors: 0, warnings: 0, unconnected: 0 },
         raw: {},
         pcbRevision: { sha256: pcbSha },
+        projectDependencies: await snapshotProjectDependencies(created.path),
       }),
     );
     const ready = (await (await api(`/projects/${created.id}/order`)).json()) as { ready: boolean };

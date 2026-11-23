@@ -4,6 +4,7 @@ import { sha256Blob } from "./pcb-preview-revision";
 import { pcbSelectionParts, schematicSelectionParts, type SelectablePart } from "./part-selection";
 
 export type SelectionIndex = {
+  references: string[];
   pcb: { parts: SelectablePart[]; sha256: string } | null;
   model: { references: string[]; sha256: string } | null;
   sheets: { path: string; identity: string; name: string; sha256: string; parts: SelectablePart[] }[];
@@ -27,7 +28,7 @@ export async function inspectSelectionIndex(client: Pick<CoreClient, "readFileBl
   };
   const json = async (path: string) => { const blob = await read(path); if (!blob || blob.size > 512 * 1024) return null; try { return JSON.parse(await blob.text()) as unknown; } catch { return null; } };
   const [pcb, pcbRaw, modelRaw, schRaw] = await Promise.all([read("board.kicad_pcb"), json("renders/pcb.svg.revision.json"), json("renders/board.glb.revision.json"), json("renders/schematic.revision.json")]);
-  const result: SelectionIndex = { pcb: null, model: null, sheets: [] };
+  const result: SelectionIndex = { references: [], pcb: null, model: null, sheets: [] };
   const pcbHash = pcb ? await sha256Blob(pcb) : null;
   const pcbParts = pcb ? pcbSelectionParts(await pcb.text()) : [];
   const preview = PcbPreviewRevision.safeParse(pcbRaw);
@@ -54,5 +55,10 @@ export async function inspectSelectionIndex(client: Pick<CoreClient, "readFileBl
     if (!!before !== !!after || before && after && await sha256Blob(before) !== await sha256Blob(after)) throw new Error("Design changed while loading component selection. Try again.");
   }
   if (directory(await client.inspectBoardSources(projectId)) !== dir) throw new Error("Board source moved during inspection.");
+  const references = new Set(pcbParts.map(part => part.ref));
+  for (const sheet of result.sheets) {
+    for (const part of sheet.parts) references.add(part.ref);
+  }
+  result.references = [...references].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   return result;
 }

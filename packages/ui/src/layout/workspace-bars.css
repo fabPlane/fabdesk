@@ -229,3 +229,89 @@
   left: var(--fd-canvas-gutter);
   max-width: calc(100% - 48px);
 }
+
+/* Keep project views in the same place instead of swapping rows on navigation. */
+.fd-canvas-workspace .fd-project-status { padding:86px 40px 90px; }
+.fd-canvas-workspace .fd-project-status > .fd-project-status-nav { margin:0 0 24px; padding:0; }
+.fd-project-status-heading { flex-wrap:wrap; }
+.fd-project-status-heading > div { min-width:0; overflow-wrap:anywhere; }
+.fd-workspace-menu-content { max-width:calc(100vw - 40px); }
+
+/* Caption controls stay native-sized when page zoom reduces available CSS width. */
+@media(max-width:1100px) {
+  .fd-canvas-header .fd-canvas-brand > span:last-child { display:none; }
+  .fd-canvas-header .fd-project-identity { min-width:0; flex:1 1 auto; }
+  .fd-canvas-header-actions { flex:none; }
+}
+@media(max-width:900px) {
+  .fd-canvas-header .fd-workspace-back > span { display:none; }
+  .fd-canvas-header .fd-header-home { display:none; }
+  .fd-canvas-header .fd-activity-label { display:none; }
+}
+@media(max-width:780px) {
+  .fd-canvas-workspace .fd-project-status { padding:86px 20px 90px; }
+  /* These pages only have the destination picker, not a second tool row. */
+  .fd-canvas-main[data-task-toolbar=true]:is([data-area=overview],[data-area=status])::before { height:64px; }
+  .fd-canvas-workspace .fd-project-overview { padding-top:86px; }
+}
+
+/* Board tools share the navigation rhythm; secondary view controls live below. */
+.fd-assembly-detail-heading > .fd-board-tools > summary {
+  width:36px;
+  padding:0;
+  justify-content:center;
+}
+.fd-assembly-detail-heading > .fd-canvas-tool > .fd-canvas-tool-button {
+  width:36px;
+  height:36px;
+  min-height:36px;
+  padding:0;
+}
+.fd-assembly-detail-heading .fd-board-view-tabs {
+  padding-left:10px;
+}
+.fd-assembly-detail-heading .fd-board-task-actions {
+  gap:8px;
+}
+
+.fd-assembly-detail-heading > .fd-canvas-tool {
+  padding:0;
+  border:0;
+  background:transparent;
+}
+
+/* Board navigation participates in the toolbar's flex lines, including at page zoom. */
+.fd-canvas-controls[data-inline-navigation] {
+  min-height: 60px;
+  height: auto;
+  padding: 10px var(--fd-canvas-gutter);
+  gap: 8px 12px;
+}
+.fd-canvas-controls > .fd-canvas-destinations {
+  position: relative;
+  inset: auto;
+}
+.fd-canvas-main:has(.fd-canvas-controls[data-inline-navigation])::before {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  /* Edit placement is also available under More board tools. */
+  .fd-canvas-controls[data-inline-navigation]:has(.fd-board-tools) .fd-placement-shortcut {
+    display: none;
+  }
+}
+
+/* A wrapped tools button may sit at either edge of the window. */
+.fd-canvas-controls .fd-board-tools { anchor-name: --fd-board-tools; }
+.fd-canvas-controls .fd-board-tools > .fd-workspace-menu-content {
+  --menu-width: min(280px, calc(100vw - 2 * var(--fd-canvas-gutter)));
+  position: fixed;
+  position-anchor: --fd-board-tools;
+  top: calc(anchor(bottom) + 6px);
+  left: clamp(var(--fd-canvas-gutter), anchor(left), calc(100vw - var(--menu-width) - var(--fd-canvas-gutter)));
+  right: auto;
+  width: var(--menu-width);
+  max-height: min(60dvh, 420px);
+  overflow-y: auto;
+}

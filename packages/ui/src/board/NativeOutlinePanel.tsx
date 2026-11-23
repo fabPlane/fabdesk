@@ -54,7 +54,7 @@ export function NativeOutlinePanel({ projectId, board, canPosition, onBusyChange
       if (result.saved !== true) throw Error("The native tool did not confirm a saved outline.");
       saved = true; if (mounted.current) setRecovery(null);
       if (snapshot.bounds) PcbOutlineResizeResult.parse(result);
-      const rendered = await preview.run("render_pcb_svg", { projectId, ...(board ? { board: { ...board } } : {}) });
+
       const data = await inspectPcbOutline(client, projectId, board);
       const actual = data.bounds, origin = previousBounds ?? { minX: 0, minY: 0 };
       if (!data.editable || !actual || Math.abs(actual.minX - origin.minX) > .000001 || Math.abs(actual.minY - origin.minY) > .000001 || Math.abs(actual.maxX - actual.minX - targetWidth) > .000001 || Math.abs(actual.maxY - actual.minY - targetHeight) > .000001 || previousBounds && JSON.stringify([...data.edgeIds].sort()) !== JSON.stringify([...previousEdgeIds].sort())) throw Error("The inspected outline does not match the requested saved dimensions and original edges. Review the latest PCB before making another change.");
@@ -62,7 +62,7 @@ export function NativeOutlinePanel({ projectId, board, canPosition, onBusyChange
         choose(data);
         if (!reverting && previousBounds) setRecovery({ bounds: previousBounds, edgeIds: previousEdgeIds, savedSha256: data.sourceSha256 });
         setNotice(`${reverting ? "Previous board dimensions restored." : "Board outline saved."} Parts and routed copper stayed in place. Review edge clearances, routing and the enclosure before exporting.`);
-        if (rendered.status === "failed") setExportError(rendered.error ?? "The preview could not refresh and remains out of date.");
+
       }
     } catch (failure) { if (mounted.current) setError(`${saved ? "The outline was saved, but refresh could not finish." : "Could not resize this outline."} Reload before retrying. ${failure instanceof Error ? failure.message : ""}`); }
     finally {
@@ -86,7 +86,7 @@ export function NativeOutlinePanel({ projectId, board, canPosition, onBusyChange
       <p className="fd-native-part-note">{snapshot.bounds ? `Keep top-left corner · (${snapshot.bounds.minX}, ${snapshot.bounds.minY}) mm` : "New outline · top-left corner at KiCad (0, 0)"}</p>
       <p className="fd-native-outline-scope">Outline only. Parts, tracks and mechanical models stay in place.</p>
       {stale && <p role="status" className="fd-native-part-warning">The PCB changed. Reload its outline before applying dimensions. Your typed values are kept.</p>}
-      {!canPosition && !busy && <p className="fd-native-part-warning">Update the PCB preview before applying dimensions.</p>}
+      {!canPosition && !busy && <p className="fd-native-part-warning">Waiting for the preview to match the saved PCB before applying dimensions.</p>}
       <form ref={form} onSubmit={event => { event.preventDefault(); void apply(); }}>
         <div className="fd-native-outline-fields">
           <label>Width (mm)<Input type="number" min="0.000001" max="1000" step="any" aria-label="Board width (mm)" value={width} disabled={busy} onChange={event => setWidth(event.target.value)} /></label>
@@ -99,7 +99,7 @@ export function NativeOutlinePanel({ projectId, board, canPosition, onBusyChange
       {recovery && <div><Button size="sm" variant="ghost" disabled={busy || hasProposal || stale || !canPosition || inspection.isFetching || inspection.isError || recovery.savedSha256 !== snapshot.sourceSha256 || inspection.data?.sourceSha256 !== recovery.savedSha256 || JSON.stringify([...snapshot.edgeIds].sort()) !== JSON.stringify([...recovery.edgeIds].sort())} onClick={() => void apply(true)}>Revert last dimensions</Button><p className="fd-native-part-note">Restore {recovery.bounds.maxX - recovery.bounds.minX} × {recovery.bounds.maxY - recovery.bounds.minY} mm using the same outline edges. Available here for this saved PCB snapshot; other edits are not undone.</p></div>}
     </>}
     {notice && <p role="status" className="fd-native-part-warning">{notice}<BoardChecksButton projectId={projectId} {...(board ? { board } : {})} /></p>}
-    {exportError && <details className="fd-native-part-note"><DisclosureSummary icon="warning" label="Preview remains out of date" variant="compact" /><p>{exportError}</p><p>Resolve the export error, then choose Update preview. The outline is already saved.</p></details>}
+    {exportError && <details className="fd-native-part-note"><DisclosureSummary icon="warning" label="Preview remains out of date" variant="compact" /><p>{exportError}</p><p>Resolve the error, then choose Retry preview. The outline is already saved.</p></details>}
     {error && <p role="alert" className="fd-native-part-warning">{error}</p>}
   </>;
 }

@@ -1,14 +1,13 @@
-import { useOutputRevisions, outputRevisionLabel, outputInputsNeedReview } from "@fabdesk/client-core";
-import { askAboutSurface, useAssistantSurface } from "../chat/useAssistantSurface";
-import { DisclosureSummary } from "../components/DisclosureSummary";
+import { assemblyCheckNeedsReview,assemblyCheckSummaryLabel,assemblyModelNeedsReview,assemblyModelSummaryLabel,assemblyReviewRows,outputInputsNeedReview,outputRevisionLabel,overviewBoardImages,restoreAssemblySelection,useAssemblyCheckSummaries,useAssemblyModelSummaries,useAssemblyPreviewRevisions,useOutputRevisions,useProject,useRunTool,useVideoInputRevision,videoInputsNeedReview } from "@fabdesk/client-core";
+import { ASSEMBLY_MANIFEST_PATH,type ProjectBoardSources } from "@fabdesk/protocol";
 import { useState } from "react";
-import { ASSEMBLY_MANIFEST_PATH, type ProjectBoardSources } from "@fabdesk/protocol";
-import { overviewBoardImages, restoreAssemblySelection, assemblyModelNeedsReview, assemblyModelSummaryLabel, useAssemblyModelSummaries, assemblyCheckNeedsReview, assemblyCheckSummaryLabel, useAssemblyCheckSummaries, assemblyReviewRows, useAssemblyPreviewRevisions, useProject, useRunTool, useVideoInputRevision, videoInputsNeedReview } from "@fabdesk/client-core";
-import { OutputPreviewDialog } from "./OutputPreviewDialog";
-import { videoInputLabel } from "./VideoSourceStatus";
-import { Select, Button, Spinner } from "../components/ui";
-import { ReviewDesignSources, ReviewKeepNote, ReviewScope, ReviewUpdateTable, type ReviewOutputRow } from "./ReviewUpdateLayout";
+import { askAboutSurface,useAssistantSurface } from "../chat/useAssistantSurface";
+import { DisclosureSummary } from "../components/DisclosureSummary";
+import { Button,Select,Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
+import { OutputPreviewDialog } from "./OutputPreviewDialog";
+import { ReviewDesignSources,ReviewKeepNote,ReviewScope,ReviewUpdateTable,type ReviewOutputRow } from "./ReviewUpdateLayout";
+import { videoInputLabel } from "./VideoSourceStatus";
 
 export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRetry }: { projectId: string; data: ProjectBoardSources; checking: boolean; failed: boolean; onRetry: () => void }) {
   const project = useProject(projectId), previews = useAssemblyPreviewRevisions(projectId, data.sources), update = useRunTool();
@@ -31,12 +30,6 @@ export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRet
     const target = rows.find(row => row.sourceId === sourceId);
     const prompt = compare ? `Compare the saved PCB and schematic for ${name}. Find a matching schematic in the project if it is missing, and explain any differences before changing sources.` : `Review ${name}. Explain missing files, source changes, and which boards are affected.`;
     askAboutSurface({ projectId, label: `Review / ${name}`, priority: 40, details: JSON.stringify({ board: target?.board, sourceId, manifestSha256: data.manifestSha256, source: data.sources.find(row => row.source.id === sourceId)?.source, request: "Inspect native sources and shared ownership before proposing changes. Artifact freshness does not establish electrical compatibility." }) }, prompt);
-  };
-  const refresh = async (target: typeof rows[number]) => {
-    if (!target.board || busy || unavailable || !active()) return;
-    setUpdatingSource(target.sourceId);
-    await update.run("render_pcb_svg", { projectId, board: { ...target.board } });
-    if (active()) { onRetry(); void previews.find(preview => preview.sourceId === target.sourceId)?.refetch(); }
   };
   const openSource = (target: typeof rows[number], tab: "pcb" | "schematic" | "drc" | "3d") => {
     if (!active() || unavailable || busy || !target.selection) return;
@@ -63,7 +56,7 @@ export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRet
   useAssistantSurface(assistantSurface);
   const outputs: ReviewOutputRow[] = row && !row.board ? [{key:"unavailable",item:"Board outputs",icon:"folder",status:row.status,warning:true,note:"Resolve the native source to review its saved outputs.",actions:<Button size="sm" disabled={unavailable || busy} onClick={() => browse(ASSEMBLY_MANIFEST_PATH)}>Source details</Button>}] : row ? [
     { key: "model", item: "3D model", icon: "cube", status: modelStatus, warning: assemblyModelNeedsReview(modelById.get(row.sourceId)), note: "External component models and physical fit remain unverified.", actions: <Button size="sm" disabled={unavailable || busy || !row.selection} onClick={() => openSource(row, "3d")}>Review model</Button> },
-    { key: "preview", item: "Board preview", icon: "image", status: unavailable ? "Source check unavailable" : row.status, warning: row.warning, note: "Saved PCB drawing · electrical checks stay separate.", actions: row.board ? <Button size="sm" data-update={!row.previewCurrent} disabled={unavailable || busy || !!selectedPreview?.isFetching} onClick={() => row.previewCurrent ? openSource(row, "pcb") : void refresh(row)}>{busy && updatingSource === row.sourceId ? "Updating preview…" : row.previewCurrent ? "Open board" : row.hasPreview ? "Update preview" : "Create preview"}</Button> : <Button size="sm" disabled={unavailable || busy} onClick={() => ask(row.sourceId, row.name)}>Resolve source</Button> },
+    { key: "preview", item: "Board preview", icon: "image", status: unavailable ? "Source check unavailable" : row.status, warning: row.warning, note: "Saved PCB drawing · electrical checks stay separate.", actions: row.board ? <Button size="sm" data-update={!row.previewCurrent} disabled={unavailable || busy || !!selectedPreview?.isFetching} onClick={() => openSource(row, "pcb")}>Open board</Button> : <Button size="sm" disabled={unavailable || busy} onClick={() => ask(row.sourceId, row.name)}>Resolve source</Button> },
     ...(savedRender ? [{ key: "image", item: savedRender.kind === "top" ? "Top board image" : "Board image", icon: "image" as const, status: imageStatus, warning: imageWarning, note: "Review the saved image and its inputs; component models and appearance remain unverified.", actions: <Button size="sm" disabled={unavailable || busy} onClick={() => setPreviewPath(savedRender.path)}>Review image</Button> }] : []),
     ...(video ? [{ key: "video", item: "Review video", icon: "play" as const, status: videoStatus, warning: videoInputsNeedReview(videoRevision.data), note: "Recorded video and model inputs only; captions, scene content and external dependencies need separate review.", actions: <Button size="sm" disabled={unavailable || busy} onClick={() => setPreviewPath(video.path)}>Preview video</Button> }] : []),
   ] : [];

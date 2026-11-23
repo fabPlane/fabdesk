@@ -87,7 +87,7 @@ export function bundledKicadCliCandidates(roots: string[] = bundledKicadRoots())
   return out;
 }
 
-function knownLocations(): string[] {
+function knownLocations(env: NodeJS.ProcessEnv = process.env): string[] {
   switch (process.platform) {
     case "darwin":
       return [
@@ -99,7 +99,7 @@ function knownLocations(): string[] {
       ];
     case "win32": {
       // Per-machine installs, then the per-user installs winget and the "current user" installer write.
-      const local = process.env["LOCALAPPDATA"] ?? join(homedir(), "AppData", "Local");
+      const local = env["LOCALAPPDATA"] ?? join(homedir(), "AppData", "Local");
       return ["10.0", "9.0", "10.99"].flatMap((v) => [
         join(local, "Programs", "FabPlane", "KiCad", v, "bin", "kicad-cli.exe"),
         `C:\\Program Files\\KiCad\\${v}\\bin\\kicad-cli.exe`,
@@ -189,7 +189,56 @@ const NOISE = [
   "Fontconfig warning:",
 ];
 
-/** Runs kicad-cli with `args`, filtering platform noise from stderr. Throws on non-zero exit unless `tolerateExit`. */
+/** Model libraries can accompany a prefix, a macOS app, or a nested nightly tree. */
+function modelLibrariesUnder(root: string): string[] {
+  return [root, join(root, "kicad-cli")].flatMap(prefix => [
+    join(prefix, "share", "kicad", "3dmodels"),
+    join(prefix, "KiCad.app", "Contents", "SharedSupport", "3dmodels"),
+    join(prefix, "Contents", "SharedSupport", "3dmodels"),
+    join(prefix, "SharedSupport", "3dmodels"),
+  ]);
+}
+
+function modelLibrariesNearCli(path: string): string[] {
+  return [dirname(path), dirname(dirname(path))].flatMap(modelLibrariesUnder);
+}
+
+/** Resolve legacy versioned model variables against an available configured/bundled stock tree.
+ * Reuse assets in place: never download/copy models or rewrite project paths/transforms.
+ * Explicit per-version overrides win; absent model assets remain absent. */
+export function componentModelLibraryRoots(
+  env: NodeJS.ProcessEnv = process.env,
+  cliPath: string | undefined = env["KICAD_CLI"],
+): string[] {
+  const resourceRoots = [env["FABDESK_RESOURCES"], join(dirname(process.execPath), "..")]
+    .filter((root): root is string => !!root);
+  const candidates = [
+    env["FABDESK_KICAD_MODELS"],
+    ...[11, 10, 9, 8, 7, 6].map(v => env[`KICAD${v}_3DMODEL_DIR`]),
+    env["KICAD_STOCK_DATA_HOME"] ? join(env["KICAD_STOCK_DATA_HOME"]!, "3dmodels") : undefined,
+    ...bundledKicadRoots(env).flatMap(modelLibrariesUnder),
+    ...resourceRoots.flatMap(root => modelLibrariesUnder(join(root, "pcb", "kicad"))),
+    ...(cliPath ? modelLibrariesNearCli(cliPath) : []),
+    ...knownLocations(env).flatMap(modelLibrariesNearCli),
+    ...(process.platform === "linux" ? ["/usr/share/kicad/3dmodels", "/usr/share/kicad-nightly/3dmodels"] : process.platform === "darwin" ? ["/Applications/KiCad/KiCad.app/Contents/SharedSupport/3dmodels"] : []),
+  ];
+  return [...new Set(candidates)].filter((path): path is string => {
+    if (!path) return false;
+    try { return statSync(path).isDirectory(); } catch { return false; }
+  });
+}
+
+export function componentModelEnvironment(
+  env: NodeJS.ProcessEnv = process.env,
+  cliPath: string | undefined = env["KICAD_CLI"],
+): NodeJS.ProcessEnv {
+  const root = componentModelLibraryRoots(env, cliPath)[0];
+  if (!root) return env;
+  const out = { ...env };
+  for (const version of [6, 7, 8, 9, 10, 11]) if (!out[`KICAD${version}_3DMODEL_DIR`]) out[`KICAD${version}_3DMODEL_DIR`] = root;
+  return out;
+}
+
 export async function runKicadCli(
   cli: KicadCli,
   args: string[],
@@ -209,6 +258,7 @@ async function runKicadCliUntraced(
   const proc = Bun.spawn([cli.path, ...args], {
     stdout: "pipe",
     stderr: "pipe",
+    env: componentModelEnvironment(process.env, cli.path),
     ...(opts.cwd ? { cwd: opts.cwd } : {}),
   });
   const onAbort = () => proc.kill();

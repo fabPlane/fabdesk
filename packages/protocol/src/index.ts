@@ -42,7 +42,9 @@ export * from "./enclosure-footprint";
 export * from "./connector-opening";
 export * from "./opening-profile";
 export * from "./project-sharing";
+export * from "./board-checks";
 
 export { sanitizeSharedGlb } from "./shared-glb";
 
 export * from "./board-contributions";
+export * from "./board-layers";

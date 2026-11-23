@@ -25,6 +25,12 @@ export const MechanicalBoxSchema = z.object({
   depth: size,
   height: size,
 });
+/**
+ * [x, y, z] as a length-3 array typed as a tuple, not `z.tuple`: this schema is part of cad_fit's input, the MCP SDK
+ * writes a tuple as array-form `items: [...]`, and Codex silently drops a tool whose schema has one.
+ */
+const vec3 = z.array(coordinate).length(3) as unknown as z.ZodType<[number, number, number]>;
+
 export const MechanicalDesignSchema = z
   .object({
     version: z.literal(1),
@@ -34,8 +40,8 @@ export const MechanicalDesignSchema = z
       .object({
         path,
         scale: z.number().positive().max(10000),
-        position: z.tuple([coordinate, coordinate, coordinate]),
-        rotation: z.tuple([coordinate, coordinate, coordinate]),
+        position: vec3,
+        rotation: vec3,
       })
       .nullable(),
     space: z.object({

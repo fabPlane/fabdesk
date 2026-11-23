@@ -5,6 +5,9 @@ import { AGENT_OWNER_DIR, trackAgentProcess } from "../process-ownership";
 import { CodexStreamParser } from "../parsers/codex";
 import { isImage, promptWithAttachments } from "./shared";
 
+/** Timeout for the app server's `initialize` and `thread/start` / `thread/resume` (see `rpc`). */
+const STARTUP_RPC_MS = 120_000;
+
 export const APP_SERVER_QUESTION_INSTRUCTIONS =
   "You are running in fabPlane, whose client displays interactive question cards. When asking the user a question, call the blocking request_user_input tool or fabdesk's request_user_input MCP tool and wait for the submitted answer. Prefer the native blocking tool when available. If an MCP call through a code-mode exec wrapper returns Script running with cell ID, use the matching wait tool with that cell ID until it completes; do not end the turn while that question is still waiting. Use concise choices when helpful; custom answers are supported. Do not use request_user_input_async, print pretend controls as Markdown lists, or continue dependent work without an answer.";
 
@@ -29,10 +32,13 @@ export function runCodexAppServer(session: AgentSession, cmd: string[], env: Rec
   const questionControllers = new Map<string | number, AbortController>();
   const push = (event: AgentEvent) => { events.push(event); wake?.(); wake = undefined; };
   const send = (message: unknown) => { if (!finishing) child.stdin.write(JSON.stringify(message) + "\n"); };
-  const rpc = (method: string, params: unknown): Promise<any> => new Promise((resolve, reject) => {
+  // Starting the app server and its thread (which connects the MCP servers) can take well over 30 s on a loaded machine:
+  // an eval run failed with "did not respond to initialize" while the core was writing a 90 MB run dump, and the same
+  // run started at once on a retry. Those two calls get STARTUP_RPC_MS; the rest keep 30 s.
+  const rpc = (method: string, params: unknown, timeoutMs = 30_000): Promise<any> => new Promise((resolve, reject) => {
     if (finishing) { reject(new Error("Codex connection closed.")); return; }
     const id = ++nextId;
-    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`Codex did not respond to ${method}.`)); }, 30_000);
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`Codex did not respond to ${method} within ${Math.round(timeoutMs / 1000)} s.`)); }, timeoutMs);
     pending.set(id, { resolve, reject, timer });
     send({ id, method, params });
   });
@@ -191,7 +197,7 @@ export function runCodexAppServer(session: AgentSession, cmd: string[], env: Rec
     return async () => {};
   });
   void (async () => {
-    await rpc("initialize", { clientInfo: { name: "fabplane", version: "0.2.0" }, capabilities: { experimentalApi: true } });
+    await rpc("initialize", { clientInfo: { name: "fabplane", version: "0.2.0" }, capabilities: { experimentalApi: true } }, STARTUP_RPC_MS);
     send({ method: "initialized", params: {} });
     const options = {
       cwd: session.cwd,
@@ -201,7 +207,7 @@ export function runCodexAppServer(session: AgentSession, cmd: string[], env: Rec
       sandbox: session.planningOnly ? "read-only" : session.permission === "bypass" ? "danger-full-access" : "workspace-write",
       developerInstructions: APP_SERVER_QUESTION_INSTRUCTIONS,
     };
-    const result = await rpc(session.resume ? "thread/resume" : "thread/start", { ...options, ...(session.resume ? { threadId: session.resume } : {}) });
+    const result = await rpc(session.resume ? "thread/resume" : "thread/start", { ...options, ...(session.resume ? { threadId: session.resume } : {}) }, STARTUP_RPC_MS);
     threadId = result.thread.id;
     push({ type: "init", sessionId: threadId! });
     const input = [{ type: "text", text: promptWithAttachments(session.prompt, session.attachments, { skipImages: true }), text_elements: [] }, ...session.attachments.filter(isImage).map((a) => ({ type: "localImage", path: a.path }))];
