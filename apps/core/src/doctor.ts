@@ -6,6 +6,7 @@ import { fabCadBridgeToken, fabCadBridgeUrl, fpPcbBridgeUrl, type CoreConfig } f
 import { FabCadBridgeClient } from "./fab-cad-bridge";
 import { FpPcbBridgeClient } from "./fp-pcb-bridge";
 import { errMsg } from "./log";
+import { userPathReady } from "./user-path";
 
 const MINIMUM_FP_PCB_KICAD = [10, 99] as const;
 
@@ -73,6 +74,7 @@ export async function runDoctor(o: { config: CoreConfig; settings: Settings }): 
   const agents = await (async () => {
     try {
       const m = await import("@fabdesk/agents");
+      await userPathReady();
       return await m.detectAgents(o.settings);
     } catch (e) {
       warnings.push(`agent detection failed: ${errMsg(e)}`);

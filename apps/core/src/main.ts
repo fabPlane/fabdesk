@@ -149,6 +149,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
           return 2;
         }
       }
+      // A Finder / launcher start has no shell PATH; agent CLIs and their tools live on it.
+      const { adoptUserPath } = await import("./user-path");
+      void adoptUserPath();
       const { serve } = await import("./serve");
       const daemon = await serve({
         ...(num(f, "port") !== undefined ? { port: num(f, "port")! } : {}),
