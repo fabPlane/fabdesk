@@ -1,0 +1,79 @@
+{
+  "date": "2026-11-16",
+  "baseCommit": "be14cc1df52439fa1651a51d34b72ba24ebbb94b",
+  "testedWorkingTree": "fix/project-root-and-order-readiness",
+  "runtime": {
+    "kicadVersion": "10.99.0",
+    "bridge": "installed fabPlane desktop bundle",
+    "defaultRouter": "Freerouting 2.4.1",
+    "fallbackRouter": "fab_router"
+  },
+  "isolation": "Separate temporary core home, projects, ports, KiCad config, and bridge; synthetic regression designs only. No existing user projects changed.",
+  "nativeWorkflow": {
+    "steps": [
+      "build native board and schematic",
+      "edit netlist component value and rebuild",
+      "route and apply with Freerouting",
+      "verify native DRC",
+      "verify native ERC",
+      "export Gerbers",
+      "export drill files",
+      "adopt native board into a second project"
+    ],
+    "drc": {
+      "errors": 0,
+      "warnings": 0,
+      "unconnected": 0
+    },
+    "erc": {
+      "errors": 0,
+      "warnings": 0
+    },
+    "differentialPolarityPreserved": true,
+    "importBytesUnchanged": true,
+    "freshOrderReadiness": true
+  },
+  "legacyCases": {
+    "61": {
+      "distinctLibrarySymbols": [
+        "Device:R",
+        "Connector_Generic:Conn_01x03"
+      ],
+      "ercErrors": 0,
+      "ercWarnings": 0
+    },
+    "63": {
+      "nativeFixture": "vendor/fab_pcb/e2e/fixtures/boards/sonde_xilinx/sonde xilinx.kicad_pcb",
+      "netTableEntriesIncludingNoNet": 151,
+      "importAndFabricationExportSourceBytesUnchanged": true
+    },
+    "73": {
+      "terminalsPerNet": 13,
+      "nets": [
+        "P3V3",
+        "GND"
+      ],
+      "router": "fab_router",
+      "state": "completed",
+      "initialOpens": 24,
+      "finalOpens": 0,
+      "candidateReopenable": true,
+      "application": "manual; canonical board not mutated"
+    },
+    "111": {
+      "generatedVias": 48,
+      "allNativeViaSizesMm": [
+        "0.45"
+      ],
+      "allNativeViaDrillsMm": [
+        "0.2"
+      ],
+      "importedFixtureVias": 3,
+      "nativeFixtureUnchangedAfterGerberAndDrillExport": true
+    }
+  },
+  "leftOpen": {
+    "58": "A small synthetic pass cannot establish dense MCU board routing quality.",
+    "59": "The reported near-edge/card-finger geometry was not exercised."
+  }
+}

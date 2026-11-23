@@ -1,8 +1,7 @@
 import { bindNativeSource } from "../native-source-binding";
 import { NATIVE_SOURCE_HEADER, NativeSourceContext } from "@fabdesk/protocol";
-import { nativeViewBinding, nativeProjectPath, currentNativeLayout, withNativeLayout } from "@fabdesk/tools";
+import { nativeViewBinding, nativeProjectPath, currentNativeLayout, withNativeLayout, snapshotProjectDependencies, visiblePublishedFile, presentationBinding, summarizePresentationBinding } from "@fabdesk/tools";
 import { WorkingDesigns } from "../working-design";
-import { presentationBinding, summarizePresentationBinding } from "@fabdesk/tools";
 import { createHash as presentationHash } from "node:crypto";
 /** Hono application: auth + origin guard, control API, tools/jobs, MCP, events. */
 import { readFile, stat, mkdir } from "node:fs/promises";
@@ -488,11 +487,20 @@ export function createApp(deps: AppDeps): Hono<Env> {
     return c.json(deps.store.routeRuns.list(c.req.param("id")).filter(run => (run.nativeSource?.sourcePath ?? null) === (scope?.sourcePath ?? null)));
   });
 
+  app.get("/projects/:id/output-dependencies", async c => {
+    const h = await deps.projects.handle(c.req.param("id"));
+    if (!h) return c.json({ error: "not found" }, 404);
+    const directory = c.req.query("directory");
+    return c.json(await snapshotProjectDependencies(!directory || directory === "." ? h.dir : await jailPath(h.dir, directory)));
+  });
+
   app.get("/projects/:id/files/*", async (c) => {
     const h = await deps.projects.handle(c.req.param("id"));
     if (!h) return c.json({ error: "not found" }, 404);
     const rel = decodeURIComponent(c.req.path.split("/files/")[1] ?? "");
-    const abs = await jailPath(h.dir, rel);
+    const visible = await visiblePublishedFile(h.dir, rel);
+    if (visible === null) return c.json({ error: "not found" }, 404);
+    const abs = visible ?? await jailPath(h.dir, rel);
     const st = await stat(abs).catch(() => null);
     if (!st || !st.isFile()) return c.json({ error: "not found" }, 404);
     const mime = MIME[extname(abs).toLowerCase()] ?? "application/octet-stream";

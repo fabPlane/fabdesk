@@ -54,6 +54,15 @@ describe("scriptable tool CLI", () => {
     expect(parsed.matches[0]?.inputSchema).toBeUndefined();
   });
 
+  test("unreachable agent-shell endpoint returns actionable JSON without retrying or exposing credentials", async () => {
+    let output = "", calls = 0;
+    spyOn(process.stdout, "write").mockImplementation(chunk => { output += String(chunk); return true; });
+    const code = await runToolCli({ action: "describe", name: "pcb_inspect", baseUrl: "http://core", token: "private-token" }, { fetch: (async () => { calls++; throw Error("network sandbox denied private-token"); }) as unknown as typeof fetch });
+    expect(code).toBe(1); expect(calls).toBe(1);
+    expect(JSON.parse(output)).toMatchObject({ ok: false, code: "endpoint_unavailable" });
+    expect(output).toContain("MCP"); expect(output).not.toContain("private-token");
+  });
+
   test("calls tools with the current project and supports JSONL batches", async () => {
     let output = "";
     const bodies: unknown[] = [];

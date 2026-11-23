@@ -44,7 +44,9 @@ export * from "./opening-profile";
 
 export * from "./native-source";
 export * from "./project-sharing";
+export * from "./board-checks";
 
 export { sanitizeSharedGlb } from "./shared-glb";
 
 export * from "./board-contributions";
+export * from "./board-layers";

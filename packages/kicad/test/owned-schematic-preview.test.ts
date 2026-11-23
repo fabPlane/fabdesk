@@ -84,3 +84,12 @@ test.skipIf(!process.env["FABPLANE_KICAD_CLI"])("installed KiCad circuit framing
     expect(await Promise.all(["board.kicad_sch", "child.kicad_sch", "board.kicad_pro"].map(path => readFile(join(f.dir, path), "utf8")))).toEqual(before);
   } finally { await rm(f.dir, { recursive: true, force: true }); }
 }, 30_000);
+
+test("document previews can bind native pages without switching to circuit framing", async () => {
+  const f = await ownedPreviewFixture(); try {
+    const hierarchy = await f.inspect(); hierarchy.sheets.reverse();
+    const result = await exportOwnedSchematicSvg(f.cli, { projectDir: f.dir, hierarchy, bindNativePages: true });
+    expect(result.sheets.map(sheet => sheet.nativeSheet?.hierarchyPath)).toEqual(["/Child/", "/"]);
+    expect(result.sheets.every(sheet => !new TextDecoder().decode(sheet.svg).includes('data-fabplane-schematic-view="circuit'))).toBe(true);
+  } finally { await rm(f.dir, { recursive: true, force: true }); }
+});

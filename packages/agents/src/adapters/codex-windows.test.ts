@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs";
 import { tmpdir } from "node:os";
@@ -106,7 +107,8 @@ test("Windows preserves snapshot rejection and does not hide unrelated filesyste
   const overlay = join(
     source,
     "fabdesk-agents",
-    fs.readdirSync(join(source, "fabdesk-agents"))[0]!,
+    "v2",
+    createHash("sha256").update(dir).digest("hex"),
   );
   fs.writeFileSync(join(overlay, "auth.json"), "possibly newer fixture credentials");
   expect(() => codexEnv(session())).toThrow("private snapshot");

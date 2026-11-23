@@ -270,15 +270,15 @@ async function withCapturedSchematic<T>(opts: { projectDir: string; hierarchy: S
 }
 
 /** Render immutable native sheets without altering any project source. */
-export async function exportOwnedSchematicSvg(cli: KicadCli, opts: { projectDir: string; hierarchy: SchematicHierarchy; circuit?: boolean; signal?: AbortSignal }): Promise<OwnedSchematicSvg> {
+export async function exportOwnedSchematicSvg(cli: KicadCli, opts: { projectDir: string; hierarchy: SchematicHierarchy; circuit?: boolean; bindNativePages?: boolean; signal?: AbortSignal }): Promise<OwnedSchematicSvg> {
   const captured = await withCapturedSchematic(opts, async (source, scratch) => {
-    if (opts.circuit) {
+    if (opts.circuit || opts.bindNativePages) {
       // Bind each drawing through KiCad's page/instance table, never sorted SVG filenames.
       const pages = await capturedPageTable(cli, source, scratch, opts.signal);
       const sheets: OwnedSchematicSvg["sheets"] = [];
       for (const [index, sheet] of opts.hierarchy.sheets.entries()) {
         verifyCapturedPage(opts.hierarchy, sheet, pages);
-        const result = await exportSchematicSvg(cli, { schematic: source, outDir: join(scratch, `circuit-${index}`), pages: [sheet.pageNumber!], circuit: true, ...(opts.signal ? { signal: opts.signal } : {}) });
+        const result = await exportSchematicSvg(cli, { schematic: source, outDir: join(scratch, `circuit-${index}`), pages: [sheet.pageNumber!], ...(opts.circuit ? { circuit: true } : {}), ...(opts.signal ? { signal: opts.signal } : {}) });
         if (result.paths.length !== 1) throw new Error("KiCad did not produce exactly the selected circuit page");
         sheets.push({ name: basename(result.paths[0]!), svg: new Uint8Array(await readFile(result.paths[0]!)), nativeSheet: { identity: sheet.identity, hierarchyPath: sheet.hierarchyPath, nativePath: sheet.nativePath, pageNumber: sheet.pageNumber! } });
       }

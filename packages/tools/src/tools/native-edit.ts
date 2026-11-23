@@ -25,7 +25,7 @@ import {
   type ToolContext,
 } from "../registry";
 import type { NativeSchematicEdit, PcbFootprintEdit, PcbGeometryEdit } from "../services";
-import { inspectSavedHierarchy, ok, p } from "./common";
+import { inspectSavedHierarchy, ok, p, requireKicad } from "./common";
 
 const Point = mutationInputObject({ x: z.number().finite(), y: z.number().finite() });
 const PadEndpoint = mutationInputObject({ reference: z.string().min(1), pad: z.string().min(1) });
@@ -592,6 +592,7 @@ export const native_edit_transaction = defineTool({
           project.dir,
           outline.points,
           outline.replace,
+          expectedPcbRevision ? { expectedSourceSha256: expectedPcbRevision } : {},
         );
       if (footprints?.length) {
         const placed = await ctx.services.design.placeFootprints(
@@ -785,10 +786,11 @@ export const pcb_edit_copper = defineTool({
   toolset: "circuit",
   title: "Atomically edit PCB copper",
   description:
-    "Atomically validate and apply native tracks, vias, copper deletion by inspected ID, or removal of named routed nets in one recoverable transaction. The normal mode=apply path validates before saving and restores prior files if rejected; use mode=preview only when a non-mutating forecast is specifically needed. For reroutes, write a project-local JSON candidate and pass candidateFile with removeNets so old copper is replaced in one recoverable transaction. Applying named-net removal without replacement requires an explicit commitRemovalOnly acknowledgement. Track endpoints accept exact millimetre points or semantic {reference,pad} endpoints resolved from the saved board. Rejects stale PCB revisions.",
+    "Atomically validate and apply native tracks, vias, copper deletion by inspected ID, or removal of named routed nets in one recoverable transaction. The normal mode=apply path validates before saving and restores prior files if rejected; use mode=preview only when a non-mutating forecast is specifically needed. For reroutes, write a project-local JSON candidate and pass candidateFile with removeNets so old copper is replaced in one recoverable transaction. Applying named-net removal without replacement requires an explicit commitRemovalOnly acknowledgement. Track endpoints accept exact millimetre points or semantic {reference,pad} endpoints resolved from the saved board. Rejects stale PCB revisions. To re-route what an edit or a measurement opened, board_route (last-mile actions) supersedes hand-written copper edits: it tries router and pair steps on the whole board and keeps only what improves A1-A9.",
   inputSchema: {
     mode: z.enum(["preview", "apply"]).default("apply"),
     expectedPcbRevision: z.string().length(64).optional(),
+    checkDrc: z.boolean().default(false).describe("After applying, run a saved-board PCB-only DRC and return its actual counts; errors leave the requested edit saved for repair."),
     tracks: PcbGeometry.shape.tracks,
     vias: PcbGeometry.shape.vias,
     candidateFile: z
@@ -816,6 +818,7 @@ export const pcb_edit_copper = defineTool({
   handler: async (
     {
       mode,
+      checkDrc,
       expectedPcbRevision,
       tracks,
       vias,
@@ -826,6 +829,7 @@ export const pcb_edit_copper = defineTool({
     },
     ctx,
   ) => {
+    if (checkDrc && mode === "preview") throw new ToolError("checkDrc requires mode=apply", "invalid_args");
     if (candidateFile && (tracks?.length || vias?.length))
       throw new ToolError(
         "candidateFile cannot be combined with inline tracks or vias",
@@ -890,6 +894,18 @@ export const pcb_edit_copper = defineTool({
       },
       ctx,
     );
+    if (checkDrc && !result.isError) {
+      const project = ctx.requireProject(), cli = await requireKicad(ctx), board = p(project, PROJECT_FILES.boardPcb), revision = await sha(board);
+      const temporary = await jailPath(project.dir, `.fabdesk/native-checks/${randomUUID()}.json`);
+      await mkdir(dirname(temporary), { recursive: true });
+      try {
+        const report = await ctx.services.kicad.runDrc(cli, { board, outFile: temporary, severity: "all", schematicParity: false, signal: ctx.signal });
+        if (await sha(board) !== revision) throw new ToolError("Saved PCB changed during the post-edit DRC; inspect the current board before checking again", "precondition");
+        const receipt = { ...report, pcbRevision: { sha256: revision }, schematicParityChecked: false };
+        const path = await jailPath(project.dir, "reports/copper-drc.json"); await writeJson(path, receipt);
+        return { ...result, text: `${result.text}\nSaved-board PCB-only DRC: ${report.counts.errors} errors, ${report.counts.unconnected} opens.`, json: { ...(result.json as Record<string, unknown>), ...(candidateFile ? { candidateFile } : {}), drc: { ...receipt, path } }, isError: report.counts.errors > 0 || report.counts.unconnected > 0 };
+      } finally { await rm(temporary, { force: true }); }
+    }
     if (candidateFile && result.json && typeof result.json === "object")
       return { ...result, json: { ...(result.json as Record<string, unknown>), candidateFile } };
     return result;

@@ -11,7 +11,7 @@ import { Button, IconButton, Textarea } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { InstallHint } from "../components/InstallHint";
 import { ErrorNotice } from "../components/ErrorNotice";
-import { useCore, useSaveAgentPreference, useSaveAgentEffort } from "@fabdesk/client-core";
+import { acknowledgeComposerDraft, useCore, useSaveAgentPreference, useSaveAgentEffort } from "@fabdesk/client-core";
 import { activeQuestion, CoreHttpError, formatVoiceShortcut, parseVoiceShortcut, useDoctor, useSettings, useSpeechStatus, useMessages, useQueueMessage, useUnqueueMessage, useFinishIt, useFinishItNeedsWork, useStartFinishIt, useStopFinishIt, useBoardSources, useProject } from "@fabdesk/client-core";
 import { useRunsStore } from "@fabdesk/client-core";
 import { newChatDraftKey, useUiStore } from "../stores/ui";
@@ -31,6 +31,8 @@ import { finishItActive } from "./finish-it-view";
 /** Bridge for the global shortcut hook (mod+Enter send, mod+. abort) and for app automation. */
 export const composerHandlers: {
   send: (() => void) | null;
+  canSend: (() => boolean) | null;
+  canSelectAgent: (() => boolean) | null;
   abort: (() => void) | null;
   finishIt: (() => void) | null;
   /**
@@ -41,6 +43,8 @@ export const composerHandlers: {
   voiceToggle: (() => void) | null;
 } = {
   send: null,
+  canSend: null,
+  canSelectAgent: null,
   abort: null,
   finishIt: null,
   setAgent: null,
@@ -68,7 +72,9 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
   const { client, host } = useCore();
   const qc = useQueryClient();
   const projectId = useUiStore((s) => s.activeProjectId);
-  const draftKey = thread?.id ?? newChatDraftKey(projectId);
+  const activeThreadId = useUiStore((s) => s.activeThreadId);
+  // The selected chat owns typing even while its metadata is still loading.
+  const draftKey = thread?.id ?? activeThreadId ?? newChatDraftKey(projectId);
   const draft = useUiStore((s) => s.drafts[draftKey] ?? "");
   const setDraft = useUiStore((s) => s.setDraft);
   const savedContexts = useUiStore(s => s.draftBoardContexts?.[draftKey]);
@@ -84,7 +90,6 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
   const pending = useUiStore((s) => s.attachments[draftKey] ?? EMPTY);
   const addAttachment = useUiStore((s) => s.addAttachment);
   const removeAttachment = useUiStore((s) => s.removeAttachment);
-  const clearAttachments = useUiStore((s) => s.clearAttachments);
   const setSketchOpen = useUiStore((s) => s.setSketchOpen);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const focusNonce = useUiStore((s) => s.composerFocusNonce);
@@ -262,6 +267,12 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
     const workspaceContext = attachPanelContext(captureAssistantContext(selectAssistantState(useUiStore.getState()), boardSources.data, boardSources.isFetching || boardSources.isError, matchingContexts));
     setSending(true);
     setError(null);
+    // Keep observing this chat even if navigation unmounts its composer. Comparing
+    // only the final text cannot distinguish a newly retyped identical question.
+    let textEditedSinceSubmission = false;
+    const stopWatchingDraft = useUiStore.subscribe((next, previous) => {
+      if (next.drafts[draftKey] !== previous.drafts[draftKey]) textEditedSinceSubmission = true;
+    });
     try {
       let threadId = thread?.id;
       let created = preparedThread.current;
@@ -280,25 +291,28 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
       };
       // The queue endpoint starts immediately when idle and queues if a run began meanwhile.
       await queueMessage.mutateAsync({ threadId, input });
-      voice.reset();
-      setDraft(draftKey, "");
-      clearAttachments(draftKey);
-      setDraftBoardContext(draftKey, null);
-      if (!thread) setDraft(threadId, "");
+      if (!textEditedSinceSubmission && (useUiStore.getState().drafts[draftKey] ?? "") === draft) voice.reset();
+      useUiStore.setState(state => {
+        const remaining = acknowledgeComposerDraft({ text: state.drafts[draftKey] ?? "", attachments: state.attachments[draftKey] ?? [], contexts: state.draftBoardContexts[draftKey] ?? [] },
+          { text: draft, attachments: pending, contexts: matchingContexts ?? [] }, textEditedSinceSubmission);
+        return { drafts: { ...state.drafts, [draftKey]: remaining.text }, attachments: { ...state.attachments, [draftKey]: remaining.attachments }, draftBoardContexts: { ...state.draftBoardContexts, [draftKey]: remaining.contexts } };
+      });
       void qc.invalidateQueries({ queryKey: ["messages", threadId] });
       void qc.invalidateQueries({ queryKey: ["threads"] });
       if (created && !thread) {
         const ui = useUiStore.getState();
-        if (ui.activeProjectId === projectId && ui.activeThreadId === null && ui.setActiveProject(created.projectId)) ui.setActiveThread(created.id);
+        const hasNewDraft = !!ui.drafts[draftKey] || !!ui.attachments[draftKey]?.length || !!ui.draftBoardContexts[draftKey]?.length;
+        if (!hasNewDraft && ui.activeProjectId === projectId && ui.activeThreadId === null && ui.setActiveProject(created.projectId)) ui.setActiveThread(created.id);
         preparedThread.current = null;
       }
     } catch (e) {
       // Retain this prepared thread and the visible draft for a normal retry.
       setError(e);
     } finally {
+      stopWatchingDraft();
       setSending(false);
     }
-  }, [draft, rootAutomation, matchingContexts, boardSources.data, boardSources.isFetching, boardSources.isError, setDraftBoardContext, sending, saveEffort.isPending, loadingThread, settings.data, savePreference.isPending, startMode, projectId, setProjectPickerOpen, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, clearAttachments, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
+  }, [draft, rootAutomation, matchingContexts, boardSources.data, boardSources.isFetching, boardSources.isError, setDraftBoardContext, sending, saveEffort.isPending, loadingThread, settings.data, savePreference.isPending, startMode, projectId, setProjectPickerOpen, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
 
   const stop = useCallback(async () => {
     if (!run || stopping) return;
@@ -311,6 +325,8 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
 
   useEffect(() => {
     composerHandlers.send = () => void send();
+    composerHandlers.canSend = () => !!draft.trim() && !sending && !saveEffort.isPending && !loadingThread && !!settings.data && !savePreference.isPending && !savingEffort.current && !!(thread || projectId || startMode);
+    composerHandlers.canSelectAgent = () => !!settings.data && !loadingThread && !savePreference.isPending && !savingEffort.current && !run && queued.length === 0;
     composerHandlers.abort = run ? () => void stop() : null;
     composerHandlers.voiceToggle = () => voice.toggle();
     composerHandlers.finishIt = () => void beginFinishIt();
@@ -324,12 +340,14 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
     };
     return () => {
       composerHandlers.send = null;
+      composerHandlers.canSend = null;
+      composerHandlers.canSelectAgent = null;
       composerHandlers.abort = null;
       composerHandlers.finishIt = null;
       composerHandlers.setAgent = null;
       composerHandlers.voiceToggle = null;
     };
-  }, [send, stop, run, doctor.data, settings.data, loadingThread, voice.toggle, beginFinishIt, selectAgent, savePreference.isPending, queued.length]);
+  }, [send, stop, run, doctor.data, settings.data, loadingThread, voice.toggle, beginFinishIt, selectAgent, savePreference.isPending, queued.length, draft, sending, saveEffort.isPending, thread, projectId, startMode]);
 
   const showStop = !!run && !draft.trim() && !sending;
 
@@ -506,16 +524,16 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
                   variant="ghost"
                   size="sm"
                   className="fd-agent-button h-8 max-w-full font-medium"
-                  title={`${pickerLabel} (${mod} + /)`}
-                  aria-label={`Agent and model: ${pickerLabel}`}
+                  title={loadingThread ? "Loading chat…" : `${pickerLabel} (${mod} + /)`}
+                  aria-label={loadingThread ? "Loading chat agent and model" : `Agent and model: ${pickerLabel}`}
                   onClick={() => setAgentPickerOpen(!agentPickerOpen)}
                   disabled={!!run || queued.length > 0 || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending}
                   aria-haspopup="menu"
                   aria-expanded={agentPickerOpen}
                   data-testid="agent-model"
                 >
-                  <AgentLogo agentId={agentId} />
-                  <span className="min-w-0 truncate">{savePreference.isPending ? "Switching…" : modelEffortLabel}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
+                  {!loadingThread && <AgentLogo agentId={agentId} />}
+                  <span className="min-w-0 truncate">{loadingThread ? "Loading chat…" : savePreference.isPending ? "Switching…" : modelEffortLabel}</span> <Icon name="chevronDown" width={13} height={13} className="shrink-0" />
                 </Button>
                 <AgentModelMenu
                   anchorRef={agentButtonRef}
@@ -548,7 +566,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
             </div>
           </div>
         </div>
-        {agentMissing && selectedAgent && (
+        {!loadingThread && agentMissing && selectedAgent && (
           <details className="fd-setup-notice mt-2 rounded-lg border border-warning/25 bg-warning/5 text-xs leading-5 text-warning">
             <summary className="flex cursor-pointer items-center gap-2 px-3 py-2">
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />

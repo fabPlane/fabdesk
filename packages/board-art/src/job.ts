@@ -77,6 +77,7 @@ function readme(o: ResolvedArtOptions, primitives: number): string {
     "Deterministic image-to-silkscreen conversion. No AI credits.",
     `Style: ${o.style}`,
     `Color mode: ${o.colorMode}`,
+    ...(o.colorMode === "multicolor" ? [`Color effect: ${o.recolor.mode}; strength: ${Math.round(o.recolor.amount * 100)}%; dark: ${o.recolor.shadow}; light: ${o.recolor.highlight}`] : []),
     `Monotone ink (preview/order choice): ${o.inkColor}`,
     ...(o.colorMode === "multicolor"
       ? [

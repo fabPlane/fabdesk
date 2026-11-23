@@ -1,0 +1,7 @@
+{"part": "TI TPS62822 (adjustable 2 A buck)", "match": "TPS62822",
+ "checked_against_datasheet": false,
+ "source": "standard adjustable-buck application circuit; to be confirmed against the TPS62822 datasheet (typical application, FB divider)",
+ "rules": [
+  {"pin": "FB", "path": ["R"], "arrives_ground": true, "why": "lower feedback resistor from FB to ground"},
+  {"pin": "FB", "path": ["R", "L"], "arrives_pin": "SW", "why": "upper feedback resistor to the output node, which the inductor ties to SW"}
+ ]}

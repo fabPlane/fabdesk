@@ -7,7 +7,7 @@ import { CanvasToolButton } from "../../components/CanvasToolButton";
 import { useOutputSource } from "../useOutputSource";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, EmptyState, LoadError, Select, Spinner } from "../../components/ui";
-import { restoreAssemblySelection, routeRunMatchesSource, useCoreClient } from "@fabdesk/client-core";
+import { restoreAssemblySelection, routeRunMatchesSource, selectOwnedRouteRun, useCoreClient } from "@fabdesk/client-core";
 import { useCinemaStore } from "../../stores/cinema";
 import { useUiStore } from "../../stores/ui";
 import { Icon } from "../../components/Icon";
@@ -131,20 +131,22 @@ function ProjectCinema({ projectId, scopeReady, board, prefix = "", sourceSha256
   const [frameError, setFrameError] = useState<string | null>(null);
   const [frameRetry, setFrameRetry] = useState(0);
   const runRecord = useRouteRun(activeRunId);
-  // Frame metadata has no project identity. Verify the durable record before showing it.
-  const ownedRunId = runRecord.data && routeRunMatchesSource(runRecord.data, projectId, board, client.nativeSource) ? activeRunId : null;
+  // Metadata has no project identity. Keep diagnostics as well as geometry scoped.
+  const ownedRecord = runRecord.data && routeRunMatchesSource(runRecord.data, projectId, board, client.nativeSource) ? runRecord.data : undefined;
+  const ownedRunId = ownedRecord ? activeRunId : null;
   const run = ownedRunId ? runs[ownedRunId] : undefined;
-  const runError = runFailureText(runRecord.data);
+  const runError = runFailureText(ownedRecord);
   const frames = run?.frames.length ?? 0;
 
-  const restoredHistory = useRef(false);
+  const seenRunIds = useRef<Set<string> | null>(null);
   useEffect(() => {
     if (!history.data) return;
-    const foreignActiveRun = !!runRecord.data && !routeRunMatchesSource(runRecord.data, projectId, board, client.nativeSource);
-    if (restoredHistory.current && !foreignActiveRun) return;
-    restoredHistory.current = true;
-    if (!ownedRunId) setActiveRun(history.data.find(item => routeRunMatchesSource(item, projectId, board, client.nativeSource))?.id ?? null);
-  }, [history.data, ownedRunId, projectId, board?.sourceId, board?.manifestSha256, runRecord.data?.projectId, runRecord.data?.board?.sourceId, runRecord.data?.board?.manifestSha256, setActiveRun]);
+    const nextId = selectOwnedRouteRun(history.data, { projectId, ...(board ? { board } : {}), ...(client.nativeSource ? { nativeSource: client.nativeSource } : {}) }, {
+      currentId: activeRunId, current: ownedRecord, seen: seenRunIds.current, followNew: followLive,
+    });
+    seenRunIds.current = new Set(history.data.map(row => row.id));
+    if (nextId !== activeRunId) setActiveRun(nextId);
+  }, [history.data, activeRunId, ownedRecord?.id, projectId, board?.sourceId, board?.manifestSha256, followLive, client.nativeSource, setActiveRun]);
 
   // A newly launched run can return immediately. Refresh the project list while awaiting it.
   useEffect(() => {
@@ -250,28 +252,29 @@ function ProjectCinema({ projectId, scopeReady, board, prefix = "", sourceSha256
 
   const projectRuns = (history.data ?? []).filter(item => routeRunMatchesSource(item, projectId, board, client.nativeSource));
   const runIds = [...new Set([...projectRuns.map(item => item.id), ...(ownedRunId ? [ownedRunId] : [])])];
-  const active = !!ownedRunId && ["queued", "running", "cancel_requested", "cancelling"].includes(runRecord.data?.status ?? "");
+  const active = !!ownedRunId && ["queued", "running", "cancel_requested", "cancelling"].includes(ownedRecord?.status ?? "");
   const busy = applying || route.state.status === "running" || active || projectRuns.some(item => ["queued", "running", "cancel_requested", "cancelling"].includes(item.status));
   useEffect(() => { onBusyChange?.(busy); return () => onBusyChange?.(false); }, [busy, onBusyChange]);
-  useAssistantSurface({ projectId, label: sourceName ? `Routing / ${sourceName}` : "Routing", priority: 10, details: JSON.stringify({ board, sourceSha256, sourceDirectory: prefix || ".", router: pickedRouter, setupOpen, runId: ownedRunId, runState: runRecord.data?.status, creatingCandidate: busy, error: runError ?? route.state.error, instruction: "Candidate creation and explicit Apply are separate. Partial routing and recorded playback do not establish electrical checks or manufacturing readiness." }) });
+  useAssistantSurface({ projectId, label: sourceName ? `Routing / ${sourceName}` : "Routing", priority: 10, details: JSON.stringify({ board, sourceSha256, sourceDirectory: prefix || ".", router: pickedRouter, setupOpen, runId: ownedRunId, runState: ownedRecord?.status, creatingCandidate: busy, error: runError ?? route.state.error, instruction: "Candidate creation and explicit Apply are separate. Partial routing and recorded playback do not establish electrical checks or manufacturing readiness." }) });
   const hasPcb = project.data?.files.some(file => file.path === `${prefix}board.kicad_pcb`) ?? false;
   const routerAvailable = !routers.isPending && !routers.isFetching && !routers.isError && picker.some(option => option.id === pickedRouter && !option.disabled);
   const canRoute = scopeReady && hasPcb && routerAvailable && !project.isFetching && !project.isError && !!history.data && !history.isFetching && !history.isError && !busy;
   const preview = project.data?.files.some(file => file.path === `${prefix}renders/pcb.svg`);
   const showSavedReference = frames === 0 && !active && !!runError && preview;
-  const cancelButton = active && cancel.manifest?.some(tool => tool.name === "route_cancel") ? <Button size="sm" disabled={cancel.state.status === "running" || ["cancel_requested", "cancelling"].includes(runRecord.data?.status ?? "")} onClick={() => {
+  const cancelButton = active && cancel.manifest?.some(tool => tool.name === "route_cancel") ? <Button size="sm" disabled={cancel.state.status === "running" || ["cancel_requested", "cancelling"].includes(ownedRecord?.status ?? "")} onClick={() => {
     if (ownedRunId && useUiStore.getState().activeProjectId === projectId) void cancel.run("route_cancel", { projectId, ...(board ? { board } : {}), runId: ownedRunId }).then(() => { void runRecord.refetch(); void history.refetch(); });
   }}>Cancel run</Button> : null;
   async function startRouting() {
     if (!canRoute || useUiStore.getState().activeProjectId !== projectId) return;
+    goLive();
     await route.run("route", { projectId, applyPolicy: "manual", ...(board ? { board, expectedSourceSha256: sourceSha256 } : {}), ...(pickedRouter !== "default" ? { router: pickedRouter } : {}) });
     void history.refetch();
   }
-  const failure = runFailureNotice(runRecord.data, !!picker.find(option => option.id === runRecord.data?.router)?.disabled);
+  const failure = runFailureNotice(ownedRecord, !!picker.find(option => option.id === ownedRecord?.router)?.disabled);
   const failureNotice = runError && (
         <div role="alert" className="border-b border-danger/40 bg-danger/10 px-3 py-1.5 text-xs text-danger" data-testid="route-run-error">
-          <p><span className="font-semibold">{failure.title}</span> using {runRecord.data?.router}. {failure.hint}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2"><Button size="sm" disabled={!scopeReady || busy} onClick={() => { if (onOpenPcb) onOpenPcb(); else useUiStore.getState().setBoardTab("pcb"); }}>Review PCB</Button><CanvasToolButton icon="sparkles" label="Ask about this routing result" onClick={() => askAboutSurface({ projectId, label: "Routing / Stopped run", priority: 40, details: JSON.stringify({ board, runId: ownedRunId, router: runRecord.data?.router, status: runRecord.data?.status, error: runError, diagnostics: runRecord.data?.result?.diagnostics, endpointCollisions: runRecord.data?.result?.endpointCollisions, instruction: "Recorded result only; inspect current saved inputs before proposing changes." }) }, "Explain why this routing run stopped and review its reported constraints or collisions. Propose the next step before changing the PCB or its design rules.")} />{picker.find(option => option.id === runRecord.data?.router)?.disabled && <Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setSettingsOpen(true, "router")}>Manage routers</Button>}</div>
+          <p><span className="font-semibold">{failure.title}</span> using {ownedRecord?.router}. {failure.hint}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2"><Button size="sm" disabled={!scopeReady || busy} onClick={() => { if (onOpenPcb) onOpenPcb(); else useUiStore.getState().setBoardTab("pcb"); }}>Review PCB</Button><CanvasToolButton icon="sparkles" label="Ask about this routing result" onClick={() => askAboutSurface({ projectId, label: "Routing / Stopped run", priority: 40, details: JSON.stringify({ board, runId: ownedRunId, router: ownedRecord?.router, status: ownedRecord?.status, error: runError, diagnostics: ownedRecord?.result?.diagnostics, endpointCollisions: ownedRecord?.result?.endpointCollisions, instruction: "Recorded result only; inspect current saved inputs before proposing changes." }) }, "Explain why this routing run stopped and review its reported constraints or collisions. Propose the next step before changing the PCB or its design rules.")} />{picker.find(option => option.id === ownedRecord?.router)?.disabled && <Button size="sm" variant="ghost" onClick={() => useUiStore.getState().setSettingsOpen(true, "router")}>Manage routers</Button>}</div>
           <details className="mt-1"><DisclosureSummary icon="warning" label="Failure details" variant="compact" /><p className="mt-2 break-words">{runError}</p></details>
         </div>
       );
@@ -288,9 +291,9 @@ function ProjectCinema({ projectId, scopeReady, board, prefix = "", sourceSha256
     {!routers.isPending && !routers.isError && !routerAvailable && <p role="status">{routers.isFetching ? "Checking router availability…" : picker.find(option => option.id === pickedRouter)?.hint ?? "Choose an available router."}</p>}
     <p role="status">{project.isError ? "Project files could not be read." : !scopeReady || project.isFetching ? "Checking saved PCB…" : !hasPcb ? "Add a saved PCB in Board before starting routing." : "Routing creates a candidate and keeps the saved PCB. Review the result, then choose whether to apply it."}</p>
     <Button className="fd-routing-start-action" variant="primary" disabled={!canRoute} onClick={() => void startRouting()}>{busy ? "Routing…" : "Start routing"}</Button>
-    {ownedRunId && <section className="fd-routing-saved-run"><h3>Saved run</h3>{failureNotice || <p>Recorded {runRecord.data?.status ?? "run"} · inspect playback before starting another run.</p>}</section>}
+    {ownedRunId && <section className="fd-routing-saved-run"><h3>Saved run</h3>{failureNotice || <p>Recorded {ownedRecord?.status ?? "run"} · inspect playback before starting another run.</p>}</section>}
   </section>;
-  const feedback = <>{ownedRunId && !active && runRecord.data?.candidate?.available && <RouteCandidateReview key={ownedRunId} projectId={projectId} runId={ownedRunId} sourceName={sourceName ?? project.data?.name ?? "Saved PCB"} {...(board ? { board } : {})} {...(onOpenPcb ? { onOpenPcb } : {})} enabled={scopeReady && !busy} onBusyChange={setApplying} onChanged={() => { void runRecord.refetch(); void history.refetch(); void project.refetch(); }} />}{route.state.error && <p role="alert" className="text-danger">{route.state.error}</p>}{cancel.state.error && <p role="alert" className="text-danger">{cancel.state.error}</p>}{history.isError && <p role="alert">Routing history could not be loaded. <Button size="sm" onClick={() => void history.refetch()}>Retry history</Button></p>}{frameError && <p role="alert">{frameError} <Button size="sm" onClick={() => setFrameRetry(value => value + 1)}>Retry frames</Button></p>}</>;
+  const feedback = <>{ownedRunId && !active && ownedRecord?.candidate?.available && <RouteCandidateReview key={ownedRunId} projectId={projectId} runId={ownedRunId} sourceName={sourceName ?? project.data?.name ?? "Saved PCB"} {...(board ? { board } : {})} {...(onOpenPcb ? { onOpenPcb } : {})} enabled={scopeReady && !busy} onBusyChange={setApplying} onChanged={() => { void runRecord.refetch(); void history.refetch(); void project.refetch(); }} />}{route.state.error && <p role="alert" className="text-danger">{route.state.error}</p>}{cancel.state.error && <p role="alert" className="text-danger">{cancel.state.error}</p>}{history.isError && <p role="alert">Routing history could not be loaded. <Button size="sm" onClick={() => void history.refetch()}>Retry history</Button></p>}{frameError && <p role="alert">{frameError} <Button size="sm" onClick={() => setFrameRetry(value => value + 1)}>Retry frames</Button></p>}</>;
   if (!run) return <div className="fd-routing-start">
     <header><div><h1>Routing</h1><p>Start a run when your board is ready for copper routing.</p></div><Button ref={setupTrigger} size="sm" aria-expanded={setupOpen} onClick={() => setSetupOpen(!setupOpen)}>{setupOpen ? "Close setup" : "Set up routing"}</Button></header>
     <div className="fd-routing-start-body" data-setup-open={setupOpen}>{preview ? <RoutingReference projectId={projectId} prefix={prefix} /> : <section className="fd-routing-reference"><EmptyState title={hasPcb ? "Saved PCB" : "Start with a saved PCB"}>Choose Set up routing to review router options and requirements.</EmptyState></section>}{setupOpen && setup}</div>
@@ -299,7 +302,7 @@ function ProjectCinema({ projectId, scopeReady, board, prefix = "", sourceSha256
 
   return (
     <div className="fd-routing-player flex h-full flex-col" data-setup-open={setupOpen}>
-      <div className="fd-routing-heading"><strong>Routing</strong><span>{runRecord.data?.router} · {runRecord.data?.result?.state ?? runRecord.data?.status}{runRecord.data?.result?.state && ["complete", "partial"].includes(runRecord.data.result.state) ? ` · ${runRecord.data.result.open.length} unrouted nets in recorded result` : ""} · Current saved PCB coverage unverified</span><Button size="sm" variant="ghost" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(!detailsOpen)}>Layers and run details</Button><Button ref={setupTrigger} size="sm" aria-expanded={setupOpen} onClick={() => setSetupOpen(!setupOpen)}>{setupOpen ? "Close setup" : "New run"}</Button>{cancelButton}</div>
+      <div className="fd-routing-heading"><strong>Routing</strong><span>{ownedRecord?.router} · {ownedRecord?.result?.state ?? ownedRecord?.status}{ownedRecord?.result?.state && ["complete", "partial"].includes(ownedRecord.result.state) ? ` · ${ownedRecord.result.open.length} unrouted nets in recorded result` : ""} · Current saved PCB coverage unverified</span><Button size="sm" variant="ghost" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(!detailsOpen)}>Layers and run details</Button><Button ref={setupTrigger} size="sm" aria-expanded={setupOpen} onClick={() => setSetupOpen(!setupOpen)}>{setupOpen ? "Close setup" : "New run"}</Button>{cancelButton}</div>
       {setupOpen && setup}
       <div className="fd-routing-feedback">{feedback}</div>
       <div className="fd-routing-playback flex flex-wrap items-center gap-1.5 text-xs" role="group" aria-label="Recorded routing playback">

@@ -28,3 +28,16 @@ export { nativeViewBinding } from "./native-view";
 export { prepareProjectShare, inspectProjectStatus } from "./project-share";
 
 export { prepareEditableBoard } from "./board-contributions";
+
+export { capabilityScore } from "./capability-ranking";
+export * from "./resources";
+export * from "./board-state";
+export * from "./durable";
+export * from "./board-adopt";
+export { setInterconnectGate } from "./tools/board-release";
+export * from "./release-state";
+export * from "./child-tasks";
+
+export { visiblePublishedFile, publicationInProgress } from "./publication-visibility";
+
+export { snapshotProjectDependencies } from "./project-dependencies";

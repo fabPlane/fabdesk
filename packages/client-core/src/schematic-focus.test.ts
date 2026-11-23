@@ -38,6 +38,8 @@ test("live focus events reach an optional client sink without depending on chat 
 test("component navigation can be reopened explicitly from recognized successful result envelopes", () => {
   for (const output of [{ focus }, { json: { focus } }, { structuredContent: { focus } }, { structured_content: { focus } }, { result: { structuredContent: { focus } } }]) expect(schematicFocusFromResult(output)?.reference).toBe("U1");
   expect(schematicFocusFromResult({ isError: true, structuredContent: { focus } })).toBeNull();
+  expect(schematicFocusFromResult({ result: { structuredContent: { isError: true, focus } } })).toBeNull();
+  expect(schematicFocusFromResult({ result: { isError: true, structuredContent: { focus } } })).toBeNull();
   expect(schematicFocusFromResult({ content: [{ type: "text", text: JSON.stringify({ focus }) }] })).toBeNull();
   expect(schematicFocusFromResult({ focus: { ...focus, sourcePath: "some-other-source" } })).toBeNull();
 });
@@ -45,6 +47,9 @@ test("ambiguous native choices require structured source data and never come fro
   const focusChoices = { projectId: "p", reference: "U2", expectedHierarchyRevision: "a".repeat(64), sheets: [{ identity: "root/left", hierarchyPath: "/Left/", sourcePath: "child.kicad_sch" }, { identity: "root/right", hierarchyPath: "/Right/", sourcePath: "child.kicad_sch" }] };
   expect(schematicFocusChoicesFromResult({ json: { focusChoices } })?.sheets).toHaveLength(2);
   expect(schematicFocusChoicesFromResult({ isError: true, json: { focusChoices } })).toBeNull();
+  for (const key of ["json", "result", "structured_content"]) {
+    expect(schematicFocusChoicesFromResult({ [key]: { structuredContent: { isError: true, focusChoices } } })).toBeNull();
+  }
   expect(schematicFocusChoicesFromResult({ text: JSON.stringify({ focusChoices }) })).toBeNull();
   expect(schematicFocusChoicesFromResult({ focusChoices: { ...focusChoices, expectedHierarchyRevision: "unknown" } })).toBeNull();
 });

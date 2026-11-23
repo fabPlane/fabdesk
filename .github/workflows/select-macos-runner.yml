@@ -7,7 +7,7 @@ on:
         default: auto
       blacksmith-runner:
         type: string
-        default: blacksmith-6vcpu-macos-15
+        default: macos-15
       minimum-memory-mib:
         type: number
         default: 0
@@ -23,7 +23,7 @@ permissions:
   contents: write
 jobs:
   select:
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     outputs:
       runner: ${{ steps.pick.outputs.runner }}
       lease: ${{ steps.pick.outputs.lease }}
@@ -44,7 +44,7 @@ jobs:
             const heartbeat = Number(process.env.MAC_RUNNER_HEARTBEAT || 0);
             const fork = context.eventName === 'pull_request' && context.payload.pull_request?.head.repo.full_name !== `${context.repo.owner}/${context.repo.repo}`;
             if (inputs.mode === 'blacksmith' || fork || !Number.isSafeInteger(heartbeat) || heartbeat <= 0 || heartbeat > now || now - heartbeat > 45 || Number(process.env.MAC_RUNNER_MEMORY_MIB || 0) < inputs.memory || (inputs.ios && process.env.MAC_RUNNER_IOS_READY !== '1')) {
-              core.info('Using Blacksmith: Mac is busy, unavailable, or does not meet this job requirement.');
+              core.info('Using the hosted fallback: Mac is busy, unavailable, or does not meet this job requirement.');
               return;
             }
             // A fast-forward-only control ref acts as an atomic per-repository reservation.

@@ -1,0 +1,15 @@
+{"part": "Sony VAIO P battery interface, 40-contact board side (mates FPC-102 1-857-217-11, original CN2100 position)",
+ "match": "SONY PACK 40",
+ "source_kind": "measurement",
+ "source": "unpowered continuity of FPC-ORIG, 2026-09-25: vaio-p-guides power-path-rev1/reference/fpc-orig-pinout.md (net names from MBX-187 sheet 23). Caveat recorded there: the connector maker's pin-1 mark was not independently verified; edge-row power legs 1-8 and 12-20 not probed.",
+ "rules": [
+  {"pad": "1", "net_matches": "PACK_PLUS|VBATT|BAT\\+", "why": "contacts 1-17 = +VBATT1 (pack power)"},
+  {"pad": "17", "net_matches": "PACK_PLUS|VBATT|BAT\\+", "why": "contacts 1-17 = +VBATT1"},
+  {"pad": "18", "net_matches": "ID", "why": "contact 18 = BATT_ID"},
+  {"pad": "19", "net_matches": "SDA|SMB_?DATA", "why": "contact 19 = SMB_DATA"},
+  {"pad": "20", "net_matches": "SCL|SMB_?CLK", "why": "contact 20 = SMB_CLK"},
+  {"pad": "21", "net_matches": "PACK_PRESENT|BATT1?_PRS", "why": "contact 21 = BATT1_PRS#"},
+  {"pad": "22", "net_matches": "SYSTEM_PRESENT|SYS_PRS", "why": "contact 22 = SYS_PRS#"},
+  {"pad": "23", "net_matches": "GND|RTN", "why": "contacts 23-40 = BATT_RTN"},
+  {"pad": "40", "net_matches": "GND|RTN", "why": "contacts 23-40 = BATT_RTN"}
+ ]}

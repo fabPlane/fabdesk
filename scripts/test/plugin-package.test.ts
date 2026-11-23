@@ -17,7 +17,8 @@ describe("fabPlane plugin package", () => {
     expect(portable.extensions["com.openai"].interface).toEqual(compatibility.interface);
     const server = json("mcp.json").mcpServers;
     expect(server).toEqual(json(".codex.mcp.json").mcpServers);
-    expect(server.fabdesk).toEqual({ command: "fabdesk", args: ["mcp", "--apps"] });
+    // Codex's per-server keys: a board call may run past Codex's 60 s default (board jobs return a job id later)
+    expect(server.fabdesk).toEqual({ command: "fabdesk", args: ["mcp", "--apps"], startup_timeout_sec: 30, tool_timeout_sec: 1830 });
     expect(JSON.stringify(portable)).not.toContain("trycloudflare.com");
   });
 

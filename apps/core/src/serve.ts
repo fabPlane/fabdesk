@@ -1,8 +1,10 @@
 import { WorkingDesigns } from "./working-design";
+import { prepareAgentCli } from "./agent-cli";
 /** `fabdesk-core serve`: bind, write the handshake, print the ReadyLine, run until told to stop. */
 import { AGENT_OWNER_DIR, recoverAgentProcesses, stopAgentProcess } from "@fabdesk/agents";
 import { chmod, mkdir, rename, writeFile, unlink } from "node:fs/promises";
-import { join } from "node:path";
+import { join, basename } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { DaemonHandshake, DoctorReport, ReadyLine, Settings } from "@fabdesk/protocol";
 import { usageArchiveAllowed } from "@fabdesk/protocol";
 import {
@@ -12,10 +14,11 @@ import {
   type CoreServices,
   type ProjectHandle,
   type ToolRegistry,
+  projectHasPlacedBoard,
 } from "@fabdesk/tools";
 import type { AgentId } from "@fabdesk/protocol";
 import { AgentRunManager, type AgentAdapterLike } from "./agent-runs";
-import { FinishItManager } from "./finish-it";
+import { boardChecksApply, FinishItManager } from "./finish-it";
 import { resolvePrivacyStatus } from "./privacy-gate";
 import { TokenSet } from "./auth";
 import { DeviceStore } from "./devices";
@@ -39,7 +42,7 @@ import type { Hono } from "hono";
 import { createApp, type Env } from "./http/app";
 import { JobRunner } from "./jobs";
 import { logger, errMsg } from "./log";
-import { McpSessionManager } from "./mcp-sessions";
+import { McpSessionManager, projectStartToolsets, RAISED_TOOL_TIMEOUT_AGENTS } from "./mcp-sessions";
 import { machineName } from "./net";
 import { Notifier } from "./notifier";
 import { ProjectStore } from "./projects";
@@ -85,6 +88,11 @@ export function agentMcpProfile(
 }
 
 export type ServeOptions = {
+  /**
+   * Tests: override whether Finish it uses the board workflow's A1-A9 and review gate for a project (default: the
+   * project has a placed board, board_check is registered and the `boardChecksInFinishIt` setting is not off).
+   */
+  boardChecks?: (project: ProjectHandle) => boolean | Promise<boolean>;
   /** Tests: simulate an orphan that cannot be stopped. */
   recoveryStop?: (pid: number) => void | Promise<void>;
   recoveryWaitMs?: number;
@@ -416,6 +424,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
 
   const workingDesigns = new WorkingDesigns(config.home);
   const registry = createRegistry({ channel: config.channel });
+  /** The board workflow stage tools are registered (board_check is the first of them). */
+  const boardWorkflowReady = () => registry.get("board_check") !== undefined;
   const ctxFactory = createContextFactory({ services, projects, tokens, telemetry, workingDesigns });
   const mcp = new McpSessionManager({
     registry,
@@ -429,11 +439,17 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       enabledFor: (token) => runs.isSupervisedRunToken(token),
       handle: (token, req) => runs.permissionPrompt(token, req),
     },
+    // an external session (stdio proxy, `?project=`) starts with the toolsets a desktop run on that project gets
+    startToolsets: async (ref) => projectStartToolsets(registry, await projects.resolve(ref)),
+    // only agents whose tool timeout fabdesk raised wait the full durable wait (Cursor and Grok keep their default)
+    ownRun: (token) => RAISED_TOOL_TIMEOUT_AGENTS.has(runs.activeRunAgent(token) ?? ""),
   });
 
   const adapters = opts.adapters ?? (await loadAdapters());
   const agentInterface = configuredAgentInterface();
   let mcpUrl = "";
+  let cliPath: Promise<string> | undefined;
+  const activeCli = () => cliPath ??= prepareAgentCli(config.home, /^(bun|bun-debug)(\.exe)?$/i.test(basename(process.execPath)) ? [process.execPath, fileURLToPath(new URL("./main.ts", import.meta.url))] : [process.execPath]).catch(error => { cliPath = undefined; throw error; });
   const runs = new AgentRunManager({
     store,
     emit: (e) => bus.emit(e),
@@ -444,6 +460,10 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     ...(agentMcpProfile(agentInterface) ? { mcpProfile: agentMcpProfile(agentInterface)! } : {}),
     adapters,
     settings: () => store.settings.get(),
+    // a project that already has a placed board starts with the board toolset loaded, not behind load_toolset;
+    // only once the board workflow's check stage is registered (the set is board_job alone before that)
+    // (projectStartToolsets: the same decision external MCP sessions get through `startToolsets` below)
+    extraToolsets: (project) => projectStartToolsets(registry, project),
     workspaceDir: join(config.home, "workspace"),
     telemetry,
     agentEnvironment: async ({ cwd, project }) => {
@@ -454,6 +474,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       return {
         [AGENT_OWNER_DIR]: ownerDir,
         FABDESK_PROJECT_DIR: cwd,
+        FABDESK_CLI: await activeCli(),
         ...(mcpUrl ? { FABDESK_CORE_URL: new URL(mcpUrl).origin } : {}),
         ...(project
           ? {
@@ -475,7 +496,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     ...(opts.abortSettleTimeoutMs !== undefined
       ? { abortSettleTimeoutMs: opts.abortSettleTimeoutMs }
       : {}),
-    prepareProject: async (project: ProjectHandle) => {
+    prepareProject: async (project: ProjectHandle, agentId) => {
       const agents = await import("@fabdesk/agents");
       const sketches = (await projects.listFiles(join(project.dir, "sketches")))
         .filter((f) => /\.(png|jpe?g)$/i.test(f.path))
@@ -485,6 +506,10 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       return agents.writeAgentDocs(project.dir, {
         projectName: project.name,
         toolsMarkdown: toolsMarkdown(registry),
+        boardWorkflow: boardWorkflowReady(),
+        ...(agentId === "codex" && store.settings.get().agents.codex?.permissionMode !== "bypass"
+          ? { fabdeskCliUnavailableReason: "Codex workspace shell networking does not reach the desktop loopback endpoint. Use MCP capability_search/capability_call or direct MCP tools for tool discovery and execution; do not retry fabpcb tool requests from the shell." }
+          : { fabdeskCli: await activeCli() }),
         ...(cli ? { kicadCli: cli.path } : {}),
         shellExecutables: Object.fromEntries(
           ["python3", "rg", "bun"].flatMap((name) => {
@@ -510,6 +535,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     runs,
     projects,
     settings: () => store.settings.get(),
+    // the board's A1-A9 and review gate decide "verified" for a project with a placed board (a fresh circuit design keeps
+    // the DRC/ERC plan until its board exists), while the board workflow is registered and the setting is not off
+    boardChecks:
+      opts.boardChecks ??
+      ((project) => boardChecksApply(project.dir, { workflowReady: boardWorkflowReady(), settings: store.settings.get() })),
   });
 
   let resolveClosed!: (reason: string) => void;

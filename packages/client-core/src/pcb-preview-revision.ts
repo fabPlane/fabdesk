@@ -1,3 +1,4 @@
+import { dependenciesMatch } from "./dependency-revision";
 import { AssemblyRelativePath, PcbPreviewRevision, PCB_PREVIEW_REVISION_PATH } from "@fabdesk/protocol";
 import { CoreHttpError, type CoreClient } from "./CoreClient";
 
@@ -32,5 +33,6 @@ export async function inspectPcbPreviewRevision(client: Pick<CoreClient, "readFi
   const [sourceHash, artifactHash] = await Promise.all([sha256Blob(source), sha256Blob(artifact)]);
   if (expectedSourceSha256 && sourceHash !== expectedSourceSha256) throw new Error("PCB changed while checking its preview. Recheck project sources.");
   if (artifactHash !== receipt.artifactSha256) return "artifact-changed";
+  if (!await dependenciesMatch(client, projectId, receipt.dependencySnapshot, prefix)) return "source-changed";
   return sourceHash === receipt.sourceSha256 ? "matches-source" : "source-changed";
 }

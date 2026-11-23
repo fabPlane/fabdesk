@@ -44,6 +44,7 @@ describe("app toolset", () => {
       "app_type",
       "app_key",
       "app_select_project",
+      "app_clear_selection",
       "app_open_tab",
       "app_present",
       "app_open_thread",

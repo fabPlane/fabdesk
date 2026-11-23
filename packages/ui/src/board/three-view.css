@@ -1,8 +1,8 @@
 /* One selector, a tall PCB, and wide schematic/model panes. Controls reserve space
    in each viewport instead of covering the circuit or another pane. */
 .fd-three-view { display:flex; flex-direction:column; min-width:0; gap:6px; }
-.fd-three-view .fd-shared-part-selection { height:38px; min-height:38px; }
-.fd-three-view-panes { flex:1; min-height:0; }
+.fd-three-view .fd-shared-part-selection { height:auto; min-height:44px; padding:6px var(--fd-canvas-gutter, 16px); }
+.fd-three-view-panes { flex:1; min-height:0; margin:2px var(--fd-canvas-gutter, 16px) 10px; }
 .fd-three-view .fd-comparison-pane > header { flex-wrap:nowrap; gap:4px; padding:3px 6px; min-height:32px; }
 .fd-three-view .fd-comparison-pane > header .fd-button { height:26px; padding:2px 7px; font-size:11px; }
 .fd-comparison-part-actions { display:flex; flex:1; min-width:0; justify-content:flex-end; align-items:center; gap:4px; }
@@ -42,3 +42,13 @@
 
 .fd-three-view .fd-board-model-status > summary.fd-disclosure-summary { min-height:20px; height:20px; }
 .fd-three-view .fd-svg-tools .fd-svg-context > .fd-button { font-size:0; gap:0; min-width:24px; padding:2px; }
+
+/* Keep the full set of drawing controls reachable after focusing a component. */
+@container (max-width: 440px) {
+  .fd-three-view .fd-svg-return > span { display:none; }
+  .fd-canvas-workspace .fd-three-view .fd-svg-tools { height:auto; flex-wrap:wrap; }
+  .fd-three-view .fd-svg-tools .fd-svg-zoom-group { flex-basis:auto; }
+}
+
+.fd-three-view[data-layout=rows] .fd-three-view-panes { overflow-y:auto; }
+.fd-three-view[data-layout=rows] .fd-three-view-panes > [data-panel-group] { min-height:960px; }

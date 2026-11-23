@@ -1,3 +1,4 @@
+import { isManagedLibraryRow, type ProjectLibraryKind, type ProjectLibraryRow } from "./project-library-tables";
 /** Project-independent search and inspection for the KiCad libraries bundled with Fabdesk. */
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -25,6 +26,10 @@ export class KicadLibraryCatalog {
   constructor(
     private readonly roots: { footprints?: string | undefined; symbols?: string | undefined },
   ) {}
+
+  isBundledRow(kind: ProjectLibraryKind, row: ProjectLibraryRow): boolean {
+    return isManagedLibraryRow(kind, row, this.roots);
+  }
 
   has(kind: CatalogKind): boolean {
     return Boolean(kind === "footprint" ? this.roots.footprints : this.roots.symbols);

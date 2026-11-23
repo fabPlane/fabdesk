@@ -4,6 +4,9 @@
  * through the typed client on the project's session. Positions come back in millimetres; the
  * client speaks nanometres.
  */
+import { captureProjectLibraryRows } from "./project-library-tables";
+import { jailPath, projectRelative } from "@fabdesk/tools";
+import { stat } from "node:fs/promises";
 import { assertNativeBoardOwnership } from "./assembly-board-binding";
 import { resizeNativeOutlineShapes, nativeGroupLocksAny } from "./pcb-outline-resize";
 import { createHash } from "node:crypto";
@@ -35,6 +38,7 @@ import {
   SchematicSymbolType,
   SchematicTextSchema,
   TextSchema,
+  SchematicFieldSchema,
   type PolyLine,
   type PolygonWithHoles,
 } from "@fp-pcb/proto";
@@ -575,9 +579,29 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         durationMs: 0,
       };
     }
+    let sourceText = await readText(entryPath);
+    const registered = (await Promise.all((["footprint", "symbol"] as const).map(async kind =>
+      (await projectRows(opts.projectDir, kind)).map(row => ({ kind, row }))))).flat();
+    if (registered.length) {
+      let parsed: Record<string, unknown> | null = null;
+      try { const value: unknown = JSON.parse(sourceText); if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>; } catch { /* Let the compiler diagnose malformed sources. */ }
+      if (parsed && (parsed["libraries"] === undefined || Array.isArray(parsed["libraries"]))) {
+        // The bridge already supports frontend libraries after its bundled defaults. Supply
+        // project table overrides there so symbol generation/import use them, not just final tables.
+        const libraries = [...(parsed["libraries"] as unknown[] ?? []), ...registered.filter(({ row }) => !row.disabled).map(({ kind, row }) => {
+          if (row.type !== "KiCad" || row.options) throw new ToolError(`compile cannot represent project library ${row.name} (${row.type}, options=${row.options}); use native editing`, "precondition");
+          return { kind, nickname: row.name, uri: row.uri, description: row.descr };
+        })];
+        const components = (parsed["netlist"] as { components?: Array<{ footprint?: string; libSource?: { lib?: string } }> } | undefined)?.components ?? [];
+        for (const { kind, row } of registered.filter(({ row }) => row.disabled))
+          if (components.some(component => kind === "footprint" ? component.footprint?.split(":")[0] === row.name : component.libSource?.lib === row.name))
+            throw new ToolError(`project library ${row.name} is disabled; compile refused`, "precondition");
+        sourceText = JSON.stringify({ ...parsed, libraries });
+      }
+    }
     const source = {
       kind: NETLIST_JSON_KIND,
-      files: { [entrypoint]: await readText(entryPath) },
+      files: { [entrypoint]: sourceText },
       entrypoint,
     };
     if (opts.fresh) {
@@ -592,7 +616,8 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     let sessionWasBare = false;
     const job = await deps.sessions.withRetry(opts.projectDir, (s) => {
       sessionWasBare = !s.path;
-      return deps.bridge().compile(
+      // The compile registers libraries, which saves KiCad's in-memory tables over the saved ones.
+      return deps.sessions.preservingProjectLibraries(opts.projectDir, s, () => deps.bridge().compile(
         s.id,
         {
           source,
@@ -608,7 +633,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           onProgress: (j: FpPcbCompileJob) =>
             opts.progress?.(STAGE_FRACTION[j.state] ?? 0.5, j.state),
         },
-      );
+      ));
     });
     // The project may have been created by this job: the session now has a board and a path.
     if (job.state === "cancelled") throw new ToolError("compile cancelled", "cancelled");
@@ -991,12 +1016,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       for (const [name, value] of Object.entries(input.fields ?? {})) {
         assertEditableSymbolField(name);
         const field = symbol.field(name);
-        if (!field)
-          throw new ToolError(
-            `cannot add new field ${name} while updating ${input.reference}; provide it when creating the symbol`,
-            "invalid_args",
-          );
-        field.text = value;
+        if (field) field.text = value;
+        else symbol.proto.userFields.push(create(SchematicFieldSchema, {
+          name, visible: false, allowAutoPlace: true,
+          text: { text: value, ...(symbol.proto.position ? { position: symbol.proto.position } : {}) },
+        }));
       }
       updatedSymbols.push(symbol);
     }
@@ -1487,7 +1511,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     // Curved boundaries and cutouts cannot be compared or replaced by the segment-only tool.
     if (existing.some((edge) => edge.proto.shape?.geometry.case !== "segment"))
       throw new ToolError("This board has curved or non-segment Edge.Cuts geometry. Review and edit its boundary in KiCad.", "precondition");
-    const generated = existing.filter((edge) => edge.customProperties[property] === value);
+    const generated = existing.filter((edge) => edge.customProperties[property] === value || edge.customProperties["fp-pcb.generated-outline"] === "circuit.netlist.json");
     const segmentKey = (a: { x: number; y: number }, b: { x: number; y: number }) => {
       const first = `${a.x},${a.y}`;
       const second = `${b.x},${b.y}`;
@@ -1528,7 +1552,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         saved: true,
       };
     }
-    if (existing.length && (generated.length !== existing.length || !replace))
+    if (existing.length && (!replace || generated.length !== existing.length && !options.expectedSourceSha256))
       throw new ToolError(
         generated.length === existing.length
           ? "the requested outline differs from the fabPlane-owned outline; review the board and pass replace=true to update it"
@@ -1539,14 +1563,14 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       throw new ToolError("The board outline contains locked edges. Unlock them in KiCad before resizing.", "precondition");
     await assertExpectedSource();
     await board.commit("fabPlane: define native PCB outline", async (tx) => {
-      if (generated.length) await tx.delete(generated);
+      if (existing.length) await tx.delete(existing);
       await tx.create(newEdges);
     });
     await board.save();
     await keepNetClass(projectDir);
     return {
       created: newEdges.length,
-      replaced: generated.length,
+      replaced: existing.length,
       revision: Number((await board.revision()) ?? 0n),
       saved: true,
     };
@@ -2281,7 +2305,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           id: shape.id,
           owner,
           locked: shape.locked,
-          toolOwnedOutline: shape.proto.layer === BoardLayer.BL_Edge_Cuts && shape.customProperties["fabdesk.generated-outline"] === "native-atomic-edit",
+          toolOwnedOutline: shape.proto.layer === BoardLayer.BL_Edge_Cuts && (shape.customProperties["fabdesk.generated-outline"] === "native-atomic-edit" || shape.customProperties["fp-pcb.generated-outline"] === "circuit.netlist.json"),
           kind: shape.kind,
           layer: shape.layerId,
           start: { x: mm(shape.start.x), y: mm(shape.start.y) },
@@ -2322,7 +2346,15 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
           .filter((row) => keep(row.text));
       }
       case "unrouted": {
-        return (await board.ratsnest()).edges
+        // KiCad builds without the GetRatsnest handler answer AS_UNHANDLED; name the tools that report open connections
+        const rats = await board.ratsnest().catch((e: unknown) => {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (!/AS_UNHANDLED/.test(msg)) throw e;
+          throw new Error(
+            'unrouted edges need KiCad\'s ratsnest (GetRatsnest), which this KiCad build does not serve. Open connections: board_check (A1 connectivity, from KiCad DRC) or, on a last-mile workspace, board_route {"action":"why"} (each open end and what walls it).',
+          );
+        });
+        return rats.edges
           .map((e) => ({
             net: e.net,
             from: { x: mm(e.sourcePosition.x), y: mm(e.sourcePosition.y) },
@@ -2551,10 +2583,11 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     kind: "footprint" | "symbol",
     query: string,
     limit: number,
+    projectNicknames?: string[],
   ): Promise<FootprintHit[]> => {
     const kicad = await anyKicad(sessionKicad);
     const tokens = [...new Set(partSearchTokens(query))];
-    const nicknames = await kicad.libraries.nicknames(kind);
+    const nicknames = projectNicknames ?? await kicad.libraries.nicknames(kind);
     const scored = nicknames
       .map((n) => {
         const libraryTokens = new Set(partSearchTokens(n));
@@ -2573,11 +2606,9 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       const libraryTokens = new Set(partSearchTokens(n));
       const rest = tokens.filter((token) => !libraryTokens.has(token));
       const numeric = rest.find((token) => /^\d/.test(token));
-      const primary = !/\s/.test(query.trim())
+      const primary = !projectNicknames && !/\s/.test(query.trim())
         ? query.trim().toLocaleLowerCase("en-US")
-        : (numeric ??
-          [...rest].sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0))[0] ??
-          query.trim());
+        : (numeric ?? [...rest].sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0))[0] ?? "");
       const entries = await kicad.libraries.entries(kind, n, primary);
       for (const e of entries) {
         candidates.push({
@@ -2601,40 +2632,61 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
         description: description ?? "",
       }));
   };
-  const searchLibraries = (
+  const projectRows = async (projectDir: string, kind: "footprint" | "symbol") =>
+    (await captureProjectLibraryRows(projectDir))[kind]?.filter(
+      (row) => !deps.catalog?.isBundledRow?.(kind, row),
+    ) ?? [];
+
+  const searchLibraries = async (
     kind: "footprint" | "symbol",
     query: string,
     limit: number,
+    projectDir?: string,
   ): Promise<FootprintHit[]> => {
-    if (deps.catalog?.has(kind)) return deps.catalog.search(kind, query, limit);
-    // Keep the entire remote search inside the retry boundary. If the bridge disappears during an
-    // entries call, retry from nicknames rather than returning a silently truncated result set.
-    return deps.sessions.withRetry("", (session) =>
-      searchLibrariesOnce(session.kicad, kind, query, limit),
-    );
+    const rows = projectDir ? await projectRows(projectDir, kind) : [];
+    const overridden = new Set(rows.map((row) => row.name));
+    const enabled = rows.filter(row => !row.disabled);
+    // Bundled discovery is project-independent, including before native files exist or while
+    // the bridge is unavailable. Only project overrides need the live table refreshed.
+    if (projectDir && enabled.length) await deps.sessions.refreshProjectLibraries(projectDir);
+    const projectLocal = enabled.filter(row => row.uri.includes("${KIPRJMOD}"));
+    const remaining = enabled.filter(row => !projectLocal.includes(row));
+    const local = projectDir && enabled.length
+      ? await deps.sessions.withRetry(projectDir, async session => {
+          const preferred = projectLocal.length ? await searchLibrariesOnce(session.kicad, kind, query, limit, projectLocal.map(row => row.name)) : [];
+          const other = preferred.length < limit && remaining.length ? await searchLibrariesOnce(session.kicad, kind, query, limit - preferred.length, remaining.map(row => row.name)) : [];
+          return [...preferred, ...other];
+        })
+      : [];
+    const bundled = deps.catalog?.has(kind)
+      ? await deps.catalog.search(kind, query, limit + overridden.size)
+      : await deps.sessions.withRetry("", (session) =>
+          searchLibrariesOnce(session.kicad, kind, query, limit + overridden.size));
+    return [...local, ...bundled.filter((hit) => !overridden.has(hit.nickname))].slice(0, limit);
   };
-  const searchFootprints = (query: string, limit: number) =>
-    searchLibraries("footprint", query, limit);
-  const searchSymbols = (query: string, limit: number) => searchLibraries("symbol", query, limit);
+  const searchFootprints = (query: string, limit: number, projectDir?: string) =>
+    searchLibraries("footprint", query, limit, projectDir);
+  const searchSymbols = (query: string, limit: number, projectDir?: string) =>
+    searchLibraries("symbol", query, limit, projectDir);
   const describePart = async (
     kind: "footprint" | "symbol",
     libId: string,
+    projectDir?: string,
   ): Promise<PartDescription> => {
-    if (deps.catalog?.has(kind)) {
+    const nickname = libId.split(":")[0];
+    const row = projectDir ? (await projectRows(projectDir, kind)).find((row) => row.name === nickname) : undefined;
+    if (row?.disabled) throw new ToolError(`${kind} library ${nickname} is disabled in this project`, "not_found");
+    if (!row && deps.catalog?.has(kind)) {
       const item = await deps.catalog.describe(kind, libId);
       if (item) return item;
-      throw new ToolError(
-        `${kind} ${libId} was not found in the bundled KiCad libraries`,
-        "not_found",
-      );
+      throw new ToolError(`${kind} ${libId} was not found in the bundled KiCad libraries`, "not_found");
     }
-    const kicad = await anyKicad();
-    const item = await kicad.libraries.get(kind, libId);
-    if (!item)
-      throw new ToolError(
-        `${kind} ${libId} was not found in the design server libraries`,
-        "not_found",
-      );
+    if (row) await deps.sessions.refreshProjectLibraries(projectDir!);
+    // Keep lookup and conversion inside the retry boundary, including project overrides.
+    return deps.sessions.withRetry(row ? projectDir! : "", async (session) => {
+      const kicad = await anyKicad(session.kicad);
+      const item = await kicad.libraries.get(kind, libId);
+      if (!item) throw new ToolError(`${kind} ${libId} was not found in the design server libraries`, "not_found");
     if (kind === "symbol" && item instanceof LibSymbol) {
       const pins = item.items.filter(
         (child): child is SchematicPin => child instanceof SchematicPin,
@@ -2685,17 +2737,36 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
       };
     }
     throw new ToolError(`${libId} did not resolve as a ${kind}`, "invalid_args");
+    });
   };
   const checkPartCompatibility = async (
     symbolLibId: string,
     footprintLibId: string,
     role?: "power-only-usb-c",
+    projectDir?: string,
   ): Promise<PartCompatibility> => {
     const [symbol, footprint] = await Promise.all([
-      describePart("symbol", symbolLibId),
-      describePart("footprint", footprintLibId),
+      describePart("symbol", symbolLibId, projectDir),
+      describePart("footprint", footprintLibId, projectDir),
     ]);
     return evaluatePartCompatibility(symbol, footprint, role);
+  };
+
+  const registerLibrary = async (projectDir: string, kind: "footprint" | "symbol", nickname: string, path: string) => {
+    if (!/^[A-Za-z0-9_.-]+$/.test(nickname))
+      throw new ToolError("library nickname must contain only letters, numbers, underscores, dots or hyphens", "invalid_args");
+    const absolute = await jailPath(projectDir, path);
+    const info = await stat(absolute).catch(() => null);
+    if (!info || (kind === "footprint" ? !info.isDirectory() || !absolute.endsWith(".pretty") : !info.isFile() || !absolute.endsWith(".kicad_sym")))
+      throw new ToolError("library must be an existing .pretty directory or .kicad_sym file inside the project", "invalid_args");
+    const uri = "${KIPRJMOD}/" + projectRelative(projectDir, absolute);
+    await deps.sessions.ensureProject(projectDir);
+    await deps.sessions.withRetry(projectDir, (session) =>
+      deps.sessions.preservingProjectLibraries(projectDir, session, () =>
+        session.kicad.libraries.addTableRow(kind, "project", {
+          nickname, uri, type: "KiCad", description: "Project library", enabled: true,
+        }, true), { kind, nickname }));
+    return { nickname, uri };
   };
 
   /**
@@ -2811,6 +2882,7 @@ export function createFpPcbDesign(deps: FpPcbDesignDeps): DesignService {
     cancelRoute,
     unroute: nativeOperation(unroute),
     scope: nativeOperation(scope),
+    registerLibrary,
     searchFootprints,
     searchSymbols,
     describePart,

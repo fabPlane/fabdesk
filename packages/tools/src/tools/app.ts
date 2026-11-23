@@ -163,6 +163,7 @@ export const app_screenshot = defineTool({
       .enum(["png", "jpeg"])
       .optional()
       .describe("Image format; default jpeg for full window, png for regions"),
+    presentation: z.enum(["inspection", "deliverable"]).default("inspection").describe("Use deliverable only when deliberately presenting a screenshot requested by the user"),
     annotate: z.boolean().optional().describe("Reserved: overlay element refs (currently a no-op)"),
   },
   annotations: {
@@ -171,7 +172,7 @@ export const app_screenshot = defineTool({
     openWorldHint: false,
     idempotentHint: false,
   },
-  handler: async ({ windowId, region, scale, format }, ctx) => {
+  handler: async ({ windowId, region, scale, format, presentation }, ctx) => {
     const fmt = format ?? (region ? "png" : "jpeg");
     const body = {
       ...(windowId !== undefined ? { windowId } : {}),
@@ -197,7 +198,7 @@ export const app_screenshot = defineTool({
         windowId: shot.windowId,
         scale: body.scale,
       },
-      { images: [{ path, mime: shot.mime }] },
+      { images: [{ path, mime: shot.mime }], imagePresentation: presentation },
     );
   },
 });
@@ -344,6 +345,15 @@ export const app_key = defineTool({
     });
     return ok(`Pressed ${key}.`, res);
   },
+});
+
+export const app_clear_selection = defineTool({
+  name: "app_clear_selection",
+  toolset: "app", scope: "global", title: "Clear desktop selection",
+  description: "Clear the active project's component highlight and drawing-location popover explicitly, independent of keyboard focus. Does not edit native files or navigate tabs.",
+  inputSchema: {},
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  handler: async (_args, ctx) => ok("Cleared the active project's drawing and component selection.", await ui(ctx, "clearSelection")),
 });
 
 export const app_select_project = defineTool({
@@ -644,6 +654,7 @@ export const appTools = [
   app_type,
   app_key,
   app_select_project,
+  app_clear_selection,
   app_open_tab,
   app_present,
   app_open_thread,
