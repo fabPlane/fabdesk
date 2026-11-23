@@ -13,6 +13,9 @@ import { assemblyClipRange, fittedCameraDistance } from "./camera-fit";
 import { batchPcbGeometry } from "./batchPcbGeometry";
 import { parseWorkspaceView } from "./workspace-view";
 import { MeasurementOverlay } from "./measurement-overlay";
+import { prepareBoardPreviewMaterials } from "../board-preview-material";
+import { previewPixelRatio } from "../preview-quality";
+import { enclosurePreviewMaterial } from "../enclosure-preview-material";
 
 export type BoardGeometry = {
   outline: { minX: number; minY: number; maxX: number; maxY: number };
@@ -367,7 +370,7 @@ export class MechanicalScene {
     if (this.disposed) return;
     const width = this.host.clientWidth,
       height = this.host.clientHeight,
-      pixelRatio = Math.min(globalThis.devicePixelRatio || 1, 2);
+      pixelRatio = previewPixelRatio(width, height, globalThis.devicePixelRatio || 1);
     if (!width || !height) return;
     const previous = this.viewportSize;
     if (
@@ -578,8 +581,9 @@ export class MechanicalScene {
   static async decode(source: SceneModel, batch = true): Promise<T.Group> {
     const group = new T.Group();
     group.userData["modelId"] = source.item.id;
-    const material = () =>
-      new T.MeshStandardMaterial({
+    const material = () => source.enclosure || source.item.kind === "base" || source.item.kind === "lid"
+      ? enclosurePreviewMaterial()
+      : new T.MeshStandardMaterial({
         color: source.item.kind === "import" ? 0xaeb7bd : 0xa5adb2,
         roughness: 0.42,
         metalness: 0.18,
@@ -657,7 +661,7 @@ export class MechanicalScene {
             bevelEnabled: false,
             curveSegments: 24,
           }),
-          new T.MeshStandardMaterial({ color: 0x196e43, roughness: 0.55, metalness: 0.15 }),
+          new T.MeshStandardMaterial({ color: 0x12643b, roughness: 0.5, metalness: 0, envMapIntensity: .35 }),
         ),
       );
       for (const part of b.parts) {
@@ -702,6 +706,7 @@ export class MechanicalScene {
           return url;
         });
         const gltf = await new GLTFLoader(manager).parseAsync(source.data, "");
+        if (source.item.kind === "board") prepareBoardPreviewMaterials(gltf);
         // KiCad's GLB is Y-up with PCB +Y stored as +Z. The enclosure is PCB XY/Z-up.
         // Generic GLB uses the standard right-handed Y-up conversion instead.
         gltf.scene.scale.set(1000, 1000, source.item.kind === "board" ? -1000 : 1000);

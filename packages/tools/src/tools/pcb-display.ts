@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
 import {
+  stockModelCacheRoot,
+  withModelCache,
   findKicadCli,
   kicadVersionAtLeast,
   measureGlb,
@@ -105,6 +107,10 @@ export function displayCoverage(board: string, roots: ReturnType<typeof measureG
 
 /** A fresh immutable export; never reuse an old file after a failed KiCad process. */
 export async function renderPcbDisplay(ctx: ToolContext, path: string, expected: string) {
+  return withModelCache(stockModelCacheRoot(), () => exportDisplay(ctx, path, expected));
+}
+
+async function exportDisplay(ctx: ToolContext, path: string, expected: string) {
   const project = ctx.requireProject();
   if (!path.toLowerCase().endsWith(".kicad_pcb"))
     throw new ToolError("Choose a KiCad PCB file", "invalid_args");
@@ -117,6 +123,7 @@ export async function renderPcbDisplay(ctx: ToolContext, path: string, expected:
       "precondition",
     );
   const cli = await requireKicad(ctx);
+  const prepared = await ctx.services.kicad.prepareModels(cli, { board, signal: ctx.signal, allowOffline: true });
   const relativePath = `renders/pcb-models/${randomUUID()}.glb`;
   const output = await jailPath(project.dir, relativePath);
   await ensureDir(await jailPath(project.dir, "renders/pcb-models"));
@@ -147,7 +154,7 @@ export async function renderPcbDisplay(ctx: ToolContext, path: string, expected:
         maxY: Math.max(...measured.roots.flatMap((r) => (r.bounds ? [r.bounds.maxY] : []))),
         maxZ: Math.max(...measured.roots.flatMap((r) => (r.bounds ? [r.bounds.maxZ] : []))),
       },
-      warnings: result.warnings,
+      warnings: [...prepared.warnings, ...result.warnings],
     });
   } catch (error) {
     await rm(output, { force: true });

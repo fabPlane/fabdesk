@@ -1,6 +1,14 @@
 import type { OrthographicCamera, Vector3 } from "three";
 
 export type BoardCameraMode = { mode: "2d" | "3d"; side: "top" | "bottom"; revision?: number };
+export type SavedBoardCamera = { camera: OrthographicCamera; target: Vector3; view: BoardCameraMode };
+
+/** Restore the actual board camera, including zoom/frustum, before applying a
+ * newly requested side or mode. Replacing geometry must not reset an orbit. */
+export function restoreBoardCamera(camera: OrthographicCamera, target: Vector3, saved: SavedBoardCamera) {
+  camera.copy(saved.camera);
+  target.copy(saved.target);
+}
 
 /** Entering 3D only unlocks orbit. Keep the same projection, framing and camera pose. */
 export function alignBoardCamera(camera: OrthographicCamera, target: Vector3, next: BoardCameraMode, previous: BoardCameraMode | null) {

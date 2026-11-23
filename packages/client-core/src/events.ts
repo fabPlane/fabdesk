@@ -3,19 +3,20 @@
  * Pure of any platform: shared verbatim by the Electron renderer and the mobile client.
  */
 import type {
-  CoreEvent,
-  SchematicFocus,
-  Message,
-  MessagePart,
-  RouteFrameLine,
-  RouteResult,
-  Thread,
+CoreEvent,
+Message,
+MessagePart,
+RouteFrameLine,
+RouteResult,
+SchematicFocus,
+Thread,
 } from "@fabdesk/protocol";
 import type { QueryClient } from "@tanstack/react-query";
+import { BOARD_WORKSPACE_PATHS,BOARD_WORKSPACE_QUERY_KEY } from "./board-workspace-keys";
 import type { CoreClient } from "./CoreClient";
+import { refreshPreviewArtifacts } from "./preview-refresh";
 import { useAuthStore } from "./stores/auth";
-import { useRunsStore, type RunsState } from "./stores/runs";
-import { BOARD_WORKSPACE_PATHS, BOARD_WORKSPACE_QUERY_KEY } from "./board-workspace-keys";
+import { useRunsStore,type RunsState } from "./stores/runs";
 
 export const EVENT_TOPICS = [
   "agent.*",
@@ -352,6 +353,10 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       void qc.invalidateQueries({ queryKey: ["route-run", event.result.runId] });
       break;
     case "project.changed":
+      refreshPreviewArtifacts(qc, event.projectId, event.paths);
+      // Output writes must not schedule another export; source events re-read hashes.
+      if (event.paths.some(path => !/(?:^|\/)(?:renders|exports|reports)\//.test(path)))
+        void qc.invalidateQueries({ queryKey: ["preview-inputs", event.projectId] });
       if (event.paths.some(path => BOARD_WORKSPACE_PATHS.test(path))) void qc.invalidateQueries({ queryKey: [BOARD_WORKSPACE_QUERY_KEY, event.projectId] });
       if (event.paths.some(path => /(?:\.kicad_(?:sch|pro|pcb)$|(?:^|\/)(?:circuit\.netlist\.json|project\.parts\.json|fabplane\.assembly\.json)$)/.test(path))) void qc.invalidateQueries({ queryKey: ["project-bom", event.projectId] });
       void qc.invalidateQueries({ queryKey: ["kept-output-identity", event.projectId] });

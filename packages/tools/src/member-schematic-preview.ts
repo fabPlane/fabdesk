@@ -1,3 +1,4 @@
+import { recordAutomaticSchematicVersion } from "./automatic-schematic-history";
 import { randomUUID, createHash } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
 import { AssemblySchematicPreviewRevision, SCHEMATIC_PREVIEW_REVISION_PATH } from "@fabdesk/protocol";
@@ -6,7 +7,7 @@ import { ToolError, type ToolContext } from "./registry";
 import { inspectSavedHierarchy, ok, requireKicad } from "./tools/common";
 
 /** Immutable member SVG versions plus one atomic receipt pointer; never replace earlier preview files. */
-export async function renderMemberSchematicPreview(ctx: ToolContext, expectedHierarchyRevision?: string, circuit = false) {
+export async function renderMemberSchematicPreview(ctx: ToolContext, expectedHierarchyRevision?: string, circuit = false, automaticPreview = false) {
   const project = ctx.requireProject();
   if (!ctx.board || !expectedHierarchyRevision) throw new ToolError("Inspect the member schematic and provide its expectedHierarchyRevision before rendering.", "precondition");
   const cli = await requireKicad(ctx), hierarchy = await inspectSavedHierarchy(ctx, project, cli);
@@ -15,7 +16,7 @@ export async function renderMemberSchematicPreview(ctx: ToolContext, expectedHie
   ctx.progress(.2, "rendering captured native sheets");
   const result = await ctx.services.kicad.exportOwnedSchematicSvg(cli, { projectDir: project.dir, hierarchy, ...(circuit ? { circuit: true } : {}), signal: ctx.signal });
   if (result.sourceRevision !== expectedHierarchyRevision || result.sheets.length !== hierarchy.sheets.length) throw new ToolError("Schematic export did not match the inspected hierarchy.", "precondition");
-  const version = `renders/schematic/${randomUUID()}`, artifacts: AssemblySchematicPreviewRevision["sheets"] = [];
+  const version = `renders/schematic/${automaticPreview ? "auto-" : ""}${randomUUID()}`, artifacts: AssemblySchematicPreviewRevision["sheets"] = [];
   let committed = false;
   try {
     for (const [index, sheet] of result.sheets.entries()) {
@@ -43,6 +44,7 @@ export async function renderMemberSchematicPreview(ctx: ToolContext, expectedHie
     const pointer = await jailPath(project.dir, SCHEMATIC_PREVIEW_REVISION_PATH);
     await ctx.runInScope!(async () => {}); ctx.signal.throwIfAborted();
     await writeJson(pointer, receipt); committed = true;
+    if (automaticPreview) await recordAutomaticSchematicVersion(ctx, version, artifacts.map(s => [s.path, s.sha256] as const));
     ctx.progress(1, "done");
     return ok(`Rendered ${receipt.sheets.length} source-qualified schematic sheet(s). External symbol libraries, ERC and PCB parity remain unverified.`, { receiptPath: pointer, revision: receipt.sourceRevision, sheets: receipt.sheets, preview: receipt });
   } finally {

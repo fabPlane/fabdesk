@@ -2,8 +2,11 @@
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { lastLines, runKicadCli, type KicadCli } from "./cli";
+import { componentModelEnvironment, componentModelLibraryRoots, lastLines, runKicadCli, type KicadCli } from "./cli";
 import { parseGlbContainer } from "./glb-container";
+import { resolveModelPath } from "./mechanical";
+import { withModelBoard } from "./model-board";
+import { ledLensModels } from "./led-lens-models";
 
 export type BoardView = "top" | "bottom" | "perspective" | "side";
 
@@ -20,6 +23,16 @@ export interface RenderPngOptions {
 }
 
 export const DEFAULT_PERSPECTIVE = { rotate: "-38,0,28", zoom: 0.72 } as const;
+
+function withRenderedModelBoard<T>(board: string, modelDir: string, env: NodeJS.ProcessEnv, cli: KicadCli, run: (path: string) => Promise<T>) {
+  const roots = componentModelLibraryRoots(env, cli.path);
+  const resolvePath = (declared: string, preferStep = false) => {
+    const model = resolveModelPath(declared, modelDir, env, roots);
+    if (preferStep && model.substitutionCandidates.length) return model.substitutionCandidates[0]!;
+    return model.status === "resolved" ? model.path : model.substitutionCandidates[0] ?? null;
+  };
+  return withModelBoard(board, resolvePath, run, (text, scratch) => ledLensModels(text, scratch, declared => resolvePath(declared, true)));
+}
 
 /** Renders one PNG of a board with the KiCad ray tracer, transparent background. */
 export async function renderPng(cli: KicadCli, options: RenderPngOptions): Promise<void> {
@@ -55,8 +68,9 @@ export async function renderPng(cli: KicadCli, options: RenderPngOptions): Promi
       break;
     }
   }
-  args.push(options.board);
-  await runKicadCli(cli, args, { ...(options.signal ? { signal: options.signal } : {}) });
+  const modelDir = dirname(resolve(options.board)), env = componentModelEnvironment(process.env, cli.path);
+  await withRenderedModelBoard(options.board, modelDir, env, cli, board =>
+    runKicadCli(cli, [...args, "--define-var", `KIPRJMOD=${modelDir}`, board], { ...(options.signal ? { signal: options.signal } : {}) }));
   if (!existsSync(options.output)) throw new Error(`kicad-cli did not write ${options.output}`);
 }
 
@@ -72,14 +86,23 @@ export interface ExportGlbOptions {
 }
 
 /**
- * Exports a binary glTF with substituted STEP models, pads, silkscreen and solder mask. KiCad
+ * Exports a binary glTF with substituted STEP models and the complete outer copper
+ * (pads, tracks, vias and filled zones), silkscreen and solder mask. KiCad
  * reports a failure exit code when `--fuse-shapes` hits geometry it cannot fuse even though it
  * still writes a valid file. Validate the complete GLB before publishing it; retry an invalid or
  * missing result once unfused. Failed/cancelled attempts never replace an existing good export.
  */
 export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promise<{ fused: boolean; warnings: string[] }> {
-  const base = ["pcb", "export", "glb", "--force", "--subst-models", "--include-pads", "--include-silkscreen", "--include-soldermask"];
-  if (options.modelProjectDir) base.push("--define-var", `KIPRJMOD=${options.modelProjectDir}`);
+  const modelDir = options.modelProjectDir ?? dirname(resolve(options.board));
+  const modelEnv = componentModelEnvironment(process.env, cli.path);
+  const base = ["pcb", "export", "glb", "--force", "--subst-models", "--include-pads", "--include-tracks", "--include-zones", "--include-silkscreen", "--include-soldermask"];
+  // The STEP/GLB exporter resolves project text variables, but some KiCad builds
+  // leave versioned library variables literal even when present in the process
+  // environment. Supply only model-library paths explicitly, never other env data.
+  for (const [name, value] of Object.entries(componentModelEnvironment(process.env, cli.path))) {
+    if (/^KICAD\d+_3DMODEL_DIR$/.test(name) && value) base.push("--define-var", `${name}=${value}`);
+  }
+  base.push("--define-var", `KIPRJMOD=${modelDir}`);
   if (!options.includeDnp) base.push("--no-dnp");
   if (options.mechanical) base.push("--user-origin", "0x0mm");
   const attempt = async (fused: boolean) => {
@@ -90,10 +113,10 @@ export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promi
     const scratch = await mkdtemp(join(dirname(resolve(options.output)), ".fabdesk-glb-"));
     const temporary = join(scratch, "model.glb");
     try {
-      const result = await runKicadCli(cli, [...base, ...(fused ? ["--fuse-shapes"] : []), "-o", temporary, options.board], {
+      const result = await withRenderedModelBoard(options.board, modelDir, modelEnv, cli, board => runKicadCli(cli, [...base, ...(fused ? ["--fuse-shapes"] : []), "-o", temporary, board], {
         tolerateExit: true,
         ...(options.signal ? { signal: options.signal } : {}),
-      });
+      }));
       const warnings = `${result.stdout}\n${result.stderr}`
         .split("\n")
         .filter((line) => /file not found|problems encountered|warning|could not add|unable to load|failed/i.test(line))
