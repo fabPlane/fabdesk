@@ -118,6 +118,7 @@ export type SavedModelReference = {
 
 export type SavedFootprint = {
   ref: string | null;
+  value?: string;
   uuid: string | null;
   footprint: string;
   layer: string | null;
@@ -144,6 +145,8 @@ export function readSavedBoardModels(boardText: string): SavedFootprint[] {
     const reference =
       children(fp, "property").find((p) => p[1] === "Reference")?.[2] ??
       children(fp, "fp_text").find((t) => t[1] === "reference")?.[2];
+    const value = children(fp, "property").find(p => p[1] === "Value")?.[2] ??
+      children(fp, "fp_text").find(t => t[1] === "value")?.[2];
     const layerNode = child(fp, "layer");
     const layer = typeof layerNode?.[1] === "string" ? layerNode[1] : null;
     const transform = child(fp, "transform");
@@ -194,6 +197,7 @@ export function readSavedBoardModels(boardText: string): SavedFootprint[] {
     });
     return {
       ref: typeof reference === "string" ? reference : null,
+      ...(typeof value === "string" ? { value } : {}),
       uuid: typeof child(fp, "uuid")?.[1] === "string" ? (child(fp, "uuid")![1] as string) : null,
       footprint: typeof fp[1] === "string" ? fp[1] : "",
       layer,

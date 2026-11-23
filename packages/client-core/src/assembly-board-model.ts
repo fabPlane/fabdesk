@@ -2,6 +2,10 @@ import { AssemblyBoardModelRevision,BOARD_MODEL_REVISION_PATH,BoardSourceSelecti
 import { CoreHttpError,type CoreClient } from "./CoreClient";
 import { dependenciesMatch } from "./dependency-revision";
 import { sha256Blob } from "./pcb-preview-revision";
+/** Older GLBs used a single lens color for every instance of a stock LED. */
+export async function needsLedLensExport(version: number | undefined, pcb: Blob) {
+  return version === undefined && /LED_(?:THT|SMD)\.3dshapes\/LED_/i.test(await pcb.text());
+}
 /** Read and return the exact model bytes whose status was inspected. No root fallback or second viewer fetch. */
 export async function inspectAssemblyBoardModel(client: Pick<CoreClient, "inspectBoardSources" | "readFile" | "readFileBlob">, projectId: string, requested: BoardSourceSelection) {
   const board = Object.freeze(BoardSourceSelection.parse(requested));
@@ -18,6 +22,6 @@ export async function inspectAssemblyBoardModel(client: Pick<CoreClient, "inspec
   let raw: unknown = null; try { raw = JSON.parse(text ?? ""); } catch { /* Unverified legacy model. */ }
   const receipt = AssemblyBoardModelRevision.safeParse(raw);
   const scoped = receipt.success && receipt.data.boardSource.projectId === projectId && receipt.data.boardSource.sourceId === board.sourceId && receipt.data.boardSource.manifestSha256 === board.manifestSha256;
-  const state = !model ? "missing-model" : !scoped ? "scope-unverified" : artifactSha256 !== receipt.data.artifactSha256 ? "artifact-changed" : receipt.data.sourceSha256 !== sourceSha256 || !await dependenciesMatch(client, projectId, receipt.data.dependencySnapshot, prefix) ? "source-changed" : "source-unchanged";
+  const state = !model ? "missing-model" : !scoped ? "scope-unverified" : artifactSha256 !== receipt.data.artifactSha256 ? "artifact-changed" : receipt.data.sourceSha256 !== sourceSha256 || await needsLedLensExport(receipt.data.ledLensVersion, pcb) || !await dependenciesMatch(client, projectId, receipt.data.dependencySnapshot, prefix) ? "source-changed" : "source-unchanged";
   return { projectId, board, sourceSha256, path, model, state, warnings: scoped ? receipt.data.warnings : [], pendingModels: scoped ? receipt.data.pendingModels ?? 0 : 0, artifactSha256 };
 }

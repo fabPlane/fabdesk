@@ -6,6 +6,7 @@ import { componentModelEnvironment, componentModelLibraryRoots, lastLines, runKi
 import { parseGlbContainer } from "./glb-container";
 import { resolveModelPath } from "./mechanical";
 import { withModelBoard } from "./model-board";
+import { ledLensModels } from "./led-lens-models";
 
 export type BoardView = "top" | "bottom" | "perspective" | "side";
 
@@ -106,13 +107,15 @@ export async function exportGlb(cli: KicadCli, options: ExportGlbOptions): Promi
     const scratch = await mkdtemp(join(dirname(resolve(options.output)), ".fabdesk-glb-"));
     const temporary = join(scratch, "model.glb");
     try {
-      const result = await withModelBoard(options.board, declared => {
+      const resolvePath = (declared: string, preferStep = false) => {
         const resolution = resolveModelPath(declared, modelDir, modelEnv, modelRoots);
+        if (preferStep && resolution.substitutionCandidates.length) return resolution.substitutionCandidates[0]!;
         return resolution.status === "resolved" ? resolution.path : resolution.substitutionCandidates[0] ?? null;
-      }, board => runKicadCli(cli, [...base, ...(fused ? ["--fuse-shapes"] : []), "-o", temporary, board], {
+      };
+      const result = await withModelBoard(options.board, resolvePath, board => runKicadCli(cli, [...base, ...(fused ? ["--fuse-shapes"] : []), "-o", temporary, board], {
         tolerateExit: true,
         ...(options.signal ? { signal: options.signal } : {}),
-      }));
+      }), text => ledLensModels(text, scratch, declared => resolvePath(declared, true)));
       const warnings = `${result.stdout}\n${result.stderr}`
         .split("\n")
         .filter((line) => /file not found|problems encountered|warning|could not add|unable to load|failed/i.test(line))

@@ -1,6 +1,6 @@
 import { BoardModelRevision, BOARD_MODEL_REVISION_PATH, type BoardSourceSelection } from "@fabdesk/protocol";
 import { CoreHttpError, type CoreClient } from "./CoreClient";
-import { inspectAssemblyBoardModel } from "./assembly-board-model";
+import { inspectAssemblyBoardModel, needsLedLensExport } from "./assembly-board-model";
 import { dependenciesMatch } from "./dependency-revision";
 import { sha256Blob } from "./pcb-preview-revision";
 
@@ -23,6 +23,7 @@ export async function loadProgressiveBoardModel(client: CoreClient, projectId: s
       if (checkDependencies && !await dependenciesMatch(client, projectId, receipt.dependencySnapshot)) return null;
       const [blob, pcb] = await Promise.all([client.readFileBlob(projectId, "renders/board.glb"), client.readFileBlob(projectId, "board.kicad_pcb")]);
       if (await sha256Blob(pcb) !== hash) throw new Error("Board changed while opening its model.");
+      if (await needsLedLensExport(receipt.ledLensVersion, pcb)) return null;
       if (receipt.artifactSha256 !== await sha256Blob(blob)) return null;
       return { blob, warnings: receipt.warnings ?? [], pendingModels: receipt.pendingModels ?? 0, digest: receipt.artifactSha256 };
     } catch (error) {

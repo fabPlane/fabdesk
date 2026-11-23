@@ -3,8 +3,8 @@ import { expect,test } from "bun:test";
 import { inspectAssemblyBoardModel } from "./assembly-board-model";
 import { CoreHttpError } from "./CoreClient";
 import { sha256Blob } from "./pcb-preview-revision";
-async function fixture() {
-  const pcb = new Blob(["PCB"]), model = new Blob(["GLB"]), hash = await sha256Blob(pcb);
+async function fixture(pcbText = "PCB") {
+  const pcb = new Blob([pcbText]), model = new Blob(["GLB"]), hash = await sha256Blob(pcb);
   const source = { id: "io", name: "I/O", location: "project", directory: "boards/io" }, board = { sourceId: "io", manifestSha256: "a".repeat(64) };
   const data = ProjectBoardSources.parse({ projectId: "p", mode: "assembly", manifestSha256: board.manifestSha256, editing: "explicit-source-tools", observedAt: "2026-10-28T00:00:00Z", assembly: { contract: "fabplane.assembly.v1", sources: [source], instances: [{ id: "left", name: "Left", sourceId: "io" }], connections: [] }, sources: [{ source, status: "available", pcbSha256: hash }] });
   const receipt = { contract: "fabplane.board-model-revision.v1", source: "board.kicad_pcb", artifact: "renders/board.glb", sourceSha256: hash, artifactSha256: await sha256Blob(model), dependencies: "unverified", generatedAt: "2026-10-28T00:00:00Z", boardSource: { projectId: "p", ...board }, warnings: ["Component model unavailable"] };
@@ -18,6 +18,12 @@ test("member model inspection returns exactly the inspected source-bound bytes, 
   expect(result.warnings).toEqual(["Component model unavailable"]); expect(f.paths.filter(path => path.endsWith("board.glb"))).toHaveLength(1);
   f.receipt.sourceSha256 = "b".repeat(64); expect((await inspectAssemblyBoardModel(f.client, "p", f.board)).state).toBe("source-changed");
   f.receipt.artifactSha256 = "c".repeat(64); expect((await inspectAssemblyBoardModel(f.client, "p", f.board)).state).toBe("artifact-changed");
+});
+test("an assembly member with stock LEDs refreshes its legacy export once", async () => {
+  const f = await fixture('(model "${KICAD9_3DMODEL_DIR}/LED_THT.3dshapes/LED_D5.0mm.step")');
+  expect((await inspectAssemblyBoardModel(f.client, "p", f.board)).state).toBe("source-changed");
+  const upgraded = { ...f.client, readFile: async () => JSON.stringify({ ...f.receipt, ledLensVersion: 1 }) };
+  expect((await inspectAssemblyBoardModel(upgraded, "p", f.board)).state).toBe("source-unchanged");
 });
 test("root/other-source/older-declaration receipts remain unverified and missing models never fall back", async () => {
   const f = await fixture();
