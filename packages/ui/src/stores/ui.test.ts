@@ -82,7 +82,9 @@ describe("board tabs", () => {
     expect(BOARD_TABS.at(-1)).toBe("placement");
     expect(BOARD_TAB_LABELS.placement).toBe("Placement");
     expect(BOARD_TAB_LABELS.comments).toBe("Comments");
+    expect(BOARD_TABS).toContain("fab");
     expect(BOARD_TAB_LABELS.diff).toBe("Diff");
+    expect(BOARD_TAB_LABELS.fab).toBe("Fab check");
   });
 });
 
@@ -592,6 +594,15 @@ test("closing a project clears Back history, while a blocked close retains it", 
   expect(store.getState().navigationHistory).toEqual([]);
 });
 
+
+test("fab check stays reachable in the canvas without losing review and placement destinations", () => {
+  const store = createUiStore({ getItem: () => null, setItem() {}, removeItem() {} });
+  openProjectFromHome(store, "fab-project");
+  for (const [tab, area] of [["fab", "review"], ["comments", "review"], ["updates", "review"], ["placement", "boards"]] as const) {
+    store.getState().setBoardTab(tab);
+    expect(store.getState()).toMatchObject({ boardTab: tab, workspaceArea: area, activeProjectId: "fab-project" });
+  }
+});
 
 test("Account opens the shared profile window without navigating or losing settings and project drafts", () => {
   const store = createUiStore({ getItem: () => null, setItem() {}, removeItem() {} });

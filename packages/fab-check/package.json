@@ -1,0 +1,20 @@
+{
+  "name": "@fabdesk/fab-check",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@fabdesk/board-art": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2",
+    "@types/bun": "1.2.21"
+  }
+}

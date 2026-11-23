@@ -123,6 +123,17 @@
         "typescript": "5.9.2",
       },
     },
+    "packages/fab-check": {
+      "name": "@fabdesk/fab-check",
+      "version": "0.1.0",
+      "dependencies": {
+        "@fabdesk/board-art": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "1.2.21",
+        "typescript": "5.9.2",
+      },
+    },
     "packages/client-core": {
       "name": "@fabdesk/client-core",
       "version": "0.1.0",
@@ -204,6 +215,7 @@
       "dependencies": {
         "@fabdesk/board-art": "workspace:*",
         "@fabdesk/board-diff": "workspace:*",
+        "@fabdesk/fab-check": "workspace:*",
         "@fabdesk/kicad": "workspace:*",
         "@fabdesk/product-video": "workspace:*",
         "@fabdesk/protocol": "workspace:*",
@@ -705,6 +717,8 @@
     "@fabdesk/board-diff": ["@fabdesk/board-diff@workspace:packages/board-diff"],
 
     "@fabdesk/client-core": ["@fabdesk/client-core@workspace:packages/client-core"],
+
+    "@fabdesk/fab-check": ["@fabdesk/fab-check@workspace:packages/fab-check"],
 
     "@fabdesk/core": ["@fabdesk/core@workspace:apps/core"],
 

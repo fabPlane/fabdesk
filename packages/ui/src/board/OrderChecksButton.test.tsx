@@ -4,7 +4,7 @@ import type { OrderReadiness } from "@fabdesk/protocol";
 import { OrderChecksButton } from "./OrderChecksButton";
 
 function render(drc: OrderReadiness["checks"]["drc"], erc: OrderReadiness["checks"]["erc"], ready = false, unavailable = false) {
-  return renderToStaticMarkup(<OrderChecksButton order={{ ready, checks: { drc, erc }, hasGerbers: true, hasFabricationZip: false, hasRouted: false, hasKicadPcb: true, reasons: [], warnings: [] }} unavailable={unavailable} onClick={() => {}} />);
+  return renderToStaticMarkup(<OrderChecksButton order={{ ready, checks: { drc, erc, fabPackage: "not_required" }, hasGerbers: true, hasFabricationZip: false, hasRouted: false, hasKicadPcb: true, reasons: [], warnings: [] }} unavailable={unavailable} onClick={() => {}} />);
 }
 
 test("only current passing required checks get a green checkmark", () => {

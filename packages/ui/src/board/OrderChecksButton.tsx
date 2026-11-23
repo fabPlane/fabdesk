@@ -9,7 +9,7 @@ export function OrderChecksButton({ order, unavailable = false, onClick, onRevie
   /** Canvas navigation can take an explicit failed/stale check straight to its report. */
   onReviewChecks?: () => void;
 }) {
-  const checks = [order.checks.drc, order.checks.erc];
+  const checks = [order.checks.drc, order.checks.erc, order.checks.fabPackage];
   // Permission to order is not proof of passed checks: skipped/non-applicable
   // checks can be non-blocking, and a Gerber-only project may have no checks.
   const review = !unavailable && (order.warnings.length > 0 || checks.some((s) => s === "fail" || s === "stale" || s === "not_applicable"));

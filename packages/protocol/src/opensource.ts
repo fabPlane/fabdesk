@@ -72,8 +72,12 @@ export const OrderReadiness = z.object({
   hasFabricationZip: z.boolean(),
   hasRouted: z.boolean(),
   hasKicadPcb: z.boolean(),
-  /** Freshness and pass state of the release gate's saved-file DRC/ERC reports. */
-  checks: z.object({ drc: OrderCheckStatus, erc: OrderCheckStatus }),
+  /** Freshness and pass state of the release gate's saved-file DRC/ERC reports and the fab-package check. */
+  checks: z.object({
+    drc: OrderCheckStatus,
+    erc: OrderCheckStatus,
+    fabPackage: OrderCheckStatus,
+  }),
   reasons: z.array(z.string()),
   /** Non-blocking notes shown alongside the vendors. */
   warnings: z.array(z.string()),

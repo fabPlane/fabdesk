@@ -10,7 +10,7 @@ import type {
   OrderSession,
   OrderVendorId,
 } from "@fabdesk/protocol";
-import { savedHierarchyRevision, type SavedSheetRef } from "@fabdesk/tools";
+import { loadFabCheckEvidence, savedHierarchyRevision, type SavedSheetRef } from "@fabdesk/tools";
 
 /** The board and schematic verify_drc / verify_erc check (packages/tools PROJECT_FILES). */
 const BOARD_PCB = "board.kicad_pcb";
@@ -44,6 +44,8 @@ export type OrderCheckEvidence = {
   /** `inputsChanged`: the files the report measured changed after it was written. */
   drc: { report: DrcEvidenceReport; inputsChanged: boolean } | null;
   erc: { report: ErcEvidenceReport; inputsChanged: boolean } | null;
+  /** Soft gate: missing/stale/fail warn, they do not block `ready`. */
+  fabPackage: { overall: "pass" | "warn" | "fail"; inputsChanged: boolean } | null;
 };
 
 function drcStatus(evidence: OrderCheckEvidence): OrderCheckStatus {
@@ -57,6 +59,16 @@ function drcStatus(evidence: OrderCheckEvidence): OrderCheckStatus {
   } catch {
     return "missing";
   }
+}
+
+function fabPackageStatus(
+  evidence: OrderCheckEvidence,
+  hasPackage: boolean,
+): OrderCheckStatus {
+  if (!hasPackage) return "not_required";
+  if (!evidence.fabPackage) return "missing";
+  if (evidence.fabPackage.inputsChanged) return "stale";
+  return evidence.fabPackage.overall === "fail" ? "fail" : "pass";
 }
 
 function ercStatus(evidence: OrderCheckEvidence): OrderCheckStatus {
@@ -96,7 +108,12 @@ export function assessOrderReadiness(
   const hasRouted = files.some((f) => f.path === "circuit.routed.json");
   const hasKicadPcb = evidence.hasBoardPcb || files.some((f) => f.path.endsWith(".kicad_pcb"));
   const hasOrderArtifact = hasGerbers || hasFabricationZip || hasKicadPcb || hasRouted;
-  const checks: OrderReadiness["checks"] = { drc: drcStatus(evidence), erc: ercStatus(evidence) };
+  const hasPackage = hasGerbers || hasFabricationZip;
+  const checks: OrderReadiness["checks"] = {
+    drc: drcStatus(evidence),
+    erc: ercStatus(evidence),
+    fabPackage: fabPackageStatus(evidence, hasPackage),
+  };
   const reasons: string[] = [];
   const warnings: string[] = [];
   if (assemblyDeclared) reasons.push("Ordering is not available for multi-board projects. Review each board’s checks; assembly fabrication exports are not yet supported.");
@@ -113,6 +130,14 @@ export function assessOrderReadiness(
     warnings.push(
       "ERC could not check this schematic (its saved hierarchy is incomplete). Review the schematic before ordering.",
     );
+  if (checks.fabPackage === "missing")
+    warnings.push("The exported fab package has not been checked yet. Run a fab package check before sending files.");
+  if (checks.fabPackage === "stale")
+    warnings.push("The fabrication files changed after the last fab package check. Run the check again.");
+  if (checks.fabPackage === "fail")
+    warnings.push("The last fab package check reported failures. Review the Fab check tab before ordering.");
+  if (checks.fabPackage === "pass" && evidence.fabPackage?.overall === "warn")
+    warnings.push("The last fab package check passed with warnings. Review the Fab check tab.");
   const blocking = (s: OrderCheckStatus) => s === "missing" || s === "stale" || s === "fail";
   return {
     ready: !assemblyDeclared && hasOrderArtifact && !blocking(checks.drc) && !blocking(checks.erc),
@@ -194,7 +219,22 @@ export async function loadOrderCheckEvidence(
     hasBoardSch: schMtime !== null,
     drc: drcEvidence,
     erc: erc ? { report: erc.value, inputsChanged: await ercInputsChanged(projectDir, erc) } : null,
+    fabPackage: await loadFabPackageEvidence(projectDir),
   };
+}
+
+async function loadFabPackageEvidence(
+  projectDir: string,
+): Promise<OrderCheckEvidence["fabPackage"]> {
+  try {
+    const evidence = await loadFabCheckEvidence(projectDir);
+    if (!evidence) return null;
+    const overall = evidence.report.overall;
+    if (overall !== "pass" && overall !== "warn" && overall !== "fail") return null;
+    return { overall, inputsChanged: evidence.inputsChanged };
+  } catch {
+    return null;
+  }
 }
 
 const VENDORS: Record<OrderVendorId, { label: string; enabled: boolean; orderUrl?: string }> = {
@@ -231,6 +271,10 @@ export function startOrderSession(vendor: OrderVendorId): OrderSession {
       {
         title: "Export fabrication files",
         body: "Use export_zip (or export_gerbers + export_drill) so exports/fabrication.zip is ready to upload.",
+      },
+      {
+        title: "Check the fab package",
+        body: "Run fab_package_check (or open the Fab check tab) so Gerbers, drill, BOM and pick-and-place are inspected before you upload them.",
       },
       {
         title: `Open ${info.label}`,

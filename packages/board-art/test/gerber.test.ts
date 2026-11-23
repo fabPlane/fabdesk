@@ -63,8 +63,41 @@ describe("gerber output", () => {
     expect(names).toContain("board-F_Mask.gbr");
     const edge = parseGerber(job.gerbers.find((g) => g.name === "board-Edge_Cuts.gbr")!.body);
     expect(edge.ops.filter((op) => op.op === "draw").length).toBe(4);
+    expect(edge.fileFunction).toBe("Profile,NP");
+    expect(edge.format).toEqual({ int: 4, frac: 6 });
     const copper = parseGerber(job.gerbers.find((g) => g.name === "board-F_Cu.gbr")!.body);
     expect(copper.ops.length).toBeGreaterThan(0);
+    expect(copper.fileFunction).toBe("Copper,L1,Top");
+  });
+
+  test("parses oval apertures, FileFunction comments, and decimal coordinates", () => {
+    const text = [
+      "G04 #@! TF.FileFunction,Copper,L1,Top*",
+      "%FSLAX36Y36*%",
+      "%MOMM*%",
+      "%LPD*%",
+      "%ADD10C,0.2*%",
+      "%ADD11O,1.2X0.6*%",
+      "%ADD12P,1.0X6*%",
+      "D11*",
+      "X1.5Y2.0D03*",
+      "D10*",
+      "X0Y0D02*",
+      "X3000000Y0D01*",
+      "M02*",
+    ].join("\n");
+    const parsed = parseGerber(text);
+    expect(parsed.fileFunction).toBe("Copper,L1,Top");
+    expect(parsed.format).toEqual({ int: 3, frac: 6 });
+    expect(parsed.apertures).toEqual([
+      { id: 10, kind: "C", d: 0.2 },
+      { id: 11, kind: "O", w: 1.2, h: 0.6 },
+    ]);
+    expect(parsed.skippedApertures).toEqual([12]);
+    expect(parsed.ops).toEqual([
+      { op: "flash", x: 1.5, y: 2, aperture: 11 },
+      { op: "draw", x1: 0, y1: 0, x2: 3, y2: 0, aperture: 10 },
+    ]);
   });
 
   test("fabrication zip round-trips and includes a KiCad board", () => {

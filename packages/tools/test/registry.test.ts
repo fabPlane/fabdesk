@@ -325,6 +325,7 @@ describe("registry", () => {
       "silk_art",
       "export_stencil",
       "export_laser_stencil",
+      "fab_package_check",
       "sim_spice_netlist",
       "sim_run",
       "app_state",

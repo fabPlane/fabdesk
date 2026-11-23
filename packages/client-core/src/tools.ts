@@ -18,6 +18,7 @@ export const TOOL_PATTERNS = {
   glb: { preferred: "render_glb", patterns: [/^render_glb$/, /glb/, /3d/] },
   video: { preferred: "render_product_video", patterns: [/^render_product_video$/, /product_video/] },
   stencil: { preferred: "export_stencil", patterns: [/^export_stencil$/, /stencil/] },
+  fab_package_check: { preferred: "fab_package_check", patterns: [/^fab_package_check$/] },
 } as const;
 export type ToolKind = keyof typeof TOOL_PATTERNS;
 

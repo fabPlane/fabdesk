@@ -365,6 +365,7 @@ describe("order readiness", () => {
     hasBoardSch: false,
     drc: null,
     erc: null,
+    fabPackage: null,
   };
   const drcReport = (over: Partial<DrcReport> = {}): DrcReport => ({
     violations: [],
@@ -388,8 +389,29 @@ describe("order readiness", () => {
     expect(assessOrderReadiness([{ path: "circuit.routed.json" }], none).ready).toBe(true);
     const blocked = assessOrderReadiness([{ path: "board.kicad_pcb" }], board);
     expect(blocked.ready).toBe(false);
-    expect(blocked.checks).toEqual({ drc: "missing", erc: "not_required" });
+    expect(blocked.checks).toEqual({ drc: "missing", erc: "not_required", fabPackage: "not_required" });
     expect(blocked.reasons.join(" ")).toContain("Run DRC");
+  });
+
+  test("fab package check is a soft gate: fail warns, does not block ready", () => {
+    const gerbers = [{ path: "exports/gerbers/F_Cu.gbr" }];
+    const missing = assessOrderReadiness(gerbers, none);
+    expect(missing.ready).toBe(true);
+    expect(missing.checks.fabPackage).toBe("missing");
+    expect(missing.warnings.join(" ")).toContain("has not been checked");
+    const failed = assessOrderReadiness(gerbers, {
+      ...none,
+      fabPackage: { overall: "fail", inputsChanged: false },
+    });
+    expect(failed.ready).toBe(true);
+    expect(failed.checks.fabPackage).toBe("fail");
+    expect(failed.warnings.join(" ")).toContain("reported failures");
+    const stale = assessOrderReadiness(gerbers, {
+      ...none,
+      fabPackage: { overall: "pass", inputsChanged: true },
+    });
+    expect(stale.checks.fabPackage).toBe("stale");
+    expect(stale.ready).toBe(true);
   });
 
   test("assembly artifacts never establish root-only order readiness", () => {
@@ -513,6 +535,7 @@ describe("order readiness", () => {
 
   test("JLCPCB and PCBWay are enabled; laser and CNC are not", () => {
     expect(startOrderSession("jlcpcb").enabled).toBe(true);
+    expect(startOrderSession("jlcpcb").steps.map((s) => s.title)).toContain("Check the fab package");
     expect(startOrderSession("pcbway").orderUrl).toContain("pcbway.com");
     expect(startOrderSession("laser").enabled).toBe(false);
     expect(startOrderSession("cnc").enabled).toBe(false);

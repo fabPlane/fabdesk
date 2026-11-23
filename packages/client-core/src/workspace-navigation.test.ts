@@ -3,12 +3,14 @@ import { WORKSPACE_AREAS, workspaceAreaForView, workspaceViews, workspaceTabForA
 
 test("every existing view stays reachable after grouping; 3D and files can belong to explicit output tasks", () => {
   const available = new Set<string>(Object.keys(WORKSPACE_AREAS).flatMap((area) => workspaceViews(area as keyof typeof WORKSPACE_AREAS).map((v) => v.tab)));
-  for (const view of ["schematic", "pcb", "cinema", "3d", "cad", "drc", "renders", "files", "bom", "art", "notes", "diff", "comments", "placement"]) expect(available.has(view)).toBe(true);
+  for (const view of ["schematic", "pcb", "cinema", "3d", "cad", "drc", "renders", "files", "bom", "art", "notes", "diff", "comments", "placement", "fab"]) expect(available.has(view)).toBe(true);
   expect(workspaceViews("outputs").map((v) => v.tab)).toContain("3d");
   expect(workspaceViews("review")[0]?.tab).toBe("updates");
   expect(workspaceAreaForView("updates")).toBe("review");
   expect(workspaceAreaForView("diff")).toBe("review");
   expect(workspaceAreaForView("comments")).toBe("review");
+  expect(workspaceAreaForView("fab")).toBe("review");
+  expect(workspaceTabForArea("review", "fab")).toBe("fab");
   expect(workspaceAreaForView("cad")).toBe("mechanical");
   expect(workspaceAreaForView("notes")).toBe("files");
 });

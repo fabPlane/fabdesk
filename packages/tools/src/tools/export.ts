@@ -9,6 +9,7 @@ import { ToolError, defineTool } from "../registry";
 import { ok, p, requireBoard, requireKicad, requireSchematic } from "./common";
 import { expectedPcbSource, withPcbOutput } from "../pcb-output";
 import { silk_art } from "./silk-art";
+import { fab_package_check } from "./fab-package-check";
 
 const rel = (project: { dir: string }, abs: string) =>
   abs.startsWith(project.dir) ? abs.slice(project.dir.length + 1) : abs;
@@ -598,4 +599,5 @@ export const exportTools = [
   silk_art,
   export_stencil,
   export_laser_stencil,
+  fab_package_check,
 ];

@@ -4,7 +4,7 @@ import type { OrderReadiness } from "@fabdesk/protocol";
 import { ManufacturingHandoffView } from "./ManufacturingHandoff";
 
 const readiness: OrderReadiness = { ready: false, hasGerbers: true, hasFabricationZip: true, hasRouted: false, hasKicadPcb: true,
-  checks: { drc: "fail", erc: "pass" }, reasons: ["DRC has 16 errors"], warnings: [] };
+  checks: { drc: "fail", erc: "pass", fabPackage: "missing" }, reasons: ["DRC has 16 errors"], warnings: [] };
 const actions = { disabled: false, onChecks: () => {}, onOrder: () => {}, onRetry: () => {} };
 test("exports do not turn failing design checks into manufacturing approval", () => {
   const html = renderToStaticMarkup(<ManufacturingHandoffView {...actions} readiness={readiness} checking={false} failed={false} />);

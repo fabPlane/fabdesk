@@ -24,6 +24,7 @@ import { modKey } from "../util";
 import { CadTab } from "./CadTab";
 import { CinemaTab } from "./cinema/CinemaTab";
 import { DrcTab } from "./DrcTab";
+import { FabCheckTab } from "./FabCheckTab";
 import { ArtTab } from "./ArtTab";
 import { FilesTab } from "./FilesTab";
 import { NotesTab } from "./NotesTab";
@@ -69,6 +70,8 @@ function TabBody({ tab, canvas = false, onOpenChecks }: { tab: BoardTab; canvas?
       return <ReviewComments />;
     case "diff":
       return <DiffTab />;
+    case "fab":
+      return <FabCheckTab />;
     default:
       return null;
   }
