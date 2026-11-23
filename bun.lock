@@ -153,6 +153,17 @@
         "typescript": "5.9.2",
       },
     },
+    "packages/fab-check": {
+      "name": "@fabdesk/fab-check",
+      "version": "0.1.0",
+      "dependencies": {
+        "@fabdesk/board-art": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "1.2.21",
+        "typescript": "5.9.2",
+      },
+    },
     "packages/kicad": {
       "name": "@fabdesk/kicad",
       "version": "0.1.0",
@@ -220,6 +231,7 @@
         "@fabdesk/board-art": "workspace:*",
         "@fabdesk/board-diff": "workspace:*",
         "@fabdesk/board-workflow": "workspace:*",
+        "@fabdesk/fab-check": "workspace:*",
         "@fabdesk/kicad": "workspace:*",
         "@fabdesk/product-video": "workspace:*",
         "@fabdesk/protocol": "workspace:*",
@@ -385,9 +397,9 @@
     "electron-builder",
   ],
   "patchedDependencies": {
-    "@electron/osx-sign@1.3.3": "patches/@electron%2Fosx-sign@1.3.3.patch",
     "app-builder-lib@26.15.3": "patches/app-builder-lib@26.15.3.patch",
     "@mcp-b/global@5.1.0": "patches/@mcp-b%2Fglobal@5.1.0.patch",
+    "@electron/osx-sign@1.3.3": "patches/@electron%2Fosx-sign@1.3.3.patch",
   },
   "overrides": {
     "@hono/node-server": "2.1.8",
@@ -618,6 +630,8 @@
     "@fabdesk/core": ["@fabdesk/core@workspace:apps/core"],
 
     "@fabdesk/desktop": ["@fabdesk/desktop@workspace:apps/desktop"],
+
+    "@fabdesk/fab-check": ["@fabdesk/fab-check@workspace:packages/fab-check"],
 
     "@fabdesk/kicad": ["@fabdesk/kicad@workspace:packages/kicad"],
 
