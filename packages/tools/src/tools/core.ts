@@ -1,3 +1,5 @@
+import { snapshotProjectDependencies, assertProjectDependencies } from "../project-dependencies";
+import { canonicalReportStatus } from "../canonical-report-status";
 import { outputRevision } from "../output-revision";
 import {
   compareTaskCheckpoint,
@@ -44,7 +46,7 @@ export const load_toolset = defineTool({
   scope: "global",
   title: "Load a toolset",
   description:
-    "Enable an additional group of fabdesk tools for this session. Available toolsets are project (files, board settings, off-board parts library), circuit, route, kicad, verify, render, export, sim, app, shopping (fabplane.com shopping list and team inventory), and cad (the mechanical model in FreeCAD). Core tools are always available.",
+    "Enable an additional group of fabdesk tools for this session. Available toolsets are project (files, board settings, off-board parts library), circuit, route, kicad, verify, render, export, sim, app, shopping (fabplane.com shopping list and team inventory), cad (the mechanical model in FreeCAD), and board (board workflow jobs and stages). Core tools are always available.",
   inputSchema: {
     toolset: ToolsetIdOrAlias.describe(
       `Toolset to enable. Aliases ${Object.entries(TOOLSET_ALIASES)
@@ -119,7 +121,7 @@ export const pcb_environment = defineTool({
       mcp: "Structured KiCad, FabPCB, project, render, verification, and export operations.",
       cli: "Bundled kicad-cli path and version.",
       script:
-        "fabpcb tool exposes the same registry as JSON/JSONL for programmable calls and batches.",
+        "Shell registry access has not been preflighted in this session; use MCP tools.",
       ui: "Desktop application automation status.",
       files: "Project-local files are directly accessible.",
     };
@@ -129,12 +131,7 @@ export const pcb_environment = defineTool({
       bridge,
       desktopUi: app,
       interfaces,
-      scriptCli: {
-        search: 'fabpcb tool search "inspect board region"',
-        describe: "fabpcb tool describe pcb_inspect",
-        call: "fabpcb tool call pcb_inspect --request @request.json",
-        batch: "fabpcb tool batch --input @calls.jsonl",
-      },
+      scriptCli: { status: "unverified", reason: "The shell executable and authenticated core endpoint have not been preflighted in this session." },
       uiConventions: {
         canonicalFiles: files,
         renders: p(project, PROJECT_FILES.renders),
@@ -149,7 +146,7 @@ export const pcb_environment = defineTool({
         `PCB workbench for ${project.name} at ${project.dir}`,
         `KiCad CLI: ${cli ? `${cli.path} (${cli.version})` : "not found"}`,
         `FabPCB bridge: ${bridge.ok ? "ready" : "unavailable"} at ${bridge.url}${bridge.reason ? ` — ${bridge.reason}` : ""}`,
-        "Scriptable registry: fabpcb tool search <words>; describe <name>; call <name> --request <json|@file>; batch --input @calls.jsonl.",
+        "Shell registry: unverified in this session; use structured tools until its endpoint is preflighted.",
         `Routers (default freerouting → fab_router fallback): fab_router=${bridge.routers?.fab_router?.ok ? "ready" : `unavailable${bridge.routers?.fab_router?.reason ? ` — ${bridge.routers.fab_router.reason}` : ""}`}; freerouting=${bridge.routers?.freerouting?.ok ? "ready" : `unavailable${bridge.routers?.freerouting?.reason ? ` — ${bridge.routers.freerouting.reason}` : ""}`}; tracemaker=${ctx.services.routers?.get("tracemaker").ready ? "ready" : "not installed — Settings → Routers or TRACEMAKER_BIN"}`,
         `Desktop UI automation: ${app.running ? "available" : `unavailable${app.reason ? ` — ${app.reason}` : ""}`}`,
         `Project files: ${Object.entries(files)
@@ -199,6 +196,7 @@ export const project_status = defineTool({
         m === null ? { exists: false } : { exists: true, mtime: new Date(m).toISOString() };
     }
     const { lastSourceBuild, lastRelease } = await readProjectStatusEvidence(project);
+    const canonicalReports = assembly || declaredAssembly ? null : await canonicalReportStatus(ctx);
     // A read-only status must not fail because KiCad saved mid-comparison or a manifest is bad.
     let taskComparison: Awaited<ReturnType<typeof compareTaskCheckpoint>> = null;
     let taskComparisonError: string | null = null;
@@ -227,6 +225,7 @@ export const project_status = defineTool({
       sketches: sketches.map((s) => `${PROJECT_FILES.sketches}/${s}`),
       lastSourceBuild,
       lastRelease,
+      canonicalReports,
       lastRoute: route
         ? { runId: route.id, status: route.status, open: route.result?.open.length ?? null }
         : null,
@@ -249,6 +248,7 @@ export const project_status = defineTool({
       `Sketches: ${sketches.length ? sketches.join(", ") : "none"}`,
       `Library: supporting documents in files/ (project_files_list, project_files_search, project_files_cite)`,
       `Last source/compiler build: ${lastSourceBuild ? `${lastSourceBuild.ok ? "ok" : "FAILED"} (${lastSourceBuild.errors} errors, ${lastSourceBuild.warnings} warnings, captured ${lastSourceBuild.at})` : "never"}`,
+      ...(canonicalReports ? [`Canonical reports: DRC ${canonicalReports.drc.status}; ERC ${canonicalReports.erc.status}. Run render_publish after the last edit for a current handoff.`] : []),
       `${assembly ? "Root last release" : "Last release"}: ${formatLastRelease(lastRelease)}`,
       taskComparisonError
         ? `Task baseline comparison unavailable: ${taskComparisonError}`
@@ -553,7 +553,7 @@ function routeRunTool(inputSchema: typeof RouteRunArgs) {
     boardScoped: true,
     toolset: "core",
     title: "Autoroute the board",
-    description: `Start a durable autoroute against a revision-bound board snapshot. Waits up to waitMs (default ${ROUTE_RUN_DEFAULT_WAIT_MS / 1000} s, max ${ROUTE_RUN_MAX_WAIT_MS / 1000} s); returns the final result when the run finishes within that time, otherwise its run ID and running state. The run continues after the request returns, and its progress, diagnostics and artifacts remain available through route_status. applyPolicy=auto (default) atomically applies only while the starting PCB revision is current; manual preserves a validated native candidate for route_apply. onlyConnections limits the run to named nets.`,
+    description: `Start a durable autoroute against a revision-bound board snapshot. Waits up to waitMs (default ${ROUTE_RUN_DEFAULT_WAIT_MS / 1000} s, max ${ROUTE_RUN_MAX_WAIT_MS / 1000} s); returns the final result when the run finishes within that time, otherwise its run ID and running state. The run continues after the request returns, and its progress, diagnostics and artifacts remain available through route_status. applyPolicy=auto (default) atomically applies only while the starting PCB revision is current; manual preserves a validated native candidate for route_apply. onlyConnections limits the run to named nets. For the staged flow (preflight, seeded placements, ranking, hedged route, last mile) board_route supersedes this; route_run remains the single autoroute of the live board.`,
     inputSchema: inputSchema as typeof RouteRunArgs,
     annotations: {
       readOnlyHint: false,
@@ -603,7 +603,7 @@ export const verify_drc = defineTool({
   toolset: "core",
   title: "Run KiCad DRC",
   description:
-    "Run KiCad design rule check on board.kicad_pcb. When parity is enabled, require a complete saved schematic hierarchy and bind parity evidence to its aggregate revision. Explicit assembly members currently support PCB-only DRC: provide expectedSourceSha256 and schematicParity=false. Returns violation descriptions, rule types and native item IDs with actionable geometry; responseMode=full returns all rows. Writes reports/drc.json inside the selected source directory.",
+    "Run KiCad design rule check on board.kicad_pcb. When parity is enabled, require a complete saved schematic hierarchy and bind parity evidence to its aggregate revision. Explicit assembly members currently support PCB-only DRC: provide expectedSourceSha256 and schematicParity=false. Returns violation descriptions, rule types and native item IDs with actionable geometry; responseMode=full returns all rows. Writes reports/drc.json inside the selected source directory. For a board in the board workflow, board_check supersedes this: the same DRC with refilled zones and schematic parity, plus A1-A9 recorded against the board as onboarded.",
   inputSchema: {
     expectedSourceSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Required for an assembly member: SHA256 of its inspected saved PCB"),
     severity: z
@@ -641,6 +641,7 @@ export const verify_drc = defineTool({
     const cli = await requireKicad(ctx);
     const board = p(project, PROJECT_FILES.boardPcb);
     if (!(await exists(board))) throw new ToolError("board.kicad_pcb not found", "precondition");
+    const dependencies = await snapshotProjectDependencies(project.dir);
     const beforeRevision = await pcbFileRevision(board);
     if (expectedSourceSha256 && beforeRevision.sha256 !== expectedSourceSha256) throw new ToolError("The saved PCB changed since inspection. Inspect the selected source again before checking it.", "precondition");
     const beforeHierarchy = schematicParity ? await inspectSavedHierarchy(ctx, project, cli) : null;
@@ -683,8 +684,10 @@ export const verify_drc = defineTool({
       );
     }
     const enriched = enrichDrcReport(report, geometry);
+    await assertProjectDependencies(project.dir, dependencies);
     const checkedReport = {
       ...enriched,
+      projectDependencies: dependencies,
       schematicParityChecked: schematicParity,
       ...(ctx.board ? { boardSource: { projectId: project.id, ...ctx.board } } : {}),
       pcbRevision: afterRevision,
@@ -1008,7 +1011,7 @@ export const render_board = defineTool({
   toolset: "core",
   title: "Render board image",
   description:
-    "Render a PNG of the KiCad board (top or bottom, raytraced optional) to renders/<view>.png and return it as an image so you can inspect placement and routing. Requires kicad-cli and a saved native PCB.",
+    "Image only; the desktop interactive 3D tab needs render_glb. Render a PNG of the KiCad board (top or bottom, raytraced optional) to renders/<view>.png and return it as an image so you can inspect placement and routing. Requires kicad-cli and a saved native PCB.",
   inputSchema: {
     expectedSourceSha256: expectedPcbSource,
     view: z.enum(["top", "bottom", "perspective", "side"]).default("top"),

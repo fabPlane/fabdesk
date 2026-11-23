@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { CoreClient, CoreProvider, nullHost, useRunsStore } from "@fabdesk/client-core";
-import { ToolCallCard, isCommandTool, isImageTool } from "./ToolCallCard";
+import { ToolCallCard, extractImages, isCommandTool, isImageTool } from "./ToolCallCard";
 import { WorkedActivity } from "./RunActivity";
 import { MessageBubble } from "./MessageList";
 import { MessageList, ToolGroup } from "./MessageList";
@@ -118,4 +118,16 @@ test("collapsed tool errors show a labeled warning icon without counts", () => {
   expect(html).toContain("text-danger");
   expect(html).not.toContain("1 error");
   expect(html).not.toContain("tabular-nums");
+});
+
+test("inspection images remain in technical details after persistence and wrapped capability calls", () => {
+  const output = JSON.parse(JSON.stringify({ result: { _meta: { "fabplane/imagePresentation": "inspection" }, content: [{ type: "image", data: "INSPECTION", mimeType: "image/png" }] } }));
+  const use = { type: "tool_use" as const, id: "shot", name: "capability_call", input: { name: "app_screenshot" } };
+  const result = { type: "tool_result" as const, id: "shot", output };
+  expect(render(<ToolGroup calls={[{ use, result }]} streaming={false} />)).not.toContain("INSPECTION");
+  expect(render(<ToolCallCard use={use} result={result} />)).not.toContain("INSPECTION");
+  expect(extractImages(output, 0, true)[0]?.src).toContain("INSPECTION");
+  const deliverable = { ...output.result, _meta: { "fabplane/imagePresentation": "deliverable" } };
+  expect(render(<ToolGroup calls={[{ use, result: { ...result, output: deliverable } }]} streaming={false} />)).toContain("INSPECTION");
+  expect(extractImages({ content: [{ type: "image", data: "LEGACY" }] })[0]?.src).toContain("LEGACY");
 });

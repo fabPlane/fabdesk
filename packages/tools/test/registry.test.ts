@@ -249,6 +249,7 @@ describe("registry", () => {
       "route_run",
       "verify_drc",
       "render_board",
+      "render_publish",
       "project_checkpoint",
       "project_read_file",
       "project_write_file",
@@ -281,6 +282,8 @@ describe("registry", () => {
       "connection_review",
       "connection_set_pins",
       "connection_suggest",
+      "circuit_source",
+      "circuit_library",
       "circuit_query",
       "circuit_search_parts",
       "circuit_describe_part",
@@ -311,14 +314,23 @@ describe("registry", () => {
       "verify_erc",
       "verify_gate",
       "verify_viagrid",
+      "board_check",
+      "board_review",
+      "board_edit",
+      "board_release",
+      "board_silk",
+      "board_route",
+      "board_engines",
       "release_build",
       "render_pcb_readiness",
       "render_pcb_display",
       "render_schematic_svg",
       "render_pcb_svg",
+      "render_board_layers",
       "render_view",
       "render_glb",
       "render_product_video",
+      "export_schematic_pdf",
       "export_gerbers",
       "export_drill",
       "export_pos",
@@ -338,6 +350,7 @@ describe("registry", () => {
       "app_type",
       "app_key",
       "app_select_project",
+      "app_clear_selection",
       "app_open_tab",
       "app_open_thread",
       "app_new_chat",
@@ -369,9 +382,10 @@ describe("registry", () => {
       "cad_combine_parts",
       "cad_enclosure",
       "cad_fit",
+      "board_job",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
-    expect(reg.byToolset("core").length).toBe(10);
+    expect(reg.byToolset("core").length).toBe(11);
     expect(() =>
       defineTool({
         name: "bad.name",
@@ -1141,6 +1155,8 @@ describe("registry", () => {
         progress: () => {},
       }),
     );
+    expect((autoFitted.json as any).canonicalPreview).toMatchObject({ sourceSha256: (autoFitted.json as any).pcbRevision.sha256 });
+    expect(await readFile(join(project.dir, "renders/pcb.svg"), "utf8")).toBe(await readFile(join(project.dir, "renders/pcb-view.svg"), "utf8"));
     expect((autoFitted.json as any).region).toEqual({ minX: -7, minY: -8, maxX: 17, maxY: 18 });
     expect(await Bun.file(join(project.dir, "renders/pcb-view.svg")).text()).toContain(
       'viewBox="-7 -8 24 26"',
@@ -1434,15 +1450,12 @@ describe("registry", () => {
     const services = mockServices([project], {
       kicad: {
         ...base.kicad,
-        exportSchematicSvg: async (_cli, { outDir }) => {
-          await mkdir(outDir, { recursive: true });
-          const path = join(outDir, "board.svg");
-          await writeFile(
-            path,
-            '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="white"/><text x="2" y="12">R1</text></svg>',
-          );
-          return { paths: [path] };
-        },
+        inspectSchematicHierarchy: async (...args) => { const h = await base.kicad.inspectSchematicHierarchy(...args); h.projectFile = null; h.sheets[0]!.pageNumber = 1; return h; },
+        exportOwnedSchematicSvg: async (_cli, { hierarchy }) => ({
+          sourceRevision: hierarchy.aggregateRevision,
+          sourceFiles: [{ path: "board.kicad_sch", sha256: createHash("sha256").update(await readFile(schematic)).digest("hex") }],
+          sheets: hierarchy.sheets.map(sheet => ({ name: "board.svg", svg: new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="white"/></svg>'), nativeSheet: { identity: sheet.identity, nativePath: sheet.nativePath, hierarchyPath: sheet.hierarchyPath, pageNumber: sheet.pageNumber! } })),
+        }),
       },
     });
     const output = await reg.invoke("render_schematic_svg", {}, (ref) =>
@@ -1495,12 +1508,11 @@ describe("registry", () => {
     const services = mockServices([project], {
       kicad: {
         ...base.kicad,
-        exportSchematicSvg: async (_cli, { outDir }) => {
-          await mkdir(outDir, { recursive: true });
-          const path = join(outDir, "board.svg");
-          await writeFile(path, '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"/>');
+        inspectSchematicHierarchy: async (...args) => { const h = await base.kicad.inspectSchematicHierarchy(...args); h.projectFile = null; h.sheets[0]!.pageNumber = 1; return h; },
+        exportOwnedSchematicSvg: async (_cli, { hierarchy }) => {
+          const hash = createHash("sha256").update(await readFile(schematic)).digest("hex");
           await writeFile(schematic, "after");
-          return { paths: [path] };
+          return { sourceRevision: hierarchy.aggregateRevision, sourceFiles: [{ path: "board.kicad_sch", sha256: hash }], sheets: hierarchy.sheets.map(sheet => ({ name: "board.svg", svg: new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"/>'), nativeSheet: { identity: sheet.identity, nativePath: sheet.nativePath, hierarchyPath: sheet.hierarchyPath, pageNumber: sheet.pageNumber! } })) };
         },
       },
     });
@@ -1516,7 +1528,7 @@ describe("registry", () => {
           progress: () => {},
         }),
       ),
-    ).rejects.toThrow(/schematic changed during rendering/);
+    ).rejects.toThrow(/native sheet changed/);
   });
 
   test("revision-bound native inspection separates session diagnostics from saved-file checks", async () => {
@@ -4112,6 +4124,9 @@ describe("registry", () => {
     const factory = contextFactory(services, project);
     await mkdir(join(project.dir, "reports"), { recursive: true });
     await writeFile(join(project.dir, "board.kicad_sch"), "schematic");
+    await writeFile(join(project.dir, "board.kicad_pcb"), "(kicad_pcb)");
+    const { snapshotProjectDependencies } = await import("../src/project-dependencies");
+    const projectDependencies = await snapshotProjectDependencies(project.dir);
     await writeFile(
       join(project.dir, "reports/drc.json"),
       JSON.stringify({
@@ -4128,11 +4143,13 @@ describe("registry", () => {
         schematicParity: [],
         schematicParityChecked: true,
         counts: { errors: 0, warnings: 1, unconnected: 0 },
+        projectDependencies,
+        pcbRevision: { sha256: createHash("sha256").update("(kicad_pcb)").digest("hex") },
       }),
     );
     await writeFile(
       join(project.dir, "reports/erc.json"),
-      JSON.stringify({ violations: [], counts: { errors: 0, warnings: 0 } }),
+      JSON.stringify({ projectDependencies, violations: [], counts: { errors: 0, warnings: 0 }, measurement: { evidenceLevel: "measured", scope: "complete saved hierarchy", checkedRevision: "a".repeat(64), revisionStable: true } }),
     );
     const call = (args: Record<string, unknown>) =>
       reg.invoke("verify_gate", args, (ref) =>

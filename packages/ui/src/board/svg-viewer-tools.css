@@ -5,4 +5,10 @@
 .fd-canvas-workspace .fd-svg-tools { gap:4px; height:46px; padding:6px; }
 .fd-canvas-workspace .fd-svg-tools .fd-svg-fit-button { background:var(--fd-panel-2); border:1px solid var(--fd-border); border-radius:7px; }
 .fd-svg-zoom-group > .fd-button:not(:disabled):hover { background:var(--fd-panel-2); }
+/* Native Eeschema inks are designed for a light sheet. Keep their semantic
+   colors and geometry, independent of the surrounding application theme. */
+.fd-svg-viewer .fd-svg-host.fd-schematic-paper {
+  background:#fafcf9;
+  box-shadow:0 0 0 1px #a7b5ad44, 0 8px 32px #00000020;
+}
 @media(max-width:780px) { .fd-svg-tools .fd-svg-fit-button { padding:0 7px; } .fd-svg-zoom-group { padding-right:5px; } }

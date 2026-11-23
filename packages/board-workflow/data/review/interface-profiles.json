@@ -1,0 +1,12 @@
+{
+ "schema": "INTERFACE_PROFILES_V1",
+ "purpose": "Fallback targets and layout limits per interface, used only where a board's own pair class does not say. Every number is a common design guideline with its basis; the board's acceptance (or the agent) overrides it. Edit freely.",
+ "profiles": {
+  "usb2":  {"match": "USB2|USB90|USB_?HS|RECOVERY", "zdiff": 90, "tol_pct": 15, "max_vias_per_net": 4, "basis": "USB 2.0: 90 ohm differential +/-15 %"},
+  "usb3":  {"match": "USB3|SS_|SUPERSPEED", "zdiff": 90, "tol_pct": 15, "max_vias_per_net": 2, "basis": "USB 3.x SuperSpeed: 90 ohm differential; few vias at 5-10 Gb/s"},
+  "pcie":  {"match": "PCIE", "zdiff": 85, "tol_pct": 15, "max_vias_per_net": 2, "basis": "PCIe: 85 ohm differential is the common design target (boards may choose 90-100)"},
+  "hdmi":  {"match": "HDMI|TMDS", "zdiff": 100, "tol_pct": 15, "max_vias_per_net": 2, "basis": "HDMI TMDS: 100 ohm differential +/-15 %"},
+  "lvds":  {"match": "LVDS", "zdiff": 100, "tol_pct": 10, "max_vias_per_net": 4, "basis": "LVDS: 100 ohm differential (receiver termination) +/-10 %"},
+  "eth":   {"match": "ETH|MDI", "zdiff": 100, "tol_pct": 10, "max_vias_per_net": 4, "basis": "Ethernet MDI: 100 ohm differential"}
+ }
+}

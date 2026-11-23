@@ -1,16 +1,17 @@
-import { describe, expect, test } from "bun:test";
-import type { FinishItSession, Message, Thread } from "@fabdesk/protocol";
-import { QueryClient } from "@tanstack/react-query";
-import type { CoreClient } from "./CoreClient";
-import { useRunsStore } from "./stores/runs";
+import type { FinishItSession,Message,Thread } from "@fabdesk/protocol";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
+import { describe,expect,test } from "bun:test";
+import { CoreHttpError, type CoreClient } from "./CoreClient";
 import {
-  appendDelta,
-  appendPart,
-  handleCoreEvent,
-  messagesKey,
-  patchThreadCaches,
-  syncLiveRuns,
+appendDelta,
+appendPart,
+handleCoreEvent,
+messagesKey,
+patchThreadCaches,
+syncLiveRuns,
 } from "./events";
+import { PreviewInTrashError, refreshPreviewPresence, respectPreviewTrash } from "./preview-refresh";
+import { useRunsStore } from "./stores/runs";
 
 const base: Message = {
   id: "msg_1",
@@ -360,6 +361,89 @@ describe("syncLiveRuns", () => {
   });
 });
 
+test("saved-source events invalidate live input hashes, but generated output events cannot loop exports", () => {
+  const qc = new QueryClient();
+  const key = ["preview-inputs", "p", "endpoint", "."];
+  qc.setQueryData(key, "current");
+  handleCoreEvent({ topic: "project.changed", projectId: "p", paths: ["renders/pcb.svg", "reports/drc.json"], ts: 1 } as never, { qc, client: {} as never });
+  expect(qc.getQueryState(key)?.isInvalidated).toBe(false);
+  handleCoreEvent({ topic: "project.changed", projectId: "p", paths: ["board.kicad_pcb"], ts: 2 } as never, { qc, client: {} as never });
+  expect(qc.getQueryState(key)?.isInvalidated).toBe(true);
+});
+
+test("a completed external export refreshes the mounted model even when board inputs are unchanged", async () => {
+  const qc = new QueryClient(), key = ["live-preview", "p", "endpoint", ".", "root", "", "model", "same-source"];
+  const inputs = ["preview-inputs", "p", "endpoint", "."];
+  qc.setQueryData(inputs, "unchanged"); qc.setQueryData(key, "old-model");
+  let reads = 0;
+  const observer = new QueryObserver(qc, { queryKey: key, staleTime: Infinity, queryFn: async () => { reads++; return "new-model"; } });
+  const unsubscribe = observer.subscribe(() => {});
+  try {
+    handleCoreEvent({ topic: "project.changed", projectId: "p", paths: ["renders/board.glb.revision.json"], ts: 1 }, { qc, client: {} as CoreClient });
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+    expect(observer.getCurrentResult().data).toBe("new-model");
+    expect(reads).toBe(1);
+    expect(qc.getQueryState(inputs)?.isInvalidated).toBe(false);
+  } finally { unsubscribe(); qc.clear(); }
+});
+
+test("removing or restoring the drawing refreshes the correct board without a receipt event", () => {
+  const qc = new QueryClient();
+  const keys = ["boards/io", "boards/power"].map(dir => ["live-preview", "p", "endpoint", dir, "id", "manifest", "pcb", "source"]);
+  for (const key of keys) qc.setQueryData(key, "drawing");
+  handleCoreEvent({ topic: "project.changed", projectId: "p", paths: ["boards/io/renders/pcb.svg"], ts: 1 }, { qc, client: {} as CoreClient });
+  expect(keys.map(key => qc.getQueryState(key)?.isInvalidated)).toEqual([false, false]);
+  refreshPreviewPresence(qc, ["p", "endpoint", "boards/io", "id", "manifest"], "pcb", false);
+  expect(keys.map(key => qc.getQueryState(key)?.isInvalidated)).toEqual([true, false]);
+  qc.clear();
+});
+
+test("automatic previews respect trashed output paths while allowing a newer file at the same path", async () => {
+  const path = "boards/io/renders/board.glb";
+  const client = {
+    listOutputTrash: async () => ({ files: [{ id: "old", path, size: 1, sha256: "old", trashedAt: "yesterday" }] }),
+    readFileBlob: async (): Promise<Blob> => { throw new CoreHttpError(404, path, "missing"); },
+  };
+  await expect(respectPreviewTrash(client, "p", path)).rejects.toBeInstanceOf(PreviewInTrashError);
+  await respectPreviewTrash(client, "p", "boards/power/renders/board.glb");
+  await respectPreviewTrash({ ...client, readFileBlob: async () => new Blob(["replacement"]) }, "p", path);
+});
+
+test("an export's own receipt event does not cancel or restart its in-flight preview", async () => {
+  const qc = new QueryClient(), key = ["live-preview", "p", "endpoint", ".", "root", "", "model", "same-source"];
+  qc.setQueryData(key, "old-model");
+  let finish!: (value: string) => void, runs = 0, aborted = false;
+  const observer = new QueryObserver(qc, { queryKey: key, staleTime: Infinity, queryFn: ({ signal }) => {
+    runs++; signal.addEventListener("abort", () => { aborted = true; });
+    return new Promise<string>(resolve => { finish = resolve; });
+  } });
+  const unsubscribe = observer.subscribe(() => {});
+  try {
+    const pending = observer.refetch();
+    handleCoreEvent({ topic: "project.changed", projectId: "p", paths: ["renders/board.glb.revision.json"], ts: 1 }, { qc, client: {} as CoreClient });
+    expect(aborted).toBe(false); expect(runs).toBe(1);
+    finish("new-model"); await pending;
+    expect(observer.getCurrentResult().data).toBe("new-model");
+  } finally { unsubscribe(); qc.clear(); }
+});
+
+test("preview receipt refresh is scoped to the board, kind and project, and ignores partial writes", () => {
+  const qc = new QueryClient();
+  const keys = [
+    ["live-preview", "p", "endpoint", "boards/io", "io", "manifest", "model", "source"],
+    ["live-preview", "p", "endpoint", "boards/power", "power", "manifest", "model", "source"],
+    ["live-preview", "p", "endpoint", "boards/io", "io", "manifest", "layers", "source"],
+    ["live-preview", "other", "endpoint", "boards/io", "io", "manifest", "model", "source"],
+  ];
+  for (const key of keys) qc.setQueryData(key, "saved");
+  const ctx = { qc, client: {} as CoreClient };
+  handleCoreEvent({ topic: "project.changed", projectId: "p", paths: ["boards/io/renders/board.glb", "reports/drc.json"], ts: 1 }, ctx);
+  expect(keys.map(key => qc.getQueryState(key)?.isInvalidated)).toEqual([false, false, false, false]);
+  handleCoreEvent({ topic: "project.changed", projectId: "p", paths: ["boards/io/renders/board.glb.revision.json"], ts: 2 }, ctx);
+  expect(keys.map(key => qc.getQueryState(key)?.isInvalidated)).toEqual([true, false, false, false]);
+  qc.clear();
+});
+
 describe("patchMessages on an unseen thread", () => {
   test("a delta for a thread with no cached messages seeds the cache and schedules a fetch", () => {
     const qc = new QueryClient();
@@ -442,4 +526,29 @@ test("an auth event supersedes an older in-flight status snapshot", async () => 
   await pending;
   expect(qc.getQueryData<import('@fabdesk/protocol').AuthState>(['auth'])).toEqual(next);
   qc.clear();
+});
+
+describe("routing ownership refresh", () => {
+  test("metadata refreshes durable run lists without treating each frame as a history refresh", () => {
+    const qc = new QueryClient();
+    const ctx = { qc, client: {} as CoreClient, route: { ingest() {}, setDone() {} } };
+    qc.setQueryData(["route-runs", "A"], []); qc.setQueryData(["route-runs", "B"], []);
+    handleCoreEvent({ topic: "route.meta", ts: 1, meta: { kind: "meta", runId: "run-B", router: "fab_router", bounds: { x1: 0, y1: 0, x2: 1, y2: 1 }, layers: ["F.Cu"], unitsPerMm: 1 } }, ctx);
+    expect(qc.getQueryState(["route-runs", "A"])?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(["route-runs", "B"])?.isInvalidated).toBe(true);
+    qc.setQueryData(["route-runs", "A"], []);
+    handleCoreEvent({ topic: "route.frame", ts: 2, frame: { kind: "frame", runId: "run-B", seq: 1, event: { kind: "attempt" }, elapsedMs: 1, shapes: [] } }, ctx);
+    expect(qc.getQueryState(["route-runs", "A"])?.isInvalidated).toBe(false);
+    qc.clear();
+  });
+  test("completion refreshes the matching record without invalidating a different run record", () => {
+    const qc = new QueryClient(), ctx = { qc, client: {} as CoreClient };
+    qc.setQueryData(["route-run", "run-A"], {}); qc.setQueryData(["route-run", "run-B"], {});
+    qc.setQueryData(["route-runs", "A"], []);
+    handleCoreEvent({ topic: "route.done", ts: 1, result: { runId: "run-A", router: "fab_router", complete: [], open: [], timedOut: false, stats: { vias: 0, segments: 0, wallMs: 1, frames: 0 } } }, ctx);
+    expect(qc.getQueryState(["route-run", "run-A"])?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(["route-run", "run-B"])?.isInvalidated).toBe(false);
+    expect(qc.getQueryState(["route-runs", "A"])?.isInvalidated).toBe(true);
+    qc.clear();
+  });
 });

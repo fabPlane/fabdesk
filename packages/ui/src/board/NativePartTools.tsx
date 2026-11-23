@@ -140,7 +140,7 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
       if (data.saved !== true) throw new Error("The backend did not confirm a saved placement. Reload the part before retrying.");
       saved = true; setRecovery(null);
       const warnings = pcbPlacementWarnings(result);
-      const rendered = await preview.run("render_pcb_svg", { projectId, ...(board ? { board: { ...board } } : {}) });
+
       const inspected = await inspectPcbParts(client, projectId, { reference: selection.part.ref }, board);
       const part = inspected.parts.find((p) => p.ref === selection.part.ref);
       if (!part) throw new Error("The saved part could not be found in the refreshed inspection.");
@@ -156,8 +156,8 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
         const notice = warnings.affectedCopper || warnings.possibleShorts
           ? `${savedNotice} Placement analysis flagged ${warnings.affectedCopper} affected copper item(s)${warnings.possibleShorts ? ` and ${warnings.possibleShorts} possible short(s)` : ""}. Review routing and checks.`
           : `${savedNotice} Run checks after changing placement.`;
-        setMessage(rendered.status === "failed" ? `${notice} The preview could not update and remains out of date.` : notice);
-        setPreviewError(rendered.status === "failed" ? rendered.error ?? "The exporter returned no error detail." : null);
+        setMessage(`${notice} Preview updates automatically.`);
+        setPreviewError(null);
         if (sameLocation && useUiStore.getState().activeProjectId === projectId) { appliedPoint.current = { x: part.x, y: part.y }; onMoved(appliedPoint.current); }
       }
     } catch (failure) {
@@ -177,7 +177,7 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); event.stopPropagation(); }
     if (event.key === "Escape" && open) { event.stopPropagation(); close(); }
   }}>
-    <Button ref={trigger} size="sm" variant="ghost" aria-expanded={open && mode === "parts"} disabled={busy || !canPosition && !open} title={canPosition ? "Inspect and position native PCB parts" : "Update this preview to verify its native PCB coordinates before positioning parts"} onClick={() => { setMode("parts"); setOpen(mode !== "parts" || !open); }}><Icon name="pcb" width={15} height={15} />{selection?.part.ref ?? "Parts"}<Icon name="chevronDown" width={12} height={12} /></Button>
+    <Button ref={trigger} size="sm" variant="ghost" aria-expanded={open && mode === "parts"} disabled={busy || !canPosition && !open} title={canPosition ? "Inspect and position native PCB parts" : "Waiting for the preview to match the saved PCB before positioning parts"} onClick={() => { setMode("parts"); setOpen(mode !== "parts" || !open); }}><Icon name="pcb" width={15} height={15} />{selection?.part.ref ?? "Parts"}<Icon name="chevronDown" width={12} height={12} /></Button>
     <Button ref={outlineTrigger} size="sm" variant="ghost" aria-expanded={open && mode === "outline"} disabled={busy} title="Preview a resize in a separate placement draft" onClick={() => { setMode("outline"); setOpen(mode !== "outline" || !open); }}>Board size</Button>
     {visible && open && mode === "parts" && drawingHost && selection && values && canPosition && !sourceChanged && !busy && !parts.isError && !selection.part.locked && <NativePartTarget host={drawingHost} box={box} point={values} reference={selection.part.ref} changed={changed} onMove={target => { setFields(previous => ({ ...previous, x: String(target.x), y: String(target.y) })); setError(null); setMessage(null); setPreviewError(null); }} />}
     {open && createPortal(<section ref={popup} style={{ ...popupStyle, ...(!visible ? { visibility: "hidden" as const } : {}) }} data-canvas-tools data-mode={mode} className="fd-native-part-popover" tabIndex={-1} role="dialog" aria-label={mode === "parts" ? "Component position" : "Board size"} aria-busy={busy}>
@@ -188,7 +188,7 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
         {current.truncated && <p>More parts are nearby. Select a more precise location.</p>}
       </>}
       {parts.isError && current && <p role="alert" className="fd-native-part-warning">The latest part inspection failed. <Button size="sm" disabled={busy} onClick={() => void parts.refetch()}>Retry inspection</Button></p>}
-      {!canPosition && !busy && <p className="fd-native-part-warning">Verify or update the PCB preview before applying part positions.</p>}
+      {!canPosition && !busy && <p className="fd-native-part-warning">Waiting for the preview to match the saved PCB before applying part positions.</p>}
       {selection && <>
         {sourceChanged && <p role="status" className="fd-native-part-warning">The PCB changed. Reload this part before applying edits.</p>}
         {selection.part.locked && <p className="fd-native-part-warning">This part or its group is locked. Unlock it in KiCad before positioning it here.</p>}
@@ -211,7 +211,7 @@ export function NativePartTools({ projectId, board, point, openAbove, onMoved, c
         {selection && <details className="fd-native-part-details"><DisclosureSummary icon="pcb" label="Compare footprint in a draft" /><p className="fd-native-part-note">Compare geometry and numbered pads for {selection.part.ref}. This does not verify component function or update the BOM.</p><Button size="sm" disabled={busy || hasProposal || sourceChanged} onClick={() => openPlacementDraft({ projectId, tool: "compare", ref: selection.part.ref, sourceSha256: selection.sourceSha256, ...(board ? { sourceId: board.sourceId } : {}) })}>Compare footprint…</Button></details>}
       </>}
       {message && <p role="status" className="fd-native-part-warning">{message}<BoardChecksButton projectId={projectId} {...(board ? { board } : {})} /></p>}
-      {previewError && <details className="fd-native-part-note"><DisclosureSummary icon="warning" label="Why couldn’t the preview update?" variant="compact" /><ErrorNotice error={previewError} /><p>Resolve the export error, then choose Update preview. The native placement is already saved.</p></details>}
+      {previewError && <details className="fd-native-part-note"><DisclosureSummary icon="warning" label="Why couldn’t the preview update?" variant="compact" /><ErrorNotice error={previewError} /><p>Resolve the error, then choose Retry preview. The native placement is already saved.</p></details>}
       {error && <ErrorNotice error={error} />}
       </>}
     </section>, root.current?.closest(".fd-canvas-workspace") ?? document.body)}

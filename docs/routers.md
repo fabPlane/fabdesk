@@ -11,6 +11,131 @@ until you pick a router in Settings, pin `fabdesk.json`, or pass `route_run.rout
 | `fab_router` | Bundled on the PCB bridge | Fast iteration, automatic selective reroutes, Freerouting fallback |
 | `freerouting` | Bundled in packaged desktop builds; otherwise downloaded (GPL-3.0 JAR) | Best simple-board routing quality |
 | `tracemaker` | Weekly TensorFleet binary (source tarball fallback) | Best whole-board routing and dense pads |
+| `krt` | Pinned upstream release + a private Python venv (see below) | Engine, not a `route_run` router: the board workflow's placer and KRT router |
+
+## KiCadRoutingTools (engine)
+
+[KiCadRoutingTools](https://github.com/drandyhaas/KiCadRoutingTools) (KRT, **MIT**, Python + a Rust core) is what
+`board_route` places and routes with, and what every last-mile router, rip and nudge step runs. It sits in Settings →
+Routers as **KiCadRoutingTools** with `kind: "engine"`: it has Install / Uninstall / Reinstall like the routers, but no
+*Set default* and no entry in the Route Cinema picker or `route_run.router`.
+
+**Where the board tools find it** (`krtDir` in `packages/tools/src/tools/board-host.ts`):
+
+1. Settings `krtDir` (Settings → Routers → *KiCadRoutingTools folder*), returned as given so a wrong path fails the
+   layout `check` by name;
+2. env `FABDESK_KRT_DIR`;
+3. the installed copy, `<fabdesk data dir>/routers/krt`.
+
+A build is any folder with `src/plugins/py_router/route.py`, a venv interpreter (`venv/bin/python`, or
+`venv\Scripts\python.exe` on Windows) and `src/plugins/rust_router/grid_router.{so,pyd}`. The card shows an override
+as `installed (Settings krtDir)` / `(FABDESK_KRT_DIR)`, or says why a set path is not a build.
+
+**Install** (`packages/tools/src/routers/krt.ts`):
+
+1. Download `KiCadRoutingTools-0.23.8.zip` from the upstream GitHub release (16,067,806 bytes), verify SHA-256
+   `0179da836e6d41484701a9b840e2e30e94465cd7dc1c226e0c7bf850fe78453f`, extract it into `routers/krt/src`.
+   (`FABDESK_KRT_URL` / `FABDESK_KRT_SHA256` override both, for a mirror.)
+2. Copy the bundled Rust core for this OS/arch (`grid_router-{linux-x86_64,macos-arm64,macos-x86_64}.so`,
+   `grid_router-windows-x86_64.pyd`) to `grid_router.so` / `.pyd`, the name KRT's CLIs import (KRT's own
+   `_resolve_rust_binary` does this inside KiCad). Linux arm64 and Windows arm64 have no prebuilt core: see *ARM* below.
+3. Make `routers/krt/venv` and install the routing packages from the **hash lock** `packages/tools/src/routers/krt-lock.json`
+   (`numpy==2.5.4 scipy==1.18.1 shapely==2.2.0`, what every parity run used, each with the sha256 of every wheel and
+   the sdist PyPI lists; written to `routers/krt/krt-requirements.txt` and installed with `--require-hashes
+   --only-binary :all: --no-deps` on both the uv and the pip path). The lock's numpy needs **CPython ≥ 3.12**. The first
+   of these that takes the lock wins:
+   - `FABDESK_KRT_PYTHON` when set (used alone, so a wrong or too-old value fails loudly);
+   - **uv** found on the machine (`FABDESK_KRT_UV`, PATH, `~/.local/bin`, `~/.cargo/bin`, Homebrew): a uv-managed
+     CPython 3.12 kept inside the install (`routers/krt/python`), so it matches the parity runs, goes with Uninstall and
+     survives OS Python upgrades;
+   - a system Python ≥ 3.12: Linux `python3`, `python3.13`, `python3.12`; macOS python.org, Homebrew, KiCad.app's bundled
+     Python, and `/usr/bin/python3` only when the Command Line Tools are installed (else it is a stub that opens an
+     install dialog); Windows the `py -3` launcher, `python` on PATH (not the Store alias), then KiCad's `bin\python.exe`.
+     The venv is made by uv when uv exists (no `ensurepip` needed), else `python -m venv` + pip. Older Pythons (KiCad's
+     bundled 3.9-3.11 among them) are skipped with the reason;
+   - otherwise a **pinned uv** is downloaded into the fabdesk data dir (`routers/uv/0.13.6/`, `packages/tools/src/routers/uv.ts`)
+     and provisions the managed CPython 3.12, so a machine with no Python, uv or compiler installs KRT unaided.
+   - **Pillow** (raster previews) and **ortools** (the bus step, ~100 MB) are optional in KRT's `requirements.txt`
+     and are not installed: none of the scripts the workflow runs (route, route_diff, route_planes, place_simple,
+     check_floorplan, check_groups, net_forensics, make_unplaced) imports them on the paths it uses.
+4. Import check: the venv imports numpy, scipy, shapely and `grid_router` together.
+
+uv runs with `UV_NO_CONFIG=1 UV_NO_CACHE=1 UV_LINK_MODE=copy`: nothing goes to the user's uv cache or config, everything
+lands in the install. The venv is made in place after the extracted tree is swapped in (venv paths are absolute); any
+failure restores the previous install. When nothing works the card says what was tried and what to do. fabdesk itself
+ships no Python. The old fallback to KRT's floors (`numpy>=1.22 ...`, unhashed) for a Python without wheels for the
+pins is gone: with the uv bootstrap every supported platform reaches a Python that takes the lock, and a floor install
+would be neither hashed nor the versions the reference runs used.
+
+**The pinned uv.** uv 0.13.6 (released 2026-10-27). One archive per platform, checked against the sha256 astral-sh/uv
+publishes for the release (`sha256.sum`, which matches GitHub's asset digests); Linux uses the static musl builds:
+
+| Platform | Asset | SHA-256 |
+| --- | --- | --- |
+| linux x64 | `uv-x86_64-unknown-linux-musl.tar.gz` | `5d61f26b6c7213779eda90edc6971ea6b0b796bfb8d49a574c8ad69b59838548` |
+| linux arm64 | `uv-aarch64-unknown-linux-musl.tar.gz` | `819692e404d23e5aae6bc44c0e260f1f5492fd1910ab4693b2c650f926dbe800` |
+| macOS arm64 | `uv-aarch64-apple-darwin.tar.gz` | `60fbd5c8a1ed681845eea28d9d622fcde03c51e91a43465b64a1e17db1ed3472` |
+| macOS x64 | `uv-x86_64-apple-darwin.tar.gz` | `63ba17fdda55ad1a230d4b37fc6017ffa10c23688c83818bd3bfdf914c652a02` |
+| windows x64 | `uv-x86_64-pc-windows-msvc.zip` | `a2a8820d5eea32f08ef467ef3b7f66883a9b076d5737a2fc2fbb5f458d1bb50f` |
+| windows arm64 | `uv-aarch64-pc-windows-msvc.zip` | `c2426c0c8e28b53d8c440e47a18d96ad4db51e159866c0e81435b196d7f0081c` |
+
+uv verifies the CPython it downloads (python-build-standalone) against its own built-in sha256 table. To bump: change
+`UV_VERSION` and the table in `uv.ts` from the new release's `sha256.sum`. To regenerate the lock: see its `about` field.
+
+**ARM.** KRT 0.23.8 ships `grid_router` for linux-x86_64, macos-arm64/x86_64 and windows-x86_64 only, and has no
+pure-Python fallback (`py_router/*` import `grid_router` unconditionally). On linux-arm64 and windows-arm64 the
+install builds it from the zip's `rust_router/` (`cargo build --release`, `PYO3_PYTHON` = the venv's Python,
+`CARGO_TARGET_DIR` inside the install, the result copied to `grid_router.so` / `.pyd`) when cargo is found
+(`FABDESK_KRT_CARGO`, PATH, `~/.cargo/bin`); without it the install stops before any Python download with "building it
+needs Rust (cargo, https://rustup.rs) and a C compiler". **rustup is not bootstrapped**: a minimal toolchain is a
+~250-300 MB download, and it still would not be enough, since the crate also needs a system linker and C compiler
+(mimalloc's build script; the MSVC Build Tools on Windows, several GB), so it cannot make those machines zero-prerequisite.
+The release ships no `Cargo.lock`, so a source build resolves the `pyo3 0.23` / `numpy 0.23` / `mimalloc 0.1` ranges at
+build time (not reproducible; not verified on real ARM hardware).
+
+**Install on first use.** The board tools call the registry's `ensure` (`packages/tools/src/routers/registry.ts`) through
+the layout host (`engineEnsurer` in `board-host.ts`, `engineReady` in `@fabdesk/board-workflow`'s `layout/ctx.ts`) at the
+point a step needs an engine: the layout `check` (KRT and TraceMaker), `place` / `rank` / `route` (KRT; TraceMaker for
+the route stage's TraceMaker branch), the last-mile router, rip and nudge steps and `why` (KRT), and `fill:tracemaker`.
+The missing engine is installed inline with progress lines and the step continues. Rules:
+
+- concurrent requests share one install (one download), whether they come from parallel candidates, two tools or
+  Settings;
+- an override that is set (Settings `krtDir`, `FABDESK_KRT_DIR`, `TRACEMAKER_BIN`) is used as given; when it is broken
+  that is reported and nothing is installed over it;
+- Settings `autoInstallEngines` (default on; Settings → Routers → *Install engines on first use*) turns it off: the
+  steps then report the missing engine;
+- an automatic install that failed is not retried automatically in the same core process; `board_engines install`
+  (or Settings → Install) retries;
+- `route_run router=tracemaker`, `why`'s cause classes and `validate`'s pair audit install TraceMaker on first use as well;
+- the floorplan path (`board_route action=floorplan`, `block_eval`, last-mile `replace:`) runs TraceMaker's placer
+  `tracemaker-place` through `ensurePlacer` (`placerEnsurer` in `board-host.ts`, `tracemakerPlacer` in
+  `layout/floorplan.ts`); see [TraceMaker's placer](#tracemakers-placer-tracemaker-place).
+
+The agent can also see and install engines itself with the `board_engines` tool (`board` toolset, global): `status`
+lists each engine's state, path, override and last error (and, under TraceMaker, `placer:` with where `tracemaker-place`
+is or why it is missing) plus kicad-cli and the auto-install setting; `install` (`engine`: krt, tracemaker, freerouting,
+or all = krt + tracemaker; tracemaker also upgrades an install whose archive predates the placer) runs as a durable
+board job. Programmatic callers
+(CI) keep using `registry.install("krt")`.
+
+Measured 2026-11-12 on Linux x86_64, **cold** on a bare-machine simulation (empty HOME, PATH without uv or Python, a
+fresh data dir): about **39 s** in all (uv download 3 s, managed CPython 1 s, hash-locked wheels 33 s); a second run on a
+slow link spent 14 min on the wheels alone (uv prints nothing meanwhile, so the install logs a heartbeat every minute); about **320 MB**
+on disk for KRT (scripts, venv, managed CPython) plus 42 MB for the pinned uv. A cold install downloads ~16 MB of
+KRT, ~18 MB of uv, ~30 MB of CPython and ~60 MB of wheels.
+
+## atlc (engine)
+
+`board_review section` (finite-difference cross-section impedance, the toolkit's `review/atlc_section.py`) runs atlc 4.6.1
+(GPL-2.0-or-later, https://atlc.sourceforge.net) as a separate program. Upstream publishes source only, so the registry entry
+`atlc` (kind `engine`) downloads Debian's pristine copy of the upstream tarball
+(`https://deb.debian.org/debian/pool/main/a/atlc/atlc_4.6.1.orig.tar.bz2`, 1 784 110 bytes, sha256 `0ad8f9bb…6841321`;
+`FABDESK_ATLC_URL` / `FABDESK_ATLC_SHA256` override) and builds `atlc-4.6.1/src/atlc` with `sh ./configure CFLAGS="-O2 -fcommon"`
+and `make -C src atlc` (single-threaded, like Debian's package; a few seconds; needs a C compiler and make). `ATLC_BIN` wins, then an
+`atlc` on PATH (the Debian/Ubuntu `atlc` package) is used as it is. Windows has no build path: set `ATLC_BIN`. Verified on Linux x86_64
+(the built binary gives the same impedances as Debian's on the C6 stack106 sections); macOS is untested (the 2008 `config.guess` may
+not know arm64 Macs: then install atlc another way and set `ATLC_BIN`).
 
 ## TraceMaker size and license
 
@@ -31,6 +156,32 @@ on this repo.
 3. If that host is unreachable, or has no asset for this platform, fall back to the
    pinned upstream source tarball. The package is then `installed` but **not ready** until
    you build it or set `TRACEMAKER_BIN`.
+
+### TraceMaker's placer (`tracemaker-place`)
+
+Every published archive carries upstream's placer `tracemaker-place` (`.exe` on Windows) beside `tracemaker`: `build.sh`
+builds both CMake targets (`src/place` has existed since v0.8.0, and its CLI is the one `floorplan.ts` calls:
+`board -o out --mode full --time --seed --courtyard-clearance-mm --json`), `package.sh` gives it the same strip, library
+bundling (`$ORIGIN/lib` on Linux, DLLs beside the `.exe` on Windows), Windows DLL probe and macOS ad-hoc signature, and
+`smoke.sh` runs `tracemaker-place --help` (checking those flags) and a 2-part placement on the smoke fixture (checking
+the `legalisation: N placed, M failed` and `conflicts before … after … new …` lines and the `--json` report's
+`fixed_parts`, which the floorplan passes parse). On macOS both programs pass `verify-macos.sh` for the variant that is
+published. `asset.json` / the manifest name it (`"placer": "tracemaker-place"`).
+
+The registry resolves it (`traceMakerPlacerNear`, the snapshot's `placer` field, `ensurePlacer`):
+
+1. `TRACEMAKER_PLACE_BIN` when set (a broken value is reported, never installed over);
+2. beside the TraceMaker binary (the installed archive, an upstream install's `bin/`, or `TRACEMAKER_BIN`'s folder);
+3. the CMake build tree's `src/place` next to `src/app` (a source build, including `TRACEMAKER_BIN` pointing into one),
+   then anywhere in a source package built in place.
+
+`ensurePlacer` installs TraceMaker first when it is missing (the same rules as `ensure`). A managed install from an
+archive that predates the placer (no `placer` key) is replaced once from the current release, but only after the
+manifest shows that release carries it, so nothing is re-downloaded for nothing; automatic upgrades honour
+`autoInstallEngines` and are not retried after a failure (`board_engines install tracemaker` retries). A
+`TRACEMAKER_BIN` or source-package install is never replaced; the reason says what to build or set. `resolve-upstream.sh`
+counts a published platform only when its asset names the placer, so the first weekly run after this change rebuilds the
+existing `tracemaker-v0.12.1-db5950f` release's linux and macOS archives instead of skipping them.
 
 Each published archive contains the upstream `LICENSE` (and `NOTICE` when present) plus
 `SOURCE.txt` with the pinned upstream tag and commit. That is the GPL-3.0 §6 source offer
@@ -54,7 +205,7 @@ Measured 2026-10-09 (source fallback, still used when no binary exists for the p
 | `linux-x86_64` | yes | `cpu-only` on Ubuntu 26.04 / GCC 15 | No CUDA. Non-system libs (zstd, sqlite) are bundled with `$ORIGIN/lib` when present. Remaining dynamic deps are glibc. |
 | `macos-arm64` | yes | `macos-metal` | Two variants in one job; **publish the first that passes smoke**. **A (preferred):** Apple clang + system `/usr/lib/libc++.1.dylib` (single C++ runtime; Metal/Foundation already load Apple libc++). **B:** Homebrew LLVM `clang++` + **static** `libc++` / `libc++abi` / `libunwind` (run 38016562996 linked B then SIGABRT on `--help`). Both apply the v0.9.0 `from_chars(double)` + `<cstdlib>` patch and `-Werror=unguarded-availability-new` on A. `CMAKE_OSX_DEPLOYMENT_TARGET=15.0`. SQLite: isolated headers + static `libsqlite3.a` or `/usr/lib/libsqlite3.dylib`. zstd is **static** `libzstd.a`. `--help` / `version` do not call Metal (`MTLCopyAllDevices` is lazy; smoke uses `route --no-gpu`). Smoke abort uploads unpackaged binaries + `lldb` / `DYLD_PRINT_LIBRARIES` / crash reports as `tracemaker-macos-arm64-debug`. Manifest records `minos=15.0`, `cxxRuntime`, and `macosVariant`. |
 | `macos-x86_64` | no | — | Intel macOS runners are not cheap enough for a weekly job; brew bottles on the arm64 runner are arm64. |
-| `windows-x86_64` | best-effort | no upstream preset; MSYS2 UCRT64 + Ninja | GCC-only `Warnings.cmake` and the `base` preset's Unix `PATH` rule out MSVC. Static libgcc/libstdc++ / zstd / sqlite. Archive is `.zip` with `tracemaker.exe`. A Windows failure does not block linux/macos. |
+| `windows-x86_64` | best-effort | no upstream preset; MSYS2 UCRT64 + Ninja | GCC-only `Warnings.cmake` and the `base` preset's Unix `PATH` rule out MSVC. Static libgcc/libstdc++ / zstd / sqlite. Archive is `.zip` with `tracemaker.exe` and `tracemaker-place.exe`. A Windows failure does not block linux/macos. |
 
 Users do not need CMake or a C++ toolchain to *install* a published binary. They still need
 a matching OS/arch (glibc x86_64 Linux, Apple silicon macOS 15+, or 64-bit Windows).

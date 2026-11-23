@@ -14,6 +14,11 @@ const query = (over: Partial<Parameters<typeof bomPartsState>[0]>) => ({
 });
 
 describe("bomPartsState / planAddOffboard", () => {
+  test("an unresolved hardware read cannot create an empty replacement file", () => {
+    const state = bomPartsState(query({ data: undefined }));
+    expect(state.status).toBe("loading");
+    expect(planAddOffboard(state, "sg90-servo", 1)).toBeNull();
+  });
   test("a confirmed-absent file starts empty and Add creates it", () => {
     const state = bomPartsState(query({ data: null }));
     expect(state).toMatchObject({ status: "ok", exists: false });

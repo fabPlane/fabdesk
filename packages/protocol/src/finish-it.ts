@@ -1,7 +1,7 @@
 /** One-click autonomous "Finish it" session: take a partial board to manufacturable. */
 import { z } from "zod/v4";
 
-export const FinishItMilestoneId = z.enum(["schematic", "build", "route", "verify"]);
+export const FinishItMilestoneId = z.enum(["schematic", "build", "route", "verify", "review"]);
 export type FinishItMilestoneId = z.infer<typeof FinishItMilestoneId>;
 
 export const FINISH_IT_MILESTONES: readonly FinishItMilestoneId[] = [
@@ -9,6 +9,8 @@ export const FINISH_IT_MILESTONES: readonly FinishItMilestoneId[] = [
   "build",
   "route",
   "verify",
+  // only planned when the board toolkit is in use on the project
+  "review",
 ] as const;
 
 export const FINISH_IT_MILESTONE_LABELS: Record<FinishItMilestoneId, string> = {
@@ -16,6 +18,7 @@ export const FINISH_IT_MILESTONE_LABELS: Record<FinishItMilestoneId, string> = {
   build: "Place footprints",
   route: "Route copper",
   verify: "Verify DRC / ERC / SPICE",
+  review: "Review and settle findings",
 };
 
 export const FinishItMilestoneState = z.enum(["pending", "running", "done", "skipped", "failed"]);
