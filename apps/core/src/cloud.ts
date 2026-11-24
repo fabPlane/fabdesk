@@ -7,8 +7,31 @@ import type { Settings } from "@fabdesk/protocol";
 import { CloudService, type CloudApiFactory } from "@fabdesk/tools";
 import { FabplaneClient } from "fabplane-cli";
 
+/** A local 503, not an HTTP response from the cloud or a change in sharing access. */
+class CloudConnectionError extends Error {
+  readonly status = 503;
+  readonly code = "cloud_unreachable";
+  constructor(cause: TypeError) {
+    super("Could not reach fabplane.com. Check your connection and try again.", { cause });
+    this.name = "CloudConnectionError";
+  }
+}
+
 /** The fabplane API client (`vendor/fabplane-cli`). Tests pass `api` to swap in a fake. */
-export const cloudApiFactory: CloudApiFactory = (o) => new FabplaneClient(o);
+export const cloudApiFactory: CloudApiFactory = (o) =>
+  new FabplaneClient({
+    ...o,
+    fetch: async (input, init) => {
+      // Keep invalid URL/header/body construction outside the transport boundary.
+      const request = new Request(input, init);
+      try {
+        return await fetch(request);
+      } catch (error) {
+        if (!(error instanceof TypeError)) throw error;
+        throw new CloudConnectionError(error);
+      }
+    },
+  });
 
 export function createCloudService(o: {
   apiOrigin: string;
@@ -54,7 +77,9 @@ export function storedCredentialToken(o: {
     (inFlight ??= read(o.home)
       .then((creds) => {
         token =
-          creds && sameOrigin(creds.apiOrigin, o.apiOrigin) && Date.parse(creds.expiresAt) > now() ? creds.token : null;
+          creds && sameOrigin(creds.apiOrigin, o.apiOrigin) && Date.parse(creds.expiresAt) > now()
+            ? creds.token
+            : null;
       })
       .catch(() => {
         token = null;
