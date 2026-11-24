@@ -12,6 +12,8 @@ In **Outputs → Copper PCB**, FabDesk prepares the saved board’s front copper
 
 FabDesk locates Studio on the computer running the desktop app, including when a different machine hosts the project. For a portable installation, select Studio when prompted. **Copy project path** restores the path without regenerating. A browser downloads the project for opening in Studio.
 
+The project files were verified with Windows Studio 1.0.41 and Intel Mac Studio 1.0.42. Both editors reopened the coupon with the saved material and Fill intact. [Native project verification](validation/commarker-studio/native-project.md)
+
 ### First setup or SVG import
 
 With no tested project attached, **Open in ComMarker Studio** prepares an SVG and copies its local path. Choose **Create → Vector** in Studio and paste the path. In a Mac file picker, press **⌘⇧G** first. The browser downloads the SVG. **Use SVG instead** makes the same artwork available when a template is attached.

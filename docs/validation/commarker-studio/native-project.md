@@ -1,4 +1,4 @@
-# ComMarker Studio project and preset verification on Windows
+# ComMarker Studio project and preset verification
 
 ComMarker Studio 1.0.41 for Windows x64 reopened a native `.orzr` made by FabDesk and retained the selected pen and Fill settings. The test on November 24, 2026 used the document reader behind Studio’s **File → Open** and its **Save As** writer. The laser stayed offline.
 
@@ -10,13 +10,19 @@ ComMarker Studio 1.0.41 for Windows x64 reopened a native `.orzr` made by FabDes
 
 Studio also uses a pen’s position in the table. A test placing a record labeled “7” at slot 0 left Studio’s default entry at slot 7. FabDesk writes complete, disabled entries before a nonzero selected index. This preserves the selected index without bringing unrelated template materials into the new job.
 
+## macOS round trip
+
+The stock Intel Mac editor in ComMarker Studio 1.0.42 opened FabDesk’s 20 × 12 mm coupon on a macOS 15 GitHub runner. Studio saved an inspectable copy and an ordinary format-1 project. The copy retained all three closed contours, the centered bounds and every coordinate within 0.0000000001 mm. The complete selected pen at slot 3, per-shape settings, all three Fill layers, both transforms and the array settings matched. FabDesk imported the ordinary Mac save as a template and reproduced the coupon and its material. The test exercised Studio’s document APIs without attaching a device. [Mac run and verification log](https://github.com/fabPlane/fabdesk/actions/runs/45387610457/job/138422551363)
+
+The opt-in workflow downloads the vendor’s Intel disk image and checks SHA-256 `91fac19e7b53d82500cd8133fa0eaf14c1a34136f8c2dee93e514e544bda22c6`. The native harness is compiled only on the validation runner. [Verification workflow](../../../.github/workflows/commarker-studio-native.yml)
+
 ## Copper geometry
 
 The two-net coupon, an inset board with a copper ring and a cutout, and a routed 16.5 × 40 mm StickHub board were compared with Studio’s own SVG import. Across the three fixtures, 8,514 native hatch points matched within 0.000001 mm after aligning the coordinate origins. The inset board retained its margins, and the hatch left the coupon pads and trace centres clear. The 0.1 mm spacing in this software test was chosen for measuring geometry. [Fixture dimensions, probes and plotted hatches](native-import.md)
 
 ## Scope
 
-The project reader accepts the two verified encodings of Studio’s `2.1.8595` document schema. A source template must have one filled vector and one consistent pen across its active Fill layers. Studio’s ordinary Windows save is accepted directly. The production writer runs in TypeScript and requires no vendor libraries. The Windows test used the stock libraries only to independently open and inspect its result.
+The project reader accepts the two verified encodings of Studio’s `2.1.8595` document schema. A source template must have one filled vector and one consistent pen across its active Fill layers. FabDesk accepts ordinary saves from the tested Windows and Mac editors. The production writer runs in TypeScript and requires no vendor libraries.
 
 These checks cover file interoperability and copper geometry. Physical clearance, insulation resistance, substrate damage and registration on an Omni X 6W with a 150 mm lens and 35 µm foil require a coupon on that machine. The software fixtures contain synthetic test values. The Windows test did not operate the engraver.
 

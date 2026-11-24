@@ -20,7 +20,11 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.head.repo.full_name == github.repository &&
-      contains(github.event.pull_request.body, '[x] Verify native ComMarker Studio on Mac'))
+      contains(github.event.pull_request.body, '[x] Verify native ComMarker Studio on Mac') &&
+      (github.event.action != 'edited' || !contains(github.event.changes.body.from, '[x] Verify native ComMarker Studio on Mac')))
+    concurrency:
+      group: commarker-studio-mac-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
     runs-on: macos-15-intel
     timeout-minutes: 12
     steps:

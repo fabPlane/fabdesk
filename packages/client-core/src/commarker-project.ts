@@ -60,7 +60,7 @@ const templateHint = "Save a Studio project with one filled vector using the tes
 function readTemplate(bytes: Uint8Array): unknown {
   if (bytes.length > MAX_STUDIO_TEMPLATE_BYTES) throw new Error("The Studio template exceeds 8 MiB.");
   if (bytes.length <= 8 || bytes.subarray(1, 8).some((n) => n !== 0) || (bytes[0] !== 0 && bytes[0] !== 1)) {
-    throw new Error("Unsupported Studio project encoding. Use a regular .orzr project saved in ComMarker Studio 1.0.41.");
+    throw new Error("Unsupported Studio project encoding. Choose a regular .orzr saved by ComMarker Studio.");
   }
   try {
     const payload = bytes.subarray(8);
