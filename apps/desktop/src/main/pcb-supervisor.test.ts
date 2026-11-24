@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { coreEnvironment } from "./child-process-env";
 import { corePcbEnvironment, PcbSupervisor, resolvePcbBackend } from "./pcb-supervisor";
 
 const roots: string[] = [];
@@ -120,17 +121,27 @@ describe("bundled PCB backend", () => {
     );
     expect(resolved?.env.FREEROUTING_JAR).toBe(join(pcb, "freerouting", "freerouting.jar"));
     expect(resolved?.env.FP_PCB_JAVA).toBe(join(pcb, "freerouting", "jre", "bin", "java"));
-    // Missing optional runtime files do not prevent the bridge and fab_router starting.
-    await rm(join(pcb, "freerouting", "freerouting.jar"));
-    expect(resolvePcbBackend({ packaged: true, resourcesPath: resources, env: {} })?.env.FREEROUTING_JAR)
-      .toBe(join(pcb, "freerouting", "freerouting.jar"));
     expect(corePcbEnvironment(resolved!)).toMatchObject({
       KICAD_CLI: join(pcb, "kicad", "bin", "kicad-cli"),
       KICAD_STOCK_DATA_HOME: join(pcb, "kicad", "share", "kicad"),
       KICAD10_FOOTPRINT_DIR: join(pcb, "libraries", "footprints"),
       KICAD10_SYMBOL_DIR: join(pcb, "libraries", "symbols"),
+      FREEROUTING_JAR: join(pcb, "freerouting", "freerouting.jar"),
       LD_LIBRARY_PATH: `${join(pcb, "kicad", "lib")}:${join(pcb, "kicad", "lib", "runtime")}:/host/lib`,
     });
+    // The registry reports the installed JAR, while the bridge reports whether Java can run it.
+    await rm(resolved!.env.FP_PCB_JAVA!);
+    expect(corePcbEnvironment(resolved!).FREEROUTING_JAR).toBe(resolved!.env.FREEROUTING_JAR);
+    // A missing or invalid JAR must not shadow core's own override or managed installation.
+    const jar = join(pcb, "freerouting", "freerouting.jar");
+    await rm(jar);
+    expect(resolvePcbBackend({ packaged: true, resourcesPath: resources, env: {} })?.env.FREEROUTING_JAR).toBe(jar);
+    expect(corePcbEnvironment(resolved!)).not.toHaveProperty("FREEROUTING_JAR");
+    const override = join(resources, "custom-freerouting.jar");
+    expect(coreEnvironment({ FREEROUTING_JAR: override }, corePcbEnvironment(resolved!), true).FREEROUTING_JAR)
+      .toBe(override);
+    await mkdir(jar);
+    expect(corePcbEnvironment(resolved!)).not.toHaveProperty("FREEROUTING_JAR");
   });
 
   test("an unpackaged checkout without a bundle keeps the existing external-bridge workflow", async () => {

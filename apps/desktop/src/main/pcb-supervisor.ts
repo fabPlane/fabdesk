@@ -1,7 +1,7 @@
 /** Starts the bundled FabPlane PCB bridge before core, and supplies core's bridge/KiCad env. */
 import { type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolveProjectsDirectory } from "@fabdesk/auth-client";
 import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
@@ -35,8 +35,15 @@ export interface PcbBackendCommand {
   fixedUrl: boolean;
 }
 
-/** Environment the core needs for CLI-based DRC/render/export, not only the bridge process. */
+/** Share the bridge's KiCad paths and any bundled Freerouting JAR with the core. */
 export function corePcbEnvironment(command: PcbBackendCommand): Record<string, string> {
+  const jar = command.env.FREEROUTING_JAR;
+  let bundledJar: string | undefined;
+  try {
+    if (jar && statSync(jar).isFile()) bundledJar = jar;
+  } catch {
+    // Older or incomplete bundles use a missing path on the bridge. Keep core's on-demand install available.
+  }
   return {
     ...Object.fromEntries(Object.entries(command.env).filter(([key]) => key === "FABDESK_KICAD_MODELS" || /^KICAD\d+_3DMODEL_DIR$/.test(key))),
     FABDESK_FP_PCB_BRIDGE_URL: command.url,
@@ -49,6 +56,7 @@ export function corePcbEnvironment(command: PcbBackendCommand): Record<string, s
     FABDESK_RUNTIME_ID: command.env.FABDESK_RUNTIME_ID!,
     FABDESK_DESKTOP_PID: command.env.FABDESK_DESKTOP_PID!,
     FABDESK_PROJECTS_DIR: command.env.WORKSPACE_ROOT!,
+    ...(bundledJar ? { FREEROUTING_JAR: bundledJar } : {}),
     ...(command.env.LD_LIBRARY_PATH ? { LD_LIBRARY_PATH: command.env.LD_LIBRARY_PATH } : {}),
   };
 }

@@ -26,3 +26,12 @@ test("unknown bridge engine capability stays unavailable and missing packages st
   expect(result.routers.find(router => router.id === "fab_router")?.runtime?.ready).toBe(false);
   expect(result.routers.find(router => router.id === "freerouting")?.runtime?.ready).toBe(false);
 });
+
+test("a bundled Freerouting JAR stays installed when the bridge reports missing Java", () => {
+  const entry = catalog().routers.find(router => router.id === "freerouting")!;
+  const list: RouterList = { routers: [{ ...entry, state: "bundled", install: "bundled", ready: true }] };
+  const status = { url: "local", ok: true, routers: { freerouting: { ok: false, reason: "Java not found" } } };
+  expect(withRouterRuntime(list, status).routers[0]).toMatchObject({
+    state: "bundled", ready: true, runtime: { ready: false, reason: "Java not found" },
+  });
+});

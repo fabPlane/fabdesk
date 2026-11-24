@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { defaultRouterCatalog } from "../src/routers/catalog";
 import { createRouterRegistry, probeTraceMakerCliVersion } from "../src/routers/registry";
 import { runTraceMaker } from "../src/routers/tracemaker";
@@ -23,6 +24,36 @@ import {
 } from "../src/routers/tracemaker-release";
 
 const servers: Array<{ stop(): void }> = [];
+
+test("TraceMaker can finish routing after writing 32 MiB to stdout", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "fabdesk-verbose-tracemaker-"));
+  try {
+    // The wrapper runs `<binary> route <input> -o <output>`. Bun loads this fixture as its route command.
+    await writeFile(join(dir, "route"), `
+      import { writeFileSync, writeSync } from "node:fs";
+      const chunk = Buffer.alloc(64 * 1024, "x");
+      for (let i = 0; i < 512; i++) writeSync(1, chunk);
+      writeFileSync(process.argv[process.argv.indexOf("-o") + 1], "(kicad_pcb)");
+    `);
+    const wrapper = pathToFileURL(join(import.meta.dir, "../src/routers/tracemaker.ts")).href;
+    const driver = `
+      import { runTraceMaker } from ${JSON.stringify(wrapper)};
+      await runTraceMaker({
+        binary: process.execPath, snapshotDir: process.cwd(),
+        timeoutMs: 5000, signal: AbortSignal.timeout(5000),
+      });
+    `;
+    const child = Bun.spawn([process.execPath, "-e", driver], {
+      cwd: dir, windowsHide: true, stdout: "ignore", stderr: "pipe",
+    });
+    const [code, error] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+    expect(code, error).toBe(0);
+    expect(await readFile(join(dir, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb)");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 10_000);
+
 afterAll(() => {
   for (const server of servers) server.stop();
 });

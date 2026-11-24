@@ -31,7 +31,7 @@ export async function runTraceMaker(opts: {
     const child = spawn(
       opts.binary,
       ["route", input, "-o", output, "--time", String(seconds), "--no-kb"],
-      { stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
+      { stdio: ["ignore", "ignore", "pipe"], windowsHide: true },
     );
     const onAbort = () => {
       child.kill("SIGTERM");
