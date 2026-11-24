@@ -71,9 +71,9 @@ export function registerIpc(supervisor: CoreSupervisor): void {
     if (typeof text !== "string" || text.length > 16_384 || text.includes("\0")) throw new Error("Clipboard text must be a string under 16 KiB.");
     return clipboard.writeText(text);
   });
-  ipcMain.handle("fabdesk:open-in-commarker-studio", async (e, filename: unknown, svg: unknown) => {
+  ipcMain.handle("fabdesk:open-in-commarker-studio", async (e, filename: unknown, file: unknown) => {
     const win = BrowserWindow.fromWebContents(e.sender);
-    return prepareComMarkerStudio(filename, svg, {
+    return prepareComMarkerStudio(filename, file, {
       platform: process.platform,
       temp: app.getPath("temp"),
       userData: app.getPath("userData"),

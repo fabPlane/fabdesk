@@ -53,6 +53,21 @@ test("remembers a manually chosen macOS application for later imports", async ()
   expect(opened).toEqual([bundle, bundle]);
 });
 
+test.each(["darwin", "win32"] as const)("stages native project bytes and opens the selected Studio application on %s", async platform => {
+  const { host, clipboard, opened, revealed } = setup(platform);
+  const application = join(root, platform === "darwin" ? "ComMarker_Studio.app" : "ComMarker_Studio.exe");
+  if (platform === "darwin") await mkdir(application);
+  else await writeFile(application, "");
+  host.pickStudio = async () => application;
+  const file = Uint8Array.of(0, 0, 0, 0, 0, 0, 0, 0, 0x65, 0x33, 0x30, 0x3d);
+  const result = await prepareComMarkerStudio("front.orzr", file, host);
+  expect(result).toEqual({ path: clipboard[0]!, opened: true, copied: true });
+  expect(basename(result.path)).toBe("front.orzr");
+  expect(new Uint8Array(await readFile(result.path))).toEqual(file);
+  expect(opened).toEqual([application]);
+  expect(revealed).toEqual([]);
+});
+
 test("a canceled picker keeps the file available even if the clipboard is busy", async () => {
   const { host, revealed } = setup("win32");
   host.copyPath = () => false;

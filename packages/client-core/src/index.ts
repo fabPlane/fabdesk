@@ -180,6 +180,7 @@ export * from "./kept-output";
 
 export * from "./board-file-destination";
 export { prepareComMarkerArtwork } from "./commarker-export";
+export { inspectStudioTemplate, makeStudioCopperProject, MAX_STUDIO_TEMPLATE_BYTES } from "./commarker-project";
 export * from "./bom-origins";
 export * from "./diff-preview";
 export * from "./overview-images";

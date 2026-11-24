@@ -1,10 +1,20 @@
 # Prepare a copper PCB for ComMarker Studio
 
-In the board's **Outputs** tab, select **Copper PCB** and choose **Open in ComMarker Studio**. FabDesk uses the saved board revision to generate full-size, front-side removal artwork for pre-cut copper-clad stock. Black regions are the areas to engrave. Pads, tracks and copper pours remain clear. The drill map and perimeter cuts are separate operations.
+In **Outputs → Copper PCB**, FabDesk prepares the saved board’s front copper for pre-cut copper-clad stock. Black regions are the copper to remove. Pads, tracks and pours remain clear. Drilling and perimeter cutting are separate operations.
 
-<img src="validation/commarker-studio/studio-handoff.png" alt="FabDesk Copper PCB controls with the 150 mm lens and 35 µm foil selected" width="300">
+<img src="validation/commarker-studio/tested-template.png" alt="FabDesk showing the attached Studio project, 150 mm lens and 35 µm foil" width="300"> <img src="validation/commarker-studio/project-preview.png" alt="Copper removal geometry registered to the PCB center in a prepared native project" width="300">
 
-On Windows and macOS, FabDesk opens Studio and copies the local SVG path, including when the project is on a remote FabDesk core. If prompted, locate your copy of Studio. In Studio, choose **Create → Vector** and paste the path. In a Mac file picker, press **⌘⇧G** first. **Copy SVG path** restores the path to the clipboard without re-exporting. The browser client downloads the same SVG.
+### With a tested Studio project
+
+1. Under **Omni X setup**, select the installed lens and foil thickness. Choose **Attach tested project** and pick the `.orzr` you saved after qualifying the material. Use a project with one filled vector and one active pen shared by its Fill layers. FabDesk keeps the material on this workstation, keyed to the lens and foil.
+2. Choose **Open in ComMarker Studio**. FabDesk prepares a new editable `.orzr` containing the current board and the template’s pen, passes and Fill settings. It places the center of the full PCB at Studio’s field origin and discards the template’s geometry, position and repeats.
+3. Studio opens and FabDesk copies the project path. In Studio choose **Open** and paste it. In a Mac file picker, press **⌘⇧G** first. Check the material, preview and alignment against the physical stock. Marking is controlled in Studio.
+
+FabDesk locates Studio on the computer running the desktop app, including when a different machine hosts the project. For a portable installation, select Studio when prompted. **Copy project path** restores the path without regenerating. A browser downloads the project for opening in Studio.
+
+### First setup or SVG import
+
+With no tested project attached, **Open in ComMarker Studio** prepares an SVG and copies its local path. Choose **Create → Vector** in Studio and paste the path. In a Mac file picker, press **⌘⇧G** first. The browser downloads the SVG. **Use SVG instead** makes the same artwork available when a template is attached.
 
 Keep the import at 1:1. Select the whole graphic and compare its width and height with the expected graphic size in FabDesk. When copper reaches an entire edge, the engraved shape can be smaller than the board. FabDesk also shows its offset from the board's top-left corner for alignment. Select the artwork, enable **Fill**, and check that the preview leaves the pads and tracks clear. [Studio vector and fill controls](https://blog.commarker.com/archives/55321)
 
@@ -20,8 +30,8 @@ For custom software, ComMarker offers an SDK for evaluation by request. Its publ
 
 In **Omni X setup**, confirm the lens and foil thickness. The initial selection is a **150 mm lens and 35 µm copper**. Choose **Open test coupon** to check Studio import independently of the active design. The sample should measure 20 × 12 mm and display two clear traces connecting four round pads when Fill is enabled.
 
-FabDesk remembers your Studio Material Library name and your tested settings notes for that lens and foil. Select the imported artwork, open the **Library** control in Studio's **Laser Settings**, choose the matching material, and check the Fill interval. The SVG carries the board geometry. Studio applies the laser parameters.
+When using SVG, select the imported artwork, open **Library** in Studio’s **Laser Settings**, choose the material, enable Fill, and check its interval. FabDesk can remember the library name and your notes for this lens and foil. Once you have a tested native project, attaching it also carries the applied pen and Fill into future jobs.
 
-For new stock, use **Array → Material Test Array** on a scrap of the same laminate. Inspect for copper left in the gaps and damage to the substrate. For a board test, import the [20 × 12 mm coupon artwork](examples/omni-x-copper-coupon-remove.svg) or open its [KiCad board](examples/omni-x-copper-coupon.kicad_pcb) in FabDesk. Verify continuity from TP1 to TP2 and from TP3 to TP4, and an open circuit from TP1 to TP3. Once a combination passes, save it in Studio's material library under a name that identifies the lens and stock. Select that entry on subsequent imports. [ComMarker material test procedure](https://commarker.com/dist/js/uploads/Machines/OmniSeries/OmniX/Manual/OmniXOperationTutorial.pdf)
+For new stock, use **Array → Material Test Array** on a scrap of the same laminate. Inspect for residual copper and damage to the substrate. Run the two-trace coupon on the same stock and check continuity from TP1 to TP2 and from TP3 to TP4, and an open circuit from TP1 to TP3. Once a combination passes, save the coupon with its single filled graphic as a Studio project. Attach that file in FabDesk. [Coupon artwork](examples/omni-x-copper-coupon-remove.svg) · [KiCad coupon](examples/omni-x-copper-coupon.kicad_pcb) · [ComMarker material test procedure](https://commarker.com/dist/js/uploads/Machines/OmniSeries/OmniX/Manual/OmniXOperationTutorial.pdf)
 
 ComMarker's Omni X 6W tables provide **PCB Marking** entries for the 70 mm and 150 mm lenses. They give no copper thickness or electrical isolation result. ComMarker's separate direct-ablation example uses a **12W** UV laser on 18 µm and 35 µm foil. These references do not establish a 6W removal preset. [Omni X 6W material tables](https://commarker.com/dist/js/uploads/Machines/OmniSeries/OmniX/MaterialSettings/Omni%20X%206W%20Material%20Settings.pdf) · [ComMarker copper-clad PCB experiments](https://blog.commarker.com/archives/59265)

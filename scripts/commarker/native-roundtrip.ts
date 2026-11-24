@@ -28,7 +28,19 @@ if (action === "prepare") {
   assert.equal(shape.basePaths.length, 3);
   assert.deepEqual(shape.position, { from: [-10, -6], to: [20, 12] });
   assert.equal(shape.penIndex, 3);
-  for (const key of ["basePaths", "fillParam", "userData", "matrix", "postTransformMatrix", "arrayParam"]) {
+  for (const [index, path] of shape.basePaths.entries()) {
+    const expectedPath = expected.shapes[0].basePaths[index];
+    assert.equal(path.type, expectedPath.type);
+    assert.equal(path.points.length, expectedPath.points.length);
+    for (const [pointIndex, point] of path.points.entries()) {
+      assert.equal(point.length, 2);
+      for (const axis of [0, 1]) {
+        // Studio's decimal writer can differ by one double ULP on reopening.
+        assert.ok(Math.abs(point[axis] - expectedPath.points[pointIndex][axis]) < 1e-10);
+      }
+    }
+  }
+  for (const key of ["fillParam", "userData", "matrix", "postTransformMatrix", "arrayParam"]) {
     assert.deepEqual(shape[key], expected.shapes[0][key], key);
   }
   assert.deepEqual(actual.penPar.params[3], expected.penPar.params[3], "complete selected pen");

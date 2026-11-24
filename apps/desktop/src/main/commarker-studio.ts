@@ -41,21 +41,21 @@ async function launchStudio(path: string, host: StudioHost): Promise<boolean> {
 }
 
 function validateFilename(filename: unknown): asserts filename is string {
-  if (typeof filename !== "string" || !filename.toLowerCase().endsWith(".svg") || filename.startsWith(".")
+  if (typeof filename !== "string" || !/\.(svg|orzr)$/i.test(filename) || filename.startsWith(".")
     || /[<>:"/\\|?*\x00-\x1f]/.test(filename) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])\./i.test(filename)) {
-    throw new Error("A plain SVG filename is required for ComMarker Studio.");
+    throw new Error("Choose a plain SVG or Studio project filename.");
   }
 }
 
-export async function prepareComMarkerStudio(filename: unknown, svg: unknown, host: StudioHost) {
+export async function prepareComMarkerStudio(filename: unknown, file: unknown, host: StudioHost) {
   if (host.platform !== "win32" && host.platform !== "darwin") throw new Error("ComMarker Studio requires Windows or macOS.");
   validateFilename(filename);
-  if (!(svg instanceof Uint8Array) || !svg.byteLength) throw new Error("The copper SVG is empty or unavailable.");
+  if (!(file instanceof Uint8Array) || !file.byteLength) throw new Error("The Studio file is empty or unavailable.");
 
   // Each import gets an independent file, including when the daemon is on another machine.
   const folder = await mkdtemp(join(host.temp, "fabdesk-copper-"));
   const path = join(folder, filename);
-  await writeFile(path, svg, { flag: "wx" });
+  await writeFile(path, file, { flag: "wx" });
 
   const preference = join(host.userData, "commarker-studio-path.txt");
   const saved = await readFile(preference, "utf8").catch(() => "");

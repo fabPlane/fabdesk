@@ -29,7 +29,7 @@ export interface HostAdapter {
   copyText?: (text: string) => Promise<void>;
   /** Stages exported artwork on the desktop running Studio and opens its application. */
   openInComMarkerStudio?: (
-    filename: string, svg: Uint8Array,
+    filename: string, file: Uint8Array,
   ) => Promise<{ path: string; opened: boolean; copied: boolean }>;
   openExternal: (url: string) => Promise<void> | void;
   /** Open a local file with the operating system's default application (Electron only). */
