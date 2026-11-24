@@ -408,17 +408,10 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     settings: () => store.settings.get(),
   });
   if (!services.routers) {
-    const { createRouterRegistry, FREEROUTING_VERSION } = await import("@fabdesk/tools");
-    const { existsSync } = await import("node:fs");
+    const { createRouterRegistry } = await import("@fabdesk/tools");
     services.routers = createRouterRegistry({
       home: config.home,
       settings: () => store.settings.get(),
-      bundled: {
-        fab_router: { version: "bundled" },
-        ...(process.env["FREEROUTING_JAR"] && existsSync(process.env["FREEROUTING_JAR"])
-          ? { freerouting: { version: FREEROUTING_VERSION, path: process.env["FREEROUTING_JAR"] } }
-          : {}),
-      },
     });
   }
 

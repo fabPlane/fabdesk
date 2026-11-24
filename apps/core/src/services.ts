@@ -3,9 +3,7 @@ import { createRunChild } from "./child-runner";
 import * as kicad from "@fabdesk/kicad";
 import * as sim from "@fabdesk/sim";
 import type { Principal, Settings } from "@fabdesk/protocol";
-import { existsSync } from "node:fs";
 import {
-  FREEROUTING_VERSION,
   ToolError,
   createRouterRegistry,
   type CoreServices,
@@ -186,12 +184,6 @@ export async function createServices(
     routers: createRouterRegistry({
       home: deps.home,
       settings: () => deps.settings(),
-      bundled: {
-        fab_router: { version: "bundled" },
-        ...(process.env["FREEROUTING_JAR"] && existsSync(process.env["FREEROUTING_JAR"])
-          ? { freerouting: { version: FREEROUTING_VERSION, path: process.env["FREEROUTING_JAR"] } }
-          : {}),
-      },
     }),
     cad,
     boardAdopt: { adopt: (input) => adoptBoard(input) },

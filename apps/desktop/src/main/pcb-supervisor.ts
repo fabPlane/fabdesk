@@ -19,7 +19,7 @@ export interface PcbBundleManifest {
   /** Optional bundle-relative entry point for the private fab_router module. */
   fabRouter?: string;
   /** Optional for older bundles; missing files degrade routing to fab_router. */
-  freerouting?: { jar: string; java: string };
+  freerouting?: { jar: string; java: string; version?: string };
   /** Bundle-relative shared-library directories, in loader search order (Linux). */
   libraryPaths?: string[];
   environment?: Record<string, string>;
@@ -30,6 +30,7 @@ export interface PcbBackendCommand {
   args: string[];
   cwd: string;
   env: Record<string, string>;
+  bundledFreeroutingVersion?: string;
   url: string;
   /** An explicitly configured URL must not be silently replaced after a collision. */
   fixedUrl: boolean;
@@ -56,7 +57,10 @@ export function corePcbEnvironment(command: PcbBackendCommand): Record<string, s
     FABDESK_RUNTIME_ID: command.env.FABDESK_RUNTIME_ID!,
     FABDESK_DESKTOP_PID: command.env.FABDESK_DESKTOP_PID!,
     FABDESK_PROJECTS_DIR: command.env.WORKSPACE_ROOT!,
-    ...(bundledJar ? { FREEROUTING_JAR: bundledJar } : {}),
+    ...(bundledJar ? {
+      FREEROUTING_JAR: bundledJar,
+      FABDESK_BUNDLED_FREEROUTING_VERSION: command.bundledFreeroutingVersion || "bundled",
+    } : {}),
     ...(command.env.LD_LIBRARY_PATH ? { LD_LIBRARY_PATH: command.env.LD_LIBRARY_PATH } : {}),
   };
 }
@@ -136,6 +140,7 @@ export function resolvePcbBackend(opts: {
     cwd: sourceRoot ?? bundleRoot,
     url,
     fixedUrl: Boolean(env["FABDESK_FP_PCB_BRIDGE_URL"]),
+    ...(manifest.freerouting?.version ? { bundledFreeroutingVersion: manifest.freerouting.version } : {}),
     env: {
       ...(manifest.environment ?? {}),
       // Bun accepts spaces when the whole option is quoted. Its position and absolute path

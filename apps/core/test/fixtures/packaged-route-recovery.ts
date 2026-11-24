@@ -35,6 +35,7 @@ const env: any = {
   KICAD10_SYMBOL_DIR: join(bundle, manifest.symbols),
   LD_LIBRARY_PATH: manifest.libraryPaths.map((p: string) => join(bundle, p)).join(":"),
   FREEROUTING_JAR: join(bundle, manifest.freerouting.jar),
+  FABDESK_BUNDLED_FREEROUTING_VERSION: manifest.freerouting.version ?? "bundled",
   FP_PCB_JAVA: join(bundle, manifest.freerouting.java),
   FAB_ROUTER_MODULE: join(bundle, manifest.fabRouter),
   WORKSPACE_ROOT: workspace,

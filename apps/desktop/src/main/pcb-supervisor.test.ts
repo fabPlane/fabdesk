@@ -99,7 +99,7 @@ describe("bundled PCB backend", () => {
         footprints: "libraries/footprints",
         symbols: "libraries/symbols",
         fabRouter: "private/fab_router/src/api.ts",
-        freerouting: { jar: "freerouting/freerouting.jar", java: "freerouting/jre/bin/java" },
+        freerouting: { jar: "freerouting/freerouting.jar", java: "freerouting/jre/bin/java", version: "2.3.0" },
         libraryPaths: ["kicad/lib", "kicad/lib/runtime"],
         environment: { KICAD_SOCKET_TRANSPORT: "ipc" },
       }),
@@ -127,8 +127,12 @@ describe("bundled PCB backend", () => {
       KICAD10_FOOTPRINT_DIR: join(pcb, "libraries", "footprints"),
       KICAD10_SYMBOL_DIR: join(pcb, "libraries", "symbols"),
       FREEROUTING_JAR: join(pcb, "freerouting", "freerouting.jar"),
+      FABDESK_BUNDLED_FREEROUTING_VERSION: "2.3.0",
       LD_LIBRARY_PATH: `${join(pcb, "kicad", "lib")}:${join(pcb, "kicad", "lib", "runtime")}:/host/lib`,
     });
+    const { bundledFreeroutingVersion, ...legacy } = resolved!;
+    expect(bundledFreeroutingVersion).toBe("2.3.0");
+    expect(corePcbEnvironment(legacy).FABDESK_BUNDLED_FREEROUTING_VERSION).toBe("bundled");
     // The registry reports the installed JAR, while the bridge reports whether Java can run it.
     await rm(resolved!.env.FP_PCB_JAVA!);
     expect(corePcbEnvironment(resolved!).FREEROUTING_JAR).toBe(resolved!.env.FREEROUTING_JAR);
@@ -137,6 +141,7 @@ describe("bundled PCB backend", () => {
     await rm(jar);
     expect(resolvePcbBackend({ packaged: true, resourcesPath: resources, env: {} })?.env.FREEROUTING_JAR).toBe(jar);
     expect(corePcbEnvironment(resolved!)).not.toHaveProperty("FREEROUTING_JAR");
+    expect(corePcbEnvironment(resolved!)).not.toHaveProperty("FABDESK_BUNDLED_FREEROUTING_VERSION");
     const override = join(resources, "custom-freerouting.jar");
     expect(coreEnvironment({ FREEROUTING_JAR: override }, corePcbEnvironment(resolved!), true).FREEROUTING_JAR)
       .toBe(override);

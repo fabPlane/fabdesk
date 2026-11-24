@@ -37,7 +37,7 @@ export function stateLabel(router: RouterSnapshot): string {
         ? `bundled ${router.versionInstalled}`
         : "bundled";
     case "installed": {
-      const ver = router.versionInstalled ?? router.version;
+      const ver = router.versionInstalled ?? (router.overriddenBy ? undefined : router.version);
       if (!router.ready) return isEngine(router) ? "incomplete" : "source only · not built";
       return `installed${ver && ver !== "bundled" ? ` ${ver}` : ""}${router.overriddenBy ? ` (${router.overriddenBy})` : ""}`;
     }
