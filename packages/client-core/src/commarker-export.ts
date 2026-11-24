@@ -8,6 +8,10 @@ const reportSchema = z.object({
   json: z.object({
     relativePath: z.string(), sourceSha256: z.hash("sha256"), svgSha256: z.hash("sha256"),
     widthMm: z.number().positive(), heightMm: z.number().positive(),
+    artworkBounds: z.object({
+      xMm: z.number().nonnegative(), yMm: z.number().nonnegative(),
+      widthMm: z.number().positive(), heightMm: z.number().positive(),
+    }).optional(),
   }),
 });
 
@@ -24,7 +28,12 @@ export async function prepareComMarkerArtwork(options: {
   if (result.status !== "done") throw new Error(result.error ?? "Copper export failed. Try again.");
   const parsed = reportSchema.safeParse(result.result);
   if (!parsed.success) throw new Error("The copper exporter returned an incomplete file receipt.");
-  const { relativePath, sourceSha256, svgSha256, widthMm, heightMm } = parsed.data.json;
+  const { relativePath, sourceSha256, svgSha256, widthMm, heightMm, artworkBounds } = parsed.data.json;
+  // Allow floating-point addition of the six-decimal SVG coordinates at an edge.
+  if (artworkBounds && (artworkBounds.xMm + artworkBounds.widthMm > widthMm + 1e-7 ||
+    artworkBounds.yMm + artworkBounds.heightMm > heightMm + 1e-7)) {
+    throw new Error("The copper artwork bounds exceed the board dimensions. Prepare it again.");
+  }
   if (sourceSha256 !== expectedSourceSha256 || relativePath !== `exports/commarker/copper-${sourceSha256}.svg`) {
     throw new Error("This artwork belongs to a different board revision. Prepare it again.");
   }
@@ -41,5 +50,5 @@ export async function prepareComMarkerArtwork(options: {
     throw new Error("The board source changed. Select it again.");
   }
   if (await sha256Blob(await read("board.kicad_pcb")) !== sourceSha256) throw new Error("The board changed during export. Prepare it again.");
-  return { svg, filename: `copper-${sourceSha256}.svg`, widthMm, heightMm };
+  return { svg, filename: `copper-${sourceSha256}.svg`, widthMm, heightMm, ...(artworkBounds ? { artworkBounds } : {}) };
 }

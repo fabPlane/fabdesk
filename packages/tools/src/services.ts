@@ -745,7 +745,10 @@ export interface KicadService {
   copperRemovalArtwork(
     cli: KicadCli,
     opts: { board: string; scratchDir: string; signal?: AbortSignal },
-  ): Promise<{ svg: string; widthMm: number; heightMm: number }>;
+  ): Promise<{
+    svg: string; widthMm: number; heightMm: number;
+    artworkBounds: { xMm: number; yMm: number; widthMm: number; heightMm: number };
+  }>;
   /** One DXF per layer (mm). Copper layers show retained copper. */
   exportDxf(
     cli: KicadCli,

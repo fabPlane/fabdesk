@@ -75,7 +75,7 @@ export const export_commarker_copper = defineTool({
     const board = await requireBoard(project);
     const sourceSha256 = createHash("sha256").update(await readFile(board)).digest("hex");
     staged.progress(0.2, "Preparing front copper removal artwork");
-    const { svg, widthMm, heightMm } = await staged.services.kicad.copperRemovalArtwork(cli, {
+    const { svg, widthMm, heightMm, artworkBounds } = await staged.services.kicad.copperRemovalArtwork(cli, {
       board, scratchDir: project.dir, signal: staged.signal,
     });
     const relativePath = `exports/commarker/copper-${sourceSha256}.svg`;
@@ -83,7 +83,7 @@ export const export_commarker_copper = defineTool({
     await writeAtomic(path, svg);
     const svgSha256 = createHash("sha256").update(svg).digest("hex");
     return ok(`Exported front copper removal artwork (${widthMm} × ${heightMm} mm) to ${relativePath}.`,
-      { path, relativePath, sourceSha256, svgSha256, widthMm, heightMm });
+      { path, relativePath, sourceSha256, svgSha256, widthMm, heightMm, artworkBounds });
   }),
 });
 

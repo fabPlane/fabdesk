@@ -26,6 +26,7 @@ test("black is removable copper with front-view scale, nested islands, edge cuto
   const inner = [arc("F.Cu", "ARC", 75, -15, 1, 0, 180), arc("F.Cu", "ARC", 75, -15, 1, 180, 0)];
   const result = copperRemovalFromDxf(plot([...outline, ...holes]), plot([...copper, ...inner, ...box("F.Cu", 87, -20, 92, -15)]));
   expect([result.widthMm, result.heightMm]).toEqual([20, 20]);
+  expect(result.artworkBounds).toEqual({ xMm: 0, yMm: 0, widthMm: 20, heightMm: 20 });
   expect(result.svg).toContain('width="20mm"');
   const sample = await samples(result.svg, 20);
   expect(sample(1, 1)).toBe(0);
@@ -33,6 +34,16 @@ test("black is removable copper with front-view scale, nested islands, edge cuto
   expect(sample(5, 5)).toBe(0);
   expect(sample(14, 15)).toBe(255);
   expect(sample(19, 7)).toBe(255);
+});
+
+test("retained edges leave distinct mark bounds registered to the top-left of the full-size board", async () => {
+  // A solid copper sheet with two disjoint clear windows. Only the windows are engraved.
+  const front = plot([...box("F.Cu", 68, -32, 93, -8), ...box("F.Cu", 74, -17, 77, -13), ...box("F.Cu", 82, -27, 87, -25)]);
+  const result = copperRemovalFromDxf(plot(outline), front);
+  expect(result).toMatchObject({ widthMm: 20, heightMm: 20, artworkBounds: { xMm: 4, yMm: 3, widthMm: 13, heightMm: 14 } });
+  expect(result.svg).toContain('viewBox="0 0 20 20"');
+  const sample = await samples(result.svg, 20);
+  expect([sample(5, 4), sample(10, 10), sample(16, 16)]).toEqual([0, 255, 0]);
 });
 
 test("incomplete, crossing and unsupported plots fail before a mask can be produced", () => {
@@ -60,6 +71,7 @@ test.skipIf(!nativeCli)("bundled KiCad exports real routed pads and saved front 
     await writeFile(board, await readFile(join(import.meta.dir, "../../../docs/examples/omni-x-copper-coupon.kicad_pcb")));
     const coupon = await generate();
     expect([coupon.widthMm, coupon.heightMm]).toEqual([20, 12]);
+    expect(coupon.artworkBounds).toEqual({ xMm: 0, yMm: 0, widthMm: 20, heightMm: 12 });
     const sample = await samples(coupon.svg, 20);
     expect([sample(3, 3), sample(10, 5.5), sample(10, 6), sample(10, 6.5), sample(16, 8.5)]).toEqual([255, 255, 0, 255, 255]);
     // A copper graphic encloses a clear region inside the positive F.Cu plot.

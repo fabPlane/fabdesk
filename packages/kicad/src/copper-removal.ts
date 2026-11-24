@@ -142,6 +142,14 @@ function filledRegion(rings: Ring[]): MultiPolygon {
   return result;
 }
 
+function limits(rings: Ring[]) {
+  let left = Infinity, right = -Infinity, bottom = Infinity, top = -Infinity;
+  for (const ring of rings) for (const [x, y] of ring) {
+    left = Math.min(left, x); right = Math.max(right, x); bottom = Math.min(bottom, y); top = Math.max(top, y);
+  }
+  return { left, right, bottom, top };
+}
+
 export function copperRemovalFromDxf(edgePlot: string, copperPlot: string) {
   const outlines = contours(edgePlot, "Edge.Cuts");
   validateEdges(outlines);
@@ -149,15 +157,21 @@ export function copperRemovalFromDxf(edgePlot: string, copperPlot: string) {
   if (!polygonClipping.intersection(board, copper).length) throw new Error("No retained front copper inside the board outline.");
   const removal = polygonClipping.difference(board, copper);
   if (!removal.length) throw new Error("The entire front of the board is copper. There is nothing to remove.");
-  let left = Infinity, right = -Infinity, bottom = Infinity, top = -Infinity;
-  for (const ring of outlines) for (const [x, y] of ring) {
-    left = Math.min(left, x); right = Math.max(right, x); bottom = Math.min(bottom, y); top = Math.max(top, y);
-  }
+  const { left, right, top, bottom } = limits(outlines);
   const widthMm = precise(right - left), heightMm = precise(top - bottom);
+  // Studio may show the selectable path's bounds instead of the SVG page. Use the same
+  // top-left origin and rounding as the path below. Holes cannot extend an outer ring.
+  const mark = limits(removal.map(polygon => polygon[0]!));
+  const xMm = precise(mark.left - left), yMm = precise(top - mark.top);
+  const artworkBounds = {
+    xMm, yMm,
+    widthMm: precise(precise(mark.right - left) - xMm),
+    heightMm: precise(precise(top - mark.bottom) - yMm),
+  };
   const path = removal.flatMap(poly => poly.map(ring => ring.slice(0, -1).map(([x, y], i) =>
     `${i ? "L" : "M"}${precise(x - left)} ${precise(top - y)}`).join(" ") + " Z")).join(" ");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${widthMm}mm" height="${heightMm}mm" viewBox="0 0 ${widthMm} ${heightMm}">\n<title>Front copper to remove</title>\n<path fill="#000000" fill-rule="evenodd" stroke="none" d="${path}"/>\n</svg>\n`;
-  return { svg, widthMm, heightMm };
+  return { svg, widthMm, heightMm, artworkBounds };
 }
 
 export async function copperRemovalArtwork(cli: KicadCli, opts: { board: string; scratchDir: string; signal?: AbortSignal }) {

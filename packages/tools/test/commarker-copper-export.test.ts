@@ -30,7 +30,10 @@ test("publishes revision-bound SVG and receipt for the selected PCB, preserves t
     const first = await run(digest);
     const relativePath = `exports/commarker/copper-${digest}.svg`, path = join(project.dir, relativePath);
     const svg = await readFile(path);
-    expect(first.json).toMatchObject({ relativePath, path, sourceSha256: digest, svgSha256: hash(svg), widthMm: 20, heightMm: 12 });
+    expect(first.json).toMatchObject({
+      relativePath, path, sourceSha256: digest, svgSha256: hash(svg), widthMm: 20, heightMm: 12,
+      artworkBounds: { xMm: 0, yMm: 0, widthMm: 20, heightMm: 12 },
+    });
     expect(await Bun.file(`${path}.revision.json`).json()).toMatchObject({
       artifact: relativePath, artifactSha256: hash(svg), board: selection, inputs: [{ path: "board.kicad_pcb", sha256: digest }],
     });

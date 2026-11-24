@@ -1,8 +1,8 @@
 import { DisclosureSummary } from "../components/DisclosureSummary";
-import { Input, Select } from "../components/ui";
+import { Button, Input, Select } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 
-export function ComMarkerMaterialPreset({ disabled }: { disabled: boolean }) {
+export function ComMarkerMaterialPreset({ disabled, desktop, onCoupon }: { disabled: boolean; desktop: boolean; onCoupon: () => void }) {
   const stock = useUiStore(s => s.commarkerStock);
   const setStock = useUiStore(s => s.setComMarkerStock);
   const foil = Number(stock.foilUm);
@@ -17,9 +17,11 @@ export function ComMarkerMaterialPreset({ disabled }: { disabled: boolean }) {
     </p>
     {note.trim() && <p className="break-words leading-5 text-muted"><strong>Tested settings</strong> · {note.trim()}</p>}
     <details className="rounded-md border border-border px-2">
-      <DisclosureSummary label="Studio material preset" icon="settings" variant="compact"
+      <DisclosureSummary label="Omni X setup" icon="settings" variant="compact"
         badge={key ? <span className="whitespace-nowrap">{stock.lens} mm · {foil} µm</span> : undefined} />
       <fieldset disabled={disabled} className="space-y-2 pb-3">
+        <p className="leading-5 text-muted">Connect the Omni X by USB and look for <strong>Connected</strong> in Studio.
+          {stock.lens && <> With the {stock.lens} mm lens fitted, select <strong>Field Lens {stock.lens === "150" ? "B" : "A"}</strong>.</>}</p>
         <div className="grid grid-cols-2 gap-2">
           <label>Lens
             <Select aria-label="Lens" className="mt-1 w-full" value={stock.lens} onChange={e => setStock({ ...stock, lens: e.target.value as typeof stock.lens })}>
@@ -36,6 +38,8 @@ export function ComMarkerMaterialPreset({ disabled }: { disabled: boolean }) {
           <Input className="mt-1" disabled={!key} maxLength={240} value={note}
             onChange={e => setProfile(key, { name, note: e.target.value })} placeholder="Fill interval or other tested settings" /></label>
         <p className="leading-5 text-muted">Saved on this computer for this lens and foil. Apply the settings in Studio.</p>
+        <Button size="sm" variant="secondary" onClick={onCoupon}>{desktop ? "Open test coupon" : "Download test coupon"}</Button>
+        <p className="leading-5 text-muted">Check the import with two traces on a 20 × 12 mm sample.</p>
       </fieldset>
     </details>
   </div>;
