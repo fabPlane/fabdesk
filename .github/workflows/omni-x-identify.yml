@@ -12,11 +12,13 @@ permissions:
 jobs:
   loopback:
     name: Identification on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 5
     strategy:
       matrix:
-        os: [macos-15, windows-2025]
+        include:
+          - { os: macos-arm64, runner: blacksmith-6vcpu-macos-15 }
+          - { os: windows-x64, runner: blacksmith-4vcpu-windows-2025 }
     steps:
       - uses: actions/checkout@v5
         with:
