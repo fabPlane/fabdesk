@@ -55,8 +55,9 @@ import {
 } from "./sentry";
 import { RunTelemetry } from "./run-telemetry";
 import { buildInfo } from "./build-info";
-import { ArchiveConsentRevokedError, UsageArchive } from "./usage-archive";
+import { ArchiveConsentRevokedError, ArchiveUnavailableError, UsageArchive } from "./usage-archive";
 import { UsageApiArchiveWriter } from "./usage-api";
+import { usageRemoteBackupEnabled } from "./usage-backup-env";
 import { userPathReady } from "./user-path";
 
 /** Delay before retrying a failed usage-archive backfill (rate or daily limits, an outage). */
@@ -224,7 +225,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   if (staleFinish) logger.info("failed stale Finish it sessions from previous run", { count: staleFinish });
   const tokens = new TokenSet(config.token);
   const archiveDir = process.env["FABDESK_USAGE_ARCHIVE_DIR"]?.trim();
-  const remoteArchiveEnabled = process.env["FABDESK_USAGE_REMOTE_BACKUP"] === "1";
+  const remoteArchiveEnabled = usageRemoteBackupEnabled();
   const archiveEnabled = Boolean(archiveDir) || remoteArchiveEnabled;
   const archives: UsageArchive[] = [];
   if (archiveDir) archives.push(new UsageArchive(archiveDir));
@@ -266,8 +267,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         }
       } catch (error) {
         if (error instanceof ArchiveConsentRevokedError || archiveClosing) return;
-        // Usually a rate or daily limit; dumps not yet backed up remain local until accepted.
-        logger.warn("usage archive backfill failed; retrying later", {
+        // Rate/daily limits warn; 503 and network outages stay debug and retry later.
+        const archiveLog = error instanceof ArchiveUnavailableError ? logger.debug : logger.warn;
+        archiveLog("usage archive backfill failed; retrying later", {
           error: errMsg(error),
           retryInMs: BACKFILL_RETRY_MS,
         });
@@ -308,7 +310,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
                   await archive.put(dump, store.db, hasArchiveConsent);
                 } catch (error) {
                   if (error instanceof ArchiveConsentRevokedError) continue;
-                  logger.warn("usage archive failed; retained run dump locally", {
+                  const archiveLog = error instanceof ArchiveUnavailableError ? logger.debug : logger.warn;
+                  archiveLog("usage archive failed; retained run dump locally", {
                     runId: dump.runId,
                     error: errMsg(error),
                   });

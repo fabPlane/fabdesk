@@ -1,7 +1,12 @@
 /** Installation-authenticated usage archive upload. R2 credentials stay on the API. */
 import { createHash } from "node:crypto";
 import { ARCHIVE_PART_BYTES, partKey, partReceiptPrefix, type ArchiveChunk, type ArchivePart, type ArchiveRecord } from "./usage-parts";
-import { ArchiveConsentRevokedError, ArchiveRecordTooLargeError, type ArchiveWriter } from "./usage-archive";
+import {
+  ArchiveConsentRevokedError,
+  ArchiveRecordTooLargeError,
+  ArchiveUnavailableError,
+  type ArchiveWriter,
+} from "./usage-archive";
 
 type Installation = { installationId: string; token: string };
 export type InstallationStore = {
@@ -50,6 +55,7 @@ class RetryableUploadError extends Error {
   constructor(
     message: string,
     readonly retryAfterMs: number | null = null,
+    readonly unavailable = false,
   ) {
     super(message);
   }
@@ -115,11 +121,21 @@ export class UsageApiArchiveWriter implements ArchiveWriter {
     if (validInstallation(stored)) return Promise.resolve(stored);
     if (this.installationTask) return this.installationTask;
     const pending = (async () => {
-      const response = await this.fetchImpl(`${this.apiOrigin.replace(/\/+$/, "")}/v1/usage-archive/installation`, {
-        method: "POST",
-        signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
-      });
+      let response: Response;
+      try {
+        response = await this.fetchImpl(`${this.apiOrigin.replace(/\/+$/, "")}/v1/usage-archive/installation`, {
+          method: "POST",
+          signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
+        });
+      } catch (error) {
+        requireConsent(allowed, signal);
+        throw new ArchiveUnavailableError(
+          `usage archive registration failed (${error instanceof Error ? error.message : String(error)})`,
+        );
+      }
       requireConsent(allowed, signal);
+      if (response.status === 503)
+        throw new ArchiveUnavailableError(`usage archive registration failed (${response.status})`);
       if (!response.ok) throw new Error(`usage archive registration failed (${response.status})`);
       const installation: unknown = await response.json();
       requireConsent(allowed, signal);
@@ -207,8 +223,10 @@ export class UsageApiArchiveWriter implements ArchiveWriter {
         requireConsent(allowed, signal);
         if (!(error instanceof RetryableUploadError)) throw error;
         const delay = error.retryAfterMs ?? this.pacing.retryDelaysMs[attempt];
-        if (delay === undefined || delay > this.pacing.maxRetryAfterMs || attempt >= this.pacing.retryDelaysMs.length)
+        if (delay === undefined || delay > this.pacing.maxRetryAfterMs || attempt >= this.pacing.retryDelaysMs.length) {
+          if (error.unavailable) throw new ArchiveUnavailableError(error.message);
           throw new Error(error.message);
+        }
         await this.pacing.sleep(delay, signal);
       }
     }
@@ -240,7 +258,11 @@ export class UsageApiArchiveWriter implements ArchiveWriter {
       });
     } catch (error) {
       requireConsent(allowed, signal);
-      throw new RetryableUploadError(`usage archive upload failed (${error instanceof Error ? error.message : String(error)})`);
+      throw new RetryableUploadError(
+        `usage archive upload failed (${error instanceof Error ? error.message : String(error)})`,
+        null,
+        true,
+      );
     }
     // Once the server has accepted the record it is backed up; let the ledger record that.
     if (response.ok) return;
@@ -248,7 +270,7 @@ export class UsageApiArchiveWriter implements ArchiveWriter {
     const message = `usage archive upload failed (${response.status})`;
     if (response.status === 413) throw new ArchiveRecordTooLargeError(key, body.byteLength);
     if (response.status === 429 || response.status >= 500)
-      throw new RetryableUploadError(message, retryAfterMs(response, Date.now()));
+      throw new RetryableUploadError(message, retryAfterMs(response, Date.now()), response.status === 503);
     throw new Error(message);
   }
 }

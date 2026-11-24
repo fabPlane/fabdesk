@@ -32,14 +32,15 @@ export function sidecarEnvironment(
   return env;
 }
 
-/** Activate the packaged desktop's uploader; the core still enforces the user's privacy choice. */
+/** Activate the uploader when unset; the core still enforces the user's privacy choice. */
 export function coreEnvironment(
   base: NodeJS.ProcessEnv,
   extra: NodeJS.ProcessEnv,
   packaged: boolean,
 ): NodeJS.ProcessEnv {
+  void packaged;
   const env = sidecarEnvironment(base, extra);
-  if (packaged && env["FABDESK_USAGE_REMOTE_BACKUP"] === undefined)
+  if (env["FABDESK_USAGE_REMOTE_BACKUP"] === undefined)
     env["FABDESK_USAGE_REMOTE_BACKUP"] = "1";
   return env;
 }

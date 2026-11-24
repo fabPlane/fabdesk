@@ -10,12 +10,12 @@ import { RUN_DUMP_RETENTION } from "../src/run-retention";
 import { UsageArchive } from "../src/usage-archive";
 
 // Use the canonical OS temp root: retention deliberately refuses symlink ancestors.
-test.each([undefined, "0"])("serve retains 50 run folders with remote backup %s and attempts no uploads", async remote => {
+test("serve retains 50 run folders with remote backup 0 and attempts no uploads", async () => {
   const home = await mkdtemp(join(await realpath(tmpdir()), "fabdesk-serve-retention-"));
   await writeFile(join(home, ".fabdesk-dev"), "");
   const overrides = {
     FABDESK_USAGE_ARCHIVE_DIR: undefined,
-    FABDESK_USAGE_REMOTE_BACKUP: remote,
+    FABDESK_USAGE_REMOTE_BACKUP: "0",
     FABDESK_PROJECTS_DIR: join(home, "projects"),
     FABDESK_PRIVACY_SCREEN: "never",
   };

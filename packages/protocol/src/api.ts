@@ -386,12 +386,12 @@ export const PrivacyScreenMode = z.enum(["auto", "always", "never"]);
 export type PrivacyScreenMode = z.infer<typeof PrivacyScreenMode>;
 
 /**
- * Who sees the first-install privacy screen: `auto` (the default) asks only where
+ * Who sees the first-install privacy screen: `always` (the compiled default) is a one-time
+ * notice for every undecided installation before anything is backed up; `auto` asks only where
  * `detectConsentRegion` places the installation in the EU/EEA, UK or Switzerland and backs up
- * everyone else by default; `always` asks every undecided installation before anything is backed
- * up; `never` skips it. The core's `FABDESK_PRIVACY_SCREEN` env var overrides this at run time.
+ * everyone else by default; `never` skips it. `FABDESK_PRIVACY_SCREEN` overrides this at run time.
  */
-export const FIRST_INSTALL_PRIVACY_SCREEN: PrivacyScreenMode = "auto";
+export const FIRST_INSTALL_PRIVACY_SCREEN: PrivacyScreenMode = "always";
 
 /** `GET /privacy`: the core's decision, so every client gates on the same answer the uploader uses. */
 export const PrivacyStatus = z.object({

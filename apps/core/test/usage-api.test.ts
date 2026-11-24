@@ -7,7 +7,7 @@ import { ARCHIVE_PART_BYTES, type ArchiveRecord } from "../src/usage-parts";
 import { restoreUsageRecord } from "../src/restore-usage-record";
 import { fileDumpReference } from "../src/run-dump-file";
 import { MAX_UPLOAD_BYTES, UsageApiArchiveWriter, type UploadPacing } from "../src/usage-api";
-import { ArchiveConsentRevokedError, ArchiveRecordTooLargeError } from "../src/usage-archive";
+import { ArchiveConsentRevokedError, ArchiveRecordTooLargeError, ArchiveUnavailableError } from "../src/usage-archive";
 
 // Synthetic credentials are generated locally and accepted only by the mock fetch.
 const installationId = randomUUID();
@@ -161,6 +161,38 @@ describe("usage API archive", () => {
       const h = harness([429]);
       await expect(h.writer.write("run-dumps/run_1.json", "{}")).rejects.toThrow("usage archive upload failed (429)");
       expect(h.puts()).toBe(4);
+    });
+
+    test("503 and offline failures throw ArchiveUnavailableError", async () => {
+      const unavailable = harness([503]);
+      await expect(unavailable.writer.write("run-dumps/run_1.json", "{}")).rejects.toBeInstanceOf(
+        ArchiveUnavailableError,
+      );
+      expect(unavailable.puts()).toBe(4);
+      const offline = harness([new TypeError("fetch failed")]);
+      await expect(offline.writer.write("run-dumps/run_1.json", "{}")).rejects.toBeInstanceOf(
+        ArchiveUnavailableError,
+      );
+      const registration = new UsageApiArchiveWriter(
+        "https://api.fabplane.com",
+        () => null,
+        { readRaw: () => null, writeRaw() {}, deleteRaw() {} },
+        async () => new Response(null, { status: 503 }),
+      );
+      await expect(registration.write("run-dumps/run_1.json", "{}")).rejects.toBeInstanceOf(
+        ArchiveUnavailableError,
+      );
+      const registrationOffline = new UsageApiArchiveWriter(
+        "https://api.fabplane.com",
+        () => null,
+        { readRaw: () => null, writeRaw() {}, deleteRaw() {} },
+        async () => {
+          throw new TypeError("fetch failed");
+        },
+      );
+      await expect(registrationOffline.write("run-dumps/run_1.json", "{}")).rejects.toBeInstanceOf(
+        ArchiveUnavailableError,
+      );
     });
 
     test("honours Retry-After, and fails at once when it is beyond the cap (a daily limit)", async () => {

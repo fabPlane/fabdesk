@@ -108,8 +108,12 @@ describe("core environment", () => {
     expect(extra).not.toHaveProperty("FABDESK_USAGE_REMOTE_BACKUP");
   });
 
-  test("leaves development launches and packaged development profiles off by default", () => {
-    expect(coreEnvironment({}, {}, false)).not.toHaveProperty("FABDESK_USAGE_REMOTE_BACKUP");
+  test("activates uploads for unpackaged launches unless the kill switch is set", () => {
+    expect(coreEnvironment({}, {}, false)).toHaveProperty("FABDESK_USAGE_REMOTE_BACKUP", "1");
+    expect(coreEnvironment({ FABDESK_USAGE_REMOTE_BACKUP: "0" }, {}, false)).toHaveProperty(
+      "FABDESK_USAGE_REMOTE_BACKUP",
+      "0",
+    );
   });
 
   test.each(["0", "1", "", "false"])("preserves an explicit operator value %j", (value) => {
