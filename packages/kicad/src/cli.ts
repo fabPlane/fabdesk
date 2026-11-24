@@ -256,6 +256,7 @@ async function runKicadCliUntraced(
 ): Promise<RunResult> {
   opts.signal?.throwIfAborted();
   const proc = Bun.spawn([cli.path, ...args], {
+    windowsHide: true,
     stdout: "pipe",
     stderr: "pipe",
     env: componentModelEnvironment(process.env, cli.path),

@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -48,6 +48,19 @@ const cli = await findKicadCli();
 const hasCli = cli !== null;
 const hasStats = cli !== null && await supportsBoardStats(cli);
 const kicad = () => cli as KicadCli;
+
+test("background KiCad calls request a hidden Windows console and capture diagnostics", async () => {
+  const spawn = spyOn(Bun, "spawn");
+  try {
+    const args = ["-e", 'console.error("renderer diagnostic"); process.exit(7)'];
+    const result = await runKicadCli({ path: process.execPath, version: "test" }, args, { tolerateExit: true });
+    expect(spawn).toHaveBeenCalledWith([process.execPath, ...args], expect.objectContaining({ windowsHide: true }));
+    expect(result.exitCode).toBe(7);
+    expect(result.stderr.trim()).toBe("renderer diagnostic");
+  } finally {
+    spawn.mockRestore();
+  }
+});
 
 describe("findKicadCli", () => {
   test.skipIf(!hasCli)("finds the local install and reads its version", () => {
