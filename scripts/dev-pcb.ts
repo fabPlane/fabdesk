@@ -28,7 +28,8 @@ async function bundleTarget(path: string): Promise<string | null> {
   }
 }
 
-let bundle = process.env["FABDESK_FP_PCB_BUNDLE"]?.trim();
+const configuredBundle = process.env["FABDESK_FP_PCB_BUNDLE"]?.trim();
+let bundle = configuredBundle;
 if (bundle) bundle = resolve(bundle);
 else {
   const candidates = await findBundles(join(root, "apps", "desktop", "release"));
@@ -52,7 +53,12 @@ if (process.env["FABDESK_FP_PCB_SOURCE"])
   console.error(`[dev:pcb] bridge source=${resolve(process.env["FABDESK_FP_PCB_SOURCE"]!)}`);
 const child = Bun.spawn(["bun", "run", "dev"], {
   cwd: root,
-  env: { ...process.env, FABDESK_FP_PCB_BUNDLE: bundle, FABDESK_DEV_PROFILE: "1" },
+  env: {
+    ...process.env,
+    FABDESK_FP_PCB_BUNDLE: bundle,
+    FABDESK_DEV_PCB_DISCOVERED_BUNDLE: configuredBundle ? "" : bundle,
+    FABDESK_DEV_PROFILE: "1",
+  },
   stdin: "inherit",
   stdout: "inherit",
   stderr: "inherit",

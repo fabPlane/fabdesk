@@ -102,6 +102,7 @@ export async function readVersion(
 ): Promise<string | undefined> {
   try {
     const proc = Bun.spawn([bin, ...args], {
+      windowsHide: true,
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",

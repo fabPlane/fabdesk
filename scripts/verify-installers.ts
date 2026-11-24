@@ -37,7 +37,7 @@ function run(
   cmd: string[],
   opts: { cwd?: string; allowFail?: boolean } = {},
 ): { ok: boolean; out: string } {
-  const p = Bun.spawnSync(cmd, { cwd: opts.cwd, stdout: "pipe", stderr: "pipe" });
+  const p = Bun.spawnSync(cmd, { cwd: opts.cwd, windowsHide: true, stdout: "pipe", stderr: "pipe" });
   const out = `${new TextDecoder().decode(p.stdout)}${new TextDecoder().decode(p.stderr)}`;
   if (p.exitCode !== 0 && !opts.allowFail)
     console.error(out.trim().split("\n").slice(-8).join("\n"));
@@ -72,9 +72,6 @@ function checkPcbBundle(resourcesDir: string, label: string): void {
     if (!backend)
       return fail(`${label}: bundled PCB manifest missing under ${join(resourcesDir, "pcb")}`);
     const manifest = JSON.parse(readFileSync(join(resourcesDir, "pcb", "bundle.json"), "utf8"));
-    if (manifest.target.startsWith("windows-") &&
-        !existsSync(join(backend.cwd, "fabdesk-hide-pcb-console.cjs")))
-      return fail(`${label}: bundled Windows PCB console preload is missing`);
     if (!manifest.freerouting?.jar || !manifest.freerouting?.java ||
         !existsSync(backend.env.FREEROUTING_JAR!) || !existsSync(backend.env.FP_PCB_JAVA!))
       return fail(`${label}: backend does not contain Freerouting jar and Java`);
@@ -251,6 +248,21 @@ function verifyDeb(file: string): void {
   }
 }
 
+/** Flat installers can wrap resources in another directory. Require the preload beside that app's core. */
+function flatWindowsPayloadError(archive: string): string | null {
+  const listing = run(["7z", "l", "-slt", "-ba", archive, "-ir!fabdesk-core.exe", "-ir!fabdesk-hide-pcb-console.cjs"]);
+  if (!listing.ok) return "could not list the Windows payload";
+  const files = new Set<string>();
+  for (const entry of listing.out.split(/\r?\n\r?\n/)) {
+    const path = /^Path = (.+)$/m.exec(entry)?.[1];
+    if (path && /^Size = [1-9]\d*$/m.test(entry)) files.add(path.replaceAll("\\", "/").toLowerCase());
+  }
+  const core = [...files].find(path => /(?:^|\/)resources\/core\/fabdesk-core\.exe$/.test(path));
+  if (!core) return "bundled core missing from installer";
+  const preload = core.replace(/core\/fabdesk-core\.exe$/, "pcb/fabdesk-hide-pcb-console.cjs");
+  return files.has(preload) ? null : "bundled Windows PCB console preload is missing or empty";
+}
+
 function verifyExe(file: string): void {
   // NSIS installers are 7-Zip-readable archives; a CRC failure here means a corrupt download later.
   const t = run(["7z", "t", file]);
@@ -259,8 +271,8 @@ function verifyExe(file: string): void {
   const listing = run(["7z", "l", file]).out;
   const payload = /(\S*app-(?:64|32)\.7z)\s*$/m.exec(listing)?.[1];
   if (!payload) {
-    if (!/resources[\\/]core[\\/]fabdesk-core\.exe/.test(listing))
-      fail(`${file}: bundled core missing from installer`);
+    const error = flatWindowsPayloadError(file);
+    if (error) fail(`${file}: ${error}`);
     return;
   }
   const out = mkdtempSync(join(tmpdir(), "fabdesk-exe-"));
@@ -278,6 +290,9 @@ function verifyExe(file: string): void {
     else console.log(`${file}: core present in ${payload} (not executed on ${process.platform})`);
     const pcb = run(["7z", "x", "-y", `-o${out}`, innerPath, "resources/pcb/*"]);
     if (!pcb.ok) return fail(`${file}: could not extract the bundled PCB backend`);
+    const preload = statSync(join(out, "resources", "pcb", "fabdesk-hide-pcb-console.cjs"), { throwIfNoEntry: false });
+    if (!preload?.isFile() || preload.size === 0)
+      return fail(`${file}: bundled Windows PCB console preload is missing or empty`);
     checkPcbBundle(join(out, "resources"), file);
     if (/resources[\\/]cad[\\/]/.test(il)) {
       const cad = run(["7z", "x", "-y", `-o${out}`, innerPath, "resources/cad/*"]);

@@ -1,9 +1,11 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { commonBinDirs, detectBinary, resolveBinary } from "./detect";
 import { detectAgents } from "./index";
+import { readClaudeModelCatalog } from "./claude-models";
+import { readCodexModelCatalog } from "./codex-models";
 
 let dir: string;
 let originalPath: string | undefined;
@@ -83,10 +85,11 @@ describe("detectBinary", () => {
 describe("common install folders", () => {
   test("a bare name off PATH is found in a search folder; a path is not searched for", () => {
     const path = fakeBinary("codex");
+    const name = basename(path);
     process.env["PATH"] = join(dir, "empty");
-    expect(resolveBinary("codex", [join(dir, "nowhere"), dir])).toBe(path);
-    expect(resolveBinary("codex", [])).toBeUndefined();
-    expect(resolveBinary(join(dir, "sub", "codex"), [dir])).toBeUndefined();
+    expect(resolveBinary(name, [join(dir, "nowhere"), dir])).toBe(path);
+    expect(resolveBinary(name, [])).toBeUndefined();
+    expect(resolveBinary(join(dir, "sub", name), [dir])).toBeUndefined();
   });
 
   test("PATH wins over the search folders", () => {
@@ -110,6 +113,23 @@ describe("common install folders", () => {
 });
 
 describe("detectAgents", () => {
+  test("desktop version and model probes request hidden consoles", async () => {
+    const spawn = spyOn(Bun, "spawn").mockImplementation(() => { throw new Error("CLI unavailable"); });
+    try {
+      await detectBinary([], process.execPath);
+      await readClaudeModelCatalog(process.execPath, "test-hidden-probe");
+      await readCodexModelCatalog(process.execPath, "test-hidden-probe");
+      for (const arg of ["--version", "-p", "app-server"]) {
+        expect(spawn).toHaveBeenCalledWith(
+          expect.arrayContaining([process.execPath, arg]),
+          expect.objectContaining({ windowsHide: true }),
+        );
+      }
+    } finally {
+      spawn.mockRestore();
+    }
+  });
+
   test("returns one AgentInfo per adapter with install hints and settings overrides", async () => {
     const grokPath = fakeBinary("grok");
     const custom = fakeBinary("codex-custom");

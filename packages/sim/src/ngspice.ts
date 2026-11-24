@@ -41,7 +41,7 @@ export async function findNgspice(explicit?: string): Promise<string | null> {
   for (const path of new Set(candidates)) {
     if (!isFile(path)) continue;
     try {
-      const proc = Bun.spawn([path, "-v"], { stdout: "pipe", stderr: "pipe" });
+      const proc = Bun.spawn([path, "-v"], { windowsHide: true, stdout: "pipe", stderr: "pipe" });
       const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
       if (code === 0 && /ngspice/i.test(out)) return path;
     } catch {
@@ -119,7 +119,7 @@ export async function runNgspice(ngspicePath: string, netlist: string, analysis:
     if (analysis.kind === "ac") body = ensureAcStimulus(body);
     const deck = `${body}\n.control\nset filetype=ascii\n${controlCommand(analysis)}\nwrite ${rawPath}\n.endc\n.end\n`;
     await Bun.write(cirPath, deck);
-    const proc = Bun.spawn([ngspicePath, "-b", cirPath], { stdout: "pipe", stderr: "pipe", cwd: dir });
+    const proc = Bun.spawn([ngspicePath, "-b", cirPath], { windowsHide: true, stdout: "pipe", stderr: "pipe", cwd: dir });
     const onAbort = () => proc.kill();
     signal?.addEventListener("abort", onAbort, { once: true });
     let stdout = "";

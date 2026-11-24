@@ -34,6 +34,7 @@ async function probe(binary: string): Promise<ModelCatalog | undefined> {
     const env = { ...process.env };
     for (const name of ["CODEX_APP_TOOLS_PIPE_PATH", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CODEX_INTERNAL_ORIGINATOR_OVERRIDE", "CODEX_TASK_WORKSPACE_VERIFYING_IDENTITY"]) delete env[name];
     const child = Bun.spawn([binary, "app-server", "--stdio", "-c", "features.apps=false", "-c", "features.plugins=false", "-c", "features.remote_plugin=false"], {
+      windowsHide: true,
       cwd: tmpdir(), env, stdin: "pipe", stdout: "pipe", stderr: "ignore", timeout: 5_000, killSignal: "SIGKILL",
     });
     proc = child;

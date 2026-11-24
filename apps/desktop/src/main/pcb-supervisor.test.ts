@@ -11,7 +11,7 @@ afterEach(async () =>
 
 describe("bundled PCB backend", () => {
   test("resolves every path relative to the manifest and forwards the platform transport", async () => {
-    const resources = await mkdtemp(join(tmpdir(), "fabplane-pcb-bundle-"));
+    const resources = await mkdtemp(join(tmpdir(), "fabplane pcb bundle "));
     roots.push(resources);
     const pcb = join(resources, "pcb");
     for (const dir of [
@@ -40,7 +40,7 @@ describe("bundled PCB backend", () => {
     const opts = {
       packaged: true,
       resourcesPath: resources,
-      env: { FABDESK_PROJECTS_DIR: "C:\\boards", BUN_OPTIONS: "--no-warnings" },
+      env: { FABDESK_PROJECTS_DIR: "C:\\boards", BUN_OPTIONS: "--cwd=.. --" },
     };
     const resolved = resolvePcbBackend(opts)!;
     expect(resolved).toMatchObject({
@@ -54,10 +54,18 @@ describe("bundled PCB backend", () => {
         WORKSPACE_ROOT: "C:\\boards",
       },
     });
-    expect(resolved.env.BUN_OPTIONS).toBe(process.platform === "win32"
-      ? "--no-warnings --preload=./fabdesk-hide-pcb-console.cjs" : undefined);
+    const expectedOptions = (dir: string) =>
+      `"--preload=${join(dir, "fabdesk-hide-pcb-console.cjs").replaceAll("\\", "/")}" --cwd=.. --`;
+    expect(resolved.env.BUN_OPTIONS).toBe(process.platform === "win32" ? expectedOptions(pcb) : undefined);
     expect(corePcbEnvironment(resolved).BUN_OPTIONS).toBeUndefined();
-    expect(resolvePcbBackend({ ...opts, packaged: false })?.env.BUN_OPTIONS).toBeUndefined();
+    const manifest = join(pcb, "bundle.json");
+    const dev = { ...opts, packaged: false, appPath: resources, env: { ...opts.env, FABDESK_FP_PCB_BUNDLE: manifest } };
+    expect(resolvePcbBackend(dev)?.env.BUN_OPTIONS).toBeUndefined();
+    const discovered = { ...dev.env, FABDESK_DEV_PCB_DISCOVERED_BUNDLE: manifest.toUpperCase() };
+    expect(resolvePcbBackend({ ...dev, env: discovered })?.env.BUN_OPTIONS).toBe(
+      process.platform === "win32" && process.arch === "x64" ? expectedOptions(join(resources, "scripts")) : undefined,
+    );
+    expect(resolvePcbBackend({ ...dev, env: { ...discovered, FABDESK_FP_PCB_BRIDGE_BIN: resolved.command } })?.env.BUN_OPTIONS).toBeUndefined();
   });
 
   test("resolves bundled Linux loader paths instead of depending on the host", async () => {

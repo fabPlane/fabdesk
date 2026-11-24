@@ -52,19 +52,21 @@ const HOST_KICAD_ENTRYPOINTS = new Set(["eeschema", "kicad", "pcbnew"]);
 function resolveCommand(
   requested: string[],
   packagedCli: string,
+  project: string,
 ): { command?: string[]; error?: string; hostCommand?: string } {
   const command = [...requested];
   const executable = command[0]!;
-  const packagedWindowsCli =
-    process.platform === "win32" &&
-    (/^kicad-cli(?:\.exe)?$/i.test(executable) ||
-      (isAbsolute(executable) && resolve(executable).toLowerCase() === resolve(packagedCli).toLowerCase()));
-  if (executable === "kicad-cli" || executable === packagedCli || packagedWindowsCli) {
+  const windows = process.platform === "win32";
+  const basenameOnHost = basename(executable);
+  const name = windows ? basenameOnHost.toLowerCase().replace(/\.exe$/, "") : basenameOnHost;
+  const packagedPath = windows
+    ? resolve(project, executable).toLowerCase() === resolve(packagedCli).toLowerCase()
+    : executable === packagedCli;
+  if ((executable === basenameOnHost && name === "kicad-cli") || packagedPath) {
     command[0] = packagedCli;
     return { command };
   }
 
-  const name = basename(executable);
   if (name === "kicad-cli" || HOST_KICAD_ENTRYPOINTS.has(name)) {
     return {
       error: `fabpcb env: ${executable} is not part of the packaged CLI scope; use bare \`kicad-cli\` or run the host tool outside \`fabpcb env exec\`\n`,
@@ -170,7 +172,7 @@ export async function runHermeticEnv(
     err(`fabpcb env: exec requires a command after --\n${HERMETIC_ENV_USAGE}`);
     return 2;
   }
-  const resolved = resolveCommand(options.command, cli);
+  const resolved = resolveCommand(options.command, cli, project);
   if (resolved.error) {
     err(resolved.error);
     return 2;

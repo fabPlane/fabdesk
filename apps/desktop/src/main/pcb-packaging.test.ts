@@ -23,13 +23,13 @@ describe("PCB backend packaging", () => {
     const env = {
       KICAD_CLI: "C:\\PCB tools\\kicad-cli.exe",
       FP_PCB_JAVA: "C:\\PCB tools\\java.exe",
-      BUN_OPTIONS: "--no-warnings --preload=./fabdesk-hide-pcb-console.cjs",
+      BUN_OPTIONS: '"--preload=C:/PCB tools/fabdesk-hide-pcb-console.cjs" --cwd=somewhere --',
     };
     const child = {};
     const spawn = mock((..._args: unknown[]) => child);
     const bun = { spawn };
     runInNewContext(script, { Bun: bun, process: { env } });
-    expect(env.BUN_OPTIONS).toBe("--no-warnings");
+    expect(env.BUN_OPTIONS).toBe("--cwd=somewhere --");
     const opts = { stderr: "pipe" };
     const session = [env.KICAD_CLI, "api-server"];
     expect(bun.spawn(session, opts)).toBe(child);

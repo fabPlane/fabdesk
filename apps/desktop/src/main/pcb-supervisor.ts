@@ -56,6 +56,7 @@ export function corePcbEnvironment(command: PcbBackendCommand): Record<string, s
 export function resolvePcbBackend(opts: {
   packaged: boolean;
   resourcesPath: string;
+  appPath?: string;
   env?: NodeJS.ProcessEnv;
 }): PcbBackendCommand | null {
   const env = opts.env ?? process.env;
@@ -68,11 +69,16 @@ export function resolvePcbBackend(opts: {
   if (manifest.format !== 1)
     throw new Error(`unsupported FabPlane PCB bundle format in ${manifestPath}`);
   const bundleRoot = dirname(manifestPath);
-  // Bun resolves relative preloads against this bridge's cwd. Keeping the filename
-  // relative also supports installation paths with spaces in BUN_OPTIONS.
-  const useConsolePreload =
-    opts.packaged && process.platform === "win32" && !source && !override &&
-    resolve(bundleRoot) === resolve(opts.resourcesPath, "pcb");
+  let consolePreload: string | undefined;
+  if (process.platform === "win32" && !source && !override) {
+    if (opts.packaged && !win32.relative(join(opts.resourcesPath, "pcb", "bundle.json"), manifestPath)) {
+      consolePreload = resolve(opts.resourcesPath, "pcb", "fabdesk-hide-pcb-console.cjs");
+    } else if (!opts.packaged && opts.appPath && env.FABDESK_DEV_PCB_DISCOVERED_BUNDLE &&
+        !win32.relative(env.FABDESK_DEV_PCB_DISCOVERED_BUNDLE, manifestPath) &&
+        manifest.target === `windows-${process.arch}` && manifest.bridge === "bin/fp-pcb-bridge.exe") {
+      consolePreload = resolve(opts.appPath, "scripts", "fabdesk-hide-pcb-console.cjs");
+    }
+  }
   const bunOptions = manifest.environment?.BUN_OPTIONS ?? env.BUN_OPTIONS;
   const command = override ? resolve(override) : resolve(bundleRoot, manifest.bridge);
   const kicadCli = resolve(bundleRoot, manifest.kicadCli);
@@ -124,8 +130,10 @@ export function resolvePcbBackend(opts: {
     fixedUrl: Boolean(env["FABDESK_FP_PCB_BRIDGE_URL"]),
     env: {
       ...(manifest.environment ?? {}),
-      ...(useConsolePreload ? {
-        BUN_OPTIONS: [bunOptions, "--preload=./fabdesk-hide-pcb-console.cjs"].filter(Boolean).join(" "),
+      // Bun accepts spaces when the whole option is quoted. Its position and absolute path
+      // keep inherited "--" and "--cwd" from suppressing or redirecting this preload.
+      ...(consolePreload ? {
+        BUN_OPTIONS: [`"--preload=${consolePreload.replaceAll("\\", "/")}"`, bunOptions].filter(Boolean).join(" "),
       } : {}),
       ...(libraryPaths.length
         ? { LD_LIBRARY_PATH: [...libraryPaths, env["LD_LIBRARY_PATH"]].filter(Boolean).join(":") }
