@@ -19,10 +19,11 @@ int load(InitParam);
 }
 namespace shape {
 struct InitParam {
-  // Caller-owned opaque storage. Construction and destruction both run in libshape.
-  alignas(16) unsigned char storage[256];
+  // Studio constructs three paths and its scalar options. The caller destroys
+  // the paths in reverse order, as in its own editor.
+  utils::path first, second, third;
+  unsigned char options[16];
   InitParam();
-  ~InitParam();
 };
 int load(InitParam);
 }
