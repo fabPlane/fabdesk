@@ -26,6 +26,7 @@
     "audit": "bun test scripts/audit.test.ts scripts/picomatch-guard.test.ts && bun scripts/audit.ts"
   },
   "dependencies": {
+    "@fabdesk/ui": "workspace:*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@sentry/react-native": "~7.2.0",
     "@shopify/react-native-skia": "2.2.12",

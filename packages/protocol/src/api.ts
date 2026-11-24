@@ -3,6 +3,7 @@ import { WorkspaceContext } from "./workspace-context";
 /** Control API DTOs shared by core routes and the renderer client. */
 import { z } from "zod/v4";
 import { CoreEndpoint, EndpointKind, TailscaleState } from "./devices";
+import { AGENT_REPLY_CHOICES, UI_LOCALE_CHOICES } from "./locales";
 import {
   AgentId,
   ApprovalDecision,
@@ -377,6 +378,16 @@ export const Settings = z.object({
       pushToTalkMode: "hold",
       pushToTalkShortcut: "Alt+Space",
     }),
+  /**
+   * UI language. `system` follows the OS/browser locale (the first-run default). A concrete
+   * locale is stored when the person picks one under Settings → Language.
+   */
+  uiLocale: z.enum(UI_LOCALE_CHOICES).default("system"),
+  /**
+   * How the in-app agent chooses a reply language. `match` follows each user message;
+   * a concrete locale always replies in that language.
+   */
+  agentReplyLanguage: z.enum(AGENT_REPLY_CHOICES).default("match"),
 });
 export type Settings = z.infer<typeof Settings>;
 export type VoiceSettings = Settings["voice"];
@@ -440,6 +451,8 @@ export const CloudSettings = z.object({
   defaultRuntimeMode: RuntimeMode.optional(),
   errorReporting: z.boolean().optional(),
   notificationsEnabled: z.boolean().optional(),
+  uiLocale: z.enum(UI_LOCALE_CHOICES).optional(),
+  agentReplyLanguage: z.enum(AGENT_REPLY_CHOICES).optional(),
 });
 export type CloudSettings = z.infer<typeof CloudSettings>;
 

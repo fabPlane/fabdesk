@@ -3,7 +3,7 @@ import { Settings, type CloudSettings } from "@fabdesk/protocol";
 import { CloudSettingsSync, patchFromCloud, portableFromSettings } from "../src/cloud-settings";
 import type { SettingsRepo } from "../src/db";
 
-const settings = {
+const settings = Settings.parse({
   kicadCliPath: "/opt/kicad",
   ngspicePath: null,
   fpPcbBridgeUrl: null,
@@ -14,13 +14,11 @@ const settings = {
   defaultRuntimeMode: "full",
   agents: {},
   keepCoreRunning: true,
-  webmcpWriteTools: false,
   errorReporting: true,
   theme: "dark",
-  remote: { enabled: false, host: "0.0.0.0", port: 47820 },
-  notifications: { enabled: true },
-  cloudOrgId: null,
-} satisfies Settings;
+  uiLocale: "system",
+  agentReplyLanguage: "match",
+});
 
 describe("portableFromSettings", () => {
   test("drops machine-local fields", () => {
@@ -33,6 +31,8 @@ describe("portableFromSettings", () => {
       defaultRuntimeMode: "full",
       errorReporting: true,
       notificationsEnabled: true,
+      uiLocale: "system",
+      agentReplyLanguage: "match",
     });
     expect(JSON.stringify(cloud)).not.toContain("kicad");
     expect(JSON.stringify(cloud)).not.toContain("keepCore");

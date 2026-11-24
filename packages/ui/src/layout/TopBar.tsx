@@ -8,9 +8,11 @@ import { useCore } from "@fabdesk/client-core";
 import { useProjects } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn, modKey } from "../util";
+import { useI18n } from "../i18n";
 import type { CoreStatusInfo } from "../app/types";
 
 export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined }) {
+  const { t } = useI18n();
   const { host, sseStatus, client } = useCore();
   const projectId = useUiStore((s) => s.activeProjectId);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
@@ -47,7 +49,7 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
       <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties} className="flex items-center gap-0.5 border-r border-border pr-2">
         {showAppMenu && (
           <IconButton
-            title="Menu"
+            title={t("common.menu")}
             data-testid="app-menu-button"
             onClick={(e) => {
               const r = e.currentTarget.getBoundingClientRect();
@@ -57,14 +59,14 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
             <Icon name="menu" width={20} height={20} />
           </IconButton>
         )}
-        <IconButton title={`Toggle sidebar (${mod} + B)`} onClick={toggleSidebar} className={cn(sidebarOpen && "text-accent")}>
+        <IconButton title={t("shell.toggleSidebar", { mod })} onClick={toggleSidebar} className={cn(sidebarOpen && "text-accent")}>
           <Icon name="sidebar" width={20} height={20} />
         </IconButton>
       </div>
       <span className="fd-wordmark ml-1 text-[15px]">fab<b>Plane</b></span>
       {host.devBuild && (
-        <Badge tone="warning" title="Development build — isolated from the installed fabPlane app">
-          Dev
+        <Badge tone="warning" title={t("shell.devBuildTitle")}>
+          {t("shell.devBuild")}
         </Badge>
       )}
       {project && <span className="fd-topbar-project min-w-0 max-w-60 truncate border-l border-border pl-3 text-[12px] font-medium text-muted" title={project.name}>{project.name}</span>}
@@ -80,7 +82,7 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
           className="fd-topbar-status"
         >
           <span className="fd-topbar-status-dot mr-1.5 h-1.5 w-1.5 rounded-full bg-current" />
-          <span className="fd-topbar-status-text">{connected ? "Core connected" : `Core ${coreStatus?.state ?? sseStatus}`}</span>
+          <span className="fd-topbar-status-text">{connected ? t("shell.coreConnected") : t("shell.coreStatus", { state: coreStatus?.state ?? sseStatus })}</span>
         </Badge>
         <ProfileButton />
         <div className="fd-topbar-tools flex items-center gap-1">

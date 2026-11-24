@@ -20,7 +20,9 @@ import { CircuitLogo } from "../components/CircuitLogo";
 import { workspaceViews } from "@fabdesk/client-core";
 import { useCore } from "@fabdesk/client-core";
 import { useBoardSources, useProjectOrder, useProjects } from "@fabdesk/client-core";
-import { BOARD_TABS, BOARD_TAB_LABELS, useUiStore, type BoardTab } from "../stores/ui";
+import { BOARD_TABS, useUiStore, type BoardTab } from "../stores/ui";
+import { useI18n } from "../i18n";
+import type { MessageKey } from "../i18n";
 import { modKey } from "../util";
 import { CadTab } from "./CadTab";
 import { CinemaTab } from "./cinema/CinemaTab";
@@ -75,7 +77,27 @@ function TabBody({ tab, canvas = false, onOpenChecks }: { tab: BoardTab; canvas?
   }
 }
 
+const BOARD_TAB_KEYS: Record<BoardTab, MessageKey> = {
+  schematic: "board.tab.schematic",
+  pcb: "board.tab.pcb",
+  placement: "board.tab.placement",
+  cinema: "board.tab.cinema",
+  "3d": "board.tab.3d",
+  cad: "board.tab.cad",
+  drc: "board.tab.drc",
+  renders: "board.tab.renders",
+  notes: "board.tab.notes",
+  files: "board.tab.files",
+  art: "board.tab.art",
+  bom: "board.tab.bom",
+  diff: "board.tab.diff",
+  comments: "board.tab.comments",
+  updates: "board.tab.updates",
+  layers: "board.tab.layers",
+};
+
 export function BoardPanel({ canvas = false, navigation }: { canvas?: boolean; navigation?: ReactNode }) {
+  const { t } = useI18n();
   const { host } = useCore();
   const area = useUiStore((s) => s.workspaceArea);
   const setWorkspaceTab = useUiStore((s) => s.setWorkspaceTab);
@@ -133,8 +155,8 @@ export function BoardPanel({ canvas = false, navigation }: { canvas?: boolean; n
       <div className="fd-board-heading">
         <span className="fd-board-mark"><CircuitLogo width={22} height={22} viewBox="6 6 40 40" /></span>
         <div className="min-w-0 flex-1">
-          <div className="fd-board-eyebrow">Board workspace</div>
-          <div className="fd-board-title truncate" title={project?.name}>{project?.name ?? "Select a project"}</div>
+          <div className="fd-board-eyebrow">{t("board.workspace")}</div>
+          <div className="fd-board-title truncate" title={project?.name}>{project?.name ?? t("board.selectProject")}</div>
         </div>
         <div className="fd-board-actions">
           {assembly ? <Button size="sm" onClick={openChecks}>Board checks</Button> : order.data && (order.data.hasKicadPcb || order.data.hasRouted || order.data.ready) && (
@@ -150,7 +172,7 @@ export function BoardPanel({ canvas = false, navigation }: { canvas?: boolean; n
         <Tabs
           className="fd-board-tabs min-w-0 flex-1"
           variant="underline"
-          tabs={BOARD_TABS.map((id, i) => ({ id, label: BOARD_TAB_LABELS[id], ...(i < 9 ? { hint: `${mod} + ${i + 1}` } : {}) }))}
+          tabs={BOARD_TABS.map((id, i) => ({ id, label: t(BOARD_TAB_KEYS[id]), ...(i < 9 ? { hint: `${mod} + ${i + 1}` } : {}) }))}
           value={tab}
           onChange={setBoardTab}
         />

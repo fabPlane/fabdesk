@@ -86,6 +86,8 @@ export function mockServices(
       notifications: { enabled: true },
       cloudOrgId: null,
       voice: { provider: "auto", language: "en", pushToTalkMode: "hold", pushToTalkShortcut: "Alt+Space", cloud: { model: "gpt-4o-mini-transcribe" }, local: { model: "base.en" } },
+      uiLocale: "system",
+      agentReplyLanguage: "match",
     }),
     projects: {
       resolve: async (ref) =>

@@ -9,7 +9,7 @@
 import { BOARD_TABS, newChatDraftKey, composerHandlers, usePartSelection, useAuthStore, useCinemaStore, useUiStore, type BoardTab } from "@fabdesk/ui";
 import { cssPath, implicitRole, normalizeText, rankMatches, uiSnapshot, type ElementInfo, type PathNode, type RankedElement, type UiSnapshot } from "./automation-core";
 
-const SETTINGS_SECTIONS = ["agents", "kicad", "router", "auth", "remote", "voice", "appearance", "privacy", "shortcuts"] as const;
+const SETTINGS_SECTIONS = ["agents", "kicad", "router", "auth", "remote", "voice", "appearance", "language", "privacy", "shortcuts"] as const;
 type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 const CANDIDATE_SELECTOR = 'a[href],button,input,select,textarea,option,summary,[role],[tabindex],[data-testid],[aria-label],label,h1,h2,h3';

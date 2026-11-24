@@ -6,12 +6,14 @@ import { useCore } from "@fabdesk/client-core";
 import { useAuthStore } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { cn, modKey } from "../util";
+import { useI18n } from "../i18n";
 
 /**
  * Bottom-left account strip: avatar + name open a popup menu with account actions;
  * the gear opens Settings directly. Renders nothing unless the core reports a signed-in state.
  */
 export function UserFooter() {
+  const { t } = useI18n();
   const { host } = useCore();
   const auth = useAuthStore((s) => s.state);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
@@ -78,26 +80,26 @@ export function UserFooter() {
             {email && <div className="truncate text-[11px] text-muted">{email}</div>}
             {local && (
               <Badge tone="warning" className="mt-1">
-                Local mode
+                {t("user.localMode")}
               </Badge>
             )}
           </div>
           <div className="my-1 border-t border-border" />
-          <MenuItem onClick={() => openSettings("auth")}>Account</MenuItem>
+          <MenuItem onClick={() => openSettings("auth")}>{t("common.account")}</MenuItem>
           <MenuItem onClick={() => openSettings()}>
-            <span>Settings</span>
+            <span>{t("user.settings")}</span>
             <span className="ml-auto">
               <Kbd>{mod} + ,</Kbd>
             </span>
           </MenuItem>
-          <MenuItem onClick={() => openSettings("shortcuts")}>Keyboard shortcuts</MenuItem>
+          <MenuItem onClick={() => openSettings("shortcuts")}>{t("user.shortcuts")}</MenuItem>
           <MenuItem
             onClick={() => {
               close();
               setInventoryOpen(true);
             }}
           >
-            Parts Inventory
+            {t("user.inventory")}
           </MenuItem>
           {!local && auth.dashboardUrl && (
             <MenuItem
@@ -106,7 +108,7 @@ export function UserFooter() {
                 void host.openExternal(auth.dashboardUrl!);
               }}
             >
-              fabplane dashboard <span className="ml-auto text-muted">&#8599;</span>
+              {t("user.dashboard")} <span className="ml-auto text-muted">&#8599;</span>
             </MenuItem>
           )}
         </div>
@@ -140,7 +142,7 @@ export function UserFooter() {
           )}
           <span className="flex-1" />
         </button>
-        <IconButton title={`Settings (${mod} + ,)`} onClick={() => openSettings()}>
+        <IconButton title={`${t("user.settings")} (${mod} + ,)`} onClick={() => openSettings()}>
           <Icon name="settings" />
         </IconButton>
       </div>

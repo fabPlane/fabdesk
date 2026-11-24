@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BOARD_START_MAP_MD } from "./board-start-map-md";
+import { LANGUAGE_RULE } from "./language";
 export { BOARD_WORKFLOW_MD } from "./board-workflow-md";
 
 export interface AgentDocsContext {
@@ -117,6 +118,7 @@ ${interfaceNote}
 ${ipcNote}
 ${ctx.fabdeskCliUnavailableReason ?? (ctx.fabdeskCli ? `Active desktop CLI: \`${ctx.fabdeskCli}\`. For authenticated shell tool access use \`"$FABDESK_CLI" tool describe <name>\` or \`"$FABDESK_CLI" tool call <name> --request '<json>'\` (PowerShell: \`& $env:FABDESK_CLI tool describe <name>\`). This executable and the inherited endpoint/token belong to this running desktop. Keep credentials out of output.` : "")}
 
+${LANGUAGE_RULE}
 ## Board constraints
 - Copper layers: ${ctx.board.layers}
 - Size: ${boardSize(ctx.board)}

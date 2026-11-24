@@ -19,6 +19,8 @@ export function portableFromSettings(settings: Settings, updatedAt: number): Clo
     defaultRuntimeMode: settings.defaultRuntimeMode,
     errorReporting: settings.errorReporting,
     notificationsEnabled: settings.notifications.enabled,
+    uiLocale: settings.uiLocale,
+    agentReplyLanguage: settings.agentReplyLanguage,
   };
 }
 
@@ -31,6 +33,8 @@ export function patchFromCloud(cloud: CloudSettings): Partial<Settings> {
     ...(typeof cloud.notificationsEnabled === "boolean"
       ? { notifications: { enabled: cloud.notificationsEnabled } }
       : {}),
+    ...(cloud.uiLocale ? { uiLocale: cloud.uiLocale } : {}),
+    ...(cloud.agentReplyLanguage ? { agentReplyLanguage: cloud.agentReplyLanguage } : {}),
   };
 }
 

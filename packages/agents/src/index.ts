@@ -42,6 +42,17 @@ export {
   USER_END,
 } from "./agents-md";
 export type { AgentDocsContext } from "./agents-md";
+export {
+  LANGUAGE_RULE,
+  REPLY_LANGUAGE_HINT_PREFIX,
+  applyReplyLanguage,
+  assertToolArgsPreserveIdentifiers,
+  detectMessageLanguage,
+  extractDesignIdentifiers,
+  identifiersUntouched,
+  languageHintBlock,
+  resolveReplyLanguage,
+} from "./language";
 
 export const adapters: Record<AgentId, AgentAdapter> = {
   claude: claudeAdapter,

@@ -21,6 +21,7 @@ import type { CoreStatusInfo } from "./types";
 import { useAppActions } from "./useAppActions";
 import { FirstInstallPrivacy } from "./FirstInstallPrivacy";
 import { needsPrivacyScreen, privacyScreenRequired } from "./privacy-gate";
+import { I18nProvider } from "../i18n";
 
 export interface FabdeskAppProps {
   client: CoreClient;
@@ -34,10 +35,17 @@ export interface FabdeskAppProps {
 export function FabdeskApp({ client, host = browserHost, coreStatus, onRestartCore, children }: FabdeskAppProps) {
   return (
     <CoreProvider client={client} host={host}>
-      <AppInner coreStatus={coreStatus} onRestartCore={onRestartCore} />
-      {children}
+      <LocaleRoot>
+        <AppInner coreStatus={coreStatus} onRestartCore={onRestartCore} />
+        {children}
+      </LocaleRoot>
     </CoreProvider>
   );
+}
+
+function LocaleRoot({ children }: { children: ReactNode }) {
+  const settings = useSettings();
+  return <I18nProvider choice={settings.data?.uiLocale ?? "system"}>{children}</I18nProvider>;
 }
 
 function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo | undefined; onRestartCore?: (() => void) | undefined }) {

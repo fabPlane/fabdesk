@@ -23,6 +23,7 @@ import { applyComposerTextareaHeight } from "./composer-autosize";
 import { useVoiceInput } from "./voice/useVoiceInput";
 import { MicButton, VoiceBar } from "./voice/VoiceBar";
 import { WorkspaceMenu } from "../layout/WorkspaceMenu";
+import { useI18n } from "../i18n";
 import { FinishItPanel } from "./FinishItPanel";
 import { finishItActive } from "./finish-it-view";
 
@@ -65,6 +66,7 @@ const FALLBACK_AGENTS = [
 const EMPTY: never[] = [];
 
 export function Composer({ thread, loadingThread = false, onCreateThread, startMode = false }: ComposerProps) {
+  const { t } = useI18n();
   const agentButtonRef = useRef<HTMLButtonElement>(null);
   const { client, host } = useCore();
   const qc = useQueryClient();
@@ -360,7 +362,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
   const mod = modKey(host.platform);
   const placeholder = ideaDraft
     ? "Ask or describe the next step…" : thread
-    ? "Message the agent..."
+    ? t("chat.placeholder")
     : startMode ? "Describe your idea or ask a question…" : projectId
       ? "Ask about this project or describe a change…"
       : "Describe your idea or start with a sketch...";
