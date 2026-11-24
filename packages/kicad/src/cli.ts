@@ -277,8 +277,12 @@ async function runKicadCliUntraced(
     if (opts.signal?.aborted)
       throw new KicadCliError(`kicad-cli ${args.slice(0, 3).join(" ")} aborted`, result);
     if (exitCode !== 0 && !opts.tolerateExit) {
+      // Filtering wxWidgets noise can leave whitespace in stderr. Do not let
+      // that hide a useful error KiCad wrote to stdout.
+      const diagnostic = lastLines(stderr.trim() || stdout.trim()) ||
+        `KiCad ${cli.version} exited without diagnostic output on ${process.platform}/${process.arch}`;
       throw new KicadCliError(
-        `kicad-cli ${args.slice(0, 3).join(" ")} failed (${exitCode}): ${lastLines(stderr || stdout)}`,
+        `kicad-cli ${args.slice(0, 3).join(" ")} failed (${exitCode}): ${diagnostic}`,
         result,
       );
     }
