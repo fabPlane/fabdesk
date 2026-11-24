@@ -50,7 +50,7 @@ export async function runTraceMaker(opts: {
         opts.signal?.removeEventListener("abort", onAbort);
         reject(error);
       });
-      child.on("close", (code) => {
+      child.on("exit", (code) => {
         opts.signal?.removeEventListener("abort", onAbort);
         if (opts.signal?.aborted) {
           reject(new Error("TraceMaker cancelled"));
