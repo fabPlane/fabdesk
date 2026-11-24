@@ -234,7 +234,7 @@ export function MessageBubble({ message, streaming, latestReply = false }: { mes
             {message.parts
               .filter((p) => p.type === "image")
               .map((p, i) => (
-                <MessageAttachment key={i} path={p.path} mime={p.mime} />
+                <MessageAttachment key={i} path={p.path} mime={p.mime} className="max-h-36" />
               ))}
           </>
         ) : (

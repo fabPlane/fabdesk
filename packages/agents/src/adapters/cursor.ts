@@ -70,6 +70,7 @@ export const cursorAdapter: AgentAdapter = {
   models: () => ["auto", "sonnet-4.5", "opus-4.5", "gpt-5"],
   /** No approval channel in `cursor-agent` headless output. */
   supportsSupervised: false,
+  images: "read",
   run(session: AgentSession): AgentRun {
     const parser = new CursorStreamParser();
     writeCursorMcp(session.cwd, session.mcp.url);

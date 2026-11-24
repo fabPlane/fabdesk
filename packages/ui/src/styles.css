@@ -2,6 +2,7 @@
 @import "@fontsource-variable/inter";
 @import "./components/select.css";
 @import "./components/feedback.css";
+@import "./markup/overlay.css";
 @source "./";
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -315,7 +316,7 @@ select option:disabled {
   .fd-board-heading > .min-w-0 { flex-basis: calc(100% - 42px); }
   .fd-board-actions { width: 100%; justify-content: flex-end; }
 }
-.fd-board-stage { margin: 0 10px 10px; overflow: hidden; border: 1px solid var(--fd-border); border-radius: 10px; background: var(--fd-panel); }
+.fd-board-stage { position: relative; margin: 0 10px 10px; overflow: hidden; border: 1px solid var(--fd-border); border-radius: 10px; background: var(--fd-panel); }
 .fd-canvas-empty { background-color: var(--fd-panel); background-image: radial-gradient(color-mix(in srgb, var(--fd-muted) 13%, transparent) .7px, transparent .7px); background-size: 20px 20px; }
 .fd-canvas-empty .fd-empty-state { padding: 24px; }
 .fd-canvas-empty .fd-empty-state > div { max-width: 310px; }

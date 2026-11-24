@@ -420,6 +420,7 @@ export function MechanicalWorkspace({
         error: setError,
       });
       scene.current = s;
+      s.setPointerLock(useUiStore.getState().markupOpen);
       return () => {
         live.current = false;
         lifecycle.current.abort();
@@ -433,6 +434,10 @@ export function MechanicalWorkspace({
       };
     }
   }, []);
+  const markupOpen = useUiStore((s) => s.markupOpen);
+  useEffect(() => {
+    scene.current?.setPointerLock(markupOpen);
+  }, [markupOpen]);
   useEffect(() => {
     let canceled = false;
     loadedProject.current = null;

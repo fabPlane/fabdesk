@@ -19,6 +19,8 @@ import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { useProjectBlobUrl } from "../hooks/queries";
 import { Button, Spinner } from "../components/ui";
+import { useUiStore } from "../stores/ui";
+import { bindMarkupWebglCanvas, unbindMarkupWebglCanvas } from "../markup/webgl";
 
 type CameraState = { position: THREE.Vector3; target: THREE.Vector3; up: THREE.Vector3; minDistance: number; board: SavedBoardCamera | null };
 
@@ -87,6 +89,8 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
   const framedSelection = useRef<{ scope: string; ref: string | null } | null>(null);
   const zoom = useRef<((factor: number) => void) | null>(null);
   const fit = useRef<(() => void) | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
+  const markupOpen = useUiStore((s) => s.markupOpen);
   const query = useProjectBlobUrl(projectId, blob ? null : path);
   const data = blob ?? query.data, isPending = !blob && query.isPending, isError = !blob && query.isError, refetch = query.refetch;
   const [error, setError] = useState<string | null>(null);
@@ -156,6 +160,8 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
         renderer.domElement.setAttribute("aria-label", "3D model. Drag to orbit, scroll to zoom, right-drag to pan. Use Fit view to reset.");
         target.append(renderer.domElement);
         controls = new OrbitControls(camera, renderer.domElement);
+        controlsRef.current = controls;
+        controls.enabled = !useUiStore.getState().markupOpen;
         controls.listenToKeyEvents(renderer.domElement);
         controls.enableDamping = false; controls.minDistance = span * .08; controls.maxDistance = span * 60;
         let measureSelection = () => {};
@@ -176,6 +182,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
         const render = frames.render;
         stopRendering = frames.dispose;
         stopInput = previewInteraction(renderer.domElement, render);
+        bindMarkupWebglCanvas(renderer.domElement, render);
         let motionFrame = 0;
         stopMotion = () => { cancelAnimationFrame(motionFrame); motionFrame = 0; if (renderer) renderer.domElement.dataset["focusMotion"] = "idle"; };
         const reset = () => {
@@ -374,7 +381,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
       }
     })();
     return () => {
-      disposed = true; clearTimeout(settleTimer); changeView.current = null; changeComponents.current = null; stopMotion(); stopInput(); stopRendering(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.();
+      disposed = true; clearTimeout(settleTimer); changeView.current = null; changeComponents.current = null; stopMotion(); stopInput(); stopRendering(); fit.current = null; zoom.current = null; updateSelection.current = null; focusSelection.current = null; cleanupSelection?.(); controlsRef.current = null;
       if (camera && controls) savedCamera.current = {
         position: camera.position.clone(), target: controls.target.clone(), up: camera.up.clone(), minDistance: controls.minDistance,
         board: camera instanceof THREE.OrthographicCamera && appliedView ? { camera: camera.clone(), target: controls.target.clone(), view: appliedView } : null,
@@ -382,10 +389,15 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
       observer?.disconnect(); cleanupContext?.(); controls?.dispose();
       inspectionMaterials?.dispose();
       if (model) disposeModel(model);
+      if (renderer) unbindMarkupWebglCanvas(renderer.domElement);
       environment?.dispose();
       renderer?.dispose(); renderer?.domElement.remove();
     };
   }, [data, path, retry]);
+
+  useEffect(() => {
+    if (controlsRef.current) controlsRef.current.enabled = !markupOpen;
+  }, [markupOpen]);
 
   return <div className="fd-model-canvas" data-testid="model-canvas" onKeyDown={event => { if (event.key === "Escape" && selectionSource && selection.ref && !(event.target instanceof Element && event.target.closest("input, textarea, select, [role=dialog]"))) { selection.clear(); event.preventDefault(); event.stopPropagation(); } }}>
     {selectionSource && <PartSelectionBar target={selectionToolbar} reference={selection.ref} references={selection.ready && modelParts ? selection.index.data?.references ?? [] : []} onSelect={selection.select} onClear={selection.clear} onFocus={modelParts?.has(selection.ref ?? "") ? () => focusSelection.current?.() : undefined} notice={selectionNotice} />}

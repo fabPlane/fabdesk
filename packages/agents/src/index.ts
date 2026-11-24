@@ -9,6 +9,7 @@ export type {
   AgentAdapter,
   AgentAttachment,
   AgentEvent,
+  AgentImageSupport,
   AgentPermission,
   AgentRun,
   AgentRuntimeMode,
@@ -42,6 +43,7 @@ export {
   USER_END,
 } from "./agents-md";
 export type { AgentDocsContext } from "./agents-md";
+export { applyImagePolicy, promptWithAttachments } from "./adapters/shared";
 
 export const adapters: Record<AgentId, AgentAdapter> = {
   claude: claudeAdapter,

@@ -8,6 +8,8 @@ import { clientPointToSvg, parseSvgViewBox, resolveSvgBox, visibleSvgCenter, typ
 import { svgImageCache } from "./svg-image-cache";
 import { SvgCanvas } from "./SvgCanvas";
 import { useSvgNavigation } from "./useSvgNavigation";
+import { bindMarkupDrawing, unbindMarkupDrawing } from "../markup/drawing";
+import { useUiStore } from "../stores/ui";
 import "./svg-viewer-tools.css";
 
 const schematicViews = new DrawingViewportMemory();
@@ -40,7 +42,14 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
   const [dismissedFocus, setDismissedFocus] = useState<string | null>(null);
   const focusActive = !!focusRegion && dismissedFocus !== focusRegion.key;
   const viewport = useRef<HTMLDivElement>(null);
-  const dragging = useSvgNavigation(viewport, drawing, zoom, setZoom, viewKey ?? svg, commentMode);
+  const markupOpen = useUiStore((s) => s.markupOpen);
+  const dragging = useSvgNavigation(viewport, drawing, zoom, setZoom, viewKey ?? svg, commentMode, markupOpen);
+  useEffect(() => {
+    const host = drawing.current;
+    if (!host) return;
+    bindMarkupDrawing(host, svg);
+    return () => unbindMarkupDrawing(host);
+  }, [svg]);
   const [source, setSource] = useState<{ svg: string; url: string } | null>(null);
   const [loaded, setLoaded] = useState<{ url: string; width: number; height: number } | null>(null);
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
@@ -268,8 +277,8 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
         {canReturn && <Button size="sm" className="fd-svg-return" aria-label="Return to previous view" onClick={returnBeforeFocus} title="Restore zoom and position from before focusing a component"><Icon name="undo" width={14} height={14} /><span>Return to previous view</span></Button>}
         {toolbar && <div className="fd-svg-context ml-auto flex items-center gap-1">{toolbar}</div>}
       </div>
-      <div ref={viewport} tabIndex={0} aria-label="Drawing viewport. Drag to pan; scroll to zoom. Plus and minus zoom; arrow keys pan." className={cn("fd-svg-viewport min-h-0 flex-1 select-none overflow-auto overscroll-contain bg-panel-2/40 p-3", dragging ? "cursor-grabbing" : commentMode ? "cursor-crosshair" : "cursor-grab")}
-        onKeyDown={event => { if (event.target !== event.currentTarget) return; if (event.key === "+" || event.key === "=") { event.preventDefault(); zoomAt(zoom * 1.25); } else if (event.key === "-") { event.preventDefault(); zoomAt(zoom / 1.25); } }}
+      <div ref={viewport} tabIndex={0} aria-label="Drawing viewport. Drag to pan; scroll to zoom. Plus and minus zoom; arrow keys pan." className={cn("fd-svg-viewport min-h-0 flex-1 select-none overflow-auto overscroll-contain bg-panel-2/40 p-3", dragging ? "cursor-grabbing" : commentMode || markupOpen ? "cursor-crosshair" : "cursor-grab")}
+        onKeyDown={event => { if (event.target !== event.currentTarget || markupOpen) return; if (event.key === "+" || event.key === "=") { event.preventDefault(); zoomAt(zoom * 1.25); } else if (event.key === "-") { event.preventDefault(); zoomAt(zoom / 1.25); } }}
         >
         {!size && !failed && <div className="flex h-full items-center justify-center" role="status" aria-label="Loading board preview"><Spinner /></div>}
         {failed && <div className="p-4 text-sm text-muted" role="alert">Could not display this SVG preview. Try rendering it again.</div>}

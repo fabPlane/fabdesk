@@ -6,6 +6,8 @@ import { create } from "zustand";
 import { DRAFT_KEY_NEW, newChatDraftKey, parseAssemblyMapPosition, type AssemblyMapPosition, type AssemblyMapLayout, workspaceAreaForView, workspaceViews, workspaceTabForArea, type WorkspaceArea, type AssemblySceneSelection, type AssemblyCheckFinding, type RootCheckFinding, type KeptOutputChoice } from "@fabdesk/client-core";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import { readStoredThemeId, type ThemeId } from "../theme/resolve";
+import type { MarkupTool } from "../markup/strokes";
+import { markupViewCapturable } from "../markup/payload";
 import { stencilThicknessMm } from "./stencil-thickness";
 
 export { DRAFT_KEY_NEW, newChatDraftKey } from "@fabdesk/client-core";
@@ -50,6 +52,7 @@ export interface PendingAttachment {
   path: string;
   mime: string;
   label: string;
+  role?: "sketch" | "markup";
 }
 
 export interface PartsViewState {
@@ -154,6 +157,9 @@ export interface UiState {
   /** Section the settings dialog should show when it next opens; null keeps the last one. */
   settingsSection: SettingsSection | null;
   sketchOpen: boolean;
+  /** Transient drawing overlay over the active board view; never persisted. */
+  markupOpen: boolean;
+  markupTool: MarkupTool;
   sketchMode: "draw" | "upload";
   /** Requested saved copy, consumed by the project-scoped sketch session; never persisted. */
   sketchSourcePath: string | null;
@@ -193,6 +199,8 @@ export interface UiState {
   setPaletteOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean, section?: SettingsSection) => void;
   setSketchOpen: (open: boolean, mode?: "draw" | "upload", sourcePath?: string) => void;
+  setMarkupOpen: (open: boolean) => void;
+  setMarkupTool: (tool: MarkupTool) => void;
   setAgentPickerOpen: (open: boolean) => void;
   setWhatsNewOpen: (open: boolean) => void;
   markWhatsNewSeen: (id: string) => void;
@@ -222,12 +230,13 @@ function projectNavigationState(s: UiState, activeProjectId: string | null): Par
 
 /** Keep explicit destinations authoritative while remembering each project's other task tabs. */
 function workspaceNavigationState(state: UiState, area: WorkspaceArea, tab: BoardTab): Partial<UiState> {
-  if (!state.activeProjectId) return { workspaceArea: area, boardTab: tab, boardOpen: true };
+  const markup = state.markupOpen && !markupViewCapturable(tab, area) ? { markupOpen: false as const } : {};
+  if (!state.activeProjectId) return { workspaceArea: area, boardTab: tab, boardOpen: true, ...markup };
   const id = state.activeProjectId, history = state.workspaceTabsByProject ?? {};
   const tabs = { ...history[id] };
   if (workspaceViews(state.workspaceArea).some(view => view.tab === state.boardTab)) tabs[state.workspaceArea] = state.boardTab;
   if (workspaceViews(area).some(view => view.tab === tab)) tabs[area] = tab;
-  return { workspaceArea: area, boardTab: tab, boardOpen: true,
+  return { workspaceArea: area, boardTab: tab, boardOpen: true, ...markup,
     workspaceByProject: { ...state.workspaceByProject, [id]: { area, tab } },
     workspaceTabsByProject: { ...history, [id]: tabs } };
 }
@@ -450,6 +459,8 @@ export function createUiStore(storage?: StateStorage) {
   settingsOpen: false,
   settingsSection: null,
   sketchOpen: false,
+  markupOpen: false,
+  markupTool: "pen",
   sketchMode: "draw",
   sketchSourcePath: null,
   adoptSketchProject: (projectId) => set((s) => {
@@ -512,7 +523,16 @@ export function createUiStore(storage?: StateStorage) {
   setSettingsOpen: (settingsOpen, section) => set(settingsOpen && section === "auth"
     ? { profileOpen: true, profileReason: null }
     : { settingsOpen, settingsSection: settingsOpen ? (section ?? null) : null }),
-  setSketchOpen: (sketchOpen, sketchMode = "draw", sourcePath) => set({ sketchOpen, sketchMode, sketchSourcePath: sketchOpen && sketchMode === "draw" ? sourcePath ?? null : null }),
+  setSketchOpen: (sketchOpen, sketchMode = "draw", sourcePath) => set({ sketchOpen, sketchMode, sketchSourcePath: sketchOpen && sketchMode === "draw" ? sourcePath ?? null : null, ...(sketchOpen ? { markupOpen: false } : {}) }),
+  setMarkupOpen: (wanted) => set((s) => {
+    const markupOpen = wanted && markupViewCapturable(s.boardTab, s.workspaceArea);
+    return {
+      markupOpen,
+      ...(markupOpen ? { assistantOpen: true, boardOpen: true, sketchOpen: false } : {}),
+      ...(markupOpen && s.canvasMode ? { canvasNavigationOpen: false } : {}),
+    };
+  }),
+  setMarkupTool: (markupTool) => set({ markupTool }),
   setAgentPickerOpen: (agentPickerOpen) => set({ agentPickerOpen }),
   setWhatsNewOpen: (whatsNewOpen) => set({ whatsNewOpen }),
   markWhatsNewSeen: (whatsNewSeenId) => set({ whatsNewSeenId }),

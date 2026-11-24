@@ -110,6 +110,7 @@ export const claudeAdapter: AgentAdapter = {
   },
   models: () => ["fable", "opus", "sonnet", "haiku"],
   supportsSupervised: true,
+  images: "read",
   run(session: AgentSession): AgentRun {
     const parser = new MessagesStreamParser();
     return runAgentProcess({

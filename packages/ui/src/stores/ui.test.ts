@@ -171,6 +171,40 @@ describe("sketch-first draft adoption", () => {
   expect(migrateProjectDraftSlot(undefined, "a")).toBeUndefined();
 });
 
+test("markup closes when leaving a capturable design view and refuses to open on DOM-only tabs", () => {
+  const previous = useUiStore.getState();
+  try {
+    useUiStore.setState({ boardTab: "pcb", workspaceArea: "boards", markupOpen: false });
+    useUiStore.getState().setMarkupOpen(true);
+    expect(useUiStore.getState().markupOpen).toBe(true);
+    useUiStore.getState().setBoardTab("notes");
+    expect(useUiStore.getState().markupOpen).toBe(false);
+    expect(useUiStore.getState().boardTab).toBe("notes");
+    useUiStore.getState().setMarkupOpen(true);
+    expect(useUiStore.getState().markupOpen).toBe(false);
+    useUiStore.getState().setBoardTab("pcb");
+    useUiStore.getState().setMarkupOpen(true);
+    useUiStore.getState().setWorkspaceArea("review");
+    expect(useUiStore.getState().markupOpen).toBe(false);
+  } finally {
+    useUiStore.setState(previous);
+  }
+});
+
+test("markup mode is session-only and is not written to persisted UI state", async () => {
+  let snapshot: string | null = null;
+  const storage = { getItem: () => snapshot, setItem: (_name: string, value: string) => { snapshot = value; }, removeItem: () => { snapshot = null; } };
+  const first = createUiStore(storage);
+  first.getState().setMarkupOpen(true);
+  first.getState().setMarkupTool("arrow");
+  expect(first.getState().markupOpen).toBe(true);
+  expect(JSON.parse(snapshot ?? "{}").state.markupOpen).toBeUndefined();
+  const reopened = createUiStore(storage);
+  await reopened.persist.rehydrate();
+  expect(reopened.getState().markupOpen).toBe(false);
+  expect(reopened.getState().markupTool).toBe("pen");
+});
+
 test("saved sketch attachments survive UI-store rehydration in their project slot", async () => {
   let snapshot: string | null = null;
   const storage = { getItem: () => snapshot, setItem: (_name: string, value: string) => { snapshot = value; }, removeItem: () => { snapshot = null; } };

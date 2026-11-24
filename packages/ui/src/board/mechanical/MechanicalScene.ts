@@ -13,6 +13,7 @@ import { assemblyClipRange, fittedCameraDistance } from "./camera-fit";
 import { batchPcbGeometry } from "./batchPcbGeometry";
 import { parseWorkspaceView } from "./workspace-view";
 import { MeasurementOverlay } from "./measurement-overlay";
+import { bindMarkupWebglCanvas, unbindMarkupWebglCanvas } from "../../markup/webgl";
 import { prepareBoardPreviewMaterials } from "../board-preview-material";
 import { previewPixelRatio } from "../preview-quality";
 import { enclosurePreviewMaterial } from "../enclosure-preview-material";
@@ -92,6 +93,7 @@ export class MechanicalScene {
   private hovered: string | null = null;
   private lastHover = 0;
   private mode: SceneMode = "orbit";
+  private pointerLocked = false;
   private planarPlacement = false;
   private caseVisible = true;
   private observer: ResizeObserver;
@@ -159,6 +161,7 @@ export class MechanicalScene {
     this.renderer.domElement.style.width = "100%";
     this.renderer.domElement.style.height = "100%";
     host.appendChild(this.renderer.domElement);
+    bindMarkupWebglCanvas(this.renderer.domElement, () => this.presentForCapture());
     this.camera.up.set(0, 0, 1);
     this.camera.position.set(95, -125, 105);
     this.orbit = new OrbitControls(this.camera, this.renderer.domElement);
@@ -172,7 +175,7 @@ export class MechanicalScene {
     this.scene.add(this.gizmo.getHelper());
     this.gizmo.addEventListener("change", this.render);
     this.gizmo.addEventListener("dragging-changed", (e) => {
-      this.orbit.enabled = !e.value;
+      this.orbit.enabled = !this.pointerLocked && !e.value;
       this.draggedGizmo = true;
     });
     this.gizmo.addEventListener("mouseUp", () => {
@@ -255,7 +258,8 @@ export class MechanicalScene {
     for (const id of pointers) if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
     this.orbit.connect(canvas);
     this.gizmo.connect(canvas);
-    this.orbit.enabled = true;
+    this.orbit.enabled = !this.pointerLocked;
+    this.gizmo.enabled = !this.pointerLocked;
     this.draggedGizmo = true;
     this.updateTransforms();
     this.select(this.selection);
@@ -364,6 +368,15 @@ export class MechanicalScene {
   render = () => {
     if (this.disposed || this.frame) return;
     this.frame = requestAnimationFrame(() => this.drawFrame());
+  };
+  /** Draw now so a canvas snapshot is not blank after the compositor discards the WebGL buffer. */
+  presentForCapture = (): void => {
+    if (this.disposed) return;
+    if (this.frame) {
+      cancelAnimationFrame(this.frame);
+      this.frame = 0;
+    }
+    this.drawFrame();
   };
   private drawFrame() {
     this.frame = 0;
@@ -879,6 +892,13 @@ export class MechanicalScene {
     } else this.clearSelectionOutline();
     this.render();
   }
+  setPointerLock(locked: boolean) {
+    if (this.pointerLocked === locked) return;
+    this.pointerLocked = locked;
+    if (locked && (this.gizmo.dragging || this.activePointers.size)) this.interruptGesture();
+    this.orbit.enabled = !locked;
+    this.gizmo.enabled = !locked;
+  }
   setMode(mode: SceneMode) {
     if (this.gizmo.dragging) this.interruptGesture();
     const changed = mode !== this.mode;
@@ -1204,6 +1224,7 @@ export class MechanicalScene {
     this.clearSelectionOutline();
     this.renderer.domElement.removeEventListener("webglcontextlost", this.contextLost);
     window.removeEventListener("resize", this.render);
+    unbindMarkupWebglCanvas(this.renderer.domElement);
     this.renderer.dispose();
     this.environment.dispose();
     disposeObject(this.ground);

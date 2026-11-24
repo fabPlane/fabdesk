@@ -17,6 +17,7 @@ import {
   nextFrameSeq,
   perfStatusText,
   toCanvas,
+  fromCanvas,
   type Canvas2D,
   type OffscreenLike,
   activityBounds,
@@ -88,6 +89,9 @@ describe("bounds and transform", () => {
     const [, topY] = toCanvas(t, 0, 50);
     const [, bottomY] = toCanvas(t, 0, 0);
     expect(topY).toBeLessThan(bottomY);
+    const [bx, by] = fromCanvas(t, cx, cy);
+    expect(bx).toBeCloseTo(50);
+    expect(by).toBeCloseTo(25);
   });
 });
 

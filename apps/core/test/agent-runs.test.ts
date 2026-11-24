@@ -361,6 +361,23 @@ describe("captured workspace context", () => {
     await expect(h.manager.start({ threadId: t.id, project: null, agentId: "claude", prompt: "Change it", workspaceContext: { projectId: "other", label: "Board", details: "other source", capturedAt: "2026-10-29T00:00:00Z" }, attachments: [] })).rejects.toThrow("another project");
     expect(h.runs).toHaveLength(0); expect(h.manager.activeCount()).toBe(0);
   });
+  test("queued image attachments keep their markup role", async () => {
+    const h = await harness(), t = h.thread();
+    h.store.threads.addMessage({
+      threadId: t.id,
+      role: "user",
+      contentMd: "what is this net",
+      parts: [{ type: "image", path: "sketches/m.png", mime: "image/png", role: "markup" }],
+      status: "queued",
+    });
+    await h.manager.drainQueue(t.id);
+    expect(h.runs[0]!.session.attachments).toEqual([
+      { path: "sketches/m.png", mime: "image/png", role: "markup" },
+    ]);
+    h.runs[0]!.finish();
+    await settle();
+  });
+
   test("queued messages retain their captured view and refuse mismatched project metadata", async () => {
     const h = await harness(), t = h.thread(), context = { projectId: null, label: "Review / Checks", details: "Saved finding R1", capturedAt: "2026-10-29T00:00:00Z" };
     h.store.threads.addMessage({ threadId: t.id, role: "user", contentMd: "Help with this finding", parts: [{ type: "workspace_context", context }], status: "queued" });

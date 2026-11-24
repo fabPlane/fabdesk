@@ -24,7 +24,12 @@ export const MessagePart = z.discriminatedUnion("type", [
     output: z.unknown(),
     isError: z.boolean().optional(),
   }),
-  z.object({ type: z.literal("image"), path: z.string(), mime: z.string() }),
+  z.object({
+    type: z.literal("image"),
+    path: z.string(),
+    mime: z.string(),
+    role: z.enum(["sketch", "markup"]).optional(),
+  }),
   /**
    * Supervised runtime mode: a tool call the daemon paused for a human decision, and a question
    * the agent asked. Both are appended to the assistant message when requested and patched in

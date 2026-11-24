@@ -170,7 +170,11 @@ export const Message = z.object({
 });
 export type Message = z.infer<typeof Message>;
 
-export const Attachment = z.object({ path: z.string(), mime: z.string() });
+export const Attachment = z.object({
+  path: z.string(),
+  mime: z.string(),
+  role: z.enum(["sketch", "markup"]).optional(),
+});
 
 export const SendMessage = z.object({
   workspaceContext: WorkspaceContext.optional(),

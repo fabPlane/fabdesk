@@ -168,6 +168,7 @@ export type UiSnapshotInput = {
     settingsOpen: boolean;
     settingsSection: string | null;
     sketchOpen: boolean;
+    markupOpen?: boolean;
     agentPickerOpen: boolean;
   };
   cinema: {
@@ -201,6 +202,7 @@ export function uiSnapshot(input: UiSnapshotInput) {
     settingsSection: ui.settingsSection,
     paletteOpen: ui.paletteOpen,
     sketchOpen: ui.sketchOpen,
+    markupOpen: ui.markupOpen ?? false,
     agentPickerOpen: ui.agentPickerOpen,
     composer: { draft: ui.drafts[draftKey] ?? "", mounted: input.page.composerMounted },
     cinema: {

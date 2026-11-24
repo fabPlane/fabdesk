@@ -121,7 +121,7 @@ export interface PatchThreadInput {
 export interface SendMessageInput {
   workspaceContext?: import("@fabdesk/protocol").WorkspaceContext;
   content: string;
-  attachments?: Array<{ path: string; mime: string }>;
+  attachments?: Array<{ path: string; mime: string; role?: "sketch" | "markup" }>;
   agentId?: Thread["agentId"];
   model?: string;
 }
