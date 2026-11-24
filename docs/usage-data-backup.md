@@ -1,5 +1,8 @@
 # Usage data archive
 
+Anonymous product counts (hashed install/account ids, no design files) are in
+[telemetry.md](telemetry.md). This document is only the conversation and run-dump archive.
+
 Fabdesk already stores conversations in `fabdesk.db` and records completed agent runs as `llm-dump.json` files. Each dump includes the ordered agent and MCP tool trace. This archive preserves those records for later analysis.
 
 Run dumps capture full events and project files as described in [agent-run telemetry](agent-run-telemetry.md); capture errors are explicit. Conversation messages are exported from SQLite with their stored text and parts.
