@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -25,34 +25,90 @@ import {
 
 const servers: Array<{ stop(): void }> = [];
 
+// Bun runs the directory's "route" fixture as the TraceMaker executable's subcommand.
+async function routeFixture(dir: string): Promise<void> {
+  const wrapper = pathToFileURL(join(import.meta.dir, "../src/routers/tracemaker.ts")).href;
+  const driver = `
+    import { runTraceMaker } from ${JSON.stringify(wrapper)};
+    await runTraceMaker({
+      binary: process.execPath, snapshotDir: process.cwd(),
+      timeoutMs: 5000, signal: AbortSignal.timeout(5000),
+    });
+  `;
+  const child = Bun.spawn([process.execPath, "-e", driver], {
+    cwd: dir, windowsHide: true, stdout: "ignore", stderr: "pipe",
+  });
+  const [code, error] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+  if (code !== 0) throw new Error(error);
+}
+
 test("TraceMaker can finish routing after writing 32 MiB to stdout", async () => {
   const dir = await mkdtemp(join(tmpdir(), "fabdesk-verbose-tracemaker-"));
   try {
-    // The wrapper runs `<binary> route <input> -o <output>`. Bun loads this fixture as its route command.
     await writeFile(join(dir, "route"), `
       import { writeFileSync, writeSync } from "node:fs";
       const chunk = Buffer.alloc(64 * 1024, "x");
       for (let i = 0; i < 512; i++) writeSync(1, chunk);
       writeFileSync(process.argv[process.argv.indexOf("-o") + 1], "(kicad_pcb)");
     `);
-    const wrapper = pathToFileURL(join(import.meta.dir, "../src/routers/tracemaker.ts")).href;
-    const driver = `
-      import { runTraceMaker } from ${JSON.stringify(wrapper)};
-      await runTraceMaker({
-        binary: process.execPath, snapshotDir: process.cwd(),
-        timeoutMs: 5000, signal: AbortSignal.timeout(5000),
-      });
-    `;
-    const child = Bun.spawn([process.execPath, "-e", driver], {
-      cwd: dir, windowsHide: true, stdout: "ignore", stderr: "pipe",
-    });
-    const [code, error] = await Promise.all([child.exited, new Response(child.stderr).text()]);
-    expect(code, error).toBe(0);
+    await routeFixture(dir);
     expect(await readFile(join(dir, "board.kicad_pcb"), "utf8")).toBe("(kicad_pcb)");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 }, 10_000);
+
+test("TraceMaker retries only publish fresh routed output, including on partial success", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "fabdesk-retry-tracemaker-"));
+  const board = join(dir, "board.kicad_pcb");
+  const mode = join(dir, "mode");
+  try {
+    await writeFile(join(dir, "route"), `
+      import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+      const [action, code] = readFileSync("mode", "utf8").split(" ");
+      const output = process.argv[process.argv.indexOf("-o") + 1];
+      appendFileSync("outputs", output + "\\n");
+      if (action === "write") writeFileSync(output, "fresh partial board");
+      if (action === "empty") writeFileSync(output, "");
+      process.exit(Number(code));
+    `);
+    await writeFile(board, "original board");
+    await writeFile(mode, "write 3");
+    await routeFixture(dir);
+    expect(await readFile(board, "utf8")).toBe("fresh partial board");
+
+    // Existing snapshots can contain the old shared result plus an edited board.
+    await mkdir(join(dir, "tracemaker"), { recursive: true });
+    await writeFile(join(dir, "tracemaker", "routed.kicad_pcb"), "stale board");
+    await writeFile(board, "edited board");
+    for (const retry of ["missing 0", "missing 3", "empty 0"]) {
+      await writeFile(mode, retry);
+      await expect(routeFixture(dir)).rejects.toThrow("no routed board for this attempt");
+      expect(await readFile(board, "utf8")).toBe("edited board");
+    }
+    const outputs = (await readFile(join(dir, "outputs"), "utf8")).trim().split("\n");
+    expect(new Set(outputs).size).toBe(4);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 15_000);
+
+test("TraceMaker cancellation before launch never spawns a router", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "fabdesk-cancel-tracemaker-"));
+  const spawn = spyOn(Bun, "spawn");
+  try {
+    const opts = { binary: join(dir, "missing-tracemaker"), snapshotDir: dir, timeoutMs: 1000 };
+    await expect(runTraceMaker({ ...opts, signal: AbortSignal.abort() })).rejects.toThrow("TraceMaker cancelled");
+    const controller = new AbortController();
+    await expect(runTraceMaker({
+      ...opts, signal: controller.signal, onProgress: () => controller.abort(),
+    })).rejects.toThrow("TraceMaker cancelled");
+    expect(spawn).not.toHaveBeenCalled();
+  } finally {
+    spawn.mockRestore();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 afterAll(() => {
   for (const server of servers) server.stop();

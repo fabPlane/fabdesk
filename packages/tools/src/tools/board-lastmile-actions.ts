@@ -9,11 +9,11 @@
  * the router registry, the bridge's fab_router / Freerouting) under the resource governor. Without KRT only `finish`
  * runs (on the host router); other KRT steps fail by name. Boards of any file name work.
  */
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { edit, lastmile as L, layout, locateProject, onboard, parseBoard, profile, readRequirements, type Requirements } from "@fabdesk/board-workflow";
 import { adoptCandidate, designFileHashes, type CanonicalAdoptionDrc } from "../board-adopt";
-import { jailPath, PROJECT_FILES } from "../fs";
+import { jailPath } from "../fs";
 import { runTraceMaker } from "../routers";
 import { ToolError, type ToolContext, type ToolOutput } from "../registry";
 import { ok, requireKicad, runLiveDrc } from "./common";
@@ -43,7 +43,6 @@ function hostFill(ctx: ToolContext, host: layout.LayoutHost): L.FillFn {
       const binary = tm.path;
       if (!binary) throw new Error(tm.why ?? "TraceMaker is not installed (board_engines install tracemaker, or TRACEMAKER_BIN)");
       const s = await runTraceMaker({ binary, snapshotDir: dir, timeoutMs, signal });
-      await copyFile(join(dir, "tracemaker", "routed.kicad_pcb"), join(dir, PROJECT_FILES.boardPcb));
       return { message: s.message };
     }
     if (router !== "fab_router" && router !== "freerouting") throw new Error(`router ${router} is not available here (fab_router, freerouting, tracemaker)`);
