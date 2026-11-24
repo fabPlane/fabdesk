@@ -43,6 +43,7 @@ export async function git(
   signal?: AbortSignal,
 ): Promise<{ ok: boolean; stdout: string; stderr: string }> {
   const proc = Bun.spawn(["git", "-C", dir, ...args], {
+    windowsHide: true,
     stdout: "pipe",
     stderr: "pipe",
     ...(signal ? { signal } : {}),

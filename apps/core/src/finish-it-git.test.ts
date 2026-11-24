@@ -1,7 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { commitMilestone, ensureProjectGit } from "./finish-it-git";
 
 async function tempDir(): Promise<string> {
@@ -9,12 +9,22 @@ async function tempDir(): Promise<string> {
 }
 
 describe("commitMilestone", () => {
-  test("inits a repo and commits when files change", async () => {
+  test("inits a repo and commits with every background Git command hidden on Windows", async () => {
     const dir = await tempDir();
     await writeFile(join(dir, "circuit.netlist.json"), "{\"ok\":true}\n");
-    const sha = await commitMilestone(dir, "finish-it: schematic");
-    expect(sha).toMatch(/^[0-9a-f]{40}$/);
+    const spawn = spyOn(Bun, "spawn");
+    try {
+      const sha = await commitMilestone(dir, "finish-it: schematic");
+      expect(sha).toMatch(/^[0-9a-f]{40}$/);
+      expect(spawn).toHaveBeenCalled();
+      for (const call of spawn.mock.calls) {
+        expect(call).toEqual([expect.arrayContaining(["git"]), expect.objectContaining({ windowsHide: true })]);
+      }
+    } finally {
+      spawn.mockRestore();
+    }
     const log = Bun.spawn(["git", "-C", dir, "log", "-1", "--pretty=%s"], {
+      windowsHide: true,
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -35,6 +45,7 @@ describe("commitMilestone", () => {
     await ensureProjectGit(dir);
     await ensureProjectGit(dir);
     const probe = Bun.spawn(["git", "-C", dir, "rev-parse", "--is-inside-work-tree"], {
+      windowsHide: true,
       stdout: "pipe",
     });
     expect((await new Response(probe.stdout).text()).trim()).toBe("true");
@@ -42,7 +53,7 @@ describe("commitMilestone", () => {
 
   test("inits a nested repo when the project sits inside another work tree", async () => {
     const parent = await tempDir();
-    const init = Bun.spawn(["git", "init"], { cwd: parent, stdout: "pipe", stderr: "pipe" });
+    const init = Bun.spawn(["git", "init"], { cwd: parent, windowsHide: true, stdout: "pipe", stderr: "pipe" });
     expect(await init.exited).toBe(0);
     await writeFile(join(parent, "unrelated.txt"), "leave me alone\n");
     const project = join(parent, "boards", "usb");
@@ -51,21 +62,23 @@ describe("commitMilestone", () => {
     const sha = await commitMilestone(project, "finish-it: build");
     expect(sha).toMatch(/^[0-9a-f]{40}$/);
     const parentLog = Bun.spawn(["git", "-C", parent, "log", "--oneline"], {
+      windowsHide: true,
       stdout: "pipe",
       stderr: "pipe",
     });
     expect(await parentLog.exited).not.toBe(0);
     const nested = Bun.spawn(["git", "-C", project, "rev-parse", "--show-toplevel"], {
+      windowsHide: true,
       stdout: "pipe",
     });
-    expect((await new Response(nested.stdout).text()).trim()).toBe(project);
+    expect(resolve((await new Response(nested.stdout).text()).trim())).toBe(project);
     const ignore = await Bun.file(join(project, ".gitignore")).text();
     expect(ignore).toContain(".fabdesk/runs/");
   });
 
   test("writes .gitignore into a pre-existing project repo", async () => {
     const dir = await tempDir();
-    const init = Bun.spawn(["git", "init"], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+    const init = Bun.spawn(["git", "init"], { cwd: dir, windowsHide: true, stdout: "pipe", stderr: "pipe" });
     expect(await init.exited).toBe(0);
     await ensureProjectGit(dir);
     expect(await Bun.file(join(dir, ".gitignore")).text()).toContain(".fabdesk/cache/");

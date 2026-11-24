@@ -246,7 +246,11 @@ export async function solveSection(spec: SectionSpec, out: string, atlc: string,
   for (const [col, er] of ers) cmd.push("-d", `${col}=${pyFloat(er)}`);
   cmd.push(bmpPath);
   const t = performance.now();
-  const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", timeout: opts.timeoutMs ?? 600_000, ...(opts.signal ? { signal: opts.signal } : {}) });
+  const p = Bun.spawn(cmd, {
+    windowsHide: true,
+    stdout: "pipe", stderr: "pipe", timeout: opts.timeoutMs ?? 600_000,
+    ...(opts.signal ? { signal: opts.signal } : {}),
+  });
   const [so, se, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
   const raw = `${so}\n${se}`;
   await writeFile(`${stem}.log`, raw);

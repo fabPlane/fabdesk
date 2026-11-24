@@ -73,6 +73,7 @@ async function runDriver(
   const bin = pythonBin(env);
   const driver = await resolveSmlibDriverPath();
   const child = spawn(bin, [driver], {
+    windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"],
   });
   const chunks: Buffer[] = [];
