@@ -133,6 +133,8 @@ describe("router settings helpers", () => {
     expect(primaryAction(env)).toBeNull();
     expect(canRecheck(env)).toBe(false);
     expect(stateLabel(env)).toBe("installed 1.2.3 (TRACEMAKER_BIN)");
+    const jar = router({ id: "freerouting", state: "installed", ready: true, overriddenBy: "FREEROUTING_JAR" });
+    expect(stateLabel(jar)).toBe("installed (FREEROUTING_JAR)");
   });
 
   test("bundled routers do not repeat the word bundled", () => {

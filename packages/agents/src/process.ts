@@ -48,6 +48,7 @@ export function killTree(pid: number, signal: Signal): void {
   if (process.platform === "win32") {
     try {
       Bun.spawnSync(["taskkill", "/T", "/F", "/PID", String(pid)], {
+        windowsHide: true,
         stdout: "ignore",
         stderr: "ignore",
       });
@@ -133,6 +134,7 @@ export function runAgentProcess(opts: AgentProcessOptions): AgentRun {
     proc = Bun.spawn(opts.cmd, {
       cwd: opts.cwd,
       env: opts.env,
+      windowsHide: true,
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",

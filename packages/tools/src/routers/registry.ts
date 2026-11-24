@@ -173,7 +173,7 @@ export function traceMakerPlacerNear(tracemaker: string, root?: string | null): 
 export function probeTraceMakerCliVersion(path: string): string | null {
   for (const args of [["version"], ["--version"]] as const) {
     try {
-      const out = spawnSync(path, args, { timeout: 1500, encoding: "utf8" });
+      const out = spawnSync(path, args, { timeout: 1500, encoding: "utf8", windowsHide: true });
       const parsed = parseTraceMakerVersion(`${out.stdout ?? ""} ${out.stderr ?? ""}`);
       if (parsed) return parsed;
     } catch {
@@ -198,9 +198,15 @@ class FileRouterRegistry implements RouterRegistry {
 
   constructor(private readonly deps: RouterRegistryDeps) {
     this.root = routersRoot(deps.home);
-    this.catalog = deps.catalog ?? defaultRouterCatalog(deps.env ?? process.env);
-    this.bundled = { fab_router: { version: "bundled" }, ...deps.bundled };
     this.env = deps.env ?? process.env;
+    this.catalog = deps.catalog ?? defaultRouterCatalog(this.env);
+    const version = this.env["FABDESK_BUNDLED_FREEROUTING_VERSION"]?.trim();
+    const jar = this.env["FREEROUTING_JAR"];
+    this.bundled = {
+      fab_router: { version: "bundled" },
+      ...(version && jar && isFile(jar) ? { freerouting: { version, path: jar } } : {}),
+      ...deps.bundled,
+    };
     this.persisted = this.readState();
   }
 
@@ -444,7 +450,8 @@ class FileRouterRegistry implements RouterRegistry {
         state: "installed",
         ready: true,
         installHint: envName === PATH_ATLC ? `Using the atlc on PATH at ${local}.` : `Using ${envName}=${local}. ${clear} to manage ${entry.displayName} from Settings.`,
-        versionInstalled: probed ?? entry.version,
+        // A user-supplied JAR may differ from the catalog download.
+        ...(entry.id === "freerouting" ? {} : { versionInstalled: probed ?? entry.version }),
         path: local,
         overriddenBy: envName,
       };
@@ -846,7 +853,7 @@ function findNamedFile(
 }
 
 async function defaultSpawn(cmd: string, args: string[]): Promise<number> {
-  const proc = Bun.spawn([cmd, ...args], { stdout: "ignore", stderr: "pipe" });
+  const proc = Bun.spawn([cmd, ...args], { stdout: "ignore", stderr: "pipe", windowsHide: true });
   return proc.exited;
 }
 

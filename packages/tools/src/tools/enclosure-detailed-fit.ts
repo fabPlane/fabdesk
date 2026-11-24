@@ -51,7 +51,7 @@ export async function detailedEnclosureFit(
       note("assembly-unavailable", "Enable actual 3D model checks to inspect the assembly path.");
     return report;
   }
-  const cli = await ctx.services.kicad.resolveCli();
+  const cli = await ctx.services.kicad.resolveCli(ctx.signal);
   if (!cli) {
     note(
       "detailed-unavailable",

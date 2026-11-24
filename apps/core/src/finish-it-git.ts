@@ -23,6 +23,7 @@ async function defaultGit(
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const child = Bun.spawn(["git", ...args], {
     cwd: opts.cwd,
+    windowsHide: true,
     env: opts.env ?? process.env,
     stdout: "pipe",
     stderr: "pipe",

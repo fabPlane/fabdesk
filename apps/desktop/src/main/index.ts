@@ -214,7 +214,7 @@ if (!app.requestSingleInstanceLock()) {
     void runSentryTest();
     const home = process.env["FABDESK_HOME"];
     pcbSupervisor = new PcbSupervisor(
-      resolvePcbBackend({ packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
+      resolvePcbBackend({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() }),
     );
     let pcbEnv: Record<string, string>;
     try {

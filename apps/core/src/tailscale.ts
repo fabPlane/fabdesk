@@ -70,7 +70,7 @@ export async function runTailscale(
   cli: string,
   args: string[],
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = Bun.spawn([cli, ...args], { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+  const proc = Bun.spawn([cli, ...args], { windowsHide: true, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
   const timer = setTimeout(() => proc.kill(), TIMEOUT_MS);
   try {
     const [stdout, stderr, exitCode] = await Promise.all([

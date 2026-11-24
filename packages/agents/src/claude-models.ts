@@ -49,6 +49,7 @@ async function probe(binary: string): Promise<ModelCatalog | undefined> {
   let proc: ReturnType<typeof Bun.spawn> | undefined;
   try {
     const child = Bun.spawn([binary, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--settings", '{"disableAllHooks":true}', "--no-session-persistence"], {
+      windowsHide: true,
       cwd: tmpdir(), stdin: "pipe", stdout: "pipe", stderr: "ignore", timeout: 5_000, killSignal: "SIGKILL",
     });
     proc = child;

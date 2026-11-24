@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,6 +27,26 @@ const validation = {
 };
 
 describe("project revision boundary", () => {
+  test("native revision checks hide the KiCad version probe and board export on Windows", async () => {
+    const directory = await project();
+    const spawn = spyOn(Bun, "spawn");
+    let error = "";
+    try {
+      // Bun answers --version but rejects KiCad's export command.
+      const result = await runProjectRevision({ action: "accept", project: directory }, {
+        env: { ...process.env, KICAD_CLI: process.execPath },
+        err: (text) => { error += text; },
+      });
+      expect(result).toBe(1);
+      expect(error).toContain("pcb export svg failed (");
+      const hidden = expect.objectContaining({ windowsHide: true });
+      expect(spawn).toHaveBeenCalledWith([process.execPath, "--version"], hidden);
+      expect(spawn).toHaveBeenCalledWith(expect.arrayContaining([process.execPath, "pcb", "export", "svg"]), hidden);
+    } finally {
+      spawn.mockRestore();
+    }
+  });
+
   test("checkpoints without accepting and advances one pointer only after validation", async () => {
     const directory = await project();
     let output = "",

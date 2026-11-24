@@ -111,7 +111,12 @@ async function readJson<T>(path: string): Promise<T | null> {
 
 async function spawn(cmd: string[], cwd?: string, timeoutMs = 60_000, verbatim = false): Promise<{ code: number; out: string; err: string }> {
   try {
-    const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", ...(cwd ? { cwd } : {}), timeout: timeoutMs, ...(verbatim ? { windowsVerbatimArguments: true } : {}) });
+    const p = Bun.spawn(cmd, {
+      windowsHide: true,
+      stdout: "pipe", stderr: "pipe", timeout: timeoutMs,
+      ...(cwd ? { cwd } : {}),
+      ...(verbatim ? { windowsVerbatimArguments: true } : {}),
+    });
     const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
     return { code, out, err };
   } catch (e) {

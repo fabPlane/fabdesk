@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import { ensureAcStimulus, findNgspice, parseAsciiRaw, runSimulation, spiceNetlist, type SimResult } from "../src/index";
+import { runNgspice } from "../src/ngspice";
 
 import type { NetlistFile } from "@fabdesk/protocol";
 const netlist = (await Bun.file(join(import.meta.dir, "fixtures/divider.netlist.json")).json()) as NetlistFile;
@@ -12,6 +13,19 @@ const col = (r: SimResult, name: string) => {
 };
 const last = (r: SimResult) => r.rows[r.rows.length - 1]!;
 const ngspicePath = await findNgspice();
+
+test("ngspice detection and batch simulation request hidden consoles", async () => {
+  const spawn = spyOn(Bun, "spawn").mockImplementation(() => { throw new Error("ngspice unavailable"); });
+  try {
+    expect(await findNgspice(process.execPath)).toBeNull();
+    await expect(runNgspice(process.execPath, spiceNetlist(netlist), { kind: "op" })).rejects.toThrow("ngspice unavailable");
+    const hidden = expect.objectContaining({ windowsHide: true });
+    expect(spawn).toHaveBeenCalledWith([process.execPath, "-v"], hidden);
+    expect(spawn).toHaveBeenCalledWith([process.execPath, "-b", expect.any(String)], hidden);
+  } finally {
+    spawn.mockRestore();
+  }
+});
 
 describe("spiceNetlist", () => {
   test("netlists the divider", () => {

@@ -3,9 +3,7 @@ import { createRunChild } from "./child-runner";
 import * as kicad from "@fabdesk/kicad";
 import * as sim from "@fabdesk/sim";
 import type { Principal, Settings } from "@fabdesk/protocol";
-import { existsSync } from "node:fs";
 import {
-  FREEROUTING_VERSION,
   ToolError,
   createRouterRegistry,
   type CoreServices,
@@ -90,13 +88,13 @@ function simService(settings: () => Settings): SimService {
 export async function createServices(
   deps: ServiceDeps,
 ): Promise<CoreServices & { dispose(): Promise<void> }> {
-  const resolveCli = async (): Promise<KicadCli | null> => {
+  const resolveCli = async (signal?: AbortSignal): Promise<KicadCli | null> => {
     const explicit = deps.settings().kicadCliPath ?? undefined;
     const trace = deps.telemetry
       ? (input: kicad.KicadInvocation, invoke: () => Promise<kicad.RunResult>) =>
           deps.telemetry!.traceKicadCli(input, invoke)
       : undefined;
-    return kicad.findKicadCli(explicit, { ...(trace ? { trace } : {}) });
+    return kicad.findKicadCli(explicit, { ...(trace ? { trace } : {}), ...(signal ? { signal } : {}) });
   };
 
   // One bridge client per configured URL; re-created when the setting changes.
@@ -186,12 +184,6 @@ export async function createServices(
     routers: createRouterRegistry({
       home: deps.home,
       settings: () => deps.settings(),
-      bundled: {
-        fab_router: { version: "bundled" },
-        ...(process.env["FREEROUTING_JAR"] && existsSync(process.env["FREEROUTING_JAR"])
-          ? { freerouting: { version: FREEROUTING_VERSION, path: process.env["FREEROUTING_JAR"] } }
-          : {}),
-      },
     }),
     cad,
     boardAdopt: { adopt: (input) => adoptBoard(input) },

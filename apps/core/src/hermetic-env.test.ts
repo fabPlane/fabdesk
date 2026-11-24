@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { runHermeticEnv } from "./hermetic-env";
 import { delimiter, dirname, resolve } from "node:path";
 
@@ -13,6 +13,21 @@ const baseEnv = {
 };
 
 describe("hermetic packaged-KiCad environment", () => {
+  test("hides the packaged version probe and exec while preserving the exit code", async () => {
+    const spawn = spyOn(Bun, "spawn");
+    const deps = { env: { ...process.env, KICAD_CLI: process.execPath }, out: () => {} };
+    try {
+      expect(await runHermeticEnv({ action: "describe" }, deps)).toBe(0);
+      const args = ["-e", "process.exit(7)"];
+      const name = process.platform === "win32" ? "KiCad-CLI.EXE" : "kicad-cli";
+      expect(await runHermeticEnv({ action: "exec", command: [name, ...args] }, deps)).toBe(7);
+      expect(spawn).toHaveBeenCalledWith([process.execPath, "--version"], expect.objectContaining({ windowsHide: true }));
+      expect(spawn).toHaveBeenCalledWith([process.execPath, ...args], expect.objectContaining({ windowsHide: true }));
+    } finally {
+      spawn.mockRestore();
+    }
+  });
+
   test("preserves the inherited PATH with the platform's environment-key casing", async () => {
     const { PATH, ...rest } = baseEnv;
     let observed: Record<string, string> = {};
@@ -89,7 +104,10 @@ describe("hermetic packaged-KiCad environment", () => {
   });
 
   test("rejects host KiCad entrypoints inside the packaged CLI scope", async () => {
-    for (const executable of ["/usr/bin/kicad-cli", "pcbnew", "eeschema", "kicad"]) {
+    const windowsNames = process.platform === "win32"
+      ? ["C:\\host\\bin\\KiCAD-CLI.EXE", ".\\tools\\kicad-cli.exe", "PCBNEW.EXE", "Eeschema.Exe", "KiCad.EXE"]
+      : [];
+    for (const executable of ["/usr/bin/kicad-cli", "pcbnew", "eeschema", "kicad", ...windowsNames]) {
       let error = "";
       expect(
         await runHermeticEnv(
@@ -109,6 +127,22 @@ describe("hermetic packaged-KiCad environment", () => {
       ).toBe(2);
       expect(error).toContain("not part of the packaged CLI scope");
     }
+  });
+
+  test.skipIf(process.platform !== "win32")("resolves a relative KiCad path against the command's project", async () => {
+    const project = "C:\\FabDesk Tools";
+    const cli = project + "\\bin\\kicad-cli.exe";
+    let observed: string[] | undefined;
+    expect(await runHermeticEnv(
+      { action: "exec", project, command: [".\\BIN\\KiCAD-CLI.EXE", "--version"] },
+      {
+        env: { KICAD_CLI: cli },
+        cwd: () => "C:\\other",
+        pathExists: async () => true,
+        execute: async ({ command }) => { observed = command; return 0; },
+      },
+    )).toBe(0);
+    expect(observed).toEqual([cli, "--version"]);
   });
 
   test("executes in the project and resolves kicad-cli to the packaged binary", async () => {

@@ -52,15 +52,21 @@ const HOST_KICAD_ENTRYPOINTS = new Set(["eeschema", "kicad", "pcbnew"]);
 function resolveCommand(
   requested: string[],
   packagedCli: string,
+  project: string,
 ): { command?: string[]; error?: string; hostCommand?: string } {
   const command = [...requested];
   const executable = command[0]!;
-  if (executable === "kicad-cli" || executable === packagedCli) {
+  const windows = process.platform === "win32";
+  const basenameOnHost = basename(executable);
+  const name = windows ? basenameOnHost.toLowerCase().replace(/\.exe$/, "") : basenameOnHost;
+  const packagedPath = windows
+    ? resolve(project, executable).toLowerCase() === resolve(packagedCli).toLowerCase()
+    : executable === packagedCli;
+  if ((executable === basenameOnHost && name === "kicad-cli") || packagedPath) {
     command[0] = packagedCli;
     return { command };
   }
 
-  const name = basename(executable);
   if (name === "kicad-cli" || HOST_KICAD_ENTRYPOINTS.has(name)) {
     return {
       error: `fabpcb env: ${executable} is not part of the packaged CLI scope; use bare \`kicad-cli\` or run the host tool outside \`fabpcb env exec\`\n`,
@@ -91,7 +97,7 @@ async function defaultVersion(
   executable: string,
   env: Record<string, string>,
 ): Promise<string | null> {
-  const child = Bun.spawn([executable, "--version"], { env, stdout: "pipe", stderr: "pipe" });
+  const child = Bun.spawn([executable, "--version"], { env, windowsHide: true, stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, code] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -109,6 +115,7 @@ async function defaultExecute(input: {
   const child = Bun.spawn(input.command, {
     cwd: input.cwd,
     env: input.env,
+    windowsHide: input.command[0] === input.env["KICAD_CLI"]?.trim(),
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
@@ -165,7 +172,7 @@ export async function runHermeticEnv(
     err(`fabpcb env: exec requires a command after --\n${HERMETIC_ENV_USAGE}`);
     return 2;
   }
-  const resolved = resolveCommand(options.command, cli);
+  const resolved = resolveCommand(options.command, cli, project);
   if (resolved.error) {
     err(resolved.error);
     return 2;

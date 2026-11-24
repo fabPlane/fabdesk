@@ -100,7 +100,7 @@ export const pcb_environment = defineTool({
   handler: async (_args, ctx) => {
     const project = ctx.requireProject();
     const [cli, bridge, app] = await Promise.all([
-      ctx.services.kicad.resolveCli().catch(() => null),
+      ctx.services.kicad.resolveCli(ctx.signal).catch(() => null),
       ctx.services.design.status(),
       ctx.services.appBridge?.status().catch((error) => ({
         running: false,

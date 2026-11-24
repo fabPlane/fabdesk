@@ -284,7 +284,7 @@ export const project_import_kicad = defineTool({
     const copied = files.map(file => file.destination);
     const target = p(project, PROJECT_FILES.boardPcb);
     let layers: number | undefined;
-    const cli = await ctx.services.kicad.resolveCli();
+    const cli = await ctx.services.kicad.resolveCli(ctx.signal);
     if (cli) {
       ctx.progress(0.5, "reading board stats");
       const stats = (await ctx.services.kicad

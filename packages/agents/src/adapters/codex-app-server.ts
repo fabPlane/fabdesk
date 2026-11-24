@@ -13,7 +13,7 @@ export const APP_SERVER_QUESTION_INSTRUCTIONS =
 
 /** Bidirectional transport: exec's stdout-only interface loses native question requests. */
 export function runCodexAppServer(session: AgentSession, cmd: string[], env: Record<string, string>): AgentRun {
-  const child = Bun.spawn(cmd, { cwd: session.cwd, env, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  const child = Bun.spawn(cmd, { cwd: session.cwd, env, windowsHide: true, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
   const events: AgentEvent[] = [];
   let wake: (() => void) | undefined;
   let finished = false;

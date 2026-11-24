@@ -1,7 +1,7 @@
 /** Starts the bundled FabPlane PCB bridge before core, and supplies core's bridge/KiCad env. */
 import { type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolveProjectsDirectory } from "@fabdesk/auth-client";
 import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
@@ -19,7 +19,7 @@ export interface PcbBundleManifest {
   /** Optional bundle-relative entry point for the private fab_router module. */
   fabRouter?: string;
   /** Optional for older bundles; missing files degrade routing to fab_router. */
-  freerouting?: { jar: string; java: string };
+  freerouting?: { jar: string; java: string; version?: string };
   /** Bundle-relative shared-library directories, in loader search order (Linux). */
   libraryPaths?: string[];
   environment?: Record<string, string>;
@@ -30,13 +30,21 @@ export interface PcbBackendCommand {
   args: string[];
   cwd: string;
   env: Record<string, string>;
+  bundledFreeroutingVersion?: string;
   url: string;
   /** An explicitly configured URL must not be silently replaced after a collision. */
   fixedUrl: boolean;
 }
 
-/** Environment the core needs for CLI-based DRC/render/export, not only the bridge process. */
+/** Share the bridge's KiCad paths and any bundled Freerouting JAR with the core. */
 export function corePcbEnvironment(command: PcbBackendCommand): Record<string, string> {
+  const jar = command.env.FREEROUTING_JAR;
+  let bundledJar: string | undefined;
+  try {
+    if (jar && statSync(jar).isFile()) bundledJar = jar;
+  } catch {
+    // Older or incomplete bundles use a missing path on the bridge. Keep core's on-demand install available.
+  }
   return {
     ...Object.fromEntries(Object.entries(command.env).filter(([key]) => key === "FABDESK_KICAD_MODELS" || /^KICAD\d+_3DMODEL_DIR$/.test(key))),
     FABDESK_FP_PCB_BRIDGE_URL: command.url,
@@ -49,6 +57,10 @@ export function corePcbEnvironment(command: PcbBackendCommand): Record<string, s
     FABDESK_RUNTIME_ID: command.env.FABDESK_RUNTIME_ID!,
     FABDESK_DESKTOP_PID: command.env.FABDESK_DESKTOP_PID!,
     FABDESK_PROJECTS_DIR: command.env.WORKSPACE_ROOT!,
+    ...(bundledJar ? {
+      FREEROUTING_JAR: bundledJar,
+      FABDESK_BUNDLED_FREEROUTING_VERSION: command.bundledFreeroutingVersion || "bundled",
+    } : {}),
     ...(command.env.LD_LIBRARY_PATH ? { LD_LIBRARY_PATH: command.env.LD_LIBRARY_PATH } : {}),
   };
 }
@@ -56,6 +68,7 @@ export function corePcbEnvironment(command: PcbBackendCommand): Record<string, s
 export function resolvePcbBackend(opts: {
   packaged: boolean;
   resourcesPath: string;
+  appPath?: string;
   env?: NodeJS.ProcessEnv;
 }): PcbBackendCommand | null {
   const env = opts.env ?? process.env;
@@ -68,6 +81,17 @@ export function resolvePcbBackend(opts: {
   if (manifest.format !== 1)
     throw new Error(`unsupported FabPlane PCB bundle format in ${manifestPath}`);
   const bundleRoot = dirname(manifestPath);
+  let consolePreload: string | undefined;
+  if (process.platform === "win32" && !source && !override) {
+    if (opts.packaged && !win32.relative(join(opts.resourcesPath, "pcb", "bundle.json"), manifestPath)) {
+      consolePreload = resolve(opts.resourcesPath, "pcb", "fabdesk-hide-pcb-console.cjs");
+    } else if (!opts.packaged && opts.appPath && env.FABDESK_DEV_PCB_DISCOVERED_BUNDLE &&
+        !win32.relative(env.FABDESK_DEV_PCB_DISCOVERED_BUNDLE, manifestPath) &&
+        manifest.target === `windows-${process.arch}` && manifest.bridge === "bin/fp-pcb-bridge.exe") {
+      consolePreload = resolve(opts.appPath, "scripts", "fabdesk-hide-pcb-console.cjs");
+    }
+  }
+  const bunOptions = manifest.environment?.BUN_OPTIONS ?? env.BUN_OPTIONS;
   const command = override ? resolve(override) : resolve(bundleRoot, manifest.bridge);
   const kicadCli = resolve(bundleRoot, manifest.kicadCli);
   const kicadStockData = resolve(bundleRoot, manifest.stockData ?? "kicad/share/kicad");
@@ -116,8 +140,14 @@ export function resolvePcbBackend(opts: {
     cwd: sourceRoot ?? bundleRoot,
     url,
     fixedUrl: Boolean(env["FABDESK_FP_PCB_BRIDGE_URL"]),
+    ...(manifest.freerouting?.version ? { bundledFreeroutingVersion: manifest.freerouting.version } : {}),
     env: {
       ...(manifest.environment ?? {}),
+      // Bun accepts spaces when the whole option is quoted. Its position and absolute path
+      // keep inherited "--" and "--cwd" from suppressing or redirecting this preload.
+      ...(consolePreload ? {
+        BUN_OPTIONS: [`"--preload=${consolePreload.replaceAll("\\", "/")}"`, bunOptions].filter(Boolean).join(" "),
+      } : {}),
       ...(libraryPaths.length
         ? { LD_LIBRARY_PATH: [...libraryPaths, env["LD_LIBRARY_PATH"]].filter(Boolean).join(":") }
         : {}),

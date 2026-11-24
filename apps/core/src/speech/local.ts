@@ -185,7 +185,7 @@ async function ffmpegToWav(src: string, _mime: string): Promise<string> {
     const child = spawn(
       "ffmpeg",
       ["-y", "-i", src, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", dest],
-      { stdio: ["ignore", "ignore", "pipe"] },
+      { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] },
     );
     let err = "";
     child.stderr.on("data", (chunk: Buffer) => {
@@ -228,7 +228,7 @@ async function runWhisperCli(args: {
   prompt: string;
 }): Promise<string> {
   return await new Promise((resolve, reject) => {
-    const child = spawn(args.bin, whisperCliArgs(args), { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(args.bin, whisperCliArgs(args), { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     let err = "";
     child.stdout.on("data", (chunk: Buffer) => {

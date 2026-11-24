@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { copyFile, mkdir } from "node:fs/promises";
+import { lstatSync } from "node:fs";
+import { mkdtemp, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { PROJECT_FILES } from "../fs";
 import type { RouteProgress, RouteSummary } from "../services";
@@ -16,50 +17,61 @@ export async function runTraceMaker(opts: {
   onProgress?: (progress: RouteProgress) => void;
 }): Promise<RouteSummary> {
   const input = join(opts.snapshotDir, PROJECT_FILES.boardPcb);
-  const work = join(opts.snapshotDir, "tracemaker");
-  await mkdir(work, { recursive: true });
+  const checkCancelled = () => {
+    if (opts.signal?.aborted) throw new Error("TraceMaker cancelled");
+  };
+  checkCancelled();
+  // Retries may share a snapshot, including one with a previous router's output.
+  const work = await mkdtemp(join(opts.snapshotDir, ".tracemaker-"));
   const output = join(work, "routed.kicad_pcb");
   const started = Date.now();
   const seconds = Math.max(1, Math.ceil(opts.timeoutMs / 1000));
-  opts.onProgress?.({
-    state: "routing",
-    phase: "tracemaker",
-    message: `TraceMaker ${opts.binary}`,
-    log: [],
-  });
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(
-      opts.binary,
-      ["route", input, "-o", output, "--time", String(seconds), "--no-kb"],
-      { stdio: ["ignore", "pipe", "pipe"] },
-    );
-    const onAbort = () => {
-      child.kill("SIGTERM");
-    };
-    opts.signal?.addEventListener("abort", onAbort, { once: true });
-    let stderr = "";
-    child.stderr?.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
+  try {
+    opts.onProgress?.({
+      state: "routing",
+      phase: "tracemaker",
+      message: `TraceMaker ${opts.binary}`,
+      log: [],
     });
-    child.on("error", (error) => {
-      opts.signal?.removeEventListener("abort", onAbort);
-      reject(error);
+    checkCancelled();
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(
+        opts.binary,
+        ["route", input, "-o", output, "--time", String(seconds), "--no-kb"],
+        { stdio: ["ignore", "ignore", "pipe"], windowsHide: true },
+      );
+      const onAbort = () => { child.kill("SIGTERM"); };
+      opts.signal?.addEventListener("abort", onAbort, { once: true });
+      let stderr = "";
+      child.stderr?.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+      child.on("error", (error) => {
+        opts.signal?.removeEventListener("abort", onAbort);
+        reject(error);
+      });
+      child.on("exit", (code) => {
+        opts.signal?.removeEventListener("abort", onAbort);
+        if (opts.signal?.aborted) {
+          reject(new Error("TraceMaker cancelled"));
+          return;
+        }
+        // TraceMaker uses 0 for success and 3 for partial routing.
+        if (code === 0 || code === 3) {
+          resolve();
+          return;
+        }
+        reject(new Error(`TraceMaker exited ${code}${stderr.trim() ? `: ${stderr.trim().slice(-400)}` : ""}`));
+      });
     });
-    child.on("exit", (code) => {
-      opts.signal?.removeEventListener("abort", onAbort);
-      if (opts.signal?.aborted) {
-        reject(new Error("TraceMaker cancelled"));
-        return;
-      }
-      // TraceMaker uses 0 for success and 3 for partial routing.
-      if (code === 0 || code === 3) {
-        resolve();
-        return;
-      }
-      reject(new Error(`TraceMaker exited ${code}${stderr.trim() ? `: ${stderr.trim().slice(-400)}` : ""}`));
-    });
-  });
-  await copyFile(output, input);
+    checkCancelled();
+    const board = lstatSync(output, { throwIfNoEntry: false });
+    if (!board?.isFile() || board.size === 0) throw new Error("TraceMaker produced no routed board for this attempt");
+    await rename(output, input);
+  } finally {
+    // A cleanup failure must not turn an already published board into a failed route.
+    await rm(work, { recursive: true, force: true, maxRetries: 3 }).catch(() => undefined);
+  }
   const wallMs = Date.now() - started;
   return {
     tracks: 0,

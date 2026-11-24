@@ -620,6 +620,7 @@ async function defaultGitClone(url: string, dir: string, signal?: AbortSignal): 
   await new Promise<void>((resolve, reject) => {
     // Full history without every old file: Board History lists commits at once and fetches a revision when it is opened.
     const child = spawn("git", ["-c", "credential.helper=", "clone", "--filter=blob:none", "--progress", url, dir], {
+      windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "Never" },
       ...(signal ? { signal } : {}),

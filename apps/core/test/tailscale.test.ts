@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,7 @@ import {
   findTailscaleCli,
   parseServeStatus,
   parseStatus,
+  runTailscale,
   serveTarget,
   TAILSCALE_CLI_ENV,
   type TailscaleInfo,
@@ -59,6 +60,19 @@ const info = (over: Partial<TailscaleInfo> = {}): TailscaleInfo => ({
 });
 
 describe("tailscale cli output", () => {
+  test("remote CLI calls hide the console and keep failure diagnostics", async () => {
+    const args = ["-e", 'console.error("diagnostic");process.exit(7)'];
+    const spawn = spyOn(Bun, "spawn");
+    try {
+      const result = await runTailscale(process.execPath, args);
+      expect(result.exitCode).toBe(7);
+      expect(result.stderr.trim()).toBe("diagnostic");
+      expect(spawn).toHaveBeenCalledWith([process.execPath, ...args], expect.objectContaining({ windowsHide: true }));
+    } finally {
+      spawn.mockRestore();
+    }
+  });
+
   test("status --json yields the tailnet IPv4, the MagicDNS name without its dot, and the HTTPS feature", () => {
     expect(parseStatus(JSON.stringify(STATUS_JSON))).toEqual({
       backendState: "Running",

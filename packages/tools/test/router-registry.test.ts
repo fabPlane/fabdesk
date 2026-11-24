@@ -87,6 +87,20 @@ describe("checksum verification", () => {
 });
 
 describe("router registry state machine", () => {
+  test("Freerouting uses the bundle version and keeps external JARs separate", async () => {
+    const home = await mkdtemp(join(tmpdir(), "fabdesk-reg-"));
+    const jar = join(home, "freerouting.jar");
+    const env = { FREEROUTING_JAR: jar, FABDESK_BUNDLED_FREEROUTING_VERSION: "2.3.0" };
+    expect(createRouterRegistry({ home, env }).get("freerouting").ready).toBe(false);
+    await writeFile(jar, fixture);
+    expect(createRouterRegistry({ home, env }).get("freerouting")).toMatchObject({
+      state: "bundled", versionInstalled: "2.3.0", ready: true, path: jar,
+    });
+    const external = createRouterRegistry({ home, env: { FREEROUTING_JAR: jar } }).get("freerouting");
+    expect(external).toMatchObject({ state: "installed", overriddenBy: "FREEROUTING_JAR", path: jar });
+    expect(external.versionInstalled).toBeUndefined();
+  });
+
   test("fab_router is bundled; download routers start not_installed", async () => {
     const home = await mkdtemp(join(tmpdir(), "fabdesk-reg-"));
     const { url } = await serveArtifact(fixture);

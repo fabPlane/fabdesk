@@ -25,7 +25,7 @@ export async function findFfmpeg(explicit?: string | null): Promise<string | nul
 
 async function probe(path: string): Promise<boolean> {
   try {
-    const proc = Bun.spawn([path, "-version"], { stdout: "pipe", stderr: "pipe" });
+    const proc = Bun.spawn([path, "-version"], { windowsHide: true, stdout: "pipe", stderr: "pipe" });
     const code = await proc.exited;
     if (code !== 0) return false;
     const out = `${await new Response(proc.stdout).text()} ${await new Response(proc.stderr).text()}`;
@@ -40,7 +40,7 @@ export async function runFfmpeg(
   args: string[],
   signal?: AbortSignal,
 ): Promise<{ ok: boolean; stderr: string }> {
-  const proc = Bun.spawn([ffmpeg, ...args], { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+  const proc = Bun.spawn([ffmpeg, ...args], { windowsHide: true, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
   const onAbort = () => {
     try {
       proc.kill();
