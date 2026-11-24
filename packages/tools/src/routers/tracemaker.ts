@@ -2,8 +2,12 @@ import { spawn } from "node:child_process";
 import { lstatSync } from "node:fs";
 import { mkdtemp, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { PROJECT_FILES } from "../fs";
 import type { RouteProgress, RouteSummary } from "../services";
+
+const WINDOWS_SAVE_RETRIES = 20;
+const WINDOWS_SAVE_RETRY_MS = 50;
 
 /**
  * Run a local TraceMaker CLI against a snapshot board.
@@ -26,6 +30,7 @@ export async function runTraceMaker(opts: {
   const output = join(work, "routed.kicad_pcb");
   const started = Date.now();
   const seconds = Math.max(1, Math.ceil(opts.timeoutMs / 1000));
+  let routeMs: number;
   try {
     opts.onProgress?.({
       state: "routing",
@@ -64,10 +69,28 @@ export async function runTraceMaker(opts: {
         reject(new Error(`TraceMaker exited ${code}${stderr.trim() ? `: ${stderr.trim().slice(-400)}` : ""}`));
       });
     });
+    routeMs = Date.now() - started;
     checkCancelled();
     const board = lstatSync(output, { throwIfNoEntry: false });
     if (!board?.isFile() || board.size === 0) throw new Error("TraceMaker produced no routed board for this attempt");
-    await rename(output, input);
+    // Windows can briefly refuse to replace a board that a reader still has open.
+    for (let retries = 0; ; retries++) {
+      checkCancelled();
+      try {
+        await rename(output, input);
+        break;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (
+          process.platform !== "win32" ||
+          retries >= WINDOWS_SAVE_RETRIES ||
+          !["EPERM", "EBUSY", "EACCES"].includes(code ?? "")
+        ) {
+          throw error;
+        }
+      }
+      await delay(WINDOWS_SAVE_RETRY_MS);
+    }
   } finally {
     // A cleanup failure must not turn an already published board into a failed route.
     await rm(work, { recursive: true, force: true, maxRetries: 3 }).catch(() => undefined);
@@ -80,9 +103,9 @@ export async function runTraceMaker(opts: {
     routed: 0,
     total: 0,
     trackLengthNm: 0,
-    elapsedMs: wallMs,
+    elapsedMs: routeMs,
     wallMs,
-    timedOut: wallMs >= opts.timeoutMs,
+    timedOut: routeMs >= opts.timeoutMs,
     message: "Autoroute (tracemaker)",
     unrouted: [],
     log: [],
