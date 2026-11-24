@@ -5,8 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Dialog, Input, Select, Spinner } from "../components/ui";
 import { useCore } from "@fabdesk/client-core";
 import { useDoctor, usePatchSettings, usePrivacy, useSettings } from "@fabdesk/client-core";
-import { usageArchiveAllowed, usageArchiveChoice } from "@fabdesk/protocol";
 import { shortcutList } from "../hooks/useShortcuts";
+import { PrivacySettings } from "./PrivacySettings";
 import { THEME_IDS, THEME_LABELS, useTheme } from "../hooks/useTheme";
 import { THEME_BACKGROUNDS, THEME_PANELS, THEME_FOREGROUNDS } from "../theme/resolve";
 import { RemoteSection } from "./RemoteSection";
@@ -249,14 +249,7 @@ export function SettingsDialog() {
               </div>
             </fieldset>
           ) : section === "privacy" ? (
-            <div>
-              <Row label="Error reporting" hint="Send crash and error reports to Sentry so bugs get fixed. Reports carry no prompts, board files, tokens or project paths. Turning this off applies immediately; turning it back on applies after a restart.">
-                <input type="checkbox" checked={draft.errorReporting} onChange={(e) => update((s) => ({ ...s, errorReporting: e.target.checked }))} />
-              </Row>
-              <Row label="Share usage data" hint="Share your sessions with us so we can see where fabPlane gets stuck and make it better. This includes your conversations and agent activity, past ones too, and can include your prompts and project files. We keep it private. Turning this off stops future sharing; it doesn't remove what was already shared.">
-                <input type="checkbox" checked={usageArchiveAllowed(draft, privacyScreen ?? true)} onChange={(e) => update((s) => ({ ...s, ...usageArchiveChoice(e.target.checked) }))} />
-              </Row>
-            </div>
+            <PrivacySettings draft={draft} update={update} privacyScreen={privacyScreen} />
           ) : (
             <table className="w-full text-xs">
               <tbody>

@@ -398,8 +398,8 @@ describe("open-catalog deep links", () => {
 });
 
 describe("usage archive consent", () => {
-  test("the first-install privacy screen defaults to regional detection", () => {
-    expect(FIRST_INSTALL_PRIVACY_SCREEN).toBe("auto");
+  test("the first-install privacy screen is compiled to always", () => {
+    expect(FIRST_INSTALL_PRIVACY_SCREEN).toBe("always");
   });
 
   test("defaults on for undecided installations that skip the screen", () => {

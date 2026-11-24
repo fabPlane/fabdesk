@@ -1,4 +1,4 @@
-/** Opt-in, append-only export of conversations and agent run dumps for later curation. */
+/** Append-only export of conversations and agent run dumps for later curation. */
 import { createHash, randomUUID } from "node:crypto";
 import { copyFile, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -36,6 +36,13 @@ const recordHash = (content: string): string => parseDumpFile(content)?.sha256 ?
 export class ArchiveConsentRevokedError extends Error {
   constructor() {
     super("usage archive consent revoked");
+  }
+}
+
+/** Registration or upload is temporarily unavailable (HTTP 503 or network). Retry later; do not surface to the user. */
+export class ArchiveUnavailableError extends Error {
+  constructor(message = "usage archive unavailable") {
+    super(message);
   }
 }
 

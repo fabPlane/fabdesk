@@ -16,25 +16,27 @@ function withStore(fn: (store: Store) => void) {
 }
 
 describe("privacy gate", () => {
-  test("outside the consent region, undecided installations back up without a startup prompt", () => {
+  test("compiled always shows the notice, so undecided installations wait", () => {
     withStore((store) => {
       const privacy = resolvePrivacyStatus({ settings: store.settings, env: {}, ...US });
       expect(privacy).toMatchObject({
-        mode: "auto",
-        firstInstallScreen: false,
+        mode: "always",
+        firstInstallScreen: true,
         region: { likelyInRegion: false },
       });
+      expect(usageArchiveAllowed(store.settings.get(), privacy.firstInstallScreen)).toBe(false);
+      store.settings.patch(usageArchiveChoice(true));
       expect(usageArchiveAllowed(store.settings.get(), privacy.firstInstallScreen)).toBe(true);
       store.settings.patch(usageArchiveChoice(false));
       expect(usageArchiveAllowed(store.settings.get(), privacy.firstInstallScreen)).toBe(false);
     });
   });
 
-  test("inside the consent region, the default waits for an explicit opt-in", () => {
+  test("inside the consent region, the default waits for an explicit choice", () => {
     withStore((store) => {
       const privacy = resolvePrivacyStatus({ settings: store.settings, env: {}, ...DE });
       expect(privacy).toMatchObject({
-        mode: "auto",
+        mode: "always",
         firstInstallScreen: true,
         region: { likelyInRegion: true },
       });
@@ -67,6 +69,7 @@ describe("privacy gate", () => {
         settings: store.settings,
         env: { FABDESK_SYSTEM_LOCALES: "en-US,fr-FR" },
         timeZone: "UTC",
+        mode: "auto",
       });
       expect(status.firstInstallScreen).toBe(true);
       expect(status.region).toMatchObject({ signal: "locale", country: "FR" });
@@ -75,9 +78,9 @@ describe("privacy gate", () => {
 
   test("once detected in the region, leaving it keeps the screen", () => {
     withStore((store) => {
-      expect(resolvePrivacyStatus({ settings: store.settings, env: {}, ...DE }).firstInstallScreen).toBe(true);
+      expect(resolvePrivacyStatus({ settings: store.settings, env: {}, mode: "auto", ...DE }).firstInstallScreen).toBe(true);
       expect(store.settings.readRaw(CONSENT_REGION_REMEMBERED_KEY)).toBe(true);
-      expect(resolvePrivacyStatus({ settings: store.settings, env: {}, ...US })).toMatchObject({
+      expect(resolvePrivacyStatus({ settings: store.settings, env: {}, mode: "auto", ...US })).toMatchObject({
         firstInstallScreen: true,
         region: { likelyInRegion: true, signal: "remembered" },
       });
@@ -91,7 +94,7 @@ describe("privacy gate", () => {
       const never = resolvePrivacyStatus({ settings: store.settings, env: { FABDESK_PRIVACY_SCREEN: "never" }, ...DE });
       expect(never).toMatchObject({ mode: "never", firstInstallScreen: false });
       // An unknown value falls back to the compiled mode.
-      expect(resolvePrivacyStatus({ settings: store.settings, env: { FABDESK_PRIVACY_SCREEN: "yes" }, ...US }).mode).toBe("auto");
+      expect(resolvePrivacyStatus({ settings: store.settings, env: { FABDESK_PRIVACY_SCREEN: "yes" }, ...US }).mode).toBe("always");
     });
   });
 

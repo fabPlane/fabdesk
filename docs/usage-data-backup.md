@@ -6,37 +6,54 @@ Run dumps capture full events and project files as described in [agent-run telem
 
 ## Back up to private Cloudflare R2 through the fabplane API
 
-Installed desktop apps activate remote upload automatically, subject to usage-data consent.
-Unpackaged development launches, packaged development profiles and standalone core launches
-require the operator flag described below. The consent rules are:
+Remote upload is **on by default (opt-out)**. Unset `FABDESK_USAGE_REMOTE_BACKUP` means on.
+The desktop injects `FABDESK_USAGE_REMOTE_BACKUP=1` whenever that variable is unset, packaged
+or unpackaged. An explicit off value still wins.
 
-- **A saved choice always wins.** That covers both the first-install **Help improve Fabdesk** screen (`FirstInstallPrivacy`) and **Share usage data** in Settings → Privacy, so people who opted out stay opted out.
-- **Outside the consent region, sharing is on by default with no startup prompt.** Undecided installations can turn it off in Settings → Privacy.
-- **In the consent region, undecided installations must opt in first.** The screen's checkbox starts unchecked, and nothing uploads until the person clicks Continue with it checked.
+The operator kill switch is an explicit off value of `FABDESK_USAGE_REMOTE_BACKUP`:
+`0`, `false`, `off`, `no`, or empty. This switch never overrides a saved privacy opt-out or
+the first-install notice; users can still turn sharing off in Settings → Privacy.
+
+```bash
+export FABDESK_USAGE_REMOTE_BACKUP=0
+```
+
+The consent rules are:
+
+- **A saved choice always wins.** That covers both the first-install **Usage data is on unless you opt out** screen (`FirstInstallPrivacy`) and **Share usage data** in Settings → Privacy, so people who opted out stay opted out.
+- **Everyone sees a one-time notice.** `FIRST_INSTALL_PRIVACY_SCREEN` in `packages/protocol/src/api.ts` is `always`. The checkbox starts checked; uncheck it to opt out. Continue saves that choice. While the notice is required and no choice is saved, nothing uploads.
+- **`FABDESK_PRIVACY_SCREEN=auto|never|always` still overrides** the compiled mode for a single run without rebuilding. `auto` keeps the EU/UK/CH region heuristic: the screen only where the installation is likely in the EU/EEA, UK or Switzerland, and everyone else is backed up by default.
 
 The choice is installation-wide and covers existing conversations and run dumps. Turning it off
 cancels waiting uploads and retries, and aborts requests still in flight. Data the server already
 received is not erased. Turning sharing on again resumes backup of unsent records.
 
-The core daemon decides once at startup whether the screen is required and serves the answer at `GET /privacy`, so every client gates on the same answer the uploader uses. `FIRST_INSTALL_PRIVACY_SCREEN` in `packages/protocol/src/api.ts` is `auto`. To force a mode for a single run without rebuilding, set `FABDESK_PRIVACY_SCREEN=always|never|auto` in the core's environment.
+The core daemon decides once at startup whether the screen is required and serves the answer at `GET /privacy`, so every client gates on the same answer the uploader uses.
 
-`auto` shows the screen only where the installation is likely in the EU/EEA, UK or Switzerland, and backs everyone else up by default. It matches the system time zone against `CONSENT_REGION_TIME_ZONES` and each OS locale region against `CONSENT_REGION_COUNTRIES` (`packages/protocol/src/privacy-region.ts`); the locales come from `FABDESK_SYSTEM_LOCALES` (the desktop app passes Electron's system locale and preferred languages), then `LC_ALL`, `LC_MESSAGES`, `LANG` and `LANGUAGE`. The core remembers an installation once detected in the region. This is a heuristic: a VPN does not change it, and anyone can set any zone or locale.
+`auto` matches the system time zone against `CONSENT_REGION_TIME_ZONES` and each OS locale region against `CONSENT_REGION_COUNTRIES` (`packages/protocol/src/privacy-region.ts`); the locales come from `FABDESK_SYSTEM_LOCALES` (the desktop app passes Electron's system locale and preferred languages), then `LC_ALL`, `LC_MESSAGES`, `LANG` and `LANGUAGE`. The core remembers an installation once detected in the region. This is a heuristic: a VPN does not change it, and anyone can set any zone or locale.
 
-To enable remote upload for a development or standalone core launch, set this flag in the
-environment that launches the daemon:
-
-```bash
-export FABDESK_USAGE_REMOTE_BACKUP=1
-```
-
-An explicit value is preserved in every launch mode. Set `FABDESK_USAGE_REMOTE_BACKUP=0` to
-disable the uploader for an installed desktop launch. This operator switch never overrides a
-saved privacy opt-out or the first-install consent requirement; users can still turn sharing off
-in Settings → Privacy.
+If registration or upload returns HTTP 503, or the network is down, the client fails silently
+(`ArchiveUnavailableError`), logs at debug (not warn), and retries later. There is no user-facing
+error.
 
 The daemon registers a random installation UUID with the API and stores its signed upload token
 locally. Sign-in is optional; the desktop never receives R2 credentials. Existing installation,
 consent, opt-out cancellation and default-region rules still apply.
+
+### Deploy-time API config
+
+Set these on the API only (not in the desktop). Without the signing key or R2 settings,
+registration and uploads return 503 and the client retries later without a user-facing error.
+
+| Setting | Notes |
+| --- | --- |
+| `FABDESK_LOGS_R2_ACCOUNT_ID` | Cloudflare account that owns the private `fabdesk-logs` bucket |
+| `FABDESK_LOGS_S3_BUCKET` | Private logs bucket |
+| `FABDESK_LOGS_S3_ENDPOINT` | S3-compatible endpoint |
+| `FABDESK_LOGS_S3_ACCESS_KEY` | Bucket access key |
+| `FABDESK_LOGS_S3_SECRET_KEY` | Bucket secret key |
+| `USAGE_INGEST_SIGNING_KEY` | 32+ characters; keep stable across deploys so existing installation tokens stay valid |
+| `USAGE_S3_PREFIX` | Object prefix; default `fabdesk-usage/v1` |
 
 ### Complete large records
 
