@@ -19,6 +19,18 @@ export type {
   ZoneSnapshot,
 } from "./types";
 export { emptySnapshot, nodeKey } from "./types";
+export {
+  childBlocks,
+  childNamed,
+  closeOf,
+  parseAt,
+  parseXy,
+  propertyValue,
+  quoted,
+  rootChildren,
+  topLevelBlocks,
+  unquote,
+} from "./sexpr";
 export { assertKicadPcbText, flattenArc, snapshotFromKicadPcb } from "./kicad-pcb";
 export { snapshotFromKicadSch } from "./kicad-sch";
 export { snapshotFromNetlist } from "./netlist";

@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useCore, sortImportedBoards, importedBoardLabel, isBackupBoard, type ImportedBoardSort } from "@fabdesk/client-core";
-import { parsePublicGitHubUrl } from "@fabdesk/protocol";
-import { Select, Button, Dialog, Input } from "../components/ui";
+import { parsePublicGitHubUrl, type BoardConstructionId, type BoardMaterialId } from "@fabdesk/protocol";
+import { Button, Dialog, Input, Select } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { ErrorNotice } from "../components/ErrorNotice";
+import { BoardMaterialPicker, type BoardMaterialValue } from "../board/BoardMaterialPicker";
 import { useUiStore } from "../stores/ui";
 
 /** Mounted only while open, so canceled names and locations never leak into the next project. */
@@ -20,6 +21,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<{ id: string; boards: string[] } | null>(null);
+  const [material, setMaterial] = useState<BoardMaterialValue>({ material: "fr4", construction: "2l" });
   const [sort, setSort] = useState<ImportedBoardSort>("version");
   const abort = useRef<AbortController | null>(null);
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(client.baseUrl).hostname);
@@ -57,7 +59,13 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
     setPending(true); setError(null);
     try {
       if (mode === "create") {
-        const project = await client.createProject(name.trim(), directory ?? undefined);
+        const project = await client.createProject(
+          name.trim(),
+          directory ?? undefined,
+          material.material === "fr4" && material.construction === "2l"
+            ? undefined
+            : { material: material.material as BoardMaterialId, construction: material.construction as BoardConstructionId },
+        );
         await finish(project.id);
       } else {
         if (!url.trim() || !destination || destination.exists) return;
@@ -123,6 +131,10 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
             {directory && <Button type="button" disabled={pending || picking} onClick={() => setDirectory(null)}>Use default</Button>}</div> : <p className="text-xs leading-5 text-muted">{local ? "Folder selection is available in the desktop app." : "The project will be created on the connected computer."}</p>}
         </div>
       </div>
+      {mode === "create" && (
+        <BoardMaterialPicker compact value={material} onChange={setMaterial} />
+      )}
+      {mode === "github" && name.trim() && <div className="rounded-xl bg-panel-2/70 px-3 py-2 text-xs leading-5" aria-live="polite">Destination: <span className="break-all font-medium">{destination?.path ?? "Checking…"}</span>{destination?.exists && <span className="block text-danger">This folder already exists. Choose another name or location.</span>}</div>}
       {mode === "github" && name.trim() && <div className="rounded-xl bg-panel-2/70 px-3 py-2 text-xs leading-5" aria-live="polite">
         {destinationQuery.isError ? <>
           <p className="font-medium text-danger">Couldn’t check the project location.</p>

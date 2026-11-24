@@ -3,7 +3,9 @@ import { project_checkpoint } from "./task-checkpoint";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { z } from "zod/v4";
+import { BoardConstructionId, BoardMaterialId } from "@fabdesk/protocol";
 import { PROJECT_FILES, jailPath, projectRelative, writeAtomic } from "../fs";
+import { boardSettingsFromPlan, planMaterialApply, validateMaterialChoice } from "../materials";
 import { ToolError, defineTool } from "../registry";
 import { VIAGRID_9055 } from "../templates/viagrid-9055";
 import { ok, p, trim } from "./common";
@@ -142,7 +144,7 @@ export const project_set_board = defineTool({
   toolset: "project",
   title: "Set board settings",
   description:
-    'Update fabdesk.json board settings: layer count, outline dimensions, router, and optional prefab blank template. template="viagrid-9055" represents the Opulo 90 x 55 mm blank with its factory vias, mounting holes, and 0.2 mm track and clearance rules; template="none" removes the template.',
+    'Update fabdesk.json board settings: layer count, outline dimensions, router, laminate/material preset, and optional prefab blank template. template="viagrid-9055" represents the Opulo 90 x 55 mm blank with its factory vias, mounting holes, and 0.2 mm track and clearance rules; template="none" removes the template. board_material_set also rewrites the KiCad stackup when changing only the laminate.',
   inputSchema: {
     layers: z.number().int().min(1).max(32).optional(),
     widthMm: z.number().positive().optional(),
@@ -157,6 +159,8 @@ export const project_set_board = defineTool({
       .enum(["viagrid-9055", "none"])
       .optional()
       .describe("Prefab blank to design on; viagrid-9055 or none"),
+    material: BoardMaterialId.optional().describe("Laminate preset (fr4, flex, aluminium, copper_core, rogers, ptfe, hdi)"),
+    construction: BoardConstructionId.optional().describe("Preset construction (2l / 4l / 6l / 1l / hybrid)"),
   },
   annotations: {
     readOnlyHint: false,
@@ -164,10 +168,15 @@ export const project_set_board = defineTool({
     openWorldHint: false,
     idempotentHint: true,
   },
-  handler: async ({ layers, widthMm, heightMm, router, template }, ctx) => {
+  handler: async ({ layers, widthMm, heightMm, router, template, material, construction }, ctx) => {
     const project = ctx.requireProject();
     const current = project.manifest();
     const { template: currentTemplate, ...currentBoard } = current.board;
+    if (material || construction) {
+      const chosen = material ?? current.board.material ?? "fr4";
+      const validated = validateMaterialChoice(chosen, construction ?? current.board.construction, layers);
+      if (!validated.ok) throw new ToolError(validated.error, "invalid_args");
+    }
     const templateBoard =
       template === "viagrid-9055"
         ? {
@@ -182,9 +191,21 @@ export const project_set_board = defineTool({
           : currentTemplate !== undefined
             ? { template: currentTemplate }
             : {};
+    const materialBoard =
+      material || construction
+        ? boardSettingsFromPlan(
+            { ...currentBoard, ...templateBoard },
+            planMaterialApply({
+              material: material ?? current.board.material ?? "fr4",
+              ...(construction ? { construction } : {}),
+              current: { ...current.board, ...templateBoard },
+            }),
+          )
+        : {};
     const board = {
       ...currentBoard,
       ...templateBoard,
+      ...materialBoard,
       ...(layers !== undefined ? { layers } : {}),
       ...(widthMm !== undefined ? { widthMm } : {}),
       ...(heightMm !== undefined ? { heightMm } : {}),
@@ -199,7 +220,7 @@ export const project_set_board = defineTool({
         ? "fab_router"
         : (next.router ?? "freerouting (default; fab_router fallback)");
     const text = [
-      `Board: ${next.board.layers} layers, ${next.board.widthMm ?? "?"}×${next.board.heightMm ?? "?"} mm, router ${displayedRouter}${next.board.template ? `, template ${next.board.template}` : ""}.`,
+      `Board: ${next.board.layers} layers, ${next.board.widthMm ?? "?"}×${next.board.heightMm ?? "?"} mm, router ${displayedRouter}${next.board.material ? `, material ${next.board.material}${next.board.construction ? `/${next.board.construction}` : ""}` : ""}${next.board.template ? `, template ${next.board.template}` : ""}.`,
       ...(next.board.template === "viagrid-9055"
         ? [
             "Viagrid geometry: factory-via-free areas include x in -12..12 and |x| > 26 with |y| < 14; mounting-hole centres are at (±38.75, ±18.25) mm in the blank frame.",

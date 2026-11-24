@@ -228,8 +228,20 @@ export class CoreClient {
   listProjects(): Promise<ProjectSummary[]> {
     return this.request("/projects");
   }
-  createProject(name: string, parentDirectory?: string): Promise<ProjectSummary> {
-    return this.request("/projects", { method: "POST", json: { name, ...(parentDirectory ? { parentDirectory } : {}) } });
+  createProject(
+    name: string,
+    parentDirectory?: string,
+    board?: { material?: string; construction?: string },
+  ): Promise<ProjectSummary> {
+    return this.request("/projects", {
+      method: "POST",
+      json: {
+        name,
+        ...(parentDirectory ? { parentDirectory } : {}),
+        ...(board?.material ? { material: board.material } : {}),
+        ...(board?.construction ? { construction: board.construction } : {}),
+      },
+    });
   }
   createIdeaDraft(): Promise<ProjectSummary> {
     return this.request("/projects", { method: "POST", json: { name: "Untitled idea", draft: true } });

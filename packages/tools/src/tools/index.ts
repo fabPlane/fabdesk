@@ -73,6 +73,7 @@ export function createRegistry(opts: { channel?: "public" | "internal" } = {}): 
 }
 
 export * from "./core";
+export * from "./material";
 export * from "./project";
 export * from "./comments";
 export * from "./parts";

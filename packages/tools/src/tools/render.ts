@@ -586,6 +586,7 @@ export const render_product_video = defineTool({
         layers: manifest.board.layers,
         ...(manifest.board.widthMm !== undefined ? { widthMm: manifest.board.widthMm } : {}),
         ...(manifest.board.heightMm !== undefined ? { heightMm: manifest.board.heightMm } : {}),
+        ...(manifest.board.material !== undefined ? { material: manifest.board.material } : {}),
       },
       components,
     });

@@ -1,6 +1,7 @@
 export * from "./events";
 export * from "./route-frames";
 export * from "./handshake";
+export * from "./materials";
 export * from "./api";
 export * from "./devices";
 export * from "./opensource";

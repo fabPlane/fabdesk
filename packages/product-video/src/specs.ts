@@ -4,6 +4,7 @@ export type SpecsInput = {
     layers?: number;
     widthMm?: number;
     heightMm?: number;
+    material?: string;
   };
   components?: Array<{ ref: string; value: string; footprint?: string }>;
 };
@@ -17,6 +18,7 @@ export function extractSpecs(input: SpecsInput): { name: string; lines: string[]
   const board = input.board;
   if (board?.widthMm && board.heightMm) lines.push(`${fmt(board.widthMm)} MM × ${fmt(board.heightMm)} MM`);
   if (board?.layers) lines.push(`${board.layers} LAYER${board.layers === 1 ? "" : "S"}`);
+  if (board?.material && board.material !== "fr4") lines.push(board.material.replace(/_/g, " ").toUpperCase());
   const mcu = findMcu(input.components ?? []);
   if (mcu) lines.push(`MCU ${mcu}`);
   const n = input.components?.length ?? 0;

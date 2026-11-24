@@ -8,8 +8,12 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
 import {
   ASSEMBLY_MANIFEST_PATH,
+  BOARD_MATERIAL_DEFAULT_LAYERS,
+  layersForConstruction,
   ProjectAssembly,
   ProjectManifest,
+  type BoardConstructionId,
+  type BoardMaterialId,
   type CoreEvent,
   type FileEntry,
   type ProjectDetail,
@@ -219,7 +223,13 @@ export class ProjectStore implements ProjectResolver {
     return h;
   }
 
-  async create(name: string, parentDirectory?: string, draft = false): Promise<ProjectDetail> {
+  async create(
+    name: string,
+    parentDirectory?: string,
+    extras?: boolean | { material?: BoardMaterialId; construction?: BoardConstructionId; draft?: boolean },
+  ): Promise<ProjectDetail> {
+    const opts = typeof extras === "boolean" ? { draft: extras } : extras ?? {};
+    const draft = opts.draft === true;
     const root = await this.parentRoot(parentDirectory);
     await mkdir(root, { recursive: true });
     const base = draft ? `idea-${newId("draft")}` : slugify(name);
@@ -235,6 +245,14 @@ export class ProjectStore implements ProjectResolver {
     }
     const dir = join(root, slug);
     const ts = new Date().toISOString();
+    const material = opts.material;
+    const construction = opts.construction;
+    const layers =
+      construction !== undefined
+        ? layersForConstruction(construction)
+        : material
+          ? BOARD_MATERIAL_DEFAULT_LAYERS[material]
+          : 2;
     const manifest = ProjectManifest.parse({
       schema: 1,
       id: newId("prj"),
@@ -242,7 +260,11 @@ export class ProjectStore implements ProjectResolver {
       ...(draft ? { ideaDraft: {} } : {}),
       createdAt: ts,
       updatedAt: ts,
-      board: { layers: 2 },
+      board: {
+        layers,
+        ...(material ? { material } : {}),
+        ...(construction ? { construction } : {}),
+      },
     });
     for (const sub of [
       PROJECT_FILES.sketches,

@@ -249,6 +249,9 @@ describe("registry", () => {
       "route_run",
       "verify_drc",
       "render_board",
+      "board_material_list",
+      "board_material_get",
+      "board_material_set",
       "render_publish",
       "project_checkpoint",
       "project_read_file",
@@ -310,6 +313,7 @@ describe("registry", () => {
       "verify_erc",
       "verify_gate",
       "verify_viagrid",
+      "verify_material",
       "board_check",
       "board_review",
       "board_edit",
@@ -381,7 +385,7 @@ describe("registry", () => {
       "board_job",
     ]);
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9_]*$/);
-    expect(reg.byToolset("core").length).toBe(11);
+    expect(reg.byToolset("core").length).toBe(14);
     expect(() =>
       defineTool({
         name: "bad.name",

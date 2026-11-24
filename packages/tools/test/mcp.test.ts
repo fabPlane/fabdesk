@@ -244,6 +244,9 @@ describe("mcp adapter", () => {
     const initial = await client.listTools();
     const names = initial.tools.map((t) => t.name).sort();
     expect(names).toEqual([
+      "board_material_get",
+      "board_material_list",
+      "board_material_set",
       "capability_call",
       "capability_search",
       "circuit_build",

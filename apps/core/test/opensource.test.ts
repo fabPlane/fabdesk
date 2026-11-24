@@ -393,6 +393,13 @@ describe("order readiness", () => {
       const failed = { report: drcReport({ counts: { errors: 25, warnings: 0, unconnected: 0 } }), inputsChanged: false };
       expect(assessOrderReadiness([{ path }], { ...none, drc: failed }).ready).toBe(false);
     }
+    const flex = assessOrderReadiness(
+      [{ path: "board.kicad_pcb" }, { path: "exports/gerbers/F_Cu.gbr" }],
+      { ...board, drc: cleanDrc },
+      "flex",
+    );
+    expect(flex.ready).toBe(true);
+    expect(flex.warnings.join(" ")).toMatch(/not a standard FR-4 order/i);
     const blocked = assessOrderReadiness([{ path: "board.kicad_pcb" }], board);
     expect(blocked.ready).toBe(false);
     expect(blocked.checks).toEqual({ drc: "missing", erc: "not_required" });

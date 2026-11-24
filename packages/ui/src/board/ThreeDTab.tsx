@@ -1,3 +1,4 @@
+import { boardMaterialSummary } from "@fabdesk/protocol";
 import { useBoardSources,useCoreClient,useLivePreview,useModelOutputActivity,useProject,useRunsStore,useRunTool } from "@fabdesk/client-core";
 import { lazy,Suspense,useMemo,useState } from "react";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
@@ -84,6 +85,8 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
     [files],
   );
   const poster = files.find((f) => f.path === "exports/product-video-poster.png");
+  const material = project.data?.manifest.board.material;
+  const look = material ? boardMaterialSummary(material) : undefined;
   useAssistantSurface(projectId && active ? { projectId, label: canvas ? "Board / 3D" : "Outputs / Models & video", priority: 10, details: JSON.stringify({ model: glb?.path, videos: videos.map(file => file.path), videoSettings: form, sourceReady: canGenerate, exportingModel: exporting, makingVideo: making }) } : null);
 
   if (!projectId) return <EmptyState title="No project selected" />;
@@ -123,6 +126,18 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
   return (
     <ProductVideoPanel
       projectId={projectId}
+      {...(look
+        ? {
+            materialLook: {
+              name: look.shortName,
+              look: look.appearance.look,
+              substrate: look.appearance.substrate,
+              ...(project.data?.manifest.board.construction
+                ? { thicknessNote: project.data.manifest.board.construction }
+                : {}),
+            },
+          }
+        : {})}
       canGenerate={canGenerate}
       checkingSources={checkingSources || project.isFetching}
       modelStatus={<AutomaticPreviewStatus kind="model" projectId={projectId} />}

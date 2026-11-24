@@ -633,7 +633,17 @@ export function useCreateProject() {
   const client = useCoreClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) => client.createProject(name),
+    mutationFn: (
+      input:
+        | string
+        | { name: string; parentDirectory?: string; material?: string; construction?: string },
+    ) =>
+      typeof input === "string"
+        ? client.createProject(input)
+        : client.createProject(input.name, input.parentDirectory, {
+            ...(input.material ? { material: input.material } : {}),
+            ...(input.construction ? { construction: input.construction } : {}),
+          }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["projects"] }),
   });
 }

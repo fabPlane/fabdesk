@@ -2,13 +2,16 @@ import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { gate, type DrcReport, type ErcReport } from "@fabdesk/kicad";
-import { ASSEMBLY_MANIFEST_PATH, ProjectDependencySnapshot } from "@fabdesk/protocol";
-import type {
-  FileEntry,
-  OrderCheckStatus,
-  OrderReadiness,
-  OrderSession,
-  OrderVendorId,
+import {
+  ASSEMBLY_MANIFEST_PATH,
+  ProjectDependencySnapshot,
+  specialistFabNote,
+  type BoardMaterialId,
+  type FileEntry,
+  type OrderCheckStatus,
+  type OrderReadiness,
+  type OrderSession,
+  type OrderVendorId,
 } from "@fabdesk/protocol";
 import { publicationInProgress, savedHierarchyRevision, snapshotProjectDependencies, type SavedSheetRef } from "@fabdesk/tools";
 
@@ -95,6 +98,7 @@ const CHECK_REASONS: Record<"drc" | "erc", Partial<Record<OrderCheckStatus, stri
 export function assessOrderReadiness(
   files: readonly Pick<FileEntry, "path">[],
   evidence: OrderCheckEvidence,
+  material?: BoardMaterialId,
 ): OrderReadiness {
   const assemblyDeclared = evidence.assemblyDeclared ?? files.some(f => f.path === ASSEMBLY_MANIFEST_PATH);
   const hasGerbers = files.some((f) => f.path.startsWith("exports/gerbers/") || /gerber/i.test(f.path));
@@ -122,6 +126,10 @@ export function assessOrderReadiness(
     warnings.push(
       "ERC could not check this schematic (its saved hierarchy is incomplete). Review the schematic before ordering.",
     );
+  if (material) {
+    const note = specialistFabNote(material);
+    if (note) warnings.push(note);
+  }
   const blocking = (s: OrderCheckStatus) => s === "missing" || s === "stale" || s === "fail";
   return {
     ready: !evidence.publicationInProgress && !assemblyDeclared && hasOrderArtifact && !blocking(checks.drc) && !blocking(checks.erc),

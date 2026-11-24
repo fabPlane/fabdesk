@@ -70,6 +70,8 @@ export { NotesTab } from "./board/NotesTab";
 export { parseSvgViewBox, clientPointToSvg, svgPointToPercent } from "./board/svg-coords";
 export { ArtTab } from "./board/ArtTab";
 export { ThreeDTab } from "./board/ThreeDTab";
+export { BoardMaterialPicker, BoardMaterialBadge } from "./board/BoardMaterialPicker";
+export type { BoardMaterialValue } from "./board/BoardMaterialPicker";
 export { useRunTool, resolveToolName, TOOL_PATTERNS } from "@fabdesk/client-core";
 
 export { AppShell } from "./layout/AppShell";
