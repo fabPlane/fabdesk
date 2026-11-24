@@ -1,5 +1,6 @@
 /** First-party product analytics: hashed install/account ids, batched to fabplane.com. No PostHog SDK. */
 import { createHash, randomUUID } from "node:crypto";
+import { FabplaneClient, isFabplaneApiError, type TelemetryEvent } from "fabplane-cli";
 import type { AuthMode } from "./config";
 import { logger } from "./log";
 
@@ -30,15 +31,6 @@ export type ProductAnalyticsIdentity = {
   accountSubject?: string;
 };
 
-type BufferedEvent = {
-  uuid: string;
-  event: ProductEventName;
-  timestamp: string;
-  installId: string;
-  properties: Record<string, unknown>;
-  accountId?: string;
-};
-
 export function telemetryEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const value = env["FABDESK_TELEMETRY_ENABLED"]?.trim().toLowerCase();
   return value !== "false" && value !== "0" && value !== "off" && value !== "no";
@@ -49,7 +41,7 @@ export function hashTelemetryId(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-export function telemetryOs(platform: NodeJS.Platform = process.platform): string {
+export function telemetryOs(platform: NodeJS.Platform = process.platform): TelemetryEvent["properties"]["os"] {
   if (platform === "darwin" || platform === "linux" || platform === "win32") return platform;
   return "other";
 }
@@ -63,13 +55,15 @@ function persistInstallId(store: ProductAnalyticsStore): string {
 }
 
 export class ProductAnalytics {
-  private buffer: BufferedEvent[] = [];
+  private buffer: TelemetryEvent[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private sending: Promise<void> = Promise.resolve();
-  private readonly fetchImpl: typeof fetch;
+  private sendController: AbortController | null = null;
+  private consentGeneration = 0;
+  private readonly client: FabplaneClient;
   private readonly now: () => number;
   private readonly flushDelayMs: number;
-  private readonly os: string;
+  private readonly os: TelemetryEvent["properties"]["os"];
   private readonly arch: string;
 
   constructor(
@@ -87,7 +81,11 @@ export class ProductAnalytics {
       env?: NodeJS.ProcessEnv;
     },
   ) {
-    this.fetchImpl = opts.fetchImpl ?? fetch;
+    const fetchImpl = opts.fetchImpl;
+    this.client = new FabplaneClient({
+      origin: opts.apiOrigin,
+      ...(fetchImpl ? { fetch: (input, init) => fetchImpl(input, init) } : {}),
+    });
     this.now = opts.now ?? Date.now;
     this.flushDelayMs = opts.flushDelayMs ?? DEFAULT_FLUSH_MS;
     this.os = telemetryOs(opts.platform ?? process.platform);
@@ -100,17 +98,18 @@ export class ProductAnalytics {
     const last = this.opts.store.readRaw(LAST_ACTIVE_KEY);
     const lastMs = typeof last === "string" ? Date.parse(last) : Number.NaN;
     if (!Number.isFinite(lastMs) || this.now() - lastMs >= DAY_MS) {
-      this.track("app.active");
-      this.opts.store.writeRaw(LAST_ACTIVE_KEY, new Date(this.now()).toISOString());
+      if (this.track("app.active")) {
+        this.opts.store.writeRaw(LAST_ACTIVE_KEY, new Date(this.now()).toISOString());
+      }
     }
   }
 
-  track(event: ProductEventName, props: ProductEventProps = {}): void {
-    if (!this.live()) return;
+  track(event: ProductEventName, props: ProductEventProps = {}): boolean {
+    if (!this.live()) return false;
     const installId = hashTelemetryId(persistInstallId(this.opts.store));
     const identity = this.opts.identity();
     const accountSubject = identity.accountSubject?.trim();
-    const properties: Record<string, unknown> = {
+    const properties: TelemetryEvent["properties"] = {
       appVersion: this.opts.version.slice(0, 32),
       os: this.os,
       arch: this.arch.slice(0, 16),
@@ -121,7 +120,7 @@ export class ProductAnalytics {
         ? { exportTool: props.exportTool.slice(0, 40) }
         : {}),
     };
-    const buffered: BufferedEvent = {
+    const buffered: TelemetryEvent = {
       uuid: randomUUID(),
       event,
       timestamp: new Date(this.now()).toISOString(),
@@ -133,15 +132,18 @@ export class ProductAnalytics {
     if (this.buffer.length > MAX_BUFFER) this.buffer.splice(0, this.buffer.length - MAX_BUFFER);
     if (this.buffer.length >= 20) void this.flush();
     else this.scheduleFlush();
+    return true;
   }
 
-  /** Drop queued events (opt-out or kill switch). In-flight requests are not cancelled. */
+  /** Drop queued events (opt-out or kill switch) and abort an in-flight ingest. */
   dropPending(): void {
+    this.consentGeneration += 1;
     this.buffer = [];
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
+    this.sendController?.abort();
   }
 
   flush(): Promise<void> {
@@ -173,22 +175,23 @@ export class ProductAnalytics {
     }
     const batch = this.buffer.splice(0, this.buffer.length);
     if (batch.length === 0) return;
-    const origin = this.opts.apiOrigin.replace(/\/+$/, "");
+    const generation = this.consentGeneration;
+    const sendController = new AbortController();
+    this.sendController = sendController;
     try {
-      const response = await this.fetchImpl(`${origin}/v1/telemetry/events`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ events: batch }),
-        signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+      await this.client.postTelemetryEvents(batch, {
+        signal: AbortSignal.any([AbortSignal.timeout(SEND_TIMEOUT_MS), sendController.signal]),
       });
-      if (!response.ok) {
+    } catch (err) {
+      if (this.consentGeneration === generation && this.live()) {
         this.buffer.unshift(...batch);
         if (this.buffer.length > MAX_BUFFER) this.buffer.splice(MAX_BUFFER);
-        logger.debug("product analytics ingest declined", { status: response.status });
       }
-    } catch {
-      this.buffer.unshift(...batch);
-      if (this.buffer.length > MAX_BUFFER) this.buffer.splice(MAX_BUFFER);
+      if (isFabplaneApiError(err)) {
+        logger.debug("product analytics ingest declined", { status: err.status });
+      }
+    } finally {
+      if (this.sendController === sendController) this.sendController = null;
     }
   }
 }

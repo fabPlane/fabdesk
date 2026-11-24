@@ -37,7 +37,10 @@ function capturingFetch(posts: { url: string; events: PostedEvent[] }[]) {
     const request = new Request(input, init);
     const body = (await request.json()) as { events: PostedEvent[] };
     posts.push({ url: request.url, events: body.events });
-    return new Response(JSON.stringify({ accepted: body.events.length }), { status: 202 });
+    return new Response(JSON.stringify({ accepted: body.events.length }), {
+      status: 202,
+      headers: { "content-type": "application/json" },
+    });
   };
   return fetchImpl;
 }
@@ -227,5 +230,89 @@ describe("ProductAnalytics", () => {
     expect(byName["project_created"]!.properties["draft"]).toBe(true);
     expect(byName["ai_run"]!.properties["agentId"]).toBe("claude");
     expect(byName["export"]!.properties["exportTool"]).toBe("export_gerbers");
+  });
+
+  test("opt-out during in-flight failed send then opt-in sends only the new event", async () => {
+    const posts: { url: string; events: PostedEvent[] }[] = [];
+    let allowed = true;
+    let releaseFirst: (err: unknown) => void = () => undefined;
+    let firstStarted!: () => void;
+    const firstStartedP = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    let calls = 0;
+    const fetchImpl: typeof fetch = (input, init) => {
+      calls += 1;
+      if (calls === 1) {
+        firstStarted();
+        return new Promise((_, reject) => {
+          releaseFirst = reject;
+          init?.signal?.addEventListener(
+            "abort",
+            () => {
+              reject(init.signal?.reason ?? new DOMException("Aborted", "AbortError"));
+            },
+            { once: true },
+          );
+        });
+      }
+      return capturingFetch(posts)(input, init);
+    };
+    const pa = analytics({ fetchImpl, allowed: () => allowed });
+    pa.track("project_created", { draft: true });
+    const inflight = pa.flush();
+    await firstStartedP;
+    pa.dropPending();
+    allowed = false;
+    releaseFirst(new Error("failed"));
+    await inflight;
+    allowed = true;
+    pa.track("ai_run", { agentId: "claude" });
+    await pa.flush();
+    expect(posts).toHaveLength(1);
+    expect(posts[0]!.events.map((e) => e.event)).toEqual(["ai_run"]);
+  });
+
+  test("last-active is persisted only when app.active is queued", () => {
+    const denied = memoryStore({ product_analytics_install_id: INSTALL_UUID });
+    analytics({ store: denied, allowed: () => false }).start();
+    expect(denied.readRaw("product_analytics_last_active_at")).toBeUndefined();
+
+    const killed = memoryStore({ product_analytics_install_id: INSTALL_UUID });
+    analytics({
+      store: killed,
+      env: { FABDESK_TELEMETRY_ENABLED: "false" },
+    }).start();
+    expect(killed.readRaw("product_analytics_last_active_at")).toBeUndefined();
+
+    const queued = memoryStore({ product_analytics_install_id: INSTALL_UUID });
+    analytics({ store: queued }).start();
+    expect(queued.readRaw("product_analytics_last_active_at")).toBe("2026-01-15T12:00:00.000Z");
+  });
+
+  test("posts go through FabplaneClient with Accept and no Authorization", async () => {
+    const captured: { url: string; accept: string | null; authorization: string | null }[] = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const request = new Request(input, init);
+      captured.push({
+        url: request.url,
+        accept: request.headers.get("accept"),
+        authorization: request.headers.get("authorization"),
+      });
+      return new Response(JSON.stringify({ accepted: 1 }), {
+        status: 202,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const pa = analytics({
+      apiOrigin: "https://api.fabplane.com/",
+      fetchImpl,
+    });
+    pa.track("app_open");
+    await pa.flush();
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.url).toBe("https://api.fabplane.com/v1/telemetry/events");
+    expect(captured[0]!.accept).toBe("application/json");
+    expect(captured[0]!.authorization).toBeNull();
   });
 });
