@@ -25,21 +25,16 @@ import {
 
 const servers: Array<{ stop(): void }> = [];
 
-// Bun runs the directory's "route" fixture as the TraceMaker executable's subcommand.
-async function routeFixture(dir: string): Promise<void> {
-  const wrapper = pathToFileURL(join(import.meta.dir, "../src/routers/tracemaker.ts")).href;
-  const driver = `
-    import { runTraceMaker } from ${JSON.stringify(wrapper)};
-    await runTraceMaker({
-      binary: process.execPath, snapshotDir: process.cwd(),
-      timeoutMs: 5000, signal: AbortSignal.timeout(5000),
-    });
-  `;
-  const child = Bun.spawn([process.execPath, "-e", driver], {
-    cwd: dir, windowsHide: true, stdout: "ignore", stderr: "pipe",
+async function routeFixture(dir: string, lock?: "release" | "hold" | "cancel"): Promise<{ elapsedMs: number; wallMs: number }> {
+  const driver = join(import.meta.dir, "fixtures", "tracemaker-run.ts");
+  const child = Bun.spawn([process.execPath, driver, ...(lock ? [lock] : [])], {
+    cwd: dir, windowsHide: true, stdout: "pipe", stderr: "pipe",
   });
-  const [code, error] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+  const [code, output, error] = await Promise.all([
+    child.exited, new Response(child.stdout).text(), new Response(child.stderr).text(),
+  ]);
   if (code !== 0) throw new Error(error);
+  return JSON.parse(output);
 }
 
 test("TraceMaker can finish routing after writing 32 MiB to stdout", async () => {
@@ -88,6 +83,35 @@ test("TraceMaker retries only publish fresh routed output, including on partial 
     }
     const outputs = (await readFile(join(dir, "outputs"), "utf8")).trim().split("\n");
     expect(new Set(outputs).size).toBe(4);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 15_000);
+
+test.skipIf(process.platform !== "win32")("TraceMaker retries a locked Windows save and preserves the board on cancellation or persistent locks", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "fabdesk-locked-tracemaker-"));
+  const board = join(dir, "board.kicad_pcb");
+  const marker = join(dir, "router-exited");
+  try {
+    await mkdir(join(dir, "tracemaker"));
+    await writeFile(join(dir, "tracemaker", "routed.kicad_pcb"), "stale board");
+    await writeFile(join(dir, "route"), `
+      import { writeFileSync } from "node:fs";
+      writeFileSync(process.argv[process.argv.indexOf("-o") + 1], "fresh board");
+      process.on("exit", () => writeFileSync("router-exited", "ready"));
+    `);
+    await writeFile(board, "input board");
+    const result = await routeFixture(dir, "release");
+    expect(await readFile(board, "utf8")).toBe("fresh board");
+    expect(result.wallMs - result.elapsedMs).toBeGreaterThan(50);
+
+    for (const mode of ["cancel", "hold"] as const) {
+      await rm(marker);
+      await writeFile(board, "edited board");
+      await expect(routeFixture(dir, mode)).rejects.toThrow(mode === "cancel" ? /TraceMaker cancelled/ : /EPERM|EBUSY|EACCES/);
+      expect(await readFile(marker, "utf8")).toBe("ready");
+      expect(await readFile(board, "utf8")).toBe("edited board");
+    }
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -177,17 +201,21 @@ describe("parseTraceMakerVersion / probeTraceMakerCliVersion", () => {
     }
   });
 
-  test("reads `tracemaker 0.9.0` and ignores a failing --version", async () => {
+  test("reads the version subcommand and ignores a CLI usage error", async () => {
     expect(parseTraceMakerVersion("tracemaker 0.9.0\n")).toBe("0.9.0");
     expect(parseTraceMakerVersion("A subcommand is required")).toBeNull();
     const dir = await mkdtemp(join(tmpdir(), "fabdesk-tm-ver-"));
-    const bin = join(dir, "tracemaker");
-    await writeFile(
-      bin,
-      '#!/bin/sh\nif [ "$1" = "version" ]; then echo "tracemaker 0.9.0"; exit 0; fi\necho "A subcommand is required" >&2; exit 2\n',
-    );
-    await chmod(bin, 0o755);
-    expect(probeTraceMakerCliVersion(bin)).toBe("0.9.0");
+    try {
+      await writeFile(join(dir, "version"), 'console.log("tracemaker 0.9.0")');
+      const registry = pathToFileURL(join(import.meta.dir, "../src/routers/registry.ts")).href;
+      const driver = `import { probeTraceMakerCliVersion } from ${JSON.stringify(registry)};
+        console.log(probeTraceMakerCliVersion(process.execPath));`;
+      const probe = Bun.spawnSync([process.execPath, "-e", driver], { cwd: dir, windowsHide: true });
+      expect(probe.exitCode).toBe(0);
+      expect(probe.stdout.toString().trim()).toBe("0.9.0");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 
