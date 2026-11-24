@@ -53,6 +53,7 @@ import {
   sentryUserFromAuth,
   setSentryUser,
 } from "./sentry";
+import { ProductAnalytics } from "./product-analytics";
 import { RunTelemetry } from "./run-telemetry";
 import { buildInfo } from "./build-info";
 import { ArchiveConsentRevokedError, UsageArchive } from "./usage-archive";
@@ -354,8 +355,45 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     emit: (e) => bus.emit(e),
   });
   archiveBearer = () => auth.token();
+  const productAnalytics = new ProductAnalytics({
+    apiOrigin: config.apiOrigin,
+    version: config.version,
+    store: store.settings,
+    allowed: () => hasArchiveConsent(),
+    identity: () => {
+      const state = auth.state();
+      const accountSubject =
+        state.mode === "fabplane" && state.status === "signed_in"
+          ? state.principal?.subject?.trim()
+          : undefined;
+      return {
+        authMode: auth.mode,
+        ...(accountSubject ? { accountSubject } : {}),
+      };
+    },
+  });
+  const createProject = projects.create.bind(projects);
+  projects.create = async (name, parentDirectory, draft = false) => {
+    const created = await createProject(name, parentDirectory, draft);
+    productAnalytics.track("project_created", draft ? { draft: true } : {});
+    return created;
+  };
+  const unsubscribeProductAnalytics = bus.subscribe(
+    ["agent.started", "agent.tool_use"],
+    (events) => {
+      for (const ev of events) {
+        if (ev.event.topic === "agent.started") {
+          productAnalytics.track("ai_run", { agentId: ev.event.agentId });
+        } else if (ev.event.topic === "agent.tool_use") {
+          const exportTool = ev.event.name.replace(/^mcp__.+?__/, "").replace(/^functions\./, "");
+          if (exportTool.startsWith("export_")) productAnalytics.track("export", { exportTool });
+        }
+      }
+    },
+  );
   // In the background: a large history over a slow link must not hold the daemon's startup.
   if (hasArchiveConsent()) void startArchiveBackfill();
+  productAnalytics.start();
   if (auth.mode === "local") logger.warn("running in LOCAL auth mode");
   // Sentry user = principal id + handle (never email) while signed in; cleared on logout.
   setSentryUser(sentryUserFromAuth(auth.state()));
@@ -623,6 +661,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       if (!consent && lastArchiveConsent) {
         cancelBackfillRetry();
         for (const archive of archives) archive.cancelPending();
+        productAnalytics.dropPending();
       }
       lastArchiveConsent = consent;
     },
@@ -855,6 +894,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       unsubscribeAuth();
       unsubscribeAuthRelay();
       unsubscribeCloud();
+      unsubscribeProductAnalytics();
       relay.stop();
       notifier.stop();
       runs.abortAll();
@@ -879,6 +919,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       cancelBackfillRetry();
       for (const archive of archives) archive.close();
       await telemetry.shutdown();
+      await productAnalytics.flush();
       await backfillTask;
       await Promise.allSettled([...archiveTasks]);
       store.close();
