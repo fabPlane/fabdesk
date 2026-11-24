@@ -7,6 +7,7 @@ export * from "./board-history";
 export * from "./part-links";
 export * from "./tools/index";
 export * from "./templates/viagrid-9055";
+export * from "./photo";
 export * from "./adapters/mcp";
 export * from "./adapters/http";
 export * from "./adapters/agent-docs";

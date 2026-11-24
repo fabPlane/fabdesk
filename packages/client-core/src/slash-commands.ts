@@ -20,6 +20,11 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     usage: "/finish-it",
     hint: "Let the agent finish schematic, place, route and verify without step-by-step prompts",
   },
+  {
+    name: "photo",
+    usage: "/photo [request]",
+    hint: "Draft an editable board from photos in this chat or sketches/",
+  },
 ];
 
 function partsPrompt(request: string): string {
@@ -31,6 +36,20 @@ function partsPrompt(request: string): string {
     request
       ? `Request: ${request}`
       : "Request: search the off-board library for the hardware this project needs and add it so the BOM lists it next to the board parts.",
+  ].join("\n");
+}
+
+function photoPrompt(request: string): string {
+  return [
+    "Use the fabdesk core tools photo_analyze and photo_to_project.",
+    "1) Copy any attached photos into sketches/ if they are not already there.",
+    "2) Call photo_analyze with those paths and a what-I-see list (you can read the photos yourself and pass items).",
+    "3) Show the user the table and scale assumption, wait for corrections, then call photo_to_project.",
+    "Do not copy traces pixel-by-pixel. Draft a working functional equivalent and say so.",
+    "If the photos look like a known open-source design, mention attribution and never claim the draft is that design.",
+    request
+      ? `Request: ${request}`
+      : "Request: draft a board from the attached or sketched photos.",
   ].join("\n");
 }
 
@@ -63,6 +82,8 @@ export function expandSlashCommand(text: string): string | null {
       return shoppingListPrompt(rest);
     case "finish-it":
       return null;
+    case "photo":
+      return photoPrompt(rest);
     default:
       return null;
   }

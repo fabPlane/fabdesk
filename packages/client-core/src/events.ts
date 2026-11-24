@@ -27,6 +27,7 @@ export const EVENT_TOPICS = [
   "auth.*",
   "core.*",
   "finish_it.*",
+  "photo.*",
 ];
 
 /**
@@ -428,6 +429,20 @@ export function handleCoreEvent(event: CoreEvent, ctx: HandlerCtx): void {
       void qc.invalidateQueries({ queryKey: ["threads"] });
       void qc.invalidateQueries({ queryKey: ["thread", event.session.threadId] });
       void qc.invalidateQueries({ queryKey: messagesKey(event.session.threadId) });
+      break;
+    case "photo.started":
+    case "photo.progress":
+    case "photo.done":
+    case "photo.failed":
+      qc.setQueryData(["photo", event.session.projectId], (prev: { session?: unknown } | undefined) => ({
+        session: event.session,
+        sighting: prev && "sighting" in prev ? prev.sighting : null,
+        intent: prev && "intent" in prev ? prev.intent : null,
+        draft: prev && "draft" in prev ? prev.draft : null,
+      }));
+      void qc.invalidateQueries({ queryKey: ["photo", event.session.projectId] });
+      void qc.invalidateQueries({ queryKey: ["file", event.session.projectId] });
+      void qc.invalidateQueries({ queryKey: ["project", event.session.projectId] });
       break;
     default:
       break;

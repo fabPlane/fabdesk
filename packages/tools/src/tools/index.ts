@@ -100,6 +100,7 @@ export * from "./app";
 export * from "./shopping";
 export * from "./cad";
 export * from "./spatial";
+export * from "./photo";
 
 export * from "./task-checkpoint";
 

@@ -94,6 +94,39 @@ describe("CoreClient board comments", () => {
   });
 });
 
+describe("CoreClient photo", () => {
+  test("encodes the project id on get/analyze/continue/sighting", async () => {
+    const requested: string[] = [];
+    const client = new CoreClient({
+      baseUrl: "http://127.0.0.1:47831",
+      token: "tok",
+      fetch: async (input, init) => {
+        requested.push(`${init?.method ?? "GET"} ${input}`);
+        return Response.json({ session: null, sighting: null, intent: null, draft: null });
+      },
+    });
+    await client.getPhoto("project/one");
+    await client.analyzePhoto("project/one", { photos: ["sketches/front.png"] });
+    await client.continuePhoto("project/one", { acceptSighting: true });
+    await client.savePhotoSighting("project/one", {
+      schema: 1,
+      photos: [{ path: "sketches/front.png", side: "front", widthPx: 10, heightPx: 10 }],
+      items: [],
+      outline: { polygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }], source: "bbox" },
+      scale: { method: "unscaled", assumedMmPerPx: 0.2, boardWidthMm: 2, boardHeightMm: 2, note: "n", confidence: 0.2 },
+      mountingHoles: [],
+      notes: [],
+      equivalentDisclaimer: "equivalent",
+    });
+    expect(requested).toEqual([
+      "GET http://127.0.0.1:47831/projects/project%2Fone/photo",
+      "POST http://127.0.0.1:47831/projects/project%2Fone/photo/analyze",
+      "POST http://127.0.0.1:47831/projects/project%2Fone/photo/continue",
+      "PUT http://127.0.0.1:47831/projects/project%2Fone/photo/sighting",
+    ]);
+  });
+});
+
 describe("CoreClient finish-it", () => {
   test("encodes the project id on start/stop/get", async () => {
     const requested: string[] = [];

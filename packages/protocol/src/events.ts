@@ -3,6 +3,7 @@ import { SchematicFocus } from "./schematic-focus";
 import { WorkspaceContext } from "./workspace-context";
 import { z } from "zod/v4";
 import { FinishItMilestoneId, FinishItSession } from "./finish-it";
+import { PhotoPipelineSession, PhotoPipelineStepId } from "./photo";
 import { RouteFrame, RouteMeta, RouteResult, RouteStatic } from "./route-frames";
 
 export const AgentId = z.enum(["claude", "codex", "cursor", "grok"]);
@@ -283,6 +284,29 @@ export const CoreEvent = z.discriminatedUnion("topic", [
     ...base,
     topic: z.literal("finish_it.failed"),
     session: FinishItSession,
+    error: z.string(),
+  }),
+  z.object({
+    ...base,
+    topic: z.literal("photo.started"),
+    session: PhotoPipelineSession,
+  }),
+  z.object({
+    ...base,
+    topic: z.literal("photo.progress"),
+    session: PhotoPipelineSession,
+    step: PhotoPipelineStepId.optional(),
+    note: z.string().optional(),
+  }),
+  z.object({
+    ...base,
+    topic: z.literal("photo.done"),
+    session: PhotoPipelineSession,
+  }),
+  z.object({
+    ...base,
+    topic: z.literal("photo.failed"),
+    session: PhotoPipelineSession,
     error: z.string(),
   }),
 ]);

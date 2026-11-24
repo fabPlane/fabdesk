@@ -1,6 +1,7 @@
-import type { FinishItSession,Message,Thread } from "@fabdesk/protocol";
+import { describe, expect, test } from "bun:test";
+import type { FinishItSession, Message, PhotoPipelineSession, Thread } from "@fabdesk/protocol";
+import { emptyPhotoSteps } from "@fabdesk/protocol";
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
-import { describe,expect,test } from "bun:test";
 import { CoreHttpError, type CoreClient } from "./CoreClient";
 import {
 appendDelta,
@@ -515,6 +516,29 @@ describe("finish_it events", () => {
   });
 });
 
+describe("photo events", () => {
+  test("progress writes the session into the photo query cache", () => {
+    const qc = new QueryClient();
+    const session: PhotoPipelineSession = {
+      id: "ph_1",
+      projectId: "p1",
+      status: "running",
+      currentStep: "infer",
+      steps: emptyPhotoSteps(),
+      error: null,
+      startedAt: "2026-11-02T00:00:00.000Z",
+      endedAt: null,
+    };
+    handleCoreEvent(
+      { ts: 1, topic: "photo.progress", session, step: "infer", note: "blocks" },
+      { qc, client: {} as CoreClient },
+    );
+    expect(qc.getQueryData<{ session: PhotoPipelineSession }>(["photo", "p1"])?.session).toEqual(session);
+    expect(qc.getQueryState(["photo", "p1"])?.isInvalidated).toBe(true);
+  });
+});
+
+describe("auth events", () => {
 test("an auth event supersedes an older in-flight status snapshot", async () => {
   const qc = new QueryClient();
   let finish!: (value: import('@fabdesk/protocol').AuthState) => void;
@@ -526,6 +550,7 @@ test("an auth event supersedes an older in-flight status snapshot", async () => 
   await pending;
   expect(qc.getQueryData<import('@fabdesk/protocol').AuthState>(['auth'])).toEqual(next);
   qc.clear();
+});
 });
 
 describe("routing ownership refresh", () => {

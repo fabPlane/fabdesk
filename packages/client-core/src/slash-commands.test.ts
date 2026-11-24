@@ -29,11 +29,21 @@ describe("slash commands", () => {
 
   test("suggestions while typing the command name", () => {
     expect(slashSuggestions("/sh").map((c) => c.name)).toEqual(["shopping-list"]);
-    expect(slashSuggestions("/").map((c) => c.name)).toEqual(["parts", "shopping-list", "finish-it"]);
+    expect(slashSuggestions("/").map((c) => c.name)).toEqual(["parts", "shopping-list", "finish-it", "photo"]);
     expect(slashSuggestions("/pa").map((c) => c.name)).toEqual(["parts"]);
     expect(slashSuggestions("/shopping-list x")).toEqual([]);
     expect(slashSuggestions("hello")).toEqual([]);
     expect(slashSuggestions("/fin").map((c) => c.name)).toEqual(["finish-it"]);
+  });
+});
+
+describe("photo command", () => {
+  test("expands into photo_analyze / photo_to_project instructions", () => {
+    const out = expandSlashCommand("/photo keep the USB-C and the LED")!;
+    expect(out).toContain("photo_analyze");
+    expect(out).toContain("photo_to_project");
+    expect(out).toContain("functional equivalent");
+    expect(out).toContain("Request: keep the USB-C and the LED");
   });
 });
 

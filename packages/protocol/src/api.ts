@@ -12,6 +12,14 @@ import {
   type ApprovalRequestedEvent,
   type InputRequestedEvent,
 } from "./events";
+import {
+  CircuitIntent,
+  KnownScalePart,
+  PhotoPipelineSession,
+  PhotoSide,
+  PhotoSighting,
+  SightedItem,
+} from "./photo";
 
 export const ProjectId = z.string().min(1);
 
@@ -47,6 +55,13 @@ export const BoardSettings = z.object({
   template: BoardTemplate.optional(),
 });
 
+export const ProjectPhotoSource = z.object({
+  kind: z.literal("photo"),
+  photos: z.array(z.string()).default([]),
+  startedAt: z.string().optional(),
+});
+export type ProjectPhotoSource = z.infer<typeof ProjectPhotoSource>;
+
 export const ProjectManifest = z.object({
   schema: z.literal(1),
   id: ProjectId,
@@ -71,6 +86,7 @@ export const ProjectManifest = z.object({
   router: z.enum(["fab_router", "capacity", "freerouting", "tracemaker"]).optional(),
   agent: z.object({ lastUsed: AgentId.optional() }).default({}),
   allowedDrcWarnings: z.array(z.string()).default([]),
+  source: ProjectPhotoSource.optional(),
 });
 export type ProjectManifest = z.infer<typeof ProjectManifest>;
 
@@ -507,3 +523,37 @@ export const StartFinishIt = z.object({
   model: z.string().optional(),
 });
 export type StartFinishIt = z.infer<typeof StartFinishIt>;
+
+const PhotoScaleHint = {
+  knownDimensionMm: z.number().positive().optional(),
+  knownDimensionOf: z.enum(["width", "height", "diagonal", "part"]).optional(),
+  knownPart: KnownScalePart.optional(),
+};
+
+export const PhotoAnalyzeRequest = z.object({
+  photos: z.array(z.string().min(1)).min(1).max(8),
+  description: z.string().max(4000).optional(),
+  sides: z.array(PhotoSide).optional(),
+  items: z.array(SightedItem).optional(),
+  openSourceSuspected: z.boolean().optional(),
+  ...PhotoScaleHint,
+});
+export type PhotoAnalyzeRequest = z.infer<typeof PhotoAnalyzeRequest>;
+
+export const PhotoContinueRequest = z.object({
+  photos: z.array(z.string().min(1)).max(8).optional(),
+  description: z.string().max(4000).optional(),
+  items: z.array(SightedItem).optional(),
+  acceptSighting: z.boolean().optional(),
+  openSourceSuspected: z.boolean().optional(),
+  ...PhotoScaleHint,
+});
+export type PhotoContinueRequest = z.infer<typeof PhotoContinueRequest>;
+
+export const PhotoState = z.object({
+  session: PhotoPipelineSession.nullable(),
+  sighting: PhotoSighting.nullable(),
+  intent: CircuitIntent.nullable(),
+  draft: z.unknown().nullable(),
+});
+export type PhotoState = z.infer<typeof PhotoState>;

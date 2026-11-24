@@ -1275,6 +1275,11 @@ export interface CoreServices {
   /** Install-on-demand autorouter catalog (Settings → Routers). */
   routers?: RouterRegistry;
   /**
+   * Optional vision pass for photo_analyze. Tests inject a fake provider.
+   * When omitted, photo tools use the heuristic outline/scale provider.
+   */
+  vision?: import("./photo/vision").VisionProvider;
+  /**
    * Run a heavy board computation in a child process of the core (its own heap, killable, the event loop stays free).
    * Absent (tests, embedded hosts), tools run the computation in-process.
    */

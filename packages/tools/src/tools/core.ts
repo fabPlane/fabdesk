@@ -39,6 +39,7 @@ import { formatLastRelease, readProjectStatusEvidence } from "./project-status-e
 import { ROUTE_RUN_DEFAULT_WAIT_MS, ROUTE_RUN_MAX_WAIT_MS, runRoute, RouteRunArgs } from "./route";
 import { inspectProjectBoardSources } from "../assembly";
 import { compilerSourceHelp, formatCompilerSourceHelp } from "./compiler-source-guide";
+import { photoTools } from "./photo";
 
 export const load_toolset = defineTool({
   name: "load_toolset",
@@ -1079,5 +1080,6 @@ export const coreTools = [
   route_run,
   verify_drc,
   render_board,
+  ...photoTools,
 ];
 export { table };
