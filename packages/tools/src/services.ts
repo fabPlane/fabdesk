@@ -677,7 +677,7 @@ export type GateResult = { pass: boolean; reasons: string[]; newWarningSignature
 
 export interface KicadService {
   /** settings → KICAD_CLI env → bundled FabPlane KiCad → PATH / known locations; null when none work. */
-  resolveCli(): Promise<KicadCli | null>;
+  resolveCli(signal?: AbortSignal): Promise<KicadCli | null>;
   runDrc(
     cli: KicadCli,
     opts: {

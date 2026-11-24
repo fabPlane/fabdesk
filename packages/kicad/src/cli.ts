@@ -146,8 +146,9 @@ export function kicadVersionAtLeast(actual: string, required: string): boolean {
 
 export async function findKicadCli(
   explicit?: string,
-  opts: { extraLocations?: string[]; trace?: KicadInvocationTracer; minimumVersion?: string } = {},
+  opts: { extraLocations?: string[]; trace?: KicadInvocationTracer; minimumVersion?: string; signal?: AbortSignal } = {},
 ): Promise<KicadCli | null> {
+  opts.signal?.throwIfAborted();
   const candidates = [
     explicit,
     process.env.KICAD_CLI,
@@ -166,8 +167,9 @@ export async function findKicadCli(
       const result = await runKicadCli(
         { path, version: "", ...(opts.trace ? { trace: opts.trace } : {}) },
         ["version"],
-        { tolerateExit: true },
+        { tolerateExit: true, ...(opts.signal ? { signal: opts.signal } : {}) },
       );
+      opts.signal?.throwIfAborted();
       const version = result.stdout.trim().split("\n")[0]?.trim() ?? "";
       if (
         result.exitCode === 0 &&
@@ -176,6 +178,7 @@ export async function findKicadCli(
       )
         return { path, version, ...(opts.trace ? { trace: opts.trace } : {}) };
     } catch {
+      opts.signal?.throwIfAborted();
       // Try the next candidate.
     }
   }

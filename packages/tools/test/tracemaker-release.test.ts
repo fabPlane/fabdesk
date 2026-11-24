@@ -1,10 +1,11 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultRouterCatalog } from "../src/routers/catalog";
 import { createRouterRegistry, probeTraceMakerCliVersion } from "../src/routers/registry";
+import { runTraceMaker } from "../src/routers/tracemaker";
 import {
   TRACEMAKER_BINARY_RELEASE_REPO,
   TRACEMAKER_BINARY_RELEASE_TAG,
@@ -72,6 +73,23 @@ const SOURCE = {
 };
 
 describe("parseTraceMakerVersion / probeTraceMakerCliVersion", () => {
+  test("hides the router status probe and routing process", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "fabdesk-tracemaker-console-"));
+    const probe = spyOn(Bun, "spawnSync");
+    const route = spyOn(Bun, "spawn");
+    const missing = join(dir, "missing-tracemaker");
+    try {
+      expect(probeTraceMakerCliVersion(missing)).toBeNull();
+      await expect(runTraceMaker({ binary: missing, snapshotDir: dir, timeoutMs: 1000 })).rejects.toThrow();
+      expect(probe).toHaveBeenCalledWith(expect.objectContaining({ cmd: [missing, "version"], windowsHide: true }));
+      expect(route).toHaveBeenCalledWith(expect.objectContaining({ cmd: expect.arrayContaining([missing, "route"]), windowsHide: true }));
+    } finally {
+      probe.mockRestore();
+      route.mockRestore();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("reads `tracemaker 0.9.0` and ignores a failing --version", async () => {
     expect(parseTraceMakerVersion("tracemaker 0.9.0\n")).toBe("0.9.0");
     expect(parseTraceMakerVersion("A subcommand is required")).toBeNull();

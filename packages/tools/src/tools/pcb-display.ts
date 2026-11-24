@@ -31,7 +31,7 @@ export async function boardPreviewCli(ctx: ToolContext, text: string) {
 /** Advisory only: the saving application version is not a file-format compatibility guarantee. */
 export async function pcbModelReadiness(ctx: ToolContext, paths: string[]) {
   const project = ctx.requireProject();
-  const cli = await ctx.services.kicad.resolveCli();
+  const cli = await ctx.services.kicad.resolveCli(ctx.signal);
   const boards = await Promise.all(
     paths.map(async (path) => {
       if (!path.toLowerCase().endsWith(".kicad_pcb"))

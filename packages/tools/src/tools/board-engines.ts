@@ -28,7 +28,7 @@ async function status(ctx: ToolContext) {
   const routers = ctx.services.routers;
   if (!routers) throw new ToolError("this host has no router registry (engines are configured by env only)", "unavailable");
   const snaps = routers.list().routers.filter((r) => (ENGINES as readonly string[]).includes(r.id));
-  const cli = await ctx.services.kicad.resolveCli().catch(() => null);
+  const cli = await ctx.services.kicad.resolveCli(ctx.signal).catch(() => null);
   const auto = ctx.services.settings().autoInstallEngines !== false;
   const text = [
     ...snaps.map(row),

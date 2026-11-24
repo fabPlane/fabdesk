@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession } from "../types";
 import { codexAdapter, codexEnv } from "./codex";
+import { killTree } from "../process";
 
 const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform")!;
 let dir: string;
@@ -42,6 +43,34 @@ function seed(): string {
   fs.writeFileSync(join(source, "config.toml"), '[mcp_servers.foreign]\ncommand="foreign"\n');
   return source;
 }
+
+test("desktop chat hides its inventory, capability check, transports and cancellation helper", () => {
+  seed();
+  const bin = join(dir, "fixture-codex.exe");
+  fs.writeFileSync(bin, "");
+  const output = (value: string) => Bun.spawnSync([process.execPath, "-e", `console.log(${JSON.stringify(value)})`], {
+    windowsHide: true, stdout: "pipe", stderr: "pipe",
+  });
+  const inventory = output("[]"), help = output("--no-daemon");
+  const sync = spyOn(Bun, "spawnSync").mockReturnValue(inventory).mockReturnValueOnce(inventory).mockReturnValueOnce(help);
+  const spawn = spyOn(Bun, "spawn").mockImplementation(() => { throw new Error("fixture launch"); });
+  try {
+    const chat = { ...session(), binaryPath: bin };
+    expect(() => codexAdapter.run({ ...chat, requestInput: async () => "" })).toThrow("fixture launch");
+    codexAdapter.run(chat);
+    // The sync launcher is stubbed. Use a PID outside the Windows DWORD range as well.
+    killTree(2 ** 32, "SIGTERM");
+    const hidden = expect.objectContaining({ windowsHide: true });
+    expect(sync).toHaveBeenCalledWith(expect.arrayContaining([bin, "mcp", "list"]), hidden);
+    expect(sync).toHaveBeenCalledWith([bin, "--help"], hidden);
+    expect(spawn).toHaveBeenCalledWith(expect.arrayContaining([bin, "app-server", "--stdio"]), hidden);
+    expect(spawn).toHaveBeenCalledWith(expect.arrayContaining([bin, "exec"]), hidden);
+    expect(sync).toHaveBeenCalledWith(["taskkill", "/T", "/F", "/PID", String(2 ** 32)], hidden);
+  } finally {
+    sync.mockRestore();
+    spawn.mockRestore();
+  }
+});
 
 test("Windows EPERM uses the live home without a credential snapshot and warns", () => {
   const source = seed();

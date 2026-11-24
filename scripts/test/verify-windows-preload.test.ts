@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-test.skipIf(!Bun.which("7z"))("a flat Windows installer requires a nonempty PCB preload in its own resources tree", () => {
+test.skipIf(!Bun.which("7z"))("a flat Windows installer requires the build's PCB preload in its own resources tree", () => {
   const root = mkdtempSync(join(tmpdir(), "windows-preload-verifier-"));
   try {
     const installers = join(root, "installers");
@@ -28,7 +28,12 @@ test.skipIf(!Bun.which("7z"))("a flat Windows installer requires a nonempty PCB 
       expect(result.exitCode).toBe(1);
       expect(result.stderr.toString()).toContain("PCB console preload is missing or empty");
     }
-    writeFileSync(preload, "// fixture");
+    writeFileSync(preload, "const tools = [");
+    const broken = verify();
+    expect(broken.exitCode).toBe(1);
+    expect(broken.stderr.toString()).toContain("PCB console preload differs from the FabDesk build");
+    const source = readFileSync(resolve(import.meta.dir, "../../apps/desktop/scripts/fabdesk-hide-pcb-console.cjs"), "utf8");
+    writeFileSync(preload, source.replace(/\r?\n/g, "\r\n"));
     expect(verify().exitCode).toBe(0);
   } finally {
     rmSync(root, { recursive: true, force: true });

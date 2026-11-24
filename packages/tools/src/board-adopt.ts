@@ -201,7 +201,7 @@ export async function adoptCandidate(ctx: ToolContext, input: { candidate: strin
   if (!target.endsWith(".kicad_pcb") || !(await stat(target).catch(() => null))?.isFile())
     throw new ToolError(`target board not found in the project: ${input.board}`, "not_found");
   if (resolve(candidate) === resolve(target)) throw new ToolError("candidate is the target board", "invalid_args");
-  const cli = await ctx.services.kicad.resolveCli();
+  const cli = await ctx.services.kicad.resolveCli(ctx.signal);
   if (!cli) throw new ToolError("no kicad-cli found (Settings → KiCad CLI)", "unavailable");
   const route = ctx.services.routeRuns.latest(project.id);
   if (route && ["queued", "running", "cancel_requested", "cancelling"].includes(route.state))

@@ -30,7 +30,7 @@ function supportsStandalone(bin: string, env: Record<string, string>): boolean {
   catch { return false; }
   const cached = standaloneCapabilities.get(path);
   if (cached?.stamp === stamp) return cached.supported;
-  const help = Bun.spawnSync([bin, "--help"], { env, stdout: "pipe", stderr: "ignore", timeout: 5_000 });
+  const help = Bun.spawnSync([bin, "--help"], { env, windowsHide: true, stdout: "pipe", stderr: "ignore", timeout: 5_000 });
   const supported = help.exitCode === 0 && /(?:^|\s)--no-daemon(?:\s|$)/m.test(help.stdout.toString());
   if (help.exitCode === 0) standaloneCapabilities.set(path, { stamp, supported });
   return supported;
@@ -269,6 +269,7 @@ export const codexAdapter: AgentAdapter = {
     const inventory = Bun.spawnSync([bin, "mcp", "list", "--json", ...ISOLATION_CONFIG], {
       cwd: session.cwd,
       env,
+      windowsHide: true,
       stdout: "pipe",
       stderr: "pipe",
       timeout: 10_000,

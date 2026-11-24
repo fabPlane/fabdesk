@@ -63,6 +63,24 @@ test("background KiCad calls request a hidden Windows console and capture diagno
 });
 
 describe("findKicadCli", () => {
+  test("cancelling discovery stops the active version probe and skips fallback binaries", async () => {
+    const controller = new AbortController();
+    const reason = new Error("cancelled by caller");
+    const probes: Promise<unknown>[] = [];
+    const lookup = findKicadCli(process.execPath, {
+      signal: controller.signal,
+      trace: (_input, invoke) => {
+        const probe = invoke();
+        probes.push(probe);
+        controller.abort(reason);
+        return probe;
+      },
+    });
+    await expect(lookup).rejects.toBe(reason);
+    expect(probes).toHaveLength(1);
+    await expect(probes[0]).rejects.toThrow("version aborted");
+  });
+
   test.skipIf(!hasCli)("finds the local install and reads its version", () => {
     expect(cli?.path).toMatch(/kicad-cli/);
     expect(cli?.version).toMatch(/^\d+\.\d+/);

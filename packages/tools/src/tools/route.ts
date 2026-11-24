@@ -555,7 +555,7 @@ async function applyCandidate(
     };
     const statsPath = p(project, PROJECT_FILES.reports, "stats.json");
     await rm(statsPath, { force: true });
-    const cli = await ctx.services.kicad.resolveCli();
+    const cli = await ctx.services.kicad.resolveCli(ctx.signal);
     if (cli)
       await ctx.services.kicad
         .boardStats(cli, { board: boardPath, scratchFile: statsPath })
@@ -664,7 +664,7 @@ async function executeRoute(
     throwIfAborted(signal);
     const beforeInventory = await boardInventory(ctx, snapshotDir);
     const startingCopper = await readCopper(snapshotDir);
-    const drcCli = await ctx.services.kicad.resolveCli();
+    const drcCli = await ctx.services.kicad.resolveCli(ctx.signal);
     if (!drcCli)
       throw new ToolError(
         "Routing requires native DRC before candidate application; KiCad CLI is unavailable",

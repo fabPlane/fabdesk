@@ -173,7 +173,7 @@ export function traceMakerPlacerNear(tracemaker: string, root?: string | null): 
 export function probeTraceMakerCliVersion(path: string): string | null {
   for (const args of [["version"], ["--version"]] as const) {
     try {
-      const out = spawnSync(path, args, { timeout: 1500, encoding: "utf8" });
+      const out = spawnSync(path, args, { timeout: 1500, encoding: "utf8", windowsHide: true });
       const parsed = parseTraceMakerVersion(`${out.stdout ?? ""} ${out.stderr ?? ""}`);
       if (parsed) return parsed;
     } catch {
@@ -846,7 +846,7 @@ function findNamedFile(
 }
 
 async function defaultSpawn(cmd: string, args: string[]): Promise<number> {
-  const proc = Bun.spawn([cmd, ...args], { stdout: "ignore", stderr: "pipe" });
+  const proc = Bun.spawn([cmd, ...args], { stdout: "ignore", stderr: "pipe", windowsHide: true });
   return proc.exited;
 }
 

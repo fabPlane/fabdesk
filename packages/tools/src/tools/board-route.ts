@@ -154,7 +154,7 @@ const routeHandler = durable("board_route", async (args: RouteArgs, ctx: ToolCon
         return { text: r.text, json: { action: "status", stage: "lastmile", ...r.json } };
       }
     }
-    const host = layoutHost(ctx, (await ctx.services.kicad.resolveCli())?.path ?? null);
+    const host = layoutHost(ctx, (await ctx.services.kicad.resolveCli(ctx.signal))?.path ?? null);
     if (args.action === "check" && (!st || args.refresh)) {
       let spec: LayoutSpec;
       let specPath: string;

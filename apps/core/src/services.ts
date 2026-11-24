@@ -90,13 +90,13 @@ function simService(settings: () => Settings): SimService {
 export async function createServices(
   deps: ServiceDeps,
 ): Promise<CoreServices & { dispose(): Promise<void> }> {
-  const resolveCli = async (): Promise<KicadCli | null> => {
+  const resolveCli = async (signal?: AbortSignal): Promise<KicadCli | null> => {
     const explicit = deps.settings().kicadCliPath ?? undefined;
     const trace = deps.telemetry
       ? (input: kicad.KicadInvocation, invoke: () => Promise<kicad.RunResult>) =>
           deps.telemetry!.traceKicadCli(input, invoke)
       : undefined;
-    return kicad.findKicadCli(explicit, { ...(trace ? { trace } : {}) });
+    return kicad.findKicadCli(explicit, { ...(trace ? { trace } : {}), ...(signal ? { signal } : {}) });
   };
 
   // One bridge client per configured URL; re-created when the setting changes.
