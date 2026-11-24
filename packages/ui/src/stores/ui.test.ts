@@ -7,6 +7,22 @@ function openProjectFromHome(store: ReturnType<typeof createUiStore>, projectId:
   expect(store.getState().setActiveProject(projectId)).toBe(true);
 }
 
+test("Studio material notes persist by lens and foil without replacing the operator’s stock", () => {
+  const memory = new Map<string, string>();
+  const storage = { getItem: (key: string) => memory.get(key) ?? null,
+    setItem: (key: string, value: string) => { memory.set(key, value); }, removeItem: (key: string) => { memory.delete(key); } };
+  const store = createUiStore(storage);
+  expect(store.getState().commarkerStock).toEqual({ lens: "150", foilUm: "35" });
+  expect(store.getState().commarkerMaterials).toEqual({});
+  store.getState().setComMarkerMaterial("150:35", { name: "Coupon A", note: "See log A" });
+  store.getState().setComMarkerMaterial("70:18", { name: "Coupon B", note: "" });
+  store.getState().setComMarkerStock({ lens: "70", foilUm: "18" });
+  const restored = createUiStore(storage);
+  expect(restored.getState().commarkerStock).toEqual({ lens: "70", foilUm: "18" });
+  restored.getState().setComMarkerMaterial("70:18", { name: "", note: "" });
+  expect(restored.getState().commarkerMaterials).toEqual({ "150:35": { name: "Coupon A", note: "See log A" } });
+});
+
 test("member comment navigation captures the source selector without aliasing it", () => {
   const store = createUiStore({ getItem: () => null, setItem() {}, removeItem() {} });
   openProjectFromHome(store, "project-a");

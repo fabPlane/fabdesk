@@ -139,6 +139,10 @@ export interface UiState {
   openProjectFile: (path: string) => void;
   stencilThicknessByProject: Record<string, number>;
   setStencilThickness: (projectId: string, thicknessMm: number) => void;
+  commarkerStock: { lens: "" | "70" | "150"; foilUm: string };
+  setComMarkerStock: (stock: UiState["commarkerStock"]) => void;
+  commarkerMaterials: Record<string, { name: string; note: string }>;
+  setComMarkerMaterial: (stockKey: string, profile: { name: string; note: string }) => void;
   drafts: Record<string, string>;
   draftBoardContexts: Record<string, { projectId: string; sourceKey: string; label: string; instruction: string }[]>;
   setDraftBoardContext: (key: string, context: { projectId: string; sourceKey: string; label: string; instruction: string } | null) => void;
@@ -427,6 +431,15 @@ export function createUiStore(storage?: StateStorage) {
   setStencilThickness: (projectId, thicknessMm) => set((s) => ({
     stencilThicknessByProject: { ...s.stencilThicknessByProject, [projectId]: stencilThicknessMm(thicknessMm) },
   })),
+  commarkerStock: { lens: "150", foilUm: "35" },
+  setComMarkerStock: commarkerStock => set({ commarkerStock }),
+  commarkerMaterials: {},
+  setComMarkerMaterial: (key, profile) => set(s => {
+    const profiles = { ...s.commarkerMaterials };
+    if (profile.name || profile.note) profiles[key] = profile;
+    else delete profiles[key];
+    return { commarkerMaterials: profiles };
+  }),
   drafts: {},
   draftBoardContexts: {},
   setDraftBoardContext: (key, context) => set(s => {
@@ -558,6 +571,8 @@ export function createUiStore(storage?: StateStorage) {
         sidebarListTab: s.sidebarListTab,
         boardTab: s.boardTab,
         stencilThicknessByProject: s.stencilThicknessByProject,
+        commarkerStock: s.commarkerStock,
+        commarkerMaterials: s.commarkerMaterials,
         drafts: s.drafts,
         draftBoardContexts: s.draftBoardContexts,
         attachments: s.attachments,

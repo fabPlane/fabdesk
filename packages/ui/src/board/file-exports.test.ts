@@ -11,6 +11,11 @@ test("the stencil choice is enabled only for the actual registered tool", () => 
   expect(fileExportChoices([{ name: "stencil_preview" }])).not.toContain("export_stencil");
 });
 
+test("Studio copper export requires the copper removal capability", () => {
+  expect(fileExportChoices([{ name: "export_commarker_copper" }])).toContain("export_commarker_copper");
+  expect(fileExportChoices([{ name: "export_laser_stencil" }])).not.toContain("export_commarker_copper");
+});
+
 test("the laser stencil choice is enabled only for export_laser_stencil", () => {
   expect(fileExportChoices([{ name: "export_laser_stencil" }])).toEqual([
     "export_laser_stencil",

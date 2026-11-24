@@ -179,6 +179,7 @@ export { inspectVideoInputRevision,videoInputsNeedReview,type VideoInputRevision
 export * from "./kept-output";
 
 export * from "./board-file-destination";
+export { prepareComMarkerArtwork } from "./commarker-export";
 export * from "./bom-origins";
 export * from "./diff-preview";
 export * from "./overview-images";

@@ -60,6 +60,33 @@ export const export_gerbers = defineTool({
 
 const DXF_DEFAULT_LAYERS = ["F.Cu", "B.Cu", "Edge.Cuts"];
 
+export const export_commarker_copper = defineTool({
+  name: "export_commarker_copper",
+  boardScoped: true,
+  toolset: "export",
+  title: "Export front copper for ComMarker Studio",
+  description: "Export a millimetre-scale filled SVG of the copper to remove, clipped to Edge.Cuts. Uses retained F.Cu from the saved PCB, including saved zone fills. Black is the area to engrave.",
+  inputSchema: { expectedSourceSha256: expectedPcbSource },
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  longRunning: true,
+  handler: async ({ expectedSourceSha256 }, ctx) => withPcbOutput(ctx, expectedSourceSha256, async (staged) => {
+    const project = staged.requireProject();
+    const cli = await requireKicad(staged);
+    const board = await requireBoard(project);
+    const sourceSha256 = createHash("sha256").update(await readFile(board)).digest("hex");
+    staged.progress(0.2, "Preparing front copper removal artwork");
+    const { svg, widthMm, heightMm } = await staged.services.kicad.copperRemovalArtwork(cli, {
+      board, scratchDir: project.dir, signal: staged.signal,
+    });
+    const relativePath = `exports/commarker/copper-${sourceSha256}.svg`;
+    const path = p(project, relativePath);
+    await writeAtomic(path, svg);
+    const svgSha256 = createHash("sha256").update(svg).digest("hex");
+    return ok(`Exported front copper removal artwork (${widthMm} × ${heightMm} mm) to ${relativePath}.`,
+      { path, relativePath, sourceSha256, svgSha256, widthMm, heightMm });
+  }),
+});
+
 export const export_dxf = defineTool({
   name: "export_dxf",
   boardScoped: true,
@@ -689,6 +716,7 @@ export const exportTools = [
   export_netlist,
   export_zip,
   export_dxf,
+  export_commarker_copper,
   silk_art,
   export_stencil,
   export_laser_stencil,

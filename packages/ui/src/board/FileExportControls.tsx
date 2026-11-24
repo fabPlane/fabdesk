@@ -1,5 +1,5 @@
 import { DisclosureSummary } from "../components/DisclosureSummary";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button, Select, Spinner } from "../components/ui";
 import { FileGlyph } from "./FileGlyph";
 import { cn } from "../util";
@@ -8,7 +8,8 @@ import { STENCIL_THICKNESSES_MM, DEFAULT_STENCIL_THICKNESS_MM } from "../stores/
 import { LaserStencilPresetPanel, type LaserStencilFormState } from "./LaserStencilPresetPanel";
 
 /** The existing file exporters share the same deliberate controls in Files and Outputs. */
-export function FileExportControls({ exportChoices, exportKind, setExportKind, thicknessMm, onThickness, laserForm, setLaserForm, busy, canExport, sourceNote, error, onExport, onClose, gerberPackage = false }: {
+export function FileExportControls({ exportChoices, exportKind, setExportKind, thicknessMm, onThickness, laserForm, setLaserForm, busy, canExport, sourceNote, error, onExport, onClose, gerberPackage = false, copperPanel }: {
+  copperPanel?: ReactNode;
   gerberPackage?: boolean;
   exportChoices: readonly ExportKind[]; exportKind: ExportKind; setExportKind: (kind: ExportKind) => void;
   thicknessMm: number; onThickness: (value: number) => void;
@@ -46,11 +47,11 @@ export function FileExportControls({ exportChoices, exportKind, setExportKind, t
           {exportKind === "export_laser_stencil" && <LaserStencilPresetPanel form={laserForm} onChange={setLaserForm} />}
         </fieldset>
         {error && <p role="alert" className="mt-3 break-words text-xs text-danger">{error}</p>}
-        <div className="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
+        {exportKind === "export_commarker_copper" ? copperPanel : <div className="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
           <p className="fd-export-source-note w-full text-xs text-muted" role="status">{sourceNote}</p>
           <span className="mr-auto text-[11px] text-muted">Saved under exports/</span>
           {onClose && <Button size="sm" variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>}
           <Button size="sm" variant="primary" disabled={busy || !canExport} onClick={onExport}>{busy ? <><Spinner /> Exporting…</> : gerberPackage && exportKind === "export_gerbers" ? "Create Gerber package" : EXPORTS[exportKind].action}</Button>
-        </div>
+        </div>}
   </div>;
 }

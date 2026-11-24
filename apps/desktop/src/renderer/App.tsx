@@ -57,6 +57,8 @@ const host: HostAdapter = withReleaseNotes(
         ...(bridge.platform === "darwin" ? { nativeSpeech: bridge.nativeSpeech } : {}),
         devBuild: bridge.devBuild,
         ...(typeof bridge.copyText === "function" ? { copyText: (text: string) => bridge.copyText(text) } : {}),
+        ...((bridge.platform === "win32" || bridge.platform === "darwin") && typeof bridge.openInComMarkerStudio === "function"
+          ? { openInComMarkerStudio: bridge.openInComMarkerStudio } : {}),
         openExternal: (url) => bridge.openExternal(url),
         openPath: (path) => bridge.openPath(path),
         ...(typeof bridge.pickDirectory === "function" ? { pickDirectory: () => bridge.pickDirectory() } : {}),

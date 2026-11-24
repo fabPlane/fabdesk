@@ -36,6 +36,7 @@ export interface FabdeskBridge extends CadRuntimeBridge {
   restartCore(): Promise<void>;
   onCoreStatus(cb: (info: CoreInfo) => void): () => void;
   copyText(text: string): Promise<void>;
+  openInComMarkerStudio: NonNullable<HostAdapter["openInComMarkerStudio"]>;
   openExternal(url: string): Promise<void>;
   openPath(path: string): Promise<void>;
   openLogs(): Promise<void>;

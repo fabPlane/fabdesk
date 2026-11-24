@@ -17,6 +17,7 @@ import { cn } from "../util";
 import { buildFileTree, fileAppearance, formatFileSize, type ExplorerNode } from "./file-explorer";
 import { FileGlyph } from "./FileGlyph";
 import { FileExportControls } from "./FileExportControls";
+import { ComMarkerStudioExport } from "./ComMarkerStudioExport";
 import { ManufacturingHandoff } from "./ManufacturingHandoff";
 import { OutputPreviewDialog } from "./OutputPreviewDialog";
 import { ExportCompletionDetails } from "./ExportCompletionDetails";
@@ -84,6 +85,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const [requestedExport, setExportKind] = useState<ExportKind>(exportFocus ? "export_gerbers" : "export_stencil");
   const [lastExport, setLastExport] = useState<ExportKind>(exportFocus ? "export_gerbers" : "export_stencil");
   const [packagePhase, setPackagePhase] = useState<string | null>(null);
+  const [copperBusy, setCopperBusy] = useState(false);
   const [packageError, setPackageError] = useState<string | null>(null);
   const [packageResult, setPackageResult] = useState<{ path: string; files: string[] } | null>(null);
   const [lastScope, setLastScope] = useState<string | null>(null);
@@ -93,7 +95,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const exportChoices: ExportKind[] = exportFocus ? ["export_gerbers", ...availableExports.filter(kind => kind !== "export_gerbers")] : availableExports;
   const exportKind = exportChoices.includes(requestedExport) ? requestedExport : "export_gerbers";
   useProjectExitGuard(projectId, packagePhase ? "The Gerber package sequence is running. Wait for its remaining export steps to finish." : null);
-  const busy = state.status === "running" || packagePhase !== null;
+  const busy = state.status === "running" || packagePhase !== null || copperBusy;
   const files = project.data?.files ?? [];
   const { assembly, prefix, board, row: source, ready: sourceReady } = outputSource;
   const scopeKey = `${prefix}:${board?.sourceId ?? "root"}:${board?.manifestSha256 ?? ""}`;
@@ -208,12 +210,14 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
           onChecks={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().setBoardTab("drc"); }}
           onOrder={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().setOrderFlowOpen(true); }} />}
         {assembly && sourceReady && <div className="fd-manufacturing-handoff"><h2>Review this board before ordering</h2><p>Exports use this selected source. They do not verify other boards, assembly connections or component stock.</p><Button size="sm" disabled={busy} onClick={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().setBoardTab("drc"); }}>Review board checks</Button></div>}
-        <FileExportControls {...exportControls} />
+        <FileExportControls {...exportControls} copperPanel={<ComMarkerStudioExport key={`${scopeKey}:${files.find(f => f.path === prefix + "board.kicad_pcb")?.mtime ?? ""}`}
+          projectId={projectId} prefix={prefix} {...(board ? { board } : {})} disabled={!canExport} sourceNote={sourceNote}
+          onBusy={setCopperBusy} onSaved={() => void project.refetch()} />} />
         <details className="fd-export-assembly-guide"><DisclosureSummary icon="checklist" label="What do I need for an assembled order?" /><div><p><strong>Bare PCB:</strong> the Gerber package contains copper layers and drill files.</p><p><strong>Assembled PCB:</strong> also prepare a bill of materials (BOM) with manufacturer part IDs and a component placement list (CPL / pick and place). Review polarity, rotations, stock and Basic / Extended status with your manufacturer.</p><p>The design BOM CSV is a reference list, not a manufacturer-specific upload. A fabrication ZIP only includes saved files; it does not convert or approve them.</p><div className="fd-manufacturing-actions"><Button size="sm" disabled={busy} onClick={() => { if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().setBoardTab("bom"); }}>Parts & BOM</Button>{exportChoices.includes("export_pos") && <Button size="sm" disabled={busy} onClick={() => setExportKind("export_pos")}>Choose placement export</Button>}<Button size="sm" variant="ghost" disabled={busy} onClick={() => askAboutSurface(assistantSurface, "Help me prepare an assembled board order. Review this selected board’s saved checks, BOM, placements and manufacturing exports. Explain what is still missing, verify supplier IDs and immediate assembly stock for the intended quantity, and flag any required Basic / Extended exceptions. Do not place an order, upload files or change the design without review.")}>Ask about assembly files</Button></div></div></details>
         {sources.isError && <Button size="sm" onClick={() => void sources.refetch()}>Retry source check</Button>}
       </section>
     </div>
-    {lastScope === scopeKey && (state.status !== "idle" || packagePhase || packageError) && <div className="fd-feedback fd-export-feedback" data-tone={state.error || packageError ? "error" : busy ? "progress" : "success"} role={state.error || packageError ? "alert" : "status"}>
+    {exportKind !== "export_commarker_copper" && lastScope === scopeKey && (state.status !== "idle" || packagePhase || packageError) && <div className="fd-feedback fd-export-feedback" data-tone={state.error || packageError ? "error" : busy ? "progress" : "success"} role={state.error || packageError ? "alert" : "status"}>
       {packageError ? <p>{packageError}</p> : state.error ? <ErrorNotice error={state.error} /> : busy ? <p>{packagePhase ?? `Exporting ${EXPORTS[lastExport].title.toLowerCase()}…`}</p> : packageResult ? <p>Gerber package saved · {packageResult.files.length} files, including Gerber layers and drills. Review design checks before fabrication.</p> : <p>{EXPORTS[lastExport].title} saved under {prefix}exports/.</p>}
       {state.note && <p>{state.note}</p>}
       {!busy && !packageError && state.status === "done" && !packageResult && <ExportCompletionDetails kind={lastExport} result={state.result} />}

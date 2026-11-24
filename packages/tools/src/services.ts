@@ -742,7 +742,11 @@ export interface KicadService {
     cli: KicadCli,
     opts: { board: string; outDir: string; signal?: AbortSignal },
   ): Promise<{ paths: string[] }>;
-  /** One DXF per layer (mm), the copper-removal artwork for laser/CNC-finished blanks. */
+  copperRemovalArtwork(
+    cli: KicadCli,
+    opts: { board: string; scratchDir: string; signal?: AbortSignal },
+  ): Promise<{ svg: string; widthMm: number; heightMm: number }>;
+  /** One DXF per layer (mm). Copper layers show retained copper. */
   exportDxf(
     cli: KicadCli,
     opts: { board: string; outDir: string; layers: string[]; signal?: AbortSignal },

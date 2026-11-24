@@ -408,6 +408,7 @@ export function mockServices(
       exportGerbers: async () => ({ paths: [] }),
       exportDrill: async () => ({ paths: [] }),
       exportDxf: async () => ({ paths: [] }),
+      copperRemovalArtwork: async () => ({ svg: "<svg/>", widthMm: 20, heightMm: 12 }),
       exportPos: async () => ({ paths: [] }),
       exportBom: async () => ({ paths: [] }),
       exportNetlist: async () => ({ paths: [] }),
