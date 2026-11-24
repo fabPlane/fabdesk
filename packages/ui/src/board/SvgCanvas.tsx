@@ -3,8 +3,8 @@ import { svgRasterCache, svgRasterSize } from "./svg-raster-cache";
 import { svgDetailRegion } from "./svg-detail-region";
 
 /** Resize the existing bitmap immediately; refine vector detail once the user stops resizing. */
-export function SvgCanvas({ svg, image, width, height }: {
-  svg: string; image: HTMLImageElement; width: number; height: number;
+export function SvgCanvas({ svg, image, width, height, onState }: {
+  svg: string; image: HTMLImageElement; width: number; height: number; onState?: (state: "loading" | "ready" | "failed") => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const detail = useRef<HTMLCanvasElement>(null);
@@ -34,16 +34,16 @@ export function SvgCanvas({ svg, image, width, height }: {
         const context = target.getContext("2d");
         if (!context) throw new Error("Canvas unavailable");
         context.drawImage(raster, 0, 0);
-        painted.current = svg;
+        painted.current = svg; onState?.("ready");
       } catch {
         // Keep the original vector preview usable on hosts without a 2D canvas.
-        setFailed(true);
+        setFailed(true); onState?.("loading");
       }
     };
     if (painted.current !== svg) { paint(); return; }
     const timer = setTimeout(paint, 120);
     return () => clearTimeout(timer);
-  }, [svg, image, size.width, size.height]);
+  }, [svg, image, size.width, size.height, onState]);
   useEffect(() => {
     const target = detail.current, overview = canvas.current, host = overview?.parentElement;
     const viewport = host?.closest<HTMLElement>(".fd-svg-viewport");
@@ -84,6 +84,6 @@ export function SvgCanvas({ svg, image, width, height }: {
   return <>
     <canvas ref={canvas} role="img" aria-label="Board preview" className={failed ? "hidden" : "block h-full w-full max-w-none"} />
     <canvas ref={detail} hidden aria-hidden="true" className="pointer-events-none absolute" />
-    {failed && <img src={image.src} alt="Board preview" draggable={false} className="block h-full w-full max-w-none" />}
+    {failed && <img src={image.src} onLoad={() => onState?.("ready")} onError={() => onState?.("failed")} alt="Board preview" draggable={false} className="block h-full w-full max-w-none" />}
   </>;
 }

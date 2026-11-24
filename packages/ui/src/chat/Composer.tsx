@@ -1,3 +1,5 @@
+import { useWorkingDesignPreparation } from "../board/useWorkingDesignPreparation";
+import { attachPanelContext } from "../panel-context";
 import { useShallow } from "zustand/react/shallow";
 import { captureAssistantContext, selectAssistantState } from "./assistant-context";
 import { DisclosureSummary } from "../components/DisclosureSummary";
@@ -65,6 +67,7 @@ const FALLBACK_AGENTS = [
 const EMPTY: never[] = [];
 
 export function Composer({ thread, loadingThread = false, onCreateThread, startMode = false }: ComposerProps) {
+  useWorkingDesignPreparation();
   const agentButtonRef = useRef<HTMLButtonElement>(null);
   const { client, host } = useCore();
   const qc = useQueryClient();
@@ -261,7 +264,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
     // `/shopping-list …` and friends expand into the instructions the agent needs.
     const expanded = expandSlashCommand(typed) ?? typed;
     const content = expanded;
-    const workspaceContext = captureAssistantContext(selectAssistantState(useUiStore.getState()), boardSources.data, boardSources.isFetching || boardSources.isError, matchingContexts);
+    const workspaceContext = attachPanelContext(captureAssistantContext(selectAssistantState(useUiStore.getState()), boardSources.data, boardSources.isFetching || boardSources.isError, matchingContexts));
     setSending(true);
     setError(null);
     // Keep observing this chat even if navigation unmounts its composer. Comparing

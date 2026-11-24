@@ -2,7 +2,7 @@
 import type { Principal } from "@fabdesk/protocol";
 import { mintToken } from "./config";
 
-export type TokenInfo = { kind: "daemon" | "run" | "device"; runId?: string; projectId?: string | null; threadId?: string; deviceId?: string };
+export type TokenInfo = { kind: "daemon" | "run" | "device"; runId?: string; projectId?: string | null; threadId?: string; deviceId?: string; contextCapturedAt?: number };
 
 export class TokenSet {
   private readonly tokens = new Map<string, TokenInfo>();
@@ -19,7 +19,7 @@ export class TokenSet {
   }
 
   /** Mint a token bound to an agent run (revoked when the run ends). */
-  mintRunToken(info: { runId: string; projectId: string | null; threadId: string }): string {
+  mintRunToken(info: { runId: string; projectId: string | null; threadId: string; contextCapturedAt?: number }): string {
     const t = mintToken();
     this.tokens.set(t, { kind: "run", ...info });
     return t;

@@ -1,3 +1,4 @@
+import { nativeViewRevision, assertNativeViewRevision, recordNativeView } from "../native-view";
 import { snapshotProjectDependencies, assertProjectDependencies } from "../project-dependencies";
 import { readSavedBoardModels, withModelCache, stockModelCacheRoot } from "@fabdesk/kicad";
 import { renderRootCircuitPreview } from "../schematic-circuit-preview";
@@ -11,7 +12,7 @@ import { AssemblyBoardModelRevision, BoardModelRevision, BOARD_MODEL_REVISION_PA
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { z } from "zod/v4";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, sep } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import {
   extractSpecs,
   renderProductVideo,
@@ -93,9 +94,14 @@ export const render_schematic_svg = defineTool({
   },
   longRunning: true,
   handler: async ({ maxWidth, expectedHierarchyRevision, circuit, automaticPreview }, ctx) => {
-    if (ctx.board) return renderMemberSchematicPreview(ctx, expectedHierarchyRevision, circuit, automaticPreview);
-    await requireSchematic(ctx.requireProject());
-    return renderRootCircuitPreview(ctx, maxWidth, expectedHierarchyRevision, circuit, automaticPreview);
+    const nativeRevision = await nativeViewRevision();
+    const result = ctx.board
+      ? await renderMemberSchematicPreview(ctx, expectedHierarchyRevision, circuit, automaticPreview)
+      : (await requireSchematic(ctx.requireProject()), await renderRootCircuitPreview(ctx, maxWidth, expectedHierarchyRevision, circuit, automaticPreview));
+    await assertNativeViewRevision(nativeRevision);
+    const json = result.json as { path?: string } | undefined;
+    if (typeof json?.path === "string") await recordNativeView("schematic", json.path, nativeRevision);
+    return result;
   },
 });
 
@@ -120,6 +126,7 @@ export const render_pcb_svg = defineTool({
     const output = await jailPath(project.dir, `${PROJECT_FILES.renders}/pcb.svg`);
     await jailPath(project.dir, PCB_PREVIEW_REVISION_PATH);
     ctx.progress(0.2, "exporting svg");
+    const nativeRevision = await nativeViewRevision();
     const dependencies = await snapshotProjectDependencies(project.dir);
     const sourceBytes = await readFile(board);
     const sourceRevision = createHash("sha256").update(sourceBytes).digest("hex");
@@ -139,8 +146,10 @@ export const render_pcb_svg = defineTool({
       await jailPath(project.dir, `${PROJECT_FILES.renders}/pcb.svg`);
       await jailPath(project.dir, PCB_PREVIEW_REVISION_PATH);
       await ctx.runInScope?.(async () => {});
+      await assertNativeViewRevision(nativeRevision);
       await assertProjectDependencies(project.dir, dependencies);
       await writeAtomic(output, artifactBytes);
+      await recordNativeView("pcb", output, nativeRevision);
       await recordPcbPreviewRevision(project.dir, sourceRevision, createHash("sha256").update(artifactBytes).digest("hex"), dependencies);
     } finally {
       await rm(scratch, { recursive: true, force: true });
@@ -227,6 +236,7 @@ export const render_glb = defineTool({
     const cli = await boardPreviewCli(ctx, await readFile(board, "utf8"));
     const output = await jailPath(project.dir, `${PROJECT_FILES.renders}/board.glb`);
     const receiptPath = await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
+    const nativeRevision = await nativeViewRevision();
     const sourceSha256 = await pcbPreviewFileHash(board);
     if (expectedSourceSha256 && sourceSha256 !== expectedSourceSha256) throw new ToolError("The saved PCB changed since inspection. Inspect the selected source again before exporting its model.", "precondition");
     // The editable PCB is copied to the root during import. Its project-relative
@@ -292,8 +302,10 @@ export const render_glb = defineTool({
       await jailPath(project.dir, BOARD_MODEL_REVISION_PATH);
       await ctx.runInScope?.(async () => {});
       ctx.signal.throwIfAborted();
+      await assertNativeViewRevision(nativeRevision);
       await assertProjectDependencies(project.dir, dependencies);
       await writeAtomic(output, bytes);
+      await recordNativeView("3d", output, nativeRevision);
       await writeJson(receiptPath, receipt);
     } finally { await rm(scratch, { recursive: true, force: true }); }
     ctx.progress(1, "done");

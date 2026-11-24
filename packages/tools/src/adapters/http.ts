@@ -3,7 +3,7 @@
  * Long-running tools are enqueued as jobs and answer `202 {jobId}` unless `?sync=1`.
  */
 import { Hono } from "hono";
-import { BoardSourceSelection, type ToolManifestEntry } from "@fabdesk/protocol";
+import { NATIVE_SOURCE_HEADER, NativeSourceContext, BoardSourceSelection, type ToolManifestEntry } from "@fabdesk/protocol";
 import { assertBoardExecutionContext, ToolError, type ToolContext, type ContextFactory, type ToolDef, type ToolOutput, type ToolRegistry } from "../registry";
 
 export type JobClass = "router" | "build" | "kicad" | "render" | "default";
@@ -65,6 +65,8 @@ export function toolRoutes(opts: HttpAdapterOptions): Hono<HttpEnv> {
     const args = (body["args"] && typeof body["args"] === "object" ? { ...(body["args"] as Record<string, unknown>), ...(body["project"] ? { project: body["project"] } : {}) } : body) as Record<string, unknown>;
     const sync = c.req.query("sync") === "1" || body["sync"] === true;
     const token = c.get("token");
+    const nativeHeader = c.req.header(NATIVE_SOURCE_HEADER);
+    const nativeSource = nativeHeader ? NativeSourceContext.parse(JSON.parse(nativeHeader)) : undefined;
 
     // Validate eagerly so bad arguments fail with 400 even for queued jobs.
     const parsed = registry.inputObject(def).safeParse(args);
@@ -76,7 +78,7 @@ export function toolRoutes(opts: HttpAdapterOptions): Hono<HttpEnv> {
       registry.invoke(name, args, async (ref, _def, board) => {
         const owner = queuedOwner;
         if (owner) await owner.runInScope(async () => {});
-        const ctx = await ctxFactory({ def, projectRef: ref, signal, progress, ...(board ? { board } : {}), ...(token ? { token } : {}) });
+        const ctx = await ctxFactory({ def, ...(nativeSource ? { nativeSource } : {}), projectRef: ref, signal, progress, ...(board ? { board } : {}), ...(token ? { token } : {}) });
         if (!owner) return ctx;
         assertBoardExecutionContext(ctx, board);
         if (ctx.project?.id !== owner.projectId || ctx.project.dir !== owner.dir || !ctx.runInScope) throw new ToolError("The queued board operation's project changed. Select the source again; refusing to retarget the job.", "precondition");
@@ -89,10 +91,10 @@ export function toolRoutes(opts: HttpAdapterOptions): Hono<HttpEnv> {
       let projectId: string | null = null;
       try {
         const board = def.boardScoped && parsed.data["board"] ? Object.freeze(BoardSourceSelection.parse(parsed.data["board"])) : undefined;
-        const ctx = await ctxFactory({ def, projectRef, ...(board ? { board } : {}), signal: new AbortController().signal, progress: () => {}, ...(token ? { token } : {}) });
+        const ctx = await ctxFactory({ def, ...(nativeSource ? { nativeSource } : {}), projectRef, ...(board ? { board } : {}), signal: new AbortController().signal, progress: () => {}, ...(token ? { token } : {}) });
         assertBoardExecutionContext(ctx, board);
         projectId = ctx.project?.id ?? null;
-        if (board && ctx.project && ctx.runInScope) queuedOwner = { projectId: ctx.project.id, dir: ctx.project.dir, runInScope: ctx.runInScope };
+        if (ctx.project && ctx.runInScope) queuedOwner = { projectId: ctx.project.id, dir: ctx.project.dir, runInScope: ctx.runInScope };
         if ((def.scope ?? "project") === "project" && !projectId) return c.json({ error: "no project selected: pass `project`" }, 412);
       } catch (e) {
         return errorResponse(c, e);

@@ -13,8 +13,9 @@ import "./svg-viewer-tools.css";
 const schematicViews = new DrawingViewportMemory();
 
 /** Zoomable vector image, isolated from the app's DOM and CSS layout. */
-export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, commentMode = false, initialFit = "sheet", fitLabel = "Fit sheet", focusRegion, focusMotionEnabled = true, onRegionFocused, onDrawingClick, onDrawingEscape }: {
+export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, commentMode = false, initialFit = "sheet", fitLabel = "Fit sheet", focusRegion, focusMotionEnabled = true, onRegionFocused, onDrawingClick, onDrawingEscape, onState }: {
   svg: string;
+  onState?: (state: "loading" | "ready" | "failed") => void;
   /** Preserve zoom and scroll when only presentation (such as blend) changes. */
   viewKey?: string;
   /** Endpoint/source-qualified session memory; exact SVG bytes must still match. */
@@ -96,6 +97,7 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
 
   useEffect(() => {
     if (!viewBox) return;
+    onState?.("loading");
     // KiCad renders can contain tens of thousands of paths. An image keeps those
     // nodes out of React's document and avoids synchronous SVG layout on mount.
     const image = svgImageCache.acquire(svg);
@@ -114,7 +116,7 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
     element.setAttribute("preserveAspectRatio", "xMidYMid meet");
     element.style.width = "100%";
     element.style.height = "100%";
-    setFallback({ svg, box: resolved });
+    setFallback({ svg, box: resolved }); onState?.("ready");
   }, [svg, viewBox]);
 
   useEffect(() => {
@@ -308,10 +310,10 @@ export function SvgViewer({ svg, viewKey, viewportKey, toolbar, overlay, comment
                 if (viewKey) setPainted({ svg, viewKey });
               } else setFailedUrl(current.url);
             }}
-            onError={() => setFailedUrl(current.url)}
+            onError={() => { setFailedUrl(current.url); onState?.("failed"); }}
           />}
           {viewBox && canvasSvg && image.current && fitSize.width > 1 && (
-            <SvgCanvas svg={canvasSvg} image={image.current} width={fitSize.width * zoom} height={fitSize.height * zoom} />
+            <SvgCanvas svg={canvasSvg} image={image.current} width={fitSize.width * zoom} height={fitSize.height * zoom} {...(onState ? { onState } : {})} />
           )}
           {!viewBox && <div className="fd-svg-document h-full w-full" dangerouslySetInnerHTML={{ __html: svg }} />}
           {/* A retained bitmap belongs to the previous SVG until the new image

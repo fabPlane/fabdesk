@@ -594,6 +594,19 @@ test("closing a project clears Back history, while a blocked close retains it", 
 });
 
 
+test("switching conversations restores their own existing panel and deliberate file navigation", () => {
+  const store = createUiStore({ getItem: () => null, setItem() {}, removeItem() {} });
+  const ui = () => store.getState();
+  openProjectFromHome(store, "repo");
+  ui().setActiveThread("io-chat"); ui().openProjectFile("renders/presented/io.svg"); ui().rememberProjectFile("repo", "renders/presented/io.svg");
+  ui().setActiveThread("carrier-chat"); ui().openProjectFile("renders/presented/carrier.svg"); ui().rememberProjectFile("repo", "renders/presented/carrier.svg");
+  ui().setActiveThread("io-chat");
+  expect(ui().boardTab).toBe("files"); expect(ui().fileToReveal?.path).toBe("renders/presented/io.svg");
+  ui().openProjectFile("docs/current.md"); ui().rememberProjectFile("repo", "docs/current.md");
+  ui().setActiveThread("carrier-chat"); expect(ui().fileToReveal?.path).toBe("renders/presented/carrier.svg");
+  ui().setActiveThread("io-chat"); expect(ui().fileToReveal?.path).toBe("docs/current.md");
+});
+
 test("Account opens the shared profile window without navigating or losing settings and project drafts", () => {
   const store = createUiStore({ getItem: () => null, setItem() {}, removeItem() {} });
   store.getState().setActiveProject("project-profile");

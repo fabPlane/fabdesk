@@ -1,3 +1,4 @@
+import { NativeSourceContext } from "@fabdesk/protocol";
 /** Typed fetch wrapper over the fabdesk-core control API plus SSE subscription. */
 import { BoardChecks, TeamProjects, ContributionBoards, ProjectShareState, ProjectShareSnapshot, SharedProject, SharedProjectStatus, BoardSourceSelection } from "@fabdesk/protocol";
 import type {
@@ -81,6 +82,7 @@ import { errorMessage, errorPayload } from "./error-help";
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 export interface CoreClientOptions {
+  nativeSource?: NativeSourceContext;
   baseUrl: string;
   token: string;
   fetch?: FetchLike;
@@ -135,6 +137,7 @@ export type HealthInfo = { ok?: boolean; version?: string; [k: string]: unknown 
 export interface RouteRunRecord {
   id: string;
   projectId: string;
+  nativeSource?: NativeSourceContext;
   board?: BoardSourceSelection;
   sourceDirectory?: string;
   router: string;
@@ -167,12 +170,14 @@ export type {
 export class CoreClient {
   readonly baseUrl: string;
   readonly token: string;
+  readonly nativeSource: NativeSourceContext | null;
   private readonly fetchImpl: FetchLike;
   private readonly esFactory: EventSourceFactory;
 
   constructor(options: CoreClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
     this.token = options.token;
+    this.nativeSource = options.nativeSource ?? null;
     const fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
     this.fetchImpl = async (input, init) => {
       try { return await fetchImpl(input, init); }
@@ -187,6 +192,12 @@ export class CoreClient {
     this.esFactory =
       options.eventSourceFactory ??
       ((url) => new EventSource(url) as unknown as ReturnType<EventSourceFactory>);
+  }
+
+  /** Existing APIs and cache identities scoped to one original native design. */
+  withNativeSource(source: NativeSourceContext): CoreClient {
+    const context = NativeSourceContext.parse(source);
+    return new CoreClient({ baseUrl: `${this.baseUrl}/native-context/${encodeURIComponent(JSON.stringify(context))}`, token: this.token, fetch: this.fetchImpl, eventSourceFactory: this.esFactory, nativeSource: context });
   }
 
   private headers(extra?: Record<string, string>): Record<string, string> {

@@ -1,4 +1,5 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { BOARD_START_MAP_MD } from "./board-start-map-md";
 export { BOARD_WORKFLOW_MD } from "./board-workflow-md";
@@ -163,26 +164,26 @@ export function extractUserSection(existing: string | undefined): string | undef
   return existing.slice(start + USER_START.length, end).trim();
 }
 
-/** Writes `AGENTS.md` (preserving the user section) and `CLAUDE.md` (`@AGENTS.md`) into `projectDir`. */
-export async function writeAgentDocs(projectDir: string, ctx: AgentDocsContext): Promise<void> {
-  const agentsPath = join(projectDir, "AGENTS.md");
-  const claudePath = join(projectDir, "CLAUDE.md");
-  let existing: string | undefined;
+/** Persist app-owned context and return it for the adapter prompt. Repository instructions are never rewritten. */
+export async function writeAgentDocs(projectDir: string, ctx: AgentDocsContext): Promise<string> {
+  const rendered = renderAgentsMd(ctx).split(USER_START)[0]!
+    .replace(HEADER, "<!-- Generated Fabdesk runtime information; repository instructions are separate. -->")
+    .replaceAll("Canonical KiCad", "Default root KiCad")
+    .replace("## Board constraints", "## Workspace defaults (not selected-design evidence)");
+  const context = "Fabdesk runtime information describes available capabilities and workspace defaults. " +
+    "It does not replace repository instructions or establish which native design is current. " +
+    "Root board paths below are tool defaults; a selected file or a copied board does not establish project authority. " +
+    "Actual selected-project settings take precedence over workspace defaults. " +
+    "An existing repository may contain several boards, revisions and software. Use its original instructions and relevant handoffs to identify the task context; no board is selected merely by opening the repository. " +
+    "After identifying the relevant native design from repository instructions and handoffs, declare it with project_set_board {sourcePath} using its original project-relative .kicad_pro/.kicad_pcb/.kicad_sch path. Do this when choosing or changing the working design. The app prepares preview artifacts and automatically refreshes the content of its existing PCB, schematic and 3D panels from saved native source. Declaring context never opens, closes or switches panels. Do not routinely drive or inspect the UI to maintain them. Only reveal a panel/artifact when the current user request explicitly asks to see something, including natural requests such as 'show me the current board'; a request to review, discuss or work on a design alone is not a request to change the view. For a requested native preview use the existing app_open_tab after declaring source context; for supporting files use app_present. No root board copy or manifest conversion is needed. The selected native source binds supported board rendering, placement, routing, checks, manufacturing exports and board comment tools to the original native filenames. Canvas pins and comment_answer share that source’s comment store. Files and repository notes keep repository scope. Unsupported runtime APIs or native formats remain explicit errors; never convert headers or substitute another board. Panel observations describe visibility, not engineering validation. app_present is optional for other supporting files.\n\n" + rendered.trimEnd() + "\n";
+  const directory = join(projectDir, ".fabdesk");
+  await mkdir(directory, { recursive: true });
+  const temporary = join(directory, `agent-context-${randomUUID()}.tmp`);
   try {
-    existing = await readFile(agentsPath, "utf8");
-  } catch {
-    existing = undefined;
+    await writeFile(temporary, context, { encoding: "utf8", flag: "wx" });
+    await rename(temporary, join(directory, "agent-context.md"));
+  } finally {
+    await rm(temporary, { force: true });
   }
-  const userSection = extractUserSection(existing);
-  const rendered =
-    userSection !== undefined ? renderAgentsMd(ctx, userSection) : renderAgentsMd(ctx);
-  if (rendered !== existing) await writeFile(agentsPath, rendered, "utf8");
-  const claudeMd = "@AGENTS.md\n";
-  let existingClaude: string | undefined;
-  try {
-    existingClaude = await readFile(claudePath, "utf8");
-  } catch {
-    existingClaude = undefined;
-  }
-  if (existingClaude !== claudeMd) await writeFile(claudePath, claudeMd, "utf8");
+  return context;
 }

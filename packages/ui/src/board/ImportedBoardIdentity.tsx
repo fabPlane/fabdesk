@@ -4,13 +4,18 @@ import { WorkspaceMenu } from "../layout/WorkspaceMenu";
 import { useUiStore } from "../stores/ui";
 import { askAboutSurface } from "../chat/useAssistantSurface";
 
-/** The chosen repository file is provenance; board.kicad_pcb remains the editable source. */
-export function ImportedBoardIdentity({ projectId }: { projectId: string }) {
+/** Main’s existing source menu shows import provenance or the active native repository path. */
+export function ImportedBoardIdentity({ projectId, workingSource, sourceRevision }: { projectId: string; workingSource?: string | null; sourceRevision?: string }) {
   const project = useProject(projectId), imported = project.data?.manifest.importedBoard;
-  if (!imported) return null;
+
   const open = (path: string) => {
     if (useUiStore.getState().activeProjectId === projectId) useUiStore.getState().openProjectFile(path);
   };
+  if (workingSource) return <WorkspaceMenu className="fd-imported-board-identity" label={<><Icon name="pcb" width={16} height={16} /><span className="flex min-w-0 flex-col text-left" title={workingSource}><span className="truncate">{workingSource.split("/").pop()}</span><span className="truncate text-[10px] text-muted">{workingSource.split("/").slice(-3, -1).join("/") || "."}</span></span><Icon name="chevronDown" width={14} height={14} /></>}>
+    <div className="fd-imported-board-details"><strong>Working native source</strong><p>{workingSource}</p>{sourceRevision && <p>Saved source revision: {sourceRevision.slice(0, 12)}</p>}<p>Original repository source for previews, placement, routing, checks, exports and board comments. Saved changes refresh content; runtime compatibility and checks still apply.</p></div>
+    <button onClick={() => open(workingSource)}><Icon name="folderOpen" width={16} height={16} />Show working source in Files</button>
+  </WorkspaceMenu>;
+  if (!imported) return null;
   return <WorkspaceMenu className="fd-imported-board-identity" label={<><Icon name="pcb" width={16} height={16} /><span title={imported.path}>{importedBoardLabel(imported.path)}</span><Icon name="chevronDown" width={14} height={14} /></>}>
     <div className="fd-imported-board-details"><strong>Imported board</strong><p>{imported.path}</p><p>Working source: board.kicad_pcb. This records the file selected during import; later edits may differ. Other repository versions are separate files.</p></div>
     <button onClick={() => open("board.kicad_pcb")}><Icon name="folderOpen" width={16} height={16} />Show working PCB in Files</button>

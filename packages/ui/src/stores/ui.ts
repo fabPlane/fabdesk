@@ -52,6 +52,8 @@ export interface PendingAttachment {
   label: string;
 }
 
+type ChatPanel = { area: WorkspaceArea; tab: BoardTab; open: boolean; file: string | null };
+
 export interface PartsViewState {
   query: string;
   kinds: ProjectBomLine["kind"][];
@@ -64,6 +66,7 @@ export interface PartsViewState {
 export const DEFAULT_PARTS_VIEW: PartsViewState = { query: "", kinds: [], buildQuantity: "5", sourcesOpen: false, filtersOpen: false, scrollTop: 0, scrollLeft: 0 };
 
 export interface UiState {
+  chatPanels: Record<string, ChatPanel>;
   partsViewByProject: Record<string, PartsViewState>;
   rememberPartsView: (key: string, patch: Partial<PartsViewState>) => void;
   navigationHistory: WorkspaceHistoryEntry[];
@@ -220,6 +223,23 @@ function projectNavigationState(s: UiState, activeProjectId: string | null): Par
     boardTab: activeProjectId ? s.workspaceByProject[activeProjectId]?.tab ?? "pcb" : "pcb" };
 }
 
+/** Reuse the panel-work ownership rule without adding views or controls. */
+function chatPanelNavigation(s: UiState, threadId: string | null): Partial<UiState> {
+  if (!s.activeProjectId || threadId === s.activeThreadId) return {};
+  const key = (thread: string | null) => JSON.stringify([s.navigationEndpoint, s.activeProjectId, thread]);
+  const panels = { ...s.chatPanels };
+  delete panels[key(s.activeThreadId)];
+  panels[key(s.activeThreadId)] = { area: s.workspaceArea, tab: s.boardTab, open: s.boardOpen, file: s.selectedFileByProject[s.activeProjectId] ?? null };
+  const chatPanels = Object.fromEntries(Object.entries(panels).slice(-100));
+  const restored = chatPanels[key(threadId)];
+  if (!restored || threadId === null) return { chatPanels };
+  const selectedFileByProject = { ...s.selectedFileByProject };
+  delete selectedFileByProject[s.activeProjectId];
+  if (restored.file) selectedFileByProject[s.activeProjectId] = restored.file;
+  return { chatPanels, workspaceArea: restored.area, boardTab: restored.tab, boardOpen: restored.open, selectedFileByProject,
+    fileToReveal: restored.file && restored.tab === "files" ? { projectId: s.activeProjectId, path: restored.file } : null };
+}
+
 /** Keep explicit destinations authoritative while remembering each project's other task tabs. */
 function workspaceNavigationState(state: UiState, area: WorkspaceArea, tab: BoardTab): Partial<UiState> {
   if (!state.activeProjectId) return { workspaceArea: area, boardTab: tab, boardOpen: true };
@@ -291,6 +311,7 @@ export function createUiStore(storage?: StateStorage) {
     else delete keptOutputChoices[key];
     return { keptOutputChoices };
   }),
+  chatPanels: {},
   assistantSurfaces: {},
   setAssistantSurface: (id, surface) => set(state => { const assistantSurfaces = { ...state.assistantSurfaces }; if (surface) assistantSurfaces[id] = surface; else delete assistantSurfaces[id]; return { assistantSurfaces }; }),
   assistantOpen: false,
@@ -470,7 +491,7 @@ export function createUiStore(storage?: StateStorage) {
   toggleBoard: () => set((s) => ({ boardOpen: !s.boardOpen })),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setBoardOpen: (boardOpen) => set({ boardOpen }),
-  setActiveThread: (activeThreadId) => set(s => (s.projectExitRequested && activeThreadId ? {} : { activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false, assistantOpen: true, ...(s.canvasMode ? { canvasNavigationOpen: false } : {}) } : {}) })),
+  setActiveThread: (activeThreadId) => set(s => (s.projectExitRequested && activeThreadId ? {} : { ...chatPanelNavigation(s, activeThreadId), activeThreadId, ...(activeThreadId ? { activeOpenSourceId: null, orderFlowOpen: false, inventoryOpen: false, assistantOpen: true, ...(s.canvasMode ? { canvasNavigationOpen: false } : {}) } : {}) })),
   setFocusMessageId: (focusMessageId) => set({ focusMessageId }),
   setActiveProject: (activeProjectId) => {
     let opened = false;
@@ -482,7 +503,7 @@ export function createUiStore(storage?: StateStorage) {
     return opened;
   },
   startNewChatInProject: (projectId) =>
-    set((s) => (s.activeProjectId && projectId !== s.activeProjectId ? { projectExitRequested: true } : { ...newChatInProjectState(projectId), composerFocusNonce: s.composerFocusNonce + 1, assistantOpen: true, ...(s.canvasMode ? { canvasNavigationOpen: false } : {}),
+    set((s) => (s.activeProjectId && projectId !== s.activeProjectId ? { projectExitRequested: true } : { ...(projectId === s.activeProjectId ? chatPanelNavigation(s, null) : {}), ...newChatInProjectState(projectId), composerFocusNonce: s.composerFocusNonce + 1, assistantOpen: true, ...(s.canvasMode ? { canvasNavigationOpen: false } : {}),
       ...(projectId !== s.activeProjectId ? { rootFinding: null, assemblyFinding: null, workspaceArea: projectId ? s.workspaceByProject[projectId]?.area ?? "boards" : "boards", boardTab: projectId ? s.workspaceByProject[projectId]?.tab ?? "pcb" : "pcb" } : {}) })),
   setSidebarListTab: (sidebarListTab) => set({ sidebarListTab: normalizeSidebarListTab(sidebarListTab) }),
   setActiveOpenSourceId: (activeOpenSourceId) =>
@@ -542,6 +563,7 @@ export function createUiStore(storage?: StateStorage) {
         themeId: s.themeId,
         canvasMode: s.canvasMode,
         assistantOpen: s.assistantOpen,
+        chatPanels: s.chatPanels,
         keptOutputChoices: s.keptOutputChoices,
         workspaceArea: s.workspaceArea,
         workspaceByProject: s.workspaceByProject,

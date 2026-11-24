@@ -1,3 +1,4 @@
+import { nativeProjectPath } from "./native-layout";
 /** File helpers shared by tools: path jail, JSON I/O, project file layout. */
 import { randomUUID } from "node:crypto";
 import { rm, mkdir, lstat, readFile, realpath, stat, writeFile, rename } from "node:fs/promises";
@@ -44,7 +45,7 @@ export async function jailPath(root: string, rel: string): Promise<string> {
     throw new ToolError("path is required", "invalid_args");
   if (rel.includes("\0")) throw new ToolError("invalid path", "invalid_args");
   const rootAbs = resolve(root);
-  const candidate = isAbsolute(rel) ? resolve(rel) : resolve(rootAbs, normalize(rel));
+  const candidate = nativeProjectPath(rootAbs, isAbsolute(rel) ? rel : normalize(rel));
   const relToRoot = relative(rootAbs, candidate);
   if (relToRoot === "" || relToRoot.startsWith("..") || isAbsolute(relToRoot)) {
     throw new ToolError(`path escapes the project directory: ${rel}`, "invalid_args");

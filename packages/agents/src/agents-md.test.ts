@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -170,32 +170,38 @@ describe("renderAgentsMd", () => {
 });
 
 describe("writeAgentDocs", () => {
-  test("writes AGENTS.md + CLAUDE.md and preserves the user section across regeneration", async () => {
+  test("refreshes app-owned context without creating repository instruction files", async () => {
     const dir = mkdtempSync(join(tmpdir(), "fabdesk-docs-"));
     try {
-      await writeAgentDocs(dir, ctx);
-      expect(readFileSync(join(dir, "CLAUDE.md"), "utf8")).toBe("@AGENTS.md\n");
-      const first = readFileSync(join(dir, "AGENTS.md"), "utf8");
+      const first = await writeAgentDocs(dir, ctx);
       expect(first).toContain("Blinky");
-
-      // User edits the preserved section (and, wrongly, something outside it).
-      const edited = first
-        .replace(
-          /<!-- fabdesk:user-start -->[\s\S]*<!-- fabdesk:user-end -->/,
-          `${USER_START}\nUse 0603 passives only.\n${USER_END}`,
-        )
-        .replace("Copper layers: 2", "Copper layers: 99");
-      writeFileSync(join(dir, "AGENTS.md"), edited);
-      writeFileSync(join(dir, "CLAUDE.md"), "stale");
-
-      await writeAgentDocs(dir, { ...ctx, projectName: "Blinky v2" });
-      const second = readFileSync(join(dir, "AGENTS.md"), "utf8");
+      expect(first).toContain("Workspace defaults (not selected-design evidence)");
+      expect(first).not.toContain(USER_START);
+      expect(first).not.toContain("everything else is overwritten");
+      const second = await writeAgentDocs(dir, { ...ctx, projectName: "Blinky v2" });
       expect(second).toContain("# Blinky v2 — fabPlane project");
-      expect(second).toContain("Use 0603 passives only.");
-      expect(second).toContain("Copper layers: 2");
-      expect(second).not.toContain("Copper layers: 99");
-      expect(readFileSync(join(dir, "CLAUDE.md"), "utf8")).toBe("@AGENTS.md\n");
-      expect(extractUserSection(second)).toBe("Use 0603 passives only.");
+      expect(readFileSync(join(dir, ".fabdesk", "agent-context.md"), "utf8")).toBe(second);
+      expect(existsSync(join(dir, "AGENTS.md"))).toBe(false);
+      expect(existsSync(join(dir, "CLAUDE.md"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test.each([
+    "# Existing engineering policy\r\nRead hardware/README.md before board edits.\r\n",
+    `${renderAgentsMd(ctx)}\nOwner direction outside the old generated markers.\n`,
+    "",
+  ])("preserves complete existing instructions, including legacy generated files", async (original) => {
+    const dir = mkdtempSync(join(tmpdir(), "fabdesk-repository-docs-"));
+    const claude = "# Claude project policy\nRead the native project handoff.\n";
+    try {
+      writeFileSync(join(dir, "AGENTS.md"), original);
+      writeFileSync(join(dir, "CLAUDE.md"), claude);
+      await writeAgentDocs(dir, ctx);
+      await writeAgentDocs(dir, { ...ctx, board: { layers: 4 } });
+      expect(readFileSync(join(dir, "AGENTS.md"))).toEqual(Buffer.from(original));
+      expect(readFileSync(join(dir, "CLAUDE.md"))).toEqual(Buffer.from(claude));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

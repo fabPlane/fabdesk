@@ -958,6 +958,7 @@ export type RouteApplyState =
   | "not_available";
 
 export type RouteRunRecord = {
+  nativeSource?: import("@fabdesk/protocol").NativeSourceContext;
   id: string;
   projectId: string;
   /** Absent on legacy single-board runs; identity never follows the UI's active board. */
@@ -1063,6 +1064,7 @@ export interface RouteRunStore {
   update(id: string, patch: Partial<RouteRunRecord>): void;
   get(id: string): RouteRunRecord | null;
   latest(projectId: string): RouteRunRecord | null;
+  list?(projectId: string): RouteRunRecord[];
 }
 
 export interface RouteTaskCoordinator {

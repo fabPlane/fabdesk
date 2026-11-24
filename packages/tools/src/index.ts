@@ -19,6 +19,12 @@ export * from "./apps/dxf";
 
 export * from "./assembly";
 export * from "./project-bom";
+
+export { preparePresentation, captureNativeDesign, presentationBinding, summarizePresentationBinding } from "./presentation";
+
+export * from "./native-layout";
+
+export { nativeViewBinding } from "./native-view";
 export { prepareProjectShare, inspectProjectStatus } from "./project-share";
 
 export { prepareEditableBoard } from "./board-contributions";

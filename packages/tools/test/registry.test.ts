@@ -348,6 +348,7 @@ describe("registry", () => {
       "app_select_project",
       "app_clear_selection",
       "app_open_tab",
+      "app_present",
       "app_open_thread",
       "app_new_chat",
       "app_send_message",

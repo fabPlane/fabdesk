@@ -69,7 +69,7 @@ async function loadModel(bytes: ArrayBuffer, path: string): Promise<THREE.Object
 }
 
 /** View transforms affect only the camera. Model bytes and physical placement stay untouched. */
-export default function ModelCanvas({ projectId, path, blob, selectionSource, selectionToolbar, viewMode, side = "top", viewRevision = 0, showComponents = true }: { projectId: string; path: string; blob?: Blob; selectionSource?: PartSelectionSource; selectionToolbar?: HTMLElement | null; viewMode?: "2d" | "3d"; side?: "top" | "bottom"; viewRevision?: number; showComponents?: boolean }) {
+export default function ModelCanvas({ projectId, path, blob, onState, selectionSource, selectionToolbar, viewMode, side = "top", viewRevision = 0, showComponents = true }: { projectId: string; path: string; blob?: Blob; onState?: (state: "loading" | "ready" | "failed") => void; selectionSource?: PartSelectionSource; selectionToolbar?: HTMLElement | null; viewMode?: "2d" | "3d"; side?: "top" | "bottom"; viewRevision?: number; showComponents?: boolean }) {
   const requestedComponents = useRef(showComponents); requestedComponents.current = showComponents;
   const changeComponents = useRef<(() => void) | null>(null);
   useEffect(() => { changeComponents.current?.(); }, [showComponents]);
@@ -112,6 +112,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
     let camera: THREE.PerspectiveCamera | THREE.OrthographicCamera | null = null;
     let appliedView: BoardCameraMode | null = null;
     let cleanupContext: (() => void) | null = null;
+    setError(null); setLoading(true); onState?.("loading");
     let stopMotion = () => {};
     let cleanupSelection: (() => void) | null = null;
     let inspectionMaterials: BoardInspectionMaterials | null = null;
@@ -119,7 +120,6 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
     let stopRendering = () => {};
     let stopInput = () => {};
     let settleTimer: ReturnType<typeof setTimeout> | undefined;
-    setError(null); setLoading(true);
     void (async () => {
       try {
         if (data.size > 80 * 1024 * 1024) throw new Error("This model is too large for the canvas preview (80 MB limit). The saved file is unchanged.");
@@ -365,12 +365,12 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
         });
         controls.addEventListener("change", render);
         observer = new ResizeObserver(resize); observer.observe(target);
-        const lost = (event: Event) => { event.preventDefault(); setError("The 3D graphics connection was interrupted. Retry to reopen the preview."); };
+        const lost = (event: Event) => { event.preventDefault(); setError("The 3D graphics connection was interrupted. Retry to reopen the preview."); onState?.("failed"); };
         renderer.domElement.addEventListener("webglcontextlost", lost);
         cleanupContext = () => renderer?.domElement.removeEventListener("webglcontextlost", lost);
-        setLoading(false);
+        setLoading(false); onState?.("ready");
       } catch (failure) {
-        if (!disposed) { setError(failure instanceof Error ? failure.message : "Could not open the model preview."); setLoading(false); }
+        if (!disposed) { setError(failure instanceof Error ? failure.message : "Could not open the model preview."); setLoading(false); onState?.("failed"); }
       }
     })();
     return () => {
@@ -385,7 +385,7 @@ export default function ModelCanvas({ projectId, path, blob, selectionSource, se
       environment?.dispose();
       renderer?.dispose(); renderer?.domElement.remove();
     };
-  }, [data, path, retry]);
+  }, [data, path, retry, onState]);
 
   return <div className="fd-model-canvas" data-testid="model-canvas" onKeyDown={event => { if (event.key === "Escape" && selectionSource && selection.ref && !(event.target instanceof Element && event.target.closest("input, textarea, select, [role=dialog]"))) { selection.clear(); event.preventDefault(); event.stopPropagation(); } }}>
     {selectionSource && <PartSelectionBar target={selectionToolbar} reference={selection.ref} references={selection.ready && modelParts ? selection.index.data?.references ?? [] : []} onSelect={selection.select} onClear={selection.clear} onFocus={modelParts?.has(selection.ref ?? "") ? () => focusSelection.current?.() : undefined} notice={selectionNotice} />}

@@ -1,11 +1,12 @@
 import { z } from "zod/v4";
-import { AssemblyRelativePath, BoardSourceSelection } from "@fabdesk/protocol";
+import { AssemblyRelativePath, BoardSourceSelection, NativeSourceContext } from "@fabdesk/protocol";
 import type { CoreClient } from "./CoreClient";
 import { pcbToolJsonForSource } from "./pcb-parts";
 
 const Hash = z.string().regex(/^[a-f0-9]{64}$/);
 const ReviewRecord = z.object({
   id: z.string().regex(/^[A-Za-z0-9_-]+$/), projectId: z.string().min(1), status: z.string(),
+  nativeSource: NativeSourceContext.optional(),
   board: BoardSourceSelection.optional(), sourceDirectory: z.union([z.literal("."), AssemblyRelativePath]).optional(),
   startingPcbRevision: Hash, canonicalMatchesStart: z.boolean(),
   candidate: z.object({ available: z.boolean(), reopenable: z.boolean(), path: z.string(), sha256: Hash.nullable() }),
@@ -14,19 +15,18 @@ const ReviewRecord = z.object({
 });
 
 /** Durable run facts are useful for review; applying still rechecks native source and candidate. */
-export function routeRunMatchesSource(run: { projectId: string; board?: BoardSourceSelection | undefined }, projectId: string, board?: BoardSourceSelection): boolean {
-  return run.projectId === projectId && (!!run.board === !!board) && (!board || run.board?.sourceId === board.sourceId && run.board.manifestSha256 === board.manifestSha256);
+export function routeRunMatchesSource(run: { projectId: string; board?: BoardSourceSelection | undefined; nativeSource?: NativeSourceContext | undefined }, projectId: string, board?: BoardSourceSelection, nativeSource?: NativeSourceContext | null): boolean {
+  return (run.nativeSource?.sourcePath ?? null) === (nativeSource?.sourcePath ?? null) && run.projectId === projectId && (!!run.board === !!board) && (!board || run.board?.sourceId === board.sourceId && run.board.manifestSha256 === board.manifestSha256);
 }
-
-type RouteSelectionRecord = { id: string; projectId: string; status: string; board?: BoardSourceSelection | undefined };
+type RouteSelectionRecord = { id: string; projectId: string; status: string; board?: BoardSourceSelection | undefined; nativeSource?: NativeSourceContext | undefined };
 
 /** Choose only recorded runs owned by this view; unrelated frames cannot choose a run. */
 export function selectOwnedRouteRun(history: readonly RouteSelectionRecord[],
-  scope: { projectId: string; board?: BoardSourceSelection | undefined },
+  scope: { projectId: string; board?: BoardSourceSelection | undefined; nativeSource?: NativeSourceContext | null | undefined },
   selection: { currentId: string | null; current?: RouteSelectionRecord | undefined; seen: ReadonlySet<string> | null; followNew: boolean }) {
-  const owned = history.filter(row => routeRunMatchesSource(row, scope.projectId, scope.board));
+  const owned = history.filter(row => routeRunMatchesSource(row, scope.projectId, scope.board, scope.nativeSource));
   const currentOwned = selection.currentId && (owned.some(row => row.id === selection.currentId) ||
-    selection.current?.id === selection.currentId && routeRunMatchesSource(selection.current, scope.projectId, scope.board));
+    selection.current?.id === selection.currentId && routeRunMatchesSource(selection.current, scope.projectId, scope.board, scope.nativeSource));
   if (!currentOwned) return owned[0]?.id ?? null;
   if (selection.followNew && selection.seen) {
     // History is newest first. A short run may already have finished by refresh.
@@ -35,10 +35,10 @@ export function selectOwnedRouteRun(history: readonly RouteSelectionRecord[],
   }
   return selection.currentId;
 }
-export function parseRouteReview(value: unknown, projectId: string, runId: string, board?: BoardSourceSelection) {
+export function parseRouteReview(value: unknown, projectId: string, runId: string, board?: BoardSourceSelection, nativeSource?: NativeSourceContext | null) {
   const run = ReviewRecord.parse(pcbToolJsonForSource(value, projectId, board).run);
   if (run.id !== runId || run.projectId !== projectId) throw new Error("This routing run belongs to another project. Select the run again.");
-  if (!routeRunMatchesSource(run, projectId, board) || board && !run.sourceDirectory) throw new Error("This routing run belongs to another board source. Select the run’s recorded source.");
+  if (!routeRunMatchesSource(run, projectId, board, nativeSource) || board && !run.sourceDirectory) throw new Error("This routing run belongs to another board source. Select the run’s recorded source.");
   const candidatePath = `.fabdesk/runs/${run.id}/candidate.kicad_pcb`;
   if (run.candidate.path.replaceAll("\\", "/") !== candidatePath) throw new Error("The route candidate is outside its recorded run directory.");
   const warnings = run.result?.quality?.warnings ?? [];
@@ -50,6 +50,6 @@ export function parseRouteReview(value: unknown, projectId: string, runId: strin
 }
 export type RouteReview = ReturnType<typeof parseRouteReview>;
 
-export async function inspectRouteReview(client: Pick<CoreClient, "callTool">, projectId: string, runId: string, board?: BoardSourceSelection): Promise<RouteReview> {
-  return parseRouteReview(await client.callTool("route_status", { projectId, runId, ...(board ? { board: { ...board } } : {}) }), projectId, runId, board);
+export async function inspectRouteReview(client: Pick<CoreClient, "callTool"> & Partial<Pick<CoreClient, "nativeSource">>, projectId: string, runId: string, board?: BoardSourceSelection): Promise<RouteReview> {
+  return parseRouteReview(await client.callTool("route_status", { projectId, runId, ...(board ? { board: { ...board } } : {}) }), projectId, runId, board, client.nativeSource);
 }

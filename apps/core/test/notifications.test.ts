@@ -61,8 +61,8 @@ const adapters: NonNullable<ServeOptions["adapters"]> = {
     run: (session: AgentSession): AgentRun => ({
       events: (async function* (): AsyncGenerator<AgentEvent> {
         yield { type: "text", delta: "ok" };
-        if (session.prompt.includes("error")) yield { type: "error", message: "boom" };
-        yield { type: "done", exitCode: /fail|error/.test(session.prompt) ? 1 : 0 };
+        if (session.prompt.includes("please error out")) yield { type: "error", message: "boom" };
+        yield { type: "done", exitCode: /please error out|fail loudly|fail quietly/.test(session.prompt) ? 1 : 0 };
       })(),
       abort() {},
     }),

@@ -1,3 +1,5 @@
+import { useNativeViewObservation } from "./useNativeViewObservation";
+import { useProjectBlobUrl } from "../hooks/queries";
 import { useBoardSources,useCoreClient,useLivePreview,useModelOutputActivity,useProject,useRunsStore,useRunTool } from "@fabdesk/client-core";
 import { lazy,Suspense,useMemo,useState } from "react";
 import { useAssistantSurface } from "../chat/useAssistantSurface";
@@ -45,6 +47,8 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
   const canvas = useUiStore((s) => s.canvasMode && s.workspaceArea === "boards");
   const projectId = useUiStore((s) => s.activeProjectId);
   const project = useProject(projectId);
+  const model = useProjectBlobUrl(projectId, GLB_PATH);
+  const observation = useNativeViewObservation(projectId, GLB_PATH, model.data);
   const automatic = useLivePreview("model", { projectId: projectId ?? "", enabled: scopeReady, foreground: active });
   const glbRun = useRunTool();
   const videoRun = useRunTool();
@@ -96,10 +100,10 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
     );
   }
 
-  if (canvas) return <div className="fd-board-model-view">
+  if (canvas) return <div className="fd-board-model-view" {...observation.attributes}>
     {hasPreview ? (
       <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}>
-        <ModelCanvas projectId={projectId} path={GLB_PATH} {...(previewModel ? { blob: previewModel.blob } : {})} selectionSource={{ projectId, enabled: scopeReady }} />
+        <ModelCanvas projectId={projectId} path={GLB_PATH} {...(previewModel ? { blob: previewModel.blob } : model.data ? { blob: model.data } : {})} onState={observation.onState} selectionSource={{ projectId, enabled: scopeReady }} />
       </Suspense>
     ) : automatic.error ? (
       <PreviewError error={automatic.error} retry={() => void automatic.retry()} />
@@ -126,7 +130,7 @@ function SingleBoardThreeDTab({ scopeReady, checkingSources, compact, active }: 
       canGenerate={canGenerate}
       checkingSources={checkingSources || project.isFetching}
       modelStatus={<AutomaticPreviewStatus kind="model" projectId={projectId} />}
-      {...(canvasMode && glb ? { modelPreview: <Suspense fallback={<Spinner />}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} selectionSource={{ projectId, enabled: scopeReady }} /></Suspense> } : {})}
+      {...(canvasMode && (glb || hasPreview) ? { modelPreview: <Suspense fallback={<Spinner />}><ModelCanvas key={`${projectId}:${GLB_PATH}`} projectId={projectId} path={GLB_PATH} {...(previewModel ? { blob: previewModel.blob } : model.data ? { blob: model.data } : {})} onState={observation.onState} selectionSource={{ projectId, enabled: scopeReady }} /></Suspense> } : {})}
       glb={glb}
       videos={videos}
       poster={poster}

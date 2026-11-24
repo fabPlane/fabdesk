@@ -1,5 +1,6 @@
+import { WorkingDesigns } from "../src/working-design";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile, unlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -547,10 +548,33 @@ describe("http daemon", () => {
     expect((await api(`/projects/${project.id}`)).status).toBe(404);
   });
 
+  test("repository import preserves instructions and leaves board choice to the conversation", async () => {
+    const original = daemon.projects.importFromGit.bind(daemon.projects);
+    try {
+      for (const count of [1, 2]) {
+        daemon.projects.importFromGit = options => original({ ...options, clone: async (_url, directory) => {
+          await mkdir(join(directory, "hardware"));
+          await writeFile(join(directory, "AGENTS.md"), "# Existing engineering instructions\n");
+          for (let i = 0; i < count; i++) await writeFile(join(directory, "hardware", `Design-${i}.kicad_pcb`), "(kicad_pcb)");
+        } });
+        const response = await api("/projects/import-github", { method: "POST", body: JSON.stringify({ url: "https://github.com/example/repository", name: `Import ${count}` }) });
+        expect(response.status).toBe(201);
+        const body = await response.json() as { project: { path: string }; boards: string[]; adoptedBoard: string | null };
+        expect(body.boards).toHaveLength(count); expect(body.adoptedBoard).toBeNull();
+        expect(await Bun.file(join(body.project.path, "board.kicad_pcb")).exists()).toBe(false);
+        expect(await Bun.file(join(body.project.path, "AGENTS.md")).text()).toBe("# Existing engineering instructions\n");
+      }
+    } finally { daemon.projects.importFromGit = original; }
+  });
+
   test("threads: create, message → agent run streams agent.* events and persists parts; abort; search", async () => {
     const created = (await (
       await api("/projects", { method: "POST", body: JSON.stringify({ name: "Agent Test" }) })
     ).json()) as { id: string; path: string };
+    const repositoryInstructions = "# Engineering policy\nPreserve native source paths and read the project handoff.\n";
+    const claudeInstructions = "# Existing Claude instructions\nFollow the repository engineering policy.\n";
+    await writeFile(join(created.path, "AGENTS.md"), repositoryInstructions);
+    await writeFile(join(created.path, "CLAUDE.md"), claudeInstructions);
     const thread = (await (
       await api("/threads", {
         method: "POST",
@@ -601,9 +625,12 @@ describe("http daemon", () => {
       KICAD_CLI: "/mock/kicad-cli",
       FABDESK_FP_PCB_BRIDGE_URL: "http://127.0.0.1:4020",
     });
-    // AGENTS.md / CLAUDE.md regenerated before the run.
-    const agentInstructions = await Bun.file(join(created.path, "AGENTS.md")).text();
-    expect(agentInstructions).toContain("Canonical KiCad PCB");
+    // App-owned information reaches the adapter without replacing repository policy.
+    expect(await Bun.file(join(created.path, "AGENTS.md")).text()).toBe(repositoryInstructions);
+    expect(await Bun.file(join(created.path, "CLAUDE.md")).text()).toBe(claudeInstructions);
+    const agentInstructions = await Bun.file(join(created.path, ".fabdesk", "agent-context.md")).text();
+    expect(lastSession!.prompt).toContain(agentInstructions);
+    expect(agentInstructions).toContain("Default root KiCad PCB");
     // the board start map is the one place that prescribes a method; it is present because the board toolset is registered
     expect(agentInstructions).toContain("## Start here");
     expect(agentInstructions).toContain("## Other toolsets");
@@ -617,7 +644,6 @@ describe("http daemon", () => {
     expect(/circuit_build/i.test(agentInstructions)).toBe(
       /schematic_edit/i.test(agentInstructions),
     );
-    expect((await Bun.file(join(created.path, "CLAUDE.md")).text()).trim()).toBe("@AGENTS.md");
 
     const msgs = (await (await api(`/threads/${thread.id}/messages`)).json()) as Array<{
       role: string;
@@ -1084,4 +1110,132 @@ describe("http daemon", () => {
   expect(daemon.store.threads.messages(t.id)[0]?.contentMd).toBe("Keep my planning conversation");
   const retry = await api(`/projects/${draft.id}/promote`, { method: "POST", body: JSON.stringify({ name: "Duplicate" }) });
   expect(retry.status).toBe(412);
+});
+
+
+test("working design previews render without a UI bridge, reject stale requests and remain scoped to their chat", async () => {
+  const project = await (await api("/projects", { method: "POST", body: JSON.stringify({ name: "native-context" }) })).json();
+  const handle = (await daemon.projects.handle(project.id))!;
+  const thread = daemon.store.threads.create({ agentId: "claude", projectId: project.id });
+  const other = daemon.store.threads.create({ agentId: "claude" });
+  await mkdir(join(handle.dir, "hardware"));
+  const sourcePath = "hardware/native-v7.kicad_pcb";
+  await writeFile(join(handle.dir, sourcePath), '(kicad_pcb (version 20250114) (generator "native") (gr_rect (start 0 0) (end 20 20) (stroke (width 0.1) (type default)) (fill none) (layer "Edge.Cuts")))');
+  const selected = await new WorkingDesigns(daemon.config.home).select(handle, sourcePath, thread.id);
+  const endpoint = `/projects/${project.id}/working-design`;
+  expect(await (await api(endpoint)).json()).toEqual({ sourcePath: null });
+  expect((await api(`${endpoint}?threadId=${other.id}`)).status).toBe(404);
+  const design = await (await api(`${endpoint}?threadId=${thread.id}`)).json();
+  expect(design).toMatchObject({ sourcePath });
+  const request = { threadId: thread.id, kind: "pcb", sourceRevision: design.sourceRevision };
+  const result = await api(`${endpoint}/render`, { method: "POST", body: JSON.stringify(request) });
+  expect(result.status).toBe(200);
+  expect(await result.json()).toMatchObject({ sourcePath, sourceRevision: design.sourceRevision, sourceBinding: { status: "current" } });
+  const exportGlb = services.kicad.exportGlb;
+  try {
+    services.kicad.exportGlb = async (_cli, { output }) => { await writeFile(output, "mock GLB"); return { fused: false, warnings: [] }; };
+    const model = await api(`${endpoint}/render`, { method: "POST", body: JSON.stringify({ ...request, kind: "3d" }) });
+    expect(model.status).toBe(200);
+    expect(await model.json()).toMatchObject({ path: "renders/board.glb", sourcePath, sourceRevision: design.sourceRevision });
+  } finally { services.kicad.exportGlb = exportGlb; }
+  await writeFile(join(handle.dir, sourcePath), '(kicad_pcb (version 20250114) (generator "new") (gr_rect (start 0 0) (end 20 20) (stroke (width 0.1) (type default)) (fill none) (layer "Edge.Cuts")))');
+  expect((await api(`${endpoint}/render`, { method: "POST", body: JSON.stringify(request) })).status).toBe(409);
+  const renderPcb = services.kicad.exportPcbSvg;
+  try {
+    services.kicad.exportPcbSvg = async (...args) => { const result = await renderPcb(...args); await writeFile(join(handle.dir, sourcePath), '(kicad_pcb (version 20250114) (generator "raced"))'); return result; };
+    const next = await (await api(`${endpoint}?threadId=${thread.id}`)).json();
+    expect((await api(`${endpoint}/render`, { method: "POST", body: JSON.stringify({ ...request, sourceRevision: next.sourceRevision }) })).status).toBe(412);
+  } finally { services.kicad.exportPcbSvg = renderPcb; }
+});
+
+test("native source namespace uses original filenames, isolates generated content and refuses stale clients", async () => {
+  const project = await (await api("/projects", { method: "POST", body: JSON.stringify({ name: "native-originals" }) })).json();
+  const handle = (await daemon.projects.handle(project.id))!;
+  const thread = daemon.store.threads.create({ agentId: "claude", projectId: project.id });
+  const designs = new WorkingDesigns(daemon.config.home);
+  await mkdir(join(handle.dir, "hardware/renders"), { recursive: true });
+  const pcb = (name: string) => `(kicad_pcb (version 20250114) (generator "${name}"))`;
+  await writeFile(join(handle.dir, "board.kicad_pcb"), "root sentinel");
+  await writeFile(join(handle.dir, "hardware/rev-a.kicad_pcb"), pcb("a"));
+  await writeFile(join(handle.dir, "hardware/rev-b.kicad_pcb"), pcb("b"));
+  await writeFile(join(handle.dir, "hardware/renders/pcb.svg"), "repository render sentinel");
+  const namespace = (name: string) => `/native-context/${encodeURIComponent(JSON.stringify({ projectId: project.id, threadId: thread.id, sourcePath: `hardware/rev-${name}.kicad_pcb` }))}`;
+  await designs.select(handle, "hardware/rev-a.kicad_pcb", thread.id, 1);
+  const root = `${namespace("a")}/projects/${project.id}`;
+  expect(await (await api(`${root}/files/board.kicad_pcb`)).text()).toBe(pcb("a"));
+  const detail = await (await api(root)).json();
+  expect(detail.files.some((file: {path: string}) => file.path === "board.kicad_pcb")).toBe(true);
+  const sources = await (await api(`${root}/board-sources`)).json();
+  expect(sources.sources[0].status).toBe("available");
+  expect((await api(`${root}/files/renders/pcb.svg`)).status).toBe(404);
+  expect((await api(`${root}/files/renders/pcb.svg`, { method: "PUT", body: "a cache" })).status).toBe(200);
+  expect((await api(`${root}/files/board.kicad_pcb`, { method: "PUT", body: pcb("edited-a") })).status).toBe(200);
+  expect(await readFile(join(handle.dir, "hardware/rev-a.kicad_pcb"), "utf8")).toBe(pcb("edited-a"));
+  expect(await readFile(join(handle.dir, "hardware/rev-b.kicad_pcb"), "utf8")).toBe(pcb("b"));
+  expect(await readFile(join(handle.dir, "hardware/renders/pcb.svg"), "utf8")).toBe("repository render sentinel");
+  await designs.select(handle, "hardware/rev-b.kicad_pcb", thread.id, 2);
+  expect((await api(`${root}/files/board.kicad_pcb`, { method: "PUT", body: "stale" })).status).toBe(412);
+  const other = `${namespace("b")}/projects/${project.id}`;
+  expect((await api(`${other}/files/renders/pcb.svg`)).status).toBe(404);
+  expect((await api(`${other}/files/renders/pcb.svg`, { method: "PUT", body: "b cache" })).status).toBe(200);
+  await designs.select(handle, "hardware/rev-a.kicad_pcb", thread.id, 3);
+  expect(await (await api(`${root}/files/renders/pcb.svg`)).text()).toBe("a cache");
+  expect(await readFile(join(handle.dir, "board.kicad_pcb"), "utf8")).toBe("root sentinel");
+  expect(await Bun.file(join(handle.dir, "hardware/board.kicad_pcb")).exists()).toBe(false);
+});
+
+test("canvas pin → agent answer → reopen uses one native store, isolated across sibling basenames", async () => {
+  const project = await (await api("/projects", { method: "POST", body: JSON.stringify({ name: "native-pins" }) })).json();
+  const handle = (await daemon.projects.handle(project.id))!;
+  const thread = daemon.store.threads.create({ agentId: "claude", projectId: project.id });
+  const designs = new WorkingDesigns(daemon.config.home);
+  await mkdir(join(handle.dir, "hardware"));
+  for (const name of ["io", "carrier"]) await writeFile(join(handle.dir, `hardware/${name}.kicad_pcb`), `(kicad_pcb (version 20250114) (generator "${name}"))`);
+  const namespace = (name: string) => `/native-context/${encodeURIComponent(JSON.stringify({ projectId: project.id, threadId: thread.id, sourcePath: `hardware/${name}.kicad_pcb` }))}`;
+  await designs.select(handle, "hardware/io.kicad_pcb", thread.id, 1);
+  const pins = `${namespace("io")}/projects/${project.id}/comments`;
+  const created = await api(pins, { method: "POST", body: JSON.stringify({ question: "Check U1", anchor: { view: "pcb", ref: "U1" } }) });
+  expect(created.status).toBe(201);
+  const { comment } = await created.json();
+  const token = daemon.tokens.mintRunToken({ runId: "native-pin-answer", projectId: project.id, threadId: thread.id });
+  const answer = await api("/tools/comment_answer", { method: "POST", headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ id: comment.id, answer: "Verified this pin" }) });
+  expect(answer.status).toBe(200);
+  expect((await (await api(pins)).json()).comments[0]).toMatchObject({ id: comment.id, answer: "Verified this pin", status: "answered" });
+  expect((await (await api(`/projects/${project.id}/comments`)).json()).comments).toEqual([]);
+  await designs.select(handle, "hardware/carrier.kicad_pcb", thread.id, 2);
+  expect((await (await api(`${namespace("carrier")}/projects/${project.id}/comments`)).json()).comments).toEqual([]);
+  expect((await api(pins)).status).toBe(412);
+  await designs.select(handle, "hardware/io.kicad_pcb", thread.id, 3);
+  expect((await (await api(pins)).json()).comments[0].answer).toBe("Verified this pin");
+});
+
+test("native manufacturing exports use selected PCB bytes with and without a root sentinel", async () => {
+  const original = services.kicad.exportGerbers;
+  const observed: string[] = [];
+  services.kicad.exportGerbers = async (_cli, { board, outDir }) => {
+    const bytes = await readFile(board, "utf8"); observed.push(bytes);
+    const path = join(outDir, "selected.gtl"); await writeFile(path, bytes);
+    return { paths: [path] };
+  };
+  try {
+    for (const rootPresent of [true, false]) {
+      const project = await (await api("/projects", { method: "POST", body: JSON.stringify({ name: `native-export-${rootPresent}` }) })).json();
+      const handle = (await daemon.projects.handle(project.id))!;
+      const thread = daemon.store.threads.create({ agentId: "claude", projectId: project.id });
+      const designs = new WorkingDesigns(daemon.config.home);
+      await mkdir(join(handle.dir, "hardware"));
+      const source = '(kicad_pcb (version 20250114) (generator "selected-io-v3"))';
+      await writeFile(join(handle.dir, "hardware/io-v3.kicad_pcb"), source);
+      if (rootPresent) await writeFile(join(handle.dir, "board.kicad_pcb"), "ROOT SENTINEL");
+      await designs.select(handle, "hardware/io-v3.kicad_pcb", thread.id, 1);
+      const namespace = `/native-context/${encodeURIComponent(JSON.stringify({ projectId: project.id, threadId: thread.id, sourcePath: "hardware/io-v3.kicad_pcb" }))}`;
+      const response = await api(`${namespace}/tools/export_gerbers?sync=1`, { method: "POST", body: JSON.stringify({ project: project.id }) });
+      expect(response.status).toBe(200);
+      expect((await response.json()).isError).not.toBe(true);
+      expect(await (await api(`${namespace}/projects/${project.id}/files/exports/gerbers/selected.gtl`)).text()).toBe(source);
+      expect(observed.at(-1)).toBe(source);
+      if (rootPresent) expect(await readFile(join(handle.dir, "board.kicad_pcb"), "utf8")).toBe("ROOT SENTINEL");
+      else expect(await Bun.file(join(handle.dir, "board.kicad_pcb")).exists()).toBe(false);
+    }
+  } finally { services.kicad.exportGerbers = original; }
 });

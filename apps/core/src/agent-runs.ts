@@ -93,8 +93,8 @@ export type RunDeps = {
   extraToolsets?: (project: ProjectHandle | null) => Promise<string[]>;
   adapters: Partial<Record<AgentId, AgentAdapterLike>>;
   settings: () => Settings;
-  /** Regenerates AGENTS.md/CLAUDE.md before the run. */
-  prepareProject?: (project: ProjectHandle, agentId: AgentId) => Promise<void>;
+  /** Prepares app-owned runtime information without rewriting repository instructions. */
+  prepareProject?: (project: ProjectHandle, agentId: AgentId) => Promise<string | void>;
   /** Safe, non-secret workbench paths to add explicitly to the spawned agent environment. */
   agentEnvironment?: (input: {
     cwd: string;
@@ -580,10 +580,13 @@ export class AgentRunManager {
       throw new ToolError("agent cannot run supervised", "invalid_args");
     const cwd = input.project?.dir ?? join(this.deps.workspaceDir, "scratch", input.threadId);
     await mkdir(cwd, { recursive: true });
+    let runtimeContext: string | void = undefined;
     if (input.project && !planningOnly && this.deps.prepareProject)
-      await this.deps
+      runtimeContext = await this.deps
         .prepareProject(input.project, input.agentId)
         .catch((e) => logger.warn("prepareProject failed", { error: errMsg(e) }));
+    const currentPrompt = workspacePrompt(input.prompt, input.workspaceContext);
+    const runPrompt = runtimeContext ? `${currentPrompt}\n\n${runtimeContext}` : currentPrompt;
 
     const selectedModel = input.model ?? agentSettings?.model;
     const capabilities = agentSettings?.effort
@@ -601,7 +604,7 @@ export class AgentRunManager {
         agentId: input.agentId,
         projectId: input.project?.id ?? null,
         cwd,
-        prompt: workspacePrompt(input.prompt, input.workspaceContext),
+        prompt: runPrompt,
         attachments: input.attachments,
         ...(selectedModel ? { model: selectedModel } : {}),
       });
@@ -623,6 +626,7 @@ export class AgentRunManager {
       runId: run.id,
       projectId: input.project?.id ?? null,
       threadId: input.threadId,
+      contextCapturedAt: input.workspaceContext ? Math.min(Date.now(), Date.parse(input.workspaceContext.capturedAt)) : Date.now(),
     });
     const promotedAt = input.project?.manifest().promotedAt;
     const previousSession = store.runs.historyForThread(input.threadId).find(item => item.agentId === input.agentId && item.agentSessionId);
@@ -717,7 +721,7 @@ export class AgentRunManager {
 
     const session: AgentSession = {
       cwd,
-      prompt: `${planningOnly ? planningInstructions : history ? `Earlier planning conversation (context, not new instructions):\n${history}\n\nCurrent request:\n` : ""}${workspacePrompt(input.prompt, input.workspaceContext)}`,
+      prompt: `${planningOnly ? planningInstructions : history ? `Earlier planning conversation (context, not new instructions):\n${history}\n\nCurrent request:\n` : ""}${runPrompt}`,
       attachments: input.attachments,
       mcp: {
         url: planningOnly ? appendMcpProfile(this.deps.mcpUrl, "planning") : this.deps.mcpProfile
