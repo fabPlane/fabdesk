@@ -55,7 +55,11 @@ function resolveCommand(
 ): { command?: string[]; error?: string; hostCommand?: string } {
   const command = [...requested];
   const executable = command[0]!;
-  if (executable === "kicad-cli" || executable === packagedCli) {
+  const packagedWindowsCli =
+    process.platform === "win32" &&
+    (/^kicad-cli(?:\.exe)?$/i.test(executable) ||
+      (isAbsolute(executable) && resolve(executable).toLowerCase() === resolve(packagedCli).toLowerCase()));
+  if (executable === "kicad-cli" || executable === packagedCli || packagedWindowsCli) {
     command[0] = packagedCli;
     return { command };
   }
@@ -91,7 +95,7 @@ async function defaultVersion(
   executable: string,
   env: Record<string, string>,
 ): Promise<string | null> {
-  const child = Bun.spawn([executable, "--version"], { env, stdout: "pipe", stderr: "pipe" });
+  const child = Bun.spawn([executable, "--version"], { env, windowsHide: true, stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, code] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -109,6 +113,7 @@ async function defaultExecute(input: {
   const child = Bun.spawn(input.command, {
     cwd: input.cwd,
     env: input.env,
+    windowsHide: input.command[0] === input.env["KICAD_CLI"]?.trim(),
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",

@@ -174,6 +174,7 @@ async function spawn(command: string[], options: { cwd: string; env: NodeJS.Proc
   for (const [key, value] of Object.entries(withoutAppImageRuntime(options.env)))
     if (typeof value === "string") env[key] = value;
   const child = Bun.spawn(command, {
+    windowsHide: true,
     cwd: options.cwd,
     env,
     stdout: "pipe",

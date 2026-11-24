@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { runHermeticEnv } from "./hermetic-env";
 import { delimiter, dirname, resolve } from "node:path";
 
@@ -13,6 +13,21 @@ const baseEnv = {
 };
 
 describe("hermetic packaged-KiCad environment", () => {
+  test("hides the packaged version probe and exec while preserving the exit code", async () => {
+    const spawn = spyOn(Bun, "spawn");
+    const deps = { env: { ...process.env, KICAD_CLI: process.execPath }, out: () => {} };
+    try {
+      expect(await runHermeticEnv({ action: "describe" }, deps)).toBe(0);
+      const args = ["-e", "process.exit(7)"];
+      const name = process.platform === "win32" ? "KiCad-CLI.EXE" : "kicad-cli";
+      expect(await runHermeticEnv({ action: "exec", command: [name, ...args] }, deps)).toBe(7);
+      expect(spawn).toHaveBeenCalledWith([process.execPath, "--version"], expect.objectContaining({ windowsHide: true }));
+      expect(spawn).toHaveBeenCalledWith([process.execPath, ...args], expect.objectContaining({ windowsHide: true }));
+    } finally {
+      spawn.mockRestore();
+    }
+  });
+
   test("preserves the inherited PATH with the platform's environment-key casing", async () => {
     const { PATH, ...rest } = baseEnv;
     let observed: Record<string, string> = {};

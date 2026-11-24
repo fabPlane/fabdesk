@@ -68,6 +68,12 @@ export function resolvePcbBackend(opts: {
   if (manifest.format !== 1)
     throw new Error(`unsupported FabPlane PCB bundle format in ${manifestPath}`);
   const bundleRoot = dirname(manifestPath);
+  // Bun resolves relative preloads against this bridge's cwd. Keeping the filename
+  // relative also supports installation paths with spaces in BUN_OPTIONS.
+  const useConsolePreload =
+    opts.packaged && process.platform === "win32" && !source && !override &&
+    resolve(bundleRoot) === resolve(opts.resourcesPath, "pcb");
+  const bunOptions = manifest.environment?.BUN_OPTIONS ?? env.BUN_OPTIONS;
   const command = override ? resolve(override) : resolve(bundleRoot, manifest.bridge);
   const kicadCli = resolve(bundleRoot, manifest.kicadCli);
   const kicadStockData = resolve(bundleRoot, manifest.stockData ?? "kicad/share/kicad");
@@ -118,6 +124,9 @@ export function resolvePcbBackend(opts: {
     fixedUrl: Boolean(env["FABDESK_FP_PCB_BRIDGE_URL"]),
     env: {
       ...(manifest.environment ?? {}),
+      ...(useConsolePreload ? {
+        BUN_OPTIONS: [bunOptions, "--preload=./fabdesk-hide-pcb-console.cjs"].filter(Boolean).join(" "),
+      } : {}),
       ...(libraryPaths.length
         ? { LD_LIBRARY_PATH: [...libraryPaths, env["LD_LIBRARY_PATH"]].filter(Boolean).join(":") }
         : {}),

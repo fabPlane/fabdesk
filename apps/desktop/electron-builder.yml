@@ -91,6 +91,8 @@ win:
       filter: ["fabdesk-core*", "open-catalog/**"]
     - from: ../../dist/pcb/windows-${arch}/
       to: pcb
+    - from: scripts/fabdesk-hide-pcb-console.cjs
+      to: pcb/fabdesk-hide-pcb-console.cjs
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

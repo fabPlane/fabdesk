@@ -37,13 +37,13 @@ describe("bundled PCB backend", () => {
       }),
     );
 
-    expect(
-      resolvePcbBackend({
-        packaged: true,
-        resourcesPath: resources,
-        env: { FABDESK_PROJECTS_DIR: "C:\\boards" },
-      }),
-    ).toMatchObject({
+    const opts = {
+      packaged: true,
+      resourcesPath: resources,
+      env: { FABDESK_PROJECTS_DIR: "C:\\boards", BUN_OPTIONS: "--no-warnings" },
+    };
+    const resolved = resolvePcbBackend(opts)!;
+    expect(resolved).toMatchObject({
       command: join(pcb, "bin", "fp-pcb-bridge.exe"),
       args: [],
       url: "http://127.0.0.1:4020",
@@ -54,6 +54,10 @@ describe("bundled PCB backend", () => {
         WORKSPACE_ROOT: "C:\\boards",
       },
     });
+    expect(resolved.env.BUN_OPTIONS).toBe(process.platform === "win32"
+      ? "--no-warnings --preload=./fabdesk-hide-pcb-console.cjs" : undefined);
+    expect(corePcbEnvironment(resolved).BUN_OPTIONS).toBeUndefined();
+    expect(resolvePcbBackend({ ...opts, packaged: false })?.env.BUN_OPTIONS).toBeUndefined();
   });
 
   test("resolves bundled Linux loader paths instead of depending on the host", async () => {
