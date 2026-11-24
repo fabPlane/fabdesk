@@ -1,0 +1,57 @@
+name: ComMarker Studio native project
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+    paths:
+      - ".github/workflows/commarker-studio-native.yml"
+      - "scripts/commarker/**"
+      - "packages/client-core/src/commarker-*"
+      - "packages/client-core/test-fixtures/commarker-template.ts"
+      - "docs/examples/omni-x-copper-coupon-remove.svg"
+
+permissions:
+  contents: read
+
+jobs:
+  mac-project:
+    name: Native project round trip on Intel Mac
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.body, '[x] Verify native ComMarker Studio on Mac'))
+    runs-on: macos-15-intel
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Round-trip a FabDesk job through Studio 1.0.42's editor
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          scratch="$RUNNER_TEMP/fabdesk-commarker"
+          mount="$scratch/volume"
+          mkdir -p "$mount" "$scratch/dependencies" "$scratch/MacOS"
+          # This smoke uses one pinned runtime dependency and no FabDesk submodules.
+          bun -e 'const { zod } = require("./packages/client-core/package.json").dependencies; console.log(JSON.stringify({ private: true, dependencies: { zod } }))' > "$scratch/dependencies/package.json"
+          (cd "$scratch/dependencies" && bun install --ignore-scripts)
+          ln -s "$scratch/dependencies/node_modules" node_modules
+          curl --fail --location --retry 2 --max-time 180 'https://commarker.com/public/files/ComMarker_Studio_1.0.42_202606261722.dmg' -o "$scratch/studio.dmg"
+          (cd "$scratch" && echo '91fac19e7b53d82500cd8133fa0eaf14c1a34136f8c2dee93e514e544bda22c6  studio.dmg' | shasum -a 256 -c -)
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$scratch/studio.dmg"
+          trap 'hdiutil detach "$mount"' EXIT
+          studio=$(find "$mount" -type d -name 'ComMarker_Studio.app' -print -quit)
+          frameworks="$studio/Contents/Frameworks"
+          test -f "$frameworks/liblcsDI.dylib"
+          ln -s "$frameworks" "$scratch/Frameworks"
+          xcrun clang++ -std=c++17 scripts/commarker/macos-studio-reader.cpp \
+            -L"$frameworks" -Wl,-rpath,"$frameworks" -lparam -lshape -ldoc -lutils -llcsDI -o "$scratch/MacOS/read-studio"
+          bun run scripts/commarker/native-roundtrip.ts prepare "$scratch"
+          "$scratch/MacOS/read-studio" "$scratch/fabdesk.orzr" "$scratch/reopened.orzr" "$scratch/studio-save.orzr"
+          bun run scripts/commarker/native-roundtrip.ts verify "$scratch"

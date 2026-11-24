@@ -11,9 +11,21 @@ On 2026-11-24, an offline test loaded the SVG importer and shape engine from Com
 
 Coordinates are in millimetres from the top left of the source board. Probes compared the expected region with actual horizontal segments on the nearest native hatch row within 0.05 mm. The plot draws the coordinates returned by Studio's engine. The gray board frames are annotations.
 
+### Native project geometry
+
+The same engine also read FabDesk's editable type-4 polyline representation. Native projects place the full board's centre at (0, 0) and use positive Y upwards. The 20 × 12 mm coupon spans x = −10 to +10 and y = −6 to +6. The inset artwork spans x = −7 to +10 and y = −7.5 to +5.5, preserving the unmarked margins around it. Use Studio's workspace preview to align the physical board. [Omni X Studio operating guide](https://commarker.com/dist/js/uploads/Machines/OmniSeries/OmniX/Manual/OmniXOperationTutorial.pdf)
+
+A second run compared every computed Fill path with Studio's own SVG import, after translating the two origins to coincide. Path order and point counts matched in each case. The largest difference between a pair of coordinates was below 0.000001 mm at the tested spacing.
+
+| Geometry from FabDesk | Closed input contours | Native hatch paths | Compared hatch points |
+| --- | ---: | ---: | ---: |
+| Two-net coupon | 3 | 166 | 570 |
+| Inset board with copper ring and cutout | 4 | 81 | 420 |
+| Routed StickHub board, 16.5 × 40 mm | 123 | 3,347 | 7,524 |
+
 To check visually in Studio, create a blank project, choose **Vector**, import either SVG and select its group. Compare the selection dimensions with the table, then enable **Fill** to inspect the geometry. On the inset fixture, stretching the selected shape to the full board size would distort the artwork.
 
-The isolated test called the installed importer's `parserData`, asked the shape engine to generate its geometry, and read its bounds and computed Fill paths. The lab binding depends on private C++ layouts specific to this Windows build. FabDesk's application code uses the SVG handoff. Mac Studio and physical isolation still require separate verification. [Vendor downloads](https://commarker.com/download-center)
+The isolated test called the installed importer's `parserData`, asked the shape engine to generate its geometry, and read its bounds and computed Fill paths. The lab binding depends on C++ layouts specific to this Windows build. FabDesk generates its SVG and Studio project files independently. The separate project test exercised the stock editor's file reader and writer. Physical isolation requires a bench test. [Studio project results](native-project.md) · [Vendor downloads](https://commarker.com/download-center)
 
 | Tested file | SHA-256 |
 | --- | --- |
