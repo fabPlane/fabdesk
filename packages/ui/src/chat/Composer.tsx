@@ -25,6 +25,8 @@ import { MicButton, VoiceBar } from "./voice/VoiceBar";
 import { WorkspaceMenu } from "../layout/WorkspaceMenu";
 import { FinishItPanel } from "./FinishItPanel";
 import { finishItActive } from "./finish-it-view";
+import { AntigravityProjectStartDialog } from "./AntigravityProjectStartDialog";
+import { needsAntigravityProjectStart, prepareAntigravityProject } from "./antigravity-project-start";
 
 /** Bridge for the global shortcut hook (mod+Enter send, mod+. abort) and for app automation. */
 export const composerHandlers: {
@@ -55,7 +57,7 @@ export interface ComposerProps {
   thread: Thread | null;
   loadingThread?: boolean;
   /** Creates ownership before sending; navigation waits for the accepted message. */
-  onCreateThread: (input: { agentId: AgentId; model?: string }) => Promise<Thread>;
+  onCreateThread: (input: { agentId: AgentId; model?: string; projectId?: string }) => Promise<Thread>;
 }
 
 const FALLBACK_AGENTS = [
@@ -129,6 +131,9 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
   currentSelectionOwner.current = selectionOwner;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preparedThread = useRef<Thread | null>(null);
+  const antigravityProject = useRef<{ source: string | null; id: string } | null>(null);
+  const submitting = useRef(false);
+  const [antigravityProjectStart, setAntigravityProjectStart] = useState<{ model: string } | null>(null);
 
   const questionId = activeQuestion(messages.data ?? [], run?.runId)?.requestId;
   const questionKey = questionId ? `${thread?.id}:${run?.runId}:${questionId}` : undefined;
@@ -201,6 +206,11 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
     return () => ro.disconnect();
   }, [draft, compactQuestion]);
 
+  const refreshAgentModels = doctor.refetch;
+  useEffect(() => {
+    if (agentPickerOpen) void refreshAgentModels({ cancelRefetch: false });
+  }, [agentPickerOpen, refreshAgentModels]);
+
   const agents = doctor.data?.agents ?? [];
   const pickerAgents = agents.length > 0 ? agents : FALLBACK_AGENTS;
   const selectedAgent = agents.find((a) => a.id === agentId);
@@ -246,9 +256,9 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
     }
   }, [projectId, rootAutomation, finishItBusy, alreadyFinished, loadingThread, settings.data, savePreference.isPending, startFinishIt, thread?.id, agentId, model, setActiveThread, qc]);
 
-  const send = useCallback(async () => {
+  const send = useCallback(async (confirmedProjectName?: string) => {
     const typed = draft.trim();
-    if (!typed || sending || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending || savingEffort.current) return;
+    if (!typed || sending || submitting.current || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending || savingEffort.current) return;
     if (!thread && !projectId && !startMode) {
       setProjectPickerOpen(true);
       return;
@@ -258,10 +268,31 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
       await beginFinishIt();
       return;
     }
+    if (antigravityProjectStart && confirmedProjectName === undefined) return;
+    // An existing project may itself be an unpromoted idea. Never send a draft to
+    // Antigravity just because the project detail has not loaded or refreshed yet.
+    if (agentId === "antigravity" && projectId && project.data?.id !== projectId) {
+      setError("Wait for the current project to load before sending to Antigravity.");
+      return;
+    }
+    const preparedProjectId = antigravityProject.current?.source === projectId ? antigravityProject.current.id : null;
+    const home = startMode && !projectId && !thread;
+    const requiresProjectSetup = needsAntigravityProjectStart({ agentId, home, draft: ideaDraft, prepared: !!preparedProjectId });
+    if (confirmedProjectName !== undefined && (!requiresProjectSetup || antigravityProjectStart?.model !== model)) {
+      setAntigravityProjectStart(null);
+      setError("The selected agent or model changed. Review your selection and send again.");
+      return;
+    }
+    if (requiresProjectSetup && confirmedProjectName === undefined) {
+      setError(null);
+      setAntigravityProjectStart({ model });
+      return;
+    }
     // `/shopping-list …` and friends expand into the instructions the agent needs.
     const expanded = expandSlashCommand(typed) ?? typed;
     const content = expanded;
     const workspaceContext = captureAssistantContext(selectAssistantState(useUiStore.getState()), boardSources.data, boardSources.isFetching || boardSources.isError, matchingContexts);
+    submitting.current = true;
     setSending(true);
     setError(null);
     // Keep observing this chat even if navigation unmounts its composer. Comparing
@@ -270,12 +301,32 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
     const stopWatchingDraft = useUiStore.subscribe((next, previous) => {
       if (next.drafts[draftKey] !== previous.drafts[draftKey]) textEditedSinceSubmission = true;
     });
+    let settingUpProject = requiresProjectSetup;
     try {
+      let destination = preparedProjectId;
+      if (requiresProjectSetup && confirmedProjectName !== undefined) {
+        // A failed send after confirmation should be retryable without making another project.
+        // Reuse a Home draft if a previous provider already prepared it without sending.
+        const draftId = projectId ?? preparedThread.current?.projectId ?? null;
+        const prepared = await prepareAntigravityProject(client, draftId, confirmedProjectName);
+        destination = prepared.id;
+        antigravityProject.current = { source: projectId, id: destination };
+        if ("manifest" in prepared) qc.setQueryData(["project", destination], prepared);
+        void qc.invalidateQueries({ queryKey: ["projects"] });
+        settingUpProject = false;
+        setAntigravityProjectStart(null);
+      }
       let threadId = thread?.id;
       let created = preparedThread.current;
       if (!threadId) {
+        // A failed first send can leave a hidden thread under the previous choice.
+        // The queue falls back to the stored model when the provider default is selected,
+        // so persist the current choice explicitly, including a null model, before sending.
+        if (created && (created.agentId !== agentId || created.model !== (model || null))) {
+          created = await client.patchThread(created.id, { agentId, model: model || null });
+        }
         // No title: the daemon names the thread after this first message (and tells every client).
-        created ??= await onCreateThread({ agentId, ...(model ? { model } : {}) });
+        created ??= await onCreateThread({ agentId, ...(model ? { model } : {}), ...(destination ? { projectId: destination } : {}) });
         preparedThread.current = created;
         threadId = created.id;
       }
@@ -304,12 +355,14 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
       }
     } catch (e) {
       // Retain this prepared thread and the visible draft for a normal retry.
+      if (!settingUpProject) setAntigravityProjectStart(null);
       setError(e);
     } finally {
       stopWatchingDraft();
+      submitting.current = false;
       setSending(false);
     }
-  }, [draft, rootAutomation, matchingContexts, boardSources.data, boardSources.isFetching, boardSources.isError, setDraftBoardContext, sending, saveEffort.isPending, loadingThread, settings.data, savePreference.isPending, startMode, projectId, setProjectPickerOpen, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
+  }, [client, ideaDraft, project.data?.id, antigravityProjectStart, draft, rootAutomation, matchingContexts, boardSources.data, boardSources.isFetching, boardSources.isError, setDraftBoardContext, sending, saveEffort.isPending, loadingThread, settings.data, savePreference.isPending, startMode, projectId, setProjectPickerOpen, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
 
   const stop = useCallback(async () => {
     if (!run || stopping) return;
@@ -322,13 +375,13 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
 
   useEffect(() => {
     composerHandlers.send = () => void send();
-    composerHandlers.canSend = () => !!draft.trim() && !sending && !saveEffort.isPending && !loadingThread && !!settings.data && !savePreference.isPending && !savingEffort.current && !!(thread || projectId || startMode);
-    composerHandlers.canSelectAgent = () => !!settings.data && !loadingThread && !savePreference.isPending && !savingEffort.current && !run && queued.length === 0;
+    composerHandlers.canSend = () => !!draft.trim() && !antigravityProjectStart && !sending && !saveEffort.isPending && !loadingThread && !!settings.data && !savePreference.isPending && !savingEffort.current && !!(thread || projectId || startMode);
+    composerHandlers.canSelectAgent = () => !!settings.data && !antigravityProjectStart && !loadingThread && !savePreference.isPending && !savingEffort.current && !run && queued.length === 0;
     composerHandlers.abort = run ? () => void stop() : null;
     composerHandlers.voiceToggle = () => voice.toggle();
     composerHandlers.finishIt = () => void beginFinishIt();
     composerHandlers.setAgent = (id, m) => {
-      if (savingEffort.current) return false;
+      if (savingEffort.current || antigravityProjectStart) return false;
       const offered = doctor.data?.agents ?? FALLBACK_AGENTS;
       const agent = offered.find((a) => a.id === id);
       if (!agent || !settings.data || loadingThread || savePreference.isPending || run || queued.length > 0) return false;
@@ -344,7 +397,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
       composerHandlers.setAgent = null;
       composerHandlers.voiceToggle = null;
     };
-  }, [send, stop, run, doctor.data, settings.data, loadingThread, voice.toggle, beginFinishIt, selectAgent, savePreference.isPending, queued.length, draft, sending, saveEffort.isPending, thread, projectId, startMode]);
+  }, [send, stop, run, doctor.data, settings.data, loadingThread, voice.toggle, beginFinishIt, selectAgent, savePreference.isPending, queued.length, draft, sending, saveEffort.isPending, thread, projectId, startMode, antigravityProjectStart]);
 
   const showStop = !!run && !draft.trim() && !sending;
 
@@ -524,7 +577,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
                   title={loadingThread ? "Loading chat…" : `${pickerLabel} (${mod} + /)`}
                   aria-label={loadingThread ? "Loading chat agent and model" : `Agent and model: ${pickerLabel}`}
                   onClick={() => setAgentPickerOpen(!agentPickerOpen)}
-                  disabled={!!run || queued.length > 0 || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending}
+                  disabled={!!antigravityProjectStart || !!run || queued.length > 0 || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending}
                   aria-haspopup="menu"
                   aria-expanded={agentPickerOpen}
                   data-testid="agent-model"
@@ -537,6 +590,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
                   open={agentPickerOpen}
                   onClose={() => setAgentPickerOpen(false)}
                   agents={pickerAgents}
+                  modelsLoading={doctor.isFetching}
                   agentId={agentId}
                   model={model}
                   defaultModel={(id) => settings.data?.agents[id]?.model ?? ""}
@@ -574,7 +628,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
             <div className="border-t border-warning/20 px-3 py-2"><InstallHint text={selectedAgent.installHint} /></div>
           </details>
         )}
-        {error != null && <ErrorNotice error={error} agentId={agentId} onDismiss={() => setError(null)} />}
+        {error != null && !antigravityProjectStart && <ErrorNotice error={error} agentId={agentId} onDismiss={() => setError(null)} />}
         {selectionNotice && <ErrorNotice error={selectionNotice.error} agentId={selectionNotice.agentId}
           title={selectionNotice.savedForChat ? `Using ${pickerAgents.find(agent => agent.id === selectionNotice.agentId)?.displayName ?? selectionNotice.agentId} · default not saved` : "Could not switch agent"}
           description={selectionNotice.savedForChat ? "You can continue in this chat. Retry saving your default, or restart fabPlane if it was recently updated." : "Your previous agent is still selected. Retry the switch when the connection is ready."}
@@ -583,6 +637,13 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
           onDismiss={() => setSelectionNotice(null)}
           {...(!run && queued.length === 0 && !sending && !savePreference.isPending && selectionNotice.savedForChat && selectionNotice.error instanceof CoreHttpError && selectionNotice.error.status === 404 && host.restartCore ? { onRestart: () => { setSelectionNotice(null); void host.restartCore!().catch(failure => setError(failure)); } } : {})} />}
       </div>
+      {antigravityProjectStart && <AntigravityProjectStartDialog
+        busy={sending}
+        error={error}
+        initialName={project.data && project.data.name !== "Untitled idea" ? project.data.name : ""}
+        onCancel={() => { setAntigravityProjectStart(null); setError(null); }}
+        onConfirm={name => void send(name)}
+      />}
     </div>
   );
 }

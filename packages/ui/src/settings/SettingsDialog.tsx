@@ -17,6 +17,7 @@ import { SETTINGS_SECTIONS, useUiStore, type SettingsSection } from "../stores/u
 import { cn } from "../util";
 import { InstallHint } from "../components/InstallHint";
 import { privacyScreenRequired } from "../app/privacy-gate";
+import { modelDisplayName } from "../chat/model-display-name";
 
 const LABELS: Record<SettingsSection, string> = {
   agents: "Agents",
@@ -45,9 +46,10 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   );
 }
 
-function AgentModelSetting({ name, models, value, onChange }: { name: string; models: string[]; value: string | null; onChange: (value: string | null) => void }) {
+function AgentModelSetting({ name, models, aliases, accountOnly, value, onChange }: { name: string; models: string[]; aliases?: Record<string, string> | undefined; accountOnly?: boolean; value: string | null; onChange: (value: string | null) => void }) {
   const [custom, setCustom] = useState(false);
-  const usingCustom = custom || !!value && !models.includes(value);
+  const unavailable = !!value && !models.includes(value);
+  const usingCustom = !accountOnly && (custom || unavailable);
   return <div className="min-w-0 space-y-2">
     <Select aria-label={`${name} model`} className="w-full" value={usingCustom ? "__custom_model__" : value ?? ""} onChange={event => {
       const next = event.target.value;
@@ -55,8 +57,9 @@ function AgentModelSetting({ name, models, value, onChange }: { name: string; mo
       if (next !== "__custom_model__") onChange(next || null);
     }}>
       <option value="">Agent default</option>
-      {models.map(model => <option key={model} value={model}>{model}</option>)}
-      <option value="__custom_model__">Custom model ID…</option>
+      {models.map(model => <option key={model} value={model}>{accountOnly ? modelDisplayName(model, aliases) : model}</option>)}
+      {accountOnly && unavailable && <option value={value!} disabled>{value} (previously saved)</option>}
+      {!accountOnly && <option value="__custom_model__">Custom model ID…</option>}
     </Select>
     {usingCustom && <Input aria-label={`${name} custom model ID`} autoComplete="off" value={value ?? ""} placeholder="Enter a model ID" onChange={event => onChange(event.target.value || null)} />}
   </div>;
@@ -78,6 +81,10 @@ export function SettingsDialog() {
   const projectId = useUiStore(s => s.activeProjectId);
   const settings = useSettings();
   const doctor = useDoctor();
+  const refreshAgentModels = doctor.refetch;
+  useEffect(() => {
+    if (open && section === "agents") void refreshAgentModels({ cancelRefetch: false });
+  }, [open, section, refreshAgentModels]);
   const patch = usePatchSettings();
   const privacyScreen = privacyScreenRequired(usePrivacy());
   const [draft, setDraft] = useState<Settings | null>(null);
@@ -155,15 +162,17 @@ export function SettingsDialog() {
                       <Input value={cfg.binaryPath ?? ""} onChange={(e) => updateAgent(a.id, { binaryPath: e.target.value || null })} placeholder={a.path ?? "auto-detect"} />
                     </Row>
                     <Row label="Model">
-                      <AgentModelSetting key={`${a.id}:${modelReset}`} name={a.displayName} models={a.models} value={cfg.model} onChange={model => updateAgent(a.id, { model })} />
+                      <AgentModelSetting key={`${a.id}:${modelReset}`} name={a.displayName} models={a.models} aliases={a.modelAliases} accountOnly={a.id === "antigravity"} value={cfg.model} onChange={model => updateAgent(a.id, { model })} />
                     </Row>
-                    <Row label="Models in picker" hint="Comma-separated; empty shows the first three known models">
+                    {a.id === "antigravity" ? <Row label="Models in picker" hint={a.models.length ? "From the signed-in Antigravity account on this host" : "If no models appear, check Antigravity sign-in on this host."}>
+                      <Button variant="ghost" size="sm" disabled={doctor.isFetching} onClick={() => void refreshAgentModels({ cancelRefetch: false })}>{doctor.isFetching ? "Checking…" : "Refresh models"}</Button>
+                    </Row> : <Row label="Models in picker" hint="Comma-separated; empty shows the first three known models">
                       <Input
                         value={cfg.pickerModels.join(", ")}
                         onChange={(e) => updateAgent(a.id, { pickerModels: e.target.value.split(",").map((m) => m.trim()).filter(Boolean) })}
                         placeholder={a.models.slice(0, 3).join(", ")}
                       />
-                    </Row>
+                    </Row>}
                     {a.id === "antigravity" ? <Row label="Permission mode" hint="Set by Antigravity. FabDesk displays approval requests the CLI sends.">
                       <span className="text-sm text-muted">Antigravity settings</span>
                     </Row> : <Row label="Permission mode" hint="How much the agent may do without asking">

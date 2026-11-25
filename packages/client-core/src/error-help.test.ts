@@ -126,3 +126,14 @@ test("Antigravity authentication errors show the CLI login command", () => {
     agentId: "antigravity",
   })).toMatchObject({ action: "agents", command: "agy acp --login" });
 });
+
+test("Antigravity unavailable and unconfirmed models direct the user to refresh instead of silently falling back", () => {
+  for (const raw of [
+    "The selected model is not available to this Antigravity account.",
+    "Google Antigravity did not confirm the selected model. No prompt was sent.",
+  ]) {
+    const help = errorHelp(raw, { agentId: "antigravity" });
+    expect(help).toMatchObject({ title: "Antigravity could not use the selected model", action: "models" });
+    expect(help.message).toContain("No prompt was sent to the agent.");
+  }
+});

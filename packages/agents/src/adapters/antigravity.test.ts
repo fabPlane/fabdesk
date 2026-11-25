@@ -23,24 +23,45 @@ function fixture(env: Record<string, string> = {}): AgentSession {
     const send = value => console.log(JSON.stringify({jsonrpc: "2.0", ...value}));
     const update = value => send({method: "session/update", params:{sessionId:"agy-thread", update:value}});
     let current;
+    let model = "default";
+    let level = "high";
+    const config = () => [
+      {id:"picked-model",category:"model",currentValue:model,options:[
+        {value:"default",name:"Gemini Default"},
+        {group:"Account",options:[{value:"chosen",name:"Gemini Chosen"}]},
+      ]},
+      {id:"thought",category:"thought_level",currentValue:level,options:[{value:"high"},{value:"low"}]},
+    ];
     readline.createInterface({input: process.stdin}).on("line", line => {
       const { id, method, params, result } = JSON.parse(line);
       const ok = value => send({id, result:value});
-      if (method === "initialize") ok({protocolVersion:1, agentCapabilities:{loadSession:true, mcpCapabilities:{http:!process.env.NO_HTTP}}});
+      if (method === "initialize") ok({protocolVersion:1, agentCapabilities:{loadSession:true, mcpCapabilities:{http:!process.env.NO_HTTP},sessionCapabilities:{close:{}}}});
       if (method === "session/new" || method === "session/load") {
         if (process.env.DENY_AUTH) return send({id,error:{code:-32000,message:"Authentication required",data:"do not display"}});
-        if (require("node:fs").realpathSync(params.cwd) !== process.cwd() || params.mcpServers[0].headers[0].value !== "Bearer fixture-token") process.exit(3);
+        if (require("node:fs").realpathSync(params.cwd) !== process.cwd()) process.exit(3);
+        if (params.mcpServers.length === 0) {
+          if (!require("node:path").basename(params.cwd).startsWith("fabdesk-agy-")) process.exit(7);
+          ok({sessionId:"agy-thread",configOptions:config()});
+          return;
+        }
+        if (params.mcpServers[0].headers[0].value !== "Bearer fixture-token") process.exit(3);
         if (method === "session/load") {
           if (params.sessionId !== "agy-thread") process.exit(4);
           update({sessionUpdate:"agent_message_chunk",content:{type:"text",text:"OLD"}});
         }
-        ok({sessionId:"agy-thread",configOptions:[{id:"picked-model",category:"model"}]});
+        ok({sessionId:"agy-thread",configOptions:config(),models:{currentModelId:"default-high",availableModels:[{modelId:"default-high"},{modelId:"chosen-low"}]}});
       }
       if (method === "session/set_config_option") {
-        if(params.configId !== "picked-model" || params.value !== "chosen") process.exit(5);
-        ok({});
+        if(params.configId === "picked-model" && params.value === "chosen") {
+          if (!process.env.DONT_CONFIRM) model = "chosen";
+        } else if (params.configId === "thought" && params.value === "low") {
+          level = "low";
+        } else process.exit(5);
+        ok({configOptions:config()});
       }
+      if (method === "session/close") ok({});
       if (method === "session/prompt") {
+        if (process.env.EXPECT_LOW && level !== "low") process.exit(8);
         if (!params.prompt[0].text.includes("Say hello")) process.exit(6);
         current = id;
         update({sessionUpdate:"agent_thought_chunk",content:{type:"text",text:"Thinking"}});
@@ -81,7 +102,11 @@ const nativeTest = process.platform === "win32" ? test.skip : test;
 nativeTest("doctor discovers the new adapter and respects a binary override", async () => {
   const setup = fixture();
   expect(adapters.antigravity).toBe(antigravityAdapter);
-  expect(await antigravityAdapter.detect(setup.binaryPath)).toMatchObject({ installed: true, version: "1.5.16" });
+  expect(await antigravityAdapter.detect(setup.binaryPath)).toMatchObject({
+    installed: true, version: "1.5.16",
+    models: ["default", "chosen"], defaultModel: "default",
+    modelAliases: { default: "Gemini Default", chosen: "Gemini Chosen" },
+  });
 });
 
 nativeTest("resumes, skips replay, selects a model, streams text, and waits for one-time approval", async () => {
@@ -166,4 +191,20 @@ nativeTest("ambiguous one-time permissions outside a known interaction fail clos
     requestInput: async () => "Red",
   });
   expect(events).toContainEqual({ type:"tool_result", id:"t1", output:"cancelled", isError:false });
+});
+
+
+nativeTest("an unadvertised model or unconfirmed selection never starts a prompt", async () => {
+  const unavailable = await collect({ ...fixture(), model: "not-in-account" });
+  expect(unavailable.map(event => event.type)).toEqual(["error", "done"]);
+  expect(unavailable[0]).toMatchObject({ message: expect.stringContaining("not available") });
+  const ignored = await collect({ ...fixture({ DONT_CONFIRM: "1" }), model: "chosen" });
+  expect(ignored.map(event => event.type)).toEqual(["error", "done"]);
+  expect(ignored[0]).toMatchObject({ message: expect.stringContaining("did not confirm") });
+});
+
+nativeTest("a legacy advertised concrete model preserves its chosen thinking level", async () => {
+  const events = await collect({ ...fixture({ EXPECT_LOW: "1" }), model: "chosen-low" });
+  expect(events[0]).toEqual({ type: "init", sessionId: "agy-thread", model: "chosen-low" });
+  expect(events.at(-1)).toMatchObject({ type: "done", exitCode: 0 });
 });

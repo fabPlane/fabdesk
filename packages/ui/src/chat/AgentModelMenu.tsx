@@ -21,11 +21,12 @@ export interface AgentModelMenuProps {
   configuredModels: (id: AgentId) => string[];
   onSelect: (agentId: AgentId, model: string) => void;
   onOpenSettings: () => void;
+  modelsLoading?: boolean;
   effort: EffortSectionProps;
 }
 
 /** Agent-first accordion: expanding a provider never changes the selected model. */
-export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, model, defaultModel, configuredModels, onSelect, onOpenSettings, effort }: AgentModelMenuProps) {
+export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, model, defaultModel, configuredModels, onSelect, onOpenSettings, modelsLoading, effort }: AgentModelMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState<AgentId | "effort" | null>(null);
   useEffect(() => { if (!open) setExpanded(null); }, [open]);
@@ -98,9 +99,13 @@ export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, mode
       {ordered.map((agent) => {
         const isOpen = expanded === agent.id;
         const selected = agent.id === agentId;
-        const fallback = defaultModel(agent.id);
+        const configured = defaultModel(agent.id);
+        const nativeCatalogue = agent.id === "antigravity";
+        // Always offer the account's native default, even with a saved explicit model.
+        const fallback = nativeCatalogue ? "" : configured;
         const defaultLabel = fallback || agent.defaultModel || "";
-        const choices = [...new Set([...configuredModels(agent.id), ...agent.models, ...(selected && model ? [model] : [])])].filter(Boolean);
+        const candidates = [...configuredModels(agent.id), ...agent.models, ...(selected && model ? [model] : [])];
+        const choices = [...new Set(candidates)].filter((id) => id && (!nativeCatalogue || agent.models.includes(id)));
         return <div key={agent.id}>
           <button type="button" role="menuitem" disabled={effort.saving} aria-expanded={isOpen} aria-controls={`agent-models-${agent.id}`} data-agent={agent.id}
             className="grid min-h-10 w-full grid-cols-[18px_minmax(0,1fr)_auto_15px] items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-fg hover:bg-panel-2 focus-visible:bg-panel-2"
@@ -117,8 +122,9 @@ export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, mode
           </button>
           {isOpen && <div id={`agent-models-${agent.id}`} role="group" aria-label={`${agent.displayName} models`} className="mb-1 ml-3 border-l border-border pl-2">
             <Item selected={selected && (!model || model === fallback)} onClick={() => choose(agent.id, fallback)} title={defaultLabel || "Use the agent's default model"}>
-              <span className="min-w-0"><span className="block truncate">{defaultLabel ? modelDisplayName(defaultLabel, agent.modelAliases) : "Agent setting"}</span><span className="block text-[11px] font-normal text-muted">{defaultLabel ? "Default" : (choices.length ? "Model not reported; choose one below" : "Use the model configured in the agent")}</span></span>
+              <span className="min-w-0"><span className="block truncate">{nativeCatalogue ? "Antigravity default" : defaultLabel ? modelDisplayName(defaultLabel, agent.modelAliases) : "Agent setting"}</span><span className="block text-[11px] font-normal text-muted">{nativeCatalogue && defaultLabel ? modelDisplayName(defaultLabel, agent.modelAliases) : defaultLabel ? "Default" : (choices.length ? "Model not reported; choose one below" : "Use the model configured in the agent")}</span></span>
             </Item>
+            {nativeCatalogue && agent.installed && choices.length === 0 && <p className="px-2.5 py-2 text-xs text-muted">{modelsLoading ? "Checking available models…" : "No model list reported. Check Antigravity sign-in on this host and reopen the picker."}</p>}
             {choices.filter((id) => id !== fallback).map((id) => <Item key={id} selected={selected && model === id} onClick={() => choose(agent.id, id)} title={agent.modelAliases?.[id] ?? id}>
               <span className="min-w-0"><span className="block truncate">{modelDisplayName(id, agent.modelAliases)}</span>
                 {/^(fable|opus|sonnet|haiku)(\[1m\])?$/.test(id) && !agent.modelAliases?.[id] && <span className="block text-[11px] font-normal text-muted">Version not reported by agent</span>}
