@@ -11,10 +11,19 @@ async function ready(): Promise<void> {
   await initialization;
 }
 
+/** The native exporter returned no usable SVG, rather than a framing/runtime fault. */
+export class SchematicPreviewUnavailableError extends Error {
+  constructor() {
+    super("KiCad did not produce a usable schematic SVG preview.");
+    this.name = "SchematicPreviewUnavailableError";
+  }
+}
+
 /** Presentation-only crop of a frame-free native schematic. Geometry stays in native SVG units. */
 export async function frameSchematicCircuit(svg: string): Promise<string> {
+  if (svg.length > 24_000_000) throw new Error("The schematic preview exceeds the 24,000,000 character framing limit");
   const root = /<svg\b[^>]*>/i.exec(svg)?.[0];
-  if (!root || svg.length > 24_000_000) throw new Error("The schematic preview is missing or exceeds the framing limit");
+  if (!root) throw new SchematicPreviewUnavailableError();
   const box = /\bviewBox="([^"]+)"/.exec(root)?.[1]?.trim().split(/\s+/).map(Number);
   const width = Number(/\bwidth="([\d.]+)mm"/.exec(root)?.[1]), height = Number(/\bheight="([\d.]+)mm"/.exec(root)?.[1]);
   if (!box || box.length !== 4 || box[0] !== 0 || box[1] !== 0 || ![width, height, ...box].every(Number.isFinite) || Math.abs(width - box[2]!) > .05 || Math.abs(height - box[3]!) > .05) throw new Error("Schematic framing requires the native millimetre page coordinate system");

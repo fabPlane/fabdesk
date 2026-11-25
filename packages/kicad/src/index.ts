@@ -26,7 +26,12 @@ export {
   type Placement,
   type PlaceResult,
 } from "./place";
-export { rasterizeSvg, rasterizeSvgPixels, type RasterizedSvg } from "./raster";
+export {
+  rasterizeSvg,
+  rasterizeSvgPixels,
+  SchematicPreviewUnavailableError,
+  type RasterizedSvg,
+} from "./raster";
 export {
   renderPng,
   exportGlb,
