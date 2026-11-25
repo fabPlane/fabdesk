@@ -31,3 +31,19 @@ test("recent steps name each tool call with its state and the first line it retu
   expect(latestRunNote([m], 0)).toBe("I'll continue from the 69-part draft. Checking the footprints first.");
   expect(latestRunNote([message([])], 0)).toBeNull();
 });
+
+test("a streak of shell commands is one step that shows the latest command", () => {
+  const m = message([
+    { type: "tool_use", id: "1", name: "mcp__fabdesk__circuit_build", input: {} }, { type: "tool_result", id: "1", output: { text: "Build OK" } },
+    { type: "tool_use", id: "2", name: "command_execution", input: { command: "/bin/zsh -lc 'ls -a | head -30'" } }, { type: "tool_result", id: "2", output: { aggregated_output: ".", exit_code: 0 } },
+    { type: "tool_use", id: "3", name: "command_execution", input: { command: "/bin/zsh -lc \"python3 - <<'PY'\nprint(1)\nPY\"" } }, { type: "tool_result", id: "3", output: { aggregated_output: "1", exit_code: 0 } },
+    { type: "tool_use", id: "4", name: "mcp__fabdesk__route_run", input: {} }, { type: "tool_result", id: "4", output: { text: "[\n  {\n\"status\": \"Routed\"" } },
+    { type: "tool_use", id: "5", name: "command_execution", input: { command: "/bin/zsh -lc 'cat fabdesk.json'" } },
+  ]);
+  expect(recentRunSteps([m], 0)).toEqual([
+    { id: "1", label: "Building the native design", state: "done", detail: "Build OK" },
+    { id: "3", label: "Ran 2 commands", state: "done", detail: "python3 (inline script)" },
+    { id: "4", label: "Routing the board", state: "done", detail: "\"status\": \"Routed\"" },
+    { id: "5", label: "Running a command", state: "running", detail: "cat fabdesk.json" },
+  ]);
+});
