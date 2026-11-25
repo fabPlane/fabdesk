@@ -144,7 +144,15 @@ async function streamToFile(
   return hash.digest("hex");
 }
 
-export function registerUpdateDownloadIpc(downloader: UpdateDownloader): void {
+/** What the update badge drives: this downloader, or UpdateInstaller where the app replaces itself. */
+export interface UpdateTransport {
+  state(): UpdateDownloadState;
+  download(): Promise<UpdateDownloadState>;
+  cancel(): void;
+  open(): Promise<string>;
+}
+
+export function registerUpdateDownloadIpc(downloader: UpdateTransport): void {
   ipcMain.handle("fabdesk:update-download-state", () => downloader.state());
   ipcMain.handle("fabdesk:download-update", () => downloader.download());
   ipcMain.handle("fabdesk:cancel-update-download", () => downloader.cancel());
