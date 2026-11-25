@@ -35,15 +35,18 @@ analytics is also off when `CI` is set, so CI smoke runs of a built binary do no
 `POST {FABPLANE_API_ORIGIN}/v1/telemetry/events`
 
 The daemon batches up to 50 events and posts JSON `{ "events": [...] }`. Default API origin is
-`https://api.fabplane.com`. Failures are silent: the batch is kept and retried on the next flush.
-Shutdown flushes the queue without blocking startup.
+`https://api.fabplane.com`. A failed send never surfaces to the user: the batch is kept and
+retried on a timer (30 seconds, doubling to at most 30 minutes), and the first failure of a
+streak is logged as a warning in `core.log`. A batch the API rejects as malformed (a 4xx other
+than 408 or 429) is dropped with a warning instead of resent. Shutdown flushes the queue without
+blocking startup.
 
 ## Events
 
 | Name | When |
 | --- | --- |
 | `app_open` | Core start, every launch |
-| `app.active` | Core start, at most once per 24 hours (DAU/WAU/MAU heartbeat) |
+| `app.active` | Core start, at most once per 24 hours counted from the last heartbeat the API accepted (DAU/WAU/MAU heartbeat) |
 | `project_created` | A project is created (`draft: true` for an idea draft) |
 | `ai_run` | An in-app agent run starts (`agentId`, e.g. `claude`) |
 | `export` | An agent tool named `export_*` is used (`exportTool`, e.g. `export_gerbers`) |
