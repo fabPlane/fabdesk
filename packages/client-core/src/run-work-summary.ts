@@ -67,13 +67,15 @@ export function recentRunSteps(messages: Message[], startedAt: number, limit = 6
   const parts = messages.filter(m => m.role === "assistant" && Date.parse(m.createdAt) >= startedAt).flatMap(m => m.parts);
   const results = new Map(parts.filter(p => p.type === "tool_result").map(p => [p.id, p]));
   const steps: RunStep[] = [];
-  let shell = null as { id: string; count: number; pending: boolean; command: string } | null;
+  let shell = null as { id: string; count: number; failures: number; pending: boolean; lastFailed: boolean; command: string } | null;
   const flushShell = () => {
     if (!shell) return;
     steps.push({
       id: shell.id,
-      label: shell.pending ? "Running a command" : shell.count === 1 ? "Ran a command" : `Ran ${shell.count} commands`,
-      state: shell.pending ? "running" : "done",
+      label: (shell.pending ? "Running a command" : shell.count === 1 ? "Ran a command" : `Ran ${shell.count} commands`)
+        + (shell.failures && shell.count > 1 ? ` (${shell.failures} failed)` : ""),
+      // The streak's state is its latest command's: an earlier failed probe is counted, not alarming.
+      state: shell.pending ? "running" : shell.lastFailed ? "failed" : "done",
       ...(shell.command ? { detail: shell.command } : {}),
     });
     shell = null;
@@ -83,7 +85,9 @@ export function recentRunSteps(messages: Message[], startedAt: number, limit = 6
     const bare = use.name.replace(/^mcp__.+?__/, "").replace(/^functions\./, "");
     const result = results.get(use.id);
     if (SHELL_TOOLS.has(bare)) {
-      shell = { id: use.id, count: (shell?.count ?? 0) + 1, pending: !result, command: shellCommand(use.input) };
+      const exit = record(result?.output)?.exit_code;
+      const commandFailed = result?.isError === true || record(result?.output)?.isError === true || (typeof exit === "number" && exit !== 0);
+      shell = { id: use.id, count: (shell?.count ?? 0) + 1, failures: (shell?.failures ?? 0) + (commandFailed ? 1 : 0), pending: !result, lastFailed: commandFailed, command: shellCommand(use.input) };
       continue;
     }
     flushShell();
