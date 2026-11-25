@@ -10,7 +10,7 @@ export const FINISH_IT_STATUS_LABEL: Record<FinishItStatus, string> = {
   stopping: "Stopping…",
   completed: "Board finished",
   stopped: "Finish it stopped",
-  failed: "Finish it failed",
+  failed: "Finish it stopped early",
 };
 
 export function finishItActive(session: FinishItSession | null | undefined): boolean {
@@ -49,4 +49,25 @@ export function finishItSummary(session: FinishItSession): string {
   if (current?.note) return current.note;
   if (session.currentMilestone) return FINISH_IT_MILESTONE_LABELS[session.currentMilestone];
   return FINISH_IT_STATUS_LABEL[session.status];
+}
+
+/**
+ * Why a step ended where it did ("Board not built", "DRC 1 error"). Pending steps have nothing to
+ * say yet, and the running step's note is already the panel's summary line.
+ */
+export function finishItMilestoneNote(session: FinishItSession, milestone: FinishItMilestone): string | null {
+  const status = finishItDisplayedMilestoneStatus(session, milestone);
+  if (status === "pending" || status === "skipped" || status === "running" || !milestone.note) return null;
+  return milestone.note;
+}
+
+/** What the user can do after a session that ended with steps left; a new run resumes from the saved project. */
+export function finishItNextStep(session: FinishItSession): string | null {
+  if (session.status !== "failed" && session.status !== "stopped") return null;
+  const unfinished = session.milestones.some((m) => m.status !== "done" && m.status !== "skipped");
+  if (!unfinished) return null;
+  const kept = session.milestones.some((m) => m.status === "done");
+  return kept
+    ? "Completed steps are saved. Run Finish it again to continue, or ask the agent about the step that is stuck."
+    : "Run Finish it again to retry, or ask the agent about the step that is stuck.";
 }

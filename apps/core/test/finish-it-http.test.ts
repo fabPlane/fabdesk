@@ -302,7 +302,7 @@ describe("finish-it HTTP", () => {
       8000,
     );
     expect(session?.status).toBe("failed");
-    expect(session?.error).toContain("verify");
+    expect(session?.error).toContain("Verify DRC / ERC / SPICE");
     const verify = session?.milestones.find((m) => m.id === "verify");
     expect(verify?.status).toBe("failed");
     expect(verify?.note).toContain("DRC 4 errors");

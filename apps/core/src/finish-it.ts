@@ -234,7 +234,7 @@ export class FinishItManager {
           this.finish(
             project.id,
             "failed",
-            `agent stopped after ${this.maxFollowUps} follow-up${this.maxFollowUps === 1 ? "" : "s"} with work still remaining: ${remaining.join(", ")}`,
+            `The agent stopped after ${this.maxFollowUps + 1} attempts with steps still unfinished: ${remaining.map((id) => FINISH_IT_MILESTONE_LABELS[id]).join(", ")}.`,
           );
           return;
         }

@@ -221,4 +221,4 @@ export { useLivePreview } from "./live-previews";
 export type { PreviewKind,PreviewScope } from "./live-previews";
 export { hitSelectionPart,partScopeKey,pcbSelectionParts,schematicSelectionParts,usePartSelection,type PartBox,type PartScope,type SelectablePart } from "./part-selection";
 export { inspectSelectionIndex,type SelectionIndex } from "./part-selection-source";
-export { summarizeRunWork } from "./run-work-summary";
+export { latestRunNote, recentRunSteps, summarizeRunWork, type RunStep } from "./run-work-summary";

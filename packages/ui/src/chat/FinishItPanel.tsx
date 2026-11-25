@@ -1,8 +1,9 @@
 import { useId, useState } from "react";
+import { latestRunNote, recentRunSteps, useMessages } from "@fabdesk/client-core";
 import type { FinishItSession } from "@fabdesk/protocol";
 import { Button } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { finishItActive, finishItDisplayedMilestoneStatus, finishItMilestoneTone, finishItSummary, FINISH_IT_STATUS_LABEL } from "./finish-it-view";
+import { finishItActive, finishItDisplayedMilestoneStatus, finishItMilestoneNote, finishItMilestoneTone, finishItNextStep, finishItSummary, FINISH_IT_STATUS_LABEL } from "./finish-it-view";
 
 export interface FinishItPanelProps {
   session: FinishItSession;
@@ -16,6 +17,7 @@ export function FinishItPanel({ session, onStop, stopping }: FinishItPanelProps)
   const [collapsedSession, setCollapsedSession] = useState<string | null>(null);
   const detailsId = useId();
   const collapsed = finished && collapsedSession === session.id;
+  const nextStep = finishItNextStep(session);
   if (collapsed) {
     return (
       <div className="mb-2" data-testid="finish-it-panel">
@@ -71,8 +73,9 @@ export function FinishItPanel({ session, onStop, stopping }: FinishItPanelProps)
         {session.milestones.map((m) => {
           const status = finishItDisplayedMilestoneStatus(session, m);
           const tone = finishItMilestoneTone(status);
+          const note = finishItMilestoneNote(session, m);
           return (
-            <li key={m.id} className="flex items-center gap-2 text-xs" data-milestone={m.id} data-status={status} aria-busy={tone === "running"}>
+            <li key={m.id} className="flex items-baseline gap-2 text-xs" data-milestone={m.id} data-status={status} aria-busy={tone === "running"}>
               <span
                 className={
                   tone === "done"
@@ -90,10 +93,69 @@ export function FinishItPanel({ session, onStop, stopping }: FinishItPanelProps)
                 <span className="sr-only">{tone === "running" ? "In progress: " : tone === "done" ? "Complete: " : tone === "failed" ? "Failed: " : "Pending: "}</span>
               </span>
               <span className={tone === "pending" ? "text-muted" : "text-fg"}>{m.label}</span>
+              {note && <span className="min-w-0 text-muted">· {note}</span>}
             </li>
           );
         })}
       </ol>
+      {active && <FinishItActivity session={session} />}
+      {nextStep && <p className="mt-2 text-xs text-muted">{nextStep}</p>}
+    </div>
+  );
+}
+
+/**
+ * "What is the agent doing": a collapsed line naming the current step, expanding to the latest
+ * tool steps and the agent's last words.
+ */
+function FinishItActivity({ session }: { session: FinishItSession }) {
+  const [open, setOpen] = useState(false);
+  const listId = useId();
+  const messages = useMessages(session.threadId);
+  const startedAt = Date.parse(session.startedAt);
+  const steps = recentRunSteps(messages.data ?? [], startedAt);
+  const note = latestRunNote(messages.data ?? [], startedAt);
+  const current = steps.at(-1);
+  const headline = !current
+    ? "Waiting for the agent to start"
+    : current.state === "running"
+      ? current.label
+      : "Waiting for the agent's next step";
+  return (
+    <div className="mt-2 border-t border-border pt-2 text-xs" data-testid="finish-it-activity">
+      <button
+        type="button"
+        className="flex w-full items-center gap-1.5 rounded text-left text-muted hover:text-fg focus-visible:text-fg"
+        aria-expanded={open}
+        aria-controls={listId}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Icon name="chevronRight" width={13} height={13} aria-hidden="true" className={`shrink-0 transition-transform${open ? " rotate-90" : ""}`} />
+        <span className="min-w-0 truncate">{headline}</span>
+      </button>
+      {open && (
+        <div id={listId} className="mt-2 grid gap-1.5 pl-5">
+          {note && <p className="text-muted">Agent: {note}</p>}
+          {steps.length === 0 && <p className="text-muted">No tool steps yet.</p>}
+          <ol className="grid gap-1">
+            {steps.map((step) => (
+              <li key={step.id} className="flex items-baseline gap-2" data-status={step.state}>
+                <span className={step.state === "failed" ? "text-danger" : step.state === "done" ? "text-success" : "text-accent"} aria-hidden="true">
+                  {step.state === "failed" ? "!" : step.state === "done" ? "✓" : "…"}
+                </span>
+                <span className="sr-only">{step.state === "failed" ? "Failed: " : step.state === "done" ? "Done: " : "In progress: "}</span>
+                <span className="min-w-0">
+                  <span className="text-fg">{step.label}</span>
+                  {step.detail && <span className="text-muted"> · {step.detail}</span>}
+                </span>
+              </li>
+            ))}
+          </ol>
+          {current && current.state !== "running" && (
+            <p className="text-muted">The last step returned; the agent is deciding what to do next.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
