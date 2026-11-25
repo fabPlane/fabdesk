@@ -68,6 +68,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const openArea = useUiStore((s) => s.setWorkspaceArea);
   const assistantOpen = useUiStore((s) => s.assistantOpen);
   const setAssistantOpen = useUiStore((s) => s.setAssistantOpen);
+  const focusConversation = () => { ui().setBoardOpen(false); setAssistantOpen(false); };
   const closeAssistant = () => {
     setAssistantOpen(false);
     requestAnimationFrame(() => document.querySelector<HTMLButtonElement>("[data-assistant-launcher]")?.focus());
@@ -151,6 +152,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       <div className="fd-canvas-header-actions">
         {home && !showProjects && <Button size="sm" onClick={() => setCreating("create")}><Icon name="plus" width={16} height={16} />New project</Button>}
         {home && <Button size="sm" onClick={() => setShowProjects(!showProjects)}><Icon name={showProjects ? "chevronLeft" : "folder"} width={16} height={16} />{showProjects ? "Home" : "Projects"}</Button>}
+        {projectId && !boardOpen && !secondary && !isDraft && <Button size="sm" title="Return to the canvas workspace" onClick={() => { ui().setBoardOpen(true); setAssistantOpen(false); }}><Icon name="pcb" width={16} height={16} />Canvas</Button>}
         {projectId && <ProjectActivity key={`${client.baseUrl}/${projectId}`} projectId={projectId} />}
         <span className="fd-canvas-connection" title={connectionTitle}><i data-connected={connected} />{connection ?? <span className="sr-only">Connected</span>}</span>
         <span className="fd-canvas-update"><UpdateBadge /></span>
@@ -185,6 +187,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
               {(threads.data ?? []).filter((t) => t.projectId === projectId && !t.archived).map((t) => <button key={t.id} onClick={() => ui().setActiveThread(t.id)}>{t.title || "Untitled conversation"}</button>)}
               <button onClick={onNewChat}><Icon name="plus" width={16} height={16} />New conversation</button>
             </WorkspaceMenu>
+            <IconButton size="sm" title="Expand conversation to full size" onClick={focusConversation}><Icon name="expand" width={16} height={16} /></IconButton>
             <IconButton size="sm" title="Minimize assistant" onClick={closeAssistant}><Icon name="minus" width={17} height={17} /></IconButton>
           </div></div>}
           <ThreadView presentation={fresh ? "start" : "chat"} referenceStart={referenceStart} />
