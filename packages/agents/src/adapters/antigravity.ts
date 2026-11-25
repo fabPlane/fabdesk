@@ -106,14 +106,34 @@ function runAntigravity(session: AgentSession): AgentRun {
         let optionId: string | undefined;
         const toolCall = object(params["toolCall"]);
         const options = list(params["options"]).map(object);
-        const allowOnce = options.find((option) => option["kind"] === "allow_once");
+        const allowOnce = options.filter((option) => option["kind"] === "allow_once");
         const denyOnce = options.find((option) => option["kind"] === "reject_once");
-        if (prompting && params["sessionId"] === sessionId && session.requestApproval) {
+        const title = string(toolCall["title"]);
+        const active = prompting && params["sessionId"] === sessionId;
+        // Antigravity encodes fixed-choice questions as synthetic permission requests.
+        // Neither a binary approval nor an unlisted answer may choose an option.
+        const interaction = string(toolCall["toolCallId"])?.startsWith("interaction_") === true;
+        if (active && interaction && title && session.requestInput) {
+          const choices = new Map<string, string>();
+          for (const option of allowOnce) {
+            const label = string(option["name"])?.trim();
+            const value = string(option["optionId"]);
+            if (label && value) choices.set(label, value);
+          }
+          if (choices.size > 0 && choices.size === allowOnce.length && new Set(choices.values()).size === choices.size) {
+            const answer = await session.requestInput({
+              question: title,
+              options: [...choices.keys()],
+              signal: abortController.signal,
+            }).catch(() => "");
+            optionId = choices.get(answer.trim());
+          }
+        } else if (active && !interaction && allowOnce.length <= 1 && session.requestApproval) {
           const decision = await session.requestApproval({
-            tool: string(toolCall["title"]) ?? "Antigravity tool",
+            tool: title ?? "Antigravity tool",
             input: toolCall["rawInput"] ?? {},
           }).catch(() => "deny");
-          optionId = string((decision === "approve" ? allowOnce : denyOnce)?.["optionId"]);
+          optionId = string((decision === "approve" ? allowOnce[0] : denyOnce)?.["optionId"]);
         }
         if (!stopped) send({ id, result: { outcome: optionId
           ? { outcome: "selected", optionId }
@@ -139,7 +159,7 @@ function runAntigravity(session: AgentSession): AgentRun {
               }
               if (kind === "tool_call" || kind === "tool_call_update") {
                 const id = string(update["toolCallId"]);
-                if (!id) continue;
+                if (!id || id.startsWith("interaction_")) continue;
                 if (kind === "tool_call" && !calls.has(id)) {
                   calls.add(id);
                   emit({ type: "tool_use", id, name: string(update["title"]) ?? "Antigravity tool", input: update["rawInput"] ?? {} });

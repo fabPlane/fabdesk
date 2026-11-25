@@ -45,7 +45,14 @@ function fixture(env: Record<string, string> = {}): AgentSession {
         current = id;
         update({sessionUpdate:"agent_thought_chunk",content:{type:"text",text:"Thinking"}});
         update({sessionUpdate:"tool_call",toolCallId:"t1",title:"Edit fake.txt",status:"pending"});
-        send({id:"ask",method:"session/request_permission",params:{sessionId:"agy-thread",toolCall:{title:"Edit fake.txt",rawInput:{path:"fake.txt"}},options:[{kind:"allow_always",optionId:"always"},{kind:"allow_once",optionId:"once"},{kind:"reject_once",optionId:"no"}]}});
+        const question = process.env.AGY_QUESTION;
+        const toolCall = question
+          ? { toolCallId: question === "unknown" ? "other_abc" : "interaction_abcd1234", title: "Which LED color?" }
+          : { title: "Edit fake.txt", rawInput: {path:"fake.txt"} };
+        const options = question
+          ? [{kind:"allow_once",optionId:"1",name:"Red"},{kind:"allow_once",optionId:"2",name:"Green"}]
+          : [{kind:"allow_always",optionId:"always"},{kind:"allow_once",optionId:"once"},{kind:"reject_once",optionId:"no"}];
+        send({id:"ask",method:"session/request_permission",params:{sessionId:"agy-thread",toolCall,options}});
       }
       if (id === "ask") {
         const choice = result.outcome.optionId ?? result.outcome.outcome;
@@ -126,4 +133,37 @@ nativeTest("abort terminates a turn awaiting permission without granting it", as
   }
   expect(events.at(-1)).toEqual({ type:"done", exitCode:130, sessionId:"agy-thread" });
   expect(events.some((event) => event.type === "tool_result")).toBe(false);
+});
+
+nativeTest("Antigravity questions send the answer's option ID, never the first approval", async () => {
+  const events = await collect({
+    ...fixture({ AGY_QUESTION: "1" }),
+    requestApproval: async () => { throw new Error("not an approval"); },
+    requestInput: async ({ question, options, signal }) => {
+      expect(question).toBe("Which LED color?");
+      expect(options).toEqual(["Red", "Green"]);
+      expect(signal?.aborted).toBe(false);
+      return "Green";
+    },
+  });
+  expect(events).toContainEqual({ type:"tool_result", id:"t1", output:"2", isError:false });
+});
+
+nativeTest("an unlisted answer or missing question handler cancels instead of selecting a default", async () => {
+  for (const extra of [{}, { requestInput: async () => "Blue" }]) {
+    const events = await collect({
+      ...fixture({ AGY_QUESTION: "1" }), ...extra,
+      requestApproval: async () => "approve" as const,
+    });
+    expect(events).toContainEqual({ type:"tool_result", id:"t1", output:"cancelled", isError:false });
+  }
+});
+
+nativeTest("ambiguous one-time permissions outside a known interaction fail closed", async () => {
+  const events = await collect({
+    ...fixture({ AGY_QUESTION: "unknown" }),
+    requestApproval: async () => "approve",
+    requestInput: async () => "Red",
+  });
+  expect(events).toContainEqual({ type:"tool_result", id:"t1", output:"cancelled", isError:false });
 });
