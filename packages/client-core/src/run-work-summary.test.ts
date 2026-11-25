@@ -47,3 +47,15 @@ test("a streak of shell commands is one step that shows the latest command", () 
     { id: "5", label: "Running a command", state: "running", detail: "cat fabdesk.json" },
   ]);
 });
+
+test("a failed shell command is not shown as done", () => {
+  const run = (id: string, output: unknown, isError?: boolean): Message["parts"] => [
+    { type: "tool_use", id, name: "command_execution", input: { command: `/bin/zsh -lc 'step ${id}'` } },
+    { type: "tool_result", id, output, ...(isError ? { isError } : {}) },
+  ];
+  const failedLast = message([...run("1", { exit_code: 0 }), ...run("2", { aggregated_output: "boom", exit_code: 2 }, true)]);
+  expect(recentRunSteps([failedLast], 0)).toEqual([{ id: "2", label: "Ran 2 commands (1 failed)", state: "failed", detail: "step 2" }]);
+  const failedEarlier = message([...run("1", { exit_code: 1 }), ...run("2", { exit_code: 0 })]);
+  expect(recentRunSteps([failedEarlier], 0)).toEqual([{ id: "2", label: "Ran 2 commands (1 failed)", state: "done", detail: "step 2" }]);
+  expect(recentRunSteps([message(run("1", "failed", true))], 0)).toEqual([{ id: "1", label: "Ran a command", state: "failed", detail: "step 1" }]);
+});
