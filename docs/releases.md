@@ -79,7 +79,9 @@ Changing this baseline or merging the PR does not itself publish a release.
      not match the running app.
    - The old flow (download the installer to Downloads, then open it) remains for a `.deb`
      install, an app run from the mounted DMG or a translocated path, `FABDESK_UPDATE_INPLACE=0`,
-     and for the rest of the session after two failed in-place attempts.
+     for the rest of the session after two failed in-place attempts, and for a version whose
+     in-place install was started but did not apply (`update-install.json` in the user data
+     folder records the started version; the next launch compares it with the running one).
 
 TraceMaker weekly binaries reuse the same public host under `tracemaker/`
 (`https://downloads.fabplane.com/tracemaker/…`). See [routers.md](routers.md). The desktop

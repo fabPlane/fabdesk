@@ -412,7 +412,13 @@ if (!app.requestSingleInstanceLock()) {
     });
     if (inPlaceBlocked) console.log(`[update] installer downloads only: ${inPlaceBlocked}`);
     registerUpdateDownloadIpc(
-      inPlaceBlocked ? downloader : new UpdateInstaller(updates, { prepareQuit: stopBackendsForQuit, fallback: downloader }),
+      inPlaceBlocked
+        ? downloader
+        : new UpdateInstaller(updates, {
+            prepareQuit: stopBackendsForQuit,
+            fallback: downloader,
+            installRecordPath: join(app.getPath("userData"), "update-install.json"),
+          }),
     );
     updates.start();
     coreStartup = supervisor.start();

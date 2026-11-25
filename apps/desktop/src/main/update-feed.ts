@@ -4,6 +4,7 @@
  * No Electron imports: this file is unit-tested under Bun.
  */
 import type { ReleaseAsset, UpdateCheckResult } from "@fabdesk/protocol";
+import { readFileSync, rmSync } from "node:fs";
 
 type Platform = ReleaseAsset["platform"];
 type Arch = ReleaseAsset["arch"];
@@ -73,4 +74,22 @@ export function toUpdateInfo(result: UpdateCheckResult, asset: ReleaseAsset): Fe
     path: asset.url,
     files: [{ url: asset.url, sha2: asset.sha256, size: asset.size }],
   };
+}
+
+/**
+ * The version whose in-place install was started but is not the one running: that install did not
+ * apply, so that version goes through the installer file. Clears the record once it did apply.
+ */
+export function notAppliedVersion(recordPath: string, runningVersion: string): string | null {
+  let version: unknown;
+  try {
+    version = (JSON.parse(readFileSync(recordPath, "utf8")) as { version?: unknown }).version;
+  } catch {
+    return null;
+  }
+  if (typeof version !== "string" || version === runningVersion) {
+    rmSync(recordPath, { force: true });
+    return null;
+  }
+  return version;
 }

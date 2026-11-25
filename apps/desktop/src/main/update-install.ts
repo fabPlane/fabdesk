@@ -13,10 +13,11 @@
  */
 import type { UpdateDownloadState } from "@fabdesk/protocol";
 import { app, autoUpdater as nativeUpdater, BrowserWindow } from "electron";
+import { writeFileSync } from "node:fs";
 import * as electronUpdater from "electron-updater";
 import type { ProviderRuntimeOptions } from "electron-updater/out/providers/Provider";
 import type { UpdateDownloader } from "./update-download";
-import { inPlaceAsset, toUpdateInfo } from "./update-feed";
+import { inPlaceAsset, notAppliedVersion, toUpdateInfo } from "./update-feed";
 import type { UpdateChecker } from "./updates";
 
 /** After this many failed attempts the session uses the installer file instead. */
@@ -28,7 +29,14 @@ export interface UpdateInstallerOptions {
   /** Stops the core and the bridges, and marks the app as quitting, before the app is replaced. */
   prepareQuit: () => Promise<void>;
   fallback: UpdateDownloader;
+  /**
+   * File that records the version an install was started for. Windows and the AppImage report a
+   * failed install only as an event, after the core is already stopped, and the relaunch that
+   * follows loses this object's failure count; the record is how the next launch knows.
+   */
+  installRecordPath: string;
 }
+
 
 export class UpdateInstaller {
   #state: UpdateDownloadState = { state: "idle" };
@@ -130,8 +138,9 @@ export class UpdateInstaller {
       this.#set({ state: "error", message: "No update available for this platform." });
       return this.#state;
     }
-    if (!asset) {
-      // This release cannot be applied in place; the installer file still can.
+    // No package to apply in place, or the last in-place install of this version did not take:
+    // the installer file still works.
+    if (!asset || notAppliedVersion(this.opts.installRecordPath, app.getVersion()) === version) {
       this.#failures = FAILURES_BEFORE_FALLBACK;
       return this.opts.fallback.download();
     }
@@ -176,7 +185,15 @@ export class UpdateInstaller {
       app.exit(0);
     };
     try {
+      // Read on the next launch: still on the old version means the install did not apply.
+      writeFileSync(this.opts.installRecordPath, JSON.stringify({ version }));
+    } catch (error) {
+      console.error(`[update] could not write the install record: ${String(error)}`);
+    }
+    try {
       setTimeout(relaunch, INSTALL_QUIT_TIMEOUT_MS).unref();
+      // Windows and the AppImage do not throw from quitAndInstall: a failed install is an event.
+      electronUpdater.autoUpdater.once("error", relaunch);
       electronUpdater.autoUpdater.quitAndInstall(true, true);
     } catch (error) {
       console.error(`[update] quitAndInstall failed: ${String(error)}`);
