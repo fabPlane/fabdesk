@@ -5,7 +5,7 @@ import { z } from "zod/v4";
 import { FinishItMilestoneId, FinishItSession } from "./finish-it";
 import { RouteFrame, RouteMeta, RouteResult, RouteStatic } from "./route-frames";
 
-export const AgentId = z.enum(["claude", "codex", "cursor", "grok"]);
+export const AgentId = z.enum(["claude", "codex", "cursor", "grok", "antigravity"]);
 export type AgentId = z.infer<typeof AgentId>;
 
 export const MessagePart = z.discriminatedUnion("type", [

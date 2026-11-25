@@ -89,7 +89,7 @@ export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, mode
     onSelect(id, m);
     onClose();
   };
-  const order: AgentId[] = ["codex", "claude", "grok", "cursor"];
+  const order: AgentId[] = ["codex", "claude", "grok", "cursor", "antigravity"];
   const ordered = [...agents].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
 
   return createPortal(
@@ -117,7 +117,7 @@ export function AgentModelMenu({ open, anchorRef, onClose, agents, agentId, mode
           </button>
           {isOpen && <div id={`agent-models-${agent.id}`} role="group" aria-label={`${agent.displayName} models`} className="mb-1 ml-3 border-l border-border pl-2">
             <Item selected={selected && (!model || model === fallback)} onClick={() => choose(agent.id, fallback)} title={defaultLabel || "Use the agent's default model"}>
-              <span className="min-w-0"><span className="block truncate">{defaultLabel ? modelDisplayName(defaultLabel, agent.modelAliases) : "Agent setting"}</span><span className="block text-[11px] font-normal text-muted">{defaultLabel ? "Default" : "Model not reported; choose one below"}</span></span>
+              <span className="min-w-0"><span className="block truncate">{defaultLabel ? modelDisplayName(defaultLabel, agent.modelAliases) : "Agent setting"}</span><span className="block text-[11px] font-normal text-muted">{defaultLabel ? "Default" : (choices.length ? "Model not reported; choose one below" : "Use the model configured in the agent")}</span></span>
             </Item>
             {choices.filter((id) => id !== fallback).map((id) => <Item key={id} selected={selected && model === id} onClick={() => choose(agent.id, id)} title={agent.modelAliases?.[id] ?? id}>
               <span className="min-w-0"><span className="block truncate">{modelDisplayName(id, agent.modelAliases)}</span>

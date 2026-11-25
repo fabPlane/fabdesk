@@ -120,3 +120,9 @@ test("KiCad nightly format failures explain file-date compatibility without clai
   const help = errorHelp("Failed to load board: KiCad was unable to open this file because it was created with a more recent version than the one you are running. To open it you will need to upgrade KiCad to version 10.99 or later (file format dated 20260901 or later).");
   expect(help.title).toBe("KiCad cannot open this board format"); expect(help.action).toBe("kicad"); expect(help.message).toContain("same version number");
 });
+
+test("Antigravity authentication errors show the CLI login command", () => {
+  expect(errorHelp("Authentication required. Sign in to Google Antigravity on the selected host.", {
+    agentId: "antigravity",
+  })).toMatchObject({ action: "agents", command: "agy acp --login" });
+});
