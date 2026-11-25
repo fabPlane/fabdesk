@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ProjectManifest } from "@fabdesk/protocol";
+import { ProjectManifest, type AgentId } from "@fabdesk/protocol";
 import type { AgentEvent, AgentRun, AgentSession } from "@fabdesk/agents";
 import type { ProjectHandle } from "@fabdesk/tools";
 import { AgentRunManager, type AgentAdapterLike } from "../src/agent-runs";
@@ -24,6 +24,7 @@ type Controlled = { session: AgentSession; finish(ev?: AgentEvent[]): void; abor
 
 function harness(
   opts: {
+    agentId?: AgentId;
     ignoreAbort?: boolean;
     run?: AgentAdapterLike["run"];
     resolveProject?: (id: string) => Promise<ProjectHandle | null>;
@@ -56,12 +57,13 @@ function harness(
           },
         } satisfies AgentRun;
       });
+    const agentId = opts.agentId ?? "claude";
     const manager = new AgentRunManager({
       store,
       emit: () => {},
       tokens: new TokenSet("daemon-token"),
       mcpUrl: "http://localhost/mcp",
-      adapters: { claude: { id: "claude", run, ...(opts.detect ? { detect: opts.detect } : {}) } },
+      adapters: { [agentId]: { id: agentId, run, ...(opts.detect ? { detect: opts.detect } : {}) } },
       settings: () => store.settings.get(),
       workspaceDir: dir,
       abortSettleTimeoutMs: 100,
@@ -70,9 +72,9 @@ function harness(
     });
     const project = (id: string): ProjectHandle =>
       ({ id, name: id, dir: join(dir, id), manifest: () => ProjectManifest.parse({ schema: 1, id, name: id, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), board: {} }) }) as unknown as ProjectHandle;
-    const thread = (title = "chat") => store.threads.create({ agentId: "claude", title });
+    const thread = (title = "chat") => store.threads.create({ agentId, title });
     const start = (threadId: string, p: ProjectHandle | null, prompt = "go") =>
-      manager.start({ threadId, project: p, agentId: "claude", prompt, attachments: [] });
+      manager.start({ threadId, project: p, agentId, prompt, attachments: [] });
     return { dir, store, manager, runs, project, thread, start };
   })();
 }
@@ -93,6 +95,26 @@ test("saved effort survives storage reload and applies to new chats only when su
     expect(latest.session.permission).toBe("auto");
     latest.finish(); await settle();
   }
+});
+
+
+test("Antigravity's native approval appears in the chat in Full mode", async () => {
+  const h = await harness({ agentId: "antigravity" });
+  const t = h.thread();
+  await h.start(t.id, null);
+  const run = h.runs[0]!;
+  expect(run.session.runtimeMode).toBe("full");
+  expect(run.session.supervisor).toBeUndefined();
+  const decision = run.session.requestApproval!({ tool: "Edit test.txt", input: { path: "test.txt" } });
+  const approval = h.manager.pending(t.id).approvals[0]!;
+  expect(approval.tool).toBe("Edit test.txt");
+  expect(h.manager.resolveApproval(t.id, approval.requestId, "approve", "desktop")).toBe("ok");
+  expect(await decision).toBe("approve");
+  run.finish();
+  await settle();
+  expect(h.store.threads.messages(t.id).flatMap((m) => m.parts)).toContainEqual(expect.objectContaining({
+    type: "approval", requestId: approval.requestId, decision: "approve",
+  }));
 });
 
 describe("AgentRunManager project lease", () => {

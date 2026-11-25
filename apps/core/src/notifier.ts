@@ -412,6 +412,7 @@ const AGENT_NAMES: Record<string, string> = {
   codex: "Codex",
   cursor: "Cursor",
   grok: "Grok",
+  antigravity: "Google Antigravity",
 };
 
 function agentName(id: string): string {

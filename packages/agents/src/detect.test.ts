@@ -42,12 +42,12 @@ describe("detectBinary", () => {
   test("falls back to later candidates and to explicit paths", async () => {
     const path = fakeBinary("cursor-agent");
     const args = versionArgs("cursor-agent version 2026.1.5");
-    expect(await detectBinary(["agent", "cursor-agent"], undefined, args)).toEqual({
+    expect(await detectBinary(["fabdesk-absent-first-candidate", "cursor-agent"], undefined, args)).toEqual({
       installed: true,
       version: "2026.1.5",
       path,
     });
-    expect(await detectBinary(["agent", path], undefined, args)).toEqual({
+    expect(await detectBinary(["fabdesk-absent-first-candidate", path], undefined, args)).toEqual({
       installed: true,
       version: "2026.1.5",
       path,
@@ -164,7 +164,7 @@ describe("detectAgents", () => {
       cloudOrgId: null,
       voice: { provider: "auto", language: "en", pushToTalkMode: "hold", pushToTalkShortcut: "Alt+Space" },
     });
-    expect(infos.map((i) => i.id)).toEqual(["claude", "codex", "grok", "cursor"]);
+    expect(infos.map((i) => i.id)).toEqual(["claude", "codex", "grok", "cursor", "antigravity"]);
     const byId = Object.fromEntries(infos.map((i) => [i.id, i]));
     // claude/cursor also probe fixed home paths (~/.local/bin/…), so only PATH-independent facts are asserted.
     expect(byId["claude"]).toMatchObject({ displayName: "Claude" });
@@ -173,13 +173,15 @@ describe("detectAgents", () => {
     expect(byId["codex"]).toMatchObject({ installed: true, version: process.versions.bun, path: custom });
     expect(byId["grok"]).toMatchObject({ installed: true, version: process.versions.bun, path: grokPath });
     expect(byId["cursor"]).toMatchObject({ displayName: "Cursor" });
-    for (const info of infos) expect(info.models.length).toBeGreaterThan(0);
-    // Only Claude Code can pause a tool call for approval (see each adapter for why).
+    expect(byId["antigravity"]).toMatchObject({ displayName: "Google Antigravity", models: [] });
+    for (const info of infos.filter((a) => a.id !== "antigravity")) expect(info.models.length).toBeGreaterThan(0);
+    // See each adapter for supported FabDesk runtime modes.
     expect(infos.map((i) => [i.id, i.supportsSupervised])).toEqual([
       ["claude", true],
       ["codex", false],
       ["grok", false],
       ["cursor", false],
+      ["antigravity", false],
     ]);
   });
 });

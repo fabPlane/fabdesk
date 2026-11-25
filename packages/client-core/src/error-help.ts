@@ -37,8 +37,8 @@ export function errorPayload(input: unknown): { raw: string; message: string; co
   return { raw, message: raw };
 }
 
-const agentNames: Record<string, string> = { claude: "Claude", codex: "Codex", cursor: "Cursor", grok: "Grok" };
-const loginCommands: Record<string, string> = { claude: "claude auth login", codex: "codex login", cursor: "agent login", grok: "grok login" };
+const agentNames: Record<string, string> = { claude: "Claude", codex: "Codex", cursor: "Cursor", grok: "Grok", antigravity: "Google Antigravity" };
+const loginCommands: Record<string, string> = { claude: "claude auth login", codex: "codex login", cursor: "agent login", grok: "grok login", antigravity: "agy acp --login" };
 const modelChangeNotice = /^This session was recorded with model \S+ but is resuming with \S+\. Consider switching back to \S+ as it may affect Codex performance\.$/;
 
 export function errorHelp(input: unknown, context: ErrorContext = {}): ErrorHelp {
@@ -130,7 +130,7 @@ export function errorHelp(input: unknown, context: ErrorContext = {}): ErrorHelp
     title: "The design tools are not connected",
     message: "Restart fabPlane and try again. If board tools still fail, check the KiCad setup in Settings.", action: "kicad",
   };
-  if (/failed to start.*(?:ENOENT|not found)|(?:claude|codex|cursor|grok).*could not be started|agent.*not installed/i.test(text)) return {
+  if (/failed to start.*(?:ENOENT|not found)|(?:claude|codex|cursor|grok|antigravity).*could not be started|agent.*not installed/i.test(text)) return {
     title: `${agent} could not start`,
     message: "Open Settings → Agents to check that the agent is installed and its program location is correct, then try again.", action: "agents",
   };

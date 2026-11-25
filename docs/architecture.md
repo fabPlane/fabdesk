@@ -9,7 +9,7 @@
 │  renderer: React UI, WebMCP  │  SSE   │  /projects /threads /tools /jobs /events │
 └──────────────────────────────┘        │  /mcp  (streamable HTTP, per-session)    │
                                         │  SQLite (bun:sqlite) · job runner · bus  │
-   claude / codex / grok / cursor ─────►│  fp-pcb bridge client · kicad-cli        │
+   claude / codex / grok / cursor / agy ─────►│  fp-pcb bridge client · kicad-cli        │
                                         │  fab-cad bridge client (FreeCAD)         │
    (spawned by core, or external via    └──────────────────────────────────────────┘
     `fabdesk-core mcp` stdio bridge)
@@ -23,9 +23,9 @@
   started it or an external agent started it with `fabdesk-core mcp`. It authenticates every
   request with a bearer token handed over at spawn time (`FABDESK_TOKEN`) and recorded in
   `daemon.json` (0600) so other local processes can find and attach to it.
-- **Agents are subprocesses.** The core spawns `claude -p`, `codex exec`, `grok -p` or the cursor
-  `agent` in the project directory with an MCP config pointing at the core's `/mcp`. Every tool
-  call is therefore visible to the UI regardless of which agent made it.
+- **Agents are subprocesses.** The core starts the selected agent in the project directory with a
+  connection to its `/mcp` endpoint. Google Antigravity uses `agy acp` over stdio; see
+  [Antigravity setup](antigravity.md).
 
 ## Tool surface
 

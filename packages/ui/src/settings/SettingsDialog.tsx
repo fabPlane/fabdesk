@@ -164,13 +164,15 @@ export function SettingsDialog() {
                         placeholder={a.models.slice(0, 3).join(", ")}
                       />
                     </Row>
-                    <Row label="Permission mode" hint="How much the agent may do without asking">
+                    {a.id === "antigravity" ? <Row label="Permission mode" hint="Set by Antigravity. FabDesk displays approval requests the CLI sends.">
+                      <span className="text-sm text-muted">Antigravity settings</span>
+                    </Row> : <Row label="Permission mode" hint="How much the agent may do without asking">
                       <Select value={cfg.permissionMode} onChange={(e) => updateAgent(a.id, { permissionMode: e.target.value as AgentSettings["permissionMode"] })}>
                         <option value="acceptEdits">acceptEdits</option>
                         <option value="auto">auto</option>
                         <option value="bypass">bypass</option>
                       </Select>
-                    </Row>
+                    </Row>}
                   </div>
                 );
               })}
