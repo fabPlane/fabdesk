@@ -1,4 +1,5 @@
 import type { AgentId, AgentInfo, Settings } from "@fabdesk/protocol";
+import { antigravityAdapter } from "./adapters/antigravity";
 import { claudeAdapter } from "./adapters/claude";
 import { codexAdapter } from "./adapters/codex";
 import { cursorAdapter } from "./adapters/cursor";
@@ -48,9 +49,10 @@ export const adapters: Record<AgentId, AgentAdapter> = {
   codex: codexAdapter,
   cursor: cursorAdapter,
   grok: grokAdapter,
+  antigravity: antigravityAdapter,
 };
 
-export const agentIds: AgentId[] = ["claude", "codex", "grok", "cursor"];
+export const agentIds: AgentId[] = ["claude", "codex", "grok", "cursor", "antigravity"];
 
 /** Detects every adapter (in parallel), honoring `settings.agents[id].binaryPath`. */
 export async function detectAgents(settings?: Settings): Promise<AgentInfo[]> {

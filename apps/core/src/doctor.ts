@@ -92,7 +92,7 @@ export async function runDoctor(o: { config: CoreConfig; settings: Settings }): 
     );
   }
   if (!routers[0]?.present) warnings.push(`FabPlane PCB bridge not reachable at ${routers[0]?.detail ?? fpPcbBridgeUrl(o.settings.fpPcbBridgeUrl)}: start it (bun run --filter @fp-pcb/bridge start in a fab_pcb checkout) or set Settings.fpPcbBridgeUrl / FABDESK_FP_PCB_BRIDGE_URL; circuit_build and route_run need it`);
-  if (!agents.some((a) => a.installed)) warnings.push("no agent CLI found (claude, codex, grok or cursor agent); the app can still be used as an MCP server");
+  if (!agents.some((a) => a.installed)) warnings.push("no agent CLI found (claude, codex, grok, cursor agent or agy); the app can still be used as an MCP server");
   const repoRoot = findRepoRoot();
   if (repoRoot && existsSync(join(repoRoot, "vendor", "fabplane", "node_modules"))) warnings.push("vendor/fabplane/node_modules exists: never run `bun install` inside vendor/fabplane (duplicate zod/hono instances)");
   if (o.config.authMode === "local") warnings.push("auth mode is local (FABDESK_AUTH_MODE=local)");
