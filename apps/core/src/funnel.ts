@@ -290,11 +290,11 @@ ${handoff ? `<ul>${handoff}</ul>` : "<p>none</p>"}
       $lib: "fabdesk-core",
       $lib_version: VERSION,
       ...(body.properties ?? {}),
+      distinct_id: body.distinct_id,
     };
     const payload = JSON.stringify({
       api_key: key,
       event: body.event,
-      distinct_id: body.distinct_id,
       properties,
       timestamp: this.now().toISOString(),
     });

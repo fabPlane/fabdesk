@@ -75,14 +75,18 @@ describe("Funnel", () => {
     await funnel.flush();
     expect(bodies.some((b) => b.event === "$create_alias")).toBe(true);
     const alias = bodies.find((b) => b.event === "$create_alias")!;
-    expect(alias.distinct_id).toBe(minted);
-    expect((alias.properties as { alias: string }).alias).toBe("ph_landing");
+    expect(alias.distinct_id).toBeUndefined();
+    const aliasProps = alias.properties as { alias: string; distinct_id: string };
+    expect(aliasProps.distinct_id).toBe(minted);
+    expect(aliasProps.alias).toBe("ph_landing");
     const identify = bodies.find((b) => b.event === "$identify")!;
-    expect(identify.distinct_id).toBe("user_subject");
+    expect(identify.distinct_id).toBeUndefined();
     const props = identify.properties as {
+      distinct_id: string;
       $anon_distinct_id: string;
       $set_once: Record<string, string>;
     };
+    expect(props.distinct_id).toBe("user_subject");
     expect(props.$anon_distinct_id).toBe("ph_landing");
     expect(props.$set_once).toEqual({
       utm_source: "google",
@@ -122,6 +126,8 @@ describe("Funnel", () => {
     await funnel.flush();
     const review = bodies.find((b) => b.event === "onboarding_first_review_viewed")!;
     const reviewProps = review.properties as Record<string, unknown>;
+    expect(review.distinct_id).toBeUndefined();
+    expect(reviewProps["distinct_id"]).toBe(funnel.distinctId());
     expect(reviewProps["source"]).toBe("review");
     expect(reviewProps["path"]).toBeUndefined();
     const board = bodies.find((b) => b.event === "onboarding_first_board_viewed")!;
