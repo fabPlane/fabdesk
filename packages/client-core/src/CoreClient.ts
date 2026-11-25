@@ -52,6 +52,8 @@ import type {
   RouteFrameLine,
   RouteResult,
   Settings,
+  FunnelHandoff,
+  FunnelSnapshot,
   SpeechStatus,
   SpeechTranscript,
   Run,
@@ -706,6 +708,12 @@ export class CoreClient {
   }
   installLocalSpeech(): Promise<{ modelPath: string; status: SpeechStatus }> {
     return this.request("/v1/speech/local/install", { method: "POST" });
+  }
+  getFunnel(): Promise<FunnelSnapshot> {
+    return this.request("/funnel");
+  }
+  submitFunnelHandoff(handoff: FunnelHandoff): Promise<FunnelSnapshot> {
+    return this.request("/funnel/handoff", { method: "POST", json: handoff });
   }
   getSettings(): Promise<Settings> {
     return this.request("/settings");

@@ -23,6 +23,7 @@ import {
   SendMessage,
   RouterCatalogId,
   Settings,
+  funnelHandoffFromRecord,
   SpeechCloudSecret,
   StartFinishIt,
   StartOrder,
@@ -60,6 +61,7 @@ import type { AuthFacade } from "../auth-facade";
 import type { EventBus } from "../bus";
 import type { CoreConfig } from "../config";
 import type { Store } from "../db";
+import type { Funnel } from "../funnel";
 import type { JobRunner } from "../jobs";
 import type { McpSessionManager } from "../mcp-sessions";
 import { InvalidParentDirectory, type ProjectStore } from "../projects";
@@ -128,6 +130,8 @@ export type AppDeps = {
   privacy?: () => PrivacyStatus;
   /** Speak-to-the-agent transcription. Tests inject a fake provider. */
   speech?: SpeechService;
+  /** Onboarding funnel snapshot + website handoff. */
+  funnel?: Funnel;
 };
 
 export type Env = { Variables: { token?: string; principalSubject?: string } };
@@ -799,6 +803,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
       boardStats: (cli, opts) => deps.services.kicad.boardStats(cli, opts),
     });
     if (!adopted) return c.json({ error: "could not load this KiCad board" }, 422);
+    deps.funnel?.record("onboarding_first_project");
+    deps.funnel?.record("onboarding_first_kicad_import");
     return c.json({ project: await deps.projects.detail(c.req.param("id")), pcbPath: adopted.pcbPath });
   });
   app.get("/projects/:id/finish-it", async (c) => {
@@ -885,6 +891,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
       projects: deps.projects,
       services: deps.services,
     });
+    deps.funnel?.record("onboarding_first_project");
     return c.json(remixed, 201);
   });
 
@@ -1092,6 +1099,21 @@ export function createApp(deps: AppDeps): Hono<Env> {
     return c.json(next);
   });
   app.get("/privacy", (c) => (deps.privacy ? c.json(deps.privacy()) : c.json({ error: "not found" }, 404)));
+  app.get("/funnel", (c) => {
+    if (!deps.funnel) return c.json({ error: "not found" }, 404);
+    const snap = deps.funnel.snapshot();
+    if ((c.req.query("format") ?? "").toLowerCase() === "html") {
+      return c.html(deps.funnel.renderHtml(snap));
+    }
+    return c.json(snap);
+  });
+  app.post("/funnel/handoff", async (c) => {
+    if (!deps.funnel) return c.json({ error: "not found" }, 404);
+    const raw: unknown = await c.req.json().catch(() => ({}));
+    const record = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+    deps.funnel.adopt(funnelHandoffFromRecord(record));
+    return c.json(deps.funnel.snapshot());
+  });
   app.patch("/settings", async (c) => {
     const raw: unknown = await c.req.json();
     // `.partial()` still fills every defaulted key, so a `{ theme }` patch would otherwise reset the

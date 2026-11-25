@@ -23,6 +23,8 @@ const only = get("--only") as Target | undefined;
 /** Sentry (docs/sentry.md): DSN/environment baked into the binary from the build env; the runtime env still overrides. */
 const sentryDsn = process.env["SENTRY_DESKTOP_DSN"]?.trim() || process.env["FABDESK_SENTRY_DSN"]?.trim() || undefined;
 const sentryEnvironment = process.env["SENTRY_ENVIRONMENT"]?.trim() || process.env["FABDESK_SENTRY_ENVIRONMENT"]?.trim() || undefined;
+const posthogKey = process.env["POSTHOG_KEY"]?.trim() || process.env["FABDESK_POSTHOG_KEY"]?.trim() || undefined;
+const posthogHost = process.env["POSTHOG_HOST"]?.trim() || process.env["FABDESK_POSTHOG_HOST"]?.trim() || undefined;
 /** Release `fabdesk-core@<version>+<sha>`: CI has GITHUB_SHA, local builds ask git, else `dev`. */
 function gitSha(): string {
   const ci = process.env["GITHUB_SHA"]?.trim();
@@ -88,6 +90,8 @@ for (const target of targets) {
     `FABDESK_BUILD_TIME=${JSON.stringify(buildTime)}`,
     ...(sentryDsn ? ["--define", `FABDESK_SENTRY_DSN=${JSON.stringify(sentryDsn)}`] : []),
     ...(sentryEnvironment ? ["--define", `FABDESK_SENTRY_ENVIRONMENT=${JSON.stringify(sentryEnvironment)}`] : []),
+    ...(posthogKey ? ["--define", `FABDESK_POSTHOG_KEY=${JSON.stringify(posthogKey)}`] : []),
+    ...(posthogHost ? ["--define", `FABDESK_POSTHOG_HOST=${JSON.stringify(posthogHost)}`] : []),
     "--root",
     repoRoot,
     ...(os === "windows" ? ["--windows-hide-console"] : []),

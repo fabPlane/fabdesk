@@ -16,6 +16,7 @@ const settings = {
   keepCoreRunning: true,
   webmcpWriteTools: false,
   errorReporting: true,
+  productAnalytics: true,
   theme: "dark",
   remote: { enabled: false, host: "0.0.0.0", port: 47820 },
   notifications: { enabled: true },
@@ -36,6 +37,7 @@ describe("portableFromSettings", () => {
     });
     expect(JSON.stringify(cloud)).not.toContain("kicad");
     expect(JSON.stringify(cloud)).not.toContain("keepCore");
+    expect(JSON.stringify(cloud)).not.toContain("productAnalytics");
   });
 });
 

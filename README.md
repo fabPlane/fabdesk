@@ -63,6 +63,11 @@ Crash and error reports go to Sentry only when a DSN is configured (`SENTRY_DESK
 out in Settings → Privacy. Reports never include prompts, board files, tokens or project paths. See
 [docs/sentry.md](docs/sentry.md).
 
+The onboarding drop-off funnel is a separate, optional PostHog capture from `fabdesk-core` (no SDK).
+It is off unless `POSTHOG_KEY` is set; users can also turn it off in Settings → Privacy. Events never
+include prompts, board files, tokens, emails, project names or paths. See
+[docs/onboarding-funnel.md](docs/onboarding-funnel.md).
+
 Agent-run debugging is separate from crash reporting: every in-app run gets a portable `llm-dump.json`
 with its ordered agent/MCP/KiCad timeline and pre-tool project snapshots. Complete dumps are also kept
 in Fabdesk's existing SQLite database for simple lookup and export, with no extra service required. See

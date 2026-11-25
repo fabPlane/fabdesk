@@ -111,6 +111,7 @@ describe("sqlite", () => {
       "route_runs",
       "settings",
       "schema_migrations",
+      "funnel_events",
     ])
       expect(tables).toContain(t);
   });

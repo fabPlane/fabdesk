@@ -15,6 +15,7 @@ import {
   type FinishItMilestone,
   type FinishItMilestoneId,
   type FinishItSession,
+  type FunnelEventRecord,
   type FinishItStatus,
   type JobStatus,
   type MessagePart,
@@ -275,6 +276,17 @@ export const MIGRATIONS: Migration[] = [
         ended_at TEXT
       );
       CREATE INDEX finish_it_sessions_project ON finish_it_sessions(project_id, started_at DESC);
+    `,
+  },
+  {
+    version: 15,
+    sql: `
+      CREATE TABLE funnel_events (
+        distinct_id TEXT NOT NULL,
+        event TEXT NOT NULL,
+        recorded_at TEXT NOT NULL,
+        PRIMARY KEY (distinct_id, event)
+      );
     `,
   },
 ];
@@ -1459,6 +1471,31 @@ export class FinishItRepo {
   }
 }
 
+export class FunnelRepo {
+  constructor(private readonly db: Database) {}
+
+  insert(distinctId: string, event: string, recordedAt: string): boolean {
+    const result = this.db.run(
+      "INSERT OR IGNORE INTO funnel_events(distinct_id, event, recorded_at) VALUES (?, ?, ?)",
+      [distinctId, event, recordedAt],
+    );
+    return result.changes > 0;
+  }
+
+  list(): FunnelEventRecord[] {
+    return this.db
+      .query<{ distinct_id: string; event: string; recorded_at: string }, []>(
+        "SELECT distinct_id, event, recorded_at FROM funnel_events ORDER BY recorded_at ASC, event ASC",
+      )
+      .all()
+      .map((row) => ({
+        distinctId: row.distinct_id,
+        event: row.event,
+        recordedAt: row.recorded_at,
+      }));
+  }
+}
+
 export class Store {
   readonly projects: ProjectRepo;
   readonly threads: ThreadRepo;
@@ -1469,6 +1506,7 @@ export class Store {
   readonly routeRuns: RouteRunRepo;
   readonly settings: SettingsRepo;
   readonly finishIt: FinishItRepo;
+  readonly funnel: FunnelRepo;
   constructor(readonly db: Database) {
     this.projects = new ProjectRepo(db);
     this.threads = new ThreadRepo(db);
@@ -1479,6 +1517,7 @@ export class Store {
     this.routeRuns = new RouteRunRepo(db);
     this.settings = new SettingsRepo(db);
     this.finishIt = new FinishItRepo(db);
+    this.funnel = new FunnelRepo(db);
   }
   static open(path: string): Store {
     return new Store(openDatabase(path));

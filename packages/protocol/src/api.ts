@@ -323,6 +323,11 @@ export const Settings = z.object({
   /** Send crash/error reports to Sentry (only when a DSN is configured; see docs/sentry.md). */
   errorReporting: z.boolean().default(true),
   /**
+   * Local, device-only onboarding funnel (PostHog capture). Default on. Not part of Cloud Settings.
+   * Capture is still a no-op when `POSTHOG_KEY` is unset.
+   */
+  productAnalytics: z.boolean().default(true),
+  /**
    * Local, installation-wide consent to back up stored conversations and tool traces for analysis.
    * Only meaningful once `usageArchiveChoiceComplete` is set; read it through `usageArchiveAllowed`.
    */

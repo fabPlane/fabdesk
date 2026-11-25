@@ -123,6 +123,14 @@ describe("schemas", () => {
     expect(parsed).toEqual({ schema: 1, updatedAt: 42, appearance: "dark" });
     expect(CloudSettings.safeParse({ schema: 1 }).success).toBe(false);
     expect(CloudSettings.safeParse({ schema: 2, updatedAt: 1 }).success).toBe(false);
+    expect(
+      CloudSettings.parse({ schema: 1, updatedAt: 1, productAnalytics: false }),
+    ).toEqual({ schema: 1, updatedAt: 1 });
+  });
+
+  test("productAnalytics defaults on and is a local Settings flag", () => {
+    expect(Settings.parse({}).productAnalytics).toBe(true);
+    expect(Settings.parse({ productAnalytics: false }).productAnalytics).toBe(false);
   });
 
   test("DaemonHandshake requires a real token", () => {
