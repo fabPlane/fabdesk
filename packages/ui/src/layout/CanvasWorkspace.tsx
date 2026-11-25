@@ -92,6 +92,17 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
     const key = `${projectId}:${requestedBuild}`;
     if (isDraft && requestedBuild && !draftRunning && key !== seenRequest.current && project.data) { seenRequest.current = key; setSetupDraft(project.data); }
   }, [isDraft, requestedBuild, draftRunning, projectId, project.data]);
+  // Opening a project resumes its latest conversation once, so saved history is not hidden behind
+  // the blank start surface. A later "New conversation" in the same project is left alone.
+  const resumedProject = useRef<string | null>(null);
+  useEffect(() => {
+    if (!projectId) { resumedProject.current = null; return; }
+    if (resumedProject.current === projectId || !threads.data) return;
+    resumedProject.current = projectId;
+    if (threadId || sourceId || inventory || order) return;
+    const latest = latestDraftConversation(projectId, threads.data);
+    if (latest) ui().setActiveThread(latest.id);
+  }, [projectId, threads.data, threadId, sourceId, inventory, order]);
   const draftConversation = draftView === "conversation" || !sketchPaths.length;
   const conversationOnly = !boardOpen || (!projectId && !!threadId) || (isDraft && draftConversation);
   const hasNativeDesign = project.data?.files.some((file) => file.path === "board.kicad_pcb" || file.path === "board.kicad_sch");
